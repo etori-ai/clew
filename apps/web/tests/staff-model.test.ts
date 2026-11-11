@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import type { EntityList, EntityRef, EntityRows, EntitySource, View, ViewField } from '@clew/contracts';
+import type { EntityCard, EntityList, EntityRef, EntityRows, EntitySource, View, ViewField } from '@clew/contracts';
 import {
   answerOf,
   byNeed,
   cardLinkTexts,
+  cardsListed,
   lensNeed,
   markText,
   marksFor,
@@ -203,13 +204,36 @@ describe('Personal (D97)', () => {
         { key: 'karin', act: 0, proposals: 1, threadId: 't-karin' },
       ],
     };
-    expect(cardLinkTexts(withCards, 'ERIK')).toEqual([{ id: 'act', text: '1 att agera på', threadId: 't-erik' }]);
+    expect(cardLinkTexts(withCards, 'ERIK')).toEqual([{ kind: 'act', text: '1 att agera på', threadId: 't-erik' }]);
     expect(cardLinkTexts(withCards, 'johan')).toEqual([
-      { id: 'act', text: '2 att agera på' },
-      { id: 'proposals', text: '1 förslag' },
+      { kind: 'act', text: '2 att agera på' },
+      { kind: 'proposal', text: '1 förslag' },
     ]);
-    expect(cardLinkTexts(withCards, 'karin')).toEqual([{ id: 'proposals', text: '1 förslag', threadId: 't-karin' }]);
+    expect(cardLinkTexts(withCards, 'karin')).toEqual([{ kind: 'proposal', text: '1 förslag', threadId: 't-karin' }]);
     expect(cardLinkTexts(withCards, 'anna')).toEqual([]);
+  });
+  test('several cards are listed beside Personal: those of the kind the link counted, headed with its words', () => {
+    const card = (threadId: string, kind: EntityCard['kind']): EntityCard => ({
+      threadId,
+      title: threadId,
+      source: 'Clew',
+      kind,
+    });
+    const cards = [card('a1', 'act'), card('p1', 'proposal'), card('a2', 'act'), card('f1', 'fyi')];
+    expect(cardsListed(cards, 'act')).toEqual({
+      cards: [card('a1', 'act'), card('a2', 'act')],
+      heading: '2 att agera på',
+      empty: 'Inget att agera på',
+    });
+    expect(cardsListed(cards, 'proposal')).toEqual({
+      cards: [card('p1', 'proposal')],
+      heading: '1 förslag',
+      empty: 'Inga förslag',
+    });
+    // Every one was decided meanwhile: the list says so in its place.
+    expect(cardsListed([card('f1', 'fyi')], 'act').cards).toEqual([]);
+    // An address without a kind lists every card about the person, as Behöver dig on their page does.
+    expect(cardsListed(cards, undefined)).toEqual({ cards, heading: 'Behöver dig', empty: 'Inga kort' });
   });
   test('the count line names the unit, or how many units there are', () => {
     expect(peopleLine(list.groups)).toBe('6 medarbetare på Bergsåkers skola');

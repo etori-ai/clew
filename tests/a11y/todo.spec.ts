@@ -366,7 +366,7 @@ test.describe('the panel beside the page', () => {
     await expect(heading(page, 1, 'Hej Testa')).toBeVisible();
   });
 
-  test('a view an answer names opens beside the transcript, the conversation stays, and a view that is a tool offers its page', async ({
+  test('a view an answer names opens beside the transcript, the conversation stays, and a view that is a tool offers no page', async ({
     page,
     api,
   }) => {
@@ -388,10 +388,9 @@ test.describe('the panel beside the page', () => {
     await expect(log).toContainText('Sök i telefonboken: 2 rader.');
     await expect(panel.getByRole('heading', { level: 2, name: 'Sök i telefonboken' })).toBeFocused();
     await expectNoAxeViolations(page);
-    await expect(panel.getByRole('link', { name: 'Öppna som sida' })).toHaveAttribute(
-      'href',
-      /^\/tools\/phonebook\.directory\?input=/,
-    );
+    // No control chooses a surface (D107 rule 7): the tool is in the rail where an administrator put it.
+    await expect(panel.getByText('Öppna som sida')).toHaveCount(0);
+    await expect(panel.locator('a[href^="/tools/"]')).toHaveCount(0);
     // The box is in use while the panel is open, and typing there never loses the panel.
     await composer(page).fill('Vem är på plats?');
     await composer(page).press('Enter');
@@ -422,7 +421,7 @@ test.describe('the panel beside the page', () => {
     await expect(composer(page)).toBeFocused();
     expect(api.asked.at(-1)?.chips?.map(c => c.ref)).toEqual(['capability:phonebook.directory']);
     await expectNoAxeViolations(page);
-    // "Öppna som sida" is the way back to the view at full width; "Stäng samtalet" leads to the page it was asked on.
+    // "Stäng samtalet" leads to the page it was asked on, the tool's page with the view at full width.
     await page.getByRole('button', { name: 'Stäng samtalet' }).click();
     await expect(page).toHaveURL(/\/tools\/phonebook\.directory\?input=/);
     await expect(heading(page, 1, 'Telefonbok')).toBeVisible();

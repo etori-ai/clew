@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef, type ComponentProps, type ReactNode } from 'react';
-import { useLocation } from 'react-router';
+import { useLocation, useNavigate, useSearchParams } from 'react-router';
+import { useQuery } from '@tanstack/react-query';
 import type { AnimatedLayout } from '@clew/ui';
 import type { EntityColumn, EntityList, EntityRef, EntitySource, ViewField } from '@clew/contracts';
 import {
@@ -17,6 +18,7 @@ import {
   List,
   ListItem,
   MoreMenu,
+  Skeleton,
   Table,
   Text,
   Toolbar,
@@ -24,24 +26,29 @@ import {
   VisuallyHidden,
   pixel,
   proportional,
+  resolveColumnWidths,
   useAnnounce,
 } from '@clew/ui';
+import { ApiError } from '../api';
+import { entityDetailQuery } from '../queries';
+import { errorMessage } from '../query-policy';
 import { FieldCell, FieldValue, badgeVariant, fieldText, fieldWord, isBadged } from '../components/view';
-import { personHref, personPageFromList } from '../components/person-panel';
+import { CardList, SectionFrame } from '../components/entity-sections';
+import type { PanelFrame } from '../components/panel';
 import type { EntityActionStart } from '../entity-actions';
-import { withCard } from '../panel-address';
-import { withoutPerson } from '../person-address';
+import { cardsOf, pageOnly, withCard, withCards, withoutPanel } from '../panel-address';
+import { personPageFrom } from '../person-address';
 import { groupFields, present, rowGroups, type FieldGroup } from '../view-fields';
 import {
   byNeed,
   cardLinkTexts,
+  cardsListed,
   columnValue,
   lensNeed,
   marksFor,
   pageHref,
   rowOf,
   silentText,
-  titleField,
   viewFields,
   type Answer,
   type Row,
@@ -49,9 +56,9 @@ import {
 } from './staff-model';
 
 /**
- * The parts of Personal (D97, artboards A2, B, A3 and the left of C), each an Astryx composition: the Visa menu, the
- * row's menu, a unit's card on "Alla", under a lens and drawn compact beside an opened person, and the sentence that
- * says which system did not answer. `staff.tsx` reads the API and puts them together.
+ * The parts of Personal (D97, artboards A2, B and A3), each an Astryx composition: the Visa menu, the row's menu, a
+ * unit's card on "Alla" and under a lens, one person's cards as a list in the page's panel, and the sentence that says
+ * which system did not answer. `staff.tsx` reads the API and puts them together.
  */
 
 type MenuItems = ComponentProps<typeof MoreMenu>['items'];
@@ -157,25 +164,103 @@ export function RowMenu({ entity, ctx, lens }: { entity: EntityRef; ctx: Context
 /**
  * The person's cards as links in "Just nu" (artboard A2, D97 item 5): "1 att agera på" and "1 förslag" (or "N …"), each
  * opening the card beside the list when the server named the one card there is (D83 rule 1: the list stays, and the
- * card shows what it asks before anything is decided), and otherwise the person beside the list, where Behöver dig
- * lists their cards. `here` is the list's own address: a card opened from a row takes the place of an opened person.
+ * card shows what it asks before anything is decided), and otherwise the cards it counted as a list beside Personal
+ * (D107 answer 6), so a count never leaves the page. Either takes the place of what the panel held: one thing at a time.
  */
 export function cardLinks(
   list: EntityList,
   entity: EntityRef,
   here: { pathname: string; search: string },
 ): ReactNode[] {
-  const opensPerson = personHref(here.pathname, here.search, entity.key);
-  const listSearch = withoutPerson('', here.search);
+  const listSearch = pageOnly('', here.search);
   return cardLinkTexts(list, entity.key).map(link => (
     <Link
-      key={link.id}
-      href={link.threadId ? withCard(here.pathname, listSearch, link.threadId) : opensPerson}
+      key={link.kind}
+      href={
+        link.threadId
+          ? withCard(here.pathname, listSearch, link.threadId)
+          : withCards(here.pathname, listSearch, entity.key, link.kind)
+      }
       hasUnderline
     >
       {link.text}
     </Link>
   ));
+}
+
+/**
+ * One person's cards as a list in Personal's panel (D107 answer 6): "N att agera på" or "N förslag" in "Just nu"
+ * counted more than one card, so the list stays and those cards are listed beside it (`cards=<key>` with `cards-kind`,
+ * the page panel's `under`). They are the person's own Behöver dig, from their entity detail, of the kind the link
+ * counted. A title opens its card over the list in the same panel (`&card=`); closing the card leaves the list, with the
+ * focus on that title, and closing the list leaves Personal with its lens. The panel is named for the person, with the
+ * name the list already has, so its heading takes the focus at once while the cards arrive; it says so in the panel
+ * when the person cannot be read or no such card is left (each was decided meanwhile). A decision on one of them reads
+ * the list and the person again (`cardChanged` in `staff.tsx`).
+ */
+export function useCardsFrame(list: EntityList | undefined): PanelFrame | null {
+  const [search] = useSearchParams();
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const asked = cardsOf(search);
+  const read = useQuery({ ...entityDetailQuery('person', asked?.key ?? ''), enabled: !!asked });
+  if (!asked) return null;
+  const same = (key: string) => key.toLowerCase() === asked.key.toLowerCase();
+  const named = list?.groups.flatMap(g => g.entities).find(e => same(e.key))?.name;
+  const detail = read.isError ? undefined : read.data;
+  const base = {
+    id: `cards:${asked.key}:${asked.kind ?? 'all'}`,
+    // The address "Just nu" leads to, so the focus finds that link when the list closes and its opener is gone.
+    address: withCards(pathname, search, asked.key, asked.kind),
+    onClose: () => navigate(withoutPanel(pathname, search)),
+  };
+  if (read.isError && read.error instanceof ApiError && read.error.status === 404)
+    return {
+      ...base,
+      title: 'Personen finns inte',
+      body: () => (
+        <Text as="p">Det finns ingen sådan person, eller så har du inte tillgång till uppgifterna om hen.</Text>
+      ),
+    };
+  const name = detail?.entity.name ?? named;
+  // Neither the list nor the person has arrived: nothing yet to name the panel by.
+  if (!name) return read.isError ? { ...base, title: 'Personen kunde inte hämtas', body: () => retry(read) } : null;
+  if (read.isError) return { ...base, title: name, body: () => retry(read) };
+  const shown = detail ? cardsListed(detail.cards, asked.kind) : null;
+  return {
+    ...base,
+    title: name,
+    body: () =>
+      !shown ? (
+        <VStack gap={2}>
+          <Skeleton height={20} width="60%" />
+          <Skeleton height={20} width="40%" />
+        </VStack>
+      ) : shown.cards.length === 0 ? (
+        <EmptyState isCompact headingLevel={3} title={shown.empty} />
+      ) : (
+        <SectionFrame title={shown.heading} caption="Clew">
+          <CardList cards={shown.cards} />
+        </SectionFrame>
+      ),
+  };
+}
+/** The person's cards could not be read: said in the list's place, with the one way to ask again. */
+function retry(read: { error: unknown; isFetching: boolean; refetch: () => unknown }) {
+  return (
+    <VStack gap={3}>
+      <Text as="p">{errorMessage(read.error, 'Korten kunde inte hämtas just nu.')}</Text>
+      <HStack>
+        <Button
+          size="sm"
+          variant="secondary"
+          label="Försök igen"
+          isLoading={read.isFetching}
+          onClick={() => void read.refetch()}
+        />
+      </HStack>
+    </VStack>
+  );
 }
 
 /** The person's name as the way to their page, with the list as its way back, and their initials before it. */
@@ -186,7 +271,7 @@ function Person({ entity, openers }: { entity: EntityRef; openers: Openers }) {
       <Avatar name={entity.name} size={32} tooltip={false} />
       <Link
         ref={openers(entity.id)}
-        href={personPageFromList(location.pathname, location.search, entity.key)}
+        href={personPageFrom(location.pathname, location.search, entity.key)}
         weight="semibold"
       >
         {entity.name}
@@ -225,8 +310,8 @@ interface TableRow extends Record<string, unknown> {
 }
 type Group = EntityList['groups'][number];
 const count = (n: number) => (n === 0 ? 'Ingen medarbetare' : `${n} medarbetare`);
-/** The unit's caption, as the card's toolbar: its name, and how many people it has unless the list is compact. */
-function UnitCard({ group, compact, children }: { group: Group; compact?: boolean; children: ReactNode }) {
+/** The unit's caption, as the card's toolbar: its name, and how many people it has. */
+function UnitCard({ group, children }: { group: Group; children: ReactNode }) {
   return (
     <Card padding={0}>
       <Toolbar
@@ -236,7 +321,7 @@ function UnitCard({ group, compact, children }: { group: Group; compact?: boolea
         startContent={
           <VStack gap={0}>
             <Text weight="semibold">{group.label}</Text>
-            {!compact && <Text type="supporting">{count(group.entities.length)}</Text>}
+            <Text type="supporting">{count(group.entities.length)}</Text>
           </VStack>
         }
       />
@@ -309,7 +394,7 @@ function PhoneRow({
       label={
         <Link
           ref={ctx.openers(entity.id)}
-          href={personPageFromList(location.pathname, location.search, entity.key)}
+          href={personPageFrom(location.pathname, location.search, entity.key)}
           weight="semibold"
         >
           {entity.name}
@@ -340,16 +425,35 @@ function PhoneRow({
     />
   );
 }
+/** The widths of the list's columns: the name, a value on "Alla", Just nu and the menu. */
+const PERSON_WIDTH = proportional(2, { minWidth: 220 }),
+  VALUE_WIDTH = proportional(1, { minWidth: 160 }),
+  NOW_WIDTH = proportional(2, { minWidth: 200 }),
+  MENU_WIDTH = pixel(60);
+/** A cell of a lens: a state with its moment ("Bokat", "tors 12 nov. kl. 09:00") has room for both on one line. */
+const cellWidth = (g: FieldGroup) =>
+  proportional(1, { minWidth: groupFields(g).some(f => f.format === 'instant') ? 240 : g.beside.length ? 200 : 140 });
+/**
+ * The least width the whole list needs as a table, under a lens or on "Alla", as Astryx's Table works it out from its
+ * columns' widths (below it the table scrolls sideways). The page draws its panel beside the list only where the list
+ * keeps this much, and as the drawer over it everywhere else, so opening a card never makes the list scroll sideways.
+ */
+export function listMinWidth(list: EntityList | undefined, lens: EntitySource | undefined): number {
+  const widths = lens
+    ? [PERSON_WIDTH, ...rowGroups(viewFields(lens.view)).map(cellWidth), MENU_WIDTH]
+    : [PERSON_WIDTH, ...(list?.columns ?? []).map(() => VALUE_WIDTH), NOW_WIDTH, MENU_WIDTH];
+  return resolveColumnWidths(widths.map((width, i) => ({ key: String(i), width }))).tableMinWidth;
+}
 const personColumn = (ctx: Context) => ({
   key: 'person',
   header: 'Person',
-  width: proportional(2, { minWidth: 220 }),
+  width: PERSON_WIDTH,
   renderCell: (r: TableRow) => <Person entity={r.entity} openers={ctx.openers} />,
 });
 const menuColumn = (ctx: Context, lens?: EntitySource) => ({
   key: 'menu',
   header: <VisuallyHidden>Åtgärder</VisuallyHidden>,
-  width: pixel(60),
+  width: MENU_WIDTH,
   renderCell: (r: TableRow) => <RowMenu entity={r.entity} ctx={ctx} {...(lens ? { lens } : {})} />,
 });
 
@@ -407,7 +511,7 @@ export function AllUnit({
             ...ctx.list.columns.map(c => ({
               key: `column:${c.capability}:${c.field.key}`,
               header: columnHeader(c),
-              width: proportional(1, { minWidth: 160 }),
+              width: VALUE_WIDTH,
               // A value without a tone is ordinary text, as the artboard draws "I tjänst" and "mån 16 nov".
               renderCell: (r: TableRow) => {
                 const row = rowOf(ctx.answers.get(c.capability), r.entity.key);
@@ -417,7 +521,7 @@ export function AllUnit({
             {
               key: 'now',
               header: 'Just nu',
-              width: proportional(2, { minWidth: 200 }),
+              width: NOW_WIDTH,
               renderCell: (r: TableRow) => <Marks entity={r.entity} ctx={ctx} />,
             },
             menuColumn(ctx),
@@ -497,10 +601,7 @@ export function LensUnit({
             ...groups.map(g => ({
               key: `field:${g.lead.key}`,
               header: g.lead.label,
-              // A state with its moment ("Bokat", "tors 12 nov. kl. 09:00") has room for both on one line.
-              width: proportional(1, {
-                minWidth: groupFields(g).some(f => f.format === 'instant') ? 240 : g.beside.length ? 200 : 140,
-              }),
+              width: cellWidth(g),
               ...(g.lead.format === 'number' && !g.beside.length ? { align: 'end' as const } : {}),
               renderCell: (r: TableRow) => {
                 const row = rowOf(answer, r.entity.key);
@@ -513,50 +614,6 @@ export function LensUnit({
           hasHover
         />
       )}
-    </UnitCard>
-  );
-}
-
-/**
- * The list drawn compact while a person is open beside it (artboard C, left): one row per person, the name the way to
- * open them, the opened one marked current, and under a lens the lens's state at the end, sorted as the lens sorts.
- */
-export function CompactUnit({
-  group,
-  lens,
-  ctx,
-  opened,
-  animatedLayout,
-}: {
-  group: Group;
-  lens: EntitySource | undefined;
-  ctx: Context;
-  opened: string | undefined;
-  animatedLayout: AnimatedLayout;
-}) {
-  const location = useLocation();
-  const answer = lens ? ctx.answers.get(lens.capability) : undefined;
-  const title = lens ? titleField(lens.view) : undefined;
-  const people = lens ? byNeed(group.entities, lens, answer) : group.entities;
-  return (
-    <UnitCard group={group} compact>
-      <List aria-label={group.label} hasDividers animatedLayout={animatedLayout}>
-        {people.map(e => {
-          const value = title ? rowOf(answer, e.key)?.[title.key] : undefined;
-          return (
-            <ListItem
-              key={e.key}
-              itemKey={e.key}
-              label={<Text weight="semibold">{e.name}</Text>}
-              href={personHref(location.pathname, location.search, e.key)}
-              isSelected={!!opened && opened.toLowerCase() === e.key.toLowerCase()}
-              endContent={
-                title && present(value) ? <FieldValue field={title} value={value} text="ordinary" /> : undefined
-              }
-            />
-          );
-        })}
-      </List>
     </UnitCard>
   );
 }

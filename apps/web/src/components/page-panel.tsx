@@ -19,7 +19,7 @@ import { applyThread } from '../thread-cache';
 import { panelOf, withAction, withView, withoutPanel, type PanelRef } from '../panel-address';
 import { mobileQuery } from '../media';
 import { cardBody } from './card-panel';
-import { PanelBody, usePanel, type PanelFrame, type PanelSize } from './panel';
+import { PanelBody, usePanel, type PanelFrame } from './panel';
 
 const parse = (json: string | null): Record<string, unknown> => {
   try {
@@ -87,11 +87,9 @@ export function useView(
 export interface PagePanelOptions {
   /** The least width the page's own column needs beside the panel; a narrower window gets the panel as a drawer over it. */
   minMain: number;
-  /** The panel's own width, when the page's is not the shared 440 px. */
-  size?: PanelSize;
   /** Nothing pinned beside the page: a short screen (1.4.10), or a page that never has the panel beside it. */
   overlayOnly?: boolean;
-  /** One thing at a time: what is opened takes the place of what was open, with no tabs (`usePanel`). */
+  /** One thing at a time: what is opened takes the place of what was open, with no tabs (`usePanel`), as on Personal. */
   replaces?: boolean;
   /** Whether a thing may stay open as a tab (D66): the page's word on a card that left its stream. */
   isOpen?: (id: string) => boolean;
@@ -105,7 +103,7 @@ export interface PagePanelOptions {
    * was one hook.
    */
   failures?: 'panel' | 'page';
-  /** What the page itself holds in the panel while the address opens nothing over it: the person beside Personal's list. */
+  /** What the page itself holds in the panel while the address opens nothing over it: a person's cards beside Personal's list. */
   under?: PanelFrame | null;
   /** A card's own button changed it: told before the cache is written (`mutations.ts`), so the page can move focus first. */
   onChange?: (thread: Thread) => void;
@@ -117,8 +115,6 @@ export interface PagePanelOptions {
   cardSheet?: boolean;
   /** An entry in a day view (D32) was chosen: the page opens its dialog over the panel. */
   onOpenItem?: (item: AgendaItem, dayItems: AgendaItem[]) => void;
-  /** Beside ✕ on a view: what the page offers for the view on screen. */
-  viewActions?: (view: ShownView) => ReactNode;
   /** The address the page reads as its own when it is not the browser's (Hem under a card's review, D73). */
   at?: { pathname: string; search: URLSearchParams };
 }
@@ -154,7 +150,6 @@ export interface PagePanelSlot {
  */
 function usePanelOnPage({
   minMain,
-  size,
   overlayOnly = false,
   replaces = false,
   isOpen,
@@ -166,7 +161,6 @@ function usePanelOnPage({
   cardElsewhere = false,
   cardSheet,
   onOpenItem,
-  viewActions,
   at,
 }: PagePanelOptions): PagePanelSlot {
   const [params] = useSearchParams();
@@ -277,7 +271,6 @@ function usePanelOnPage({
         address: shown.address,
         wide: shown.spec?.kind === 'table',
         onClose: close,
-        actions: viewActions?.(shown),
         body: inline => (
           <PanelBody
             output={shown.output}
@@ -406,7 +399,7 @@ function usePanelOnPage({
             },
           }
         : null;
-  const slot = usePanel(frame, { minMain, overlayOnly, isOpen, onClosed, size, replaces });
+  const slot = usePanel(frame, { minMain, overlayOnly, isOpen, onClosed, replaces });
   return { ...slot, frame, ref, card, view, failure };
 }
 

@@ -47,9 +47,10 @@ export interface EntityActionStart {
  * the card the person decides on; nothing reaches the source's write before that decision. The card opens beside the
  * page the action was started on (D107 rule 4): that page's address with the card in its panel (`withCard`), beside the
  * page's column where both fit and over it where they do not, so starting something never takes the person away and
- * closing the card leaves the page as it was, with its lens, its section and the person opened beside a list. The address
- * is the page's when the start has answered, and the focus lands on the card's heading as on every card opened in a
- * panel. A refusal is said aloud once per start (4.1.3) and stays as `error` for the page to show beside the control.
+ * closing the card leaves the page as it was, with its lens, its section and a person's cards listed beside it. The
+ * address is the page's when the start has answered, and the focus lands on the card's heading as on every card opened
+ * in a panel. A refusal is said aloud once per start (4.1.3) and stays as `error` for the page to show beside the
+ * control.
  */
 export function useEntityAction(): EntityActionStart {
   const navigate = useNavigate();

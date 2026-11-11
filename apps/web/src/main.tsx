@@ -197,7 +197,7 @@ function App() {
         path="/staff"
         element={<Protected>{shell => <StaffPage user={shell.user} admin={shell.admin} />}</Protected>}
       />
-      {/* A person as a page (D97 item 5): "Öppna som sida" from the person beside a list; `section` is the chosen source. */}
+      {/* A person as a page (D97 item 5, D107 rule 3): a name on Personal or on any row that names them; `section` is the chosen source. */}
       <Route
         path="/people/:key"
         element={<Protected>{shell => <PersonPage user={shell.user} admin={shell.admin} />}</Protected>}

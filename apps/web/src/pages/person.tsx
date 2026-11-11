@@ -158,11 +158,12 @@ function ChosenCards({ detail, level }: { detail: EntityDetail; level: 'page' | 
 }
 
 /**
- * The person as a page (D97 item 5, artboard C2), at `/people/:key`, reached with "Öppna som sida": the trail back to
- * the list, the person's name with their actions, the list of sections ("Om <namn>", each with its source and one line)
- * and beside it the chosen source's fuller view, `?section=` in the address. On a narrow window the two are the
- * `settings-sidebar` template's drill-in: the list, then the chosen section with the way back to the list. A person the
- * reader may not ask about is the page's own "finns inte" (the server answers 404 for both).
+ * The person as a page (D97 item 5, artboard C2), at `/people/:key`, the one way a person is shown (D107 rule 3),
+ * reached from a name on Personal or on any row that names them: the trail back to the list, the person's name with
+ * their actions, the list of sections ("Om <namn>", each with its source and one line) and beside it the chosen
+ * source's fuller view, `?section=` in the address. On a narrow window the two are the `settings-sidebar` template's
+ * drill-in: the list, then the chosen section with the way back to the list. A person the reader may not ask about is
+ * the page's own "finns inte" (the server answers 404 for both).
  *
  * The page holds the panel beside its column (D107 rules 2 to 4, `usePagePanel`): a card under Behöver dig and the card
  * an action makes open there, with the section and the way back kept in the address, and closing leaves the page as it

@@ -1,10 +1,13 @@
-import type { ViewRef } from '@clew/contracts';
+import type { EntityCard, ViewRef } from '@clew/contracts';
 
 /**
  * What the panel holds is named in the address (D50), the same way on every page (`usePagePanel`, the shell's drawer):
  * `open` is a view (with `open-title`, `open-input` and `via`, the names a tool's page already uses, D42), `open-card`
  * and `open-action` are a card's own read, and `card` is a card. A view lies over a card: closing the view leaves the
  * card, closing the card leaves the page. Everything else in the address is the page's own and is kept.
+ *
+ * Under them all may lie one person's cards as a list (`cards=<key>`, with `cards-kind` the kind "Just nu" counted,
+ * D107 answer 6): Personal draws it, a card opened from it lies over it, and closing peels the card first, then the list.
  */
 export type PanelRef =
   | { kind: 'view'; capability: string; title: string; input: Record<string, unknown>; via: boolean }
@@ -12,8 +15,16 @@ export type PanelRef =
   | { kind: 'card'; threadId: string };
 
 const VIEW_KEYS = ['open', 'open-title', 'open-input', 'via', 'open-card', 'open-action'];
+const CARDS_KEYS = ['cards', 'cards-kind'];
 /** Every name the panel's part of an address uses: what a page drops when it opens its own thing in the panel's place. */
-export const PANEL_KEYS: readonly string[] = [...VIEW_KEYS, 'card'];
+export const PANEL_KEYS: readonly string[] = [...VIEW_KEYS, 'card', ...CARDS_KEYS];
+/** The kinds of card "Just nu" counts on Personal: those waiting for the reader's decision, and Clew's proposals. */
+export type CountedKind = Exclude<EntityCard['kind'], 'fyi'>;
+/** One person's cards as a list in the panel: whose, and of which kind; without a kind, all of them. */
+export interface CardsRef {
+  key: string;
+  kind: CountedKind | undefined;
+}
 const parse = (json: string | null): Record<string, unknown> => {
   try {
     const v: unknown = json ? JSON.parse(json) : {};
@@ -103,14 +114,44 @@ export function keepingPanel(target: string, search: URLSearchParams | string): 
   });
   return address(at < 0 ? target : target.slice(0, at), q);
 }
-/** The same page with the panel's top layer closed: the view if there is one, else the card. */
+/** The page's own address with nothing in its panel: what a way back to the page holds (`from`). */
+export function pageOnly(pathname: string, search: URLSearchParams | string): string {
+  return address(pathname, without(search, [...PANEL_KEYS]));
+}
+/** The person's cards the address lists in the panel, under whatever is opened over them. */
+export function cardsOf(search: URLSearchParams): CardsRef | null {
+  const key = search.get('cards');
+  if (!key) return null;
+  const kind = search.get('cards-kind');
+  return { key, kind: kind === 'act' || kind === 'proposal' ? kind : undefined };
+}
+/**
+ * The same page with one person's cards listed in the panel and nothing over them. What the panel held is let go of:
+ * the list is opened from the page, and takes the place of what was open (one thing at a time on Personal).
+ */
+export function withCards(
+  pathname: string,
+  search: URLSearchParams | string,
+  key: string,
+  kind?: CountedKind | undefined,
+): string {
+  const q = without(search, [...PANEL_KEYS]);
+  q.set('cards', key);
+  if (kind) q.set('cards-kind', kind);
+  return address(pathname, q);
+}
+/** The same page with the panel's top layer closed: the view if there is one, else the card, else a person's cards. */
 export function withoutPanel(pathname: string, search: URLSearchParams | string): string {
   const q = new URLSearchParams(search);
   if (VIEW_KEYS.some(k => q.has(k))) VIEW_KEYS.forEach(k => q.delete(k));
-  else q.delete('card');
+  else if (q.has('card')) q.delete('card');
+  else CARDS_KEYS.forEach(k => q.delete(k));
   return address(pathname, q);
 }
-/** Only the panel's part of an address, as a query string: what a conversation takes with it from the page it was asked on. */
+/**
+ * Only the panel's part of an address, as a query string: what a conversation takes with it from the page it was asked
+ * on. A person's cards are left behind: the list is Personal's own, and the conversation's page does not draw it.
+ */
 export function panelSearch(search: URLSearchParams | string): string {
   const from = new URLSearchParams(search),
     q = new URLSearchParams();

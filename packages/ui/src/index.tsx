@@ -98,6 +98,7 @@ export {
   TableHeaderCell,
   pixel,
   proportional,
+  resolveColumnWidths,
 } from '@astryxdesign/core/Table';
 export { Switch } from '@astryxdesign/core/Switch';
 export { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';

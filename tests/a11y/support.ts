@@ -161,7 +161,10 @@ export class MockApi {
   entityStarts: Array<{ key: string; capability: string }> = [];
   /** Actions the source refuses, by capability, with its Swedish sentence (a 400, as the server passes it on). */
   entityRefusals: Record<string, string> = {};
-  /** The opened person whose actions a start is checked against; a spec that answers the person itself sets it. */
+  /**
+   * The opened person, when a spec answers them itself: what the person's read answers (unless the spec routes it
+   * itself, as `person-data.ts` does) and whose actions a start is checked against.
+   */
   entityDetailOf?: (key: string) => EntityDetail | undefined;
   /** The opened unit whose actions a start is checked against; the unit's routes set it (`unit-data.ts`). */
   unitDetailOf?: (id: string) => EntityDetail | undefined;
@@ -847,7 +850,7 @@ export class MockApi {
           : { capability, status: 'ok', rows: [] };
       return json(answer);
     }
-    const detail = entityDetail(list, decodeURIComponent(key));
+    const detail = this.entityDetailOf?.(decodeURIComponent(key)) ?? entityDetail(list, decodeURIComponent(key));
     if (!detail) return missing();
     if (sub === undefined) return json(detail);
     if (sub !== 'section' || !detail.sections.some(s => s.capability === capability)) return missing();

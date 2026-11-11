@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Area, MenuEntry, SessionUser, Thread, ViewRef } from '@clew/contracts';
+import type { Area, SessionUser, Thread, ViewRef } from '@clew/contracts';
 import { isSnoozed } from '@clew/contracts';
 import {
   Badge,
@@ -63,7 +63,7 @@ function Entering({ children }: { children: (entry: EntryStyle) => ReactNode }) 
   const entry = useEntryAnimation('fadeIn');
   return <>{children(entry ?? undefined)}</>;
 }
-import { toolHref, useRail, type RailCurrent } from '../components/nav';
+import { useRail, type RailCurrent } from '../components/nav';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { ThreadRow } from '../components/card';
 import { ReviewOverlay } from '../components/review-overlay';
@@ -123,7 +123,6 @@ const capital = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
 const ALL_AREAS = 'all';
 const EMPTY_THREADS: Thread[] = [];
 const EMPTY_AREAS: Area[] = [];
-const EMPTY_MENU: MenuEntry[] = [];
 
 /** Where the focus lands on a row or a heading of Hem: a row's title link, the control with the ring; anything else as a whole. */
 const focusStop = (el: HTMLElement | null) =>
@@ -170,7 +169,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   // Nested mark readers can retry a failed first read on mount. Once it has settled, keep the content mounted.
   const loadingWork = loadingThreads || loadingAreas;
   const areas = areasQ.data?.areas ?? EMPTY_AREAS;
-  const menu = areasQ.data?.menu ?? EMPTY_MENU;
   const day = dayQ.data ?? null;
   const assistant = assistantQ.data ?? null;
   const talk = useConversation();
@@ -358,11 +356,12 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
               (!!t.receipt?.undoCapability && !!t.receipt.undoUntil && t.receipt.undoUntil > now)))),
     );
   /**
-   * The panel (D50): the view the address names, a card's own read, or a card. A view that is also a tool in the
-   * person's menu (D40) offers its page. In a conversation the card beside the transcript is the one the question was
-   * asked about; on a phone Hem draws its cards in the sheet, so a card has no panel there. With nothing open there is no
-   * panel: the day and what happened since yesterday are Hem's own (D72). Hem says a read that failed in its own alert,
-   * and a done card leads on to the next one in the stream.
+   * The panel (D50): the view the address names, a card's own read, or a card. A view that is also a tool offers no
+   * way to its page (D107 rule 7: no control chooses a surface); the tool is in the rail where an administrator put it.
+   * In a conversation the card beside the transcript is the one the question was asked about; on a phone Hem draws its
+   * cards in the sheet, so a card has no panel there. With nothing open there is no panel: the day and what happened
+   * since yesterday are Hem's own (D72). Hem says a read that failed in its own alert, and a done card leads on to the
+   * next one in the stream.
    */
   const slot = usePagePanel({
     minMain: talk.open ? CONVERSATION_MIN : HOME_MIN,
@@ -375,12 +374,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     cardElsewhere: cardsInSheet,
     cardSheet: false,
     onOpenItem: (item, dayItems) => setOpenItem({ item, dayItems }),
-    viewActions: shown => {
-      const tool = menu.find(e => e.capability === shown.capability);
-      return tool ? (
-        <Button size="sm" variant="ghost" label="Öppna som sida" href={toolHref(tool.capability, shown.input)} />
-      ) : undefined;
-    },
     // Under a card's review the page reads its address as Hem's with the card beside the column.
     ...(reviewing ? { at: { pathname: here, search } } : {}),
   });

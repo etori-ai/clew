@@ -172,3 +172,17 @@ page from their buttons. The unit's page now draws its actions as the person's d
 rest under "Fler" ("Åtgärder" on a phone); no source in the repository offers an action about a unit yet. This
 replaces the first amendment's sentence that the person's and the unit's pages have no panel and lead to Hem, and that
 an action leads there; the review of a card's rows still opens over Hem (D73) until D107's rule 5 is built.
+
+**Amended 2026-11-11 (D107): a person is a page only, and several cards are listed beside Personal.** Under
+[D107](D107-where-something-opens-is-decided-by-what-it-is.md) rule 3 and the product owner's answers 1 and 6, nothing
+draws a person beside a list. `?person=<key>`, the section drilled into on a phone (`person-section`) and the list drawn
+compact beside the person are gone; an address that still holds them leads to the person's page
+(`/people/<key>?from=<the list>`), with `person-section` as the page's `section` and an open card kept. "Just nu" that
+counts several cards now lists them beside Personal, of the kind the link counted ("N att agera på", "N förslag"), from
+the person's Behöver dig (`/staff?cards=<key>&cards-kind=act|proposal`); a title there opens its card over that list,
+and closing leaves the card, then the list, then Personal with its lens. One card still opens directly. The list is
+always drawn whole, so the panel stands beside it only where the list keeps its table's least width and is the drawer
+over it elsewhere, and closing an action's card gives the focus back to the row's menu button. The person's actions
+no longer offer "Öppna som sida". This replaces item 5's person beside the list and the sentences of the amendments
+above that keep the person beside the list where "Just nu" counts several cards, that open an action's card over the
+person, and that leave open whether a person is shown beside a list at all.

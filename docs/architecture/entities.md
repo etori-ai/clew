@@ -19,7 +19,7 @@ A capability declares `about: { entity }` on a read, or `about: { entity, param 
 
 | Declared | Place | Who places it |
 |---|---|---|
-| A propose or execute about the kind | The entity's menu: the row menu on Personal and the actions of the opened person, the person's page and the unit's page | Nobody: scope and audience decide |
+| A propose or execute about the kind | The entity's menu: the row menu on Personal and the actions of the person's page and the unit's page | Nobody: scope and audience decide |
 | A read about the kind (always a table or list) | A section on the opened entity | Nobody |
 | The same read | A lens under "Visa" on the entity's list | An administrator |
 | A field of that read with a `warn` or `alert` tone | A mark on the entity's row on "Alla", under "Just nu" | An administrator, by offering the read as a lens |
@@ -68,7 +68,7 @@ A card of Clew's own may carry `Thread.subjects` instead: an action point's card
 The thread store keeps an index from entity to cards, the table `thread_subject` ([migration 0046](../../packages/db/migrations/0046_thread_subjects.sql)), rewritten in the transaction that writes the card's rows. It answers two questions ([subjects.ts](../../apps/server/src/threads/usecases/subjects.ts)):
 
 - "Behöver dig" on the opened entity: the reader's own cards naming it that still ask for them (not waiting on someone else, not set aside under Inte nu, still visible under current authority), the cards that wait for the reader first, then proposals, then information.
-- "Just nu" on the list: per person, how many cards wait for the reader ("N att agera på") and how many are proposals ("N förslag"), with the card itself when there is only one, opened beside the list.
+- "Just nu" on the list: per person, how many cards wait for the reader ("N att agera på") and how many are proposals ("N förslag"), with the card itself when there is only one, opened beside the list. Several are listed beside the list from the person's "Behöver dig", the kind the link counted ([D107](../decisions/D107-where-something-opens-is-decided-by-what-it-is.md) answer 6); each card's `kind` (`act`, `proposal`, `fyi`) tells them apart.
 
 ## Actions started as cards
 

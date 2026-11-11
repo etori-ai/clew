@@ -121,7 +121,7 @@ A source system owns records. A connector exposes capabilities that read those r
 | Mark | A badge under **Just nu** | A value of a lens with a `warn` or `alert` tone, shown on the entity's row on "Alla". "Just nu" also counts the reader's cards about the person ("1 att agera på", "2 förslag"). |
 | Section | **Behöver dig**, then each source's title | One source's part of the opened person or unit, named with its source ("Clew" for Clew's own domain). "Behöver dig" is the section of the reader's own cards that name the entity. |
 | Column on "Alla" | A column heading with the source under it | One field of a read about an entity, chosen by an administrator under "Kolumn på Alla" and shown to everyone who has the list. At most three per entity kind. |
-| Opened entity | **Öppna som sida**; the list **Om <namn>** | A person beside the list or as a page, or a unit as a page. |
+| Opened entity | The page's heading, the person's or the unit's name; the list **Om <namn>** | A person or a unit as a page ([D107](../decisions/D107-where-something-opens-is-decided-by-what-it-is.md) rule 3). |
 
 ## Naming rules
 

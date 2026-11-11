@@ -1,4 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
+import type { EntityCard } from '@clew/contracts';
 import {
   announcements,
   desktop,
@@ -10,8 +11,9 @@ import {
   phone,
   reflowProblems,
   test,
+  type MockApi,
 } from './support';
-import { PRESENCE_LENS, TALK_LENS } from './data';
+import { PRESENCE_LENS, TALK_LENS, entityDetail } from './data';
 import { phonebook } from './phonebook';
 
 /**
@@ -27,7 +29,36 @@ import { phonebook } from './phonebook';
  * actions, each started on the server as a card; a card for Erik and for Johan to act on and a proposal for Karin.
  */
 const LENS = `/staff?show=${TALK_LENS}`;
+/**
+ * Wide enough for the whole list beside the panel: "Alla" and the talk lens each need 1020 px for their table (Astryx's
+ * floor for their columns), so the panel stands beside the list from 1780 px and is the drawer over it below.
+ */
+const WIDE = { width: 1840, height: 1000 };
 const row = (page: Page, name: string) => page.getByRole('row').filter({ hasText: name });
+const said = async (page: Page, text: string) => (await announcements(page)).filter(t => t.includes(text)).length;
+/**
+ * Johan with two cards to act on and one of Clew's proposals, as "Just nu" counts them, and one only for information.
+ * His Behöver dig is the mock's cards that are still open, so a decision takes its card out of the list.
+ */
+function severalCards(api: MockApi) {
+  api.entityList = { ...api.entityList, attention: [{ key: 'johan', act: 2, proposals: 1 }] };
+  const cards: EntityCard[] = [
+    { threadId: 'ledighet', title: 'Ledighetsansökan från Johan Byström', source: 'Personalsystemet', kind: 'act' },
+    {
+      threadId: 'samtal-svar',
+      title: 'En åtgärdspunkt skulle vara klar 3 nov',
+      source: 'Utvecklingssamtal',
+      kind: 'act',
+    },
+    { threadId: 'samtal', title: 'Planera utvecklingssamtal', source: 'Kalendern', kind: 'proposal' },
+    { threadId: 'brandskydd', title: 'Intyg i HLR gick ut 15 sep', source: 'Kompetenssystemet', kind: 'fyi' },
+  ];
+  api.entityDetailOf = key => {
+    if (key !== 'johan') return undefined;
+    const johan = entityDetail(api.entityList, key)!;
+    return { ...johan, cards: cards.filter(c => api.threads.find(t => t.id === c.threadId)?.state === 'open') };
+  };
+}
 const showMenu = (page: Page) => page.getByRole('button', { name: /^Visa: / });
 /** The section of a menu titled `title`: Astryx draws it as a named group. */
 const section = (menu: Locator, title: string) => menu.getByRole('group', { name: title });
@@ -174,21 +205,117 @@ test.describe('Personal', () => {
       await expect(page).toHaveURL(LENS);
       await expect(showMenu(page)).toHaveText('Visa: Utvecklingssamtal');
     });
-    test('“Just nu” leads to the person when there is more than one card', async ({ page, api }) => {
-      api.entityList = { ...api.entityList, attention: [{ key: 'johan', act: 1, proposals: 2 }] };
+    test('“Just nu” with several cards lists them beside Personal; a title opens its card over the list, and Esc leaves the card, then the list', async ({
+      page,
+      api,
+    }) => {
+      severalCards(api);
+      await page.setViewportSize(WIDE);
       await open(page, '/staff');
       const now = row(page, 'Johan Byström').getByRole('cell').nth(3);
-      await expect(now.getByRole('link')).toHaveText(['1 att agera på', '2 förslag']);
-      await expect(now.getByRole('link', { name: '2 förslag' })).toHaveAttribute('href', '/staff?person=johan');
-      await now.getByRole('link', { name: '1 att agera på' }).click();
-      await expect(page).toHaveURL('/staff?person=johan');
-      await expect(page.getByRole('complementary', { name: 'Johan Byström' })).toBeVisible();
+      await expect(now.getByRole('link')).toHaveText(['2 att agera på', '1 förslag']);
+      await expect(now.getByRole('link', { name: '1 förslag' })).toHaveAttribute(
+        'href',
+        '/staff?cards=johan&cards-kind=proposal',
+      );
+      const link = now.getByRole('link', { name: '2 att agera på' });
+      await expect(link).toHaveAttribute('href', '/staff?cards=johan&cards-kind=act');
+      await link.focus();
+      await page.keyboard.press('Enter');
+      // The list stays whole and Personal's own; the cards the link counted stand beside it, named for the person.
+      await expect(page).toHaveURL('/staff?cards=johan&cards-kind=act');
+      await expect(page).toHaveTitle('Personal · Startsidan');
+      await expect(page.getByRole('heading', { level: 1, name: 'Personal' })).toBeVisible();
+      await expect(page.getByRole('table')).toBeVisible();
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      const panel = page.getByRole('complementary', { name: 'Johan Byström' });
+      await expect(panel.getByRole('heading', { level: 2, name: 'Johan Byström' })).toBeFocused();
+      const cards = panel.getByRole('region', { name: '2 att agera på' });
+      await expect(cards.getByRole('link')).toHaveText([
+        'Ledighetsansökan från Johan Byström',
+        'En åtgärdspunkt skulle vara klar 3 nov',
+      ]);
+      // Only the kind the link counted: the proposal and the card for information are not listed.
+      await expect(panel.getByRole('link')).toHaveCount(2);
+      await expectNoAxeViolations(page);
+      // A title opens its card over the list, in the same panel, and the card is named aloud.
+      const title = cards.getByRole('link', { name: 'En åtgärdspunkt skulle vara klar 3 nov' });
+      await expect(title).toHaveAttribute('href', '/staff?cards=johan&cards-kind=act&card=samtal-svar');
+      await title.focus();
+      await page.keyboard.press('Enter');
+      await expect(page).toHaveURL('/staff?cards=johan&cards-kind=act&card=samtal-svar');
+      const card = page.getByRole('complementary', { name: 'Kort' });
+      await expect(card.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
+      await expect(card.getByRole('article', { name: 'Kort: Planera utvecklingssamtal vecka 45' })).toBeVisible();
+      await expect(page.getByRole('complementary')).toHaveCount(1);
+      await expect.poll(() => said(page, 'Planera utvecklingssamtal vecka 45')).toBeGreaterThan(0);
+      await expectNoAxeViolations(page);
+      // Esc leaves the card: the list again, named aloud, with the focus on the title that opened the card.
+      await page.keyboard.press('Escape');
+      await expect(page).toHaveURL('/staff?cards=johan&cards-kind=act');
+      await expect(title).toBeFocused();
+      await expect.poll(() => said(page, 'Johan Byström')).toBeGreaterThan(0);
+      // Esc again leaves the list: Personal as it was, with the focus on the link in "Just nu".
+      await page.keyboard.press('Escape');
+      await expect(page).toHaveURL('/staff');
+      await expect(page.getByRole('complementary')).toHaveCount(0);
+      await expect(link).toBeFocused();
+    });
+    test('the cards beside Personal keep the lens, and say so when the person or the cards are gone', async ({
+      page,
+      api,
+    }) => {
+      severalCards(api);
+      await page.setViewportSize(WIDE);
+      await open(page, `${LENS}&cards=johan&cards-kind=proposal`);
+      const panel = page.getByRole('complementary', { name: 'Johan Byström' });
+      await expect(panel.getByRole('region', { name: '1 förslag' }).getByRole('link')).toHaveText([
+        'Planera utvecklingssamtal',
+      ]);
+      await page.keyboard.press('Escape');
+      await expect(page).toHaveURL(LENS);
+      await expect(showMenu(page)).toHaveText('Visa: Utvecklingssamtal');
+      // Every card the link counted was decided meanwhile: the list says so in its place.
+      await open(page, '/staff?cards=karin&cards-kind=act');
+      const karin = page.getByRole('complementary', { name: 'Karin Lindqvist' });
+      await expect(karin.getByRole('heading', { level: 3, name: 'Inget att agera på' })).toBeVisible();
+      await expectNoAxeViolations(page);
+      // A person the reader may not ask about is the same answer as an unknown key.
+      await open(page, '/staff?cards=okand&cards-kind=act');
+      const missing = page.getByRole('complementary', { name: 'Personen finns inte' });
+      await expect(
+        missing.getByText('Det finns ingen sådan person, eller så har du inte tillgång till uppgifterna om hen.'),
+      ).toBeVisible();
+      await missing.getByRole('button', { name: 'Stäng panelen' }).click();
+      await expect(page).toHaveURL('/staff');
+    });
+    test('a decision on a card over the list reads the list and the person again, and the card leaves the list', async ({
+      page,
+      api,
+    }) => {
+      severalCards(api);
+      await page.setViewportSize(WIDE);
+      await open(page, '/staff?cards=johan&cards-kind=act&card=ledighet');
+      const card = page.getByRole('complementary', { name: 'Kort' });
+      const before = api.entityReads.length;
+      await card.getByRole('button', { name: 'Godkänn', exact: true }).click();
+      await expect
+        .poll(() => api.entityReads.slice(before))
+        .toEqual(expect.arrayContaining(['/entities/person', '/entities/person/johan']));
+      await card.getByRole('button', { name: 'Stäng panelen' }).click();
+      await expect(page).toHaveURL('/staff?cards=johan&cards-kind=act');
+      const panel = page.getByRole('complementary', { name: 'Johan Byström' });
+      await expect(panel.getByRole('region', { name: '1 att agera på' }).getByRole('link')).toHaveText([
+        'En åtgärdspunkt skulle vara klar 3 nov',
+      ]);
+      // The title that opened the card has gone with it: the focus is on the list's heading.
+      await expect(panel.getByRole('heading', { level: 2, name: 'Johan Byström' })).toBeFocused();
     });
     test('“Just nu” opens the one card beside the list, which stays; ✕ and Esc give the focus back to the link', async ({
       page,
       api: _,
     }) => {
-      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.setViewportSize(WIDE);
       await open(page, '/staff');
       const link = row(page, 'Erik Sandström').getByRole('link', { name: '1 att agera på' });
       await link.focus();
@@ -206,10 +333,9 @@ test.describe('Personal', () => {
       await expect(panel.getByText('Tre korta sjukperioder sedan juni.', { exact: false })).toBeVisible();
       await expect(panel.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
       await expect(panel.getByRole('button', { name: 'Se mönstret' })).toBeVisible();
-      // Beside the card the list is compact, the person the card is about current.
-      const school = page.getByRole('list', { name: 'Bergsåkers skola' });
-      await expect(school.getByRole('listitem')).toHaveCount(5);
-      await expect(school.locator('[aria-current="true"]')).toContainText('Erik Sandström');
+      // Beside the card the list is whole, as it was.
+      await expect(page.getByRole('table')).toBeVisible();
+      await expect(row(page, 'Erik Sandström').getByText('Sjuk · dag 1', { exact: true })).toBeVisible();
       await expectNoAxeViolations(page);
       await panel.getByRole('button', { name: 'Stäng panelen' }).click();
       await expect(page).toHaveURL(/\/staff$/);
@@ -225,7 +351,7 @@ test.describe('Personal', () => {
       page,
       api: _,
     }) => {
-      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.setViewportSize(WIDE);
       await open(page, '/staff?card=omtanke');
       const card = page.getByRole('complementary', { name: 'Kort' });
       await card.getByRole('button', { name: 'Se mönstret' }).click();
@@ -246,7 +372,7 @@ test.describe('Personal', () => {
       const directory = await phonebook('phonebook.directory', { query: 'lärare' });
       if (!('output' in directory.body)) throw new Error(directory.body.error);
       api.cardReads.pattern = directory.body;
-      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.setViewportSize(WIDE);
       await open(page, '/staff?card=omtanke&open-card=omtanke&open-action=pattern');
       const read = page.getByRole('complementary', { name: 'Se mönstret' });
       const name = read.getByRole('link', { name: 'Anna Lindqvist' });
@@ -268,39 +394,65 @@ test.describe('Personal', () => {
       await expect(page).toHaveURL('/staff?card=omtanke&open-card=omtanke&open-action=pattern');
       await expect(name).toBeFocused();
     });
-    test('on a wide window the panel stands on the window’s edge, and the list keeps its width when it closes', async ({
+    test('the panel stands beside the whole list only where the list keeps its columns, on the window’s edge', async ({
       page,
-      api: _,
+      api,
     }) => {
-      // Wider than the page's own 1216 px: the panel is not framed with the list (it stood 120 px in from the edge).
-      await page.setViewportSize({ width: 1720, height: 1000 });
-      for (const path of ['/staff?card=omtanke', '/staff?person=johan']) {
-        await open(page, path);
-        const panel = page.getByRole('complementary');
-        await expect(panel).toBeVisible();
-        const box = (await panel.boundingBox())!;
-        expect(Math.round(box.x + box.width)).toBe(1720);
-        const list = (await page.getByRole('list', { name: 'Bergsåkers skola' }).boundingBox())!;
-        // The list takes what is left of the page beside the panel, less the page's padding.
-        expect(Math.round(list.x + list.width)).toBeGreaterThan(Math.round(box.x) - 48);
+      severalCards(api);
+      // How far the table would scroll sideways inside its own region: never, beside the panel or not.
+      const sideways = () =>
+        page.getByRole('table').evaluate(el => {
+          let n: HTMLElement | null = el.parentElement;
+          while (n && !/(auto|scroll)/.test(getComputedStyle(n).overflowX)) n = n.parentElement;
+          return n ? n.scrollWidth - n.clientWidth : 0;
+        });
+      // From 1780 px the whole list keeps its 1020 px beside the panel, which docks to the window's edge (it is not
+      // framed with the list); it stood 120 px in from the edge when it was.
+      for (const width of [1780, 1840]) {
+        await page.setViewportSize({ width, height: 1000 });
+        for (const path of ['/staff?card=omtanke', '/staff?cards=johan&cards-kind=act']) {
+          await open(page, path);
+          const panel = page.getByRole('complementary');
+          await expect(panel).toBeVisible();
+          const box = (await panel.boundingBox())!;
+          expect(Math.round(box.x + box.width)).toBe(width);
+          const table = (await page.getByRole('table').boundingBox())!;
+          // The list takes what is left of the page beside the panel, less the page's padding.
+          expect(Math.round(table.x + table.width)).toBeLessThanOrEqual(Math.round(box.x));
+          expect(Math.round(table.x + table.width)).toBeGreaterThan(Math.round(box.x) - 64);
+          expect(await sideways()).toBeLessThanOrEqual(0);
+        }
       }
+      // A pixel narrower the panel is the drawer over the whole list, which keeps its columns.
+      await page.setViewportSize({ width: 1779, height: 1000 });
+      await open(page, '/staff?cards=johan&cards-kind=act');
+      await expect(page.getByRole('dialog', { name: 'Johan Byström' })).toBeVisible();
+      await expect(page.getByRole('complementary')).toHaveCount(0);
+      expect(await sideways()).toBeLessThanOrEqual(0);
+      await page.setViewportSize({ width: 1720, height: 1000 });
       await open(page, '/staff');
       const table = (await page.getByRole('table').boundingBox())!;
       expect(Math.round(table.width)).toBeLessThanOrEqual(1152);
       expect(Math.round(table.width)).toBeGreaterThan(1100);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     });
-    test('a person chosen from the compact list takes the place of the card', async ({ page, api: _ }) => {
-      await page.setViewportSize({ width: 1440, height: 900 });
-      await open(page, '/staff?card=omtanke');
-      const school = page.getByRole('list', { name: 'Bergsåkers skola' });
-      await expect(school.getByRole('link', { name: 'Johan Byström' })).toHaveAttribute('href', '/staff?person=johan');
+    test('beside an open card a name still leads to the person’s page, with the list without the card as the way back', async ({
+      page,
+      api: _,
+    }) => {
+      await page.setViewportSize(WIDE);
+      await open(page, `${LENS}&card=omtanke`);
+      await expect(page.getByRole('complementary', { name: 'Kort' })).toBeVisible();
+      await expect(page.getByRole('main').getByRole('link', { name: 'Johan Byström' })).toHaveAttribute(
+        'href',
+        `/people/johan?from=${encodeURIComponent(LENS)}`,
+      );
     });
     test('an address that names a card the reader does not have says so in the card’s place', async ({
       page,
       api: _,
     }) => {
-      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.setViewportSize(WIDE);
       await open(page, '/staff?card=finns-inte');
       const panel = page.getByRole('complementary', { name: 'Kort' });
       await expect(panel.getByText('Kortet finns inte längre bland dina kort.')).toBeVisible();
@@ -370,6 +522,7 @@ test.describe('Personal', () => {
       page,
       api,
     }) => {
+      await page.setViewportSize(WIDE);
       await open(page, '/staff');
       await page.getByRole('button', { name: 'Åtgärder för Karin Lindqvist' }).click();
       let menu = page.getByRole('menu');
@@ -403,12 +556,31 @@ test.describe('Personal', () => {
       await expect(card.getByText('Boka samtal: Karin Lindqvist').first()).toBeVisible();
       await expect(card.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
       await expectNoAxeViolations(page);
-      // Closing leaves the list as it was, under its lens, with the row's menu there again.
+      // Closing leaves the list as it was, under its lens, and gives the focus back to the row's menu button, which
+      // stood whole beside the card all along.
       await page.keyboard.press('Escape');
       await expect(page).toHaveURL(`/staff?show=${PRESENCE_LENS}`);
       await expect(card).toHaveCount(0);
       await expect(showMenu(page)).toHaveText('Visa: Frånvaro');
-      await expect(page.getByRole('button', { name: 'Åtgärder för Karin Lindqvist' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Åtgärder för Karin Lindqvist' })).toBeFocused();
+    });
+    test("an action's card over a list that does not fit beside it is the drawer, and closing it gives the focus back to the row's menu", async ({
+      page,
+      api,
+    }) => {
+      await open(page, '/staff');
+      const menuButton = page.getByRole('button', { name: 'Åtgärder för Karin Lindqvist' });
+      await menuButton.click();
+      await page.getByRole('menuitem', { name: 'Boka samtal' }).click();
+      await expect(page).toHaveURL('/staff?card=entity-clew-bookTalk-karin');
+      expect(api.entityStarts).toEqual([{ key: 'karin', capability: 'clew.bookTalk' }]);
+      const drawer = page.getByRole('dialog', { name: 'Kort' });
+      await expect(drawer.getByText('Boka samtal: Karin Lindqvist').first()).toBeVisible();
+      await expect(page.getByRole('complementary')).toHaveCount(0);
+      await page.keyboard.press('Escape');
+      await expect(page).toHaveURL('/staff');
+      await expect(drawer).toHaveCount(0);
+      await expect(menuButton).toBeFocused();
     });
     test('a source that refuses an action says why, aloud and over the list, and nothing opens', async ({
       page,
@@ -455,35 +627,29 @@ test.describe('Personal', () => {
       await expect(page.getByRole('button', { name: 'Försök igen' })).toBeVisible();
       await expectNoAxeViolations(page);
     });
-    test('beside an opened person the list is compact: the names, the opened one current, the lens’s state', async ({
+    test('an address that drew a person beside the list leads to their page, with the list as the way back', async ({
       page,
       api: _,
     }) => {
-      await page.setViewportSize({ width: 1440, height: 900 });
       await open(page, `${LENS}&person=johan`);
-      // The tab names the person with the list (2.4.2).
-      await expect(page).toHaveTitle('Johan Byström · Personal · Startsidan');
-      const school = page.getByRole('list', { name: 'Bergsåkers skola' });
-      await expect(school.getByRole('listitem')).toHaveCount(5);
-      await expect(school.getByRole('link')).toHaveText([
-        'Karin Lindqvist',
-        'Johan Byström',
-        'Anna Lindqvist',
-        'Erik Sandström',
-        'Maria Källström',
-      ]);
-      await expect(school.locator('[aria-current="true"]')).toContainText('Johan Byström');
-      await expect(school.getByRole('listitem').filter({ hasText: 'Karin Lindqvist' })).toContainText('Saknas');
-      await expect(page.getByRole('table')).toHaveCount(0);
-      await expect(school.getByRole('link', { name: 'Karin Lindqvist' })).toHaveAttribute(
-        'href',
-        `/staff?show=${TALK_LENS}&person=karin`,
-      );
-      await expectNoAxeViolations(page);
+      await expect(page).toHaveURL(`/people/johan?from=${encodeURIComponent(LENS)}`);
+      await expect(page.getByRole('heading', { level: 1, name: 'Johan Byström' })).toBeVisible();
+      await expect(
+        page.getByRole('navigation', { name: 'Du är här' }).getByRole('link', { name: 'Personal' }),
+      ).toHaveAttribute('href', LENS);
+      // The section drilled into on a phone is the page's section, and a card open over the person stays open.
+      await open(page, '/staff?person=johan&person-section=needs-you&card=samtal-svar');
+      await expect(page).toHaveURL('/people/johan?section=needs-you&from=%2Fstaff&card=samtal-svar');
+      await expect(page.getByRole('heading', { level: 2, name: 'Behöver dig' })).toBeVisible();
+      await expect(
+        page
+          .getByRole('dialog', { name: 'Kort' })
+          .getByRole('article', { name: 'Kort: Planera utvecklingssamtal vecka 45' }),
+      ).toBeVisible();
     });
-    test('the compact list beside a person logs no React error (on the development build, which reports them)', async ({
+    test('the cards beside the list log no React error (on the development build, which reports them)', async ({
       page,
-      api: _,
+      api,
     }) => {
       // The production build stays quiet about props that reach the DOM; the web app's development server, which the
       // suite runs for the shared header's stand-in, warns. Its first load may reload once while it prepares modules.
@@ -493,21 +659,24 @@ test.describe('Personal', () => {
         if (m.type() === 'error') errors.push(m.text());
       });
       page.on('pageerror', e => errors.push(e.message));
-      await page.setViewportSize({ width: 1440, height: 900 });
+      severalCards(api);
+      await page.setViewportSize(WIDE);
       const dev = 'http://localhost:4175';
-      await page.goto(`${dev}${LENS}&person=johan`);
-      const school = page.getByRole('list', { name: 'Bergsåkers skola' });
-      await expect(school.getByRole('link', { name: 'Karin Lindqvist' })).toBeVisible({ timeout: 60_000 });
+      await page.goto(`${dev}${LENS}&cards=johan&cards-kind=act`);
+      const panel = page.getByRole('complementary', { name: 'Johan Byström' });
+      await expect(panel.getByRole('link', { name: 'Ledighetsansökan från Johan Byström' })).toBeVisible({
+        timeout: 60_000,
+      });
       errors.length = 0;
-      await page.goto(`${dev}${LENS}&person=johan`);
-      await expect(school.getByRole('link', { name: 'Karin Lindqvist' })).toBeVisible();
-      // Another person takes Johan's place, and the list goes back to whole and to compact again.
-      await school.getByRole('link', { name: 'Karin Lindqvist' }).click();
-      await expect(page.getByRole('complementary', { name: 'Karin Lindqvist' })).toBeVisible();
+      await page.goto(`${dev}${LENS}&cards=johan&cards-kind=act`);
+      // A card over the list, back to the list, and back to Personal.
+      await panel.getByRole('link', { name: 'Ledighetsansökan från Johan Byström' }).click();
+      await expect(page.getByRole('complementary', { name: 'Kort' })).toBeVisible();
       await page.keyboard.press('Escape');
+      await expect(panel.getByRole('link', { name: 'Ledighetsansökan från Johan Byström' })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('complementary')).toHaveCount(0);
       await expect(page.getByRole('table')).toBeVisible();
-      await page.goto(`${dev}/staff?person=anna`);
-      await expect(page.getByRole('complementary', { name: 'Anna Lindqvist' })).toBeVisible();
       expect(errors).toEqual([]);
     });
     test('someone who manages nobody gets the page’s empty state and the way back', async ({ page, api }) => {
@@ -564,6 +733,36 @@ test.describe('Personal', () => {
       await expect(drawer).toHaveCount(0);
       await expect(erik.getByRole('link', { name: '1 att agera på' })).toBeFocused();
     });
+    test('several cards are listed in the drawer over the list, and a card opens over the list in the same drawer', async ({
+      page,
+      api,
+    }) => {
+      severalCards(api);
+      await open(page, '/staff');
+      const johan = page
+        .getByRole('list', { name: 'Bergsåkers skola' })
+        .getByRole('listitem')
+        .filter({ hasText: 'Johan Byström' });
+      const link = johan.getByRole('link', { name: '2 att agera på' });
+      await link.click();
+      await expect(page).toHaveURL('/staff?cards=johan&cards-kind=act');
+      const drawer = page.getByRole('dialog', { name: 'Johan Byström' });
+      const title = drawer.getByRole('link', { name: 'En åtgärdspunkt skulle vara klar 3 nov' });
+      await expect(title).toBeVisible();
+      await page.evaluate(() => Promise.all(document.getAnimations().map(a => a.finished)));
+      await expectNoAxeViolations(page);
+      await title.click();
+      await expect(page).toHaveURL('/staff?cards=johan&cards-kind=act&card=samtal-svar');
+      const card = page.getByRole('dialog', { name: 'Kort' });
+      await expect(card.getByRole('article', { name: 'Kort: Planera utvecklingssamtal vecka 45' })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page).toHaveURL('/staff?cards=johan&cards-kind=act');
+      await expect(title).toBeFocused();
+      await page.keyboard.press('Escape');
+      await expect(page).toHaveURL('/staff');
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      await expect(link).toBeFocused();
+    });
     test('the Visa menu works on a phone and the lens draws its rows by need', async ({ page, api: _ }) => {
       await open(page, '/staff');
       await showMenu(page).click();
@@ -592,5 +791,15 @@ test.describe('Personal', () => {
         await expect(page.getByRole('list', { name: 'Bergsåkers skola' })).toBeVisible();
         expect(await reflowProblems(page)).toEqual([]);
       });
+    test('a person’s cards over the list reflow at 320 px', async ({ page, api }) => {
+      severalCards(api);
+      await page.setViewportSize(narrow);
+      await open(page, '/staff?cards=johan&cards-kind=act');
+      const drawer = page.getByRole('dialog', { name: 'Johan Byström' });
+      await expect(drawer.getByRole('link', { name: 'En åtgärdspunkt skulle vara klar 3 nov' })).toBeVisible();
+      await page.evaluate(() => Promise.all(document.getAnimations().map(a => a.finished)));
+      expect(await reflowProblems(page, drawer)).toEqual([]);
+      expect(await reflowProblems(page)).toEqual([]);
+    });
   });
 });

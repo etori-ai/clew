@@ -87,3 +87,9 @@ The words, the one filled button, the row's single next step and the type scale 
 a review of the screens as they were before this structure, and a card's one time action is
 [D49 · A card has one time action](D49-a-card-has-one-time-action-and-always-says-when-it-is-back.md); all three stand, and where that record names the overview, the
 piles' rows in the menu or the box at the overview's foot, this one says where those are now.
+
+**Amended 2026-11-11 (D107): item 7 is withdrawn.** A view in the panel no longer offers "Öppna som sida" for a view
+that is also a tool ([D107](D107-where-something-opens-is-decided-by-what-it-is.md) rule 7, the product owner's answer 5:
+no control chooses a surface). The tool stays in the rail where an administrator put it, and "Stäng samtalet" still
+leads back to a tool's page when the question was asked there. The other part of this record that D107 replaces, the
+box asking about the open card by opening it, is changed separately.

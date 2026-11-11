@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SessionUser } from '@clew/contracts';
 import {
@@ -26,15 +26,37 @@ import { AsyncContent, ContentSkeleton } from '../components/loading';
 import { PageHeader } from '../components/page-header';
 import { TalkOverlay } from '../components/talk-overlay';
 import { usePagePanel } from '../components/page-panel';
-import { LIST_MIN, PERSON_PANEL, usePersonPanel } from '../components/person-panel';
 import { useEntityAction } from '../entity-actions';
+import { fromPersonBeside } from '../person-address';
 import { answerOf, peopleLine, silentOf, sourcesRead, valueCounts, type Answer } from './staff-model';
-import { AllUnit, CompactUnit, LensUnit, SilentSources, ShowMenu, type Context, type Openers } from './staff-parts';
+import {
+  AllUnit,
+  LensUnit,
+  SilentSources,
+  ShowMenu,
+  listMinWidth,
+  useCardsFrame,
+  type Context,
+  type Openers,
+} from './staff-parts';
 
 /** The list's column at its widest: the page width the person's page also has (1216 px) less the 32 px padding on each side. */
 const COLUMN = 1216 - 2 * 32;
+/** The page's own padding on each side of the list, which the list's least width does not count. */
+const PADDING = 32;
 /** The lens in the address (D43, D83 rule 4): `?show=<capability>`; absent, or not a lens, is "Alla". */
 const SHOW = 'show';
+
+/**
+ * Personal at `/staff`. A person is a page only (D107 rule 3): an address that drew a person beside the list
+ * (`?person=<key>`, bookmarked or sent before 2026-11-11) leads to the person's page in its place, with the list as the
+ * way back, so the person is never silently dropped.
+ */
+export function StaffPage(props: { user: SessionUser; admin: boolean }) {
+  const { pathname, search } = useLocation();
+  const moved = fromPersonBeside(pathname, search);
+  return moved ? <Navigate to={moved} replace /> : <Personal {...props} />;
+}
 
 /**
  * Personal (D94, D97): the people the reader may ask about, one card per unit, as the canvas draws it (artboards A2,
@@ -42,20 +64,19 @@ const SHOW = 'show';
  * person, placed by Clew. "Alla" has the columns an administrator chose, each the field of one source with the source
  * under its label, and "Just nu" with the fields of the chosen sources that need the reader. "Visa" picks a lens, a
  * source an administrator offers, and the list is then that source's view, sorted by need. Each row has its menu,
- * grouped by the system an action works in. A name leads to the person's page. "Just nu" with several cards opens
- * the person beside the list (`?person=<key>`, D83 rule 1), and the list is then drawn compact, its names choosing who
- * is beside it; whether a person is shown beside the list at all is open (2026-11-11). A card about a person opens in the
- * page's panel (`?card=<threadId>`, `page-panel.tsx`): from "Just nu" beside the list, from the person's Behöver dig over
- * the person; the list never gives way to Hem for it.
- * A source that does not answer is said once, with Försök igen; the rest stands.
+ * grouped by the system an action works in. A name leads to the person's page. Whatever is opened from the list
+ * opens in the page's panel and the list stays whole beside it (D107 rules 2 and 3): the one card "Just nu" counts
+ * (`?card=<threadId>`), or the several it counts as a list (`?cards=<key>`, `useCardsFrame`) with a card opened from
+ * that list over it; the list never gives way to Hem. Where the whole list does not fit beside the panel, the panel is
+ * the drawer over it. A source that does not answer is said once, with Försök igen; the rest stands.
  *
  * Someone who manages nobody gets an empty list from the server, and the page says whom it is for. One person's
  * utvecklingssamtal stays a drawer over this list at `/staff?talk=<personId>` (D96), reached from its source's page way
  * in ("Öppna samtalet"); the drawer reads its own data. An action from a row's menu starts on the server and opens its
- * card in the page's panel beside the list, over the person when one is open beside it (`entity-actions.ts`, D107
- * rule 4); a source's refusal is said aloud and stands over the list until the next action.
+ * card in the page's panel (`entity-actions.ts`, D107 rule 4), and closing the card gives the focus back to the row's
+ * menu button; a source's refusal is said aloud and stands over the list until the next action.
  */
-export function StaffPage({ user, admin }: { user: SessionUser; admin: boolean }) {
+function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
   const mobile = useMediaQuery(mobileQuery);
   const short = useMediaQuery(shortQuery);
   const manager = user.role === 'manager';
@@ -68,8 +89,8 @@ export function StaffPage({ user, admin }: { user: SessionUser; admin: boolean }
   const rowsQs = useQueries({ queries: read.map(c => entityRowsQuery('person', c)) });
   const answers = new Map<string, Answer>(read.map((c, i) => [c, answerOf(rowsQs[i]?.data, !!rowsQs[i]?.isError)]));
   const lens = list?.lenses.find(l => l.capability === search.get(SHOW));
-  // A decision made on a card beside the list changes what "Just nu" and the person's Behöver dig count: both are read
-  // again, the sources' own rows are not.
+  // A decision made on a card beside the list changes what "Just nu" counts and which of a person's cards are listed
+  // beside it: the list and the person are read again, the sources' own rows are not.
   const client = useQueryClient();
   const cardChanged = useCallback(() => {
     void client.invalidateQueries({ queryKey: keys.entities.list('person') });
@@ -78,33 +99,26 @@ export function StaffPage({ user, admin }: { user: SessionUser; admin: boolean }
       predicate: q => q.queryKey.length === 4,
     });
   }, [client]);
-  const person = usePersonPanel();
-  // 1.4.10: on a short screen nothing is pinned beside the page, as on a tool's page. One thing at a time: what the
-  // address opens takes the person's place, and the list's link is the way back to it.
+  const cards = useCardsFrame(list);
+  // One thing at a time: what is opened from the list takes the place of what the panel held, and the link that opened
+  // it is the way back. A person's cards lie under a card opened from them. The panel stands beside the list only where
+  // the whole list keeps its columns' widths beside it (the lens decides them), and is the drawer over it elsewhere;
+  // 1.4.10: on a short screen nothing is pinned beside the page, as on a tool's page.
   const panel = usePagePanel({
-    under: person.frame,
-    minMain: LIST_MIN,
-    size: PERSON_PANEL,
+    under: cards,
+    minMain: listMinWidth(list, lens) + 2 * PADDING,
     replaces: true,
     overlayOnly: short,
     onChange: cardChanged,
   });
-  // The row the open thing is about, marked in the compact list: the opened person, else the person whose one card it is.
-  const cardId = search.get('card') ?? undefined;
-  const marked = person.person ?? (cardId ? list?.attention.find(a => a.threadId === cardId)?.key : undefined);
   const groups = list?.groups ?? [];
   const action = useEntityAction();
 
   // The open talk names the tab itself (the drawer, D96); the list's name is not spoken again when the focus comes back.
-  // A person open beside the list names the tab with the list ("Johan Byström · Personal"); the panel's heading takes
-  // the focus and says the name, so neither is spoken again.
   const talkId = talkOf(search);
   const sawTalk = useRef(false);
-  if (talkId || person.person) sawTalk.current = true;
-  usePageTitle(
-    talkId ? null : person.name ? `${person.name} · Personal` : 'Personal',
-    sawTalk.current ? false : 'Personal',
-  );
+  if (talkId) sawTalk.current = true;
+  usePageTitle(talkId ? null : 'Personal', sawTalk.current ? false : 'Personal');
 
   const openerEls = useRef(new Map<string, HTMLElement>());
   const openers = useCallback<Openers>(
@@ -139,14 +153,11 @@ export function StaffPage({ user, admin }: { user: SessionUser; admin: boolean }
   const animatedLayout = useAnimatedLayout({ containerRef: root });
   const lensAnswer = lens ? answers.get(lens.capability) : undefined;
   const lensSilent = !!lens && lensAnswer?.status !== 'ok' && lensAnswer?.status !== 'pending';
-  // The list is drawn whole again in the same step as the person or what lies over them closes, so the row that opened
-  // them is there to take the focus back.
-  const compact = panel.occupied && (!!person.person || !!panel.ref);
   const silentLine = <SilentSources silent={silent} retrying={retrying} onRetry={retry} />;
 
   return (
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
-      {/* The layout fills the window, as on a tool's page, so the list and the person beside it scroll on their own and the handle's divider stands the height of the page (Astryx's side-panels guide). On a short window nothing is pinned and the page scrolls as one (1.4.10). */}
+      {/* The layout fills the window, as on a tool's page, so the list and the panel beside it scroll on their own and the handle's divider stands the height of the page (Astryx's side-panels guide). On a short window nothing is pinned and the page scrolls as one (1.4.10). */}
       {/* The list's column is bounded here, not with the Layout's `contentWidth`: that frames the panel with the
           content (Astryx: "the panel stays aligned to the contentWidth frame"), and on a wide window the panel then
           stood in from the window's edge with nothing beside it (the product owner, 2026-11-11). The panel docks to
@@ -161,7 +172,7 @@ export function StaffPage({ user, admin }: { user: SessionUser; admin: boolean }
               <VStack gap={5} ref={root} width="100%" maxWidth={COLUMN}>
                 <PageHeader
                   title="Personal"
-                  meta={!compact && groups.length > 0 ? <Text type="supporting">{peopleLine(groups)}</Text> : undefined}
+                  meta={groups.length > 0 ? <Text type="supporting">{peopleLine(groups)}</Text> : undefined}
                 />
                 {/* The Visa menu under the title, where the list it changes starts (artboards A2, B and C). */}
                 {list && groups.length > 0 && list.lenses.length > 0 && (
@@ -197,20 +208,6 @@ export function StaffPage({ user, admin }: { user: SessionUser; admin: boolean }
                           actions={<Button label="Till startsidan" href="/" />}
                         />
                       </Card>
-                    ) : ctx && compact ? (
-                      <>
-                        {silentLine}
-                        {groups.map(g => (
-                          <CompactUnit
-                            key={g.id}
-                            group={g}
-                            lens={lens}
-                            ctx={ctx}
-                            opened={marked}
-                            animatedLayout={animatedLayout}
-                          />
-                        ))}
-                      </>
                     ) : ctx && lens ? (
                       <>
                         <VStack gap={1}>

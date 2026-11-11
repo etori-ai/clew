@@ -1,32 +1,16 @@
 import type { Subject } from '@clew/contracts';
+import { pageOnly } from './panel-address';
 
 /**
- * Where a person or a unit is (D97, D43, D83 rule 4): `?person=<key>` on the page that shows the list opens them beside
- * it, with `person-section=<capability>` the section drilled into on a phone; `/people/<key>` is the person as a page,
- * with `section` the source whose fuller view is drawn and `from` the list they were opened from, for the way back;
- * `/units/<id>` is the unit as a page, with `from` the same way.
+ * Where a person or a unit is (D97, D43, D83 rule 4, D107 rule 3): `/people/<key>` is the person as a page, with
+ * `section` the source whose fuller view is drawn and `from` the page they were opened from, for the way back;
+ * `/units/<id>` is the unit as a page, with `from` the same way. A person is a page only: nothing draws them beside a
+ * list, and the address that once did (`?person=`) leads to their page (`fromPersonBeside`).
  */
-export const PERSON = 'person';
-export const PERSON_SECTION = 'person-section';
-
 const addressOf = (pathname: string, query: URLSearchParams) => {
   const q = query.toString();
   return q ? `${pathname}?${q}` : pathname;
 };
-/** The page's own address without the person: what closing the person leaves. */
-export function withoutPerson(pathname: string, search: URLSearchParams | string): string {
-  const q = new URLSearchParams(search);
-  q.delete(PERSON);
-  q.delete(PERSON_SECTION);
-  return addressOf(pathname, q);
-}
-/** The same page with the person opened beside the list and, on a phone, one section drilled into. */
-export function withPersonSection(pathname: string, search: URLSearchParams | string, section: string | null): string {
-  const q = new URLSearchParams(search);
-  if (section) q.set(PERSON_SECTION, section);
-  else q.delete(PERSON_SECTION);
-  return addressOf(pathname, q);
-}
 /** A path inside Clew, never another site: what `from` may hold. */
 export const insideClew = (path: string | null): string | null =>
   path && path.startsWith('/') && !path.startsWith('//') && !path.startsWith('/\\') ? path : null;
@@ -37,6 +21,29 @@ export function personPageHref(key: string, options: { section?: string; from?: 
   const from = insideClew(options.from ?? null);
   if (from) q.set('from', from);
   return addressOf(`/people/${encodeURIComponent(key)}`, q);
+}
+/**
+ * The person's page as a name in a list leads to it (the product owner, 2026-11-11: the name opens the page), with the
+ * list as its way back: the list's own address, its lens kept and nothing of its panel.
+ */
+export const personPageFrom = (pathname: string, search: URLSearchParams | string, key: string): string =>
+  personPageHref(key, { from: pageOnly(pathname, search) });
+/**
+ * Where an address that drew a person beside a list now leads (D107 answer 1): `?person=<key>` on the list, kept in
+ * bookmarks and sent links, is the person's page with the list as its way back. The section drilled into on a phone
+ * (`person-section`) is the page's `section`, and a card open over the person stays open beside the page. Null for any
+ * other address.
+ */
+export function fromPersonBeside(pathname: string, search: URLSearchParams | string): string | null {
+  const q = new URLSearchParams(search);
+  const key = q.get('person');
+  if (!key) return null;
+  const section = q.get('person-section') || undefined;
+  const card = q.get('card');
+  q.delete('person');
+  q.delete('person-section');
+  const page = personPageHref(key, { ...(section ? { section } : {}), from: pageOnly(pathname, q) });
+  return card ? `${page}${page.includes('?') ? '&' : '?'}card=${encodeURIComponent(card)}` : page;
 }
 /** The unit as a page (D97, artboard E), with the page it was opened from. */
 export function unitPageHref(id: string, options: { from?: string | null } = {}): string {

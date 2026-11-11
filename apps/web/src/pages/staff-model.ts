@@ -2,6 +2,7 @@ import {
   fieldTone,
   markFields,
   needsPerson,
+  type EntityCard,
   type EntityColumn,
   type EntityList,
   type EntityPage,
@@ -13,6 +14,7 @@ import {
   type ViewTone,
 } from '@clew/contracts';
 import { statusWord } from '../components/panel-labels';
+import type { CountedKind } from '../panel-address';
 import { wholeRow } from '../view-fields';
 
 /**
@@ -203,30 +205,50 @@ export function marksFor(list: EntityList, answers: ReadonlyMap<string, Answer>,
 export const columnValue = (column: EntityColumn, answers: ReadonlyMap<string, Answer>, key: string): unknown =>
   rowOf(answers.get(column.capability), key)?.[column.field.key];
 
-/** One link in "Just nu" (artboard A2): the words, and the card it opens when there is exactly one. */
+/** One link in "Just nu" (artboard A2): the kind of card it counts, the words, and the card it opens when there is exactly one. */
 export interface CardLink {
-  id: 'act' | 'proposals';
+  kind: CountedKind;
   text: string;
   threadId?: string;
 }
+/** How many cards of a kind, in "Just nu"'s words: "2 att agera på", "1 förslag". */
+export const countText = (kind: CountedKind, n: number): string =>
+  kind === 'act' ? `${n} att agera på` : `${n} förslag`;
 /**
  * "Just nu"'s links for one person (D97 item 5): "1 att agera på" or "N att agera på" for the cards that wait for the
  * reader's decision, "1 förslag" or "N förslag" for Clew's proposals. Each opens the card when the server named the one
- * card there is, and otherwise the person beside the list, where Behöver dig lists them.
+ * card there is, and otherwise those cards as a list beside Personal (D107 answer 6), each link the cards it counted.
  */
 export function cardLinkTexts(list: EntityList, key: string): CardLink[] {
   const a = list.attention.find(x => keyOf(x.key) === keyOf(key));
   if (!a) return [];
   const thread = a.threadId ? { threadId: a.threadId } : {};
   return [
-    ...(a.act > 0 ? [{ id: 'act' as const, text: `${a.act} att agera på`, ...thread }] : []),
-    ...(a.proposals > 0 ? [{ id: 'proposals' as const, text: `${a.proposals} förslag`, ...thread }] : []),
+    ...(a.act > 0 ? [{ kind: 'act' as const, text: countText('act', a.act), ...thread }] : []),
+    ...(a.proposals > 0 ? [{ kind: 'proposal' as const, text: countText('proposal', a.proposals), ...thread }] : []),
   ];
+}
+/**
+ * The person's cards a list beside Personal draws, its heading, and what it says when none is left: those of the kind
+ * the link counted, in the server's order, headed with the link's own words, or every card about the person under
+ * "Behöver dig" when the address names no kind, as the person's page lists them.
+ */
+export function cardsListed(
+  cards: EntityCard[],
+  kind: CountedKind | undefined,
+): { cards: EntityCard[]; heading: string; empty: string } {
+  if (!kind) return { cards, heading: 'Behöver dig', empty: 'Inga kort' };
+  const shown = cards.filter(c => c.kind === kind);
+  return {
+    cards: shown,
+    heading: countText(kind, shown.length),
+    empty: kind === 'act' ? 'Inget att agera på' : 'Inga förslag',
+  };
 }
 
 /**
  * A source's page way in for one entity (D97, D95): `{key}` and `{id}` filled in. On the page the person is on, the
- * page's own address (a lens, an opened person) is kept under the way in's own parameters, as every overlay address
+ * page's own address (its lens, what its panel holds) is kept under the way in's own parameters, as every overlay address
  * keeps the page's (D83). Null when the page needs Clew's id and the entity has none.
  */
 export function pageHref(
