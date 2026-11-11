@@ -1,5 +1,5 @@
 import { queryOptions } from '@tanstack/react-query';
-import type { Role, DocumentRequest } from '@clew/contracts';
+import type { Role, DocumentRequest, UsersAdminQueryType } from '@clew/contracts';
 import { api } from './api';
 import { keys } from './query-keys';
 import { unlessRefused } from './query-policy';
@@ -137,6 +137,8 @@ export const adminQueries = {
   units: queryOptions({ queryKey: keys.admin.units, queryFn: () => api.admin.units() }),
   groups: queryOptions({ queryKey: keys.admin.groups, queryFn: () => api.admin.groups() }),
   users: queryOptions({ queryKey: keys.admin.users, queryFn: () => api.admin.users() }),
+  usersPage: (query: UsersAdminQueryType) =>
+    queryOptions({ queryKey: keys.admin.usersPage(query), queryFn: () => api.admin.usersPage(query) }),
   organisation: queryOptions({ queryKey: keys.admin.organisation, queryFn: () => api.admin.organisation() }),
   organisationUnit: (unitId: string) =>
     queryOptions({

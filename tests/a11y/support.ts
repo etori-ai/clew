@@ -32,6 +32,7 @@ import {
   providerDetail,
   providerReport,
   usersOverview,
+  usersPeople,
   organisationOverview,
   organisationPeople,
   organisationReports,
@@ -59,6 +60,7 @@ import type {
   ProviderSummary,
   TalkHeldBody,
   TalkRound,
+  UsersAdminQueryType,
 } from '@clew/contracts';
 import { THEME_BASE_COLORS, parseThemeFile, themeFileOf } from '../../packages/contracts/src/theme-file';
 import { personSearch, phonebook } from './phonebook';
@@ -110,6 +112,11 @@ export class MockApi {
   admin = false;
   /** Användare (D85): the people and the group-capability rows the users page shows; the rows change with the page's actions. */
   users = usersOverview();
+  /** Användare (D100): the people the list is read from, a page at a time, and every question the page has asked. */
+  people = usersPeople();
+  peopleQueries: UsersAdminQueryType[] = [];
+  /** Användare: the list cannot be read, while the rest of the page can. A 400, which the page does not ask twice. */
+  peopleRefused = false;
   /** The users page for someone with `admin.connectors` but not `admin.users`: the server refuses. */
   usersForbidden = false;
   /** Organisation (D99): the tree the organisation page shows; it shares `usersForbidden`, as the two share a capability. */
@@ -276,6 +283,36 @@ export class MockApi {
         return this.usersForbidden
           ? route.fulfill({ status: 403, json: { error: 'Du saknar behörighet för åtgärden.', code: 'denied' } })
           : json(this.users);
+      if (path === '/admin/users/search' && method === 'POST') {
+        if (this.usersForbidden)
+          return route.fulfill({ status: 403, json: { error: 'Du saknar behörighet för åtgärden.', code: 'denied' } });
+        // The server's reading of a question (D100), on the suite's people: every part narrows, then one page.
+        const asked = request.postDataJSON() as UsersAdminQueryType,
+          words = (asked.text ?? '').toLocaleLowerCase('sv').split(/\s+/).filter(Boolean),
+          status = (u: (typeof this.people)[number]) =>
+            !u.enabled ? 'disabled' : !u.active ? 'no-access' : u.bound ? 'signed-in' : 'not-signed-in';
+        this.peopleQueries.push(asked);
+        if (this.peopleRefused) return route.fulfill({ status: 400, json: { error: 'Ogiltig förfrågan.' } });
+        const matching = this.people.filter(
+          u =>
+            words.every(w => [u.name, u.userName, u.email].some(v => (v ?? '').toLocaleLowerCase('sv').includes(w))) &&
+            (!(asked.unitId || asked.role) ||
+              u.assignments.some(
+                a => (!asked.unitId || a.unitId === asked.unitId) && (!asked.role || a.role === asked.role),
+              )) &&
+            (!asked.status || status(u) === asked.status) &&
+            (!asked.capability || u.capabilities.includes(asked.capability)),
+        );
+        const pageSize = asked.pageSize ?? 25,
+          page = Math.min(asked.page ?? 1, Math.max(1, Math.ceil(matching.length / pageSize)));
+        return json({
+          rows: matching.slice((page - 1) * pageSize, page * pageSize),
+          total: matching.length,
+          all: this.people.length,
+          page,
+          pageSize,
+        });
+      }
       if (path === '/admin/organisation' && method === 'GET')
         return this.usersForbidden
           ? route.fulfill({ status: 403, json: { error: 'Du saknar behörighet för åtgärden.', code: 'denied' } })

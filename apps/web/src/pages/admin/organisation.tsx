@@ -226,7 +226,9 @@ export function AdminOrganisationPage({ user }: { user: SessionUser }) {
               collapsible={false}
               title={`${people(unplaced)} saknar enhet`}
               description="De finns i Clew men kommer inte åt något förrän katalogen har placerat dem på en enhet. Under Användare står de med Ingen åtkomst."
-              endContent={<Button size="sm" variant="secondary" label="Till Användare" href="/admin/users" />}
+              endContent={
+                <Button size="sm" variant="secondary" label="Till Användare" href="/admin/users?status=no-access" />
+              }
             />
           )}
           {leaderless > 0 && (

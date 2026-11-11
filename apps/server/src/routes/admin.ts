@@ -10,6 +10,8 @@ import {
   THEME_FILE_MAX_BYTES,
   GroupCapabilityInput,
   type GroupCapabilityInputType,
+  UsersAdminQuery,
+  type UsersAdminQueryType,
   AddConnectorInput,
   AddModelInput,
   AddProviderInput,
@@ -52,6 +54,7 @@ const validators = {
   addModel: ajv.compile(AddModelInput),
   patchModel: ajv.compile(ModelPatchInput),
   groupCapability: ajv.compile(GroupCapabilityInput),
+  usersQuery: ajv.compile(UsersAdminQuery),
   appearanceTheme: ajv.compile(AppearanceThemeInput),
   appearanceLogo: ajv.compile(AppearanceLogoInput),
 };
@@ -72,8 +75,17 @@ adminRoutes.use('*', protectedRoute());
 adminRoutes.get('/reliability', async c => c.json(await operations.reliability(c.get('session').context)));
 adminRoutes.get('/units', async c => c.json({ units: await connectorAdmin.listUnits(c.get('session').context) }));
 adminRoutes.get('/groups', async c => c.json({ groups: await connectorAdmin.listGroups(c.get('session').context) }));
-// Användare (D62, D85): the provisioned people and the group-capability rows, behind `admin.users`.
+// Användare (D62, D85): the group-capability rows and the catalogue's state, behind `admin.users`. The people are read
+// a page at a time (D100), asked for in a body so that a searched name is in no address and no access log.
 adminRoutes.get('/users', async c => c.json(await usersAdmin.overview(c.get('session').context)));
+adminRoutes.post('/users/search', async c =>
+  c.json(
+    await usersAdmin.people(
+      c.get('session').context,
+      await body<UsersAdminQueryType>(c.req.raw, validators.usersQuery),
+    ),
+  ),
+);
 adminRoutes.post('/users/group-capabilities', async c =>
   c.json(
     await usersAdmin.addGroupCapability(

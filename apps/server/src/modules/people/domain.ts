@@ -5,6 +5,7 @@ import {
   type OrganisationOverview,
   type OrganisationUnit,
   type Role,
+  type UserStatus,
 } from '@clew/contracts';
 
 /**
@@ -153,6 +154,34 @@ export interface Placement {
   role: Role | null;
 }
 export const bySwedish = (a: string, b: string) => a.localeCompare(b, 'sv');
+/**
+ * D100: what the people list of Administration › Användare is narrowed by, as a store reads it. Every part narrows
+ * further and an absent part narrows nothing. `words` each match, without regard to case, somewhere in the name, the
+ * user name or the e-mail. `unitIds` is an assignment on one of the units, `role` an assignment with that role, and
+ * the two together one assignment that is both. `status` is the row's reading of access (`UserStatus`), `capability`
+ * a capability on the grant.
+ */
+export interface UserSearch {
+  words?: readonly string[];
+  unitIds?: readonly string[];
+  role?: Role;
+  status?: UserStatus;
+  capability?: string;
+}
+/** The words of a typed search, in lower case as Swedish folds it; at most eight, so a pasted text stays one query. */
+export const searchWords = (text: string | undefined): string[] =>
+  (text ?? '').toLocaleLowerCase('sv').split(/\s+/).filter(Boolean).slice(0, 8);
+/**
+ * A unit with every unit below it in the tree (D99), the unit first. A unit the tree does not name is itself alone,
+ * and each unit is taken once, so a stored chain that were ever a cycle ends.
+ */
+export function branchOf(tree: readonly TreeUnit[], unitId: string): string[] {
+  const below = new Map<string, string[]>();
+  for (const u of tree) if (u.parentId !== null) below.set(u.parentId, [...(below.get(u.parentId) ?? []), u.id]);
+  const branch = new Set([unitId]);
+  for (const id of branch) for (const next of below.get(id) ?? []) branch.add(next);
+  return [...branch];
+}
 /**
  * Who leads a unit (D99 item 4): its managers who are active. A deactivated manager leads nobody, so a unit whose only
  * manager is deactivated passes the line through as a unit without one does. Everything that reads the line asks here.

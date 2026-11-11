@@ -264,6 +264,15 @@
       "area": "integrations"
     },
     {
+      "key": "D100-the-people-list-is-read-a-page-at-a-time-and-narrowed-on-the-server",
+      "number": 100,
+      "path": "docs/decisions/D100-the-people-list-is-read-a-page-at-a-time-and-narrowed-on-the-server.md",
+      "title": "D100 · The people list is read a page at a time and narrowed on the server",
+      "status": "accepted (product owner, 2026-11-11: the list of Administration › Användare is paged and filtered, and where a person is placed is told apart from whether they are a manager or an employee), built 2026-11-11 and tried signed in on the development stack the same day; items 3, 5 and 6 are choices made in the build and stand until he says otherwise; no manual screen-reader pass yet",
+      "date": "2026-11-11",
+      "area": "ui, identity"
+    },
+    {
       "key": "D11-one-calendar-contract-two-adapters",
       "number": 11,
       "path": "docs/decisions/D11-one-calendar-contract-two-adapters.md",
@@ -1571,6 +1580,12 @@
     {
       "path": "docs/decisions/D10-integrations-fulfil-clews-api-first.md",
       "title": "D10 · Integrations fulfil Clew's API; adapters are the fallback",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D100-the-people-list-is-read-a-page-at-a-time-and-narrowed-on-the-server.md",
+      "title": "D100 · The people list is read a page at a time and narrowed on the server",
       "category": "decision-history",
       "headings": []
     },

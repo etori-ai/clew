@@ -47,6 +47,8 @@ export const keys = {
     units: ['admin', 'units'] as const,
     groups: ['admin', 'groups'] as const,
     users: ['admin', 'users'] as const,
+    /** Under `users`, so what invalidates the overview also invalidates every page of the people (D100). */
+    usersPage: (query: object) => ['admin', 'users', 'page', query] as const,
     organisation: ['admin', 'organisation'] as const,
     organisationUnit: (unitId: string) => ['admin', 'organisation', 'unit', unitId] as const,
     appearance: ['admin', 'appearance'] as const,

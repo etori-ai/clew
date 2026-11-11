@@ -4,6 +4,7 @@ import sv from '@astryxdesign/core/locales/sv-SE.json';
 export const swedish = {
   ...sv,
   '@astryx.input.readOnly': { defaultMessage: 'Skrivskyddad' },
+  '@astryx.inputClearButton.tooltip': { defaultMessage: 'Rensa' },
   '@astryx.chatComposer.placeholder': { defaultMessage: 'Skriv ett meddelande …' },
   '@astryx.chatComposer.send': { defaultMessage: 'Skicka' },
   '@astryx.chatComposer.stop': { defaultMessage: 'Stoppa' },
