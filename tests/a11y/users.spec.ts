@@ -16,7 +16,8 @@ import type { Locator, Page } from '@playwright/test';
 /**
  * Användare (D62, D68, D85, D100): the provisioned people a page at a time with unit, role, capabilities and whether
  * they have signed in, narrowed by a search and four filters, and the mapping from a group to a capability that an
- * administrator adds and removes. Keyboard, structure, announcements, axe and reflow, at desktop, phone and 320 px.
+ * administrator adds and removes, and the catalogues' keys: one is issued, replaced and taken back (D107). Keyboard,
+ * structure, announcements, axe and reflow, at desktop, phone and 320 px.
  */
 /** The line over the list that counts the people: Astryx's own live regions repeat other words about them. */
 const readout = (page: Page) => page.getByRole('status').filter({ hasText: /^\d+ (av \d+ )?person(er)?$/ });
@@ -244,16 +245,155 @@ test.describe('users administration', () => {
       await expect(rows.nth(1)).toContainText('Metakatalogen');
       await expect(rows.nth(1)).toContainText('Senaste anrop 10 november 2026 kl. 06:02');
       await expect(rows.nth(1)).toContainText('Läser in');
-      // Read, not operated: the rows add no focus stop.
-      await expect(pushes.getByRole('button')).toHaveCount(0);
+      // One focus stop a row: its menu, named by the catalogue it acts on (D107).
+      await expect(pushes.getByRole('button')).toHaveCount(2);
+      await expect(pushes.getByRole('button', { name: 'Åtgärder för Metakatalogen' })).toBeVisible();
       await expect(pushes.getByRole('link')).toHaveCount(0);
+    });
+    test('a catalogue is added from the keyboard, and its key is shown once, to copy (D107)', async ({ page, api }) => {
+      api.admin = true;
+      await open(page, '/admin/users');
+      const add = page.getByRole('button', { name: 'Lägg till katalog' });
+      await add.focus();
+      await page.keyboard.press('Enter');
+      const dialog = page.getByRole('dialog', { name: 'Lägg till katalog' });
+      await expect(dialog.getByRole('heading', { name: 'Katalogen', exact: true })).toBeFocused();
+      // What is missing is said in words at the field, and nothing is sent.
+      await dialog.getByRole('button', { name: 'Skapa nyckel' }).click();
+      await expect(dialog.getByText('Ge katalogen ett namn.', { exact: true })).toBeVisible();
+      await dialog.getByRole('textbox', { name: /^Namn/ }).fill('Nya Katalogen');
+      await expect(dialog.getByRole('textbox', { name: /^Id/ })).toHaveValue('nya-katalogen');
+      await expectNoAxeViolations(page);
+      await dialog.getByRole('button', { name: 'Skapa nyckel' }).click();
+      // While the key is on the screen the dialog is one that has to be answered, and is announced as such.
+      const shown = page.getByRole('alertdialog', { name: 'Lägg till katalog' });
+      // The key replaces the form: its heading takes the focus, and the dialog says it will not be shown again.
+      await expect(shown.getByRole('heading', { name: 'Nyckeln', exact: true })).toBeFocused();
+      await expect(shown.getByText('Nyckeln visas bara nu.')).toBeVisible();
+      await expect(shown.getByText('a11y-key-nya-katalogen')).toBeVisible();
+      await expect(shown.getByText('Nyckeln går inte ut av sig själv.')).toBeVisible();
+      // Where the key is sent is the server's word for its own address, not the address of this page.
+      await expect(shown).toContainText('https://clew.test/scim/v2');
+      // The only copy of the key is on the screen: Escape does not close the dialog, and the header has no button
+      // that does. The one way out says what it means.
+      await page.keyboard.press('Escape');
+      await expect(shown.getByText('a11y-key-nya-katalogen')).toBeVisible();
+      await expect(shown.getByRole('button', { name: 'Kopiera kod' })).toBeVisible();
+      await expect(shown.getByRole('button')).toHaveCount(2);
+      await expectNoAxeViolations(page);
+      await shown.getByRole('button', { name: 'Jag har sparat nyckeln' }).click();
+      await expect(shown).toBeHidden();
+      await expect(add).toBeFocused();
+      // The catalogue is in the list, and the key is nowhere on the page.
+      const rows = page.getByRole('list', { name: 'Inläsning från katalogen' }).getByRole('listitem');
+      await expect(rows).toHaveCount(3);
+      await expect(rows.filter({ hasText: 'Nya Katalogen' })).toContainText('Har aldrig anropat Clew');
+      await expect(page.getByText('a11y-key-nya-katalogen')).toHaveCount(0);
+      // An id that is taken is refused in the dialog, in the server's words.
+      await add.click();
+      await dialog.getByRole('textbox', { name: /^Namn/ }).fill('Metakatalogen');
+      await dialog.getByRole('button', { name: 'Skapa nyckel' }).click();
+      await expect(
+        dialog.getByRole('alert').filter({ hasText: 'Det finns redan en katalog med det id:t.' }),
+      ).toHaveCount(1);
+    });
+    test('a key is replaced from the row menu with a time for the old one, and the row says until when (D107)', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/users');
+      const pushes = page.getByRole('list', { name: 'Inläsning från katalogen' });
+      const menu = pushes.getByRole('button', { name: 'Åtgärder för Metakatalogen' });
+      await menu.focus();
+      await page.keyboard.press('Enter');
+      await page.getByRole('menuitem', { name: 'Byt nyckel' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Byt nyckel' });
+      await expect(dialog.getByRole('heading', { name: 'Den gamla nyckeln' })).toBeFocused();
+      await expect(dialog).toContainText('Metakatalogen får en ny nyckel, som gäller tills vidare.');
+      // The time is for the old key alone, and the group of choices is named so.
+      await expect(
+        dialog.getByRole('radiogroup', { name: /Hur länge ska den gamla nyckeln fortsätta gälla\?/ }),
+      ).toBeVisible();
+      // A day's grace is chosen from the start: the choice that breaks no push.
+      await expect(dialog.getByRole('radio', { name: 'Ett dygn till' })).toBeChecked();
+      await expect(dialog.getByRole('radio')).toHaveCount(3);
+      await expectNoAxeViolations(page);
+      await dialog.getByRole('button', { name: 'Byt nyckel' }).click();
+      const shown = page.getByRole('alertdialog', { name: 'Byt nyckel' });
+      await expect(shown.getByRole('heading', { name: 'Den nya nyckeln' })).toBeFocused();
+      await expect(shown.getByText('a11y-key-rotated')).toBeVisible();
+      // Until when the old key answers, in Swedish time whatever zone the browser is in.
+      await expect(shown).toContainText(
+        'Den förra nyckeln gäller till 12 november 2026 kl. 06:00. Byt den i katalogen före dess.',
+      );
+      await expectNoAxeViolations(page);
+      await shown.getByRole('button', { name: 'Jag har sparat nyckeln' }).click();
+      await expect(shown).toBeHidden();
+      await expect(menu).toBeFocused();
+      await expect(pushes.getByRole('listitem').filter({ hasText: 'Metakatalogen' })).toContainText(
+        'Den förra nyckeln gäller till 12 november 2026 kl. 06:00',
+      );
+      await expect(page.getByText('a11y-key-rotated')).toHaveCount(0);
+    });
+    test('a key is taken back after a confirmation, said aloud, and the focus goes to the control that is left (D107)', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/users');
+      const pushes = page.getByRole('list', { name: 'Inläsning från katalogen' });
+      const menu = pushes.getByRole('button', { name: 'Åtgärder för Metakatalogen' });
+      await menu.focus();
+      await page.keyboard.press('Enter');
+      await page.getByRole('menuitem', { name: 'Återkalla nyckeln' }).click();
+      const confirm = page.getByRole('alertdialog', { name: 'Återkalla nyckeln för Metakatalogen' });
+      await expect(confirm).toContainText('Katalogen kan inte längre föra in ändringar i Clew');
+      await expectNoAxeViolations(page);
+      // Changing one's mind leaves everything as it was, and the focus where it came from.
+      await confirm.getByRole('button', { name: 'Avbryt' }).click();
+      await expect(confirm).toBeHidden();
+      await expect(menu).toBeFocused();
+      await expect(pushes.getByRole('listitem')).toHaveCount(2);
+      await page.keyboard.press('Enter');
+      await page.getByRole('menuitem', { name: 'Återkalla nyckeln' }).click();
+      await confirm.getByRole('button', { name: 'Återkalla' }).click();
+      await expect
+        .poll(() => announcements(page))
+        .toContainEqual(expect.stringContaining('Nyckeln för Metakatalogen är återkallad.'));
+      await expect(pushes.getByRole('listitem')).toHaveCount(1);
+      await expect(pushes).not.toContainText('Metakatalogen');
+      await expect(page.getByRole('button', { name: 'Lägg till katalog' })).toBeFocused();
+    });
+    test('a key that cannot be taken back says why in a notice that stays, and the list is read again (D107)', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/users');
+      const pushes = page.getByRole('list', { name: 'Inläsning från katalogen' });
+      await pushes.getByRole('button', { name: 'Åtgärder för Metakatalogen' }).click();
+      await page.getByRole('menuitem', { name: 'Återkalla nyckeln' }).click();
+      const confirm = page.getByRole('alertdialog', { name: 'Återkalla nyckeln för Metakatalogen' });
+      await expect(confirm).toBeVisible();
+      // Somebody else took the key back while the confirmation was open.
+      api.users.provisioners = api.users.provisioners.filter(p => p.id !== 'metakatalogen');
+      await confirm.getByRole('button', { name: 'Återkalla' }).click();
+      await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Katalogen finns inte.'));
+      await expect(confirm).toBeHidden();
+      // The page shows what is true now, and the focus is on the control that is left.
+      await expect(pushes.getByRole('listitem')).toHaveCount(1);
+      await expect(page.getByRole('button', { name: 'Lägg till katalog' })).toBeFocused();
+      await expectNoAxeViolations(page);
     });
     test('a catalogue that has never called and an installation without one are both said in words', async ({
       page,
       api,
     }) => {
       api.admin = true;
-      api.users.provisioners = [{ id: 'ny', label: 'Ny katalog', lastSeenAt: null, silent: true }];
+      api.users.provisioners = [
+        { id: 'ny', label: 'Ny katalog', lastSeenAt: null, silent: true, previousValidUntil: null },
+      ];
       await open(page, '/admin/users');
       const row = page.getByRole('list', { name: 'Inläsning från katalogen' }).getByRole('listitem');
       await expect(row).toContainText('Har aldrig anropat Clew');
@@ -336,6 +476,21 @@ test.describe('users administration', () => {
       await expect(pager(page)).toContainText('Sida 1 av 3');
       await expect(page.getByRole('list', { name: 'Inläsning från katalogen' })).toContainText('Tyst i över två dygn');
       expect(await reflowProblems(page)).toEqual([]);
+    });
+    test('the dialog that shows a key reflows at 320 px, the key wrapped inside it (D107)', async ({ page, api }) => {
+      api.admin = true;
+      await page.setViewportSize(narrow);
+      await open(page, '/admin/users');
+      await page.getByRole('button', { name: 'Lägg till katalog' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Lägg till katalog' });
+      await dialog.getByRole('textbox', { name: /^Namn/ }).fill('Nya Katalogen');
+      expect(await reflowProblems(page)).toEqual([]);
+      await dialog.getByRole('button', { name: 'Skapa nyckel' }).click();
+      await expect(
+        page.getByRole('alertdialog', { name: 'Lägg till katalog' }).getByText('a11y-key-nya-katalogen'),
+      ).toBeVisible();
+      expect(await reflowProblems(page)).toEqual([]);
+      await expectNoAxeViolations(page);
     });
   });
 });

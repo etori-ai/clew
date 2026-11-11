@@ -371,6 +371,47 @@ export class MockApi {
             })
           : route.fulfill({ status: 400, json: { error: 'Enheten finns inte.', code: 'invalid' } });
       }
+      // The catalogues' keys (D107): the answer that issues or rotates one carries the key, once.
+      if (path === '/admin/users/provisioners' && method === 'POST') {
+        const input = request.postDataJSON() as { id: string; label: string };
+        if (this.users.provisioners.some(p => p.id === input.id))
+          return route.fulfill({
+            status: 400,
+            json: { error: 'Det finns redan en katalog med det id:t.', code: 'invalid' },
+          });
+        const provisioner = {
+          id: input.id,
+          label: input.label,
+          lastSeenAt: null,
+          silent: true,
+          previousValidUntil: null,
+        };
+        this.users.provisioners.push(provisioner);
+        return json({
+          id: input.id,
+          token: 'a11y-key-' + input.id,
+          address: 'https://clew.test/scim/v2',
+          overview: this.users,
+        });
+      }
+      const keyed = /^\/admin\/users\/provisioners\/([^/]+)\/(rotate|revoke)$/.exec(path);
+      if (keyed && method === 'POST') {
+        const provisioner = this.users.provisioners.find(p => p.id === decodeURIComponent(keyed[1]!));
+        if (!provisioner)
+          return route.fulfill({ status: 400, json: { error: 'Katalogen finns inte.', code: 'invalid' } });
+        if (keyed[2] === 'revoke') {
+          this.users.provisioners = this.users.provisioners.filter(p => p !== provisioner);
+          return json(this.users);
+        }
+        const { graceHours } = request.postDataJSON() as { graceHours: number };
+        provisioner.previousValidUntil = graceHours ? '2026-11-12T05:00:00.000Z' : null;
+        return json({
+          id: provisioner.id,
+          token: 'a11y-key-rotated',
+          address: 'https://clew.test/scim/v2',
+          overview: this.users,
+        });
+      }
       if (path === '/admin/users/group-capabilities' && method === 'POST') {
         const input = request.postDataJSON() as {
           groupExternalId: string;
@@ -1140,10 +1181,27 @@ export async function open(page: Page, path: string) {
 /**
  * Every rule tagged for WCAG 2.0, 2.1 and 2.2 A and AA, plus axe's best practices: landmarks, headings and regions.
  * `without` leaves a rule out for a page where the rule cannot read the structure; the spec that passes it says why and
- * checks the criterion itself in the rule's place.
+ * checks the criterion itself in the rule's place. The page is read once its running entrances have ended.
  */
 export async function expectNoAxeViolations(page: Page, { without = [] }: { without?: string[] } = {}) {
   const tags = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'];
+  // A dialog still fading in is not a contrast fault: axe reads the text half transparent and reports it one run in
+  // a few. The animations that are running and will end are let end first, for a second at most: an entrance is over
+  // well inside it, and a notice's countdown or a paused animation is not waited for at all or not for long, so no
+  // page can hold a check up.
+  await page.evaluate(
+    limit =>
+      Promise.race([
+        Promise.all(
+          document
+            .getAnimations()
+            .filter(a => a.playState === 'running' && a.effect?.getComputedTiming().iterations !== Infinity)
+            .map(a => a.finished.catch(() => undefined)),
+        ),
+        new Promise(resolve => setTimeout(resolve, limit)),
+      ]).then(() => undefined),
+    1000,
+  );
   const { violations } = await new AxeBuilder({ page })
     .withTags(tags)
     .disableRules(['target-size', ...without])

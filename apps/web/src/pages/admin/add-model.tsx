@@ -38,7 +38,7 @@ import { DialogFrame } from '../../components/dialog-frame';
 const ID = /^[a-z][a-z0-9-]*$/;
 const URL_PATTERN = /^https?:\/\/\S+$/;
 const WIRE = /^\S+$/;
-const slug = (text: string) =>
+export const slug = (text: string) =>
   text
     .toLowerCase()
     .normalize('NFKD')

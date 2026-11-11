@@ -89,8 +89,38 @@ export interface ProvisionTx {
    * together one records the run.
    */
   touchProvisioner(id: string, at: string, seenBefore: string | null): Promise<boolean>;
-  /** The organisation's provisioners that are not revoked, by id, for Administration › Användare. */
-  provisioners(organisationId: string): Promise<Array<Provisioner & { lastSeenAt: string | null }>>;
+  /**
+   * The organisation's provisioners that are not revoked, by id, for Administration › Användare. `previousValidUntil`
+   * is how long the token rotated out last still answers; null when none does.
+   */
+  provisioners(
+    organisationId: string,
+  ): Promise<Array<Provisioner & { lastSeenAt: string | null; previousValidUntil: string | null }>>;
+  // Administration › Användare (D107): an administrator issues, rotates and revokes a provisioner's token.
+  /**
+   * A provisioner by its id, whichever organisation it fills (the id is the installation's), revoked or not, with the
+   * row held for the rest of the transaction: an issue, a rotation and a revocation of one provisioner run one after
+   * the other.
+   */
+  provisionerById(
+    id: string,
+  ): Promise<(Provisioner & { revoked: boolean; previousValidUntil: string | null }) | undefined>;
+  /**
+   * Writes a provisioner under its id with the digest of a new token: a new provisioner, or a revoked one of the same
+   * organisation issued again. It is active, never seen, and no token from before answers for it. False, and nothing
+   * written, when the id is held by an active provisioner or by another organisation's. The answer is the store's,
+   * given with the write, so two issues of one id at once cannot both be taken.
+   */
+  issueProvisioner(
+    record: Provisioner & { tokenDigest: string; createdBy: string; createdAt: string },
+  ): Promise<boolean>;
+  /**
+   * A new token for a provisioner. The token it replaces answers until `previousValidUntil`, or no longer when that
+   * is null; a token rotated out before that one no longer answers either way.
+   */
+  rotateProvisioner(id: string, tokenDigest: string, previousValidUntil: string | null): Promise<void>;
+  /** Ends every token of the provisioner at `at`. */
+  revokeProvisioner(id: string, at: string): Promise<void>;
   // SCIM: users, always within the provisioner's organisation.
   readUser(organisationId: string, id: string): Promise<UserRecord | undefined>;
   /**

@@ -4,7 +4,8 @@ import { eq, inArray, like } from 'drizzle-orm';
 import { database, schema } from '../../packages/db/src/index';
 import { postgresProvisionStore } from '../../apps/server/src/modules/people/adapters/postgres';
 import type { ProvisionStore } from '../../apps/server/src/modules/people/ports';
-import { scimUsecases } from '../../apps/server/src/modules/people/usecases';
+import { scimUsecases, usersAdminUsecases } from '../../apps/server/src/modules/people/usecases';
+import type { AuthenticatedContext } from '@clew/contracts';
 
 /**
  * Two SCIM requests at once on Postgres (D68): what the memory adapter cannot show. A derivation locks the person, so
@@ -409,4 +410,64 @@ test('two organisations take one unit at once, one by its unit key and one by it
       .where(inArray(schema.groups.externalId, keys));
     expect(holders).toHaveLength(1);
   }
+});
+test('one id issued twice at once: the second waits for the first, is told the id is taken, and the first key is the one that opens (D107)', async () => {
+  const { prefix, store } = stack();
+  const persona = (id: string): AuthenticatedContext => ({
+    id,
+    name: id,
+    unitId: 'u',
+    unitLabel: 'U',
+    role: 'employee',
+    organisationId: prefix + '-org',
+    principal: { id: 'person:' + id, kind: 'person' },
+    capabilities: ['admin.users'],
+    authorizationVersion: 'v',
+    sessionBinding: 'test',
+    expiresAt: '2099-01-01T00:00:00.000Z',
+    authorize: async () => ({ version: 'v' }),
+  });
+  let n = 0;
+  const deps = { clock: () => new Date(), token: () => `${prefix}-token-${++n}`, digest: (t: string) => 'digest:' + t };
+  // The first issue stops when its row is written and not yet committed: the moment a second one used to slip past.
+  let reached!: () => void, release!: () => void;
+  const written = new Promise<void>(resolve => (reached = resolve)),
+    gate = new Promise<void>(resolve => (release = resolve));
+  const slow: ProvisionStore = {
+    transaction: fn =>
+      store.transaction(tx =>
+        fn({
+          ...tx,
+          issueProvisioner: async record => {
+            const taken = await tx.issueProvisioner(record);
+            reached();
+            await gate;
+            return taken;
+          },
+        }),
+      ),
+  };
+  const id = prefix + '-cat';
+  const first = usersAdminUsecases({ store: slow, ...deps }).issueProvisioner(persona('anna'), { id, label: 'Annas' });
+  await written;
+  const second = usersAdminUsecases({ store, ...deps }).issueProvisioner(persona('bo'), { id, label: 'Bos' });
+  const secondDone = settled(second);
+  await new Promise(resolve => setTimeout(resolve, 400));
+  expect(secondDone()).toBe(false);
+  release();
+  const issued = await first;
+  await expect(second).rejects.toThrow('Det finns redan en katalog med det id:t.');
+  const db = database();
+  expect(
+    await db
+      .select({ label: schema.provisioners.label, tokenDigest: schema.provisioners.tokenDigest })
+      .from(schema.provisioners)
+      .where(eq(schema.provisioners.id, id)),
+  ).toEqual([{ label: 'Annas', tokenDigest: 'digest:' + issued.token }]);
+  expect(
+    await db
+      .select({ actor: schema.audit.actor, action: schema.audit.action })
+      .from(schema.audit)
+      .where(eq(schema.audit.subject, 'provisioner:' + id)),
+  ).toEqual([{ actor: 'person:anna', action: 'provisioner.added' }]);
 });
