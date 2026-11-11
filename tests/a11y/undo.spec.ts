@@ -22,6 +22,28 @@ test.describe('a decision the card is left waiting on keeps its way back where t
     await expect(page.locator('#card-samtal').getByRole('button', { name: 'Skicka 2 inbjudningar' })).toBeVisible();
   });
 
+  test('the receipt’s toast stays when the person moves on, and its Visa opens the card over the page they are on (D107)', async ({
+    page,
+    api: _,
+  }) => {
+    await open(page, '/?card=samtal');
+    await page.locator('#card-samtal').getByRole('button', { name: 'Skicka 2 inbjudningar' }).click();
+    const toasts = page.getByRole('region', { name: 'Aviseringar' });
+    const show = toasts.getByRole('link', { name: 'Visa' });
+    // On Hem it leads to the tab the card went to, with the card beside it.
+    await expect(show).toHaveAttribute('href', '/?tab=waiting&card=samtal');
+    // The card lies over Hem at this width: closed first, then the person goes to Kalender with the toast still there.
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog', { name: 'Kort' })).toHaveCount(0);
+    await page.getByRole('navigation').getByRole('link', { name: 'Kalender', exact: true }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Vecka' })).toBeVisible();
+    await expect(show).toHaveAttribute('href', '/calendar?card=samtal');
+    await show.click();
+    await expect(page).toHaveURL('/calendar?card=samtal');
+    await expect(page.getByRole('heading', { level: 1, name: 'Vecka' })).toBeAttached();
+    await expect(page.getByRole('dialog', { name: 'Kort' }).locator('#card-samtal')).toBeVisible();
+  });
+
   test('sending the invitations keeps the row with the receipt and Ångra, the toast says the card is under Väntar på andra, and the row there undoes it', async ({
     page,
     api: _,

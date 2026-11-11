@@ -391,18 +391,24 @@ test.describe('Personal', () => {
         'href',
         `/staff?show=${PRESENCE_LENS}&talk=karin`,
       );
-      // An action starts on the server without the model, and its card opens beside Hem with the focus on it (D83: a
-      // card lives on Hem; Personal, its lens and the person stay one step back).
+      // An action starts on the server without the model, and its card opens beside the list it was started on, with
+      // the lens kept and the focus on the card (D107 rule 4): Personal never gives way to Hem.
       await menu.getByRole('menuitem', { name: 'Boka samtal' }).click();
-      await expect(page).toHaveURL('/?card=entity-clew-bookTalk-karin');
+      await expect(page).toHaveURL(`/staff?show=${PRESENCE_LENS}&card=entity-clew-bookTalk-karin`);
       expect(api.entityStarts).toEqual([{ key: 'karin', capability: 'clew.bookTalk' }]);
       expect(api.asked).toEqual([]);
-      // Beside Hem where it fits, else Hem's drawer over it; the focus is in the card either way.
-      const card = page.getByRole('dialog', { name: 'Kort' }).or(page.getByRole('complementary', { name: 'Kort' }));
+      await expect(page.getByRole('heading', { level: 1, name: 'Personal' })).toBeVisible();
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      const card = page.getByRole('complementary', { name: 'Kort' });
       await expect(card.getByText('Boka samtal: Karin Lindqvist').first()).toBeVisible();
-      await expect.poll(() => card.evaluate(el => el.contains(document.activeElement))).toBe(true);
-      await page.goBack();
+      await expect(card.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
+      await expectNoAxeViolations(page);
+      // Closing leaves the list as it was, under its lens, with the row's menu there again.
+      await page.keyboard.press('Escape');
       await expect(page).toHaveURL(`/staff?show=${PRESENCE_LENS}`);
+      await expect(card).toHaveCount(0);
+      await expect(showMenu(page)).toHaveText('Visa: Frånvaro');
+      await expect(page.getByRole('button', { name: 'Åtgärder för Karin Lindqvist' })).toBeVisible();
     });
     test('a source that refuses an action says why, aloud and over the list, and nothing opens', async ({
       page,

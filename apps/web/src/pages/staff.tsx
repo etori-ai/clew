@@ -52,7 +52,8 @@ const SHOW = 'show';
  * Someone who manages nobody gets an empty list from the server, and the page says whom it is for. One person's
  * utvecklingssamtal stays a drawer over this list at `/staff?talk=<personId>` (D96), reached from its source's page way
  * in ("Öppna samtalet"); the drawer reads its own data. An action from a row's menu starts on the server and opens its
- * card on Hem (`entity-actions.ts`); a source's refusal is said aloud and stands over the list until the next action.
+ * card in the page's panel beside the list, over the person when one is open beside it (`entity-actions.ts`, D107
+ * rule 4); a source's refusal is said aloud and stands over the list until the next action.
  */
 export function StaffPage({ user, admin }: { user: SessionUser; admin: boolean }) {
   const mobile = useMediaQuery(mobileQuery);

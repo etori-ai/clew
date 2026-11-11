@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { announcements, expect, expectNoAxeViolations, heading, narrow, open, reflowProblems, test } from './support';
 import { ENTITY_UNIT, TALK_LENS, user } from './data';
-import { MEMBER_UNIT, SICK_UNIT, TALK_UNITS, Units } from './unit-data';
+import { MEMBER_UNIT, SICK_UNIT, TALK_UNITS, Units, unitAction, unitCard } from './unit-data';
 
 /**
  * The unit as an entity (D97, artboard E): a page of its own at `/units/:id`, its name with what Clew knows of it, then
@@ -139,6 +139,58 @@ test.describe('the unit as a page', () => {
     await expect(page).toHaveURL(/\/$/);
     await expect(heading(page, 2, `Läget på ${user.unitLabel}`)).toBeVisible();
   });
+
+  test('a card under Behöver dig opens beside the page with its way back kept; Esc gives the focus back to its title', async ({
+    page,
+    api: _,
+  }) => {
+    const units = new Units();
+    units.cards = [unitCard];
+    await units.route(page);
+    await open(page, `${school}?from=%2F`);
+    const needs = region(page, 'Behöver dig');
+    const title = needs.getByRole('link', { name: unitCard.title });
+    await expect(title).toHaveAttribute('href', `${school}?from=%2F&card=${unitCard.threadId}`);
+    await title.focus();
+    await page.keyboard.press('Enter');
+    // The unit's page stays: its address with the card added, its heading and its trail (D107 rules 2 and 3).
+    await expect(page).toHaveURL(`${school}?from=%2F&card=${unitCard.threadId}`);
+    const panel = page.getByRole('complementary', { name: 'Kort' });
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
+    await expect(panel.getByRole('article', { name: 'Kort: Tillbud 2026-1182, halkolycka i duschen' })).toBeVisible();
+    await expect(heading(page, 1, ENTITY_UNIT.label)).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Du är här' }).getByRole('link', { name: 'Hem' })).toBeVisible();
+    await expectNoAxeViolations(page);
+    await page.keyboard.press('Escape');
+    await expect(page).toHaveURL(`${school}?from=%2F`);
+    await expect(panel).toHaveCount(0);
+    await expect(title).toBeFocused();
+  });
+
+  test('the unit’s actions are at the end of its name, and one started there opens its card beside the page', async ({
+    page,
+    api,
+  }) => {
+    const units = new Units();
+    units.actions = [unitAction];
+    await units.route(page, api);
+    await open(page, `${school}?from=%2F`);
+    const button = page.getByRole('main').getByRole('button', { name: unitAction.title, exact: true });
+    await expect(button).toBeVisible();
+    await expectNoAxeViolations(page);
+    await button.click();
+    await expect(page).toHaveURL(`${school}?from=%2F&card=entity-calendar-bookWorkplaceMeeting-${ENTITY_UNIT.id}`);
+    expect(api.entityStarts).toEqual([{ key: ENTITY_UNIT.id, capability: unitAction.capability }]);
+    expect(api.asked).toEqual([]);
+    const panel = page.getByRole('complementary', { name: 'Kort' });
+    await expect(panel.getByText(`${unitAction.title}: ${ENTITY_UNIT.label}`).first()).toBeVisible();
+    await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
+    await expect(heading(page, 1, ENTITY_UNIT.label)).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page).toHaveURL(`${school}?from=%2F`);
+    await expect(button).toBeFocused();
+  });
 });
 
 test.describe('the unit on a phone', () => {
@@ -172,5 +224,19 @@ test.describe('1.4.10 reflow', () => {
     await open(page, `${school}?from=%2F`);
     await expect(region(page, 'Utvecklingssamtal').getByText('Utvecklingssamtal svarade inte.')).toBeVisible();
     expect(await reflowProblems(page)).toEqual([]);
+  });
+  test('the unit’s actions and a card opened over the page reflow at 320 px', async ({ page, api: _ }) => {
+    const units = new Units();
+    units.actions = [unitAction];
+    units.cards = [unitCard];
+    await units.route(page);
+    await open(page, school);
+    await expect(page.getByRole('button', { name: `Åtgärder för ${ENTITY_UNIT.label}` })).toBeVisible();
+    expect(await reflowProblems(page)).toEqual([]);
+    await open(page, `${school}?card=${unitCard.threadId}`);
+    const drawer = page.getByRole('dialog', { name: 'Kort' });
+    await expect(drawer.getByRole('article', { name: 'Kort: Tillbud 2026-1182, halkolycka i duschen' })).toBeVisible();
+    await page.evaluate(() => Promise.all(document.getAnimations().map(a => a.finished)));
+    expect(await reflowProblems(page, drawer)).toEqual([]);
   });
 });

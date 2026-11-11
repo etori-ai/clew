@@ -1,24 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import type { EntityAction, EntityDetail } from '@clew/contracts';
-import {
-  Avatar,
-  Button,
-  DropdownMenu,
-  EmptyState,
-  HStack,
-  Icon,
-  Link,
-  Text,
-  VStack,
-  useAnimatedLayout,
-  useMediaQuery,
-} from '@clew/ui';
+import type { EntityDetail } from '@clew/contracts';
+import { Avatar, Button, EmptyState, HStack, Icon, Text, VStack, useAnimatedLayout, useMediaQuery } from '@clew/ui';
 import { ApiError } from '../api';
 import { entityDetailQuery } from '../queries';
 import { errorMessage } from '../query-policy';
-import { actionMenuItems, useEntityAction } from '../entity-actions';
 import { PANEL_KEYS, panelOf, withCard } from '../panel-address';
 import {
   PERSON,
@@ -31,6 +18,7 @@ import {
 import type { PanelFrame, PanelSize } from './panel';
 import { mobileQuery } from './shell';
 import {
+  EntityActions,
   NEEDS_YOU,
   NeedsYouSection,
   PersonLine,
@@ -86,79 +74,6 @@ export const PERSON_PANEL: PanelSize = { default: 560, min: 440, max: 640, id: '
 /** What the list beside the person keeps: its names and one mark each (artboard C). */
 export const LIST_MIN = 440;
 
-/**
- * The opened person's actions (artboard C): the first two as buttons, the rest under Fler grouped by the system they
- * act in, as the row menu on Personal is (artboard A3), and the way to the person's page. On a phone one button,
- * Åtgärder, the width of the drawer, holds them all (artboard D). An action starts on the server and opens its card
- * (`entity-actions.ts`); a source's refusal is said aloud and stands under the buttons until the next action.
- */
-export function PersonActions({
-  detail,
-  mobile,
-  pageHref,
-}: {
-  detail: EntityDetail;
-  mobile: boolean;
-  pageHref?: string;
-}) {
-  const { start, error } = useEntityAction();
-  const { kind, key, name } = detail.entity;
-  const run = (a: EntityAction) => start(a, { kind, key, name });
-  const actions = detail.actions;
-  const refusal = error ? <Text as="p">{error}</Text> : null;
-  if (mobile)
-    return actions.length > 0 ? (
-      <VStack gap={2}>
-        <DropdownMenu
-          renderTrigger={trigger => (
-            <Button
-              {...trigger}
-              variant="secondary"
-              label="Åtgärder"
-              aria-label={`Åtgärder för ${name}`}
-              width="100%"
-            />
-          )}
-          presentation="adaptive"
-          items={actionMenuItems(actions, run)}
-        />
-        {refusal}
-      </VStack>
-    ) : null;
-  const shown = actions.slice(0, 2),
-    rest = actions.slice(2);
-  if (shown.length === 0 && !pageHref) return null;
-  const buttons = (
-    <HStack gap={2} wrap="wrap" vAlign="center">
-      {shown.map(a => (
-        <Button key={a.capability} variant="secondary" label={a.title} onClick={() => run(a)} />
-      ))}
-      {rest.length > 0 && (
-        // The menu is named by its button, which says whose actions they are (Astryx's renderTrigger).
-        <DropdownMenu
-          renderTrigger={trigger => (
-            <Button {...trigger} variant="secondary" label="Fler" aria-label={`Fler åtgärder för ${name}`} />
-          )}
-          presentation="adaptive"
-          items={actionMenuItems(rest, run)}
-        />
-      )}
-      {pageHref && (
-        <Link href={pageHref} weight="semibold" isStandalone>
-          Öppna som sida
-        </Link>
-      )}
-    </HStack>
-  );
-  // One shape with or without a refusal, so the button that was pressed keeps the focus when the refusal appears.
-  return (
-    <VStack gap={2}>
-      {buttons}
-      {refusal}
-    </VStack>
-  );
-}
-
 /** Beside the list, and over it on a narrow window: the actions, then every section as it arrives. */
 function PersonBody({
   detail,
@@ -179,7 +94,7 @@ function PersonBody({
   const nothing = detail.cards.length === 0 && drawnSections(answers).length === 0;
   return (
     <VStack ref={root} gap={5}>
-      <PersonActions detail={detail} mobile={false} pageHref={pageHref} />
+      <EntityActions detail={detail} mobile={false} pageHref={pageHref} />
       {settled && nothing ? (
         <EmptyState isCompact headingLevel={3} title={`Inget mer att visa om ${detail.entity.name}`} />
       ) : (
@@ -232,7 +147,7 @@ function PhoneBody({
   const { key, name, id } = detail.entity;
   return (
     <VStack ref={root} gap={4}>
-      <PersonActions detail={detail} mobile />
+      <EntityActions detail={detail} mobile />
       {drill && (drill === NEEDS_YOU || answer) ? (
         <VStack gap={3}>
           <HStack>

@@ -433,8 +433,8 @@ export function PanelClaims({ children }: { children: ReactNode }) {
 }
 
 /**
- * The panel of a page that draws it beside its own column (Hem, a tool's page, Personal): the page spreads `end` into
- * its `Layout` and renders `overlay`, and the shell leaves the panel to it.
+ * The panel of a page that draws it beside its own column (Hem, a tool's page, Personal, a person's and a unit's page):
+ * the page spreads `end` into its `Layout` and renders `overlay`, and the shell leaves the panel to it.
  */
 export function usePagePanel(options: PagePanelOptions): PagePanelSlot {
   const claim = useContext(Claim);
@@ -443,11 +443,11 @@ export function usePagePanel(options: PagePanelOptions): PagePanelSlot {
 }
 
 /**
- * The panel over a page that has none of its own (Kalender, Administration, a person's or a unit's page): what the
- * address opens, a card or a view, lies in the drawer over the page, and closing it leaves the page as it was. Decided
- * once the page is on screen: layout effects run from the shell up to the page, so by the first re-render every page
- * that holds the panel has claimed it, and the panel is never drawn twice nor a card's read asked twice. Outside a
- * session's pages (no `PanelClaims`) it draws nothing.
+ * The panel over a page that has none of its own (Kalender, Administration): what the address opens, a card or a view,
+ * lies in the drawer over the page, and closing it leaves the page as it was. A card that is not among the person's
+ * cards says so in the drawer, as it does beside any page. Decided once the page is on screen: layout effects run from
+ * the shell up to the page, so by the first re-render every page that holds the panel has claimed it, and the panel is
+ * never drawn twice nor a card's read asked twice. Outside a session's pages (no `PanelClaims`) it draws nothing.
  */
 export function PanelOverPage() {
   const claimed = useContext(Claimed);

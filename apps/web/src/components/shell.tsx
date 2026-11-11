@@ -26,6 +26,8 @@ import { api } from '../api';
 import { ReminderBell } from './reminders';
 import { PanelOverPage } from './page-panel';
 import { mobileQuery } from '../media';
+import { cardOverPage } from '../panel-address';
+import { pageLocation, usePublishPageLocation } from '../page-location';
 
 export { mobileQuery, shortQuery } from '../media';
 /** Until the installation's header has arrived: the site's name and Start, so the bar keeps its height and heading. */
@@ -80,6 +82,8 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
   const toast = useToast();
   const location = useLocation(),
     navigate = useNavigate();
+  // A toast is drawn outside the router and outlives the page that raised it: it reads where the person is from here.
+  usePublishPageLocation();
   const deliveryAttempts = useRef(new Set<string>());
   // The same session-scoped cache as the start page carries reminder cards and pending delivery claims.
   const threadsQ = useQuery(threadsQuery);
@@ -125,7 +129,9 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
                 variant="ghost"
                 label="Visa"
                 onClick={() => {
-                  navigate('/?card=' + encodeURIComponent(thread.id));
+                  // Over the page the person is on when they press it, which need not be the one that raised the toast.
+                  const { pathname, search } = pageLocation();
+                  navigate(cardOverPage(pathname, search, thread.id));
                   dismiss();
                 }}
               />

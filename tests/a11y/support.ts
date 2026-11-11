@@ -157,12 +157,14 @@ export class MockApi {
   entityRowsDelay: Record<string, number> = {};
   /** Every entities read that reached the mock, as path and query, in order. */
   entityReads: string[] = [];
-  /** Every action started from an entity's menu (D97), as person key and capability, in order. */
+  /** Every action started from an entity's menu (D97), as the entity's key and capability, in order. */
   entityStarts: Array<{ key: string; capability: string }> = [];
   /** Actions the source refuses, by capability, with its Swedish sentence (a 400, as the server passes it on). */
   entityRefusals: Record<string, string> = {};
   /** The opened person whose actions a start is checked against; a spec that answers the person itself sets it. */
   entityDetailOf?: (key: string) => EntityDetail | undefined;
+  /** The opened unit whose actions a start is checked against; the unit's routes set it (`unit-data.ts`). */
+  unitDetailOf?: (id: string) => EntityDetail | undefined;
   /**
    * The session person is an employee who manages nobody: the session's role is `employee`, Personal is refused, the
    * round lists nobody and their own action points are only the ones about them. For Hem without Personal.
@@ -778,18 +780,22 @@ export class MockApi {
    * with no groups (no refusal).
    */
   /**
-   * An action from an entity's menu (D97, D8), answered as the server would: an action the opened person does not offer
-   * is a 404, a refusal is the source's sentence as a 400, and otherwise the card it became, which joins the stream and
-   * is opened on Hem. The same start while that card is open gives the same card.
+   * An action from an entity's menu (D97, D8), answered as the server would: an action the opened person or unit does
+   * not offer is a 404, a refusal is the source's sentence as a 400, and otherwise the card it became, which joins the
+   * stream and opens beside the page it was started on. The same start while that card is open gives the same card.
    */
   private entityStart(route: Route, path: string) {
     const [, , kind, key = '', sub] = path.split('/');
     const capability = (route.request().postDataJSON() as { capability?: string } | null)?.capability ?? '';
     const opened = decodeURIComponent(key);
     const detail =
-      kind === 'person' && sub === 'actions'
-        ? (this.entityDetailOf?.(opened) ?? entityDetail(this.entityList, opened))
-        : undefined;
+      sub !== 'actions'
+        ? undefined
+        : kind === 'person'
+          ? (this.entityDetailOf?.(opened) ?? entityDetail(this.entityList, opened))
+          : kind === 'unit'
+            ? this.unitDetailOf?.(opened)
+            : undefined;
     const action = detail?.actions.find(a => a.capability === capability);
     if (!detail || !action) return route.fulfill({ status: 404, json: { error: 'Okänd adress.' } });
     this.entityStarts.push({ key: detail.entity.key, capability });

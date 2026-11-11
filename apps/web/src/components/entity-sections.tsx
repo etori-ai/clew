@@ -1,9 +1,11 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { useLocation } from 'react-router';
 import { useQueries, useQuery, type UseQueryResult } from '@tanstack/react-query';
 import {
   fieldTone,
   openRef,
   viewRows,
+  type EntityAction,
   type EntityCard,
   type EntityDetail,
   type EntityKind,
@@ -15,6 +17,7 @@ import {
 import {
   Button,
   Card,
+  DropdownMenu,
   HStack,
   Heading,
   Link,
@@ -30,6 +33,7 @@ import {
   type AnimatedLayout,
 } from '@clew/ui';
 import { entitySectionQuery, viewQuery } from '../queries';
+import { actionMenuItems, useEntityAction } from '../entity-actions';
 import { withCard } from '../panel-address';
 import { unitPageHref } from '../person-address';
 import { compactField, groupFields, present, rowGroups, wholeRow, type FieldGroup } from '../view-fields';
@@ -391,26 +395,21 @@ export function SectionFrame({
   );
 }
 
-/** Where a card opens when the page has no panel of its own for it: beside Hem's column (D50). */
-const onHem = (threadId: string) => withCard('/', '', threadId);
 /**
- * The reader's cards about the person, each leading to the card, its source at the end of the line. Beside a list the
- * card opens over the person in the same panel (`cardHref`, D83 rule 1); on a page without that panel it opens on Hem.
+ * The reader's cards about the person or the unit, each leading to the card, its source at the end of the line. A card
+ * opens in the panel of the page it is listed on (D107 rules 2 and 3): beside the person's or the unit's page with its
+ * section and its way back kept, and beside a list over the person opened there (`cardHref`, D83 rule 1).
  */
-export function CardList({
-  cards,
-  cardHref = onHem,
-}: {
-  cards: EntityCard[];
-  cardHref?: (threadId: string) => string;
-}) {
+export function CardList({ cards, cardHref }: { cards: EntityCard[]; cardHref?: (threadId: string) => string }) {
+  const { pathname, search } = useLocation();
+  const href = cardHref ?? ((threadId: string) => withCard(pathname, search, threadId));
   return (
     <List density="compact" hasDividers edge="flush">
       {cards.map(c => (
         <ListItem
           key={c.threadId}
           label={
-            <Link href={cardHref(c.threadId)} hasUnderline>
+            <Link href={href(c.threadId)} hasUnderline>
               {c.title}
             </Link>
           }
@@ -423,6 +422,80 @@ export function CardList({
         />
       ))}
     </List>
+  );
+}
+
+/**
+ * The opened person's or unit's actions (artboard C): the first two as buttons, the rest under Fler grouped by the
+ * system they act in, as the row menu on Personal is (artboard A3), and, beside a list, the way to the person's page.
+ * On a phone one button, Åtgärder, the width of its column, holds them all (artboard D). An action starts on the server
+ * and its card opens beside the page it was started on (`entity-actions.ts`); a source's refusal is said aloud and
+ * stands under the buttons until the next action.
+ */
+export function EntityActions({
+  detail,
+  mobile,
+  pageHref,
+}: {
+  detail: EntityDetail;
+  mobile: boolean;
+  pageHref?: string;
+}) {
+  const { start, error } = useEntityAction();
+  const { kind, key, name } = detail.entity;
+  const run = (a: EntityAction) => start(a, { kind, key, name });
+  const actions = detail.actions;
+  const refusal = error ? <Text as="p">{error}</Text> : null;
+  if (mobile)
+    return actions.length > 0 ? (
+      <VStack gap={2}>
+        <DropdownMenu
+          renderTrigger={trigger => (
+            <Button
+              {...trigger}
+              variant="secondary"
+              label="Åtgärder"
+              aria-label={`Åtgärder för ${name}`}
+              width="100%"
+            />
+          )}
+          presentation="adaptive"
+          items={actionMenuItems(actions, run)}
+        />
+        {refusal}
+      </VStack>
+    ) : null;
+  const shown = actions.slice(0, 2),
+    rest = actions.slice(2);
+  if (shown.length === 0 && !pageHref) return null;
+  const buttons = (
+    <HStack gap={2} wrap="wrap" vAlign="center">
+      {shown.map(a => (
+        <Button key={a.capability} variant="secondary" label={a.title} onClick={() => run(a)} />
+      ))}
+      {rest.length > 0 && (
+        // The menu is named by its button, which says whose actions they are (Astryx's renderTrigger).
+        <DropdownMenu
+          renderTrigger={trigger => (
+            <Button {...trigger} variant="secondary" label="Fler" aria-label={`Fler åtgärder för ${name}`} />
+          )}
+          presentation="adaptive"
+          items={actionMenuItems(rest, run)}
+        />
+      )}
+      {pageHref && (
+        <Link href={pageHref} weight="semibold" isStandalone>
+          Öppna som sida
+        </Link>
+      )}
+    </HStack>
+  );
+  // One shape with or without a refusal, so the button that was pressed keeps the focus when the refusal appears.
+  return (
+    <VStack gap={2}>
+      {buttons}
+      {refusal}
+    </VStack>
   );
 }
 

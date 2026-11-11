@@ -1,6 +1,6 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { useParams, useSearchParams } from 'react-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { EntityAction, EntityDetail, SessionUser } from '@clew/contracts';
 import {
   Avatar,
@@ -25,17 +25,21 @@ import {
 } from '@clew/ui';
 import { ApiError } from '../api';
 import { areasQuery, entityDetailQuery } from '../queries';
+import { keys } from '../query-keys';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { useEntityAction } from '../entity-actions';
+import { keepingPanel } from '../panel-address';
 import { insideClew, originOf, personPageHref, toolOf } from '../person-address';
 import { useRail, type RailCurrent } from '../components/nav';
-import { Shell, mobileQuery } from '../components/shell';
+import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { PageHeader } from '../components/page-header';
 import { ContentSkeleton } from '../components/loading';
-import { PersonActions } from '../components/person-panel';
+import { RAIL, panelBesideQuery } from '../components/panel';
+import { usePagePanel } from '../components/page-panel';
 import {
   CardList,
+  EntityActions,
   NEEDS_YOU,
   OpenRead,
   PersonLine,
@@ -55,18 +59,28 @@ import {
 
 /** The `settings-sidebar` template's breakpoint: below it the list of sections and the chosen one are two steps. */
 const narrowQuery = '(max-width: 768px)';
-/** The fuller view's table needs the page beside the list of sections. */
-const tableQuery = '(min-width: 1280px)';
+/** The fuller view's table needs the page beside the list of sections: a 1280 px window, the rail beside the page. */
+const TABLE_QUERY = '(min-width: 1280px)';
+/** With the panel beside the page the table needs the same column, so a window wider by the panel. */
+const TABLE_BESIDE_QUERY = panelBesideQuery(1280 - RAIL);
+/** The list of sections keeps its width (artboard C2); the chosen section beside it reads down to this. */
+const SECTIONS_WIDTH = 340;
+const CHOSEN_MIN = 300;
+/** The page's column at its widest, less its 32 px padding on each side, and the least it needs beside the panel. */
+const COLUMN = 1216 - 2 * 32;
+const PERSON_MIN = SECTIONS_WIDTH + 32 + CHOSEN_MIN + 2 * 32;
 
 /** The chosen source's fuller view (artboard C2): its name, where it was read and when, its actions, then its read in full. */
 function ChosenSection({
   detail,
   answer,
   level,
+  tableQuery,
 }: {
   detail: EntityDetail;
   answer: SectionAnswer;
   level: 'page' | 'drill';
+  tableQuery: string;
 }) {
   const { start, error } = useEntityAction();
   const { kind, key, name, id } = detail.entity;
@@ -128,7 +142,7 @@ function ChosenSection({
   );
 }
 
-/** Behöver dig as the chosen section: the reader's cards about the person, each leading to the card on Hem. */
+/** Behöver dig as the chosen section: the reader's cards about the person, each opening in the panel beside the page. */
 function ChosenCards({ detail, level }: { detail: EntityDetail; level: 'page' | 'drill' }) {
   return (
     <VStack gap={5}>
@@ -149,12 +163,19 @@ function ChosenCards({ detail, level }: { detail: EntityDetail; level: 'page' | 
  * and beside it the chosen source's fuller view, `?section=` in the address. On a narrow window the two are the
  * `settings-sidebar` template's drill-in: the list, then the chosen section with the way back to the list. A person the
  * reader may not ask about is the page's own "finns inte" (the server answers 404 for both).
+ *
+ * The page holds the panel beside its column (D107 rules 2 to 4, `usePagePanel`): a card under Behöver dig and the card
+ * an action makes open there, with the section and the way back kept in the address, and closing leaves the page as it
+ * was. Choosing another section keeps what is open beside it. Where the panel does not fit beside the list of sections
+ * and the chosen one, it is the drawer over the page.
  */
 export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean }) {
   const { key = '' } = useParams<{ key: string }>();
   const [search] = useSearchParams();
   const mobile = useMediaQuery(mobileQuery);
   const narrow = useMediaQuery(narrowQuery);
+  // 1.4.10: on a short screen nothing is pinned beside the page, and the page scrolls as one.
+  const short = useMediaQuery(shortQuery);
   const from = insideClew(search.get('from'));
   const section = search.get('section') || undefined;
   const read = useQuery(entityDetailQuery('person', key));
@@ -183,7 +204,15 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
   const chosenId = section ?? (narrow ? undefined : fallback);
   const chosen = chosenId ? answers.find(a => a.source.capability === chosenId) : undefined;
   const showsCards = chosenId === NEEDS_YOU && !!detail && detail.cards.length > 0;
-  const hrefFor = (id: string | null) => personPageHref(key, { ...(id ? { section: id } : {}), from });
+  // A decision made on a card beside the page changes what Behöver dig holds: the person is read again, their sources not.
+  const client = useQueryClient();
+  const cardChanged = useCallback(() => {
+    void client.invalidateQueries({ queryKey: keys.entities.detail('person', key), exact: true });
+  }, [client, key]);
+  const panel = usePagePanel({ minMain: PERSON_MIN, overlayOnly: short, onChange: cardChanged });
+  // Another section is a move within the page: what is open beside it stays.
+  const hrefFor = (id: string | null) =>
+    keepingPanel(personPageHref(key, { ...(id ? { section: id } : {}), from }), search);
   // Into a section on a narrow window the focus goes to the way back; out of it, to the row it came from.
   const backLink = useRef<HTMLButtonElement>(null);
   const navRef = useRef<HTMLDivElement>(null);
@@ -228,7 +257,7 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
     const { name } = detail.entity;
     const list = (
       <VStack ref={navRef} as="nav" aria-label={`Om ${name}`}>
-        <Card padding={0} {...(narrow ? {} : { width: 340 })}>
+        <Card padding={0} {...(narrow ? {} : { width: SECTIONS_WIDTH })}>
           <SectionNav rows={sectionNavRows(detail.cards, answers, hrefFor, narrow ? undefined : chosenId)} />
         </Card>
       </VStack>
@@ -236,7 +265,12 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
     const view = showsCards ? (
       <ChosenCards detail={detail} level={narrow ? 'drill' : 'page'} />
     ) : chosen ? (
-      <ChosenSection detail={detail} answer={chosen} level={narrow ? 'drill' : 'page'} />
+      <ChosenSection
+        detail={detail}
+        answer={chosen}
+        level={narrow ? 'drill' : 'page'}
+        tableQuery={panel.occupied ? TABLE_BESIDE_QUERY : TABLE_QUERY}
+      />
     ) : null;
     const chosenTitle = showsCards ? 'Behöver dig' : chosen?.source.title;
     body = (
@@ -244,7 +278,7 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
         <PageHeader
           title={name}
           icon={<Avatar name={name} size={60} tooltip={false} aria-hidden />}
-          end={<PersonActions detail={detail} mobile={mobile} />}
+          end={<EntityActions detail={detail} mobile={mobile} />}
           {...(detail.entity.detail || detail.entity.unit
             ? {
                 meta: (
@@ -299,25 +333,29 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
     );
   }
   return (
-    <Shell user={user} nav={nav}>
+    <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
+      {/* As on Personal: the layout fills the window, so the page and the panel beside it scroll on their own and the handle's divider stands the height of the page; on a short window nothing is pinned and the page scrolls as one (1.4.10). The column is bounded inside the content, not with the Layout's `contentWidth`, which would frame the panel with it and stand it in from the window's edge. */}
       <Layout
-        height="auto"
-        contentWidth={1216}
+        height={short ? 'auto' : 'fill'}
         padding={mobile ? 3 : 8}
+        end={panel.end}
         content={
-          <LayoutContent isScrollable={false}>
-            <VStack gap={5}>
-              {back && (
-                <Breadcrumbs label="Du är här" variant="supporting" separator="›">
-                  <BreadcrumbItem href={back.href}>{back.label}</BreadcrumbItem>
-                  <BreadcrumbItem isCurrent>{detail!.entity.name}</BreadcrumbItem>
-                </Breadcrumbs>
-              )}
-              {body}
+          <LayoutContent isScrollable={!short}>
+            <VStack hAlign="center">
+              <VStack gap={5} width="100%" maxWidth={COLUMN}>
+                {back && (
+                  <Breadcrumbs label="Du är här" variant="supporting" separator="›">
+                    <BreadcrumbItem href={back.href}>{back.label}</BreadcrumbItem>
+                    <BreadcrumbItem isCurrent>{detail!.entity.name}</BreadcrumbItem>
+                  </Breadcrumbs>
+                )}
+                {body}
+              </VStack>
             </VStack>
           </LayoutContent>
         }
       />
+      {panel.overlay}
     </Shell>
   );
 }

@@ -160,3 +160,15 @@ page (`/people/<key>?from=<the list>`). A menu choice that opened the person bes
 taken out the same day: a menu holds what can be done about a person, never where Clew shows them. The person is still
 drawn beside the list where "Just nu" counts several cards, and the focus goes to the row's name when that closes.
 Whether a person is shown beside a list at all, or only as a page, is open and waits for the navigation review.
+
+**Amended 2026-11-11 (D107): a card opens beside the page it is on, and an action's card beside the page it was
+started on.** Under [D107](D107-where-something-opens-is-decided-by-what-it-is.md) rules 2 to 4 the person's page and
+the unit's page hold the panel beside their column, as Personal does: a card under their Behöver dig opens there
+(`/people/<key>?section=needs-you&from=<the list>&card=<threadId>`, `/units/<id>?card=<threadId>`), with the section
+and the way back kept, and closing leaves the page as it was. An action about a person or a unit no longer leads to
+Hem: its card opens beside the page where it was started, over the person when it was started from the person beside
+the list (`/staff?person=<key>&card=<threadId>`), beside the list from a row's menu, beside the person's or the unit's
+page from their buttons. The unit's page now draws its actions as the person's do, the first two as buttons and the
+rest under "Fler" ("Åtgärder" on a phone); no source in the repository offers an action about a unit yet. This
+replaces the first amendment's sentence that the person's and the unit's pages have no panel and lead to Hem, and that
+an action leads there; the review of a card's rows still opens over Hem (D73) until D107's rule 5 is built.

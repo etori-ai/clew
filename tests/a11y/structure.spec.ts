@@ -255,6 +255,24 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expect(page).toHaveURL(/\/\?card=fakturor$/);
   });
 
+  test('a card picked in the rail’s search opens over the page the person is on, which stays (D107 rule 2)', async ({
+    page,
+    api: _,
+  }) => {
+    await open(page, '/calendar');
+    const search = page.getByRole('combobox', { name: 'Sök i samtal och kort' });
+    await search.fill('fakturor');
+    await page.getByRole('option', { name: /Attestera 3 fakturor/ }).click();
+    await expect(page).toHaveURL('/calendar?card=fakturor');
+    const drawer = page.getByRole('dialog', { name: 'Kort' });
+    await expect(drawer.getByRole('article', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Vecka' })).toBeAttached();
+    await expect.poll(() => drawer.evaluate(el => el.contains(document.activeElement))).toBe(true);
+    await page.keyboard.press('Escape');
+    await expect(drawer).toHaveCount(0);
+    await expect(page).toHaveURL(/\/calendar$/);
+  });
+
   test('the calendar names its days as headings', async ({ page, api: _ }) => {
     await open(page, '/calendar');
     await expect(heading(page, 2, 'ons 4 nov')).toBeVisible();

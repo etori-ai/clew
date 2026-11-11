@@ -5,9 +5,15 @@ import { api } from '../api';
 import { useThreadAction } from '../mutations';
 import { threadsQuery } from '../queries';
 import { canUndoReceipt, receiptComplete } from '../receipt-state';
+import { cardOverPage } from '../panel-address';
+import { usePageLocation } from '../page-location';
 import { useCountdown } from './card';
 
-/** A live receipt notice: expiry, pending compensation and errors must not leave a stale Undo button. */
+/**
+ * A live receipt notice: expiry, pending compensation and errors must not leave a stale Undo button. The toast stays
+ * until closed (2.2.1), also when the person moves on, so Visa follows them: on Hem it leads to the tab the card went to
+ * with the card beside it, on any other page to the card over that page (D107 rule 2).
+ */
 export function ReceiptNotice({
   threadId,
   onChange,
@@ -21,6 +27,7 @@ export function ReceiptNotice({
   const thread = data?.threads.find(t => t.id === threadId);
   const { run, error } = useThreadAction({ onChange });
   const countdown = useCountdown(thread?.receipt?.undoUntil ?? null);
+  const { pathname, search } = usePageLocation();
   if (!thread?.receipt) return null;
   const where =
     thread.state === 'handled'
@@ -37,7 +44,11 @@ export function ReceiptNotice({
           size="sm"
           variant="ghost"
           label="Visa"
-          href={`/?tab=${where[0]}&card=${encodeURIComponent(thread.id)}`}
+          href={
+            pathname === '/'
+              ? `/?tab=${where[0]}&card=${encodeURIComponent(thread.id)}`
+              : cardOverPage(pathname, search, thread.id)
+          }
         />
         {countdown && canUndoReceipt(thread) && (
           <Button

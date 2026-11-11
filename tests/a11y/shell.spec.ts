@@ -90,8 +90,11 @@ test('the phone bar holds the heading, the bell and the person, and the drawer h
   ).toBeVisible();
 });
 
-for (const source of ['/calendar', '/?area=budget'])
-  test(`a reminder opens and focuses its card from ${source}`, async ({ page, api }) => {
+for (const [source, heading] of [
+  ['/calendar', 'Vecka'],
+  ['/?area=budget', 'Hej Testa'],
+] as const)
+  test(`a reminder opens and focuses its card over ${source}`, async ({ page, api }) => {
     api.threads = api.threads.map(t => (t.id === 'ledighet' ? { ...t, remindedAt: NOW } : t));
     await open(page, source);
     const bell = page.getByRole('button', { name: 'Påminnelser: 1', exact: true });
@@ -100,9 +103,11 @@ for (const source of ['/calendar', '/?area=budget'])
     await expect(list).toBeVisible();
     await expectNoAxeViolations(page);
     await list.getByRole('link', { name: /Ledighetsansökan/ }).click();
-    await expect(page).toHaveURL('/?card=ledighet');
+    // The card opens over the page the person is on, with that page's own address kept (D107 rule 2): on Kalender in
+    // the shell's drawer, on Hem in its panel, over the page at this width, and the focus is in it.
+    await expect(page).toHaveURL(`${source}${source.includes('?') ? '&' : '?'}card=ledighet`);
     await expect(list).not.toBeVisible();
-    // The card opens in Hem's panel (D50, D53), over the page at this width, and the focus is in it.
+    await expect(page.getByRole('heading', { level: 1, name: heading })).toBeAttached();
     const panel = page.getByRole('dialog', { name: 'Kort', exact: true });
     await expect(
       panel.getByRole('article', { name: 'Kort: Ledighetsansökan från Johan Byström', exact: true }),
@@ -170,12 +175,15 @@ test.describe('on a touch phone', () => {
     await expectNoAxeViolations(page);
     expect(await reflowProblems(page, sheet)).toEqual([]);
     await sheet.getByRole('link', { name: /Ledighetsansökan/ }).click();
-    await expect(page).toHaveURL('/?card=ledighet');
+    await expect(page).toHaveURL('/calendar?card=ledighet');
     await expect(sheet).not.toBeVisible();
-    // On a phone the card rises in its own sheet (D71), and the focus is in it.
-    const card = page.getByRole('dialog', { name: 'Kort: Ledighetsansökan från Johan Byström', exact: true });
-    await expect(card).toBeVisible();
+    // On a phone the card lies over Kalender in the shell's drawer, and the focus is in it.
+    const card = page.getByRole('dialog', { name: 'Kort', exact: true });
+    await expect(
+      card.getByRole('article', { name: 'Kort: Ledighetsansökan från Johan Byström', exact: true }),
+    ).toBeVisible();
     await expect.poll(() => card.evaluate(el => el.contains(document.activeElement))).toBe(true);
+    expect(await reflowProblems(page, card)).toEqual([]);
   });
 });
 
@@ -271,9 +279,10 @@ test('the person signs out from the phone bar', async ({ page, api }) => {
 
 /**
  * Every page has the panel (the product owner, 2026-11-11). A page without one beside its own column (Kalender,
- * Administration, a person's or a unit's page) gets what its address opens, a card or a view, in the drawer over it from
- * the shell; closing the drawer leaves the page as it was. Nothing links to such an address from Clew yet, so the first
- * test follows one the way the router follows a link inside Clew, with the focus where the person was.
+ * Administration) gets what its address opens, a card or a view, in the drawer over it from the shell; closing the
+ * drawer leaves the page as it was. The bell, a toast and the rail's search lead there (above, `reliability.spec.ts`,
+ * `structure.spec.ts`); the first test follows such an address the way the router follows a link inside Clew, with the
+ * focus where the person was.
  */
 test.describe('the panel over a page that has none of its own', () => {
   test.use({ viewport: desktop });
@@ -330,6 +339,21 @@ test.describe('the panel over a page that has none of its own', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Vecka' })).toBeVisible();
     // Nothing is left holding the focus inside the drawer that closed.
     expect(await page.evaluate(() => !document.activeElement?.closest('dialog'))).toBe(true);
+  });
+
+  test('a card that is not among the person’s cards says so in the drawer over Administration, and the page stays', async ({
+    page,
+    api,
+  }) => {
+    api.admin = true;
+    await open(page, '/admin/connectors?card=okand');
+    const drawer = page.getByRole('dialog', { name: 'Kort' });
+    await expect(drawer.getByText('Kortet finns inte längre bland dina kort.')).toBeVisible();
+    await expect(page).toHaveURL('/admin/connectors?card=okand');
+    await expectNoAxeViolations(page);
+    await page.keyboard.press('Escape');
+    await expect(drawer).toHaveCount(0);
+    await expect(page).toHaveURL(/\/admin\/connectors$/);
   });
 
   test('a card’s read lies over the card in the same drawer, and closing it leaves the card', async ({

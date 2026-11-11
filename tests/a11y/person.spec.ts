@@ -149,18 +149,18 @@ test.describe('the person beside Personal', () => {
     await page.keyboard.press('Escape');
     await expect(menu).toHaveCount(0);
     await expect(panel).toBeVisible();
-    // An action starts on the server without the model; its card opens on Hem with the focus in it, and Personal with
-    // the person open is one step back.
+    // An action starts on the server without the model; its card opens over the person in the same panel, the list
+    // and the person kept under it (D107 rule 4), with the focus on the card; closing leaves the person.
     await panel.getByRole('button', { name: 'Boka möte', exact: true }).click();
-    await expect(page).toHaveURL('/?card=entity-calendar-bookMeeting-johan');
+    await expect(page).toHaveURL('/staff?person=johan&card=entity-calendar-bookMeeting-johan');
     expect(api.entityStarts).toEqual([{ key: 'johan', capability: 'calendar.bookMeeting' }]);
     expect(api.asked).toEqual([]);
-    const card = page.getByRole('complementary', { name: 'Kort' }).or(page.getByRole('dialog', { name: 'Kort' }));
+    const card = page.getByRole('complementary', { name: 'Kort' });
     await expect(card.getByText('Boka möte: Johan Byström').first()).toBeVisible();
-    await expect.poll(() => card.evaluate(el => el.contains(document.activeElement))).toBe(true);
-    await page.goBack();
+    await expect(card.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
+    await page.keyboard.press('Escape');
     await expect(page).toHaveURL('/staff?person=johan');
-    await page.goto('/staff?person=johan');
+    await expect(panel.getByRole('heading', { level: 2, name: 'Johan Byström' })).toBeVisible();
     await panelOf(page).getByRole('link', { name: 'Öppna som sida' }).click();
     await expect(page).toHaveURL(/\/people\/johan\?from=%2Fstaff$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Johan Byström' })).toBeVisible();
@@ -311,6 +311,63 @@ test.describe('the person as a page', () => {
     await expect(page.getByRole('button', { name: 'Boka möte', exact: true })).toBeVisible();
     await expectNoAxeViolations(page);
   });
+
+  test('a card under Behöver dig opens beside the page with the section and the way back kept; Esc gives the focus back to its title', async ({
+    page,
+    api: _,
+  }) => {
+    await new People().route(page);
+    await open(page, '/people/johan?section=needs-you&from=%2Fstaff');
+    const title = page.getByRole('link', { name: 'En åtgärdspunkt skulle vara klar 3 nov' });
+    await expect(title).toHaveAttribute('href', '/people/johan?section=needs-you&from=%2Fstaff&card=samtal-svar');
+    await title.focus();
+    await page.keyboard.press('Enter');
+    // The person's page stays: its address with the card added, its title, its heading and its trail (D107 rule 3).
+    await expect(page).toHaveURL('/people/johan?section=needs-you&from=%2Fstaff&card=samtal-svar');
+    const panel = page.getByRole('complementary', { name: 'Kort' });
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
+    await expect(panel.getByRole('article', { name: 'Kort: Planera utvecklingssamtal vecka 45' })).toBeVisible();
+    await expect(page).toHaveTitle('Johan Byström · Startsidan');
+    await expect(page.getByRole('heading', { level: 1, name: 'Johan Byström' })).toBeVisible();
+    await expect(
+      page.getByRole('navigation', { name: 'Du är här' }).getByRole('link', { name: 'Personal' }),
+    ).toHaveAttribute('href', '/staff');
+    await expectNoAxeViolations(page);
+    await page.keyboard.press('Escape');
+    await expect(page).toHaveURL('/people/johan?section=needs-you&from=%2Fstaff');
+    await expect(panel).toHaveCount(0);
+    await expect(title).toBeFocused();
+    // Another section is a move within the page: what is open beside it stays open.
+    await title.click();
+    await page
+      .getByRole('navigation', { name: 'Om Johan Byström' })
+      .getByRole('link', { name: /Kontakt/ })
+      .click();
+    await expect(page).toHaveURL('/people/johan?section=directory.contact&from=%2Fstaff&card=samtal-svar');
+    await expect(page.getByRole('heading', { level: 2, name: 'Kontakt' })).toBeVisible();
+    await expect(panel.getByRole('article', { name: 'Kort: Planera utvecklingssamtal vecka 45' })).toBeVisible();
+  });
+
+  test('an action started on the page opens its card beside it, and closing gives the focus back to the button', async ({
+    page,
+    api,
+  }) => {
+    await new People().route(page, api);
+    await open(page, '/people/johan?from=%2Fstaff');
+    const button = page.getByRole('main').getByRole('button', { name: 'Boka möte', exact: true });
+    await button.click();
+    await expect(page).toHaveURL('/people/johan?from=%2Fstaff&card=entity-calendar-bookMeeting-johan');
+    expect(api.entityStarts).toEqual([{ key: 'johan', capability: 'calendar.bookMeeting' }]);
+    const panel = page.getByRole('complementary', { name: 'Kort' });
+    await expect(panel.getByText('Boka möte: Johan Byström').first()).toBeVisible();
+    await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
+    await expect(page.getByRole('heading', { level: 1, name: 'Johan Byström' })).toBeVisible();
+    await expectNoAxeViolations(page);
+    await page.keyboard.press('Escape');
+    await expect(page).toHaveURL('/people/johan?from=%2Fstaff');
+    await expect(button).toBeFocused();
+  });
 });
 
 test.describe('the person on a phone', () => {
@@ -376,5 +433,15 @@ test.describe('1.4.10 reflow', () => {
     await open(page, '/people/johan?from=%2Fstaff&section=clew.talkPeople');
     await expect(page.getByText('Skicka underlag om schemaläggning')).toBeVisible();
     expect(await reflowProblems(page)).toEqual([]);
+  });
+  test('a card opened on the person’s page lies over it and reflows at 320 px', async ({ page, api: _ }) => {
+    await new People().route(page);
+    await open(page, '/people/johan?from=%2Fstaff&card=samtal-svar');
+    const drawer = page.getByRole('dialog', { name: 'Kort' });
+    await expect(drawer.getByRole('article', { name: 'Kort: Planera utvecklingssamtal vecka 45' })).toBeVisible();
+    await page.evaluate(() => Promise.all(document.getAnimations().map(a => a.finished)));
+    expect(await reflowProblems(page, drawer)).toEqual([]);
+    expect(await reflowProblems(page)).toEqual([]);
+    await expectNoAxeViolations(page);
   });
 });

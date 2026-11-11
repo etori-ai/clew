@@ -1,6 +1,6 @@
-import { type ReactNode } from 'react';
+import { useCallback, type ReactNode } from 'react';
 import { useParams, useSearchParams } from 'react-router';
-import { useQuery, type UseQueryResult } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import type { EntityDetail, EntityList, SessionUser } from '@clew/contracts';
 import {
   BreadcrumbItem,
@@ -19,20 +19,28 @@ import {
 } from '@clew/ui';
 import { ApiError } from '../api';
 import { areasQuery, entityDetailQuery, entityListQuery } from '../queries';
+import { keys } from '../query-keys';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { insideClew, originOf, toolOf } from '../person-address';
 import { useRail, type RailCurrent } from '../components/nav';
-import { Shell, mobileQuery } from '../components/shell';
+import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { PageHeader } from '../components/page-header';
 import { ContentSkeleton } from '../components/loading';
+import { usePagePanel } from '../components/page-panel';
 import {
+  EntityActions,
   NeedsYouSection,
   SectionFrame,
   SourceSection,
   drawnSections,
   useSectionAnswers,
 } from '../components/entity-sections';
+
+/** A section keeps this width; two stand side by side where both get it, one under the other below that (1.4.10). */
+const SECTION_MIN = 420;
+/** The page's column at its widest, less its 32 px padding on each side. */
+const COLUMN = 1040 - 2 * 32;
 
 /**
  * Clew's own section (artboard E): how many people the unit has, from the reader's own list of the people on the units
@@ -98,18 +106,25 @@ function useStaffCount(user: SessionUser, id: string) {
 }
 
 /**
- * The unit as a page (D97 items 5 and 6, artboard E), at `/units/:id`: its name, what Clew knows of it (a unit, and that
- * the reader is its manager), then one section per source in a grid that is one column on a narrow window: Clew's own
- * Personal for a unit the reader manages, then every source about a unit that answered for this one, each named with its
- * source and drawn by the shared section. A source that did not answer says so in its own section with Försök igen. A
- * unit the reader may not ask about is the page's own "finns inte" (the server answers 404 for both). No rail entry
- * leads here (an administrator places the rail's tools): Läget on Hem, the person's header and any row that names the
- * unit do, and `from` names the page it was opened from for the way back.
+ * The unit as a page (D97 items 5 and 6, artboard E), at `/units/:id`: its name with its actions, what Clew knows of it
+ * (a unit, and that the reader is its manager), then one section per source in a grid that is one column on a narrow
+ * window: Behöver dig with the reader's cards about the unit, Clew's own Personal for a unit the reader manages, then
+ * every source about a unit that answered for this one, each named with its source and drawn by the shared section. A
+ * source that did not answer says so in its own section with Försök igen. A unit the reader may not ask about is the
+ * page's own "finns inte" (the server answers 404 for both). No rail entry leads here (an administrator places the
+ * rail's tools): Läget on Hem, the person's header and any row that names the unit do, and `from` names the page it was
+ * opened from for the way back.
+ *
+ * The page holds the panel beside its column (D107 rules 2 to 4, `usePagePanel`): a card under Behöver dig and the card
+ * an action makes open there, with the way back kept in the address, and closing leaves the page as it was. Where the
+ * panel does not fit beside one section, it is the drawer over the page.
  */
 export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean }) {
   const { id = '' } = useParams<{ id: string }>();
   const [search] = useSearchParams();
   const mobile = useMediaQuery(mobileQuery);
+  // 1.4.10: on a short screen nothing is pinned beside the page, and the page scrolls as one.
+  const short = useMediaQuery(shortQuery);
   const from = insideClew(search.get('from'));
   const read = useQuery(entityDetailQuery('unit', id));
   const detail: EntityDetail | undefined = read.data;
@@ -130,6 +145,12 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
         : { surface: 'verktyg', view: null };
   const nav = useRail({ current, admin, manager: user.role === 'manager' });
   usePageTitle(detail ? detail.entity.name : missing ? 'Enheten finns inte' : null);
+  // A decision made on a card beside the page changes what Behöver dig holds: the unit is read again, its sources not.
+  const client = useQueryClient();
+  const cardChanged = useCallback(() => {
+    void client.invalidateQueries({ queryKey: keys.entities.detail('unit', id), exact: true });
+  }, [client, id]);
+  const panel = usePagePanel({ minMain: SECTION_MIN + 2 * 32, overlayOnly: short, onChange: cardChanged });
 
   let body: ReactNode;
   if (missing)
@@ -168,6 +189,7 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
       <>
         <PageHeader
           title={name}
+          end={<EntityActions detail={detail} mobile={mobile} />}
           meta={<Text color="secondary">{staff.manages === true ? 'Enhet · du är chef' : 'Enhet'}</Text>}
         />
         {settled && nothing ? (
@@ -175,7 +197,7 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
         ) : (
           // Two sections across where both get 420 px, one under the other below that (1.4.10); each a named region
           // whose heading is the outline's second level, under the unit's name.
-          <Grid columns={{ minWidth: 420, max: 2 }} gap={4}>
+          <Grid columns={{ minWidth: SECTION_MIN, max: 2 }} gap={4}>
             {detail.cards.length > 0 && <NeedsYouSection cards={detail.cards} headingLevel={2} />}
             {staff.shown && <StaffSection count={staff.count} read={staff.read} />}
             {drawn.map(a => (
@@ -187,25 +209,29 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
     );
   }
   return (
-    <Shell user={user} nav={nav}>
+    <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
+      {/* As on the person's page: the page and the panel beside it scroll on their own, the column is bounded inside the content so the panel docks to the window's edge, and on a short window the page scrolls as one (1.4.10). */}
       <Layout
-        height="auto"
-        contentWidth={1040}
+        height={short ? 'auto' : 'fill'}
         padding={mobile ? 3 : 8}
+        end={panel.end}
         content={
-          <LayoutContent isScrollable={false}>
-            <VStack gap={5}>
-              {origin && detail && (
-                <Breadcrumbs label="Du är här" variant="supporting" separator="›">
-                  <BreadcrumbItem href={origin.href}>{origin.label}</BreadcrumbItem>
-                  <BreadcrumbItem isCurrent>{detail.entity.name}</BreadcrumbItem>
-                </Breadcrumbs>
-              )}
-              {body}
+          <LayoutContent isScrollable={!short}>
+            <VStack hAlign="center">
+              <VStack gap={5} width="100%" maxWidth={COLUMN}>
+                {origin && detail && (
+                  <Breadcrumbs label="Du är här" variant="supporting" separator="›">
+                    <BreadcrumbItem href={origin.href}>{origin.label}</BreadcrumbItem>
+                    <BreadcrumbItem isCurrent>{detail.entity.name}</BreadcrumbItem>
+                  </Breadcrumbs>
+                )}
+                {body}
+              </VStack>
             </VStack>
           </LayoutContent>
         }
       />
+      {panel.overlay}
     </Shell>
   );
 }

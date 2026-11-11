@@ -1,5 +1,5 @@
-import { useCallback, type ComponentProps } from 'react';
-import { useNavigate } from 'react-router';
+import { useCallback, useRef, type ComponentProps } from 'react';
+import { useLocation, useNavigate } from 'react-router';
 import type { EntityAction, EntityKind } from '@clew/contracts';
 import { useAnnounce, type MoreMenu } from '@clew/ui';
 import { api } from './api';
@@ -44,15 +44,18 @@ export interface EntityActionStart {
 }
 /**
  * Starting an action about an entity (D97, D8): the server starts it on the entity's key without the model and answers
- * the card the person decides on; nothing reaches the source's write before that decision. The card opens as Hem opens
- * a card (`/?card=<threadId>`, the panel beside Hem's column, D50, D73): Hem is where a card and its decision live, with
- * its receipt, its settling and its next step, and Personal's own panel holds one person at a time (D83). The page the
- * action was started on stays one step back in the history, with its lens and its opened person, and the focus lands on
- * the card's heading as on every card opened beside Hem. A refusal is said aloud once per start (4.1.3) and stays as
- * `error` for the page to show beside the control.
+ * the card the person decides on; nothing reaches the source's write before that decision. The card opens beside the
+ * page the action was started on (D107 rule 4): that page's address with the card in its panel (`withCard`), beside the
+ * page's column where both fit and over it where they do not, so starting something never takes the person away and
+ * closing the card leaves the page as it was, with its lens, its section and the person opened beside a list. The address
+ * is the page's when the start has answered, and the focus lands on the card's heading as on every card opened in a
+ * panel. A refusal is said aloud once per start (4.1.3) and stays as `error` for the page to show beside the control.
  */
 export function useEntityAction(): EntityActionStart {
   const navigate = useNavigate();
+  const location = useLocation();
+  const here = useRef(location);
+  here.current = location;
   const announce = useAnnounce();
   const { start, busy, error } = useEntityStart();
   const run = useCallback(
@@ -61,7 +64,7 @@ export function useEntityAction(): EntityActionStart {
       void start(() => api.entities.start(kind, subject.key, action.capability), { kind, key: subject.key }).then(
         started => {
           if (!started) return;
-          if ('threadId' in started) navigate(withCard('/', '', started.threadId));
+          if ('threadId' in started) navigate(withCard(here.current.pathname, here.current.search, started.threadId));
           else announce(started.error);
         },
       );

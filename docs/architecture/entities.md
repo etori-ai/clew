@@ -19,7 +19,7 @@ A capability declares `about: { entity }` on a read, or `about: { entity, param 
 
 | Declared | Place | Who places it |
 |---|---|---|
-| A propose or execute about the kind | The entity's menu: the row menu on Personal and the actions of the opened person | Nobody: scope and audience decide |
+| A propose or execute about the kind | The entity's menu: the row menu on Personal and the actions of the opened person, the person's page and the unit's page | Nobody: scope and audience decide |
 | A read about the kind (always a table or list) | A section on the opened entity | Nobody |
 | The same read | A lens under "Visa" on the entity's list | An administrator |
 | A field of that read with a `warn` or `alert` tone | A mark on the entity's row on "Alla", under "Just nu" | An administrator, by offering the read as a lens |
@@ -72,7 +72,7 @@ The thread store keeps an index from entity to cards, the table `thread_subject`
 
 ## Actions started as cards
 
-`POST /api/entities/:kind/:key/actions` with `{ capability }` starts an action from the entity's menu without the model ([actions.ts](../../apps/server/src/modules/entities/actions.ts), [started.ts](../../apps/server/src/threads/usecases/started.ts)). The action must be one the opened entity offers the reader. The key goes into its `param`, which the loader requires to be its only required input. A propose runs as the person, and the `ThreadDraft` it answers becomes the card. An execute is never called here: the card's one button is the human decision ([D8](../decisions/D08-every-action-works-without-the-model.md)), and the execute runs after it through the ledger. The card's reason is the person's choice ("Du valde … för …"), not the source's. The same request while the card is open gives the same card. The card, its first message and the `thread.started` audit row, which names the entity by Clew's id, share one transaction. A follower and an execute with a `review` cannot be started this way. The web opens the card beside Hem.
+`POST /api/entities/:kind/:key/actions` with `{ capability }` starts an action from the entity's menu without the model ([actions.ts](../../apps/server/src/modules/entities/actions.ts), [started.ts](../../apps/server/src/threads/usecases/started.ts)). The action must be one the opened entity offers the reader. The key goes into its `param`, which the loader requires to be its only required input. A propose runs as the person, and the `ThreadDraft` it answers becomes the card. An execute is never called here: the card's one button is the human decision ([D8](../decisions/D08-every-action-works-without-the-model.md)), and the execute runs after it through the ledger. The card's reason is the person's choice ("Du valde … för …"), not the source's. The same request while the card is open gives the same card. The card, its first message and the `thread.started` audit row, which names the entity by Clew's id, share one transaction. A follower and an execute with a `review` cannot be started this way. The web opens the card beside the page the action was started on ([D107](../decisions/D107-where-something-opens-is-decided-by-what-it-is.md) rule 4), and a card under an entity's Behöver dig opens beside that entity's page.
 
 ## Erasure
 

@@ -1,5 +1,14 @@
 import type { Page, Route } from '@playwright/test';
-import type { EntityDetail, EntitySection, EntitySource, PanelViewSpec, SearchResult } from '@clew/contracts';
+import type {
+  EntityAction,
+  EntityCard,
+  EntityDetail,
+  EntitySection,
+  EntitySource,
+  PanelViewSpec,
+  SearchResult,
+} from '@clew/contracts';
+import type { MockApi } from './support';
 import { ENTITY_UNIT, TALKS_SOURCE, TALK_LENS } from './data';
 
 /**
@@ -58,6 +67,25 @@ export const talkUnitSource: EntitySource = {
   // Clew's own domain (a core connector): its section is captioned "Clew".
   own: true,
 };
+/**
+ * An action about a unit (D97, D107 rule 4). No connector in the repository offers one yet; the suite's is the
+ * calendar's, as a source would declare it with `about: { entity: 'unit', param }`.
+ */
+export const unitAction: EntityAction = {
+  capability: 'calendar.bookWorkplaceMeeting',
+  connector: 'calendar',
+  source: 'Kalendern',
+  title: 'Boka arbetsplatsträff',
+  kind: 'propose',
+  param: 'unit',
+};
+/** A card of the reader's whose rows name the school: Behöver dig on the unit's page. */
+export const unitCard: EntityCard = {
+  threadId: 'tillbud',
+  title: 'Tillbud 2026-1182, halkolycka i duschen',
+  source: 'Avvikelsesystemet',
+  kind: 'act',
+};
 const rows: Record<string, Record<string, Record<string, unknown>>> = {
   [SICK_UNIT]: {
     [ENTITY_UNIT.id]: {
@@ -104,14 +132,17 @@ export class Units {
   silent: Record<string, 'unavailable' | 'timeout'> = {};
   /** Every section read, by capability, in order. */
   reads: string[] = [];
+  /** The school's actions and the reader's cards about it; none unless a test gives them (`unitAction`, `unitCard`). */
+  actions: EntityAction[] = [];
+  cards: EntityCard[] = [];
   detail(id: string): EntityDetail | undefined {
     if (id === ENTITY_UNIT.id)
       return {
         entity: { kind: 'unit', key: ENTITY_UNIT.id, name: ENTITY_UNIT.label, id: ENTITY_UNIT.id },
         relation: 'member',
-        actions: [],
+        actions: this.actions,
         sections: [sickSource, talkUnitSource],
-        cards: [],
+        cards: this.cards,
       };
     if (id === MEMBER_UNIT.id)
       return {
@@ -130,7 +161,9 @@ export class Units {
     const row = rows[capability]?.[id];
     return { capability, status: 'ok', ...(row ? { row } : {}) };
   }
-  async route(page: Page) {
+  /** `api`, when given, starts an action from the unit's header against this unit's actions, as the server does. */
+  async route(page: Page, api?: MockApi) {
+    if (api) api.unitDetailOf = id => this.detail(id);
     const missing = (route: Route) =>
       route.fulfill({ status: 404, json: { error: 'Enheten finns inte.', code: 'not_found' } });
     await page.route(

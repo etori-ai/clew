@@ -81,6 +81,28 @@ export function withCard(pathname: string, search: URLSearchParams | string, thr
   q.set('card', threadId);
   return address(pathname, q);
 }
+/**
+ * A card opened from something that belongs to no page (the bell, a toast, the rail's search), over the page the person
+ * is on (D107 rule 2): that page's address with the card in its panel. A card's review is the one page that is not
+ * yet its own address (D73: Hem with the card beside it and the review over both), so from there it is Hem's card.
+ */
+export function cardOverPage(pathname: string, search: URLSearchParams | string, threadId: string): string {
+  return /^\/cards\/[^/]+\/review$/.test(pathname) ? withCard('/', '', threadId) : withCard(pathname, search, threadId);
+}
+/**
+ * `target`, another address of the same page, with what the panel holds in `search` kept: a move within the page (a
+ * person's section) leaves what is open beside it open.
+ */
+export function keepingPanel(target: string, search: URLSearchParams | string): string {
+  const at = target.indexOf('?');
+  const q = new URLSearchParams(at < 0 ? '' : target.slice(at));
+  const from = new URLSearchParams(search);
+  PANEL_KEYS.forEach(k => {
+    const v = from.get(k);
+    if (v !== null) q.set(k, v);
+  });
+  return address(at < 0 ? target : target.slice(0, at), q);
+}
 /** The same page with the panel's top layer closed: the view if there is one, else the card. */
 export function withoutPanel(pathname: string, search: URLSearchParams | string): string {
   const q = new URLSearchParams(search);

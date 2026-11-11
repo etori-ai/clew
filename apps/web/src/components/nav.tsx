@@ -22,6 +22,8 @@ import { titled } from './conversation-context';
 import { areasQuery, threadsQuery } from '../queries';
 import { groupThreads } from '../stream';
 import { clewIcon } from '../icons';
+import { cardOverPage } from '../panel-address';
+import { pageLocation } from '../page-location';
 import { SubRows, type ShellNav } from './shell';
 
 /** The administration's sections, rows under Administration (D45, administration keeps the rail). */
@@ -63,7 +65,8 @@ export const toolHref = (
     .join('&');
   return `/tools/${capability}${query ? `?${query}` : ''}`;
 };
-type Found = { href: string; detail: string };
+/** A hit's address, or for a card the card itself, which opens over the page the person is on when it is picked. */
+type Found = { href: string; detail: string } | { card: string; detail: string };
 
 /**
  * The rail (D50, D53, after the `shell-side-nav` template): places first, then where the person has been. On top Nytt samtal and
@@ -117,7 +120,7 @@ export function useRail({
       ...[...g.nu, ...g.senare, ...g.foreslar, ...g.kannedom, ...g.waiting, ...g.snoozed].map(t => ({
         id: 'kort:' + t.id,
         label: t.title,
-        auxiliaryData: { href: `/?card=${encodeURIComponent(t.id)}`, detail: `Kort · ${t.trigger.source}` },
+        auxiliaryData: { card: t.id, detail: `Kort · ${t.trigger.source}` },
       })),
       ...areas.map(a => ({
         id: 'omrade:' + a.id,
@@ -161,8 +164,10 @@ export function useRail({
           emptySearchText="Inget samtal eller kort heter så"
           renderItem={item => <TypeaheadItem item={item} description={item.auxiliaryData?.detail} />}
           onChange={item => {
-            const href = item?.auxiliaryData?.href;
-            if (href) navigate(href);
+            const found = item?.auxiliaryData;
+            if (!found) return;
+            const { pathname, search } = pageLocation();
+            navigate('card' in found ? cardOverPage(pathname, search, found.card) : found.href);
           }}
         />
       </VStack>
