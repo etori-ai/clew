@@ -26,7 +26,7 @@ One more attribute is held and not required ([D110](../decisions/D110-a-persons-
 
 | Attribute | Meaning in Clew |
 |---|---|
-| `title` | What the source calls the person's work, in its own words: Byggchef, Rektor, Specialpedagog. Shown under the person's name and found by the search on Administration › Användare. It decides nothing: whether a person is a manager comes from the `unit-manager:` group and never from a title. One per person, at most 512 characters. An empty string, `null`, a `remove` and a `PUT` without it all clear it. |
+| `title` | What the source calls the person's work, in its own words: Byggchef, Rektor, Specialpedagog. Shown under the person's name and found by the search on Administration › Användare. It decides nothing: whether a person is a manager comes from the `unit-manager:` group and never from a title. One per person. An empty string, `null`, a `remove` and a `PUT` without it all clear it. A title never refuses a request: text past 512 characters is cut there, and a value that is not text is read as no title, so a person is created and a leaver deactivated whatever the title beside it says. |
 
 Extension schemas and unknown attributes are accepted and ignored, as the standard asks, in a `PATCH` too: adding, replacing or removing an attribute Clew does not hold (a phone number, `name.givenName`, the enterprise extension's `manager`) changes nothing and is not an error. Removing one of the five required attributes is refused with `mutability`. A path-less `PATCH` may repeat the resource's own `id`, `schemas` and `meta`, as Okta does; an `id` that names another resource is refused.
 

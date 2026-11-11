@@ -9,6 +9,7 @@ import {
   pageOf,
   parseFilter,
   project,
+  schemaDocuments,
 } from '../../apps/server/src/modules/people/domain';
 import type { ProvisionStore } from '../../apps/server/src/modules/people/ports';
 import { scimUsecases } from '../../apps/server/src/modules/people/usecases';
@@ -158,17 +159,51 @@ describe('SCIM users', () => {
     expect((await scim.replaceUser(p, 'id-1', { ...anna, title: 'Byggchef' }, BASE)).title).toBe('Byggchef');
     expect(await scim.replaceUser(p, 'id-1', anna, BASE)).not.toHaveProperty('title');
     expect(store.state.users.get('id-1')?.title).toBeNull();
-    // Anything but a string is the client's mistake, and is said.
-    await expect(patch([{ op: 'replace', path: 'title', value: 7 }])).rejects.toMatchObject({
-      status: 400,
-      scimType: 'invalidValue',
-      detail: "Attribute 'title' needs a string of at most 512 characters.",
-    });
-    await expect(
-      scim.createUser(p, { ...anna, externalId: 'mk-2', userName: 'bygber', title: 7 }, BASE),
-    ).rejects.toMatchObject({ status: 400 });
+    // The path may carry the schema, and its case is the client's own.
+    const qualified = 'urn:ietf:params:scim:schemas:core:2.0:User:Title';
+    expect((await patch([{ op: 'replace', path: qualified, value: 'Byggchef' }])).title).toBe('Byggchef');
+    // Only space is no title, as an empty one is.
+    expect(await patch([{ op: 'replace', path: 'title', value: '   ' }])).not.toHaveProperty('title');
     // What a person is called decided nothing along the way: the grant is the one the manager group gave.
     expect(store.state.grants.get('id-1')).toEqual(grant);
+    expect(
+      schemaDocuments(BASE)
+        .find(s => s.id === SCIM.user)
+        ?.attributes.map(a => a.name),
+    ).toContain('title');
+  });
+  test('a title never refuses a request: one that is not text is read as none, a long one is cut, and the changes beside it go through (D110)', async () => {
+    const { scim, p, store } = harness();
+    const patch = (id: string, Operations: unknown[]) =>
+      scim.patchUser(p, id, { schemas: [SCIM.patch], Operations }, BASE);
+    // A person is created whatever the directory holds in the field: a number, a list or an object is no title.
+    const created = await scim.createUser(p, { ...anna, title: 7 }, BASE);
+    expect(created).not.toHaveProperty('title');
+    expect(store.state.users.get(created.id)).toMatchObject({ enabled: true, title: null });
+    expect(await scim.replaceUser(p, created.id, { ...anna, title: ['Byggchef'] }, BASE)).not.toHaveProperty('title');
+    await patch(created.id, [{ op: 'replace', path: 'title', value: 'Byggchef' }]);
+    expect(await patch(created.id, [{ op: 'replace', path: 'title', value: { value: 'x' } }])).not.toHaveProperty(
+      'title',
+    );
+    // Text past 512 characters is cut there, counted as characters so that none is cut in half, on every way in.
+    const long = 'Å'.repeat(511) + '🙂' + 'x'.repeat(100),
+      kept = 'Å'.repeat(511) + '🙂';
+    expect((await patch(created.id, [{ op: 'replace', path: 'title', value: long }])).title).toBe(kept);
+    expect((await scim.replaceUser(p, created.id, { ...anna, title: long }, BASE)).title).toBe(kept);
+    expect(
+      (await scim.createUser(p, { ...anna, externalId: 'mk-2', userName: 'bygber', title: long }, BASE)).title,
+    ).toBe(kept);
+    // A leaver is deactivated although the same request carries a title Clew cannot read (Entra sends both at once).
+    const left = await patch(created.id, [
+      { op: 'replace', path: 'title', value: 7 },
+      { op: 'replace', path: 'active', value: false },
+    ]);
+    expect(left).toMatchObject({ active: false });
+    expect(left).not.toHaveProperty('title');
+    expect(store.state.audit.at(-1)).toMatchObject({
+      action: 'scim.user.deactivated',
+      details: { changed: ['title', 'enabled'], via: 'scim.user.patched' },
+    });
   });
   test('refuses a user without externalId, display name or work address, naming the attribute', async () => {
     const { scim, p } = harness();

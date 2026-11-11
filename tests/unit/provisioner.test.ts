@@ -941,6 +941,12 @@ test('the published school walkthrough produces the printed output and the promi
       'unit:112': '110',
     });
     expect(grantOf('anna.berg')).toMatchObject({ role: 'manager', capabilities: ['admin.users'] });
+    // D110: the example sends each person's title, as the table above it says.
+    expect(['e-1001', 'e-1002', 'e-1003'].map(id => store.state.users.get(ekonomiId(store, id))?.title)).toEqual([
+      'Skolchef',
+      'Rektor',
+      'Lärare',
+    ]);
     const staff = staffUsecases({ store });
     for (const [sourceId, expected] of [
       ['e-1001', 'Omar Ali'],

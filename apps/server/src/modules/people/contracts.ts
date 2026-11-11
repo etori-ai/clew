@@ -44,8 +44,8 @@ export const ScimUserInputSchema = Type.Object(
       ),
     ),
     emails: Type.Optional(Type.Array(ScimEmailSchema)),
-    // D110: optional, and the one attribute a client may send empty or null, which both mean "no title".
-    title: Type.Optional(Type.Union([Type.String({ maxLength: 512 }), Type.Null()])),
+    // D110: optional, and never a reason to refuse a person, so any value passes the schema and `titleOf` reads it.
+    title: Type.Optional(Type.Unknown()),
     active: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: true },

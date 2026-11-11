@@ -495,7 +495,7 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
                 type="search"
                 size="sm"
                 width={mobile ? '100%' : 280}
-                placeholder="Sök namn, titel eller användarnamn"
+                placeholder="Namn, titel, användarnamn, e-post"
                 startIcon="search"
                 hasClear
                 value={typed}

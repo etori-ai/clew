@@ -21,10 +21,18 @@
    code.
 
 4. **It arrives as the standard attribute.** `title` on the SCIM User (RFC 7643 §4.1.1), which a directory sends
-   without knowing anything about Clew. It is optional. It is kept as sent, less the space around it, up to 512
-   characters. An empty string, `null`, a `remove` and a `PUT` that leaves it out all mean the person has no title,
-   and a resource without one carries no `title`. A value that is not a string is refused with `invalidValue`.
-   The five attributes D68 requires are still required; this is a sixth that is not.
+   without knowing anything about Clew. It is optional. It is kept as sent, less the space around it. An empty
+   string, `null`, a `remove` and a `PUT` that leaves it out all mean the person has no title, and a resource
+   without one carries no `title`. The five attributes D68 requires are still required; this is a sixth that is
+   not.
+
+   **A title never refuses a request.** Text past 512 characters is cut there, and a value that is not text is read
+   as no title. The first build refused both with a 400, and the review of the change (2026-11-11) turned that
+   round: before this record any `title` was accepted and ignored, a refused `POST` leaves a person without access
+   and stops a reconciliation at that person, and a client such as Entra sends several changes in one `PATCH`, so a
+   refused title would also have refused the deactivation beside it. An attribute that decides nothing must not be
+   able to do that. What a directory loses is the error: a mapping that sends something unreadable shows as people
+   without a title on the page.
 
 5. **One title per person.** It is on `auth_person`, not on the assignment. A person who works on two units has one
    title, and a move in the organisation tree or between units leaves it alone.

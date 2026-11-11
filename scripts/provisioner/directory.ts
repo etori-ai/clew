@@ -6,10 +6,10 @@ import type { Capability } from '@clew/contracts';
  * `unit-manager:` groups; may work in or manage further units; may be in plain directory groups, which mean nothing in
  * Clew until an administrator maps one to a capability (D85) or names it in an audience (D23); and may hold Clew
  * capabilities that become `capability:` groups; and has a title, what the source calls their work, which the
- * provisioner sends as SCIM's `title` (D110) and which decides nothing. Two hundred and fifty people in forty-eight units: three personas
- * with a Keycloak account (`login`), seven written by hand for the names a real directory holds, and the rest
- * generated deterministically, so every manager has a team, the users page has something to page and a group has
- * anything from no members to eighty.
+ * provisioner sends as SCIM's `title` (D110) and which decides nothing. Two hundred and fifty people in forty-eight
+ * units: three personas with a Keycloak account (`login`), seven written by hand for the names a real directory
+ * holds, and the rest generated deterministically, so every manager has a team, the users page has something to page
+ * and a group has anything from no members to eighty.
  *
  * The units are a tree (D99), as a municipality's line organisation is, six levels at its deepest: the municipality
  * and its director; five administrations, each with a head; under three of them departments, each with a head of its
@@ -230,7 +230,9 @@ const SCHOOL_STAFF = ['Lärare', 'Lärare', 'Speciallärare', 'Elevassistent', '
   CARE_HOME_STAFF = ['Undersköterska', 'Sjuksköterska', 'Undersköterska', 'Vårdbiträde', 'Arbetsterapeut'],
   DIRECTOR: { lead: string[]; staff: string[] } = { lead: ['Förvaltningsdirektör'], staff: ['Verksamhetsutvecklare'] };
 const TITLES: Record<string, { lead: string[]; staff: string[] }> = {
-  // The school's people as the HR fixture names them (`connectors/hr/fixture.mjs`), so the two sources agree.
+  // The school's people as the HR fixture names them (`connectors/hr/fixture.mjs`), for everyone both sources place
+  // on the school. The fixture also has a Hassan Ali there as elevassistent; the directory's Hassan is the
+  // undersköterska of Hemtjänst Centrum, so those two rows differ, as they did before either had a title.
   'unit-skola': {
     lead: [],
     staff: [

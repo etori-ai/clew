@@ -162,9 +162,9 @@ export const bySwedish = (a: string, b: string) => a.localeCompare(b, 'sv');
 /**
  * D100: what the people list of Administration › Användare is narrowed by, as a store reads it. Every part narrows
  * further and an absent part narrows nothing. `words` each match, without regard to case, somewhere in the name, the
- * title (D110), the user name or the e-mail. `unitIds` is an assignment on one of the units, `role` an assignment with that role, and
- * the two together one assignment that is both. `status` is the row's reading of access (`UserStatus`), `capability`
- * a capability on the grant.
+ * title (D110), the user name or the e-mail. `unitIds` is an assignment on one of the units, `role` an assignment
+ * with that role, and the two together one assignment that is both. `status` is the row's reading of access
+ * (`UserStatus`), `capability` a capability on the grant.
  */
 export interface UserSearch {
   words?: readonly string[];
@@ -337,8 +337,15 @@ const noWorkEmail = (emails: readonly unknown[] | undefined): never => {
     'invalidValue',
   );
 };
-/** D110: a title is kept as sent, less the space around it; an empty one and `null` both mean the person has none. */
-export const titleOf = (value: string | null | undefined): string | null => value?.trim() || null;
+const TITLE_LENGTH = 512;
+/**
+ * D110: a title is kept as sent, less the space around it and whatever is past 512 characters (counted as characters,
+ * so none is cut in half). An empty one, `null` and a value that is not text all mean the person has none. A title
+ * decides nothing, so it is never a reason to refuse a person or the other changes of the same request: a leaver is
+ * deactivated whatever stands in the title beside it.
+ */
+const titleOf = (value: unknown): string | null =>
+  typeof value === 'string' ? Array.from(value.trim()).slice(0, TITLE_LENGTH).join('').trimEnd() || null : null;
 /** A full user representation (POST, PUT) to the fields Clew holds, with D68's requirements checked by name. */
 export function userFields(input: ScimUserInput): UserFields {
   const name =
@@ -582,11 +589,6 @@ const asString = (value: unknown, path: string): string => {
   if (typeof value === 'string' && value.length > 0 && value.length <= 512) return value;
   throw new ScimError(400, `Attribute '${path}' needs a non-empty string.`, 'invalidValue');
 };
-/** D110: a title may be empty, which clears it; anything but a string of at most 512 characters is a mistake. */
-const asTitle = (value: unknown, path: string): string => {
-  if (typeof value === 'string' && value.length <= 512) return value;
-  throw new ScimError(400, `Attribute '${path}' needs a string of at most 512 characters.`, 'invalidValue');
-};
 const asBoolean = (value: unknown, path: string): boolean => {
   if (typeof value === 'boolean') return value;
   if (value === 'true' || value === 'True') return true;
@@ -662,7 +664,7 @@ export function applyUserPatch(
     else if (key === 'externalid') next.externalId = asString(value, path);
     else if (key === 'displayname' || key === 'name.formatted') next.name = asString(value, path);
     else if (key === 'active') next.enabled = asBoolean(value, path);
-    else if (key === 'title') next.title = value === null ? null : titleOf(asTitle(value, path));
+    else if (key === 'title') next.title = titleOf(value);
     else if (key === 'emails') {
       const list = Array.isArray(value) ? value : [value];
       const sent = list
