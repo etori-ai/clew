@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { Value } from '@sinclair/typebox/value';
+import { Value } from 'typebox/value';
 import { CallbackRequestSchema } from '@clew/connectors/protocol';
 import { InputError, privateHeaders } from '../context';
 import { registry } from '../connectors/registry';

@@ -1,4 +1,4 @@
-import { Type, type Static } from '@sinclair/typebox';
+import { Type, type Static } from 'typebox';
 import { SearchKind } from '@clew/contracts';
 
 /** The input of the composite search (D26): the person's question as it was typed, optionally narrowed to kinds. */

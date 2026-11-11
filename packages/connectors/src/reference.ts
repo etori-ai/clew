@@ -8,7 +8,7 @@ import {
 } from '@clew/contracts';
 import { ConnectorManifestSchema, PROTOCOL_ACCEPTED, PROTOCOL_VERSION, type ConnectorManifest } from './protocol';
 /** TypeBox itself, for the test that evaluates the generated source and compares the schema it emits with the JSON it came from. */
-export { Type as TypeBoxType } from '@sinclair/typebox';
+export { Type as TypeBoxType } from 'typebox';
 
 /**
  * The manifest, field by field (D60, item 5): what each field does, its type, whether it is required, its constraints,
@@ -544,7 +544,7 @@ export function typeboxModule(constants: Record<string, unknown>): string | unde
   if (!holdsSchema(constants)) return undefined;
   return (
     [
-      "import { Type } from '@sinclair/typebox';",
+      "import { Type } from 'typebox';",
       '',
       ...Object.entries(constants).map(([name, value]) => `export const ${name} = ${typescriptOf(value)};`),
     ].join('\n') + '\n'
@@ -802,7 +802,7 @@ export function referenceMarkdown(reference: ManifestReference, options: RenderO
     '',
   ];
   lines.push(
-    "On the wire a schema is JSON Schema. Write it in your language's schema library and emit it (TypeBox or zod in TypeScript, Pydantic in Python); where a recipe holds a schema, the same manifest follows authored with TypeBox.",
+    "On the wire a schema is JSON Schema. Write it in your language's schema library and emit it (TypeBox or zod in TypeScript, Pydantic in Python); where a recipe holds a schema, the same manifest follows authored with TypeBox, the package `typebox`. Its earlier line, `@sinclair/typebox` 0.34, takes the same code under its own import and emits the same schema, and a connector written with it needs no change.",
     '',
   );
   for (const r of reference.recipes) {

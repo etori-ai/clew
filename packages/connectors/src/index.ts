@@ -1,4 +1,4 @@
-import type { TSchema } from '@sinclair/typebox';
+import type { TSchema } from 'typebox';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import type {
@@ -30,16 +30,17 @@ import { menuEligible, menuRowOf } from './views';
 import { viewOutputProblem } from './views';
 import {
   DocumentBundleSchema,
+  ENTITY_KEY_MAX,
   ENTITY_KEYS_MAX,
   MAX_DOCUMENT_BYTES,
   SiteHeaderOutputSchema,
-  SubjectSchema,
+  contractProblems,
   isEntityKind,
   type DocumentRequest,
   type DocumentContent,
   type SiteHeaderOutput,
 } from '@clew/contracts';
-import { Value } from '@sinclair/typebox/value';
+import { Value } from 'typebox/value';
 import { connectorProblems } from './validation';
 export {
   MENU_DEFAULT_ICON,
@@ -230,7 +231,7 @@ export interface AboutAction {
 /** Plain ordering of ids and names, the same in every locale. */
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 /** The longest key a card row may name an entity by (`SubjectSchema`). */
-const SUBJECT_KEY_MAX = SubjectSchema.properties.key.maxLength ?? 256;
+const SUBJECT_KEY_MAX = ENTITY_KEY_MAX;
 /** What an execute capability returns: the source system's answer, row by row, read back. */
 export interface ExecuteResult {
   headline: string;
@@ -726,7 +727,7 @@ export class Registry {
       if (subject === undefined) continue;
       if (typeof subject?.entity !== 'string' || !isEntityKind(subject.entity))
         return `row ${item.ref} names an entity of an unknown kind`;
-      if (typeof subject.key !== 'string' || !subject.key.length || subject.key.length > SUBJECT_KEY_MAX)
+      if (typeof subject.key !== 'string' || !subject.key.length || [...subject.key].length > SUBJECT_KEY_MAX)
         return `row ${item.ref} names a ${subject.entity} without a key of 1 to ${SUBJECT_KEY_MAX} characters`;
     }
     for (const a of draft.actions) {
@@ -1004,7 +1005,7 @@ export class Registry {
     try {
       const output = await this.run<unknown>(actor, holder.header!, {}, context);
       if (Value.Check(SiteHeaderOutputSchema, output)) return { connector: holder, output };
-      const problem = [...Value.Errors(SiteHeaderOutputSchema, output)][0];
+      const problem = contractProblems(SiteHeaderOutputSchema, output, 1)[0];
       this.options.onRefused?.(
         holder.id,
         'header',

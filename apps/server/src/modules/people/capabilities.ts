@@ -1,4 +1,4 @@
-import { Type } from '@sinclair/typebox';
+import { Type } from 'typebox';
 import type { Connector } from '@clew/connectors';
 import type { UserReads } from './ports';
 

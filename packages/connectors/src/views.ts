@@ -17,7 +17,7 @@ import {
   ReviewRecoverySchema,
   checkContract,
 } from '@clew/contracts';
-import { Value } from '@sinclair/typebox/value';
+import { Value } from 'typebox/value';
 import type { AboutPlace } from './protocol';
 
 export { fieldTone, markFields, openRef, rowsKey, viewRows };

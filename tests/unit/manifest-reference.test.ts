@@ -493,7 +493,7 @@ describe('the TypeBox tab', () => {
         : value;
   test('is generated from the JSON and emits the same JSON Schema back', () => {
     const job = reference.recipes.find(r => r.id === 'job-follower')!;
-    expect(job.typebox).toContain("import { Type } from '@sinclair/typebox';");
+    expect(job.typebox).toContain("import { Type } from 'typebox';");
     expect(evaluate(job.typebox!)).toEqual((job.example as { manifests: Record<string, unknown> }).manifests);
     const tool = reference.recipes.find(r => r.id === 'menu-tool')!;
     expect(alike(evaluate(tool.typebox!))).toEqual(alike({ directory: tool.example }));

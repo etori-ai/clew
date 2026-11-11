@@ -7,7 +7,7 @@ import {
   type Thread,
 } from '@clew/contracts';
 import type { Registry } from '@clew/connectors';
-import { Value } from '@sinclair/typebox/value';
+import { Value } from 'typebox/value';
 import { InputError } from '../../context';
 
 export interface CardDecisionsDeps {

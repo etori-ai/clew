@@ -1,4 +1,4 @@
-import { Type } from '@sinclair/typebox';
+import { Type } from 'typebox';
 import type { Connector } from '@clew/connectors';
 import { CalendarRoomSchema, DayViewSchema, TodayViewSchema, WeekEventsSchema } from '@clew/contracts';
 import { systemContext } from '../../system-context';

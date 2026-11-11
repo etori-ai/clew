@@ -50,7 +50,6 @@
         "@opentelemetry/sdk-metrics": "3.1.1",
         "@opentelemetry/sdk-node": "0.301.1",
         "@opentelemetry/semantic-conventions": "1.45.0",
-        "@sinclair/typebox": "0.34.52",
         "ai": "7.0.169",
         "ajv": "8.20.0",
         "ajv-formats": "3.0.1",
@@ -62,6 +61,7 @@
         "rapidoc": "12.2.0",
         "temporal-polyfill": "1.0.8",
         "tsx": "4.23.15",
+        "typebox": "1.4.6",
       },
       "devDependencies": {
         "pino-pretty": "13.2.0",
@@ -101,16 +101,16 @@
       "version": "0.0.1",
       "dependencies": {
         "@clew/contracts": "workspace:*",
-        "@sinclair/typebox": "0.34.52",
         "ajv": "8.20.0",
         "ajv-formats": "3.0.1",
+        "typebox": "1.4.6",
       },
     },
     "packages/contracts": {
       "name": "@clew/contracts",
       "version": "0.0.1",
       "dependencies": {
-        "@sinclair/typebox": "0.34.52",
+        "typebox": "1.4.6",
       },
     },
     "packages/db": {
@@ -527,8 +527,6 @@
     "@rolldown/binding-win32-x64-msvc": ["@rolldown/binding-win32-x64-msvc@1.2.19", "", { "os": "win32", "cpu": "x64" }, "sha512-y/sqRRc6d7hECzOFc5n3LSeqctmIp9mMjY1Kq4s14uLPd/LZ4z7i1zrW6fMtp2mPeuQIC4e6ULMcwQzMomqQag=="],
 
     "@rolldown/pluginutils": ["@rolldown/pluginutils@1.0.1", "", {}, "sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw=="],
-
-    "@sinclair/typebox": ["@sinclair/typebox@0.34.52", "", {}, "sha512-XiMQh7qqVlxZzcVD+kkGMNGMzcTrDMLWI7S4x7z1MkCkbDPrekpZXEUK0eZqZFMuHQg2a2DZOcDIh9o5v3Gonw=="],
 
     "@solid-primitives/event-listener": ["@solid-primitives/event-listener@2.4.6", "", { "dependencies": { "@solid-primitives/utils": "^6.4.1" }, "peerDependencies": { "solid-js": "^1.6.12" } }, "sha512-5I0YJcTVYIWoMmgBSROBZGcz+ymhew/pGTg2dHW74BUjFKsV8Li4bOZYl0YAGP4mHw5o4UBd9/BEesqBci3wxw=="],
 
@@ -1185,6 +1183,8 @@
     "tsx": ["tsx@4.23.15", "", { "dependencies": { "esbuild": "~0.28.0" }, "optionalDependencies": { "fsevents": "~2.3.3" }, "bin": { "tsx": "dist/cli.mjs" } }, "sha512-Yiex1Ovn8z2xPpOWckIiysV1SSyRMY9BkLF++q0yKiDxCqRhosKfMg3janKkiLBwZ5c/YryloKwGZcrEmtwxKw=="],
 
     "type-fest": ["type-fest@0.20.2", "", {}, "sha512-Ne+eE4r0/iWnpAxD852z3A+N0Bt5RN//NjJwRd2VFHEmrywxf5vsZlh4R6lixl6B+wz/8d+maTSAkN1FIkI3LQ=="],
+
+    "typebox": ["typebox@1.4.6", "", {}, "sha512-Yh8Mi4hzD7gqcuv9ZIk6HK1KVJKubTlfxaNxkrYK35HCvxoCjCuWVr8cBjQ/ChfA7yliPteJEBWHGFVGWDuF5Q=="],
 
     "typescript": ["typescript@7.0.2", "", { "optionalDependencies": { "@typescript/typescript-aix-ppc64": "7.0.2", "@typescript/typescript-darwin-arm64": "7.0.2", "@typescript/typescript-darwin-x64": "7.0.2", "@typescript/typescript-freebsd-arm64": "7.0.2", "@typescript/typescript-freebsd-x64": "7.0.2", "@typescript/typescript-linux-arm": "7.0.2", "@typescript/typescript-linux-arm64": "7.0.2", "@typescript/typescript-linux-loong64": "7.0.2", "@typescript/typescript-linux-mips64el": "7.0.2", "@typescript/typescript-linux-ppc64": "7.0.2", "@typescript/typescript-linux-riscv64": "7.0.2", "@typescript/typescript-linux-s390x": "7.0.2", "@typescript/typescript-linux-x64": "7.0.2", "@typescript/typescript-netbsd-arm64": "7.0.2", "@typescript/typescript-netbsd-x64": "7.0.2", "@typescript/typescript-openbsd-arm64": "7.0.2", "@typescript/typescript-openbsd-x64": "7.0.2", "@typescript/typescript-sunos-x64": "7.0.2", "@typescript/typescript-win32-arm64": "7.0.2", "@typescript/typescript-win32-x64": "7.0.2" }, "bin": { "tsc": "bin/tsc" } }, "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA=="],
 

@@ -614,6 +614,9 @@ describe("a card is one system's: its actions name the pushing connector's capab
       'row finance:inv:2 names a person without a key of 1 to 256 characters',
     );
     expect(r.draftProblem('finance', rowNaming({ entity: 'person', key: 'x'.repeat(257) }))).toMatch(/1 to 256/);
+    // The length is counted as the schema counts it, in code points: a key the schema accepts is kept.
+    expect(r.draftProblem('finance', rowNaming({ entity: 'person', key: '😀'.repeat(256) }))).toBeUndefined();
+    expect(r.draftProblem('finance', rowNaming({ entity: 'person', key: '😀'.repeat(257) }))).toMatch(/1 to 256/);
     expect(r.draftProblem('finance', rowNaming({ entity: 'person' }))).toMatch(/without a key/);
   });
   test('every fixture connector keeps the rule', async () => {

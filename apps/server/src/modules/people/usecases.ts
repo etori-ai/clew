@@ -1,6 +1,8 @@
-import { Value } from '@sinclair/typebox/value';
+import type { TSchema } from 'typebox';
+import { Value } from 'typebox/value';
 import {
   CAPABILITIES,
+  contractProblems,
   isCapability,
   type AuthenticatedContext,
   type Capability,
@@ -176,9 +178,9 @@ export function scimUsecases(deps: {
   const derivation = provisioningUsecases({ store: deps.store });
   const actorOf = (p: Provisioner) => 'provisioner:' + p.id;
   const now = () => deps.clock().toISOString();
-  const checked = <T>(schema: Parameters<typeof Value.Check>[0], body: unknown, name: string): T => {
+  const checked = <T>(schema: TSchema, body: unknown, name: string): T => {
     if (Value.Check(schema, body)) return body as T;
-    const first = Value.Errors(schema, body).First();
+    const first = contractProblems(schema, body, 1)[0];
     throw new ScimError(
       400,
       `The request body does not match the ${name} schema${first ? ` at '${first.path.replace(/^\//, '').replace(/\//g, '.')}'` : ''}.`,

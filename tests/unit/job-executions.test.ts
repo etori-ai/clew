@@ -7,7 +7,7 @@ import {
   type Connector,
   type ExecuteResult,
 } from '../../packages/connectors/src/index';
-import { FactEnvelopeSchema, FollowResponseSchema } from '../../packages/connectors/src/protocol';
+import { FactEnvelopeSchema, FollowResponseSchema, type FactEnvelope } from '../../packages/connectors/src/protocol';
 import { executionUsecases } from '../../apps/server/src/modules/executions/usecases';
 import { memoryExecutionStore } from '../../apps/server/src/modules/executions/adapters/memory';
 import type { ExecutionSource, WatchSource } from '../../apps/server/src/modules/executions/model';
@@ -47,7 +47,7 @@ const fact = { kind: 'hr:absence', attributes: { person: 'hr:emp:1004', from: '2
 const follower = (
   name: string,
   follows: string[],
-  steps: (fact: (typeof FactEnvelopeSchema.static)['fact']) => unknown[],
+  steps: (fact: FactEnvelope['fact']) => unknown[],
   extra: Record<string, unknown> = {},
 ) => ({
   name,
@@ -60,7 +60,7 @@ const follower = (
   scope: {},
   follows,
   ...extra,
-  run: async (_: unknown, input: typeof FactEnvelopeSchema.static) => ({ steps: steps(input.fact) }),
+  run: async (_: unknown, input: FactEnvelope) => ({ steps: steps(input.fact) }),
 });
 const execute = (name: string, extra: Record<string, unknown> = {}) => ({
   name,
