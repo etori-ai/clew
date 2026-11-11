@@ -2,6 +2,8 @@
 
 A **provisioner** is the one thing that puts people, units and groups into a Clew installation ([D68](../decisions/D68-people-are-pushed-into-clew-through-standard-scim.md)). It is a process the installation runs, reads the organisation's own source (a directory, an HR export, a metadata catalogue) and pushes to Clew's SCIM 2.0 server at `/scim/v2`. Clew never reads the source and never learns its name; everything the source knows about fields, groups and roles is mapped inside the provisioner. A provisioner is not a connector ([D22](../decisions/D22-connectors-not-modules.md)): it calls Clew, offers no capabilities and is reached by nobody.
 
+This page is the protocol, for whoever writes the provisioner. What the teams around it deliver (the directory, the identity provider, hosting) and how to tell that it works is [Provisioning: what operations deliver](provisioning-for-operations.md), which is also in Swedish.
+
 The repository ships one: `scripts/provisioner/`, which pushes the development stack's directory. Read it alongside this page; it is about two hundred lines.
 
 ![How people enter Clew: the source, the provisioner, the SCIM server, the stored tables, the derivation and the person's grant](../architecture/figures/provisioning-flow.svg)
@@ -32,7 +34,7 @@ Clew holds one name per person. Send `displayName` (or `name.formatted`) when a 
 |---|---|---|
 | `unit:<unitId>` | An assignment to that unit as `employee`. The group is also the unit itself: a node of the organisation tree, which may name the unit above it (see below) | The unit's name, shown in the product |
 | `unit-manager:<unitId>` | An assignment to that unit as `manager`, which wins over `unit:` for the same unit | Free |
-| `capability:<name>` | That capability, one of the closed list (`admin.connectors`, `admin.users`) | Free |
+| `capability:<name>` | That capability, one of the closed list (`admin.connectors`, `admin.users`, `admin.appearance`) | Free |
 | `protected`, in any case | Refused with 400 `invalidValue` ([D93](../decisions/D93-the-protected-key-is-refused-at-the-scim-boundary.md)): Clew has not decided whether it may hold that fact, so do not send it | Free |
 | Anything else | Nothing by itself; an administrator may map it to a capability in Clew ([D85](../decisions/D85-capabilities-are-mapped-from-provisioned-groups-in-clew.md)) and use it as a connector audience | Free |
 

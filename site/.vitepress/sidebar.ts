@@ -116,5 +116,31 @@ export function navigation(docsDir: string, isPage: (path: string) => boolean) {
     { text: 'Decisions', link: '/decisions/in-force', activeMatch: '^/decisions/' },
     { text: 'Maintainers', link: '/maintainers/', activeMatch: '^/maintainers/' },
   ];
-  return { nav, sidebar: { '/decisions/': decisions, '/': general } satisfies DefaultTheme.Sidebar };
+  /**
+   * The Swedish pages (D106, the amendment): `docs/sv/` holds translations at the paths of the pages they translate,
+   * so its sidebar is its index and one group per folder that has a page.
+   */
+  const swedishFolders: Record<string, string> = { guides: 'Guider' };
+  const swedish: Item[] = [
+    { text: 'Clew på svenska', items: [{ text: 'Sidor på svenska', link: '/sv/' }, ...documents('sv').map(item)] },
+    ...readdirSync(join(docsDir, 'sv'), { withFileTypes: true })
+      .filter(entry => entry.isDirectory())
+      .map(entry => entry.name)
+      .sort()
+      .map(folder => ({
+        text: swedishFolders[folder] ?? folder,
+        collapsed: false,
+        items: documents(`sv/${folder}`).map(item),
+      })),
+  ];
+  const swedishNav: DefaultTheme.NavItem[] = [
+    { text: 'Sidor på svenska', link: '/sv/', activeMatch: '^/sv/' },
+    { text: 'Dokumentation på engelska', link: '/' },
+  ];
+
+  return {
+    nav,
+    sidebar: { '/decisions/': decisions, '/': general } satisfies DefaultTheme.Sidebar,
+    sv: { nav: swedishNav, sidebar: { '/sv/': swedish } satisfies DefaultTheme.Sidebar },
+  };
 }

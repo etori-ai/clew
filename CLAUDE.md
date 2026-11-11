@@ -18,7 +18,7 @@ Clew is an open source system that will be shared with other municipalities and 
 
 ## Working rules carried over from startsidan
 
-- Swedish only where a person reads it in the product: UI text and API error messages shown in the UI. Everything else is English: identifiers, addresses in the browser (paths, query parameters and their values, anchors; D43), contracts, comments, console output, script and CLI output, infrastructure messages, thrown configuration errors, documentation, and commit messages.
+- Swedish only where a person reads it in the product: UI text and API error messages shown in the UI. Everything else is English: identifiers, addresses in the browser (paths, query parameters and their values, anchors; D43), contracts, comments, console output, script and CLI output, infrastructure messages, thrown configuration errors, documentation, and commit messages. One exception (D106 item 8): a page for readers outside the team may also have a Swedish translation under `docs/sv/`, at the path of the English page it translates; the English page is the source and both change in the same change.
 - Bun with exact versions and a frozen lockfile as package manager, script runner and test runner. The server runtime is Node via `tsx` (D16, 2026-11-04). DBOS Transact runs the durable workflows and timers inside the BFF process, checkpointing to Clew's own PostgreSQL (D85; D17 superseded).
 - Prettier formats TypeScript, JavaScript and CSS (D57): `.prettierrc.json`, and `bun run format` before committing. `bun run format:check` is the first step of `bun run check`. Markdown, JSON, YAML and SQL are outside it.
 - Commands run inside the devcontainer: `docker exec -w /workspace clew-app-1 …` (see `README.md`).
