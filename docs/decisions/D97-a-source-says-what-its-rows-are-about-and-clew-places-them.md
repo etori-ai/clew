@@ -204,3 +204,13 @@ Personal is gone: "Just nu" counting several cards leads to the person's page at
 (`/people/<key>?section=needs-you&from=<the list>`), and an old `/staff?cards=<key>` address leads there in its place.
 Personal's panel stands beside the list from the one width every page has, 1336 px, and the list gives way, drawn as
 its rows where the table does not fit beside the panel.
+
+**Amended 2026-11-11, later the same day: an action is drawn in its source's section.** On seeing the amendment
+"actions are drawn once, beside the name" built, the product owner reversed it: "Registrera frånvaro" beside the name
+was more prominent than it deserves, and it can live under Frånvaro. On the person's page an action about the person is
+drawn once, in the section of the source (the connector) that offers it: a secondary button on the line of the
+section's heading, on a phone a button the width of the column under it, with the source's refusal under them. Beside
+the name stands only an action whose source has no section that holds it (none on the page, one that answered without
+a row, or one that did not answer and so is no way in from the list of sections), so no action is lost; when every
+action has its section, nothing stands beside the name. The unit's page, whose sections are drawn by another component
+and all at once, keeps every action beside its name. This replaces that amendment for the person's page.

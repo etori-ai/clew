@@ -234,11 +234,83 @@ test.describe('the person as a page', () => {
     await expect(menu).toHaveCount(0);
   });
 
-  test('the first two actions are buttons and the rest are under Fler by system; no control chooses where the person is shown', async ({
+  test('an action is drawn once, in its source’s section on the heading’s line; beside the name only one whose source has no section; no control chooses where the person is shown', async ({
     page,
     api: _,
   }) => {
+    // Frånvaro is Personalsystemet's, which offers Registrera frånvaro; Utvecklingssamtal is Clew's, which offers Boka
+    // samtal; Kalendern has no section, so its Boka möte stands beside the name (D97, amended 2026-11-11).
     await new People().route(page);
+    await open(page, `/people/johan?from=%2Fstaff&section=${PRESENCE_LENS}`);
+    const main = page.getByRole('main');
+    const sections = page.getByRole('navigation', { name: 'Om Johan Byström' });
+    const heading = page.getByRole('heading', { level: 2, name: 'Frånvaro' });
+    const caption = main.getByText(/Personalsystemet · hämtat/);
+    await expect(heading).toBeVisible();
+    await expect(caption).toBeVisible();
+    const button = main.getByRole('button', { name: 'Registrera frånvaro', exact: true });
+    await expect(button).toHaveCount(1);
+    const [h, c, b] = await Promise.all([heading.boundingBox(), caption.boundingBox(), button.boundingBox()]);
+    const middle = b!.y + b!.height / 2;
+    expect(middle).toBeGreaterThanOrEqual(h!.y);
+    expect(middle).toBeLessThanOrEqual(c!.y + c!.height);
+    await expect(main.getByRole('button', { name: 'Boka möte', exact: true })).toHaveCount(1);
+    await expect(main.getByRole('button', { name: 'Boka samtal', exact: true })).toHaveCount(0);
+    await expect(main.getByRole('button', { name: /Fler åtgärder/ })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+    await sections.getByRole('link', { name: /Utvecklingssamtal/ }).click();
+    await expect(page.getByRole('heading', { level: 2, name: 'Utvecklingssamtal' })).toBeVisible();
+    await expect(main.getByRole('button', { name: 'Boka samtal', exact: true })).toHaveCount(1);
+    await expect(main.getByRole('link', { name: 'Öppna samtalet' })).toBeVisible();
+    await expect(main.getByRole('button', { name: 'Registrera frånvaro', exact: true })).toHaveCount(0);
+    await expect(main.getByRole('button', { name: 'Boka möte', exact: true })).toHaveCount(1);
+    // A section whose source offers no action draws none, and Behöver dig none either.
+    await sections.getByRole('link', { name: /Kontakt/ }).click();
+    await expect(page.getByRole('heading', { level: 2, name: 'Kontakt' })).toBeVisible();
+    await sections.getByRole('link', { name: /Behöver dig/ }).click();
+    await expect(page.getByRole('heading', { level: 2, name: 'Behöver dig' })).toBeVisible();
+    for (const name of ['Registrera frånvaro', 'Boka samtal'])
+      await expect(main.getByRole('button', { name, exact: true })).toHaveCount(0);
+    // A person is a page only (D110 rule 7): nothing offers another place to show them.
+    await expect(page.getByText('Öppna som sida')).toHaveCount(0);
+    await expect(page.getByText('Visa bredvid')).toHaveCount(0);
+  });
+
+  test('a source that refuses an action says why under its section’s buttons, once aloud, and the focus and the page stay', async ({
+    page,
+    api,
+  }) => {
+    const refusal = 'Personalsystemet hittar ingen anställning för Johan Byström.';
+    api.entityRefusals['hr.registerAbsence'] = refusal;
+    await new People().route(page, api);
+    const here = `/people/johan?from=%2Fstaff&section=${PRESENCE_LENS}`;
+    await open(page, here);
+    const main = page.getByRole('main');
+    const button = main.getByRole('button', { name: 'Registrera frånvaro', exact: true });
+    await button.click();
+    await expect(main.getByText(refusal, { exact: true })).toHaveCount(1);
+    await expect(main.getByText(refusal, { exact: true })).toBeVisible();
+    await expect.poll(() => said(page, refusal)).toBe(1);
+    await expect(page).toHaveURL(here);
+    await expect(button).toBeFocused();
+    await expectNoAxeViolations(page);
+    // The refusal belongs to the section whose action it answered.
+    await page
+      .getByRole('navigation', { name: 'Om Johan Byström' })
+      .getByRole('link', { name: /Utvecklingssamtal/ })
+      .click();
+    await expect(page.getByRole('heading', { level: 2, name: 'Utvecklingssamtal' })).toBeVisible();
+    await expect(main.getByText(refusal, { exact: true })).toHaveCount(0);
+  });
+
+  test('an action whose source’s section did not answer stands beside the name: the first two as buttons, the rest under Fler by system', async ({
+    page,
+    api: _,
+  }) => {
+    const people = new People();
+    people.silent[PRESENCE_LENS] = 'unavailable';
+    people.silent[TALK_LENS] = 'unavailable';
+    await people.route(page);
     await open(page, '/people/johan?from=%2Fstaff');
     const main = page.getByRole('main');
     await expect(main.getByRole('button', { name: 'Boka möte', exact: true })).toBeVisible();
@@ -253,60 +325,10 @@ test.describe('the person as a page', () => {
     await page.keyboard.press('Escape');
     await expect(menu).toHaveCount(0);
     await expect(page).toHaveURL('/people/johan?from=%2Fstaff');
-    // A person is a page only (D110 rule 7): nothing offers another place to show them.
-    await expect(page.getByText('Öppna som sida')).toHaveCount(0);
-    await expect(page.getByText('Visa bredvid')).toHaveCount(0);
-  });
-
-  test('a source that refuses an action says why under the buttons, once aloud, and the page stays', async ({
-    page,
-    api,
-  }) => {
-    const refusal = 'Personalsystemet hittar ingen anställning för Johan Byström.';
-    api.entityRefusals['hr.registerAbsence'] = refusal;
-    await new People().route(page, api);
-    await open(page, '/people/johan?from=%2Fstaff');
-    const button = page.getByRole('main').getByRole('button', { name: 'Registrera frånvaro', exact: true });
-    await button.click();
-    await expect(page.getByRole('main').getByText(refusal, { exact: true })).toBeVisible();
-    await expect.poll(() => said(page, refusal)).toBe(1);
-    await expect(page).toHaveURL('/people/johan?from=%2Fstaff');
-    await expect(button).toBeFocused();
-    await expectNoAxeViolations(page);
-  });
-
-  test('an action about the person is drawn once, beside the name, whichever section is open; its refusal stands there', async ({
-    page,
-    api,
-  }) => {
-    // Frånvaro is Personalsystemet's, which offers Registrera frånvaro; Utvecklingssamtal is Clew's, which offers Boka
-    // samtal under Fler. Neither section draws them again (D97, amended 2026-11-11).
-    const refusal = 'Personalsystemet hittar ingen anställning för Johan Byström.';
-    api.entityRefusals['hr.registerAbsence'] = refusal;
-    await new People().route(page, api);
+    // The section that did not answer, opened by its address, does not draw its action again.
     await open(page, `/people/johan?from=%2Fstaff&section=${PRESENCE_LENS}`);
-    const main = page.getByRole('main');
-    await expect(page.getByRole('heading', { level: 2, name: 'Frånvaro' })).toBeVisible();
-    await expect(main.getByText(/Personalsystemet · hämtat/)).toBeVisible();
-    const button = page.getByRole('button', { name: 'Registrera frånvaro', exact: true });
-    await expect(button).toHaveCount(1);
-    await button.click();
-    await expect(main.getByText(refusal, { exact: true })).toHaveCount(1);
-    await expect(main.getByText(refusal, { exact: true })).toBeVisible();
-    await expect.poll(() => said(page, refusal)).toBe(1);
-    await expect(button).toBeFocused();
-    await expectNoAxeViolations(page);
-    await open(page, `/people/johan?from=%2Fstaff&section=${TALK_LENS}`);
-    await expect(page.getByRole('heading', { level: 2, name: 'Utvecklingssamtal' })).toBeVisible();
-    await expect(page.getByText('Skicka underlag om schemaläggning')).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Öppna samtalet' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Boka samtal', exact: true })).toHaveCount(0);
-    await main.getByRole('button', { name: 'Fler åtgärder för Johan Byström' }).click();
-    await expect(
-      page
-        .getByRole('button', { name: 'Boka samtal', exact: true })
-        .or(page.getByRole('menuitem', { name: 'Boka samtal' })),
-    ).toHaveCount(1);
+    await expect(main.getByText('Personalsystemet svarade inte.')).toBeVisible();
+    await expect(main.getByRole('button', { name: 'Registrera frånvaro', exact: true })).toHaveCount(1);
   });
 
   test('a source that does not answer says so in its own place, once aloud, and Försök igen asks it alone', async ({
@@ -346,12 +368,15 @@ test.describe('the person as a page', () => {
 test.describe('the person on a phone', () => {
   test.use({ viewport: phoneSize });
 
-  test('Åtgärder holds every action by system, and a row leads into its section and back', async ({ page, api: _ }) => {
+  test('Åtgärder holds the actions no section holds, and a row leads into its section and back', async ({
+    page,
+    api: _,
+  }) => {
     await new People().route(page);
     await open(page, '/people/johan?from=%2Fstaff');
     await page.getByRole('main').getByRole('button', { name: 'Åtgärder för Johan Byström' }).click();
     const menu = page.getByRole('menu', { name: 'Åtgärder för Johan Byström' });
-    await expect(menu.getByRole('menuitem')).toHaveText(['Boka möte', 'Registrera frånvaro', 'Boka samtal']);
+    await expect(menu.getByRole('menuitem')).toHaveText(['Boka möte']);
     await page.evaluate(() => Promise.all(document.getAnimations().map(a => a.finished)));
     await expectNoAxeViolations(page);
     await page.keyboard.press('Escape');
@@ -368,22 +393,29 @@ test.describe('the person on a phone', () => {
     ).toBeFocused();
   });
 
-  test('in an opened section the action about the person is only under Åtgärder beside the name', async ({
+  test('in an opened section its source’s action is a button the width of the column, and not under Åtgärder', async ({
     page,
     api: _,
   }) => {
     await new People().route(page);
     await open(page, `/people/johan?from=%2Fstaff&section=${PRESENCE_LENS}`);
+    const main = page.getByRole('main');
     await expect(page.getByRole('heading', { level: 2, name: 'Frånvaro' })).toBeVisible();
-    await expect(page.getByRole('main').getByText(/Personalsystemet · hämtat/)).toBeVisible();
-    const control = page
-      .getByRole('button', { name: 'Registrera frånvaro', exact: true })
-      .or(page.getByRole('menuitem', { name: 'Registrera frånvaro' }));
-    await expect(control).toHaveCount(0);
-    await page.getByRole('main').getByRole('button', { name: 'Åtgärder för Johan Byström' }).click();
+    await expect(main.getByText(/Personalsystemet · hämtat/)).toBeVisible();
+    const button = main.getByRole('button', { name: 'Registrera frånvaro', exact: true });
+    await expect(button).toBeVisible();
+    const column = page.getByRole('toolbar', { name: 'Tillbaka till Om Johan Byström' });
+    const [b, t] = await Promise.all([button.boundingBox(), column.boundingBox()]);
+    expect(Math.abs(b!.width - t!.width)).toBeLessThanOrEqual(1);
+    await expectNoAxeViolations(page);
+    await main.getByRole('button', { name: 'Åtgärder för Johan Byström' }).click();
     const menu = page.getByRole('menu', { name: 'Åtgärder för Johan Byström' });
-    await expect(menu.getByRole('menuitem', { name: 'Registrera frånvaro' })).toBeVisible();
-    await expect(control).toHaveCount(1);
+    await expect(menu.getByRole('menuitem')).toHaveText(['Boka möte']);
+    await expect(
+      page
+        .getByRole('button', { name: 'Registrera frånvaro', exact: true })
+        .or(page.getByRole('menuitem', { name: 'Registrera frånvaro' })),
+    ).toHaveCount(1);
   });
 
   test('the page drills into a section and back on a narrow window', async ({ page, api: _ }) => {

@@ -19,7 +19,7 @@ A capability declares `about: { entity }` on a read, or `about: { entity, param 
 
 | Declared | Place | Who places it |
 |---|---|---|
-| A propose or execute about the kind | The entity's menu: the row menu on Personal and the actions beside the name on the person's page and the unit's page, never again in a section | Nobody: scope and audience decide |
+| A propose or execute about the kind | The entity's menu: the row menu on Personal; on the person's page the section of the source that offers it, or beside the name when that source has no section to hold it; beside the name on the unit's page | Nobody: scope and audience decide |
 | A read about the kind (always a table or list) | A section on the opened entity | Nobody |
 | The same read | A lens under "Visa" on the entity's list | An administrator |
 | A field of that read with a `warn` or `alert` tone | A mark on the entity's row on "Alla", under "Just nu" | An administrator, by offering the read as a lens |

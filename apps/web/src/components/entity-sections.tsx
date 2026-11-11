@@ -64,6 +64,18 @@ export const rowOf = (a: SectionAnswer): Row | undefined =>
   a.query.data?.status === 'ok' ? a.query.data.row : undefined;
 /** The sections that are drawn: every one but those that answered without a row. */
 export const drawnSections = (answers: SectionAnswer[]) => answers.filter(a => !rowless(a));
+/**
+ * A section holds its source's actions (D97, amended 2026-11-11) while it can be opened: its source has not answered
+ * yet or answered with a row. One that answered without a row is not drawn, and one that did not answer is no way in
+ * from the list of sections, so neither holds any.
+ */
+const holdsActions = (answer: SectionAnswer) => !rowless(answer) && !unanswered(answer);
+/** The actions a section draws under its heading: those of the connector whose read it is, while it holds them. */
+export const sectionActions = (actions: EntityAction[], answer: SectionAnswer) =>
+  holdsActions(answer) ? actions.filter(a => a.connector === answer.source.connector) : [];
+/** The actions no section holds, drawn beside the name so none is lost: their source has no section that holds them. */
+export const sectionlessActions = (actions: EntityAction[], answers: SectionAnswer[]) =>
+  actions.filter(a => !answers.some(s => holdsActions(s) && s.source.connector === a.connector));
 /** Whose a source is, as a section names it (D97, artboards B and C): Clew's own domain as Clew, any other by its name. */
 export const sourceCaption = (source: Pick<EntitySource, 'source' | 'own'>) => (source.own ? 'Clew' : source.source);
 
@@ -418,18 +430,27 @@ export function CardList({ cards }: { cards: EntityCard[] }) {
 }
 
 /**
- * The opened person's or unit's actions (artboard C2): the first two as buttons, the rest under Fler grouped by the
- * system they act in, as the row menu on Personal is (artboard A3). On a phone one button, Åtgärder, the width of its
- * column, holds them all (artboard D). An action starts on the server and its card opens beside the page it was started
- * on (`entity-actions.ts`); a source's refusal is said aloud and stands under the buttons until the next action. They
- * hold what can be done about the entity, never a choice of where Clew shows it (D110 rule 7), and are the one place
- * the page draws them: a section shows only what its source read (D97, amended 2026-11-11).
+ * The opened person's or unit's actions beside the name (artboard C2): the first two as buttons, the rest under Fler
+ * grouped by the system they act in, as the row menu on Personal is (artboard A3). On a phone one button, Åtgärder, the
+ * width of its column, holds them all (artboard D). An action starts on the server and its card opens beside the page it
+ * was started on (`entity-actions.ts`); a source's refusal is said aloud and stands under the buttons until the next
+ * action. They hold what can be done about the entity, never a choice of where Clew shows it (D110 rule 7). The unit's
+ * page draws every action here; the person's page only those whose source has no section to hold them
+ * (`sectionlessActions`, D97 amended 2026-11-11), each of the others drawn once, in its source's section.
  */
-export function EntityActions({ detail, mobile }: { detail: EntityDetail; mobile: boolean }) {
+export function EntityActions({
+  detail,
+  actions = detail.actions,
+  mobile,
+}: {
+  detail: EntityDetail;
+  /** The actions drawn here: every one of the entity's unless the page draws some in their source's section. */
+  actions?: EntityAction[];
+  mobile: boolean;
+}) {
   const { start, error } = useEntityAction();
   const { kind, key, name } = detail.entity;
   const run = (a: EntityAction) => start(a, { kind, key, name });
-  const actions = detail.actions;
   const refusal = error ? <Text as="p">{error}</Text> : null;
   if (mobile)
     return actions.length > 0 ? (

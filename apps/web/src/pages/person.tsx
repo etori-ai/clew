@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { useLocation, useParams, useSearchParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { EntityDetail, SessionUser } from '@clew/contracts';
+import type { EntityAction, EntityDetail, SessionUser } from '@clew/contracts';
 import {
   Avatar,
   BreadcrumbItem,
@@ -28,6 +28,7 @@ import { areasQuery, entityDetailQuery } from '../queries';
 import { keys } from '../query-keys';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
+import { useEntityAction } from '../entity-actions';
 import { keepingPanel } from '../panel-address';
 import { insideClew, originOf, personPageHref, toolOf } from '../person-address';
 import { sourcePageHref } from '../talk-address';
@@ -50,7 +51,9 @@ import {
   drawnSections,
   openOf,
   rowOf,
+  sectionActions,
   sectionNavRows,
+  sectionlessActions,
   sourceCaption,
   unanswered,
   useSectionAnswers,
@@ -73,27 +76,34 @@ const PERSON_MIN = SECTIONS_WIDTH + 32 + CHOSEN_MIN + 2 * 32;
 const SIDE_BY_SIDE_BESIDE_QUERY = panelBesideQuery(PERSON_MIN);
 
 /**
- * The chosen source's fuller view (artboard C2): its name, where it was read and when, the way to its own page, then its
- * read in full. It shows only what was read: an action about the person is drawn once, beside their name, whichever
- * section is open (D97, amended 2026-11-11), so its refusal stands there too.
+ * The chosen source's fuller view (artboard C2): its name, where it was read and when, its actions and the way to its
+ * own page, then its read in full. An action about the person is drawn once, here in its source's section (D97, amended
+ * later on 2026-11-11): beside the heading as a button, on a phone a button the width of the column under it, and the
+ * source's refusal stands under them.
  */
 function ChosenSection({
   detail,
   answer,
   level,
   tableQuery,
+  mobile,
 }: {
   detail: EntityDetail;
   answer: SectionAnswer;
   level: 'page' | 'drill';
   tableQuery: string;
+  mobile: boolean;
 }) {
-  const { key, id } = detail.entity;
+  const { start, error } = useEntityAction();
+  const { kind, key, name, id } = detail.entity;
   const row = rowOf(answer);
+  const own = sectionActions(detail.actions, answer);
+  const run = (a: EntityAction) => start(a, { kind, key, name });
   // The source's own page in Clew: the person's talk lies over this page, with the section and the way back kept.
   const { pathname, search } = useLocation();
   const page = answer.source.page ? sourcePageHref(answer.source.page, { key, id }, { pathname, search }) : null;
   const read = answer.query.dataUpdatedAt;
+  const beside = mobile ? [] : own;
   return (
     <VStack gap={5}>
       <HStack gap={3} justify="between" vAlign="center" wrap="wrap">
@@ -109,12 +119,29 @@ function ChosenSection({
             ) : null}
           </Text>
         </VStack>
-        {page && answer.source.page && (
-          <Link href={page} weight="semibold" isStandalone>
-            {answer.source.page.title}
-          </Link>
+        {(beside.length > 0 || (page && answer.source.page)) && (
+          <HStack gap={2} wrap="wrap" vAlign="center">
+            {beside.map(a => (
+              <Button key={a.capability} variant="secondary" label={a.title} onClick={() => run(a)} />
+            ))}
+            {page && answer.source.page && (
+              <Link href={page} weight="semibold" isStandalone>
+                {answer.source.page.title}
+              </Link>
+            )}
+          </HStack>
         )}
       </HStack>
+      {mobile && own.length > 0 && (
+        <VStack gap={2}>
+          {own.map(a => (
+            <Button key={a.capability} variant="secondary" label={a.title} width="100%" onClick={() => run(a)} />
+          ))}
+        </VStack>
+      )}
+      {/* A source's refusal of an action started here, said aloud as it came (entity-actions.ts); it is placed after the
+          buttons, so the one that was pressed keeps the focus when it appears. */}
+      {error && <Text as="p">{error}</Text>}
       {answer.query.isPending ? (
         <Card>
           <VStack gap={2}>
@@ -155,11 +182,12 @@ function ChosenCards({ detail, level }: { detail: EntityDetail; level: 'page' | 
 
 /**
  * The person as a page (D97 item 5, artboard C2), at `/people/:key`, the one way a person is shown (D110 rule 3),
- * reached from a name on Personal or on any row that names them: the trail back to the list, the person's name with
- * their actions (the one place they are drawn, whichever section is open), the list of sections ("Om <namn>", each with
- * its source and one line) and beside it the chosen source's fuller view, `?section=` in the address. On a narrow window the two are the `settings-sidebar` template's
- * drill-in: the list, then the chosen section with the way back to the list. A person the reader may not ask about is
- * the page's own "finns inte" (the server answers 404 for both).
+ * reached from a name on Personal or on any row that names them: the trail back to the list, the person's name, the list
+ * of sections ("Om <namn>", each with its source and one line) and beside it the chosen source's fuller view with that
+ * source's actions, `?section=` in the address. An action whose source has no section to hold it stands beside the name
+ * instead, so each is drawn once and none is lost (D97, amended 2026-11-11). On a narrow window the two are the
+ * `settings-sidebar` template's drill-in: the list, then the chosen section with the way back to the list. A person the
+ * reader may not ask about is the page's own "finns inte" (the server answers 404 for both).
  *
  * The page holds the panel beside its column (D110 rules 2 to 4, `usePagePanel`): a card under Behöver dig and the card
  * an action makes open there, with the section and the way back kept in the address, and closing leaves the page as it
@@ -268,11 +296,14 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
     const view = showsCards ? (
       <ChosenCards detail={detail} level={narrow ? 'drill' : 'page'} />
     ) : chosen ? (
+      // Keyed by its source, so a refusal stands only in the section whose action it answered.
       <ChosenSection
+        key={chosen.source.capability}
         detail={detail}
         answer={chosen}
         level={narrow ? 'drill' : 'page'}
         tableQuery={panel.occupied ? TABLE_BESIDE_QUERY : TABLE_QUERY}
+        mobile={mobile}
       />
     ) : null;
     const chosenTitle = showsCards ? 'Behöver dig' : chosen?.source.title;
@@ -281,7 +312,7 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
         <PageHeader
           title={name}
           icon={<Avatar name={name} size={60} tooltip={false} aria-hidden />}
-          end={<EntityActions detail={detail} mobile={mobile} />}
+          end={<EntityActions detail={detail} actions={sectionlessActions(detail.actions, answers)} mobile={mobile} />}
           {...(detail.entity.detail || detail.entity.unit
             ? {
                 meta: (
