@@ -107,9 +107,11 @@ module.exports = {
   options: {
     doNotFollow: { path: 'node_modules' },
     tsConfig: { fileName: 'tsconfig.json' },
-    // TypeScript 7 has no JavaScript compiler API, so dependency-cruiser cannot tell `import type` from `import`:
-    // a type a test needs from the store comes from packages/db/src/schema.ts, which the unit-test rule allows.
-    tsPreCompilationDeps: true,
+    // TypeScript 7 has no JavaScript compiler API, so dependency-cruiser reads TypeScript through `@swc/core`, a root
+    // devDependency for this alone: without it only the .mjs and .cjs files are cruised and every rule passes unseen
+    // (tests/unit/dependency-rules.test.ts fails then). It reads the source as written, so `import type` counts like
+    // `import`: a type a test needs from the store comes from packages/db/src/schema.ts, which the unit-test rule allows.
+    parser: 'swc',
     enhancedResolveOptions: {
       exportsFields: ['exports'],
       conditionNames: ['import', 'require', 'default', 'types'],
