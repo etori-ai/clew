@@ -1183,6 +1183,15 @@
       "status": "provisional (product owner, 2026-11-10; the direction is chosen, the governance is not designed and nothing is built; accepted when one action has been carried out by the assistant alone, under a level an administrator set, against a source that was not written for Clew)",
       "date": "2026-11-10",
       "area": "product, platform"
+    },
+    {
+      "key": "D105-the-repository-explains-itself-without-a-handover-file",
+      "number": 105,
+      "path": "docs/decisions/D105-the-repository-explains-itself-without-a-handover-file.md",
+      "title": "D105 · The repository explains itself without a handover file",
+      "status": "accepted (product owner, 2026-11-11)",
+      "date": "2026-11-11",
+      "area": "platform"
     }
   ],
   "documents": [
@@ -1194,23 +1203,6 @@
         "Open source, always",
         "Working rules carried over from startsidan",
         "Backend structure (D20) and connectors (D21, D22)"
-      ]
-    },
-    {
-      "path": "HANDOVER.md",
-      "title": "Clew · handover for the first build session",
-      "category": "session-history",
-      "headings": [
-        "0. State after session 1 (2026-11-03)",
-        "1. What Clew is",
-        "2. Decisions taken",
-        "3. Backend: decided, kept for the record",
-        "4. Open questions",
-        "5. First use case: a manager plans the week (built)",
-        "6. UX principles to hold on to",
-        "7. Guardrails carried over from startsidan",
-        "8. Repository layout (as built)",
-        "9. Session log"
       ]
     },
     {
@@ -1693,6 +1685,12 @@
     {
       "path": "docs/decisions/D104-the-model-does-the-work-a-floor-holds-without-it-and-the-assistant-may-act-alone-within-limits.md",
       "title": "D104 · The model does the work: a floor holds without it, and the assistant may act alone within governed limits",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D105-the-repository-explains-itself-without-a-handover-file.md",
+      "title": "D105 · The repository explains itself without a handover file",
       "category": "decision-history",
       "headings": []
     },
@@ -2456,6 +2454,38 @@
       ]
     },
     {
+      "path": "docs/history/README.md",
+      "title": "History",
+      "category": "session-history",
+      "headings": [
+        "Where the same things live now"
+      ]
+    },
+    {
+      "path": "docs/history/handover.md",
+      "title": "Clew · handover for the first build session",
+      "category": "session-history",
+      "headings": [
+        "0. State after session 1 (2026-11-03)",
+        "1. What Clew is",
+        "2. Decisions taken",
+        "3. Backend: decided, kept for the record",
+        "4. Open questions",
+        "5. First use case: a manager plans the week (built)",
+        "6. UX principles to hold on to",
+        "7. Guardrails carried over from startsidan",
+        "8. Repository layout (as built)"
+      ]
+    },
+    {
+      "path": "docs/history/session-log.md",
+      "title": "Session log, 2026-11-03 to 2026-11-11",
+      "category": "session-history",
+      "headings": [
+        "9. Session log"
+      ]
+    },
+    {
       "path": "docs/maintainers/README.md",
       "title": "Maintain Clew",
       "category": "maintainer-guide",
@@ -2498,6 +2528,17 @@
         "Utvecklingssamtal: the round, and switching the answering system",
         "Reset fixture data deliberately",
         "Source of runtime versions"
+      ]
+    },
+    {
+      "path": "docs/maintainers/open-questions.md",
+      "title": "Open questions",
+      "category": "maintainer-guide",
+      "headings": [
+        "Waiting for the product owner",
+        "Records whose status needs a look",
+        "Before the freeze on new surface lifts",
+        "Accessibility"
       ]
     },
     {
@@ -2565,6 +2606,12 @@
       ]
     },
     {
+      "path": "docs/reference/design-canvases.md",
+      "title": "Design canvases",
+      "category": "integrator-guide",
+      "headings": []
+    },
+    {
       "path": "docs/reference/interface-spaces.md",
       "title": "Interface spaces and navigation",
       "category": "integrator-guide",
@@ -2573,6 +2620,15 @@
         "Placement and return rules",
         "A person and a unit",
         "Implementation and verification"
+      ]
+    },
+    {
+      "path": "docs/reference/licences.md",
+      "title": "Licence record",
+      "category": "integrator-guide",
+      "headings": [
+        "How to add an entry",
+        "Record"
       ]
     },
     {
@@ -2589,7 +2645,115 @@
       "title": "Implementation status",
       "category": "integrator-guide",
       "headings": [
+        "Find an entry",
         "How to read the decision history"
+      ]
+    },
+    {
+      "path": "docs/reference/status/calendar.md",
+      "title": "Implementation status: calendar",
+      "category": "integrator-guide",
+      "headings": [
+        "Calendar",
+        "Calendar follow-up"
+      ]
+    },
+    {
+      "path": "docs/reference/status/connectors.md",
+      "title": "Implementation status: connectors in this repository",
+      "category": "integrator-guide",
+      "headings": [
+        "Fixture connectors",
+        "Phone book",
+        "Sick-leave statistics",
+        "Errands",
+        "Nextcloud Approval"
+      ]
+    },
+    {
+      "path": "docs/reference/status/identity.md",
+      "title": "Implementation status: identity and access",
+      "category": "integrator-guide",
+      "headings": [
+        "Users and identity",
+        "User delegation",
+        "Protocol 2 authority"
+      ]
+    },
+    {
+      "path": "docs/reference/status/interface.md",
+      "title": "Implementation status: pages and appearance",
+      "category": "integrator-guide",
+      "headings": [
+        "Theme and logo",
+        "Shared header",
+        "Type levels and the area mark",
+        "Initial page loading",
+        "Adding to the box",
+        "Sedan i går beside Hem"
+      ]
+    },
+    {
+      "path": "docs/reference/status/operations.md",
+      "title": "Implementation status: operations and models",
+      "category": "integrator-guide",
+      "headings": [
+        "Observability",
+        "Operations",
+        "Model configuration"
+      ]
+    },
+    {
+      "path": "docs/reference/status/people.md",
+      "title": "Implementation status: people, units and talks",
+      "category": "integrator-guide",
+      "headings": [
+        "Personal",
+        "Utvecklingssamtal (talks)",
+        "Sources about an entity",
+        "The opened person and the unit page",
+        "Subjects on cards and their erasure",
+        "Actions about a person"
+      ]
+    },
+    {
+      "path": "docs/reference/status/protocol.md",
+      "title": "Implementation status: connector protocol and registration",
+      "category": "integrator-guide",
+      "headings": [
+        "Manifest preview",
+        "Remote connectors",
+        "Served protocol",
+        "Cross-connector dependencies",
+        "Change notifications",
+        "Search",
+        "External agent MCP"
+      ]
+    },
+    {
+      "path": "docs/reference/status/views.md",
+      "title": "Implementation status: views and documents",
+      "category": "integrator-guide",
+      "headings": [
+        "Views and menu tools",
+        "Document and semantic catalogue",
+        "Views, answers and small places",
+        "Läget's figures"
+      ]
+    },
+    {
+      "path": "docs/reference/status/work.md",
+      "title": "Implementation status: work, decisions and durable execution",
+      "category": "integrator-guide",
+      "headings": [
+        "Approved writes",
+        "Jobs across systems",
+        "Scan occurrence lifecycle",
+        "Timers",
+        "Review recovery and completion",
+        "Becoming done",
+        "Card actions in the browser",
+        "Browser updates"
       ]
     },
     {
@@ -3161,7 +3325,8 @@
         "Results",
         "What the spike did not cover",
         "Comparison after the spike",
-        "Recommendation"
+        "Recommendation",
+        "Outcome"
       ]
     },
     {

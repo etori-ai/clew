@@ -45,4 +45,6 @@ Read repository instructions before modifying code. Treat historical reviews, so
 - [Decision log](docs/decisions/README.md): generated index of every original record, preserving its recorded status.
 - [Reviews](docs/reviews/README.md): dated evidence and explorations; not an implementation contract.
 - [Vision](docs/vision.md): product direction.
-- [Handover](HANDOVER.md): chronological session history; not the integrator entry point.
+- [Open questions](docs/maintainers/open-questions.md): what is undecided and who it waits for.
+- [Licence record](docs/reference/licences.md): what was checked before each dependency was pinned.
+- [History](docs/history/README.md): the frozen handover and session log up to 2026-11-11; history, not instructions.

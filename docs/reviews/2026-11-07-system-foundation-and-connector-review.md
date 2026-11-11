@@ -141,6 +141,6 @@ The five findings above are addressed in the working tree:
 4. Figure calls use bounded concurrency (four by default) and one two-second source budget including queued calls. Remote requests receive cancellation; unfinished calls show the existing unavailable state. Completions skip figure reads.
 5. Preview, parsing and registration use the same descriptor validator, including duplicate names, fact ownership, follows/creates rules and JSON Schema compilation. Replacements validate before removing the current registration.
 
-Regression coverage includes memory and PostgreSQL transfers and renewed grants, legacy snapshots, chips and model context, uncertain actions, descriptor reuse and concurrent refreshes, in-flight figure revocation, timeouts and HTTP cancellation, and preview/registration parity. Final verification results are recorded in the session log in [HANDOVER](../../HANDOVER.md#9-session-log).
+Regression coverage includes memory and PostgreSQL transfers and renewed grants, legacy snapshots, chips and model context, uncertain actions, descriptor reuse and concurrent refreshes, in-flight figure revocation, timeouts and HTTP cancellation, and preview/registration parity. Final verification results are recorded in the session log in [HANDOVER](../history/session-log.md#9-session-log).
 
 This closes the five code findings, not the separate real-source pilot and operational release gates. The connector starter, explicit profiles, gradual legacy consolidation and architecture-map cleanup remain recommendations for subsequent work.

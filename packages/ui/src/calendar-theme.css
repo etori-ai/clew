@@ -666,7 +666,7 @@
     white-space: normal;
   }
 }
-/* Under a finger a list row is as tall as a control (HANDOVER §6): the same token Astryx's own controls take from the theme's adaptation. */
+/* Under a finger a list row is as tall as a control (docs/history/handover.md §6): the same token Astryx's own controls take from the theme's adaptation. */
 @media (pointer: coarse) {
   .clew-cal-list-event {
     min-height: var(--size-element-sm);

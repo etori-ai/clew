@@ -53,6 +53,10 @@ Clew's integration contract is the connector protocol. A connector can use an MC
 | Decide whether a feature is built into Clew or reached through a connector | [Core or connector](maintainers/core-or-connector.md) |
 | Upgrade, diagnose and recover | [Reliability operations](maintainers/reliability-operations.md) |
 | Maintain these docs | [Documentation workflow](maintainers/README.md) |
+| See what is undecided | [Open questions](maintainers/open-questions.md) |
+| Check or record a dependency's licence | [Licence record](reference/licences.md) |
+| Compare a screen with its design | [Design canvases](reference/design-canvases.md) |
+| See every connector in the repository | [Connectors](../connectors/README.md) |
 
 ## Look up the contract
 
@@ -64,7 +68,7 @@ Clew's integration contract is the connector protocol. A connector can use an MC
 
 ## Current documentation and history
 
-The architecture pages explain the current system; the [reliability plan](architecture/reliability-and-authorization-plan.md) retains milestone acceptance criteria. [Decisions in force](decisions/in-force.md) lists the decisions that bind today; the full [decision log](decisions/README.md), [dated reviews](reviews/README.md) and [session notes](../HANDOVER.md) preserve intent and evidence at a point in time. An accepted decision does not by itself establish implementation.
+The architecture pages explain the current system; the [reliability plan](architecture/reliability-and-authorization-plan.md) retains milestone acceptance criteria. [Decisions in force](decisions/in-force.md) lists the decisions that bind today; the full [decision log](decisions/README.md), [dated reviews](reviews/README.md) and the frozen [history](history/README.md) preserve intent and evidence at a point in time. An accepted decision does not by itself establish implementation.
 
 Code and behavioral tests define implemented behavior. Generated schemas and examples expose the contract. Guides explain it. When these disagree, resolve the discrepancy against the implementation and update the affected pages.
 

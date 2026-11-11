@@ -13,7 +13,10 @@ Start with the [product overview](../overview.md) and [architecture overview](..
 | Understand designs and unfinished work | [Architecture map](../architecture/README.md), [status](../reference/status.md) and [reliability plan](../architecture/reliability-and-authorization-plan.md) |
 | Understand product intent | [Vision](../vision.md), [personas](../personas.md) |
 | See which decisions bind today | [Decisions in force](../decisions/in-force.md) |
-| Recover rationale or session context | [Decision index](../decisions/README.md), [reviews](../reviews/README.md), [handover](../../HANDOVER.md) |
+| Recover rationale | [Decision index](../decisions/README.md), [reviews](../reviews/README.md), frozen [history](../history/README.md) |
+| See what is undecided | [Open questions](open-questions.md) |
+| Record a licence check | [Licence record](../reference/licences.md) |
+| Find a design canvas | [Design canvases](../reference/design-canvases.md) |
 
 ## Documentation is an interface
 
@@ -23,7 +26,7 @@ Keep the default reading path useful to someone who has never met Clew: explain 
 
 **Prose owns explanation and workflow.** Guides state prerequisites, expected outcomes, trust boundaries and implementation limits. Link to the owning source and a behavioral test. When a feature is proposed or only fixture-tested, say so in [status](../reference/status.md). Do not infer implementation from an ADR's acceptance.
 
-**History retains its identity.** Preserve decision filenames and review bodies. The generated index copies the recorded metadata and exposes the existing numbering collisions. A new decision uses an unused number. A review is evidence, not an automatic change in policy. Update the handover session log when documentation changes.
+**History retains its identity.** Preserve decision filenames and review bodies. The generated index copies the recorded metadata and exposes the existing numbering collisions. A new decision uses an unused number. A review is evidence, not an automatic change in policy. There is no session log ([D105](../decisions/D105-the-repository-explains-itself-without-a-handover-file.md)): say what changed and why in the commit message.
 
 ## Generate and verify
 

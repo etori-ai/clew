@@ -15,7 +15,7 @@ Checkpoint: 2026-11-05. The [roadmap](../architecture/reliability-and-authorizat
 
 ## Verification record
 
-Fast checks, database/runtime counts and browser results are recorded in the latest [handover](../../HANDOVER.md#9-session-log). The dedicated [Reliability workflow](../../.github/workflows/reliability.yml) runs database contracts, real Node/DBOS tests and the upgrade/restore rehearsal separately from the fast check. Existing fixture tests are not replaced by a UI assertion that says “done.”
+Fast checks, database/runtime counts and browser results up to 2026-11-11 are recorded in the frozen [session log](../history/session-log.md#9-session-log); later runs are in the commit that made them. The dedicated [Reliability workflow](../../.github/workflows/reliability.yml) runs database contracts, real Node/DBOS tests and the upgrade/restore rehearsal separately from the fast check. Existing fixture tests are not replaced by a UI assertion that says “done.”
 
 The browser suite uses mocked APIs and therefore cannot prove server latency or source effects. Its new reminder scenarios exercise no-click invalidation, claim ownership, reload and navigation. After [upstream reconciliation](../reviews/2026-11-05-documentation-upstream-reconciliation.md), the full suite on the Neutral default passes (237 tests; 34 optional screenshot cases skipped), superseding the earlier sidebar/reflow failures for this merged tree. A manual screen-reader pass has not been performed. WCAG conformance is not established by the automated suite.
 

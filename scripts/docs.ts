@@ -179,7 +179,7 @@ generated.set(
       .join('\n') +
     '\n\n## Add a decision\n\n' +
     `Use [TEMPLATE.md](TEMPLATE.md) and a new unused number (currently D${Math.max(...decisions.map(d => d.number)) + 1}). Include status, date, area, decision, rationale and what it replaces. ` +
-    'Preserve earlier decision bodies; record supersession explicitly. Refer to the full filename when a number is ambiguous. Update the implementation-status guide when delivery changes, add a session note to [HANDOVER.md](../../HANDOVER.md), and run `bun run docs:generate` followed by `bun run docs:check`. The generated context map includes every record.\n',
+    'Preserve earlier decision bodies; record supersession explicitly. Refer to the full filename when a number is ambiguous. Update the implementation-status guide when delivery changes, say what changed and why in the commit message, and run `bun run docs:generate` followed by `bun run docs:check`. The generated context map includes every record.\n',
 );
 // The digest: which decisions bind today, one line each, grouped by the first area a record names.
 const AREAS = ['product', 'integrations', 'identity', 'platform', 'ui'];
@@ -269,7 +269,6 @@ const docPaths = [
   ...new Set([
     'README.md',
     'CLAUDE.md',
-    'HANDOVER.md',
     'llms.txt',
     ...files('docs'),
     ...files('connectors').filter(p => p.endsWith('.md')),
@@ -279,7 +278,7 @@ const docPaths = [
   .filter(p => p.endsWith('.md') || p === 'llms.txt')
   .sort();
 const category = (path: string) =>
-  path === 'HANDOVER.md'
+  path.startsWith('docs/history/')
     ? 'session-history'
     : path === 'CLAUDE.md'
       ? 'repository-instructions'

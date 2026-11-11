@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**99 in force**: 96 accepted and 3 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 8 proposed and not decided. 5 no longer in force.
+**100 in force**: 97 accepted and 3 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 8 proposed and not decided. 5 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -85,6 +85,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D86 · The ledger starts its durable workflow inside its own transaction; the outbox loops are retired](D86-the-ledger-starts-its-workflow-inside-its-own-transaction.md) | 2026-11-09 | accepted |  |
 | [D91 · One logger, OpenTelemetry export, and the model turn in the audit trail](D91-one-logger-opentelemetry-export-and-the-model-turn-in-the-audit-trail.md) | 2026-11-09 | accepted |  |
 | [D102 · A decision is provisional until something outside the repository has tested it, and small adjustments are not numbered](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md) | 2026-11-10 | accepted |  |
+| [D105 · The repository explains itself without a handover file](D105-the-repository-explains-itself-without-a-handover-file.md) | 2026-11-11 | accepted |  |
 
 ## Interface
 
