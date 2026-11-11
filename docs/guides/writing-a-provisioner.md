@@ -75,7 +75,27 @@ The token is printed once; Clew keeps its digest. `rotate <id>` issues a new one
 
 Clew records when a provisioner last called, and Administration › Användare shows it with a warning after two days of silence. A push that changes nothing still leaves that mark and one `provisioner.seen` audit row, so "it ran and nothing changed" and "it has stopped" look different.
 
-## What a provisioner does on every run
+## What a provisioner does when something changes
+
+A change in the source is sent to Clew when it happens, not saved for a nightly run ([D109](../decisions/D109-a-provisioner-sends-a-change-when-it-happens-and-reconciles-the-whole-source-daily.md)). Each is one request, or two for a move, and the person has the right access at their next request.
+
+| In the source | Send |
+|---|---|
+| A person begins | `POST /Users`, then `PATCH` `add` on the `unit:` group they are placed on |
+| A name, a user name or a work address changes | `PATCH /Users/<id>` |
+| A person leaves | `PATCH /Users/<id>` with `active` `false` |
+| A person moves to another unit | `PATCH` `add` on the unit they join, then `PATCH` `remove` on the unit they leave |
+| A person becomes a manager, or stops being one | `PATCH` `add` or `remove` on `unit-manager:<id>` |
+| A person gains or loses a capability | `PATCH` `add` or `remove` on the capability's group |
+| A unit is added | `POST /Groups` with its `parent`, once the unit above exists |
+| A unit is renamed or moved | `PATCH` its `displayName` or its `parent` |
+| A unit is removed | `DELETE /Groups/<id>`, once nothing stands below it and its people have been placed elsewhere |
+
+A unit, a manager's role and a capability are memberships, and SCIM changes a membership on the group, not on the person: a user's `groups` are read only. A source that holds the unit and the manager flag as fields on the person turns a change of such a field into the group requests above. A change that takes effect on a day (an acting manager from the first of the month) is sent on that day: Clew holds no dates of validity.
+
+## What a provisioner does on every reconciliation
+
+Beside the changes, the whole source is compared with what Clew holds at least once a day. A change that was lost on the way, because the provisioner was down or a request failed and was not sent again, is found by nothing else, and the run writes nothing where nothing differs.
 
 The organisation first, then the people, then who is placed where ([D101](../decisions/D101-a-provisioner-pushes-the-organisation-first-and-adds-before-it-removes-and-a-unit-belongs-to-one-organisation.md)). Read the organisation from the source as a list of its own: each unit with its id, its name and the id of the unit above it.
 
@@ -85,7 +105,7 @@ The organisation first, then the people, then who is placed where ([D101](../dec
 4. Who is in which group (the units, the managers of each unit, the capability holders, the plain directory groups), as SCIM ids from step 3, **in two rounds**. First, for every group, `PATCH` `add` the members it gains (or `POST` a group that does not exist with its members). Then, for every group, `PATCH` `remove` the members it loses. A person who moves between two units is then in both for a moment and never in neither. Sent the other way round, the person has no unit between the two writes, Clew takes their access away and hands it back, and a request in between signs them out.
 5. For each group with a key this provisioner owns that no longer follows from the source: `DELETE`, a unit only once no unit that is also going still stands below it. Groups with other keys belong to somebody else and are left alone.
 
-Run it at least daily: validity lives in the source (a ställföreträdare is a membership the provisioner adds when the period starts and removes when it ends), so access ends when the push arrives. A leaver's account must also be closed at the identity provider.
+Run it at least daily, as the net under the changes sent as they happen. Validity lives in the source (a ställföreträdare is a membership the provisioner adds when the period starts and removes when it ends), so access ends when the change arrives. A leaver's account must also be closed at the identity provider.
 
 **Guard against an empty source.** Steps 3 and 5 remove what the source no longer has, so a provisioner that reads an empty or truncated export deactivates everyone and deletes every unit. Clew cannot tell that from a real change. Stop the run in step 1 when the source returned no people, or far fewer than Clew holds, and let a person decide. The example refuses a run that would deactivate more than a fifth of its people and is told `force` by the person who decided.
 

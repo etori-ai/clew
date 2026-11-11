@@ -400,8 +400,8 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
               <VStack gap={0}>
                 <Text weight="semibold">Inläsning från katalogen</Text>
                 <Text type="supporting">
-                  Katalogen ska föra in ändringar minst en gång per dygn. Den som har slutat eller bytt enhet behåller
-                  sin åtkomst i Clew tills nästa inläsning kommer.
+                  Katalogen ska skicka varje ändring till Clew när den sker, och stämma av allt minst en gång per dygn.
+                  Tills en ändring har kommit fram gäller den åtkomst personen hade.
                 </Text>
               </VStack>
             }
