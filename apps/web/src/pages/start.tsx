@@ -333,7 +333,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     const next = [...g.nu, ...g.senare].find(x => x.id !== t.id);
     return next ? { title: next.title, href: cardHref(next.id) } : undefined;
   };
-  // A card stays a tab while it is in the stream (D66): snoozed or dismissed, it leaves the row with the pile. A done
+  // A card stays in the phone's sheet while it is in the stream: snoozed or dismissed, it leaves with the pile. A done
   // card stays while its receipt can still be undone (D70). Reviewed cards remain addressable after that window,
   // so closing a completed review can return to the same receipt on a phone as on desktop (D80).
   const inStream = (threadId: string) =>
@@ -356,7 +356,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
    */
   const slot = usePagePanel({
     overlayOnly: short,
-    isOpen: id => !id.startsWith('card:') || inStream(id.slice(5)),
     onClosed: landAfterDrawer,
     failures: 'page',
     onChange: replace,

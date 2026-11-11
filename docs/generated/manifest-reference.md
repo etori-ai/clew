@@ -261,7 +261,7 @@ export const directory = {
 
 ### A scan that becomes cards
 
-With `scan: true` Clew asks the connector, per person, what needs attention; each draft names an area of the manifest and carries actions of this connector (D35). The area shows the drafts as cards, its standing actions under "Gör själv", its schedules as text, and, with `figure: true`, its figure from `/clew/figure` as a tile on Hem.
+With `scan: true` Clew asks the connector, per person, what needs attention; each draft names an area of the manifest and carries actions of this connector (D35). Each draft becomes a card on Hem, marked with its area, whose title opens the card in the panel beside Hem; the area is a choice in Hem's area filter, its standing proposes and executes are suggested under "Menar du" as the person types in the question box, and, with `figure: true`, its figure from `/clew/figure` is a tile on Hem.
 
 ```json
 {
@@ -791,7 +791,7 @@ true
 
 #### `areas`
 
-The areas this connector gives a person: each is a button under the box on Hem (D41, D53) with its standing actions, schedules and figure. Empty is allowed for a connector that only answers questions.
+The areas this connector gives a person: each names and marks the connector's cards, is a choice in Hem's area filter, and holds its standing capabilities, schedules and figure. Where each shows is in docs/guides/where-things-open.md. Empty is allowed for a connector that only answers questions.
 
 - Type: array of object
 - required
@@ -824,7 +824,7 @@ Example:
 
 #### `areas[].id`
 
-Stable and lowercase. It is the area's address, `/areas/<id>`, and what a scan draft names in `area`.
+Stable and lowercase. Hem's area filter names it in its address (`/?area=<id>`), and a scan draft names it in `area`.
 
 - Type: string
 - required
@@ -840,7 +840,7 @@ Example:
 
 #### `areas[].title`
 
-Swedish. The area's name on its button under the box and in the sidebar.
+Swedish. The area's name: a choice in Hem's area filter and the rail's search, and the word that marks its cards (D71).
 
 - Type: string
 - required
@@ -871,7 +871,7 @@ Example:
 
 #### `areas[].standing`
 
-Capability names shown under "Gör själv": what a person can do here without composing a question. Each must be a capability of this manifest.
+Capability names the area offers, each a capability of this manifest. A propose or execute among them is suggested under "Menar du" while the person types in the question box on Hem; a read among them marks its view with the area's word and icon and has no entry of its own.
 
 - Type: array of string
 - required
@@ -889,7 +889,7 @@ Example:
 
 #### `areas[].schedules`
 
-What the connector does for this area on its own and when, as a person reads it under the area. Informational text; the scan itself runs nightly and on first visit.
+What the connector does for this area on its own and when. Informational text that Clew keeps with the manifest and draws nowhere today; the scan itself runs nightly and on first visit.
 
 - Type: array of object
 - required

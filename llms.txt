@@ -27,6 +27,7 @@
 - [Authentication overview](docs/guides/authentication-overview.md): the end-to-end flow: sign-in, signed assertion, source credential choice and human decisions.
 - [Authorization](docs/guides/authorization.md): protocol 2, RS256, pinned public keys, separate callback grants.
 - [Search and views](docs/guides/example-custom-directory.md): phone book implementation.
+- [Where things open](docs/guides/where-things-open.md): one table from what a manifest declares to where Clew shows it, the card action fields `target` and `confirm`, and links out of Clew (D110).
 - [Actions and recovery](docs/guides/actions-and-receipts.md): source writes, receipts and execution limits.
 - [Validation and deployment](docs/guides/testing-and-deployment.md): checks, registration and operating notes.
 - [Writing a provisioner](docs/guides/writing-a-provisioner.md): how people, units and groups enter an installation through the SCIM 2.0 server at `/scim/v2` (D68, D85); a provisioner is not a connector.

@@ -102,7 +102,7 @@ This complete minimal manifest declares one team list. It is a contract example,
 }
 ```
 
-`scope: {}` imposes no role restriction, but Clew's configured audience and your source's record permissions still apply. `model: false` keeps this first read out of the assistant's tools. The empty input means the unit must come from verified identity, not a browser-supplied unit id. The view makes it eligible for administrator-selected menu placement; it does not publish itself.
+`scope: {}` imposes no role restriction, but Clew's configured audience and your source's record permissions still apply. `model: false` keeps this first read out of the assistant's tools. The empty input means the unit must come from verified identity, not a browser-supplied unit id. The view makes it eligible for administrator-selected menu placement; it does not publish itself. [Where things open](where-things-open.md) says where Clew shows each thing a manifest declares.
 
 Save the JSON as `manifest.json` in your project and post it to the test installation:
 
@@ -266,7 +266,7 @@ What each part buys:
 
 The handler answers one row per key it knows, each carrying `key` as Clew asked it, and nothing for an unknown key or a person outside the caller's scope in your system. Compare a person's key without regard to case. The caller's own user name is `actor.userName` in the verified assertion; the fixture uses it to find the manager. Beside `rows` an output may declare `heading` and `note`, two strings Clew draws over the lens.
 
-An action about a person names the input property that takes the key, and requires nothing else. The HR fixture's `hr.prepareAbsence` ([manifest](../../connectors/hr/manifest.mjs)) declares `about: { entity: 'person', param: 'person' }` with an input that requires only `person`; it shows as "Registrera frånvaro" in a manager's menu on a person. Clew starts it with `{ person: <key> }` without the model: a propose answers a `ThreadDraft`, which becomes the manager's card, and an execute is a card whose button is the human decision.
+An action about a person names the input property that takes the key, and requires nothing else. The HR fixture's `hr.prepareAbsence` ([manifest](../../connectors/hr/manifest.mjs)) declares `about: { entity: 'person', param: 'person' }` with an input that requires only `person`; it shows as "Registrera frånvaro" in a manager's menu on a person. Clew starts it with `{ person: <key> }` without the model: a propose answers a `ThreadDraft`, which becomes the manager's card, and an execute is a card whose button is the human decision. Either card opens beside the page the action was started on ([Where things open](where-things-open.md)).
 
 For values drawn in a column or a section, three view options help: the `tones` key `*` warns for any present value ("2 försenade") while an absent one stays neutral; `beside: true` draws a field on the line of the one before it ("Bokat", "tors 12 nov kl. 09:00"); `compact: true` marks the one field that says the row in one value where there is room for only one ("Inte bokat").
 

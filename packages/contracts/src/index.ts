@@ -739,7 +739,7 @@ export type PanelViewSpec = View & {
  * A view as a tool in the menu (D40): one click away on every page, under Verktyg. Any read that declares a view and
  * opens without input can be one; an administrator chooses which, view by view. A connector may say what a view's row
  * is called and which of Clew's icons it carries; without that the row takes the capability's title and a plain icon. The same list of
- * icons serves an area (D41): the name a connector gives its area is drawn on the area's button under the box.
+ * icons serves an area (D41, D71): the area's icon marks its cards and views beside the area's name.
  */
 export const MENU_ICONS = [
   'phone',
@@ -1480,13 +1480,23 @@ export const ThreadActionSchema = object({
   capability: Type.String(),
   kind: Type.Union([Type.Literal('read'), Type.Literal('propose'), Type.Literal('execute')]),
   role: ActionRole,
-  /** Where a read capability renders: a side-panel view, or a link out to the source system. */
-  target: Type.Optional(Type.Union([Type.Literal('panel'), Type.Literal('link')])),
+  /** Where a read's answer goes (D110): unfolded inside the card, or a link out to the source system in a new tab. */
+  target: Type.Optional(
+    Type.Union([Type.Literal('panel'), Type.Literal('link')], {
+      description:
+        "For a `read`: absent or `panel` unfolds the read's answer inside the card, under its buttons (a `table` view opens in the card's place in the panel); `link` marks the button as leaving Clew and opens the `url` the read answers in a new tab (D110 rule 8). Ignored on a propose or execute.",
+    }),
+  ),
   /** Fixed input merged with the selected item refs at execution time. */
   input: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
   /** Whether the action takes the selected items as `refs`. */
   usesItems: Type.Optional(Type.Boolean()),
-  confirm: Type.Optional(Type.String()),
+  confirm: Type.Optional(
+    Type.String({
+      description:
+        'Swedish. Asked in a dialog over the card before the action runs, with "Avbryt" and the action\'s own label as the buttons: up to the first "?" is the question, the rest says what follows from yes ("Avvisa filen? Ditt beslut gäller för alla som kan godkänna den.").',
+    }),
+  ),
   /**
    * The person reviews the items one at a time before this execute runs (D70): Clew opens the review flow from the
    * card's next step, and the write happens once, with the refs the person approved. Only on an execute with `usesItems`.
@@ -2428,13 +2438,13 @@ export const AreaFigureSchema = object({
   observedAt: Type.Optional(instant),
 });
 export type AreaFigure = Static<typeof AreaFigureSchema>;
-/** An area in the sidebar: a lens on one connector for one role (D3). Configuration, not code. */
+/** An area: a lens on one connector for one role (D3), a choice in Hem's area filter. Configuration, not code. */
 export const AreaSchema = object({
   id: Type.String(),
   title: Type.String(),
   connector: Type.String(),
   source: Type.String(),
-  /** The icon the connector named for the area (D41), from Clew's list; drawn on the area's button under the box. */
+  /** The icon the connector named for the area (D41), from Clew's list; drawn in the area's mark on its cards and views (D71). */
   icon: Type.Optional(MenuIconSchema),
   /** The area's figure (D54): what its connector answered, null when it answered none or the administrator switched it off. */
   figure: Type.Union([AreaFigureSchema, Type.Null()]),
@@ -2442,7 +2452,7 @@ export const AreaSchema = object({
   waiting: Type.Integer(),
   /** The highest attention level among the open cards that need the person; the sidebar count takes its colour from it. */
   urgency: Type.Union([AttentionLevelSchema, Type.Null()]),
-  /** "Gör själv": capabilities the person may start without a thread. */
+  /** The area's standing capabilities: a propose or execute is suggested under "Menar du" as the person types in Hem's box. */
   standing: Type.Array(
     object({
       capability: Type.String(),

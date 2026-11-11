@@ -5,7 +5,7 @@ import { ThreadCard } from './thread';
 /** How a card is drawn where it is open: its heading's level and the surface it stands on. */
 export interface CardPlace {
   level?: 2 | 3;
-  /** In the panel beside the page: the panel is the card's border, and its header holds what is open and ✕ (D66). */
+  /** In the panel beside the page: the panel is the card's border, and its header holds the small title "Kort" and ✕. */
   beside?: boolean;
   /** A proposal's times as rows rather than the week (`ThreadCard`). */
   compact?: boolean;

@@ -24,6 +24,7 @@ A connector is your independently deployed HTTP service. It translates a source 
 |---|---|---|
 | Define and build a first integration | [Create a connector](guides/creating-a-connector.md) | [Phone book](../connectors/phonebook/README.md) |
 | Map source records, add search and views | [Directory walkthrough](guides/example-custom-directory.md) | [Manifest](../connectors/phonebook/manifest.mjs), [adapter](../connectors/phonebook/directory.mjs) |
+| Know where Clew shows what your manifest declares, and what opens a new tab | [Where things open](guides/where-things-open.md) | [Interface spaces](reference/interface-spaces.md) |
 | Show original documents, records, metrics, charts and history | [Document and semantic views](guides/document-and-semantic-views.md) | [Finance fixture](../connectors/finance/manifest.mjs) |
 | Understand who authenticates to whom, and where a write is approved | [Authentication overview](guides/authentication-overview.md) | [Token exchange](../apps/server/src/auth-exchange.ts), [Eneo connector](../connectors/eneo/README.md) |
 | Verify the actor and narrow source access | [Authorization](guides/authorization.md) | [Standalone verifier](../connectors/hello/verification.mjs) |

@@ -274,10 +274,10 @@ export interface AreaDefinition {
   roles: Array<Actor['role']>;
   /** The area's figure (D54): the connector's answer, or null. The registry turns a throw into the warning figure and checks `opens`. */
   figure?: (actor: Actor, clew: Clew) => Promise<Figure | null>;
-  /** Capability names shown under "Gör själv". */
+  /** Capability names the area offers: a propose or execute is suggested under "Menar du" on Hem; a read takes the area's mark. */
   standing: string[];
   schedules: Array<{ label: string; when: string }>;
-  /** One of Clew's icons for the area's button under the box (D41). */
+  /** One of Clew's icons for the area's mark on its cards and views (D41, D71). */
   icon?: MenuIcon;
   /**
    * For Clew's own connectors only: whether the area exists for this person at all. The errand area is there only for

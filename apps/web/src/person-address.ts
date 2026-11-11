@@ -1,4 +1,4 @@
-import type { Subject } from '@clew/contracts';
+import { sameSubject, type Subject } from '@clew/contracts';
 import { pageOnly } from './panel-address';
 
 /**
@@ -16,11 +16,27 @@ const addressOf = (pathname: string, query: URLSearchParams) => {
 /** A path inside Clew, never another site: what `from` may hold. */
 export const insideClew = (path: string | null): string | null =>
   path && path.startsWith('/') && !path.startsWith('//') && !path.startsWith('/\\') ? path : null;
+/**
+ * The page a person or a unit was opened from, as `from` holds it: a path inside Clew with its own search, never the
+ * `from` of that page, so a way back never holds another way back (`/people/anna?from=/staff` names `/people/anna`).
+ * The trail and the rail name `from` by its path alone (`originOf`: Hem, Personal, Kalender or a tool, never a person
+ * or a unit), and the trail leads back to it with its own search (a card still open beside it), so the nested one was
+ * never read.
+ */
+const wayBack = (path: string | null | undefined): string | null => {
+  const inside = insideClew(path ?? null);
+  const at = inside ? inside.indexOf('?') : -1;
+  if (!inside || at < 0) return inside;
+  const q = new URLSearchParams(inside.slice(at + 1));
+  if (!q.has('from')) return inside;
+  q.delete('from');
+  return addressOf(inside.slice(0, at), q);
+};
 /** The person as a page, with a section chosen and the list it was opened from. */
 export function personPageHref(key: string, options: { section?: string; from?: string | null } = {}): string {
   const q = new URLSearchParams();
   if (options.section) q.set('section', options.section);
-  const from = insideClew(options.from ?? null);
+  const from = wayBack(options.from);
   if (from) q.set('from', from);
   return addressOf(`/people/${encodeURIComponent(key)}`, q);
 }
@@ -65,15 +81,29 @@ export function fromCardsBeside(pathname: string, search: URLSearchParams | stri
 /** The unit as a page (D97, artboard E), with the page it was opened from. */
 export function unitPageHref(id: string, options: { from?: string | null } = {}): string {
   const q = new URLSearchParams();
-  const from = insideClew(options.from ?? null);
+  const from = wayBack(options.from);
   if (from) q.set('from', from);
   return addressOf(`/units/${encodeURIComponent(id)}`, q);
+}
+/** The person or unit whose page `pathname` is (`/people/<key>`, `/units/<id>`), or null on any other page. */
+export function pageSubject(pathname: string): Subject | null {
+  const match = /^\/(people|units)\/([^/]+)\/?$/.exec(pathname);
+  if (!match) return null;
+  try {
+    return { entity: match[1] === 'units' ? 'unit' : 'person', key: decodeURIComponent(match[2]!) };
+  } catch {
+    return null;
+  }
 }
 /**
  * Where a row that names an entity leads (D97 item 6): a person to their page, a unit to its page, each with the
  * address of the page the row was on as `from`, so the way back returns to it as it was (a card still open beside Hem).
+ * Null on the entity's own page: a row there that names the person or unit the page is about would lead to the page the
+ * reader is already on, out of the card it stands in, so its name is plain text (the product owner, 2026-11-11).
  */
-export function entityHref(subject: Subject, from?: string | null): string {
+export function entityHref(subject: Subject, from?: string | null): string | null {
+  const here = from ? pageSubject(from.split('?')[0]!) : null;
+  if (here && sameSubject(here, subject)) return null;
   const options = { from: from ?? null };
   return subject.entity === 'unit' ? unitPageHref(subject.key, options) : personPageHref(subject.key, options);
 }

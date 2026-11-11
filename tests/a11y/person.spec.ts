@@ -22,11 +22,19 @@ import { CONTACT, POINTS, People, pointsOutput, pointsSpec } from './person-data
 const wide = { width: 1440, height: 900 };
 const phoneSize = { width: 390, height: 844 };
 const said = async (page: Page, text: string) => (await announcements(page)).filter(t => t.includes(text)).length;
+/**
+ * Reflow problems but the tab strip's own tabs past the edge: the strip scrolls sideways by the product owner's choice
+ * (2026-11-11), each tab reached by the arrows or by scrolling it and the chosen one kept in view, so a tab past the edge
+ * is the strip doing its job. The cases check that the strip itself fits.
+ */
+const STRIP_TABS = ['Behöver dig', 'Utvecklingssamtal', 'Frånvaro', 'Kontakt', 'Kompetenser'];
+const outsideTheStrip = (problems: string[]) =>
+  problems.filter(p => !STRIP_TABS.some(t => p === `beyond the edge: span "${t}"`));
 
 test.describe('the person as a page', () => {
   test.use({ viewport: wide });
 
-  test('the trail leads back to Personal, the sections are a named list with the chosen one current, and the chosen source is read in full', async ({
+  test('the trail leads back to Personal, the sections are a tab strip under the name with the chosen one current, back and forward choose as a click does, and the chosen source is read in full', async ({
     page,
     api: _,
   }) => {
@@ -38,24 +46,43 @@ test.describe('the person as a page', () => {
     await expect(trail.getByRole('link', { name: 'Personal' })).toHaveAttribute('href', '/staff');
     await expect(page.getByRole('main').getByRole('link', { name: 'Bergsåkers skola' })).toHaveAttribute(
       'href',
-      '/units/unit-skola?from=%2Fpeople%2Fjohan%3Ffrom%3D%252Fstaff',
+      '/units/unit-skola?from=%2Fpeople%2Fjohan',
     );
     const sections = page.getByRole('navigation', { name: 'Om Johan Byström' });
     await expect(sections).toBeVisible();
-    // Behöver dig is chosen when there are cards.
+    // One tab per section in the page's order: Behöver dig with the count of the reader's cards, as Hem's tabs count,
+    // then each source by its section's title, a silent one too. No summary line and no source name in the strip.
+    const tabs = sections.getByRole('link');
+    const names = [/^Behöver dig\s?2$/, 'Utvecklingssamtal', 'Frånvaro', 'Kontakt', 'Kompetenser'];
+    await expect(tabs).toHaveCount(names.length);
+    for (const [i, name] of names.entries()) await expect(tabs.nth(i)).toHaveAccessibleName(name);
+    await expect(sections.getByText('Katalogen')).toHaveCount(0);
+    await expect(sections.getByRole('link', { name: 'Kontakt' })).toHaveAttribute(
+      'href',
+      '/people/johan?section=directory.contact&from=%2Fstaff',
+    );
+    // Without a section in the address the first tab, Behöver dig, is chosen.
     await expect(sections.locator('[aria-current="true"]')).toContainText('Behöver dig');
     await expect(page.getByRole('heading', { level: 2, name: 'Behöver dig' })).toBeVisible();
     await expectNoAxeViolations(page);
-    await sections.getByRole('link', { name: /Kontakt/ }).click();
-    await expect(page).toHaveURL(/section=directory\.contact/);
+    await sections.getByRole('link', { name: 'Kontakt' }).click();
+    await expect(page).toHaveURL('/people/johan?section=directory.contact&from=%2Fstaff');
     await expect(sections.locator('[aria-current="true"]')).toContainText('Kontakt');
     await expect(page.getByRole('heading', { level: 2, name: 'Kontakt' })).toBeVisible();
     await expect(page.getByText('Katalogen · hämtat nu')).toBeVisible();
-    await sections.getByRole('link', { name: /Utvecklingssamtal/ }).click();
+    await sections.getByRole('link', { name: 'Utvecklingssamtal' }).click();
     await expect(page.getByRole('heading', { level: 2, name: 'Utvecklingssamtal' })).toBeVisible();
     await expect(page.getByText('Skicka underlag om schemaläggning')).toBeVisible();
     await expect(page.getByRole('link', { name: 'Öppna samtalet' })).toBeVisible();
     await expectNoAxeViolations(page);
+    // The address is the choice: back and forward move between the sections as the clicks did.
+    await page.goBack();
+    await expect(page).toHaveURL('/people/johan?section=directory.contact&from=%2Fstaff');
+    await expect(sections.locator('[aria-current="true"]')).toContainText('Kontakt');
+    await expect(page.getByRole('heading', { level: 2, name: 'Kontakt' })).toBeVisible();
+    await page.goForward();
+    await expect(sections.locator('[aria-current="true"]')).toContainText('Utvecklingssamtal');
+    await expect(page.getByRole('heading', { level: 2, name: 'Utvecklingssamtal' })).toBeVisible();
     const { unmarked } = await hiddenFocusStops(page);
     expect(unmarked).toEqual([]);
   });
@@ -93,7 +120,7 @@ test.describe('the person as a page', () => {
     await open(page, '/people/johan');
     await expect(page.getByRole('navigation', { name: 'Du är här' })).toHaveCount(0);
     const sections = page.getByRole('navigation', { name: 'Om Johan Byström' });
-    await expect(sections.getByRole('listitem')).toHaveCount(1);
+    await expect(sections.getByRole('link')).toHaveCount(1);
     await expect(sections.locator('[aria-current="true"]')).toContainText('Kontakt');
     await expect(page.getByRole('heading', { level: 2, name: 'Kontakt' })).toBeVisible();
     // Only what the server gives a colleague (artboard G): one action, no Fler, no cards, and their unit named, not
@@ -143,37 +170,33 @@ test.describe('the person as a page', () => {
     await expect(panel.getByRole('article', { name: 'Kort: Planera utvecklingssamtal vecka 45' })).toBeVisible();
   });
 
-  test('where the sections and the panel no longer fit side by side the page gives way: its drill-in beside the card, and side by side again when it closes', async ({
+  test('beside a card the page keeps its tab strip and its section, and the card a section’s action made closes back to that button', async ({
     page,
-    api: _,
+    api,
   }) => {
-    // The panel stands beside every page from 1336 px; the list of sections and the chosen one need 1432 px beside it.
-    await new People().route(page);
+    // The panel stands beside every page from 1336 px; the page under it is the same at every width.
+    await new People().route(page, api);
     await page.setViewportSize({ width: 1400, height: 900 });
-    await open(page, '/people/johan?section=needs-you&from=%2Fstaff');
+    const here = `/people/johan?section=${PRESENCE_LENS}&from=%2Fstaff`;
+    await open(page, here);
     const sections = page.getByRole('navigation', { name: 'Om Johan Byström' });
-    await expect(sections).toBeVisible();
-    await page.getByRole('link', { name: 'En åtgärdspunkt skulle vara klar 3 nov' }).click();
+    const button = page.getByRole('main').getByRole('button', { name: 'Registrera frånvaro', exact: true });
+    await button.click();
+    await expect(page).toHaveURL(`${here}&card=entity-hr-registerAbsence-johan`);
+    expect(api.entityStarts).toEqual([{ key: 'johan', capability: 'hr.registerAbsence' }]);
     const panel = page.getByRole('complementary', { name: 'Kort' });
-    await expect(panel.getByRole('article', { name: 'Kort: Planera utvecklingssamtal vecka 45' })).toBeVisible();
+    await expect(panel.getByText('Registrera frånvaro: Johan Byström').first()).toBeVisible();
+    await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    // The page is its narrow drill-in: the chosen section, with the way back to the list of sections.
-    const back = page.getByRole('link', { name: 'Tillbaka till Om Johan Byström' });
-    await expect(back).toBeVisible();
-    await expect(page.getByRole('heading', { level: 2, name: 'Behöver dig' })).toBeVisible();
-    await expect(sections).toHaveCount(0);
+    await expect(sections).toBeVisible();
+    await expect(sections.locator('[aria-current="true"]')).toContainText('Frånvaro');
+    await expect(page.getByRole('heading', { level: 2, name: 'Frånvaro', exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await expectNoAxeViolations(page);
-    // The list of sections is one step away, with the card still beside it.
-    await back.click();
-    await expect(page).toHaveURL('/people/johan?from=%2Fstaff&card=samtal-svar');
-    await expect(sections).toBeVisible();
-    await expect(panel).toBeVisible();
-    // Closed, the page stands side by side again.
-    await panel.getByRole('button', { name: 'Stäng panelen' }).click();
-    await expect(page).toHaveURL('/people/johan?from=%2Fstaff');
-    await expect(sections).toBeVisible();
-    await expect(page.getByRole('heading', { level: 2, name: 'Behöver dig' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page).toHaveURL(here);
+    await expect(panel).toHaveCount(0);
+    await expect(button).toBeFocused();
   });
 
   test('an action started on the page opens its card beside it, and closing gives the focus back to the button', async ({
@@ -303,16 +326,20 @@ test.describe('the person as a page', () => {
     await expect(main.getByText(refusal, { exact: true })).toHaveCount(0);
   });
 
-  test('an action whose source’s section did not answer stands beside the name: the first two as buttons, the rest under Fler by system', async ({
+  test('an action whose source answered without a row stands beside the name, the first two as buttons and the rest under Fler by system; a source that did not answer keeps its tab and its action', async ({
     page,
     api: _,
   }) => {
     const people = new People();
-    people.silent[PRESENCE_LENS] = 'unavailable';
-    people.silent[TALK_LENS] = 'unavailable';
+    people.empty = [PRESENCE_LENS, TALK_LENS];
     await people.route(page);
     await open(page, '/people/johan?from=%2Fstaff');
     const main = page.getByRole('main');
+    const sections = page.getByRole('navigation', { name: 'Om Johan Byström' });
+    await expect(sections.getByRole('link', { name: 'Kontakt' })).toBeVisible();
+    // Neither source has a tab: they had nothing about Johan.
+    await expect(sections.getByRole('link', { name: 'Frånvaro' })).toHaveCount(0);
+    await expect(sections.getByRole('link', { name: 'Utvecklingssamtal' })).toHaveCount(0);
     await expect(main.getByRole('button', { name: 'Boka möte', exact: true })).toBeVisible();
     await expect(main.getByRole('button', { name: 'Registrera frånvaro', exact: true })).toBeVisible();
     await main.getByRole('button', { name: 'Fler åtgärder för Johan Byström' }).click();
@@ -325,27 +352,34 @@ test.describe('the person as a page', () => {
     await page.keyboard.press('Escape');
     await expect(menu).toHaveCount(0);
     await expect(page).toHaveURL('/people/johan?from=%2Fstaff');
-    // The section that did not answer, opened by its address, does not draw its action again.
+    // An address naming a section that has no tab shows the first one.
     await open(page, `/people/johan?from=%2Fstaff&section=${PRESENCE_LENS}`);
+    await expect(sections.locator('[aria-current="true"]')).toContainText('Behöver dig');
+    await expect(page.getByRole('heading', { level: 2, name: 'Behöver dig' })).toBeVisible();
+    // A source that did not answer has its tab, and its section says so beside its action.
+    people.empty = [];
+    people.silent[PRESENCE_LENS] = 'unavailable';
+    await open(page, `/people/johan?from=%2Fstaff&section=${PRESENCE_LENS}`);
+    await expect(sections.locator('[aria-current="true"]')).toContainText('Frånvaro');
     await expect(main.getByText('Personalsystemet svarade inte.')).toBeVisible();
     await expect(main.getByRole('button', { name: 'Registrera frånvaro', exact: true })).toHaveCount(1);
+    await expect(main.getByRole('button', { name: /Fler åtgärder/ })).toHaveCount(0);
   });
 
-  test('a source that does not answer says so in its own place, once aloud, and Försök igen asks it alone', async ({
+  test('a source that does not answer has its tab, says so in its own place, once aloud, and Försök igen asks it alone', async ({
     page,
     api: _,
   }) => {
     const people = new People();
     await people.route(page);
     await open(page, `/people/johan?from=%2Fstaff&section=${SILENT_SECTION}`);
+    const sections = page.getByRole('navigation', { name: 'Om Johan Byström' });
+    await expect(sections.locator('[aria-current="true"]')).toContainText('Kompetenser');
     await expect(page.getByRole('main').getByText('Kompetenssystemet svarade inte.')).toBeVisible();
     await expect.poll(() => said(page, 'Kompetenssystemet svarade inte.')).toBe(1);
     const before = [...people.reads];
     delete people.silent[SILENT_SECTION];
-    await page
-      .getByRole('navigation', { name: 'Om Johan Byström' })
-      .getByRole('button', { name: 'Försök igen med Kompetenser' })
-      .click();
+    await page.getByRole('main').getByRole('button', { name: 'Försök igen med Kompetenser' }).click();
     await expect(page.getByRole('main').getByText('HLR vuxen').first()).toBeVisible();
     expect(people.reads.slice(before.length)).toEqual([SILENT_SECTION]);
     expect(await said(page, 'Kompetenssystemet svarade inte.')).toBe(1);
@@ -356,10 +390,14 @@ test.describe('the person as a page', () => {
     people.delay[PRESENCE_LENS] = 2_500;
     await people.route(page);
     await page.goto(`/people/johan?from=%2Fstaff&section=${PRESENCE_LENS}`);
+    // Frånvaro is chosen and on its way: the strip and the other sections do not wait for it.
     const sections = page.getByRole('navigation', { name: 'Om Johan Byström' });
-    await expect(sections.getByText('2 försenade')).toBeVisible();
-    await expect(sections.getByText('johan@clew.test')).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'Frånvaro' })).toBeVisible();
     await expect(page.getByText('Semester 21–23 dec')).toHaveCount(0);
+    await sections.getByRole('link', { name: 'Utvecklingssamtal' }).click();
+    await expect(page.getByText('Skicka underlag om schemaläggning')).toBeVisible();
+    await page.goBack();
+    await expect(page.getByRole('heading', { level: 2, name: 'Frånvaro' })).toBeVisible();
     await expect(page.getByText('Semester 21–23 dec').first()).toBeVisible({ timeout: 10_000 });
     expect(people.reads).toEqual(expect.arrayContaining([TALK_LENS, PRESENCE_LENS, CONTACT, SILENT_SECTION]));
   });
@@ -368,7 +406,7 @@ test.describe('the person as a page', () => {
 test.describe('the person on a phone', () => {
   test.use({ viewport: phoneSize });
 
-  test('Åtgärder holds the actions no section holds, and a row leads into its section and back', async ({
+  test('Åtgärder holds the actions no section holds; the strip is the one of a wide window, its first tab chosen, and a tab leads to its section and back', async ({
     page,
     api: _,
   }) => {
@@ -381,16 +419,17 @@ test.describe('the person on a phone', () => {
     await expectNoAxeViolations(page);
     await page.keyboard.press('Escape');
     const sections = page.getByRole('navigation', { name: 'Om Johan Byström' });
-    await sections.getByRole('link', { name: /Utvecklingssamtal/ }).click();
+    await expect(sections.locator('[aria-current="true"]')).toContainText('Behöver dig');
+    await expect(page.getByRole('heading', { level: 2, name: 'Behöver dig' })).toBeVisible();
+    const talk = sections.getByRole('link', { name: 'Utvecklingssamtal' });
+    await talk.click();
     await expect(page).toHaveURL(/section=clew\.talkPeople/);
-    await expect(page.getByRole('link', { name: 'Tillbaka till Om Johan Byström' })).toBeFocused();
+    await expect(talk).toBeFocused();
     await expect(page.getByText('Skicka underlag om schemaläggning')).toBeVisible();
     await expectNoAxeViolations(page);
-    await page.getByRole('link', { name: 'Tillbaka till Om Johan Byström' }).click();
+    await page.goBack();
     await expect(page).toHaveURL('/people/johan?from=%2Fstaff');
-    await expect(
-      page.getByRole('navigation', { name: 'Om Johan Byström' }).getByRole('link', { name: /Utvecklingssamtal/ }),
-    ).toBeFocused();
+    await expect(page.getByRole('heading', { level: 2, name: 'Behöver dig' })).toBeVisible();
   });
 
   test('in an opened section its source’s action is a button the width of the column, and not under Åtgärder', async ({
@@ -404,7 +443,8 @@ test.describe('the person on a phone', () => {
     await expect(main.getByText(/Personalsystemet · hämtat/)).toBeVisible();
     const button = main.getByRole('button', { name: 'Registrera frånvaro', exact: true });
     await expect(button).toBeVisible();
-    const column = page.getByRole('toolbar', { name: 'Tillbaka till Om Johan Byström' });
+    // The strip spans the column.
+    const column = page.getByRole('navigation', { name: 'Om Johan Byström' });
     const [b, t] = await Promise.all([button.boundingBox(), column.boundingBox()]);
     expect(Math.abs(b!.width - t!.width)).toBeLessThanOrEqual(1);
     await expectNoAxeViolations(page);
@@ -418,32 +458,52 @@ test.describe('the person on a phone', () => {
     ).toHaveCount(1);
   });
 
-  test('the page drills into a section and back on a narrow window', async ({ page, api: _ }) => {
+  test('the keyboard through the strip: the arrows move between the tabs, Enter opens one, the chosen tab is scrolled into view, and Tab leaves the strip', async ({
+    page,
+    api: _,
+  }) => {
     await new People().route(page);
     await open(page, '/people/johan?from=%2Fstaff');
     const sections = page.getByRole('navigation', { name: 'Om Johan Byström' });
-    await expect(sections.locator('[aria-current="true"]')).toHaveCount(0);
+    const last = sections.getByRole('link', { name: 'Kompetenser' });
+    await sections.getByRole('link').first().focus();
+    for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowRight');
+    await expect(last).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(`/people/johan?section=${SILENT_SECTION}&from=%2Fstaff`);
+    await expect(last).toHaveAttribute('aria-current', 'true');
+    await expect(last).toBeFocused();
+    await expect(last).toBeInViewport();
+    await expect(page.getByRole('heading', { level: 2, name: 'Kompetenser' })).toBeVisible();
+    await expect(page.getByRole('main').getByText('Kompetenssystemet svarade inte.')).toBeVisible();
+    await page.keyboard.press('ArrowLeft');
+    await expect(sections.getByRole('link', { name: 'Kontakt' })).toBeFocused();
+    // The strip is one stop: Tab goes on to the section, not to the next tab.
+    await page.keyboard.press('Tab');
+    await expect(page.getByRole('main').getByRole('button', { name: 'Försök igen med Kompetenser' })).toBeFocused();
     await expectNoAxeViolations(page);
-    await sections.getByRole('link', { name: /Kontakt/ }).click();
-    await expect(page.getByRole('heading', { level: 2, name: 'Kontakt' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Tillbaka till Om Johan Byström' })).toBeFocused();
-    await page.getByRole('link', { name: 'Tillbaka till Om Johan Byström' }).click();
-    await expect(
-      page.getByRole('navigation', { name: 'Om Johan Byström' }).getByRole('link', { name: /Kontakt/ }),
-    ).toBeFocused();
   });
 });
 
 test.describe('1.4.10 reflow', () => {
   test.use({ viewport: narrow });
-  test('the person as a page reflows at 320 px', async ({ page, api: _ }) => {
+  test('the person as a page reflows at 320 px: the tab strip fits and scrolls, its chosen tab in view', async ({
+    page,
+    api: _,
+  }) => {
     await new People().route(page);
     await open(page, '/people/johan?from=%2Fstaff');
-    await expect(page.getByRole('navigation', { name: 'Om Johan Byström' })).toBeVisible();
-    expect(await reflowProblems(page)).toEqual([]);
+    const strip = page.getByRole('navigation', { name: 'Om Johan Byström' });
+    await expect(strip).toBeVisible();
+    const box = (await strip.boundingBox())!;
+    expect(box.x + box.width).toBeLessThanOrEqual(narrow.width);
+    expect(outsideTheStrip(await reflowProblems(page))).toEqual([]);
     await open(page, '/people/johan?from=%2Fstaff&section=clew.talkPeople');
     await expect(page.getByText('Skicka underlag om schemaläggning')).toBeVisible();
-    expect(await reflowProblems(page)).toEqual([]);
+    expect(outsideTheStrip(await reflowProblems(page))).toEqual([]);
+    await open(page, `/people/johan?from=%2Fstaff&section=${SILENT_SECTION}`);
+    await expect(strip.getByRole('link', { name: 'Kompetenser' })).toBeInViewport({ ratio: 1 });
+    expect(outsideTheStrip(await reflowProblems(page))).toEqual([]);
   });
   test('a card opened on the person’s page lies over it and reflows at 320 px', async ({ page, api: _ }) => {
     await new People().route(page);
@@ -452,7 +512,53 @@ test.describe('1.4.10 reflow', () => {
     await expect(drawer.getByRole('article', { name: 'Kort: Planera utvecklingssamtal vecka 45' })).toBeVisible();
     await page.evaluate(() => Promise.all(document.getAnimations().map(a => a.finished)));
     expect(await reflowProblems(page, drawer)).toEqual([]);
-    expect(await reflowProblems(page)).toEqual([]);
+    expect(outsideTheStrip(await reflowProblems(page))).toEqual([]);
     await expectNoAxeViolations(page);
+  });
+});
+
+test.describe('a card row that names the person whose page it is beside', () => {
+  test.use({ viewport: wide });
+
+  test('the person the page is about is plain text in the card, another person is a link whose way back holds no way back, and elsewhere the same row leads to the page', async ({
+    page,
+    api,
+  }) => {
+    // The card under Behöver dig with two rows that name a person: Johan, whose page it is beside, and Anna.
+    const row = (key: string, label: string, detail: string) => ({
+      ref: `hr:person:${key}`,
+      label,
+      detail,
+      selectable: false,
+      selected: false,
+      subject: { entity: 'person' as const, key },
+    });
+    api.threads = api.threads.map(t =>
+      t.id === 'samtal-svar'
+        ? {
+            ...t,
+            proposals: [],
+            items: [row('johan', 'Johan Byström', 'Medarbetare'), row('anna', 'Anna Lindqvist', 'Chef')],
+          }
+        : t,
+    );
+    await new People().route(page);
+    await open(page, '/people/johan?section=needs-you&from=%2Fstaff&card=samtal-svar');
+    const panel = page.getByRole('complementary', { name: 'Kort' });
+    // Anna's page has this page as its way back, the section and the card kept and this page's own `from` left out.
+    await expect(panel.getByRole('link', { name: 'Anna Lindqvist', exact: true })).toHaveAttribute(
+      'href',
+      '/people/anna?from=%2Fpeople%2Fjohan%3Fsection%3Dneeds-you%26card%3Dsamtal-svar',
+    );
+    // Johan is named in plain text: a link would lead out of the card to the page the reader is on (the product
+    // owner, 2026-11-11).
+    await expect(panel.getByText('Johan Byström', { exact: true })).toBeVisible();
+    await expect(panel.getByRole('link', { name: 'Johan Byström', exact: true })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+    // Beside any other page the same row leads to Johan's page, with that page as the way back.
+    await open(page, '/?card=samtal-svar');
+    await expect(
+      page.getByRole('complementary', { name: 'Kort' }).getByRole('link', { name: 'Johan Byström', exact: true }),
+    ).toHaveAttribute('href', '/people/johan?from=%2F%3Fcard%3Dsamtal-svar');
   });
 });

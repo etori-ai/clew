@@ -628,6 +628,16 @@ function useThreadActions({ thread, onChange, onRead }: ActionProps) {
 type Actions = ReturnType<typeof useThreadActions>;
 
 /**
+ * A read whose answer is an address out of Clew (`target: 'link'`) says on its control that it leaves (D110 rule 8):
+ * Astryx's external-link glyph after the label, named with the words Astryx's own external link says in Swedish, so the
+ * control's name is "Öppna i ekonomisystemet (öppnas i ny flik)" as a link out's is. A read into the panel unfolds in
+ * the card instead and is not marked.
+ */
+const leavingMark = (action: ThreadAction) =>
+  action.kind === 'read' && action.target === 'link'
+    ? { endContent: <Icon icon="externalLink" label="(öppnas i ny flik)" /> }
+    : {};
+/**
  * The action row shared by every card and row (artboards A and E): the one next step from the connector, filled only
  * when the thread is due today (D48), with the secondary actions, "Lägg till i samtalet" and the card's one time action
  * (D49) beside it on a card, also when the card is open beside the page (the product owner, 2026-11-06: the panel's
@@ -736,6 +746,7 @@ function ActionRow({
         width={width}
         clickAction={() => perform(primary)}
         {...readState(primary)}
+        {...leavingMark(primary)}
       />
     )
   ) : null;
@@ -772,7 +783,7 @@ function ActionRow({
         menuMaxHeight={480}
       >
         {[...tucked, ...overflow].map(a => (
-          <DropdownMenuItem key={a.id} label={a.label} onClick={() => void perform(a)} />
+          <DropdownMenuItem key={a.id} label={a.label} onClick={() => void perform(a)} {...leavingMark(a)} />
         ))}
         {time && <TimeSubMenu label="Inte nu" rows={time.rows} own={time.own} />}
         {([...tucked, ...overflow].length > 0 || time) && <DropdownMenuDivider />}
@@ -871,6 +882,7 @@ function ActionRow({
         width={width}
         clickAction={() => perform(a)}
         {...readState(a)}
+        {...leavingMark(a)}
       />
     ));
     const rest = (
@@ -937,7 +949,14 @@ function ActionRow({
         {secondary
           .filter(a => a.kind === 'read')
           .map(a => (
-            <Button key={a.id} size={size} label={a.label} clickAction={() => perform(a)} {...readState(a)} />
+            <Button
+              key={a.id}
+              size={size}
+              label={a.label}
+              clickAction={() => perform(a)}
+              {...readState(a)}
+              {...leavingMark(a)}
+            />
           ))}
         <Text type="supporting">Varje rad visar källsystemets svar. Grönt bara när det lästs tillbaka.</Text>
       </HStack>
@@ -959,11 +978,13 @@ function Flags({ thread }: { thread: Thread }) {
 }
 /**
  * A row's name (D97 item 6): the source's own words, and a link to the person or unit the row names when it names one,
- * with the page it was opened on as the way back. Never a name the row did not have.
+ * with the page it was opened on as the way back. Never a name the row did not have, and no link on the page of the
+ * person or unit it names (`entityHref`): it would lead out of the card to the page the reader is on.
  */
 function ItemLabel({ item, from }: { item: ThreadItem; from: string }) {
-  return item.subject ? (
-    <Link href={entityHref(item.subject, from)} weight="semibold" hasUnderline>
+  const href = item.subject ? entityHref(item.subject, from) : null;
+  return href ? (
+    <Link href={href} weight="semibold" hasUnderline>
       {item.label}
     </Link>
   ) : (

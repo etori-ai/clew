@@ -345,7 +345,11 @@ test.describe('D26 questions answered from documents', () => {
     await expect(rows).toHaveCount(3);
     await expect(rows.nth(0)).toContainText('Rutin vid fall i ordinärt boende · Vid fall');
     await expect(rows.nth(0)).toContainText('Intranätet · MAS · granskad 12 mars 2026');
-    await expect(rows.nth(0).getByRole('link', { name: 'Öppna' })).toHaveAttribute('target', '_blank');
+    // A link out of Clew opens a new tab and says so (D110 rule 8).
+    await expect(rows.nth(0).getByRole('link', { name: /^Öppna\s*\(öppnas i ny flik\)$/ })).toHaveAttribute(
+      'target',
+      '_blank',
+    );
     await expect(rows.nth(0).getByRole('button', { name: 'Lägg till i samtalet' })).toBeVisible();
     await expect(rows.nth(2)).toContainText('2 år sedan');
     await expect(rows.nth(2).getByRole('link', { name: 'Öppna' })).toHaveCount(0);

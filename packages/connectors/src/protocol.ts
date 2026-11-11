@@ -254,9 +254,11 @@ export const ManifestAreaSchema = object({
     pattern: '^[a-z][a-z0-9-]*$',
     maxLength: 40,
     description:
-      "Stable and lowercase. It is the area's address, `/areas/<id>`, and what a scan draft names in `area`.",
+      "Stable and lowercase. Hem's area filter names it in its address (`/?area=<id>`), and a scan draft names it in `area`.",
   }),
-  title: swedish("Swedish. The area's name on its button under the box and in the sidebar."),
+  title: swedish(
+    "Swedish. The area's name: a choice in Hem's area filter and the rail's search, and the word that marks its cards (D71).",
+  ),
   roles: Type.Array(RoleSchema, {
     minItems: 1,
     uniqueItems: true,
@@ -264,7 +266,7 @@ export const ManifestAreaSchema = object({
   }),
   standing: Type.Array(Type.String(), {
     description:
-      'Capability names shown under "Gör själv": what a person can do here without composing a question. Each must be a capability of this manifest.',
+      'Capability names the area offers, each a capability of this manifest. A propose or execute among them is suggested under "Menar du" while the person types in the question box on Hem; a read among them marks its view with the area\'s word and icon and has no entry of its own.',
   }),
   schedules: Type.Array(
     object({
@@ -273,7 +275,7 @@ export const ManifestAreaSchema = object({
     }),
     {
       description:
-        'What the connector does for this area on its own and when, as a person reads it under the area. Informational text; the scan itself runs nightly and on first visit.',
+        'What the connector does for this area on its own and when. Informational text that Clew keeps with the manifest and draws nowhere today; the scan itself runs nightly and on first visit.',
     },
   ),
   figure: Type.Optional(
@@ -317,7 +319,7 @@ export const ConnectorManifestSchema = Type.Object(
     source: swedish('Swedish. The system as shown on cards: "Personalsystemet".'),
     areas: Type.Array(ManifestAreaSchema, {
       description:
-        'The areas this connector gives a person: each is a button under the box on Hem (D41, D53) with its standing actions, schedules and figure. Empty is allowed for a connector that only answers questions.',
+        "The areas this connector gives a person: each names and marks the connector's cards, is a choice in Hem's area filter, and holds its standing capabilities, schedules and figure. Where each shows is in docs/guides/where-things-open.md. Empty is allowed for a connector that only answers questions.",
     }),
     capabilities: Type.Array(ManifestCapabilitySchema, {
       description:
@@ -465,7 +467,7 @@ export const FigureSchema = object(
       Type.String({
         maxLength: 80,
         description:
-          'A read capability of this connector with a declared view that needs no input: the tile is then a link to that view. Clew drops it when it names another connector or a capability without such a view.',
+          'A read capability of this connector with a declared view that needs no input: the tile is then a link to that view, which opens in the panel beside Hem. Clew drops it when it names another connector or a capability without such a view.',
       }),
     ),
   },
@@ -616,7 +618,7 @@ export const ManifestPreviewCapabilitySchema = object({
   }),
   openedFrom: Type.Array(Type.String(), {
     description:
-      "The reads of this manifest whose rows open it (their view's `open`). Opened from a read about an entity, it is drawn under that read's section and in full on the entity's page; from any other read, a row opens it beside the list. Empty when nothing opens it.",
+      "The reads of this manifest whose rows open it (their view's `open`). Opened from a read about an entity, it is drawn under that read's section and in full on the entity's page; from any other read, a row's name opens it in the panel beside the page, in the list's place with Tillbaka when the list is itself in the panel. Empty when nothing opens it.",
   }),
   audience: Type.Array(
     object({

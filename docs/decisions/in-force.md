@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**106 in force**: 99 accepted and 7 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 10 proposed and not decided. 5 no longer in force.
+**105 in force**: 98 accepted and 7 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 10 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -124,7 +124,6 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D63 · Hem is drawn as the canvas draws it, pixel for pixel, with Astryx's own tokens](D63-hem-is-drawn-as-the-canvas-draws-it.md) | 2026-11-06 | accepted |  |
 | [D64 · A card shows the person's own action at once, and keeps it on its way until the source has answered](D64-a-card-shows-the-persons-own-action-at-once.md) | 2026-11-06 | accepted |  |
 | [D65 · "Sedan i går" names a few cards and sums the rest](D65-sedan-i-gar-names-a-few-cards-and-sums-the-rest.md) | 2026-11-06 | accepted |  |
-| [D66 · The panel keeps everything opened beside the page as tabs](D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md) | 2026-11-06 | accepted |  |
 | [D70 · One press confirms on the row, and rows with a document are reviewed one at a time](D70-one-press-confirms-on-the-row-and-rows-with-a-document-are-reviewed-one-at-a-time.md) | 2026-11-06 | accepted |  |
 | [D71 · Three type levels on every surface, and an area mark whose colour is the system's](D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md) | 2026-11-06 | accepted |  |
 | [D72 · The day is the page's, and the panel holds only what was opened](D72-the-day-is-the-pages-and-the-panel-holds-only-what-was-opened.md) | 2026-11-07 | accepted |  |
@@ -161,5 +160,6 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D7 · Bun is the server runtime](D07-bun-is-the-server-runtime.md) | 2026-11-03 | superseded | [D16](D16-node-is-the-server-runtime.md) |
 | [D13 · The conversation lives in the composer's drawer; the dim is an Astryx Overlay](D13-conversation-in-the-composer-drawer.md) | 2026-11-03 | superseded | [D31](D31-the-conversation-swaps-the-stream-inside-one-chatlayout.md) |
 | [D17 · Temporal runs the durable timers, starting with a person's own reminders](D17-temporal-runs-the-durable-timers.md) | 2026-11-04 | superseded | [D85](README.md) |
+| [D66 · The panel keeps everything opened beside the page as tabs](D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md) | 2026-11-06 | superseded | [D110](D110-where-something-opens-is-decided-by-what-it-is.md) |
 | [D67 · The portal is a second web app over the same server, drawn as the product owner's proof of concept draws it](D67-the-portal-is-a-second-web-app-over-the-same-server.md) | 2026-11-06 | superseded | [D87](D87-one-header-shared-by-the-portal-and-the-intranet.md), [D88](D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md) |
 | [D81 · MCP Apps extend AI chat with provider-owned interactions](D81-mcp-apps-extend-ai-chat-with-provider-owned-interactions.md) | 2026-11-08 | withdrawn |  |

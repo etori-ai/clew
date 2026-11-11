@@ -86,10 +86,6 @@ export function useView(
 export interface PagePanelOptions {
   /** Nothing pinned beside the page: a short screen (1.4.10), or a page that never has the panel beside it. */
   overlayOnly?: boolean;
-  /** One thing at a time: what is opened takes the place of what was open, with no tabs (`usePanel`), as on Personal. */
-  replaces?: boolean;
-  /** Whether a thing may stay open as a tab (D66): the page's word on a card that left its stream. */
-  isOpen?: (id: string) => boolean;
   /** The drawer over the page has closed (`usePanel`): where the page sends the focus when its opener is gone. */
   onClosed?: () => void;
   /**
@@ -143,8 +139,6 @@ export interface PagePanelSlot {
  */
 function usePanelOnPage({
   overlayOnly = false,
-  replaces = false,
-  isOpen,
   onClosed,
   failures = 'panel',
   onChange,
@@ -293,10 +287,11 @@ function usePanelOnPage({
         id: `card:${thread.id}`,
         kind: 'card',
         title: 'Kort',
-        tab: thread.title,
+        // Another card taking this one's place is said by its own title: the heading says only "Kort".
+        spoken: thread.title,
         address,
         onClose: close,
-        // The card's buttons, Inte nu among them, are the card's own: the header holds what is open and ✕ (D66).
+        // The card's buttons, Inte nu among them, are the card's own: the header holds the small title and ✕.
         body: () =>
           cardBody(thread, {
             beside: true,
@@ -336,7 +331,7 @@ function usePanelOnPage({
   }
   const failure =
     viewRef && side.failed ? { message: errorMessage(side.failed, 'Kunde inte hämta.'), retry: side.retry } : null;
-  const slot = usePanel(frame, { overlayOnly, isOpen, onClosed, replaces });
+  const slot = usePanel(frame, { overlayOnly, onClosed });
   return { ...slot, frame, ref, card, view, failure };
 }
 

@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, type ReactNode } from 'react';
+import { useCallback, type ReactNode } from 'react';
 import { useLocation, useParams, useSearchParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { EntityAction, EntityDetail, SessionUser } from '@clew/contracts';
 import {
   Avatar,
+  Badge,
   BreadcrumbItem,
   Breadcrumbs,
   Button,
@@ -11,15 +12,14 @@ import {
   EmptyState,
   HStack,
   Heading,
-  Icon,
   Layout,
   LayoutContent,
   Link,
   Skeleton,
-  StackItem,
+  Tab,
+  TabList,
   Text,
   Timestamp,
-  Toolbar,
   VStack,
   useMediaQuery,
 } from '@clew/ui';
@@ -45,14 +45,12 @@ import {
   NEEDS_YOU,
   OpenRead,
   PersonLine,
-  SectionNav,
   SectionRow,
   Unanswered,
   drawnSections,
   openOf,
   rowOf,
   sectionActions,
-  sectionNavRows,
   sectionlessActions,
   sourceCaption,
   unanswered,
@@ -60,37 +58,71 @@ import {
   type SectionAnswer,
 } from '../components/entity-sections';
 
-/** The `settings-sidebar` template's breakpoint: below it the list of sections and the chosen one are two steps. */
-const narrowQuery = '(max-width: 768px)';
-/** The fuller view's table needs the page beside the list of sections: a 1280 px window, the rail beside the page. */
+/** The fuller view's table needs a 1280 px window with the rail beside the page, as on a tool's page. */
 const TABLE_QUERY = '(min-width: 1280px)';
 /** With the panel beside the page the table needs the same column, so a window wider by the panel. */
 const TABLE_BESIDE_QUERY = panelBesideQuery(1280 - RAIL);
-/** The list of sections keeps its width (artboard C2); the chosen section beside it reads down to this. */
-const SECTIONS_WIDTH = 340;
-const CHOSEN_MIN = 300;
-/** The page's column at its widest, less its 32 px padding on each side, and the least the two side by side need. */
+/** The page's column at its widest, less its 32 px padding on each side. */
 const COLUMN = 1216 - 2 * 32;
-const PERSON_MIN = SECTIONS_WIDTH + 32 + CHOSEN_MIN + 2 * 32;
-/** Where the list of sections and the chosen one still stand side by side with the panel open beside the page. */
-const SIDE_BY_SIDE_BESIDE_QUERY = panelBesideQuery(PERSON_MIN);
 
 /**
- * The chosen source's fuller view (artboard C2): its name, where it was read and when, its actions and the way to its
- * own page, then its read in full. An action about the person is drawn once, here in its source's section (D97, amended
- * later on 2026-11-11): beside the heading as a button, on a phone a button the width of the column under it, and the
- * source's refusal stands under them.
+ * The person's sections as a tab strip under the name (D97, amended 2026-11-11; the product owner's choice): Behöver dig
+ * with the count of the reader's cards in a badge, as Hem's tabs count, when there are any, then each drawn source by
+ * its section's title. Each tab is a link to the page with that section chosen (`?section=`), so the strip is Astryx's
+ * navigation pattern, a landmark named "Om <namn>" with the chosen tab current, and back, forward and an address choose
+ * as a click does. One tab stop, the arrows between the tabs; a strip wider than the column scrolls and keeps the chosen
+ * tab in view.
+ */
+function SectionTabs({
+  name,
+  cards,
+  drawn,
+  chosen,
+  hrefFor,
+}: {
+  name: string;
+  cards: EntityDetail['cards'];
+  drawn: SectionAnswer[];
+  chosen: string | undefined;
+  hrefFor: (id: string) => string;
+}) {
+  return (
+    // The tab is a link: the address chooses the section, so choosing needs nothing more here.
+    <TabList value={chosen ?? ''} onChange={() => {}} aria-label={`Om ${name}`} hasDivider>
+      {cards.length > 0 && (
+        <Tab
+          value={NEEDS_YOU}
+          label="Behöver dig"
+          href={hrefFor(NEEDS_YOU)}
+          endContent={<Badge variant="neutral" label={String(cards.length)} />}
+        />
+      )}
+      {drawn.map(a => (
+        <Tab
+          key={a.source.capability}
+          value={a.source.capability}
+          label={a.source.title}
+          href={hrefFor(a.source.capability)}
+        />
+      ))}
+    </TabList>
+  );
+}
+
+/**
+ * The chosen source's fuller view (artboard C2) under the tab strip, the column's full width: its name, where it was
+ * read and when, its actions and the way to its own page, then its read in full. An action about the person is drawn
+ * once, here in its source's section (D97, amended 2026-11-11): beside the heading as a button, on a phone a button the
+ * width of the column under it, and the source's refusal stands under them.
  */
 function ChosenSection({
   detail,
   answer,
-  level,
   tableQuery,
   mobile,
 }: {
   detail: EntityDetail;
   answer: SectionAnswer;
-  level: 'page' | 'drill';
   tableQuery: string;
   mobile: boolean;
 }) {
@@ -108,7 +140,7 @@ function ChosenSection({
     <VStack gap={5}>
       <HStack gap={3} justify="between" vAlign="center" wrap="wrap">
         <VStack gap={0}>
-          {level === 'page' && <Heading level={2}>{answer.source.title}</Heading>}
+          <Heading level={2}>{answer.source.title}</Heading>
           <Text type="supporting">
             {sourceCaption(answer.source)}
             {row && read ? (
@@ -166,11 +198,11 @@ function ChosenSection({
 }
 
 /** Behöver dig as the chosen section: the reader's cards about the person, each opening in the panel beside the page. */
-function ChosenCards({ detail, level }: { detail: EntityDetail; level: 'page' | 'drill' }) {
+function ChosenCards({ detail }: { detail: EntityDetail }) {
   return (
     <VStack gap={5}>
       <VStack gap={0}>
-        {level === 'page' && <Heading level={2}>Behöver dig</Heading>}
+        <Heading level={2}>Behöver dig</Heading>
         <Text type="supporting">Clew</Text>
       </VStack>
       <Card>
@@ -182,26 +214,22 @@ function ChosenCards({ detail, level }: { detail: EntityDetail; level: 'page' | 
 
 /**
  * The person as a page (D97 item 5, artboard C2), at `/people/:key`, the one way a person is shown (D110 rule 3),
- * reached from a name on Personal or on any row that names them: the trail back to the list, the person's name, the list
- * of sections ("Om <namn>", each with its source and one line) and beside it the chosen source's fuller view with that
- * source's actions, `?section=` in the address. An action whose source has no section to hold it stands beside the name
- * instead, so each is drawn once and none is lost (D97, amended 2026-11-11). On a narrow window the two are the
- * `settings-sidebar` template's drill-in: the list, then the chosen section with the way back to the list. A person the
- * reader may not ask about is the page's own "finns inte" (the server answers 404 for both).
+ * reached from a name on Personal or on any row that names them: the trail back to the list, the person's name, the tab
+ * strip of their sections ("Om <namn>") and under it the chosen section at the column's full width, `?section=` in the
+ * address; without one the first tab is chosen. The page is the same at every width, a phone included. An action whose
+ * source has no section to hold it stands beside the name instead, so each is drawn once and none is lost (D97, amended
+ * 2026-11-11). A person the reader may not ask about is the page's own "finns inte" (the server answers 404 for both).
  *
  * The page holds the panel beside its column (D110 rules 2 to 4, `usePagePanel`): a card under Behöver dig and the card
  * an action makes open there, with the section and the way back kept in the address, and closing leaves the page as it
  * was. Choosing another section keeps what is open beside it. The panel stands beside the page from the one width
- * every page has (`BESIDE_FROM`); the page gives way, not the panel: where the list of sections and the chosen one no
- * longer fit side by side beside it, the page is its narrow drill-in, and the fuller view's table its list. In a
- * narrower window the panel is the drawer over the page.
+ * every page has (`BESIDE_FROM`), and the fuller view's table gives way to its list where the column is too narrow
+ * beside it; in a narrower window the panel is the drawer over the page.
  */
 export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean }) {
   const { key = '' } = useParams<{ key: string }>();
   const [search] = useSearchParams();
   const mobile = useMediaQuery(mobileQuery);
-  const narrowWindow = useMediaQuery(narrowQuery);
-  const sideBySideBeside = useMediaQuery(SIDE_BY_SIDE_BESIDE_QUERY);
   // 1.4.10: on a short screen nothing is pinned beside the page, and the page scrolls as one.
   const short = useMediaQuery(shortQuery);
   const from = insideClew(search.get('from'));
@@ -214,9 +242,6 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
     void client.invalidateQueries({ queryKey: keys.entities.detail('person', key), exact: true });
   }, [client, key]);
   const panel = usePagePanel({ overlayOnly: short, onChange: cardChanged });
-  // The page gives way to the panel beside it (the product owner, 2026-11-11): the narrow drill-in it draws on a narrow
-  // window, wherever the two no longer fit side by side beside the panel.
-  const narrow = narrowWindow || (panel.occupied && !sideBySideBeside);
   const missing = read.isError && read.error instanceof ApiError && read.error.status === 404;
   const answers = useSectionAnswers(detail?.entity.key, detail?.sections ?? []);
   const origin = originOf(from, useQuery(areasQuery).data?.menu);
@@ -237,24 +262,14 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
   // none for an address without one (D83 rule 4: no prior page is guessed).
   const back = detail ? origin : null;
   const drawn = drawnSections(answers);
-  const fallback = detail ? (detail.cards.length > 0 ? NEEDS_YOU : drawn[0]?.source.capability) : undefined;
-  const chosenId = section ?? (narrow ? undefined : fallback);
-  const chosen = chosenId ? answers.find(a => a.source.capability === chosenId) : undefined;
-  const showsCards = chosenId === NEEDS_YOU && !!detail && detail.cards.length > 0;
+  // The tabs, in their order: Behöver dig when the reader has cards about the person, then each drawn source. The
+  // address chooses one of them; without one, or naming none of them, the first is chosen.
+  const tabs = [...(detail && detail.cards.length > 0 ? [NEEDS_YOU] : []), ...drawn.map(a => a.source.capability)];
+  const chosenId = section && tabs.includes(section) ? section : tabs[0];
+  const chosen = chosenId ? drawn.find(a => a.source.capability === chosenId) : undefined;
+  const showsCards = chosenId === NEEDS_YOU;
   // Another section is a move within the page: what is open beside it stays.
-  const hrefFor = (id: string | null) =>
-    keepingPanel(personPageHref(key, { ...(id ? { section: id } : {}), from }), search);
-  // Into a section on a narrow window the focus goes to the way back; out of it, to the row it came from.
-  const backLink = useRef<HTMLButtonElement>(null);
-  const navRef = useRef<HTMLDivElement>(null);
-  const lastSection = useRef(section);
-  useEffect(() => {
-    const was = lastSection.current;
-    lastSection.current = section;
-    if (!narrow || was === section) return;
-    if (section) backLink.current?.focus();
-    else if (was) navRef.current?.querySelector<HTMLElement>(`a[href="${CSS.escape(hrefFor(was))}"]`)?.focus();
-  }, [section, narrow]);
+  const hrefFor = (id: string) => keepingPanel(personPageHref(key, { section: id, from }), search);
 
   let body: ReactNode;
   if (missing)
@@ -286,27 +301,18 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
   else if (!detail) body = <ContentSkeleton />;
   else {
     const { name } = detail.entity;
-    const list = (
-      <VStack ref={navRef} as="nav" aria-label={`Om ${name}`}>
-        <Card padding={0} {...(narrow ? {} : { width: SECTIONS_WIDTH })}>
-          <SectionNav rows={sectionNavRows(detail.cards, answers, hrefFor, narrow ? undefined : chosenId)} />
-        </Card>
-      </VStack>
-    );
     const view = showsCards ? (
-      <ChosenCards detail={detail} level={narrow ? 'drill' : 'page'} />
+      <ChosenCards detail={detail} />
     ) : chosen ? (
       // Keyed by its source, so a refusal stands only in the section whose action it answered.
       <ChosenSection
         key={chosen.source.capability}
         detail={detail}
         answer={chosen}
-        level={narrow ? 'drill' : 'page'}
         tableQuery={panel.occupied ? TABLE_BESIDE_QUERY : TABLE_QUERY}
         mobile={mobile}
       />
     ) : null;
-    const chosenTitle = showsCards ? 'Behöver dig' : chosen?.source.title;
     body = (
       <>
         <PageHeader
@@ -327,41 +333,14 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
               }
             : {})}
         />
-        {detail.cards.length === 0 && drawn.length === 0 && answers.every(a => !a.query.isPending) ? (
+        {/* A section on its way has its tab, so no tab means every source answered without a row and there are no cards. */}
+        {tabs.length === 0 ? (
           <EmptyState isCompact headingLevel={2} title={`Inget mer att visa om ${name}`} />
-        ) : narrow ? (
-          view && chosenTitle ? (
-            <VStack gap={4}>
-              <Toolbar
-                label={`Tillbaka till Om ${name}`}
-                gap={2}
-                startContent={
-                  <>
-                    <Button
-                      ref={backLink}
-                      label={`Tillbaka till Om ${name}`}
-                      variant="ghost"
-                      size="sm"
-                      isIconOnly
-                      icon={<Icon icon="chevronLeft" size="sm" />}
-                      href={hrefFor(null)}
-                    />
-                    <Heading level={2}>{chosenTitle}</Heading>
-                  </>
-                }
-              />
-              {view}
-            </VStack>
-          ) : (
-            list
-          )
         ) : (
-          // The list of sections and the chosen one side by side (the template's sidebar and content, artboard C2):
-          // the list keeps its width, the view takes the rest.
-          <HStack gap={8} vAlign="start">
-            <StackItem>{list}</StackItem>
-            <StackItem size="fill">{view}</StackItem>
-          </HStack>
+          <>
+            <SectionTabs name={name} cards={detail.cards} drawn={drawn} chosen={chosenId} hrefFor={hrefFor} />
+            {view}
+          </>
         )}
       </>
     );

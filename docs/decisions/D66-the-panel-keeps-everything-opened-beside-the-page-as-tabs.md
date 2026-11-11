@@ -1,6 +1,6 @@
 # D66 · The panel keeps everything opened beside the page as tabs
 
-**Status:** accepted, built 2026-11-06 on `main`, revised the same day (items 2, 4 and 5: a menu, not a row; item 3 the same evening: the fold keeps the tabs, Stäng alla closes all) · **Date:** 2026-11-06 · **Area:** ui
+**Status:** superseded by D110 as amended 2026-11-11 (the panel holds one thing; the tabs are removed), built 2026-11-06 on `main`, revised the same day (items 2, 4 and 5: a menu, not a row; item 3 the same evening: the fold keeps the tabs, Stäng alla closes all) · **Date:** 2026-11-06 · **Area:** ui
 
 **Decision.** Beside a page the panel ([D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md)
 item 3) no longer replaces what it holds. Each card or view opened joins a row of tabs in the panel's header, in the
@@ -78,3 +78,16 @@ token, the focus on the button). `keyboard.spec.ts` and `card-actions.spec.ts` r
 D63's "left for later" for the panel's tabs. D50 item 4 (the address) and item 5 (the card goes along) stand.
 
 **Amended 2026-11-06 by [D70](D70-one-press-confirms-on-the-row-and-rows-with-a-document-are-reviewed-one-at-a-time.md).** A done card whose receipt can still be undone stays in the panel, with the receipt, Ångra allt and the way on; the rule that a card leaves with its row now covers Inte nu, Avfärda and a receipt whose window has passed.
+
+**Amended 2026-11-11 ([D110](D110-where-something-opens-is-decided-by-what-it-is.md)).** The tabs are withdrawn: the
+panel holds one thing, and opening another replaces it, on every page, Hem included. The product owner, looking at the
+app live, opened one card under "Behöver dig" on a person's page and then another, and the panel's header turned from
+the small "Kort" and ✕ into a menu named by the second card's title with "Stäng alla" behind ⋯: several things beside
+the page, which D110's amendment (answer 3: one opened thing, never a list) had ruled out. The header is always the
+small title and ✕ "Stäng panelen", which closes the panel; the `TabList` with its `TabMenu` ("N öppna bredvid"), ✕
+named after the current tab, the ⋯ with "Stäng alla (N)", `OpenTab`, `PanelFrame.tab`, a view's figure word on its tab
+and `usePanel`'s `isOpen` and `replaces` options are gone. What stands: item 2's card buttons in the card, Inte nu
+among them; item 4's speech, a card that takes another's place said by its own title (`PanelFrame.spoken`) with the
+focus on the heading; and, from Personal's one thing at a time, the link that opened the new thing as the way back on
+close. Browser Back returns to the card opened before because the address names it (`card=`), as it always did.
+`tests/a11y/todo.spec.ts` and `views.spec.ts` assert the replacement in place of the menu.

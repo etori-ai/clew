@@ -24,7 +24,7 @@ test.describe('screens', () => {
     await new People().route(page);
     await page.setViewportSize({ width: 390, height: 844 });
     await open(page, '/people/johan?from=%2Fstaff');
-    await page.getByRole('navigation', { name: 'Om Johan Byström' }).getByText('Katalogen').waitFor();
+    await page.getByRole('heading', { level: 2, name: 'Behöver dig' }).waitFor();
     await page.waitForTimeout(500);
     await page.screenshot({ path: out('person-phone-390') });
     await open(page, '/people/johan?from=%2Fstaff&section=clew.talkPeople');

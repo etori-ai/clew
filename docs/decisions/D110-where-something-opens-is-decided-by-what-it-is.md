@@ -97,3 +97,8 @@ the one before with only ✕ leading back. Their five answers:
 
 For a connector author the table's "a card's read lies over the card" now reads "a card's read unfolds in the card".
 
+Seen live again at 18:00, a second card opened beside a person's page still turned the header into
+[D66](D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md)'s menu of open things: D66's tabs are withdrawn
+(its amendment of 2026-11-11), so answer 3 holds on every page, Hem included, and opening another thing replaces what
+the panel holds under answer 2's one header.
+

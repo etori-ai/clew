@@ -62,13 +62,13 @@
                 "type": "string",
                 "pattern": "^[a-z][a-z0-9-]*$",
                 "maxLength": 40,
-                "description": "Stable and lowercase. It is the area's address, `/areas/<id>`, and what a scan draft names in `area`."
+                "description": "Stable and lowercase. Hem's area filter names it in its address (`/?area=<id>`), and a scan draft names it in `area`."
               },
               "title": {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 200,
-                "description": "Swedish. The area's name on its button under the box and in the sidebar."
+                "description": "Swedish. The area's name: a choice in Hem's area filter and the rail's search, and the word that marks its cards (D71)."
               },
               "roles": {
                 "type": "array",
@@ -93,7 +93,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "Capability names shown under \"Gör själv\": what a person can do here without composing a question. Each must be a capability of this manifest."
+                "description": "Capability names the area offers, each a capability of this manifest. A propose or execute among them is suggested under \"Menar du\" while the person types in the question box on Hem; a read among them marks its view with the area's word and icon and has no entry of its own."
               },
               "schedules": {
                 "type": "array",
@@ -115,7 +115,7 @@
                   },
                   "additionalProperties": false
                 },
-                "description": "What the connector does for this area on its own and when, as a person reads it under the area. Informational text; the scan itself runs nightly and on first visit."
+                "description": "What the connector does for this area on its own and when. Informational text that Clew keeps with the manifest and draws nowhere today; the scan itself runs nightly and on first visit."
               },
               "figure": {
                 "type": "boolean",
@@ -169,7 +169,7 @@
             },
             "additionalProperties": false
           },
-          "description": "The areas this connector gives a person: each is a button under the box on Hem (D41, D53) with its standing actions, schedules and figure. Empty is allowed for a connector that only answers questions."
+          "description": "The areas this connector gives a person: each names and marks the connector's cards, is a choice in Hem's area filter, and holds its standing capabilities, schedules and figure. Where each shows is in docs/guides/where-things-open.md. Empty is allowed for a connector that only answers questions."
         },
         "capabilities": {
           "type": "array",
@@ -3054,7 +3054,8 @@
                           "type": "string",
                           "const": "link"
                         }
-                      ]
+                      ],
+                      "description": "For a `read`: absent or `panel` unfolds the read's answer inside the card, under its buttons (a `table` view opens in the card's place in the panel); `link` marks the button as leaving Clew and opens the `url` the read answers in a new tab (D110 rule 8). Ignored on a propose or execute."
                     },
                     "input": {
                       "type": "object",
@@ -3066,7 +3067,8 @@
                       "type": "boolean"
                     },
                     "confirm": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Swedish. Asked in a dialog over the card before the action runs, with \"Avbryt\" and the action's own label as the buttons: up to the first \"?\" is the question, the rest says what follows from yes (\"Avvisa filen? Ditt beslut gäller för alla som kan godkänna den.\")."
                     },
                     "review": {
                       "type": "string",
@@ -3369,7 +3371,8 @@
                     "type": "string",
                     "const": "link"
                   }
-                ]
+                ],
+                "description": "For a `read`: absent or `panel` unfolds the read's answer inside the card, under its buttons (a `table` view opens in the card's place in the panel); `link` marks the button as leaving Clew and opens the `url` the read answers in a new tab (D110 rule 8). Ignored on a propose or execute."
               },
               "input": {
                 "type": "object",
@@ -3381,7 +3384,8 @@
                 "type": "boolean"
               },
               "confirm": {
-                "type": "string"
+                "type": "string",
+                "description": "Swedish. Asked in a dialog over the card before the action runs, with \"Avbryt\" and the action's own label as the buttons: up to the first \"?\" is the question, the rest says what follows from yes (\"Avvisa filen? Ditt beslut gäller för alla som kan godkänna den.\")."
               },
               "review": {
                 "type": "string",
@@ -3541,7 +3545,7 @@
         "opens": {
           "type": "string",
           "maxLength": 80,
-          "description": "A read capability of this connector with a declared view that needs no input: the tile is then a link to that view. Clew drops it when it names another connector or a capability without such a view."
+          "description": "A read capability of this connector with a declared view that needs no input: the tile is then a link to that view, which opens in the panel beside Hem. Clew drops it when it names another connector or a capability without such a view."
         }
       },
       "additionalProperties": false,
@@ -3620,7 +3624,7 @@
                 "opens": {
                   "type": "string",
                   "maxLength": 80,
-                  "description": "A read capability of this connector with a declared view that needs no input: the tile is then a link to that view. Clew drops it when it names another connector or a capability without such a view."
+                  "description": "A read capability of this connector with a declared view that needs no input: the tile is then a link to that view, which opens in the panel beside Hem. Clew drops it when it names another connector or a capability without such a view."
                 }
               },
               "additionalProperties": false,

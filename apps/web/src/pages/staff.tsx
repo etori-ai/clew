@@ -95,9 +95,8 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
       predicate: q => q.queryKey.length === 4,
     });
   }, [client]);
-  // One thing at a time: what is opened from the list takes the place of what the panel held, and the link that opened
-  // it is the way back. 1.4.10: on a short screen nothing is pinned beside the page, as on a tool's page.
-  const panel = usePagePanel({ replaces: true, overlayOnly: short, onChange: cardChanged });
+  // 1.4.10: on a short screen nothing is pinned beside the page, as on a tool's page.
+  const panel = usePagePanel({ overlayOnly: short, onChange: cardChanged });
   // The page gives way to the panel beside it (the product owner, 2026-11-11): where the whole table no longer keeps
   // its columns' widths beside the panel (the lens decides them), the list is the rows it is on a phone.
   const tableBeside = useMediaQuery(panelBesideQuery(listMinWidth(list, lens) + 2 * PADDING));

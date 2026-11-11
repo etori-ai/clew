@@ -214,3 +214,12 @@ the name stands only an action whose source has no section that holds it (none o
 a row, or one that did not answer and so is no way in from the list of sections), so no action is lost; when every
 action has its section, nothing stands beside the name. The unit's page, whose sections are drawn by another component
 and all at once, keeps every action beside its name. This replaces that amendment for the person's page.
+
+**Amended 2026-11-11: the person's sections are a tab strip.** The product owner chose top tabs over the list of
+sections beside the chosen one. The sections are chosen in a tab strip under the name, "Om <namn>", one tab per
+section in the same order ("Behöver dig" with the count of the reader's cards, then each source's title), each a link
+to `?section=`, with the chosen section under the strip at the column's full width; without a section in the address
+the first tab is chosen at every width. The list of sections with its line per section, and the phone's drill-in into
+a section and back, are gone; the strip is the same on a phone and scrolls sideways. A source that did not answer keeps
+its tab, so its section now holds its source's actions too: beside the name stands only an action whose source has no
+section on the page or answered without a row. The unit's page is unchanged.

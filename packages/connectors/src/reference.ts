@@ -681,7 +681,7 @@ export function recipes(examples: ConnectorManifest[]): Recipe[] {
     {
       id: 'scan-cards',
       title: 'A scan that becomes cards',
-      text: 'With `scan: true` Clew asks the connector, per person, what needs attention; each draft names an area of the manifest and carries actions of this connector (D35). The area shows the drafts as cards, its standing actions under "Gör själv", its schedules as text, and, with `figure: true`, its figure from `/clew/figure` as a tile on Hem.',
+      text: 'With `scan: true` Clew asks the connector, per person, what needs attention; each draft names an area of the manifest and carries actions of this connector (D35). Each draft becomes a card on Hem, marked with its area, whose title opens the card in the panel beside Hem; the area is a choice in Hem\'s area filter, its standing proposes and executes are suggested under "Menar du" as the person types in the question box, and, with `figure: true`, its figure from `/clew/figure` is a tile on Hem.',
       example: scanning ? { scan: scanning.scan, areas: scanning.areas } : {},
     },
     {

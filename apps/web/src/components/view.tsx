@@ -425,12 +425,13 @@ function Rows({
     const ref = own ?? (view.open ? openRef(view.open, row, view.source) : undefined);
     return ref ? hrefFor(ref) : undefined;
   };
-  // The person or unit a row names (D97 item 6): the row's key for it leads to the entity, with this page as the way back.
+  // The person or unit a row names (D97 item 6): the row's key for it leads to the entity, with this page as the way back;
+  // on that entity's own page it leads nowhere (`entityHref`).
   const { pathname, search } = useLocation();
   const entityOf = (row: Row) => {
     const key = view.subject ? row[view.subject.key] : undefined;
     return view.subject && typeof key === 'string' && key
-      ? entityHref({ entity: view.subject.entity, key }, pathname + search)
+      ? (entityHref({ entity: view.subject.entity, key }, pathname + search) ?? undefined)
       : undefined;
   };
   // A row that opens a read keeps that on its name; the entity is then a link of its own at the row's end, named for it.
@@ -671,7 +672,7 @@ export function DeclaredView({
     const facts = shown.filter(f => f.format !== 'link'),
       out = shown.filter(f => f.format === 'link');
     const factLines = rowGroups(view.fields).filter(g => groupFields(g).some(f => facts.includes(f)));
-    // The person or unit the record names (D97 item 6): its heading leads to the entity.
+    // The person or unit the record names (D97 item 6): its heading leads to the entity, except on that entity's own page.
     const subject = view.kind === 'detail' ? view.subject : undefined;
     const named = subject ? record[subject.key] : undefined;
     const entity =

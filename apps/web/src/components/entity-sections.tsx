@@ -2,7 +2,6 @@ import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { useLocation } from 'react-router';
 import { useQueries, useQuery, type UseQueryResult } from '@tanstack/react-query';
 import {
-  fieldTone,
   openRef,
   viewRows,
   type EntityAction,
@@ -12,7 +11,6 @@ import {
   type EntitySection,
   type EntitySource,
   type View,
-  type ViewField,
 } from '@clew/contracts';
 import {
   Button,
@@ -36,7 +34,7 @@ import { actionMenuItems, useEntityAction } from '../entity-actions';
 import { withCard } from '../panel-address';
 import { NEEDS_YOU, unitPageHref } from '../person-address';
 import { sourcePageHref } from '../talk-address';
-import { compactField, groupFields, present, rowGroups, wholeRow, type FieldGroup } from '../view-fields';
+import { groupFields, present, rowGroups, wholeRow, type FieldGroup } from '../view-fields';
 import { DeclaredView, FieldCell, FieldValue, fieldText, isBadged } from './view';
 
 /**
@@ -65,17 +63,15 @@ export const rowOf = (a: SectionAnswer): Row | undefined =>
 /** The sections that are drawn: every one but those that answered without a row. */
 export const drawnSections = (answers: SectionAnswer[]) => answers.filter(a => !rowless(a));
 /**
- * A section holds its source's actions (D97, amended 2026-11-11) while it can be opened: its source has not answered
- * yet or answered with a row. One that answered without a row is not drawn, and one that did not answer is no way in
- * from the list of sections, so neither holds any.
+ * The actions a section draws under its heading (D97, amended 2026-11-11): those of the connector whose read it is,
+ * while the section is drawn. Every drawn section has its tab, one whose source did not answer too, so only one that
+ * answered without a row, which is left out, holds none.
  */
-const holdsActions = (answer: SectionAnswer) => !rowless(answer) && !unanswered(answer);
-/** The actions a section draws under its heading: those of the connector whose read it is, while it holds them. */
 export const sectionActions = (actions: EntityAction[], answer: SectionAnswer) =>
-  holdsActions(answer) ? actions.filter(a => a.connector === answer.source.connector) : [];
-/** The actions no section holds, drawn beside the name so none is lost: their source has no section that holds them. */
+  rowless(answer) ? [] : actions.filter(a => a.connector === answer.source.connector);
+/** The actions no section holds, drawn beside the name so none is lost: their source has no drawn section. */
 export const sectionlessActions = (actions: EntityAction[], answers: SectionAnswer[]) =>
-  actions.filter(a => !answers.some(s => holdsActions(s) && s.source.connector === a.connector));
+  actions.filter(a => !drawnSections(answers).some(s => s.source.connector === a.connector));
 /** Whose a source is, as a section names it (D97, artboards B and C): Clew's own domain as Clew, any other by its name. */
 export const sourceCaption = (source: Pick<EntitySource, 'source' | 'own'>) => (source.own ? 'Clew' : source.source);
 
@@ -190,40 +186,6 @@ export function SectionRow({ source, row }: { source: EntitySource; row: Row }) 
       )}
     </VStack>
   );
-}
-
-/**
- * One line about a section, for the list of sections (artboards C2 and D): the row's state, the row in one value where
- * the view declares one (D97: "tors 12 nov"), and every other value with a tone ("2 försenade"), each once.
- */
-export function SectionSummary({ source, row }: { source: EntitySource; row: Row }) {
-  const view = rowsView(source.view);
-  if (!view) return null;
-  const title = view.fields.find(f => f.key === view.title);
-  const toned = view.fields.filter(f => f.format === 'status' && fieldTone(f, row[f.key]) !== 'none');
-  const shown = [title, compactField(view.fields), ...toned]
-    .filter((f): f is ViewField => !!f && present(row[f.key]))
-    .filter((f, i, all) => all.findIndex(x => x.key === f.key) === i);
-  if (shown.length === 0) return <Text type="supporting">Inget att visa.</Text>;
-  // The line sits in a row that is itself a link: an address, a number or a link out is said as text there.
-  return (
-    <HStack gap={2} vAlign="center" wrap="wrap">
-      {shown.map(f =>
-        f.format === 'email' || f.format === 'phone' || f.format === 'link' ? (
-          <Text key={f.key}>{String(row[f.key])}</Text>
-        ) : (
-          <FieldValue key={f.key} field={f} value={row[f.key]} text="ordinary" />
-        ),
-      )}
-    </HStack>
-  );
-}
-
-/** "1 att agera på · 1 till kännedom": what Behöver dig holds, for the list of sections. */
-export function cardsSummary(cards: EntityCard[]): string {
-  const fyi = cards.filter(c => c.kind === 'fyi').length;
-  const act = cards.length - fyi;
-  return [act ? `${act} att agera på` : '', fyi ? `${fyi} till kännedom` : ''].filter(Boolean).join(' · ');
 }
 
 /** The source's fuller read for this person (its view's `open`), as the row says how to ask for it. */
@@ -583,89 +545,4 @@ export function NeedsYouSection({ cards, headingLevel = 3 }: { cards: EntityCard
       <CardList cards={cards} />
     </SectionFrame>
   );
-}
-
-/** One row in the list of sections (artboards C2 and D): the section's name, its source, one line about it. */
-export interface SectionNavRow {
-  id: string;
-  title: string;
-  source: string;
-  summary: ReactNode;
-  href?: string;
-  isSelected?: boolean;
-  /** A control at the row's end, for a row that is not a link (a source that did not answer: Försök igen). */
-  end?: ReactNode;
-}
-/** The list of sections: each row leads to its section, the chosen one marked as current. */
-export function SectionNav({ rows, label }: { rows: SectionNavRow[]; label?: string }) {
-  return (
-    <List hasDividers {...(label ? { 'aria-label': label } : {})}>
-      {rows.map(r => (
-        <ListItem
-          key={r.id}
-          itemKey={r.id}
-          align="start"
-          label={
-            <HStack gap={2} justify="between" vAlign="center" wrap="wrap">
-              <Text weight="semibold">{r.title}</Text>
-              <Text type="supporting">{r.source}</Text>
-            </HStack>
-          }
-          description={r.summary}
-          {...(r.href ? { href: r.href } : {})}
-          {...(r.isSelected ? { isSelected: true } : {})}
-          {...(r.end ? { endContent: r.end } : {})}
-        />
-      ))}
-    </List>
-  );
-}
-/** The rows of the list of sections for a person: Behöver dig when there are cards, then each source that has something. */
-export function sectionNavRows(
-  cards: EntityCard[],
-  answers: SectionAnswer[],
-  href: (id: string) => string,
-  selected: string | undefined,
-): SectionNavRow[] {
-  const rows: SectionNavRow[] = [];
-  if (cards.length > 0)
-    rows.push({
-      id: NEEDS_YOU,
-      title: 'Behöver dig',
-      source: 'Clew',
-      summary: <Text type="supporting">{cardsSummary(cards)}</Text>,
-      href: href(NEEDS_YOU),
-      isSelected: selected === NEEDS_YOU,
-    });
-  for (const a of drawnSections(answers)) {
-    const row = rowOf(a);
-    const failed = unanswered(a);
-    rows.push({
-      id: a.source.capability,
-      title: a.source.title,
-      source: sourceCaption(a.source),
-      summary: a.query.isPending ? (
-        <Skeleton height={16} width={160} />
-      ) : failed || !row ? (
-        <Text type="supporting">Svarade inte.</Text>
-      ) : (
-        <SectionSummary source={a.source} row={row} />
-      ),
-      ...(failed
-        ? {
-            end: (
-              <Button
-                size="sm"
-                variant="secondary"
-                label="Försök igen"
-                aria-label={`Försök igen med ${a.source.title}`}
-                isLoading={a.query.isFetching}
-                onClick={() => void a.query.refetch()}
-              />
-            ),
-          }
-        : { href: href(a.source.capability), isSelected: selected === a.source.capability }),
-    });
-  }
-  return rows;
 }

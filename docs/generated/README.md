@@ -28,7 +28,7 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 | `id` | yes | string | Stable and lowercase. Must match the id Clew was configured with, and prefixes every capability name. |
 | `kind` | yes | "passthrough" / "derived" | Who owns the data (D3): `passthrough` when it lives in the connected system and Clew keeps refs and audit rows only; `derived` when the connector computes it from other sources. `core` is Clew's own and never a remote connector. |
 | `source` | yes | string | Swedish. The system as shown on cards: "Personalsystemet". |
-| `areas` | yes | array of object | The areas this connector gives a person: each is a button under the box on Hem (D41, D53) with its standing actions, schedules and figure. Empty is allowed for a connector that only answers questions. |
+| `areas` | yes | array of object | The areas this connector gives a person: each names and marks the connector's cards, is a choice in Hem's area filter, and holds its standing capabilities, schedules and figure. Where each shows is in docs/guides/where-things-open.md. Empty is allowed for a connector that only answers questions. |
 | `capabilities` | yes | array of object | What the connector can do, one entry per operation. The name is the contract (D37): a break is a new name, never a changed one. |
 | `uses` | no | array of string | The exact capability names of other connectors this one calls back through `POST /api/connectors/call` while serving a request (D37), such as `calendar.today`. A name not listed is refused; an `execute` can never be called back. |
 | `facts` | no | array of object | The fact kinds this connector creates (D55), each prefixed with its id. |
@@ -62,11 +62,11 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 
 | Field | Required | Shape | Description |
 |---|---|---|---|
-| `id` | yes | string | Stable and lowercase. It is the area's address, `/areas/<id>`, and what a scan draft names in `area`. |
-| `title` | yes | string | Swedish. The area's name on its button under the box and in the sidebar. |
+| `id` | yes | string | Stable and lowercase. Hem's area filter names it in its address (`/?area=<id>`), and a scan draft names it in `area`. |
+| `title` | yes | string | Swedish. The area's name: a choice in Hem's area filter and the rail's search, and the word that marks its cards (D71). |
 | `roles` | yes | array of "manager" / "employee" | Who sees the area: at least one role. |
-| `standing` | yes | array of string | Capability names shown under "Gör själv": what a person can do here without composing a question. Each must be a capability of this manifest. |
-| `schedules` | yes | array of object | What the connector does for this area on its own and when, as a person reads it under the area. Informational text; the scan itself runs nightly and on first visit. |
+| `standing` | yes | array of string | Capability names the area offers, each a capability of this manifest. A propose or execute among them is suggested under "Menar du" while the person types in the question box on Hem; a read among them marks its view with the area's word and icon and has no entry of its own. |
+| `schedules` | yes | array of object | What the connector does for this area on its own and when. Informational text that Clew keeps with the manifest and draws nowhere today; the scan itself runs nightly and on first visit. |
 | `figure` | no | boolean | Clew asks POST /clew/figure for this area's figure and draws it as a tile on Hem (D54), unless an administrator switched it off. |
 | `icon` | no | "phone" / "people" / "book" / "document" / "chart" / "search" / "clock" / "link" / "calendar" / "bell" | One of Clew's icons. The connector sends a name, never a drawing. |
 
