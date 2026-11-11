@@ -394,7 +394,7 @@ api.post('/threads/:id/snooze', async c =>
   ),
 );
 api.get('/snooze/presets', async c => c.json({ presets: await snoozeOptions(c.get('session').context) }));
-/** A person's own timer (D17): a Temporal reminder workflow that pushes a card back at this thread. */
+/** A person's own timer (D17, D85): a durable reminder workflow that pushes a card back at this thread. */
 api.post('/threads/:id/remind', async c =>
   c.json(
     await remind(

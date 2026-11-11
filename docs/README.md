@@ -10,7 +10,7 @@ Read these in order if you are new to the project:
 2. [Architecture overview](architecture/overview.md): the running components, data boundaries and end-to-end read, scan and action flows.
 3. [Implementation status](reference/status.md): what works in this checkout and what remains a fixture, proposal or release gate.
 
-[Interface spaces and navigation](reference/interface-spaces.md) defines where pages, contextual details, service catalogues, Apps and confirmations open, and how people return.
+[Interface spaces and navigation](reference/interface-spaces.md) defines where pages, contextual details, overlays and confirmations open, and how people return.
 
 The [vocabulary and entity map](reference/vocabulary.md) defines work items, cards, proposals, conversations and interface containers, and connects those terms to the current code.
 
@@ -35,13 +35,9 @@ A connector is your independently deployed HTTP service. It translates a source 
 
 The [guide index](guides/README.md) separates the minimum read integration from optional search, scan, write and composition features.
 
-## Consume an existing MCP service
+## A source that speaks MCP
 
-A vendor that already exposes standard MCP does not need to build a Clew connector or supply a Clew manifest. The separate, AI-enabled chat path consumes discovered tools and optional provider-owned MCP Apps. Clew can also run an approved read on a schedule and deliver a separate card when meaningful source evidence changes.
-
-Read [MCP chat services](architecture/mcp-chat-services.md) for the ownership boundary, standard OAuth requirements, delivery flow and implementation map. The [independent poll/status demo](../fixtures/mcp-pulse/README.md) runs this path for an explicitly registered development user. This is a development prototype; OAuth and production hosting remain unfinished. The [provider review](reviews/2026-11-08-mcp-services-and-provider-compatibility.md) distinguishes verified vendor tools from the illustrative poll App.
-
-For tighter native integration, an independent connector can use MCP as its source API. The [MCP-backed connector exploration](reviews/2026-11-09-mcp-backed-native-connectors.md) compares the options using the poll fixture and separates existing support from proposed forms and App handoffs.
+Clew's integration contract is the connector protocol. A connector can use an MCP server as its source API; the [MCP-backed connector exploration](reviews/2026-11-09-mcp-backed-native-connectors.md) compares the options. Consuming a vendor's MCP server and MCP App directly in AI chat was prototyped and removed on 2026-11-11; the [closing note](reviews/2026-11-11-external-mcp-chat-services-exploration.md) says what it showed.
 
 ## Develop and operate Clew
 
@@ -68,7 +64,7 @@ For tighter native integration, an independent connector can use MCP as its sour
 
 ## Current documentation and history
 
-The architecture pages explain the current system; the [reliability plan](architecture/reliability-and-authorization-plan.md) retains milestone acceptance criteria. [Decisions](decisions/README.md), [dated reviews](reviews/README.md) and [session notes](../HANDOVER.md) preserve intent and evidence at a point in time. An accepted decision does not by itself establish implementation.
+The architecture pages explain the current system; the [reliability plan](architecture/reliability-and-authorization-plan.md) retains milestone acceptance criteria. [Decisions in force](decisions/in-force.md) lists the decisions that bind today; the full [decision log](decisions/README.md), [dated reviews](reviews/README.md) and [session notes](../HANDOVER.md) preserve intent and evidence at a point in time. An accepted decision does not by itself establish implementation.
 
 Code and behavioral tests define implemented behavior. Generated schemas and examples expose the contract. Guides explain it. When these disagree, resolve the discrepancy against the implementation and update the affected pages.
 

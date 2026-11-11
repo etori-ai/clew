@@ -65,7 +65,6 @@ import type {
 } from '@clew/contracts';
 import { sessionFetch } from '@clew/ui';
 import type { AppearanceAdminView, AppearanceLogoInputType } from '@clew/contracts';
-import type { McpDelivery, McpService, McpView, McpResult } from '@clew/contracts';
 import type {
   EntityActionStarted,
   EntityDetail,
@@ -215,18 +214,6 @@ export const api = {
     /** Opens a done action point again. */
     reopen: (id: string) => del<void>(`${commitmentPath(id)}/done`),
   },
-  chatServices: () => call<{ services: McpService[]; deliveries: McpDelivery[] }>('/api/chat-services'),
-  chatService: (id: string, deliveryId?: string) =>
-    call<McpView>(
-      '/api/chat-services/' +
-        encodeURIComponent(id) +
-        (deliveryId ? '?delivery=' + encodeURIComponent(deliveryId) : ''),
-    ),
-  decideService: (id: string, input: { decisionId: string; name: string; arguments: Record<string, unknown> }) =>
-    call<McpResult>('/api/chat-services/' + encodeURIComponent(id) + '/decisions', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }),
   /** The manifest field by field (D60): a public document, read with the plain fetch since no session or token belongs on it. */
   manifestReference: async () => {
     const response = await fetch('/api/protocol/manifest-reference.json');

@@ -75,29 +75,6 @@ services:
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
-  # Standard MCP mocks, deliberately no Clew connector manifest. Synthetic data only.
-  mcp-pulse:
-    image: node:26.13.0-bookworm-slim
-    init: true
-    working_dir: /workspace
-    command: node fixtures/mcp-pulse/server.mjs
-    environment:
-      HOST: 0.0.0.0
-    volumes:
-      - ${CLEW_HOST_WORKSPACE:-..}:/workspace:ro
-    ports:
-      - "127.0.0.1:4035:4035"
-  mcp-status:
-    image: node:26.13.0-bookworm-slim
-    init: true
-    working_dir: /workspace
-    command: node fixtures/mcp-status/server.mjs
-    environment:
-      HOST: 0.0.0.0
-    volumes:
-      - ${CLEW_HOST_WORKSPACE:-..}:/workspace:ro
-    ports:
-      - "127.0.0.1:4036:4036"
   calendar:
     image: clew-calendar:local
     build:

@@ -25,8 +25,6 @@ import { signingAuthority } from './connectors/signing';
 import { startupReadiness } from './startup';
 import { startRefresh } from './composition/refresh';
 import { startJobs } from './composition/jobs';
-import { mcpRoutes } from './routes/mcp';
-import { startMcpWatches } from './composition/mcp';
 import { scimRoutes } from './routes/scim';
 import { SCIM_CONTENT_TYPE, ScimError } from './modules/people/contracts';
 import { staffRoutes } from './routes/staff';
@@ -60,7 +58,6 @@ const startup = startupReadiness({
     startDurableRuntime();
     watchConnectors(connectorReconcile);
     startJobs();
-    startMcpWatches();
     startAssistantProbe();
     startRefresh();
     void loadConnectors(registry)
@@ -107,7 +104,6 @@ app.route('/api/entities', entityRoutes({ entities, actions: entityActions }));
 app.route('/api/talks', talkRoutes({ talks, writable: talksWritable }));
 // The shared header (D88): what the person's header connector lists for them.
 app.route('/api/header', headerRoutes);
-app.route('/api/chat-services', mcpRoutes);
 app.route('/api', api);
 app.notFound(c => c.json({ error: 'Okänd adress.' }, 404));
 // Hono hands handler errors to onError, not to the middleware chain: map auth, calendar and input errors here.

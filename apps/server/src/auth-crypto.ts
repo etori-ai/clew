@@ -77,10 +77,6 @@ export function authorizationVersion(access: Parameters<typeof authorityOf>[0]) 
     .update(JSON.stringify(authorityOf(access)))
     .digest('hex');
 }
-/** A keyed digest for a value that a plain hash would leave guessable (a poll answer, a decision), bound to a purpose. */
-export function keyedDigest(purpose: string, value: unknown) {
-  return createHmac('sha256', masterKey()).update(JSON.stringify({ purpose, value })).digest('hex');
-}
 export function localReturnTo(value: string | null) {
   if (!value || !value.startsWith('/') || value.startsWith('//') || /[\\\r\n]/.test(value)) return '/';
   const url = new URL(value, 'https://clew.invalid');

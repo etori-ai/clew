@@ -70,20 +70,6 @@ export const assistantQuery = queryOptions({
   queryFn: () => api.assistantStatus(),
   retry: false,
 });
-export const chatServicesQuery = queryOptions({
-  queryKey: keys.chatServices,
-  queryFn: () => api.chatServices(),
-  retry: false,
-  refetchInterval: 10_000,
-});
-export const chatServiceQuery = (id: string, deliveryId?: string) =>
-  queryOptions({
-    queryKey: keys.chatService(id, deliveryId),
-    queryFn: () => api.chatService(id, deliveryId),
-    retry: false,
-    gcTime: 0,
-    refetchOnWindowFocus: false,
-  });
 export const calendarWeekQuery = (week: string) =>
   queryOptions({ queryKey: keys.calendar(week), queryFn: () => api.calendar(week) });
 export const membersQuery = queryOptions({

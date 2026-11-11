@@ -32,13 +32,6 @@ type Shell = { session: BrowserSession; user: SessionUser; admin: boolean };
 const Devtools = import.meta.env.DEV
   ? lazy(() => import('@tanstack/react-query-devtools').then(m => ({ default: m.ReactQueryDevtools })))
   : null;
-// D81: synthetic service lab; excluded from normal production builds.
-const McpPreview =
-  import.meta.env.DEV || import.meta.env.VITE_MCP_PREVIEW === 'true' ? lazy(() => import('./labs/mcp/preview')) : null;
-const McpServiceOverlay =
-  import.meta.env.DEV || import.meta.env.VITE_MCP_PREVIEW === 'true'
-    ? lazy(() => import('./labs/mcp/services-overlay'))
-    : null;
 /**
  * The protected tree mounts only after a live session is confirmed. No user content is kept in browser storage: the
  * query cache (D33) is one client per confirmed session, in memory, emptied once the boundary has shown the ended card.
@@ -143,14 +136,7 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
     <SessionBoundary session={shell.session} onEnded={() => client.clear()}>
       <QueryClientProvider client={client}>
         {/* One conversation for the whole session's pages (D50): asked on a tool's page, it is still there when the transcript takes the column. */}
-        <ConversationProvider>
-          {children(shell)}
-          {McpServiceOverlay && (
-            <Suspense fallback={null}>
-              <McpServiceOverlay />
-            </Suspense>
-          )}
-        </ConversationProvider>
+        <ConversationProvider>{children(shell)}</ConversationProvider>
         {Devtools && (
           <Suspense fallback={null}>
             <Devtools initialIsOpen={false} buttonPosition="bottom-right" />
@@ -189,26 +175,6 @@ function App() {
   );
   return (
     <Routes>
-      {McpPreview && (
-        <Route
-          path="/labs/mcp"
-          element={
-            <Suspense fallback={<Spinner label="Öppnar prototypen …" />}>
-              <Protected>{() => <McpPreview />}</Protected>
-            </Suspense>
-          }
-        />
-      )}
-      {McpPreview && (
-        <Route
-          path="/chat/services/:connectionId?"
-          element={
-            <Suspense fallback={<Spinner label="Hämtar tjänster …" />}>
-              <Protected>{() => <McpPreview />}</Protected>
-            </Suspense>
-          }
-        />
-      )}
       <Route path="/login" element={<LoginPage returnTo="/" />} />
       {/* Integrator documentation, public like the login (D60): the manifest field by field, drawn from the instance's own schema. */}
       <Route path="/protocol/manifest" element={<ManifestReferencePage />} />

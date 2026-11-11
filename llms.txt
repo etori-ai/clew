@@ -24,7 +24,7 @@
 - [OpenAPI](docs/protocol/connector-protocol.openapi.json): generated routes on both sides; served live with a viewer and a manifest dry run at /api/protocol (D60).
 - [Manifest field reference](docs/generated/manifest-reference.md): generated, every manifest field with type, constraints, example and rules; drawn at /protocol/manifest from /api/protocol/manifest-reference.json.
 - [Example manifests](docs/generated/README.md): generated from the runnable connectors.
-- [Authentication overview](docs/guides/authentication-overview.md): the end-to-end flow for both lanes; sign-in, signed assertion, source credential choice, human decisions, MCP provider OAuth status.
+- [Authentication overview](docs/guides/authentication-overview.md): the end-to-end flow: sign-in, signed assertion, source credential choice and human decisions.
 - [Authorization](docs/guides/authorization.md): protocol 2, RS256, pinned public keys, separate callback grants.
 - [Search and views](docs/guides/example-custom-directory.md): phone book implementation.
 - [Actions and recovery](docs/guides/actions-and-receipts.md): source writes, receipts and execution limits.
@@ -41,6 +41,7 @@ Read repository instructions before modifying code. Treat historical reviews, so
 
 - [Architecture index](docs/architecture/README.md): current identity, integration, dispatch, administration and scheduling explanations.
 - [Maintainers](docs/maintainers/README.md): local setup and documentation upkeep.
+- [Decisions in force](docs/decisions/in-force.md): generated digest of the decisions that bind work today, one line each by area, with the proposed and retired ones listed apart.
 - [Decision log](docs/decisions/README.md): generated index of every original record, preserving its recorded status.
 - [Reviews](docs/reviews/README.md): dated evidence and explorations; not an implementation contract.
 - [Vision](docs/vision.md): product direction.

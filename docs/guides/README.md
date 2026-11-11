@@ -5,7 +5,7 @@ First read [What Clew is](../overview.md) and the [architecture overview](../arc
 ## Your first integration
 
 1. [Create a custom connector](creating-a-connector.md): run a fixture, define one read and view, implement the verified request boundary and register it.
-2. [How authentication works end to end](authentication-overview.md): sign-in, Clew's signed assertion, the connector's own source credential and the human decision that releases a write, with the MCP lane beside it.
+2. [How authentication works end to end](authentication-overview.md): sign-in, Clew's signed assertion, the connector's own source credential and the human decision that releases a write.
 3. [Authorize every request](authorization.md): transport secret, signed actor, source permissions and credential choices.
 4. [Test and deploy](testing-and-deployment.md): handler tests, conformance, draft registration, audience and operations.
 

@@ -330,6 +330,13 @@
       "when": 1794345563242,
       "tag": "0046_session_bindings",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1794381417322,
+      "tag": "0047_drop_mcp_chat_services",
+      "breakpoints": true
     }
   ]
 }

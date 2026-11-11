@@ -1,20 +1,14 @@
 # Choose an integration path
 
-Start with the employee's task and the source's access policy. For native, model-independent work, use an independent HTTP connector, whether the source owner implements Clew's contract directly or you write an adapter beside it. [Integration architecture](integrations.md) explains that boundary. Existing MCP services have a separate AI-enabled chat path, currently a development prototype.
-
-## Consume a standard MCP service
-
-Choose this lane when a vendor already supplies tools or an MCP App and Clew should host that interaction. The vendor keeps its existing MCP endpoint, tool schemas and optional App resources; no Clew manifest, callback or view type is required. Clew owns registration, access, discovery, confirmation and the surrounding cards. Provider OAuth remains necessary and is not implemented by the synthetic demo.
-
-An administrator can configure a Clew-owned read watch over an existing tool. A durable workflow checks the source; a stable identity and eligibility/change rule determine whether to create a delivery card. The interval controls when Clew checks, not when it sends repeat reminders. The source needs no Clew-specific push support. Analytics-only tools do not imply that respondent invitations or submission are available.
-
-See [MCP chat services](mcp-chat-services.md) for the end-to-end path and remaining production work, [the independent demo](../../fixtures/mcp-pulse/README.md) to run it, and [provider evidence](../reviews/2026-11-08-mcp-services-and-provider-compatibility.md) for actual vendor capabilities. MCP services do not automatically acquire native scan, job, undo or reconciliation semantics. The following table describes the native connector lane.
+Start with the employee's task and the source's access policy. For native, model-independent work, use an independent HTTP connector, whether the source owner implements Clew's contract directly or you write an adapter beside it. [Integration architecture](integrations.md) explains that boundary. A vendor's own MCP server is not consumed directly; a connector can use it as its source API, as described below.
 
 ## Use MCP behind a native connector
 
 An independent connector can call an MCP server as its source API and expose selected results through the existing Clew protocol. This supports native, model-independent work without requiring the MCP vendor to adopt Clew's contract. The adapter supplies the actor mapping, views, occurrence semantics and write guarantees that tool discovery alone cannot establish.
 
-The [MCP-backed connector exploration](../reviews/2026-11-09-mcp-backed-native-connectors.md) maps the poll fixture to native capabilities, compares a wrapper with direct MCP and a proposed App handoff, and identifies the missing form, source-history and recovery support. The wrapper and handoff are proposals, not delivered poll features.
+The [MCP-backed connector exploration](../reviews/2026-11-09-mcp-backed-native-connectors.md) maps a poll provider to native capabilities, compares a wrapper with direct MCP and a proposed App handoff, and identifies the missing form, source-history and recovery support. The wrapper and handoff are proposals, not delivered features.
+
+Consuming a vendor's MCP server and MCP App directly in AI chat was prototyped and removed on 2026-11-11. The [closing note](../reviews/2026-11-11-external-mcp-chat-services-exploration.md) records what it showed and what it lacked, and [provider evidence](../reviews/2026-11-08-mcp-services-and-provider-compatibility.md) what real vendors offer.
 
 ## Add only what the task needs
 

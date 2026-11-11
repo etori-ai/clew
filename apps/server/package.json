@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch --clear-screen=false src/main.ts",
     "start": "tsx src/main.ts",
-    "test:node": "node --import tsx --test --test-concurrency=1 tests/runtime.test.ts tests/fixture-runtime.test.ts tests/mcp-runtime.test.ts",
+    "test:node": "node --import tsx --test --test-concurrency=1 tests/runtime.test.ts tests/fixture-runtime.test.ts",
     "test:durability": "node --import tsx --test --test-concurrency=1 --test-force-exit tests/execution-runtime.test.ts tests/timer-runtime.test.ts tests/watch-runtime.test.ts"
   },
   "dependencies": {
@@ -19,7 +19,6 @@
     "@dbos-inc/dbos-sdk": "5.4.0",
     "@hono/node-server": "2.1.6",
     "@hono/otel": "1.3.0",
-    "@modelcontextprotocol/sdk": "1.32.2",
     "@opentelemetry/api": "1.10.0",
     "@opentelemetry/exporter-metrics-otlp-http": "0.301.0",
     "@opentelemetry/exporter-trace-otlp-http": "0.301.0",

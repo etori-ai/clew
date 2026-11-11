@@ -250,8 +250,6 @@ export class MockApi {
     }
     // The shared header (D88): what the person's header connector lists for them, Clew's default until a test says otherwise.
     if (path === '/header') return json(this.header);
-    // The MCP service inbox (D81): empty unless a spec routes it itself.
-    if (path === '/chat-services') return json({ services: [], deliveries: [] });
     // Entities (D97): the people the reader may ask about, one source over them, the opened person and one source's
     // answer for them. A key the reader may not ask about answers 404 as if it did not exist.
     if (path.startsWith('/entities/') && !post) return this.entities(route, path, url);
@@ -517,8 +515,6 @@ export class MockApi {
     }
     // The calendar's rooms (D69, amended): the one calendar read with a declared view, drawn by the one renderer.
     if (path === '/cap/calendar.rooms') return json({ output: { rows: rooms }, source: 'Kalendern', view: roomsSpec });
-    // No MCP service is registered for the person here (D81); mcp.spec.ts routes its own answers over this one.
-    if (path === '/chat-services') return json({ services: [], deliveries: [] });
     // The combined errand list (D35 item 4, D89) and one errand in the system a row came from.
     if (path === '/cap/clew.errands') return json({ output: errandsOutput, source: 'Startsidan', view: errandsSpec });
     if (path === '/cap/sm.errand')

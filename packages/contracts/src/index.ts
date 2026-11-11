@@ -2344,7 +2344,6 @@ export interface SiteHeaderView {
   /** The connector the header came from, or null for the default. */
   source: { id: string; label: string } | null;
 }
-export type { McpTool, McpResult, McpWatch, McpRegistration, McpDelivery, McpService, McpView } from './mcp';
 
 // Named one by one: the server runs under Node through tsx, where a star re-export's names are not visible to an importer.
 export {

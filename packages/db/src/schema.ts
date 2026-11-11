@@ -14,7 +14,6 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
-import type { McpWatch } from '@clew/contracts';
 import type {
   ConnectorAudience,
   InstallationTheme,
@@ -355,7 +354,8 @@ export const audit = pgTable(
   },
   t => [index('audit_subject').on(t.subject, t.createdAt)],
 );
-// Postgres-backed scheduler for v1: a nightly scan and a timer per undo window. Temporal comes with the second use case.
+// The scheduler's jobs (D15): a nightly scan and a timer per undo window. The durable engine runs them since D85; the
+// status value `temporal` is the engine owner's historical name (see jobs.ts).
 export const jobs = pgTable(
   'job',
   {
@@ -755,48 +755,6 @@ export const attentionDays = pgTable('attention_day', {
   dueAt: timestamp('due_at', { withTimezone: true }).notNull(),
 });
 
-// MCP is a separate standards-based lane (D81). A registration currently binds one development identity.
-export const mcpConnections = pgTable('mcp_connection', {
-  id: text('id').primaryKey(),
-  personId: text('person_id')
-    .notNull()
-    .references(() => people.id),
-  url: text('url').notNull(),
-  enabled: boolean('enabled').notNull().default(true),
-  readTools: jsonb('read_tools').$type<string[]>().notNull(),
-  writeTools: jsonb('write_tools').$type<string[]>().notNull(),
-  watch: jsonb('watch').$type<McpWatch>().notNull(),
-  lastKey: text('last_key'),
-});
-export const mcpDeliveries = pgTable('mcp_delivery', {
-  id: text('id').primaryKey(),
-  personId: text('person_id')
-    .notNull()
-    .references(() => people.id),
-  connectionId: text('connection_id')
-    .notNull()
-    .references(() => mcpConnections.id),
-  title: text('title').notNull(),
-  text: text('text').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
-  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
-});
-export const mcpDecisions = pgTable(
-  'mcp_decision',
-  {
-    id: text('id').notNull(),
-    personId: text('person_id')
-      .notNull()
-      .references(() => people.id),
-    connectionId: text('connection_id')
-      .notNull()
-      .references(() => mcpConnections.id),
-    digest: text('digest').notNull(),
-    state: text('state').$type<'unknown' | 'succeeded' | 'failed'>().notNull(),
-    result: text('result'),
-  },
-  t => [primaryKey({ columns: [t.personId, t.id] })],
-);
 export const deliveries = pgTable(
   'attention_delivery',
   {

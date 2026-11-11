@@ -117,9 +117,8 @@ cards, the buttons and the receipts.
    Full rule in `CLAUDE.md`.
 2. **Clew owns what the model and the UI see** (D1). An adapter is the normal way a system meets that
    contract, written by the Clew team, a municipality or an integrator; a vendor that implements it itself
-   is welcome, not expected (D10, amended by D100). A vendor's standard MCP service is accepted as it is in
-   the chat lane (D81). Which wire format a connector speaks is open until one adapter to a product that was
-   not written for Clew has been built both ways.
+   is welcome, not expected (D10, amended by D100). Which wire format a connector speaks is open until one
+   adapter to a product that was not written for Clew has been built both ways.
 3. **The server decides.** Identity, scope, connector state and audit are enforced server-side; the browser
    and the model are untrusted.
 4. **Every mutation is audited in the same transaction.** Every receipt is a read-back, never a sent request.

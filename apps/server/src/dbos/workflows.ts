@@ -25,7 +25,6 @@ export interface Activities {
   progressExecution(id: string): Promise<'done' | 'busy' | 'reconcile'>;
   observeWatch(jobId: string, stepId: string, check: number): Promise<WatchOutcome>;
   runScheduledJob(id: string): Promise<'done' | 'busy'>;
-  observeMcp(id: string): Promise<number | null>;
   checkObligation(threadId: string): Promise<ObligationStep>;
   remindInvitees(threadId: string, due: string[]): Promise<unknown>;
   returnObligation(threadId: string, why: 'answered' | 'deadline'): Promise<unknown>;
@@ -42,7 +41,7 @@ function activity<K extends keyof Activities>(name: K): Activities[K] {
     return fn(...args);
   }) as Activities[K];
 }
-/** One checkpointed call of a use case. Retries are the step's (Temporal's activity retry); a step that still fails ends the workflow in ERROR, where an operator resumes it. */
+/** One checkpointed call of a use case. Retries are the step's; a step that still fails ends the workflow in ERROR, where an operator resumes it. */
 const step = <T>(name: keyof Activities, run: () => Promise<T>, maxAttempts = 5) =>
   DBOS.runStep(run, {
     name,
@@ -66,27 +65,6 @@ export const scheduledJob = DBOS.registerWorkflow(
       await DBOS.sleep(30_000);
   },
   { name: 'scheduledJob', serialization: 'portable' },
-);
-
-/**
- * A registered MCP read watch (D81): read, sleep the interval the use case asks for, up to a hundred times. The
- * reconciler in composition starts the next round when none is running, which bounds one workflow's step history.
- */
-export const mcpWatch = DBOS.registerWorkflow(
-  async (id: string): Promise<'ended' | 'rotated'> => {
-    for (let check = 0; check < 100; check++) {
-      let interval: number | null = 60;
-      try {
-        interval = await step('observeMcp', () => activity('observeMcp')(id), 3);
-      } catch {
-        /* A failed read is never a delivery. Try later. */
-      }
-      if (interval === null) return 'ended';
-      await DBOS.sleep(interval * 1000);
-    }
-    return 'rotated';
-  },
-  { name: 'mcpWatch' },
 );
 
 /** A reminder or snooze timer (D17, D47): wait until the absolute due time, then let the ledger decide by generation. Cancel ends the wait. */

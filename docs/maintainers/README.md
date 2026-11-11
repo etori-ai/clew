@@ -12,6 +12,7 @@ Start with the [product overview](../overview.md) and [architecture overview](..
 | Upgrade, inspect reliability or rehearse recovery | [Reliability operations](reliability-operations.md), [acceptance evidence](../reference/reliability-acceptance.md) |
 | Understand designs and unfinished work | [Architecture map](../architecture/README.md), [status](../reference/status.md) and [reliability plan](../architecture/reliability-and-authorization-plan.md) |
 | Understand product intent | [Vision](../vision.md), [personas](../personas.md) |
+| See which decisions bind today | [Decisions in force](../decisions/in-force.md) |
 | Recover rationale or session context | [Decision index](../decisions/README.md), [reviews](../reviews/README.md), [handover](../../HANDOVER.md) |
 
 ## Documentation is an interface
