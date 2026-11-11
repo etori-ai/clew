@@ -1,3 +1,4 @@
+import { manyPeople, usersPeople } from './data';
 import {
   announcements,
   desktop,
@@ -10,12 +11,23 @@ import {
   reflowProblems,
   test,
 } from './support';
+import type { Locator, Page } from '@playwright/test';
 
 /**
- * Användare (D62, D68, D85): the provisioned people with unit, role, capabilities and whether they have signed in, and the
- * mapping from a group to a capability that an administrator adds and removes. Keyboard, structure, announcements, axe and
- * reflow, at desktop, phone and 320 px.
+ * Användare (D62, D68, D85, D100): the provisioned people a page at a time with unit, role, capabilities and whether
+ * they have signed in, narrowed by a search and four filters, and the mapping from a group to a capability that an
+ * administrator adds and removes. Keyboard, structure, announcements, axe and reflow, at desktop, phone and 320 px.
  */
+/** The line over the list that counts the people: Astryx's own live regions repeat other words about them. */
+const readout = (page: Page) => page.getByRole('status').filter({ hasText: /^\d+ (av \d+ )?person(er)?$/ });
+const filters = (page: Page) => page.getByRole('search', { name: 'Sök och filtrera personer' });
+const pager = (page: Page) => page.getByRole('navigation', { name: 'Sidor med personer' });
+/** Opens a filter from the keyboard and takes the option named. */
+async function choose(page: Page, filter: Locator, option: string) {
+  await filter.focus();
+  await page.keyboard.press('Enter');
+  await page.getByRole('option', { name: option, exact: true }).click();
+}
 test.describe('users administration', () => {
   for (const [layout, viewport] of [
     ['desktop', desktop],
@@ -34,7 +46,7 @@ test.describe('users administration', () => {
     });
   test.describe('desktop', () => {
     test.use({ viewport: desktop });
-    test('the list says where each person belongs, what they may do and whether they have signed in', async ({
+    test('the list says where each person is placed, what they are there, what they may do and whether they have signed in', async ({
       page,
       api,
     }) => {
@@ -43,13 +55,179 @@ test.describe('users administration', () => {
       await expect(page).toHaveTitle('Användare · Startsidan');
       await expect(page.getByRole('link', { name: 'Användare', exact: true })).toHaveAttribute('aria-current', 'page');
       const people = page.getByRole('table').first();
-      await expect(people.getByText('Hillevi Berg')).toBeVisible();
-      await expect(people.getByText('Bergsåkers skola · chef')).toBeVisible();
+      // The unit and the role are columns of their own: where a person is and what they are there are two questions.
+      await expect(people.getByRole('columnheader')).toHaveText(['Person', 'Enhet', 'Roll', 'Behörigheter', 'Status']);
+      const hillevi = people.getByRole('row', { name: /Hillevi Berg/ }).getByRole('cell');
+      await expect(hillevi.nth(1)).toHaveText('Bergsåkers skola');
+      await expect(hillevi.nth(2)).toHaveText('Chef');
+      const omar = people.getByRole('row', { name: /Omar Ny/ }).getByRole('cell');
+      await expect(omar.nth(1)).toHaveText('Ingen enhet');
+      await expect(omar.nth(2)).toHaveText('');
       await expect(people.getByText('Administrera användare', { exact: true })).toBeVisible();
       await expect(people.getByText('Har loggat in', { exact: true })).toHaveCount(2);
       await expect(people.getByText('Inte inloggad ännu', { exact: true })).toBeVisible();
       await expect(people.getByText('Ingen åtkomst', { exact: true })).toBeVisible();
       await expect(page.getByRole('table').nth(1).getByText('IT-personal')).toBeVisible();
+      // Four people fit one page, so there is nothing to step through and nothing to clear.
+      await expect(readout(page)).toHaveText('4 personer');
+      await expect(pager(page)).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Rensa filter' })).toHaveCount(0);
+      expect(api.peopleQueries).toEqual([{ page: 1, pageSize: 25 }]);
+    });
+    test('the list is narrowed from the keyboard, the result is said aloud and kept in the address, and one step clears it', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/users');
+      const people = page.getByRole('table').first().locator('tbody tr');
+      const role = filters(page).getByRole('combobox', { name: 'Roll' });
+      // Enter opens the filter and Enter takes its first choice: a chip that says the whole clause.
+      await role.focus();
+      await page.keyboard.press('Enter');
+      await page.keyboard.press('Enter');
+      await expect(role).toContainText('Roll: Chef');
+      await expect(page).toHaveURL(/\/admin\/users\?role=manager$/);
+      await expect(readout(page)).toHaveText('1 av 4 personer');
+      await expect.poll(() => announcements(page)).toContainEqual('1 av 4 personer');
+      await expect(people).toHaveText([/Hillevi Berg/]);
+      await expectNoAxeViolations(page);
+      // A second filter narrows further; together they match nobody, and the page says so with the way out.
+      await choose(page, filters(page).getByRole('combobox', { name: 'Status' }), 'Ingen åtkomst');
+      await expect(page).toHaveURL(/\?role=manager&status=no-access$/);
+      await expect(page.getByRole('heading', { name: 'Inga personer matchar' })).toBeVisible();
+      await expect.poll(() => announcements(page)).toContainEqual('0 av 4 personer');
+      await expectNoAxeViolations(page);
+      // Back undoes one step, and Rensa filter all of them.
+      await page.goBack();
+      await expect(readout(page)).toHaveText('1 av 4 personer');
+      await page.getByRole('button', { name: 'Rensa filter' }).click();
+      await expect(page).toHaveURL(/\/admin\/users$/);
+      await expect(readout(page)).toHaveText('4 personer');
+      await expect(role).not.toContainText('Chef');
+      // The button is gone once used, and the focus is on the search box, not lost at the top of the page.
+      await expect(page.getByRole('button', { name: 'Rensa filter' })).toHaveCount(0);
+      await expect(filters(page).getByRole('searchbox', { name: 'Sök person' })).toBeFocused();
+    });
+    test('a list that cannot be read keeps its search and filters, and clearing them reads it again', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/users');
+      await expect(readout(page)).toHaveText('4 personer');
+      api.peopleRefused = true;
+      await choose(page, filters(page).getByRole('combobox', { name: 'Roll' }), 'Chef');
+      await expect(page.getByRole('alert').filter({ hasText: 'Ogiltig förfrågan.' })).toBeVisible();
+      // What was asked for is still there to change: the chip says the clause and the search box is where it was.
+      await expect(filters(page).getByRole('combobox', { name: 'Roll' })).toContainText('Roll: Chef');
+      await expect(filters(page).getByRole('searchbox', { name: 'Sök person' })).toBeVisible();
+      await expectNoAxeViolations(page);
+      api.peopleRefused = false;
+      await page.getByRole('button', { name: 'Rensa filter' }).click();
+      await expect(readout(page)).toHaveText('4 personer');
+      await expect(page.getByRole('alert').filter({ hasText: 'Ogiltig förfrågan.' })).toHaveCount(0);
+    });
+    test('a unit is found by its name and a link to a narrowed list opens it narrowed', async ({ page, api }) => {
+      api.admin = true;
+      await open(page, '/admin/users');
+      const unit = filters(page).getByRole('button', { name: /^Enhet/ });
+      await unit.click();
+      await page.keyboard.type('hemtj');
+      // The unit above tells two units with one name apart.
+      await expect(page.getByRole('option')).toHaveText([/Hemtjänst Centrum/]);
+      await page.keyboard.press('ArrowDown');
+      await page.keyboard.press('Enter');
+      await expect(page).toHaveURL(/\?unit=unit-omsorg$/);
+      await expect(unit).toContainText('Enhet: Hemtjänst Centrum');
+      await expect(page.getByRole('table').first().locator('tbody tr')).toHaveText([/Hassan Ali/]);
+      // The address is the filter: what it names is asked for, and what it cannot mean is left out.
+      api.peopleQueries = [];
+      await open(page, '/admin/users?unit=unit-skola&role=manager&status=nonsense&page=x&size=7');
+      await expect(readout(page)).toHaveText('1 av 4 personer');
+      await expect(filters(page).getByRole('button', { name: /^Enhet/ })).toContainText('Enhet: Bergsåkers skola');
+      await expect(filters(page).getByRole('combobox', { name: 'Roll' })).toContainText('Roll: Chef');
+      expect(api.peopleQueries.at(-1)).toEqual({ unitId: 'unit-skola', role: 'manager', page: 1, pageSize: 25 });
+      // A unit the tree no longer names still narrows the list, and the chip says that it does.
+      await open(page, '/admin/users?unit=unit-borta');
+      await expect(page.getByRole('heading', { name: 'Inga personer matchar' })).toBeVisible();
+      await expect(filters(page).getByRole('button', { name: /^Enhet/ })).toContainText('Enhet: unit-borta');
+    });
+    test('a typed name narrows the list after a pause, as one question, and never enters the address', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/users');
+      const search = filters(page).getByRole('searchbox', { name: 'Sök person' });
+      await search.pressSequentially('mikael');
+      await expect(readout(page)).toHaveText('1 av 4 personer');
+      await expect(page.getByRole('table').first().locator('tbody tr')).toHaveText([/Mikael Lund/]);
+      // One question for the word, not one for each letter, and the name is in the body and not in the address.
+      expect(api.peopleQueries.filter(q => q.text !== undefined)).toEqual([{ text: 'mikael', page: 1, pageSize: 25 }]);
+      await expect(page).toHaveURL(/\/admin\/users$/);
+      await filters(page).getByRole('button', { name: 'Rensa Sök person' }).click();
+      await expect(readout(page)).toHaveText('4 personer');
+      await expect(search).toBeFocused();
+      // The box holds no more than the server reads, so a pasted text is cut there and never refused.
+      await search.fill('x'.repeat(300));
+      await expect(search).toHaveValue('x'.repeat(200));
+      await expect(readout(page)).toHaveText('0 av 4 personer');
+    });
+    test('a name typed on a later page is one question, from the first page', async ({ page, api }) => {
+      api.admin = true;
+      api.people = [...usersPeople(), ...manyPeople()];
+      await open(page, '/admin/users?page=2');
+      await expect(page.getByRole('table').first().locator('tbody tr').first()).toContainText('Person 22');
+      api.peopleQueries = [];
+      await filters(page).getByRole('searchbox', { name: 'Sök person' }).pressSequentially('person');
+      await expect(readout(page)).toHaveText('60 av 64 personer');
+      await expect(page).toHaveURL(/\/admin\/users$/);
+      expect(api.peopleQueries).toEqual([{ text: 'person', page: 1, pageSize: 25 }]);
+    });
+    test('many people come a page at a time: the pager steps through them, the list starts over when it is narrowed, and the page size is chosen', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      api.people = [...usersPeople(), ...manyPeople()];
+      await open(page, '/admin/users');
+      const people = page.getByRole('table').first();
+      const rows = people.locator('tbody tr');
+      await expect(readout(page)).toHaveText('64 personer');
+      await expect(rows).toHaveCount(25);
+      await expect(pager(page).getByRole('button', { name: 'Gå till sida 1' })).toHaveAttribute('aria-current', 'page');
+      const next = pager(page).getByRole('button', { name: 'Gå till nästa sida' });
+      await next.focus();
+      await page.keyboard.press('Enter');
+      await expect(page).toHaveURL(/\?page=2$/);
+      await expect(rows.first()).toContainText('Person 22');
+      await expect(pager(page).getByRole('button', { name: 'Gå till sida 2' })).toHaveAttribute('aria-current', 'page');
+      // The step is taken at the foot of the list and read from its head: the head is in view, the focus where it was.
+      await expect(readout(page)).toBeInViewport();
+      await expect(next).toBeFocused();
+      // Each row says where it stands among all the people, not on the page.
+      await expect(people).toHaveAttribute('aria-rowcount', '64');
+      await expect(rows.first()).toHaveAttribute('aria-rowindex', '26');
+      await expectNoAxeViolations(page);
+      // Narrowing starts over from the first page.
+      await choose(page, filters(page).getByRole('combobox', { name: 'Roll' }), 'Medarbetare');
+      await expect(page).toHaveURL(/\?role=employee$/);
+      await expect(readout(page)).toHaveText('62 av 64 personer');
+      await expect(pager(page).getByRole('button', { name: 'Gå till sida 1' })).toHaveAttribute('aria-current', 'page');
+      // More on a page, by choice, and that too is in the address.
+      await choose(page, pager(page).getByRole('combobox', { name: 'Objekt per sida' }), '50');
+      await expect(page).toHaveURL(/\?role=employee&size=50$/);
+      await expect(rows).toHaveCount(50);
+      await expect(pager(page).getByRole('button', { name: 'Gå till sida 3' })).toHaveCount(0);
+      // One choice is one step back, though the pager asks for the first page as well.
+      await page.goBack();
+      await expect(page).toHaveURL(/\?role=employee$/);
+      await expect(rows).toHaveCount(25);
+      // A page past the end, which an old link may name, shows the last one.
+      await open(page, '/admin/users?page=9');
+      await expect(rows).toHaveCount(14);
+      await expect(pager(page).getByRole('button', { name: 'Gå till sida 3' })).toHaveAttribute('aria-current', 'page');
     });
     test('the page says when each catalogue last called and warns about one that has gone silent', async ({
       page,
@@ -85,6 +263,14 @@ test.describe('users administration', () => {
       await expect(page.getByText('Ingen katalog har fått en nyckel till Clew ännu.')).toBeVisible();
       await expectNoAxeViolations(page);
     });
+    test('an organisation nobody has been pushed into says so, without a list to narrow', async ({ page, api }) => {
+      api.admin = true;
+      api.people = [];
+      await open(page, '/admin/users');
+      await expect(page.getByRole('heading', { level: 2, name: 'Inga användare ännu' })).toBeVisible();
+      await expect(filters(page)).toHaveCount(0);
+      await expectNoAxeViolations(page);
+    });
     test('a group is mapped to a capability by keyboard, said aloud, and taken back again', async ({ page, api }) => {
       api.admin = true;
       await open(page, '/admin/users');
@@ -113,15 +299,41 @@ test.describe('users administration', () => {
       api.usersForbidden = true;
       await open(page, '/admin/users');
       // Astryx keeps an empty assertive live region on every page; the page's own alert is the one with words.
-      await expect(page.getByRole('alert').filter({ hasText: 'behörighet' })).toBeVisible();
+      await expect(page.getByRole('alert').filter({ hasText: 'behörighet' })).toHaveCount(1);
+    });
+  });
+  test.describe('phone', () => {
+    test.use({ viewport: phone });
+    test('the people are rows with unit and role on a line, narrowed and stepped through as on a desktop', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      api.people = [...usersPeople(), ...manyPeople()];
+      await open(page, '/admin/users?role=manager');
+      const people = page.getByRole('list', { name: 'Personer' }).getByRole('listitem');
+      await expect(people).toHaveText([/Hillevi Berg.*Bergsåkers skola · chef/]);
+      await page.getByRole('button', { name: 'Rensa filter' }).click();
+      await expect(readout(page)).toHaveText('64 personer');
+      await expect(people).toHaveCount(25);
+      // The pager says where the list stands in words, since the numbered pages do not fit the width.
+      await expect(pager(page)).toContainText('Sida 1 av 3');
+      await pager(page).getByRole('button', { name: 'Gå till nästa sida' }).click();
+      await expect(pager(page)).toContainText('Sida 2 av 3');
+      await expect(people.first()).toContainText('Person 22');
+      await expectNoAxeViolations(page);
     });
   });
   test.describe('1.4.10 reflow', () => {
     test('the page reflows at 320 px', async ({ page, api }) => {
       api.admin = true;
+      api.people = [...usersPeople(), ...manyPeople()];
       await page.setViewportSize(narrow);
-      await open(page, '/admin/users');
+      // With a filter set and a pager under the list: the widest the list's own controls get.
+      await open(page, '/admin/users?role=employee&status=not-signed-in');
       await expect(page.getByRole('list', { name: 'Personer' })).toBeVisible();
+      await expect(filters(page).getByRole('combobox', { name: 'Status' })).toContainText('Status: Inte inloggad ännu');
+      await expect(pager(page)).toContainText('Sida 1 av 3');
       await expect(page.getByRole('list', { name: 'Inläsning från katalogen' })).toContainText('Tyst i över två dygn');
       expect(await reflowProblems(page)).toEqual([]);
     });

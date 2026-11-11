@@ -2,7 +2,10 @@ import type {
   CommitmentsResult,
   TalkRound,
   TalksResult,
+  UserAdminRow,
   UsersAdminOverview,
+  OrganisationOverview,
+  OrganisationUnitPeople,
   StaffOverview,
   AssistantStatus,
   ModelDetail,
@@ -1302,70 +1305,83 @@ export const readOnlyCommitments = (result: CommitmentsResult): CommitmentsResul
   writable: false,
   source: TALKS_READ_ONLY_SOURCE,
 });
+/** The people of Administration › Användare as the suite lists them (D100), by name. */
+export const usersPeople = (): UserAdminRow[] => [
+  {
+    id: 'hassan',
+    name: 'Hassan Ali',
+    userName: 'hassan',
+    externalId: 'dev:hassan',
+    email: 'hassan@clew.test',
+    enabled: true,
+    bound: true,
+    assignments: [{ unitId: 'unit-omsorg', unitLabel: 'Hemtjänst Centrum', role: 'employee' }],
+    active: { unitId: 'unit-omsorg', unitLabel: 'Hemtjänst Centrum', role: 'employee' },
+    capabilities: [],
+  },
+  {
+    id: 'hillevi',
+    name: 'Hillevi Berg',
+    userName: 'hillevi',
+    externalId: 'dev:hillevi',
+    email: 'hillevi@clew.test',
+    enabled: true,
+    bound: true,
+    assignments: [{ unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' }],
+    active: { unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' },
+    capabilities: [],
+  },
+  {
+    id: 'mikael',
+    name: 'Mikael Lund',
+    userName: 'mikael',
+    externalId: 'dev:mikael',
+    email: 'mikael@clew.test',
+    enabled: true,
+    bound: false,
+    assignments: [{ unitId: 'unit-it', unitLabel: 'IT och digitalisering', role: 'employee' }],
+    active: { unitId: 'unit-it', unitLabel: 'IT och digitalisering', role: 'employee' },
+    capabilities: ['admin.connectors', 'admin.users'],
+  },
+  {
+    id: 'omar',
+    name: 'Omar Ny',
+    userName: 'omar',
+    externalId: 'dev:omar',
+    email: 'omar@clew.test',
+    enabled: true,
+    bound: false,
+    assignments: [],
+    active: null,
+    capabilities: [],
+  },
+];
+/** Enough people for three pages: sixty on one unit, by name, after which nobody in `usersPeople` sorts. */
+export const manyPeople = (): UserAdminRow[] =>
+  Array.from({ length: 60 }, (_, i) => {
+    const n = String(i + 1).padStart(2, '0'),
+      placed = { unitId: 'unit-omsorg', unitLabel: 'Hemtjänst Centrum', role: 'employee' as const };
+    return {
+      id: 'p' + n,
+      name: 'Person ' + n,
+      userName: 'person' + n,
+      externalId: 'dev:p' + n,
+      email: `person${n}@clew.test`,
+      enabled: true,
+      bound: false,
+      assignments: [placed],
+      active: placed,
+      capabilities: [],
+    };
+  });
 export const usersOverview = (): UsersAdminOverview => ({
-  users: [
-    {
-      id: 'hassan',
-      name: 'Hassan Ali',
-      userName: 'hassan',
-      externalId: 'dev:hassan',
-      email: 'hassan@clew.test',
-      enabled: true,
-      bound: true,
-      assignments: [{ unitId: 'unit-omsorg', unitLabel: 'Hemtjänst Centrum', role: 'employee' }],
-      active: { unitId: 'unit-omsorg', unitLabel: 'Hemtjänst Centrum', role: 'employee' },
-      capabilities: [],
-      groups: [{ externalId: 'unit:unit-omsorg', label: 'Hemtjänst Centrum' }],
-    },
-    {
-      id: 'hillevi',
-      name: 'Hillevi Berg',
-      userName: 'hillevi',
-      externalId: 'dev:hillevi',
-      email: 'hillevi@clew.test',
-      enabled: true,
-      bound: true,
-      assignments: [{ unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' }],
-      active: { unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' },
-      capabilities: [],
-      groups: [
-        { externalId: 'unit:unit-skola', label: 'Bergsåkers skola' },
-        { externalId: 'unit-manager:unit-skola', label: 'Chefer · Bergsåkers skola' },
-        { externalId: 'S-1-5-21-rektorer', label: 'Rektorer' },
-      ],
-    },
-    {
-      id: 'mikael',
-      name: 'Mikael Lund',
-      userName: 'mikael',
-      externalId: 'dev:mikael',
-      email: 'mikael@clew.test',
-      enabled: true,
-      bound: false,
-      assignments: [{ unitId: 'unit-it', unitLabel: 'IT och digitalisering', role: 'employee' }],
-      active: { unitId: 'unit-it', unitLabel: 'IT och digitalisering', role: 'employee' },
-      capabilities: ['admin.connectors', 'admin.users'],
-      groups: [
-        { externalId: 'unit:unit-it', label: 'IT och digitalisering' },
-        { externalId: 'S-1-5-21-it-staff', label: 'IT-personal' },
-      ],
-    },
-    {
-      id: 'omar',
-      name: 'Omar Ny',
-      userName: 'omar',
-      externalId: 'dev:omar',
-      email: 'omar@clew.test',
-      enabled: true,
-      bound: false,
-      assignments: [],
-      active: null,
-      capabilities: [],
-      groups: [],
-    },
-  ],
   groupCapabilities: [
     { groupExternalId: 'S-1-5-21-it-staff', groupLabel: 'IT-personal', capability: 'admin.connectors' },
+  ],
+  units: [
+    { id: 'unit-skola', label: 'Bergsåkers skola', parentLabel: 'Grundskola' },
+    { id: 'unit-omsorg', label: 'Hemtjänst Centrum', parentLabel: null },
+    { id: 'unit-it', label: 'IT och digitalisering', parentLabel: null },
   ],
   groups: [
     { id: 'unit:unit-skola', label: 'Bergsåkers skola' },
@@ -1580,3 +1596,115 @@ export const siteHeader = (): SiteHeaderView => ({
   logo: null,
   source: null,
 });
+
+/**
+ * Administration › Organisation (D99): a tree of four levels as a catalogue pushed it, with what a push can leave
+ * wrong: an administration nobody leads whose unit is led from nowhere above it either, a unit nobody is placed on, a
+ * unit people are on that no unit group names, and two people placed on no unit.
+ */
+export const organisationOverview = (): OrganisationOverview => {
+  const unit = (
+    unitId: string,
+    unitLabel: string,
+    parentId: string | null,
+    managers: string[],
+    placed: number,
+    branch: number,
+    line: 'own' | 'above' | 'none',
+    pushed = true,
+  ) => ({
+    unitId,
+    unitLabel,
+    parentId,
+    managers: managers.map(name => ({ id: name.toLowerCase().replace(/\W+/g, '-'), name })),
+    placed,
+    branch,
+    line,
+    pushed,
+  });
+  return {
+    units: [
+      unit('unit-arkiv', 'Arkivet', 'unit-kultur', [], 0, 0, 'none'),
+      unit('unit-utbildning', 'Barn och utbildning', 'unit-kommun', ['Elin Lindqvist'], 2, 9, 'own'),
+      unit('unit-skola', 'Bergsåkers skola', 'unit-grundskola', ['Hillevi Berg', 'Karin Åberg'], 3, 3, 'own'),
+      unit('unit-grundskola', 'Grundskola', 'unit-utbildning', ['Mattias Eriksson'], 1, 7, 'own'),
+      unit('unit-hagaskolan', 'Hagaskolan', 'unit-grundskola', [], 3, 3, 'above'),
+      unit('unit-hemtjanst', 'Hemtjänst', 'unit-omsorg', [], 0, 4, 'above'),
+      unit('unit-omsorg-centrum', 'Hemtjänst Centrum', 'unit-hemtjanst', ['Sara Pettersson'], 4, 4, 'own'),
+      unit('unit-kommun', 'Kommunen', null, ['Yusuf Lundgren'], 1, 15, 'own'),
+      unit('unit-kultur', 'Kultur och fritid', null, [], 2, 2, 'none'),
+      unit('unit-okand', 'unit-okand', null, ['Nils Öberg'], 1, 1, 'own', false),
+      unit('unit-omsorg', 'Vård och omsorg', 'unit-kommun', ['Amir Sjöberg'], 1, 5, 'own'),
+    ],
+    unplaced: 2,
+  };
+};
+/** The people of the units of `organisationOverview()` that a test opens; a unit not listed has nobody placed on it. */
+export const organisationPeople: Record<string, OrganisationUnitPeople['people']> = {
+  'unit-skola': [
+    {
+      id: 'anna',
+      name: 'Anna Lindqvist',
+      userName: 'anna.lindqvist',
+      email: 'anna.lindqvist@clew.test',
+      role: 'employee',
+      enabled: true,
+    },
+    {
+      id: 'hillevi',
+      name: 'Hillevi Berg',
+      userName: 'hillevi',
+      email: 'hillevi@clew.test',
+      role: 'manager',
+      enabled: true,
+    },
+    { id: 'karin', name: 'Karin Åberg', userName: 'karin.aberg', email: null, role: 'manager', enabled: true },
+    // Deactivated: listed with the mark, and not among the three the tree's row counts.
+    { id: 'vera', name: 'Vera Öst', userName: 'vera.ost', email: null, role: 'employee', enabled: false },
+  ],
+  'unit-grundskola': [
+    {
+      id: 'mattias',
+      name: 'Mattias Eriksson',
+      userName: 'mattias.eriksson',
+      email: 'mattias.eriksson@clew.test',
+      role: 'manager',
+      enabled: true,
+    },
+  ],
+};
+/**
+ * Who reports to a unit's managers from the units below it (D99 item 4), for the units a test opens: under Grundskola
+ * the two who lead Bergsåkers skola, and a person placed on Hagaskolan, which nobody leads.
+ */
+export const organisationReports: Record<string, OrganisationUnitPeople['reports']> = {
+  'unit-grundskola': [
+    {
+      id: 'hillevi',
+      name: 'Hillevi Berg',
+      userName: 'hillevi',
+      email: 'hillevi@clew.test',
+      role: 'manager',
+      enabled: true,
+      below: [{ unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' }],
+    },
+    {
+      id: 'karin',
+      name: 'Karin Åberg',
+      userName: 'karin.aberg',
+      email: null,
+      role: 'manager',
+      enabled: true,
+      below: [{ unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' }],
+    },
+    {
+      id: 'omar',
+      name: 'Omar Hosseini',
+      userName: 'omar.hosseini',
+      email: 'omar.hosseini@clew.test',
+      role: 'employee',
+      enabled: true,
+      below: [{ unitId: 'unit-hagaskolan', unitLabel: 'Hagaskolan', role: 'employee' }],
+    },
+  ],
+};

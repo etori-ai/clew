@@ -320,22 +320,29 @@
     {
       "idx": 45,
       "version": "7",
-      "when": 1794337459790,
-      "tag": "0045_thread_subjects",
+      "when": 1794337031534,
+      "tag": "0045_organisation_tree",
       "breakpoints": true
     },
     {
       "idx": 46,
       "version": "7",
-      "when": 1794345563242,
-      "tag": "0046_session_bindings",
+      "when": 1794337459790,
+      "tag": "0046_thread_subjects",
       "breakpoints": true
     },
     {
       "idx": 47,
       "version": "7",
+      "when": 1794345563242,
+      "tag": "0047_session_bindings",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
       "when": 1794381417322,
-      "tag": "0047_drop_mcp_chat_services",
+      "tag": "0048_drop_mcp_chat_services",
       "breakpoints": true
     }
   ]

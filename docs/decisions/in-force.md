@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**101 in force**: 97 accepted and 4 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 8 proposed and not decided. 5 no longer in force.
+**104 in force**: 100 accepted and 4 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 8 proposed and not decided. 5 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -20,10 +20,10 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D49 · A card has one time action, and it always says when it is back](D49-a-card-has-one-time-action-and-always-says-when-it-is-back.md) | 2026-11-05 | accepted |  |
 | [D78 · Work items, cards and proposals have distinct meanings](D78-work-items-cards-and-proposals-have-distinct-meanings.md) | 2026-11-08 | accepted |  |
 | [D84 · A model's reasoning is its own setting, and the model test settles it](D84-a-models-reasoning-is-its-own-setting.md) | 2026-11-07, revised 2026-11-09 | accepted |  |
-| [D94 · A manager has a Personal section that lists the people on the units they manage](D94-a-manager-has-a-personal-section-listing-the-people-on-their-units.md) | 2026-11-09 | accepted |  |
+| [D94 · A manager has a Personal section that lists the people on the units they manage](D94-a-manager-has-a-personal-section-listing-the-people-on-their-units.md) | 2026-11-09 | accepted | [D99](README.md) |
 | [D95 · Clew may own a domain by choice, decided per domain with the core-or-connector checklist](D95-clew-may-own-a-domain-by-choice-decided-with-the-core-or-connector-checklist.md) | 2026-11-10 | accepted |  |
-| [D96 · Talks is Clew's first owned domain: the round and action points, behind a profile a connector can answer](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md) | 2026-11-10 | accepted |  |
-| [D100 · The vision is narrowed to what Clew can keep today: the open page, adapters as the norm, a closed view catalogue](D100-the-vision-is-narrowed-to-what-clew-can-keep-today.md) | 2026-11-10 | accepted | [D81](D81-mcp-apps-extend-ai-chat-with-provider-owned-interactions.md), [D101](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) |
+| [D96 · Talks is Clew's first owned domain: the round and action points, behind a profile a connector can answer](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md) | 2026-11-10 | accepted | [D99](README.md) |
+| [D100 · The vision is narrowed to what Clew can keep today: the open page, adapters as the norm, a closed view catalogue](D100-the-vision-is-narrowed-to-what-clew-can-keep-today.md) | 2026-11-10 | accepted | [D81](D81-mcp-apps-extend-ai-chat-with-provider-owned-interactions.md), [D101](README.md) |
 | [D101 · The first real integration is Nextcloud's Approval app, and new surface waits until its loop works](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) | 2026-11-10 | provisional |  |
 | [D104 · The model does the work: a floor holds without it, and the assistant may act alone within governed limits](D104-the-model-does-the-work-a-floor-holds-without-it-and-the-assistant-may-act-alone-within-limits.md) | 2026-11-10 | provisional |  |
 
@@ -35,7 +35,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D2 · No OpenAPI-to-MCP conversion in the running system](D02-no-openapi-to-mcp-conversion.md) | 2026-11-03 | accepted |  |
 | [D3 · Three module kinds: core, pass-through, derived](D03-three-module-kinds.md) | 2026-11-03 | accepted | [D95](D95-clew-may-own-a-domain-by-choice-decided-with-the-core-or-connector-checklist.md) |
 | [D4 · Foreign MCP servers are wrapped, not passed through](D04-foreign-mcp-servers-are-wrapped.md) | 2026-11-03 | accepted |  |
-| [D10 · Integrations fulfil Clew's API; adapters are the fallback](D10-integrations-fulfil-clews-api-first.md) | 2026-11-03 | accepted | [D100](D100-the-vision-is-narrowed-to-what-clew-can-keep-today.md) |
+| [D10 · Integrations fulfil Clew's API; adapters are the fallback](D10-integrations-fulfil-clews-api-first.md) | 2026-11-03 | accepted | [D100](README.md) |
 | [D11 · One calendar contract, CalDAV and Microsoft 365 as adapters](D11-one-calendar-contract-two-adapters.md) | 2026-11-03 | accepted | [D69](D69-a-local-fake-of-microsoft-graph-tests-the-microsoft-365-adapter.md) |
 | [D21 · Every integration is a module service behind the Clew module protocol](D21-integrations-are-module-services.md) | 2026-11-04 | accepted |  |
 | [D22 · Connectors, not modules: the word for an integration that a person, an operator or a vendor meets](D22-connectors-not-modules.md) | 2026-11-04 | accepted |  |
@@ -60,12 +60,14 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D6 · Dev login with username and password, local only](D06-dev-login-local-only.md) | 2026-11-03 | accepted |  |
 | [D44 · Authorized reads and Clew-signed connector authority](D44-authorized-reads-and-clew-signed-connector-authority.md) | 2026-11-05 | accepted |  |
 | [D62 · Users are core entities, not connected systems](D62-users-are-core-entities-not-connected-systems.md) | 2026-11-06 | accepted |  |
-| [D68 · People are pushed into Clew through standard SCIM, and mapping happens outside Clew](D68-people-are-pushed-into-clew-through-standard-scim.md) | 2026-11-06 | accepted | [D85](README.md) |
+| [D68 · People are pushed into Clew through standard SCIM, and mapping happens outside Clew](D68-people-are-pushed-into-clew-through-standard-scim.md) | 2026-11-06 | accepted | [D85](README.md), [D99](README.md) |
 | [D75 · Source snapshots retain the authority that produced them](D75-source-snapshots-retain-the-authority-that-produced-them.md) | 2026-11-07 | accepted |  |
 | [D85 · Capabilities are mapped from provisioned groups in Clew; units and manager roles keep D68's keys](D85-capabilities-are-mapped-from-provisioned-groups-in-clew.md) | 2026-11-09 | accepted |  |
 | [D93 · The `protected` key is refused at the SCIM boundary until Clew decides whether it may hold the fact](D93-the-protected-key-is-refused-at-the-scim-boundary.md) | 2026-11-09 | accepted | [D96](README.md) |
 | [D96 · A key written wrong is refused at the SCIM boundary, not stored as a plain group](D96-a-key-written-wrong-is-refused-at-the-scim-boundary.md) | 2026-11-10 | accepted |  |
-| [D103 · The session that asked stands behind delegated work: an approved write, and a scan while the person is present](D103-the-session-that-asked-stands-behind-delegated-work.md) | 2026-11-10 | provisional | [D101](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) |
+| [D99 · Units form a tree pushed over SCIM, and a manager works with their direct reports](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md) | 2026-11-10 | accepted | [D101](README.md) |
+| [D101 · A provisioner pushes the organisation first and adds before it removes, and a unit belongs to one organisation](D101-a-provisioner-pushes-the-organisation-first-and-adds-before-it-removes-and-a-unit-belongs-to-one-organisation.md) | 2026-11-11 | accepted |  |
+| [D103 · The session that asked stands behind delegated work: an approved write, and a scan while the person is present](D103-the-session-that-asked-stands-behind-delegated-work.md) | 2026-11-10 | provisional | [D101](README.md) |
 
 ## Platform
 
@@ -133,6 +135,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D90 · Mina ärenden is a section on Hem, after the day's work](D90-mina-arenden-is-a-section-on-hem.md) | 2026-11-09 | accepted |  |
 | [D92 · What goes into the box enters on Astryx's entry motion](D92-what-goes-into-the-box-enters-on-astryxs-entry-motion.md) | 2026-11-09 | accepted |  |
 | [D98 · The installation's theme and logo are saved in Clew by an administrator, the theme as a design tokens file](D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md) | 2026-11-10 | accepted |  |
+| [D100 · The people list is read a page at a time and narrowed on the server](D100-the-people-list-is-read-a-page-at-a-time-and-narrowed-on-the-server.md) | 2026-11-11 | accepted |  |
 
 ## Proposed, not decided
 

@@ -15,10 +15,13 @@ interface UserRow {
   active: boolean;
   groups?: Array<{ value: string }>;
 }
+/** D99: the extension a `unit:` group names the unit above it in. */
+const UNIT_EXTENSION = 'urn:clew:params:scim:schemas:extension:unit:2.0:Group';
 interface GroupRow {
   id: string;
   externalId?: string;
   displayName: string;
+  [UNIT_EXTENSION]?: { parent?: string };
 }
 const UNIT = 'unit:',
   MANAGER = 'unit-manager:',
@@ -39,7 +42,16 @@ const some = (names: string[]) =>
   names.slice(0, 5).join(', ') + (names.length > 5 ? ` (and ${names.length - 5} more)` : '');
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-export async function checkProvisioning(baseUrl: string, client: ScimClient, fetchImpl: Fetch = fetch) {
+/** What the caller knows the source to hold, for the check to compare with: how many roots its tree has. */
+export interface Expected {
+  roots?: number;
+}
+export async function checkProvisioning(
+  baseUrl: string,
+  client: ScimClient,
+  fetchImpl: Fetch = fetch,
+  expected: Expected = {},
+) {
   const findings: Finding[] = [],
     say = (level: Finding['level'], text: string) => void findings.push({ level, text });
   const anonymous = await fetchImpl(baseUrl.replace(/\/+$/, '') + '/ServiceProviderConfig');
@@ -105,11 +117,56 @@ export async function checkProvisioning(baseUrl: string, client: ScimClient, fet
       'warn',
       `${plural(unnamed.length, 'unit has', 'units have')} a unit-manager: group and no unit: group, so the unit is shown by its id instead of a name: ${some(unnamed)}.`,
     );
-  const empty = [...units, ...managers].filter(g => !membersOf.get(g.id));
+  // The tree (D99): which unit stands above which, as the unit groups say it.
+  const above = new Map(
+    units.map(g => [g.externalId!.slice(UNIT.length), g[UNIT_EXTENSION]?.parent?.slice(UNIT.length)]),
+  );
+  const hasBelow = new Set([...above.values()].filter((id): id is string => id !== undefined));
+  const depthOf = (id: string) => {
+    let depth = 0;
+    for (let at = above.get(id); at !== undefined && depth < above.size; at = above.get(at)) depth++;
+    return depth;
+  };
+  const roots = [...above].filter(([, parent]) => parent === undefined || !above.has(parent)).map(([id]) => id);
+  if (hasBelow.size) {
+    const levels = Math.max(...[...above.keys()].map(depthOf)) + 1;
+    say(
+      'ok',
+      `The units form a tree: ${plural(roots.length, 'root', 'roots')}, ${plural(levels, 'level', 'levels')} deep.`,
+    );
+  } else if (units.length) say('ok', 'No unit names a unit above it: the organisation is flat.');
+  // A unit group written without the extension is a root (D99), so a client that replaces a unit's members and
+  // leaves its parent out flattens the tree one unit at a time. Only the source knows how many roots there should be.
+  if (expected.roots !== undefined && roots.length > expected.roots)
+    say(
+      'warn',
+      `The tree has ${plural(roots.length, 'root', 'roots')} where ${expected.roots} ${expected.roots === 1 ? 'was' : 'were'} expected; a unit written without its parent becomes a root: ${some(roots.map(id => UNIT + id))}.`,
+    );
+  // A unit with units below it may be a heading nobody is placed on; one without is a unit somebody should be in.
+  const empty = [...units.filter(g => !hasBelow.has(g.externalId!.slice(UNIT.length))), ...managers].filter(
+    g => !membersOf.get(g.id),
+  );
   if (empty.length)
     say(
       'warn',
       `${plural(empty.length, 'unit or unit-manager group has', 'unit or unit-manager groups have')} no members: ${some(empty.map(g => g.externalId!))}.`,
+    );
+  // Who the people on a unit report to is the manager of that unit or of the nearest unit above with one (D99).
+  // Deactivated people lead nobody and are counted nowhere, as Administration › Organisation reads the same tree.
+  const activeIn = new Map<string, number>();
+  for (const u of active) for (const g of u.groups ?? []) activeIn.set(g.value, (activeIn.get(g.value) ?? 0) + 1);
+  const led = new Set(managers.filter(g => activeIn.get(g.id)).map(g => g.externalId!.slice(MANAGER.length)));
+  const leaderless = units.filter(g => {
+    if (!activeIn.get(g.id)) return false;
+    let at: string | undefined = g.externalId!.slice(UNIT.length);
+    for (let hops = 0; at !== undefined && hops <= above.size; at = above.get(at), hops++)
+      if (led.has(at)) return false;
+    return true;
+  });
+  if (leaderless.length)
+    say(
+      'warn',
+      `${plural(leaderless.length, 'unit has', 'units have')} people and no manager, on the unit or on any unit above it, so its people report to nobody: ${some(leaderless.map(g => g.externalId!))}.`,
     );
   // Stored before the server began refusing them (D96): they mean nothing, and the next write of them is refused.
   const miswritten = groups.filter(g => {

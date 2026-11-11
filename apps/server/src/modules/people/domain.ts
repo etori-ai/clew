@@ -1,4 +1,12 @@
-import { CAPABILITIES, isCapability, type Capability, type Role } from '@clew/contracts';
+import {
+  CAPABILITIES,
+  isCapability,
+  type Capability,
+  type OrganisationOverview,
+  type OrganisationUnit,
+  type Role,
+  type UserStatus,
+} from '@clew/contracts';
 
 /**
  * Deriving a person's authority from what was pushed (D68) and mapped (D85). Pure: no I/O, no clock.
@@ -62,9 +70,14 @@ export interface Derived {
   protected: boolean;
   grant: Grant | undefined;
 }
+/**
+ * The order of unit ids, which decides the active assignment. The locale is named, so the order is the same whatever
+ * locale the process was started with: the one the server has always run under.
+ */
+const byUnitId = (a: string, b: string) => a.localeCompare(b, 'en');
 export function activeOf(assignments: readonly Assignment[]): Assignment | undefined {
   return [...assignments].sort(
-    (a, b) => Number(b.role === 'manager') - Number(a.role === 'manager') || a.unitId.localeCompare(b.unitId),
+    (a, b) => Number(b.role === 'manager') - Number(a.role === 'manager') || byUnitId(a.unitId, b.unitId),
   )[0];
 }
 /**
@@ -99,7 +112,7 @@ export function deriveAuthority(
     if (held.has(row.groupExternalId) && isCapability(row.capability)) capabilities.add(row.capability);
   const assignments = [...roles.entries()]
     .map(([unitId, role]) => ({ unitId, role }))
-    .sort((a, b) => a.unitId.localeCompare(b.unitId));
+    .sort((a, b) => byUnitId(a.unitId, b.unitId));
   const active = activeOf(assignments),
     sorted = [...capabilities].sort(),
     labelOf = (unitId: string) => labels.get(unitId) ?? knownLabels[unitId] ?? unitId;
@@ -127,6 +140,120 @@ export function sameGrant(a: Grant | undefined, b: Grant | undefined) {
     a.capabilities.length === b.capabilities.length &&
     a.capabilities.every((c, i) => c === b.capabilities[i])
   );
+}
+
+// ---- The organisation tree (D99): the pure half. Units and placements in, what a page draws out.
+
+/** A node as pushed: a `unit:` group's unit id, name and the unit above it. */
+export interface TreeUnit {
+  id: string;
+  label: string;
+  parentId: string | null;
+}
+/** One person on one unit, or a person on none (`unitId` and `role` null). */
+export interface Placement {
+  personId: string;
+  name: string;
+  enabled: boolean;
+  unitId: string | null;
+  role: Role | null;
+}
+export const bySwedish = (a: string, b: string) => a.localeCompare(b, 'sv');
+/**
+ * D100: what the people list of Administration › Användare is narrowed by, as a store reads it. Every part narrows
+ * further and an absent part narrows nothing. `words` each match, without regard to case, somewhere in the name, the
+ * user name or the e-mail. `unitIds` is an assignment on one of the units, `role` an assignment with that role, and
+ * the two together one assignment that is both. `status` is the row's reading of access (`UserStatus`), `capability`
+ * a capability on the grant.
+ */
+export interface UserSearch {
+  words?: readonly string[];
+  unitIds?: readonly string[];
+  role?: Role;
+  status?: UserStatus;
+  capability?: string;
+}
+/** The words of a typed search, in lower case as Swedish folds it; at most eight, so a pasted text stays one query. */
+export const searchWords = (text: string | undefined): string[] =>
+  (text ?? '').toLocaleLowerCase('sv').split(/\s+/).filter(Boolean).slice(0, 8);
+/**
+ * A unit with every unit below it in the tree (D99), the unit first. A unit the tree does not name is itself alone,
+ * and each unit is taken once, so a stored chain that were ever a cycle ends.
+ */
+export function branchOf(tree: readonly TreeUnit[], unitId: string): string[] {
+  const below = new Map<string, string[]>();
+  for (const u of tree) if (u.parentId !== null) below.set(u.parentId, [...(below.get(u.parentId) ?? []), u.id]);
+  const branch = new Set([unitId]);
+  for (const id of branch) for (const next of below.get(id) ?? []) branch.add(next);
+  return [...branch];
+}
+/**
+ * Who leads a unit (D99 item 4): its managers who are active. A deactivated manager leads nobody, so a unit whose only
+ * manager is deactivated passes the line through as a unit without one does. Everything that reads the line asks here.
+ */
+export const leadsUnit = (p: { role: Role | null; enabled: boolean }) => p.enabled && p.role === 'manager';
+/**
+ * The tree an administrator reads. A unit people are assigned to without a `unit:` group is drawn as a root that was
+ * not pushed, named as the unit table knows it; a parent that names no node is read as no parent, so every node is
+ * drawn. Deactivated people are left out of every count.
+ */
+export function organisationOf(
+  tree: readonly TreeUnit[],
+  placements: readonly Placement[],
+  knownLabels: Readonly<Record<string, string>> = {},
+): OrganisationOverview {
+  const nodes = new Map<string, TreeUnit & { pushed: boolean }>();
+  for (const unit of tree) nodes.set(unit.id, { ...unit, pushed: true });
+  const active = placements.filter(p => p.enabled);
+  for (const p of active)
+    if (p.unitId !== null && !nodes.has(p.unitId))
+      nodes.set(p.unitId, { id: p.unitId, label: knownLabels[p.unitId] ?? p.unitId, parentId: null, pushed: false });
+  const parentOf = (id: string) => {
+    const parent = nodes.get(id)?.parentId;
+    return parent && parent !== id && nodes.has(parent) ? parent : null;
+  };
+  const managers = new Map<string, Array<{ id: string; name: string }>>(),
+    placed = new Map<string, number>();
+  for (const p of active) {
+    if (p.unitId === null) continue;
+    placed.set(p.unitId, (placed.get(p.unitId) ?? 0) + 1);
+    if (leadsUnit(p)) managers.set(p.unitId, [...(managers.get(p.unitId) ?? []), { id: p.personId, name: p.name }]);
+  }
+  // Each placement counts on its unit and on every unit above it, a person once however many units of the branch they
+  // are on; `seen` ends the walk if a stored chain were ever a cycle.
+  const branch = new Map<string, Set<string>>();
+  for (const p of active) {
+    const seen = new Set<string>();
+    for (let at = p.unitId; at !== null && !seen.has(at); at = parentOf(at)) {
+      seen.add(at);
+      branch.set(at, (branch.get(at) ?? new Set()).add(p.personId));
+    }
+  }
+  const lineOf = (id: string): OrganisationUnit['line'] => {
+    if (managers.get(id)?.length) return 'own';
+    const seen = new Set([id]);
+    for (let at = parentOf(id); at !== null && !seen.has(at); at = parentOf(at)) {
+      if (managers.get(at)?.length) return 'above';
+      seen.add(at);
+    }
+    return 'none';
+  };
+  const placedPeople = new Set(active.filter(p => p.unitId !== null).map(p => p.personId));
+  return {
+    units: [...nodes.values()]
+      .map(n => ({
+        unitId: n.id,
+        unitLabel: n.label,
+        parentId: parentOf(n.id),
+        managers: (managers.get(n.id) ?? []).sort((a, b) => bySwedish(a.name, b.name) || a.id.localeCompare(b.id)),
+        placed: placed.get(n.id) ?? 0,
+        branch: branch.get(n.id)?.size ?? 0,
+        line: lineOf(n.id),
+        pushed: n.pushed,
+      }))
+      .sort((a, b) => bySwedish(a.unitLabel, b.unitLabel) || a.unitId.localeCompare(b.unitId)),
+    unplaced: new Set(active.filter(p => !placedPeople.has(p.personId)).map(p => p.personId)).size,
+  };
 }
 
 // ---- SCIM (RFC 7643, RFC 7644): the pure half. Records in, resources and new records out; nothing read or written here.
@@ -161,6 +288,8 @@ export interface GroupRecord {
   externalId: string | null;
   /** The group's name: SCIM's `displayName`. */
   label: string;
+  /** D99: on a `unit:` group, the unit id of the node above it in the organisation tree; null on a root and on any other group. */
+  parentUnitId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -175,6 +304,8 @@ export interface UserFields {
 export interface GroupFields {
   externalId: string | null;
   label: string;
+  /** D99: the unit id of the parent, from the unit extension; null when the group carries none. */
+  parent: string | null;
   members: string[];
 }
 const need = (attribute: string): never => {
@@ -199,10 +330,41 @@ export function userFields(input: ScimUserInput): UserFields {
     enabled: input.active ?? true,
   };
 }
+/** The unit id a `unit:` group's key names; undefined for `unit-manager:` and every other key. */
+export const unitGroupOf = (externalId: string | null | undefined): string | undefined =>
+  externalId?.startsWith(UNIT_KEY) ? externalId.slice(UNIT_KEY.length) : undefined;
+const UNIT_EXTENSION = SCIM.unit.toLowerCase();
+/**
+ * What a name aims at in the unit extension (D99), without regard to case as a schema URN is: the extension as a
+ * whole (its value is an object with `parent`), its `parent` attribute, or nothing.
+ */
+const unitExtensionTarget = (name: string): 'extension' | 'parent' | undefined => {
+  const key = name.trim().toLowerCase();
+  return key === UNIT_EXTENSION ? 'extension' : key === UNIT_EXTENSION + ':parent' ? 'parent' : undefined;
+};
+/**
+ * The parent a client sent, as a unit id. It is the `externalId` of the parent's `unit:` group, written as exactly as
+ * a key is (D96); null, or nothing, makes the unit a root.
+ */
+export function parentUnitOf(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  const id = typeof value === 'string' ? unitGroupOf(value) : undefined;
+  if (!id || id !== id.trim())
+    throw new ScimError(
+      400,
+      `The parent ${typeof value === 'string' ? `'${value}'` : 'given'} must be the externalId of the unit group above, '${UNIT_KEY}<unitId>' (D99). The group was not stored.`,
+      'invalidValue',
+    );
+  return id;
+}
+const parentInExtension = (value: unknown, path: string | undefined) =>
+  value === undefined || value === null ? null : parentUnitOf(asObject(value, path).parent);
 export function groupFields(input: ScimGroupInput): GroupFields {
+  const extension = Object.entries(input).find(([name]) => unitExtensionTarget(name) === 'extension');
   return {
     externalId: input.externalId ?? null,
     label: input.displayName,
+    parent: parentInExtension(extension?.[1], SCIM.unit),
     members: [...new Set((input.members ?? []).map(m => m.value))],
   };
 }
@@ -238,6 +400,36 @@ export function assertAcceptedKey(fields: GroupFields): void {
     throw refusedKey(
       `The key '${key}' names no capability of this installation; the capabilities are ${CAPABILITIES.join(', ')} (D96).`,
     );
+}
+/**
+ * D99: where a parent may stand, as far as the group itself says. Only a `unit:` group is a node of the tree, and a
+ * unit is not its own parent. Whether the parent exists, and whether it would close a cycle, is asked of the store.
+ */
+export function assertAcceptedParent(fields: GroupFields): void {
+  if (fields.parent === null) return;
+  const unit = unitGroupOf(fields.externalId);
+  if (unit === undefined)
+    throw refusedKey(
+      `A parent is carried by a '${UNIT_KEY}' group only; '${fields.externalId ?? fields.label}' is not one (D99).`,
+    );
+  if (unit === fields.parent) throw refusedKey(`The unit '${unit}' cannot be its own parent (D99).`);
+}
+/**
+ * Whether placing `unit` under `parent` would close a cycle: true when `unit` is `parent` or stands above it. `above`
+ * answers the parent of a unit, undefined or null at a root. A chain longer than any organisation is read as a cycle
+ * already stored, so the walk always ends.
+ */
+export async function closesCycle(
+  unit: string,
+  parent: string,
+  above: (unitId: string) => Promise<string | null | undefined>,
+): Promise<boolean> {
+  let at: string | null | undefined = parent;
+  for (let hops = 0; at; hops++) {
+    if (at === unit || hops > 256) return true;
+    at = await above(at);
+  }
+  return false;
 }
 /** `attribute eq "value"` on one of `attributes`, the one filter shape D68 requires; anything else is `invalidFilter`. */
 export function parseFilter(
@@ -285,6 +477,10 @@ const projectionPaths = (list: string | undefined) =>
     )
     .filter(Boolean)
     .map(name => {
+      // The unit extension (D99) is named by its URN, which has a dot of its own ('2.0'): the URN is the attribute, and
+      // what follows it the sub-attribute.
+      if (name === UNIT_EXTENSION || name.startsWith(UNIT_EXTENSION + ':'))
+        return { top: UNIT_EXTENSION, sub: name.slice(UNIT_EXTENSION.length + 1) || undefined };
       const [top, ...sub] = name.split('.');
       return { top: top!, sub: sub.join('.') || undefined };
     });
@@ -467,7 +663,10 @@ export function applyUserPatch(
 }
 /**
  * PATCH on a group: `members` added, removed (by path filter or by value list) or replaced; the name and external id
- * replaced; the external id removed. Anything else is not held and is ignored, a read-only attribute as for a user.
+ * replaced; the external id removed; the unit extension's `parent` set or removed (D99), by its schema-qualified path
+ * or as the extension's object in a path-less value. A group whose key stops being a `unit:` key stops being a node,
+ * so the parent it had goes with the key; a parent the patch itself names is kept, and refused where it stands.
+ * Anything else is not held and is ignored, a read-only attribute as for a user.
  */
 export function applyGroupPatch(
   current: GroupFields,
@@ -475,7 +674,8 @@ export function applyGroupPatch(
   id?: string,
 ): GroupFields {
   let members = new Set(current.members),
-    next = { ...current };
+    next = { ...current },
+    placed = false;
   const memberIds = (value: unknown): string[] => {
     const list = Array.isArray(value) ? value : value === undefined ? [] : [value];
     return list.map(m => {
@@ -484,8 +684,12 @@ export function applyGroupPatch(
     });
   };
   const setAttribute = (path: string, value: unknown, pathless: boolean) => {
-    const key = coreKey(path, 'group');
-    if (key === 'displayname') next.label = asString(value, path);
+    const key = coreKey(path, 'group'),
+      extension = unitExtensionTarget(path);
+    if (extension) {
+      next.parent = extension === 'parent' ? parentUnitOf(value) : parentInExtension(value, path);
+      placed = true;
+    } else if (key === 'displayname') next.label = asString(value, path);
     else if (key === 'externalid') next.externalId = asString(value, path);
     else if (key === 'members') members = new Set(memberIds(value));
     else if (isReadOnly(key, 'group')) {
@@ -514,7 +718,8 @@ export function applyGroupPatch(
     }
     if (op === 'remove') {
       if (!path || !key) throw new ScimError(400, 'A remove operation needs a path.', 'noTarget');
-      if (key === 'externalid') next.externalId = null;
+      if (unitExtensionTarget(path)) next.parent = null;
+      else if (key === 'externalid') next.externalId = null;
       else if (key === 'displayname') throw required(path);
       else if (isReadOnly(key, 'group')) throw readOnly(path);
       continue;
@@ -526,6 +731,7 @@ export function applyGroupPatch(
           for (const member of memberIds(value)) members.add(member);
         else setAttribute(name, value, true);
   }
+  if (!placed && unitGroupOf(next.externalId) === undefined) next.parent = null;
   return { ...next, members: [...members] };
 }
 export function userResource(
@@ -557,11 +763,12 @@ export function groupResource(
   base: string,
 ): ScimGroup {
   return {
-    schemas: [SCIM.group],
+    schemas: record.parentUnitId ? [SCIM.group, SCIM.unit] : [SCIM.group],
     id: record.id,
     ...(record.externalId ? { externalId: record.externalId } : {}),
     displayName: record.label,
     members: members.map(m => ({ value: m.id, display: m.name, $ref: `${base}/Users/${m.id}` })),
+    ...(record.parentUnitId ? { [SCIM.unit]: { parent: UNIT_KEY + record.parentUnitId } } : {}),
     meta: {
       resourceType: 'Group',
       created: record.createdAt,
@@ -609,7 +816,7 @@ export const resourceTypes = (base: string) => [
     endpoint: '/Groups',
     description: 'A group as the source knows it; keys in externalId carry its meaning in Clew.',
     schema: SCIM.group,
-    schemaExtensions: [],
+    schemaExtensions: [{ schema: SCIM.unit, required: false }],
     meta: { resourceType: 'ResourceType', location: `${base}/ResourceTypes/Group` },
   },
 ];
@@ -654,7 +861,7 @@ export const schemaDocuments = (base: string) => [
     id: SCIM.group,
     name: 'Group',
     description:
-      'A group; unit:, unit-manager: and capability: keys in externalId carry meaning in Clew. The key protected is refused (D93), and so is a key written wrong (D96). Members are users; a group as a member is refused.',
+      'A group; unit:, unit-manager: and capability: keys in externalId carry meaning in Clew. The key protected is refused (D93), and so is a key written wrong (D96). Members are users; a group as a member is refused. A unit: group may name the unit above it in the unit extension (D99).',
     attributes: [
       attribute('displayName', 'string', { required: true }),
       attribute('externalId', 'string', { caseExact: true, uniqueness: 'server' }),
@@ -664,5 +871,20 @@ export const schemaDocuments = (base: string) => [
       }),
     ],
     meta: { resourceType: 'Schema', location: `${base}/Schemas/${SCIM.group}` },
+  },
+  {
+    schemas: [SCIM.schema],
+    id: SCIM.unit,
+    name: 'Unit',
+    description:
+      'The place of a unit: group in the organisation tree (D99). Carried by a unit: group only; a tree is pushed from the root down and removed from the leaves up.',
+    attributes: [
+      attribute('parent', 'string', {
+        caseExact: true,
+        description:
+          'The externalId of the unit group above this one, unit:<unitId>; absent on a root. It must exist in the same organisation and may not close a cycle.',
+      }),
+    ],
+    meta: { resourceType: 'Schema', location: `${base}/Schemas/${SCIM.unit}` },
   },
 ];

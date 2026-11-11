@@ -54,7 +54,7 @@ describe('/scim/v2', () => {
     }
     expect((await call('GET', '/Users', undefined, 'wrong')).status).toBe(401);
   });
-  test('discovery describes the server: patch and filter on, bulk off, two resource types, two schemas', async () => {
+  test('discovery describes the server: patch and filter on, bulk off, two resource types, their two schemas and the unit extension', async () => {
     const { call } = app();
     const config = await (await call('GET', '/ServiceProviderConfig')).json();
     expect(config).toMatchObject({
@@ -69,8 +69,40 @@ describe('/scim/v2', () => {
     expect((await call('GET', '/ResourceTypes/Group')).status).toBe(200);
     expect((await call('GET', '/ResourceTypes/Device')).status).toBe(404);
     const schemas = await (await call('GET', '/Schemas')).json();
-    expect(schemas.totalResults).toBe(2);
+    expect(schemas.totalResults).toBe(3);
     expect((await call('GET', '/Schemas/urn:ietf:params:scim:schemas:core:2.0:User')).status).toBe(200);
+    // D99: the unit extension is named on Group and can be read by its URN.
+    const group = await (await call('GET', '/ResourceTypes/Group')).json();
+    expect(group.schemaExtensions).toEqual([
+      { schema: 'urn:clew:params:scim:schemas:extension:unit:2.0:Group', required: false },
+    ]);
+    const unit = await call('GET', '/Schemas/urn:clew:params:scim:schemas:extension:unit:2.0:Group');
+    expect(unit.status).toBe(200);
+    expect((await unit.json()).attributes.map((a: { name: string }) => a.name)).toEqual(['parent']);
+  });
+  test('a tree is pushed over HTTP: a unit under its parent, a parent that is missing refused, a unit with units below it kept (D99)', async () => {
+    const { call } = app();
+    const UNIT = 'urn:clew:params:scim:schemas:extension:unit:2.0:Group';
+    const post = (unitId: string, parent?: string) =>
+      call('POST', '/Groups', {
+        externalId: 'unit:' + unitId,
+        displayName: unitId,
+        ...(parent ? { [UNIT]: { parent: 'unit:' + parent } } : {}),
+      });
+    const early = await post('it', 'ksk');
+    expect(early.status).toBe(400);
+    expect(await early.json()).toMatchObject({ status: '400', scimType: 'invalidValue' });
+    const root = await (await post('ksk')).json(),
+      leaf = await post('it', 'ksk');
+    expect(leaf.status).toBe(201);
+    const made = await leaf.json();
+    expect(made[UNIT]).toEqual({ parent: 'unit:ksk' });
+    expect(made.schemas).toEqual(['urn:ietf:params:scim:schemas:core:2.0:Group', UNIT]);
+    const kept = await call('DELETE', '/Groups/' + root.id);
+    expect(kept.status).toBe(409);
+    expect((await kept.json()).detail).toContain("still has a unit below it ('unit:it')");
+    expect((await call('DELETE', '/Groups/' + made.id)).status).toBe(204);
+    expect((await call('DELETE', '/Groups/' + root.id)).status).toBe(204);
   });
   test('a user is created, read, listed by filter, patched and deactivated over HTTP', async () => {
     const { call, store } = app();
@@ -123,6 +155,9 @@ describe('/scim/v2', () => {
     const measured = await call('POST', '/Users', '{"userName":"' + 'x'.repeat(4 * 1024 * 1024) + '"}');
     expect(measured.status).toBe(413);
     expect(await measured.json()).toMatchObject({ status: '413', detail: 'The request body is too large.' });
+    // Measured in bytes: fewer characters than the limit, more bytes than it.
+    const accented = await call('POST', '/Users', '{"userName":"' + 'å'.repeat(2.5 * 1024 * 1024) + '"}');
+    expect(accented.status).toBe(413);
     expect(store.state.users.size).toBeLessThanOrEqual(1);
   });
   test('what the server does not offer answers 501, a search request lists like GET, and an unknown address is the error resource', async () => {

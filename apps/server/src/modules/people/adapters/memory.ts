@@ -1,4 +1,13 @@
-import type { Assignment, Grant, GroupCapabilityRule, GroupRecord, UserRecord } from '../domain';
+import {
+  bySwedish,
+  unitGroupOf,
+  type Assignment,
+  type Grant,
+  type GroupCapabilityRule,
+  type GroupRecord,
+  type Placement,
+  type UserRecord,
+} from '../domain';
 import type { Provisioner, ProvisionStore, ProvisionTx } from '../ports';
 
 /**
@@ -82,6 +91,7 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
       return p && { id: p.id, organisationId: p.organisationId };
     },
     async lockUnits() {},
+    async lockTree() {},
     async memberships(personId) {
       return groupsOf(personId)
         .filter(g => g.externalId !== null)
@@ -218,19 +228,71 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
       for (const key of [...state.members]) if (splitKey(key)[0] === groupId) state.members.delete(key);
       for (const p of personIds) state.members.add(memberKey(groupId, p));
     },
+    async searchUsers(organisationId, search, p) {
+      const folded = (value: string | null) => (value ?? '').toLocaleLowerCase('sv');
+      const matching = [...state.users.values()]
+        .filter(u => {
+          if (u.organisationId !== organisationId) return false;
+          const granted = state.grants.has(u.id),
+            bound = state.bindings.has(u.id),
+            status = !u.enabled ? 'disabled' : !granted ? 'no-access' : bound ? 'signed-in' : 'not-signed-in';
+          return (
+            (search.words ?? []).every(word =>
+              [u.name, u.userName, u.email].some(value => folded(value).includes(folded(word))),
+            ) &&
+            (!(search.unitIds || search.role) ||
+              (state.assignments.get(u.id) ?? []).some(
+                a => (!search.unitIds || search.unitIds.includes(a.unitId)) && (!search.role || a.role === search.role),
+              )) &&
+            (!search.status || search.status === status) &&
+            (search.capability === undefined || !!state.grants.get(u.id)?.capabilities.includes(search.capability))
+          );
+        })
+        .sort((a, b) => bySwedish(a.name, b.name) || a.id.localeCompare(b.id));
+      return {
+        total: matching.length,
+        rows: matching.slice(p.startIndex - 1, p.startIndex - 1 + p.count).map(u => ({ ...u })),
+      };
+    },
     async assignmentsOf(personId) {
       return (state.assignments.get(personId) ?? [])
         .map(a => ({ unitId: a.unitId, unitLabel: state.units.get(a.unitId)?.label ?? a.unitId, role: a.role }))
         .sort((a, b) => a.unitId.localeCompare(b.unitId));
     },
-    async unitPeople(unitId) {
-      return [...state.assignments.entries()]
-        .flatMap(([personId, list]) => list.filter(a => a.unitId === unitId).map(a => ({ personId, role: a.role })))
-        .flatMap(({ personId, role }) => {
-          const u = state.users.get(personId);
-          return u ? [{ id: u.id, name: u.name, userName: u.userName, email: u.email, role, enabled: u.enabled }] : [];
-        })
+    async unitPeople(unitIds, organisationId) {
+      const byUnit: Awaited<ReturnType<ProvisionTx['unitPeople']>> = {};
+      for (const [personId, list] of [...state.assignments.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+        const u = state.users.get(personId);
+        if (!u || (organisationId !== undefined && u.organisationId !== organisationId)) continue;
+        const person = { id: u.id, name: u.name, userName: u.userName, email: u.email, enabled: u.enabled };
+        for (const a of list)
+          if (unitIds.includes(a.unitId)) (byUnit[a.unitId] ??= []).push({ ...person, role: a.role });
+      }
+      return byUnit;
+    },
+    async childUnits(unitId) {
+      return [...state.groups.values()]
+        .filter(g => g.parentUnitId === unitId && unitGroupOf(g.externalId) !== undefined)
+        .map(g => ({ id: unitGroupOf(g.externalId)!, label: g.label }))
         .sort((a, b) => a.id.localeCompare(b.id));
+    },
+    async unitTree(organisationId) {
+      return [...state.groups.values()]
+        .filter(g => g.organisationId === organisationId && unitGroupOf(g.externalId) !== undefined)
+        .map(g => ({ id: unitGroupOf(g.externalId)!, label: g.label, parentId: g.parentUnitId }))
+        .sort((a, b) => a.id.localeCompare(b.id));
+    },
+    async placements(organisationId) {
+      return [...state.users.values()]
+        .filter(u => u.organisationId === organisationId)
+        .sort((a, b) => a.id.localeCompare(b.id))
+        .flatMap((u): Placement[] => {
+          const person = { personId: u.id, name: u.name, enabled: u.enabled },
+            held = [...(state.assignments.get(u.id) ?? [])].sort((a, b) => a.unitId.localeCompare(b.unitId));
+          return held.length
+            ? held.map(a => ({ ...person, unitId: a.unitId, role: a.role }))
+            : [{ ...person, unitId: null, role: null }];
+        });
     },
     async bound(personId) {
       return state.bindings.has(personId);

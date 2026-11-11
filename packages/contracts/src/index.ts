@@ -1654,7 +1654,6 @@ export interface UserAdminRow {
   /** The assignment the person acts as, from the grant projection; null when the person has no unit. */
   active: { unitId: string; unitLabel: string; role: Role } | null;
   capabilities: string[];
-  groups: Array<{ externalId: string | null; label: string }>;
 }
 /** Personal (D94): a person on a unit the signed-in manager manages, as the page lists them. No token, no subject. */
 export interface StaffPerson {
@@ -1662,19 +1661,70 @@ export interface StaffPerson {
   name: string;
   userName: string | null;
   email: string | null;
-  /** The person's role on this unit, not their active one. */
+  /**
+   * The person's role on this unit, not their active one. For a person who reports here from a unit below (D99), the
+   * role they hold there: `manager` when they lead one of those units.
+   */
   role: Role;
   enabled: boolean;
+  /**
+   * D99: set for a person who is not assigned to this unit but reports to its manager through the tree: the units
+   * below it that they lead, or are placed on where nobody leads, by label in Swedish order. Absent for a person
+   * assigned to the unit itself.
+   */
+  below?: Array<{ unitId: string; unitLabel: string; role: Role }>;
 }
 export interface StaffUnit {
   unitId: string;
   unitLabel: string;
-  /** Everyone assigned to the unit except the manager reading, by name in Swedish order. */
+  /**
+   * The manager's reports through this unit (D99), by name in Swedish order: everyone assigned to the unit except the
+   * manager reading, then the managers of the nearest units below that have one, and the people placed on a unit
+   * below that nobody leads. Never the people those managers lead.
+   */
   people: StaffPerson[];
 }
 /** The units the manager manages, by label in Swedish order; the server refuses anyone who manages none. */
 export interface StaffOverview {
   units: StaffUnit[];
+}
+/**
+ * Administration › Organisation (D99): one node of the organisation tree as the provisioner pushed it. Deactivated
+ * people are counted nowhere here.
+ */
+export interface OrganisationUnit {
+  unitId: string;
+  unitLabel: string;
+  /** The unit above, null on a root. */
+  parentId: string | null;
+  /** The people who lead the unit, by name in Swedish order. */
+  managers: Array<{ id: string; name: string }>;
+  /** How many people are assigned to the unit itself, its managers included. */
+  placed: number;
+  /** How many people are assigned to the unit or to a unit below it, each person once. */
+  branch: number;
+  /** Who the people placed here report to: the unit's own managers, the managers of a unit above, or nobody. */
+  line: 'own' | 'above' | 'none';
+  /** False when people are assigned to the unit but no `unit:` group names it, so it has no name and no place. */
+  pushed: boolean;
+}
+export interface OrganisationOverview {
+  /** Every unit, by label in Swedish order; the tree is `parentId`. */
+  units: OrganisationUnit[];
+  /** People who are provisioned and active but placed on no unit, so they can do nothing (D68). */
+  unplaced: number;
+}
+/** The people assigned to one unit, by name in Swedish order, as the tree shows them beside a selected unit. */
+export interface OrganisationUnitPeople {
+  unitId: string;
+  unitLabel: string;
+  people: StaffPerson[];
+  /**
+   * Who reports to the unit's managers from the units below it (D99 item 4), each with `below`, by name in Swedish
+   * order: the managers of the nearest units that have one, and the people placed on a unit below that nobody leads.
+   * Empty for a unit nobody leads, since the line passes through it.
+   */
+  reports: StaffPerson[];
 }
 /** D85: one group gives one capability. `groupLabel` is the group's name while the group is provisioned, null when only this row remains. */
 export interface GroupCapability {
@@ -1683,16 +1733,64 @@ export interface GroupCapability {
   capability: Capability;
 }
 export interface UsersAdminOverview {
-  users: UserAdminRow[];
   groupCapabilities: GroupCapability[];
   /** The provisioned groups with an external id, as the editor offers them. */
   groups: Array<{ id: string; label: string }>;
   capabilities: Capability[];
   /**
+   * The organisation's units as the people list offers them to narrow by (D100): the nodes of the tree (D99), by label
+   * in Swedish order. `parentLabel` tells two units with one name apart; null on a root.
+   */
+  units: Array<{ id: string; label: string; parentLabel: string | null }>;
+  /**
    * The clients that push people into this organisation (D68) and when each was last heard from. `silent` is the
    * server's reading of that time: never seen, or not for two days, where a push is due daily.
    */
   provisioners: Array<{ id: string; label: string; lastSeenAt: string | null; silent: boolean }>;
+}
+/**
+ * D100: what a person's row says about their access, as the people list narrows by it. `disabled` is a deactivated
+ * person; of the others, `no-access` has no unit and so no grant (D68), and the two remaining say whether an identity
+ * binding exists. The words are addresses (D43), so English.
+ */
+export const USER_STATUSES = ['signed-in', 'not-signed-in', 'no-access', 'disabled'] as const;
+export type UserStatus = (typeof USER_STATUSES)[number];
+/** D100: how many people a page of the list may hold; the first is the default. */
+export const USERS_PAGE_SIZES = [25, 50, 100] as const;
+/**
+ * D100: the most a question about the people may hold. The page holds what it sends to the same limits, so that
+ * nothing a person types or an address names is refused as a malformed request.
+ */
+export const USERS_QUERY_LIMITS = { text: 200, unitId: 512, page: 1_000_000 } as const;
+/**
+ * D100: one page of Administration › Användare, asked for in a request body so that a searched name is never part of
+ * an address. Every part narrows the list further. `text` is words matched without regard to case against name, user
+ * name and e-mail, each word in one of them. `unitId` is a unit with everything below it in the tree. `role` is a role
+ * on some unit, and with `unitId` on one of those units.
+ */
+export const UsersAdminQuery = Type.Object(
+  {
+    text: Type.Optional(Type.String({ maxLength: USERS_QUERY_LIMITS.text })),
+    unitId: Type.Optional(Type.String({ minLength: 1, maxLength: USERS_QUERY_LIMITS.unitId })),
+    role: Type.Optional(RoleSchema),
+    status: Type.Optional(Type.Union(USER_STATUSES.map(s => Type.Literal(s)))),
+    capability: Type.Optional(CapabilitySchema),
+    page: Type.Optional(Type.Integer({ minimum: 1, maximum: USERS_QUERY_LIMITS.page })),
+    pageSize: Type.Optional(Type.Union(USERS_PAGE_SIZES.map(n => Type.Literal(n)))),
+  },
+  { additionalProperties: false },
+);
+export type UsersAdminQueryType = Static<typeof UsersAdminQuery>;
+/** D100: one page of the people list, by name in Swedish order. */
+export interface UsersAdminPage {
+  rows: UserAdminRow[];
+  /** How many people the query matches, across every page. */
+  total: number;
+  /** How many people the organisation has, whatever the query. */
+  all: number;
+  /** The page that was read, 1-based: the one asked for, or the last one when the list has become shorter than that. */
+  page: number;
+  pageSize: number;
 }
 export const GroupCapabilityInput = Type.Object(
   { groupExternalId: Type.String({ minLength: 1, maxLength: 512 }), capability: CapabilitySchema },

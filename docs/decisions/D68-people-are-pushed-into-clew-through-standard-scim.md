@@ -1,6 +1,6 @@
 # D68 · People are pushed into Clew through standard SCIM, and mapping happens outside Clew
 
-**Status:** accepted, built 2026-11-09 (the SCIM server, the derivation, the synthetic provisioner, binding at first login, Administration › Användare); the group keys are proposed until a real provisioner has used them; item 2 amended by D85 (2026-11-09): capabilities are mapped from groups in Clew, units and manager roles keep these keys · **Date:** 2026-11-06 · **Area:** identity
+**Status:** accepted, built 2026-11-09 (the SCIM server, the derivation, the synthetic provisioner, binding at first login, Administration › Användare); the group keys are proposed until a real provisioner has used them; item 2 amended by D85 (2026-11-09): capabilities are mapped from groups in Clew, units and manager roles keep these keys; amended by D99 (2026-11-10): units form a tree, a `unit:` group names the unit above it and the provisioner no longer flattens a hierarchy · **Date:** 2026-11-06 · **Area:** identity
 
 **Decision.** Clew is a standard SCIM 2.0 server (RFC 7643, 7644) and the only way people, units and groups enter a
 production installation. Clew never reads an organisation's directory to learn who exists. Each installation runs a

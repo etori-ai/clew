@@ -108,7 +108,7 @@ Where the code settled something the items above left open, or differs from them
   about. A key outside the rule answers 404.
 - Item 8: the signed actor carries an optional `userName`. "Who may be asked about" is one rule in
   `modules/entities`: for a person `managed`, `self` or `colleague`; for a unit `member`. The index from entity to
-  cards is migration `0045_thread_subjects`, with no backfill: an older card is indexed when its rows are next
+  cards is migration `0046_thread_subjects`, with no backfill: an older card is indexed when its rows are next
   written. Personal reads the entities API alone; `GET /api/staff` remains for the talk drawer.
 - Beyond the items: an action about an entity starts a card without the model
   (`POST /api/entities/:kind/:key/actions`, `apps/server/src/threads/usecases/started.ts`). A propose runs as the

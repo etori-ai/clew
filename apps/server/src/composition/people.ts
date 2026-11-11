@@ -1,5 +1,5 @@
 import { postgresProvisionStore, postgresUserReads } from '../modules/people/adapters/postgres';
-import { scimUsecases, staffUsecases, usersAdminUsecases } from '../modules/people/usecases';
+import { organisationUsecases, scimUsecases, staffUsecases, usersAdminUsecases } from '../modules/people/usecases';
 import { tokenDigest } from '../auth-crypto';
 import { clock, ids } from './ambient';
 
@@ -13,5 +13,7 @@ export const scim = scimUsecases({ store: postgresProvisionStore(), clock, ids, 
 export const provisioning = scim;
 /** Administration › Användare (D85): the overview and the group-to-capability mapping. */
 export const usersAdmin = usersAdminUsecases({ store: postgresProvisionStore(), clock });
-/** Personal (D94): the people on the units the signed-in manager manages, read only. */
+/** Administration › Organisation (D99): the organisation tree as the provisioner pushed it, read only. */
+export const organisation = organisationUsecases({ store: postgresProvisionStore() });
+/** Personal (D94, D99): the signed-in manager's reports, read only. */
 export const staff = staffUsecases({ store: postgresProvisionStore() });

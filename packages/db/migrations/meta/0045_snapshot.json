@@ -1,5 +1,5 @@
 {
-  "id": "e26221da-075f-4d1a-a56a-4cb27ec038c1",
+  "id": "437506de-6091-41d2-a567-9d7c6591c71f",
   "prevId": "404daf8c-9e44-414d-adc2-6a15d54f1564",
   "version": "7",
   "dialect": "postgresql",
@@ -1394,6 +1394,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "parent_unit_id": {
+          "name": "parent_unit_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -1421,6 +1427,21 @@
             }
           ],
           "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "auth_group_parent_unit": {
+          "name": "auth_group_parent_unit",
+          "columns": [
+            {
+              "expression": "parent_unit_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -3581,115 +3602,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.thread_subject": {
-      "name": "thread_subject",
-      "schema": "",
-      "columns": {
-        "thread_id": {
-          "name": "thread_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "person_id": {
-          "name": "person_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "entity": {
-          "name": "entity",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "key": {
-          "name": "key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "thread_subject_owner": {
-          "name": "thread_subject_owner",
-          "columns": [
-            {
-              "expression": "person_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "entity",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "thread_subject_entity": {
-          "name": "thread_subject_entity",
-          "columns": [
-            {
-              "expression": "entity",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "thread_subject_thread_id_thread_id_fk": {
-          "name": "thread_subject_thread_id_thread_id_fk",
-          "tableFrom": "thread_subject",
-          "tableTo": "thread",
-          "columnsFrom": [
-            "thread_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "thread_subject_thread_id_entity_key_pk": {
-          "name": "thread_subject_thread_id_entity_key_pk",
-          "columns": [
-            "thread_id",
-            "entity",
-            "key"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.thread": {
       "name": "thread",
       "schema": "",
@@ -3778,13 +3690,6 @@
         },
         "items": {
           "name": "items",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "subjects": {
-          "name": "subjects",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true,

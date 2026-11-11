@@ -32,6 +32,10 @@ import {
   providerDetail,
   providerReport,
   usersOverview,
+  usersPeople,
+  organisationOverview,
+  organisationPeople,
+  organisationReports,
   staffOverview,
   entityDetail,
   entityList,
@@ -64,6 +68,7 @@ import type {
   ProviderSummary,
   TalkHeldBody,
   TalkRound,
+  UsersAdminQueryType,
 } from '@clew/contracts';
 import { THEME_BASE_COLORS, parseThemeFile, themeFileOf } from '../../packages/contracts/src/theme-file';
 import { personSearch, phonebook } from './phonebook';
@@ -116,8 +121,15 @@ export class MockApi {
   admin = false;
   /** Användare (D85): the people and the group-capability rows the users page shows; the rows change with the page's actions. */
   users = usersOverview();
+  /** Användare (D100): the people the list is read from, a page at a time, and every question the page has asked. */
+  people = usersPeople();
+  peopleQueries: UsersAdminQueryType[] = [];
+  /** Användare: the list cannot be read, while the rest of the page can. A 400, which the page does not ask twice. */
+  peopleRefused = false;
   /** The users page for someone with `admin.connectors` but not `admin.users`: the server refuses. */
   usersForbidden = false;
+  /** Organisation (D99): the tree the organisation page shows; it shares `usersForbidden`, as the two share a capability. */
+  organisation = organisationOverview();
   /**
    * The installation's appearance (D98): Astryx Neutral with no logo until a test saves or sets one. The public read
    * every page makes and Administration › Utseende share it, as they share the one row on the server.
@@ -312,6 +324,53 @@ export class MockApi {
         return this.usersForbidden
           ? route.fulfill({ status: 403, json: { error: 'Du saknar behörighet för åtgärden.', code: 'denied' } })
           : json(this.users);
+      if (path === '/admin/users/search' && method === 'POST') {
+        if (this.usersForbidden)
+          return route.fulfill({ status: 403, json: { error: 'Du saknar behörighet för åtgärden.', code: 'denied' } });
+        // The server's reading of a question (D100), on the suite's people: every part narrows, then one page.
+        const asked = request.postDataJSON() as UsersAdminQueryType,
+          words = (asked.text ?? '').toLocaleLowerCase('sv').split(/\s+/).filter(Boolean),
+          status = (u: (typeof this.people)[number]) =>
+            !u.enabled ? 'disabled' : !u.active ? 'no-access' : u.bound ? 'signed-in' : 'not-signed-in';
+        this.peopleQueries.push(asked);
+        if (this.peopleRefused) return route.fulfill({ status: 400, json: { error: 'Ogiltig förfrågan.' } });
+        const matching = this.people.filter(
+          u =>
+            words.every(w => [u.name, u.userName, u.email].some(v => (v ?? '').toLocaleLowerCase('sv').includes(w))) &&
+            (!(asked.unitId || asked.role) ||
+              u.assignments.some(
+                a => (!asked.unitId || a.unitId === asked.unitId) && (!asked.role || a.role === asked.role),
+              )) &&
+            (!asked.status || status(u) === asked.status) &&
+            (!asked.capability || u.capabilities.includes(asked.capability)),
+        );
+        const pageSize = asked.pageSize ?? 25,
+          page = Math.min(asked.page ?? 1, Math.max(1, Math.ceil(matching.length / pageSize)));
+        return json({
+          rows: matching.slice((page - 1) * pageSize, page * pageSize),
+          total: matching.length,
+          all: this.people.length,
+          page,
+          pageSize,
+        });
+      }
+      if (path === '/admin/organisation' && method === 'GET')
+        return this.usersForbidden
+          ? route.fulfill({ status: 403, json: { error: 'Du saknar behörighet för åtgärden.', code: 'denied' } })
+          : json(this.organisation);
+      const unitPeople = /^\/admin\/organisation\/units\/([^/]+)$/.exec(path);
+      if (unitPeople && method === 'GET') {
+        const unitId = decodeURIComponent(unitPeople[1]!),
+          unit = this.organisation.units.find(u => u.unitId === unitId);
+        return unit
+          ? json({
+              unitId,
+              unitLabel: unit.unitLabel,
+              people: organisationPeople[unitId] ?? [],
+              reports: organisationReports[unitId] ?? [],
+            })
+          : route.fulfill({ status: 400, json: { error: 'Enheten finns inte.', code: 'invalid' } });
+      }
       if (path === '/admin/users/group-capabilities' && method === 'POST') {
         const input = request.postDataJSON() as {
           groupExternalId: string;
@@ -1078,10 +1137,17 @@ export async function open(page: Page, path: string) {
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
 }
 
-/** Every rule tagged for WCAG 2.0, 2.1 and 2.2 A and AA, plus axe's best practices: landmarks, headings and regions. */
-export async function expectNoAxeViolations(page: Page) {
+/**
+ * Every rule tagged for WCAG 2.0, 2.1 and 2.2 A and AA, plus axe's best practices: landmarks, headings and regions.
+ * `without` leaves a rule out for a page where the rule cannot read the structure; the spec that passes it says why and
+ * checks the criterion itself in the rule's place.
+ */
+export async function expectNoAxeViolations(page: Page, { without = [] }: { without?: string[] } = {}) {
   const tags = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'];
-  const { violations } = await new AxeBuilder({ page }).withTags(tags).disableRules(['target-size']).analyze();
+  const { violations } = await new AxeBuilder({ page })
+    .withTags(tags)
+    .disableRules(['target-size', ...without])
+    .analyze();
   // 2.5.8 is about the targets themselves: measured with the dock in the flow, so a row that has scrolled under the sticky dock is not read as too close to its buttons.
   const undock = (on: boolean) =>
     page.evaluate(on => {
@@ -1204,7 +1270,18 @@ export async function hiddenFocusStops(page: Page, limit = 150) {
           ring(el.parentElement, depth + 1)
         );
       };
-      if (!ring(active, 0)) unmarked.push(name);
+      // A tree row (Astryx TreeList) takes the focus on its list item and draws the ring on the row inside it, so that
+      // the ring goes round the row and not round the rows nested under it.
+      const ownRow =
+        active.getAttribute('role') === 'treeitem'
+          ? active.querySelector(':scope > [data-astryx-pressable], :scope > * > [data-astryx-pressable]')
+          : null;
+      const drawn = (el: Element | null) => {
+        if (!el) return false;
+        const s = getComputedStyle(el);
+        return s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0;
+      };
+      if (!ring(active, 0) && !drawn(ownRow)) unmarked.push(name);
       const box = {
         left: Math.max(r.left, 0),
         right: Math.min(r.right, innerWidth),

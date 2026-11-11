@@ -6,12 +6,24 @@ import type {
   ProviderHealth,
   ProviderSummary,
   Role,
+  StaffPerson,
 } from '@clew/contracts';
 
 /** Swedish words for what the administration page shows (D23). Colour never stands alone: every variant has its word. */
 export const roleLabel: Record<Role, string> = { manager: 'Chefer', employee: 'Medarbetare' };
 /** A person's role in one unit, singular. */
 export const roleOfOne: Record<Role, string> = { manager: 'Chef', employee: 'Medarbetare' };
+const unitNames = new Intl.ListFormat('sv', { type: 'conjunction' });
+/**
+ * The role as a list of people says it. A person assigned to the unit has their role on it; one who reports there from
+ * below (D99) is named by the units they lead, or are placed on where nobody leads: "Chef för Utveckling".
+ */
+export const roleText = (p: StaffPerson) => {
+  const below = p.below ?? [];
+  if (!below.length) return roleOfOne[p.role];
+  const led = below.filter(b => b.role === 'manager');
+  return `${led.length ? 'Chef för' : 'Medarbetare på'} ${unitNames.format((led.length ? led : below).map(b => b.unitLabel))}`;
+};
 /** The closed list of capabilities (D85) in the administrator's words. */
 export const capabilityLabel: Record<Capability, string> = {
   'admin.connectors': 'Administrera anslutna system',

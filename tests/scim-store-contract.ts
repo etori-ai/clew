@@ -38,6 +38,7 @@ export const groupRow = (id: string, organisationId: string, extra: Partial<Grou
   organisationId,
   externalId: 'g:' + id,
   label: 'Group ' + id,
+  parentUnitId: null,
   createdAt: T,
   updatedAt: T,
   ...extra,
@@ -156,10 +157,16 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         await tx.replaceAssignments(a, [{ unitId: p + '-u1', role: 'manager' }]);
         expect(await tx.assignmentsOf(a)).toEqual([{ unitId: p + '-u1', unitLabel: 'Enhet 1', role: 'manager' }]);
         // Personal (D94): the unit's people with their role on it, as the manager's page reads them.
-        expect(await tx.unitPeople(p + '-u1')).toEqual([
-          { id: a, name: 'Name ' + a, userName: 'u:' + a, email: a + '@example.test', role: 'manager', enabled: true },
-        ]);
-        expect(await tx.unitPeople(p + '-nowhere')).toEqual([]);
+        const person = { id: a, name: 'Name ' + a, userName: 'u:' + a, email: a + '@example.test', enabled: true };
+        expect(await tx.unitPeople([p + '-u1'])).toEqual({ [p + '-u1']: [{ ...person, role: 'manager' }] });
+        // A unit nobody is assigned to is absent, as is every unit when none is asked for.
+        expect(await tx.unitPeople([p + '-nowhere'])).toEqual({});
+        expect(await tx.unitPeople([])).toEqual({});
+        // Within one organisation only when it is named: another organisation's people are not on the unit.
+        expect(await tx.unitPeople([p + '-u1', p + '-nowhere'], p + '-org')).toEqual({
+          [p + '-u1']: [{ ...person, role: 'manager' }],
+        });
+        expect(await tx.unitPeople([p + '-u1'], p + '-elsewhere')).toEqual({});
         expect(await tx.bound(a)).toBe(false);
       });
       await h.bind(a);
@@ -236,6 +243,146 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         expect(await tx.provisioner('digest:' + p + ':old', '2026-11-11T00:00:00.000Z')).toBeUndefined();
         expect((await tx.provisioner('digest:' + p + ':new', '2026-11-11T00:00:00.000Z'))?.id).toBe(p + '-r');
         expect(await tx.provisioner('digest:' + p + ':x-old', T)).toBeUndefined();
+      });
+    });
+    test('the tree is the unit groups with their parent, the units below one are found by it, and placements list everyone (D99)', async () => {
+      const { store, prefix: p } = await make();
+      const org = p + '-org',
+        [root, mid, leaf, lone] = [p + '-root', p + '-mid', p + '-leaf', p + '-lone'],
+        [a, b, c] = [p + '-a', p + '-b', p + '-c'];
+      const unit = (id: string, parentUnitId: string | null) =>
+        groupRow(p + '-g-' + id, org, { externalId: 'unit:' + id, label: 'Unit ' + id, parentUnitId });
+      await store.transaction(async tx => {
+        await tx.lockTree(org);
+        await tx.insertGroup(unit(root, null));
+        await tx.insertGroup(unit(mid, root));
+        await tx.insertGroup(unit(leaf, mid));
+        await tx.insertGroup(unit(lone, null));
+        // Neither is a node: a manager group carries no place, and another organisation has its own tree.
+        await tx.insertGroup(groupRow(p + '-g-m', org, { externalId: 'unit-manager:' + mid, label: 'Managers' }));
+        await tx.insertGroup(
+          groupRow(p + '-g-x', p + '-elsewhere', { externalId: 'unit:' + p + '-x', label: 'Elsewhere' }),
+        );
+        await tx.insertUser(userRow(a, org));
+        await tx.insertUser(userRow(b, org, { enabled: false }));
+        await tx.insertUser(userRow(c, org));
+        await tx.insertUser(userRow(p + '-z', p + '-elsewhere'));
+        await tx.writeUnits(org, [
+          { id: mid, label: 'Unit ' + mid },
+          { id: leaf, label: 'Unit ' + leaf },
+        ]);
+        await tx.replaceAssignments(a, [
+          { unitId: mid, role: 'manager' },
+          { unitId: leaf, role: 'employee' },
+        ]);
+        await tx.replaceAssignments(b, [{ unitId: leaf, role: 'employee' }]);
+      });
+      await store.transaction(async tx => {
+        expect(await tx.unitTree(org)).toEqual([
+          { id: leaf, label: 'Unit ' + leaf, parentId: mid },
+          { id: lone, label: 'Unit ' + lone, parentId: null },
+          { id: mid, label: 'Unit ' + mid, parentId: root },
+          { id: root, label: 'Unit ' + root, parentId: null },
+        ]);
+        expect(await tx.childUnits(root)).toEqual([{ id: mid, label: 'Unit ' + mid }]);
+        expect(await tx.childUnits(leaf)).toEqual([]);
+        // Several units in one read (D99): each under its own id, by person id, a deactivated person included.
+        const read = await tx.unitPeople([mid, leaf, root]);
+        expect(Object.keys(read).sort()).toEqual([leaf, mid].sort());
+        expect(read[mid]!.map(q => [q.id, q.role])).toEqual([[a, 'manager']]);
+        expect(read[leaf]!.map(q => [q.id, q.role, q.enabled])).toEqual([
+          [a, 'employee', true],
+          [b, 'employee', false],
+        ]);
+        expect(await tx.placements(org)).toEqual([
+          { personId: a, name: 'Name ' + a, enabled: true, unitId: leaf, role: 'employee' },
+          { personId: a, name: 'Name ' + a, enabled: true, unitId: mid, role: 'manager' },
+          { personId: b, name: 'Name ' + b, enabled: false, unitId: leaf, role: 'employee' },
+          { personId: c, name: 'Name ' + c, enabled: true, unitId: null, role: null },
+        ]);
+        // A move is the parent on the group, and a root is no parent.
+        await tx.updateGroup(p + '-g-' + leaf, { parentUnitId: root, updatedAt: '2026-11-09T07:00:00.000Z' });
+        expect((await tx.childUnits(root)).map(u => u.id)).toEqual([leaf, mid]);
+        await tx.updateGroup(p + '-g-' + leaf, { parentUnitId: null, updatedAt: '2026-11-09T07:00:01.000Z' });
+        expect((await tx.readGroup(org, p + '-g-' + leaf))?.parentUnitId).toBeNull();
+        expect((await tx.childUnits(root)).map(u => u.id)).toEqual([mid]);
+      });
+    });
+    test('the people list is searched by word, unit, role, status and capability, in Swedish order and a page at a time (D100)', async () => {
+      const h = await make(),
+        p = h.prefix,
+        org = p + '-org',
+        [u1, u2] = [p + '-u1', p + '-u2'],
+        [anna, bo, zara] = [p + '-anna', p + '-bo', p + '-zara'],
+        [ake, orjan, other] = [p + '-ake', p + '-orjan', p + '-other'];
+      await h.store.transaction(async tx => {
+        await tx.insertUser(userRow(anna, org, { name: 'Anna Berg', userName: p + '.ANNBER' }));
+        await tx.insertUser(userRow(bo, org, { name: 'Bo Av', enabled: false }));
+        await tx.insertUser(userRow(zara, org, { name: 'Zara Öst', email: 'zara@skola.' + p + '.test' }));
+        await tx.insertUser(userRow(ake, org, { name: 'Åke 100% Lind' }));
+        await tx.insertUser(userRow(orjan, org, { name: 'Örjan Ek', userName: null, email: null }));
+        await tx.insertUser(userRow(other, p + '-elsewhere', { name: 'Anna Annan' }));
+        await tx.writeUnits(org, [
+          { id: u1, label: 'Enhet 1' },
+          { id: u2, label: 'Enhet 2' },
+        ]);
+        await tx.replaceAssignments(anna, [
+          { unitId: u1, role: 'manager' },
+          { unitId: u2, role: 'employee' },
+        ]);
+        await tx.replaceAssignments(zara, [{ unitId: u2, role: 'employee' }]);
+        await tx.replaceAssignments(ake, [{ unitId: u2, role: 'manager' }]);
+        await tx.writeGrant(anna, { unitId: u1, unitLabel: 'Enhet 1', role: 'manager', capabilities: ['admin.users'] });
+        await tx.writeGrant(zara, { unitId: u2, unitLabel: 'Enhet 2', role: 'employee', capabilities: [] });
+        await tx.writeGrant(ake, { unitId: u2, unitLabel: 'Enhet 2', role: 'manager', capabilities: [] });
+      });
+      await h.bind(anna);
+      await h.store.transaction(async tx => {
+        const every = { startIndex: 1, count: 100 };
+        const found = async (search: Parameters<typeof tx.searchUsers>[1], organisationId = org) =>
+          (await tx.searchUsers(organisationId, search, every)).rows.map(r => r.id);
+        // By name as Swedish orders it: å and ö after z. Within the organisation only.
+        const all = await tx.searchUsers(org, {}, every);
+        expect(all.total).toBe(5);
+        expect(all.rows.map(r => r.id)).toEqual([anna, bo, zara, ake, orjan]);
+        expect(all.rows[0]).toEqual(userRow(anna, org, { name: 'Anna Berg', userName: p + '.ANNBER' }));
+        expect(await found({}, p + '-elsewhere')).toEqual([other]);
+        // A page is a slice of that order with the whole count; a count of 0 only counts.
+        const second = await tx.searchUsers(org, {}, { startIndex: 2, count: 2 });
+        expect(second.total).toBe(5);
+        expect(second.rows.map(r => r.id)).toEqual([bo, zara]);
+        expect(await tx.searchUsers(org, { words: ['berg'] }, { startIndex: 1, count: 0 })).toEqual({
+          total: 1,
+          rows: [],
+        });
+        // Words: each one somewhere in the name, the user name or the e-mail, without regard to case, å included.
+        expect(await found({ words: ['BERG'] })).toEqual([anna]);
+        expect(await found({ words: ['åke'] })).toEqual([ake]);
+        expect(await found({ words: ['ÖST'] })).toEqual([zara]);
+        expect(await found({ words: ['anna', 'berg'] })).toEqual([anna]);
+        expect(await found({ words: ['anna', 'öst'] })).toEqual([]);
+        expect(await found({ words: [p + '.annber'] })).toEqual([anna]);
+        expect(await found({ words: ['skola.' + p] })).toEqual([zara]);
+        // A word is matched as written: a per cent sign is a per cent sign.
+        expect(await found({ words: ['%'] })).toEqual([ake]);
+        expect(await found({ words: ['100%'] })).toEqual([ake]);
+        // A unit, a role, and the two as one assignment: Anna leads the first unit and is an employee on the second.
+        expect(await found({ unitIds: [u1] })).toEqual([anna]);
+        expect(await found({ unitIds: [u2] })).toEqual([anna, zara, ake]);
+        expect(await found({ unitIds: [u1, u2, p + '-nowhere'] })).toEqual([anna, zara, ake]);
+        expect(await found({ role: 'manager' })).toEqual([anna, ake]);
+        expect(await found({ unitIds: [u2], role: 'manager' })).toEqual([ake]);
+        expect(await found({ unitIds: [u2], role: 'employee' })).toEqual([anna, zara]);
+        // Access as the row reads it: deactivated first, then no grant, then whether a binding exists.
+        expect(await found({ status: 'disabled' })).toEqual([bo]);
+        expect(await found({ status: 'no-access' })).toEqual([orjan]);
+        expect(await found({ status: 'signed-in' })).toEqual([anna]);
+        expect(await found({ status: 'not-signed-in' })).toEqual([zara, ake]);
+        expect(await found({ capability: 'admin.users' })).toEqual([anna]);
+        expect(await found({ capability: 'admin.connectors' })).toEqual([]);
+        // Every part narrows further.
+        expect(await found({ words: ['a'], unitIds: [u2], status: 'not-signed-in' })).toEqual([zara, ake]);
+        expect(await found({ words: ['zara'], role: 'manager' })).toEqual([]);
       });
     });
     test('a locked person and a locked group read as they do unlocked', async () => {

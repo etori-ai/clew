@@ -6,6 +6,8 @@ import type {
   TalksResult,
   GroupCapabilityInputType,
   UsersAdminOverview,
+  UsersAdminPage,
+  UsersAdminQueryType,
   StaffOverview,
   ManifestReference,
   DocumentRequest,
@@ -64,7 +66,12 @@ import type {
   Verb,
 } from '@clew/contracts';
 import { sessionFetch } from '@clew/ui';
-import type { AppearanceAdminView, AppearanceLogoInputType } from '@clew/contracts';
+import type {
+  AppearanceAdminView,
+  AppearanceLogoInputType,
+  OrganisationOverview,
+  OrganisationUnitPeople,
+} from '@clew/contracts';
 import type {
   EntityActionStarted,
   EntityDetail,
@@ -303,10 +310,16 @@ export const api = {
     groups: () => call<{ groups: Array<{ id: string; label: string }> }>('/api/admin/groups'),
     // Användare (D62, D85): the provisioned people and the group-capability rows.
     users: () => call<UsersAdminOverview>('/api/admin/users'),
+    // One page of the people (D100). A read sent as a body, so a searched name is in no address.
+    usersPage: (query: UsersAdminQueryType) => post<UsersAdminPage>('/api/admin/users/search', query),
     addGroupCapability: (input: GroupCapabilityInputType) =>
       post<UsersAdminOverview>('/api/admin/users/group-capabilities', input),
     removeGroupCapability: (input: GroupCapabilityInputType) =>
       post<UsersAdminOverview>('/api/admin/users/group-capabilities/remove', input),
+    // Organisation (D99): the organisation tree as the catalogue pushed it, and the people of one unit.
+    organisation: () => call<OrganisationOverview>('/api/admin/organisation'),
+    organisationUnit: (unitId: string) =>
+      call<OrganisationUnitPeople>(`/api/admin/organisation/units/${encodeURIComponent(unitId)}`),
     // Utseende (D98): the installation's theme file and logo.
     appearance: () => call<AppearanceAdminView>('/api/admin/appearance'),
     setTheme: (file: unknown) =>

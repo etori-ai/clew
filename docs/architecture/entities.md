@@ -65,7 +65,7 @@ A card row (`ThreadItem.subject`), a search hit (`SearchHit.subject`) and a reco
 
 A card of Clew's own may carry `Thread.subjects` instead: an action point's card is about the employee of the talk without naming them ([D96](../decisions/D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md) item 6). These are never drawn and never read by the model.
 
-The thread store keeps an index from entity to cards, the table `thread_subject` ([migration 0045](../../packages/db/migrations/0045_thread_subjects.sql)), rewritten in the transaction that writes the card's rows. It answers two questions ([subjects.ts](../../apps/server/src/threads/usecases/subjects.ts)):
+The thread store keeps an index from entity to cards, the table `thread_subject` ([migration 0046](../../packages/db/migrations/0046_thread_subjects.sql)), rewritten in the transaction that writes the card's rows. It answers two questions ([subjects.ts](../../apps/server/src/threads/usecases/subjects.ts)):
 
 - "Behöver dig" on the opened entity: the reader's own cards naming it that still ask for them (not waiting on someone else, not set aside under Inte nu, still visible under current authority), the cards that wait for the reader first, then proposals, then information.
 - "Just nu" on the list: per person, how many cards wait for the reader ("N att agera på") and how many are proposals ("N förslag"), with the card itself when there is only one.
@@ -108,7 +108,7 @@ No page lists units, so a read about a unit shows only as a section on the unit 
 - A read about an entity is never a model tool, and no assistant answer lists rows from two sources.
 - The person's key on the wire is the directory user name, provisionally.
 - The three-column limit is counted outside the transaction that saves the choice, without a lock; two administrators saving at once can pass it. The list still shows at most three.
-- Cards stored before migration 0045 name nobody until their rows are next written.
+- Cards stored before migration 0046 name nobody until their rows are next written.
 - The browser specs run on routed data, including sources the server does not have. No manual screen-reader pass has been made.
 
 [Implementation status](../reference/status.md) lists the evidence; [interface spaces](../reference/interface-spaces.md#a-person-and-a-unit) gives where each surface opens and where it closes to.
