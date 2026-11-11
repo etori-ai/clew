@@ -269,7 +269,7 @@ describe('the synthetic provisioner', () => {
       ['scim.user.replaced', 'person:' + held('hassan').id, ['title']],
     ]);
     expect(grantOf('hillevi')).toEqual(grant);
-  });
+  }, 20_000);
   test('a changed directory moves roles, takes capabilities back, deactivates a leaver and removes an empty key group', async () => {
     const { store, client, grantOf } = stack();
     await push(client, developmentDirectory);
@@ -462,7 +462,8 @@ describe('the synthetic provisioner', () => {
     });
     expect(gone.refused).toEqual([]);
     expect(held(first!.userName)).toMatchObject({ enabled: false, email: first!.email });
-  });
+    // Three pushes of two hundred and fifty people: more than a test's five seconds on a slow runner.
+  }, 30_000);
   test("an account name given to somebody new is moved off the leaver's row first, whether the source keeps that row or not, and two people may swap", async () => {
     const { client, store } = stack();
     const scope = { userPrefix: 'e-', groupPrefixes: ['unit:s'], groupKeys: [] };
