@@ -1,7 +1,7 @@
 /**
  * The development chain (D61): registers the fixture connectors that `.devcontainer/compose.yaml` runs beside Clew,
  * enabling each except the ones `FIXTURES` marks `enable: false` (added as drafts), binds their followers of `hr:absence` (D55), and opens the
- * development organisation's round of talks when it has none (D96, `talk-round.ts`) and seeds its competence catalogue and holdings where they are missing (D107, `competence-seed.ts`), idempotently. Runs inside the app container, where the
+ * development organisation's round of talks when it has none (D96, `talk-round.ts`) and seeds its competence catalogue and holdings where they are missing (D108, `competence-seed.ts`), idempotently. Runs inside the app container, where the
  * services are reachable by name; `postCreateCommand` runs it after the migrations, and `bun run dev:connectors` runs it
  * again to fill missing registrations. Existing configuration is preserved; refresh manifests explicitly in administration. The transport secret is the one compose gives the services, CLEW_DEV_CONNECTOR_SECRET.
  * Last it makes the administrator's choice for Personal (D97) that the canvas draws, while nobody has chosen any:
@@ -190,7 +190,7 @@ try {
       ? `talks          kept the open round ${round.kept} of organisation "${DEVELOPMENT_ROUND.organisationId}"`
       : `talks          opened round ${round.opened} for organisation "${DEVELOPMENT_ROUND.organisationId}" (${DEVELOPMENT_ROUND.opensOn} to ${DEVELOPMENT_ROUND.dueOn})`,
   );
-  // The competence module's catalogue and holdings (D107): the types the development organisation lacks and holdings
+  // The competence module's catalogue and holdings (D108): the types the development organisation lacks and holdings
   // for the people who have none. The module itself stays off until an administrator switches it on (item 13).
   const seeded = await seedCompetence(DEVELOPMENT_ROUND.organisationId);
   console.log(

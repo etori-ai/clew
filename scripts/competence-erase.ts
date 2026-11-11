@@ -1,5 +1,5 @@
 /**
- * Erase one person from the competence domain (D107 item 14): their holdings, and their id on the holdings they
+ * Erase one person from the competence domain (D108 item 14): their holdings, and their id on the holdings they
  * registered or revoked for others. Runs inside the app container with the server's local settings (DATABASE_URL); no
  * route and no `package.json` entry. Audited (`competence.person_erased`, counts only) with the actor `operator:cli`.
  * It cannot be undone, so it needs `--confirm`.

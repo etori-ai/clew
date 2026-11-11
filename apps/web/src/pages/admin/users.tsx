@@ -23,6 +23,7 @@ import {
   HStack,
   List,
   ListItem,
+  MoreMenu,
   Pagination,
   Section,
   Selector,
@@ -41,9 +42,15 @@ import { adminQueries } from '../../queries';
 import { keys } from '../../query-keys';
 import { errorMessage } from '../../query-policy';
 import { usePageTitle } from '../../page-title';
-import { capabilityLabel, roleOfOne } from './labels';
+import { capabilityLabel, instantText, roleOfOne } from './labels';
 import { AdminShell } from './shell';
 import { PageHeader } from '../../components/page-header';
+import {
+  IssueProvisionerDialog,
+  RevokeProvisionerDialog,
+  RotateProvisionerDialog,
+  previousKeyUntil,
+} from './provisioner-key';
 
 /**
  * "Användare" (D62, D68, D85): the people the provisioner pushed, read only, and the one thing an administrator decides
@@ -51,6 +58,7 @@ import { PageHeader } from '../../components/page-header';
  * them and never edits them. A Table on a desktop, List rows on a phone, as the other administration pages (D23, D24).
  * Above the people, the catalogue's own state: each provisioner with when it last called, and a warning when it has
  * been silent for two days, because access a person has lost in the catalogue ends in Clew only when the push arrives.
+ * A catalogue is added here and handed its key, and a key is replaced or taken back from the row's menu (D107).
  *
  * The people are read a page at a time (D100) and narrowed above the list: a search box, then one Selector per field
  * that is its own chip, the bare field name unset and the whole clause once set (Astryx's filter bar). Where a person
@@ -69,14 +77,9 @@ interface MapRow extends Record<string, unknown> {
 }
 const EMPTY: UsersAdminOverview = { groupCapabilities: [], groups: [], capabilities: [], units: [], provisioners: [] };
 type ProvisionerRow = UsersAdminOverview['provisioners'][number];
-const seenAt = new Intl.DateTimeFormat('sv-SE', {
-  timeZone: 'Europe/Stockholm',
-  dateStyle: 'long',
-  timeStyle: 'short',
-});
 /** When the catalogue last called (D68): the one sign on this page that people and groups are still being pushed in. */
 const lastSeen = (p: ProvisionerRow) =>
-  p.lastSeenAt ? `Senaste anrop ${seenAt.format(new Date(p.lastSeenAt))}` : 'Har aldrig anropat Clew';
+  p.lastSeenAt ? `Senaste anrop ${instantText(p.lastSeenAt)}` : 'Har aldrig anropat Clew';
 const liveness = (p: ProvisionerRow) =>
   !p.silent
     ? { label: 'Läser in', variant: 'success' as const }
@@ -206,6 +209,24 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
   const [group, setGroup] = useState<string | undefined>();
   const [capability, setCapability] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
+  // The catalogues' keys (D107): which dialog is open, and about which catalogue.
+  const [issuing, setIssuing] = useState(false);
+  const [rotating, setRotating] = useState<ProvisionerRow | null>(null);
+  const [revoking, setRevoking] = useState<ProvisionerRow | null>(null);
+  // A catalogue whose key was taken back leaves the list with its menu. Astryx returns the focus to the opener when
+  // the confirmation closes; when that opener is gone, the one control left takes it (2.4.3), as the overlays do it.
+  // An attempt that failed and left the row where it was leaves the focus on the row's menu.
+  const addCatalogue = useRef<HTMLButtonElement>(null);
+  const revoked = useRef(false);
+  useEffect(() => {
+    if (revoking || !revoked.current) return;
+    revoked.current = false;
+    const frame = requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (!active || active === document.body) addCatalogue.current?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [revoking]);
   usePageTitle('Användare');
   const data = query.data ?? (query.isError ? EMPTY : null);
   const error =
@@ -384,6 +405,15 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
                 </Text>
               </VStack>
             }
+            endContent={
+              <Button
+                size="sm"
+                variant="secondary"
+                label="Lägg till katalog"
+                onClick={() => setIssuing(true)}
+                ref={addCatalogue}
+              />
+            }
           />
           {provisioners.length === 0 ? (
             <Section variant="transparent" padding={4}>
@@ -395,8 +425,27 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
                 <ListItem
                   key={p.id}
                   label={<Text weight="semibold">{p.label}</Text>}
-                  description={<Text type="supporting">{lastSeen(p)}</Text>}
-                  endContent={<Badge variant={liveness(p).variant} label={liveness(p).label} />}
+                  description={
+                    <VStack gap={0} hAlign="start">
+                      <Text type="supporting">{lastSeen(p)}</Text>
+                      {p.previousValidUntil && <Text type="supporting">{previousKeyUntil(p.previousValidUntil)}</Text>}
+                    </VStack>
+                  }
+                  endContent={
+                    <HStack gap={2} vAlign="center">
+                      <Badge variant={liveness(p).variant} label={liveness(p).label} />
+                      <MoreMenu
+                        label={`Åtgärder för ${p.label}`}
+                        size="sm"
+                        alignment="end"
+                        presentation="adaptive"
+                        items={[
+                          { id: 'rotate', label: 'Byt nyckel', onClick: () => setRotating(p) },
+                          { id: 'revoke', label: 'Återkalla nyckeln', onClick: () => setRevoking(p) },
+                        ]}
+                      />
+                    </HStack>
+                  }
                 />
               ))}
             </List>
@@ -676,6 +725,15 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
           )}
         </Card>
       )}
+      <IssueProvisionerDialog isOpen={issuing} onClose={() => setIssuing(false)} />
+      <RotateProvisionerDialog provisioner={rotating} onClose={() => setRotating(null)} />
+      <RevokeProvisionerDialog
+        provisioner={revoking}
+        onClose={() => setRevoking(null)}
+        onDone={() => {
+          revoked.current = true;
+        }}
+      />
     </AdminShell>
   );
 }

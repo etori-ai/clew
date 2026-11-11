@@ -1118,7 +1118,7 @@ export type EntityActionInput = Static<typeof EntityActionInputSchema>;
 export const EntityActionStartedSchema = object({ threadId: id });
 export type EntityActionStarted = Static<typeof EntityActionStartedSchema>;
 /**
- * What a competence type is (D107 item 2). A closed list: a certificate and a competence are one record, a holding, and
+ * What a competence type is (D108 item 2). A closed list: a certificate and a competence are one record, a holding, and
  * the kind says which the type is.
  */
 export const COMPETENCE_KINDS = ['certificate', 'degree', 'course', 'authorisation'] as const;
@@ -1131,7 +1131,7 @@ export const CompetenceKind = Type.Union(
 );
 export type CompetenceKind = (typeof COMPETENCE_KINDS)[number];
 /**
- * Where a holding stands on a day (D107 item 4), computed when read and never stored. The order here is the order a
+ * Where a holding stands on a day (D108 item 4), computed when read and never stored. The order here is the order a
  * list is drawn in: what needs a person first.
  */
 export const COMPETENCE_STATUSES = ['expired', 'expiring', 'valid'] as const;
@@ -1143,13 +1143,13 @@ export const CompetenceStatus = Type.Union(
   },
 );
 export type CompetenceStatus = (typeof COMPETENCE_STATUSES)[number];
-/** How a holding is attested (D107 items 7 and 9): read from a system, registered by a manager, or the person's own word. */
+/** How a holding is attested (D108 items 7 and 9): read from a system, registered by a manager, or the person's own word. */
 export const COMPETENCE_EVIDENCE = ['system', 'manager', 'self'] as const;
 export type CompetenceEvidence = (typeof COMPETENCE_EVIDENCE)[number];
 const competenceName = Type.String({ minLength: 1, maxLength: 120 });
 const competenceArea = Type.String({ minLength: 1, maxLength: 80 });
 const validityMonths = Type.Integer({ minimum: 1, maximum: 600 });
-/** One row of the catalogue (D107 item 2) as the administration and the registration form list it. */
+/** One row of the catalogue (D108 item 2) as the administration and the registration form list it. */
 export const CompetenceTypeSchema = object(
   {
     id: id,
@@ -1162,12 +1162,12 @@ export const CompetenceTypeSchema = object(
     }),
     archived: Type.Boolean({ description: 'An archived type takes no new holdings; the ones it has stay.' }),
   },
-  'A competence type in the catalogue (D107).',
+  'A competence type in the catalogue (D108).',
 );
 export type CompetenceType = Static<typeof CompetenceTypeSchema>;
 export const CompetenceTypesOutputSchema = object({ rows: Type.Array(CompetenceTypeSchema, { maxItems: 2000 }) });
 export type CompetenceTypesOutput = Static<typeof CompetenceTypesOutputSchema>;
-/** One holding as a read lists it (D107): who, what, since when, until when and where it stands today. */
+/** One holding as a read lists it (D108): who, what, since when, until when and where it stands today. */
 export const CompetenceHoldingRowSchema = object(
   {
     ref: Type.String({
@@ -1189,7 +1189,7 @@ export const CompetenceHoldingRowSchema = object(
     status: CompetenceStatus,
     evidence: Type.Union(COMPETENCE_EVIDENCE.map(e => Type.Literal(e))),
   },
-  'One holding of one person (D107).',
+  'One holding of one person (D108).',
 );
 export type CompetenceHoldingRow = Static<typeof CompetenceHoldingRowSchema>;
 /** What `competence.holdings` takes: a person the reader manages, by user name (or id when they have none); absent for the reader's own. */
@@ -1205,10 +1205,10 @@ export const CompetenceAttentionInputSchema = object({});
 export type CompetenceAttentionInput = Static<typeof CompetenceAttentionInputSchema>;
 export const CompetenceAttentionOutputSchema = object(
   { rows: Type.Array(CompetenceHoldingRowSchema, { maxItems: 500 }) },
-  "What has expired or expires within 90 days among the reader's reports (D107 item 11), the expired first.",
+  "What has expired or expires within 90 days among the reader's reports (D108 item 11), the expired first.",
 );
 export type CompetenceAttentionOutput = Static<typeof CompetenceAttentionOutputSchema>;
-/** An administrator adds a type to the catalogue (D107 item 2). */
+/** An administrator adds a type to the catalogue (D108 item 2). */
 export const CompetenceTypeBodySchema = object({
   name: competenceName,
   area: competenceArea,
@@ -1224,14 +1224,14 @@ export const CompetenceTypePatchSchema = object({
   validityMonths: Type.Optional(Type.Union([validityMonths, Type.Null()])),
 });
 export type CompetenceTypePatch = Static<typeof CompetenceTypePatchSchema>;
-/** What a change of a type's validity would do to the holdings counted from it (D107 item 3), before it is confirmed. */
+/** What a change of a type's validity would do to the holdings counted from it (D108 item 3), before it is confirmed. */
 export interface CompetenceValidityImpact {
   /** Holdings that end by the rule: the ones with no date of the issuer's. */
   holdings: number;
   expiredBefore: number;
   expiredAfter: number;
 }
-/** A manager registers a certificate for a person who reports to them (D107 item 7). */
+/** A manager registers a certificate for a person who reports to them (D108 item 7). */
 export const CompetenceHoldingBodySchema = object({
   typeId: id,
   issuedOn: calendarDay,
@@ -1755,7 +1755,7 @@ export type Role = Static<typeof RoleSchema>;
  * The grant capabilities Clew enforces (D85): a closed list. A group mapping, a `capability:` group key or the development
  * seed may name nothing else; a new name is a contract change. `admin.connectors` administers connected systems (D23),
  * `admin.users` the users page and the group-to-capability mapping (D85), `admin.appearance` the installation's theme
- * and logo (D98), `admin.competence` the catalogue of competence types (D107 item 8).
+ * and logo (D98), `admin.competence` the catalogue of competence types (D108 item 8).
  */
 export const CAPABILITIES = ['admin.connectors', 'admin.users', 'admin.appearance', 'admin.competence'] as const;
 export type Capability = (typeof CAPABILITIES)[number];
@@ -1867,7 +1867,48 @@ export interface UsersAdminOverview {
    * The clients that push people into this organisation (D68) and when each was last heard from. `silent` is the
    * server's reading of that time: never seen, or not for two days, where a push is due daily.
    */
-  provisioners: Array<{ id: string; label: string; lastSeenAt: string | null; silent: boolean }>;
+  provisioners: ProvisionerAdminRow[];
+}
+/**
+ * D107: one client that pushes people into the organisation, as Administration › Användare lists it. `id` is what the
+ * audit names it by. `previousValidUntil` is set while the key that was replaced last still answers. Never the key.
+ */
+export interface ProvisionerAdminRow {
+  id: string;
+  label: string;
+  lastSeenAt: string | null;
+  silent: boolean;
+  previousValidUntil: string | null;
+}
+/** D107: the name a provisioner is issued under, as `scripts/provisioner-token.ts` takes it. */
+export const PROVISIONER_ID_PATTERN = '^[a-z0-9][a-z0-9-]{1,63}$';
+export const PROVISIONER_LABEL_MAX = 120;
+/** D107: how long the key that is replaced may still answer, in hours; 0 ends it at once. */
+export const PROVISIONER_GRACE_HOURS = [24, 168, 0] as const;
+export const ProvisionerIssueInput = Type.Object(
+  {
+    id: Type.String({ pattern: PROVISIONER_ID_PATTERN }),
+    label: Type.String({ minLength: 1, maxLength: PROVISIONER_LABEL_MAX }),
+  },
+  { additionalProperties: false },
+);
+export type ProvisionerIssueInputType = Static<typeof ProvisionerIssueInput>;
+export const ProvisionerRotateInput = Type.Object(
+  { graceHours: Type.Union(PROVISIONER_GRACE_HOURS.map(h => Type.Literal(h))) },
+  { additionalProperties: false },
+);
+export type ProvisionerRotateInputType = Static<typeof ProvisionerRotateInput>;
+/**
+ * D107: the answer to issuing or rotating a provisioner's key. `token` is the key itself, in this answer and nowhere
+ * else: Clew keeps its digest and cannot show it again.
+ */
+export interface ProvisionerKeyIssued {
+  /** The provisioner the key is for; its row is in `overview`. */
+  id: string;
+  token: string;
+  /** Where the provisioner sends the key: the address the SCIM server answers at, as the server knows it. */
+  address: string;
+  overview: UsersAdminOverview;
 }
 /**
  * D100: what a person's row says about their access, as the people list narrows by it. `disabled` is a deactivated

@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**104 in force**: 100 accepted and 4 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 9 proposed and not decided. 5 no longer in force.
+**105 in force**: 100 accepted and 5 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 9 proposed and not decided. 5 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -68,6 +68,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D99 · Units form a tree pushed over SCIM, and a manager works with their direct reports](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md) | 2026-11-10 | accepted | [D101](README.md) |
 | [D101 · A provisioner pushes the organisation first and adds before it removes, and a unit belongs to one organisation](D101-a-provisioner-pushes-the-organisation-first-and-adds-before-it-removes-and-a-unit-belongs-to-one-organisation.md) | 2026-11-11 | accepted |  |
 | [D103 · The session that asked stands behind delegated work: an approved write, and a scan while the person is present](D103-the-session-that-asked-stands-behind-delegated-work.md) | 2026-11-10 | provisional | [D101](README.md) |
+| [D107 · An administrator issues, replaces and takes back a provisioner's key on the users page](D107-an-administrator-issues-replaces-and-takes-back-a-provisioners-key-on-the-users-page.md) | 2026-11-11 | provisional |  |
 
 ## Platform
 
@@ -149,7 +150,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D82 · Sick-leave statistics come through an absence connector that reads only aggregates](D82-sick-leave-statistics-come-through-an-absence-connector-that-reads-only-aggregates.md) | integrations | 2026-11-06 | [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) |
 | [D87 · One header shared by the portal and the intranet, built with Astryx and embedded as a custom element](D87-one-header-shared-by-the-portal-and-the-intranet.md) | ui | 2026-11-09 | [D88](D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md) |
 | [D99 · An unresolved job step reaches a person and is finished forward; no connector is asked for rollback](D99-an-unresolved-job-step-reaches-a-person-and-is-finished-forward.md) | integrations, product | 2026-11-10 |  |
-| [D107 · Competence is an owned domain: one holding for competences and certificates, typed against a catalogue](D107-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md) | product, identity, integrations | 2026-11-11 | [D101](README.md) |
+| [D108 · Competence is an owned domain: one holding for competences and certificates, typed against a catalogue](D108-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md) | product, identity, integrations | 2026-11-11 | [D101](README.md) |
 
 ## No longer in force
 

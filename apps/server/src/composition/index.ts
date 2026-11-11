@@ -176,7 +176,7 @@ export async function talksWritable(persona: AuthenticatedContext) {
   return registry.talkSource(actorOf(persona))?.builtIn === true;
 }
 /**
- * Clew writes competence records only while the built-in module is switched on and visible to this person (D107 item
+ * Clew writes competence records only while the built-in module is switched on and visible to this person (D108 item
  * 13). The rows are read first, as every API request does, so a change made on another instance counts at once.
  */
 export async function competenceWritable(persona: AuthenticatedContext) {

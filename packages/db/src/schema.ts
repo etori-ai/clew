@@ -884,7 +884,7 @@ export const talkCommitments = pgTable(
   ],
 );
 /**
- * The catalogue of competence types (D107 item 2): rows per installation, never an enumeration in code. Archived, never
+ * The catalogue of competence types (D108 item 2): rows per installation, never an enumeration in code. Archived, never
  * deleted; one name per organisation among the types that are not archived, without regard to case.
  */
 export const competenceTypes = pgTable(
@@ -911,7 +911,7 @@ export const competenceTypes = pgTable(
   ],
 );
 /**
- * What one person holds of one type (D107 item 1): a competence and a certificate are the same record. Where it stands
+ * What one person holds of one type (D108 item 1): a competence and a certificate are the same record. Where it stands
  * is computed when read and never stored (item 4). `expires_on` is the issuer's own date only (item 3). The person's
  * rows go with the person; the people who registered or revoked a row are nulled by erasure.
  */

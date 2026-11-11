@@ -29,7 +29,7 @@ import {
 import { Registry } from '../registry';
 
 /**
- * The competence module's use cases (D107) on the memory adapter, with a clock, ids and a staff port the test owns:
+ * The competence module's use cases (D108) on the memory adapter, with a clock, ids and a staff port the test owns:
  * every mutation's audit row and that none carries a person's or a type's name; where a holding stands is computed
  * from the dates on the day asked; a manager's reach is their reports now, so a former manager reaches nothing; and
  * the built-in connector answers through the registry with a figure and cards derived from the same dates.

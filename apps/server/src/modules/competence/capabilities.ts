@@ -16,7 +16,7 @@ import { swedishDayAndMonth } from './domain';
 import type { CompetenceUsecases } from './usecases';
 
 /**
- * The competence module as Clew's built-in connector (D107 items 11 to 13): two reads with declared views and a third
+ * The competence module as Clew's built-in connector (D108 items 11 to 13): two reads with declared views and a third
  * about a person (D97), the area
  * whose figure says how much has run out among a manager's reports, and the scan that turns what needs a person into a
  * card. No read is a model tool, and neither view declares a `ref`, so no row can be added to a conversation as a chip.
@@ -155,7 +155,7 @@ export function competenceConnector(
     output: PersonCompetenceOutputSchema,
     view: personView,
     scope: { roles: ['manager'] },
-    // A certificate is registered on Personal, in the dialog (D107 item 7): the section's second way in.
+    // A certificate is registered on Personal, in the dialog (D108 item 7): the section's second way in.
     about: { entity: 'person', page: { title: 'Registrera intyg', href: '/staff?register={id}' } },
     run: async (actor, input) => {
       const { rows } = await competence.aboutPeople(await persona(actor), input.keys);
@@ -202,7 +202,7 @@ export function competenceConnector(
     ],
     capabilities: [attention as Capability, holdings as Capability, aboutPerson as Capability],
     /**
-     * What needs a person (D107 item 12), derived from the dates each time and never stored: the card goes when a
+     * What needs a person (D108 item 12), derived from the dates each time and never stored: the card goes when a
      * certificate is registered. A person gets one card per holding of their own, with its end date as the deadline.
      * A manager gets one card that counts their reports' holdings and names nobody: its rows are the read it opens.
      */

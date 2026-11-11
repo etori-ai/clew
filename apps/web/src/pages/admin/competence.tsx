@@ -43,7 +43,7 @@ import { mobileQuery } from '../../components/shell';
 import { AdminShell } from './shell';
 
 /**
- * "Kompetens" (D107 items 2, 3 and 8): the catalogue of competence types, kept by whoever has `admin.competence`. A
+ * "Kompetens" (D108 items 2, 3 and 8): the catalogue of competence types, kept by whoever has `admin.competence`. A
  * type has a name, an area it is listed under, a kind and, where the employer sets one, how many months a holding is
  * valid from the day it was issued. A type is added and changed in a dialog over the list, named in the address
  * (`?type=new`, `?type=<id>`, D83), and archived there: an archived type takes no new holdings and keeps the ones it

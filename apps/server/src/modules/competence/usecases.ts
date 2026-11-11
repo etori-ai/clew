@@ -33,16 +33,16 @@ import {
 } from './domain';
 import { TypeNameTaken, type CompetenceDeps, type CompetenceExport, type CompetenceTx, type TypeRecord } from './model';
 
-/** A request the competence module turns down for what it asks, not who asks (D107); a 400 with this message. */
+/** A request the competence module turns down for what it asks, not who asks (D108); a 400 with this message. */
 export class CompetenceError extends InputError {
   constructor(message: string) {
     super(message);
     this.name = 'CompetenceError';
   }
 }
-/** The grant capability behind the catalogue (D107 item 8). */
+/** The grant capability behind the catalogue (D108 item 8). */
 export const COMPETENCE_ADMIN: Capability = 'admin.competence';
-/** The version of the export document (D107 item 14); a breaking change is a new version. */
+/** The version of the export document (D108 item 14); a breaking change is a new version. */
 export const COMPETENCE_EXPORT_FORMAT = 'clew.competence/1';
 const NOT_A_MANAGER = 'Intyg registreras av den som är chef för en enhet.';
 const NOT_YOURS = 'Personen finns inte bland dem du är chef för.';
@@ -55,7 +55,7 @@ const BAD_AREA = 'Ange ett område på högst 80 tecken.';
 const NOT_ALLOWED = 'Du kan inte ändra det här intyget.';
 
 /**
- * The competence module's use cases (D107): the catalogue, a manager's registration of a certificate, and the reads
+ * The competence module's use cases (D108): the catalogue, a manager's registration of a certificate, and the reads
  * that work out where every holding stands today. A manager's reach is their reports, computed when asked
  * (`deps.staff`, D99 item 4) and never stored, so a former manager reads and writes nothing the day the line changes.
  * Every change is one `deps.store` transaction with its audit row. Audit rows carry ids, dates, counts and kinds:
@@ -184,7 +184,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
 
   return {
     /**
-     * The catalogue (D107 item 2). An administrator of it reads every type, archived ones included; a manager reads the
+     * The catalogue (D108 item 2). An administrator of it reads every type, archived ones included; a manager reads the
      * ones a certificate can be registered for; anyone else is refused.
      */
     async types(persona: AuthenticatedContext): Promise<{ rows: CompetenceType[] }> {
@@ -204,7 +204,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
       insertType(actor, organisationId, body),
 
     /**
-     * What a new validity would do to the holdings counted from this type's rule (D107 item 3): how many there are and
+     * What a new validity would do to the holdings counted from this type's rule (D108 item 3): how many there are and
      * how many are expired today under the current rule and under the new one. Nothing is written.
      */
     async validityImpact(
@@ -230,7 +230,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
 
     /**
      * An administrator changes a type: its name, area, kind or the employer's validity. A new validity applies at once
-     * to every holding counted from the rule (D107 item 3); `validityImpact` says what that does before this is called.
+     * to every holding counted from the rule (D108 item 3); `validityImpact` says what that does before this is called.
      */
     async updateType(persona: AuthenticatedContext, typeId: string, body: CompetenceTypePatch): Promise<void> {
       await admin(persona);
@@ -283,7 +283,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
     },
 
     /**
-     * The manager a person reports to registers a certificate for them (D107 item 7): the type, the day it was issued
+     * The manager a person reports to registers a certificate for them (D108 item 7): the type, the day it was issued
      * and, where the issuer set one, its end date. Returns the holding's id.
      */
     async registerHolding(
@@ -380,7 +380,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
     },
 
     /**
-     * `competence.attention` (D107 item 11): what has expired or expires within 90 days among the manager's reports,
+     * `competence.attention` (D108 item 11): what has expired or expires within 90 days among the manager's reports,
      * the expired first.
      */
     async attention(persona: AuthenticatedContext): Promise<CompetenceAttentionOutput> {
@@ -425,7 +425,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
     },
 
     /**
-     * Erase one person from the domain (D107 item 14): their holdings, and their id on the holdings they registered or
+     * Erase one person from the domain (D108 item 14): their holdings, and their id on the holdings they registered or
      * revoked for others. `actor` is the operator's.
      */
     async erasePerson(actor: string, personId: string): Promise<{ holdings: number; cleared: number }> {
@@ -444,7 +444,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
       });
     },
 
-    /** The whole domain of one organisation as one versioned document (D107 item 14). */
+    /** The whole domain of one organisation as one versioned document (D108 item 14). */
     async exportDomain(
       actor: string,
       organisationId: string,

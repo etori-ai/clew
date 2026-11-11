@@ -65,7 +65,7 @@ A person with no `unit:` or `unit-manager:` membership exists but can do nothing
 
 **Requests may be sent in parallel.** Clew derives one person at a time, writes one group at a time and writes one unit at a time: two requests that touch the same person, the same group or the two groups of one unit (`unit:<id>` and `unit-manager:<id>`) queue behind each other, so the grant that results is the same whatever order they arrive in. A group need not be split either: the first write of a unit group with ten thousand members took about five seconds on the development stack, and writing it again unchanged under one.
 
-**Authentication.** A bearer token issued to the provisioner by a Clew administrator, for this purpose alone:
+**Authentication.** A bearer token issued to the provisioner by a Clew administrator, for this purpose alone. An administrator with `admin.users` issues it on Administration › Användare ("Lägg till katalog"), where it is shown once, and replaces it or takes it back there ([D107](../decisions/D107-an-administrator-issues-replaces-and-takes-back-a-provisioners-key-on-the-users-page.md)). The first token of an installation, before anybody is an administrator, comes from the script:
 
 ```bash
 docker exec -w /workspace clew-app-1 bun scripts/provisioner-token.ts add metakatalogen --organisation sundsvall --label "Metakatalogen"

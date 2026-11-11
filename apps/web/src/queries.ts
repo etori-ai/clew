@@ -56,7 +56,7 @@ export const commitmentsQuery = (person?: string) =>
     retry: false,
   });
 /**
- * Kompetens (D107): the types a certificate can be registered for. `null` when the module is switched off for the
+ * Kompetens (D108): the types a certificate can be registered for. `null` when the module is switched off for the
  * person or they may not register: nothing is offered then, and it is no error. Not retried.
  */
 export const competenceTypesQuery = queryOptions({
@@ -152,7 +152,7 @@ export const cardViewQuery = (threadId: string, actionId: string) =>
 /** The shared header (D88): what the person's header connector lists for them, read once per visit. */
 export const headerQuery = queryOptions({ queryKey: keys.header, queryFn: () => api.header(), staleTime: Infinity });
 /**
- * Administration › Kompetens (D107): the whole catalogue, archived types included, for an administrator of it. A
+ * Administration › Kompetens (D108): the whole catalogue, archived types included, for an administrator of it. A
  * refusal is the page's own state (the module is off, or the capability is missing), so it is not retried.
  */
 export const competenceCatalogueQuery = queryOptions({

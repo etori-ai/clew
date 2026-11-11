@@ -1,7 +1,7 @@
 import type { AuthenticatedContext, CompetenceEvidence, CompetenceKind, StaffOverview } from '@clew/contracts';
 
 /**
- * The ports of the competence module (D107, D25): the catalogue of competence types and the holdings people have of
+ * The ports of the competence module (D108, D25): the catalogue of competence types and the holdings people have of
  * them. A certificate and a competence are one record, a holding (item 1). Everything a use case reads and writes
  * happens inside one `CompetenceStore` transaction together with its audit row. `adapters/postgres.ts` runs in the
  * server, `adapters/memory.ts` in the unit tests, both held to one store contract. Who reports to whom comes in as a
@@ -12,7 +12,7 @@ import type { AuthenticatedContext, CompetenceEvidence, CompetenceKind, StaffOve
  * domain computes it from the dates when asked (item 4). No audit entry carries a person's name or a type's name.
  */
 
-/** One row of the catalogue (D107 item 2). Rows per installation, never an enumeration in code. */
+/** One row of the catalogue (D108 item 2). Rows per installation, never an enumeration in code. */
 export interface TypeRecord {
   id: string;
   organisationId: string;
@@ -30,12 +30,12 @@ export interface TypeRecord {
 }
 export type TypePatch = Partial<Pick<TypeRecord, 'name' | 'area' | 'kind' | 'validityMonths' | 'archivedAt'>>;
 /**
- * A holding's state as stored (D107 items 7 and 9). `pending` and `rejected` belong to a person's own registration and
+ * A holding's state as stored (D108 items 7 and 9). `pending` and `rejected` belong to a person's own registration and
  * `system` evidence to a row copied from a source; neither is written yet, and the store takes them so the table does
  * not change shape when they are.
  */
 export type HoldingState = 'pending' | 'valid' | 'rejected' | 'revoked';
-/** What one person holds of one type (D107 item 1). */
+/** What one person holds of one type (D108 item 1). */
 export interface HoldingRecord {
   id: string;
   personId: string;
@@ -68,14 +68,14 @@ export interface CompetenceAudit {
   at: string;
   details?: Record<string, unknown>;
 }
-/** What `CompetenceTx.erasePerson` did (D107 item 14). */
+/** What `CompetenceTx.erasePerson` did (D108 item 14). */
 export interface Erased {
   /** Holdings removed because they were the person's own. */
   holdings: number;
   /** Other people's holdings from which the person was removed (registered by, revoked by). */
   cleared: number;
 }
-/** The whole domain for one organisation (D107 item 14); the use case turns it into `clew.competence/1`. */
+/** The whole domain for one organisation (D108 item 14); the use case turns it into `clew.competence/1`. */
 export interface CompetenceExport {
   types: TypeRecord[];
   holdings: HoldingRecord[];
@@ -117,7 +117,7 @@ export interface CompetenceTx {
   // People.
   /** These people as the domain names them; an unknown id is absent. */
   persons(ids: readonly string[]): Promise<PersonRef[]>;
-  // Erasure and export (D107 item 14).
+  // Erasure and export (D108 item 14).
   /** Remove the person's holdings and remove them from other people's (null `registeredBy`, `revokedBy`). */
   erasePerson(personId: string): Promise<Erased>;
   /** Every type of the organisation, archived included, and every holding of them. */

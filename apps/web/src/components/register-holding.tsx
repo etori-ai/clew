@@ -13,7 +13,7 @@ import { DialogFrame } from './dialog-frame';
 import { mobileQuery } from './shell';
 
 /**
- * Registering a certificate for a person who reports to the manager (D107 item 7): which competence, the day it was
+ * Registering a certificate for a person who reports to the manager (D108 item 7): which competence, the day it was
  * issued and, where the issuer set one, the day it ends. A dialog over the list, with the person named in its heading
  * and in the address (`?register=<personId>`, D83): closing it, by Avbryt, Esc or the close button, is the list again
  * with the focus on what opened it, which Astryx gives back. The way in is the page the competence module declares on

@@ -60,7 +60,7 @@ const clewConnector = {
 };
 // The built-in talks module (D96 item 9) is bundled, not internal: it gets an administrable row, enabled by default,
 // and an administrator can switch it off so that another system answers the profile.
-// The competence module (D107 item 13) is bundled too, and is the one bundled connector an installation switches on
+// The competence module (D108 item 13) is bundled too, and is the one bundled connector an installation switches on
 // itself: its row is created disabled (`offAtFirstBoot`), so nothing of the domain shows until an administrator enables it.
 const bundled = [
   calendarConnector(calendar, events),
@@ -72,7 +72,7 @@ for (const m of [...internal, ...bundled]) registry.register({ ...m, uses: ['*']
 export const internalIds = internal.map(m => m.id);
 /** The connectors that live in this process: they get a `connector` row at boot so an administrator can govern them too (D23). */
 export const bundledIds = bundled.map(m => m.id);
-/** The bundled connectors whose row is created disabled: an administrator switches them on (D107 item 13). */
+/** The bundled connectors whose row is created disabled: an administrator switches them on (D108 item 13). */
 export const offAtFirstBoot: readonly string[] = [COMPETENCE_CONNECTOR];
 export { actorOf };
 

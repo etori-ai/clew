@@ -5,6 +5,9 @@ import type {
   TalkHeldBody,
   TalksResult,
   GroupCapabilityInputType,
+  ProvisionerIssueInputType,
+  ProvisionerKeyIssued,
+  ProvisionerRotateInputType,
   UsersAdminOverview,
   UsersAdminPage,
   UsersAdminQueryType,
@@ -227,7 +230,7 @@ export const api = {
     reopen: (id: string) => del<void>(`${commitmentPath(id)}/done`),
   },
   /**
-   * Kompetens (D107): the built-in module's own routes. They are refused while the module is switched off for the
+   * Kompetens (D108): the built-in module's own routes. They are refused while the module is switched off for the
    * person, and the catalogue is refused to someone who neither manages anyone nor administers it; `queries.ts` turns
    * that refusal into `null`.
    */
@@ -345,6 +348,13 @@ export const api = {
       post<UsersAdminOverview>('/api/admin/users/group-capabilities', input),
     removeGroupCapability: (input: GroupCapabilityInputType) =>
       post<UsersAdminOverview>('/api/admin/users/group-capabilities/remove', input),
+    // The catalogues' keys (D107). The answer to issuing or rotating one carries the key, once.
+    issueProvisioner: (input: ProvisionerIssueInputType) =>
+      post<ProvisionerKeyIssued>('/api/admin/users/provisioners', input),
+    rotateProvisioner: (id: string, input: ProvisionerRotateInputType) =>
+      post<ProvisionerKeyIssued>(`/api/admin/users/provisioners/${encodeURIComponent(id)}/rotate`, input),
+    revokeProvisioner: (id: string) =>
+      post<UsersAdminOverview>(`/api/admin/users/provisioners/${encodeURIComponent(id)}/revoke`),
     // Organisation (D99): the organisation tree as the catalogue pushed it, and the people of one unit.
     organisation: () => call<OrganisationOverview>('/api/admin/organisation'),
     organisationUnit: (unitId: string) =>

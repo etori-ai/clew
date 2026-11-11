@@ -173,7 +173,7 @@ export const isTalkSource = (c: Pick<Capability, 'name' | 'kind'>, connectorId: 
 /** A capability lists action points when it is named `<id>.commitments` and is a read (D96 item 8); the composite `clew.commitments` never does. */
 export const isCommitmentSource = (c: Pick<Capability, 'name' | 'kind'>, connectorId: string) =>
   c.kind === 'read' && c.name === connectorId + '.commitments' && connectorId !== SEARCH_CONNECTOR;
-/** The built-in connector of the competence domain (D107 item 13): Clew's own module, switched on by an administrator. */
+/** The built-in connector of the competence domain (D108 item 13): Clew's own module, switched on by an administrator. */
 export const COMPETENCE_CONNECTOR = 'competence';
 const TALK_COMPOSITE = SEARCH_CONNECTOR + '.talks';
 const COMMITMENT_COMPOSITE = SEARCH_CONNECTOR + '.commitments';

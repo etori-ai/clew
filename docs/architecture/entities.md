@@ -93,7 +93,7 @@ The thread store keeps an index from entity to cards, the table `thread_subject`
 |---|---|---|---|
 | `talks.person` | Clew's talks module ([capabilities.ts](../../apps/server/src/modules/talks/capabilities.ts)) | person | Section, lens, column, marks; the section's way in is the talk at `/staff?talk={id}` |
 | `talks.unit` | Clew's talks module | unit | Section on the unit page; its way in is the lens on Personal |
-| `competence.person` | Clew's competence module ([capabilities.ts](../../apps/server/src/modules/competence/capabilities.ts)), proposed in D107 and switched off until an administrator enables it | person | Section, lens, column, a mark for "Utgånget" and "Går ut snart"; the section's way in is the registration form at `/staff?register={id}` |
+| `competence.person` | Clew's competence module ([capabilities.ts](../../apps/server/src/modules/competence/capabilities.ts)), proposed in D108 and switched off until an administrator enables it | person | Section, lens, column, a mark for "Utgånget" and "Går ut snart"; the section's way in is the registration form at `/staff?register={id}` |
 | `hr.person` | The HR fixture ([manifest](../../connectors/hr/manifest.mjs)) | person | Section, lens, column; no field warns, so no mark |
 | `hr.prepareAbsence` | The HR fixture | person | Menu: "Registrera frånvaro", a propose |
 | `appraisals.person` | The talks-system fixture ([connector](../../connectors/appraisals/connector.mjs)), registered as a draft | person | Section, lens, column, a mark for "Saknas" |

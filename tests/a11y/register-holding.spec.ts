@@ -13,7 +13,7 @@ import {
 } from './support';
 
 /**
- * Registrera intyg on Personal (D107 item 7): the competence module's page for one person, a dialog over the list at
+ * Registrera intyg on Personal (D108 item 7): the competence module's page for one person, a dialog over the list at
  * `/staff?register=<personId>`, which is where the "Registrera intyg" link of the person's Kompetens section leads
  * (D97: the page a core source declares on its read about a person). The form is named for the person; what is missing
  * is said on the field; the server's refusal is an alert and keeps what was chosen; on success the dialog closes and

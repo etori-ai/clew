@@ -10,7 +10,7 @@ import { competenceUsecases } from '../../apps/server/src/modules/competence/use
 import { competenceRoutes, NOT_ENABLED } from '../../apps/server/src/routes/competence';
 
 /**
- * The competence wiring as the server assembles it (D107 item 13), on memory adapters and the production registry,
+ * The competence wiring as the server assembles it (D108 item 13), on memory adapters and the production registry,
  * which denies what no row governs: the bundled connector's row is created disabled, so nothing of the domain shows
  * until an administrator switches it on; and Clew's own routes answer only while it is on for the person.
  */
@@ -136,7 +136,7 @@ function world() {
   };
 }
 
-describe('the competence wiring (D107 item 13)', () => {
+describe('the competence wiring (D108 item 13)', () => {
   test('the bundled row is created disabled: no area, no read, no card and no route until an administrator switches it on', async () => {
     const w = world();
     await syncBundledRows(w.reconcile);

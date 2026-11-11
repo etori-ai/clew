@@ -157,7 +157,7 @@ const values: Record<string, string> = {
   held: 'hållet',
   missing: 'saknas',
   closed: 'stängd',
-  // Where a holding stands today (D107 item 4).
+  // Where a holding stands today (D108 item 4).
   expired: 'utgånget',
   expiring: 'går ut snart',
   valid: 'giltigt',

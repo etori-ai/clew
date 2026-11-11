@@ -1,5 +1,5 @@
 /**
- * Export the competence domain of one organisation (D107 item 14) as one versioned document, `clew.competence/1`: the
+ * Export the competence domain of one organisation (D108 item 14) as one versioned document, `clew.competence/1`: the
  * catalogue, archived types included, and every holding of them. Runs inside the app container with the server's local
  * settings (DATABASE_URL); no route and no `package.json` entry. The export is audited (`competence.exported`, counts
  * only) with the actor `operator:cli`.

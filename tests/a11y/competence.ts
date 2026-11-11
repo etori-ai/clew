@@ -1,6 +1,6 @@
 import type { CompetenceType, PanelViewSpec } from '@clew/contracts';
 
-/** Kompetens (D107) as the browser specs meet it: one person's holdings as the declared view, and the catalogue. */
+/** Kompetens (D108) as the browser specs meet it: one person's holdings as the declared view, and the catalogue. */
 
 export const holdingsSpec: PanelViewSpec = {
   kind: 'list',

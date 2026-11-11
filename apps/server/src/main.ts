@@ -104,7 +104,7 @@ app.route('/api/staff', staffRoutes);
 app.route('/api/entities', entityRoutes({ entities, actions: entityActions }));
 // The talks module's writes (D96), only while Clew's own module answers the talks profile for the person.
 app.route('/api/talks', talkRoutes({ talks, writable: talksWritable }));
-// The competence module's catalogue and registrations (D107), only while the built-in module is switched on for the person.
+// The competence module's catalogue and registrations (D108), only while the built-in module is switched on for the person.
 app.route('/api/competence', competenceRoutes({ competence, writable: competenceWritable }));
 // The shared header (D88): what the person's header connector lists for them.
 app.route('/api/header', headerRoutes);

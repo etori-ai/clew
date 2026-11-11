@@ -40,7 +40,7 @@ export const keys = {
     section: (kind: string, key: string, capability: string) =>
       ['entities', kind, 'detail', key, 'section', capability] as const,
   },
-  /** Kompetens (D107): the catalogue a certificate is registered from, and the administrator's whole catalogue. */
+  /** Kompetens (D108): the catalogue a certificate is registered from, and the administrator's whole catalogue. */
   competenceTypes: ['competence', 'types'] as const,
   competenceCatalogue: ['competence', 'catalogue'] as const,
   competenceAll: ['competence'] as const,

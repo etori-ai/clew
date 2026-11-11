@@ -10,12 +10,12 @@ import {
 import type { HoldingRecord, PersonRef, TypeRecord } from './model';
 
 /**
- * The rules of the competence domain (D107) as pure functions: when a holding ends, where it stands on a day, which of
+ * The rules of the competence domain (D108) as pure functions: when a holding ends, where it stands on a day, which of
  * several holdings of one type decides, what a type's name may be, and the refs, keys and rows the reads carry. No I/O,
  * no clock: the use case hands in every day.
  */
 
-/** A holding that ends within this many days is expiring (D107 item 4). */
+/** A holding that ends within this many days is expiring (D108 item 4). */
 export const EXPIRING_DAYS = 90;
 export const TYPE_NAME_MAX = 120;
 export const TYPE_AREA_MAX = 80;
@@ -57,7 +57,7 @@ export function addMonths(day: string, months: number): string {
   return new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), Math.min(d, last))).toISOString().slice(0, 10);
 }
 /**
- * The last day a holding is valid (D107 item 3): the issuer's date where the holding has one, else the employer's rule
+ * The last day a holding is valid (D108 item 3): the issuer's date where the holding has one, else the employer's rule
  * counted from the issue date, else null (it does not end). `validityMonths` is the type's now, so a change of the rule
  * moves every holding counted from it.
  */
@@ -68,7 +68,7 @@ export function endOf(
   if (holding.expiresOn) return holding.expiresOn;
   return type.validityMonths ? addMonths(holding.issuedOn, type.validityMonths) : null;
 }
-/** Where a holding that ends on `end` stands on `today` (D107 item 4). The last day is still valid. */
+/** Where a holding that ends on `end` stands on `today` (D108 item 4). The last day is still valid. */
 export function statusOn(end: string | null, today: string): CompetenceStatus {
   if (end === null) return 'valid';
   const days = daysUntil(end, today);
@@ -85,7 +85,7 @@ export interface Standing {
   status: CompetenceStatus;
 }
 /**
- * For each person and type, the one holding that decides (D107 item 9): of the ones that count, the one that ends last,
+ * For each person and type, the one holding that decides (D108 item 9): of the ones that count, the one that ends last,
  * one that never ends before any that does, the most recently issued on a tie. Holdings of an unknown type are left out.
  */
 export function deciding(

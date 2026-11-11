@@ -8,6 +8,9 @@ import {
   type GroupCapability,
   type OrganisationOverview,
   type OrganisationUnitPeople,
+  type ProvisionerIssueInputType,
+  type ProvisionerKeyIssued,
+  type ProvisionerRotateInputType,
   type Role,
   type StaffOverview,
   type StaffPerson,
@@ -636,7 +639,13 @@ export const USERS_ADMIN_CAPABILITY: Capability = 'admin.users';
  * days has missed one with a day's margin, and the page says so.
  */
 const PROVISIONER_SILENT_MS = 48 * 60 * 60 * 1000;
-export function usersAdminUsecases(deps: { store: ProvisionStore; clock: () => Date }) {
+export function usersAdminUsecases(deps: {
+  store: ProvisionStore;
+  clock: () => Date;
+  /** A new bearer token for a provisioner (D107): long and random, made on the server. */
+  token: () => string;
+  digest: (token: string) => string;
+}) {
   const derivation = provisioningUsecases({ store: deps.store });
   const require = (persona: AuthenticatedContext) => {
     if (!persona.capabilities.includes(USERS_ADMIN_CAPABILITY)) throw new ForbiddenError();
@@ -691,6 +700,7 @@ export function usersAdminUsecases(deps: { store: ProvisionStore; clock: () => D
         label: p.label,
         lastSeenAt: p.lastSeenAt,
         silent: p.lastSeenAt === null || since(at, p.lastSeenAt) > PROVISIONER_SILENT_MS,
+        previousValidUntil: p.previousValidUntil !== null && p.previousValidUntil > at ? p.previousValidUntil : null,
       }));
     return { groupCapabilities, groups, capabilities: [...CAPABILITIES], units, provisioners };
   }
@@ -715,6 +725,28 @@ export function usersAdminUsecases(deps: { store: ProvisionStore; clock: () => D
         await derivation.deriveAll(tx, 'person:' + persona.id, await tx.members(input.groupExternalId));
       }
       return overviewWithin(tx, persona);
+    });
+  }
+  /** An active provisioner of the administrator's own organisation; another organisation's does not exist here. */
+  const ownProvisioner = async (tx: ProvisionTx, persona: AuthenticatedContext, id: string) => {
+    const held = await tx.provisionerById(id);
+    if (!held || held.revoked || held.organisationId !== persona.organisationId)
+      throw new InputError('Katalogen finns inte.');
+    return held;
+  };
+  /**
+   * A write that answers a new key: the key once, whose it is, and the overview as it is afterwards, with the
+   * provisioner's row in it. Where the key is sent is the route's to add: the server's address is no use case's.
+   */
+  async function keyed(
+    persona: AuthenticatedContext,
+    write: (tx: ProvisionTx, at: string) => Promise<{ id: string; token: string }>,
+  ): Promise<Omit<ProvisionerKeyIssued, 'address'>> {
+    require(persona);
+    await persona.authorize();
+    return deps.store.transaction(async tx => {
+      const { id, token } = await write(tx, deps.clock().toISOString());
+      return { id, token, overview: await overviewWithin(tx, persona) };
     });
   }
   return {
@@ -750,6 +782,77 @@ export function usersAdminUsecases(deps: { store: ProvisionStore; clock: () => D
         for (const u of listed.rows) rows.push(await rowOf(tx, u));
         const all = (await tx.searchUsers(persona.organisationId, {}, { startIndex: 1, count: 0 })).total;
         return { rows, total: listed.total, all, page, pageSize };
+      });
+    },
+    /**
+     * D107: an administrator issues a provisioner its key. The id is the installation's, so one that is in use, here
+     * or in another organisation, is refused with the same words; a revoked one of this organisation is issued again
+     * under its id. The key is made here, answered once and kept as its digest. Audited as the script audits it, with
+     * the administrator as the actor and never the key.
+     */
+    issueProvisioner: (persona: AuthenticatedContext, input: ProvisionerIssueInputType) =>
+      keyed(persona, async (tx, at) => {
+        const token = deps.token(),
+          label = input.label.trim();
+        if (!label) throw new InputError('Katalogen behöver ett namn.');
+        // Whether the id is free is the store's answer, given with the write: a check made before it would let two
+        // issues of one id at once both through, and the second would end the first one's key.
+        const taken = !(await tx.issueProvisioner({
+          id: input.id,
+          organisationId: persona.organisationId,
+          label,
+          tokenDigest: deps.digest(token),
+          createdBy: 'person:' + persona.id,
+          createdAt: at,
+        }));
+        if (taken) throw new InputError('Det finns redan en katalog med det id:t.');
+        await tx.audit({
+          actor: 'person:' + persona.id,
+          action: 'provisioner.added',
+          subject: 'provisioner:' + input.id,
+          details: { organisationId: persona.organisationId, label },
+        });
+        return { id: input.id, token };
+      }),
+    /**
+     * D107: a new key for a provisioner of the administrator's organisation. The key it replaces answers for the
+     * grace period, so the client is switched without a push failing; 0 ends it at once. One old key is kept: a key
+     * rotated out before that one no longer answers, and the audit row says until when it would have.
+     */
+    rotateProvisioner: (persona: AuthenticatedContext, id: string, input: ProvisionerRotateInputType) =>
+      keyed(persona, async (tx, at) => {
+        const held = await ownProvisioner(tx, persona, id),
+          token = deps.token(),
+          until =
+            input.graceHours > 0 ? new Date(Date.parse(at) + input.graceHours * 60 * 60 * 1000).toISOString() : null,
+          cutOff = held.previousValidUntil !== null && held.previousValidUntil > at ? held.previousValidUntil : null;
+        await tx.rotateProvisioner(id, deps.digest(token), until);
+        await tx.audit({
+          actor: 'person:' + persona.id,
+          action: 'provisioner.rotated',
+          subject: 'provisioner:' + id,
+          details: {
+            graceHours: input.graceHours,
+            previousValidUntil: until,
+            ...(cutOff ? { endedEarlier: cutOff } : {}),
+          },
+        });
+        return { id, token };
+      }),
+    /** D107: ends every key of a provisioner of the administrator's organisation, now. Its pushes answer 401 from here on. */
+    async revokeProvisioner(persona: AuthenticatedContext, id: string): Promise<UsersAdminOverview> {
+      require(persona);
+      await persona.authorize();
+      return deps.store.transaction(async tx => {
+        await ownProvisioner(tx, persona, id);
+        await tx.revokeProvisioner(id, deps.clock().toISOString());
+        await tx.audit({
+          actor: 'person:' + persona.id,
+          action: 'provisioner.revoked',
+          subject: 'provisioner:' + id,
+          details: {},
+        });
+        return overviewWithin(tx, persona);
       });
     },
     addGroupCapability: (persona: AuthenticatedContext, input: GroupCapabilityInputType) =>

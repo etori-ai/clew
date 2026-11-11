@@ -219,7 +219,7 @@ export function StaffPage({ user, admin }: { user: SessionUser; admin: boolean }
       />
       {panel.overlay}
       {manager && <TalkOverlay opener={opener} />}
-      {/* Registrera intyg (D107 item 7): the competence module's page for one person, a dialog over the list. */}
+      {/* Registrera intyg (D108 item 7): the competence module's page for one person, a dialog over the list. */}
       {manager && <RegisterHolding />}
     </Shell>
   );

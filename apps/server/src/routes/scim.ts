@@ -12,6 +12,12 @@ import type { ScimQuery, ScimUsecases } from '../modules/people/usecases';
  * derivation. Errors are the standard's error resource, in English: a machine reads them.
  */
 type Env = { Variables: { provisioner: Provisioner } };
+/**
+ * Where the SCIM server answers, as a provisioner reaches it: the installation's public address when one is set, else
+ * the origin the request came to. The resources' own `meta.location` and the key dialog (D107) both say this.
+ */
+export const scimAddress = (requestUrl: string) =>
+  (process.env.PUBLIC_URL ?? new URL(requestUrl).origin).replace(/\/+$/, '') + '/scim/v2';
 /** Four megabytes: a group of ten thousand members, the largest resource a municipal push carries, is well under it. */
 const BODY_LIMIT = 4 * 1024 * 1024;
 /**
@@ -51,7 +57,7 @@ export function scimRoutes(scim: ScimUsecases, log: ScimLog) {
     const scim = asScimError(error);
     return c.body(JSON.stringify(scim.body()), scim.status, { 'Content-Type': SCIM_CONTENT_TYPE, ...privateHeaders });
   };
-  const base = (c: Context) => (process.env.PUBLIC_URL ?? new URL(c.req.url).origin).replace(/\/+$/, '') + '/scim/v2';
+  const base = (c: Context) => scimAddress(c.req.url);
   const body = async (c: Context): Promise<unknown> => {
     // The declared length first, so an oversized body is refused before it is read; then the measured one, for a
     // chunked body that declares none.
