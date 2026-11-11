@@ -63,3 +63,4 @@ Dated evidence, design explorations and recommendations. They are historical con
 - [Comparison: Frappe HR's appraisal cycle against the talks profile · 2026-11-11](2026-11-11-frappe-hr-appraisals-against-the-talks-profile.md)
 - [Review: the SCIM flow end to end, people and the organisation tree · 2026-11-11](2026-11-11-scim-flow-people-and-organisation.md)
 - [Review: the panel beside the page against what Astryx ships · 2026-11-11](2026-11-11-the-panel-beside-the-page-against-what-astryx-ships.md)
+- [Review: `typebox` 1.x instead of `@sinclair/typebox` 0.34 · 2026-11-11](2026-11-11-typebox-1-instead-of-sinclair-typebox.md)

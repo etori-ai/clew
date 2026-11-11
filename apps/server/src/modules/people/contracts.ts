@@ -1,4 +1,4 @@
-import { Type, type Static } from '@sinclair/typebox';
+import { Type, type Static } from 'typebox';
 
 /**
  * The SCIM 2.0 contract Clew serves (RFC 7643, RFC 7644; D68): what a provisioner may send. Inputs are permissive on

@@ -3725,6 +3725,23 @@
       ]
     },
     {
+      "path": "docs/reviews/2026-11-11-typebox-1-instead-of-sinclair-typebox.md",
+      "title": "Review: `typebox` 1.x instead of `@sinclair/typebox` 0.34 · 2026-11-11",
+      "category": "review-history",
+      "headings": [
+        "The facts upstream",
+        "What was measured, and how",
+        "Result: the published protocol schema",
+        "Result: validation",
+        "Result: error texts",
+        "Result: connector authors",
+        "What changed in the code",
+        "Recommendation",
+        "The choice, and its answer",
+        "Validation"
+      ]
+    },
+    {
       "path": "docs/reviews/README.md",
       "title": "Reviews and explorations",
       "category": "review-history",

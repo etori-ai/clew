@@ -45,10 +45,10 @@ import {
   refresh,
   attention,
 } from '../composition';
-import { Type } from '@sinclair/typebox';
+import { Type, type Static } from 'typebox';
 import { executions } from '../composition/executions';
 import { jobs } from '../composition/jobs-across-systems';
-import { FactEnvelopeSchema, StepDraftSchema } from '@clew/connectors/protocol';
+import { FactEnvelopeSchema, StepDraftSchema, type FactEnvelope } from '@clew/connectors/protocol';
 import { changesFor } from '../composition/changes';
 import { authenticate, AuthError, SESSION_COOKIE } from '../auth';
 import { getCookie } from 'hono/cookie';
@@ -225,17 +225,14 @@ api.post('/executions/:id/reconcile', async c =>
 );
 /** A job across systems (D55): assemble the proposal for one fact as the person (nothing is written), approve it once (the human decision endpoint, never a tool), read it back. */
 api.post('/jobs/assemble', async c => {
-  const { fact } = await body(
-      c.req.raw,
-      validators.fact as unknown as (value: unknown) => value is typeof FactEnvelopeSchema.static,
-    ),
+  const { fact } = await body(c.req.raw, validators.fact as unknown as (value: unknown) => value is FactEnvelope),
     persona = c.get('session').context;
   return c.json(await jobs.assemble(actorOf(persona), fact, (name, input) => runCapability(persona, name, input)));
 });
 api.post('/jobs', async c => {
   const input = await body(
     c.req.raw,
-    validators.jobApproval as unknown as (value: unknown) => value is typeof JobApprovalInput.static,
+    validators.jobApproval as unknown as (value: unknown) => value is Static<typeof JobApprovalInput>,
   );
   return c.json(await jobs.approve(c.get('session').context, input), 202);
 });

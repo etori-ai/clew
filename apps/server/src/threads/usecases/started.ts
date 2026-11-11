@@ -1,4 +1,4 @@
-import { Value } from '@sinclair/typebox/value';
+import { Value } from 'typebox/value';
 import type { AuthenticatedContext, ThreadAction, ThreadItem } from '@clew/contracts';
 import { actorOf, CapabilityError, type Registry, type ThreadDraft } from '@clew/connectors';
 import { ThreadDraftSchema } from '@clew/connectors/protocol';

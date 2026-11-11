@@ -1,4 +1,4 @@
-import { Type, type Static } from '@sinclair/typebox';
+import { Type, type Static } from 'typebox';
 
 const object = <T extends Record<string, any>>(properties: T) =>
   Type.Object(properties, { additionalProperties: false });

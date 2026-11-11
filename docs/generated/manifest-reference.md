@@ -8,7 +8,7 @@ A running Clew draws this page at `/protocol/manifest`, serves it as data at `/a
 
 ## Recipes
 
-On the wire a schema is JSON Schema. Write it in your language's schema library and emit it (TypeBox or zod in TypeScript, Pydantic in Python); where a recipe holds a schema, the same manifest follows authored with TypeBox.
+On the wire a schema is JSON Schema. Write it in your language's schema library and emit it (TypeBox or zod in TypeScript, Pydantic in Python); where a recipe holds a schema, the same manifest follows authored with TypeBox, the package `typebox`. Its earlier line, `@sinclair/typebox` 0.34, takes the same code under its own import and emits the same schema, and a connector written with it needs no change.
 
 ### A read that can be a tool in the menu
 
@@ -160,7 +160,7 @@ A `read` with a `view` and an input that accepts `{}` is eligible for the menu u
 The same, authored with TypeBox:
 
 ```ts
-import { Type } from '@sinclair/typebox';
+import { Type } from 'typebox';
 
 export const directory = {
   name: 'phonebook.directory',
@@ -557,7 +557,7 @@ One event means work in several systems, and no connector writes in another. The
 The same, authored with TypeBox:
 
 ```ts
-import { Type } from '@sinclair/typebox';
+import { Type } from 'typebox';
 
 export const hr = {
   id: 'hr',

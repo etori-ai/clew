@@ -1,4 +1,4 @@
-import { Value } from '@sinclair/typebox/value';
+import { Value } from 'typebox/value';
 import type { AuthenticatedContext } from '@clew/contracts';
 import { actorOf, type Actor } from '@clew/connectors';
 import { FollowResponseSchema } from '@clew/connectors/protocol';
