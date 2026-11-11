@@ -16,6 +16,7 @@ import {
   type ThreadItem,
 } from '@clew/contracts';
 import {
+  AlertDialog,
   AreaChip,
   AreaLine,
   Badge,
@@ -52,6 +53,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation } from 'react-router';
 import { displayDate, today } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
+import { confirmParts } from '../confirm-parts';
 import { snoozePresetsQuery } from '../queries';
 import { useSettling, useThreadAction, type RunAction } from '../mutations';
 import { dismissed, reopened, snoozed } from '../optimistic';
@@ -420,6 +422,9 @@ type ActionProps = {
  * error as from the card. Busy never disables the buttons: a disabled button drops the focus it holds (2.4.3).
  * Action-buttons wait on their own promise. The thread an action returns goes into the cache for every screen (D33);
  * `onChange` lets the page move focus first. `perform` says whether it ran: a confirm the person declined runs nothing.
+ * An action with `confirm` asks in an alert dialog (`confirmation`, which the caller renders): Avbryt has the focus,
+ * Esc cancels, and the dialog closes on the answer, so the focus is back on the pressed button before the card shows
+ * the wait and the source's answer, as for an action that asks nothing (D45, D64).
  */
 export function useCardAction({
   thread,
@@ -436,13 +441,44 @@ export function useCardAction({
     if (!settling) setPressed(null);
   }, [settling]);
   const selectable = thread.items.some(i => i.selectable);
+  // The question an action asks before it runs. The one asked stays in the dialog while it closes.
+  const [asked, setAsked] = useState<ThreadAction | null>(null);
+  const answered = useRef<((yes: boolean) => void) | null>(null);
+  const question = useRef<ThreadAction | null>(null);
+  if (asked) question.current = asked;
+  // Astryx runs a button's `clickAction` as a transition, which holds every state change until the action has ended.
+  // The question is therefore asked a task later, outside it, so the dialog can open while a caller waits for the answer.
+  const ask = (action: ThreadAction) =>
+    new Promise<boolean>(resolve => {
+      answered.current = resolve;
+      setTimeout(() => setAsked(action), 0);
+    });
+  const answer = (yes: boolean) => {
+    answered.current?.(yes);
+    answered.current = null;
+    setAsked(null);
+  };
+  const parts = question.current ? confirmParts(question.current) : null;
+  const confirmation = (
+    <AlertDialog
+      isOpen={asked !== null}
+      onOpenChange={open => {
+        if (!open) answer(false);
+      }}
+      title={parts?.title ?? ''}
+      description={parts?.description ?? ''}
+      actionLabel={question.current?.label ?? ''}
+      cancelLabel="Avbryt"
+      onAction={() => answer(true)}
+    />
+  );
   const perform = async (
     action: ThreadAction,
     refs?: string[],
     reviews?: import('@clew/contracts').ReviewEvidence[],
   ): Promise<boolean> => {
     if (busy) return false;
-    if (action.confirm && !window.confirm(action.confirm)) return false;
+    if (action.confirm && !(await ask(action))) return false;
     const chosen = selectable ? refs : undefined;
     if (action.kind === 'read') {
       if (action.target === 'link') {
@@ -469,7 +505,7 @@ export function useCardAction({
     );
     return true;
   };
-  return { run, apply, busy, settling, pressed, error, selectable, perform };
+  return { run, apply, busy, settling, pressed, error, selectable, perform, confirmation };
 }
 /** The execute a card reviews one row at a time before it sends (D70): its next step is then "Granska N", which leads to the review's address (D73). */
 export const reviewedAction = (thread: Thread) =>
@@ -486,6 +522,7 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
     error,
     selectable,
     perform: performRefs,
+    confirmation,
   } = useCardAction({
     thread,
     onChange,
@@ -523,8 +560,13 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
   }, [thread.updatedAt]);
   const client = useQueryClient();
   const leave = useLeaveWithUndo(apply);
-  const perform = async (action: ThreadAction, refs?: string[]) => {
-    await performRefs(action, refs ?? selected);
+  // A button waits on its action (the pressed button loads until the source has answered). An action that asks first
+  // is not waited on: the button stays as it is, enabled, while the question is open, so the focus can come back to
+  // it on Avbryt; after a yes it loads as `pressed` while the card settles.
+  const perform = (action: ThreadAction, refs?: string[]): Promise<void> | void => {
+    const ran = performRefs(action, refs ?? selected).then(() => undefined);
+    if (action.confirm) return;
+    return ran;
   };
   // A card whose next step is a review (D70): "Granska N" leads to the review's drawer, which sends once with the approved refs (D73).
   const reviewed = reviewedAction(thread);
@@ -572,6 +614,8 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
     reviewed,
     /** The history entry the review handed its decisions back on, or null: the card's "Granska N" takes the focus once per entry. */
     returned: returnedAt,
+    /** The alert dialog an action with `confirm` asks in; the card and the row render it. */
+    confirmation,
   };
 }
 type Actions = ReturnType<typeof useThreadActions>;
@@ -1064,6 +1108,7 @@ export function GenericCard({
           {error}
         </Text>
       )}
+      {actions.confirmation}
       <ActionRow thread={thread} level={level} actions={actions} stacked={sheet} />
       {/* The way on from a done card (D70, artboard D): the first card that needs the person, never opened on its own. */}
       {receipt && next && (
@@ -1289,6 +1334,7 @@ export function ThreadRow({
               {error}
             </Text>
           )}
+          {actions.confirmation}
         </VStack>
       }
       endContent={

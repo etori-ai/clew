@@ -1,6 +1,6 @@
 import type { Locator } from '@playwright/test';
 import { NEXT_WEEK } from './data';
-import { composer, desktop, expect, open, phone, test } from './support';
+import { composer, desktop, expect, expectNoAxeViolations, open, phone, test } from './support';
 
 /** What a person cannot read because it is cut off with an ellipsis. */
 const cutOff = (root: Locator) =>
@@ -69,6 +69,47 @@ test.describe('a row shows the next step and Lägg till i samtalet; the rest is 
       page.getByText('Godkänn skrivs till Personalsystemet och läses tillbaka som kvitto. Fungerar utan modellen.'),
     ).toBeVisible();
     await expect(page.getByText(/Ångra i 10 minuter/)).toHaveCount(0);
+  });
+
+  test('an action that asks first asks in an alert dialog: Avbryt has the focus, Esc sends nothing and gives the focus back, a yes sends it', async ({
+    page,
+    api,
+  }) => {
+    // The HR fixture's second decision on a leave request, with the question it really asks.
+    api.threads
+      .find(t => t.id === 'ledighet')!
+      .actions.push({
+        id: 'reject',
+        label: 'Avslå',
+        capability: 'hr.decideLeave',
+        kind: 'execute',
+        role: 'secondary',
+        confirm: 'Avslå ansökan? Medarbetaren meddelas direkt.',
+      });
+    const sent: string[] = [];
+    page.on('request', request => {
+      if (request.method() === 'POST' && request.url().endsWith('/api/threads/ledighet/act'))
+        sent.push(request.postData() ?? '');
+    });
+    await open(page, '/?card=ledighet');
+    const card = page.getByRole('dialog', { name: 'Kort', exact: true });
+    const reject = card.getByRole('button', { name: 'Avslå', exact: true });
+    await reject.click();
+    // The question is the dialog's name and what follows from a yes is its description (the alert dialog pattern).
+    const question = page.getByRole('alertdialog', { name: 'Avslå ansökan?' });
+    await expect(question).toBeVisible();
+    await expect(question).toHaveAccessibleDescription('Medarbetaren meddelas direkt.');
+    await expect(question.getByRole('button', { name: 'Avbryt', exact: true })).toBeFocused();
+    await expectNoAxeViolations(page);
+    await page.keyboard.press('Escape');
+    await expect(question).toHaveCount(0);
+    await expect(reject).toBeFocused();
+    expect(sent).toEqual([]);
+    await reject.click();
+    await question.getByRole('button', { name: 'Avslå', exact: true }).click();
+    await expect(question).toHaveCount(0);
+    await expect.poll(() => sent.length).toBe(1);
+    expect(sent[0]).toContain('"actionId":"reject"');
   });
 
   test('a card that waits on someone has one time action too, and says when it will remind', async ({ page, api }) => {
@@ -188,6 +229,32 @@ test.describe('a phone', () => {
       .click();
     await expect(page.getByRole('menuitem', { name: /^I morgon/ })).toBeVisible();
     await expect(page.getByRole('menuitem', { name: /^Skriv själv/ })).toBeVisible();
+  });
+
+  test('the question an action asks fits a phone: nothing scrolls sideways, and Avbryt has the focus', async ({
+    page,
+    api,
+  }) => {
+    api.threads
+      .find(t => t.id === 'ledighet')!
+      .actions.push({
+        id: 'reject',
+        label: 'Avslå',
+        capability: 'hr.decideLeave',
+        kind: 'execute',
+        role: 'secondary',
+        confirm: 'Avslå ansökan? Medarbetaren meddelas direkt.',
+      });
+    await open(page, '/?card=ledighet');
+    await page
+      .getByRole('dialog', { name: 'Kort: Ledighetsansökan från Johan Byström' })
+      .getByRole('button', { name: 'Avslå', exact: true })
+      .click();
+    const question = page.getByRole('alertdialog', { name: 'Avslå ansökan?' });
+    await expect(question.getByRole('button', { name: 'Avbryt', exact: true })).toBeFocused();
+    await expect(question.getByRole('button', { name: 'Avslå', exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await expectNoAxeViolations(page);
   });
 });
 

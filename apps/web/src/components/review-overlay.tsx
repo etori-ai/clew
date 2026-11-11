@@ -373,7 +373,7 @@ function Review({
   // and only then does the overlay lead back to the card, where the row keeps its place with the receipt (D70 item 1).
   // The mutation response can arrive before the list query notifies this render. Keep that confirmed answer too.
   const response = useRef<Thread | null>(null);
-  const { settling, error, perform, run } = useCardAction({
+  const { settling, error, perform, run, confirmation } = useCardAction({
     thread: live,
     onChange: thread => {
       response.current = thread;
@@ -653,6 +653,7 @@ function Review({
           {error}
         </Text>
       )}
+      {confirmation}
     </VStack>
   );
   const flowStatus = readOnly ? (
