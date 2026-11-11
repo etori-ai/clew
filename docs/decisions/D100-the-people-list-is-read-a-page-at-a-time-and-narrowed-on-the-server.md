@@ -11,12 +11,15 @@ the browser never holds the organisation.
    the filters offer, and no longer carries people. The use case is `usersAdminUsecases.people` in
    `apps/server/src/modules/people/usecases.ts`, behind `admin.users` as the rest of the page; it writes nothing, so
    it has no audit row. The store narrows through one port, `ProvisionTx.searchUsers`, held to the same behaviour on
-   both adapters by `tests/scim-store-contract.ts`, and only the rows of the page are filled in with units, grant,
-   groups and binding.
+   both adapters by `tests/scim-store-contract.ts`, and only the rows of the page are filled in with units, grant
+   and binding. A row carries what the list shows and nothing else, so a person's groups are not read for it.
 2. **What narrows the list.** Words, a unit, a role, a status and a capability; every part narrows further. A word
    matches without regard to case somewhere in the name, the user name or the e-mail, and each word must match. The
    status is the row's own reading of access (`USER_STATUSES`): deactivated, no access (no unit, so no grant, D68),
-   signed in, not signed in yet. The capability is one on the grant.
+   signed in, not signed in yet. The capability is one on the grant. On PostgreSQL the words are matched under the
+   ICU collation `sv-x-icu`, the one the order asks for, so å, ä and ö fold the same in a database created with the
+   locale C as in any other. The page holds what it sends to the limits of `USERS_QUERY_LIMITS`: the search box takes
+   no more than the server reads, and an address that names more is read as naming nothing.
 3. **A unit is asked for with everything below it.** The unit filter matches a person placed on the unit or on any
    unit under it in the tree (D99; `branchOf` in `modules/people/domain.ts`). An administrator who picks an
    administration means the people in it, and Organisation already shows who is placed on exactly one unit. With a
@@ -29,7 +32,9 @@ the browser never holds the organisation.
    (D43: English names and values). A narrowed list can be linked, as Organisation now links its "saknar enhet"
    warning to `?status=no-access`, and Back undoes a step. The search text is a person's name, so it is sent in the
    request body and never becomes part of an address, a browser history or an access log: the same reason SCIM has
-   `POST /.search` (RFC 7644 §3.4.3). The cost is that a reload forgets the typed search.
+   `POST /.search` (RFC 7644 §3.4.3). The cost is that a reload forgets the typed search. A change that leaves the
+   address as it is writes nothing, so one choice is one step back. A value the address names and the options do not
+   hold, such as a unit that has left the tree, still narrows the list, and its chip says so by the value itself.
 6. **Pages of 25, 50 or 100, by name.** The order is name in Swedish order and then id, the same on every page, so
    nobody is on two pages and nobody is missing. A page past the end, which an old link or a list that became
    shorter leaves behind, answers with the last page. Changing a filter starts again from the first page.
@@ -40,7 +45,8 @@ the browser never holds the organisation.
    desktop and "Sida 2 av 11" on a phone, shared by the `Table` and the phone's `List`; the table says each row's
    place among all the people (`rowIndexStart`, `rowCount`). The line that counts ("46 av 255 personer") is a status
    that is read out when it changes. A step to another page brings the head of the list into view and leaves the
-   focus on the pager.
+   focus on the pager. Rensa filter is gone once used, so it leaves the focus on the search box. A list that cannot
+   be read keeps its search and filters and says why where the rows would be.
 
 **Why.** The page read every person and, for each, four more rows: a thousand reads for the development directory's
 two hundred and fifty people, repeated after every change to the mapping, and all of them drawn at once. A
@@ -56,8 +62,8 @@ SegmentedControl for the role (two choices, but it truncates on a phone and woul
 unlike the others); the search in the address (a name in every log on the way).
 
 **Not built.** Sorting by anything but name. A person's own page or overlay, which is where their groups would be
-read now that the count is gone. An export of the narrowed list. The four reads per row are not batched; at 100
-rows that is 400 small reads in one transaction, measured above, and the place to batch if it ever shows.
+read now that the count is gone. An export of the narrowed list. The three reads per row are not batched; at 100
+rows that is 300 small reads in one transaction, and the place to batch if it ever shows.
 
 **Replaces.** Nothing numbered. It changes the unpaged list built as step 8 of the SCIM order of work (D85's page,
 HANDOVER 2026-11-09) and the contract `UsersAdminOverview`, which loses `users` and gains `units`.

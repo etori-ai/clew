@@ -1305,7 +1305,6 @@ export const usersPeople = (): UserAdminRow[] => [
     assignments: [{ unitId: 'unit-omsorg', unitLabel: 'Hemtjänst Centrum', role: 'employee' }],
     active: { unitId: 'unit-omsorg', unitLabel: 'Hemtjänst Centrum', role: 'employee' },
     capabilities: [],
-    groups: [{ externalId: 'unit:unit-omsorg', label: 'Hemtjänst Centrum' }],
   },
   {
     id: 'hillevi',
@@ -1318,11 +1317,6 @@ export const usersPeople = (): UserAdminRow[] => [
     assignments: [{ unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' }],
     active: { unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' },
     capabilities: [],
-    groups: [
-      { externalId: 'unit:unit-skola', label: 'Bergsåkers skola' },
-      { externalId: 'unit-manager:unit-skola', label: 'Chefer · Bergsåkers skola' },
-      { externalId: 'S-1-5-21-rektorer', label: 'Rektorer' },
-    ],
   },
   {
     id: 'mikael',
@@ -1335,10 +1329,6 @@ export const usersPeople = (): UserAdminRow[] => [
     assignments: [{ unitId: 'unit-it', unitLabel: 'IT och digitalisering', role: 'employee' }],
     active: { unitId: 'unit-it', unitLabel: 'IT och digitalisering', role: 'employee' },
     capabilities: ['admin.connectors', 'admin.users'],
-    groups: [
-      { externalId: 'unit:unit-it', label: 'IT och digitalisering' },
-      { externalId: 'S-1-5-21-it-staff', label: 'IT-personal' },
-    ],
   },
   {
     id: 'omar',
@@ -1351,7 +1341,6 @@ export const usersPeople = (): UserAdminRow[] => [
     assignments: [],
     active: null,
     capabilities: [],
-    groups: [],
   },
 ];
 /** Enough people for three pages: sixty on one unit, by name, after which nobody in `usersPeople` sorts. */
@@ -1370,7 +1359,6 @@ export const manyPeople = (): UserAdminRow[] =>
       assignments: [placed],
       active: placed,
       capabilities: [],
-      groups: [],
     };
   });
 export const usersOverview = (): UsersAdminOverview => ({

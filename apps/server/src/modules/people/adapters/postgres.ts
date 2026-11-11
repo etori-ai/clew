@@ -1,4 +1,4 @@
-import { and, eq, gt, ilike, inArray, isNotNull, isNull, like, not, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNotNull, isNull, like, not, or, sql, type SQL } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
 import { writeAudit } from '@clew/db/threads';
 import { UNIT_KEY, unitGroupOf, type GroupRecord, type UserRecord, type UserSearch } from '../domain';
@@ -75,10 +75,13 @@ const ROW_LOCK = 'no key update' as const;
 const groupColumn = { externalId: schema.groups.externalId, label: schema.groups.label } as const;
 /**
  * D100: the people list's search as conditions on `auth_person`. A word is matched as written, so `%` and `_` in it
- * are escaped; `ilike` folds case by the database's own rules, which cover Swedish in a UTF-8 database.
+ * are escaped. `ilike` folds case by the collation of what it reads, and a database created with the locale C folds
+ * only a to z there, so each column is read under the ICU collation the order already asks for: å, ä and ö fold the
+ * same in every installation, however its database was created.
  */
 const personHas = (table: SQL, ...conditions: Array<SQL | undefined>) =>
   sql`exists (select 1 from ${table} where ${and(...conditions)})`;
+const folded = (column: SQL, pattern: string) => sql`${column} collate "sv-x-icu" ilike ${pattern}`;
 function userSearchConditions(search: UserSearch): Array<SQL | undefined> {
   const granted = personHas(sql`${schema.accessGrants}`, eq(schema.accessGrants.personId, schema.people.id)),
     bound = personHas(sql`${schema.identityBindings}`, eq(schema.identityBindings.personId, schema.people.id));
@@ -86,9 +89,9 @@ function userSearchConditions(search: UserSearch): Array<SQL | undefined> {
     ...(search.words ?? []).map(word => {
       const pattern = '%' + word.replace(/[\\%_]/g, '\\$&') + '%';
       return or(
-        ilike(schema.people.name, pattern),
-        ilike(schema.people.userName, pattern),
-        ilike(schema.people.email, pattern),
+        folded(sql`${schema.people.name}`, pattern),
+        folded(sql`${schema.people.userName}`, pattern),
+        folded(sql`${schema.people.email}`, pattern),
       );
     }),
     search.unitIds || search.role

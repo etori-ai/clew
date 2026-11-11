@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { startTransition, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   USERS_PAGE_SIZES,
+  USERS_QUERY_LIMITS,
   USER_STATUSES,
   isCapability,
   type Capability,
@@ -98,19 +99,33 @@ const count = new Intl.NumberFormat('sv-SE');
 const people = (n: number) => `${count.format(n)} ${n === 1 ? 'person' : 'personer'}`;
 /** How long the list waits after the last keystroke before it asks, so a name is one question and not eight. */
 const TYPING_PAUSE_MS = 250;
-/** What the address says the list is narrowed by (D43: English names and values). Anything it cannot mean is left out. */
+/**
+ * A filter's options with the chosen value among them. The address may name a value the options do not hold: a unit
+ * that has left the tree since the link was saved, or any value while the options are still being read. The list is
+ * narrowed by it all the same, so the chip says so, by the value itself when nothing better is known.
+ */
+const withChosen = <T extends { value: string; label: string }>(
+  options: T[],
+  value: string | undefined,
+  label: string,
+) => (value === undefined || options.some(o => o.value === value) ? options : [...options, { value, label }]);
+/**
+ * What the address says the list is narrowed by (D43: English names and values). Anything it cannot mean is left out,
+ * and so is anything the server would refuse as malformed: an address is never the reason the list cannot be read.
+ */
 function filterOf(params: URLSearchParams) {
-  const role = params.get('role'),
+  const unit = params.get('unit'),
+    role = params.get('role'),
     status = params.get('status'),
     capability = params.get('capability'),
     page = Number(params.get('page')),
     size = Number(params.get('size'));
   return {
-    unitId: params.get('unit') || undefined,
+    unitId: unit && unit.length <= USERS_QUERY_LIMITS.unitId ? unit : undefined,
     role: roles.find(r => r === role),
     status: USER_STATUSES.find(s => s === status),
     capability: capability && isCapability(capability) ? capability : undefined,
-    page: Number.isInteger(page) && page > 1 ? page : 1,
+    page: Number.isInteger(page) && page > 1 && page <= USERS_QUERY_LIMITS.page ? page : 1,
     pageSize: USERS_PAGE_SIZES.find(n => n === size) ?? USERS_PAGE_SIZES[0],
   };
 }
@@ -128,10 +143,6 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
   const filter = filterOf(params);
   const [typed, setTyped] = useState('');
   const [text, setText] = useState('');
-  useEffect(() => {
-    const timer = setTimeout(() => setText(typed.trim()), TYPING_PAUSE_MS);
-    return () => clearTimeout(timer);
-  }, [typed]);
   const asked: UsersAdminQueryType = {
     ...(text ? { text } : {}),
     ...(filter.unitId ? { unitId: filter.unitId } : {}),
@@ -143,20 +154,38 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
   };
   // The page on screen stays while the next one is read, so the list never blinks empty between two answers.
   const listed = useQuery({ ...adminQueries.usersPage(asked), placeholderData: keepPreviousData });
-  /** Changes the address. Anything but a step to another page starts again from the first one. */
+  /**
+   * Changes the address. Anything but a step to another page starts again from the first one. A change that leaves
+   * the address as it is writes nothing, so Back never has a step that did nothing: Astryx's pager asks for page 1
+   * right after a new page size, which the new size has already given.
+   */
   const show = (change: Record<string, string | number | null | undefined>) => {
     const next = new URLSearchParams(address.current);
     if (!('page' in change)) next.delete('page');
     for (const [name, value] of Object.entries(change))
       if (value === null || value === undefined || value === '' || (name === 'page' && value === 1)) next.delete(name);
       else next.set(name, String(value));
+    if (next.toString() === address.current.toString()) return;
     address.current = next;
     setParams(next);
   };
-  const search = (value: string) => {
-    setTyped(value);
-    if (address.current.has('page')) show({});
+  /**
+   * Asks for the words, from the first page, as one question. The router changes the address in a transition, so the
+   * words go in one too: the two are drawn together, and no question is sent with the new words on the old page.
+   */
+  const ask = useRef((_words: string) => {});
+  ask.current = words => {
+    startTransition(() => setText(words));
+    show({});
   };
+  const pending = typed.trim();
+  useEffect(() => {
+    if (pending === text) return;
+    const timer = setTimeout(() => ask.current(pending), TYPING_PAUSE_MS);
+    return () => clearTimeout(timer);
+  }, [pending, text]);
+  // The box holds no more than the server reads, so a pasted text is cut where it is typed and not refused later.
+  const search = (value: string) => setTyped(value.slice(0, USERS_QUERY_LIMITS.text));
   // A step to another page is taken at the foot of the list and read from its head, so the head comes back into view.
   // Focus stays on the pager, where the next step is taken.
   const head = useRef<HTMLSpanElement>(null);
@@ -164,11 +193,15 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
     show({ page: next });
     head.current?.scrollIntoView({ block: 'start' });
   };
-  const narrowed = !!(typed.trim() || filter.unitId || filter.role || filter.status || filter.capability);
+  const narrowed = !!(pending || filter.unitId || filter.role || filter.status || filter.capability);
+  // Rensa filter is gone once it has been used, so the focus goes to the search box: the first thing to narrow by, and
+  // never the top of the page (2.4.3).
+  const searchBox = useRef<HTMLInputElement>(null);
   const clear = () => {
     setTyped('');
-    setText('');
+    startTransition(() => setText(''));
     show({ unit: null, role: null, status: null, capability: null });
+    searchBox.current?.focus();
   };
   const [group, setGroup] = useState<string | undefined>();
   const [capability, setCapability] = useState<string | undefined>();
@@ -312,7 +345,6 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
   const users = page?.rows ?? [];
   const listError =
     !error && listed.isError && page === undefined ? errorMessage(listed.error, 'Listan kunde inte läsas.') : null;
-  const unitName = (id: string) => data?.units.find(u => u.id === id)?.label ?? id;
   const groupCapabilities = data?.groupCapabilities ?? [];
   const groups = data?.groups ?? [];
   const provisioners = data?.provisioners ?? [];
@@ -371,11 +403,6 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
           )}
         </Card>
       )}
-      {listError && (
-        <Text as="p" role="alert" color="accent">
-          {listError}
-        </Text>
-      )}
       {page?.all === 0 && (
         <Card>
           <EmptyState
@@ -386,7 +413,8 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
           />
         </Card>
       )}
-      {page && page.all > 0 && (
+      {/* A list that could not be read keeps its search and filters: what was asked for is what there is to change. */}
+      {(page ? page.all > 0 : listError !== null) && (
         <Card padding={0}>
           <Toolbar
             label="Personer"
@@ -395,7 +423,11 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
             startContent={
               // The one line that says what the filters did, read out when it changes (4.1.3).
               <Text weight="semibold" role="status" ref={head}>
-                {page.total === page.all ? people(page.all) : `${count.format(page.total)} av ${people(page.all)}`}
+                {!page
+                  ? ''
+                  : page.total === page.all
+                    ? people(page.all)
+                    : `${count.format(page.total)} av ${people(page.all)}`}
               </Text>
             }
             endContent={
@@ -415,6 +447,7 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
                 hasClear
                 value={typed}
                 onChange={search}
+                ref={searchBox}
               />
               <Selector
                 label="Enhet"
@@ -426,14 +459,18 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
                 hasSearch
                 searchPlaceholder="Sök enhet"
                 emptyText="Katalogen har inte fört in några enheter."
-                options={(data?.units ?? []).map(u => ({
-                  value: u.id,
-                  label: u.label,
-                  ...(u.parentLabel ? { description: u.parentLabel } : {}),
-                }))}
+                options={withChosen(
+                  (data?.units ?? []).map(u => ({
+                    value: u.id,
+                    label: u.label,
+                    ...(u.parentLabel ? { description: u.parentLabel } : {}),
+                  })),
+                  filter.unitId,
+                  filter.unitId ?? '',
+                )}
                 value={filter.unitId ?? null}
                 onChange={(unit: string | null) => show({ unit })}
-                renderValue={() => `Enhet: ${unitName(filter.unitId ?? '')}`}
+                renderValue={o => `Enhet: ${o.label}`}
               />
               <Selector
                 label="Roll"
@@ -466,14 +503,24 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
                 size="sm"
                 presentation="adaptive"
                 hasClear
-                options={(data?.capabilities ?? []).map(c => ({ value: c, label: capabilityLabel[c] }))}
+                options={withChosen(
+                  (data?.capabilities ?? []).map(c => ({ value: c, label: capabilityLabel[c] })),
+                  filter.capability,
+                  filter.capability ? capabilityLabel[filter.capability] : '',
+                )}
                 value={filter.capability ?? null}
                 onChange={(capability: string | null) => show({ capability })}
                 renderValue={o => `Behörighet: ${o.label}`}
               />
             </HStack>
           </Section>
-          {users.length === 0 ? (
+          {!page ? (
+            <Section variant="transparent" padding={3}>
+              <Text as="p" role="alert" color="accent">
+                {listError}
+              </Text>
+            </Section>
+          ) : users.length === 0 ? (
             <EmptyState
               isCompact
               headingLevel={2}
@@ -523,7 +570,7 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
               rowCount={page.total}
             />
           )}
-          {page.total > USERS_PAGE_SIZES[0] && (
+          {page && page.total > USERS_PAGE_SIZES[0] && (
             <Section variant="transparent" padding={3}>
               <HStack justify="center">
                 <Pagination

@@ -120,7 +120,7 @@ describe('Användare', () => {
       { id: 'd-never', label: 'Label d-never', lastSeenAt: null, silent: true },
     ]);
   });
-  test('a page lists people by name with unit, role, groups, capabilities and whether they signed in', async () => {
+  test('a page lists people by name with unit, role, capabilities and whether they signed in', async () => {
     const { usecases, admin, store } = stack();
     const o = await usecases.people(admin);
     expect(o).toMatchObject({ total: 3, all: 3, page: 1, pageSize: 25 });
@@ -130,10 +130,10 @@ describe('Användare', () => {
       bound: true,
       active: { unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' },
       assignments: [{ unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' }],
-      groups: [{ externalId: 'unit:unit-skola', label: 'Bergsåkers skola' }],
     });
     expect(o.rows[1]).toMatchObject({ bound: false, capabilities: [] });
-    expect(o.rows[1]!.groups.map(g => g.label)).toEqual(['IT-personal', 'IT', 'No external id']);
+    // A row carries what the list shows and nothing else: a person's groups are not read for it.
+    expect(o.rows[1]).not.toHaveProperty('groups');
     expect(o.rows[2]).toMatchObject({ enabled: false, active: null, assignments: [] });
     // Reading writes nothing, so nothing is audited.
     expect(store.state.audit).toEqual([]);

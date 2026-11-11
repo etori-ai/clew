@@ -105,6 +105,28 @@ test.describe('users administration', () => {
       await expect(page).toHaveURL(/\/admin\/users$/);
       await expect(readout(page)).toHaveText('4 personer');
       await expect(role).not.toContainText('Chef');
+      // The button is gone once used, and the focus is on the search box, not lost at the top of the page.
+      await expect(page.getByRole('button', { name: 'Rensa filter' })).toHaveCount(0);
+      await expect(filters(page).getByRole('searchbox', { name: 'Sök person' })).toBeFocused();
+    });
+    test('a list that cannot be read keeps its search and filters, and clearing them reads it again', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/users');
+      await expect(readout(page)).toHaveText('4 personer');
+      api.peopleRefused = true;
+      await choose(page, filters(page).getByRole('combobox', { name: 'Roll' }), 'Chef');
+      await expect(page.getByRole('alert').filter({ hasText: 'Ogiltig förfrågan.' })).toBeVisible();
+      // What was asked for is still there to change: the chip says the clause and the search box is where it was.
+      await expect(filters(page).getByRole('combobox', { name: 'Roll' })).toContainText('Roll: Chef');
+      await expect(filters(page).getByRole('searchbox', { name: 'Sök person' })).toBeVisible();
+      await expectNoAxeViolations(page);
+      api.peopleRefused = false;
+      await page.getByRole('button', { name: 'Rensa filter' }).click();
+      await expect(readout(page)).toHaveText('4 personer');
+      await expect(page.getByRole('alert').filter({ hasText: 'Ogiltig förfrågan.' })).toHaveCount(0);
     });
     test('a unit is found by its name and a link to a narrowed list opens it narrowed', async ({ page, api }) => {
       api.admin = true;
@@ -126,6 +148,10 @@ test.describe('users administration', () => {
       await expect(filters(page).getByRole('button', { name: /^Enhet/ })).toContainText('Enhet: Bergsåkers skola');
       await expect(filters(page).getByRole('combobox', { name: 'Roll' })).toContainText('Roll: Chef');
       expect(api.peopleQueries.at(-1)).toEqual({ unitId: 'unit-skola', role: 'manager', page: 1, pageSize: 25 });
+      // A unit the tree no longer names still narrows the list, and the chip says that it does.
+      await open(page, '/admin/users?unit=unit-borta');
+      await expect(page.getByRole('heading', { name: 'Inga personer matchar' })).toBeVisible();
+      await expect(filters(page).getByRole('button', { name: /^Enhet/ })).toContainText('Enhet: unit-borta');
     });
     test('a typed name narrows the list after a pause, as one question, and never enters the address', async ({
       page,
@@ -143,6 +169,21 @@ test.describe('users administration', () => {
       await filters(page).getByRole('button', { name: 'Rensa Sök person' }).click();
       await expect(readout(page)).toHaveText('4 personer');
       await expect(search).toBeFocused();
+      // The box holds no more than the server reads, so a pasted text is cut there and never refused.
+      await search.fill('x'.repeat(300));
+      await expect(search).toHaveValue('x'.repeat(200));
+      await expect(readout(page)).toHaveText('0 av 4 personer');
+    });
+    test('a name typed on a later page is one question, from the first page', async ({ page, api }) => {
+      api.admin = true;
+      api.people = [...usersPeople(), ...manyPeople()];
+      await open(page, '/admin/users?page=2');
+      await expect(page.getByRole('table').first().locator('tbody tr').first()).toContainText('Person 22');
+      api.peopleQueries = [];
+      await filters(page).getByRole('searchbox', { name: 'Sök person' }).pressSequentially('person');
+      await expect(readout(page)).toHaveText('60 av 64 personer');
+      await expect(page).toHaveURL(/\/admin\/users$/);
+      expect(api.peopleQueries).toEqual([{ text: 'person', page: 1, pageSize: 25 }]);
     });
     test('many people come a page at a time: the pager steps through them, the list starts over when it is narrowed, and the page size is chosen', async ({
       page,
@@ -179,6 +220,10 @@ test.describe('users administration', () => {
       await expect(page).toHaveURL(/\?role=employee&size=50$/);
       await expect(rows).toHaveCount(50);
       await expect(pager(page).getByRole('button', { name: 'Gå till sida 3' })).toHaveCount(0);
+      // One choice is one step back, though the pager asks for the first page as well.
+      await page.goBack();
+      await expect(page).toHaveURL(/\?role=employee$/);
+      await expect(rows).toHaveCount(25);
       // A page past the end, which an old link may name, shows the last one.
       await open(page, '/admin/users?page=9');
       await expect(rows).toHaveCount(14);

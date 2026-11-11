@@ -115,6 +115,8 @@ export class MockApi {
   /** Användare (D100): the people the list is read from, a page at a time, and every question the page has asked. */
   people = usersPeople();
   peopleQueries: UsersAdminQueryType[] = [];
+  /** Användare: the list cannot be read, while the rest of the page can. A 400, which the page does not ask twice. */
+  peopleRefused = false;
   /** The users page for someone with `admin.connectors` but not `admin.users`: the server refuses. */
   usersForbidden = false;
   /** Organisation (D99): the tree the organisation page shows; it shares `usersForbidden`, as the two share a capability. */
@@ -290,6 +292,7 @@ export class MockApi {
           status = (u: (typeof this.people)[number]) =>
             !u.enabled ? 'disabled' : !u.active ? 'no-access' : u.bound ? 'signed-in' : 'not-signed-in';
         this.peopleQueries.push(asked);
+        if (this.peopleRefused) return route.fulfill({ status: 400, json: { error: 'Ogiltig förfrågan.' } });
         const matching = this.people.filter(
           u =>
             words.every(w => [u.name, u.userName, u.email].some(v => (v ?? '').toLocaleLowerCase('sv').includes(w))) &&

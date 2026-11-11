@@ -1397,7 +1397,6 @@ export interface UserAdminRow {
   /** The assignment the person acts as, from the grant projection; null when the person has no unit. */
   active: { unitId: string; unitLabel: string; role: Role } | null;
   capabilities: string[];
-  groups: Array<{ externalId: string | null; label: string }>;
 }
 /** Personal (D94): a person on a unit the signed-in manager manages, as the page lists them. No token, no subject. */
 export interface StaffPerson {
@@ -1502,6 +1501,11 @@ export type UserStatus = (typeof USER_STATUSES)[number];
 /** D100: how many people a page of the list may hold; the first is the default. */
 export const USERS_PAGE_SIZES = [25, 50, 100] as const;
 /**
+ * D100: the most a question about the people may hold. The page holds what it sends to the same limits, so that
+ * nothing a person types or an address names is refused as a malformed request.
+ */
+export const USERS_QUERY_LIMITS = { text: 200, unitId: 512, page: 1_000_000 } as const;
+/**
  * D100: one page of Administration › Användare, asked for in a request body so that a searched name is never part of
  * an address. Every part narrows the list further. `text` is words matched without regard to case against name, user
  * name and e-mail, each word in one of them. `unitId` is a unit with everything below it in the tree. `role` is a role
@@ -1509,12 +1513,12 @@ export const USERS_PAGE_SIZES = [25, 50, 100] as const;
  */
 export const UsersAdminQuery = Type.Object(
   {
-    text: Type.Optional(Type.String({ maxLength: 200 })),
-    unitId: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
+    text: Type.Optional(Type.String({ maxLength: USERS_QUERY_LIMITS.text })),
+    unitId: Type.Optional(Type.String({ minLength: 1, maxLength: USERS_QUERY_LIMITS.unitId })),
     role: Type.Optional(RoleSchema),
     status: Type.Optional(Type.Union(USER_STATUSES.map(s => Type.Literal(s)))),
     capability: Type.Optional(CapabilitySchema),
-    page: Type.Optional(Type.Integer({ minimum: 1, maximum: 1_000_000 })),
+    page: Type.Optional(Type.Integer({ minimum: 1, maximum: USERS_QUERY_LIMITS.page })),
     pageSize: Type.Optional(Type.Union(USERS_PAGE_SIZES.map(n => Type.Literal(n)))),
   },
   { additionalProperties: false },

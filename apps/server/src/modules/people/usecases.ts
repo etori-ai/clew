@@ -599,7 +599,7 @@ export type ScimUsecases = ReturnType<typeof scimUsecases>;
  * group is re-derived in the same transaction, so a grant never lags the row that produced it.
  *
  * The people are read a page at a time (D100): the store narrows, orders and counts, and only the rows of the page are
- * filled in with unit, grant, groups and binding, so a page costs the same in an organisation of two hundred and one of
+ * filled in with unit, grant and binding, so a page costs the same in an organisation of two hundred and one of
  * twenty thousand. A read writes nothing, so it has no audit row.
  */
 export const USERS_ADMIN_CAPABILITY: Capability = 'admin.users';
@@ -627,7 +627,6 @@ export function usersAdminUsecases(deps: { store: ProvisionStore; clock: () => D
       assignments: await tx.assignmentsOf(u.id),
       active: grant ? { unitId: grant.unitId, unitLabel: grant.unitLabel, role: grant.role } : null,
       capabilities: grant ? sorted(grant.capabilities) : [],
-      groups: (await tx.userGroups(u.id)).map(g => ({ externalId: g.externalId, label: g.label })),
     };
   }
   async function overviewWithin(tx: ProvisionTx, persona: AuthenticatedContext): Promise<UsersAdminOverview> {
