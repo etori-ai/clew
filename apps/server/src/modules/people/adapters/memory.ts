@@ -150,8 +150,42 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
     async provisioners(organisationId) {
       return [...state.provisioners.values()]
         .filter(p => p.organisationId === organisationId && !p.revoked)
-        .map(provisionerRow)
+        .map(p => ({ ...provisionerRow(p), previousValidUntil: p.previous?.until ?? null }))
         .sort((a, b) => a.id.localeCompare(b.id));
+    },
+    async provisionerById(id) {
+      const p = [...state.provisioners.values()].find(o => o.id === id);
+      return (
+        p && {
+          id: p.id,
+          organisationId: p.organisationId,
+          label: p.label,
+          revoked: !!p.revoked,
+          previousValidUntil: p.previous?.until ?? null,
+        }
+      );
+    },
+    async issueProvisioner({ id, organisationId, label, tokenDigest }) {
+      const held = [...state.provisioners.values()].find(p => p.id === id);
+      if (held && (!held.revoked || held.organisationId !== organisationId)) return false;
+      for (const [digest, p] of state.provisioners) if (p.id === id) state.provisioners.delete(digest);
+      state.provisioners.set(tokenDigest, { id, organisationId, label, lastSeenAt: null });
+      return true;
+    },
+    async rotateProvisioner(id, tokenDigest, previousValidUntil) {
+      for (const [digest, p] of state.provisioners)
+        if (p.id === id) {
+          state.provisioners.delete(digest);
+          state.provisioners.set(tokenDigest, {
+            ...p,
+            previous: previousValidUntil === null ? undefined : { digest, until: previousValidUntil },
+          });
+          return;
+        }
+    },
+    async revokeProvisioner(id) {
+      for (const [digest, p] of state.provisioners)
+        if (p.id === id) state.provisioners.set(digest, { ...p, revoked: true, previous: undefined });
     },
     async readUser(organisationId, id) {
       const u = state.users.get(id);

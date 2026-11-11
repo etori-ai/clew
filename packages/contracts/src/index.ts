@@ -1746,7 +1746,48 @@ export interface UsersAdminOverview {
    * The clients that push people into this organisation (D68) and when each was last heard from. `silent` is the
    * server's reading of that time: never seen, or not for two days, where a push is due daily.
    */
-  provisioners: Array<{ id: string; label: string; lastSeenAt: string | null; silent: boolean }>;
+  provisioners: ProvisionerAdminRow[];
+}
+/**
+ * D107: one client that pushes people into the organisation, as Administration › Användare lists it. `id` is what the
+ * audit names it by. `previousValidUntil` is set while the key that was replaced last still answers. Never the key.
+ */
+export interface ProvisionerAdminRow {
+  id: string;
+  label: string;
+  lastSeenAt: string | null;
+  silent: boolean;
+  previousValidUntil: string | null;
+}
+/** D107: the name a provisioner is issued under, as `scripts/provisioner-token.ts` takes it. */
+export const PROVISIONER_ID_PATTERN = '^[a-z0-9][a-z0-9-]{1,63}$';
+export const PROVISIONER_LABEL_MAX = 120;
+/** D107: how long the key that is replaced may still answer, in hours; 0 ends it at once. */
+export const PROVISIONER_GRACE_HOURS = [24, 168, 0] as const;
+export const ProvisionerIssueInput = Type.Object(
+  {
+    id: Type.String({ pattern: PROVISIONER_ID_PATTERN }),
+    label: Type.String({ minLength: 1, maxLength: PROVISIONER_LABEL_MAX }),
+  },
+  { additionalProperties: false },
+);
+export type ProvisionerIssueInputType = Static<typeof ProvisionerIssueInput>;
+export const ProvisionerRotateInput = Type.Object(
+  { graceHours: Type.Union(PROVISIONER_GRACE_HOURS.map(h => Type.Literal(h))) },
+  { additionalProperties: false },
+);
+export type ProvisionerRotateInputType = Static<typeof ProvisionerRotateInput>;
+/**
+ * D107: the answer to issuing or rotating a provisioner's key. `token` is the key itself, in this answer and nowhere
+ * else: Clew keeps its digest and cannot show it again.
+ */
+export interface ProvisionerKeyIssued {
+  /** The provisioner the key is for; its row is in `overview`. */
+  id: string;
+  token: string;
+  /** Where the provisioner sends the key: the address the SCIM server answers at, as the server knows it. */
+  address: string;
+  overview: UsersAdminOverview;
 }
 /**
  * D100: what a person's row says about their access, as the people list narrows by it. `disabled` is a deactivated

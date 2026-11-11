@@ -1231,6 +1231,15 @@
       "status": "provisional (product owner chose the generator, 2026-11-11; accepted when the site has been published from `main` and read there)",
       "date": "2026-11-11",
       "area": "platform"
+    },
+    {
+      "key": "D107-an-administrator-issues-replaces-and-takes-back-a-provisioners-key-on-the-users-page",
+      "number": 107,
+      "path": "docs/decisions/D107-an-administrator-issues-replaces-and-takes-back-a-provisioners-key-on-the-users-page.md",
+      "title": "D107 · An administrator issues, replaces and takes back a provisioner's key on the users page",
+      "status": "provisional (product owner, 2026-11-11: the key a provisioner pushes with is handed out and replaced from administration), built 2026-11-11; items 2, 3 and 6 are choices made in the build and stand until he says otherwise; accepted once a provisioner outside the team has been issued a key on the page and has pushed with it; no manual screen-reader pass yet, and the page was run on fixtures, not signed in",
+      "date": "2026-11-11",
+      "area": "identity, ui"
     }
   ],
   "documents": [
@@ -1749,6 +1758,12 @@
     {
       "path": "docs/decisions/D106-the-documentation-site-is-vitepress-over-docs-as-it-is.md",
       "title": "D106 · The documentation site is VitePress over `docs/` as it is, published to GitHub Pages",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D107-an-administrator-issues-replaces-and-takes-back-a-provisioners-key-on-the-users-page.md",
+      "title": "D107 · An administrator issues, replaces and takes back a provisioner's key on the users page",
       "category": "decision-history",
       "headings": []
     },

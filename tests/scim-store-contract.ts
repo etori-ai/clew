@@ -210,8 +210,91 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
           lastSeenAt: '2026-11-09T07:30:00.000Z',
         });
         // The organisation's own, without the revoked one, by id.
-        expect(await tx.provisioners(p + '-org')).toEqual([{ ...live, lastSeenAt: '2026-11-09T07:30:00.000Z' }]);
+        expect(await tx.provisioners(p + '-org')).toEqual([
+          { ...live, lastSeenAt: '2026-11-09T07:30:00.000Z', previousValidUntil: null },
+        ]);
         expect((await tx.provisioners(p + '-elsewhere')).map(o => o.id)).toEqual([p + '-other']);
+      });
+    });
+    test('a provisioner is issued, found by its id, rotated with and without a grace period, revoked and issued again under its id (D107)', async () => {
+      const h = await make(),
+        p = h.prefix,
+        id = p + '-adm',
+        org = p + '-org',
+        digest = (n: number) => `digest:${p}:adm-${n}`,
+        until = '2026-11-10T06:00:00.000Z';
+      const issued = (label: string, n: number) => ({
+        id,
+        organisationId: org,
+        label,
+        tokenDigest: digest(n),
+        createdBy: 'person:test',
+        createdAt: T,
+      });
+      await h.store.transaction(async tx => {
+        expect(await tx.provisionerById(id)).toBeUndefined();
+        expect(await tx.issueProvisioner(issued('Issued', 1))).toBe(true);
+        // The id is held now: issued again it is refused, by its own organisation and by another, and nothing moves.
+        expect(await tx.issueProvisioner(issued('Twice', 9))).toBe(false);
+        expect(await tx.issueProvisioner({ ...issued('Elsewhere', 9), organisationId: p + '-elsewhere' })).toBe(false);
+        expect(await tx.provisioner(digest(9), T)).toBeUndefined();
+      });
+      await h.store.transaction(async tx => {
+        expect(await tx.provisionerById(id)).toEqual({
+          id,
+          organisationId: org,
+          label: 'Issued',
+          revoked: false,
+          previousValidUntil: null,
+        });
+        expect(await tx.provisioner(digest(1), T)).toEqual({
+          id,
+          organisationId: org,
+          label: 'Issued',
+          lastSeenAt: null,
+        });
+        expect(await tx.provisioners(org)).toEqual([
+          { id, organisationId: org, label: 'Issued', lastSeenAt: null, previousValidUntil: null },
+        ]);
+        // A new token, and the one it replaces answers until the instant given.
+        await tx.rotateProvisioner(id, digest(2), until);
+      });
+      await h.store.transaction(async tx => {
+        expect((await tx.provisioner(digest(2), T))?.id).toBe(id);
+        expect((await tx.provisioner(digest(1), T))?.id).toBe(id);
+        expect(await tx.provisioner(digest(1), until)).toBeUndefined();
+        expect((await tx.provisionerById(id))?.previousValidUntil).toBe(until);
+        expect((await tx.provisioners(org))[0]?.previousValidUntil).toBe(until);
+        // Again, with no grace: neither of the two before answers.
+        await tx.rotateProvisioner(id, digest(3), null);
+      });
+      await h.store.transaction(async tx => {
+        expect((await tx.provisioner(digest(3), T))?.id).toBe(id);
+        expect(await tx.provisioner(digest(2), T)).toBeUndefined();
+        expect(await tx.provisioner(digest(1), T)).toBeUndefined();
+        expect((await tx.provisionerById(id))?.previousValidUntil).toBeNull();
+        expect(await tx.touchProvisioner(id, '2026-11-09T07:00:00.000Z', null)).toBe(true);
+        await tx.revokeProvisioner(id, '2026-11-09T08:00:00.000Z');
+      });
+      await h.store.transaction(async tx => {
+        expect(await tx.provisioner(digest(3), T)).toBeUndefined();
+        expect(await tx.provisioners(org)).toEqual([]);
+        expect(await tx.provisionerById(id)).toMatchObject({ id, organisationId: org, revoked: true });
+        // Another organisation does not take a revoked id; the one that held it issues it again: active, never
+        // seen, and nothing from before answers.
+        expect(await tx.issueProvisioner({ ...issued('Elsewhere', 9), organisationId: p + '-elsewhere' })).toBe(false);
+        expect(await tx.provisionerById(id)).toMatchObject({ organisationId: org, revoked: true });
+        expect(await tx.issueProvisioner(issued('Again', 4))).toBe(true);
+      });
+      await h.store.transaction(async tx => {
+        expect(await tx.provisioner(digest(4), T)).toEqual({
+          id,
+          organisationId: org,
+          label: 'Again',
+          lastSeenAt: null,
+        });
+        expect(await tx.provisioner(digest(3), T)).toBeUndefined();
+        expect(await tx.provisionerById(id)).toMatchObject({ revoked: false, previousValidUntil: null });
       });
     });
     test('a rotated-out token answers until its grace period ends and not after, and never for a revoked provisioner', async () => {
