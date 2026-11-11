@@ -1457,7 +1457,7 @@ export const talkSource: EntitySource = {
   source: TALKS_SOURCE,
   title: 'Utvecklingssamtal',
   view: talkView,
-  page: { title: 'Öppna samtalet', href: '/staff?talk={id}' },
+  page: { title: 'Öppna samtalet', href: '?talk={id}' },
   // Clew's own domain (a core connector): its section and its lens are captioned "Clew".
   own: true,
 };

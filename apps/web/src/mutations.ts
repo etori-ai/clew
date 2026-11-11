@@ -169,8 +169,12 @@ export function useAdminAction({
 
 /** What a talk write changes and is waited for before `busy` lets go: the round, every list of action points, Personal. */
 const TALK_KEYS: readonly QueryKey[] = [keys.talks.all, keys.staff];
-/** What it changes beside them and is re-read without waiting (D96 item 5): the action point's card in the stream and the counts and figure beside it. */
-const TALK_SIDE_KEYS: readonly QueryKey[] = [keys.threads, keys.attention, keys.areas];
+/**
+ * What it changes beside them and is re-read without waiting (D96 item 5): the action point's card in the stream and the
+ * counts and figure beside it, and what Clew's talks say about people and units (D97) on whichever page the talk lay
+ * over (D107 rule 5): Personal's lens, column and "Just nu", the talks section on a person's page, a unit's section.
+ */
+const TALK_SIDE_KEYS: readonly QueryKey[] = [keys.threads, keys.attention, keys.areas, keys.entities.all];
 /** What a caller may add to a talk write's completion toast. */
 export type TalkToast = {
   /** An action at the toast's end, such as Ångra. The toast then stays until it is used or closed (2.2.1). */

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { Thread, ThreadAction, ReviewEvidence, Receipt } from '@clew/contracts';
 import {
@@ -34,11 +34,18 @@ import {
 } from '@clew/ui';
 import { previewQuery, threadsQuery } from '../queries';
 import { errorMessage } from '../query-policy';
-import { usePageTitle } from '../page-title';
+import { useOverlayTitle } from '../page-title';
 import { useMarks } from '../marks';
 import { expectReceipt } from '../linger';
-import { withCard } from '../panel-address';
-import { reviewHref, reviewReturn, stepOf, type ReviewReturn } from '../review-address';
+import {
+  reviewOf,
+  reviewReturn,
+  stepOf,
+  withRetriedReview,
+  withReview,
+  withoutReview,
+  type ReviewReturn,
+} from '../review-address';
 import { mobileQuery, shortQuery } from './shell';
 import { reviewedAction, useCardAction } from './card';
 import { receiptComplete } from '../receipt-state';
@@ -50,8 +57,6 @@ type Decision = 'approve' | 'leave';
 const decisionWord: Record<Decision, string> = { approve: 'Vald för godkännande', leave: 'Lämnas kvar' };
 /** The verb of the action, for its buttons: "Attestera valda" is "Attestera" on one row. */
 const verbOf = (action: ThreadAction) => action.label.replace(/\s+valda$/i, '');
-/** The card beside Hem, where the review leads back to (D73). */
-const cardAddress = (threadId: string) => withCard('/', '', threadId);
 /** A card that is reviewed: open, not yet decided, with an execute that asks for a review one row at a time (D70). */
 const reviewable = (thread: Thread | undefined) => (thread ? reviewedAction(thread) : undefined);
 const submitted = (thread: Thread) =>
@@ -66,21 +71,26 @@ const submitted = (thread: Thread) =>
 const REVIEW_WIDTH = 1040;
 
 /**
- * The review one row at a time (D70 item 2) as an overlay over Hem (D73, amended 2026-11-07: an overlay, not a page of
- * its own): an Astryx `Drawer` from the end edge, and on a phone, where the card is itself a `BottomSheet`, a tall
- * `BottomSheet` stacked over the card's sheet, Astryx's drill-in (D73, second amendment). The route
- * `/cards/:threadId/review` draws Hem with the card beside the column (or in its sheet), as `/?card=` does, and this
- * overlay over it; `threadId` is the card the route names, null on every other start route. The step is the address's
- * `step`, rewritten in place. Closing (✕, Esc, the scrim, a swipe on the sheet) keeps the decisions: the overlay slides
- * away first and then leads to `/?card=<threadId>` with them laid over the card's selection, so the page (or the card's sheet)
- * is no longer inert when the card puts the focus back on its "Granska N". The decisions live here, above the surface,
- * so a resize across the phone's width swaps the drawer for the sheet without losing them. The card comes from the
- * threads list, the cache Hem's cards are drawn from (D33). A card that is not reviewed, or a step it does not have,
+ * The review one row at a time (D70 item 2) as an overlay over the page it was opened on (D73, amended 2026-11-07 and
+ * 2026-11-11 under D107 rule 5): an Astryx `Drawer` from the end edge, and on a phone a tall `BottomSheet`, stacked over
+ * the card's sheet where the card is one, Astryx's drill-in (D73, second amendment). Mounted once for every page of the
+ * session, after the page in the tree (`main.tsx`), so a cold open stacks it over the card the same update opens: the
+ * page's own drawer, Hem's sheet or the shell's drawer over Kalender (Astryx: sibling overlays opened together stack in
+ * tree order, last-opened on top, and Esc closes the top one only). The address names it (`?review=<threadId>`, with
+ * `step` rewritten in place) on whichever page it lies over; on every other address it draws nothing. Closing (✕, Esc,
+ * the scrim, a swipe on the sheet, "Tillbaka till kortet", Skicka's answer) keeps the decisions: the overlay slides
+ * away first and then replaces the address with the same one without `review` and `step`, the decisions as the entry's
+ * state laid over the card's selection, so the page (or the card's sheet or drawer) is no longer inert when the card
+ * puts the focus back on its "Granska N", wherever the card is drawn. The decisions live here, above the surface, so a
+ * resize across the phone's width swaps the drawer for the sheet without losing them. The card comes from the threads
+ * list, the cache every page's cards are drawn from (D33). A card that is not reviewed, or a step it does not have,
  * says so inside the overlay, where the ✕ is the way out.
  */
-export function ReviewOverlay({ threadId }: { threadId: string | null }) {
+export function ReviewOverlay() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [search] = useSearchParams();
+  const threadId = reviewOf(search);
   const mobile = useMediaQuery(mobileQuery);
   // 1.4.10: with 480 px or less in height nothing in the overlay is pinned; it scrolls as one.
   const short = useMediaQuery(shortQuery);
@@ -93,7 +103,7 @@ export function ReviewOverlay({ threadId }: { threadId: string | null }) {
   // Where the overlay leads once it has slid away, set by a close or by Skicka; null while it stays.
   const [leaving, setLeaving] = useState<{ to: string; state?: ReviewReturn } | null>(null);
   // While the decision is on its way the card turns handled under the overlay: the review keeps the card it was sending
-  // from until it has led back to Hem.
+  // from until it has led back to the page under it.
   const [sending, setSending] = useState(false);
   if (threadId && !leaving && (!held || !held.open || held.threadId !== threadId)) {
     setHeld({ threadId, open: true });
@@ -123,8 +133,8 @@ export function ReviewOverlay({ threadId }: { threadId: string | null }) {
   const failed = threadsQ.isError && threadsQ.data === undefined;
   // The overlay opens once the threads are read, in the same commit as the card under it: where the card is itself a
   // drawer, the one shown last stacks on top, and on a phone two sheets opened in one update stack in tree order, so the
-  // review, written after the card's sheet in `StartPage`, is the top one. Until then Hem draws its own loading state
-  // under the address.
+  // review, written after the page and everything it draws, is the top one. Until then the page draws its own loading
+  // state under the address.
   // A resize across the phone's width swaps the drawer for the sheet (or back) while the card under it swaps too. Opened
   // in that same commit, or one commit later, the new surface came out beneath the card's (measured in both directions:
   // the card's sheet or drawer on top), so it opens a frame later, over the card already presented. A cold open is not
@@ -143,15 +153,21 @@ export function ReviewOverlay({ threadId }: { threadId: string | null }) {
     : missing
       ? 'Kortet finns inte'
       : 'Granskning';
-  // The document title names the review while it is open; Hem's own title comes back with Hem's address. The overlay
+  // The document title names the review while it is open, and the page's own comes back when it closes. The overlay
   // says its name itself when the focus enters it, so the title is not spoken.
-  usePageTitle(isOpen && (shown || missing) ? title : null, false);
+  useOverlayTitle(isOpen && (shown || missing) ? title : null);
 
   const approved = items.filter(i => decisions[i.ref] === 'approve').map(i => i.ref);
   const left = items.filter(i => decisions[i.ref] === 'leave').map(i => i.ref);
-  /** Back to the card beside Hem, or to Hem when the card is not there; with the decisions when there was a step to take them on. */
+  /**
+   * Back to the page under the review as it was, with the card open where it was; when the card is not there, the page
+   * without it. With the decisions when there was a step to take them on.
+   */
   const leave = (state?: ReviewReturn) =>
-    setLeaving({ to: live ? cardAddress(live.id) : '/', ...(state ? { state } : {}) });
+    setLeaving({
+      to: withoutReview(location.pathname, location.search, live ? undefined : (shownId ?? undefined)),
+      ...(state ? { state } : {}),
+    });
   // ✕, Esc and the scrim save and close, as "Spara och stäng" did (D73 item 3); nothing closes while Skicka waits on the source.
   const onOpenChange = (open: boolean) => {
     if (open || sending || leaving) return;
@@ -264,7 +280,7 @@ export function ReviewOverlay({ threadId }: { threadId: string | null }) {
       <VStack gap={3}>
         <Text as="p">Granskningen har {items.length + 1} steg: en rad i taget och sist Skicka.</Text>
         <HStack>
-          <Button label="Till första steget" href={reviewHref(shown.thread.id)} />
+          <Button label="Till första steget" href={withReview(location.pathname, location.search, shown.thread.id)} />
         </HStack>
       </VStack>,
     )
@@ -350,6 +366,7 @@ function Review({
   phone: boolean;
 }) {
   const navigate = useNavigate();
+  const { pathname, search } = useLocation();
   const short = useMediaQuery(shortQuery);
   const items = thread.items.filter(i => i.selectable);
   const [zoom, setZoom] = useState(false);
@@ -362,7 +379,7 @@ function Review({
   const mark = useMarks().ofThread(thread);
   const source = thread.trigger.source;
   // A step is a place in the address, rewritten in place, so the browser's Back leaves the review (D73 item 1).
-  const goTo = (n: number) => navigate(reviewHref(thread.id, n), { replace: true });
+  const goTo = (n: number) => navigate(withReview(pathname, search, thread.id, n), { replace: true });
   const decide = (d: Decision) => {
     if (!item || readOnly) return;
     onDecide(item.ref, d, documents?.evidence);
@@ -829,7 +846,8 @@ function Review({
                       clickAction={() =>
                         run(async () => {
                           const next = await api.retryRejected(thread.id);
-                          navigate(reviewHref(next.id));
+                          // The new card's review in this one's place, over the same page (D80, D107 rule 5).
+                          navigate(withRetriedReview(pathname, search, thread.id, next.id));
                           return next;
                         })
                       }

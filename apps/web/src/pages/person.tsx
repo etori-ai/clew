@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, type ReactNode } from 'react';
-import { useParams, useSearchParams } from 'react-router';
+import { useLocation, useParams, useSearchParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { EntityDetail, SessionUser } from '@clew/contracts';
 import {
@@ -30,12 +30,14 @@ import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { keepingPanel } from '../panel-address';
 import { insideClew, originOf, personPageHref, toolOf } from '../person-address';
+import { sourcePageHref } from '../talk-address';
 import { useRail, type RailCurrent } from '../components/nav';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { PageHeader } from '../components/page-header';
 import { ContentSkeleton } from '../components/loading';
 import { RAIL, panelBesideQuery } from '../components/panel';
 import { usePagePanel } from '../components/page-panel';
+import { TalkOverlay } from '../components/talk-overlay';
 import {
   CardList,
   EntityActions,
@@ -47,7 +49,6 @@ import {
   Unanswered,
   drawnSections,
   openOf,
-  pageHref,
   rowOf,
   sectionNavRows,
   sourceCaption,
@@ -87,7 +88,9 @@ function ChosenSection({
 }) {
   const { key, id } = detail.entity;
   const row = rowOf(answer);
-  const page = pageHref(answer.source, key, id);
+  // The source's own page in Clew: the person's talk lies over this page, with the section and the way back kept.
+  const { pathname, search } = useLocation();
+  const page = answer.source.page ? sourcePageHref(answer.source.page, { key, id }, { pathname, search }) : null;
   const read = answer.query.dataUpdatedAt;
   return (
     <VStack gap={5}>
@@ -348,6 +351,8 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
         }
       />
       {panel.overlay}
+      {/* The talk from the talks section's "Öppna samtalet" lies over the page and its panel (D107 rule 5). */}
+      {user.role === 'manager' && <TalkOverlay back={detail ? `Tillbaka till ${detail.entity.name}` : 'Tillbaka'} />}
     </Shell>
   );
 }

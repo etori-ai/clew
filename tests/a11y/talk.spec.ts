@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { TALKS_FAIL_ERROR, TALK_LENS } from './data';
+import { People } from './person-data';
 import {
   desktop,
   expect,
@@ -13,9 +14,11 @@ import {
 } from './support';
 
 /**
- * One person's utvecklingssamtal (D96 item 7) as a focused overlay over Personal (D83): an end Drawer on a desktop, a
- * tall sheet on a phone, at `/staff?talk=<personId>`. Both surfaces are a modal dialog named "Samtal med <name>". Since
- * D97 Personal knows no talk: the way in from the list is the source's page, "Öppna samtalet" in the person's menu. The
+ * One person's utvecklingssamtal (D96 item 7) as a focused overlay over the page it was opened on (D83, D107 rule 5): an
+ * end Drawer on a desktop, a tall sheet on a phone, at the page's own address with `talk=<personId>` (`/staff?talk=` is
+ * Personal with the talk over it). Both surfaces are a modal dialog named "Samtal med <name>". Since D97 Personal knows
+ * no talk: the way in is the source's page, "Öppna samtalet" in the person's menu and in the talks section of the
+ * person's own page. The
  * mock's round (`data.ts`): Anna's talk is held with one action point carried over, two of this round's and one done;
  * Erik's is booked with one carried over; Karin's is missing with none; Lena's is booked with none.
  */
@@ -243,6 +246,33 @@ for (const [layout, viewport] of [
       await page.goForward();
       await expect(page).toHaveURL(`/staff?show=${TALK_LENS}&talk=anna`);
       await expect(dialog).toBeVisible();
+    });
+
+    test("Öppna samtalet on a person's page lies over that page and closes to it with its section and way back", async ({
+      page,
+      api,
+    }) => {
+      expect(api.talksWritable).toBe(true);
+      await new People().route(page);
+      const here = `/people/karin?section=${TALK_LENS}&from=%2Fstaff`;
+      await open(page, here);
+      const way = page.getByRole('main').getByRole('link', { name: 'Öppna samtalet' });
+      await expect(way).toHaveAttribute('href', `${here}&talk=karin`);
+      await way.click();
+      await expect(page).toHaveURL(`${here}&talk=karin`);
+      const dialog = talk(page, 'Karin Lindqvist');
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByText('Saknas', { exact: true })).toBeVisible();
+      await expect(page).toHaveTitle('Samtal med Karin Lindqvist · Startsidan');
+      // The person's page stays under it, never Personal.
+      await expect(page.getByRole('heading', { level: 1, name: 'Karin Lindqvist' })).toBeAttached();
+      await expect(page.getByRole('heading', { level: 1, name: 'Personal' })).toHaveCount(0);
+      await expectNoAxeViolations(page);
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+      await expect(page).toHaveURL(here);
+      await expect(page).toHaveTitle('Karin Lindqvist · Startsidan');
+      await expect(way).toBeFocused();
     });
 
     test('an id that is not on the reader’s units shows an empty state with the way back', async ({ page, api }) => {

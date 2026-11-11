@@ -1,6 +1,6 @@
 import { StrictMode, Suspense, forwardRef, lazy, useEffect, useRef, useState, type AnchorHTMLAttributes } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Link, Routes, Route, useLocation } from 'react-router';
+import { BrowserRouter, Link, Navigate, Routes, Route, useLocation, useParams, useSearchParams } from 'react-router';
 import { QueryClientProvider } from '@tanstack/react-query';
 import '@clew/ui/styles.css';
 import { createQueryClient } from './query-client';
@@ -10,6 +10,8 @@ import type { SessionUser } from '@clew/contracts';
 import { StartPage } from './pages/start';
 import { ConversationProvider } from './components/conversation-context';
 import { PanelClaims } from './components/page-panel';
+import { ReviewOverlay } from './components/review-overlay';
+import { legacyReview } from './review-address';
 import { CalendarPage } from './pages/calendar';
 import { ToolPage } from './pages/tool';
 import { LoginPage } from './pages/login';
@@ -137,9 +139,12 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
   return (
     <SessionBoundary session={shell.session} onEnded={() => client.clear()}>
       <QueryClientProvider client={client}>
-        {/* One conversation for the whole session's pages (D50): asked on a tool's page, it is still there when the transcript takes the column. Every page has the panel: the pages that draw it beside their column claim it, and the shell draws it over the others. */}
+        {/* One conversation for the whole session's pages (D50): asked on a tool's page, it is still there when the transcript takes the column. Every page has the panel: the pages that draw it beside their column claim it, and the shell draws it over the others. A card's review lies over whichever page it was opened on (D107 rule 5): one overlay for every page, after the page in the tree, so it stacks over the card the same update opens. */}
         <ConversationProvider>
-          <PanelClaims>{children(shell)}</PanelClaims>
+          <PanelClaims>
+            {children(shell)}
+            <ReviewOverlay />
+          </PanelClaims>
         </ConversationProvider>
         {Devtools && (
           <Suspense fallback={null}>
@@ -164,10 +169,11 @@ const RouterLink = forwardRef<
  * Routes (D34, D50, D53): `/` is Hem, the box with everything the assistant has pushed, a card's state as `tab` and
  * the areas as `area`; `/conversations/:id` a conversation in the same column (`/conversations/new` while a question
  * asked on another page is being answered). What the panel holds is in the query of whichever page it is beside
- * (`panel-address.ts`). `/calendar` and `/tools/:capability` are the tools, each a page of its own in the same shell (D42).
- * `/cards/:threadId/review` is a card's review one row at a time: Hem with the card beside the column and the review as a
- * drawer over it, its step in `step` (D73, amended 2026-11-07). It is a start route, so opening and closing the review
- * never remounts Hem or the card under it.
+ * (`panel-address.ts`), and so is a card's review one row at a time, which lies over the page it was opened on
+ * (`?review=<threadId>&step=n`, `review-address.ts`; D73 amended under D107 rule 5). `/calendar` and
+ * `/tools/:capability` are the tools, each a page of its own in the same shell (D42). `/cards/:threadId/review`, the
+ * review's address before that, is a cold link only: it leads to Hem with the card beside the column and the review over
+ * both, at the step it named.
  */
 function App() {
   // One element for every start route: a route change between Hem and a conversation re-renders the page
@@ -263,13 +269,20 @@ function App() {
       />
       <Route path="/" element={start} />
       <Route path="/conversations/:conversationId" element={start} />
-      <Route path="/cards/:threadId/review" element={start} />
+      {/* Signed in first, so a link followed before signing in still lands in the review afterwards. */}
+      <Route path="/cards/:threadId/review" element={<Protected>{() => <LegacyReview />}</Protected>} />
       <Route path="*" element={start} />
     </Routes>
   );
 }
 function StartRoute({ user, admin }: { user: SessionUser; admin: boolean }) {
   return <StartPage user={user} admin={admin} />;
+}
+/** `/cards/:threadId/review?step=n` from before the review lay over its page: the same review over Hem's card, in its place. */
+function LegacyReview() {
+  const { threadId = '' } = useParams<{ threadId: string }>();
+  const [search] = useSearchParams();
+  return <Navigate to={legacyReview(threadId, search)} replace />;
 }
 /** The installation's theme (D98) around everything: a save on Utseende redraws the whole app without a reload. */
 function Root() {

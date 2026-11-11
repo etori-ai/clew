@@ -94,6 +94,8 @@ test.describe('the shared document and semantic catalogue', () => {
       };
       await open(page, '/?tab=done');
       await page.getByRole('link', { name: card.title, exact: false }).click();
+      // The row opens its card beside Klart and the review over both, in Klart's own address (D107 rule 5).
+      await expect(page).toHaveURL('/?tab=done&card=fakturor&review=fakturor');
       const review = page.getByRole('dialog', { name: 'Visa 3 rader' });
       await expect(review.getByRole('status', { name: 'Sida 1 av 2' })).toBeVisible();
       await expect(review.getByRole('button', { name: /^Attestera|^Lämna kvar|^Spara rättelse/ })).toHaveCount(0);
@@ -102,6 +104,8 @@ test.describe('the shared document and semantic catalogue', () => {
       expect(await reflowProblems(page, review)).toEqual([]);
       await expectNoAxeViolations(page);
       await review.getByRole('button', { name: 'Tillbaka till kortet' }).click();
+      // Closing leaves Klart as it was, with the card beside it: the tab is kept.
+      await expect(page).toHaveURL('/?tab=done&card=fakturor');
       await expect(page.getByRole('link', { name: 'Visa granskning', exact: true })).toBeFocused();
     });
   for (const viewport of [desktop, narrow])
@@ -190,7 +194,7 @@ test.describe('the shared document and semantic catalogue', () => {
     });
   test('named steps distinguish repeated suppliers and preserve decisions made out of order', async ({ page, api }) => {
     await originals(page, api);
-    await open(page, '/cards/fakturor/review');
+    await open(page, '/?card=fakturor&review=fakturor');
     const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
     const steps = review.getByRole('list', { name: 'Rader', exact: true });
     const firstInvoice = steps.getByRole('button', { name: /Skolgrossisten · 11 200 kr/ });
@@ -198,16 +202,16 @@ test.describe('the shared document and semantic catalogue', () => {
     await expect(firstInvoice).toBeVisible();
     await expect(secondInvoice).toBeVisible();
     await secondInvoice.click();
-    await expect(page).toHaveURL('/cards/fakturor/review?step=2');
+    await expect(page).toHaveURL('/?card=fakturor&review=fakturor&step=2');
     await expect(review).toContainText('0 av 3 bedömda');
     await expect(steps.getByRole('img', { name: 'Vald för godkännande' })).toHaveCount(0);
     await review.getByRole('button', { name: 'Attestera', exact: true }).click();
-    await expect(page).toHaveURL('/cards/fakturor/review?step=3');
+    await expect(page).toHaveURL('/?card=fakturor&review=fakturor&step=3');
     await expect(review.getByRole('heading', { name: /Underlag från/ })).toBeFocused();
     await firstInvoice.focus();
     await expect(firstInvoice).toBeFocused();
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL('/cards/fakturor/review');
+    await expect(page).toHaveURL('/?card=fakturor&review=fakturor');
     await expect(review).toContainText('1 av 3 bedömda');
     await review.getByRole('button', { name: 'Lämna kvar', exact: true }).click();
     await steps.getByRole('button', { name: /Skicka/ }).click();
@@ -234,7 +238,7 @@ test.describe('the shared document and semantic catalogue', () => {
       window.EventSource = Changes as unknown as typeof EventSource;
     });
     const fixture = await originals(page, api);
-    await open(page, '/cards/fakturor/review');
+    await open(page, '/?card=fakturor&review=fakturor');
     const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
     const approve = review.getByRole('button', { name: 'Attestera', exact: true });
     await expect(approve).toBeEnabled();
@@ -348,7 +352,7 @@ test.describe('the shared document and semantic catalogue', () => {
   }) => {
     const fixture = await originals(page, api);
     fixture.outage(true);
-    await open(page, '/cards/fakturor/review');
+    await open(page, '/?card=fakturor&review=fakturor');
     const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
     await expect(review.getByText('Underlaget kan inte längre läsas.')).toBeVisible();
     await expect(review.getByRole('button', { name: 'Attestera', exact: true })).toBeDisabled();

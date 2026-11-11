@@ -190,3 +190,11 @@ person, and that leave open whether a person is shown beside a list at all.
 **Amended 2026-11-11: actions are drawn once, beside the name.** Actions about a person or a unit are drawn once,
 beside the name, whichever section is open, and are no longer repeated in the opened section, which shows only what its
 source read (the product owner saw "Registrera frånvaro" twice on a person's page).
+
+**Amended 2026-11-11 (D107 rule 5): a card's review and a person's talk lie over the page they were opened on.** The
+sentences above that keep the review of a card's rows over Hem until D107's rule 5 is built no longer hold: "Granska N"
+on a card beside Personal, a person's or a unit's page opens the review over that page, and closing it leaves the page
+with the card beside it ([D73](D73-the-review-is-a-page-in-the-shell-with-an-address.md), amended the same day). A
+source's `about.page` may be a query alone, which lies over the page its way in is drawn on: the talks section's
+"Öppna samtalet" is `?talk={id}`, so the talk opens over the person's page as well as over Personal
+([D96](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md), amended the same day).

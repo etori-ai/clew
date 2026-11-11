@@ -5,7 +5,6 @@ import {
   type EntityCard,
   type EntityColumn,
   type EntityList,
-  type EntityPage,
   type EntityRef,
   type EntityRows,
   type EntitySource,
@@ -244,28 +243,6 @@ export function cardsListed(
     heading: countText(kind, shown.length),
     empty: kind === 'act' ? 'Inget att agera på' : 'Inga förslag',
   };
-}
-
-/**
- * A source's page way in for one entity (D97, D95): `{key}` and `{id}` filled in. On the page the person is on, the
- * page's own address (its lens, what its panel holds) is kept under the way in's own parameters, as every overlay address
- * keeps the page's (D83). Null when the page needs Clew's id and the entity has none.
- */
-export function pageHref(
-  page: EntityPage,
-  entity: EntityRef,
-  here: { pathname: string; search: string },
-): string | null {
-  if (page.href.includes('{id}') && !entity.id) return null;
-  const filled = page.href
-    .replaceAll('{key}', encodeURIComponent(entity.key))
-    .replaceAll('{id}', encodeURIComponent(entity.id ?? ''));
-  const target = new URL(filled, 'http://clew.invalid');
-  if (target.pathname !== here.pathname) return filled;
-  const query = new URLSearchParams(here.search);
-  target.searchParams.forEach((value, name) => query.set(name, value));
-  const q = query.toString();
-  return target.pathname + (q ? `?${q}` : '') + target.hash;
 }
 
 /** The count line under the title: "5 medarbetare på Bergsåkers skola", or the number of units when there are several. */

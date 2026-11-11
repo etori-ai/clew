@@ -62,7 +62,8 @@ import { useConversation } from './conversation-context';
 import { executionStatus } from '../execution-status';
 import { useMarks, type Mark, type Marks } from '../marks';
 import { AddToConversation } from './add-to-conversation';
-import { returnedReview, reviewHref, selectionAfterReview } from '../review-address';
+import { returnedReview, selectionAfterReview, withReview } from '../review-address';
+import { reviewOverCard } from '../panel-address';
 import { canUndoReceipt, receiptComplete } from '../receipt-state';
 import { entityHref } from '../person-address';
 
@@ -417,7 +418,7 @@ type ActionProps = {
   onOpenCardView: (threadId: string, actionId: string) => void;
 };
 /**
- * Running one of a card's actions, shared by the card, the row and the review's drawer (D73), so a decision sent from the
+ * Running one of a card's actions, shared by the card, the row and the review (D73), so a decision sent from the
  * review goes through the same confirm, the same decision endpoint (D45/D47), the same wait for the source and the same
  * error as from the card. Busy never disables the buttons: a disabled button drops the focus it holds (2.4.3).
  * Action-buttons wait on their own promise. The thread an action returns goes into the cache for every screen (D33);
@@ -507,7 +508,7 @@ export function useCardAction({
   };
   return { run, apply, busy, settling, pressed, error, selectable, perform, confirmation };
 }
-/** The execute a card reviews one row at a time before it sends (D70): its next step is then "Granska N", which leads to the review's address (D73). */
+/** The execute a card reviews one row at a time before it sends (D70): its next step is then "Granska N", which opens the review over the page (D73, D107 rule 5). */
 export const reviewedAction = (thread: Thread) =>
   thread.actions.find(a => a.role === 'primary' && a.kind === 'execute' && a.review === 'each');
 
@@ -536,13 +537,13 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
     lastStatus.current = status;
     announce(status ?? thread.receipt?.headline ?? 'Åtgärden är kontrollerad.');
   }, [status, settling, announce, thread.receipt?.headline]);
-  // The card starts from the rows the connector marked. Back from the review's drawer with ✕, Esc or the scrim (D73),
-  // the review's decisions are laid over the selection: a row chosen for approval is ticked, a row left behind is not,
-  // and a row the review never judged keeps the tick it had, so a review opened and closed again changes nothing (it
-  // used to hand back the approved rows as the whole selection, which cleared the connector's marks; the product owner,
-  // 2026-11-11). A change to the thread starts it over from the connector's marks. The card usually stood under the
-  // drawer all along (D73 amended), so the decisions are taken for each entry that hands them back, not only when the
-  // card is drawn.
+  // The card starts from the rows the connector marked. Back from the review with ✕, Esc or the scrim (D73), the
+  // review's decisions are laid over the selection: a row chosen for approval is ticked, a row left behind is not, and a
+  // row the review never judged keeps the tick it had, so a review opened and closed again changes nothing (it used to
+  // hand back the approved rows as the whole selection, which cleared the connector's marks; the product owner,
+  // 2026-11-11). A change to the thread starts it over from the connector's marks. The card stood under the review all
+  // along, wherever it is drawn (D107 rule 5), so the decisions are taken for each entry that hands them back, not only
+  // when the card is drawn.
   const { state, key } = useLocation();
   const returned = returnedReview(state, thread.id);
   const returnedAt = returned ? key : null;
@@ -572,7 +573,7 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
     if (action.confirm) return;
     return ran;
   };
-  // A card whose next step is a review (D70): "Granska N" leads to the review's drawer, which sends once with the approved refs (D73).
+  // A card whose next step is a review (D70): "Granska N" opens the review over the page, which sends once with the approved refs (D73).
   const reviewed = reviewedAction(thread);
   // The card leaves at once (D64); the toast with Ångra confirms when the server has it.
   const dismiss = () =>
@@ -679,10 +680,10 @@ function ActionRow({
   const size = quiet ? 'md' : 'lg';
   // A row's step fills the phone's line, and the sheet's steps stand full width (artboards 11 and 12).
   const width = phone || stacked ? '100%' : undefined;
-  // Back from the review's drawer with ✕, Esc or the scrim (D73), the focus is on "Granska N" again. On the card, not the
-  // row: the card is what the address opens beside Hem or in the sheet. The drawer leads back only once it has slid
-  // away, so the page is no longer inert; the panel puts the focus on its heading when it opens with Hem (usePanel's
-  // effect runs after the card's), so this waits a frame.
+  // Back from the review with ✕, Esc or the scrim (D73), the focus is on "Granska N" again. On the card, not the row:
+  // the card is what the address opens beside the page, over it or in the sheet, or the card in a conversation's answer.
+  // The review leads back only once it has slid away, so the page is no longer inert; the panel puts the focus on its
+  // heading when it opens with the page (usePanel's effect runs after the card's), so this waits a frame.
   const review = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!returned || quiet) return;
@@ -690,7 +691,10 @@ function ActionRow({
     return () => cancelAnimationFrame(frame);
   }, [returned]);
   // The one next step: the execute itself, or "Granska N" when the rows are reviewed one at a time first (D70), a link
-  // to the review's address, which opens it as a drawer over Hem (D73 amended).
+  // that lays the review over the page it is on (D107 rule 5). A card leaves the panel as it is; a row opens its card in
+  // the panel under the review, as its title would, since the review hands its decisions back to the card.
+  const { pathname, search } = useLocation();
+  const reviewLink = quiet ? reviewOverCard(pathname, search, thread.id) : withReview(pathname, search, thread.id);
   const primaryButton = primary ? (
     reviewed ? (
       <Button
@@ -699,7 +703,7 @@ function ActionRow({
         variant={due ? 'primary' : 'secondary'}
         label={`Granska ${thread.items.filter(i => i.selectable).length}`}
         width={width}
-        href={reviewHref(thread.id)}
+        href={reviewLink}
       />
     ) : (
       <Button
@@ -762,7 +766,7 @@ function ActionRow({
   const pending = executionStatus(thread.execution);
   const viewReview =
     reviewed && (receipt || pending || !open) && !quiet ? (
-      <Button ref={review} size={size} variant="secondary" label="Visa granskning" href={reviewHref(thread.id)} />
+      <Button ref={review} size={size} variant="secondary" label="Visa granskning" href={reviewLink} />
     ) : null;
   // A decision the source has not confirmed is said so, unless it is the person's own and still on its way (D64).
   if (pending && (!settling || pressed === null))

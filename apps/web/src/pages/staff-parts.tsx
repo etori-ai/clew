@@ -38,6 +38,7 @@ import type { PanelFrame } from '../components/panel';
 import type { EntityActionStart } from '../entity-actions';
 import { cardsOf, pageOnly, withCard, withCards, withoutPanel } from '../panel-address';
 import { personPageFrom } from '../person-address';
+import { sourcePageHref } from '../talk-address';
 import { groupFields, present, rowGroups, type FieldGroup } from '../view-fields';
 import {
   byNeed,
@@ -46,7 +47,6 @@ import {
   columnValue,
   lensNeed,
   marksFor,
-  pageHref,
   rowOf,
   silentText,
   viewFields,
@@ -151,7 +151,7 @@ export function RowMenu({ entity, ctx, lens }: { entity: EntityRef; ctx: Context
       onClick: () => start(a, { key: entity.key, name: entity.name }),
     });
   for (const s of list.lenses) {
-    const href = s.page ? pageHref(s.page, entity, here) : null;
+    const href = s.page ? sourcePageHref(s.page, entity, here) : null;
     if (s.page && href) add(s.source, { id: `page:${s.capability}`, label: s.page.title, href });
   }
   const items: MenuItems = [...sections]

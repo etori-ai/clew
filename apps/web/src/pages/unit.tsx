@@ -28,6 +28,7 @@ import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { PageHeader } from '../components/page-header';
 import { ContentSkeleton } from '../components/loading';
 import { usePagePanel } from '../components/page-panel';
+import { TalkOverlay } from '../components/talk-overlay';
 import {
   EntityActions,
   NeedsYouSection,
@@ -232,6 +233,8 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
         }
       />
       {panel.overlay}
+      {/* A source's way in that is a talk lies over the page and its panel, as on a person's page (D107 rule 5). */}
+      {user.role === 'manager' && <TalkOverlay back={detail ? `Tillbaka till ${detail.entity.name}` : 'Tillbaka'} />}
     </Shell>
   );
 }

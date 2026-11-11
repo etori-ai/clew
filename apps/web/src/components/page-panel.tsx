@@ -115,8 +115,6 @@ export interface PagePanelOptions {
   cardSheet?: boolean;
   /** An entry in a day view (D32) was chosen: the page opens its dialog over the panel. */
   onOpenItem?: (item: AgendaItem, dayItems: AgendaItem[]) => void;
-  /** The address the page reads as its own when it is not the browser's (Hem under a card's review, D73). */
-  at?: { pathname: string; search: URLSearchParams };
 }
 export interface PagePanelSlot {
   /** The panel beside the page, for the page's `Layout end`; undefined where it is drawn over the page. */
@@ -161,16 +159,14 @@ function usePanelOnPage({
   cardElsewhere = false,
   cardSheet,
   onOpenItem,
-  at,
 }: PagePanelOptions): PagePanelSlot {
-  const [params] = useSearchParams();
+  const [search] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
   const client = useQueryClient();
   const mobile = useMediaQuery(mobileQuery);
-  const pathname = at?.pathname ?? location.pathname;
-  const search = at?.search ?? params;
-  const address = at ? pathname + (at.search.toString() ? `?${at.search.toString()}` : '') : pathname + location.search;
+  const { pathname } = location;
+  const address = pathname + location.search;
   const ref = panelOf(search);
   const viewRef = ref?.kind === 'view' ? ref : null;
   const actionRef = ref?.kind === 'action' ? ref : null;

@@ -47,7 +47,6 @@ import { keys } from '../query-keys';
 import { groupThreads } from '../stream';
 import { useReceiptArrivals } from '../linger';
 import { withAction, withCard, withView, withoutPanel } from '../panel-address';
-import { reviewOf } from '../review-address';
 import { Composer, Suggestions } from '../components/composer';
 import { PageHeader } from '../components/page-header';
 import { titled, useConversation, type ConversationState } from '../components/conversation-context';
@@ -66,7 +65,6 @@ function Entering({ children }: { children: (entry: EntryStyle) => ReactNode }) 
 import { useRail, type RailCurrent } from '../components/nav';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { ThreadRow } from '../components/card';
-import { ReviewOverlay } from '../components/review-overlay';
 import { ReceiptNotice } from '../components/receipt-notice';
 import { BriefSkeleton } from '../components/brief';
 import { ERRANDS_AREA, MyErrands } from '../components/my-errands';
@@ -173,17 +171,11 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const talk = useConversation();
   const navigate = useNavigate();
   const location = useLocation();
-  const params = useParams<{ conversationId?: string; threadId?: string }>();
-  const [addressed] = useSearchParams();
-  // A card's review (D73, amended 2026-11-07) is Hem with the card beside the column, as `/?card=` draws it, and the
-  // review's drawer over it: the page reads its address as that one, so the row says "öppet bredvid" under the scrim and
-  // every link drawn under the drawer leads to Hem. The step is the drawer's own.
-  const reviewing = reviewOf(params);
-  const search = useMemo(
-    () => (reviewing ? new URLSearchParams({ card: reviewing }) : addressed),
-    [reviewing, addressed],
-  );
-  const here = reviewing ? '/' : location.pathname;
+  const params = useParams<{ conversationId?: string }>();
+  // A card's review lies over the page in its own part of the address (`?review=`, D107 rule 5), which Hem reads past:
+  // under it Hem is what the rest of its address draws, the card beside the column (or in its sheet) when `card` names it.
+  const [search] = useSearchParams();
+  const here = location.pathname;
   const conversationId = params.conversationId && params.conversationId !== 'new' ? params.conversationId : null;
   const tab = tabOf(search.get('tab'));
   const area = search.get('area');
@@ -373,8 +365,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     cardElsewhere: cardsInSheet,
     cardSheet: false,
     onOpenItem: (item, dayItems) => setOpenItem({ item, dayItems }),
-    // Under a card's review the page reads its address as Hem's with the card beside the column.
-    ...(reviewing ? { at: { pathname: here, search } } : {}),
   });
   // The page's one alert: a read that failed before it had anything to show. A failed refetch keeps the old data and says nothing; the day and the model's status are extras.
   const failed = [threadsQ, areasQ].find(q => q.isError && q.data === undefined);
@@ -383,8 +373,8 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const besideOpen = !!slot.ref && slot.inline;
   const railCurrent: RailCurrent = { surface: 'start', conversationId };
   const pageTitle = slot.view ? slot.view.title : conversationId ? 'Samtal' : 'Hem';
-  // While the review is open its drawer names the document (D73 amended); Hem's title comes back with Hem's address.
-  usePageTitle(reviewing ? null : pageTitle, slot.view || conversationId ? false : pageTitle);
+  // While a card's review lies over Hem it names the document itself (`useOverlayTitle`), and Hem's comes back after it.
+  usePageTitle(pageTitle, slot.view || conversationId ? false : pageTitle);
   const nav = useRail({ current: railCurrent, admin, manager: user.role === 'manager' });
 
   const card = (
@@ -1049,8 +1039,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       </Shell>
       {slot.overlay}
       {sheet}
-      {/* After the panel's drawer and the phone's sheet, so a direct open stacks the review on top of the card (D73 amended). */}
-      <ReviewOverlay threadId={reviewing} />
       <EventDialog
         item={openItem?.item ?? null}
         dayItems={openItem?.dayItems ?? []}

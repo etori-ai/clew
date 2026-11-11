@@ -5,6 +5,7 @@ import {
   keepingPanel,
   pageOnly,
   panelSearch,
+  reviewOverCard,
   withCard,
   withCards,
   withoutPanel,
@@ -27,12 +28,29 @@ describe('a card opens over the page the person is on (D107 rule 2)', () => {
       '/people/johan?section=x&from=%2Fstaff',
     );
   });
-  test('from the bell, a toast or the search: over the page, except a review, which is still Hem’s (D73)', () => {
+  test('from the bell, a toast or the search: over the page, letting go of a review or a talk over it (D107 rule 5)', () => {
     expect(cardOverPage('/admin/connectors', '', 'ledighet')).toBe('/admin/connectors?card=ledighet');
     expect(cardOverPage('/staff', '?show=clew.talkPeople&cards=johan&cards-kind=act', 'ledighet')).toBe(
       '/staff?show=clew.talkPeople&cards=johan&cards-kind=act&card=ledighet',
     );
-    expect(cardOverPage('/cards/fakturor/review', '?step=2', 'ledighet')).toBe('/?card=ledighet');
+    expect(cardOverPage('/', '?tab=done&card=fakturor&review=fakturor&step=2', 'ledighet')).toBe(
+      '/?tab=done&card=ledighet',
+    );
+    expect(cardOverPage('/people/karin', '?from=%2Fstaff&talk=karin', 'ledighet')).toBe(
+      '/people/karin?from=%2Fstaff&card=ledighet',
+    );
+  });
+});
+
+describe("a row's Granska N opens its card beside the page and the review over it (D107 rule 5)", () => {
+  test('the card in the panel, as the row’s title opens it, and the review of that card', () => {
+    expect(reviewOverCard('/', '', 'fakturor')).toBe('/?card=fakturor&review=fakturor');
+    expect(reviewOverCard('/', '?tab=done&area=ekonomi', 'fakturor')).toBe(
+      '/?tab=done&area=ekonomi&card=fakturor&review=fakturor',
+    );
+    expect(reviewOverCard('/', '?open=hr.whoIsOn&open-title=Bemanning&card=other', 'fakturor')).toBe(
+      '/?card=fakturor&review=fakturor',
+    );
   });
 });
 
@@ -78,6 +96,9 @@ describe('one person’s cards as a list beside Personal (D107 answer 6)', () =>
   test('the page’s own address drops the list; a conversation does not take it along', () => {
     expect(pageOnly('/staff', '?show=x&cards=johan&cards-kind=act&card=t1')).toBe('/staff?show=x');
     expect(pageOnly('', '?cards=johan')).toBe('');
+    // A way back holds nothing that lay over the page either.
+    expect(pageOnly('/', '?tab=done&card=f&review=f&step=2')).toBe('/?tab=done');
+    expect(pageOnly('/staff', '?show=x&talk=anna')).toBe('/staff?show=x');
     expect(panelSearch('?show=x&cards=johan&cards-kind=act&card=t1')).toBe('?card=t1');
     expect(keepingPanel('/staff?show=y', '?show=x&cards=johan&cards-kind=act')).toBe(
       '/staff?show=y&cards=johan&cards-kind=act',

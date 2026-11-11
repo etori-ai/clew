@@ -19,7 +19,6 @@ import { entityListQuery, entityRowsQuery } from '../queries';
 import { keys } from '../query-keys';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
-import { talkOf } from '../talk-address';
 import { useRail } from '../components/nav';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { AsyncContent, ContentSkeleton } from '../components/loading';
@@ -71,10 +70,11 @@ export function StaffPage(props: { user: SessionUser; admin: boolean }) {
  * the drawer over it. A source that does not answer is said once, with Försök igen; the rest stands.
  *
  * Someone who manages nobody gets an empty list from the server, and the page says whom it is for. One person's
- * utvecklingssamtal stays a drawer over this list at `/staff?talk=<personId>` (D96), reached from its source's page way
- * in ("Öppna samtalet"); the drawer reads its own data. An action from a row's menu starts on the server and opens its
- * card in the page's panel (`entity-actions.ts`, D107 rule 4), and closing the card gives the focus back to the row's
- * menu button; a source's refusal is said aloud and stands over the list until the next action.
+ * utvecklingssamtal is a drawer over the list as it stands, its lens and what its panel holds kept (`?talk=<personId>`,
+ * D96, D107 rule 5), reached from its source's way in ("Öppna samtalet") in the row's menu; the drawer reads its own
+ * data, and a cold `/staff?talk=<personId>` is the list with the talk over it. An action from a row's menu starts on
+ * the server and opens its card in the page's panel (`entity-actions.ts`, D107 rule 4), and closing the card gives the
+ * focus back to the row's menu button; a source's refusal is said aloud and stands over the list until the next action.
  */
 function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
   const mobile = useMediaQuery(mobileQuery);
@@ -114,11 +114,8 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
   const groups = list?.groups ?? [];
   const action = useEntityAction();
 
-  // The open talk names the tab itself (the drawer, D96); the list's name is not spoken again when the focus comes back.
-  const talkId = talkOf(search);
-  const sawTalk = useRef(false);
-  if (talkId) sawTalk.current = true;
-  usePageTitle(talkId ? null : 'Personal', sawTalk.current ? false : 'Personal');
+  // An open talk names the tab itself while it lies over the list (`useOverlayTitle`), and the list's name comes back.
+  usePageTitle('Personal');
 
   const openerEls = useRef(new Map<string, HTMLElement>());
   const openers = useCallback<Openers>(
@@ -255,7 +252,7 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
         }
       />
       {panel.overlay}
-      {manager && <TalkOverlay opener={opener} />}
+      {manager && <TalkOverlay opener={opener} back="Tillbaka till Personal" />}
     </Shell>
   );
 }

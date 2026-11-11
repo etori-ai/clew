@@ -91,7 +91,7 @@ The thread store keeps an index from entity to cards, the table `thread_subject`
 
 | Capability | Source | About | Places it can take |
 |---|---|---|---|
-| `talks.person` | Clew's talks module ([capabilities.ts](../../apps/server/src/modules/talks/capabilities.ts)) | person | Section, lens, column, marks; the section's way in is the talk at `/staff?talk={id}` |
+| `talks.person` | Clew's talks module ([capabilities.ts](../../apps/server/src/modules/talks/capabilities.ts)) | person | Section, lens, column, marks; the section's way in is the talk, `?talk={id}`, laid over the page it is drawn on (D107 rule 5) |
 | `talks.unit` | Clew's talks module | unit | Section on the unit page; its way in is the lens on Personal |
 | `hr.person` | The HR fixture ([manifest](../../connectors/hr/manifest.mjs)) | person | Section, lens, column; no field warns, so no mark |
 | `hr.prepareAbsence` | The HR fixture | person | Menu: "Registrera frånvaro", a propose |

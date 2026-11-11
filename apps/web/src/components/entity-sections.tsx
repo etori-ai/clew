@@ -35,6 +35,7 @@ import { entitySectionQuery, viewQuery } from '../queries';
 import { actionMenuItems, useEntityAction } from '../entity-actions';
 import { withCard } from '../panel-address';
 import { unitPageHref } from '../person-address';
+import { sourcePageHref } from '../talk-address';
 import { compactField, groupFields, present, rowGroups, wholeRow, type FieldGroup } from '../view-fields';
 import { DeclaredView, FieldCell, FieldValue, fieldText, isBadged } from './view';
 
@@ -212,13 +213,6 @@ export function cardsSummary(cards: EntityCard[]): string {
   const fyi = cards.filter(c => c.kind === 'fyi').length;
   const act = cards.length - fyi;
   return [act ? `${act} att agera på` : '', fyi ? `${fyi} till kännedom` : ''].filter(Boolean).join(' · ');
-}
-
-/** A source's page in Clew, with the person's key and Clew's id filled in; none when the page needs an id Clew does not have. */
-export function pageHref(source: EntitySource, key: string, id: string | undefined): string | null {
-  if (!source.page) return null;
-  if (source.page.href.includes('{id}') && !id) return null;
-  return source.page.href.replaceAll('{key}', encodeURIComponent(key)).replaceAll('{id}', encodeURIComponent(id ?? ''));
 }
 
 /** The source's fuller read for this person (its view's `open`), as the row says how to ask for it. */
@@ -537,6 +531,11 @@ export function SourceSection({
   headingLevel?: 2 | 3;
 }) {
   const row = rowOf(answer);
+  // The source's page in Clew over or instead of the page this section is on (`sourcePageHref`, D107 rule 5).
+  const { pathname, search } = useLocation();
+  const page = answer.source.page
+    ? sourcePageHref(answer.source.page, { key: personKey, id: personId }, { pathname, search })
+    : null;
   return (
     <SectionFrame title={answer.source.title} caption={sourceCaption(answer.source)} headingLevel={headingLevel}>
       {answer.query.isPending ? (
@@ -550,12 +549,7 @@ export function SourceSection({
         <VStack gap={3}>
           <SectionRow source={answer.source} row={row} />
           <InlineRead source={answer.source} row={row} />
-          <WayIn
-            answer={answer}
-            row={row}
-            page={pageHref(answer.source, personKey, personId)}
-            {...(fullerHref ? { fullerHref } : {})}
-          />
+          <WayIn answer={answer} row={row} page={page} {...(fullerHref ? { fullerHref } : {})} />
         </VStack>
       )}
     </SectionFrame>

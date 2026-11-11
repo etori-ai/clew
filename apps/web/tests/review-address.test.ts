@@ -1,5 +1,71 @@
 import { describe, expect, test } from 'bun:test';
-import { returnedReview, reviewReturn, selectionAfterReview } from '../src/review-address';
+import {
+  REVIEW_KEYS,
+  legacyReview,
+  returnedReview,
+  reviewOf,
+  reviewReturn,
+  selectionAfterReview,
+  stepOf,
+  withRetriedReview,
+  withReview,
+  withoutReview,
+} from '../src/review-address';
+
+describe('the review lies over the page it was opened on (D73 amended, D107 rule 5)', () => {
+  test('its address is the page’s own with the card as `review` and the step, 1-based, the first left out', () => {
+    expect(REVIEW_KEYS).toEqual(['review', 'step']);
+    expect(withReview('/', '?card=fakturor', 'fakturor')).toBe('/?card=fakturor&review=fakturor');
+    expect(withReview('/', '?card=fakturor&review=fakturor', 'fakturor', 2)).toBe(
+      '/?card=fakturor&review=fakturor&step=3',
+    );
+    expect(withReview('/', '?card=fakturor&review=fakturor&step=3', 'fakturor', 0)).toBe(
+      '/?card=fakturor&review=fakturor',
+    );
+    expect(withReview('/staff', '?show=clew.talkPeople&card=fakturor', 'fakturor')).toBe(
+      '/staff?show=clew.talkPeople&card=fakturor&review=fakturor',
+    );
+    expect(withReview('/conversations/c1', '', 'fakturor')).toBe('/conversations/c1?review=fakturor');
+    expect(withReview('/people/johan', '?section=needs-you&from=%2Fstaff&card=a%20b', 'a b')).toBe(
+      '/people/johan?section=needs-you&from=%2Fstaff&card=a+b&review=a+b',
+    );
+  });
+  test('the address names the card and the step, or none', () => {
+    expect(reviewOf('?card=fakturor&review=fakturor')).toBe('fakturor');
+    expect(reviewOf(new URLSearchParams('review='))).toBeNull();
+    expect(reviewOf('')).toBeNull();
+    expect(stepOf(new URLSearchParams('review=f'), 4)).toBe(0);
+    expect(stepOf(new URLSearchParams('review=f&step=4'), 4)).toBe(3);
+    expect(stepOf(new URLSearchParams('review=f&step=5'), 4)).toBeNull();
+    expect(stepOf(new URLSearchParams('review=f&step=0'), 4)).toBeNull();
+    expect(stepOf(new URLSearchParams('review=f&step=x'), 4)).toBeNull();
+  });
+  test('closing leaves the page as it was under it: its tab, its lens, its section and the card beside it', () => {
+    expect(withoutReview('/', '?card=fakturor&review=fakturor&step=2')).toBe('/?card=fakturor');
+    expect(withoutReview('/', '?tab=done&card=fakturor&review=fakturor')).toBe('/?tab=done&card=fakturor');
+    expect(withoutReview('/staff', '?show=clew.talkPeople&cards=johan&card=x&review=x&step=3')).toBe(
+      '/staff?show=clew.talkPeople&cards=johan&card=x',
+    );
+    expect(withoutReview('/conversations/c1', '?review=fakturor')).toBe('/conversations/c1');
+  });
+  test('a card that is gone leaves the panel too, and only that card', () => {
+    expect(withoutReview('/', '?card=okand&review=okand', 'okand')).toBe('/');
+    expect(withoutReview('/calendar', '?card=other&review=okand', 'okand')).toBe('/calendar?card=other');
+  });
+  test('Granska avvisade igen puts the new card’s review in the old one’s place, from its first step', () => {
+    expect(withRetriedReview('/', '?tab=done&card=fakturor&review=fakturor&step=3', 'fakturor', 'retry:1')).toBe(
+      '/?tab=done&card=retry%3A1&review=retry%3A1',
+    );
+    expect(withRetriedReview('/conversations/c1', '?review=fakturor', 'fakturor', 'retry:1')).toBe(
+      '/conversations/c1?review=retry%3A1',
+    );
+  });
+  test('the address from before is a cold link to Hem with the card beside it and the review over both', () => {
+    expect(legacyReview('fakturor', '')).toBe('/?card=fakturor&review=fakturor');
+    expect(legacyReview('fakturor', '?step=2')).toBe('/?card=fakturor&review=fakturor&step=2');
+    expect(legacyReview('a b', '?step=2&other=x')).toBe('/?card=a+b&review=a+b&step=2');
+  });
+});
 
 describe("the review hands its decisions back to the card, laid over the card's selection (D73, amended 2026-11-11)", () => {
   const marked = ['inv:1', 'inv:2'];

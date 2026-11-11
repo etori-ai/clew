@@ -1,4 +1,6 @@
 import type { EntityCard, ViewRef } from '@clew/contracts';
+import { REVIEW_KEYS, withReview } from './review-address';
+import { TALK_PARAM } from './talk-address';
 
 /**
  * What the panel holds is named in the address (D50), the same way on every page (`usePagePanel`, the shell's drawer):
@@ -18,6 +20,11 @@ const VIEW_KEYS = ['open', 'open-title', 'open-input', 'via', 'open-card', 'open
 const CARDS_KEYS = ['cards', 'cards-kind'];
 /** Every name the panel's part of an address uses: what a page drops when it opens its own thing in the panel's place. */
 export const PANEL_KEYS: readonly string[] = [...VIEW_KEYS, 'card', ...CARDS_KEYS];
+/**
+ * What lies over the page and the panel and holds the focus (D107 rule 5): a card's review (`review-address.ts`) and
+ * one person's talk (`talk-address.ts`). Closing one leaves the page's address as it was under it.
+ */
+const FOCUSED_KEYS: readonly string[] = [...REVIEW_KEYS, TALK_PARAM];
 /** The kinds of card "Just nu" counts on Personal: those waiting for the reader's decision, and Clew's proposals. */
 export type CountedKind = Exclude<EntityCard['kind'], 'fyi'>;
 /** One person's cards as a list in the panel: whose, and of which kind; without a kind, all of them. */
@@ -37,7 +44,7 @@ const address = (pathname: string, query: URLSearchParams) => {
   const q = query.toString();
   return q ? `${pathname}?${q}` : pathname;
 };
-const without = (search: URLSearchParams | string, keys: string[]) => {
+const without = (search: URLSearchParams | string, keys: readonly string[]) => {
   const q = new URLSearchParams(search);
   keys.forEach(k => q.delete(k));
   return q;
@@ -94,11 +101,21 @@ export function withCard(pathname: string, search: URLSearchParams | string, thr
 }
 /**
  * A card opened from something that belongs to no page (the bell, a toast, the rail's search), over the page the person
- * is on (D107 rule 2): that page's address with the card in its panel. A card's review is the one page that is not
- * yet its own address (D73: Hem with the card beside it and the review over both), so from there it is Hem's card.
+ * is on (D107 rule 2): that page's address with the card in its panel. A review or a talk lying over the page is let go
+ * of, so the card asked for is the thing in front.
  */
 export function cardOverPage(pathname: string, search: URLSearchParams | string, threadId: string): string {
-  return /^\/cards\/[^/]+\/review$/.test(pathname) ? withCard('/', '', threadId) : withCard(pathname, search, threadId);
+  return withCard(pathname, without(search, FOCUSED_KEYS), threadId);
+}
+/**
+ * Where a row's "Granska N" leads (D107 rule 5): the row's card in the page's panel, as the row's title opens it, and the
+ * card's review over the page. The review hands its decisions back to the card and its receipt shows there, so a review
+ * opened from a row closes to that card beside the page, as one opened from the card itself does.
+ */
+export function reviewOverCard(pathname: string, search: URLSearchParams | string, threadId: string): string {
+  const q = without(search, VIEW_KEYS);
+  q.set('card', threadId);
+  return withReview(pathname, q, threadId);
 }
 /**
  * `target`, another address of the same page, with what the panel holds in `search` kept: a move within the page (a
@@ -114,9 +131,9 @@ export function keepingPanel(target: string, search: URLSearchParams | string): 
   });
   return address(at < 0 ? target : target.slice(0, at), q);
 }
-/** The page's own address with nothing in its panel: what a way back to the page holds (`from`). */
+/** The page's own address with nothing in its panel and nothing over it: what a way back to the page holds (`from`). */
 export function pageOnly(pathname: string, search: URLSearchParams | string): string {
-  return address(pathname, without(search, [...PANEL_KEYS]));
+  return address(pathname, without(search, [...PANEL_KEYS, ...FOCUSED_KEYS]));
 }
 /** The person's cards the address lists in the panel, under whatever is opened over them. */
 export function cardsOf(search: URLSearchParams): CardsRef | null {
