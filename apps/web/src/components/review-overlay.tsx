@@ -361,7 +361,7 @@ function Review({
   const undecided = items.filter(i => !decisions[i.ref]).length;
   const verb = verbOf(action);
   const mark = useMarks().ofThread(thread);
-  const source = thread.trigger.source.toLowerCase();
+  const source = thread.trigger.source;
   // A step is a place in the address, rewritten in place, so the browser's Back leaves the review (D73 item 1).
   const goTo = (n: number) => navigate(reviewHref(thread.id, n), { replace: true });
   const decide = (d: Decision) => {
@@ -640,7 +640,7 @@ function Review({
             <Text weight="semibold">Vad som händer när du skickar</Text>
             <Text as="p" type="supporting">
               {verb} skrivs till {source} i ett beslut och läses tillbaka rad för rad som kvitto. Grönt bara när{' '}
-              {source} har bekräftat. Ångra i 10 minuter. Kortet går till Klart
+              {source} har bekräftat. Kortet går till Klart
               {left + undecided > 0
                 ? `; det som lämnas kvar ligger kvar på kortet och kommer som ett eget kort vid nästa genomgång.`
                 : '.'}

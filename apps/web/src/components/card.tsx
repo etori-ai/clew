@@ -80,7 +80,7 @@ export const ReceiptCheck = CompletionMark;
 /** What a decision's row says (D70): the receipt's headline and when the source answered. */
 export const receiptLine = (thread: Thread) =>
   thread.receipt
-    ? `${thread.receipt.headline.replace(/\.$/, '')} · ${thread.trigger.source.toLowerCase()} svarade ${clock(thread.receipt.at)}`
+    ? `${thread.receipt.headline.replace(/\.$/, '')} · ${thread.trigger.source} svarade ${clock(thread.receipt.at)}`
     : '';
 export function useCountdown(until: string | null) {
   const [now, setNow] = useState(Date.now());
@@ -1079,14 +1079,15 @@ export function GenericCard({
           </VStack>
         </Card>
       )}
-      {/* What the next step does (artboard E): written to the source and read back, undone within the window, without the model. */}
+      {/* What the next step does (artboard E): written to the source and read back, without the model. The source's name
+          stands as the source wrote it ("Nextcloud" is a name, not a noun), and nothing is said about undo here: whether
+          a write can be undone, and for how long, is only known from the receipt, which offers Ångra when the source does. */}
       {open &&
         !receipt &&
         primary?.kind === 'execute' &&
         (!executionStatus(thread.execution) || (actions.settling && actions.pressed !== null)) && (
           <Text type="supporting" as="p">
-            {primary.label} skrivs till {thread.trigger.source.toLowerCase()} och läses tillbaka som kvitto. Ångra i 10
-            minuter. Fungerar utan modellen.
+            {primary.label} skrivs till {thread.trigger.source} och läses tillbaka som kvitto. Fungerar utan modellen.
           </Text>
         )}
       {/* Why the card is here, folded away as the artboard draws it; the words can be read and announced, never a tooltip (D28). */}

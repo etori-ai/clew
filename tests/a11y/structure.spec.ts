@@ -157,7 +157,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expect(today.getByRole('link', { name: 'Hela veckan' })).toHaveAttribute('href', '/calendar');
     // Sedan i går is three sentences (artboard A): what closed with its receipt, what waits with who has answered, the next review.
     await expect(
-      since.getByText(/^2 klara: attesterade fakturor, kvitto läst från ekonomisystemet 09:00 och påminnelse om/),
+      since.getByText(/^2 klara: attesterade fakturor, kvitto läst från Ekonomisystemet 09:00 och påminnelse om/),
     ).toBeVisible();
     await expect(
       since.getByText(/^2 väntar på andra: planera utvecklingssamtal vecka 45 \(1 av 2 har svarat\) och tillbud/),

@@ -50,7 +50,7 @@ export function sinceSentences({ handled, waiting, sources, now }: Input) {
             t.state === 'dismissed'
               ? `${lower(t.title)}, avfärdad ${timeLabel(when(t))}`
               : t.receipt
-                ? `${lower(t.title)}, kvitto läst från ${lower(t.trigger.source)} ${timeLabel(t.receipt.at)}`
+                ? `${lower(t.title)}, kvitto läst från ${t.trigger.source} ${timeLabel(t.receipt.at)}`
                 : `${lower(t.title)} ${timeLabel(when(t))}`,
           ),
         )}.`

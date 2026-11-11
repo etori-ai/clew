@@ -165,7 +165,7 @@ test.describe('rows with a document are reviewed one at a time in a drawer over 
     await expect(page).toHaveURL('/?card=fakturor');
     await expect(review).toHaveCount(0);
     const hemRow = page.getByRole('main').locator('#thread-fakturor');
-    await expect(hemRow).toContainText('2 fakturor attesterade · ekonomisystemet svarade');
+    await expect(hemRow).toContainText('2 fakturor attesterade · Ekonomisystemet svarade');
     await expect(hemRow.getByRole('img', { name: 'Klart' })).toBeVisible();
     const card = page.getByRole('dialog', { name: 'Kort', exact: true });
     await expect(card.getByRole('button', { name: /^Ångra allt · / })).toBeVisible();

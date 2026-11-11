@@ -58,6 +58,19 @@ test.describe('a row shows the next step and Lägg till i samtalet; the rest is 
     await expect(page.getByRole('menuitem', { name: /Påminn mig|Inte nu/ })).toHaveCount(0);
   });
 
+  test('what the next step does names the source as the source wrote it and promises no undo before a receipt says so', async ({
+    page,
+    api: _,
+  }) => {
+    // A source's name is a name ("Nextcloud"), so it is never lower-cased; and whether a write can be undone is only
+    // known from its receipt, so the line under the buttons says nothing about undo.
+    await open(page, '/?card=ledighet');
+    await expect(
+      page.getByText('Godkänn skrivs till Personalsystemet och läses tillbaka som kvitto. Fungerar utan modellen.'),
+    ).toBeVisible();
+    await expect(page.getByText(/Ångra i 10 minuter/)).toHaveCount(0);
+  });
+
   test('a card that waits on someone has one time action too, and says when it will remind', async ({ page, api }) => {
     api.threads.find(t => t.id === 'tillbud')!.timers = [
       { kind: 'reminder', dueAt: '2026-11-05T10:00:00.000Z', state: 'scheduled' },
