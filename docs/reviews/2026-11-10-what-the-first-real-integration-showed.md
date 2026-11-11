@@ -92,14 +92,53 @@ page showed that the tests had not:
   not answer it, so the pass answered it by script; a person would have seen the sentence "Avvisa filen? Ditt beslut
   gäller för alla som kan godkänna den."
 
-Not done on the page: a second person, a person whose access was taken away, and a failed decision. Those are shown
-through the use cases, the harness and the recorded exchanges above.
+Not done on the page in that pass: a second person, a person whose access was taken away, and a failed decision.
+They were done later the same day, below.
+
+## The second signed-in pass, 2026-11-11
+
+The rest of D101 item 5 on the page, on `localhost:3020` against the development Nextcloud, with the seed reset first
+(three files waiting for Hillevi, two for Hassan). What was changed in Nextcloud was changed as the file's owner would
+(new content, a share removed), by script in the calendar container. Times are the page's.
+
+| Step | On the page | In Clew's audit | In Nextcloud |
+|---|---|---|---|
+| Hillevi's visit | Three cards under Godkännanden, Erik's three files | `refresh.completed`, count 3 | Three waiting for `hillevi` |
+| Erik saves new content to "Inköp av läsplattor.txt"; a scan runs | The card's line turns to "Källan har ändrat uppgiften. Du kan godkänna filen i Nextcloud" | `thread.refreshed` with `materialChange: true` | A new etag |
+| He saves again and Hillevi presses Godkänn on the card as it stands, 10:58 | A badge "1 rad misslyckades", "Beslutet registrerades inte i Nextcloud · Nextcloud svarade 10:58", a toast with the same sentence; the open card adds "Filen har ändrats sedan kortet skapades. Granska den nya versionen i Nextcloud innan du beslutar." | `execution.approved`, `claimed`, `dispatched`, `failed` with `['failed']` | Still waiting |
+| The connector's container is paused; Godkänn on "Plan för klassresa.txt", 10:59 | Sedan i går counts the card among "väntar på andra"; ten seconds later it is under Behöver dig with "Källans besked saknas. Utfallet behöver kontrolleras innan något mer görs." and Kontrollera status; a banner says "Nextcloud svarar inte sedan 10:59" | `execution.unknown` with `source-outcome-unknown`, then a recovery attempt ending in `manual-reconciliation` | Still waiting, also after the container ran again: nothing had been sent on |
+| Kontrollera status, the connector answering again | Nothing changes | `execution.reconciliation_requested`, a third attempt, `unknown` again | Still waiting |
+| Hassan's visit | Two cards, Karin's two files, none of Hillevi's | `refresh.completed`, count 2, two `thread.pushed` | Two waiting for `hassan` |
+| Karin removes both shares, 11:03 | At the next scan, without a reload, both cards are gone; Sedan i går reads "2 klara: godkänn eller avvisa Beställning av förbrukningsmaterial.txt 11:03 och …" | Two `work.resolved`, two `thread.source_resolved`, `refresh.completed` with count 0 | Waiting, shared with nobody |
+| The shares are put back | No card comes back | `refresh.completed` with count 2 and no `thread.pushed` | Two waiting for `hassan` again |
+| Approval is requested again for both files | Two cards | | Two waiting, a new request time |
+
+So two people see different files, a person whose access was taken away sees no card, and a refused and a lost write
+are each shown as what they are. What the page showed that was not known before:
+
+- **A card whose decision failed or is unknown is a dead end.** Its menu holds "Lägg till i samtalet" and nothing else
+  (`apps/web/src/components/card.tsx`, the branch for a pending execution), on the row and on the open card. "Avfärda
+  is the only way on", above, is not so on the page: there is no way on. Any connector.
+- **Kontrollera status says nothing.** For a `manual` write Clew cannot ask the source, the outcome stays unknown, and
+  the page does not say that the person has to look in Nextcloud. Gap 2 above, as a person meets it.
+- **The outage banner promises a queue**: "Det du skickar köas och läses tillbaka när systemet svarar." The decision
+  sent during the outage was not queued; nothing reached Nextcloud and the card needs a hand.
+- **Files a person lost access to are called done, by name.** The cards are gone, but Sedan i går lists both files as
+  "klara", which the person did not do, and keeps showing the names of files they can no longer reach. The names were
+  theirs to see when the cards were made; whether they may stay is a question for the product owner.
+- **Access given back brings no card back.** The scan reports the two files again and nothing is pushed. Their key,
+  version and request time are those of the work it resolved, which is the likely reason; the cause was not traced in
+  the code. A share removed by mistake and restored, or a source that wrongly answers an empty list once, costs the
+  person their cards until someone asks for approval again.
+
+Left on the development stack: two cards of Hillevi's with a failed and an unknown decision, which cannot be removed
+from the page. The seed was reset afterwards and the edited file given its first content back.
 
 ## What is left before the freeze lifts
 
-D101 item 5: the loop signed in on the development stack is done for one person (above). Still open: two people
-and a revoked person on the page, not only in the harness; one manual pass with a screen reader; the second build as
-an MCP server and the comparison of the two. Not started: Frappe HR.
+D101 item 5 as amended: the loop signed in on the development stack, two people with different files, a person whose
+access was taken away, and a refused and a lost write are done on the page (above). Still open: one manual pass with
+a screen reader. Not started: Frappe HR.
 
 Open on the stack itself: the running Nextcloud container needs to be recreated once to pick up the compose change
 that lets it reach Keycloak (a hosts line was added by hand meanwhile), and running the calendar seed from `main`
