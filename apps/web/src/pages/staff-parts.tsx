@@ -27,9 +27,10 @@ import {
   useAnnounce,
 } from '@clew/ui';
 import { FieldCell, FieldValue, badgeVariant, fieldText, fieldWord, isBadged } from '../components/view';
-import { personHref } from '../components/person-panel';
+import { personHref, personPageFromList } from '../components/person-panel';
 import type { EntityActionStart } from '../entity-actions';
 import { withCard } from '../panel-address';
+import { withoutPerson } from '../person-address';
 import { groupFields, present, rowGroups, type FieldGroup } from '../view-fields';
 import {
   byNeed,
@@ -125,7 +126,8 @@ export function ShowMenu({
  * One person's menu (artboard A3): every action about a person, one section per system with the system as its title,
  * and a source's page as a way in under that source ("Öppna samtalet"). Under a lens its own source comes first. An
  * action starts on the server without the model (`useEntityAction`) and opens its card; nothing reaches the source's
- * write before the person decides on the card.
+ * write before the person decides on the card. The menu holds what can be done about the person, never a choice of
+ * where Clew shows them (the product owner, 2026-11-11).
  */
 export function RowMenu({ entity, ctx, lens }: { entity: EntityRef; ctx: Context; lens?: EntitySource }) {
   const { list, start } = ctx;
@@ -154,18 +156,29 @@ export function RowMenu({ entity, ctx, lens }: { entity: EntityRef; ctx: Context
 
 /**
  * The person's cards as links in "Just nu" (artboard A2, D97 item 5): "1 att agera på" and "1 förslag" (or "N …"), each
- * opening the card as Hem opens one when the server named the one card there is, and otherwise the person beside the
- * list, where Behöver dig lists their cards.
+ * opening the card beside the list when the server named the one card there is (D83 rule 1: the list stays, and the
+ * card shows what it asks before anything is decided), and otherwise the person beside the list, where Behöver dig
+ * lists their cards. `here` is the list's own address: a card opened from a row takes the place of an opened person.
  */
-export function cardLinks(list: EntityList, entity: EntityRef, opensPerson: string): ReactNode[] {
+export function cardLinks(
+  list: EntityList,
+  entity: EntityRef,
+  here: { pathname: string; search: string },
+): ReactNode[] {
+  const opensPerson = personHref(here.pathname, here.search, entity.key);
+  const listSearch = withoutPerson('', here.search);
   return cardLinkTexts(list, entity.key).map(link => (
-    <Link key={link.id} href={link.threadId ? withCard('/', '', link.threadId) : opensPerson} hasUnderline>
+    <Link
+      key={link.id}
+      href={link.threadId ? withCard(here.pathname, listSearch, link.threadId) : opensPerson}
+      hasUnderline
+    >
       {link.text}
     </Link>
   ));
 }
 
-/** The person's name as the way to open them beside the list (D83 rule 1), with their initials before it. */
+/** The person's name as the way to their page, with the list as its way back, and their initials before it. */
 function Person({ entity, openers }: { entity: EntityRef; openers: Openers }) {
   const location = useLocation();
   return (
@@ -173,7 +186,7 @@ function Person({ entity, openers }: { entity: EntityRef; openers: Openers }) {
       <Avatar name={entity.name} size={32} tooltip={false} />
       <Link
         ref={openers(entity.id)}
-        href={personHref(location.pathname, location.search, entity.key)}
+        href={personPageFromList(location.pathname, location.search, entity.key)}
         weight="semibold"
       >
         {entity.name}
@@ -194,7 +207,7 @@ const columnHeader = (column: EntityColumn) => (
 function Marks({ entity, ctx }: { entity: EntityRef; ctx: Context }) {
   const location = useLocation();
   const marks = marksFor(ctx.list, ctx.answers, entity.key);
-  const links = cardLinks(ctx.list, entity, personHref(location.pathname, location.search, entity.key));
+  const links = cardLinks(ctx.list, entity, location);
   if (!marks.length && !links.length) return null;
   return (
     <HStack gap={2} vAlign="center" wrap="wrap">
@@ -268,7 +281,7 @@ function phoneParts(groups: FieldGroup[], row: Row): { badges: ViewField[]; word
   return { badges, words };
 }
 /**
- * One person as a row on a phone (the shape the page had before D97): the initials and the name, which opens them,
+ * One person as a row on a phone (the shape the page had before D97): the initials and the name, which leads to their page,
  * the states that are badges, the rest as one line of words, and the row's menu at the end.
  */
 function PhoneRow({
@@ -296,7 +309,7 @@ function PhoneRow({
       label={
         <Link
           ref={ctx.openers(entity.id)}
-          href={personHref(location.pathname, location.search, entity.key)}
+          href={personPageFromList(location.pathname, location.search, entity.key)}
           weight="semibold"
         >
           {entity.name}
@@ -370,7 +383,7 @@ export function AllUnit({
                 key={e.key}
                 entity={e}
                 ctx={ctx}
-                links={cardLinks(ctx.list, e, personHref(location.pathname, location.search, e.key))}
+                links={cardLinks(ctx.list, e, location)}
                 badges={[
                   ...toned.map(({ c, value }) => (
                     <FieldValue key={`${c.capability}:${c.field.key}`} field={c.field} value={value} />

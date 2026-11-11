@@ -230,11 +230,18 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       ...(o.threadId ? { threadId: o.threadId } : {}),
     });
   }, []);
-  const addChip = useCallback((chip: ChipRef) => {
-    known.current.set(chip.ref, chip);
-    setChips(list => (list.some(c => c.ref === chip.ref) ? list : [...list, chip]));
-    input.current?.focus();
-  }, []);
+  // On a page without a box (Personal, with a card beside the list) the chip is taken to Hem's box: the person chose
+  // the conversation, and a chip added where nothing shows it would leave the pressed button resting with the focus on
+  // nothing (2.4.3).
+  const addChip = useCallback(
+    (chip: ChipRef) => {
+      known.current.set(chip.ref, chip);
+      setChips(list => (list.some(c => c.ref === chip.ref) ? list : [...list, chip]));
+      if (input.current) input.current.focus();
+      else if (!where.current.here) navigate('/');
+    },
+    [navigate],
+  );
   // The removed chip's neighbour takes the focus, or the field when the drawer is empty (2.4.3).
   const removeChip = useCallback((ref: string) => {
     setChips(list => list.filter(c => c.ref !== ref));

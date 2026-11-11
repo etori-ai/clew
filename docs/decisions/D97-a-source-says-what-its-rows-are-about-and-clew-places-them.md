@@ -144,3 +144,19 @@ page have not been looked up. The pattern is unproven beyond people and units. N
 page), [D96](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md) item 7 (the status
 column on Personal becomes a lens and a section) and the line in `docs/architecture/working-across-connectors.md`
 that cross-connector view enrichment is not supported.
+
+**Amended 2026-11-11: a card about a person opens beside the list, not on Hem.** The product owner followed "1 att
+agera på" on Personal and landed on Hem with the card already attached to the box: the list was gone, and a link that
+counts what waits had started the work instead of showing it. Under item 5 the one card "Just nu" counts now opens in
+the list's own panel (`/staff?card=<threadId>`), and a card under the opened person's Behöver dig opens over the person
+(`/staff?person=<key>&card=<threadId>`); closing leaves the person or the list (D83 rules 1 and 3). The card is the one
+Hem draws, from the same cache, so its decision goes through the same endpoint. The person's page and the unit's page
+have no panel and still lead to Hem, as does an action started from a person's menu and the review of a card's rows
+(D73). `docs/reference/interface-spaces.md` has the placement row.
+
+**Amended 2026-11-11, the same day: the name leads to the page.** With the person in the panel and "Öppna som sida"
+as a link inside it, the product owner found the two the wrong way round. On Personal a name now leads to the person's
+page (`/people/<key>?from=<the list>`). A menu choice that opened the person beside the list instead was tried and
+taken out the same day: a menu holds what can be done about a person, never where Clew shows them. The person is still
+drawn beside the list where "Just nu" counts several cards, and the focus goes to the row's name when that closes.
+Whether a person is shown beside a list at all, or only as a page, is open and waits for the navigation review.

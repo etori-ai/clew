@@ -12,6 +12,8 @@ export type PanelRef =
   | { kind: 'card'; threadId: string };
 
 const VIEW_KEYS = ['open', 'open-title', 'open-input', 'via', 'open-card', 'open-action'];
+/** Every name the panel's part of an address uses: what a page drops when it opens its own thing in the panel's place. */
+export const PANEL_KEYS: readonly string[] = [...VIEW_KEYS, 'card'];
 const parse = (json: string | null): Record<string, unknown> => {
   try {
     const v: unknown = json ? JSON.parse(json) : {};

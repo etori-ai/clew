@@ -338,9 +338,17 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     via: boolean;
     address: string;
   } | null>(null);
+  // Only a read is asked for from the address. The request is the decision endpoint's (D45/D47), so an address that
+  // named an execute would make the decision when the page loaded, with no button pressed and no confirm asked: a
+  // link someone was sent must never do that. The card's own buttons decide; the address only opens what a read shows.
+  const addressedRead =
+    !!actionPanel &&
+    threads.some(
+      t => t.id === actionPanel.threadId && t.actions.some(a => a.id === actionPanel.actionId && a.kind === 'read'),
+    );
   const cardView = useQuery({
     ...cardViewQuery(actionPanel?.threadId ?? '', actionPanel?.actionId ?? ''),
-    enabled: !!actionPanel,
+    enabled: addressedRead,
   });
   // What a card action answered is acted on once per answer (StrictMode replays effects): an executed thread goes into the cache, a link opens a tab.
   const acted = useRef<unknown>(null);

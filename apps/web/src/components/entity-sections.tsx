@@ -391,15 +391,26 @@ export function SectionFrame({
   );
 }
 
-/** The reader's cards about the person, each leading to the card on Hem, its source at the end of the line. */
-export function CardList({ cards }: { cards: EntityCard[] }) {
+/** Where a card opens when the page has no panel of its own for it: beside Hem's column (D50). */
+const onHem = (threadId: string) => withCard('/', '', threadId);
+/**
+ * The reader's cards about the person, each leading to the card, its source at the end of the line. Beside a list the
+ * card opens over the person in the same panel (`cardHref`, D83 rule 1); on a page without that panel it opens on Hem.
+ */
+export function CardList({
+  cards,
+  cardHref = onHem,
+}: {
+  cards: EntityCard[];
+  cardHref?: (threadId: string) => string;
+}) {
   return (
     <List density="compact" hasDividers edge="flush">
       {cards.map(c => (
         <ListItem
           key={c.threadId}
           label={
-            <Link href={withCard('/', '', c.threadId)} hasUnderline>
+            <Link href={cardHref(c.threadId)} hasUnderline>
               {c.title}
             </Link>
           }
@@ -492,10 +503,18 @@ export function SourceSection({
 }
 
 /** Behöver dig: the cards about the person, first, named after the place they come from (Clew). */
-export function NeedsYouSection({ cards, headingLevel = 3 }: { cards: EntityCard[]; headingLevel?: 2 | 3 }) {
+export function NeedsYouSection({
+  cards,
+  headingLevel = 3,
+  cardHref,
+}: {
+  cards: EntityCard[];
+  headingLevel?: 2 | 3;
+  cardHref?: (threadId: string) => string;
+}) {
   return (
     <SectionFrame title="Behöver dig" caption="Clew" headingLevel={headingLevel}>
-      <CardList cards={cards} />
+      <CardList cards={cards} {...(cardHref ? { cardHref } : {})} />
     </SectionFrame>
   );
 }
@@ -511,6 +530,7 @@ export function PersonSections({
   personId,
   name,
   fullerHref,
+  cardHref,
   animatedLayout,
 }: {
   cards: EntityCard[];
@@ -519,12 +539,15 @@ export function PersonSections({
   personId: string | undefined;
   name: string;
   fullerHref: (capability: string) => string;
+  cardHref?: (threadId: string) => string;
   animatedLayout: AnimatedLayout;
 }) {
   const drawn = drawnSections(answers);
   return (
     <List aria-label={`Om ${name}`} density="compact" edge="flush" animatedLayout={animatedLayout}>
-      {cards.length > 0 && <ListItem itemKey={NEEDS_YOU} label={<NeedsYouSection cards={cards} />} />}
+      {cards.length > 0 && (
+        <ListItem itemKey={NEEDS_YOU} label={<NeedsYouSection cards={cards} {...(cardHref ? { cardHref } : {})} />} />
+      )}
       {drawn.map(a => (
         <ListItem
           key={a.source.capability}

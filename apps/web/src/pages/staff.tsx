@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
-import { useQueries, useQuery } from '@tanstack/react-query';
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SessionUser } from '@clew/contracts';
 import {
   Button,
@@ -16,6 +16,7 @@ import {
   useMediaQuery,
 } from '@clew/ui';
 import { entityListQuery, entityRowsQuery } from '../queries';
+import { keys } from '../query-keys';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { talkOf } from '../talk-address';
@@ -24,11 +25,14 @@ import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { AsyncContent, ContentSkeleton } from '../components/loading';
 import { PageHeader } from '../components/page-header';
 import { TalkOverlay } from '../components/talk-overlay';
+import { useCardFrame } from '../components/card-panel';
 import { usePersonPanel } from '../components/person-panel';
 import { useEntityAction } from '../entity-actions';
 import { answerOf, peopleLine, silentOf, sourcesRead, valueCounts, type Answer } from './staff-model';
 import { AllUnit, CompactUnit, LensUnit, SilentSources, ShowMenu, type Context, type Openers } from './staff-parts';
 
+/** The list's column at its widest: the page width the person's page also has (1216 px) less the 32 px padding on each side. */
+const COLUMN = 1216 - 2 * 32;
 /** The lens in the address (D43, D83 rule 4): `?show=<capability>`; absent, or not a lens, is "Alla". */
 const SHOW = 'show';
 
@@ -38,8 +42,11 @@ const SHOW = 'show';
  * person, placed by Clew. "Alla" has the columns an administrator chose, each the field of one source with the source
  * under its label, and "Just nu" with the fields of the chosen sources that need the reader. "Visa" picks a lens, a
  * source an administrator offers, and the list is then that source's view, sorted by need. Each row has its menu,
- * grouped by the system an action works in. A person opens beside the list (`?person=<key>`, D83 rule 1), and the list
- * is then drawn compact. A source that does not answer is said once, with Försök igen; the rest stands.
+ * grouped by the system an action works in. A name leads to the person's page. "Just nu" with several cards opens
+ * the person beside the list (`?person=<key>`, D83 rule 1), and the list is then drawn compact, its names choosing who
+ * is beside it; whether a person is shown beside the list at all is open (2026-11-11). A card about a person opens in the same panel (`?card=<threadId>`, `card-panel.tsx`): from
+ * "Just nu" beside the list, from the person's Behöver dig over the person; the list never gives way to Hem for it.
+ * A source that does not answer is said once, with Försök igen; the rest stands.
  *
  * Someone who manages nobody gets an empty list from the server, and the page says whom it is for. One person's
  * utvecklingssamtal stays a drawer over this list at `/staff?talk=<personId>` (D96), reached from its source's page way
@@ -59,7 +66,21 @@ export function StaffPage({ user, admin }: { user: SessionUser; admin: boolean }
   const rowsQs = useQueries({ queries: read.map(c => entityRowsQuery('person', c)) });
   const answers = new Map<string, Answer>(read.map((c, i) => [c, answerOf(rowsQs[i]?.data, !!rowsQs[i]?.isError)]));
   const lens = list?.lenses.find(l => l.capability === search.get(SHOW));
-  const panel = usePersonPanel();
+  // A decision made on a card beside the list changes what "Just nu" and the person's Behöver dig count: both are read
+  // again, the sources' own rows are not.
+  const client = useQueryClient();
+  const cardChanged = useCallback(() => {
+    void client.invalidateQueries({ queryKey: keys.entities.list('person') });
+    void client.invalidateQueries({
+      queryKey: ['entities', 'person', 'detail'],
+      predicate: q => q.queryKey.length === 4,
+    });
+  }, [client]);
+  const card = useCardFrame({ onChange: cardChanged });
+  const panel = usePersonPanel(card.frame);
+  // The row the open thing is about, marked in the compact list: the opened person, else the person whose one card it is.
+  const marked =
+    panel.person ?? (card.threadId ? list?.attention.find(a => a.threadId === card.threadId)?.key : undefined);
   const groups = list?.groups ?? [];
   const action = useEntityAction();
 
@@ -113,105 +134,112 @@ export function StaffPage({ user, admin }: { user: SessionUser; admin: boolean }
   return (
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
       {/* The layout fills the window, as on a tool's page, so the list and the person beside it scroll on their own and the handle's divider stands the height of the page (Astryx's side-panels guide). On a short window nothing is pinned and the page scrolls as one (1.4.10). */}
+      {/* The list's column is bounded here, not with the Layout's `contentWidth`: that frames the panel with the
+          content (Astryx: "the panel stays aligned to the contentWidth frame"), and on a wide window the panel then
+          stood in from the window's edge with nothing beside it (the product owner, 2026-11-11). The panel docks to
+          the edge as on Hem, and the column keeps the page's 1216 px less its padding, centred in what is left. */}
       <Layout
         height={short ? 'auto' : 'fill'}
-        contentWidth={1216}
         padding={mobile ? 3 : 8}
         end={panel.end}
         content={
           <LayoutContent isScrollable={!short}>
-            <VStack gap={5} ref={root}>
-              <PageHeader
-                title="Personal"
-                meta={!compact && groups.length > 0 ? <Text type="supporting">{peopleLine(groups)}</Text> : undefined}
-              />
-              {/* The Visa menu under the title, where the list it changes starts (artboards A2, B and C). */}
-              {list && groups.length > 0 && list.lenses.length > 0 && (
-                <HStack>
-                  <ShowMenu lenses={list.lenses} answers={answers} lens={lens} onChoose={choose} />
-                </HStack>
-              )}
-              {listQ.isError ? (
-                <VStack gap={2}>
-                  <Text as="p" role="alert">
-                    {errorMessage(listQ.error, 'Listan kunde inte läsas.')}
-                  </Text>
+            <VStack hAlign="center">
+              <VStack gap={5} ref={root} width="100%" maxWidth={COLUMN}>
+                <PageHeader
+                  title="Personal"
+                  meta={!compact && groups.length > 0 ? <Text type="supporting">{peopleLine(groups)}</Text> : undefined}
+                />
+                {/* The Visa menu under the title, where the list it changes starts (artboards A2, B and C). */}
+                {list && groups.length > 0 && list.lenses.length > 0 && (
                   <HStack>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      label="Försök igen"
-                      isLoading={listQ.isFetching}
-                      onClick={() => void listQ.refetch()}
-                    />
+                    <ShowMenu lenses={list.lenses} answers={answers} lens={lens} onChoose={choose} />
                   </HStack>
-                </VStack>
-              ) : (
-                <AsyncContent pending={pending} fallback={<ContentSkeleton />} gap={5}>
-                  {/* A source's refusal of an action from a row's menu, said aloud as it came (entity-actions.ts). */}
-                  {action.error && <Text as="p">{action.error}</Text>}
-                  {ctx && groups.length === 0 ? (
-                    <Card>
-                      <EmptyState
-                        headingLevel={2}
-                        title="Inga medarbetare att visa"
-                        description="Här ser den som är chef för en enhet medarbetarna på den. Katalogen avgör vem som är chef; be systemförvaltaren om det inte stämmer."
-                        actions={<Button label="Till startsidan" href="/" />}
+                )}
+                {listQ.isError ? (
+                  <VStack gap={2}>
+                    <Text as="p" role="alert">
+                      {errorMessage(listQ.error, 'Listan kunde inte läsas.')}
+                    </Text>
+                    <HStack>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        label="Försök igen"
+                        isLoading={listQ.isFetching}
+                        onClick={() => void listQ.refetch()}
                       />
-                    </Card>
-                  ) : ctx && compact ? (
-                    <>
-                      {silentLine}
-                      {groups.map(g => (
-                        <CompactUnit
-                          key={g.id}
-                          group={g}
-                          lens={lens}
-                          ctx={ctx}
-                          opened={panel.person}
-                          animatedLayout={animatedLayout}
+                    </HStack>
+                  </VStack>
+                ) : (
+                  <AsyncContent pending={pending} fallback={<ContentSkeleton />} gap={5}>
+                    {/* A source's refusal of an action from a row's menu, said aloud as it came (entity-actions.ts). */}
+                    {action.error && <Text as="p">{action.error}</Text>}
+                    {ctx && groups.length === 0 ? (
+                      <Card>
+                        <EmptyState
+                          headingLevel={2}
+                          title="Inga medarbetare att visa"
+                          description="Här ser den som är chef för en enhet medarbetarna på den. Katalogen avgör vem som är chef; be systemförvaltaren om det inte stämmer."
+                          actions={<Button label="Till startsidan" href="/" />}
                         />
-                      ))}
-                    </>
-                  ) : ctx && lens ? (
-                    <>
-                      <VStack gap={1}>
-                        <Heading level={2}>{(lensAnswer?.status === 'ok' && lensAnswer.heading) || lens.title}</Heading>
-                        <Text type="supporting">
-                          {[
-                            lensAnswer?.status === 'ok' ? lensAnswer.note : undefined,
-                            lensAnswer?.status === 'ok' ? valueCounts(lens.view, lensAnswer.all) : undefined,
-                            // Clew's own domain is named as Clew (artboard B), any other source by its name.
-                            lens.own ? 'Clew' : lens.source,
-                          ]
-                            .filter(Boolean)
-                            .join(' · ')}
-                        </Text>
-                      </VStack>
-                      {/* A lens whose source did not answer has nothing to list: the sentence takes the table's place. */}
-                      {lensSilent
-                        ? silentLine
-                        : groups.map(g => (
-                            <LensUnit
-                              key={g.id}
-                              group={g}
-                              lens={lens}
-                              ctx={ctx}
-                              mobile={mobile}
-                              animatedLayout={animatedLayout}
-                            />
-                          ))}
-                    </>
-                  ) : ctx ? (
-                    <>
-                      {silentLine}
-                      {groups.map(g => (
-                        <AllUnit key={g.id} group={g} ctx={ctx} mobile={mobile} animatedLayout={animatedLayout} />
-                      ))}
-                    </>
-                  ) : null}
-                </AsyncContent>
-              )}
+                      </Card>
+                    ) : ctx && compact ? (
+                      <>
+                        {silentLine}
+                        {groups.map(g => (
+                          <CompactUnit
+                            key={g.id}
+                            group={g}
+                            lens={lens}
+                            ctx={ctx}
+                            opened={marked}
+                            animatedLayout={animatedLayout}
+                          />
+                        ))}
+                      </>
+                    ) : ctx && lens ? (
+                      <>
+                        <VStack gap={1}>
+                          <Heading level={2}>
+                            {(lensAnswer?.status === 'ok' && lensAnswer.heading) || lens.title}
+                          </Heading>
+                          <Text type="supporting">
+                            {[
+                              lensAnswer?.status === 'ok' ? lensAnswer.note : undefined,
+                              lensAnswer?.status === 'ok' ? valueCounts(lens.view, lensAnswer.all) : undefined,
+                              // Clew's own domain is named as Clew (artboard B), any other source by its name.
+                              lens.own ? 'Clew' : lens.source,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </Text>
+                        </VStack>
+                        {/* A lens whose source did not answer has nothing to list: the sentence takes the table's place. */}
+                        {lensSilent
+                          ? silentLine
+                          : groups.map(g => (
+                              <LensUnit
+                                key={g.id}
+                                group={g}
+                                lens={lens}
+                                ctx={ctx}
+                                mobile={mobile}
+                                animatedLayout={animatedLayout}
+                              />
+                            ))}
+                      </>
+                    ) : ctx ? (
+                      <>
+                        {silentLine}
+                        {groups.map(g => (
+                          <AllUnit key={g.id} group={g} ctx={ctx} mobile={mobile} animatedLayout={animatedLayout} />
+                        ))}
+                      </>
+                    ) : null}
+                  </AsyncContent>
+                )}
+              </VStack>
             </VStack>
           </LayoutContent>
         }

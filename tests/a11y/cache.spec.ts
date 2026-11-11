@@ -37,4 +37,24 @@ test.describe('D33 the browser cache', () => {
     await expect(page.getByRole('dialog', { name: 'Se mönstret' })).toBeVisible();
     expect(posts).toHaveLength(1);
   });
+  test('an address that names a card’s decision asks for nothing: only the card’s button decides', async ({
+    page,
+    api,
+  }) => {
+    const posts: string[] = [];
+    page.on('request', r => {
+      if (r.method() === 'POST' && r.url().includes('/act')) posts.push(r.url());
+    });
+    // "Boka samtalet" is an execute. Opened by address it must not run, on Hem or beside Personal.
+    for (const path of [
+      '/?open-card=omtanke&open-action=book',
+      '/staff?card=omtanke&open-card=omtanke&open-action=book',
+    ]) {
+      await open(page, path);
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+      await page.waitForLoadState('networkidle');
+      expect(posts).toEqual([]);
+      expect(api.threads.find(t => t.id === 'omtanke')?.state).toBe('open');
+    }
+  });
 });

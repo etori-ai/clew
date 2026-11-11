@@ -19,6 +19,7 @@ import { ApiError } from '../api';
 import { entityDetailQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { actionMenuItems, useEntityAction } from '../entity-actions';
+import { PANEL_KEYS, withCard } from '../panel-address';
 import {
   PERSON,
   PERSON_SECTION,
@@ -57,13 +58,31 @@ export interface PersonPanelSlot {
   /** The opened person's name once it has arrived, for the page's title. */
   name: string | undefined;
 }
-/** The address of a person opened beside the list at `pathname`, keeping the list's own selection (`search`). */
+/**
+ * The address of a person opened beside the list at `pathname`, keeping the list's own selection (`search`). A card
+ * open in the panel is let go of: one thing at a time, and the person chosen from the list takes its place.
+ */
 export const personHref = (pathname: string, search: string, key: string): string => {
   const params = new URLSearchParams(search);
   params.delete(PERSON_SECTION);
+  PANEL_KEYS.forEach(k => params.delete(k));
   params.set(PERSON, key);
   return pathname + '?' + params.toString();
 };
+/** The list's own address: the page without the person opened beside it and without what the panel holds. */
+export const listAddress = (pathname: string, search: URLSearchParams | string): string => {
+  const params = new URLSearchParams(search);
+  [PERSON, PERSON_SECTION, ...PANEL_KEYS].forEach(k => params.delete(k));
+  const q = params.toString();
+  return q ? `${pathname}?${q}` : pathname;
+};
+/**
+ * The person's page as a name in the list leads to it (the product owner, 2026-11-11: the name opens the page), with
+ * the list as the way back. The opened person's own "Öppna som sida" is the same
+ * address, which is how the focus finds the name again when the panel closes.
+ */
+export const personPageFromList = (pathname: string, search: URLSearchParams | string, key: string): string =>
+  personPageHref(key, { from: listAddress(pathname, search) });
 /** The person's panel is wider than the shared one (artboard C: 520 to 600 px), its width remembered on its own. */
 const PERSON_PANEL: PanelSize = { default: 560, min: 440, max: 640, id: 'clew-person-panel-width' };
 /** What the list beside the person keeps: its names and one mark each (artboard C). */
@@ -148,11 +167,13 @@ function PersonBody({
   answers,
   pageHref,
   fullerHref,
+  cardHref,
 }: {
   detail: EntityDetail;
   answers: SectionAnswer[];
   pageHref: string;
   fullerHref: (capability: string) => string;
+  cardHref: (threadId: string) => string;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const animatedLayout = useAnimatedLayout({ containerRef: root });
@@ -171,6 +192,7 @@ function PersonBody({
           personId={detail.entity.id}
           name={detail.entity.name}
           fullerHref={fullerHref}
+          cardHref={cardHref}
           animatedLayout={animatedLayout}
         />
       )}
@@ -189,12 +211,14 @@ function PhoneBody({
   drill,
   rowHref,
   fullerHref,
+  cardHref,
 }: {
   detail: EntityDetail;
   answers: SectionAnswer[];
   drill: string | undefined;
   rowHref: (section: string | null) => string;
   fullerHref: (capability: string) => string;
+  cardHref: (threadId: string) => string;
 }) {
   const back = useRef<HTMLButtonElement>(null);
   const root = useRef<HTMLDivElement>(null);
@@ -225,7 +249,7 @@ function PhoneBody({
             />
           </HStack>
           {drill === NEEDS_YOU ? (
-            <NeedsYouSection cards={detail.cards} />
+            <NeedsYouSection cards={detail.cards} cardHref={cardHref} />
           ) : (
             answer && (
               <SourceSection
@@ -248,8 +272,12 @@ function PhoneBody({
  * The person beside the list (D97 item 5, artboard C), in the one panel (D50), wired as a tool's page wires its view:
  * opening moves focus to the person's name, Esc and ✕ close and give focus back to the link that opened them, one person
  * taking another's place is named aloud, and where the panel does not fit beside the list it is the drawer over it.
+ *
+ * `over` is what the page holds in the same panel over the person: a card opened from the list or from the person's
+ * Behöver dig (`card-panel.tsx`). The panel draws it in the person's place, the person's sources are not asked again
+ * while it does (D83 rule 7), and closing it leaves the person when one is in the address, else the list.
  */
-export function usePersonPanel(): PersonPanelSlot {
+export function usePersonPanel(over: PanelFrame | null = null): PersonPanelSlot {
   const [search] = useSearchParams();
   const { pathname } = useLocation();
   const navigate = useNavigate();
@@ -265,13 +293,15 @@ export function usePersonPanel(): PersonPanelSlot {
     placeholderData: keepPreviousData,
   });
   const detail = key && !read.isError ? read.data : undefined;
-  const answers = useSectionAnswers(detail?.entity.key, detail?.sections ?? []);
+  const answers = useSectionAnswers(over ? undefined : detail?.entity.key, detail?.sections ?? []);
   const missing = !!key && read.isError && read.error instanceof ApiError && read.error.status === 404;
   const list = withoutPerson(pathname, search);
   // The unit's page leads back here, with the person still open (D83 rule 4).
   const here = search.toString() ? `${pathname}?${search.toString()}` : pathname;
   const close = () => navigate(list);
   const origin = originLabel(pathname) ?? 'listan';
+  // A card about the person opens over them, in the same panel: the address keeps the person under it.
+  const cardHref = (threadId: string) => withCard(pathname, search, threadId);
   const frame: PanelFrame | null = !key
     ? null
     : detail
@@ -295,9 +325,10 @@ export function usePersonPanel(): PersonPanelSlot {
           ...(detail.entity.detail || detail.entity.unit
             ? { subtitle: <PersonLine entity={detail.entity} relation={detail.relation} from={here} /> }
             : {}),
-          // The address of the link that opened the person: a list drawn compact beside the panel draws its rows
-          // anew, so the focus finds the row by where it leads when the person is closed.
-          address: personHref(pathname, withoutPerson('', search), detail.entity.key),
+          // Where the person's name in the whole list leads: the panel was opened from "Just nu" or by its address,
+          // and a list drawn compact beside the panel draws its rows anew, so when the person is closed the focus goes
+          // to the row's name, found by its address.
+          address: personPageFromList(pathname, search, detail.entity.key),
           onClose: close,
           body: () =>
             mobile ? (
@@ -307,6 +338,7 @@ export function usePersonPanel(): PersonPanelSlot {
                 drill={drill}
                 rowHref={section => withPersonSection(pathname, search, section)}
                 fullerHref={section => personPageHref(detail.entity.key, { section, from: list })}
+                cardHref={cardHref}
               />
             ) : (
               <PersonBody
@@ -314,6 +346,7 @@ export function usePersonPanel(): PersonPanelSlot {
                 answers={answers}
                 pageHref={personPageHref(detail.entity.key, { from: list })}
                 fullerHref={section => personPageHref(detail.entity.key, { section, from: list })}
+                cardHref={cardHref}
               />
             ),
         }
@@ -347,8 +380,13 @@ export function usePersonPanel(): PersonPanelSlot {
               ),
             }
           : null;
-  const slot = usePanel(frame, { minMain: LIST_MIN, size: PERSON_PANEL, replaces: true, overlayOnly: short });
-  // The list is drawn whole again in the same step as the person closes, so the row that opened them is there to
-  // take the focus back.
-  return { ...slot, occupied: slot.occupied && !!key, person: key, name: key ? detail?.entity.name : undefined };
+  const slot = usePanel(over ?? frame, { minMain: LIST_MIN, size: PERSON_PANEL, replaces: true, overlayOnly: short });
+  // The list is drawn whole again in the same step as the person or the card closes, so the row that opened them is
+  // there to take the focus back.
+  return {
+    ...slot,
+    occupied: slot.occupied && (!!key || !!over),
+    person: key,
+    name: key ? detail?.entity.name : undefined,
+  };
 }

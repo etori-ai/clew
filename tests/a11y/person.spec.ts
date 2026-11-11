@@ -27,15 +27,13 @@ const said = async (page: Page, text: string) => (await announcements(page)).fil
 test.describe('the person beside Personal', () => {
   test.use({ viewport: wide });
 
-  test('a row opens the person beside the list with the focus on their name; ✕ and Esc give it back to the row', async ({
+  test('the person beside the list takes the focus on their name; ✕ and Esc give it to the row’s name', async ({
     page,
     api: _,
   }) => {
     await new People().route(page);
-    await open(page, '/staff');
-    await rowLink(page, 'Johan Byström').focus();
-    await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(/\/staff\?person=johan$/);
+    // The name in the list leads to the person's page; beside the list they are opened by "Just nu" or by address.
+    await open(page, '/staff?person=johan');
     const panel = panelOf(page);
     await expect(panel).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -50,9 +48,10 @@ test.describe('the person beside Personal', () => {
     // Behöver dig first, then each source named with its own: the order of artboard C.
     const headings = panel.locator('[aria-level="3"]');
     await expect(headings).toHaveText(['Behöver dig', 'Utvecklingssamtal', 'Frånvaro', 'Kontakt', 'Kompetenser']);
+    // A card about the person opens over them in the same panel (D83 rule 1): the address keeps the person under it.
     await expect(panel.getByRole('link', { name: 'En åtgärdspunkt skulle vara klar 3 nov' })).toHaveAttribute(
       'href',
-      '/?card=samtal-svar',
+      '/staff?person=johan&card=samtal-svar',
     );
     await expect(panel.getByText('Kompetenssystemet · till kännedom')).toBeVisible();
     // Clew's own talks are captioned Clew (artboard C); the action points stand under the state as a plain list, and
@@ -82,11 +81,36 @@ test.describe('the person beside Personal', () => {
     await expect(page).toHaveURL(/\/staff$/);
     await expect(rowLink(page, 'Johan Byström')).toBeFocused();
     // Esc inside the panel closes it the same way.
-    await rowLink(page, 'Johan Byström').click();
+    await expect(rowLink(page, 'Johan Byström')).toHaveAttribute('href', '/people/johan?from=%2Fstaff');
+    await open(page, '/staff?person=johan');
     await expect(panel.getByRole('heading', { level: 2, name: 'Johan Byström' })).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(panelOf(page)).toHaveCount(0);
     await expect(rowLink(page, 'Johan Byström')).toBeFocused();
+  });
+
+  test('a card under Behöver dig opens over the person, is named aloud, and closing it leaves the person', async ({
+    page,
+    api: _,
+  }) => {
+    await new People().route(page);
+    await open(page, '/staff?person=johan');
+    const cardLink = panelOf(page).getByRole('link', { name: 'En åtgärdspunkt skulle vara klar 3 nov' });
+    await cardLink.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL('/staff?person=johan&card=samtal-svar');
+    const card = page.getByRole('complementary', { name: 'Kort' });
+    await expect(card.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
+    await expect(card.getByRole('article', { name: 'Kort: Planera utvecklingssamtal vecka 45' })).toBeVisible();
+    await expect(page.getByRole('complementary')).toHaveCount(1);
+    await expect.poll(() => said(page, 'Planera utvecklingssamtal vecka 45')).toBeGreaterThan(0);
+    // The list beside it keeps the person current, and the tab still names them.
+    await expect(page).toHaveTitle('Johan Byström · Personal · Startsidan');
+    await expectNoAxeViolations(page);
+    await page.keyboard.press('Escape');
+    await expect(page).toHaveURL(/\/staff\?person=johan$/);
+    await expect(panelOf(page).getByRole('heading', { level: 2, name: 'Johan Byström' })).toBeVisible();
+    await expect(cardLink).toBeFocused();
   });
 
   test('one person takes the place of another, is named aloud, and closing returns to the row that opened them', async ({
