@@ -196,6 +196,33 @@ deliver the organisation as a list of its own, which should go in before the peo
   a filter on the unit extension.
 
 Verification: `bun run check` (896 unit tests, the Node runtime tests, the documentation check) and `bun run test:db`
-(115, the store contracts and the concurrency cases on Postgres) in the devcontainer. The new cases were not each
-seen to fail without their fix; the probe above showed the faults before the fixes. Nothing was run against a real
+(115, the store contracts and the concurrency cases on Postgres) in the devcontainer. Nothing was run against a real
 source, and Personal was not looked at in a browser.
+
+## Second pass: the orders nobody thought of
+
+The product owner asked the same day whether the tests cover adding and removing in the right and the wrong order.
+The orders somebody had thought of were covered; four kinds were not, and are now.
+
+- **A run that dies on the way.** `tests/unit/provisioner.test.ts` pushes a small organisation and loses each request
+  of the run in turn, once before it reaches the server and once after the server answered, for a first run and for a
+  run with a day of changes of every kind. The next run ends exactly where one whole run would have, and the run after
+  that writes nothing.
+- **Orders nobody wrote down.** `tests/unit/organisation-tree.test.ts` creates, moves and removes units in a seeded
+  random order beside a model of the tree: the server takes exactly what keeps the tree whole, refuses the rest, and
+  writes one audit row per change. A second case sends a tree in a shuffled order and sends again what was refused
+  until it is whole, then removes it the same way.
+- **What the server does with the wrong member order.** `tests/unit/scim.test.ts` removes a person from one unit
+  before adding them to the other: no grant and no capability in between, a `grant.derived` row with `removed: true`
+  and one that gives it back; the right order keeps a grant the whole way and writes one row.
+- **Two races on Postgres.** A member added to a unit while the unit is removed, in either order, each stopped at the
+  moment it holds the unit; and two organisations that take one unit at once, one by `unit:` and one by
+  `unit-manager:`.
+
+Each fix of D101 was then switched off in turn and the test meant for it run: all eleven failed, as did the random
+order case without the cycle check and without the refusal to remove a unit with units below it. The race between
+adding and removing did not fail without the group lock as first written (eight rounds left to chance); it was
+rewritten to stop each request where it holds the unit, and fails without the lock on either request.
+
+Verification: `bun run check` (901 unit tests) and `bun run test:db` (117) in the devcontainer, in a worktree of the
+branch.

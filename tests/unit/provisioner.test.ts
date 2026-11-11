@@ -3,8 +3,13 @@ import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapt
 import { scimUsecases } from '../../apps/server/src/modules/people/usecases';
 import { scimRoutes } from '../../apps/server/src/routes/scim';
 import { checkProvisioning } from '../../scripts/provisioner/check';
-import { scimClient } from '../../scripts/provisioner/client';
-import { developmentDirectory, fullName, type Directory } from '../../scripts/provisioner/directory';
+import { scimClient, type ScimClient } from '../../scripts/provisioner/client';
+import {
+  developmentDirectory,
+  fullName,
+  type Directory,
+  type DirectoryPerson,
+} from '../../scripts/provisioner/directory';
 import { plan, push } from '../../scripts/provisioner/push';
 
 /**
@@ -504,4 +509,130 @@ describe('the synthetic provisioner', () => {
     );
     expect(wrong[0]).toMatchObject({ level: 'fail', text: expect.stringContaining('answered 200 (text/html)') });
   });
+});
+
+/**
+ * A run that dies on the way (D101). The next run has to end where one whole run would have, whichever request was
+ * the last: the organisation is small here so that every request of a run can be the one that is lost, once before it
+ * reaches the server and once after the server did what it asked.
+ */
+describe('a run that is interrupted', () => {
+  const unit = (id: string, label: string, parent?: string) => ({ id, label, ...(parent ? { parent } : {}) });
+  const person = (name: string, department: string, extra: Partial<DirectoryPerson> = {}): DirectoryPerson => ({
+    externalId: 'dev:' + name,
+    userName: name,
+    givenName: name,
+    familyName: 'Test',
+    email: name + '@clew.test',
+    department,
+    manager: false,
+    capabilities: [],
+    ...extra,
+  });
+  const before: Directory = {
+    units: [
+      unit('kommun', 'Kommunen'),
+      unit('skola', 'Skolan', 'kommun'),
+      unit('fritids', 'Fritids', 'skola'),
+      unit('omsorg', 'Omsorgen', 'kommun'),
+      unit('natt', 'Natt', 'omsorg'),
+    ],
+    groups: [{ id: 'ad:alla', label: 'Alla' }],
+    people: [
+      person('dir', 'kommun', { manager: true, capabilities: ['admin.users'] }),
+      person('rektor', 'skola', { manager: true }),
+      person('anna', 'skola', { groups: ['ad:alla'] }),
+      person('bo', 'fritids'),
+      person('chef', 'omsorg', { manager: true }),
+      person('dag', 'natt'),
+      person('eva', 'natt', { alsoIn: ['omsorg'] }),
+    ],
+  };
+  // A day with every kind of change: a unit removed, one moved, one renamed and one new; a leaver and a newcomer; a
+  // person who moves each way between two units; a manager who is one no longer and one who gains a unit; a
+  // capability taken back; a plain group renamed.
+  const after: Directory = {
+    units: [
+      unit('kommun', 'Kommunen'),
+      unit('skola', 'Skolan', 'kommun'),
+      unit('omsorg', 'Vård och omsorg', 'kommun'),
+      unit('natt', 'Natt', 'kommun'),
+      unit('kost', 'Kost', 'skola'),
+    ],
+    groups: [{ id: 'ad:alla', label: 'Alla anställda' }],
+    people: [
+      person('dir', 'kommun', { manager: true }),
+      person('rektor', 'skola', { manager: true, alsoManages: ['kost'] }),
+      person('anna', 'omsorg', { groups: ['ad:alla'] }),
+      person('bo', 'skola'),
+      person('chef', 'skola'),
+      person('eva', 'natt'),
+      person('fia', 'kost'),
+    ],
+  };
+  /** What Clew holds, by the source's ids: Clew's own ids differ from one stack to the next. */
+  const held = (store: ReturnType<typeof stack>['store']) => {
+    const s = store.state,
+      source = (id: string) => s.users.get(id)!.externalId!,
+      rows = <T>(list: T[]) => list.map(row => JSON.stringify(row)).sort();
+    return {
+      users: rows([...s.users.values()].map(u => [u.externalId, u.userName, u.name, u.email, u.enabled])),
+      groups: rows(
+        [...s.groups.values()].map(g => [
+          g.externalId,
+          g.label,
+          g.parentUnitId,
+          [...s.members]
+            .map(key => key.split('\u0000'))
+            .filter(([group]) => group === g.id)
+            .map(([, member]) => source(member!))
+            .sort(),
+        ]),
+      ),
+      assignments: rows([...s.assignments].filter(([, list]) => list.length).map(([id, list]) => [source(id), list])),
+      grants: rows([...s.grants].map(([id, grant]) => [source(id), grant])),
+      units: rows([...s.units]),
+    };
+  };
+  /** The client with its `at`th request lost: before it is sent, or after the server answered it. */
+  const cut = (client: ScimClient, at: number, lost: 'request' | 'response'): ScimClient => {
+    let sent = 0;
+    return {
+      request: async (...args) => {
+        if (++sent !== at) return client.request(...args);
+        if (lost === 'response') await client.request(...args);
+        throw new Error('connection lost');
+      },
+    };
+  };
+  for (const [name, from, to] of [
+    ['a first run', undefined, before],
+    ['a run with a day of changes', before, after],
+  ] as const)
+    test(`${name}, lost at any request, is finished by the next run exactly as one whole run would have`, async () => {
+      const begin = async () => {
+        const s = stack();
+        if (from) await push(s.client, from);
+        return s;
+      };
+      const whole = await begin();
+      let requests = 0;
+      await push({ request: (...args) => (requests++, whole.client.request(...args)) }, to);
+      const expected = held(whole.store);
+      expect(requests).toBeGreaterThan(30);
+      for (const lost of ['request', 'response'] as const)
+        for (let at = 1; at <= requests; at++) {
+          const s = await begin();
+          await expect(push(cut(s.client, at, lost), to)).rejects.toThrow('connection lost');
+          await push(s.client, to);
+          expect([`the ${lost} of call ${at} lost`, held(s.store)]).toEqual([
+            `the ${lost} of call ${at} lost`,
+            expected,
+          ]);
+          // And the run after that has nothing left to do.
+          const audited = s.store.state.audit.length;
+          await push(s.client, to);
+          expect(s.store.state.audit.length).toBe(audited);
+        }
+    });
 });

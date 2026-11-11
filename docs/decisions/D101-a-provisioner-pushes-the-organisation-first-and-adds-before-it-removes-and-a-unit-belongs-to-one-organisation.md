@@ -82,7 +82,11 @@ body limit), `scripts/provisioner/push.ts`, `check.ts`, `index.ts` and `scripts/
 `tests/unit/organisation-tree.test.ts` (the unit's name with its audit row; the organisation boundary with nothing
 stored and no audit row), `tests/unit/users-admin.test.ts` (the mapping), `tests/unit/provisioner.test.ts` (a move
 that never loses the grant, the guard, the roots warning) and `tests/unit/scim-routes.test.ts` (bytes). No migration
-and no port changed.
+and no port changed. The same day the orders nobody had thought of were added: a run lost at any request and
+finished by the next, units created, moved and removed in a seeded random order beside a model of the tree, what the
+server does when a client removes before it adds (`tests/unit/scim.test.ts`), and two races in
+`tests/db/postgres-scim-concurrency.test.ts`. Each fix was switched off in turn and its test seen to fail; the
+[review](../reviews/2026-11-11-scim-flow-people-and-organisation.md) says how.
 
 **Not done.** A run against a real source or a real identity provider. A second organisation in an installation
 (item 5). A manual look at Personal signed in as the head of a unit nobody is placed on.

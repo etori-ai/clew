@@ -312,3 +312,101 @@ test('a unit placed under a parent while the parent is removed, and two moves th
   }
   expect(b.id).not.toBe(d.id);
 });
+/**
+ * A store whose transactions stop after reading a group until `release` is called: the request holds the group, if it
+ * locks it, and has not yet written anything.
+ */
+function pausedAtGroup(inner: ProvisionStore) {
+  let reached!: () => void, release!: () => void;
+  const atRead = new Promise<void>(resolve => (reached = resolve)),
+    gate = new Promise<void>(resolve => (release = resolve));
+  const store: ProvisionStore = {
+    transaction: fn =>
+      inner.transaction(tx =>
+        fn({
+          ...tx,
+          readGroup: async (organisationId, id, lock) => {
+            const row = await tx.readGroup(organisationId, id, lock);
+            reached();
+            await gate;
+            return row;
+          },
+        }),
+      ),
+  };
+  return { store, atRead, release };
+}
+test('a member is added to a unit while the unit is removed, in either order: the second request waits for the first, and nobody is left on a unit that is gone', async () => {
+  const { prefix, deps, p, store, user, grant, scim } = stack();
+  const add = (use: typeof scim, groupId: string, personId: string) =>
+    use.patchGroup(
+      p,
+      groupId,
+      { schemas: [PATCH], Operations: [{ op: 'add', path: 'members', value: [{ value: personId }] }] },
+      BASE,
+    );
+  const nothingLeft = async (groupId: string, personId: string) => {
+    const db = database();
+    expect(await grant(personId)).toBeUndefined();
+    expect(await db.select().from(schema.groups).where(eq(schema.groups.id, groupId))).toEqual([]);
+    expect(await db.select().from(schema.groupMembers).where(eq(schema.groupMembers.personId, personId))).toEqual([]);
+    expect(await db.select().from(schema.assignments).where(eq(schema.assignments.personId, personId))).toEqual([]);
+  };
+  const begin = async (n: number) => ({
+    person: (await scim.createUser(p, user(n), BASE)).id,
+    unit: (await scim.createGroup(p, { externalId: `unit:${prefix}-gone${n}`, displayName: 'Gone ' + n }, BASE)).id,
+  });
+  // The addition holds the unit first: the removal waits, then removes the unit with its new member.
+  const one = await begin(1),
+    adding = pausedAtGroup(store),
+    added = add(scimUsecases({ store: adding.store, ...deps }), one.unit, one.person);
+  await adding.atRead;
+  const removed = scim.deleteGroup(p, one.unit),
+    removedDone = settled(removed);
+  await new Promise(resolve => setTimeout(resolve, 400));
+  expect(removedDone()).toBe(false);
+  adding.release();
+  await Promise.all([added, removed]);
+  await nothingLeft(one.unit, one.person);
+  // The removal holds the unit first: the addition waits, then finds no unit to add to.
+  const two = await begin(2),
+    removing = pausedAtGroup(store),
+    gone = scimUsecases({ store: removing.store, ...deps }).deleteGroup(p, two.unit);
+  await removing.atRead;
+  const late = add(scim, two.unit, two.person),
+    lateDone = settled(late);
+  await new Promise(resolve => setTimeout(resolve, 400));
+  expect(lateDone()).toBe(false);
+  removing.release();
+  await gone;
+  await expect(late).rejects.toMatchObject({ status: 404 });
+  await nothingLeft(two.unit, two.person);
+});
+test('two organisations take one unit at once, one by its unit key and one by its manager key: one holds it and the other is refused (D101)', async () => {
+  const ours = stack(),
+    theirs = stack();
+  for (let round = 0; round < 8; round++) {
+    const unit = `${ours.prefix}-shared${round}`,
+      keys = ['unit:' + unit, 'unit-manager:' + unit];
+    const writes = [
+      () => ours.scim.createGroup(ours.p, { externalId: keys[0]!, displayName: 'Ours' }, BASE),
+      () => theirs.scim.createGroup(theirs.p, { externalId: keys[1]!, displayName: 'Theirs' }, BASE),
+    ];
+    if (round % 2) writes.reverse();
+    const results = await Promise.all(
+      writes.map(write =>
+        write().then(
+          () => 'done',
+          (error: { detail?: string }) => error.detail ?? String(error),
+        ),
+      ),
+    );
+    expect(results.filter(r => r === 'done')).toHaveLength(1);
+    expect(results.find(r => r !== 'done')).toContain(`The unit '${unit}' is not a unit of this organisation (D101)`);
+    const holders = await database()
+      .select({ organisationId: schema.groups.organisationId })
+      .from(schema.groups)
+      .where(inArray(schema.groups.externalId, keys));
+    expect(holders).toHaveLength(1);
+  }
+});
