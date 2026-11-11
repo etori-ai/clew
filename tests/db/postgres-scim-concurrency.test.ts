@@ -102,6 +102,52 @@ const settled = (promise: Promise<unknown>) => {
   );
   return () => done;
 };
+test('concurrent user patches preserve the name and the deactivation', async () => {
+  const { deps, p, store, user, scim } = stack();
+  const { id } = await scim.createUser(p, user(1), BASE);
+  const slow = paused(store);
+  const patch = (path: string, value: string | boolean) => ({
+    schemas: [PATCH],
+    Operations: [{ op: 'replace', path, value }],
+  });
+  const first = scimUsecases({ store: slow.store, ...deps }).patchUser(p, id, patch('active', false), BASE);
+  await slow.atRead;
+  // The first write is uncommitted. A second writer must read the committed inactive state.
+  let reading!: () => void;
+  const started = new Promise<void>(resolve => {
+    reading = resolve;
+  });
+  const observed: ProvisionStore = {
+    transaction: fn =>
+      store.transaction(tx =>
+        fn({
+          ...tx,
+          readUser: (...args) => {
+            reading();
+            return tx.readUser(...args);
+          },
+        }),
+      ),
+  };
+  const second = scimUsecases({ store: observed, ...deps }).patchUser(p, id, patch('displayName', 'New name'), BASE);
+  try {
+    await started;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  } finally {
+    slow.release();
+  }
+  await Promise.all([first, second]);
+  expect(await scim.getUser(p, id, BASE)).toMatchObject({ active: false, displayName: 'New name' });
+  const rows = await database()
+    .select({ action: schema.audit.action })
+    .from(schema.audit)
+    .where(eq(schema.audit.subject, 'person:' + id));
+  expect(rows.map(row => row.action).sort()).toEqual([
+    'scim.user.created',
+    'scim.user.deactivated',
+    'scim.user.patched',
+  ]);
+});
 test('two membership changes for one person at once: the second derivation waits and reads what the first committed', async () => {
   const { prefix, deps, p, store, user, grant, scim } = stack();
   const person = (await scim.createUser(p, user(1), BASE)).id;

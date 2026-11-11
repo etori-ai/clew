@@ -187,8 +187,8 @@ export function scimUsecases(deps: {
       'invalidSyntax',
     );
   };
-  const userOr404 = async (tx: ProvisionTx, p: Provisioner, id: string) => {
-    const user = await tx.readUser(p.organisationId, id);
+  const userOr404 = async (tx: ProvisionTx, p: Provisioner, id: string, lock = false) => {
+    const user = await tx.readUser(p.organisationId, id, lock);
     if (!user) throw new ScimError(404, `User '${id}' not found.`);
     return user;
   };
@@ -479,7 +479,7 @@ export function scimUsecases(deps: {
         writeUser(
           tx,
           p,
-          await userOr404(tx, p, id),
+          await userOr404(tx, p, id, true),
           userFields(checked(ScimUserInputSchema, body, 'User')),
           'scim.user.replaced',
           base,
@@ -487,7 +487,7 @@ export function scimUsecases(deps: {
       ),
     patchUser: (p: Provisioner, id: string, body: unknown, base: string) =>
       deps.store.transaction(async tx => {
-        const current = await userOr404(tx, p, id),
+        const current = await userOr404(tx, p, id, true),
           patch = checked<{ Operations: Parameters<typeof applyUserPatch>[1] }>(ScimPatchSchema, body, 'PatchOp');
         return writeUser(
           tx,
@@ -501,7 +501,7 @@ export function scimUsecases(deps: {
     /** D68: a deleted user is deactivated, never erased. Idempotent. */
     deleteUser: (p: Provisioner, id: string) =>
       deps.store.transaction(async tx => {
-        const current = await userOr404(tx, p, id);
+        const current = await userOr404(tx, p, id, true);
         if (!current.enabled) return;
         await tx.updateUser(id, { enabled: false, updatedAt: now() });
         await tx.audit({

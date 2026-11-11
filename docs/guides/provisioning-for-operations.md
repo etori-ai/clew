@@ -1,8 +1,8 @@
 # Provisioning: what operations deliver
 
-This page is for the people who run an installation of Clew: the team that runs the organisation's directory, the team that runs the identity provider and the team that hosts Clew. It says what each of them delivers before anybody can sign in, what has to be answered before anything is built, and how to tell that it works. Every example on the page uses one small organisation and can be run as it stands. The protocol itself, every attribute and every answer, is in [Writing a provisioner](writing-a-provisioner.md).
+This page is for the people who run an installation of Clew: the team that runs the organisation's directory, the team that runs the identity provider and the team that hosts Clew. It says what each of them delivers before anybody can sign in, what has to be answered before anything is built, and how to tell that it works. The walkthrough loads a complete school organisation into an empty test installation and checks the resulting state. The protocol itself, every attribute and every answer, is in [Writing a provisioner](writing-a-provisioner.md).
 
-Clew never reads an organisation's directory. People, units and groups are sent to Clew by a **provisioner**, a process the installation runs itself, over standard SCIM 2.0. A person who has not been sent cannot sign in, and a person who has been sent signs in through the organisation's own identity provider.
+Clew never reads an organisation's directory. People, units and groups are sent to Clew by a **provisioner**, a process the installation runs itself, using SCIM 2.0 with Clew’s unit extension and group-key conventions. A person who has not been sent cannot sign in, and a person who has been sent signs in through the organisation's own identity provider.
 
 ![Two paths into Clew. Above: the source is read by the provisioner, which sends people, units and groups to Clew's SCIM server over HTTPS with a key, and the person is stored in Clew with a user name. Below: a person signs in at the identity provider, which sends an ID token with the account name to Clew's sign-in, and the sign-in finds the stored person whose user name is that account name.](../architecture/figures/provisioning-and-sign-in.svg)
 
@@ -44,7 +44,7 @@ The format fits a source that can answer yes to the first three. Each answer cha
 
 | Question | Why Clew needs the answer | An answer that fits |
 |---|---|---|
-| Does every person have an id that is stable and never given to somebody else? | Clew finds a person by it on every later request (`externalId`). An id that changes makes a new person; an id that is reused hands one person's history to another. | "The employee number, `e-1001`. It follows the person for life and is never issued again." |
+| Does every person have an id that is stable and never given to somebody else? | A provisioner filters by this source ID (`externalId`) to recover Clew’s resource ID for later writes. An id that changes makes a new person; an id that is reused hands one person's history to another. | "The employee number, `e-1001`. It follows the person for life and is never issued again." |
 | Can the units be delivered as a list of their own, each with an id, a name and the id of the unit above it? | Clew holds the organisation as a tree and never works it out from the people. A tree that exists only as a path on each person has to be turned into units in the provisioner. | "Yes: the table of units above." |
 | Do unit ids survive a reorganisation? | Everything in Clew that names a unit follows the id. A unit that moves keeps its id and changes only the unit above it; a unit that gets a new id is a new unit to Clew. | "Yes. `111` stays `111` when Centralskolan moves to another administration." |
 | What does the source's manager flag refer to, and where is a manager placed: on the unit they lead, or on the one above? | A manager must be sent as manager of the unit they lead. Who a person reports to is read from that and from the tree. | "Each unit names its manager. Anna is placed on `110` and leads `110`." |
@@ -55,7 +55,7 @@ The format fits a source that can answer yes to the first three. Each answer cha
 
 ## The directory team: a provisioner
 
-A provisioner is a small program: the example in the repository, [scripts/provisioner/](../../scripts/provisioner), is about two hundred lines with a forty-line SCIM client. Replace its reader with a reader of your source and keep the rest, or write your own in any language. It is the only place that knows the source's fields, groups and roles.
+The directory team owns the reader, mapping and reconciliation. Assign one writer to each user ID namespace and each group key, including capability groups. The [example provisioner](../../scripts/provisioner) takes these boundaries explicitly. Its development reader owns people prefixed `dev:`. A reader using `e-1001` would configure `userPrefix: 'e-'`. Assign disjoint group prefixes or list the exact keys. Each writer owns the entire membership of its assigned groups.
 
 It does two things ([D109](../decisions/D109-a-provisioner-sends-a-change-when-it-happens-and-reconciles-the-whole-source-daily.md)). It sends each change to Clew when it happens, which is the rule. And it compares the whole source with what Clew holds at least once a day, which is the net under the rule: a change that was lost on the way is found by nothing else. The example does only the second, because its source is a file that has no events; sending a change when it happens is yours to add.
 
@@ -64,116 +64,91 @@ It does two things ([D109](../decisions/D109-a-provisioner-sends-a-change-when-i
 | From the source | Becomes in Clew | In the example | Required |
 |---|---|---|---|
 | Each unit: id, name, id of the unit above | A group with the key `unit:<id>`, the name and its `parent`. A unit nobody is placed on, such as a heading over several departments, is sent as well. | `unit:100` Kommunen, `unit:110` Utbildning with parent `unit:100` | Yes |
-| Each person: stable id, account name, name, work address, whether they are active | A user with `externalId`, `userName`, `displayName`, `emails` and `active` | `e-1001`, `anna.berg`, Anna Berg, `anna.berg@example.org`, `true` | The first four. `active` is `true` when it is left out. |
+| Each person: stable id, account name, name, work address, whether they are active | A user with `externalId`, `userName`, `displayName`, `emails` and `active` | `e-1001`, `anna.berg`, Anna Berg, `anna.berg@example.org`, `true` | Send all five. On creation or full replacement Clew defaults `active` to `true` if omitted. |
 | Where each person works | Membership of the group `unit:<id>` of that unit | Lena is a member of `unit:111` | Yes: a person with no unit exists and can do nothing |
 | Who leads each unit | Membership of the group `unit-manager:<id>` of that unit. Once, on the unit they lead; not on every unit below it. | Anna is a member of `unit:110` and of `unit-manager:110` | Yes, for anybody who is to see their reports |
 | Who administers Clew | A group with the key `capability:<name>`, such as `capability:admin.users`. Or any directory group, which an administrator then maps to a capability in Clew. | Anna is a member of `capability:admin.users` | At least one person with `admin.users`, or nobody can administer the installation |
 | Other directory groups | Plain groups. They mean nothing until an administrator maps one or uses it as the audience of a connected system. | `ad:larare` | No |
 
-A key is written exactly: lower case, the id directly after the colon. Do not send whether a person is protected. Clew has not decided whether it may hold that fact, and refuses the key `protected`.
+Clew’s organisational model uses the SCIM Group resource and its own unit extension. Enterprise User attributes such as `department`, `division`, `organization` and `manager` can be accepted without creating a placement or reporting line. Convert the source tree into unit groups, and nested directory groups into explicit person memberships. An installation supports one organisation with one or more root units. The token selects the organisation. A person needs an enabled account and an employee or manager assignment to sign in. The first administrator also needs `admin.users`. Select an approved work address at the source. Clew accepts an explicitly typed work address or an untyped address selected for that purpose. A home-only list is refused.
+
+Use the reserved prefix in lower case, followed immediately by the source ID in its original case. Do not send whether a person is protected. Clew has not decided whether it may hold that fact, and refuses the key `protected`.
 
 ### Try it by hand first
 
-Seven steps put the example into a test installation and show that the address, the key and the format are right before any program is written. They need `curl` and the key from the [hosting team](#the-hosting-team-address-key-and-environments). Each answer carries the `id` Clew gave the resource; later requests name the resource by it.
+Run these Bash blocks in order in the same shell from a checkout with Bun, Python 3 and curl (7.76 or newer). Use an **empty test organisation**. Export `CLEW` as its SCIM base URL and supply `CLEW_PROVISIONER_TOKEN` through the secret store. The commands create the complete school example. If a create response is lost, find the resource by its source ID before continuing.
+
+**Verify the token.** The `scim` command shows HTTP errors. The `id_of` command requires exactly one result and returns the ID Clew assigned.
 
 ```bash
-export CLEW=https://clew.example.org/scim/v2
-export KEY=<the key>
+set -euo pipefail
+: "${CLEW:?Export the SCIM base URL ending in /scim/v2}"
+: "${CLEW_PROVISIONER_TOKEN:?Supply the test token through your secret store}"
+scim() {
+  curl --silent --show-error --fail-with-body \
+    -H "Authorization: Bearer $CLEW_PROVISIONER_TOKEN" \
+    -H 'Content-Type: application/scim+json' "$@"
+}
+id_of() {
+  scim -G "$CLEW/$1" --data-urlencode "filter=externalId eq \"$2\"" |
+    python3 -c 'import json,sys; [resource] = json.load(sys.stdin)["Resources"]; print(resource["id"])'
+}
+scim "$CLEW/ServiceProviderConfig" >/dev/null
 ```
 
-**1. The address and the key answer.** Without the key the answer is 401; with it, 200 and what the server supports.
+**Create all four units, three people and their memberships.** A child's `parent` holds its parent's **external group key**. Membership values are **Clew user IDs**. Membership requests target a **Clew group ID**.
 
 ```bash
-curl -s -H "Authorization: Bearer $KEY" $CLEW/ServiceProviderConfig
+bun - <<'TS'
+import { scimClient } from './scripts/provisioner/client';
+const client = scimClient(process.env.CLEW, process.env.CLEW_PROVISIONER_TOKEN);
+const core = 'urn:ietf:params:scim:schemas:core:2.0:';
+const unit = 'urn:clew:params:scim:schemas:extension:unit:2.0:Group';
+const patchSchema = 'urn:ietf:params:scim:api:messages:2.0:PatchOp';
+
+async function create(path, data) {
+  const { status, body } = await client.request('POST', path, data);
+  if (status !== 201 || !body.id) throw new Error('Expected a created SCIM resource');
+  return body.id;
+}
+function group(key, label, members = [], parent) {
+  return create('/Groups', {
+    schemas: parent ? [core + 'Group', unit] : [core + 'Group'],
+    externalId: key, displayName: label, members: members.map(value => ({ value })),
+    ...(parent && { [unit]: { parent } }),
+  });
+}
+function person(externalId, userName, displayName) {
+  return create('/Users', { schemas: [core + 'User'], externalId, userName, displayName,
+    emails: [{ type: 'work', value: userName + '@example.org' }], active: true });
+}
+function place(groupId, ...users) {
+  return client.request('PATCH', '/Groups/' + groupId, { schemas: [patchSchema],
+    Operations: [{ op: 'add', path: 'members', value: users.map(value => ({ value })) }] });
+}
+
+await group('unit:100', 'Kommunen');
+const education = await group('unit:110', 'Utbildning', [], 'unit:100');
+const school = await group('unit:111', 'Centralskolan', [], 'unit:110');
+await group('unit:112', 'Skolbiblioteket', [], 'unit:110');
+const anna = await person('e-1001', 'anna.berg', 'Anna Berg');
+const omar = await person('e-1002', 'omar.ali', 'Omar Ali');
+const lena = await person('e-1003', 'lena.holm', 'Lena Holm');
+await place(education, anna);
+await place(school, omar, lena);
+await group('unit-manager:110', 'Chefer Utbildning', [anna]);
+await group('unit-manager:111', 'Chefer Centralskolan', [omar]);
+await group('capability:admin.users', 'Clew-administratörer', [anna]);
+TS
 ```
 
-**2. The root unit, then a unit below it.** A unit below another names the one above in the unit extension. Each answer is 201 with the unit's `id`.
+**Check the result.** The first line of the checker names your installation. This command omits that variable line so that the output can be compared exactly.
 
 ```bash
-curl -s -X POST $CLEW/Groups \
-  -H "Authorization: Bearer $KEY" -H "Content-Type: application/scim+json" \
-  -d '{
-    "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group"],
-    "externalId": "unit:100",
-    "displayName": "Kommunen"
-  }'
-
-curl -s -X POST $CLEW/Groups \
-  -H "Authorization: Bearer $KEY" -H "Content-Type: application/scim+json" \
-  -d '{
-    "schemas": [
-      "urn:ietf:params:scim:schemas:core:2.0:Group",
-      "urn:clew:params:scim:schemas:extension:unit:2.0:Group"
-    ],
-    "externalId": "unit:110",
-    "displayName": "Utbildning",
-    "urn:clew:params:scim:schemas:extension:unit:2.0:Group": { "parent": "unit:100" }
-  }'
+bun scripts/provisioner-check.ts "$CLEW" --roots 1 | sed '1d'
 ```
-
-**3. A person.** The answer is 201 with the person's `id`.
-
-```bash
-curl -s -X POST $CLEW/Users \
-  -H "Authorization: Bearer $KEY" -H "Content-Type: application/scim+json" \
-  -d '{
-    "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
-    "externalId": "e-1001",
-    "userName": "anna.berg",
-    "displayName": "Anna Berg",
-    "emails": [{ "value": "anna.berg@example.org", "type": "work" }],
-    "active": true
-  }'
-```
-
-**4. The person is placed on the unit.** A placement is a membership, and a membership is changed on the group. The answer is 200 with the group and its members.
-
-```bash
-curl -s -X PATCH $CLEW/Groups/<id of unit:110> \
-  -H "Authorization: Bearer $KEY" -H "Content-Type: application/scim+json" \
-  -d '{
-    "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
-    "Operations": [{ "op": "add", "path": "members", "value": [{ "value": "<id of Anna>" }] }]
-  }'
-```
-
-**5. The person leads the unit.** A group of its own, with any name.
-
-```bash
-curl -s -X POST $CLEW/Groups \
-  -H "Authorization: Bearer $KEY" -H "Content-Type: application/scim+json" \
-  -d '{
-    "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group"],
-    "externalId": "unit-manager:110",
-    "displayName": "Chefer Utbildning",
-    "members": [{ "value": "<id of Anna>" }]
-  }'
-```
-
-**6. The person administers Clew.**
-
-```bash
-curl -s -X POST $CLEW/Groups \
-  -H "Authorization: Bearer $KEY" -H "Content-Type: application/scim+json" \
-  -d '{
-    "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group"],
-    "externalId": "capability:admin.users",
-    "displayName": "Clew-administratörer",
-    "members": [{ "value": "<id of Anna>" }]
-  }'
-```
-
-**7. Find a person again by the source's id.** This is how a provisioner learns Clew's `id` for somebody it sent earlier.
-
-```bash
-curl -s -G $CLEW/Users -H "Authorization: Bearer $KEY" \
-  --data-urlencode 'filter=externalId eq "e-1001"'
-```
-
-Anna can now sign in, is manager of Utbildning and may administer users. With the whole example sent, [the check](writing-a-provisioner.md#checking-a-push) says:
 
 ```text
-Provisioning at https://clew.example.org/scim/v2
   ok   Without a token the endpoint answers 401 with the SCIM error resource.
   ok   The token is accepted. PATCH yes, filter yes (at most 200 rows a page), bulk no, sort no, ETags no.
   ok   3 users: 3 active, 0 deactivated.
@@ -185,11 +160,11 @@ Provisioning at https://clew.example.org/scim/v2
 No failures, 1 warning(s).
 ```
 
-The warning is right: nobody works in Skolbiblioteket yet.
+The library is deliberately empty. In Personal, Anna sees Omar and Omar sees Lena. A level without an active manager passes the reporting line upward. Managers on the same unit share its staff. An acting manager joins the incumbent unless the source also removes the incumbent's membership. Verify the three parent links and those staff lists against the source. The checker can count a tree whose people report to the wrong managers.
 
 ### What it sends when something changes
 
-One request for each change, or two for a move, sent when the change happens in the source and not saved for the night. The person has the right access at their next request. Every kind of change is in [Writing a provisioner](writing-a-provisioner.md#what-a-provisioner-does-when-something-changes).
+Send a change when it happens. Updating a person’s name takes one request. Creating and placing someone or moving them between two units takes two. A change to several duties can require more. Each committed request takes effect on the next access check. Every kind of change is in [Writing a provisioner](writing-a-provisioner.md#what-a-provisioner-does-when-something-changes).
 
 | In the source | Request |
 |---|---|
@@ -201,48 +176,49 @@ One request for each change, or two for a move, sent when the change happens in 
 | A unit is added, renamed or moved | `POST /Groups`, or `PATCH` its `displayName` or its `parent`. A move keeps the unit's id. |
 | A change that takes effect on a day, such as an acting manager from the first of the month | The same requests, sent on that day. Clew holds no dates. |
 
-Lena moves from Centralskolan to Skolbiblioteket. The addition goes first, so that she is in both units for a moment and never in neither:
+In the same Bash session, move Lena to the library, then move the library under Centralskolan. Each membership change targets the group. A unit move changes only the fully qualified parent path. Read the unit back to verify its parent and members. A full group `PUT` replaces its members, and a unit `PUT` without its extension makes it a root.
 
 ```bash
-curl -s -X PATCH $CLEW/Groups/<id of unit:112> \
-  -H "Authorization: Bearer $KEY" -H "Content-Type: application/scim+json" \
-  -d '{
-    "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
-    "Operations": [{ "op": "add", "path": "members", "value": [{ "value": "<id of Lena>" }] }]
-  }'
-
-curl -s -X PATCH $CLEW/Groups/<id of unit:111> \
-  -H "Authorization: Bearer $KEY" -H "Content-Type: application/scim+json" \
-  -d '{
-    "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
-    "Operations": [{ "op": "remove", "path": "members[value eq \"<id of Lena>\"]" }]
-  }'
+library=$(id_of Groups unit:112)
+school=$(id_of Groups unit:111)
+lena=$(id_of Users e-1003)
+omar=$(id_of Users e-1002)
+extension=urn:clew:params:scim:schemas:extension:unit:2.0:Group
+patch() {
+  scim -X PATCH "$CLEW/$1" --data "{\"schemas\":[\"urn:ietf:params:scim:api:messages:2.0:PatchOp\"],\"Operations\":[$2]}" >/dev/null
+}
+patch "Groups/$library" "{\"op\":\"add\",\"path\":\"members\",\"value\":[{\"value\":\"$lena\"}]}"
+patch "Groups/$school" "{\"op\":\"remove\",\"path\":\"members[value eq \\\"$lena\\\"]\"}"
+patch "Groups/$library" "{\"op\":\"replace\",\"path\":\"$extension:parent\",\"value\":\"unit:111\"}"
+scim "$CLEW/Groups/$library" | python3 -c '
+import json, sys
+group = json.load(sys.stdin)
+assert group[sys.argv[1]]["parent"] == "unit:111"
+assert [m["value"] for m in group["members"]] == [sys.argv[2]]
+print("Library moved with Lena still assigned.")
+' "$extension" "$lena"
+patch "Users/$omar" '{"op":"replace","path":"active","value":false}'
+scim "$CLEW/Users/$omar" | python3 -c 'import json,sys; assert json.load(sys.stdin)["active"] is False; print("Omar deactivated.")'
 ```
 
-Sent the other way round, Lena has no unit between the two requests, loses her access and is signed out in the middle of her work.
-
-Omar leaves. He is deactivated, never erased, and keeps his account name:
-
-```bash
-curl -s -X PATCH $CLEW/Users/<id of Omar> \
-  -H "Authorization: Bearer $KEY" -H "Content-Type: application/scim+json" \
-  -d '{
-    "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
-    "Operations": [{ "op": "replace", "path": "active", "value": false }]
-  }'
+```text
+Library moved with Lena still assigned.
+Omar deactivated.
 ```
+
+Removing a person's last placement before adding the new one leaves a gap. A protected request during that gap ends their session. A deactivated person retains their identity binding and existing memberships until the writer removes them. On return, reconcile current duties before enabling access. If several sources own groups, confirm that every writer has withdrawn its expired duties. Use `active=false` for a leaver. Clew also treats user `DELETE` as deactivation and keeps the row searchable, which differs from the 404 and search omission required after deletion by [RFC 7644 `3.6](https://www.rfc-editor.org/rfc/rfc7644.html#section-3.6). A full user `PUT` without `active` enables the person.
 
 ### What the daily comparison does
 
 The order matters; the reasons are in [Writing a provisioner](writing-a-provisioner.md#what-a-provisioner-does-on-every-reconciliation).
 
-1. **Stop on an empty source.** Compare the people in the source with the people Clew holds. When the source lists nobody, or far fewer than Clew holds, stop and let a person decide. Clew cannot tell an empty export from a real change, and would deactivate everyone. The example refuses a comparison that would deactivate more than a fifth.
-2. **The organisation first,** from the root down, each unit with its name and the unit above it.
-3. **Then the people:** new ones are created, changed ones are written, and those who are no longer in the source are deactivated.
-4. **Then who is where, in two rounds:** first every group gets the members it gains, then every group loses the members it loses.
-5. **Last, the units and groups that are gone,** from the leaves up.
+1. Validate the source's final pages or export manifest for people, units, directory groups and memberships. Set `complete` only when every part succeeds. An incomplete snapshot stops even with `force`.
+2. Check the writer's user prefix, group prefixes and exact group keys. Before writing, the example stops if all of its active people would be disabled, or more than one of them and more than one fifth. It applies the same rule to its units, its plain directory groups and its manager and capability groups together, each counted separately. One person or one group is always let through, so the school of three can lose Omar without `--force`. A human can approve a large verified change with `--force`.
+3. Send units from roots to leaves. Send people with an explicit active state, including inactive people retained by HR whom Clew already holds. An inactive person Clew has never held is not created. Disable absent people in the writer's namespace.
+4. Add memberships across all groups before removing old ones. Delete obsolete owned groups from leaves to roots. Re-enable returning people after reconciling current duties.
+5. Use one ordered writer for a snapshot and its change stream. Capture the change cursor with the snapshot, apply the snapshot, then replay subsequent events in source order. Persist the cursor only after success. On restart, recover by stable ID and resume from the last confirmed cursor. If the source cannot supply a consistent snapshot cursor, serialize comparison and replay and read current source state for each queued change.
 
-A comparison on a day when every change arrived writes nothing, and one that dies on the way is put right by the next.
+On an unchanged export the example still sends a `PUT` for each present person. Identity, membership and grant state stay the same.
 
 ### What Clew answers when something is wrong
 
@@ -255,7 +231,8 @@ Every refusal is the standard's error resource, with the reason in `detail`. Not
 | A unit whose parent has not been sent yet | 400 `invalidValue` | `The parent 'unit:120' is not a unit of this organisation; a tree is pushed from the root down (D99). The group was not stored.` |
 | A capability Clew does not have | 400 `invalidValue` | `The key 'capability:admin.everything' names no capability of this installation; the capabilities are …`, followed by the list |
 | The key `protected` | 400 `invalidValue` | `The key 'protected' is not accepted: Clew has not decided whether it may hold that fact (D93). The group was not stored.` |
-| A person without a work address | 400 `invalidValue` | `Attribute 'emails' is required.` |
+| A person without an address | 400 `invalidValue` | `Attribute 'emails' is required.` |
+| A person whose only addresses have another type than `work`, such as `home` | 400 `invalidValue` | `Attribute 'emails' needs a work address: one with type 'work', or one without a type. An address of another type is not stored as the work address.` |
 | A person whose account name somebody already has, in any case, also a person who has left | 409 `uniqueness` | `A user with this userName already exists.` |
 | A group as a member of a group | 400 `invalidValue` | `Member '<id>' is a group. Nested groups are not supported: send the people as members.` |
 | Removing a unit that still has units below it | 409 | `The unit '110' still has 2 units below it ('unit:111', 'unit:112'); move or remove them first, a tree is removed from the leaves up (D99). The group was not removed.` |
@@ -265,8 +242,8 @@ Every refusal is the standard's error resource, with the reason in `detail`. Not
 ### Running it
 
 - **Changes when they happen, the comparison at least daily.** Clew holds no validity dates: access begins and ends when the change arrives, and until then the access the person had is the one that holds.
-- **Send a failed request again.** A change that is not sent again waits for the comparison, which may be a day away.
-- **Alarm on a change that could not be sent, and on a comparison that failed or did not start.** Clew shows when each provisioner last called, with a warning after two days of silence, on Administration › Användare. It raises no alarm and exports no metric for it, so the alarm is the provisioner's own.
+- **Recover by outcome.** Correct a 400 mapping error. Check the token on 401. After a POST timeout or uniqueness conflict, look up `externalId` and compare the resource before retrying. Respect `Retry-After` on 503. The client exposes the header as `ScimClientError.retryAfter`. After a 503 with a valid wait of up to 60 seconds, the example waits and starts one fresh reconciliation. A longer delay or another failure is returned to the scheduler. Retry transient failures with bounded backoff and keep the event pending until confirmed.
+- **Alarm on a change that could not be sent, and on a comparison that failed or did not start.** Clew shows when each provisioner last called, with a warning after two days of silence, on Administration › Användare. A failed run can advance that timestamp. Monitor the last successful complete comparison and the age of the oldest unapplied change in the provisioner.
 - **Keep the key in a secret store.** The key is a bearer token for this purpose alone. It is shown once when it is issued and never stops answering by itself.
 - **One organisation per installation** is what is supported today.
 
@@ -275,11 +252,11 @@ Every refusal is the standard's error resource, with the reason in `detail`. Not
 - The check counts the roots the source has and names nothing you cannot explain: no active person without a unit, no managed unit without its unit group, and no unit whose people report to nobody unless the source says so.
 
   ```bash
-  CLEW_PROVISIONER_TOKEN=<a key for the check> bun scripts/provisioner-check.ts https://clew.example.org/scim/v2 --roots 1
+  bun scripts/provisioner-check.ts "$CLEW" --roots 1
   ```
 
 - Administration › Organisation shows the tree as the source has it.
-- A comparison directly after another writes nothing.
+- A second comparison leaves identity fields, memberships and effective access unchanged. The checker exits zero with warnings. Investigate unexpected warnings and compare exact unit parents, placements and intended administrators with the source.
 - A person who is moved in the source is moved in Clew without waiting for the comparison, and was never without a unit in between.
 
 ## The identity provider team: sign-in
@@ -289,15 +266,15 @@ Clew signs people in with OpenID Connect and creates nobody at sign-in. The iden
 | What | Value |
 |---|---|
 | Client | Confidential (with a client secret), Authorization Code with PKCE (`S256`) |
-| Scopes | `openid profile email` |
+| Scopes | `openid profile email`. Clew requires a refresh token. For direct Microsoft Entra v2, configure `OIDC_REQUEST_OFFLINE_ACCESS=true` in Clew to also request `offline_access`. Agree consent with the IdP team. |
 | Redirect address | `<Clew's public address>/api/auth/callback` |
 | Address after sign-out | `<Clew's public address>/login` |
-| Back-channel logout | `<Clew's public address>/api/auth/backchannel-logout` (OpenID Connect Back-Channel Logout) |
+| Back-channel logout | `<Clew's public address>/api/auth/backchannel-logout` (OpenID Connect Back-Channel Logout, RS256) |
 | Issuer | Over HTTPS, with its discovery document reachable from Clew's server |
 
 ### The claim and the user name
 
-The ID token carries the account name in a claim, `preferred_username` unless the installation says otherwise. Clew compares it with the `userName` the provisioner sent, without regard to case, and never matches on an e-mail address or a name. A first sign-in binds the account to the one person with that `userName`; after that the person is known by the token's `sub`.
+The ID token carries the account name in a claim, `preferred_username` unless the installation says otherwise. Clew compares it with the `userName` the provisioner sent, without regard to case, and never matches on an e-mail address or a name. A first sign-in binds the account to the one person with that `userName`; after that the binding uses the issuer and subject together (`iss` and `sub`).
 
 Anna's ID token, the part Clew reads at her first sign-in:
 
@@ -317,7 +294,9 @@ Anna's ID token, the part Clew reads at her first sign-in:
 | `anna.berg` | nobody has it | Refused: the person has not been sent |
 | `anna.berg`, from a new account with another `sub` | `anna.berg`, already bound to her first account | Refused until a person has looked at it: an account that is replaced is not bound again by itself |
 
-With some identity providers the claim holds the whole sign-in address, `anna.berg@example.org`, and not the short account name. Either the provisioner sends that same value as `userName`, or the installation names another claim that holds the short name. Decide which with the directory team before the first person is sent. Every refused first sign-in is written to Clew's authentication log (`auth_audit`) as `identity-unmatched` with the value the claim held, which is where to look when the two differ.
+With some identity providers the claim holds the whole sign-in address, `anna.berg@example.org`, and not the short account name. Either the provisioner sends that same value as `userName`, or the installation names another claim that holds the short name. Decide which with the directory team before the first person is sent. In `auth_audit` an unknown or disabled account name can produce `identity-unmatched` with the claim value. A changed subject can produce `identity-conflict`. A missing claim can produce only `login-denied`. Administration shows whether a binding exists. Verify usable access with a signed-in request and check the person's active state and unit assignment.
+
+For direct Entra integrations, verify the [Microsoft refresh-token scope requirement](https://learn.microsoft.com/en-us/entra/identity-platform/scopes-oidc#the-offline_access-scope) with the IdP team.
 
 ### Hand over, and keep doing
 
@@ -326,7 +305,7 @@ With some identity providers the claim holds the whole sign-in address, `anna.be
 
 ### Done when
 
-- A person who has been sent signs in, and Administration › Användare shows that they have.
+- An active person with a placement opens a protected page and retains access after the first access token expires and the session is refreshed.
 - A person who has an account at the identity provider and has not been sent is refused.
 - Signing out at the identity provider ends the session in Clew.
 
@@ -339,16 +318,17 @@ With some identity providers the claim holds the whole sign-in address, `anna.be
 | Request size | Let 4 MB through. Clew refuses a larger body itself. The largest request is a unit group with all its members. |
 | Request time | The first write of a group with ten thousand members took about five seconds on the development stack. Do not cut a request off before that with room to spare. |
 | While Clew starts | It answers 503 with `Retry-After`. A provisioner waits and tries again. |
-| Sign-in settings | `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` and, when the claim is not `preferred_username`, `OIDC_BINDING_CLAIM`, from the identity provider team |
+| Sign-in settings | `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REQUEST_OFFLINE_ACCESS` when required and, when the claim is not `preferred_username`, `OIDC_BINDING_CLAIM`, from the identity provider team |
 
 The settings for the example, as Clew's server reads them from its environment:
 
 ```bash
-PUBLIC_URL=https://clew.example.org
-OIDC_ISSUER=https://login.example.org/realms/organisation
-OIDC_CLIENT_ID=clew
-OIDC_CLIENT_SECRET=<from the secret store>
-OIDC_BINDING_CLAIM=preferred_username
+export PUBLIC_URL=https://clew.example.org
+export OIDC_ISSUER=https://login.example.org/realms/organisation
+export OIDC_CLIENT_ID=clew
+: "${OIDC_CLIENT_SECRET:?Supply the client secret through the secret store}"
+export OIDC_CLIENT_SECRET
+export OIDC_BINDING_CLAIM=preferred_username
 ```
 
 A reverse proxy in front of Clew, here nginx, that lets a request through:
@@ -357,7 +337,7 @@ A reverse proxy in front of Clew, here nginx, that lets a request through:
 location /scim/v2/ {
     client_max_body_size 4m;
     proxy_read_timeout   60s;
-    proxy_pass           http://<Clew's server>;
+    proxy_pass           http://clew-app:3000;
 }
 ```
 
@@ -374,7 +354,7 @@ location /scim/v2/ {
 
   Clew keeps only the key's digest. Hand the key to the directory team through the secret store, not in a message.
 - **After that, on the page.** An administrator with `admin.users` adds a provisioner, replaces its key and takes it back on Administration › Användare. A replaced key may go on answering for a day or a week, so the provisioner is switched without a request failing.
-- **A test installation first.** Give the directory team an installation to send to before the real one, and a key under an id of its own for the check, so that a check does not count as a call from the provisioner:
+- **A test installation first.** Give the directory team an installation to send to before the real one, and a key under an id of its own for the check, so the check has its own last-seen time. Its token has full provisioning write access for the organisation. Store it accordingly.
 
   ```bash
   bun scripts/provisioner-token.ts add check --organisation example --label "The check"
@@ -387,14 +367,14 @@ location /scim/v2/ {
 - [Writing a provisioner](writing-a-provisioner.md): the attributes, the group keys, the organisation tree, the transport and every refusal.
 - [scripts/provisioner/](../../scripts/provisioner): an example to start from, with its tests.
 - [scripts/provisioner-check.ts](../../scripts/provisioner-check.ts): reads what was sent, over SCIM alone, and changes nothing. It is run from a checkout of the repository.
-- Administration › Användare: the provisioners and when each last called, the people with unit, role and capabilities, and whether each has signed in.
+- Administration › Användare: the provisioners and when each last called, the people with unit, role and capabilities, and whether each has an identity binding.
 - Administration › Organisation: the tree as it was sent, and what was left wrong.
 
 ## Not decided yet
 
 Four things are open on Clew's side and change what is sent. They are listed with the [open questions](../maintainers/open-questions.md).
 
-- Whether people who are not meant to sign in should be sent at all. Today everyone who is sent gets an account.
+- Whether people who are not meant to sign in should be sent at all. Sending a User creates a local person. Usable access requires an active account, a unit assignment and a matching identity at sign-in.
 - Whether Clew may hold the fact that a person is protected. Until it is answered, do not send it.
 - Whether a person with several placements can switch between them. Today they act as one: a unit they lead before a unit they work in.
 - Whether one installation can hold several organisations. Today it is one.

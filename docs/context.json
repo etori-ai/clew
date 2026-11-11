@@ -3693,6 +3693,18 @@
       ]
     },
     {
+      "path": "docs/reviews/2026-11-11-provisioning-operations-guide-and-source-lifecycle.md",
+      "title": "Operations handover for SCIM, people and the organisation",
+      "category": "review-history",
+      "headings": [
+        "What the installation actually sends",
+        "Findings that affect the first installation",
+        "Changes that would make the guide easier to operate",
+        "Pilot acceptance",
+        "Outcome"
+      ]
+    },
+    {
       "path": "docs/reviews/2026-11-11-scim-flow-people-and-organisation.md",
       "title": "Review: the SCIM flow end to end, people and the organisation tree · 2026-11-11",
       "category": "review-history",
