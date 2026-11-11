@@ -25,19 +25,11 @@ import { AsyncContent, ContentSkeleton } from '../components/loading';
 import { PageHeader } from '../components/page-header';
 import { TalkOverlay } from '../components/talk-overlay';
 import { usePagePanel } from '../components/page-panel';
+import { panelBesideQuery } from '../components/panel';
 import { useEntityAction } from '../entity-actions';
-import { fromPersonBeside } from '../person-address';
+import { fromCardsBeside, fromPersonBeside } from '../person-address';
 import { answerOf, peopleLine, silentOf, sourcesRead, valueCounts, type Answer } from './staff-model';
-import {
-  AllUnit,
-  LensUnit,
-  SilentSources,
-  ShowMenu,
-  listMinWidth,
-  useCardsFrame,
-  type Context,
-  type Openers,
-} from './staff-parts';
+import { AllUnit, LensUnit, SilentSources, ShowMenu, listMinWidth, type Context, type Openers } from './staff-parts';
 
 /** The list's column at its widest: the page width the person's page also has (1216 px) less the 32 px padding on each side. */
 const COLUMN = 1216 - 2 * 32;
@@ -49,11 +41,12 @@ const SHOW = 'show';
 /**
  * Personal at `/staff`. A person is a page only (D107 rule 3): an address that drew a person beside the list
  * (`?person=<key>`, bookmarked or sent before 2026-11-11) leads to the person's page in its place, with the list as the
- * way back, so the person is never silently dropped.
+ * way back, so the person is never silently dropped. So does one that listed a person's cards beside it (`?cards=<key>`,
+ * from the same day): to the person's page at Behöver dig, since the panel holds one opened thing.
  */
 export function StaffPage(props: { user: SessionUser; admin: boolean }) {
   const { pathname, search } = useLocation();
-  const moved = fromPersonBeside(pathname, search);
+  const moved = fromPersonBeside(pathname, search) ?? fromCardsBeside(pathname, search);
   return moved ? <Navigate to={moved} replace /> : <Personal {...props} />;
 }
 
@@ -64,10 +57,12 @@ export function StaffPage(props: { user: SessionUser; admin: boolean }) {
  * under its label, and "Just nu" with the fields of the chosen sources that need the reader. "Visa" picks a lens, a
  * source an administrator offers, and the list is then that source's view, sorted by need. Each row has its menu,
  * grouped by the system an action works in. A name leads to the person's page. Whatever is opened from the list
- * opens in the page's panel and the list stays whole beside it (D107 rules 2 and 3): the one card "Just nu" counts
- * (`?card=<threadId>`), or the several it counts as a list (`?cards=<key>`, `useCardsFrame`) with a card opened from
- * that list over it; the list never gives way to Hem. Where the whole list does not fit beside the panel, the panel is
- * the drawer over it. A source that does not answer is said once, with Försök igen; the rest stands.
+ * opens in the page's panel and the list stays beside it (D107 rules 2 and 3): the one card "Just nu" counts
+ * (`?card=<threadId>`); several lead to the person's page at Behöver dig, since the panel holds one opened thing
+ * (D107, amended 2026-11-11). The panel stands beside the list from the one width every page has (`BESIDE_FROM`), and
+ * the list gives way: where its table no longer keeps its least width beside the panel, it is drawn as the rows a
+ * phone draws. In a narrower window the panel is the drawer over the list. A source that does not answer is said once,
+ * with Försök igen; the rest stands.
  *
  * Someone who manages nobody gets an empty list from the server, and the page says whom it is for. One person's
  * utvecklingssamtal is a drawer over the list as it stands, its lens and what its panel holds kept (`?talk=<personId>`,
@@ -89,8 +84,8 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
   const rowsQs = useQueries({ queries: read.map(c => entityRowsQuery('person', c)) });
   const answers = new Map<string, Answer>(read.map((c, i) => [c, answerOf(rowsQs[i]?.data, !!rowsQs[i]?.isError)]));
   const lens = list?.lenses.find(l => l.capability === search.get(SHOW));
-  // A decision made on a card beside the list changes what "Just nu" counts and which of a person's cards are listed
-  // beside it: the list and the person are read again, the sources' own rows are not.
+  // A decision made on a card beside the list changes what "Just nu" counts and what the person's page lists under
+  // Behöver dig: the list and the person are read again, the sources' own rows are not.
   const client = useQueryClient();
   const cardChanged = useCallback(() => {
     void client.invalidateQueries({ queryKey: keys.entities.list('person') });
@@ -99,18 +94,13 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
       predicate: q => q.queryKey.length === 4,
     });
   }, [client]);
-  const cards = useCardsFrame(list);
   // One thing at a time: what is opened from the list takes the place of what the panel held, and the link that opened
-  // it is the way back. A person's cards lie under a card opened from them. The panel stands beside the list only where
-  // the whole list keeps its columns' widths beside it (the lens decides them), and is the drawer over it elsewhere;
-  // 1.4.10: on a short screen nothing is pinned beside the page, as on a tool's page.
-  const panel = usePagePanel({
-    under: cards,
-    minMain: listMinWidth(list, lens) + 2 * PADDING,
-    replaces: true,
-    overlayOnly: short,
-    onChange: cardChanged,
-  });
+  // it is the way back. 1.4.10: on a short screen nothing is pinned beside the page, as on a tool's page.
+  const panel = usePagePanel({ replaces: true, overlayOnly: short, onChange: cardChanged });
+  // The page gives way to the panel beside it (the product owner, 2026-11-11): where the whole table no longer keeps
+  // its columns' widths beside the panel (the lens decides them), the list is the rows it is on a phone.
+  const tableBeside = useMediaQuery(panelBesideQuery(listMinWidth(list, lens) + 2 * PADDING));
+  const narrow = mobile || (panel.occupied && !tableBeside);
   const groups = list?.groups ?? [];
   const action = useEntityAction();
 
@@ -231,7 +221,7 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
                                 group={g}
                                 lens={lens}
                                 ctx={ctx}
-                                mobile={mobile}
+                                narrow={narrow}
                                 animatedLayout={animatedLayout}
                               />
                             ))}
@@ -240,7 +230,7 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
                       <>
                         {silentLine}
                         {groups.map(g => (
-                          <AllUnit key={g.id} group={g} ctx={ctx} mobile={mobile} animatedLayout={animatedLayout} />
+                          <AllUnit key={g.id} group={g} ctx={ctx} narrow={narrow} animatedLayout={animatedLayout} />
                         ))}
                       </>
                     ) : null}

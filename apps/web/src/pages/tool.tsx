@@ -19,7 +19,7 @@ import { withView } from '../panel-address';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { toolHref, useRail } from '../components/nav';
 import { DeclaredView } from '../components/view';
-import { CONVERSATION_MIN, panelBesideQuery } from '../components/panel';
+import { RAIL, besideQuery, panelBesideQuery } from '../components/panel';
 import { usePagePanel, useView } from '../components/page-panel';
 import { Composer, type ComposerAbout } from '../components/composer';
 import { PageHeader } from '../components/page-header';
@@ -27,22 +27,26 @@ import { ContentArrival, ContentSkeleton } from '../components/loading';
 
 /** The table needs 970 px beside the rail, so a 1280 px laptop gets it, with a scrollbar too; a narrower window draws the same rows as a list. */
 const tableQuery = '(min-width: 1280px)';
+/** With the panel open beside the page the table needs the same column, so a window wider by the panel: below it the page gives way and draws its list. */
+const tableBesideQuery = panelBesideQuery(1280 - RAIL);
 
 /**
  * A tool as a page (D42): a view an administrator has chosen for the menu (D40) is opened at `/tools/:capability`,
  * inside the one shell, as Kalender is. The page follows Astryx's `table-page` template and the one page header (D74):
  * the name as the heading with the view's own search field and choice at the end of its line, the mark row (chip,
  * source, count) under it, then the rows, all in one scrolling column. The view is drawn by the one renderer
- * (D38). A row's own view, a contact card, opens in the page's panel (`usePagePanel`): beside the page where there is
- * room for both, over it where there is not (D50); the address names both, so a reload, a link and the back button land
- * where the person was.
+ * (D38). A row's own view, a contact card, opens in the page's panel (`usePagePanel`): beside the page from the one
+ * width every page has (`BESIDE_FROM`), over it in a narrower window (D50). The page gives way, the panel does not:
+ * beside the panel the rows are the list they are on a narrower window until the table fits too. The address names
+ * both, so a reload, a link and the back button land where the person was.
  * The box at the foot asks about the page: the answer opens as a conversation with this view beside it.
  */
 export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
   const mobile = useMediaQuery(mobileQuery);
   // 1.4.10: with 480 px or less in height nothing is pinned; the box joins the page's flow.
   const short = useMediaQuery(shortQuery);
-  const besideTranscript = useMediaQuery(panelBesideQuery(CONVERSATION_MIN));
+  // A conversation asked here keeps the view beside its transcript where the panel stands beside a page.
+  const besideTranscript = useMediaQuery(besideQuery);
   const { capability = '' } = useParams<{ capability: string }>();
   const [search] = useSearchParams();
   const navigate = useNavigate();
@@ -56,13 +60,8 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
   const inputJson = search.get('input');
   const main = useView(entry ? capability : null, inputJson, { title: entry?.label ?? '', via: false, address });
   const tool = main.shown?.capability === capability ? main.shown : null;
-  // A table keeps the width it needs: the panel is beside it only on a screen wide enough for both, else over it as before.
   // The page says a failed read in its banner, as it says its own.
-  const slot = usePagePanel({
-    minMain: tool?.spec?.kind === 'table' ? 1060 : 600,
-    overlayOnly: short,
-    failures: 'page',
-  });
+  const slot = usePagePanel({ overlayOnly: short, failures: 'page' });
   const title = slot.view?.title ?? entry?.label ?? (missing ? 'Verktyget finns inte' : null);
   usePageTitle(title, slot.view ? false : (title ?? false));
   const input = tool?.input ?? {};
@@ -130,7 +129,7 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
                           input={tool.input}
                           isLoading={main.isLoading}
                           headingLevel={2}
-                          tableQuery={tableQuery}
+                          tableQuery={slot.occupied ? tableBesideQuery : tableQuery}
                           title={entry!.label}
                           /* The view's controls rewrite the address in place, so a search is addressable and one step back leaves the tool. */
                           onInput={next => navigate(toolHref(capability, next), { replace: true })}

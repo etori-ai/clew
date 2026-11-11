@@ -1,4 +1,4 @@
-import type { Locator } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import {
   announcements,
   desktop,
@@ -10,7 +10,9 @@ import {
   reflowProblems,
   test,
 } from './support';
-import { NOW } from './data';
+import { ENTITY_UNIT, NOW } from './data';
+import { menuRows } from './phonebook';
+import { Units } from './unit-data';
 
 /** What a person sees of a rail row: where it starts, how wide and tall it is, and its type. */
 const rowLook = (row: Locator) =>
@@ -337,7 +339,7 @@ test.describe('the panel over a page that has none of its own', () => {
     await expect(drawer.getByRole('article', { name: 'Kort: Omtankesamtal med Anna Lindqvist' })).toBeVisible();
     await expect.poll(() => drawer.evaluate(el => el.contains(document.activeElement))).toBe(true);
     await expectNoAxeViolations(page);
-    await drawer.getByRole('button', { name: 'Stäng', exact: true }).click();
+    await drawer.getByRole('button', { name: 'Stäng panelen' }).click();
     await expect(drawer).toHaveCount(0);
     await expect(page).toHaveURL(/\/calendar$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Vecka' })).toBeVisible();
@@ -360,23 +362,96 @@ test.describe('the panel over a page that has none of its own', () => {
     await expect(page).toHaveURL(/\/admin\/connectors$/);
   });
 
-  test('a card’s read lies over the card in the same drawer, and closing it leaves the card', async ({
+  test('a card’s read unfolds inside the card in the drawer, and the drawer holds the card all along', async ({
     page,
     api: _,
   }) => {
     await open(page, '/calendar?card=omtanke');
     const drawer = page.getByRole('dialog', { name: 'Kort' });
-    await drawer.getByRole('button', { name: 'Se mönstret' }).click();
+    const button = drawer.locator('[data-read="pattern"]');
+    await button.click();
     await expect(page).toHaveURL('/calendar?card=omtanke&open-card=omtanke&open-action=pattern');
-    const read = page.getByRole('dialog', { name: 'Se mönstret' });
-    await expect(read).toBeVisible();
-    await expect(read.getByRole('heading', { name: 'Se mönstret' })).toBeVisible();
+    const section = drawer.locator('#read-card-omtanke');
+    await expect(section.getByText('Anna Lindqvist 07:00–16:00')).toBeVisible();
+    await expect(button).toBeFocused();
+    await expect(drawer.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(1);
+    await expectNoAxeViolations(page);
+    // Esc lets go of the card, read and all: Kalender as it was.
     await page.keyboard.press('Escape');
-    await expect(page).toHaveURL('/calendar?card=omtanke');
-    await expect(
-      page
-        .getByRole('dialog', { name: 'Kort' })
-        .getByRole('article', { name: 'Kort: Omtankesamtal med Anna Lindqvist' }),
-    ).toBeVisible();
+    await expect(page).toHaveURL(/\/calendar$/);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
   });
+});
+
+/**
+ * One panel (the product owner, 2026-11-11: "there are multiple different sidebars"): on every page that holds it, a
+ * card stands beside the page from the one width, 1336 px, as a named region that leaves the page in use, and below it
+ * is the drawer over the page; either way under the same header, the same small "Kort" at the same level and the same
+ * ✕ in the same place. The page gives way to the panel, never the other way round: nothing scrolls sideways.
+ */
+test.describe('one panel on every page, from one width', () => {
+  /** Whether the page under what is open still takes the focus: it does beside the panel, never under the drawer. */
+  const pageTakesFocus = (page: Page) =>
+    page.evaluate(() => {
+      const target = document.querySelector<HTMLElement>('main a[href], [role="main"] a[href]');
+      target?.focus();
+      return !!target && document.activeElement === target;
+    });
+  /** The panel's name for a card: drawn small as artboard E draws "KORT", at the outline's second level for everyone. */
+  const kort = (surface: Locator) => surface.locator('[aria-level="2"]').filter({ hasText: 'Kort' });
+  /** Where the header's name and ✕ stand in the surface that holds them, and how large the name is drawn. */
+  const headerLook = async (surface: Locator) => {
+    // Inside the surface's own edge: the drawer draws a 1 px line on its edge, where beside the page the resize
+    // handle's divider stands outside the region.
+    const edge = await surface.evaluate(el => ({ start: el.clientLeft, top: el.clientTop }));
+    const outer = (await surface.boundingBox())!;
+    const box = { ...outer, x: outer.x + edge.start, y: outer.y + edge.top, width: outer.width - edge.start };
+    const name = kort(surface);
+    const close = surface.getByRole('button', { name: 'Stäng panelen' });
+    const named = (await name.boundingBox())!;
+    const closer = (await close.boundingBox())!;
+    return {
+      size: await name.evaluate(el => getComputedStyle(el).fontSize),
+      nameFromStart: Math.round(named.x - box.x),
+      nameFromTop: Math.round(named.y - box.y),
+      closeFromEnd: Math.round(box.x + box.width - (closer.x + closer.width)),
+      closeFromTop: Math.round(closer.y - box.y),
+    };
+  };
+  for (const [what, path] of [
+    ['Hem', '/?card=omtanke'],
+    ['Personal', '/staff?card=omtanke'],
+    ['a person’s page', '/people/johan?card=omtanke'],
+    ['a unit’s page', `/units/${ENTITY_UNIT.id}?card=omtanke`],
+    ['a tool’s page', '/tools/phonebook.directory?card=omtanke'],
+  ] as const)
+    test(`a card on ${what} stands beside the page at 1440 px and is the drawer at 1200 px, under the same header`, async ({
+      page,
+      api,
+    }) => {
+      api.menu = menuRows;
+      await new Units().route(page);
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await open(page, path);
+      const beside = page.getByRole('complementary', { name: 'Kort' });
+      await expect(beside.getByRole('article', { name: 'Kort: Omtankesamtal med Anna Lindqvist' })).toBeVisible();
+      await expect(kort(beside)).toBeFocused();
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      expect(await pageTakesFocus(page)).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      await expectNoAxeViolations(page);
+      const besideLook = await headerLook(beside);
+
+      await page.setViewportSize({ width: 1200, height: 900 });
+      await open(page, path);
+      const drawer = page.getByRole('dialog', { name: 'Kort' });
+      await expect(drawer.getByRole('article', { name: 'Kort: Omtankesamtal med Anna Lindqvist' })).toBeVisible();
+      await expect(kort(drawer)).toBeFocused();
+      await expect(page.getByRole('complementary', { name: 'Kort' })).toHaveCount(0);
+      expect(await pageTakesFocus(page)).toBe(false);
+      await page.evaluate(() => Promise.all(document.getAnimations().map(a => a.finished)));
+      await expectNoAxeViolations(page);
+      expect(await headerLook(drawer)).toEqual(besideLook);
+    });
 });

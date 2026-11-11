@@ -69,7 +69,7 @@ test.describe('a decision the card is left waiting on keeps its way back where t
     await expect(row).toHaveCount(0, { timeout: 5_000 });
     await page
       .getByRole('dialog', { name: 'Kort', exact: true })
-      .getByRole('button', { name: 'Stäng', exact: true })
+      .getByRole('button', { name: 'Stäng panelen' })
       .click();
     await page.getByRole('tab', { name: /^Väntar på andra/ }).click();
     const waiting = page.getByRole('main').locator('#thread-samtal');

@@ -3,7 +3,7 @@
  * under D107 rule 5): its address is that page's own with the card as `review` and the step as `step`, 1-based, the
  * rows in the card's order and the last step Skicka; the first step leaves `step` out. Closing it is the same address
  * without the two, so what was under it is there again as it was: Hem's tab, Personal's lens, a person's section and
- * way back, a conversation, and the card or the cards open in the page's panel. Everything else in the address is the
+ * way back, a conversation, and the card open in the page's panel. Everything else in the address is the
  * page's own and is kept. `/cards/:threadId/review`, the address before that amendment, is a cold link that leads to
  * Hem with the card beside it and the review over both (`legacyReview`).
  */
@@ -29,7 +29,7 @@ export function reviewOf(search: URLSearchParams | string): string | null {
 }
 /**
  * The page with this card's review over it, at a step (0-based; the first step is left out of the address). The card
- * stays where it is drawn: beside the page or in its sheet, over a person's cards, in a conversation's answer.
+ * stays where it is drawn: beside the page or in its sheet, or in a conversation's answer.
  */
 export function withReview(pathname: string, search: URLSearchParams | string, threadId: string, step = 0): string {
   const q = new URLSearchParams(search);

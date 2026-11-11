@@ -198,3 +198,9 @@ with the card beside it ([D73](D73-the-review-is-a-page-in-the-shell-with-an-add
 source's `about.page` may be a query alone, which lies over the page its way in is drawn on: the talks section's
 "Öppna samtalet" is `?talk={id}`, so the talk opens over the person's page as well as over Personal
 ([D96](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md), amended the same day).
+
+**Amended 2026-11-11 (D107 amended): several cards lead to the person's page.** The list of a person's cards beside
+Personal is gone: "Just nu" counting several cards leads to the person's page at Behöver dig
+(`/people/<key>?section=needs-you&from=<the list>`), and an old `/staff?cards=<key>` address leads there in its place.
+Personal's panel stands beside the list from the one width every page has, 1336 px, and the list gives way, drawn as
+its rows where the table does not fit beside the panel.

@@ -46,7 +46,7 @@ import { applyThread } from '../thread-cache';
 import { keys } from '../query-keys';
 import { groupThreads } from '../stream';
 import { useReceiptArrivals } from '../linger';
-import { withAction, withCard, withView, withoutPanel } from '../panel-address';
+import { withCard, withView, withoutPanel } from '../panel-address';
 import { Composer, Suggestions } from '../components/composer';
 import { PageHeader } from '../components/page-header';
 import { titled, useConversation, type ConversationState } from '../components/conversation-context';
@@ -70,7 +70,7 @@ import { BriefSkeleton } from '../components/brief';
 import { ERRANDS_AREA, MyErrands } from '../components/my-errands';
 import { MyCommitments, TALKS_AREA } from '../components/my-commitments';
 import { AsideSkeleton, AsyncContent } from '../components/loading';
-import { CONVERSATION_MIN, PANEL_EDGE, panelBesideQuery } from '../components/panel';
+import { PAGE_MIN, PANEL_EDGE, panelBesideQuery } from '../components/panel';
 import { usePagePanel } from '../components/page-panel';
 import { cardBody } from '../components/card-panel';
 import { EventDialog } from '../components/calendar/event-dialog';
@@ -93,8 +93,8 @@ const tabTitle: Record<TodoTab, string> = {
   snoozed: 'Inte nu',
   done: 'Klart',
 };
-/** The least width Hem's column needs beside the panel: the rows with their day, their line and their one button. */
-const HOME_MIN = 640;
+/** The least width Hem's column needs beside the panel: the rows with their day, their line and their one button, the width that sets the panel's one line for every page (`BESIDE_FROM`). */
+const HOME_MIN = PAGE_MIN;
 /** Under this the day and what happened since yesterday fold under the day's work (artboard A's note: the side column folds at 1024). */
 const twoColumnQuery = '(min-width: 1024px)';
 /** The side column's least width: the earlier canvas drew it as `minmax(320px, 1fr)`. */
@@ -139,7 +139,7 @@ const stopAt = (id: string) =>
  * the column is Hem: the greeting with the day, the box, and under it everything the assistant has pushed, with a
  * card's state as the tabs (Behöver dig, Väntar på andra, Inte nu, Klart), the areas as a filter, and on a quiet day
  * the person's areas with what they can start. The day and what happened since yesterday are the page's own, beside the
- * day's work, and the panel exists only while a card, a view or a card's read is open in it (D72); opening one is not
+ * day's work, and the panel exists only while a card or a view is open in it (D72); opening one is not
  * asking about it, so the box is unchanged until the person adds it (D107 rule 6).
  * A conversation takes the column at `/conversations/:id` (D31), with what it is about in the panel: the view an answer
  * names, the card or view that was open when it was asked, or the page it was asked on. The address is the state
@@ -325,7 +325,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     ...threads.filter(t => t.state !== 'open'),
   ];
 
-  const openCardView = (threadId: string, actionId: string) => navigate(withAction(here, search, threadId, actionId));
   // On a phone Hem has no panel for a card (artboards 11 and 12): the threads are rows, and the card the address names
   // rises in Astryx's bottom sheet over them; closing the sheet leaves the address as the ✕ beside the column does.
   const cardsInSheet = mobile && !talk.open;
@@ -347,15 +346,15 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
               (!!t.receipt?.undoCapability && !!t.receipt.undoUntil && t.receipt.undoUntil > now)))),
     );
   /**
-   * The panel (D50): the view the address names, a card's own read, or a card. A view that is also a tool offers no
+   * The panel (D50): the view the address names, or a card, with its own read unfolded in it when the address says so
+   * (a table read in the card's place, `unfoldsInCard`). A view that is also a tool offers no
    * way to its page (D107 rule 7: no control chooses a surface); the tool is in the rail where an administrator put it.
    * In a conversation the card beside the transcript is the one that was open when the question was asked; on a phone
    * Hem draws its cards in the sheet, so a card has no panel there. With nothing open there is no panel: the day and
-   * what happened since yesterday are Hem's own (D72). Hem says a read that failed in its own alert, and a done card
+   * what happened since yesterday are Hem's own (D72). Hem says a view that failed in its own alert, and a done card
    * leads on to the next one in the stream.
    */
   const slot = usePagePanel({
-    minMain: talk.open ? CONVERSATION_MIN : HOME_MIN,
     overlayOnly: short,
     isOpen: id => !id.startsWith('card:') || inStream(id.slice(5)),
     onClosed: landAfterDrawer,
@@ -391,7 +390,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       ...options,
       compact: options.compact ?? mobile,
       onChange: replace,
-      onOpenCardView: openCardView,
     });
   /**
    * A group's threads (D31, D50, artboard A): rows in one list, the title of each the link to its card beside the column,
@@ -412,7 +410,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
             compact={besideOpen}
             phone={mobile}
             onChange={replace}
-            onOpenCardView={openCardView}
           />
         ))}
       </List>

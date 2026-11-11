@@ -14,14 +14,14 @@ export interface CardPlace {
   /** After a receipt (D70): the way on from the done card, where the page has a stream to continue in. */
   next?: { title: string; href: string } | undefined;
   onChange: (thread: Thread) => void;
-  onOpenCardView: (threadId: string, actionId: string) => void;
 }
 
 /**
  * One card, drawn by the components Hem draws it with wherever it is open: beside a page or over it in the panel
  * (`page-panel.tsx`), in Hem's sheet on a phone and in a conversation's turn. A proposal keeps the calendar's
  * specialised card; every other card is the generic one. The cards read the same cache (D33), so a decision made on one
- * page is the decision made on Hem: the same confirm, the same decision endpoint, the same receipt.
+ * page is the decision made on Hem: the same confirm, the same decision endpoint, the same receipt. A card's own read
+ * unfolds inside it wherever it is drawn (`card-read.tsx`).
  */
 export const cardBody = (thread: Thread, place: CardPlace) =>
   thread.proposals.length ? (
@@ -42,6 +42,5 @@ export const cardBody = (thread: Thread, place: CardPlace) =>
       sheet={!!place.sheet}
       next={place.next}
       onChange={place.onChange}
-      onOpenCardView={place.onOpenCardView}
     />
   );

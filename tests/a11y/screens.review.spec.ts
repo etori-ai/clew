@@ -244,7 +244,7 @@ test.describe('review', () => {
   shot(
     '32-panel-card',
     async page => {
-      await open(page, '/?open-card=omtanke&open-action=pattern');
+      await open(page, '/?card=omtanke&open-card=omtanke&open-action=pattern');
     },
     ['1280'],
   );

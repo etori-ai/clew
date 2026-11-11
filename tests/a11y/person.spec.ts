@@ -143,6 +143,39 @@ test.describe('the person as a page', () => {
     await expect(panel.getByRole('article', { name: 'Kort: Planera utvecklingssamtal vecka 45' })).toBeVisible();
   });
 
+  test('where the sections and the panel no longer fit side by side the page gives way: its drill-in beside the card, and side by side again when it closes', async ({
+    page,
+    api: _,
+  }) => {
+    // The panel stands beside every page from 1336 px; the list of sections and the chosen one need 1432 px beside it.
+    await new People().route(page);
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await open(page, '/people/johan?section=needs-you&from=%2Fstaff');
+    const sections = page.getByRole('navigation', { name: 'Om Johan Byström' });
+    await expect(sections).toBeVisible();
+    await page.getByRole('link', { name: 'En åtgärdspunkt skulle vara klar 3 nov' }).click();
+    const panel = page.getByRole('complementary', { name: 'Kort' });
+    await expect(panel.getByRole('article', { name: 'Kort: Planera utvecklingssamtal vecka 45' })).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    // The page is its narrow drill-in: the chosen section, with the way back to the list of sections.
+    const back = page.getByRole('link', { name: 'Tillbaka till Om Johan Byström' });
+    await expect(back).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'Behöver dig' })).toBeVisible();
+    await expect(sections).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await expectNoAxeViolations(page);
+    // The list of sections is one step away, with the card still beside it.
+    await back.click();
+    await expect(page).toHaveURL('/people/johan?from=%2Fstaff&card=samtal-svar');
+    await expect(sections).toBeVisible();
+    await expect(panel).toBeVisible();
+    // Closed, the page stands side by side again.
+    await panel.getByRole('button', { name: 'Stäng panelen' }).click();
+    await expect(page).toHaveURL('/people/johan?from=%2Fstaff');
+    await expect(sections).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'Behöver dig' })).toBeVisible();
+  });
+
   test('an action started on the page opens its card beside it, and closing gives the focus back to the button', async ({
     page,
     api,

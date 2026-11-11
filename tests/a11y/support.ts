@@ -211,6 +211,10 @@ export class MockApi {
   };
   /** A card's read that answers with a declared view (D38), by the action's id; any other read answers `output`. */
   cardReads: Record<string, { output: unknown; view?: PanelViewSpec }> = {};
+  /** How long a card's read waits before it answers, in ms: for a test that sees it on its way. */
+  cardReadDelay = 0;
+  /** Every card's read fails as a source that does not answer does. */
+  cardReadFails = false;
   unmocked: string[] = [];
   /** Keeps every turn pending until the returned function is called, for a test that works while the answer is on its way: `answerDelay` can run out first on a slow machine. */
   holdAnswer() {
@@ -770,6 +774,8 @@ export class MockApi {
         };
         return json({ kind: 'execute', thread: this.update(id, { state: 'handled', handledAt: NOW, receipt }) });
       }
+      if (this.cardReadDelay) await new Promise(resolve => setTimeout(resolve, this.cardReadDelay));
+      if (this.cardReadFails) return route.fulfill({ status: 503, json: { error: 'Källan svarade inte.' } });
       const read = body.actionId ? this.cardReads[body.actionId] : undefined;
       return json(read ? { kind: 'read', ...read } : { kind: 'read', output: this.output });
     }

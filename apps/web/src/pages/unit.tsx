@@ -117,8 +117,9 @@ function useStaffCount(user: SessionUser, id: string) {
  * opened from for the way back.
  *
  * The page holds the panel beside its column (D107 rules 2 to 4, `usePagePanel`): a card under Behöver dig and the card
- * an action makes open there, with the way back kept in the address, and closing leaves the page as it was. Where the
- * panel does not fit beside one section, it is the drawer over the page.
+ * an action makes open there, with the way back kept in the address, and closing leaves the page as it was. It stands
+ * beside the page from the one width every page has (`BESIDE_FROM`), and the sections give way to one across where two
+ * no longer fit beside it (the grid's own least width); in a narrower window it is the drawer over the page.
  */
 export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean }) {
   const { id = '' } = useParams<{ id: string }>();
@@ -151,7 +152,7 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
   const cardChanged = useCallback(() => {
     void client.invalidateQueries({ queryKey: keys.entities.detail('unit', id), exact: true });
   }, [client, id]);
-  const panel = usePagePanel({ minMain: SECTION_MIN + 2 * 32, overlayOnly: short, onChange: cardChanged });
+  const panel = usePagePanel({ overlayOnly: short, onChange: cardChanged });
 
   let body: ReactNode;
   if (missing)

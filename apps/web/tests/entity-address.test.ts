@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { entityHref, fromPersonBeside, personPageFrom, personPageHref, unitPageHref } from '../src/person-address';
+import {
+  entityHref,
+  fromCardsBeside,
+  fromPersonBeside,
+  personPageFrom,
+  personPageHref,
+  unitPageHref,
+} from '../src/person-address';
 
 describe('a row that names an entity leads to it (D97 item 6, D83 rule 4)', () => {
   test('a unit is a page of its own, with the page it was opened from', () => {
@@ -23,7 +30,7 @@ describe('a row that names an entity leads to it (D97 item 6, D83 rule 4)', () =
 
 describe('a person is a page only (D107 rule 3)', () => {
   test('a name in a list leads to the page, with the list as it stands and nothing of its panel as the way back', () => {
-    expect(personPageFrom('/staff', '?show=clew.talkPeople&cards=karin&card=t1', 'johan')).toBe(
+    expect(personPageFrom('/staff', '?show=clew.talkPeople&card=t1&open-card=t1&open-action=pattern', 'johan')).toBe(
       '/people/johan?from=%2Fstaff%3Fshow%3Dclew.talkPeople',
     );
     expect(personPageFrom('/staff', '', 'johan')).toBe('/people/johan?from=%2Fstaff');
@@ -38,5 +45,16 @@ describe('a person is a page only (D107 rule 3)', () => {
     );
     expect(fromPersonBeside('/staff', '?show=x')).toBeNull();
     expect(fromPersonBeside('/staff', '?person=')).toBeNull();
+  });
+  test('an address that listed the person’s cards beside the list leads to their page at Behöver dig, a card kept', () => {
+    expect(fromCardsBeside('/staff', '?cards=johan')).toBe('/people/johan?section=needs-you&from=%2Fstaff');
+    expect(fromCardsBeside('/staff', '?show=clew.talkPeople&cards=johan&cards-kind=act')).toBe(
+      '/people/johan?section=needs-you&from=%2Fstaff%3Fshow%3Dclew.talkPeople',
+    );
+    expect(fromCardsBeside('/staff', '?show=x&cards=johan&cards-kind=proposal&card=samtal-svar')).toBe(
+      '/people/johan?section=needs-you&from=%2Fstaff%3Fshow%3Dx&card=samtal-svar',
+    );
+    expect(fromCardsBeside('/staff', '?show=x&person=johan')).toBeNull();
+    expect(fromCardsBeside('/staff', '?cards=')).toBeNull();
   });
 });

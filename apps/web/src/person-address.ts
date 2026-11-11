@@ -7,6 +7,8 @@ import { pageOnly } from './panel-address';
  * `/units/<id>` is the unit as a page, with `from` the same way. A person is a page only: nothing draws them beside a
  * list, and the address that once did (`?person=`) leads to their page (`fromPersonBeside`).
  */
+/** The value Behöver dig takes in the address (`?section=`): never a capability's name, which always has a dot. */
+export const NEEDS_YOU = 'needs-you';
 const addressOf = (pathname: string, query: URLSearchParams) => {
   const q = query.toString();
   return q ? `${pathname}?${q}` : pathname;
@@ -44,6 +46,21 @@ export function fromPersonBeside(pathname: string, search: URLSearchParams | str
   q.delete('person-section');
   const page = personPageHref(key, { ...(section ? { section } : {}), from: pageOnly(pathname, q) });
   return card ? `${page}${page.includes('?') ? '&' : '?'}card=${encodeURIComponent(card)}` : page;
+}
+/**
+ * Where an address that listed a person's cards beside Personal now leads (D107, amended 2026-11-11: the panel holds one
+ * opened thing): `?cards=<key>`, with `cards-kind`, is the person's page at Behöver dig with the list as its way back,
+ * and a card open over that list stays open beside the page. Null for any other address.
+ */
+export function fromCardsBeside(pathname: string, search: URLSearchParams | string): string | null {
+  const q = new URLSearchParams(search);
+  const key = q.get('cards');
+  if (!key) return null;
+  const card = q.get('card');
+  q.delete('cards');
+  q.delete('cards-kind');
+  const page = personPageHref(key, { section: NEEDS_YOU, from: pageOnly(pathname, q) });
+  return card ? `${page}&card=${encodeURIComponent(card)}` : page;
 }
 /** The unit as a page (D97, artboard E), with the page it was opened from. */
 export function unitPageHref(id: string, options: { from?: string | null } = {}): string {

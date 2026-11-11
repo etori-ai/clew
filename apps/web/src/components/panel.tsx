@@ -9,7 +9,6 @@ import {
   DayStrip,
   Drawer,
   EventList,
-  DrawerHeader,
   DropdownMenu,
   EmptyState,
   Heading,
@@ -53,6 +52,9 @@ const plain = (address: string) => {
   }
 };
 const sameAddress = (href: string | null, address: string) => !!href && plain(href) === plain(address);
+/** The link on the page that leads to `address`, the way back to what it opened. */
+const linkTo = (address: string) =>
+  [...document.querySelectorAll<HTMLElement>('a[href]')].find(el => sameAddress(el.getAttribute('href'), address));
 type BodyProps = {
   output: unknown;
   onOpenItem?: (item: AgendaItem, dayItems: AgendaItem[]) => void;
@@ -358,9 +360,20 @@ const searchOf = (address: string) => {
   const i = address.indexOf('?');
   return i < 0 ? '' : address.slice(i);
 };
-/** The rail and the panel as the shell draws them; with the page's own least width they decide when the panel fits beside it. */
+/** The rail and the panel as the shell draws them. */
 export const RAIL = 256,
   PANEL = 440;
+/** The least width a page's own column keeps beside the panel: Hem's rows with their day, their line and their one button. */
+export const PAGE_MIN = 640;
+/**
+ * The one window width from which the panel stands beside the page, on every page that holds it (the product owner,
+ * 2026-11-11, D107 amended): the rail, Hem's least column and the panel, 256 + 640 + 440 = 1336 px. Narrower, or short
+ * (1.4.10), or on a phone, it is the drawer over the page. A page whose own layout needs more than 640 px does not move
+ * this line: it gives way, drawing the narrow layout it already has while the panel is open beside it (its own
+ * breakpoint shifted by the panel, `panelBesideQuery`).
+ */
+export const BESIDE_FROM = RAIL + PAGE_MIN + PANEL;
+export const besideQuery = `(min-width: ${BESIDE_FROM}px)`;
 /**
  * What stands on the panel's inner edge beside its width while it is shown: the 1 px resize handle, as measured in the
  * browser. The fold button floats over the page beside it (D63 item 14, revised 2026-11-10), so it takes no width of
@@ -369,14 +382,14 @@ export const RAIL = 256,
 export const PANEL_EDGE = 1;
 /** How far in from the panel's own edge the fold button stands: 20 px in from the handle, which is on that edge while the panel is shown. */
 const FOLD_OFFSET = 20 + PANEL_EDGE;
-/** The window width from which the panel, `width` px wide, fits beside a column that needs `minMain` px. */
+/**
+ * A page's own breakpoint while the panel stands beside it: the window width from which a column that needs `minMain`
+ * px still has it beside the panel. Below it, with the panel open, the page draws its narrow layout; the panel's own
+ * line is `BESIDE_FROM`.
+ */
 export const panelBesideQuery = (minMain: number, width: number = PANEL) => `(min-width: ${RAIL + minMain + width}px)`;
-/** What a transcript needs beside the panel: a conversation asked on a page brings the page along only where both fit (D50). */
-export const CONVERSATION_MIN = 600;
 type Options = {
-  /** The least width the page's own column needs beside the panel. Narrower windows get the panel as a drawer over the page. */
-  minMain: number;
-  /** Nothing is pinned on a short screen (1.4.10): the panel is always a drawer there. */
+  /** Nothing is pinned on a short screen (1.4.10), nor beside a page that has no room for it: the panel is always a drawer there. */
   overlayOnly?: boolean;
   /** Whether a thing may stay open as a tab (D66): a card that left the stream (Inte nu, Avfärda, done) leaves the tabs too. The current one always stays. */
   isOpen?: (id: string) => boolean;
@@ -395,17 +408,19 @@ type Options = {
 /**
  * The panel (D50): the one place beside the page's column for what the person holds next to it, a view, a source or a
  * card, and nothing else: with nothing open there is no panel, and a page's own content (Hem's day) stays the page's
- * (D72). Where it fits it is a `LayoutPanel` in the page's `end` slot, non-modal, so the column stays in use (the
- * `ai-chat` template's artifact beside the transcript, composed as the calendar page composes its own panel); where it
- * does not fit, and on a phone, it is the drawer it always was. Beside the page it is a named complementary region:
- * opening it moves focus to its heading (never away from a field the person is typing in: the box keeps the focus
- * when a conversation brings its panel along), Esc inside it closes it and gives focus back to what opened it, and one
- * thing taking another's place is named aloud (2.4.3, 4.1.3). A drawer does all of that itself.
+ * (D72). From the one width `BESIDE_FROM` it is a `LayoutPanel` in the page's `end` slot, non-modal, so the column stays
+ * in use (the `ai-chat` template's artifact beside the transcript, composed as the calendar page composes its own
+ * panel); in a narrower window, on a short screen and on a phone it is the drawer over the page. Both are drawn with
+ * the same header, the same title and the same ✕ (the product owner, 2026-11-11: one sidebar, not two), so only the
+ * page around it changes. Beside the page it is a named complementary region: opening it moves focus to its heading
+ * (never away from a field the person is typing in: the box keeps the focus when a conversation brings its panel
+ * along), Esc inside it closes it and gives focus back to what opened it, and one thing taking another's place is named
+ * aloud (2.4.3, 4.1.3). Over the page the drawer gives the heading the focus and takes it back itself.
  */
 const TYPING = 'input, textarea, [contenteditable="true"], [role="textbox"], [role="combobox"]';
 export function usePanel(
   panel: PanelFrame | null,
-  { minMain, overlayOnly = false, isOpen, onClosed, replaces = false }: Options,
+  { overlayOnly = false, isOpen, onClosed, replaces = false }: Options,
 ): {
   end: ReactNode | undefined;
   overlay: ReactNode;
@@ -414,12 +429,14 @@ export function usePanel(
   /** Whether the panel stands beside the page (non-modal) rather than over it: the one rule, so a page never works it out again. */
   inline: boolean;
 } {
-  const fits = useMediaQuery(panelBesideQuery(minMain));
+  const fits = useMediaQuery(besideQuery);
   const inline = fits && !overlayOnly;
   const announce = useAnnounce();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const region = useRef<HTMLDivElement>(null);
+  /** The drawer's dialog, where the panel is drawn over the page. */
+  const drawer = useRef<HTMLDialogElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const menu = useRef<HTMLButtonElement>(null);
   /** Where focus lands at the panel's start: the heading, or the menu of open things, named by the current one, when several are open. */
@@ -500,6 +517,18 @@ export function usePanel(
   );
   const opener = useRef<HTMLElement | null>(null);
   const shown = useRef<{ id: string; address: string | undefined } | null>(null);
+  /** The address of what was closed, while the page may still draw the link that opened it anew (see below). */
+  const returnTo = useRef<string | null>(null);
+  // Folded away after the last thing closed, the page draws its own layout again, the link that opened the panel with
+  // it: the focus follows that link into the layout, so it is never left on what the page took away (2.4.3).
+  useEffect(() => {
+    const address = returnTo.current;
+    returnTo.current = null;
+    if (!address || !collapsed) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active !== document.body && active.isConnected) return;
+    linkTo(address)?.focus();
+  }, [collapsed]);
   // A view whose area has a figure says the figure's word on its tab (D54, artboard 3): "Budget · lugnt".
   const areas = useQuery(areasQuery).data?.areas;
   const viewed = panel?.id.startsWith('view:') ? panel.id.slice('view:'.length) : null;
@@ -574,16 +603,14 @@ export function usePanel(
       const back = opener.current;
       opener.current = null;
       if (!from || !inline) return;
-      const target = back?.isConnected
-        ? back
-        : from.address
-          ? [...document.querySelectorAll<HTMLElement>('a[href]')].find(el =>
-              sameAddress(el.getAttribute('href'), from.address!),
-            )
-          : undefined;
+      const target = back?.isConnected ? back : from.address ? linkTo(from.address) : undefined;
       target?.focus();
+      // The page gave way to the panel (Personal's rows, a person's drill-in, a tool's list): folded away, the panel
+      // gives the page its own layout back on the next render, and the link that opened it is drawn anew there.
+      returnTo.current = back?.isConnected ? null : (from.address ?? null);
       return;
     }
+    returnTo.current = null;
     if (from?.id === id) return;
     // One thing at a time: a link on the page that opened another thing in its place is the new way back.
     if (from && replaces && inline) {
@@ -600,17 +627,18 @@ export function usePanel(
     }
     // One thing took another's place in the open panel (a row's own view, and back): nobody hears that, and focus would
     // stay on a link that is gone. Focus goes to the link that led away when the person comes back to it, else to the
-    // panel's start (the menu of open things, once it has been drawn), and the new name is spoken.
-    const root: ParentNode | null = inline ? region.current : document.querySelector('dialog[open]');
+    // panel's start (its heading, or the menu of open things once it has been drawn), and the new name is spoken. The
+    // same beside the page and in the drawer, whose header is the same.
+    const root: ParentNode | null = inline ? region.current : drawer.current;
     const stops = [
       ...(root?.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled])') ?? []),
     ];
     const led = from.address ? stops.find(el => sameAddress(el.getAttribute('href'), from.address!)) : undefined;
     // With several things open the heading gives way to the menu on the next render: the focus waits for it.
-    const several = inline && tabsRef.current.length > 1;
-    const target = led ?? (several ? null : inline ? heading.current : (stops[1] ?? stops[0]));
+    const several = tabsRef.current.length > 1;
+    const target = led ?? (several ? null : heading.current);
     if (target) target.focus();
-    else if (inline) requestAnimationFrame(() => start()?.focus());
+    else requestAnimationFrame(() => start()?.focus());
     if (name) announce(name);
   }, [id, inline]);
   /**
@@ -692,16 +720,60 @@ export function usePanel(
       />
     </VStack>
   );
-  const titleHeading = panel && (
-    <Heading
-      ref={heading}
-      tabIndex={-1}
-      level={panel.kind === 'card' ? 4 : 2}
-      accessibilityLevel={2}
-      color={panel.kind === 'card' ? 'secondary' : 'primary'}
-    >
-      {panel.title}
-    </Heading>
+  // The drawer keeps the last thing's name while it slides away, so its heading is never empty (axe: empty-heading).
+  const last = useRef<PanelFrame | null>(null);
+  if (panel) last.current = panel;
+  const named = panel ?? last.current;
+  /**
+   * The panel's one header, beside the page and in the drawer alike (the product owner, 2026-11-11: one sidebar): the
+   * name of what is open and ✕, in the same place and at the same size either way. A card's name is the small label over
+   * the card, as artboard E draws "KORT"; a view keeps its title as the heading. A heading and a button, not a toolbar:
+   * the heading takes the focus when the panel opens (beside the page from `usePanel`'s effect, in the drawer by
+   * Astryx's `data-autofocus`), and a toolbar would offer its arrow keys there. With several things open the menu of them
+   * stands where the heading stood, and ✕ beside it closes the one it names. Astryx's `DrawerHeader` is not used in the
+   * drawer: its title is always a full-size h2 that takes no ref, so the same card would be named differently in the
+   * two, which is what the product owner saw.
+   */
+  const header = named && (
+    <LayoutHeader hasDivider={named.kind !== 'card' || !!tabRow}>
+      <HStack justify="between" vAlign="center" gap={2}>
+        {tabRow ?? (
+          <Heading
+            ref={heading}
+            tabIndex={-1}
+            data-autofocus=""
+            level={named.kind === 'card' ? 4 : 2}
+            accessibilityLevel={2}
+            color={named.kind === 'card' ? 'secondary' : 'primary'}
+          >
+            {named.title}
+          </Heading>
+        )}
+        <HStack gap={1} vAlign="center">
+          {more}
+          <IconButton
+            size="sm"
+            variant="ghost"
+            label={closeLabel}
+            icon={<Icon icon="close" />}
+            onClick={() => panel?.onClose()}
+          />
+        </HStack>
+      </HStack>
+    </LayoutHeader>
+  );
+  /** The header and the body, laid out the same beside the page and in the drawer. */
+  const framed = (body: ReactNode) => (
+    <Layout
+      height="fill"
+      padding={6}
+      header={header}
+      content={
+        <LayoutContent>
+          <VStack id={BODY_ID}>{body}</VStack>
+        </LayoutContent>
+      }
+    />
   );
   // The handle stands between the page and the panel only while the panel is shown, as Astryx's `ai-chat` template
   // mounts its handle with the open panel. A folded panel has no width to change, and its handle would stand on the
@@ -745,33 +817,7 @@ export function usePanel(
               panel.onClose();
             }}
           >
-            <Layout
-              height="fill"
-              padding={6}
-              /* A heading and a button, not a toolbar: the heading takes the focus when the panel opens, and a toolbar would offer its arrow keys there. With several things open the menu of them stands where the heading stood, and ✕ beside it closes the one it names. */
-              header={
-                <LayoutHeader hasDivider={panel.kind !== 'card' || !!tabRow}>
-                  <HStack justify="between" vAlign="center" gap={2}>
-                    {tabRow ?? titleHeading}
-                    <HStack gap={1} vAlign="center">
-                      {more}
-                      <IconButton
-                        size="sm"
-                        variant="ghost"
-                        label={closeLabel}
-                        icon={<Icon icon="close" />}
-                        onClick={panel.onClose}
-                      />
-                    </HStack>
-                  </HStack>
-                </LayoutHeader>
-              }
-              content={
-                <LayoutContent>
-                  <VStack id={BODY_ID}>{panel.body(true)}</VStack>
-                </LayoutContent>
-              }
-            />
+            {framed(panel.body(true))}
           </VStack>
         )}
       </LayoutPanel>
@@ -780,7 +826,6 @@ export function usePanel(
   const occupied = inline && (panel !== null || !collapsed);
   // The drawer's dialog fires `close` when it has slid away and left the top layer, after Astryx's own focus return:
   // the moment the page under it takes focus again, and so the one a consumer's listener is given the last word at.
-  const drawer = useRef<HTMLDialogElement>(null);
   const closed = useRef(onClosed);
   closed.current = onClosed;
   useEffect(() => {
@@ -790,9 +835,7 @@ export function usePanel(
     dialog.addEventListener('close', tell);
     return () => dialog.removeEventListener('close', tell);
   }, [inline]);
-  // The drawer keeps the last name while it slides away, so its heading is never empty (axe: empty-heading).
-  const lastTitle = useRef<string | null>(null);
-  if (panel) lastTitle.current = panel.title;
+  // The drawer's own inset is the panel's: none of its own, the layout's 24 px, as beside the page.
   const overlay = inline ? null : (
     <Drawer
       ref={drawer}
@@ -800,24 +843,10 @@ export function usePanel(
       onOpenChange={close}
       side="end"
       width={panel?.wide ? 'min(1100px, 100vw)' : PANEL}
-      label={lastTitle.current ?? 'Vy'}
+      label={named?.title ?? 'Vy'}
+      padding={0}
     >
-      <Layout
-        header={<DrawerHeader title={lastTitle.current ?? 'Vy'} onOpenChange={close} />}
-        content={
-          <LayoutContent>
-            <VStack gap={3}>
-              {tabRow}
-              {more && (
-                <HStack gap={1} wrap="wrap" vAlign="center">
-                  {more}
-                </HStack>
-              )}
-              <VStack id={BODY_ID}>{panel?.body(false)}</VStack>
-            </VStack>
-          </LayoutContent>
-        }
-      />
+      {framed(panel?.body(false))}
     </Drawer>
   );
   return { end, overlay, occupied, inline };

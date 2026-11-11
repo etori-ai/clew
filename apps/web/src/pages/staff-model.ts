@@ -13,7 +13,6 @@ import {
   type ViewTone,
 } from '@clew/contracts';
 import { statusWord } from '../components/panel-labels';
-import type { CountedKind } from '../panel-address';
 import { wholeRow } from '../view-fields';
 
 /**
@@ -23,6 +22,8 @@ import { wholeRow } from '../view-fields';
  */
 
 export type Row = Record<string, unknown>;
+/** The kinds of card "Just nu" counts on Personal: those waiting for the reader's decision, and Clew's proposals. */
+export type CountedKind = Exclude<EntityCard['kind'], 'fyi'>;
 /** How one source answered for the page: its rows by key, or why there are none. `pending` is still on its way. */
 export type Answer =
   | { status: 'ok'; rows: Map<string, Row>; heading?: string; note?: string; all: Row[] }
@@ -215,8 +216,9 @@ export const countText = (kind: CountedKind, n: number): string =>
   kind === 'act' ? `${n} att agera på` : `${n} förslag`;
 /**
  * "Just nu"'s links for one person (D97 item 5): "1 att agera på" or "N att agera på" for the cards that wait for the
- * reader's decision, "1 förslag" or "N förslag" for Clew's proposals. Each opens the card when the server named the one
- * card there is, and otherwise those cards as a list beside Personal (D107 answer 6), each link the cards it counted.
+ * reader's decision, "1 förslag" or "N förslag" for Clew's proposals. Each opens the card beside Personal when the
+ * server named the one card there is (it names one only when the person has exactly one card in all), and otherwise
+ * leads to the person's page at Behöver dig (D107, amended 2026-11-11), where each card opens beside that page.
  */
 export function cardLinkTexts(list: EntityList, key: string): CardLink[] {
   const a = list.attention.find(x => keyOf(x.key) === keyOf(key));
@@ -227,24 +229,6 @@ export function cardLinkTexts(list: EntityList, key: string): CardLink[] {
     ...(a.proposals > 0 ? [{ kind: 'proposal' as const, text: countText('proposal', a.proposals), ...thread }] : []),
   ];
 }
-/**
- * The person's cards a list beside Personal draws, its heading, and what it says when none is left: those of the kind
- * the link counted, in the server's order, headed with the link's own words, or every card about the person under
- * "Behöver dig" when the address names no kind, as the person's page lists them.
- */
-export function cardsListed(
-  cards: EntityCard[],
-  kind: CountedKind | undefined,
-): { cards: EntityCard[]; heading: string; empty: string } {
-  if (!kind) return { cards, heading: 'Behöver dig', empty: 'Inga kort' };
-  const shown = cards.filter(c => c.kind === kind);
-  return {
-    cards: shown,
-    heading: countText(kind, shown.length),
-    empty: kind === 'act' ? 'Inget att agera på' : 'Inga förslag',
-  };
-}
-
 /** The count line under the title: "5 medarbetare på Bergsåkers skola", or the number of units when there are several. */
 export function peopleLine(groups: EntityList['groups']): string {
   const people = groups.reduce((sum, g) => sum + g.entities.length, 0);

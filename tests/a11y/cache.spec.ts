@@ -28,13 +28,18 @@ test.describe('D33 the browser cache', () => {
     await page.waitForLoadState('networkidle');
     expect(count('/api/threads')).toBe(1);
   });
-  test('a card view posts its action once and opens the panel', async ({ page, api: _ }) => {
+  test('a card’s read posts its action once, for the card that unfolds it and the panel that would draw a table', async ({
+    page,
+    api: _,
+  }) => {
     const posts: string[] = [];
     page.on('request', r => {
       if (r.method() === 'POST' && r.url().includes('/act')) posts.push(r.url());
     });
-    await open(page, '/?open-card=omtanke&open-action=pattern');
-    await expect(page.getByRole('dialog', { name: 'Se mönstret' })).toBeVisible();
+    await open(page, '/?card=omtanke&open-card=omtanke&open-action=pattern');
+    const card = page.getByRole('dialog', { name: 'Kort' });
+    await expect(card.locator('#read-card-omtanke').getByText('Anna Lindqvist 07:00–16:00')).toBeVisible();
+    await page.waitForLoadState('networkidle');
     expect(posts).toHaveLength(1);
   });
   test('an address that names a card’s decision asks for nothing: only the card’s button decides', async ({
@@ -47,7 +52,7 @@ test.describe('D33 the browser cache', () => {
     });
     // "Boka samtalet" is an execute. Opened by address it must not run, on Hem or beside Personal.
     for (const path of [
-      '/?open-card=omtanke&open-action=book',
+      '/?card=omtanke&open-card=omtanke&open-action=book',
       '/staff?card=omtanke&open-card=omtanke&open-action=book',
     ]) {
       await open(page, path);

@@ -65,3 +65,35 @@ about the open card by opening it, and "Öppna som sida" on a view in the panel 
 the person beside the list, and an action about a person leading to Hem. In
 [D83](D83-interface-spaces-have-stable-navigation-roles.md) rule 1: the explicit "Öppna som sida" promotion. Each of
 those records is amended in the change that builds the rule.
+
+**Amended 2026-11-11, after the first four changes were seen live.** The product owner looked at stages 1 to 5 in one
+window about 1900 px wide and found "multiple different sidebars": a card stood beside Hem under a small "Kort", the same
+card was a modal drawer over Personal under a large "Kort" (Personal's panel stood beside only where its whole table
+fit, about 1780 px), and "2 att agera på" listed cards in the drawer, where a card and then its own read each replaced
+the one before with only ✕ leading back. Their five answers:
+
+1. **One panel, one width, every page.** The panel stands beside the page from one window width on every page that
+   holds it: Hem's, the rail, 640 px of column and the panel, 256 + 640 + 440 = 1336 px (`BESIDE_FROM` in
+   `apps/web/src/components/panel.tsx`). The page gives way, the panel does not: where the page's wide layout no longer
+   fits beside the panel it draws the narrow layout it already has (Personal its rows instead of the table, a person's
+   page its drill-in, a tool's page its list), its own breakpoint shifted by the panel's width while the panel is open.
+   The modal drawer remains only below that width, on a short screen (1.4.10) and on a phone. Kalender, whose end slot
+   holds its own Förslag panel, and Administration, whose pages grow with the shell's scroll and have no narrow layout,
+   keep the shell's drawer.
+2. **One header.** Beside the page and in the drawer the panel has the same header: the same name at the same size and
+   level, ✕ in the same place, "Tillbaka" in the same place. Astryx's `DrawerHeader` is not used for it, since its
+   title is always a full-size h2 that takes no ref.
+3. **The panel holds one opened thing, never a list of cards.** Answer 6 in the table above is reversed to the review's
+   proposal: "N att agera på" or "N förslag" counting several cards leads to the person's page at "Behöver dig"
+   (`/people/<key>?section=needs-you&from=<the list>`), where each card opens beside that page; one card still opens
+   beside Personal. `/staff?cards=<key>` from before leads there in its place.
+4. **A card's read unfolds in the card.** A card's own read into the panel is drawn inside the card under its buttons,
+   folded and unfolded as "Varför nu?" is, titled with the action's words, so the card and its decision stay in view,
+   wherever the card is drawn, a conversation's answer included. `open-card` and `open-action` now say which read is
+   unfolded; the address is replaced, not pushed, so Back never steps through folds. A row's own view in the read
+   still opens in the card's place with "Tillbaka". A read that answers with a table (today only "Se i
+   personalsystemet" on a leave request) still opens in the card's place until the product owner places it.
+5. **Unchanged:** the wide modal drawer for focused work, a review and a talk, is the one other side surface.
+
+For a connector author the table's "a card's read lies over the card" now reads "a card's read unfolds in the card".
+

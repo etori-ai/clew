@@ -1,6 +1,5 @@
 import { Fragment, useEffect, useRef, type ComponentProps, type ReactNode } from 'react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router';
-import { useQuery } from '@tanstack/react-query';
+import { useLocation } from 'react-router';
 import type { AnimatedLayout } from '@clew/ui';
 import type { EntityColumn, EntityList, EntityRef, EntitySource, ViewField } from '@clew/contracts';
 import {
@@ -18,7 +17,6 @@ import {
   List,
   ListItem,
   MoreMenu,
-  Skeleton,
   Table,
   Text,
   Toolbar,
@@ -29,21 +27,15 @@ import {
   resolveColumnWidths,
   useAnnounce,
 } from '@clew/ui';
-import { ApiError } from '../api';
-import { entityDetailQuery } from '../queries';
-import { errorMessage } from '../query-policy';
 import { FieldCell, FieldValue, badgeVariant, fieldText, fieldWord, isBadged } from '../components/view';
-import { CardList, SectionFrame } from '../components/entity-sections';
-import type { PanelFrame } from '../components/panel';
 import type { EntityActionStart } from '../entity-actions';
-import { cardsOf, pageOnly, withCard, withCards, withoutPanel } from '../panel-address';
-import { personPageFrom } from '../person-address';
+import { pageOnly, withCard } from '../panel-address';
+import { NEEDS_YOU, personPageFrom, personPageHref } from '../person-address';
 import { sourcePageHref } from '../talk-address';
 import { groupFields, present, rowGroups, type FieldGroup } from '../view-fields';
 import {
   byNeed,
   cardLinkTexts,
-  cardsListed,
   columnValue,
   lensNeed,
   marksFor,
@@ -57,8 +49,8 @@ import {
 
 /**
  * The parts of Personal (D97, artboards A2, B and A3), each an Astryx composition: the Visa menu, the row's menu, a
- * unit's card on "Alla" and under a lens, one person's cards as a list in the page's panel, and the sentence that says
- * which system did not answer. `staff.tsx` reads the API and puts them together.
+ * unit's card on "Alla" and under a lens, and the sentence that says which system did not answer. `staff.tsx` reads the
+ * API and puts them together.
  */
 
 type MenuItems = ComponentProps<typeof MoreMenu>['items'];
@@ -164,103 +156,28 @@ export function RowMenu({ entity, ctx, lens }: { entity: EntityRef; ctx: Context
 /**
  * The person's cards as links in "Just nu" (artboard A2, D97 item 5): "1 att agera på" and "1 förslag" (or "N …"), each
  * opening the card beside the list when the server named the one card there is (D83 rule 1: the list stays, and the
- * card shows what it asks before anything is decided), and otherwise the cards it counted as a list beside Personal
- * (D107 answer 6), so a count never leaves the page. Either takes the place of what the panel held: one thing at a time.
+ * card shows what it asks before anything is decided; one thing at a time, so it takes the place of what the panel
+ * held). With several the link leads to the person's page at Behöver dig, with the list as its way back, where each
+ * card opens beside that page (D107, amended 2026-11-11: the panel holds one opened thing, never a list of cards).
  */
 export function cardLinks(
   list: EntityList,
   entity: EntityRef,
   here: { pathname: string; search: string },
 ): ReactNode[] {
-  const listSearch = pageOnly('', here.search);
   return cardLinkTexts(list, entity.key).map(link => (
     <Link
       key={link.kind}
       href={
         link.threadId
-          ? withCard(here.pathname, listSearch, link.threadId)
-          : withCards(here.pathname, listSearch, entity.key, link.kind)
+          ? withCard(here.pathname, pageOnly('', here.search), link.threadId)
+          : personPageHref(entity.key, { section: NEEDS_YOU, from: pageOnly(here.pathname, here.search) })
       }
       hasUnderline
     >
       {link.text}
     </Link>
   ));
-}
-
-/**
- * One person's cards as a list in Personal's panel (D107 answer 6): "N att agera på" or "N förslag" in "Just nu"
- * counted more than one card, so the list stays and those cards are listed beside it (`cards=<key>` with `cards-kind`,
- * the page panel's `under`). They are the person's own Behöver dig, from their entity detail, of the kind the link
- * counted. A title opens its card over the list in the same panel (`&card=`); closing the card leaves the list, with the
- * focus on that title, and closing the list leaves Personal with its lens. The panel is named for the person, with the
- * name the list already has, so its heading takes the focus at once while the cards arrive; it says so in the panel
- * when the person cannot be read or no such card is left (each was decided meanwhile). A decision on one of them reads
- * the list and the person again (`cardChanged` in `staff.tsx`).
- */
-export function useCardsFrame(list: EntityList | undefined): PanelFrame | null {
-  const [search] = useSearchParams();
-  const { pathname } = useLocation();
-  const navigate = useNavigate();
-  const asked = cardsOf(search);
-  const read = useQuery({ ...entityDetailQuery('person', asked?.key ?? ''), enabled: !!asked });
-  if (!asked) return null;
-  const same = (key: string) => key.toLowerCase() === asked.key.toLowerCase();
-  const named = list?.groups.flatMap(g => g.entities).find(e => same(e.key))?.name;
-  const detail = read.isError ? undefined : read.data;
-  const base = {
-    id: `cards:${asked.key}:${asked.kind ?? 'all'}`,
-    // The address "Just nu" leads to, so the focus finds that link when the list closes and its opener is gone.
-    address: withCards(pathname, search, asked.key, asked.kind),
-    onClose: () => navigate(withoutPanel(pathname, search)),
-  };
-  if (read.isError && read.error instanceof ApiError && read.error.status === 404)
-    return {
-      ...base,
-      title: 'Personen finns inte',
-      body: () => (
-        <Text as="p">Det finns ingen sådan person, eller så har du inte tillgång till uppgifterna om hen.</Text>
-      ),
-    };
-  const name = detail?.entity.name ?? named;
-  // Neither the list nor the person has arrived: nothing yet to name the panel by.
-  if (!name) return read.isError ? { ...base, title: 'Personen kunde inte hämtas', body: () => retry(read) } : null;
-  if (read.isError) return { ...base, title: name, body: () => retry(read) };
-  const shown = detail ? cardsListed(detail.cards, asked.kind) : null;
-  return {
-    ...base,
-    title: name,
-    body: () =>
-      !shown ? (
-        <VStack gap={2}>
-          <Skeleton height={20} width="60%" />
-          <Skeleton height={20} width="40%" />
-        </VStack>
-      ) : shown.cards.length === 0 ? (
-        <EmptyState isCompact headingLevel={3} title={shown.empty} />
-      ) : (
-        <SectionFrame title={shown.heading} caption="Clew">
-          <CardList cards={shown.cards} />
-        </SectionFrame>
-      ),
-  };
-}
-/** The person's cards could not be read: said in the list's place, with the one way to ask again. */
-function retry(read: { error: unknown; isFetching: boolean; refetch: () => unknown }) {
-  return (
-    <VStack gap={3}>
-      <Text as="p">{errorMessage(read.error, 'Korten kunde inte hämtas just nu.')}</Text>
-      <HStack>
-        <Button
-          size="sm"
-          variant="secondary"
-          label="Försök igen"
-          isLoading={read.isFetching}
-          onClick={() => void read.refetch()}
-        />
-      </HStack>
-    </VStack>
-  );
 }
 
 /** The person's name as the way to their page, with the list as its way back, and their initials before it. */
@@ -366,8 +283,9 @@ function phoneParts(groups: FieldGroup[], row: Row): { badges: ViewField[]; word
   return { badges, words };
 }
 /**
- * One person as a row on a phone (the shape the page had before D97): the initials and the name, which leads to their page,
- * the states that are badges, the rest as one line of words, and the row's menu at the end.
+ * One person as a row on a phone, and beside the panel where the table does not fit (the shape the page had before
+ * D97): the initials and the name, which leads to their page, the states that are badges, the rest as one line of
+ * words, and the row's menu at the end.
  */
 function PhoneRow({
   entity,
@@ -435,8 +353,9 @@ const cellWidth = (g: FieldGroup) =>
   proportional(1, { minWidth: groupFields(g).some(f => f.format === 'instant') ? 240 : g.beside.length ? 200 : 140 });
 /**
  * The least width the whole list needs as a table, under a lens or on "Alla", as Astryx's Table works it out from its
- * columns' widths (below it the table scrolls sideways). The page draws its panel beside the list only where the list
- * keeps this much, and as the drawer over it everywhere else, so opening a card never makes the list scroll sideways.
+ * columns' widths (below it the table scrolls sideways). With the panel open beside the list, a window that does not
+ * keep this much for the list draws it as its rows instead, as a phone does: the page gives way to the panel, never
+ * scrolls sideways for it, and the panel keeps the width and the line every page has.
  */
 export function listMinWidth(list: EntityList | undefined, lens: EntitySource | undefined): number {
   const widths = lens
@@ -459,23 +378,24 @@ const menuColumn = (ctx: Context, lens?: EntitySource) => ({
 
 /**
  * A unit on "Alla" (artboard A2): Person, one column per field an administrator chose, each from its source, "Just nu"
- * and the row's menu. On a phone the same people as rows: the name, the columns' words and the marks, the menu.
+ * and the row's menu. `narrow` (on a phone, and beside the panel where the table does not fit) the same people as rows:
+ * the name, the columns' words and the marks, the menu.
  */
 export function AllUnit({
   group,
   ctx,
-  mobile,
+  narrow,
   animatedLayout,
 }: {
   group: Group;
   ctx: Context;
-  mobile: boolean;
+  narrow: boolean;
   animatedLayout: AnimatedLayout;
 }) {
   const location = useLocation();
   return (
     <UnitCard group={group}>
-      {mobile ? (
+      {narrow ? (
         <List aria-label={group.label} hasDividers animatedLayout={animatedLayout}>
           {group.entities.map(e => {
             const values = ctx.list.columns
@@ -553,19 +473,20 @@ function LensCell({ group, row }: { group: FieldGroup; row: Row }) {
 /**
  * A unit under a lens (artboard B): Person, one column per cell of the lens's view (a field and what it puts beside it,
  * the compact one left out, D97), and the row's menu; the people sorted by need, those the source has no row for last
- * with nothing in its columns. On a phone the same rows with the badges and the words under the name.
+ * with nothing in its columns. `narrow` (on a phone, and beside the panel where the table does not fit) the same rows
+ * with the badges and the words under the name.
  */
 export function LensUnit({
   group,
   lens,
   ctx,
-  mobile,
+  narrow,
   animatedLayout,
 }: {
   group: Group;
   lens: EntitySource;
   ctx: Context;
-  mobile: boolean;
+  narrow: boolean;
   animatedLayout: AnimatedLayout;
 }) {
   const answer = ctx.answers.get(lens.capability);
@@ -573,7 +494,7 @@ export function LensUnit({
   const people = byNeed(group.entities, lens, answer);
   return (
     <UnitCard group={group}>
-      {mobile ? (
+      {narrow ? (
         <List aria-label={group.label} hasDividers animatedLayout={animatedLayout}>
           {people.map(e => {
             const row = rowOf(answer, e.key);

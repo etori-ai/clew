@@ -1,37 +1,35 @@
-import type { EntityCard, ViewRef } from '@clew/contracts';
+import type { ViewRef } from '@clew/contracts';
 import { REVIEW_KEYS, withReview } from './review-address';
 import { TALK_PARAM } from './talk-address';
 
 /**
  * What the panel holds is named in the address (D50), the same way on every page (`usePagePanel`, the shell's drawer):
- * `open` is a view (with `open-title`, `open-input` and `via`, the names a tool's page already uses, D42), `open-card`
- * and `open-action` are a card's own read, and `card` is a card. A view lies over a card: closing the view leaves the
- * card, closing the card leaves the page. Everything else in the address is the page's own and is kept.
+ * `open` is a view (with `open-title`, `open-input` and `via`, the names a tool's page already uses, D42) and `card` is
+ * a card. A view lies over a card: closing the view leaves the card, closing the card leaves the page. The panel holds
+ * one opened thing (D107, amended 2026-11-11). Everything else in the address is the page's own and is kept.
  *
- * Under them all may lie one person's cards as a list (`cards=<key>`, with `cards-kind` the kind "Just nu" counted,
- * D107 answer 6): Personal draws it, a card opened from it lies over it, and closing peels the card first, then the list.
+ * `open-card` with `open-action` is one of a card's own reads unfolded inside that card (D107, amended 2026-11-11),
+ * wherever the card is drawn: beside the page, in Hem's sheet, in a conversation's answer. It is the card's state, not
+ * a thing in the panel: it stays under a view opened from one of its rows, and goes when the card goes.
  */
 export type PanelRef =
   | { kind: 'view'; capability: string; title: string; input: Record<string, unknown>; via: boolean }
-  | { kind: 'action'; threadId: string; actionId: string }
   | { kind: 'card'; threadId: string };
+/** A card's own read the address unfolds in that card. */
+export interface ReadRef {
+  threadId: string;
+  actionId: string;
+}
 
-const VIEW_KEYS = ['open', 'open-title', 'open-input', 'via', 'open-card', 'open-action'];
-const CARDS_KEYS = ['cards', 'cards-kind'];
+const VIEW_KEYS = ['open', 'open-title', 'open-input', 'via'];
+const READ_KEYS = ['open-card', 'open-action'];
 /** Every name the panel's part of an address uses: what a page drops when it opens its own thing in the panel's place. */
-export const PANEL_KEYS: readonly string[] = [...VIEW_KEYS, 'card', ...CARDS_KEYS];
+const PANEL_KEYS: readonly string[] = [...VIEW_KEYS, 'card', ...READ_KEYS];
 /**
  * What lies over the page and the panel and holds the focus (D107 rule 5): a card's review (`review-address.ts`) and
  * one person's talk (`talk-address.ts`). Closing one leaves the page's address as it was under it.
  */
 const FOCUSED_KEYS: readonly string[] = [...REVIEW_KEYS, TALK_PARAM];
-/** The kinds of card "Just nu" counts on Personal: those waiting for the reader's decision, and Clew's proposals. */
-export type CountedKind = Exclude<EntityCard['kind'], 'fyi'>;
-/** One person's cards as a list in the panel: whose, and of which kind; without a kind, all of them. */
-export interface CardsRef {
-  key: string;
-  kind: CountedKind | undefined;
-}
 const parse = (json: string | null): Record<string, unknown> => {
   try {
     const v: unknown = json ? JSON.parse(json) : {};
@@ -50,7 +48,7 @@ const without = (search: URLSearchParams | string, keys: readonly string[]) => {
   return q;
 };
 
-/** What the address says the panel holds; a view first, then a card's read, then the card. */
+/** What the address says the panel holds: a view first, then the card. */
 export function panelOf(search: URLSearchParams): PanelRef | null {
   const open = search.get('open');
   if (open)
@@ -61,13 +59,19 @@ export function panelOf(search: URLSearchParams): PanelRef | null {
       input: parse(search.get('open-input')),
       via: search.get('via') === '1',
     };
-  const threadId = search.get('open-card'),
-    actionId = search.get('open-action');
-  if (threadId && actionId) return { kind: 'action', threadId, actionId };
   const card = search.get('card');
   return card ? { kind: 'card', threadId: card } : null;
 }
-/** The same page with a view in the panel. `via` marks a view opened from another one, which then offers the way back. */
+/** The card's read the address unfolds, if it names one. */
+export function readOf(search: URLSearchParams): ReadRef | null {
+  const threadId = search.get('open-card'),
+    actionId = search.get('open-action');
+  return threadId && actionId ? { threadId, actionId } : null;
+}
+/**
+ * The same page with a view in the panel. `via` marks a view opened from another one, or from a card's read, which
+ * then offers the way back. A card's unfolded read stays: closing the view shows the card as it was.
+ */
 export function withView(
   pathname: string,
   search: URLSearchParams | string,
@@ -81,21 +85,38 @@ export function withView(
   if (via) q.set('via', '1');
   return address(pathname, q);
 }
-/** The same page with a card's own read in the panel. */
-export function withAction(
+/** The same page with one of a card's reads unfolded in the card; any other read of any card folds. */
+export function withRead(
   pathname: string,
   search: URLSearchParams | string,
   threadId: string,
   actionId: string,
 ): string {
-  const q = without(search, VIEW_KEYS);
+  const q = new URLSearchParams(search);
   q.set('open-card', threadId);
   q.set('open-action', actionId);
   return address(pathname, q);
 }
-/** The same page with a card in the panel, and nothing over it. */
+/** A row's own read (a row has no room to unfold one): its card in the panel, with the read unfolded in it. */
+export function cardWithRead(
+  pathname: string,
+  search: URLSearchParams | string,
+  threadId: string,
+  actionId: string,
+): string {
+  const q = without(search, [...VIEW_KEYS, ...READ_KEYS]);
+  q.set('card', threadId);
+  q.set('open-card', threadId);
+  q.set('open-action', actionId);
+  return address(pathname, q);
+}
+/** The same page with the card's read folded again. */
+export function withoutRead(pathname: string, search: URLSearchParams | string): string {
+  return address(pathname, without(search, READ_KEYS));
+}
+/** The same page with a card in the panel, and nothing over it or unfolded in it. */
 export function withCard(pathname: string, search: URLSearchParams | string, threadId: string): string {
-  const q = without(search, VIEW_KEYS);
+  const q = without(search, [...VIEW_KEYS, ...READ_KEYS]);
   q.set('card', threadId);
   return address(pathname, q);
 }
@@ -113,7 +134,7 @@ export function cardOverPage(pathname: string, search: URLSearchParams | string,
  * opened from a row closes to that card beside the page, as one opened from the card itself does.
  */
 export function reviewOverCard(pathname: string, search: URLSearchParams | string, threadId: string): string {
-  const q = without(search, VIEW_KEYS);
+  const q = without(search, [...VIEW_KEYS, ...READ_KEYS]);
   q.set('card', threadId);
   return withReview(pathname, q, threadId);
 }
@@ -135,44 +156,21 @@ export function keepingPanel(target: string, search: URLSearchParams | string): 
 export function pageOnly(pathname: string, search: URLSearchParams | string): string {
   return address(pathname, without(search, [...PANEL_KEYS, ...FOCUSED_KEYS]));
 }
-/** The person's cards the address lists in the panel, under whatever is opened over them. */
-export function cardsOf(search: URLSearchParams): CardsRef | null {
-  const key = search.get('cards');
-  if (!key) return null;
-  const kind = search.get('cards-kind');
-  return { key, kind: kind === 'act' || kind === 'proposal' ? kind : undefined };
-}
 /**
- * The same page with one person's cards listed in the panel and nothing over them. What the panel held is let go of:
- * the list is opened from the page, and takes the place of what was open (one thing at a time on Personal).
+ * The same page with the panel's top layer closed: the view if there is one, else the card with whatever was unfolded
+ * in it. A read unfolded in a card that is not in the panel (in a conversation's answer) folds with nothing else open.
  */
-export function withCards(
-  pathname: string,
-  search: URLSearchParams | string,
-  key: string,
-  kind?: CountedKind | undefined,
-): string {
-  const q = without(search, [...PANEL_KEYS]);
-  q.set('cards', key);
-  if (kind) q.set('cards-kind', kind);
-  return address(pathname, q);
-}
-/** The same page with the panel's top layer closed: the view if there is one, else the card, else a person's cards. */
 export function withoutPanel(pathname: string, search: URLSearchParams | string): string {
   const q = new URLSearchParams(search);
   if (VIEW_KEYS.some(k => q.has(k))) VIEW_KEYS.forEach(k => q.delete(k));
-  else if (q.has('card')) q.delete('card');
-  else CARDS_KEYS.forEach(k => q.delete(k));
+  else [...READ_KEYS, 'card'].forEach(k => q.delete(k));
   return address(pathname, q);
 }
-/**
- * Only the panel's part of an address, as a query string: what a conversation takes with it from the page it was asked
- * on. A person's cards are left behind: the list is Personal's own, and the conversation's page does not draw it.
- */
+/** Only the panel's part of an address, as a query string: what a conversation takes with it from the page it was asked on. */
 export function panelSearch(search: URLSearchParams | string): string {
   const from = new URLSearchParams(search),
     q = new URLSearchParams();
-  [...VIEW_KEYS, 'card'].forEach(k => {
+  PANEL_KEYS.forEach(k => {
     const v = from.get(k);
     if (v !== null) q.set(k, v);
   });

@@ -105,3 +105,8 @@ Hem. Asking still carries what the person was looking at: a question sent on Hem
 column opens the conversation with it beside the transcript, and "Stäng samtalet" returns to Hem as it stood, the card
 or view still open; the card is the question's subject only when the person added it. On a tool's page item 5 is
 unchanged: the placeholder names the tool ("Fråga om Telefonbok …") and its view goes with the question as a chip.
+
+**Amended 2026-11-11 (D107 amended): a card's read unfolds in the card.** Item 4's `open-card` and `open-action` no
+longer put a card's read in the panel over the card: they name the read unfolded inside the card, wherever it is drawn.
+A read that answers with a table still opens in the card's place. Item 3's widths give way to one: the panel stands
+beside every page from 1336 px.

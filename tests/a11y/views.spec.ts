@@ -91,8 +91,13 @@ test.describe('a declared view in the side panel', () => {
     await panel.getByRole('link', { name: 'Anna Lindqvist' }).click();
     const contact = page.getByRole('dialog', { name: 'Kontaktkort' });
     await expect(contact.getByText('Anna Lindqvist')).toBeVisible();
-    // The panel stayed open and the view in it changed: the new view is named aloud and focus is in it, on the way back.
-    await expect(contact.getByRole('button', { name: 'Tillbaka' })).toBeFocused();
+    // The panel stayed open and the view in it changed: the new view is named aloud and focus is on its name at the
+    // panel's start, as beside the page (the panel's one header): with two open, the menu of them named by the current
+    // one (D66). The way back is under it.
+    await expect(
+      contact.getByRole('navigation', { name: 'Öppet bredvid' }).getByRole('button', { name: 'Kontaktkort' }),
+    ).toBeFocused();
+    await expect(contact.getByRole('button', { name: 'Tillbaka' })).toBeVisible();
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Kontaktkort'));
     await expect(contact.getByText('Rum')).toBeVisible();
     await expect(contact.getByRole('link', { name: '0980-319 203' })).toHaveAttribute('href', 'tel:0980319203');

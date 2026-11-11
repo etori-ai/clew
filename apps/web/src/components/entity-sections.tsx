@@ -34,7 +34,7 @@ import {
 import { entitySectionQuery, viewQuery } from '../queries';
 import { actionMenuItems, useEntityAction } from '../entity-actions';
 import { withCard } from '../panel-address';
-import { unitPageHref } from '../person-address';
+import { NEEDS_YOU, unitPageHref } from '../person-address';
 import { sourcePageHref } from '../talk-address';
 import { compactField, groupFields, present, rowGroups, wholeRow, type FieldGroup } from '../view-fields';
 import { DeclaredView, FieldCell, FieldValue, fieldText, isBadged } from './view';
@@ -43,8 +43,8 @@ import { DeclaredView, FieldCell, FieldValue, fieldText, isBadged } from './view
  * The opened person's or unit's content (D97 item 5, artboards C2, E and G): "Behöver dig" with the reader's cards about
  * them, then one section per source that is about them, each named with its source and each read on its own, so a slow
  * or silent source never holds the others. A source that answered without a row says nothing (no row means "none" or
- * "not allowed"); one that did not answer says so in its own place with a way to ask again. The person's page, the
- * unit's page and a person's cards listed beside Personal draw from the same pieces.
+ * "not allowed"); one that did not answer says so in its own place with a way to ask again. The person's page and the
+ * unit's page draw from the same pieces.
  */
 type RowsView = Extract<View, { kind: 'table' | 'list' }>;
 type Row = Record<string, unknown>;
@@ -53,8 +53,7 @@ export interface SectionAnswer {
   source: EntitySource;
   query: UseQueryResult<EntitySection, Error>;
 }
-/** The value Behöver dig takes in the address (`?section=`): never a capability's name, which always has a dot. */
-export const NEEDS_YOU = 'needs-you';
+export { NEEDS_YOU };
 const rowsView = (view: View): RowsView | null => (view.kind === 'table' || view.kind === 'list' ? view : null);
 /** The source answered, and had no row for this person: the section is left out. */
 export const rowless = (a: SectionAnswer) => a.query.data?.status === 'ok' && !a.query.data.row;

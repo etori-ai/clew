@@ -128,7 +128,7 @@ test.describe('2.4.3 focus order', () => {
     await page.keyboard.press('Enter');
     const panel = page.getByRole('dialog');
     await expect(panel).toBeVisible();
-    await panel.getByRole('button', { name: 'Stäng', exact: true }).click();
+    await panel.getByRole('button', { name: 'Stäng panelen' }).click();
     await expect(panel).toBeHidden();
     await expect(trigger).toBeFocused();
   });

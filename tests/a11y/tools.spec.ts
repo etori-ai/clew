@@ -94,7 +94,7 @@ test.describe('a tool as a page', () => {
     await expect(page).toHaveURL(/\/$/);
   });
 
-  test('a name opens the contact card in the side panel over the page; closing it gives the rows and the focus back', async ({
+  test('a name opens the contact card in the side panel beside the page; closing it gives the rows and the focus back', async ({
     page,
     api,
   }) => {
@@ -103,7 +103,7 @@ test.describe('a tool as a page', () => {
     const name = page.getByRole('link', { name: 'Anna Lindqvist' });
     await name.focus();
     await page.keyboard.press('Enter');
-    const contact = page.getByRole('dialog', { name: 'Kontaktkort' });
+    const contact = page.getByRole('complementary', { name: 'Kontaktkort' });
     await expect(contact.getByText('Anna Lindqvist')).toBeVisible();
     await expect(contact.getByRole('link', { name: '0980-319 203' })).toHaveAttribute('href', 'tel:0980319203');
     // The address names the tool, what was asked in it and the card, so a link or a reload lands here.
@@ -131,12 +131,12 @@ test.describe('a tool as a page', () => {
     api.menu = menuRows;
     await open(page, directory);
     await page.getByRole('link', { name: 'Anna Lindqvist' }).click();
-    await expect(page.getByRole('dialog', { name: 'Kontaktkort' })).toBeVisible();
+    await expect(page.getByRole('complementary', { name: 'Kontaktkort' })).toBeVisible();
     await page.reload();
-    await expect(page.getByRole('dialog', { name: 'Kontaktkort' }).getByText('Anna Lindqvist')).toBeVisible();
+    await expect(page.getByRole('complementary', { name: 'Kontaktkort' }).getByText('Anna Lindqvist')).toBeVisible();
     await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveText('Telefonbok');
     await page.goBack();
-    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByRole('complementary', { name: 'Kontaktkort' })).toHaveCount(0);
     await expect(page.getByRole('row')).toHaveCount(15);
   });
 
@@ -145,7 +145,7 @@ test.describe('a tool as a page', () => {
     api,
   }) => {
     api.menu = menuRows;
-    // Wide enough for a card beside the table (the table keeps 1060 px), so the box is not under a drawer.
+    // Wide enough for the table to keep its width beside the card (1720 px), so the rows are the table's.
     await page.setViewportSize({ width: 1920, height: 1080 });
     await open(page, `${directory}?card=fakturor`);
     await expect(
@@ -252,6 +252,29 @@ test.describe("a tool's page on a smaller screen", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
   });
 
+  test('with a contact card beside it the page gives way: its rows are the list until the table fits beside the panel too', async ({
+    page,
+    api,
+  }) => {
+    // The panel stands beside every page from 1336 px; the table needs 1280 px beside the rail, and as much again
+    // beside the panel (1720 px), so between the two the page draws the list it draws on a narrower window.
+    await page.setViewportSize(wide);
+    api.menu = menuRows;
+    await open(page, directory);
+    await expect(page.getByRole('table')).toBeVisible();
+    await page.getByRole('link', { name: 'Hassan Ali' }).click();
+    const contact = page.getByRole('complementary', { name: 'Kontaktkort' });
+    await expect(contact.getByText('Hassan Ali').first()).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByRole('table')).toHaveCount(0);
+    await expect(page.getByRole('list', { name: 'Telefonboken' }).getByRole('listitem')).toHaveCount(14);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await expectNoAxeViolations(page);
+    await contact.getByRole('button', { name: 'Stäng panelen' }).click();
+    await expect(page.getByRole('table')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Hassan Ali' })).toBeFocused();
+  });
+
   test('on a phone the page and the card both fit, and the card closes back to the rows', async ({ page, api }) => {
     await page.setViewportSize(phone);
     api.menu = menuRows;
@@ -262,7 +285,7 @@ test.describe("a tool's page on a smaller screen", () => {
     const contact = page.getByRole('dialog', { name: 'Kontaktkort' });
     await expect(contact.getByText('Hassan Ali')).toBeVisible();
     await expectNoAxeViolations(page);
-    await contact.getByRole('button', { name: 'Stäng' }).click();
+    await contact.getByRole('button', { name: 'Stäng panelen' }).click();
     await expect(page.getByRole('list', { name: 'Telefonboken' }).getByRole('listitem')).toHaveCount(14);
   });
 

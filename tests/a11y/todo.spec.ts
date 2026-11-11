@@ -364,16 +364,93 @@ test.describe('the panel beside the page', () => {
     await expect(page.getByText(HEM_PLACEHOLDER, { exact: true })).toBeVisible();
   });
 
-  test("a card's own read lies over the card: closing the view leaves the card", async ({ page, api: _ }) => {
+  test("a card's own read unfolds inside the card under its buttons, is said aloud, survives a reload and folds again", async ({
+    page,
+    api,
+  }) => {
+    api.cardReadDelay = 400;
     await open(page, '/?card=omtanke');
     const card = page.getByRole('complementary', { name: 'Kort' });
-    await card.getByRole('button', { name: 'Se mönstret' }).click();
-    await expect(page).toHaveURL(/card=omtanke&open-card=omtanke&open-action=pattern$/);
-    const view = page.getByRole('complementary', { name: 'Se mönstret' });
-    await expect(view).toBeVisible();
-    await view.getByRole('button', { name: 'Stäng panelen' }).click();
-    await expect(page.getByRole('complementary', { name: 'Kort' }).locator('#card-omtanke')).toBeVisible();
+    const button = card.locator('[data-read="pattern"]');
+    await expect(button).toHaveAccessibleName('Se mönstret');
+    await expect(button).toHaveAttribute('aria-expanded', 'false');
+    await button.click();
+    // The address says which read is unfolded, in place of the one before: Back is not a step through every fold.
+    await expect(page).toHaveURL(/\/\?card=omtanke&open-card=omtanke&open-action=pattern$/);
+    const section = card.locator('#read-card-omtanke');
+    // While the read is on its way the section holds its shape, and the focus stays on the button.
+    await expect(section.locator('[aria-busy="true"]')).toBeVisible();
+    await expect(button).toBeFocused();
+    await expect(section.getByText('Anna Lindqvist 07:00–16:00')).toBeVisible();
+    await expect(button).toBeFocused();
+    await expect(button).toHaveAttribute('aria-expanded', 'true');
+    await expect(button).toHaveAttribute('aria-controls', 'read-card-omtanke');
+    await expect
+      .poll(async () => (await announcements(page)).filter(a => a === 'Se mönstret visas i kortet.'))
+      .toHaveLength(1);
+    // The card stays whole around it: its title, its decision, and nothing has taken its place in the panel.
+    await expect(card.getByRole('article', { name: 'Kort: Omtankesamtal med Anna Lindqvist' })).toBeVisible();
+    await expect(card.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
+    await expect(page.getByRole('complementary', { name: 'Se mönstret' })).toHaveCount(0);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expectNoAxeViolations(page);
+    // A reload is the same card with the same read unfolded.
+    await page.reload();
+    await expect(section.getByText('Anna Lindqvist 07:00–16:00')).toBeVisible();
+    await expect(button).toHaveAttribute('aria-expanded', 'true');
+    // The section's own toggle folds it, and the focus goes to the button that unfolded it.
+    await section.getByRole('button', { name: 'Se mönstret' }).click();
     await expect(page).toHaveURL(/\/\?card=omtanke$/);
+    await expect(section).toHaveCount(0);
+    await expect(button).toBeFocused();
+    await expect(button).toHaveAttribute('aria-expanded', 'false');
+    // The button unfolds it again and folds it again; the card stays where it is all along.
+    await button.click();
+    await expect(section.getByText('Anna Lindqvist 07:00–16:00')).toBeVisible();
+    await button.click();
+    await expect(section).toHaveCount(0);
+    await expect(page).toHaveURL(/\/\?card=omtanke$/);
+    await expect(button).toBeFocused();
+  });
+
+  test("a card's read that fails says so in the card with Försök igen, and one that answers with an address opens a tab and unfolds nothing", async ({
+    page,
+    api,
+  }) => {
+    api.cardReadFails = true;
+    await open(page, '/?card=omtanke&open-card=omtanke&open-action=pattern');
+    const card = page.getByRole('complementary', { name: 'Kort' });
+    const section = card.locator('#read-card-omtanke');
+    await expect(section.getByText('Källan svarade inte.')).toBeVisible();
+    await expect
+      .poll(async () => (await announcements(page)).filter(a => a === 'Källan svarade inte.'))
+      .toHaveLength(1);
+    await expect(card.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
+    await expectNoAxeViolations(page);
+    api.cardReadFails = false;
+    await section.getByRole('button', { name: 'Försök igen' }).click();
+    await expect(section.getByText('Anna Lindqvist 07:00–16:00')).toBeVisible();
+    // A read that answers with an address is a way out: a new tab once, and the card stays folded.
+    await open(page, '/?card=omtanke');
+    api.cardReads.pattern = { output: { url: 'https://hr.example.test/franvaro/anna' } };
+    await page.evaluate(() => {
+      const opened: string[] = [];
+      Object.assign(window, { opened });
+      window.open = (url?: string | URL) => {
+        opened.push(String(url));
+        return null;
+      };
+    });
+    await card.locator('[data-read="pattern"]').click();
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { opened: string[] }).opened))
+      .toEqual(['https://hr.example.test/franvaro/anna']);
+    await expect(page).toHaveURL(/\/\?card=omtanke$/);
+    await expect(section).toHaveCount(0);
+    await expect(card.locator('[data-read="pattern"]')).toBeFocused();
+    await expect
+      .poll(async () => (await announcements(page)).filter(a => a.includes('öppnades i en ny flik')))
+      .toHaveLength(1);
   });
 
   test('a question asked on Hem with a card open: the conversation takes the column with the card beside it, the card is its subject only once added, and closing leads back', async ({

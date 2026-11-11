@@ -50,7 +50,7 @@ import {
   VStack,
 } from '@clew/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useLocation } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import { displayDate, today } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
 import { confirmParts } from '../confirm-parts';
@@ -63,7 +63,8 @@ import { executionStatus } from '../execution-status';
 import { useMarks, type Mark, type Marks } from '../marks';
 import { AddToConversation } from './add-to-conversation';
 import { returnedReview, selectionAfterReview, withReview } from '../review-address';
-import { reviewOverCard } from '../panel-address';
+import { cardWithRead, readOf, reviewOverCard, withRead, withoutRead } from '../panel-address';
+import { CardRead, unfoldsInCard, useCardRead } from './card-read';
 import { canUndoReceipt, receiptComplete } from '../receipt-state';
 import { entityHref } from '../person-address';
 
@@ -415,7 +416,8 @@ const TimeSubMenu = ({ label, rows, own }: { label: string; rows: TimeRows['rows
 type ActionProps = {
   thread: Thread;
   onChange: (thread: Thread) => void;
-  onOpenCardView: (threadId: string, actionId: string) => void;
+  /** One of the card's own reads into the panel was pressed: the card unfolds it, a row opens its card with it unfolded. */
+  onRead?: (action: ThreadAction) => void;
 };
 /**
  * Running one of a card's actions, shared by the card, the row and the review (D73), so a decision sent from the
@@ -430,7 +432,7 @@ type ActionProps = {
 export function useCardAction({
   thread,
   onChange,
-  onOpenCardView,
+  onRead,
 }: Pick<ActionProps, 'thread'> & Partial<Omit<ActionProps, 'thread'>>) {
   const { run, apply, busy, error } = useThreadAction({ onChange });
   // The person's own action is on its way (D64): the card keeps the look it had, with the pressed button loading, and the
@@ -490,8 +492,8 @@ export function useCardAction({
         });
         return true;
       }
-      // A panel view has an address (`open-card` and `open-action`), so it survives reload and the back button closes it.
-      onOpenCardView?.(thread.id, action.id);
+      // A read into the panel unfolds in the card, by its address (`open-card` and `open-action`), so it survives reload.
+      onRead?.(action);
       return true;
     }
     // The outcome is the source's (D45): nothing is predicted, the button stays loading until the answer has come to rest.
@@ -513,7 +515,7 @@ export const reviewedAction = (thread: Thread) =>
   thread.actions.find(a => a.role === 'primary' && a.kind === 'execute' && a.review === 'each');
 
 /** Everything a card can do, shared by the card and the row: run an action, snooze, dismiss, explain, and keep the selection. */
-function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
+function useThreadActions({ thread, onChange, onRead }: ActionProps) {
   const {
     run,
     apply,
@@ -527,7 +529,7 @@ function useThreadActions({ thread, onChange, onOpenCardView }: ActionProps) {
   } = useCardAction({
     thread,
     onChange,
-    onOpenCardView,
+    onRead,
   });
   const status = executionStatus(thread.execution);
   const lastStatus = useRef(status),
@@ -644,6 +646,8 @@ function ActionRow({
   compact = false,
   phone = false,
   stacked = false,
+  openRead = null,
+  readSection,
 }: {
   thread: Thread;
   level: AttentionLevel;
@@ -652,6 +656,10 @@ function ActionRow({
   compact?: boolean;
   phone?: boolean;
   stacked?: boolean;
+  /** The read unfolded in the card now (`CardRead`), whose button says so. */
+  openRead?: string | null;
+  /** The id of the section a read unfolds in. */
+  readSection?: string;
 }) {
   const conversation = useConversation();
   const countdown = useCountdown(thread.receipt?.undoUntil ?? null);
@@ -672,6 +680,19 @@ function ActionRow({
     a => a.role === 'overflow' || (a.role === 'secondary' && !secondary.includes(a)),
   );
   const count = selected.length;
+  /**
+   * A read that unfolds in the card says so on its button (a disclosure, 4.1.2): whether it is unfolded and, while it
+   * is, the section it controls. The card finds the button again by `data-read` when the section's own toggle folds it.
+   * A row's read opens the card instead, and a link out is a link out.
+   */
+  const readState = (a: ThreadAction) =>
+    !quiet && a.kind === 'read' && a.target !== 'link'
+      ? {
+          'aria-expanded': openRead === a.id,
+          ...(openRead === a.id && readSection ? { 'aria-controls': readSection } : {}),
+          'data-read': a.id,
+        }
+      : {};
   // "Granska 3" on a row, "Attestera 2 valda" on the card (artboards A and E).
   const primaryLabel =
     primary && selectable ? (quiet ? `${primary.label} ${count}` : `${primary.label} ${count} valda`) : primary?.label;
@@ -714,6 +735,7 @@ function ActionRow({
         isLoading={settling && pressed === primary.id}
         width={width}
         clickAction={() => perform(primary)}
+        {...readState(primary)}
       />
     )
   ) : null;
@@ -848,6 +870,7 @@ function ActionRow({
         isLoading={settling && pressed === a.id}
         width={width}
         clickAction={() => perform(a)}
+        {...readState(a)}
       />
     ));
     const rest = (
@@ -914,7 +937,7 @@ function ActionRow({
         {secondary
           .filter(a => a.kind === 'read')
           .map(a => (
-            <Button key={a.id} size={size} label={a.label} clickAction={() => perform(a)} />
+            <Button key={a.id} size={size} label={a.label} clickAction={() => perform(a)} {...readState(a)} />
           ))}
         <Text type="supporting">Varje rad visar källsystemets svar. Grönt bara när det lästs tillbaka.</Text>
       </HStack>
@@ -947,7 +970,7 @@ function ItemLabel({ item, from }: { item: ThreadItem; from: string }) {
     <Text weight="semibold">{item.label}</Text>
   );
 }
-type Props = ActionProps & {
+type Props = Omit<ActionProps, 'onRead'> & {
   position?: string;
   headingLevel?: 2 | 3 | 4;
   autoFocusTitle?: boolean;
@@ -974,21 +997,45 @@ export function GenericCard({
   next,
   sheet = false,
   onChange,
-  onOpenCardView,
 }: Props) {
   // Opened from its row, the title takes the focus the row's button had (2.4.3).
   const title = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     if (autoFocusTitle) title.current?.focus();
   }, []);
-  const actions = useThreadActions({ thread, onChange, onOpenCardView });
+  // What folds open glides the content under it instead of jumping (Astryx's useAnimatedLayout), within the card.
+  const root = useRef<HTMLDivElement>(null);
+  const animatedLayout = useAnimatedLayout({ containerRef: root });
+  const { pathname, search } = useLocation();
+  const navigate = useNavigate();
+  // One of the card's own reads unfolded in it (`open-card` and `open-action`, D107 amended 2026-11-11), wherever the
+  // card is drawn. Pressing its button again, or the section's toggle, folds it. The address is replaced, not pushed:
+  // unfolding is a change within the card, as a view's search is, so Back leaves the card as it would without the read
+  // and never steps through every unfold and fold, while a reload and the entries either side of it keep it.
+  const asked = readOf(new URLSearchParams(search));
+  const unfolded = asked?.threadId === thread.id ? asked.actionId : null;
+  const read = useCardRead(thread, unfolded);
+  const readSection = `read-${beside ? 'card' : 'thread'}-${thread.id}`;
+  const openRead = read.action && !read.url && !(read.shown && !unfoldsInCard(read.shown.view)) ? read.action.id : null;
+  const onRead = (a: ThreadAction) =>
+    navigate(unfolded === a.id ? withoutRead(pathname, search) : withRead(pathname, search, thread.id, a.id), {
+      replace: true,
+    });
+  /** Folded by the section's toggle the toggle is gone with it: the focus goes to the button that unfolded it, else the title. */
+  const fold = (refocus: boolean) => {
+    const opener = read.action
+      ? root.current?.querySelector<HTMLElement>(`[data-read="${CSS.escape(read.action.id)}"]`)
+      : null;
+    navigate(withoutRead(pathname, search), { replace: true });
+    if (refocus) requestAnimationFrame(() => (opener?.isConnected ? opener : title.current)?.focus());
+  };
+  const actions = useThreadActions({ thread, onChange, onRead });
   const { selected, setSelected, selectable, error } = actions;
   const conversation = useConversation();
   const marks = useMarks();
   const mark = marks.ofThread(thread);
   const systems = rowSystems(thread, marks);
   const rowChipped = (ref: string) => conversation.chipped.includes(ref);
-  const { pathname, search } = useLocation();
   const inConversation = rowChipped('thread:' + thread.id) || thread.items.some(i => rowChipped(i.ref));
   const open = thread.state === 'open';
   const level = attentionLevel(thread, today());
@@ -998,9 +1045,6 @@ export function GenericCard({
   const elevation =
     open && !thread.waitingOn && (streamGroup(thread, today()) === 'nu' || inConversation) ? 'low' : 'none';
   const variant = open && (thread.waitingOn || isSnoozed(thread, new Date().toISOString())) ? 'muted' : 'default';
-  // What folds open glides the content under it instead of jumping (Astryx's useAnimatedLayout), within the card.
-  const root = useRef<HTMLDivElement>(null);
-  const animatedLayout = useAnimatedLayout({ containerRef: root });
   const body = (
     <VStack
       ref={root}
@@ -1120,7 +1164,17 @@ export function GenericCard({
         </Text>
       )}
       {actions.confirmation}
-      <ActionRow thread={thread} level={level} actions={actions} stacked={sheet} />
+      <ActionRow
+        thread={thread}
+        level={level}
+        actions={actions}
+        stacked={sheet}
+        openRead={openRead}
+        readSection={readSection}
+      />
+      {read.action && (
+        <CardRead action={read.action} read={read} id={readSection} animatedLayout={animatedLayout} onFold={fold} />
+      )}
       {/* The way on from a done card (D70, artboard D): the first card that needs the person, never opened on its own. */}
       {receipt && next && (
         <Card padding={3} variant="muted">
@@ -1193,7 +1247,7 @@ export function GenericCard({
   );
 }
 
-type RowProps = ActionProps & {
+type RowProps = Omit<ActionProps, 'onRead'> & {
   notice?: boolean;
   /** Where the title leads: the card beside the column (D50, artboard E). */
   href: string;
@@ -1233,9 +1287,15 @@ export function ThreadRow({
   compact = false,
   phone = false,
   onChange,
-  onOpenCardView,
 }: RowProps) {
-  const actions = useThreadActions({ thread, onChange, onOpenCardView });
+  // A row has no room to unfold a read: its read opens the card beside the page with the read unfolded in it.
+  const { pathname, search } = useLocation();
+  const navigate = useNavigate();
+  const actions = useThreadActions({
+    thread,
+    onChange,
+    onRead: a => navigate(cardWithRead(pathname, search, thread.id, a.id)),
+  });
   const { error } = actions;
   const conversation = useConversation();
   const marks = useMarks();

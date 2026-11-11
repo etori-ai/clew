@@ -66,9 +66,11 @@ const TABLE_BESIDE_QUERY = panelBesideQuery(1280 - RAIL);
 /** The list of sections keeps its width (artboard C2); the chosen section beside it reads down to this. */
 const SECTIONS_WIDTH = 340;
 const CHOSEN_MIN = 300;
-/** The page's column at its widest, less its 32 px padding on each side, and the least it needs beside the panel. */
+/** The page's column at its widest, less its 32 px padding on each side, and the least the two side by side need. */
 const COLUMN = 1216 - 2 * 32;
 const PERSON_MIN = SECTIONS_WIDTH + 32 + CHOSEN_MIN + 2 * 32;
+/** Where the list of sections and the chosen one still stand side by side with the panel open beside the page. */
+const SIDE_BY_SIDE_BESIDE_QUERY = panelBesideQuery(PERSON_MIN);
 
 /**
  * The chosen source's fuller view (artboard C2): its name, where it was read and when, the way to its own page, then its
@@ -161,20 +163,32 @@ function ChosenCards({ detail, level }: { detail: EntityDetail; level: 'page' | 
  *
  * The page holds the panel beside its column (D107 rules 2 to 4, `usePagePanel`): a card under Behöver dig and the card
  * an action makes open there, with the section and the way back kept in the address, and closing leaves the page as it
- * was. Choosing another section keeps what is open beside it. Where the panel does not fit beside the list of sections
- * and the chosen one, it is the drawer over the page.
+ * was. Choosing another section keeps what is open beside it. The panel stands beside the page from the one width
+ * every page has (`BESIDE_FROM`); the page gives way, not the panel: where the list of sections and the chosen one no
+ * longer fit side by side beside it, the page is its narrow drill-in, and the fuller view's table its list. In a
+ * narrower window the panel is the drawer over the page.
  */
 export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean }) {
   const { key = '' } = useParams<{ key: string }>();
   const [search] = useSearchParams();
   const mobile = useMediaQuery(mobileQuery);
-  const narrow = useMediaQuery(narrowQuery);
+  const narrowWindow = useMediaQuery(narrowQuery);
+  const sideBySideBeside = useMediaQuery(SIDE_BY_SIDE_BESIDE_QUERY);
   // 1.4.10: on a short screen nothing is pinned beside the page, and the page scrolls as one.
   const short = useMediaQuery(shortQuery);
   const from = insideClew(search.get('from'));
   const section = search.get('section') || undefined;
   const read = useQuery(entityDetailQuery('person', key));
   const detail = read.data;
+  // A decision made on a card beside the page changes what Behöver dig holds: the person is read again, their sources not.
+  const client = useQueryClient();
+  const cardChanged = useCallback(() => {
+    void client.invalidateQueries({ queryKey: keys.entities.detail('person', key), exact: true });
+  }, [client, key]);
+  const panel = usePagePanel({ overlayOnly: short, onChange: cardChanged });
+  // The page gives way to the panel beside it (the product owner, 2026-11-11): the narrow drill-in it draws on a narrow
+  // window, wherever the two no longer fit side by side beside the panel.
+  const narrow = narrowWindow || (panel.occupied && !sideBySideBeside);
   const missing = read.isError && read.error instanceof ApiError && read.error.status === 404;
   const answers = useSectionAnswers(detail?.entity.key, detail?.sections ?? []);
   const origin = originOf(from, useQuery(areasQuery).data?.menu);
@@ -199,12 +213,6 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
   const chosenId = section ?? (narrow ? undefined : fallback);
   const chosen = chosenId ? answers.find(a => a.source.capability === chosenId) : undefined;
   const showsCards = chosenId === NEEDS_YOU && !!detail && detail.cards.length > 0;
-  // A decision made on a card beside the page changes what Behöver dig holds: the person is read again, their sources not.
-  const client = useQueryClient();
-  const cardChanged = useCallback(() => {
-    void client.invalidateQueries({ queryKey: keys.entities.detail('person', key), exact: true });
-  }, [client, key]);
-  const panel = usePagePanel({ minMain: PERSON_MIN, overlayOnly: short, onChange: cardChanged });
   // Another section is a move within the page: what is open beside it stays.
   const hrefFor = (id: string | null) =>
     keepingPanel(personPageHref(key, { ...(id ? { section: id } : {}), from }), search);

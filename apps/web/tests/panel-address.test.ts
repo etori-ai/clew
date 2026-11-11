@@ -1,14 +1,18 @@
 import { describe, expect, test } from 'bun:test';
 import {
   cardOverPage,
-  cardsOf,
+  cardWithRead,
   keepingPanel,
   pageOnly,
+  panelOf,
   panelSearch,
+  readOf,
   reviewOverCard,
   withCard,
-  withCards,
+  withRead,
+  withView,
   withoutPanel,
+  withoutRead,
 } from '../src/panel-address';
 
 describe('a card opens over the page the person is on (D107 rule 2)', () => {
@@ -30,9 +34,9 @@ describe('a card opens over the page the person is on (D107 rule 2)', () => {
   });
   test('from the bell, a toast or the search: over the page, letting go of a review or a talk over it (D107 rule 5)', () => {
     expect(cardOverPage('/admin/connectors', '', 'ledighet')).toBe('/admin/connectors?card=ledighet');
-    expect(cardOverPage('/staff', '?show=clew.talkPeople&cards=johan&cards-kind=act', 'ledighet')).toBe(
-      '/staff?show=clew.talkPeople&cards=johan&cards-kind=act&card=ledighet',
-    );
+    expect(
+      cardOverPage('/staff', '?show=clew.talkPeople&card=samtal&open-card=samtal&open-action=pattern', 'ledighet'),
+    ).toBe('/staff?show=clew.talkPeople&card=ledighet');
     expect(cardOverPage('/', '?tab=done&card=fakturor&review=fakturor&step=2', 'ledighet')).toBe(
       '/?tab=done&card=ledighet',
     );
@@ -71,37 +75,49 @@ describe('a move within the page keeps what is open beside it', () => {
   });
 });
 
-describe('one person’s cards as a list beside Personal (D107 answer 6)', () => {
-  test('the list takes the place of what the panel held, and keeps the page’s lens', () => {
-    expect(withCards('/staff', '?show=clew.talkPeople', 'johan', 'act')).toBe(
-      '/staff?show=clew.talkPeople&cards=johan&cards-kind=act',
-    );
-    expect(withCards('/staff', '?show=x&card=t1&open=a.b&open-title=A', 'johan', 'proposal')).toBe(
-      '/staff?show=x&cards=johan&cards-kind=proposal',
-    );
-    expect(withCards('/staff', '', 'johan')).toBe('/staff?cards=johan');
-    expect(cardsOf(new URLSearchParams('?show=x&cards=johan&cards-kind=act'))).toEqual({ key: 'johan', kind: 'act' });
-    expect(cardsOf(new URLSearchParams('?cards=johan&cards-kind=fyi'))).toEqual({ key: 'johan', kind: undefined });
-    expect(cardsOf(new URLSearchParams('?show=x'))).toBeNull();
+describe('a card’s own read unfolds inside the card (D107, amended 2026-11-11)', () => {
+  test('the read is the card’s state, not a thing in the panel: the panel still holds the card', () => {
+    const q = new URLSearchParams('?show=x&card=t1&open-card=t1&open-action=pattern');
+    expect(panelOf(q)).toEqual({ kind: 'card', threadId: 't1' });
+    expect(readOf(q)).toEqual({ threadId: 't1', actionId: 'pattern' });
+    expect(readOf(new URLSearchParams('?card=t1&open-card=t1'))).toBeNull();
+    // A card in a conversation's answer unfolds its read with nothing in the panel.
+    expect(panelOf(new URLSearchParams('?open-card=t1&open-action=pattern'))).toBeNull();
   });
-  test('a card opened from the list lies over it, and closing peels the card, then the list', () => {
-    const list = '?show=x&cards=johan&cards-kind=act';
-    const card = withCard('/staff', list, 't1');
-    expect(card).toBe('/staff?show=x&cards=johan&cards-kind=act&card=t1');
-    const read = '?show=x&cards=johan&cards-kind=act&card=t1&open-card=t1&open-action=pattern';
-    expect(withoutPanel('/staff', read)).toBe(card);
-    expect(withoutPanel('/staff', card.slice('/staff'.length))).toBe(`/staff${list}`);
-    expect(withoutPanel('/staff', list)).toBe('/staff?show=x');
+  test('unfolding and folding keep everything else, and unfold one read at a time', () => {
+    expect(withRead('/staff', '?show=x&card=t1', 't1', 'pattern')).toBe(
+      '/staff?show=x&card=t1&open-card=t1&open-action=pattern',
+    );
+    expect(withRead('/', '?card=t1&open-card=t1&open-action=pattern', 't1', 'state')).toBe(
+      '/?card=t1&open-card=t1&open-action=state',
+    );
+    expect(withoutRead('/staff', '?show=x&card=t1&open-card=t1&open-action=pattern')).toBe('/staff?show=x&card=t1');
   });
-  test('the page’s own address drops the list; a conversation does not take it along', () => {
-    expect(pageOnly('/staff', '?show=x&cards=johan&cards-kind=act&card=t1')).toBe('/staff?show=x');
-    expect(pageOnly('', '?cards=johan')).toBe('');
+  test('a row’s read opens its card with the read unfolded, in place of what the panel held', () => {
+    expect(cardWithRead('/', '?tab=done&open=a.b&open-title=A&card=other', 't1', 'pattern')).toBe(
+      '/?tab=done&card=t1&open-card=t1&open-action=pattern',
+    );
+  });
+  test('a row’s own view in the read lies over the card, which keeps its read; ✕ peels the view, then the card', () => {
+    const unfolded = '?card=t1&open-card=t1&open-action=pattern';
+    const view = withView('/staff', unfolded, { capability: 'directory.contact', title: 'Kontakt' }, true);
+    expect(view).toBe(
+      '/staff?card=t1&open-card=t1&open-action=pattern&open=directory.contact&open-title=Kontakt&via=1',
+    );
+    expect(panelOf(new URLSearchParams(view.slice('/staff'.length)))?.kind).toBe('view');
+    expect(withoutPanel('/staff', view.slice('/staff'.length))).toBe(`/staff${unfolded}`);
+    expect(withoutPanel('/staff', unfolded)).toBe('/staff');
+    // Another card lets go of the read of the one before.
+    expect(withCard('/staff', unfolded, 't2')).toBe('/staff?card=t2');
+  });
+  test('the page’s own address drops the read; a conversation takes it along with the card', () => {
+    expect(pageOnly('/staff', '?show=x&card=t1&open-card=t1&open-action=pattern')).toBe('/staff?show=x');
     // A way back holds nothing that lay over the page either.
     expect(pageOnly('/', '?tab=done&card=f&review=f&step=2')).toBe('/?tab=done');
     expect(pageOnly('/staff', '?show=x&talk=anna')).toBe('/staff?show=x');
-    expect(panelSearch('?show=x&cards=johan&cards-kind=act&card=t1')).toBe('?card=t1');
-    expect(keepingPanel('/staff?show=y', '?show=x&cards=johan&cards-kind=act')).toBe(
-      '/staff?show=y&cards=johan&cards-kind=act',
+    expect(panelSearch('?show=x&card=t1&open-card=t1&open-action=pattern')).toBe(
+      '?card=t1&open-card=t1&open-action=pattern',
     );
+    expect(reviewOverCard('/', '?card=t1&open-card=t1&open-action=pattern', 't2')).toBe('/?card=t2&review=t2');
   });
 });
