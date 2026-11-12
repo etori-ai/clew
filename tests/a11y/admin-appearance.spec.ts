@@ -79,7 +79,13 @@ test.describe('appearance administration', () => {
       api.admin = true;
       await open(page, '/admin/appearance');
       await expect(page).toHaveTitle('Utseende · Startsidan');
-      await expect(page.getByRole('link', { name: 'Utseende', exact: true })).toHaveAttribute('aria-current', 'page');
+      // The administration's sections are tabs under the trail, each a link to its own address (D115 item 3): one
+      // navigation of the page, in which the open section's tab is the current one.
+      const tabs = page
+        .getByRole('main')
+        .getByRole('navigation')
+        .filter({ has: page.getByRole('link', { name: 'Utseende', exact: true }) });
+      await expect(tabs.locator('[aria-current]')).toHaveAccessibleName('Utseende');
       await expect(page.getByText('Nuvarande tema: Neutral, Clews standardtema.')).toBeVisible();
       const use = page.getByRole('button', { name: 'Använd temat' });
       // Nothing to save yet: the button says so and stays a focus stop (aria-disabled, not removed).

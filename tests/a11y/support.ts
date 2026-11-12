@@ -1246,17 +1246,39 @@ export const heading = (page: Page, level: number, name: string) =>
   page.locator(`h${level}:not([aria-level]), [aria-level="${level}"]`).filter({ hasText: name });
 export const announcements = (page: Page) =>
   page.evaluate(() => (window as unknown as { announcements: string[] }).announcements);
-/** The areas live in the shell's SideNav (D31); below the shell's breakpoint AppShell keeps it in a modal drawer that this opens. */
+/**
+ * Clew's own pages stand in the row under the header's band, the navigation named after the place, Start (D115 item
+ * 3). Below the header's breakpoint the header folds its places and those pages into "Meny", a modal drawer that this
+ * opens.
+ */
 export async function openNav(page: Page) {
-  const toggle = page.getByRole('button', { name: 'Öppna navigering' });
-  if (!(await toggle.isVisible())) return page.getByRole('navigation', { name: 'Sidonavigering' });
+  const toggle = page.getByRole('button', { name: 'Meny', exact: true });
+  if (!(await toggle.isVisible())) return page.getByRole('navigation', { name: 'Start', exact: true });
   await toggle.click();
-  return page.getByRole('dialog', { name: 'Navigering' });
+  return page.getByRole('dialog').filter({ has: page.getByRole('group', { name: 'Huvudmeny' }) });
 }
 /** The surface that docks the composer: ChatLayout's sticky wrapper (D31), or null when the row is in the page flow. */
 const dockOf = (page: Page) =>
   page.evaluate(() => {
-    let el = document.querySelector('[role="combobox"]')?.parentElement ?? null;
+    let el =
+      (() => {
+        // The box itself, not another field with the combobox role (the errand view's own selector on Hem, D90): the
+        // combobox in the chat composer, else the one named as the box is named.
+        const boxes = [...document.querySelectorAll<HTMLElement>('[role="combobox"]')];
+        const name = (el: HTMLElement) =>
+          (
+            el.getAttribute('aria-label') ??
+            (el.getAttribute('aria-labelledby') ?? '')
+              .split(' ')
+              .map(id => document.getElementById(id)?.textContent ?? '')
+              .join(' ')
+          ).trim();
+        return (
+          boxes.find(el => el.closest('[class*="chat-composer"]')) ??
+          boxes.find(el => /^(Vad vill du göra|Svara i samtalet)$/.test(name(el))) ??
+          null
+        );
+      })()?.parentElement ?? null;
     while (el && !['sticky', 'fixed'].includes(getComputedStyle(el).position)) el = el.parentElement;
     return el ? (el.getBoundingClientRect().toJSON() as DOMRect) : null;
   });
@@ -1301,7 +1323,25 @@ export async function expectNoAxeViolations(page: Page, { without = [] }: { with
   // 2.5.8 is about the targets themselves: measured with the dock in the flow, so a row that has scrolled under the sticky dock is not read as too close to its buttons.
   const undock = (on: boolean) =>
     page.evaluate(on => {
-      let el = document.querySelector('[role="combobox"]')?.parentElement ?? null;
+      let el =
+        (() => {
+          // The box itself, not another field with the combobox role (the errand view's own selector on Hem, D90): the
+          // combobox in the chat composer, else the one named as the box is named.
+          const boxes = [...document.querySelectorAll<HTMLElement>('[role="combobox"]')];
+          const name = (el: HTMLElement) =>
+            (
+              el.getAttribute('aria-label') ??
+              (el.getAttribute('aria-labelledby') ?? '')
+                .split(' ')
+                .map(id => document.getElementById(id)?.textContent ?? '')
+                .join(' ')
+            ).trim();
+          return (
+            boxes.find(el => el.closest('[class*="chat-composer"]')) ??
+            boxes.find(el => /^(Vad vill du göra|Svara i samtalet)$/.test(name(el))) ??
+            null
+          );
+        })()?.parentElement ?? null;
       while (el && !['sticky', 'fixed'].includes(getComputedStyle(el).position) && !el.dataset.undocked)
         el = el.parentElement;
       if (!el) return;
@@ -1329,8 +1369,8 @@ export async function expectNoAxeViolations(page: Page, { without = [] }: { with
 
 /**
  * 1.4.10: nothing may need sideways scrolling, and no text may be clipped to fit. A drawer still sliding in is not a
- * reflow fault, so finite animations settle first. `scope` limits the text to one surface, for a check made with the
- * rail open: the rail ends a long row with an ellipsis on purpose, and the page's width is still checked.
+ * reflow fault, so finite animations settle first. `scope` limits the text to one surface, for a check made with a
+ * drawer, a sheet or a dialog open over the page; the page's width is still checked.
  */
 export async function reflowProblems(page: Page, scope?: Locator) {
   const root = scope ? await scope.elementHandle() : null;
@@ -1378,6 +1418,13 @@ export async function reflowProblems(page: Page, scope?: Locator) {
 export async function hiddenFocusStops(page: Page, limit = 150) {
   await page.evaluate(() => {
     (document.activeElement as HTMLElement | null)?.blur();
+    // The walk starts at the top of the document. A blurred element stays the browser's starting point for the next
+    // Tab, so a box that had the focus (Hem, Min AI) would start the walk after itself and leave out what is above it.
+    const start = document.createElement('span');
+    start.tabIndex = -1;
+    document.body.prepend(start);
+    start.focus({ preventScroll: true });
+    start.remove();
     window.scrollTo(0, 0);
     Object.assign(window, { unmarked: [], visited: [] });
   });
@@ -1453,9 +1500,18 @@ export async function hiddenFocusStops(page: Page, limit = 150) {
         const frosted = (e: Element) =>
           getComputedStyle(e).backdropFilter !== 'none' ||
           [...e.children].some(c => getComputedStyle(c).backdropFilter !== 'none');
-        const paints = s.backgroundImage !== 'none' || s.backgroundColor !== 'rgba(0, 0, 0, 0)' || frosted(el);
-        const o = el.getBoundingClientRect();
-        if (paints && box.top >= o.top && box.bottom <= o.bottom && box.left >= o.left && box.right <= o.right)
+        const paints = (e: Element) => {
+          const style = getComputedStyle(e);
+          return style.backgroundImage !== 'none' || style.backgroundColor !== 'rgba(0, 0, 0, 0)' || frosted(e);
+        };
+        // A layer that places something without painting itself (the floating "Fråga AI", D115 item 5: a fixed box
+        // around a raised button) hides what is under the part it paints, so each painted part is measured too.
+        const covers = (e: Element) => {
+          const o = e.getBoundingClientRect();
+          return box.top >= o.top && box.bottom <= o.bottom && box.left >= o.left && box.right <= o.right;
+        };
+        const shown = (e: Element) => e.checkVisibility({ opacityProperty: true, visibilityProperty: true });
+        if ((paints(el) && covers(el)) || [...el.querySelectorAll('*')].some(p => shown(p) && paints(p) && covers(p)))
           return { name, again, covered: el.className.toString().slice(0, 40) || el.tagName };
       }
       return { name, again, covered: null };

@@ -66,8 +66,11 @@ export interface ConversationState {
   done: { text: string; undo?: () => Promise<void> } | null;
   busy: boolean;
   error: string | null;
-  /** The transcript is on the page in place of the stream. */
+  /** The transcript is on the page: under the box on the start page, in Min AI, or in the assistant's panel (D115 item 5). */
   open: boolean;
+  /** The assistant's panel over a page (D115 item 5), opened by the floating "Fråga AI". */
+  corner: boolean;
+  setCorner(open: boolean): void;
   value: string;
   verbs: Verb[];
   input: RefObject<ChatComposerInputHandle | null>;
@@ -104,6 +107,8 @@ export const ConversationContext = createContext<ConversationState>({
   busy: false,
   error: null,
   open: false,
+  corner: false,
+  setCorner: noop,
   value: '',
   verbs: [],
   input: { current: null },
@@ -132,31 +137,39 @@ export const refsIn = (value: string) => [...value.matchAll(TOKEN)].map(m => m[1
 export const tokenValue = (ref: string) => `@[${ref}]`;
 
 /**
- * The conversation (D31, D50): one state for the box and the transcript, held above the pages so a question asked on a
- * tool's page or on Att göra is the same conversation when the transcript takes the column. The transcript is on the
- * page at `/` and at `/conversations/:id`; `/conversations/new` is a conversation on its way, asked from another page
- * and not yet answered. Sending puts the transcript on the page; the box keeps focus throughout and sending never
- * moves it. Chips travel in the drawer and stay across turns; the text is cleared. Esc or "Stäng samtalet" leads back
- * to where the conversation was asked, and the conversation is kept under Samtal in the menu.
+ * The conversation (D31, D50, D115 item 5): one state for the box and the transcript, held above the pages. The
+ * transcript is drawn in three places: under the box on the start page (`/`), where a question is answered without
+ * the address changing; in Min AI (`/conversations` with nothing open, `/conversations/:id` for a conversation;
+ * `/conversations/new` is one on its way); and in the assistant's panel over any other page (`corner`). Sending puts
+ * the transcript where the question was asked; the box keeps focus throughout and sending never moves it. Chips
+ * travel in the drawer and stay across turns; the text is cleared. Esc or "Stäng" puts the answer away, and from Min AI
+ * leads back to where the conversation was asked; the conversation is kept in Min AI's list.
  */
 export function ConversationProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const routeId = useMatch('/conversations/:conversationId')?.params.conversationId ?? null;
   const conversationId = routeId && routeId !== 'new' ? routeId : null;
-  // The transcript belongs to the landing and to a conversation's own address; every other page keeps its column.
-  const here = location.pathname === '/' || routeId !== null;
+  // Min AI with nothing open: the list of conversations and the box.
+  const onList = useMatch('/conversations') !== null;
+  const [corner, setCornerOpen] = useState(false);
+  // The transcript belongs to the start page, to Min AI and to the assistant's panel while it is open; every other
+  // page keeps its column.
+  const here = location.pathname === '/' || routeId !== null || onList || corner;
   const where = useRef({ onRoute: false, here: true });
-  where.current = { onRoute: routeId !== null, here };
+  where.current = { onRoute: routeId !== null || onList, here };
   // Where "Stäng samtalet" leads: the page the conversation was asked from, else the landing.
   const origin = useRef<string | null>(null);
   const onConversation = useCallback(
     (id: string | null) => {
-      if (id)
-        navigate(`/conversations/${id}${panelSearch(window.location.search)}`, {
-          replace: window.location.pathname === '/conversations/new',
-        });
-      else if (where.current.onRoute) {
+      if (id) {
+        // Only Min AI's address follows the conversation: an answer under the box on the start page or in the
+        // assistant's panel leaves the address as it is (D115 item 5).
+        if (where.current.onRoute)
+          navigate(`/conversations/${id}${panelSearch(window.location.search)}`, {
+            replace: window.location.pathname === '/conversations/new',
+          });
+      } else if (where.current.onRoute) {
         const back = origin.current ?? '/';
         origin.current = null;
         navigate(back);
@@ -251,7 +264,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     setValue('');
     setShown(false);
     origin.current = null;
-    if (where.current.onRoute) navigate('/');
+    // In Min AI a new conversation is Min AI with nothing open; anywhere else the box is simply empty again.
+    if (where.current.onRoute) navigate('/conversations');
     input.current?.focus();
   }, [navigate, abortTurn]);
   const openConversation = useCallback(
@@ -275,7 +289,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (conversationId && conversationId !== conversation?.id) void openConversation(conversationId);
     else if (conversationId && !shown) setShown(true);
-    // Leaving /conversations/:id by the back button brings the stream back; the conversation stays under Redan hanterat.
+    // Leaving /conversations/:id by the back button puts the transcript away; the conversation stays in Min AI's list.
     if (!conversationId && routeConversation.current && shown) setShown(false);
     routeConversation.current = conversationId;
   }, [conversationId]);
@@ -286,6 +300,20 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       setShown(false);
     }
   }, [here, abortTurn]);
+  // Arriving at Min AI with an answer still shown (from under the box, or from the panel) continues that conversation.
+  useEffect(() => {
+    if (onList && shownRef.current && conversation && !pending)
+      navigate(`/conversations/${conversation.id}`, { replace: true });
+  }, [onList]);
+  // The assistant's panel (D115 item 5): opening it brings back the conversation it last held; closing it puts the
+  // transcript away, and the effect above stops a turn on its way, as leaving a page does.
+  const setCorner = useCallback(
+    (next: boolean) => {
+      setCornerOpen(next);
+      if (next && conversation) setShown(true);
+    },
+    [conversation],
+  );
   // `/conversations/new` with nothing on its way (a reload, a stopped first question) is the landing, with the question back in the box.
   useEffect(() => {
     if (routeId === 'new' && !pending && !conversation) navigate('/', { replace: true });
@@ -296,6 +324,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         if (shownRef.current) newConversation();
+        // A page without a box of its own: the assistant's panel has one.
+        else if (!input.current) setCornerOpen(true);
         else focus();
       }
       // Esc inside a dialog, a menu or the `@` list is theirs (the D29 picker, the pile menu); only a bare Esc closes the conversation.
@@ -469,6 +499,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       busy,
       error,
       open,
+      corner,
+      setCorner,
       value,
       verbs,
       input,
@@ -498,6 +530,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       busy,
       error,
       open,
+      corner,
+      setCorner,
       value,
       verbs,
       addChip,

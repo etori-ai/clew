@@ -366,6 +366,37 @@ export function Composer({
 }
 
 /**
+ * What the person can start, under the box while it is empty (D115 item 4): the connectors' first standing actions and
+ * the first questions a connector answers, as buttons in a row that wraps. A read opens its view; everything else is
+ * asked in the box, as "Menar du" does. They give way to "Menar du" when the person types.
+ */
+export function RestSuggestions({ viewHref }: { viewHref: (capability: string, title: string) => string }) {
+  const talk = useConversation();
+  const navigate = useNavigate();
+  const completions = useQuery(completionsQuery).data;
+  const typed = talk.value.replace(/@\[[^\]]+\]/g, '').trim();
+  if (!completions || typed.length >= 2) return null;
+  const rows = [
+    ...completions.do.slice(0, 2).map(d => ({
+      key: 'do:' + d.capability,
+      label: d.text,
+      go: () => (d.kind === 'read' ? navigate(viewHref(d.capability, d.text)) : talk.ask(d.text)),
+    })),
+    ...completions.ask
+      .slice(0, 2)
+      .map(a => ({ key: 'ask:' + a.capability, label: a.text, go: () => talk.ask(a.text) })),
+  ];
+  if (rows.length === 0) return null;
+  return (
+    <HStack gap={2} wrap="wrap" role="group" aria-label="Förslag">
+      {rows.map(r => (
+        <Button key={r.key} size="sm" variant="suggestion" label={r.label} onClick={r.go} />
+      ))}
+    </HStack>
+  );
+}
+
+/**
  * "Menar du" under the box while the person types (G): what the router finds without the model (D8), an open card that
  * matches first, then the connectors' standing actions, then the questions a connector answers, then an earlier conversation to continue. A read
  * opens its view, everything else is asked in the box, a conversation opens. Nothing here waits for the model.

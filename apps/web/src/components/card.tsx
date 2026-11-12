@@ -29,6 +29,7 @@ import {
   Dialog,
   DialogHeader,
   DropdownMenu,
+  Divider,
   DropdownMenuDivider,
   DropdownMenuItem,
   DropdownMenuSubMenu,
@@ -41,6 +42,7 @@ import {
   ListItem,
   MoreMenu,
   StatusDot,
+  StackItem,
   Text,
   TextInput,
   useAnimatedLayout,
@@ -814,20 +816,13 @@ function ActionRow({
           label="Ta upp nu"
           clickAction={() => run(() => api.reopen(thread.id), { optimistic: reopened(thread) })}
         />
-        {quiet ? !compact && addToConversation : more({})}
+        {quiet ? null : more({})}
       </HStack>
     );
-  if (open && !thread.waitingOn && quiet && phone)
-    return (
-      <HStack gap={2} vAlign="center">
-        {primaryButton}
-        {addToConversation}
-      </HStack>
-    );
+  // A row has its one next step and nothing beside it (D115 item 4): "Lägg till i samtalet" is the open card's.
   if (open && !thread.waitingOn && quiet)
     return (
       <HStack gap={2} vAlign="center">
-        {!compact && addToConversation}
         {primaryButton}
       </HStack>
     );
@@ -881,7 +876,7 @@ function ActionRow({
         )}
         {viewReview}
         <TimePicker label="Påminn mig" rows={remindRows.rows} own={remindRows.own} size="md" />
-        {quiet ? !compact && addToConversation : more({})}
+        {quiet ? null : more({})}
       </HStack>
     );
   // The row a receipt has just arrived on (D70): its one control is the way back, while the window is open.
@@ -1246,6 +1241,19 @@ export function ThreadRow({
   // A receipt that has just arrived (D70): the row keeps its place for a moment, the check in its day cell and what was done
   // in its line. A row that waits on others after the decision keeps its day and carries the receipt in its line too.
   const done = thread.state === 'handled' && receiptComplete(thread.receipt);
+  // The edge's colour: done is success, due is the error colour, a proposal is the assistant's, a day ahead waits, and
+  // what is only to know is neutral.
+  const edge = done
+    ? ('status-success' as const)
+    : notice
+      ? ('status-neutral' as const)
+      : due
+        ? ('status-error' as const)
+        : cardKind(thread) === 'forslag'
+          ? ('status-info' as const)
+          : thread.deadline
+            ? ('status-warning' as const)
+            : ('status-neutral' as const);
   const day = done ? (
     <ReceiptCheck />
   ) : notice ? (
@@ -1307,9 +1315,15 @@ export function ThreadRow({
         phone ? (
           day
         ) : (
-          <VStack width={56} minHeight={rowHead} vAlign="center">
-            {day}
-          </VStack>
+          <HStack gap={3}>
+            {/* The row's status as an edge at its start (D115 item 4): drawn only, the badge and the words say it. */}
+            <StackItem aria-hidden>
+              <Divider orientation="vertical" variant={edge} />
+            </StackItem>
+            <VStack width={76} minHeight={rowHead} vAlign="center">
+              {day}
+            </VStack>
+          </HStack>
         )
       }
       label={

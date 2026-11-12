@@ -1,6 +1,6 @@
 # D46 · Astryx Neutral is the default theme; Sundsvall is a profile to opt into
 
-**Status:** accepted; Neutral is still the default, and "Switching back" is now an upload of `themes/sundsvall/theme.tokens.json` on Administration › Utseende ([D98](D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md), 2026-11-10) · **Date:** 2026-11-05 · **Area:** ui
+**Status:** accepted; Neutral is still the default, and "Switching back" is now an upload of `themes/sundsvall/theme.tokens.json` on Administration › Utseende ([D98](D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md), 2026-11-10); the rail's surface to be replaced by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built) · **Date:** 2026-11-05 · **Area:** ui
 
 **Decision.** An installation that chooses nothing gets Astryx Neutral: `resolveBranding` in
 `packages/ui/src/branding.ts` falls back to `neutral`, with no logo and no municipal colours.

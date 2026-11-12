@@ -30,6 +30,9 @@ const problemsOf = (value: unknown) => {
 const sundsvall = JSON.parse(
   readFileSync(new URL('../../themes/sundsvall/theme.tokens.json', import.meta.url), 'utf8'),
 );
+const prototype = JSON.parse(
+  readFileSync(new URL('../../themes/startsidan-prototype/theme.tokens.json', import.meta.url), 'utf8'),
+);
 
 describe('the theme file and the base it is checked against (D98)', () => {
   const resolved = {
@@ -188,10 +191,23 @@ describe('the theme file and the base it is checked against (D98)', () => {
       expect(colors[`background-${hue}` as ThemeColorToken]).toEqual(pair);
   });
 
+  test("the prototype's example holds every contrast pair and carries its page, its band and its two blues (D115)", () => {
+    const parsed = parseThemeFile(prototype);
+    if (!parsed.ok) throw new Error(parsed.problems.map(p => p.message).join(' '));
+    const colors = parsed.theme.colors;
+    expect(checkThemeContrast(colors)).toEqual([]);
+    expect(colors['background-body']![0]).toBe('#edf1f5');
+    expect(colors['background-card']![0]).toBe('#ffffff');
+    expect(colors['background-inverted']![0]).toBe('#003c69');
+    expect(colors.accent![0]).toBe('#005595');
+    expect(colors.info![0]).toBe('#1f64b8');
+  });
+
   test('the published schema bounds the two groups Clew reads and accepts the examples', () => {
     const schema = themeFileSchema();
     const validate = new Ajv2020({ strict: false }).compile(schema);
     expect(validate(sundsvall)).toBe(true);
+    expect(validate(prototype)).toBe(true);
     expect(validate(themeFileOf(themeFromAccent('#005595', '#daeff1', 'Två färger')))).toBe(true);
     expect(validate(file({ error: color('#ff0000') }, {}))).toBe(false);
     expect(validate({ light: { color: {} } })).toBe(false);

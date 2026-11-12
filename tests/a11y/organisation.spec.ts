@@ -71,10 +71,13 @@ test.describe('organisation', () => {
       api.admin = true;
       await open(page, '/admin/organisation');
       await expect(page).toHaveTitle('Organisation · Startsidan');
-      await expect(page.getByRole('link', { name: 'Organisation', exact: true })).toHaveAttribute(
-        'aria-current',
-        'page',
-      );
+      // The administration's sections are tabs under the trail, each a link to its own address (D115 item 3): one
+      // navigation of the page, in which the open section's tab is the current one.
+      const tabs = page
+        .getByRole('main')
+        .getByRole('navigation')
+        .filter({ has: page.getByRole('link', { name: 'Organisation', exact: true }) });
+      await expect(tabs.locator('[aria-current]')).toHaveAccessibleName('Organisation');
       const tree = page.getByRole('tree', { name: 'Organisationsträd' });
       // The roots are open from the start, so the level under each is read without a click; deeper levels are not.
       const kommunen = tree.getByRole('treeitem', { name: /Kommunen/ }).first();

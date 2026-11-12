@@ -1,16 +1,28 @@
 import type { ReactNode } from 'react';
 import type { SessionUser } from '@clew/contracts';
-import { BreadcrumbItem, Breadcrumbs, Button, EmptyState, Layout, LayoutContent, VStack } from '@clew/ui';
-import { useRail, type AdminSection } from '../../components/nav';
+import {
+  BreadcrumbItem,
+  Breadcrumbs,
+  Button,
+  DropdownMenu,
+  EmptyState,
+  Layout,
+  LayoutContent,
+  Tab,
+  TabList,
+  VStack,
+} from '@clew/ui';
+import { ADMIN_SECTIONS, useNav, type AdminSection } from '../../components/nav';
 import { Shell, mobileQuery } from '../../components/shell';
 import { useMediaQuery } from '@clew/ui';
 import { AsyncContent, ContentSkeleton } from '../../components/loading';
+import { PageFooter } from '../../components/footer';
 
 /**
- * The administration surface (D23, D24) on the shared shell (D31) with the same rail as every other page (D45): Anslutna
- * system and Modeller are rows under Administration. The page sits in a Layout whose contentWidth bounds and centres it,
- * so a table does not run to the edge of a wide screen and the page lines up with the start page's column. Each page
- * opens with the one page header (D74, `components/page-header.tsx`) under the trail. Only Astryx.
+ * The administration surface (D23, D24) on the shared shell (D31): Administration is one of Clew's pages in the header
+ * (D115 item 3), and its sections (D45) are tabs under the trail, each a link to its own address. The page sits in a
+ * Layout whose contentWidth bounds and centres it, as every page's does. Each page opens with the one page header
+ * (D74, `components/page-header.tsx`) under the tabs. Only Astryx.
  */
 export type Crumb = { label: string; href?: string };
 export function AdminShell({
@@ -28,7 +40,7 @@ export function AdminShell({
 }) {
   const mobile = useMediaQuery(mobileQuery);
   // Only an administrator reaches this shell: `main.tsx` draws NotAdmin for anyone else.
-  const nav = useRail({ current: { surface: 'admin', section }, admin: true, manager: user.role === 'manager' });
+  const nav = useNav({ current: { surface: 'admin' }, admin: true, manager: user.role === 'manager' });
   return (
     <Shell user={user} nav={nav}>
       {/* Layout's contentWidth bounds the page and centres it in the content area, the same mechanism as the start page's
@@ -36,7 +48,7 @@ export function AdminShell({
         the shell keeps the scroll. The trail stands above the page header, where Astryx places Breadcrumbs. */}
       <Layout
         height="auto"
-        contentWidth={1216}
+        contentWidth={1280}
         padding={mobile ? 3 : 8}
         content={
           <LayoutContent isScrollable={false}>
@@ -50,9 +62,30 @@ export function AdminShell({
                   </BreadcrumbItem>
                 ))}
               </Breadcrumbs>
+              {/* Navigation between the sections, not panels switched in place: every entry is a link. Six tabs do not
+                fit 320 px without scrolling sideways (1.4.10), so a phone gets the sections as a menu, as a connector's
+                own page does; a wider window gets Astryx TabList's navigation pattern. */}
+              {mobile ? (
+                <DropdownMenu
+                  presentation="adaptive"
+                  button={{
+                    label: `Sektion: ${ADMIN_SECTIONS.find(s => s.id === section)!.label}`,
+                    size: 'sm',
+                    variant: 'secondary',
+                  }}
+                  items={ADMIN_SECTIONS.map(s => ({ id: s.id, label: s.label, href: s.href }))}
+                />
+              ) : (
+                <TabList value={section} onChange={() => {}} hasDivider>
+                  {ADMIN_SECTIONS.map(s => (
+                    <Tab key={s.id} value={s.id} label={s.label} href={s.href} />
+                  ))}
+                </TabList>
+              )}
               <AsyncContent pending={pending} fallback={<ContentSkeleton />} gap={5}>
                 {children}
               </AsyncContent>
+              <PageFooter user={user} />
             </VStack>
           </LayoutContent>
         }

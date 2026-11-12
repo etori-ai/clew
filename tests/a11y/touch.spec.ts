@@ -47,15 +47,41 @@ test.describe('a finger reaches every control at 44 px (docs/history/handover.md
     expect(list!.y - (bar!.y + bar!.height)).toBeLessThan(140);
   });
 
-  for (const path of ['/', '/?area=personal', '/?tab=waiting', '/?tab=snoozed', '/?tab=done', '/calendar'])
+  // The tabs and the area filter are Mina aktiviteter's (D115 item 4), the conversations Min AI's (D115 item 5).
+  for (const path of [
+    '/',
+    '/activities',
+    '/activities?area=personal',
+    '/activities?tab=waiting',
+    '/activities?tab=snoozed',
+    '/activities?tab=done',
+    '/conversations',
+    '/conversations/fraga',
+    '/calendar',
+  ])
     test(`on ${path}`, async ({ page, api: _ }) => {
       await open(page, path);
       expect(await shortTargets(page)).toEqual([]);
     });
 
-  test('in the rail', async ({ page, api: _ }) => {
+  // On a phone the header's own Meny holds the places and Clew's pages under Start (D115 item 3).
+  test("in the header's menu", async ({ page, api: _ }) => {
     await open(page, '/');
-    await openNav(page);
+    const drawer = await openNav(page);
+    await expect(drawer.getByRole('link', { name: 'Kalender' })).toBeVisible();
+    expect(await shortTargets(page)).toEqual([]);
+  });
+
+  // The floating "Fråga AI" and its panel over the page (D115 item 5), and Min AI's list in its drawer.
+  test('on the assistant’s panel and Min AI’s list', async ({ page, api: _ }) => {
+    await open(page, '/activities');
+    expect(await shortTargets(page)).toEqual([]);
+    await page.getByRole('button', { name: 'Fråga AI', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Fråga AI', exact: true })).toBeVisible();
+    expect(await shortTargets(page)).toEqual([]);
+    await open(page, '/conversations');
+    await page.getByRole('button', { name: 'Dina samtal', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Dina samtal', exact: true })).toBeVisible();
     expect(await shortTargets(page)).toEqual([]);
   });
 
@@ -73,6 +99,7 @@ test.describe('a mouse', () => {
 
   test('keeps the compact controls the screens were drawn with', async ({ page, api: _ }) => {
     await open(page, '/');
-    await expect(page.getByRole('button', { name: 'Lägg till i samtalet' }).first()).toHaveCSS('height', '32px');
+    // A row's one next step (D115 item 4) is the compact button the rows were drawn with.
+    await expect(page.locator('#thread-ledighet').getByRole('button', { name: 'Godkänn' })).toHaveCSS('height', '32px');
   });
 });

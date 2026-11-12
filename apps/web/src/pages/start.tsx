@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
+import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { keepPreviousData, QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Area, MenuEntry, SessionUser, Thread, ViewRef, PanelViewSpec } from '@clew/contracts';
 import { isSnoozed } from '@clew/contracts';
@@ -11,6 +11,8 @@ import {
   Card,
   ChatLayout,
   Divider,
+  Drawer,
+  DrawerHeader,
   DropdownMenu,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -24,11 +26,12 @@ import {
   Layout,
   LayoutContent,
   LayoutHeader,
+  LayoutPanel,
   Link,
   List,
+  ListItem,
   MoreMenu,
   SparklesIcon,
-  StatusDot,
   Tab,
   TabList,
   Text,
@@ -48,7 +51,8 @@ import { groupThreads } from '../stream';
 import { useReceiptArrivals } from '../linger';
 import { panelOf, withAction, withCard, withView, withoutPanel } from '../panel-address';
 import { reviewOf } from '../review-address';
-import { Composer, Suggestions, type ComposerAbout } from '../components/composer';
+import { Composer, RestSuggestions, Suggestions, type ComposerAbout } from '../components/composer';
+import { PageFooter, PageTrail } from '../components/footer';
 import { PageHeader } from '../components/page-header';
 import { titled, useConversation, type ConversationState } from '../components/conversation-context';
 import { Transcript } from '../components/conversation';
@@ -63,7 +67,7 @@ function Entering({ children }: { children: (entry: EntryStyle) => ReactNode }) 
   const entry = useEntryAnimation('fadeIn');
   return <>{children(entry ?? undefined)}</>;
 }
-import { toolHref, useRail, type RailCurrent } from '../components/nav';
+import { toolHref, useNav, type NavCurrent } from '../components/nav';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { GenericCard, ThreadRow } from '../components/card';
 import { ReviewOverlay } from '../components/review-overlay';
@@ -114,6 +118,8 @@ const ASIDE = 320;
  */
 const GRID_GAP = 32,
   PAGE_INLINE = 32;
+/** The widest the page's own column is drawn, its two gutters included, as the reference bounds its pages (D115 item 3). */
+const PAGE_MAX = 1280;
 /**
  * Where the day stays beside the day's work with the panel open too (D72, artboard A3). `Grid columns={3}` draws three
  * equal tracks, the work spanning two and the gap between them, the day one: a track needs
@@ -127,6 +133,8 @@ const threeTrackQuery = panelBesideQuery(2 * PAGE_INLINE + 3 * TRACK + 2 * GRID_
 /** The counts in words, as "Alla fyra källor svarade" has them. */
 const capital = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
 const ALL_AREAS = 'all';
+/** Mina aktiviteter's address (D43, D115 item 4): the tabs and the area filter that stood on Hem. */
+const ACTIVITIES = '/activities';
 const EMPTY_THREADS: Thread[] = [];
 const EMPTY_AREAS: Area[] = [];
 const EMPTY_MENU: MenuEntry[] = [];
@@ -193,6 +201,15 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     [reviewing, addressed],
   );
   const here = reviewing ? '/' : location.pathname;
+  // Mina aktiviteter (D115 item 4): the tabs and the area filter have a page of their own; `/` is the board.
+  const activities = !reviewing && location.pathname === ACTIVITIES;
+  // Min AI (D115 item 5): the conversations' own full-window place, with nothing open or with one conversation.
+  const minAi = !reviewing && location.pathname.startsWith('/conversations');
+  // Where a transcript is drawn: in Min AI it is the page; on the board it is the answer under the box.
+  const fullTalk = talk.open && minAi;
+  const inlineTalk = talk.open && !minAi;
+  // An address from before the tabs moved: `/?tab=…` and `/?area=…` lead to the same rows on their new page.
+  const moved = !reviewing && location.pathname === '/' && (addressed.has('tab') || addressed.has('area'));
   const query = reviewing ? `?${search.toString()}` : location.search;
   const conversationId = params.conversationId && params.conversationId !== 'new' ? params.conversationId : null;
   const tab = tabOf(search.get('tab'));
@@ -208,7 +225,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     withView(here, search, { capability, title, input }, via);
   /** Where a row's title and a matching "Menar du" row lead: the card in the panel beside Hem (D50, amended 2026-11-05). */
   const cardHref = (threadId: string) => withCard(here, search, threadId);
-  /** Hem with a tab or an area: the first tab is the default and is left out of the address (D50 item 2). */
+  /** Mina aktiviteter with a tab or an area: the first tab is the default and is left out of the address (D50 item 2). */
   const homeHref = (next: { tab?: TodoTab; area?: string | null }) => {
     const q = new URLSearchParams(search);
     if (next.tab) {
@@ -220,7 +237,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       else q.delete('area');
     }
     const s = q.toString();
-    return s ? `/?${s}` : '/';
+    return s ? `${ACTIVITIES}?${s}` : ACTIVITIES;
   };
   const closePanel = () => navigate(withoutPanel(here, search));
   // An entry opened from the panel's day view (D32): the same dialog as on the calendar page, over the panel.
@@ -430,17 +447,17 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     ...threads.filter(t => t.state === 'open' && t.kind === 'question'),
     ...threads.filter(t => t.state !== 'open'),
   ];
-  const railCurrent: RailCurrent = { surface: 'start', conversationId };
-  const pageTitle = view ? view.title : conversationId ? 'Samtal' : 'Hem';
+  const railCurrent: NavCurrent = { surface: minAi ? 'conversations' : activities ? 'activities' : 'start' };
+  const pageTitle = view ? view.title : minAi ? 'Min AI' : activities ? 'Mina aktiviteter' : 'Hem';
   // While the review is open its drawer names the document (D73 amended); Hem's title comes back with Hem's address.
-  usePageTitle(reviewing ? null : pageTitle, view || conversationId ? false : pageTitle);
-  const nav = useRail({ current: railCurrent, admin, manager: user.role === 'manager' });
+  usePageTitle(reviewing ? null : pageTitle, view || fullTalk ? false : pageTitle);
+  const nav = useNav({ current: railCurrent, admin, manager: user.role === 'manager' });
 
   const openCardView = (threadId: string, actionId: string) => navigate(withAction(here, search, threadId, actionId));
   // On a phone Hem has no panel for a card (artboards 11 and 12): the threads are rows, and the card the address names
   // rises in Astryx's bottom sheet over them; closing the sheet leaves the address as the ✕ beside the column does.
-  const cardsInSheet = mobile && !talk.open;
-  const besideOpen = !!panel && !(panel.kind === 'card' && cardsInSheet) && panelFits && !short && !talk.open;
+  const cardsInSheet = mobile && !minAi;
+  const besideOpen = !!panel && !(panel.kind === 'card' && cardsInSheet) && panelFits && !short && !minAi;
   /** The way on from a done card (D70): the first other card under Nu, else under Senare. */
   const nextFor = (t: Thread) => {
     const next = [...g.nu, ...g.senare].find(x => x.id !== t.id);
@@ -479,17 +496,17 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     );
   /**
    * A group's threads (D31, D50, artboard A): rows in one list, the title of each the link to its card beside the column,
-   * or in the sheet on a phone, where the next step goes under the line (artboard 11). What is due today stands in a
-   * red-tinted card; the other groups are rows fenced by dividers, their text on the column's content line (edge flush).
+   * or in the sheet on a phone, where the next step goes under the line (artboard 11). The rows of a
+   * group are fenced by dividers, their text on the column's content line (edge flush).
    */
-  const records = (list: Thread[], options: { notice?: boolean; due?: boolean } = {}) => {
+  const records = (list: Thread[], options: { notice?: boolean | ((t: Thread) => boolean); bare?: boolean } = {}) => {
     const rows = (
       <List hasDividers density="balanced" edge="flush">
         {list.map(t => (
           <ThreadRow
             key={t.id}
             thread={t}
-            notice={options.notice}
+            notice={typeof options.notice === 'function' ? options.notice(t) : options.notice}
             href={cardHref(t.id)}
             isOpen={!cardsInSheet && openId === t.id}
             onClose={closePanel}
@@ -501,17 +518,10 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
         ))}
       </List>
     );
-    return options.due ? (
-      <Card variant="red" padding={3}>
-        {rows}
-      </Card>
-    ) : (
-      <VStack gap={0}>
-        <Divider />
-        {rows}
-        <Divider />
-      </VStack>
-    );
+    // Rows stand in a card (D115 items 4 and 6): the board's card draws its own heading around them (`bare`), and on
+    // Mina aktiviteter each group's rows are a card under the group's heading. A status is the row's own badge, never
+    // a tinted surface.
+    return options.bare ? rows : <Card padding={4}>{rows}</Card>;
   };
   const assistantDown = !!assistant && assistant.configured && !assistant.available;
   const needsYou = g.nu.length + g.senare.length + g.foreslar.length + g.kannedom.length;
@@ -530,7 +540,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   );
   /** Lugnt läge (artboard B): a card with the sources, what waits and when the assistant next goes through everything, with the way to each. */
   const calm = (
-    <Card variant="green" padding={5}>
+    <Card padding={5}>
       <HStack gap={4} vAlign="start">
         <Icon icon="check" size="lg" color="success" />
         <VStack gap={1.5}>
@@ -585,7 +595,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
                 : 'Källorna kontrolleras. Sparade uppgifter visas under tiden.'}
             </Text>
           )}
-          {g.nu.length > 0 && records(g.nu, { due: true })}
+          {g.nu.length > 0 && records(g.nu)}
         </VStack>
       )}
       {g.foreslar.length > 0 && (
@@ -606,26 +616,53 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
           {records(g.kannedom, { notice: true })}
         </VStack>
       )}
-      {/* Mina ärenden (D90): the person's errands from every case system, after the day's work; also when Ärenden is the chosen area. */}
-      {(!area || area === ERRANDS_AREA) && (
+      {/* Mina ärenden (D90) and Mina åtgärdspunkter (D96 item 7) stand on the board (D115 item 4); here they follow the
+        rows only when their own area is the chosen one. */}
+      {area === ERRANDS_AREA && (
         <MyErrands areas={areas} hrefFor={ref => viewHref(ref.capability, ref.title, ref.input)} />
       )}
-      {/* Mina åtgärdspunkter (D96 item 7): the open action points the person owns and those about them, after Mina ärenden. */}
-      {(!area || area === TALKS_AREA) && <MyCommitments />}
-      {/* Läget (D54): the areas' figures after the groups, for every area at once, so not while one area is chosen. */}
-      {!area && (
-        <Lage
-          areas={areas}
-          loading={loadingAreas}
-          sources={sources}
-          now={now}
-          unitLabel={user.unitLabel}
-          unitId={user.unitId || undefined}
-          viewHref={(capability, title) => viewHref(capability, title)}
-          twoAcross={mobile}
-        />
-      )}
+      {area === TALKS_AREA && <MyCommitments />}
     </VStack>
+  );
+  /**
+   * The board's first card (D115 item 4): everything that needs the person as one list under "Att agera på", the
+   * groups' order kept (Nu, Jag föreslår, Senare, Till kännedom) without their headings, and the way to the whole list
+   * with its tabs. On a quiet day the card says so.
+   */
+  const acting = [...g.nu, ...g.foreslar, ...g.senare, ...g.kannedom];
+  const noticed = new Set(g.kannedom.map(t => t.id));
+  const actOn = quiet ? (
+    <VStack as="section" aria-label="Att agera på">
+      {calm}
+    </VStack>
+  ) : (
+    <Card padding={5}>
+      <VStack gap={3} as="section" aria-label="Att agera på">
+        <HStack justify="between" vAlign="center" gap={3} wrap="wrap">
+          <Heading id="behover-dig" tabIndex={-1} level={3} accessibilityLevel={2}>
+            {loadingWork ? 'Att agera på' : `Att agera på · ${acting.length}`}
+          </Heading>
+          <Text type="supporting" weight="medium">
+            <Link href={ACTIVITIES} color="primary">
+              Visa alla
+            </Link>
+          </Text>
+        </HStack>
+        {sourcesWaiting && (
+          <Text as="p" role="status">
+            {sources?.some(s => s.error)
+              ? 'Någon källa kunde inte kontrolleras. Sparade uppgifter visas och kontrolleras igen.'
+              : 'Källorna kontrolleras. Sparade uppgifter visas under tiden.'}
+          </Text>
+        )}
+        {/* The work and its figures arrive together (above), so the rows do not stand before the figures over them. */}
+        {loadingWork ? (
+          <BriefSkeleton compact={mobile} />
+        ) : (
+          records(acting, { notice: t => noticed.has(t.id), bare: true })
+        )}
+      </VStack>
+    </Card>
   );
   /** Väntar på andra and Inte nu (D28; the name is D53's): what waits on someone else, and what the person set aside. The tab's panel is the named region. */
   const pile = (list: Thread[], title: string, empty: string) => (
@@ -767,17 +804,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
                 </Heading>
                 <BriefSkeleton compact={mobile} />
               </VStack>
-              {tab === 'needs-you' && !area && (
-                <Lage
-                  areas={[]}
-                  loading
-                  now={now}
-                  unitLabel={user.unitLabel}
-                  unitId={user.unitId || undefined}
-                  viewHref={() => ''}
-                  twoAcross={mobile}
-                />
-              )}
             </VStack>
           }
         >
@@ -789,16 +815,45 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
 
   // The box's context for `@`: the cards in view, in the tab and the area the address names.
   const near = (
-    tab === 'waiting'
-      ? g.waiting
-      : tab === 'snoozed'
-        ? g.snoozed
-        : tab === 'done'
-          ? []
-          : [...g.nu, ...g.senare, ...g.foreslar, ...g.kannedom]
+    !activities
+      ? acting
+      : tab === 'waiting'
+        ? g.waiting
+        : tab === 'snoozed'
+          ? g.snoozed
+          : tab === 'done'
+            ? []
+            : [...g.nu, ...g.senare, ...g.foreslar, ...g.kannedom]
   ).map(t => 'thread:' + t.id);
   // On a phone the box is docked at the foot (G on the phone): the greeting sits right above it.
-  const docked = mobile && !short;
+  const docked = mobile && !short && !activities;
+  // Hem is read from the top (D115 item 4). On a phone the board stands in ChatLayout, which keeps a conversation at
+  // its newest line: while the short skeleton is there it is at the bottom, and it follows the board down as the board
+  // grows. Until the person scrolls or types, the board is put back at its top as each part arrives; the dock is
+  // ChatLayout's. ChatLayout has no setting for this (D115, "Astryx gaps").
+  const boardTop = useRef<HTMLDivElement>(null);
+  const boardTouched = useRef(false);
+  useEffect(() => {
+    if (!docked || minAi) return;
+    let scroller: HTMLElement | null = boardTop.current?.parentElement ?? null;
+    while (scroller && !['auto', 'scroll'].includes(getComputedStyle(scroller).overflowY))
+      scroller = scroller.parentElement;
+    if (!scroller) return;
+    const touched = () => {
+      boardTouched.current = true;
+    };
+    const options = { passive: true } as const;
+    ['wheel', 'touchstart', 'keydown', 'pointerdown'].forEach(e => scroller!.addEventListener(e, touched, options));
+    const toTop = () => {
+      if (!boardTouched.current && !inlineTalk) scroller!.scrollTop = 0;
+    };
+    const frame = requestAnimationFrame(() => requestAnimationFrame(toTop));
+    return () => {
+      cancelAnimationFrame(frame);
+      ['wheel', 'touchstart', 'keydown', 'pointerdown'].forEach(e => scroller!.removeEventListener(e, touched));
+    };
+    // Again each time a part of the board arrives: the work, the figures, the day.
+  }, [docked, minAi, inlineTalk, loadingWork, dayQ.isPending]);
   /**
    * Beside the column (D53, artboard A): the day with its free gaps, and what happened since yesterday. They are the
    * page's own and never the panel's (D72): one aside named "Bredvid" wherever the layout places it, so a screen reader
@@ -841,61 +896,136 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     );
   };
   // The box is anchored under the greeting (D53): nothing above it changes, and what grows under it while the person
-  // types ("Menar du") pushes the day's work down, never the field they are typing in (D36).
+  // types ("Menar du") pushes the board down, never the field they are typing in (D36).
   const landing = () => {
-    // The lead (artboard A) is the page header every surface opens with (D74): the person by first name as the page's h1
-    // (D71's page title), with the id the focus is sent back to, the sparkle before it, and the day, the week and the
-    // unit at the end of the line. On a phone the day stands under the title in supporting, where it can wrap (artboard
-    // 11, D63 item 2).
-    const title = 'Hej ' + user.name.split(' ')[0];
-    const sparkle = <Icon icon={SparklesIcon} size="md" color="accent" />;
-    const date = `${capital(dayLabel(todayDate))} · vecka ${weekNumber(todayDate)} · ${user.unitLabel}`;
-    const lead = mobile ? (
+    // Mina aktiviteter (D115 item 4): the trail, the title, and the tabs with their rows. The box is not on this page.
+    if (activities)
+      return (
+        <VStack gap={5}>
+          <PageTrail current="Mina aktiviteter" />
+          <PageHeader title="Mina aktiviteter" titleId="hem" />
+          {work()}
+          <PageFooter user={user} />
+        </VStack>
+      );
+    // The lead (D115 item 4) is the page header every surface opens with (D74): the greeting by the time of day and the
+    // person's first name as the page's h1, with the id the focus is sent back to, and under it the day, the week and
+    // the unit in supporting, where they can wrap.
+    const hour = new Date().getHours();
+    const greeting =
+      hour < 5
+        ? 'God kväll'
+        : hour < 10
+          ? 'God morgon'
+          : hour < 12
+            ? 'God förmiddag'
+            : hour < 18
+              ? 'God eftermiddag'
+              : 'God kväll';
+    const lead = (
       <PageHeader
-        title={title}
+        title={`${greeting}, ${user.name.split(' ')[0]}!`}
         titleId="hem"
-        icon={sparkle}
         meta={
           <Text type="supporting" as="p">
-            {date}
-          </Text>
-        }
-      />
-    ) : (
-      <PageHeader
-        title={title}
-        titleId="hem"
-        icon={sparkle}
-        end={
-          <Text color="secondary" as="p">
-            {date}
+            {`${capital(dayLabel(todayDate))} · vecka ${weekNumber(todayDate)} · ${user.unitLabel}`}
           </Text>
         }
       />
     );
     const box = <Composer place="landing" near={near} about={about} />;
-    const menarDu = <Suggestions viewHref={viewHref} cardHref={cardHref} />;
-    const column = <VStack gap={6}>{work()}</VStack>;
-    // One flow from the top on every screen: the greeting and the box (docked at the foot on a phone), then the day's work
-    // with the day and what happened since yesterday beside it (artboard A's two columns) from 1024 px while nothing is
-    // open (D72, A1). With the panel open beside the page they stay beside the work where all three fit (A3), else they
-    // fold under it with I dag and Sedan i går side by side (A2); under 1024 px and on a phone they end the page.
-    // From 1024 px it is one Grid whatever is open, so the day's work keeps its place in the tree and a row that opened
-    // a card is still the same element to give the focus back to when the card closes (2.4.3).
+    // Under the box: what the person can start while it is empty, and "Menar du" while they type.
+    const under = (
+      <>
+        <RestSuggestions viewHref={viewHref} />
+        <Suggestions viewHref={viewHref} cardHref={cardHref} />
+      </>
+    );
+    // The answer under the box (D115 item 5): a question asked here is answered here, and the address stays `/`. The
+    // transcript is the same one Min AI draws, so a second question continues it; "Fortsätt i Min AI" opens it there,
+    // and "Stäng" puts it away. Esc does the same from the box (`conversation-context.tsx`).
+    const answer = inlineTalk && (
+      <Card padding={5}>
+        <VStack gap={3} as="section" aria-label="Svar">
+          <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
+            <Heading level={3} accessibilityLevel={2}>
+              Svar
+            </Heading>
+            <HStack gap={1} vAlign="center">
+              {talk.conversation && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  label="Fortsätt i Min AI"
+                  href={`/conversations/${talk.conversation.id}`}
+                />
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                label="Stäng"
+                aria-label="Stäng svaret"
+                endContent={<Icon icon="close" size="sm" />}
+                onClick={talk.close}
+              />
+            </HStack>
+          </HStack>
+          {transcript}
+        </VStack>
+      </Card>
+    );
+    // The board's main column: what needs the person, then their errands and their action points when they hold any.
+    const column = (
+      <VStack gap={5}>
+        {error && (
+          <Text as="p" role="alert" color="accent">
+            {error}
+          </Text>
+        )}
+        {openId && threadsQ.isSuccess && !threads.some(t => t.id === openId) && (
+          <Banner
+            status="info"
+            title="Kortet finns inte längre."
+            description="Det kan ha tagits bort i källsystemet."
+          />
+        )}
+        {actOn}
+        <MyErrands areas={areas} hrefFor={ref => viewHref(ref.capability, ref.title, ref.input)} />
+        <MyCommitments />
+      </VStack>
+    );
+    // One flow from the top on every screen (D115 item 4): the greeting and the box (docked at the foot on a phone),
+    // the key figures, then the board: what needs the person, with the day and what happened since yesterday beside it
+    // from 1024 px while nothing is open (D72). With the panel open beside the page they stay beside the work where
+    // all three fit, else they fold under it side by side; under 1024 px and on a phone they end the page. From 1024 px
+    // it is one Grid whatever is open, so the rows keep their place in the tree and a row that opened a card is still
+    // the same element to give the focus back to when the card closes (2.4.3).
     const beside = !slot.occupied || threeTracks;
     return (
       <VStack gap={6}>
-        <VStack gap={mobile ? 3 : 6} as="section" aria-label="Vad vill du göra">
+        <VStack gap={mobile ? 3 : 5} as="section" aria-label="Vad vill du göra">
           {lead}
           {!docked && (
-            <VStack gap={2}>
+            <VStack gap={3}>
               {box}
-              {menarDu}
+              {under}
             </VStack>
           )}
+          {answer}
         </VStack>
+        {/* Läget (D54) as the board's row of key figures, before the work (D115 item 4). */}
+        <Lage
+          areas={areas}
+          loading={loadingAreas}
+          sources={sources}
+          now={now}
+          unitLabel={user.unitLabel}
+          unitId={user.unitId || undefined}
+          viewHref={(capability, title) => viewHref(capability, title)}
+          twoAcross={mobile}
+        />
         {twoColumns && !mobile ? (
-          <Grid columns={beside ? 3 : 1} gap={beside ? 8 : 6} align="start">
+          <Grid columns={beside ? 3 : 1} gap={beside ? 5 : 6} align="start">
             <GridSpan columns={beside ? 2 : 'full'}>{column}</GridSpan>
             {aside(beside ? 'track' : 'across')}
           </Grid>
@@ -905,6 +1035,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
             {aside('stack')}
           </VStack>
         )}
+        <PageFooter user={user} />
       </VStack>
     );
   };
@@ -984,7 +1115,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
         }
       : null;
   const slot = usePanel(frame, {
-    minMain: talk.open ? CONVERSATION_MIN : HOME_MIN,
+    minMain: minAi ? CONVERSATION_MIN : HOME_MIN,
     overlayOnly: short,
     isOpen: id => !id.startsWith('card:') || inStream(id.slice(5)),
     onClosed: landAfterDrawer,
@@ -1001,7 +1132,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   if (sheetThread) sheetShown.current = sheetThread;
   const sheetCard = sheetShown.current;
   // The same rule as `usePanel`'s own: beside the page where both fit and the screen is not short, else over it.
-  const panelBeside = (talk.open ? besideTranscript : panelFits) && !short;
+  const panelBeside = (minAi ? besideTranscript : panelFits) && !short;
   const inDrawer = panelCard && !panelBeside ? panelCard.id : null;
   const inSheet = sheetThread?.id ?? null;
   overPage.current = { drawer: inDrawer, sheet: inSheet, close: closePanel };
@@ -1070,7 +1201,10 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
               label="Fler val"
               size="sm"
               variant="ghost"
-              items={[{ id: 'new', label: 'Nytt samtal', onClick: talk.newConversation }]}
+              items={[
+                { id: 'new', label: 'Nytt samtal', onClick: talk.newConversation },
+                { id: 'list', label: 'Dina samtal', onClick: () => setListOpen(true) },
+              ]}
             />
           </HStack>
         ) : (
@@ -1092,42 +1226,114 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const transcript = (
     <Transcript
       onOpenView={openView}
-      renderCard={t => (panelCard?.id === t.id ? null : card(t, { level: 2 }))}
+      // In Min AI the question is the page's h1, so a card is an h2; under the box it stands under "Svar", an h2 itself.
+      renderCard={t => (panelCard?.id === t.id ? null : card(t, { level: minAi ? 2 : 3 }))}
       viewHref={v => viewHref(v.capability, v.title, v.input, true)}
     />
   );
 
-  /** What the column holds: the transcript when a conversation is open (D31), else Hem. The panel is the Layout's end. */
+  /**
+   * Min AI's list (D115 item 5): "Nytt samtal", then the person's conversations under the day each was last in, the
+   * open one marked. A navigation landmark of its own; on a phone the list is under Klart on Mina aktiviteter.
+   */
+  // On a phone the list has no column of its own: it opens as a drawer from Min AI's own controls, and closes when
+  // the person has chosen a conversation.
+  const [listOpen, setListOpen] = useState(false);
+  useEffect(() => setListOpen(false), [location.key]);
+  const yesterdayDate = addDays(todayDate, -1);
+  const saidOn = (t: Thread) => {
+    const at = displayDate(t.updatedAt);
+    return at === todayDate ? 'I dag' : at === yesterdayDate ? 'I går' : capital(shortDayLabel(at));
+  };
+  const conversationList = (heading: boolean) => (
+    <VStack gap={3} padding={4} as="nav" aria-label="Dina samtal">
+      {heading && (
+        <Heading level={3} accessibilityLevel={2}>
+          Dina samtal
+        </Heading>
+      )}
+      <Button variant="primary" label="Nytt samtal" onClick={talk.newConversation} />
+      {all.questions.length === 0 ? (
+        <Text type="supporting" as="p">
+          Inga samtal än. Det du frågar om hamnar här.
+        </Text>
+      ) : (
+        <List density="compact" aria-label="Samtal">
+          {all.questions.map((t, i) => (
+            <ListItem
+              key={t.id}
+              label={<Text maxLines={2}>{titled(t.title)}</Text>}
+              description={
+                i === 0 || saidOn(all.questions[i - 1]!) !== saidOn(t) ? (
+                  <Text type="supporting">{saidOn(t)}</Text>
+                ) : undefined
+              }
+              href={`/conversations/${t.id}`}
+              isSelected={t.id === conversationId}
+            />
+          ))}
+        </List>
+      )}
+    </VStack>
+  );
+  /** Min AI with nothing open: what the place is for, over the box. */
+  const minAiEmpty = (
+    <EmptyState
+      headingLevel={1}
+      icon={<Icon icon={SparklesIcon} size="lg" />}
+      title={`Hej ${user.name.split(' ')[0]}! Vad vill du ha hjälp med?`}
+      description={
+        mobile
+          ? 'Skriv eller säg vad du vill göra.'
+          : 'Skriv eller säg vad du vill göra. Dina tidigare samtal finns i listan.'
+      }
+      actions={
+        mobile && all.questions.length > 0 ? (
+          <Button variant="secondary" label="Dina samtal" aria-haspopup="dialog" onClick={() => setListOpen(true)} />
+        ) : undefined
+      }
+    />
+  );
+
+  /** What the column holds: Min AI when its address is open (D115 item 5), else Hem or Mina aktiviteter. The panel is the Layout's end. */
   const column = (entry: EntryStyle) => {
-    if (talk.open)
+    if (minAi) {
+      // The first question of a new conversation is asked as on the board; a reply is the conversation's own.
+      const minAiBox = <Composer place={fullTalk ? 'conversation' : 'landing'} />;
       return short ? (
         <VStack gap={4} padding={3} xstyle={entry}>
-          {conversationHeader}
-          {transcript}
-          <Composer place="conversation" />
+          {fullTalk ? conversationHeader : minAiEmpty}
+          {fullTalk && transcript}
+          {minAiBox}
         </VStack>
       ) : (
-        // The same gutter as every page (D74 item 3): the Layout's padding reaches the header, so the title stands 32 px in
-        // from the rail and 32 px down on a desktop, 12 on a phone.
         <Layout
           xstyle={entry}
           height="fill"
           padding={mobile ? 3 : 8}
           defaultHasDividers
-          header={<LayoutHeader>{conversationHeader}</LayoutHeader>}
+          header={fullTalk ? <LayoutHeader>{conversationHeader}</LayoutHeader> : undefined}
+          start={
+            mobile ? undefined : (
+              <LayoutPanel width={280} padding={0} hasDivider>
+                {conversationList(true)}
+              </LayoutPanel>
+            )
+          }
           end={slot.end}
           content={
             <LayoutContent isScrollable={false} padding={0}>
-              {/* The ChatLayout spans the content area full bleed and owns the scroll, so its scrollbar sits at the column's edge like a page's. The transcript and the dock take the width Hem's content has, 32 px in from the rail like the title (the product owner, 2026-11-06: the same width as the start page; D74), not a centred column. */}
+              {/* The ChatLayout spans the content area and owns the scroll, so its scrollbar sits at the column's edge like a page's. */}
               <VStack height="100%" paddingInline={mobile ? 0 : 8}>
-                <ChatLayout density="balanced" composer={<Composer place="conversation" />}>
-                  {transcript}
+                <ChatLayout density="balanced" composer={minAiBox}>
+                  {fullTalk ? transcript : minAiEmpty}
                 </ChatLayout>
               </VStack>
             </LayoutContent>
           }
         />
       );
+    }
     // Hem (D53, artboard A): the content takes the width the rail leaves, the panel beside it only while something is open (D72),
     // the box in the page flow under the greeting; on a phone the box is docked at the foot, and on a short screen nothing is docked.
     return short ? (
@@ -1153,13 +1359,16 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
                   density="balanced"
                   scrollButton={null}
                   composer={
+                    // The suggestions at rest are not in the phone's dock: the dock is frosted glass only behind the box,
+                    // so they stood over the board without a ground, and they raised the box into a toast's place (2.4.11).
                     <VStack gap={2}>
                       <Suggestions viewHref={viewHref} cardHref={cardHref} />
                       <Composer place="landing" near={near} about={about} />
                     </VStack>
                   }
                 >
-                  <VStack paddingBlockStart={3} paddingBlockEnd={3}>
+                  {/* The board's cards keep a gutter from the screen's edge, as the page's own gutter does on a wide window. */}
+                  <VStack ref={boardTop} paddingBlockStart={3} paddingBlockEnd={3} paddingInline={3}>
                     {landing()}
                   </VStack>
                 </ChatLayout>
@@ -1167,8 +1376,11 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
             </LayoutContent>
           ) : (
             <LayoutContent isScrollable padding={0}>
-              <VStack paddingInline={8} paddingBlockStart={8} paddingBlockEnd={10}>
-                {landing()}
+              {/* The page is bounded and centred, as every page is (D115 item 3): 1280 px with its gutters. */}
+              <VStack hAlign="center">
+                <VStack width="100%" maxWidth={PAGE_MAX} paddingInline={8} paddingBlockStart={10} paddingBlockEnd={10}>
+                  {landing()}
+                </VStack>
               </VStack>
             </LayoutContent>
           )
@@ -1177,13 +1389,18 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     );
   };
 
+  if (moved) return <Navigate replace to={ACTIVITIES + location.search} />;
   return (
     <>
-      <KeepFocus open={talk.open} focus={talk.focus} />
+      <KeepFocus open={fullTalk} focus={talk.focus} />
       <Shell
         user={user}
         nav={nav}
         height={short ? 'auto' : 'fill'}
+        // Min AI is a full-window mode with its own narrow bar; the board and Min AI have a box of their own, and Mina
+        // aktiviteter gets the floating "Fråga AI" as every other page does (D115 item 5).
+        focus={minAi ? { title: 'Min AI' } : undefined}
+        assistant={activities}
         /* Page level (D8): one Banner in the shell's banner slot when the model is configured but not answering. Everything that is not prose keeps working. */
         banner={
           assistantDown ? (
@@ -1205,10 +1422,19 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
           ) : undefined
         }
       >
-        <Entering key={talk.open ? 'conversation' : 'hem'}>{column}</Entering>
+        <Entering key={minAi ? 'min-ai' : 'hem'}>{column}</Entering>
       </Shell>
       {slot.overlay}
       {sheet}
+      {/* Min AI's list on a phone (D115 item 5): the same navigation, in a drawer from the start edge. */}
+      {minAi && mobile && (
+        <Drawer isOpen={listOpen} onOpenChange={setListOpen} side="start" label="Dina samtal" padding={0}>
+          <Layout
+            header={<DrawerHeader title="Dina samtal" onOpenChange={setListOpen} />}
+            content={<LayoutContent padding={0}>{conversationList(false)}</LayoutContent>}
+          />
+        </Drawer>
+      )}
       {/* After the panel's drawer and the phone's sheet, so a direct open stacks the review on top of the card (D73 amended). */}
       <ReviewOverlay threadId={reviewing} />
       <EventDialog

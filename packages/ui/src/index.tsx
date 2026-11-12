@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { LayerProvider } from '@astryxdesign/core/Layer';
 import { InternationalizationProvider } from '@astryxdesign/core/i18n';
+import { useMediaQuery as useQuery } from '@astryxdesign/core/hooks';
 import { AppearanceProvider } from './appearance';
 import type { Branding } from './branding';
 import { swedish } from './locale';
@@ -191,12 +192,19 @@ export { swedish } from './locale';
 /**
  * The installation's Astryx theme (D38) and Swedish strings. LayerProvider keeps the toast
  * stack inside these providers: without it Astryx mounts a fallback root that gets neither the Swedish catalog nor the theme.
+ * The toasts stand above what is fixed at the foot of the window (2.4.11, D115 item 5): the docked box on a phone, and
+ * the floating "Fråga AI" in the corner on a wider window. Astryx's own toast inset, by the height of each.
  */
+const TOAST_ABOVE_DOCK = 132,
+  TOAST_ABOVE_CORNER = 72;
 export function Providers({ branding, children }: { branding: Branding; children: ReactNode }) {
+  const phone = useQuery('(max-width: 767px)');
   return (
     <InternationalizationProvider locale="sv-SE" messages={{ 'sv-SE': swedish }}>
       <AppearanceProvider branding={branding}>
-        <LayerProvider>{children}</LayerProvider>
+        <LayerProvider toast={{ inset: { bottom: phone ? TOAST_ABOVE_DOCK : TOAST_ABOVE_CORNER } }}>
+          {children}
+        </LayerProvider>
       </AppearanceProvider>
     </InternationalizationProvider>
   );

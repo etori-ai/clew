@@ -19,9 +19,12 @@ for (const [layout, viewport] of [
         };
         api.threads = [card];
         await open(page, '/');
-        const check = page.getByRole('button', { name: 'Kontrollera status' });
+        // The card's own row: the start page also suggests "Attestera fakturor" under the box (D115 item 4), which
+        // asks the box and decides nothing.
+        const row = page.locator('#thread-fakturor');
+        const check = row.getByRole('button', { name: 'Kontrollera status' });
         await expect(check).toBeVisible();
-        await expect(page.getByRole('button', { name: /^Attestera ·/ })).toHaveCount(0);
+        await expect(row.getByRole('button', { name: /^Attestera ·/ })).toHaveCount(0);
         await check.focus();
         await expect(check).toBeFocused();
         let release!: () => void, arrived!: () => void;
@@ -40,7 +43,7 @@ for (const [layout, viewport] of [
         await requested;
         await expect(check).toBeVisible();
         await expect(check).toBeFocused();
-        await expect(page.getByRole('button', { name: /^(Attestera|Inte nu)/ })).toHaveCount(0);
+        await expect(row.getByRole('button', { name: /^(Attestera|Inte nu)/ })).toHaveCount(0);
         release();
         await expect(check).toBeFocused();
         await expectNoAxeViolations(page);

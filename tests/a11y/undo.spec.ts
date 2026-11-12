@@ -1,4 +1,4 @@
-import { desktop, expect, expectNoAxeViolations, open, test } from './support';
+import { desktop, expect, expectNoAxeViolations, open, openNav, test } from './support';
 
 test.describe('a decision the card is left waiting on keeps its way back where the card lies (D70 amended)', () => {
   test.use({ viewport: desktop });
@@ -27,7 +27,7 @@ test.describe('a decision the card is left waiting on keeps its way back where t
     api: _,
   }) => {
     await open(page, '/?card=samtal');
-    // The card open beside the page has its own id (D50); on this viewport the panel is no dialog.
+    // The open card has its own id (D50); on this viewport it is in the drawer over the page.
     const card = page.locator('#card-samtal');
     await card.getByRole('button', { name: 'Skicka 2 inbjudningar' }).click();
     // The row keeps its place for a moment with what was done; its one control is still the ✕ of the open card (D66), and
@@ -43,13 +43,18 @@ test.describe('a decision the card is left waiting on keeps its way back where t
     ).toBeVisible();
     await expect(toasts.getByRole('button', { name: 'Ångra' })).toBeVisible();
     await expect(toasts.getByRole('link', { name: 'Visa' })).toHaveAttribute('href', /tab=waiting/);
-    // Then the row leaves Behöver dig for Väntar på andra; closed, the card is found there with the receipt and the way back.
+    // Then the row leaves the start page's list for Väntar på andra; closed, the card is found there with the receipt
+    // and the way back. The tabs are on Mina aktiviteter (D115 item 4), reached from the header's own row.
     await expect(row).toHaveCount(0, { timeout: 5_000 });
     await page
       .getByRole('dialog', { name: 'Kort', exact: true })
       .getByRole('button', { name: 'Stäng', exact: true })
       .click();
-    await page.getByRole('tab', { name: /^Väntar på andra/ }).click();
+    await (await openNav(page)).getByRole('link', { name: 'Mina aktiviteter' }).click();
+    await expect(page).toHaveURL(/\/activities$/);
+    const waitingTab = page.getByRole('tab', { name: /^Väntar på andra/ });
+    await waitingTab.click();
+    const waitingBefore = Number((await waitingTab.textContent())!.match(/(\d+)$/)![1]);
     const waiting = page.getByRole('main').locator('#thread-samtal');
     await expect(waiting).toContainText('Kalendern svarade');
     await expect(waiting).toContainText('väntar på svar från medarbetarna');
@@ -58,7 +63,8 @@ test.describe('a decision the card is left waiting on keeps its way back where t
     await waiting.getByRole('button', { name: /^Ångra · / }).click();
     // Undone, the card is back under Behöver dig with its proposals, and nothing waits on anyone.
     await expect(waiting).toHaveCount(0);
-    await expect(page.getByRole('tab', { name: /^Väntar på andra/ })).not.toHaveText(/· \d/);
+    // The tab's count badge (D115 item 4) has one card fewer.
+    await expect(waitingTab).toHaveText(new RegExp(`^Väntar på andra.*\\D${waitingBefore - 1}$`));
     await page.getByRole('tab', { name: /^Behöver dig/ }).click();
     const back = page.getByRole('main').locator('#thread-samtal');
     await expect(back).toBeVisible();

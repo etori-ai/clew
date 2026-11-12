@@ -22,7 +22,9 @@ const directory = '/tools/phonebook.directory';
 const team = '/tools/phonebook.team';
 const wide = { width: 1440, height: 900 };
 const withInput = (input: object) => `${directory}?input=${encodeURIComponent(JSON.stringify(input))}`;
-const rail = (page: import('@playwright/test').Page) => page.getByRole('navigation', { name: 'Sidonavigering' });
+/** Clew's own pages, the tools among them: the row under the header's band, named after the place (D115 item 3). */
+const pages = (page: import('@playwright/test').Page) =>
+  page.getByRole('banner').getByRole('navigation', { name: 'Start', exact: true });
 
 test.describe('a tool as a page', () => {
   test.use({ viewport: wide });
@@ -48,12 +50,12 @@ test.describe('a tool as a page', () => {
     await expect(page.getByRole('link', { name: '0980-319 203' })).toHaveAttribute('href', 'tel:0980319203');
     await expect(page.getByText('14 rader · Telefonboken')).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(rail(page).locator('a[aria-current="page"]')).toHaveText('Telefonbok');
+    await expect(pages(page).locator('a[aria-current="page"]')).toHaveText('Telefonbok');
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(wide.width);
     await expectNoAxeViolations(page);
   });
 
-  test("the calendar's rooms are a tool like any connector's view: a row under Verktyg, a page named by it, and no axe violations", async ({
+  test("the calendar's rooms are a tool like any connector's view: a link among Clew's pages in the header, a page named by it, and no axe violations", async ({
     page,
     api,
   }) => {
@@ -64,7 +66,7 @@ test.describe('a tool as a page', () => {
     await expect(page.getByRole('columnheader')).toHaveText(['Rum', 'Platser', 'Utrustning']);
     await expect(page.getByRole('row')).toHaveCount(8);
     await expect(page.getByText('7 rader · Kalendern')).toBeVisible();
-    await expect(rail(page).getByRole('link', { name: 'Mötesrum' })).toHaveAttribute('aria-current', 'page');
+    await expect(pages(page).getByRole('link', { name: 'Mötesrum' })).toHaveAttribute('aria-current', 'page');
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expectNoAxeViolations(page);
   });
@@ -75,7 +77,7 @@ test.describe('a tool as a page', () => {
   }) => {
     api.menu = menuRows;
     await open(page, '/');
-    await rail(page).getByRole('link', { name: 'Telefonbok' }).click();
+    await pages(page).getByRole('link', { name: 'Telefonbok' }).click();
     const field = page.getByRole('searchbox', { name: 'Sök i telefonboken' });
     await field.fill('lärare');
     await expect(page.getByRole('row')).toHaveCount(3);
@@ -146,13 +148,13 @@ test.describe('a tool as a page', () => {
     api.menu = menuRows;
     await open(page, directory);
     await expect(page.getByRole('row')).toHaveCount(15);
-    await rail(page).getByRole('link', { name: 'Mitt team' }).click();
+    await pages(page).getByRole('link', { name: 'Mitt team' }).click();
     await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveText('Mitt team');
     await expect(page.getByRole('list', { name: 'Telefonboken' }).getByRole('listitem')).toHaveCount(5);
     await expect(page.getByRole('table')).toHaveCount(0);
     await expect(page.getByRole('searchbox', { name: 'Sök i telefonboken' })).toHaveCount(0);
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Mitt team'));
-    await expect(rail(page).locator('a[aria-current="page"]')).toHaveText('Mitt team');
+    await expect(pages(page).locator('a[aria-current="page"]')).toHaveText('Mitt team');
     await expectNoAxeViolations(page);
   });
 
@@ -192,10 +194,7 @@ test.describe('a tool as a page', () => {
 });
 
 test.describe("a tool's page on a smaller screen", () => {
-  test('beside the rail on a laptop the rows are a table, one line a person, and nothing scrolls sideways', async ({
-    page,
-    api,
-  }) => {
+  test('on a laptop the rows are a table, one line a person, and nothing scrolls sideways', async ({ page, api }) => {
     await page.setViewportSize(desktop);
     api.menu = menuRows;
     await open(page, directory);

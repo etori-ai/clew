@@ -99,4 +99,29 @@ describe('the appearance the browser draws (D98)', () => {
     expect(plain['--color-text-primary']).toBe('#ffffff');
     expect(createHeaderBandTheme(custom)).toBe(createHeaderBandTheme({ ...custom, revision: 4 }));
   });
+
+  test("a theme's inverted background is the band's ground, with the white or black text that reads on it (D115)", () => {
+    const colors = custom.theme!.colors;
+    const dark = createHeaderBandTheme({
+      ...custom,
+      theme: { ...custom.theme!, colors: { ...colors, 'background-inverted': ['#003c69', '#eaf1f8'] } },
+    }).tokens;
+    expect(dark['--color-background-surface']).toBe('#003c69');
+    expect(dark['--color-text-primary']).toBe('#ffffff');
+    const pale = createHeaderBandTheme({
+      ...custom,
+      theme: { ...custom.theme!, colors: { ...colors, 'background-inverted': ['#eaf1f8', '#003c69'] } },
+    }).tokens;
+    expect(pale['--color-background-surface']).toBe('#eaf1f8');
+    expect(pale['--color-text-primary']).toBe('#000000');
+  });
+
+  test("the form is the base theme's and no theme file changes it: the type, the corners and a card's shadow (D115)", () => {
+    for (const theme of [createClewTheme(NEUTRAL_BRANDING), createClewTheme(custom)]) {
+      expect(theme.tokens['--font-family-heading']).toContain('Raleway Variable');
+      expect(theme.tokens['--font-family-body']).toMatch(/^Arial/);
+      expect(theme.tokens['--radius-container']).toBe('1rem');
+      expect(theme.components?.card?.base).toMatchObject({ boxShadow: 'var(--shadow-low)' });
+    }
+  });
 });

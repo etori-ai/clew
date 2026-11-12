@@ -52,18 +52,24 @@ test.describe('Administration › Kompetens', () => {
     });
   test.describe('desktop', () => {
     test.use({ viewport: desktop });
-    test('an administrator reaches it from the rail and reads each type with its area, kind and validity', async ({
+    test("an administrator reaches it from the administration's tabs and reads each type with its area, kind and validity", async ({
       page,
       api,
     }) => {
       api.admin = true;
       api.competenceTypes = competenceCatalogue();
       await open(page, '/admin/connectors');
-      const row = page.getByRole('link', { name: 'Kompetens', exact: true });
-      await row.click();
+      // The administration's sections are tabs under the trail, each a link to its own address (D115 item 3); there is
+      // no rail with a row per section. They are one navigation of the page, and the open section's tab is its current one.
+      const tabs = page
+        .getByRole('main')
+        .getByRole('navigation')
+        .filter({ has: page.getByRole('link', { name: 'Kompetens', exact: true }) });
+      await expect(tabs.locator('[aria-current]')).toHaveAccessibleName('Anslutna system');
+      await tabs.getByRole('link', { name: 'Kompetens', exact: true }).click();
       await expect(page).toHaveURL(/\/admin\/competence$/);
       await expect(page).toHaveTitle('Kompetens · Startsidan');
-      await expect(page.getByRole('link', { name: 'Kompetens', exact: true })).toHaveAttribute('aria-current', 'page');
+      await expect(tabs.locator('[aria-current]')).toHaveAccessibleName('Kompetens');
       await expect(page.getByRole('status').filter({ hasText: 'att registrera' })).toHaveText(
         '3 kompetenser att registrera, 1 arkiverade',
       );

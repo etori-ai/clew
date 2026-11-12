@@ -16,7 +16,7 @@ import { allCommitments, TALKS_FAIL_ERROR, TALKS_READ_ONLY_SOURCE, type Commitme
 
 /**
  * Mina åtgärdspunkter on Hem (D96 item 7): the open action points the person owns and those about them, after the day's
- * work, the first five and the rest in place. The owner ticks one off with Klar, and the completion toast's Ångra opens
+ * work (D115 item 4: Läget, then "Att agera på", Mina ärenden and Mina åtgärdspunkter), the first five and the rest in place. The owner ticks one off with Klar, and the completion toast's Ångra opens
  * it again. Nothing is drawn without a talks system or with nothing open; another system answering is read-only.
  */
 const section = (page: Page) => page.getByRole('region', { name: 'Mina åtgärdspunkter' });
@@ -53,12 +53,12 @@ for (const [layout, viewport] of [
       await open(page, '/');
       const mine = section(page);
       await expect(heading(page, 2, 'Mina åtgärdspunkter · 5')).toBeVisible();
-      // After the day's work and before Läget, as Mina ärenden (D90).
-      const work = heading(page, 2, 'Nu · 1'),
+      // After the day's work, as Mina ärenden (D90); Läget comes before the work (D115 item 4).
+      const work = heading(page, 2, 'Att agera på · '),
         own = heading(page, 2, 'Mina åtgärdspunkter'),
         lage = heading(page, 2, 'Läget på Skönsmons skola');
       expect((await own.boundingBox())!.y).toBeGreaterThan((await work.boundingBox())!.y);
-      expect((await lage.boundingBox())!.y).toBeGreaterThan((await own.boundingBox())!.y);
+      expect((await work.boundingBox())!.y).toBeGreaterThan((await lage.boundingBox())!.y);
 
       // The reader's own first, in the server's order; a done point is not listed.
       const items = mine.getByRole('listitem');
@@ -231,14 +231,14 @@ test.describe('Mina åtgärdspunkter is absent', () => {
   test('when nothing is open', async ({ page, api }) => {
     api.commitments = allCommitments().filter(c => c.done);
     await open(page, '/');
-    await expect(heading(page, 2, 'Nu · 1')).toBeVisible();
+    await expect(heading(page, 2, 'Att agera på · ')).toBeVisible();
     await expect(section(page)).toHaveCount(0);
   });
 
   test('without a talks system, and no error is shown', async ({ page, api }) => {
     api.talksOffered = false;
     await open(page, '/');
-    await expect(heading(page, 2, 'Nu · 1')).toBeVisible();
+    await expect(heading(page, 2, 'Att agera på · ')).toBeVisible();
     await expect(section(page)).toHaveCount(0);
     await expect(page.getByText('Du saknar behörighet för åtgärden.')).toHaveCount(0);
   });

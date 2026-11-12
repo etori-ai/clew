@@ -54,7 +54,13 @@ test.describe('users administration', () => {
       api.admin = true;
       await open(page, '/admin/users');
       await expect(page).toHaveTitle('Användare · Startsidan');
-      await expect(page.getByRole('link', { name: 'Användare', exact: true })).toHaveAttribute('aria-current', 'page');
+      // The administration's sections are tabs under the trail, each a link to its own address (D115 item 3): one
+      // navigation of the page, in which the open section's tab is the current one.
+      const tabs = page
+        .getByRole('main')
+        .getByRole('navigation')
+        .filter({ has: page.getByRole('link', { name: 'Användare', exact: true }) });
+      await expect(tabs.locator('[aria-current]')).toHaveAccessibleName('Användare');
       const people = page.getByRole('table').first();
       // The unit and the role are columns of their own: where a person is and what they are there are two questions.
       await expect(people.getByRole('columnheader')).toHaveText(['Person', 'Enhet', 'Roll', 'Behörigheter', 'Status']);

@@ -355,7 +355,11 @@ const searchOf = (address: string) => {
   const i = address.indexOf('?');
   return i < 0 ? '' : address.slice(i);
 };
-/** The rail and the panel as the shell draws them; with the page's own least width they decide when the panel fits beside it. */
+/**
+ * The panel as the shell draws it; with the page's own least width it decides when the panel fits beside it. `RAIL` is
+ * the width the rail took before D115 removed it: it stays in the sum until the start page is rebuilt (D115 item 4),
+ * so the panel still opens beside the page at the widths it did.
+ */
 export const RAIL = 256,
   PANEL = 440;
 /**

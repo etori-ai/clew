@@ -420,7 +420,7 @@ export function Transcript({
       <Text
         type="supporting"
         justify="end"
-      >{`${mobile ? '' : 'Esc stänger · '}${latest?.draft || messages.some(m => m.meta?.draft) ? 'kortet behåller utkastet' : 'samtalet sparas under Redan hanterat'}`}</Text>
+      >{`${mobile ? '' : 'Esc stänger · '}${latest?.draft || messages.some(m => m.meta?.draft) ? 'kortet behåller utkastet' : 'samtalet sparas i Min AI'}`}</Text>
     </VStack>
   );
 }

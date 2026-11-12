@@ -580,7 +580,7 @@
       "number": 42,
       "path": "docs/decisions/D42-a-tool-opens-as-a-page.md",
       "title": "D42 · A tool opens as a page",
-      "status": "accepted, built 2026-11-05; sorting and column filters on the page are not built; the link from a view in the panel to the tool's page, the box on the page and the row's view beside the table are [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md)",
+      "status": "accepted, built 2026-11-05; sorting and column filters on the page are not built; the link from a view in the panel to the tool's page, the box on the page and the row's view beside the table are [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md); the width rule that counts the rail and the box on the page to be replaced by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built)",
       "date": "2026-11-05",
       "area": "ui"
     },
@@ -634,7 +634,7 @@
       "number": 46,
       "path": "docs/decisions/D46-astryx-neutral-is-the-default-theme.md",
       "title": "D46 · Astryx Neutral is the default theme; Sundsvall is a profile to opt into",
-      "status": "accepted; Neutral is still the default, and \"Switching back\" is now an upload of `themes/sundsvall/theme.tokens.json` on Administration › Utseende ([D98](D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md), 2026-11-10)",
+      "status": "accepted; Neutral is still the default, and \"Switching back\" is now an upload of `themes/sundsvall/theme.tokens.json` on Administration › Utseende ([D98](D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md), 2026-11-10); the rail's surface to be replaced by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built)",
       "date": "2026-11-05",
       "area": "ui"
     },
@@ -661,7 +661,7 @@
       "number": 48,
       "path": "docs/decisions/D48-one-next-step-the-rest-one-step-away.md",
       "title": "D48 · One next step on a surface, the rest one step away",
-      "status": "accepted, implemented; items 1, 3, 5, 6 and 7 changed by [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) on 2026-11-06 (base 14, no ⋯ on a row, the artboards' captions, Ny fråga as the primary button, no shortcut in the box)",
+      "status": "accepted, implemented; items 1, 3, 5, 6 and 7 changed by [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) on 2026-11-06 (base 14, no ⋯ on a row, the artboards' captions, Ny fråga as the primary button, no shortcut in the box); the type scale to be changed by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built); one filled button on a surface stands",
       "date": "2026-11-05",
       "area": "ui"
     },
@@ -679,7 +679,7 @@
       "number": 50,
       "path": "docs/decisions/D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md",
       "title": "D50 · The conversation is the column, and the panel holds what it is about",
-      "status": "accepted, built 2026-11-05, amended the same day (a brief row opens its card beside the landing); the panel's tabs for what a conversation has opened, the box on the calendar page, a conversation's origin shown on a card and on a tool's page, a resizable panel, and a manual screen-reader pass are not built; item 2's page is `/` and the day stands beside it since [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md)",
+      "status": "accepted, built 2026-11-05, amended the same day (a brief row opens its card beside the landing); the panel's tabs for what a conversation has opened, the box on the calendar page, a conversation's origin shown on a card and on a tool's page, a resizable panel, and a manual screen-reader pass are not built; item 2's page is `/` and the day stands beside it since [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md); the rail, the conversation as the column, the conversation never in a panel and the box on every page to be replaced by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built)",
       "date": "2026-11-05",
       "area": "ui"
     },
@@ -706,7 +706,7 @@
       "number": 53,
       "path": "docs/decisions/D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md",
       "title": "D53 · Hem is the start page: the day's work under the box, and the day beside it",
-      "status": "accepted, built 2026-11-06 on branch `hem`; not built: the phone's shift strip (artboard D needs a schedule capability no connector declares), the panel's tabs for everything a conversation has opened (artboards F, H, J) (built 2026-11-06, [D66](D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md)), a conversation carrying a job across connectors with a step list (artboard J), and the mark on an earlier conversation that something happened since (artboard H); items 2 and 6 and the pixels changed by [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) on 2026-11-06 (the greeting drawn small with the day on its line, the day and Sedan i går as cards in the page's own side column)",
+      "status": "accepted, built 2026-11-06 on branch `hem`; not built: the phone's shift strip (artboard D needs a schedule capability no connector declares), the panel's tabs for everything a conversation has opened (artboards F, H, J) (built 2026-11-06, [D66](D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md)), a conversation carrying a job across connectors with a step list (artboard J), and the mark on an earlier conversation that something happened since (artboard H); items 2 and 6 and the pixels changed by [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) on 2026-11-06 (the greeting drawn small with the day on its line, the day and Sedan i går as cards in the page's own side column); the layout to be replaced by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built): the tabs move to Mina aktiviteter and suggestions stand under the box at rest",
       "date": "2026-11-06",
       "area": "ui"
     },
@@ -715,7 +715,7 @@
       "number": 54,
       "path": "docs/decisions/D54-figures-come-from-connectors-and-laget-draws-them.md",
       "title": "D54 · Figures come from connectors, and Läget draws them",
-      "status": "accepted 2026-11-06 with the canvas D71 builds, built 2026-11-06 on `main`; amended below where the build differs",
+      "status": "accepted 2026-11-06 with the canvas D71 builds, built 2026-11-06 on `main`; amended below where the build differs; the tile's drawing and its place on the page to be changed by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built); where figures come from stands",
       "date": "2026-11-06",
       "area": "integrations, ui"
     },
@@ -796,7 +796,7 @@
       "number": 63,
       "path": "docs/decisions/D63-hem-is-drawn-as-the-canvas-draws-it.md",
       "title": "D63 · Hem is drawn as the canvas draws it, pixel for pixel, with Astryx's own tokens",
-      "status": "accepted, built 2026-11-06 on `main`; the elements the artboards draw without anything behind them are listed under \"Asked, not built\" and wait for the product owner",
+      "status": "accepted, built 2026-11-06 on `main`; the elements the artboards draw without anything behind them are listed under \"Asked, not built\" and wait for the product owner; to be replaced by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built): the startsidan prototype, not the canvas, is the reference",
       "date": "2026-11-06",
       "area": "ui"
     },
@@ -877,7 +877,7 @@
       "number": 72,
       "path": "docs/decisions/D72-the-day-is-the-pages-and-the-panel-holds-only-what-was-opened.md",
       "title": "D72 · The day is the page's, and the panel holds only what was opened",
-      "status": "accepted, built 2026-11-07 on `main`",
+      "status": "accepted, built 2026-11-07 on `main`; the breakpoints that count the rail to be replaced by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built)",
       "date": "2026-11-07",
       "area": "ui"
     },
@@ -1030,7 +1030,7 @@
       "number": 88,
       "path": "docs/decisions/D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md",
       "title": "D88 · The web app draws the shared header above its rail, a connector gives Clew its content, and Clew has one front end",
-      "status": "accepted, built 2026-11-09 on `main`",
+      "status": "accepted, built 2026-11-09 on `main`; items 2 and 3 to be amended by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built): no rail, and the third row under Start is Clew's own tools",
       "date": "2026-11-09",
       "area": "ui, product, integrations"
     },
@@ -1183,7 +1183,7 @@
       "number": 101,
       "path": "docs/decisions/D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md",
       "title": "D101 · The first real integration is Nextcloud's Approval app, and new surface waits until its loop works",
-      "status": "provisional (product owner, 2026-11-10; the connector is built and the loop has run signed in as one person on the development stack, the remaining conditions are in the implementation status; amended 2026-11-11: the second build as an MCP server and the comparison of the two builds are dropped from the freeze)",
+      "status": "provisional (product owner, 2026-11-10; the connector is built and the loop has run signed in as one person on the development stack, the remaining conditions are in the implementation status; amended 2026-11-11: the second build as an MCP server and the comparison of the two builds are dropped from the freeze; an exception for the redrawing after the startsidan prototype in [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (Oliver Borgström, 2026-11-11))",
       "date": "2026-11-10",
       "area": "product, integrations"
     },
@@ -1258,6 +1258,15 @@
       "status": "provisional (product owner, 2026-11-11: with SCIM a change is pushed when it happens, and once a day is not the rule); accepted once a provisioner outside the team sends its changes as they happen; the page, the guide and the comments say it, and the example provisioner still only reconciles",
       "date": "2026-11-11",
       "area": "identity"
+    },
+    {
+      "key": "D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout",
+      "number": 115,
+      "path": "docs/decisions/D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md",
+      "title": "D115 · The startsidan prototype's Version 1.0 is the reference for Clew's look and layout, built with Astryx",
+      "status": "provisional (Oliver Borgström, 2026-11-11: \"the prototype is the truth right now\"; every item is built on the branch `prototype-look`, with the differences listed under \"Built\", and the accessibility specs are not yet rewritten for items 4 to 6; accepted once a manager outside the team has used the rebuilt start page)",
+      "date": "2026-11-11",
+      "area": "ui, product"
     }
   ],
   "documents": [
@@ -1802,6 +1811,12 @@
     {
       "path": "docs/decisions/D11-one-calendar-contract-two-adapters.md",
       "title": "D11 · One calendar contract, CalDAV and Microsoft 365 as adapters",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md",
+      "title": "D115 · The startsidan prototype's Version 1.0 is the reference for Clew's look and layout, built with Astryx",
       "category": "decision-history",
       "headings": []
     },
@@ -3674,6 +3689,22 @@
         "Verification",
         "Outcome",
         "Second pass: the orders nobody thought of"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-11-startsidan-prototype-version-1-0-against-clew.md",
+      "title": "Review: the startsidan prototype's Version 1.0 against Clew · 2026-11-11",
+      "category": "review-history",
+      "headings": [
+        "What was asked",
+        "What was looked at",
+        "What Clew's start page was",
+        "What the prototype's Version 1.0 is",
+        "What differs in kind, not in paint",
+        "What Astryx has for it",
+        "What Clew lacks for it",
+        "Two things found on the way",
+        "Outcome"
       ]
     },
     {

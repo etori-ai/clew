@@ -2,6 +2,9 @@ import type { Locator } from '@playwright/test';
 import { NEXT_WEEK } from './data';
 import { composer, desktop, expect, expectNoAxeViolations, open, phone, test } from './support';
 
+/** Where the card opened from a row stands beside the page and not over it (D50): the page's least width and the panel's. */
+const besidePanel = { width: 1440, height: 900 };
+
 /** What a person cannot read because it is cut off with an ellipsis. */
 const cutOff = (root: Locator) =>
   root.evaluate(element =>
@@ -12,17 +15,19 @@ const cutOff = (root: Locator) =>
       .map(e => (e as HTMLElement).innerText),
   );
 
-test.describe('a row shows the next step and Lägg till i samtalet; the rest is on the open card', () => {
+test.describe('a row shows the next step; the rest is on the open card', () => {
   test.use({ viewport: desktop });
 
-  test('a row has its two buttons, and the keyboard reaches everything else on its card, the time picker included', async ({
+  test('a row has its one button, and the keyboard reaches everything else on its card, the time picker included', async ({
     page,
     api: _,
   }) => {
     await open(page, '/');
     const row = page.locator('#thread-omtanke');
+    // One button on a row (D115 item 4): its next step. "Lägg till i samtalet" is the open card's.
     await expect(row.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
-    await expect(row.getByRole('button', { name: 'Lägg till i samtalet' })).toBeVisible();
+    await expect(row.getByRole('button')).toHaveCount(1);
+    await expect(row.getByRole('button', { name: /^(Lägg till i samtalet|I samtalet)$/ })).toHaveCount(0);
     await expect(row.getByRole('button', { name: 'Se mönstret' })).toHaveCount(0);
     await expect(row.getByRole('button', { name: 'Inte nu', exact: true })).toHaveCount(0);
     await expect(row.getByRole('button', { name: 'Fler val' })).toHaveCount(0);
@@ -116,7 +121,7 @@ test.describe('a row shows the next step and Lägg till i samtalet; the rest is 
     api.threads.find(t => t.id === 'tillbud')!.timers = [
       { kind: 'reminder', dueAt: '2026-11-05T10:00:00.000Z', state: 'scheduled' },
     ];
-    await open(page, '/?tab=waiting');
+    await open(page, '/activities?tab=waiting');
     const card = page.locator('#thread-tillbud');
     await expect(card).toContainText('väntar på skyddsombudet · påminner dig');
     await expect(card.getByRole('button', { name: 'Inte nu', exact: true })).toHaveCount(0);
@@ -147,28 +152,48 @@ test.describe('a row shows the next step and Lägg till i samtalet; the rest is 
     await expect.poll(() => dialog.evaluate(d => d.contains(document.activeElement))).toBe(true);
   });
 
-  test('a card put in the box says so on its button and on its line', async ({ page, api: _ }) => {
+  // "Lägg till i samtalet" is on the open card only (D115 item 4). At this width the card is a modal drawer over the
+  // page, so the box is behind it: the card's button and the row's line say the card is in the conversation, the
+  // chip is said aloud, the focus stays in the drawer, and the chip is in the box when the drawer is closed.
+  test('a card put in the box from the drawer says so on its button and on its line, and the focus stays in the drawer', async ({
+    page,
+    api: _,
+  }) => {
     await open(page, '/');
-    const row = page.locator('#thread-omtanke');
-    await row.getByRole('button', { name: 'Lägg till i samtalet' }).click();
-    await expect(row).toContainText('i samtalet');
+    await page.locator('#thread-omtanke').getByRole('link', { name: 'Omtankesamtal med Anna Lindqvist' }).click();
+    const card = page.getByRole('dialog', { name: 'Kort', exact: true });
+    await card.getByRole('button', { name: 'Lägg till i samtalet' }).click();
+    await expect(card.getByRole('button', { name: 'I samtalet' })).toBeDisabled();
+    await expect(page.locator('#thread-omtanke')).toContainText('i samtalet');
+    await expect(page.getByRole('status').filter({ hasText: 'är med i samtalet' })).toContainText(
+      'Omtankesamtal med Anna Lindqvist är med i samtalet',
+    );
+    // The button that was pressed rests, so the focus is not left on it, nor on the page behind the drawer (2.4.3).
+    await expect.poll(() => card.evaluate(d => d.contains(document.activeElement))).toBe(true);
+    await page.keyboard.press('Escape');
+    await expect(card).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Ta bort Omtankesamtal med Anna Lindqvist' })).toBeVisible();
     await expect(composer(page)).toBeVisible();
-    await expect(row.getByRole('button', { name: 'I samtalet' })).toBeDisabled();
   });
 
   // D92: the chip enters the drawer on Astryx's entry motion, the field has the focus from the same click, and a screen
-  // reader hears the chip's name; under reduced motion the chip is there at once.
+  // reader hears the chip's name; under reduced motion the chip is there at once. Where the card stands beside the
+  // page (D50) the box is reachable, so the click puts the focus in it.
   for (const reducedMotion of ['no-preference', 'reduce'] as const) {
     test(`a card put in the box enters the drawer, is announced, and respects ${reducedMotion} motion`, async ({
       page,
       api: _,
     }) => {
+      await page.setViewportSize(besidePanel);
       await page.emulateMedia({ reducedMotion });
-      await open(page, '/');
-      await page.locator('#thread-omtanke').getByRole('button', { name: 'Lägg till i samtalet' }).click();
+      await open(page, '/?card=omtanke');
+      await expect(page.getByRole('dialog', { name: 'Kort', exact: true })).toHaveCount(0);
+      await page.locator('#card-omtanke').getByRole('button', { name: 'Lägg till i samtalet' }).click();
       const remove = page.getByRole('button', { name: 'Ta bort Omtankesamtal med Anna Lindqvist' });
       await expect(remove).toBeVisible();
       await expect(composer(page)).toBeFocused();
+      await expect(page.locator('#card-omtanke').getByRole('button', { name: 'I samtalet' })).toBeDisabled();
+      await expect(page.locator('#thread-omtanke')).toContainText('i samtalet');
       await expect(page.getByRole('status').filter({ hasText: 'är med i samtalet' })).toContainText(
         'Omtankesamtal med Anna Lindqvist är med i samtalet',
       );
@@ -215,7 +240,8 @@ test.describe('a phone', () => {
 
   test("the day's work comes before the day", async ({ page, api: _ }) => {
     await open(page, '/');
-    const work = await page.getByRole('heading', { name: 'Nu · 1' }).boundingBox();
+    // The board's one list (D115 item 4) before the day, which ends the page on a phone.
+    const work = await page.getByRole('heading', { name: /^Att agera på · / }).boundingBox();
     const day = await page.getByRole('region', { name: 'I dag' }).boundingBox();
     expect(work!.y).toBeLessThan(day!.y);
   });
@@ -274,7 +300,7 @@ test.describe('Redan hanterat', () => {
   test.use({ viewport: desktop });
 
   test('when and what are two choices, and the times stand under each other', async ({ page, api: _ }) => {
-    await open(page, '/?tab=done');
+    await open(page, '/activities?tab=done');
     await expect(page.getByRole('radiogroup', { name: 'Tid' }).getByRole('radio', { name: 'I dag' })).toBeChecked();
     await page.getByRole('radiogroup', { name: 'Typ' }).getByRole('radio', { name: 'Frågor' }).click();
     const region = page.getByRole('region', { name: 'Redan hanterat' });
@@ -315,7 +341,7 @@ test.describe('the calendar on a phone', () => {
 
 test.describe('nothing is cut off', () => {
   for (const width of [1024, 768])
-    test(`a row and a card keep their words beside the rail at ${width} px`, async ({ page, api: _ }) => {
+    test(`a row and a card keep their words at ${width} px`, async ({ page, api: _ }) => {
       await page.setViewportSize({ width, height: 900 });
       await open(page, '/');
       await expect(

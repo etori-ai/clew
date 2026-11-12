@@ -67,7 +67,13 @@ test.describe('model administration', () => {
       api.admin = true;
       await open(page, '/admin/models');
       await expect(page).toHaveTitle('Modeller · Startsidan');
-      await expect(page.getByRole('link', { name: 'Modeller', exact: true })).toHaveAttribute('aria-current', 'page');
+      // The administration's sections are tabs under the trail, each a link to its own address (D115 item 3): one
+      // navigation of the page, in which the open section's tab is the current one.
+      const tabs = page
+        .getByRole('main')
+        .getByRole('navigation')
+        .filter({ has: page.getByRole('link', { name: 'Modeller', exact: true }) });
+      await expect(tabs.locator('[aria-current]')).toHaveAccessibleName('Modeller');
       await expect(page.getByText('Den som inte valt själv får Kapabel (standard).')).toBeVisible();
       const tables = page.getByRole('table');
       await expect(tables).toHaveCount(2);

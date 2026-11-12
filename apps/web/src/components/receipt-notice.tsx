@@ -37,7 +37,7 @@ export function ReceiptNotice({
           size="sm"
           variant="ghost"
           label="Visa"
-          href={`/?tab=${where[0]}&card=${encodeURIComponent(thread.id)}`}
+          href={`/activities?tab=${where[0]}&card=${encodeURIComponent(thread.id)}`}
         />
         {countdown && canUndoReceipt(thread) && (
           <Button

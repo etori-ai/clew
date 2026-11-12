@@ -31,7 +31,8 @@ const measure = (page: Page) =>
       ),
     ].filter(visible);
     const main = document.querySelector('main,[role="main"]');
-    const nav = document.querySelector('nav,[role="navigation"]');
+    // The navigation is the shared header (D88, D115 item 3): its heading row, the places and Clew's own pages.
+    const navs = [...document.querySelectorAll('header nav, [role="banner"] [role="navigation"]')];
     const words = (e: Element | null) => (e as HTMLElement | null)?.innerText?.split(/\s+/).filter(Boolean).length ?? 0;
     const box = focusables.findIndex(
       e => e.getAttribute('role') === 'combobox' && /Vad vill du|Svara/.test(e.getAttribute('aria-label') ?? ''),
@@ -64,11 +65,11 @@ const measure = (page: Page) =>
     return {
       tabStops: focusables.length,
       tabStopsInMain: focusables.filter(e => main?.contains(e)).length,
-      tabStopsInNav: focusables.filter(e => nav?.contains(e)).length,
+      tabStopsInNav: focusables.filter(e => navs.some(nav => nav.contains(e))).length,
       tabStopsBeforeBox: box,
       buttonsInMain: main ? [...main.querySelectorAll('button')].filter(visible).length : 0,
       wordsInMain: words(main),
-      wordsInNav: words(nav),
+      wordsInNav: navs.reduce((sum, nav) => sum + words(nav), 0),
       typeSizes: Object.fromEntries([...sizesSeen].sort((a, b) => parseFloat(b[0]) - parseFloat(a[0]))),
       typeWeights: [...weights],
       textColours: colors.size,
@@ -172,7 +173,8 @@ test.describe('review', () => {
   shot(
     '12-overview-snooze',
     async page => {
-      await open(page, '/');
+      // A row has its one next step (D115 item 4): Inte nu is the open card's.
+      await open(page, '/?card=fakturor');
       await page.getByRole('button', { name: 'Inte nu', exact: true }).first().click();
     },
     ['1280', '375'],
@@ -185,24 +187,25 @@ test.describe('review', () => {
     },
     ['1280'],
   );
+  // The tabs and the area filter are Mina aktiviteter's (D115 item 4).
   shot('14-area', async page => {
-    await open(page, '/?area=personal');
+    await open(page, '/activities?area=personal');
   });
   shot('15-waiting', async page => {
-    await open(page, '/?tab=waiting');
+    await open(page, '/activities?tab=waiting');
   });
   shot('16-snoozed', async page => {
-    await open(page, '/?tab=snoozed');
+    await open(page, '/activities?tab=snoozed');
   });
   shot(
     '17-handled',
     async page => {
-      await open(page, '/?tab=done');
+      await open(page, '/activities?tab=done');
     },
     ['1280', '375', 'tall'],
   );
 
-  // The conversation.
+  // The conversation, in Min AI (D115 item 5), and the assistant's panel over a page.
   shot(
     '20-conversation',
     async page => {
@@ -211,13 +214,31 @@ test.describe('review', () => {
     ['1280', '375'],
     true,
   );
+  shot(
+    '25-min-ai',
+    async page => {
+      await open(page, '/conversations');
+    },
+    ['1280', '375'],
+  );
+  shot(
+    '26-fraga-ai',
+    async page => {
+      await open(page, '/activities');
+      await page.getByRole('button', { name: 'Fråga AI', exact: true }).click();
+      await page.getByRole('dialog', { name: 'Fråga AI', exact: true }).waitFor();
+      await page.waitForTimeout(300);
+    },
+    ['1280', '375'],
+  );
   const ask =
     (text: string): Setup =>
     async page => {
       await open(page, '/');
       await composer(page).fill(text);
       await composer(page).press('Enter');
-      await page.getByRole('button', { name: 'Stäng samtalet' }).first().waitFor();
+      // The answer stands under the box on Hem (D115 item 5).
+      await page.getByRole('button', { name: 'Stäng svaret' }).waitFor();
       await page.waitForTimeout(700);
     };
   shot('21-answer-steps', ask('Vad gör jag om någon ramlat?'));
@@ -368,23 +389,18 @@ test.describe('review', () => {
     async (page, api) => {
       full(api);
       await open(page, '/');
-      await page.getByRole('button', { name: 'Testa Testsson', exact: true }).click();
+      await page.getByRole('button', { name: 'Testa Testsson, inställningar', exact: true }).click();
     },
     ['1280'],
   );
   shot(
     '71-settings',
-    async (page, api, size) => {
+    async (page, api) => {
       full(api);
       await open(page, '/');
-      if (size === '375') await openNav(page);
-      await page.getByRole('button', { name: 'Testa Testsson', exact: true }).click();
-      await page
-        .getByRole('menuitem', { name: 'Inställningar' })
-        .or(page.getByRole('button', { name: 'Inställningar', exact: true }))
-        .first()
-        .click();
-      await page.getByRole('dialog').first().waitFor();
+      // The person is a button on the header's band at every width (D88); it opens the settings.
+      await page.getByRole('button', { name: 'Testa Testsson, inställningar', exact: true }).click();
+      await page.getByRole('dialog', { name: 'Testa Testsson', exact: true }).waitFor();
     },
     ['1280', '375'],
   );
@@ -400,32 +416,25 @@ test.describe('review', () => {
     },
     ['1280'],
   );
+  // There is no rail (D115 item 3): on a phone the header's own Meny holds the places and Clew's pages.
   shot(
     '73-mobile-nav',
     async (page, api) => {
       full(api);
       await open(page, '/');
-      await page.getByRole('button', { name: 'Öppna navigering' }).click();
+      await openNav(page);
     },
     ['375'],
   );
+  // The row of Clew's pages under the header's band, on a page of its own so that one of them is the current one.
   shot(
-    '74-rail-open',
+    '74-header-pages',
     async (page, api) => {
       full(api);
-      await open(page, '/');
-      await page.getByRole('button', { name: 'Administration', exact: true }).click();
-      await page.getByRole('button', { name: 'Testa Testsson', exact: true }).click();
+      await open(page, '/calendar');
+      await page.getByRole('navigation', { name: 'Start', exact: true }).waitFor();
     },
     ['1280', 'tall'],
-  );
-  shot(
-    '75-rail-search',
-    async page => {
-      await open(page, '/');
-      await page.getByRole('combobox', { name: 'Sök i samtal och kort' }).fill('fak');
-    },
-    ['1280'],
   );
   shot('76-signed-out', async (page, api) => {
     api.signedIn = false;

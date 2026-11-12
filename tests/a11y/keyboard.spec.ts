@@ -32,7 +32,7 @@ async function openSnoozeRows(page: Page) {
 }
 
 test.describe('2.4.7 focus visible', () => {
-  for (const path of ['/', '/?tab=done', '/calendar'])
+  for (const path of ['/', '/activities', '/activities?tab=done', '/conversations/fraga', '/calendar'])
     test(`every stop on ${path} shows a focus ring`, async ({ page, api: _ }) => {
       await open(page, path);
       const { unmarked } = await hiddenFocusStops(page);
@@ -58,12 +58,13 @@ test.describe('2.4.7 focus visible', () => {
 test.describe('2.4.3 focus order', () => {
   test('regaining the window keeps focus where it was', async ({ page, api }) => {
     await open(page, '/');
-    const button = page.getByRole('main').getByRole('button', { name: 'Lägg till i samtalet' }).first();
+    // A row's one next step (D115 item 4).
+    const button = page.locator('#thread-ledighet').getByRole('button', { name: 'Godkänn', exact: true });
     await button.focus();
     api.sessionDelay = 200;
     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
     await page.waitForTimeout(350);
-    expect((await focused(page)).text).toBe('Lägg till i samtalet');
+    await expect(button).toBeFocused();
   });
 
   test('a row leads to its card in the panel, and gets the focus back when the panel closes', async ({

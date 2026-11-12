@@ -7,7 +7,8 @@ import { MEMBER_UNIT, SICK_UNIT, TALK_UNITS, Units } from './unit-data';
  * The unit as an entity (D97, artboard E): a page of its own at `/units/:id`, its name with what Clew knows of it, then
  * a section per source in a grid that is one column on a narrow window: Clew's own Personal for a unit the reader
  * manages, then each source about a unit. `unit-data.ts` answers the unit and its sections over the shared mock, which
- * answers the list of people the count comes from. Reached from Läget on Hem; no rail entry leads here.
+ * answers the list of people the count comes from. Reached from Läget on Hem; none of Clew's pages in the header
+ * leads here.
  */
 const wide = { width: 1440, height: 900 };
 const phoneSize = { width: 390, height: 844 };

@@ -29,9 +29,10 @@ import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { useEntityAction } from '../entity-actions';
 import { insideClew, originOf, personPageHref, toolOf } from '../person-address';
-import { useRail, type RailCurrent } from '../components/nav';
+import { useNav, type NavCurrent } from '../components/nav';
 import { Shell, mobileQuery } from '../components/shell';
 import { PageHeader } from '../components/page-header';
+import { PageFooter } from '../components/footer';
 import { ContentSkeleton } from '../components/loading';
 import { PersonActions } from '../components/person-panel';
 import {
@@ -163,8 +164,8 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
   const answers = useSectionAnswers(detail?.entity.key, detail?.sections ?? []);
   const origin = originOf(from, useQuery(areasQuery).data?.menu);
   const tool = toolOf(from);
-  // The rail marks the place the person was opened from; without one, Personal for the reader's own people.
-  const current: RailCurrent = from?.startsWith('/staff')
+  // The header marks the place the person was opened from; without one, Personal for the reader's own people.
+  const current: NavCurrent = from?.startsWith('/staff')
     ? { surface: 'staff' }
     : tool
       ? { surface: 'verktyg', view: tool }
@@ -173,7 +174,7 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
         : !from && detail?.relation === 'managed'
           ? { surface: 'staff' }
           : { surface: 'verktyg', view: null };
-  const nav = useRail({ current, admin, manager: user.role === 'manager' });
+  const nav = useNav({ current, admin, manager: user.role === 'manager' });
   usePageTitle(detail ? detail.entity.name : missing ? 'Personen finns inte' : null);
   // The trail (artboard C2): the place the person was opened from, by its name ("Personal", "Hem", a tool's row), and
   // none for an address without one (D83 rule 4: no prior page is guessed).
@@ -302,7 +303,7 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
     <Shell user={user} nav={nav}>
       <Layout
         height="auto"
-        contentWidth={1216}
+        contentWidth={1280}
         padding={mobile ? 3 : 8}
         content={
           <LayoutContent isScrollable={false}>
@@ -314,6 +315,7 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
                 </Breadcrumbs>
               )}
               {body}
+              <PageFooter user={user} />
             </VStack>
           </LayoutContent>
         }

@@ -141,7 +141,7 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
         <ConversationProvider>{children(shell)}</ConversationProvider>
         {Devtools && (
           <Suspense fallback={null}>
-            <Devtools initialIsOpen={false} buttonPosition="bottom-right" />
+            <Devtools initialIsOpen={false} buttonPosition="bottom-left" />
           </Suspense>
         )}
       </QueryClientProvider>
@@ -266,6 +266,8 @@ function App() {
         ))}
       />
       <Route path="/" element={start} />
+      <Route path="/activities" element={start} />
+      <Route path="/conversations" element={start} />
       <Route path="/conversations/:conversationId" element={start} />
       <Route path="/cards/:threadId/review" element={start} />
       <Route path="*" element={start} />

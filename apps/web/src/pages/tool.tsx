@@ -2,27 +2,18 @@ import { useMemo, useRef } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import type { PanelViewSpec, SessionUser } from '@clew/contracts';
-import {
-  Banner,
-  Button,
-  EmptyState,
-  Layout,
-  LayoutContent,
-  LayoutFooter,
-  Skeleton,
-  VStack,
-  useMediaQuery,
-} from '@clew/ui';
+import { Banner, Button, EmptyState, Layout, LayoutContent, Skeleton, VStack, useMediaQuery } from '@clew/ui';
 import { areasQuery, viewQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { withView } from '../panel-address';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
-import { toolHref, useRail } from '../components/nav';
+import { toolHref, useNav } from '../components/nav';
 import { DeclaredView } from '../components/view';
 import { CONVERSATION_MIN, PanelBody, panelBesideQuery, usePanel, type PanelFrame } from '../components/panel';
-import { Composer, type ComposerAbout } from '../components/composer';
+import type { ComposerAbout } from '../components/composer';
 import { PageHeader } from '../components/page-header';
+import { PageFooter, PageTrail } from '../components/footer';
 import { ContentArrival, ContentSkeleton } from '../components/loading';
 
 /** The table needs 970 px beside the rail, so a 1280 px laptop gets it, with a scrollbar too; a narrower window draws the same rows as a list. */
@@ -91,7 +82,7 @@ function useView(
  * source, count) under it, then the rows, all in one scrolling column. The view is drawn by the one renderer
  * (D38). A row's own view, a contact card, opens in the panel: beside the page where there is room for both, over it
  * where there is not (D50); the address names both, so a reload, a link and the back button land where the person was.
- * The box at the foot asks about the page: the answer opens as a conversation with this view beside it.
+ * The floating "Fråga AI" asks about the page (D115 item 5): the question takes what the page shows with it.
  */
 export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
   const mobile = useMediaQuery(mobileQuery);
@@ -107,7 +98,7 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
   // A tool is a row the person has in the menu: a view that is not chosen, or not theirs, has no page.
   const entry = areasQ.data?.menu?.find(e => e.capability === capability) ?? null;
   const missing = areasQ.data !== undefined && !entry;
-  const nav = useRail({ current: { surface: 'verktyg', view: capability }, admin, manager: user.role === 'manager' });
+  const nav = useNav({ current: { surface: 'verktyg', view: capability }, admin, manager: user.role === 'manager' });
   const inputJson = search.get('input');
   const main = useView(entry ? capability : null, inputJson, { title: entry?.label ?? '', via: false, address });
   const tool = main.shown?.capability === capability ? main.shown : null;
@@ -179,66 +170,70 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
         chips: [{ ref: `capability:${capability}`, kind: 'capability', label: entry.label }],
       }
     : undefined;
-  const box = !missing && <Composer place="page" about={about} />;
   return (
-    <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
+    <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'} assistant={about ?? true}>
       {/* `padding={0}` on the content and the padding on the stack is the template's way to keep a table on the heading's line. The title stands 32 px in from the rail and 32 px down, as on every page (D74). */}
       <Layout
         height={short ? 'auto' : 'fill'}
         padding={mobile ? 3 : 8}
         end={slot.end}
-        footer={box && !short ? <LayoutFooter>{box}</LayoutFooter> : undefined}
         content={
           <LayoutContent padding={0}>
-            <VStack
-              paddingInline={mobile ? 3 : 8}
-              paddingBlockStart={mobile ? 3 : 8}
-              paddingBlockEnd={mobile ? 3 : 5}
-              gap={4}
-            >
-              {missing ? (
-                <EmptyState
-                  headingLevel={1}
-                  title="Verktyget finns inte"
-                  description="Det är inte påslaget för dig, eller så har adressen ändrats."
-                  actions={<Button label="Till startsidan" href="/" />}
-                />
-              ) : (
-                <>
-                  {/* The one page header (D74): with a declared view the view draws it, with its controls at the end of the title's line and its mark row under it; before the view has arrived the title stands alone in the same place. The skeleton is the heading's line, 32 px. */}
-                  {entry
-                    ? !tool?.spec && <PageHeader title={entry.label} />
-                    : !failed && <Skeleton height={32} width={200} />}
-                  {failed && (
-                    <Banner status="error" title={failed.message}>
-                      <Button label="Försök igen" size="sm" variant="secondary" onClick={failed.retry} />
-                    </Banner>
-                  )}
-                  {tool ? (
-                    <ContentArrival>
-                      {tool.spec ? (
-                        <DeclaredView
-                          view={tool.spec}
-                          output={tool.output}
-                          input={tool.input}
-                          isLoading={main.isLoading}
-                          headingLevel={2}
-                          tableQuery={tableQuery}
-                          title={entry!.label}
-                          /* The view's controls rewrite the address in place, so a search is addressable and one step back leaves the tool. */
-                          onInput={next => navigate(toolHref(capability, next), { replace: true })}
-                          hrefFor={v => toolHref(capability, tool.input, v)}
-                        />
-                      ) : (
-                        <EmptyState headingLevel={2} title="Inget att visa" />
-                      )}
-                    </ContentArrival>
-                  ) : (
-                    !failed && <ContentSkeleton heading={false} />
-                  )}
-                  {short && box}
-                </>
-              )}
+            {/* Bounded and centred, as every page is (D115 item 6): 1280 px with its gutters. */}
+            <VStack hAlign="center">
+              <VStack
+                width="100%"
+                maxWidth={1280}
+                paddingInline={mobile ? 3 : 8}
+                paddingBlockStart={mobile ? 3 : 8}
+                paddingBlockEnd={mobile ? 3 : 5}
+                gap={4}
+              >
+                {missing ? (
+                  <EmptyState
+                    headingLevel={1}
+                    title="Verktyget finns inte"
+                    description="Det är inte påslaget för dig, eller så har adressen ändrats."
+                    actions={<Button label="Till startsidan" href="/" />}
+                  />
+                ) : (
+                  <>
+                    {entry && <PageTrail current={entry.label} />}
+                    {/* The one page header (D74): with a declared view the view draws it, with its controls at the end of the title's line and its mark row under it; before the view has arrived the title stands alone in the same place. The skeleton is the heading's line, 32 px. */}
+                    {entry
+                      ? !tool?.spec && <PageHeader title={entry.label} />
+                      : !failed && <Skeleton height={32} width={200} />}
+                    {failed && (
+                      <Banner status="error" title={failed.message}>
+                        <Button label="Försök igen" size="sm" variant="secondary" onClick={failed.retry} />
+                      </Banner>
+                    )}
+                    {tool ? (
+                      <ContentArrival>
+                        {tool.spec ? (
+                          <DeclaredView
+                            view={tool.spec}
+                            output={tool.output}
+                            input={tool.input}
+                            isLoading={main.isLoading}
+                            headingLevel={2}
+                            tableQuery={tableQuery}
+                            title={entry!.label}
+                            /* The view's controls rewrite the address in place, so a search is addressable and one step back leaves the tool. */
+                            onInput={next => navigate(toolHref(capability, next), { replace: true })}
+                            hrefFor={v => toolHref(capability, tool.input, v)}
+                          />
+                        ) : (
+                          <EmptyState headingLevel={2} title="Inget att visa" />
+                        )}
+                      </ContentArrival>
+                    ) : (
+                      !failed && <ContentSkeleton heading={false} />
+                    )}
+                  </>
+                )}
+                {!missing && <PageFooter user={user} />}
+              </VStack>
             </VStack>
           </LayoutContent>
         }

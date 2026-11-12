@@ -1,6 +1,6 @@
 # D88 · The web app draws the shared header above its rail, a connector gives Clew its content, and Clew has one front end
 
-**Status:** accepted, built 2026-11-09 on `main` · **Date:** 2026-11-09 · **Area:** ui, product, integrations
+**Status:** accepted, built 2026-11-09 on `main`; items 2 and 3 to be amended by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built): no rail, and the third row under Start is Clew's own tools · **Date:** 2026-11-09 · **Area:** ui, product, integrations
 
 **Decision.** The product owner showed the header of the proof of concept at https://start.sundsvall.dev/portal/start
 on 2026-11-09 and asked for it in Clew. Asked where, the product owner chose the web app on 3020 ("that is where we

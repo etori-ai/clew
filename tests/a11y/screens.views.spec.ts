@@ -42,7 +42,10 @@ test.describe('screens', () => {
     await page.setViewportSize(desktop);
     await open(page, '/');
     await page.screenshot({ path: out('menu-verktyg-1280') });
-    await page.getByRole('navigation', { name: 'Sidonavigering' }).getByRole('link', { name: 'Telefonbok' }).click();
+    await page
+      .getByRole('navigation', { name: 'Start', exact: true })
+      .getByRole('link', { name: 'Telefonbok' })
+      .click();
     await page.getByRole('heading', { level: 1, name: 'Telefonbok' }).waitFor();
     await page.getByRole('list', { name: 'Telefonboken' }).waitFor();
     await page.screenshot({ path: out('tool-page-1280') });
@@ -53,7 +56,7 @@ test.describe('screens', () => {
     await page.getByRole('dialog', { name: 'Kontaktkort' }).getByText('Rum').waitFor();
     await page.screenshot({ path: out('tool-page-card-1440') });
     await page.keyboard.press('Escape');
-    await page.getByRole('navigation', { name: 'Sidonavigering' }).getByRole('link', { name: 'Mitt team' }).click();
+    await page.getByRole('navigation', { name: 'Start', exact: true }).getByRole('link', { name: 'Mitt team' }).click();
     await page.getByRole('heading', { level: 1, name: 'Mitt team' }).waitFor();
     await page.screenshot({ path: out('tool-page-list-1440') });
     await page.setViewportSize(phone);

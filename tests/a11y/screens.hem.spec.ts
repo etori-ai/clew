@@ -53,6 +53,24 @@ test.describe('screens', () => {
     await open(page, '/tools/phonebook.directory');
     await page.screenshot({ path: out('hem-I-1440') });
   });
+  // D115 items 4 and 5: the tabs on a page of their own, Min AI, and the assistant's panel over a page.
+  test('Mina aktiviteter', async ({ page, api: _ }) => {
+    await page.setViewportSize(board);
+    await open(page, '/activities');
+    await page.screenshot({ path: out('hem-activities-1440') });
+  });
+  test('Min AI', async ({ page, api: _ }) => {
+    await page.setViewportSize(board);
+    await open(page, '/conversations/fraga');
+    await page.screenshot({ path: out('hem-min-ai-1440') });
+  });
+  test('Fråga AI over a page', async ({ page, api: _ }) => {
+    await page.setViewportSize(board);
+    await open(page, '/activities');
+    await page.getByRole('button', { name: 'Fråga AI', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Fråga AI', exact: true }).waitFor();
+    await page.screenshot({ path: out('hem-fraga-ai-1440') });
+  });
   test('D · the phone', async ({ page, api: _ }) => {
     await page.setViewportSize(phone);
     await open(page, '/');

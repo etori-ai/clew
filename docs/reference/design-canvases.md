@@ -5,6 +5,14 @@ They are Claude Design artifacts outside the repository and are private until th
 names the decision that chose from a canvas and the review that describes it, so the reasoning can be read without the
 link.
 
+**Being replaced as the reference.**
+[D115](../decisions/D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md)
+(provisional, 2026-11-11) makes the startsidan prototype's Version 1.0 the reference for look and layout: the portal
+in the repository `startsidan-prototype` (`apps/portal`), run with the cookie `startsidan-version=1.0`, described in
+[the prototype against Clew](../reviews/2026-11-11-startsidan-prototype-version-1-0-against-clew.md). Until a step
+of that decision is built, the screen it will change is still compared with its artboard below; once it is built,
+that screen is compared with the prototype.
+
 Add a row here in the change that first refers to a new canvas.
 
 | Canvas | Link | What it draws | Decision | Review |

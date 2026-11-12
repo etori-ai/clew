@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**105 in force**: 99 accepted and 6 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 10 proposed and not decided. 5 no longer in force.
+**106 in force**: 99 accepted and 7 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 10 proposed and not decided. 5 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -24,7 +24,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D95 · Clew may own a domain by choice, decided per domain with the core-or-connector checklist](D95-clew-may-own-a-domain-by-choice-decided-with-the-core-or-connector-checklist.md) | 2026-11-10 | accepted |  |
 | [D96 · Talks is Clew's first owned domain: the round and action points, behind a profile a connector can answer](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md) | 2026-11-10 | accepted | [D99](README.md) |
 | [D100 · The vision is narrowed to what Clew can keep today: the open page, adapters as the norm, a closed view catalogue](D100-the-vision-is-narrowed-to-what-clew-can-keep-today.md) | 2026-11-10 | accepted | [D81](D81-mcp-apps-extend-ai-chat-with-provider-owned-interactions.md), [D101](README.md) |
-| [D101 · The first real integration is Nextcloud's Approval app, and new surface waits until its loop works](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) | 2026-11-10 | provisional |  |
+| [D101 · The first real integration is Nextcloud's Approval app, and new surface waits until its loop works](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) | 2026-11-10 | provisional | [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) |
 | [D104 · The model does the work: a floor holds without it, and the assistant may act alone within governed limits](D104-the-model-does-the-work-a-floor-holds-without-it-and-the-assistant-may-act-alone-within-limits.md) | 2026-11-10 | provisional |  |
 
 ## Integrations
@@ -42,7 +42,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D23 · Connectors are registered and governed in the database by an administrator, not by environment variables](D23-connectors-are-managed-in-the-database.md) | 2026-11-04 | accepted |  |
 | [D35 · Errands from several case systems: one connector per system, a shared profile for the reads, and a card's buttons reach only its own connector](D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md) | 2026-11-05 | accepted | [D89](D89-an-errand-connector-acts-as-the-person-and-the-case-system-decides-access.md) |
 | [D52 · The mocks are generic systems; nothing in the repository names a vendor](D52-the-mocks-are-generic-systems-without-vendor-names.md) | 2026-11-05 | accepted |  |
-| [D54 · Figures come from connectors, and Läget draws them](D54-figures-come-from-connectors-and-laget-draws-them.md) | 2026-11-06 | accepted | [D71](D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md) |
+| [D54 · Figures come from connectors, and Läget draws them](D54-figures-come-from-connectors-and-laget-draws-them.md) | 2026-11-06 | accepted | [D71](D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md), [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) |
 | [D60 · The instance serves its connector protocol, and a protocol break keeps the number before it](D60-the-instance-serves-its-connector-protocol.md) | 2026-11-06 | accepted |  |
 | [D61 · Fixture sources are independent connectors in the development stack; Clew bundles only its core](D61-fixture-sources-are-independent-connectors.md) | 2026-11-06 | accepted |  |
 | [D69 · A local fake of Microsoft Graph tests the Microsoft 365 adapter](D69-a-local-fake-of-microsoft-graph-tests-the-microsoft-365-adapter.md) | 2026-11-06 | accepted |  |
@@ -111,32 +111,33 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D39 · The landing's box rests on the column's centre line when what is above it fits](D39-the-landings-box-rests-on-the-columns-centre-line.md) | 2026-11-05 | accepted | [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md) |
 | [D40 · A connector's views can be tools in the menu, and an administrator chooses which](D40-views-can-be-tools-in-the-menu-and-an-administrator-chooses-which.md) | 2026-11-05 | accepted | [D41](D41-the-landing-is-the-ai-chat-landing-template-with-the-persons-areas-under-the-box.md), [D42](D42-a-tool-opens-as-a-page.md) |
 | [D41 · The landing is Astryx's `ai-chat-landing` template, with the person's areas under the box](D41-the-landing-is-the-ai-chat-landing-template-with-the-persons-areas-under-the-box.md) | 2026-11-05 | accepted | [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md), [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) |
-| [D42 · A tool opens as a page](D42-a-tool-opens-as-a-page.md) | 2026-11-05 | accepted | [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md) |
+| [D42 · A tool opens as a page](D42-a-tool-opens-as-a-page.md) | 2026-11-05 | accepted | [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md), [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) |
 | [D43 · Addresses are English](D43-addresses-are-english.md) | 2026-11-05 | accepted | [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md) |
 | [D44 · The connector check reads as a result, not a log](D44-the-connector-check-reads-as-a-result-not-a-log.md) | 2026-11-05 | accepted |  |
 | [D45 · Administration keeps the rail](D45-administration-keeps-the-rail.md) | 2026-11-05 | accepted |  |
-| [D46 · Astryx Neutral is the default theme; Sundsvall is a profile to opt into](D46-astryx-neutral-is-the-default-theme.md) | 2026-11-05 | accepted | [D98](D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md) |
-| [D48 · One next step on a surface, the rest one step away](D48-one-next-step-the-rest-one-step-away.md) | 2026-11-05 | accepted | [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) |
-| [D50 · The conversation is the column, and the panel holds what it is about](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md) | 2026-11-05 | accepted | [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md) |
-| [D53 · Hem is the start page: the day's work under the box, and the day beside it](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md) | 2026-11-06 | accepted | [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md), [D66](D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md) |
+| [D46 · Astryx Neutral is the default theme; Sundsvall is a profile to opt into](D46-astryx-neutral-is-the-default-theme.md) | 2026-11-05 | accepted | [D98](D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md), [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) |
+| [D48 · One next step on a surface, the rest one step away](D48-one-next-step-the-rest-one-step-away.md) | 2026-11-05 | accepted | [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md), [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) |
+| [D50 · The conversation is the column, and the panel holds what it is about](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md) | 2026-11-05 | accepted | [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md), [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) |
+| [D53 · Hem is the start page: the day's work under the box, and the day beside it](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md) | 2026-11-06 | accepted | [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md), [D66](D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md), [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) |
 | [D56 · The rows under a rail row hang from a line](D56-the-rows-under-a-rail-row-hang-from-a-line.md) | 2026-11-06 | accepted |  |
 | [D58 · A click on the calendar's grid starts a booking](D58-a-click-on-the-calendar-grid-starts-a-booking.md) | 2026-11-06 | accepted |  |
-| [D63 · Hem is drawn as the canvas draws it, pixel for pixel, with Astryx's own tokens](D63-hem-is-drawn-as-the-canvas-draws-it.md) | 2026-11-06 | accepted |  |
+| [D63 · Hem is drawn as the canvas draws it, pixel for pixel, with Astryx's own tokens](D63-hem-is-drawn-as-the-canvas-draws-it.md) | 2026-11-06 | accepted | [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) |
 | [D64 · A card shows the person's own action at once, and keeps it on its way until the source has answered](D64-a-card-shows-the-persons-own-action-at-once.md) | 2026-11-06 | accepted |  |
 | [D65 · "Sedan i går" names a few cards and sums the rest](D65-sedan-i-gar-names-a-few-cards-and-sums-the-rest.md) | 2026-11-06 | accepted |  |
 | [D66 · The panel keeps everything opened beside the page as tabs](D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md) | 2026-11-06 | accepted |  |
 | [D70 · One press confirms on the row, and rows with a document are reviewed one at a time](D70-one-press-confirms-on-the-row-and-rows-with-a-document-are-reviewed-one-at-a-time.md) | 2026-11-06 | accepted |  |
 | [D71 · Three type levels on every surface, and an area mark whose colour is the system's](D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md) | 2026-11-06 | accepted |  |
-| [D72 · The day is the page's, and the panel holds only what was opened](D72-the-day-is-the-pages-and-the-panel-holds-only-what-was-opened.md) | 2026-11-07 | accepted |  |
+| [D72 · The day is the page's, and the panel holds only what was opened](D72-the-day-is-the-pages-and-the-panel-holds-only-what-was-opened.md) | 2026-11-07 | accepted | [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) |
 | [D73 · The review is a page in the shell, with an address](D73-the-review-is-a-page-in-the-shell-with-an-address.md) | 2026-11-07 | accepted |  |
 | [D74 · One page header for every surface](D74-one-page-header-for-every-surface.md) | 2026-11-07 | accepted |  |
 | [D76 · Loading sections reserve their place and enter together](D76-loading-sections-reserve-their-place-and-enter-together.md) | 2026-11-07 | accepted |  |
 | [D83 · Interface spaces have stable navigation roles](D83-interface-spaces-have-stable-navigation-roles.md) | 2026-11-09 | accepted | [D81](D81-mcp-apps-extend-ai-chat-with-provider-owned-interactions.md) |
-| [D88 · The web app draws the shared header above its rail, a connector gives Clew its content, and Clew has one front end](D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md) | 2026-11-09 | accepted |  |
+| [D88 · The web app draws the shared header above its rail, a connector gives Clew its content, and Clew has one front end](D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md) | 2026-11-09 | accepted | [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) |
 | [D90 · Mina ärenden is a section on Hem, after the day's work](D90-mina-arenden-is-a-section-on-hem.md) | 2026-11-09 | accepted |  |
 | [D92 · What goes into the box enters on Astryx's entry motion](D92-what-goes-into-the-box-enters-on-astryxs-entry-motion.md) | 2026-11-09 | accepted |  |
 | [D98 · The installation's theme and logo are saved in Clew by an administrator, the theme as a design tokens file](D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md) | 2026-11-10 | accepted |  |
 | [D100 · The people list is read a page at a time and narrowed on the server](D100-the-people-list-is-read-a-page-at-a-time-and-narrowed-on-the-server.md) | 2026-11-11 | accepted |  |
+| [D115 · The startsidan prototype's Version 1.0 is the reference for Clew's look and layout, built with Astryx](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) | 2026-11-11 | provisional |  |
 
 ## Proposed, not decided
 

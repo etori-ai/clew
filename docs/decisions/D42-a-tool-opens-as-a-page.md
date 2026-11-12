@@ -1,6 +1,6 @@
 # D42 · A tool opens as a page
 
-**Status:** accepted, built 2026-11-05; sorting and column filters on the page are not built; the link from a view in the panel to the tool's page, the box on the page and the row's view beside the table are [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md) · **Date:** 2026-11-05 · **Area:** ui
+**Status:** accepted, built 2026-11-05; sorting and column filters on the page are not built; the link from a view in the panel to the tool's page, the box on the page and the row's view beside the table are [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md); the width rule that counts the rail and the box on the page to be replaced by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built) · **Date:** 2026-11-05 · **Area:** ui
 
 **Amended 2026-11-05 by D48.** The table starts at 1280 px, not 1360 (§8): the phone book's seven columns need 970 px at the new floors, and the rail takes 260, so a 1280 px laptop has the table and nothing scrolls sideways. The reason to keep a list below that still holds.
 

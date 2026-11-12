@@ -22,12 +22,12 @@ type Props = {
 };
 const SKELETONS = 4;
 /**
- * A tile's least width on a phone: two across from 356 px, so at 375 px (artboard 11, 181 px each), and one column
- * below, where the area's chip (one line, D71) would cut "Utvecklingssamtal" with an ellipsis: in two tiles of 154 px
- * at 320 px (1.4.10), and under the text-spacing overrides (1.4.12) in two of 168 to 171 px at 348 to 354 px. Astryx's
- * responsive `Grid` columns, never a fixed count, which "never reflows".
+ * A tile's least width on a phone: two across from 340 px of column, so at 375 px with the board's gutter (351 px,
+ * D115 item 4), and one column at 320 px, where two tiles of 142 px leave the value and its line too little room. A
+ * tile's label wraps (it is a text type, not a chip), so nothing in it is cut at either width (1.4.10, 1.4.12).
+ * Astryx's responsive `Grid` columns, never a fixed count, which "never reflows".
  */
-const PHONE_TILE = 172;
+const PHONE_TILE = 164;
 
 /**
  * Läget (D54, artboard 3): one tile per area with a figure, in the order the areas come; an area whose connector

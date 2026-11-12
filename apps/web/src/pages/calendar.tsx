@@ -55,7 +55,7 @@ import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { useMarks } from '../marks';
 import { Shell, mobileQuery } from '../components/shell';
-import { useRail } from '../components/nav';
+import { useNav } from '../components/nav';
 import { EventDialog } from '../components/calendar/event-dialog';
 import { BookingDialog } from '../components/calendar/booking-dialog';
 import { PageHeader } from '../components/page-header';
@@ -134,7 +134,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   // The same frame as the start page (D31, D34), from the same cache (D33): the rail with the person's time axis.
   const client = useQueryClient();
   const areas = useQuery(areasQuery).data?.areas ?? EMPTY_AREAS;
-  const nav = useRail({ current: { surface: 'calendar' }, admin, manager: user.role === 'manager' });
+  const nav = useNav({ current: { surface: 'calendar' }, admin, manager: user.role === 'manager' });
   const marks = useMarks();
   // The proposal thread beside the grid is picked from the stream's own list, so a confirm here and the card on the start page agree.
   const threadsQ = useQuery({ ...threadsQuery, select: selectProposalThread });

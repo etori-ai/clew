@@ -22,9 +22,10 @@ import { areasQuery, entityDetailQuery, entityListQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { insideClew, originOf, toolOf } from '../person-address';
-import { useRail, type RailCurrent } from '../components/nav';
+import { useNav, type NavCurrent } from '../components/nav';
 import { Shell, mobileQuery } from '../components/shell';
 import { PageHeader } from '../components/page-header';
+import { PageFooter } from '../components/footer';
 import { ContentSkeleton } from '../components/loading';
 import {
   NeedsYouSection,
@@ -120,15 +121,15 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
   const menu = useQuery(areasQuery).data?.menu;
   const origin = originOf(from, menu);
   const tool = toolOf(from);
-  // The rail marks the place the unit was opened from; nothing in it is the unit's own.
-  const current: RailCurrent = from?.startsWith('/staff')
+  // The header marks the place the unit was opened from; nothing in it is the unit's own.
+  const current: NavCurrent = from?.startsWith('/staff')
     ? { surface: 'staff' }
     : tool
       ? { surface: 'verktyg', view: tool }
       : from === '/' || from?.startsWith('/?')
         ? { surface: 'start' }
         : { surface: 'verktyg', view: null };
-  const nav = useRail({ current, admin, manager: user.role === 'manager' });
+  const nav = useNav({ current, admin, manager: user.role === 'manager' });
   usePageTitle(detail ? detail.entity.name : missing ? 'Enheten finns inte' : null);
 
   let body: ReactNode;
@@ -190,7 +191,7 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
     <Shell user={user} nav={nav}>
       <Layout
         height="auto"
-        contentWidth={1040}
+        contentWidth={1280}
         padding={mobile ? 3 : 8}
         content={
           <LayoutContent isScrollable={false}>
@@ -202,6 +203,7 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
                 </Breadcrumbs>
               )}
               {body}
+              <PageFooter user={user} />
             </VStack>
           </LayoutContent>
         }

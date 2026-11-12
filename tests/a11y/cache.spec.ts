@@ -24,7 +24,8 @@ test.describe('D33 the browser cache', () => {
     expect(count('/api/threads')).toBe(1);
     expect(count('/api/areas')).toBe(1);
     await page.goBack();
-    await expect(heading(page, 2, 'Nu')).toBeVisible();
+    // Hem's list of what needs the person (D115 item 4) is drawn from the read already in the cache.
+    await expect(heading(page, 2, 'Att agera på')).toBeVisible();
     await page.waitForLoadState('networkidle');
     expect(count('/api/threads')).toBe(1);
   });

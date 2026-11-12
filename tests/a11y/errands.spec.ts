@@ -1,5 +1,5 @@
 import type { Area, ErrandsResult } from '@clew/contracts';
-import { desktop, expect, expectNoAxeViolations, narrow, open, reflowProblems, test } from './support';
+import { desktop, expect, expectNoAxeViolations, heading, narrow, open, reflowProblems, test } from './support';
 import { errandsOutput, errandsSpec } from './errands';
 
 /**
@@ -54,8 +54,11 @@ test.describe('Mina ärenden on Hem', () => {
     );
     await open(page, '/');
     const section = page.getByRole('region', { name: 'Mina ärenden' });
-    // The section's heading is one of Hem's group headings, at the level of Nu, Senare and Läget.
+    // The section's heading is one of the start page's h2s, at the level of "Att agera på" and Läget (D115 item 4).
     await expect(section.getByRole('heading', { name: 'Mina ärenden' })).toBeVisible();
+    expect((await section.boundingBox())!.y).toBeGreaterThan(
+      (await heading(page, 2, 'Att agera på · ').boundingBox())!.y,
+    );
     await expect(section.getByRole('listitem')).toHaveCount(5);
     await expect(section.getByText('5 av 7 rader')).toBeVisible();
     // What waits on the person is the first row, and each row says which system it is in.
@@ -86,7 +89,7 @@ test.describe('Mina ärenden on Hem', () => {
 
   test('a person without a case system has no errand section', async ({ page, api: _ }) => {
     await open(page, '/');
-    await expect(page.getByRole('heading', { name: /Nu/ }).first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: /^Att agera på · / })).toBeVisible();
     await expect(page.getByRole('region', { name: 'Mina ärenden' })).toHaveCount(0);
   });
 

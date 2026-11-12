@@ -76,16 +76,20 @@ test.describe('Personal', () => {
 
   test.describe('desktop', () => {
     test.use({ viewport: desktop });
-    test('a manager reaches it from the rail and sees the unit with its columns and marks', async ({
+    test('a manager reaches it from the header and sees the unit with its columns and marks', async ({
       page,
       api: _,
     }) => {
       await open(page, '/');
-      const rail = page.getByRole('link', { name: 'Personal', exact: true });
-      await rail.click();
+      // Personal is one of Clew's own pages in the row under the header's band (D115 item 3), for a manager (D94).
+      const link = page
+        .getByRole('banner')
+        .getByRole('navigation', { name: 'Start', exact: true })
+        .getByRole('link', { name: 'Personal', exact: true });
+      await link.click();
       await expect(page).toHaveURL(/\/staff$/);
       await expect(page).toHaveTitle('Personal · Startsidan');
-      await expect(page.getByRole('link', { name: 'Personal', exact: true })).toHaveAttribute('aria-current', 'page');
+      await expect(link).toHaveAttribute('aria-current', 'page');
       await expect(page.getByText('5 medarbetare på Bergsåkers skola', { exact: true })).toBeVisible();
       await expect(page.getByRole('toolbar', { name: 'Bergsåkers skola' })).toContainText('5 medarbetare');
       const table = page.getByRole('table');

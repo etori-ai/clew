@@ -126,8 +126,8 @@
       "version": "0.0.1",
       "dependencies": {
         "@astryxdesign/core": "0.7.12",
-        "@astryxdesign/theme-neutral": "0.7.12",
         "@clew/ui": "workspace:*",
+        "@fontsource-variable/raleway": "5.3.0",
         "@heroicons/react": "2.2.0",
         "react": "19.3.1",
         "react-dom": "19.3.1",
@@ -145,6 +145,7 @@
         "@astryxdesign/theme-neutral": "0.7.12",
         "@clew/calendar": "workspace:*",
         "@clew/contracts": "workspace:*",
+        "@fontsource-variable/raleway": "5.3.0",
         "@fullcalendar/react": "7.1.4",
         "@heroicons/react": "2.2.0",
         "@stylexjs/stylex": "0.19.1",
@@ -338,6 +339,8 @@
     "@floating-ui/dom": ["@floating-ui/dom@1.8.0", "", { "dependencies": { "@floating-ui/core": "^1.8.0", "@floating-ui/utils": "^0.2.12" } }, "sha512-yXSrzeHZBTZadLOlfyhCkJHNeLJnHRnRInwdZ40L7ZiaAtrBwoYlsDrX3v5zB1Utk7CLfzcOVnVVWoXEky7Ceg=="],
 
     "@floating-ui/utils": ["@floating-ui/utils@0.2.12", "", {}, "sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww=="],
+
+    "@fontsource-variable/raleway": ["@fontsource-variable/raleway@5.3.0", "", {}, "sha512-aSV2k+V6Zz+od0dHpBOzkVxEzmgEdiXcxDfant39jLOx+T89dielQRrZylukwK3Fp+FY255gPqz67ruOfs1rqA=="],
 
     "@formatjs/fast-memoize": ["@formatjs/fast-memoize@3.1.7", "", {}, "sha512-zXfhLpvA6T7+efdt9JLbBwZ00tT7NsBMDVnDu8rpHeNNv8KfRZAMo2gkG0k9lK/Nzc//3kJ9pImsfuJxk3KhUA=="],
 

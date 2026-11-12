@@ -1,6 +1,6 @@
 # D72 · The day is the page's, and the panel holds only what was opened
 
-**Status:** accepted, built 2026-11-07 on `main` · **Date:** 2026-11-07 · **Area:** ui
+**Status:** accepted, built 2026-11-07 on `main`; the breakpoints that count the rail to be replaced by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built) · **Date:** 2026-11-07 · **Area:** ui
 
 **Decision.** I dag and Sedan i går are Hem's own content and never the panel's. The panel
 ([D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md) item 3) exists only while the

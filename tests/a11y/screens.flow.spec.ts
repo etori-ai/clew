@@ -3,7 +3,8 @@ import { menuRow, menuRows } from './phonebook';
 
 /**
  * Not a test: screenshots of the structure D50 gave the product, for the comparison with the canvas "Clew · ett
- * sammanhängande flöde" (Hem, Samtal med panel, Att göra, Verktygssida, the phone). Run on demand with
+ * sammanhängande flöde" (Hem, Samtal med panel, Att göra, Verktygssida, the phone); since D115 the tabs are
+ * Mina aktiviteter's and a tool's page asks in the floating panel. Run on demand with
  * `CLEW_SCREENS=1 … playwright test -c tests/a11y screens.flow`; the images land in test-results/screens/.
  */
 const out = (name: string) => `test-results/screens/flow-${name}.png`;
@@ -29,10 +30,11 @@ test.describe('screens', () => {
     await page.screenshot({ path: out('2-samtal-med-panel') });
   });
   test('3 att göra', async ({ page, api: _ }) => {
+    // The tabs and the groups are Mina aktiviteter's (D115 item 4).
     await page.setViewportSize(wide);
-    await open(page, '/');
+    await open(page, '/activities');
     await page.screenshot({ path: out('3-att-gora') });
-    await open(page, '/?card=fakturor');
+    await open(page, '/activities?card=fakturor');
     await page.getByRole('complementary', { name: 'Kort' }).waitFor();
     await page.screenshot({ path: out('3-att-gora-kort') });
     await page.setViewportSize(desktop);
@@ -52,13 +54,18 @@ test.describe('screens', () => {
     await page.setViewportSize(wide);
     await open(page, '/tools/phonebook.directory');
     await page.screenshot({ path: out('4-verktygssida') });
+    // A tool's page asks in the floating Fråga AI's panel (D115 item 5).
+    await page.getByRole('button', { name: 'Fråga AI', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Fråga AI', exact: true }).waitFor();
+    await page.screenshot({ path: out('4-verktygssida-fraga-ai') });
+    await page.keyboard.press('Escape');
     await page.getByRole('link', { name: 'Anna Lindqvist' }).click();
     await page.getByText('Rum').first().waitFor();
     await page.screenshot({ path: out('4-verktygssida-rad') });
   });
   test('5 telefon', async ({ page, api: _ }) => {
     await page.setViewportSize(phone);
-    await open(page, '/');
+    await open(page, '/activities');
     await page.screenshot({ path: out('5-telefon-att-gora') });
     await open(page, '/');
     await composer(page).fill('telefonboken lärare');
