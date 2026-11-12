@@ -45,6 +45,11 @@ export const TYPE_AREA_MAX = 80;
 export const personKey = (person: Pick<PersonRef, 'id' | 'userName'>) => person.userName ?? person.id;
 /** `holding:competence:<holding id>`. */
 export const holdingRef = (holdingId: string) => `holding:${COMPETENCE_CONNECTOR}:${holdingId}`;
+/**
+ * The read a manager's card of an approval opens (D108 item 7): the registration that waits, which leads to its decision
+ * on the matrix.
+ */
+export const APPROVAL_READ = `${COMPETENCE_CONNECTOR}.approval`;
 /** A required type a person lacks is no holding: `holding:competence:missing:<person id>:<type id>`, stable while it lacks. */
 export const missingRef = (personId: string, typeId: string) =>
   `holding:${COMPETENCE_CONNECTOR}:missing:${personId}:${typeId}`;
@@ -102,6 +107,9 @@ export function statusOn(end: string | null, today: string): HeldStatus {
 }
 /** A holding counts when it is `valid` as stored: not pending, rejected or revoked. */
 export const counts = (holding: Pick<HoldingRecord, 'state'>) => holding.state === 'valid';
+/** A person's own registration that waits for their manager's decision (D108 item 7): it counts towards nothing. */
+export const awaiting = (holding: Pick<HoldingRecord, 'state' | 'evidence'>) =>
+  holding.evidence === 'self' && holding.state === 'pending';
 
 /** A holding with its type's end date and status worked out for one day. */
 export interface HeldStanding {
@@ -501,6 +509,30 @@ export function uncountedRow(
     ...copiedFrom(holding, sourceNames),
   };
 }
+/**
+ * A person's own registration that waits for a decision, or was rejected (D108 item 7), as a read lists it: its type,
+ * its dates (the end worked out as for any holding) and `awaiting-approval` or `rejected`. Neither counts towards
+ * anything; a rejected one is listed to the person alone, which the read decides.
+ */
+export function ownRow(
+  holding: HoldingRecord,
+  type: TypeRecord,
+  person: Pick<PersonRef, 'id' | 'name' | 'userName'>,
+): CompetenceHoldingRow {
+  const end = endOf(holding, type);
+  return {
+    ref: holdingRef(holding.id),
+    userName: personKey(person),
+    name: person.name,
+    competence: type.name,
+    area: type.area,
+    kind: type.kind,
+    issuedOn: holding.issuedOn,
+    ...(end ? { expiresOn: end } : {}),
+    status: holding.state === 'pending' ? 'awaiting-approval' : 'rejected',
+    evidence: holding.evidence,
+  };
+}
 /** A copied row that waits for its type: it is listed, but counts towards nothing until the type is mapped. */
 export const uncounted = (holding: HoldingRecord) =>
   holding.copy !== null && holding.typeId === null && counts(holding);
@@ -571,7 +603,8 @@ const REASON_ORDER = ['position', 'unit', 'person'] as const;
  * first area). Each cell says where the person stands (the holding that decides, as `deciding` works it out, or
  * `missing` where the type is required of them and nothing counts, or `none` where it is neither held nor required),
  * what requires it of them, and whether the reader may revoke the holding: one registered in Clew may be, one copied
- * from a source never (D108 item 9).
+ * from a source never (D108 item 9). Where the person's own registration of the type waits for a decision (item 7), the
+ * cell names it (`pending`) beside the status it has without it.
  */
 export function matrixOf(input: {
   people: readonly MatrixPerson[];
@@ -642,6 +675,11 @@ export function matrixOf(input: {
 
   const standings = deciding(input.holdings, input.types, input.today, required);
   const at = new Map(standings.map(s => [s.personId + '\n' + s.type.id, s]));
+  // A person's own registration waiting for a decision (D108 item 7) counts towards nothing: the cell's status is what
+  // it is without it, and the cell says it waits.
+  const waits = new Map(
+    input.holdings.filter(h => awaiting(h) && h.typeId !== null).map(h => [h.personId + '\n' + h.typeId, h.id]),
+  );
   const reason = (r: RequirementRecord): CompetenceMatrixReason =>
     r.positionCode !== null
       ? { on: 'position', label: positionLabel.get(r.positionCode) ?? r.positionCode }
@@ -661,8 +699,11 @@ export function matrixOf(input: {
       );
     const standing = at.get(personId + '\n' + typeId);
     const required = through.length > 0;
-    if (!standing) return { typeId, status: 'none', required, through, revocable: false };
-    if (standing.holding === null) return { typeId, status: 'missing', required, through, revocable: false };
+    const pendingId = waits.get(personId + '\n' + typeId);
+    const pending = pendingId ? { pending: pendingId } : {};
+    if (!standing) return { typeId, status: 'none', required, through, revocable: false, ...pending };
+    if (standing.holding === null)
+      return { typeId, status: 'missing', required, through, revocable: false, ...pending };
     return {
       typeId,
       status: standing.status,
@@ -672,6 +713,7 @@ export function matrixOf(input: {
       holdingId: standing.holding.id,
       evidence: standing.holding.evidence,
       revocable: standing.holding.evidence !== 'system',
+      ...pending,
     };
   };
   const rows = [...input.people]
@@ -912,6 +954,9 @@ export function planCopy(input: {
         sourceLabel: holding.label,
         readAt: input.at,
       },
+      decidedBy: null,
+      decidedAt: null,
+      threadId: null,
     };
     if (old && sameCopy(old, next)) {
       touch.push(holding.id);

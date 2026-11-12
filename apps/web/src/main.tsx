@@ -31,7 +31,7 @@ import { AdminOrganisationPage } from './pages/admin/organisation';
 import { AdminOrganisationUnitPage } from './pages/admin/organisation-unit';
 import { StaffPage } from './pages/staff';
 import { CompetencePage } from './pages/competence';
-import { CompetenceMatrixPage } from './pages/competence-matrix';
+import { ApprovalPage, CompetenceMatrixPage } from './pages/competence-matrix';
 import { PersonPage } from './pages/person';
 import { UnitPage } from './pages/unit';
 import { AdminModelPage } from './pages/admin/model';
@@ -229,6 +229,8 @@ function App() {
         path="/tools/clew.news"
         element={<Protected>{shell => <NewsPage user={shell.user} admin={shell.admin} />}</Protected>}
       />
+      {/* A report's own registration (D108 item 7): the page of the read its card opens is the decision over the matrix. */}
+      <Route path="/tools/competence.approval" element={<ApprovalPage />} />
       <Route
         path="/tools/:capability"
         element={<Protected>{shell => <ToolPage user={shell.user} admin={shell.admin} />}</Protected>}

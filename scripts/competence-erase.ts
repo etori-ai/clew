@@ -36,7 +36,7 @@ if (!args.includes('--confirm')) {
 try {
   const erased = await competence.erasePerson(OPERATOR, personId);
   console.log(
-    `Erased person "${personId}" from the competence domain: ${erased.holdings} holdings and ${erased.requirements} requirements removed, ${erased.cleared} other holdings cleared of their id.`,
+    `Erased person "${personId}" from the competence domain: ${erased.holdings} holdings and ${erased.requirements} requirements removed, ${erased.cleared} other holdings cleared of their id, the cards of ${erased.approvals} approvals removed.`,
   );
 } catch (error) {
   console.error(`Could not erase: ${(error as Error).message}`);

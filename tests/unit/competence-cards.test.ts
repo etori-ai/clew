@@ -240,6 +240,9 @@ describe('a person’s cards close, stay and come back (D108 item 12, D47)', () 
       createdAt: new Date(now).toISOString(),
       revokedAt: null,
       revokedBy: null,
+      decidedBy: null,
+      decidedAt: null,
+      threadId: null,
       copy: {
         connectorId: 'lms',
         sourceId: 'row-' + id,

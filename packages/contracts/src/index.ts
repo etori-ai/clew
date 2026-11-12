@@ -1603,11 +1603,14 @@ export const CompetenceStatus = literals(COMPETENCE_STATUSES, {
 });
 export type CompetenceStatus = (typeof COMPETENCE_STATUSES)[number];
 /**
- * Where a row of a read stands (D108 items 4 and 9): one of the statuses, or `uncounted` for a holding copied from a
- * source whose type no administrator has mapped to the catalogue yet. It is listed under the source's own label and
- * counts towards nothing. Last in the order a list is drawn in.
+ * Where a row of a read stands (D108 items 4, 7 and 9): one of the statuses; `awaiting-approval` for a holding the person
+ * registered themselves that waits for their manager's decision, and `rejected` for one the manager turned down, both
+ * counting towards nothing; or `uncounted` for a holding copied from a source whose type no administrator has mapped to
+ * the catalogue yet, listed under the source's own label. What counts towards nothing comes last in the order a list is
+ * drawn in. The words are their own (`awaiting-approval`, not `pending`), so a browser that words every source's values
+ * alike never gives another system's `pending` this meaning.
  */
-export const COMPETENCE_ROW_STATUSES = [...COMPETENCE_STATUSES, 'uncounted'] as const;
+export const COMPETENCE_ROW_STATUSES = [...COMPETENCE_STATUSES, 'awaiting-approval', 'rejected', 'uncounted'] as const;
 export type CompetenceRowStatus = (typeof COMPETENCE_ROW_STATUSES)[number];
 /** How a holding is attested (D108 items 7 and 9): read from a system, registered by a manager, or the person's own word. */
 export const COMPETENCE_EVIDENCE = ['system', 'manager', 'self'] as const;
@@ -1662,7 +1665,7 @@ export const CompetenceHoldingRowSchema = object(
     }),
     status: literals(COMPETENCE_ROW_STATUSES, {
       description:
-        '`expired`, `missing`, `expiring` or `valid` as computed today (`missing`: a type required of the person that they hold nothing of that counts); `uncounted`: copied from a source whose type is not mapped to the catalogue, so it counts towards nothing.',
+        "`expired`, `missing`, `expiring` or `valid` as computed today (`missing`: a type required of the person that they hold nothing of that counts); `awaiting-approval`: registered by the person themselves and waiting for their manager's decision; `rejected`: registered by the person and turned down by their manager, listed to the person alone; `uncounted`: copied from a source whose type is not mapped to the catalogue. The last three count towards nothing.",
     }),
     evidence: Type.Optional(
       literals(COMPETENCE_EVIDENCE, {
@@ -1721,13 +1724,59 @@ export interface CompetenceValidityImpact {
   expiredBefore: number;
   expiredAfter: number;
 }
-/** A manager registers a certificate for a person who reports to them (D108 item 7). */
+/**
+ * A manager registers a certificate for a person who reports to them, or a person registers their own for their manager
+ * to approve (D108 item 7): the type, the day it was issued and, where the issuer set one, the day it ends.
+ */
 export const CompetenceHoldingBodySchema = object({
   typeId: id,
   issuedOn: calendarDay,
   expiresOn: Type.Optional(calendarDay),
 });
 export type CompetenceHoldingBody = Static<typeof CompetenceHoldingBodySchema>;
+/** One of the reader's own registrations that waits for their manager's decision (D108 item 7). */
+export interface CompetenceOwnPending {
+  holdingId: string;
+  typeId: string;
+  /** The type's name, as a person reads it. */
+  competence: string;
+  issuedOn: string;
+  /** The last day it would be valid: the issuer's date, else the employer's rule. Absent: it does not end. */
+  expiresOn?: string;
+}
+/**
+ * What the reader's own registration needs to know (D108 item 7): whether anyone would decide it (`approver`: the reader
+ * reports to a manager now, D99 item 4; false, a registration cannot be sent), and the registrations waiting for a
+ * decision, oldest first.
+ */
+export interface CompetenceOwnOutput {
+  approver: boolean;
+  pending: CompetenceOwnPending[];
+}
+/**
+ * A registration of a person's own as the manager who decides it reads it (D108 item 7): who registered it, which
+ * competence, and its dates. Only for a registration that waits, and only for a manager the person reports to now.
+ */
+export interface CompetenceApproval {
+  holdingId: string;
+  personId: string;
+  /** The person's user name, or Clew's id for a person provisioned without one. */
+  key: string;
+  name: string;
+  typeId: string;
+  competence: string;
+  area: string;
+  issuedOn: string;
+  /** The last day it would be valid: the issuer's date, else the employer's rule. Absent: it does not end. */
+  expiresOn?: string;
+  /** When the person registered it. */
+  registeredAt: string;
+}
+/** The manager's decision on a registration of a person's own (D108 item 7). */
+export const COMPETENCE_DECISIONS = ['approve', 'reject'] as const;
+export type CompetenceDecision = (typeof COMPETENCE_DECISIONS)[number];
+export const CompetenceDecisionBodySchema = object({ decision: literals(COMPETENCE_DECISIONS) });
+export type CompetenceDecisionBody = Static<typeof CompetenceDecisionBodySchema>;
 /**
  * How one read of a source ended (D108 item 9). `complete`: read to the end with nothing marked partial. `partial`: read
  * to the end, but the source marked some of it partial, so nothing was revoked. `failed`: a page could not be read; what
@@ -1956,6 +2005,11 @@ export const CompetenceMatrixCellSchema = object({
   evidence: Type.Optional(literals(COMPETENCE_EVIDENCE)),
   revocable: Type.Boolean({
     description: 'Whether the reader may revoke that holding: one registered in Clew, never one copied from a source.',
+  }),
+  pending: Type.Optional({
+    ...id,
+    description:
+      "The person's own registration of this type that waits for the reader's decision (D108 item 7), by its id. It counts towards nothing, so the status is what it is without it.",
   }),
 });
 export type CompetenceMatrixCell = Static<typeof CompetenceMatrixCellSchema>;

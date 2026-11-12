@@ -407,6 +407,13 @@
       "when": 1794521143361,
       "tag": "0057_competence_requirements_by_key",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1794525331307,
+      "tag": "0058_competence_own_registration",
+      "breakpoints": true
     }
   ]
 }

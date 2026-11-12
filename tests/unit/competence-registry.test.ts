@@ -56,11 +56,16 @@ function world() {
   const clock = () => new Date(now);
   let n = 0;
   const store = memoryCompetenceStore({
-    persons: [{ id: 'p-anna', organisationId: ORG, name: 'Anna Lindqvist', userName: 'anna.lindqvist' }],
+    persons: [
+      { id: 'p-anna', organisationId: ORG, name: 'Anna Lindqvist', userName: 'anna.lindqvist' },
+      { id: 'hillevi', organisationId: ORG, name: 'Hillevi Berg', userName: 'hillevi.berg' },
+    ],
   });
   const competence = competenceUsecases({
     store,
     staff: async p => overviews.get(p.id) ?? { units: [] },
+    // Anna reports to Hillevi (D99 item 4); Hillevi and Mikael report to nobody.
+    above: async p => (p.id === 'p-anna' ? ['hillevi'] : []),
     clock,
     ids: () => 'id-' + ++n,
   });
@@ -195,6 +200,12 @@ describe('the competence wiring (D108 item 13)', () => {
       rows: [{ id: typeId, name: 'HLR', area: 'Akut', kind: 'course', validityMonths: 24, archived: false }],
     });
     expect((await w.call(anna, 'GET', '/types')).status).toBe(403);
+    // A person reads the types they may register one of their own for (D108 item 7), the archived ones left out.
+    const ownTypes = await w.call(anna, 'GET', '/own/types');
+    expect(ownTypes.headers.get('cache-control')).toContain('no-store');
+    expect(await ownTypes.json()).toEqual({
+      rows: [{ id: typeId, name: 'HLR', area: 'Akut', kind: 'course', validityMonths: 24, archived: false }],
+    });
 
     const registered = await w.call(hillevi, 'POST', '/people/p-anna/holdings', { typeId, issuedOn: '2025-05-10' });
     expect(registered.status).toBe(201);
@@ -219,6 +230,69 @@ describe('the competence wiring (D108 item 13)', () => {
     expect(w.store.state.holdings.get(holdingId)?.state).toBe('revoked');
     expect((await w.call(mikael, 'POST', `/types/${typeId}/archive`)).status).toBe(204);
     expect(w.store.state.types.get(typeId)?.archivedAt).not.toBeNull();
+  });
+
+  test("the routes carry a person's own registration and its manager's decision (D108 item 7), and map each refusal", async () => {
+    const w = world();
+    await syncBundledRows(w.reconcile);
+    await w.admin.update(mikael, COMPETENCE_CONNECTOR, { state: 'enabled' });
+    const added = await w.call(mikael, 'POST', '/types', { name: 'HLR', area: 'Akut', kind: 'course' });
+    const { id: typeId } = (await added.json()) as { id: string };
+
+    // Anna reports to Hillevi; Hillevi reports to nobody, so hers cannot be sent.
+    const mine = await w.call(anna, 'GET', '/own');
+    expect(mine.headers.get('cache-control')).toContain('no-store');
+    expect(await mine.json()).toEqual({ approver: true, pending: [] });
+    expect(await (await w.call(hillevi, 'GET', '/own')).json()).toEqual({ approver: false, pending: [] });
+    const nobody = await w.call(hillevi, 'POST', '/own/holdings', { typeId, issuedOn: '2025-05-10' });
+    expect(nobody.status).toBe(400);
+    expect(await nobody.json()).toMatchObject({
+      error: 'Registreringen kan inte skickas: ingen chef är registrerad för dig.',
+    });
+    expect((await w.call(anna, 'POST', '/own/holdings', { typeId, issuedOn: '10 maj' })).status).toBe(400);
+
+    const sent = await w.call(anna, 'POST', '/own/holdings', { typeId, issuedOn: '2025-05-10' });
+    expect(sent.status).toBe(201);
+    const { id: holdingId } = (await sent.json()) as { id: string };
+    expect(await (await w.call(anna, 'GET', '/own')).json()).toEqual({
+      approver: true,
+      pending: [{ holdingId, typeId, competence: 'HLR', issuedOn: '2025-05-10' }],
+    });
+    const twice = await w.call(anna, 'POST', '/own/holdings', { typeId, issuedOn: '2025-06-10' });
+    expect(twice.status).toBe(400);
+
+    // Hillevi reads it and decides; Anna and Mikael may not, and a body outside the contract is turned down.
+    const read = await w.call(hillevi, 'GET', `/approvals/${holdingId}`);
+    expect(read.status).toBe(200);
+    expect(await read.json()).toMatchObject({
+      holdingId,
+      personId: 'p-anna',
+      name: 'Anna Lindqvist',
+      competence: 'HLR',
+    });
+    expect((await w.call(anna, 'GET', `/approvals/${holdingId}`)).status).toBe(403);
+    expect((await w.call(mikael, 'POST', `/approvals/${holdingId}`, { decision: 'approve' })).status).toBe(403);
+    expect((await w.call(hillevi, 'POST', `/approvals/${holdingId}`, { decision: 'maybe' })).status).toBe(400);
+    // Through the registry too, as the card's read: a row for her manager, refused to anyone else.
+    expect(await w.registry.run(actorOf(hillevi), 'competence.approval', { holding: holdingId })).toEqual({
+      rows: [{ name: 'Anna Lindqvist', competence: 'HLR', issuedOn: '2025-05-10' }],
+    });
+    await expect(w.registry.run(actorOf(mikael), 'competence.approval', { holding: holdingId })).rejects.toThrow();
+
+    expect((await w.call(hillevi, 'POST', `/approvals/${holdingId}`, { decision: 'approve' })).status).toBe(204);
+    expect(w.store.state.holdings.get(holdingId)).toMatchObject({ state: 'valid', decidedBy: 'hillevi' });
+    const again = await w.call(hillevi, 'POST', `/approvals/${holdingId}`, { decision: 'reject' });
+    expect(again.status).toBe(400);
+    expect(await again.json()).toMatchObject({ error: 'Registreringen är redan granskad.' });
+    // Decided, it can no longer be taken back.
+    expect((await w.call(anna, 'DELETE', `/own/holdings/${holdingId}`)).status).toBe(400);
+
+    // A new one is taken back while it waits; someone else's is refused as unknown.
+    const other = await w.call(anna, 'POST', '/own/holdings', { typeId, issuedOn: '2026-01-10' });
+    const { id: second } = (await other.json()) as { id: string };
+    expect((await w.call(hillevi, 'DELETE', `/own/holdings/${second}`)).status).toBe(403);
+    expect((await w.call(anna, 'DELETE', `/own/holdings/${second}`)).status).toBe(204);
+    expect(w.store.state.holdings.has(second)).toBe(false);
   });
 
   test('the routes carry requirements and share targets (D108 item 6) and map each refusal', async () => {

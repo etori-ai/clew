@@ -2,6 +2,7 @@ import { Hono, type MiddlewareHandler } from 'hono';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import {
+  CompetenceDecisionBodySchema,
   CompetenceHoldingBodySchema,
   CompetenceMappingBodySchema,
   CompetenceRequirementBodySchema,
@@ -9,6 +10,7 @@ import {
   CompetenceTypeBodySchema,
   CompetenceTypePatchSchema,
   type AuthenticatedContext,
+  type CompetenceDecisionBody,
   type CompetenceHoldingBody,
   type CompetenceMappingBody,
   type CompetenceMatrixInput,
@@ -23,8 +25,9 @@ import type { CompetenceUsecases } from '../modules/competence/usecases';
 /**
  * The competence module's own routes (D108): the catalogue an administrator keeps, the sources whose holdings are
  * copied in and their mappings to the catalogue (item 9), the requirements and share targets (item 6), a manager's
- * registration of a certificate, and the manager's matrix and its file (item 11), which is no declared view because its
- * columns are chosen and a cell writes. A person's holdings, what needs attention and a unit's coverage have no route here:
+ * registration of a certificate, the manager's matrix and its file (item 11), which is no declared view because its
+ * columns are chosen and a cell writes, and a person's own registration with the decision of the manager they report to
+ * (item 7). A person's holdings, what needs attention and a unit's coverage have no route here:
  * Clew reads `competence.holdings`, `competence.attention` and `competence.coverage` through the capability route. Each
  * route parses, validates, calls one use case and maps its errors; the use cases own who may do what. Every route first
  * refuses unless the built-in module is switched on and visible to the person, so nothing of the domain is read or
@@ -51,6 +54,12 @@ export interface CompetenceRouteDeps {
     | 'removeShareTarget'
     | 'matrix'
     | 'exportMatrix'
+    | 'ownRegistrations'
+    | 'ownTypes'
+    | 'registerOwn'
+    | 'withdrawOwn'
+    | 'approval'
+    | 'decideHolding'
   >;
   /** Whether the built-in module is on for this person now (composition: `competenceWritable`). */
   writable: (persona: AuthenticatedContext) => Promise<boolean>;
@@ -66,6 +75,7 @@ const validators = {
   mapping: ajv.compile<CompetenceMappingBody>(CompetenceMappingBodySchema),
   requirement: ajv.compile<CompetenceRequirementBody>(CompetenceRequirementBodySchema),
   target: ajv.compile<CompetenceShareTargetBody>(CompetenceShareTargetBodySchema),
+  decision: ajv.compile<CompetenceDecisionBody>(CompetenceDecisionBodySchema),
 };
 async function body<T>(request: Request, validate: (value: unknown) => value is T, max = 2000): Promise<T> {
   const text = await request.text();
@@ -152,6 +162,30 @@ export function competenceRoutes(deps: CompetenceRouteDeps) {
   });
   routes.delete('/holdings/:id', async c => {
     await competence.revokeHolding(c.get('session').context, param(c.req.param('id')));
+    return c.body(null, 204);
+  });
+  // A person's own registration (D108 item 7): whether anyone would decide it and what waits, a new one, and one taken
+  // back while it waits.
+  routes.get('/own', async c =>
+    c.json(await competence.ownRegistrations(c.get('session').context), 200, privateHeaders),
+  );
+  routes.get('/own/types', async c => c.json(await competence.ownTypes(c.get('session').context), 200, privateHeaders));
+  routes.post('/own/holdings', async c => {
+    const input = await body(c.req.raw, validators.holding);
+    return c.json({ id: await competence.registerOwn(c.get('session').context, input) }, 201);
+  });
+  routes.delete('/own/holdings/:id', async c => {
+    await competence.withdrawOwn(c.get('session').context, param(c.req.param('id')));
+    return c.body(null, 204);
+  });
+  // Its decision by the manager the person reports to now: the registration as they read it, and approve or reject.
+  routes.get('/approvals/:id', async c =>
+    c.json(await competence.approval(c.get('session').context, param(c.req.param('id'))), 200, privateHeaders),
+  );
+  routes.post('/approvals/:id', async c => {
+    const id = param(c.req.param('id')),
+      input = await body(c.req.raw, validators.decision);
+    await competence.decideHolding(c.get('session').context, id, input.decision);
     return c.body(null, 204);
   });
   // The sources whose holdings are copied in (D108 item 9): what each holds and its mappings, and a read started now.

@@ -73,6 +73,9 @@ export const holdingRow = (
   revokedAt: null,
   revokedBy: null,
   copy: null,
+  decidedBy: null,
+  decidedAt: null,
+  threadId: null,
   ...extra,
 });
 /** A row copied from a source (D108 item 9): evidence `system`, nobody who registered it, the source's ids and label. */
@@ -286,6 +289,7 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
         holdings: 2,
         cleared: 1,
         requirements: 0,
+        threadIds: [],
       });
       expect(await w.store.transaction(tx => tx.holdingsOf([w.anna]))).toEqual([]);
       expect(await w.store.transaction(tx => tx.holdingsOf([w.bo]))).toEqual([
@@ -302,6 +306,107 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
         holdings: 0,
         cleared: 0,
         requirements: 0,
+        threadIds: [],
+      });
+    });
+
+    /** A person's own registration (D108 item 7) as Anna makes it: pending, evidence `self`, with an approval's key. */
+    const own = (w: { p: string; anna: string }, id: string, typeId: string, extra: Partial<HoldingRecord> = {}) =>
+      holdingRow(w.p + '-' + id, w.anna, w.p + '-' + typeId, {
+        evidence: 'self',
+        state: 'pending',
+        registeredBy: w.anna,
+        threadId: w.p + '-a-' + id,
+        ...extra,
+      });
+
+    test("a person's own registration waits once per type, is decided with who and when, and is removed when taken back", async () => {
+      const w = await world();
+      await w.store.transaction(async tx => {
+        await tx.insertType(typeRow(w.p + '-t1', w.org));
+        await tx.insertType(typeRow(w.p + '-t2', w.org));
+        await tx.insertHolding(own(w, 'h1', 't1'));
+      });
+      expect(await w.store.transaction(tx => tx.holding(w.p + '-h1'))).toEqual(own(w, 'h1', 't1'));
+      // A second of the same type waiting for the same person is refused; another type, or another person, is not.
+      const again = await refused(() => w.store.transaction(tx => tx.insertHolding(own(w, 'h2', 't1'))));
+      expect(again?.name).toBe('PendingTaken');
+      await w.store.transaction(tx => tx.insertHolding(own(w, 'h3', 't2')));
+      await w.store.transaction(tx =>
+        tx.insertHolding(own(w, 'h4', 't1', { personId: w.bo, registeredBy: w.bo, threadId: w.p + '-a-h4' })),
+      );
+      // Decided: who and when; then a new one of the same type may wait.
+      await w.store.transaction(tx =>
+        tx.updateHolding(w.p + '-h1', { state: 'valid', decidedBy: w.boss, decidedAt: T2 }),
+      );
+      expect(await w.store.transaction(tx => tx.holding(w.p + '-h1'))).toEqual(
+        own(w, 'h1', 't1', { state: 'valid', decidedBy: w.boss, decidedAt: T2 }),
+      );
+      await w.store.transaction(tx => tx.insertHolding(own(w, 'h5', 't1')));
+      await w.store.transaction(tx =>
+        tx.updateHolding(w.p + '-h5', { state: 'rejected', decidedBy: w.boss, decidedAt: T2 }),
+      );
+      expect((await w.store.transaction(tx => tx.holding(w.p + '-h5')))?.state).toBe('rejected');
+      // Taken back: the row goes. A copied row is never removed this way.
+      await w.store.transaction(tx => tx.deleteHolding(w.p + '-h3'));
+      expect(await w.store.transaction(tx => tx.holding(w.p + '-h3'))).toBeUndefined();
+      expect((await w.store.transaction(tx => tx.holdingsOf([w.anna]))).map(h => h.id)).toEqual([
+        w.p + '-h1',
+        w.p + '-h5',
+      ]);
+    });
+
+    test("only a person's own registration waits, is rejected or decided, or carries an approval's key", async () => {
+      const w = await world();
+      await w.store.transaction(tx => tx.insertType(typeRow(w.p + '-t1', w.org)));
+      for (const row of [
+        // A manager's registration never waits or is rejected, and is never decided.
+        holdingRow(w.p + '-x1', w.anna, w.p + '-t1', { state: 'pending' }),
+        holdingRow(w.p + '-x2', w.anna, w.p + '-t1', { state: 'rejected' }),
+        holdingRow(w.p + '-x3', w.anna, w.p + '-t1', { decidedBy: w.boss, decidedAt: T2 }),
+        holdingRow(w.p + '-x4', w.anna, w.p + '-t1', { threadId: w.p + '-a' }),
+        // The person's own is decided exactly when it no longer waits, and a decider has a time.
+        own(w, 'x5', 't1', { decidedBy: w.boss, decidedAt: T2 }),
+        own(w, 'x6', 't1', { state: 'valid' }),
+        own(w, 'x7', 't1', { state: 'rejected', decidedBy: w.boss }),
+      ])
+        expect(await refused(() => w.store.transaction(tx => tx.insertHolding(row)))).toBeDefined();
+      expect(await w.store.transaction(tx => tx.holdingsOf([w.anna]))).toEqual([]);
+      // A decision kept after its manager is gone (erasure nulls the decider) stands.
+      await w.store.transaction(tx =>
+        tx.insertHolding(own(w, 'h1', 't1', { state: 'valid', decidedBy: null, decidedAt: T2 })),
+      );
+      expect((await w.store.transaction(tx => tx.holding(w.p + '-h1')))?.decidedAt).toBe(T2);
+    });
+
+    test("erasure takes a person's own registrations with their approval keys, and their id off what they decided", async () => {
+      const w = await world();
+      await w.store.transaction(async tx => {
+        await tx.insertType(typeRow(w.p + '-t1', w.org));
+        await tx.insertType(typeRow(w.p + '-t2', w.org));
+        await tx.insertHolding(own(w, 'h1', 't1'));
+        await tx.insertHolding(own(w, 'h2', 't2', { state: 'valid', decidedBy: w.boss, decidedAt: T2 }));
+        await tx.insertHolding(
+          own(w, 'h3', 't1', {
+            personId: w.bo,
+            registeredBy: w.bo,
+            threadId: w.p + '-a-h3',
+            state: 'rejected',
+            decidedBy: w.anna,
+            decidedAt: T2,
+          }),
+        );
+      });
+      expect(await w.store.transaction(tx => tx.erasePerson(w.anna))).toEqual({
+        holdings: 2,
+        cleared: 1,
+        requirements: 0,
+        threadIds: [w.p + '-a-h1', w.p + '-a-h2'],
+      });
+      expect(await w.store.transaction(tx => tx.holding(w.p + '-h3'))).toMatchObject({
+        state: 'rejected',
+        decidedBy: null,
+        decidedAt: T2,
       });
     });
 
@@ -641,6 +746,7 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
           holdings: 1,
           cleared: 0,
           requirements: 0,
+          threadIds: [],
         });
         expect((await w.store.transaction(tx => tx.copiedFrom(w.lms))).map(h => h.id)).toEqual([w.p + '-c2']);
       });
@@ -891,6 +997,7 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
           holdings: 0,
           cleared: 2,
           requirements: 1,
+          threadIds: [],
         });
         expect(await w.store.transaction(tx => tx.requirements(w.org))).toEqual([
           requirementRow(w.p + '-r3', w.org, w.p + '-t2', { personId: w.bo }),

@@ -95,6 +95,9 @@ import type {
   CompetenceTypePatch,
   CompetenceTypesOutput,
   CompetenceValidityImpact,
+  CompetenceApproval,
+  CompetenceDecision,
+  CompetenceOwnOutput,
   EntityActionStarted,
   EntityDetail,
   EntityKind,
@@ -250,8 +253,8 @@ export const api = {
   },
   /**
    * Kompetens (D108): the built-in module's own routes. They are refused while the module is switched off for the
-   * person, and the catalogue is refused to someone who neither manages anyone nor administers it; `queries.ts` turns
-   * that refusal into `null`.
+   * person, and the catalogue is refused to someone who neither manages anyone nor administers it (a person reads the
+   * types of their own registration from `ownTypes`); `queries.ts` turns that refusal into `null`.
    */
   competence: {
     /** The competence types a certificate can be registered for. */
@@ -273,6 +276,19 @@ export const api = {
       post<{ id: string }>(`/api/competence/people/${encodeURIComponent(personId)}/holdings`, body),
     /** The manager a person reports to takes back a holding registered in Clew; a copied one is refused. */
     revokeHolding: (id: string) => del<void>(`/api/competence/holdings/${encodeURIComponent(id)}`),
+    /** The reader's own registration (D108 item 7): whether anyone would decide it, and the ones that wait. */
+    own: () => call<CompetenceOwnOutput>('/api/competence/own'),
+    /** The types a person may register one of their own for: the catalogue's, archived ones left out. */
+    ownTypes: () => call<CompetenceTypesOutput>('/api/competence/own/types'),
+    /** The reader registers a holding of their own, for the manager they report to to approve. */
+    registerOwn: (body: CompetenceHoldingBody) => post<{ id: string }>('/api/competence/own/holdings', body),
+    /** The reader takes back their own registration while it waits. */
+    withdrawOwn: (id: string) => del<void>(`/api/competence/own/holdings/${encodeURIComponent(id)}`),
+    /** A registration of a report's own that waits for the reader's decision. */
+    approval: (id: string) => call<CompetenceApproval>(`/api/competence/approvals/${encodeURIComponent(id)}`),
+    /** The reader approves or rejects it. */
+    decide: (id: string, decision: CompetenceDecision) =>
+      post<void>(`/api/competence/approvals/${encodeURIComponent(id)}`, { decision }),
     /** The manager's matrix (D108 item 11): their reports against what is required of them, the set of columns `by`. */
     matrix: (input: CompetenceMatrixInput) =>
       call<CompetenceMatrixOutput>(`/api/competence/matrix${matrixQuery(input)}`),

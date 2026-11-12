@@ -8,6 +8,7 @@ import type {
   HoldingsOutput,
   HoldingsRow,
   StaffOverview,
+  Subject,
 } from '@clew/contracts';
 
 /**
@@ -43,8 +44,8 @@ export interface TypeRecord {
 }
 export type TypePatch = Partial<Pick<TypeRecord, 'name' | 'area' | 'kind' | 'validityMonths' | 'archivedAt'>>;
 /**
- * A holding's state as stored (D108 items 7 and 9). `pending` and `rejected` belong to a person's own registration,
- * which is not written yet; the store takes them so the table does not change shape when it is.
+ * A holding's state as stored (D108 items 7 and 9). `pending` and `rejected` belong to a person's own registration
+ * (evidence `self`): it waits for the manager they report to, who approves it (`valid`) or rejects it.
  */
 export type HoldingState = 'pending' | 'valid' | 'rejected' | 'revoked';
 /**
@@ -70,15 +71,31 @@ export interface HoldingRecord {
   expiresOn: string | null;
   evidence: CompetenceEvidence;
   state: HoldingState;
-  /** The manager who registered it; null once that person was erased, and always on a copied row. */
+  /**
+   * Who registered it: the manager, or the person themselves for their own registration (evidence `self`); null once
+   * that person was erased, and always on a copied row.
+   */
   registeredBy: string | null;
   createdAt: string;
   revokedAt: string | null;
   revokedBy: string | null;
   /** Set on a row copied from a source (evidence `system`), null on one registered in Clew. */
   copy: HoldingCopy | null;
+  /**
+   * The decision on a person's own registration (D108 item 7): the manager who approved or rejected it (their
+   * attestation; null once that manager was erased) and when (null while it waits, and on every other holding).
+   */
+  decidedBy: string | null;
+  decidedAt: string | null;
+  /**
+   * The approval's key on a person's own registration: each manager's card is the thread `<threadId>:<manager id>`
+   * (`approvalCardId`), all of them on one topic, so one decision closes every one. Null on every other holding.
+   */
+  threadId: string | null;
 }
-export type HoldingPatch = Partial<Pick<HoldingRecord, 'state' | 'revokedAt' | 'revokedBy'>>;
+export type HoldingPatch = Partial<
+  Pick<HoldingRecord, 'state' | 'revokedAt' | 'revokedBy' | 'decidedBy' | 'decidedAt'>
+>;
 /** A source's type mapped to the catalogue for one organisation (D108 item 9). `mappedBy` is an actor string. */
 export interface SourceMapping {
   connectorId: string;
@@ -203,16 +220,18 @@ export interface Erased {
   /** Holdings removed because they were the person's own. */
   holdings: number;
   /**
-   * Rows from which the person was removed: other people's holdings they registered or revoked, and the requirements and
-   * share targets they set (`createdBy`).
+   * Rows from which the person was removed: other people's holdings they registered, revoked or decided, and the
+   * requirements and share targets they set (`createdBy`).
    */
   cleared: number;
   /** Requirements set on the person alone (D108 item 6), removed with them. */
   requirements: number;
+  /** The approval keys of the person's own registrations that were removed: their cards go with them (`workItems`). */
+  threadIds: string[];
 }
 /**
  * The whole domain for one organisation (D108 item 14), copied rows, the mappings of sources, the requirements and the
- * share targets included; the use case turns it into `clew.competence/4`.
+ * share targets included; the use case turns it into `clew.competence/5`.
  */
 export interface CompetenceExport {
   types: TypeRecord[];
@@ -233,6 +252,54 @@ export class TypeNameTaken extends Error {
     super('The organisation already has a competence type with this name.');
     this.name = 'TypeNameTaken';
   }
+}
+
+/** The store's refusal of a second registration of one type waiting for the same person (D108 item 7). */
+export class PendingTaken extends Error {
+  constructor() {
+    super('The person has a registration of this type waiting already.');
+    this.name = 'PendingTaken';
+  }
+}
+
+/** How a person's own registration left the managers' streams (D108 item 7). */
+export type ApprovalOutcome = 'approved' | 'rejected' | 'withdrawn';
+/**
+ * The approval of a person's own registration as work (D108 item 7): one card in the stream of each manager the person
+ * reports to when they register it, every card on one topic so that one decision, by any of them or by a manager the
+ * person reports to later, or the person taking it back, closes them all. A card's title, summary and messages name
+ * nobody and no competence, since they are what the assistant reads; the person is the card's subject (D97 item 6), a
+ * key that is never drawn or read, so the card shows on that person for its owner. Its way in is a read that leads to
+ * the approval on the matrix. Implemented in composition over the thread store's transaction (`withThreadTx`), on the
+ * same database transaction as the `CompetenceTx` it belongs to, as talks implements its `WorkItemTx`; the memory
+ * store records the calls.
+ */
+export interface ApprovalWorkItemTx {
+  /**
+   * Insert an open card for each of `managers` (`<threadId>:<manager id>`), admit its delivery, write its message and
+   * its `thread.pushed` audit row. `subject` is the person who registered it, by user name.
+   */
+  open(input: {
+    threadId: string;
+    holdingId: string;
+    managers: readonly string[];
+    at: string;
+    subject?: Subject;
+  }): Promise<void>;
+  /**
+   * Mark every card of the approval handled, with a message that says how it ended, and end the reminders the owners
+   * set on them. A card that is gone or already handled is no error.
+   */
+  close(threadId: string, at: string, outcome: ApprovalOutcome): Promise<void>;
+  /** Erasure of the person who registered: every card of these approvals goes, from whichever stream it is in. */
+  remove(threadIds: readonly string[]): Promise<void>;
+  /**
+   * Erasure of the person who registered, by the key the cards are about (their `subject`): every approval card about
+   * them goes, a registration's they took back included, whose row is gone and with it the approval's key.
+   */
+  removeAbout(subject: Subject): Promise<void>;
+  /** Erasure of a manager: the approval cards in their own stream go; the other managers' stay. */
+  removeOwned(personId: string): Promise<void>;
 }
 
 /** The store's refusal of a requirement the type and its target already have (D108 item 6). */
@@ -273,8 +340,17 @@ export interface CompetenceTx {
   holdingsOfType(typeId: string): Promise<HoldingRecord[]>;
   /** One holding, locked. */
   holding(id: string): Promise<HoldingRecord | undefined>;
+  /**
+   * Insert a holding. A second `pending` one of the same person and type is refused with `PendingTaken` (D108 item 7);
+   * only a holding of evidence `self` may be pending or rejected, and only it is decided or has an approval's key.
+   */
   insertHolding(holding: HoldingRecord): Promise<void>;
   updateHolding(id: string, patch: HoldingPatch): Promise<void>;
+  /**
+   * Remove one holding registered in Clew, as a person's own registration taken back is (D108 item 7). A copied row is
+   * left alone: it goes only with its source or its person.
+   */
+  deleteHolding(id: string): Promise<void>;
   // Rows copied from a source (D108 item 9).
   /**
    * Every row copied from this connector, whatever its state. Not locked row by row: the copy's write and a mapping
@@ -366,9 +442,10 @@ export interface CompetenceTx {
   // Erasure and export (D108 item 14).
   /**
    * Remove the person's holdings, copied ones included, and the requirements set on them alone, and remove them from
-   * other people's holdings (null `registeredBy`, `revokedBy`) and from the requirements and share targets they set
-   * (null `createdBy`, which holds `person:<id>`). Takes the row lock of every source the person has copied
-   * rows from first, in the order of their ids.
+   * other people's holdings (null `registeredBy`, `revokedBy`, `decidedBy`) and from the requirements and share targets
+   * they set (null `createdBy`, which holds `person:<id>`). Takes the row lock of every source the person has copied
+   * rows from first, in the order of their ids. Returns the approval keys of the removed holdings, whose cards the use
+   * case removes with `workItems` in the same transaction.
    */
   erasePerson(personId: string): Promise<Erased>;
   /**
@@ -377,6 +454,8 @@ export interface CompetenceTx {
    */
   exportOrganisation(organisationId: string): Promise<CompetenceExport>;
   audit(entry: CompetenceAudit): Promise<void>;
+  /** The approvals' cards in the managers' streams (D108 item 7), on the same transaction. */
+  workItems: ApprovalWorkItemTx;
 }
 export interface CompetenceStore {
   transaction<T>(fn: (tx: CompetenceTx) => Promise<T>): Promise<T>;
@@ -390,6 +469,12 @@ export interface CompetenceStore {
  * imports another module's error.
  */
 export type Staff = (persona: AuthenticatedContext) => Promise<StaffOverview>;
+/**
+ * The people the reader reports to now (D99 item 4, D117's line): whoever leads the nearest unit above the reader that
+ * somebody leads, active, by person id, never the reader. Empty for someone who reports to nobody. Computed when asked,
+ * never stored, through the people module's reach bound in composition.
+ */
+export type Above = (persona: AuthenticatedContext) => Promise<string[]>;
 
 /**
  * What a source answers (D108 item 9, D119) is the holdings profile of `@clew/contracts`: a page of `HoldingsRow`s,
@@ -436,6 +521,8 @@ export type CompetenceLog = (message: string, ...details: unknown[]) => void;
 export interface CompetenceDeps {
   store: CompetenceStore;
   staff: Staff;
+  /** Whom the reader reports to (D108 item 7). Absent: everyone reports to nobody, as in the tests of earlier slices. */
+  above?: Above;
   clock: () => Date;
   ids: () => string;
   /** The sources the copy reads (item 9). Absent: there are none, as in the tests of the first slice. */

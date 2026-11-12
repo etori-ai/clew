@@ -1,9 +1,13 @@
 import {
   COMPETENCE_STATUSES,
+  ENTITY_KEY_MAX,
   type AuthenticatedContext,
   type Capability,
+  type CompetenceApproval,
   type CompetenceAttentionOutput,
+  type CompetenceDecision,
   type CompetenceHoldingBody,
+  type CompetenceOwnOutput,
   type CompetenceHoldingsInput,
   type CompetenceHoldingsOutput,
   type CompetenceMappingBody,
@@ -27,6 +31,7 @@ import {
 } from '@clew/contracts';
 import { ForbiddenError, InputError } from '../../context';
 import {
+  awaiting,
   branchOf,
   counts,
   coverageOf,
@@ -48,6 +53,7 @@ import {
   orderHoldingRows,
   orderTypes,
   ownCard,
+  ownRow,
   COPY_HOLDINGS_MAX,
   PAGES_MAX,
   personKey,
@@ -75,6 +81,7 @@ import {
   type UnitCoverage,
 } from './domain';
 import {
+  PendingTaken,
   RequirementTaken,
   ShareTargetTaken,
   TypeNameTaken,
@@ -116,9 +123,11 @@ export const COMPETENCE_ADMIN: Capability = 'admin.competence';
  * may have no type (a copied row whose source type is not mapped) and carries `copy`, and the document lists the
  * mappings of sources. Version 3 (item 6): the document lists the requirements and the share targets. Version 4: a
  * requirement and a share target name a position by its code (`positionCode`) and a unit by the id of its `unit:` key,
- * never by an internal row, and `createdBy` may be null (its author was erased).
+ * never by an internal row, and `createdBy` may be null (its author was erased). Version 5 (item 7): a holding may be a
+ * person's own registration (evidence `self`, `pending` or `rejected`), and carries the decision on one (`decidedBy`,
+ * `decidedAt`) and its approval's key (`threadId`).
  */
-export const COMPETENCE_EXPORT_FORMAT = 'clew.competence/4';
+export const COMPETENCE_EXPORT_FORMAT = 'clew.competence/5';
 /** The actor of the scheduled copy (D108 item 9) in its audit rows. */
 export const COPY_ACTOR = 'system:competence-copy';
 const NOT_A_MANAGER = 'Intyg registreras av den som är chef för en enhet.';
@@ -147,6 +156,12 @@ const TARGET_TAKEN = 'Det finns redan ett andelsmål för den kompetensen och be
 const NO_TARGET = 'Andelsmålet finns inte.';
 const NOT_YOUR_UNIT = 'Enheten finns inte bland dem du är chef för.';
 const NOT_A_MANAGER_MATRIX = 'Medarbetarnas kompetens visas för den som är chef för en enhet.';
+const NO_APPROVER = 'Registreringen kan inte skickas: ingen chef är registrerad för dig.';
+const PENDING_TAKEN = 'Du har redan en registrering av den kompetensen som väntar på godkännande.';
+const NOT_YOURS_TO_DECIDE = 'Registreringen finns inte bland dem du kan granska.';
+const DECIDED = 'Registreringen är redan granskad.';
+const NOT_YOUR_OWN = 'Du har ingen sådan registrering.';
+const DECIDED_OWN = 'Registreringen är redan granskad och kan inte tas tillbaka.';
 /**
  * A unit's coverage (D108 items 6 and 8) as the read about a unit and its table answer it: counts only, each share
  * target set on the unit with its position's label.
@@ -243,24 +258,38 @@ export function competenceUsecases(deps: CompetenceDeps) {
       ]),
     );
   }
+  /** Whom the reader reports to now (D99 item 4), each once, never the reader; nobody without the port. */
+  const managersOf = async (persona: AuthenticatedContext) =>
+    [...new Set(deps.above ? await deps.above(persona) : [])].filter(id => id !== persona.id).sort();
   /**
    * Where these people stand today: one standing per person and type held, mapped copied rows counted exactly like
    * registered ones (D108 items 4 and 9), and one `missing` standing per type required of them that they hold nothing of
-   * that counts (item 6). `waiting` are the copied rows whose type is not mapped.
+   * that counts (item 6). `waiting` are the copied rows whose type is not mapped; `own` the people's own registrations
+   * that wait for a decision or were rejected (item 7), which count towards nothing; `types` every type named.
    */
   async function standingsWith(
     tx: CompetenceTx,
     organisationId: string,
     personIds: readonly string[],
     today: string,
-  ): Promise<{ standings: Standing[]; waiting: HoldingRecord[] }> {
+  ): Promise<{
+    standings: Standing[];
+    waiting: HoldingRecord[];
+    own: HoldingRecord[];
+    types: ReadonlyMap<string, TypeRecord>;
+  }> {
     const holdings = await tx.holdingsOf(personIds);
     const required = await requiredFor(tx, organisationId, personIds);
     const typeIds = [
       ...new Set([...holdings.flatMap(h => (h.typeId === null ? [] : [h.typeId])), ...[...required.values()].flat()]),
     ];
     const types = new Map((await tx.typesById(typeIds)).map(t => [t.id, t]));
-    return { standings: deciding(holdings, types, today, required), waiting: holdings.filter(uncounted) };
+    return {
+      standings: deciding(holdings, types, today, required),
+      waiting: holdings.filter(uncounted),
+      own: holdings.filter(h => h.evidence === 'self' && (h.state === 'pending' || h.state === 'rejected')),
+      types,
+    };
   }
   const standings = async (tx: CompetenceTx, organisationId: string, personIds: readonly string[], today: string) =>
     (await standingsWith(tx, organisationId, personIds, today)).standings;
@@ -509,6 +538,40 @@ export function competenceUsecases(deps: CompetenceDeps) {
       throw error;
     }
   }
+  /**
+   * The dates of a holding to be registered (D108 items 3 and 7): real days, issued no later than today in Sweden, and no
+   * end before the issue. A manager's, an operator's and a person's own registration share them.
+   */
+  function checkDates(body: CompetenceHoldingBody, today: string) {
+    if (!isCalendarDay(body.issuedOn)) throw new CompetenceError(BAD_DAY);
+    if (body.issuedOn > today)
+      throw new CompetenceError('Ett intyg kan inte vara utfärdat en dag som inte har kommit.');
+    if (body.expiresOn !== undefined) {
+      if (!isCalendarDay(body.expiresOn)) throw new CompetenceError(BAD_DAY);
+      if (body.expiresOn < body.issuedOn) throw new CompetenceError('Slutdatumet kan inte vara före utfärdandet.');
+    }
+  }
+  /** A type a holding can be registered for in the organisation: its own, and not archived. */
+  async function registrable(tx: CompetenceTx, organisationId: string, typeId: string) {
+    const type = await tx.type(typeId);
+    if (!type || type.organisationId !== organisationId) throw new CompetenceError(NO_TYPE);
+    if (type.archivedAt) throw new CompetenceError(ARCHIVED);
+    return type;
+  }
+  /**
+   * A person's own registration for the reader to decide (D108 item 7): one that exists, is the person's own and belongs
+   * to someone who reports to the reader now (D99 item 4). Anything else is refused in the same words, so a refusal never
+   * tells whether a registration exists; one the reader may decide that is no longer waiting is said to be decided.
+   */
+  async function decidable(persona: AuthenticatedContext, holdingId: string) {
+    const refused = () => new ForbiddenError(NOT_YOURS_TO_DECIDE);
+    const found = await deps.store.transaction(tx => tx.holding(holdingId));
+    if (!found || found.evidence !== 'self' || found.typeId === null) throw refused();
+    const person = (await reports(persona)).people.get(found.personId);
+    if (!person) throw refused();
+    if (found.state !== 'pending') throw new CompetenceError(DECIDED);
+    return { found, person, refused };
+  }
   /** Register a holding for `personId` as `actor`; the manager's and the operator's path share the checks on the type and the dates. */
   async function insertHolding(
     actor: string,
@@ -518,20 +581,11 @@ export function competenceUsecases(deps: CompetenceDeps) {
     body: CompetenceHoldingBody,
   ): Promise<string> {
     const at = now(),
-      iso = at.toISOString(),
-      today = swedishDay(at);
-    if (!isCalendarDay(body.issuedOn)) throw new CompetenceError(BAD_DAY);
-    if (body.issuedOn > today)
-      throw new CompetenceError('Ett intyg kan inte vara utfärdat en dag som inte har kommit.');
-    if (body.expiresOn !== undefined) {
-      if (!isCalendarDay(body.expiresOn)) throw new CompetenceError(BAD_DAY);
-      if (body.expiresOn < body.issuedOn) throw new CompetenceError('Slutdatumet kan inte vara före utfärdandet.');
-    }
+      iso = at.toISOString();
+    checkDates(body, swedishDay(at));
     const id = deps.ids();
     return deps.store.transaction(async tx => {
-      const type = await tx.type(body.typeId);
-      if (!type || type.organisationId !== organisationId) throw new CompetenceError(NO_TYPE);
-      if (type.archivedAt) throw new CompetenceError(ARCHIVED);
+      const type = await registrable(tx, organisationId, body.typeId);
       await tx.insertHolding({
         id,
         personId,
@@ -545,6 +599,9 @@ export function competenceUsecases(deps: CompetenceDeps) {
         revokedAt: null,
         revokedBy: null,
         copy: null,
+        decidedBy: null,
+        decidedAt: null,
+        threadId: null,
       });
       await tx.audit({
         actor,
@@ -948,12 +1005,21 @@ export function competenceUsecases(deps: CompetenceDeps) {
   return {
     /**
      * The catalogue (D108 item 2). An administrator of it reads every type, archived ones included; a manager reads the
-     * ones a certificate can be registered for; anyone else is refused.
+     * ones a certificate can be registered for; anyone else is refused, which the catalogue's page says.
      */
     async types(persona: AuthenticatedContext): Promise<{ rows: CompetenceType[] }> {
       const isAdmin = persona.capabilities.includes(COMPETENCE_ADMIN);
       if (!isAdmin && !(await reports(persona)).manages) throw new ForbiddenError();
       const rows = await deps.store.transaction(tx => tx.types(persona.organisationId, { archived: isAdmin }));
+      return { rows: orderTypes(rows).map(typeRow) };
+    },
+
+    /**
+     * The types a person may register one of their own for (D108 item 7): every type of their organisation that is not
+     * archived, for anyone. The routes read nothing while the module is off for the person.
+     */
+    async ownTypes(persona: AuthenticatedContext): Promise<{ rows: CompetenceType[] }> {
+      const rows = await deps.store.transaction(tx => tx.types(persona.organisationId));
       return { rows: orderTypes(rows).map(typeRow) };
     },
 
@@ -1062,15 +1128,23 @@ export function competenceUsecases(deps: CompetenceDeps) {
       insertHolding(actor, null, organisationId, personId, body),
 
     /**
-     * The manager a person reports to now takes back a holding registered in Clew: it stays as a row, marked revoked,
-     * and counts towards nothing. Revoking twice is one.
+     * The manager a person reports to now takes back a holding registered in Clew, an approved one of the person's own
+     * included: it stays as a row, marked revoked, and counts towards nothing. Revoking twice is one. A registration that
+     * waits or was rejected is no holding to revoke (D108 item 7).
      */
     async revokeHolding(persona: AuthenticatedContext, holdingId: string): Promise<void> {
       const { people } = await reports(persona);
       const at = now().toISOString();
       await deps.store.transaction(async tx => {
         const holding = await tx.holding(holdingId);
-        if (!holding || !people.has(holding.personId) || holding.evidence === 'system')
+        // A copied row is its source's; a person's own registration that waits or was rejected is decided, not revoked.
+        if (
+          !holding ||
+          !people.has(holding.personId) ||
+          holding.evidence === 'system' ||
+          holding.state === 'pending' ||
+          holding.state === 'rejected'
+        )
           throw new ForbiddenError(NOT_ALLOWED);
         if (holding.state === 'revoked') return;
         await tx.updateHolding(holdingId, { state: 'revoked', revokedAt: at, revokedBy: persona.id });
@@ -1085,11 +1159,189 @@ export function competenceUsecases(deps: CompetenceDeps) {
     },
 
     /**
+     * A person registers a holding of their own (D108 item 7): a type of the catalogue, the day it was issued and, where
+     * the issuer set one, the day it ends, checked as a manager's registration is. It is stored `pending` with evidence
+     * `self` and counts towards nothing until the manager the person reports to approves it. Its approval is a card in
+     * the stream of each manager the person reports to now (D99 item 4), opened in the same transaction; any one of them
+     * deciding closes every card. Someone who reports to nobody is refused: nobody could decide it (who approves then is
+     * open in D108). A second registration of the same type waiting for the same person is refused. Returns its id.
+     */
+    async registerOwn(persona: AuthenticatedContext, body: CompetenceHoldingBody): Promise<string> {
+      const at = now(),
+        iso = at.toISOString();
+      checkDates(body, swedishDay(at));
+      const managers = await managersOf(persona);
+      if (!managers.length) throw new CompetenceError(NO_APPROVER);
+      const id = deps.ids(),
+        threadId = deps.ids();
+      try {
+        return await deps.store.transaction(async tx => {
+          const type = await registrable(tx, persona.organisationId, body.typeId);
+          await tx.insertHolding({
+            id,
+            personId: persona.id,
+            typeId: type.id,
+            issuedOn: body.issuedOn,
+            expiresOn: body.expiresOn ?? null,
+            evidence: 'self',
+            state: 'pending',
+            registeredBy: persona.id,
+            createdAt: iso,
+            revokedAt: null,
+            revokedBy: null,
+            copy: null,
+            decidedBy: null,
+            decidedAt: null,
+            threadId,
+          });
+          // The cards are about the person (D97 item 6), by the key another system knows them by; nobody without one.
+          const [self] = await tx.persons([persona.id]);
+          const userName = self?.userName;
+          await tx.workItems.open({
+            threadId,
+            holdingId: id,
+            managers,
+            at: iso,
+            ...(userName && [...userName].length <= ENTITY_KEY_MAX
+              ? { subject: { entity: 'person' as const, key: userName } }
+              : {}),
+          });
+          await tx.audit({
+            actor: persona.principal.id,
+            action: 'competence.holding_submitted',
+            subject: 'holding:' + id,
+            at: iso,
+            details: {
+              personId: persona.id,
+              typeId: type.id,
+              issuedOn: body.issuedOn,
+              expiresOn: body.expiresOn ?? null,
+              managers,
+            },
+          });
+          return id;
+        });
+      } catch (error) {
+        if (error instanceof PendingTaken) throw new CompetenceError(PENDING_TAKEN);
+        throw error;
+      }
+    },
+
+    /**
+     * What the reader's own registration needs (D108 item 7): whether anyone would decide it, and the registrations of
+     * theirs that wait for a decision, oldest first.
+     */
+    async ownRegistrations(persona: AuthenticatedContext): Promise<CompetenceOwnOutput> {
+      const approver = (await managersOf(persona)).length > 0;
+      const pending = await deps.store.transaction(async tx => {
+        const own = (await tx.holdingsOf([persona.id])).filter(awaiting);
+        const types = new Map(
+          (await tx.typesById([...new Set(own.flatMap(h => (h.typeId ? [h.typeId] : [])))])).map(t => [t.id, t]),
+        );
+        return own.flatMap(h => {
+          const type = h.typeId ? types.get(h.typeId) : undefined;
+          if (!type) return [];
+          const end = endOf(h, type);
+          return [
+            {
+              holdingId: h.id,
+              typeId: type.id,
+              competence: type.name,
+              issuedOn: h.issuedOn,
+              ...(end ? { expiresOn: end } : {}),
+            },
+          ];
+        });
+      });
+      return { approver, pending };
+    },
+
+    /**
+     * A registration of a person's own as the manager who decides it reads it (D108 item 7): who registered it, the
+     * competence and the dates, the end worked out as for any holding. Only while it waits, and only for a manager the
+     * person reports to now; anything else is refused as the decision is.
+     */
+    async approval(persona: AuthenticatedContext, holdingId: string): Promise<CompetenceApproval> {
+      const { found, person, refused } = await decidable(persona, holdingId);
+      const [type] = await deps.store.transaction(tx => tx.typesById([found.typeId!]));
+      if (!type) throw refused();
+      const end = endOf(found, type);
+      return {
+        holdingId: found.id,
+        personId: person.id,
+        key: personKey(person),
+        name: person.name,
+        typeId: type.id,
+        competence: type.name,
+        area: type.area,
+        issuedOn: found.issuedOn,
+        ...(end ? { expiresOn: end } : {}),
+        registeredAt: found.createdAt,
+      };
+    },
+
+    /**
+     * The manager a person reports to now decides their own registration (D108 item 7): `approve` makes it `valid`, with
+     * evidence still `self` and the manager's attestation in `decidedBy` and `decidedAt`, and from then it counts like any
+     * holding; `reject` makes it `rejected`, which counts towards nothing and is listed to the person alone. Either closes
+     * every card of the approval in the same transaction. Only while it waits: deciding twice, or one taken back, is
+     * refused. A former manager decides nothing; a manager the person reports to since may decide it from the matrix.
+     */
+    async decideHolding(persona: AuthenticatedContext, holdingId: string, decision: CompetenceDecision): Promise<void> {
+      const { found, refused } = await decidable(persona, holdingId);
+      const at = now().toISOString();
+      await deps.store.transaction(async tx => {
+        const holding = await tx.holding(holdingId);
+        if (!holding || holding.personId !== found.personId) throw refused();
+        if (holding.state !== 'pending') throw new CompetenceError(DECIDED);
+        const approve = decision === 'approve';
+        await tx.updateHolding(holdingId, {
+          state: approve ? 'valid' : 'rejected',
+          decidedBy: persona.id,
+          decidedAt: at,
+        });
+        if (holding.threadId) await tx.workItems.close(holding.threadId, at, approve ? 'approved' : 'rejected');
+        await tx.audit({
+          actor: persona.principal.id,
+          action: approve ? 'competence.holding_approved' : 'competence.holding_rejected',
+          subject: 'holding:' + holdingId,
+          at,
+          details: { personId: holding.personId, typeId: holding.typeId },
+        });
+      });
+    },
+
+    /**
+     * A person takes back their own registration while it waits (D108 item 7). The row is removed, since it was never
+     * attested and counted towards nothing, and every card of its approval is closed in the same transaction; the audit
+     * row keeps that it was. One that is decided, or not the person's own, is refused.
+     */
+    async withdrawOwn(persona: AuthenticatedContext, holdingId: string): Promise<void> {
+      const at = now().toISOString();
+      await deps.store.transaction(async tx => {
+        const holding = await tx.holding(holdingId);
+        if (!holding || holding.personId !== persona.id || holding.evidence !== 'self')
+          throw new ForbiddenError(NOT_YOUR_OWN);
+        if (holding.state !== 'pending') throw new CompetenceError(DECIDED_OWN);
+        await tx.deleteHolding(holdingId);
+        if (holding.threadId) await tx.workItems.close(holding.threadId, at, 'withdrawn');
+        await tx.audit({
+          actor: persona.principal.id,
+          action: 'competence.holding_withdrawn',
+          subject: 'holding:' + holdingId,
+          at,
+          details: { personId: holding.personId, typeId: holding.typeId },
+        });
+      });
+    },
+
+    /**
      * `competence.holdings`. With `person` (a user name, or the id of a person provisioned without one): what that
      * report holds, for the manager they report to. Without: the reader's own. For each type the holding that decides,
      * a copied one with its source and when it was read; a type required of the person that they hold nothing of as a
-     * `missing` row (D108 item 6); after them the copied rows whose type is not mapped, under the source's own label and
-     * marked as counting towards nothing (item 9).
+     * `missing` row (D108 item 6); the person's own registrations that wait for a decision (`awaiting-approval`) and,
+     * to the person alone, those that were rejected (item 7); after them the copied rows whose type is not mapped, under
+     * the source's own label and marked as counting towards nothing (item 9).
      */
     async holdings(
       persona: AuthenticatedContext,
@@ -1109,11 +1361,23 @@ export function competenceUsecases(deps: CompetenceDeps) {
       return deps.store.transaction(async tx => {
         const [person] = await tx.persons([personId]);
         if (!person) return { rows: [] };
-        const { standings: held, waiting } = await standingsWith(tx, persona.organisationId, [personId], today);
+        const {
+          standings: held,
+          waiting,
+          own,
+          types,
+        } = await standingsWith(tx, persona.organisationId, [personId], today);
         const names = await sourceNames(tx);
+        // A rejection is the person's to see, nobody else's (item 7).
+        const mine = personId === persona.id;
+        const registered = own.flatMap(h => {
+          const type = h.typeId ? types.get(h.typeId) : undefined;
+          return type && (h.state === 'pending' || mine) ? [ownRow(h, type, person)] : [];
+        });
         return {
           rows: orderHoldingRows([
             ...held.map(s => holdingRow(s, person, names)),
+            ...registered,
             ...waiting.map(h => uncountedRow(h, person, names)),
           ]).slice(0, 500),
         };
@@ -1712,20 +1976,33 @@ export function competenceUsecases(deps: CompetenceDeps) {
 
     /**
      * Erase one person from the domain (D108 item 14): their holdings, copied ones included, the requirements set on them
-     * alone (item 6), and their id on the holdings they registered or revoked for others. Only for a person the directory
-     * has deactivated: an active person is refused with `PersonStillActive`. `actor` is the operator's.
+     * alone (item 6), and their id on the holdings they registered, revoked or decided for others. The cards of their own
+     * registrations' approvals go from every manager's stream, and the approval cards in their own stream go too (item
+     * 7). Only for a person the directory has deactivated: an active person is refused with `PersonStillActive`.
+     * `actor` is the operator's.
      */
     async erasePerson(
       actor: string,
       personId: string,
-    ): Promise<{ holdings: number; cleared: number; requirements: number }> {
+    ): Promise<{ holdings: number; cleared: number; requirements: number; approvals: number }> {
       const at = now().toISOString();
       return deps.store.transaction(async tx => {
         // Erasure is for a person the directory has deactivated (item 14): an active person's copied rows would come
         // back at the next read of their source, and their manager's attestations are still in use.
         if ((await tx.activeIds([personId])).has(personId)) throw new PersonStillActive();
+        const [person] = await tx.persons([personId]);
         const erased = await tx.erasePerson(personId);
-        const counted = { holdings: erased.holdings, cleared: erased.cleared, requirements: erased.requirements };
+        // The cards of their registrations' approvals: by the approvals the rows name, and by the person the cards are
+        // about, which also finds those of a registration they took back, whose row is gone.
+        if (erased.threadIds.length) await tx.workItems.remove(erased.threadIds);
+        if (person?.userName) await tx.workItems.removeAbout({ entity: 'person', key: person.userName });
+        await tx.workItems.removeOwned(personId);
+        const counted = {
+          holdings: erased.holdings,
+          cleared: erased.cleared,
+          requirements: erased.requirements,
+          approvals: erased.threadIds.length,
+        };
         await tx.audit({
           actor,
           action: 'competence.person_erased',

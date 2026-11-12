@@ -62,7 +62,10 @@ import {
 import type {
   AppearanceAdminView,
   Capability,
+  CompetenceApproval,
+  CompetenceDecisionBody,
   CompetenceHoldingBody,
+  CompetenceOwnOutput,
   CompetenceMappingBody,
   CompetenceMatrixCell,
   CompetenceMatrixOutput,
@@ -308,6 +311,19 @@ export class MockApi {
   matrixDownloads: string[] = [];
   /** Every revocation of a holding, in order. */
   holdingWrites: Array<{ method: string; path: string }> = [];
+  /**
+   * The reader's own registration (D108 item 7): whether anyone would decide it, and the ones that wait, as the writes
+   * from the page change them. Every write to them in order; the next registration answers 400 with `ownFail`.
+   */
+  competenceOwn: CompetenceOwnOutput = { approver: true, pending: [] };
+  ownWrites: Array<{ method: string; path: string; body?: unknown }> = [];
+  ownFail: string | null = null;
+  /**
+   * The registrations of the reports' own that wait for the reader's decision, by holding id; an id not here is refused
+   * as the server refuses one the reader may not decide. Every decision in order; a decided one leaves this map.
+   */
+  competenceApprovals: Record<string, CompetenceApproval> = {};
+  approvalWrites: Array<{ path: string; body: CompetenceDecisionBody }> = [];
   /** Utvecklingssamtal (D96). False: the person has no talks system, so both reads are refused as the registry refuses them. */
   talksOffered = true;
   /** False: another system answers the profile; the reads are read-only (no `id`, a `link` on every row) and the writes refused. */
@@ -1051,6 +1067,66 @@ export class MockApi {
         else this.competenceRequirements.rows = this.competenceRequirements.rows.filter(r => r.id !== id);
         return route.fulfill({ status: 204, body: '' });
       }
+    }
+    // A person's own registration (D108 item 7): what waits, a new one and one taken back.
+    if (path === '/competence/own' && route.request().method() === 'GET') return json(this.competenceOwn);
+    if (path === '/competence/own/types' && route.request().method() === 'GET')
+      return json({ rows: this.competenceTypes });
+    if (path === '/competence/own/holdings' && route.request().method() === 'POST') {
+      if (this.ownFail) {
+        const error = this.ownFail;
+        this.ownFail = null;
+        return route.fulfill({ status: 400, json: { error } });
+      }
+      const body = route.request().postDataJSON() as CompetenceHoldingBody;
+      this.ownWrites.push({ method: 'POST', path, body });
+      const id = 'own-' + this.ownWrites.length;
+      const type = this.competenceTypes?.find(t => t.id === body.typeId);
+      this.competenceOwn = {
+        ...this.competenceOwn,
+        pending: [
+          ...this.competenceOwn.pending,
+          {
+            holdingId: id,
+            typeId: body.typeId,
+            competence: type?.name ?? body.typeId,
+            issuedOn: body.issuedOn,
+            ...(body.expiresOn ? { expiresOn: body.expiresOn } : {}),
+          },
+        ],
+      };
+      return route.fulfill({ status: 201, json: { id } });
+    }
+    const withdrawing = /^\/competence\/own\/holdings\/([^/]+)$/.exec(path);
+    if (withdrawing && route.request().method() === 'DELETE') {
+      const id = decodeURIComponent(withdrawing[1]!);
+      this.ownWrites.push({ method: 'DELETE', path });
+      this.competenceOwn = {
+        ...this.competenceOwn,
+        pending: this.competenceOwn.pending.filter(p => p.holdingId !== id),
+      };
+      return route.fulfill({ status: 204, body: '' });
+    }
+    // Its decision by the manager the person reports to: the registration read, and approved or rejected.
+    const approvalPath = /^\/competence\/approvals\/([^/]+)$/.exec(path);
+    if (approvalPath) {
+      const id = decodeURIComponent(approvalPath[1]!);
+      const found = this.competenceApprovals[id];
+      if (!found)
+        return route.fulfill({ status: 403, json: { error: 'Registreringen finns inte bland dem du kan granska.' } });
+      if (route.request().method() === 'GET') return json(found);
+      const body = route.request().postDataJSON() as CompetenceDecisionBody;
+      this.approvalWrites.push({ path, body });
+      delete this.competenceApprovals[id];
+      // Approved, the registration decides the cell; rejected, the cell is as it was without it.
+      this.changeMatrix(c => {
+        if (c.pending !== id) return c;
+        const { pending: _pending, ...rest } = c;
+        return body.decision === 'approve'
+          ? { ...rest, status: 'valid', holdingId: id, evidence: 'self', revocable: true }
+          : rest;
+      });
+      return route.fulfill({ status: 204, body: '' });
     }
     const registering = /^\/competence\/people\/([^/]+)\/holdings$/.exec(path);
     if (registering && route.request().method() === 'POST') {

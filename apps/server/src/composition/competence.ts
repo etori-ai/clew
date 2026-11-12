@@ -1,8 +1,11 @@
-import { postgresCompetenceStore } from '../modules/competence/adapters/postgres';
+import { withThreadTx, type ThreadStoreOptions } from '../threads/adapters/postgres';
+import { competenceTx } from '../modules/competence/adapters/postgres';
 import { competenceUsecases } from '../modules/competence/usecases';
 import { reportsByUnit } from '../modules/entities/domain';
-import type { HoldingsPort, Staff } from '../modules/competence/model';
+import type { Above, CompetenceStore, HoldingsPort, Staff } from '../modules/competence/model';
+import { cancelDurable } from '../dbos/start';
 import { logPort, logger } from '../logging';
+import { competenceWorkItems } from './competence-work-items';
 import { staff as staffUsecases } from './people';
 import { clock, ids } from './ambient';
 import { ledger } from './durable';
@@ -12,7 +15,21 @@ import { ledger } from './durable';
  * connector over what is built here, and `composition/index.ts` builds the stream over the registry: this file imports
  * neither. The store starts the copy's workflow inside its own transaction (D86).
  */
-export const competenceStore = postgresCompetenceStore(ledger);
+/**
+ * One competence transaction is one thread-store transaction (D108 item 7): the competence tables and the approvals'
+ * cards (`competenceWorkItems`) share the physical database transaction, so a person's own registration, its cards in
+ * the managers' streams, their audit rows and anything enqueued commit or roll back as one, as talks' action points do.
+ * `options` names the durable engine's queue: the server's ledger here, a test's own in `tests/db`.
+ */
+export function competenceStoreWithCards(options: ThreadStoreOptions, deps: { clock: () => Date }): CompetenceStore {
+  return {
+    transaction: fn =>
+      withThreadTx(options, (tx, thread) =>
+        fn(competenceTx(tx, options.durable, competenceWorkItems(tx, thread, { clock: deps.clock }))),
+      ),
+  };
+}
+export const competenceStore = competenceStoreWithCards({ durable: ledger, cancel: cancelDurable }, { clock });
 /**
  * The reader's reports (D99 item 4) as the module's `Staff` port has them: the units they manage, each with exactly the
  * people the `managed` relation names (D117, `reportsByUnit`), read from the people module's directory on every call.
@@ -20,6 +37,12 @@ export const competenceStore = postgresCompetenceStore(ledger);
  * and neither is anyone whose competence the reader may read or write. Someone who manages no unit has no units.
  */
 const staff: Staff = async persona => ({ units: reportsByUnit(await staffUsecases.reach(persona)) });
+/**
+ * Whom the reader reports to (D99 item 4, D117's line), as the people module's reach answers it: whoever leads the
+ * nearest unit above the reader that somebody leads, active, read on every call. A person's own registration goes to
+ * them (D108 item 7).
+ */
+const above: Above = async persona => (await staffUsecases.reach(persona)).above.filter(id => id !== persona.id);
 /**
  * What the copy of D108 item 9 reads: the module's switch and the installation's read of the holdings profile (D119,
  * `holdingsReader`). The registry is built over the module this file builds, so the slot is filled in
@@ -36,6 +59,7 @@ export const holdingsPort: HoldingsPort = {
 export const competence = competenceUsecases({
   store: competenceStore,
   staff,
+  above,
   clock,
   ids,
   holdings: {

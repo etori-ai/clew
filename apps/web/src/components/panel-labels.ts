@@ -167,6 +167,9 @@ const values: Record<string, string> = {
   valid: 'giltigt',
   // A copied holding whose source type is not mapped to the catalogue (D108 item 9).
   uncounted: 'räknas inte',
+  // A person's own registration that waits for their manager, or that the manager rejected (D108 item 7).
+  'awaiting-approval': 'väntar på godkännande',
+  rejected: 'avvisat',
   done: 'klart',
   failed: 'misslyckades',
   long: 'sjukskriven',

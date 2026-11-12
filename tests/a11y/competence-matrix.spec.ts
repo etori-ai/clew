@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import type { CompetenceMatrixOutput } from '@clew/contracts';
-import { competenceTypes } from './competence';
+import { competenceTypes, lenaApproval, withLenaWaiting } from './competence';
 import {
   desktop,
   expect,
@@ -22,7 +22,9 @@ import {
  * manager's own requirement on one person added in a dialog with an address and removed from its cell. More required
  * than ten columns hold is chosen as a set, which is in the address; the matrix as shown is a file. Beside the panel, on
  * a phone and at 320 px the table is a list of one person per item. The page's own answer for someone who manages
- * nobody and with the module off. The mock's clock stands at 2026-11-04.
+ * nobody and with the module off. A report's own registration that waits (D108 item 7) is noted in its cell, and is
+ * approved or, after the confirmation, rejected in a dialog named in the address (`approve`), from the cell, from a cold
+ * address, and from the page the approval's card leads to. The mock's clock stands at 2026-11-04.
  */
 const MATRIX = '/competence/matrix';
 const notices = (page: Page) => page.getByRole('region', { name: 'Aviseringar' });
@@ -47,6 +49,12 @@ const switchedOn = (api: MockApi) => {
   api.competenceTypes = competenceTypes();
 };
 const heading = (page: Page) => page.getByRole('heading', { level: 1, name: 'Medarbetarnas kompetens' });
+const approvalDialog = (page: Page) => page.getByRole('dialog', { name: 'Granska intyg' });
+/** Lena has registered HLR herself, and it waits for the reader. */
+const lenaWaits = (api: MockApi) => {
+  api.competenceMatrix = withLenaWaiting(api.competenceMatrix);
+  api.competenceApprovals = { 'own-lena': lenaApproval() };
+};
 /**
  * Presses Tab (or Shift+Tab) until `target` has the focus, as a person moving through the page does, from wherever the
  * focus is; fails after `max` stops.
@@ -366,6 +374,107 @@ test.describe('Kompetens › Medarbetare', () => {
       await expect(heading(page)).toBeFocused();
     });
 
+    test('a report’s own registration is approved from its cell by keyboard: the decision has its address, a toast says it, and the focus comes back to the cell', async ({
+      page,
+      api,
+    }) => {
+      switchedOn(api);
+      lenaWaits(api);
+      await open(page, MATRIX);
+      const lena = row(page, 'Lena Berg');
+      // The cell is what it is without the registration, and says that one waits.
+      await expect(lena.getByRole('cell').nth(0)).toContainText('Saknas');
+      await expect(lena.getByRole('cell').nth(0)).toContainText('Att granska');
+      const control = cell(page, 'HLR', 'Lena Berg');
+      await tabTo(page, control);
+      await page.keyboard.press('Enter');
+      await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText(['Granska', 'Registrera intyg']);
+      await expect(page.getByRole('menuitem', { name: 'Granska' })).toBeFocused();
+      await page.keyboard.press('Enter');
+      await expect(page).toHaveURL(`${MATRIX}?approve=own-lena`);
+      const dialog = approvalDialog(page);
+      await expect(dialog.getByText('Registrerat av Lena Berg')).toBeVisible();
+      await expect(dialog).toContainText('HLR');
+      await expect(dialog).toContainText('1 okt. 2026');
+      await expect(dialog).toContainText('1 okt. 2028');
+      await settled(page);
+      await expectNoAxeViolations(page);
+      await tabTo(page, dialog.getByRole('button', { name: 'Godkänn' }), { max: 12 });
+      await page.keyboard.press('Enter');
+      await expect(dialog).toBeHidden();
+      await expect(page).toHaveURL(MATRIX);
+      expect(api.approvalWrites).toEqual([{ path: '/competence/approvals/own-lena', body: { decision: 'approve' } }]);
+      await expect(notices(page).getByText('HLR är godkänt för Lena Berg.')).toBeAttached();
+      await expect(lena.getByRole('cell').nth(0)).toContainText('Giltigt');
+      await expect(lena.getByRole('cell').nth(0)).not.toContainText('Att granska');
+      await expect(control).toBeFocused();
+    });
+
+    test('from a cold address it is rejected after the confirmation, Esc in which closes back into the dialog, and the focus goes to the heading', async ({
+      page,
+      api,
+    }) => {
+      switchedOn(api);
+      lenaWaits(api);
+      await open(page, `${MATRIX}?approve=own-lena`);
+      const dialog = approvalDialog(page);
+      await expect(dialog.getByText('Registrerat av Lena Berg')).toBeVisible();
+      const reject = dialog.getByRole('button', { name: 'Avvisa', exact: true });
+      await tabTo(page, reject, { max: 12 });
+      await page.keyboard.press('Enter');
+      const confirm = page.getByRole('alertdialog', { name: 'Avvisa intyget?' });
+      await expect(confirm).toContainText('HLR för Lena Berg räknas inte, och Lena Berg ser att det är avvisat.');
+      await settled(page);
+      await expectNoAxeViolations(page);
+      await page.keyboard.press('Escape');
+      await expect(confirm).toBeHidden();
+      await expect(dialog).toBeVisible();
+      await expect(reject).toBeFocused();
+      expect(api.approvalWrites).toEqual([]);
+      await page.keyboard.press('Enter');
+      await tabTo(page, confirm.getByRole('button', { name: 'Avvisa intyget' }), { max: 4 });
+      await page.keyboard.press('Enter');
+      await expect(confirm).toBeHidden();
+      await expect(dialog).toBeHidden();
+      await expect(page).toHaveURL(MATRIX);
+      expect(api.approvalWrites).toEqual([{ path: '/competence/approvals/own-lena', body: { decision: 'reject' } }]);
+      await expect(notices(page).getByText('HLR är avvisat för Lena Berg.')).toBeAttached();
+      await expect(row(page, 'Lena Berg').getByRole('cell').nth(0)).toContainText('Saknas');
+      await expect(row(page, 'Lena Berg').getByRole('cell').nth(0)).not.toContainText('Att granska');
+      await expect(heading(page)).toBeFocused();
+    });
+
+    test('an address for a registration the reader may not decide, or one decided, opens nothing and the page says why', async ({
+      page,
+      api,
+    }) => {
+      switchedOn(api);
+      await open(page, `${MATRIX}?approve=own-elsewhere`);
+      await expect(page.getByRole('main').getByRole('alert')).toHaveText(
+        'Registreringen finns inte bland dem du kan granska.',
+      );
+      await expect(page).toHaveURL(MATRIX);
+      await expect(approvalDialog(page)).toHaveCount(0);
+      await expectNoAxeViolations(page);
+    });
+
+    test('the page the approval’s card leads to is the decision over the matrix, and Esc closes it to the matrix', async ({
+      page,
+      api,
+    }) => {
+      switchedOn(api);
+      lenaWaits(api);
+      const input = encodeURIComponent(JSON.stringify({ holding: 'own-lena' }));
+      await open(page, `/tools/competence.approval?input=${input}&from=%2F`);
+      await expect(page).toHaveURL(`${MATRIX}?approve=own-lena`);
+      await expect(approvalDialog(page).getByText('Registrerat av Lena Berg')).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(approvalDialog(page)).toBeHidden();
+      await expect(page).toHaveURL(MATRIX);
+      await expect(heading(page)).toBeFocused();
+      expect(api.approvalWrites).toEqual([]);
+    });
+
     test('more required than ten columns hold: the set is chosen with the selector, kept in the address and in the file', async ({
       page,
       api,
@@ -543,7 +652,7 @@ test.describe('Kompetens › Medarbetare', () => {
   });
 
   test.describe('1.4.10 reflow', () => {
-    test('the matrix, its sets and both dialogs reflow at 320 px', async ({ page, api }) => {
+    test('the matrix, its sets and its dialogs reflow at 320 px', async ({ page, api }) => {
       switchedOn(api);
       api.competenceMatrixSets = true;
       await page.setViewportSize(narrow);
@@ -556,6 +665,10 @@ test.describe('Kompetens › Medarbetare', () => {
       expect(await reflowProblems(page)).toEqual([]);
       await open(page, `${MATRIX}?requirement=new`);
       await expect(requirement(page).getByRole('button', { name: 'Spara', exact: true })).toBeVisible();
+      expect(await reflowProblems(page)).toEqual([]);
+      lenaWaits(api);
+      await open(page, `${MATRIX}?approve=own-lena`);
+      await expect(approvalDialog(page).getByRole('button', { name: 'Godkänn' })).toBeVisible();
       expect(await reflowProblems(page)).toEqual([]);
     });
   });

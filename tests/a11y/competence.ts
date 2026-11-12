@@ -1,4 +1,5 @@
 import type {
+  CompetenceApproval,
   CompetenceMatrixCell,
   CompetenceMatrixOutput,
   CompetenceRequirementsOutput,
@@ -24,7 +25,7 @@ export const holdingsSpec: PanelViewSpec = {
       key: 'status',
       label: 'Status',
       format: 'status',
-      tones: { expired: 'alert', missing: 'alert', expiring: 'warn' },
+      tones: { expired: 'alert', missing: 'alert', expiring: 'warn', 'awaiting-approval': 'none', rejected: 'none' },
     },
     { key: 'expiresOn', label: 'Giltigt till', format: 'date' },
     { key: 'issuedOn', label: 'Utfärdat', format: 'date' },
@@ -301,3 +302,44 @@ export function matrixAnswer(base: CompetenceMatrixOutput, sets: boolean, by: st
     required: 12,
   };
 }
+
+/**
+ * Lena's own registration of HLR (D108 item 7), waiting for her manager's decision: as the decision's dialog reads it,
+ * and the matrix with it noted in her HLR cell, which stays "Saknas" without it.
+ */
+export const lenaApproval = (): CompetenceApproval => ({
+  holdingId: 'own-lena',
+  personId: 'lena',
+  key: 'lena.berg',
+  name: 'Lena Berg',
+  typeId: 't-hlr',
+  competence: 'HLR',
+  area: 'Akut omhändertagande',
+  issuedOn: '2026-10-01',
+  expiresOn: '2028-10-01',
+  registeredAt: '2026-11-03T08:00:00.000Z',
+});
+export const withLenaWaiting = (m: CompetenceMatrixOutput): CompetenceMatrixOutput => ({
+  ...m,
+  rows: m.rows.map(r =>
+    r.personId === 'lena'
+      ? { ...r, cells: r.cells.map(c => (c.typeId === 't-hlr' ? { ...c, pending: 'own-lena' } : c)) }
+      : r,
+  ),
+});
+/** The reader's own list with a registration of hers that waits, which the page draws in its own card, and one rejected. */
+export const holdingsWithOwn = {
+  rows: [
+    ...holdingsOutput.rows,
+    {
+      ...holding('Heta arbeten', 'Säkerhet', 'awaiting-approval', '2026-10-01', '2031-09-30'),
+      ref: 'holding:competence:own-1',
+      evidence: 'self',
+    },
+    {
+      ...holding('Fallskydd', 'Säkerhet', 'rejected', '2026-09-01'),
+      ref: 'holding:competence:own-2',
+      evidence: 'self',
+    },
+  ],
+};

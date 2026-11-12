@@ -17,6 +17,7 @@ import {
   type MemoryCompetenceStore,
 } from '../../apps/server/src/modules/competence/adapters/memory';
 import {
+  approvalView,
   attentionView,
   competenceConnector,
   coverageView,
@@ -201,6 +202,9 @@ describe('the dates', () => {
       revokedAt: null,
       revokedBy: null,
       copy: null,
+      decidedBy: null,
+      decidedAt: null,
+      threadId: null,
       ...extra,
     });
     const types = new Map([[t.id, t]]);
@@ -273,7 +277,7 @@ describe('the catalogue', () => {
     expect(store.state.types.size).toBe(1);
     expect(audits()).toHaveLength(1);
   });
-  test('an administrator reads every type, a manager the ones that can be registered, anyone else is refused', async () => {
+  test('an administrator reads every type, a manager the ones that can be registered, anyone else is refused; a person reads the ones they may register for themselves', async () => {
     const { hot, hlr } = await catalogue();
     await competence.archiveType(admin, hot);
     const read = async (p: AuthenticatedContext) => (await competence.types(p)).rows.map(t => [t.name, t.archived]);
@@ -295,6 +299,8 @@ describe('the catalogue', () => {
       archived: false,
     });
     await expect(competence.types(asAnna)).rejects.toBeInstanceOf(ForbiddenError);
+    // A person registers their own (D108 item 7) from the types a manager registers from.
+    expect((await competence.ownTypes(asAnna)).rows).toEqual((await competence.types(boss)).rows);
   });
   test('a change is audited with what changed and the validity before and after; a change of nothing writes nothing', async () => {
     const { hlr } = await catalogue();
@@ -376,6 +382,9 @@ describe('a manager registers a certificate', () => {
       revokedAt: null,
       revokedBy: null,
       copy: null,
+      decidedBy: null,
+      decidedAt: null,
+      threadId: null,
     });
     expect(lastAudit()).toEqual({
       actor: 'person:boss',
@@ -574,17 +583,27 @@ describe('erasure and export', () => {
     await competence.registerHolding(boss, 'bo', { typeId: hot, issuedOn: '2026-01-10' });
     // Erasure is for a person the directory has deactivated (D108 item 14).
     store.deactivate('anna');
-    expect(await competence.erasePerson('operator:cli', 'anna')).toEqual({ holdings: 1, cleared: 0, requirements: 0 });
+    expect(await competence.erasePerson('operator:cli', 'anna')).toEqual({
+      holdings: 1,
+      cleared: 0,
+      requirements: 0,
+      approvals: 0,
+    });
     expect(lastAudit()).toEqual({
       actor: 'operator:cli',
       action: 'competence.person_erased',
       subject: 'person:anna',
       at: now.toISOString(),
-      details: { holdings: 1, cleared: 0, requirements: 0 },
+      details: { holdings: 1, cleared: 0, requirements: 0, approvals: 0 },
     });
     // The manager who registered is erased: the holdings stay, without her id.
     store.deactivate('boss');
-    expect(await competence.erasePerson('operator:cli', 'boss')).toEqual({ holdings: 0, cleared: 1, requirements: 0 });
+    expect(await competence.erasePerson('operator:cli', 'boss')).toEqual({
+      holdings: 0,
+      cleared: 1,
+      requirements: 0,
+      approvals: 0,
+    });
     expect([...store.state.holdings.values()].map(h => [h.personId, h.registeredBy])).toEqual([['bo', null]]);
   });
   test('the export is one versioned document of the organisation, audited with counts', async () => {
@@ -592,7 +611,7 @@ describe('erasure and export', () => {
     await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2026-01-10' });
     await competence.seedType('operator:test', 'org-2', { name: 'Annan', area: 'X', kind: 'course' });
     const doc = await competence.exportDomain('operator:cli', ORG);
-    expect(doc).toMatchObject({ format: 'clew.competence/4', exportedAt: now.toISOString(), organisationId: ORG });
+    expect(doc).toMatchObject({ format: 'clew.competence/5', exportedAt: now.toISOString(), organisationId: ORG });
     expect(doc.types.map(t => t.name).sort()).toEqual(['HLR', 'Heta arbeten', 'Socionomexamen']);
     expect(doc.holdings).toHaveLength(1);
     expect(lastAudit()).toEqual({
@@ -662,12 +681,15 @@ describe('the built-in connector', () => {
       ['competence.person', 'read', false, 'person'],
       ['competence.unit', 'read', false, 'unit'],
       ['competence.coverage', 'read', false, null],
+      ['competence.approval', 'read', false, null],
     ]);
     for (const x of c.capabilities) expect(viewProblem(x, c.capabilities)).toBeUndefined();
-    // The reads about a person and a unit take the keys they are asked with, and the table a unit's row opens takes
-    // the unit, so none of them is a place in the menu.
-    expect(c.capabilities.map(x => menuEligible(x))).toEqual([true, true, false, false, false]);
-    expect([attentionView, holdingsView, personView, unitView, coverageView].some(v => 'ref' in v)).toBe(false);
+    // The reads about a person and a unit take the keys they are asked with, the table a unit's row opens takes the
+    // unit, and an approval's read takes the registration, so none of them is a place in the menu.
+    expect(c.capabilities.map(x => menuEligible(x))).toEqual([true, true, false, false, false, false]);
+    expect([attentionView, holdingsView, personView, unitView, coverageView, approvalView].some(v => 'ref' in v)).toBe(
+      false,
+    );
   });
 
   test('the read about a person is placed by the registry: a section source with the dialog as its page, and words a person reads', async () => {
@@ -1035,7 +1057,12 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
       const target = await competence.addShareTarget(admin, { typeId: hlr, positionCode: SSK, minShare: 40 });
       const onAnna = await competence.addRequirement(boss, { typeId: hot, personId: 'anna' });
       store.deactivate('ada');
-      expect(await competence.erasePerson('operator:cli', 'ada')).toEqual({ holdings: 0, cleared: 2, requirements: 0 });
+      expect(await competence.erasePerson('operator:cli', 'ada')).toEqual({
+        holdings: 0,
+        cleared: 2,
+        requirements: 0,
+        approvals: 0,
+      });
       expect(store.state.requirements.get(onPosition)?.createdBy).toBeNull();
       expect(store.state.shareTargets.get(target)?.createdBy).toBeNull();
       expect(store.state.requirements.get(onAnna)?.createdBy).toBe('person:boss');
@@ -1186,6 +1213,9 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
         revokedAt: null,
         revokedBy: null,
         copy: null,
+        decidedBy: null,
+        decidedAt: null,
+        threadId: null,
         ...extra,
       });
       const standings = deciding(
@@ -1617,7 +1647,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
     await competence.removeRequirement(boss, onBo);
     await competence.addRequirement(boss, { typeId: hot, personId: 'bo' });
     const doc = await competence.exportDomain('operator:cli', ORG);
-    expect(doc.format).toBe('clew.competence/4');
+    expect(doc.format).toBe('clew.competence/5');
     expect(doc.requirements.map(r => [r.typeId, r.positionCode, r.unitId, r.personId])).toEqual([
       [hlr, USK, null, null],
       [hlr, null, 'u1', null],
@@ -1626,13 +1656,18 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
     expect(doc.shareTargets.map(t => [t.positionCode, t.unitId, t.minShare])).toEqual([[SSK, null, 40]]);
     expect(lastAudit().details).toEqual({ types: 3, holdings: 0, mappings: 0, requirements: 3, shareTargets: 1 });
     store.deactivate('bo');
-    expect(await competence.erasePerson('operator:cli', 'bo')).toEqual({ holdings: 0, cleared: 0, requirements: 1 });
+    expect(await competence.erasePerson('operator:cli', 'bo')).toEqual({
+      holdings: 0,
+      cleared: 0,
+      requirements: 1,
+      approvals: 0,
+    });
     expect(lastAudit()).toEqual({
       actor: 'operator:cli',
       action: 'competence.person_erased',
       subject: 'person:bo',
       at: now.toISOString(),
-      details: { holdings: 0, cleared: 0, requirements: 1 },
+      details: { holdings: 0, cleared: 0, requirements: 1, approvals: 0 },
     });
     expect([...store.state.requirements.values()].map(r => r.personId)).toEqual([null, null]);
     const written = JSON.stringify(audits());
@@ -1693,6 +1728,9 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
             createdAt: now.toISOString(),
             revokedAt: null,
             revokedBy: null,
+            decidedBy: null,
+            decidedAt: null,
+            threadId: null,
             copy: { connectorId: 'lms', sourceId: 'row-' + id, sourceType: 'c1', sourceLabel: 'Kurs', readAt: '' },
           },
         ]);
@@ -2037,5 +2075,456 @@ describe("a manager's reports are D99's, not everyone Personal lists (D117 `mana
     // A real report is still hers to register for.
     await w.competence.registerHolding(w.hillevi, 'anna', { typeId: hlr, issuedOn: '2026-10-01' });
     expect(w.store.audit().length).toBe(written + 1);
+  });
+});
+
+/**
+ * A person's own registration (D108 item 7): stored pending with evidence `self`, counting towards nothing, its
+ * approval a card in the stream of each manager the person reports to, closed in the same transaction as the decision
+ * or the person taking it back. Anna reports to Karin and Olle, two managers of her unit; Bo to Karin; Dan to nobody.
+ */
+describe('a person registers their own certificate and the manager they report to decides it (D108 item 7)', () => {
+  const asDan = personaOf('dan', 'employee', 'Dan Dahl');
+  let above: Map<string, string[]>;
+  let own: CompetenceUsecases;
+  beforeEach(() => {
+    above = new Map([
+      ['anna', ['other', 'boss']],
+      ['bo', ['boss']],
+    ]);
+    staff.set('other', { units: [{ unitId: 'u1', unitLabel: 'Enhet 1', people: [anna, dan] }] });
+    store.addPerson({ id: 'other', organisationId: ORG, name: 'Olle Chef', userName: 'other' });
+    own = competenceUsecases({
+      store,
+      staff: async persona => staff.get(persona.id) ?? { units: [] },
+      above: async persona => above.get(persona.id) ?? [],
+      clock: () => now,
+      ids: () => 'id-' + ++n,
+    });
+  });
+  const calls = () => store.calls();
+  const actions = () => audits().map(a => a.action);
+  /** HLR (24 months by the employer's rule), Heta arbeten and Socionomexamen; HLR required of Anna by Karin. */
+  async function setup() {
+    const types = await catalogue();
+    await own.addRequirement(boss, { typeId: types.hlr, personId: 'anna' });
+    store.addUnit({ id: 'u1', organisationId: ORG, label: 'Enhet 1' });
+    store.assign('anna', 'u1');
+    return types;
+  }
+
+  test('it is stored pending with evidence self, with one card per manager she reports to and an audit row of ids', async () => {
+    const { hlr, hot } = await setup();
+    const before = audits().length;
+    const id = await own.registerOwn(asAnna, { typeId: hlr, issuedOn: '2026-01-10' });
+    const threadId = store.state.holdings.get(id)!.threadId!;
+    expect(store.state.holdings.get(id)).toEqual({
+      id,
+      personId: 'anna',
+      typeId: hlr,
+      issuedOn: '2026-01-10',
+      expiresOn: null,
+      evidence: 'self',
+      state: 'pending',
+      registeredBy: 'anna',
+      createdAt: now.toISOString(),
+      revokedAt: null,
+      revokedBy: null,
+      copy: null,
+      decidedBy: null,
+      decidedAt: null,
+      threadId,
+    });
+    // Both managers get a card, in one call, about her by her user name and naming nothing else.
+    expect(calls()).toEqual([
+      {
+        op: 'open',
+        threadId,
+        holdingId: id,
+        managers: ['boss', 'other'],
+        at: now.toISOString(),
+        subject: { entity: 'person', key: 'anna.a' },
+      },
+    ]);
+    expect([...store.state.cards.keys()].sort()).toEqual([threadId + ':boss', threadId + ':other']);
+    expect(audits().slice(before)).toEqual([
+      {
+        actor: 'person:anna',
+        action: 'competence.holding_submitted',
+        subject: 'holding:' + id,
+        at: now.toISOString(),
+        details: {
+          personId: 'anna',
+          typeId: hlr,
+          issuedOn: '2026-01-10',
+          expiresOn: null,
+          managers: ['boss', 'other'],
+        },
+      },
+    ]);
+    // Bo has no user name: his card is about nobody it could name.
+    await own.registerOwn(asBo, { typeId: hot, issuedOn: '2026-02-01', expiresOn: '2031-01-31' });
+    expect(calls().at(-1)).toEqual({
+      op: 'open',
+      threadId: expect.any(String),
+      holdingId: expect.any(String),
+      managers: ['boss'],
+      at: now.toISOString(),
+    });
+  });
+
+  test('it is refused, with nothing written and no card, without a manager, twice while waiting, for a type that cannot be registered and for a wrong day', async () => {
+    const { hlr, hot } = await setup();
+    await own.registerOwn(asAnna, { typeId: hlr, issuedOn: '2026-01-10' });
+    await own.archiveType(admin, hot);
+    const foreign = await own.seedType('operator:test', 'org-2', { name: 'Annan', area: 'X', kind: 'course' });
+    const holdings = store.state.holdings.size,
+      written = audits().length,
+      called = calls().length;
+    for (const [persona, body, message] of [
+      [
+        asDan,
+        { typeId: hlr, issuedOn: '2026-01-10' },
+        'Registreringen kan inte skickas: ingen chef är registrerad för dig.',
+      ],
+      [
+        asAnna,
+        { typeId: hlr, issuedOn: '2026-02-10' },
+        'Du har redan en registrering av den kompetensen som väntar på godkännande.',
+      ],
+      [asAnna, { typeId: hot, issuedOn: '2026-01-10' }, 'Kompetensen är arkiverad och kan inte registreras.'],
+      [asAnna, { typeId: foreign, issuedOn: '2026-01-10' }, 'Kompetensen finns inte i katalogen.'],
+      [asAnna, { typeId: 'nope', issuedOn: '2026-01-10' }, 'Kompetensen finns inte i katalogen.'],
+      [asAnna, { typeId: hlr, issuedOn: '2026-11-11' }, 'Ett intyg kan inte vara utfärdat en dag som inte har kommit.'],
+      [asAnna, { typeId: hlr, issuedOn: '2026-02-30' }, 'Ange ett giltigt datum.'],
+      [
+        asAnna,
+        { typeId: hlr, issuedOn: '2026-01-10', expiresOn: '2026-01-09' },
+        'Slutdatumet kan inte vara före utfärdandet.',
+      ],
+    ] as const) {
+      const attempt = own.registerOwn(persona, body);
+      await expect(attempt).rejects.toBeInstanceOf(CompetenceError);
+      await expect(attempt).rejects.toThrow(message);
+    }
+    expect(store.state.holdings.size).toBe(holdings);
+    expect(audits()).toHaveLength(written);
+    expect(calls()).toHaveLength(called);
+    // Without the port everyone reports to nobody, as the earlier slices were built.
+    await expect(competence.registerOwn(asBo, { typeId: hlr, issuedOn: '2026-01-10' })).rejects.toThrow(
+      'Registreringen kan inte skickas: ingen chef är registrerad för dig.',
+    );
+  });
+
+  test('while it waits it counts towards nothing: status, matrix, attention, figure, coverage, the read about people and her own card', async () => {
+    const { hlr } = await setup();
+    const id = await own.registerOwn(asAnna, { typeId: hlr, issuedOn: '2026-01-10' });
+    // Her own list: HLR is still missing, and her registration waits beside it.
+    expect((await own.holdings(asAnna)).rows.map(r => [r.competence, r.status, r.expiresOn ?? null])).toEqual([
+      ['HLR', 'missing', null],
+      ['HLR', 'awaiting-approval', '2028-01-10'],
+    ]);
+    expect(checkContract(CompetenceHoldingsOutputSchema, await own.holdings(asAnna))).toBe(true);
+    // Her manager sees it waiting too.
+    expect((await own.holdings(boss, { person: 'anna.a' })).rows.map(r => r.status)).toEqual([
+      'missing',
+      'awaiting-approval',
+    ]);
+    // The matrix cell is what it is without it, and names the registration that waits.
+    const cell = (await own.matrix(boss)).rows.find(r => r.personId === 'anna')!.cells[0]!;
+    expect(cell).toMatchObject({ typeId: hlr, status: 'missing', required: true, pending: id });
+    expect(checkContract(CompetenceMatrixOutputSchema, await own.matrix(boss))).toBe(true);
+    expect((await own.attention(boss)).rows.map(r => [r.name, r.status])).toEqual([['Anna Andersson', 'missing']]);
+    expect(await own.summary(boss)).toEqual({ expired: 0, missing: 1, expiring: 0, people: 1, reports: 2 });
+    expect((await own.aboutPeople(boss, ['anna.a'])).rows).toEqual([
+      { key: 'anna.a', expired: 0, missing: 1, expiring: 0, holdings: 0 },
+    ]);
+    expect((await own.coverage(boss, 'u1')).requirements.map(r => [r.under, r.meeting])).toEqual([[1, 0]]);
+    // Her "saknas" card stays until it is approved.
+    expect((await own.scanOf(asAnna, false)).own.map(o => [o.standing.type.name, o.standing.status])).toEqual([
+      ['HLR', 'missing'],
+    ]);
+    expect((await own.validityImpact(admin, hlr, 12)).holdings).toBe(0);
+
+    // Approved, it counts like any holding.
+    await own.decideHolding(boss, id, 'approve');
+    expect((await own.holdings(asAnna)).rows.map(r => [r.competence, r.status, r.evidence])).toEqual([
+      ['HLR', 'valid', 'self'],
+    ]);
+    expect((await own.matrix(boss)).rows.find(r => r.personId === 'anna')!.cells[0]).toMatchObject({
+      status: 'valid',
+      holdingId: id,
+      evidence: 'self',
+      revocable: true,
+    });
+    expect((await own.matrix(boss)).rows.find(r => r.personId === 'anna')!.cells[0]!.pending).toBeUndefined();
+    expect(await own.summary(boss)).toEqual({ expired: 0, missing: 0, expiring: 0, people: 0, reports: 2 });
+    expect((await own.coverage(boss, 'u1')).requirements.map(r => [r.under, r.meeting])).toEqual([[1, 1]]);
+    expect((await own.scanOf(asAnna, false)).own).toEqual([]);
+  });
+
+  test('a manager she reports to approves it: valid, evidence self, decided by and when; every card closes; deciding twice is refused', async () => {
+    const { hlr } = await setup();
+    const id = await own.registerOwn(asAnna, { typeId: hlr, issuedOn: '2026-01-10' });
+    const threadId = store.state.holdings.get(id)!.threadId!;
+    now = new Date('2026-11-11T09:00:00.000Z');
+    const before = audits().length;
+    // The second manager decides; Karin's card closes with Olle's.
+    await own.decideHolding(other, id, 'approve');
+    expect(store.state.holdings.get(id)).toMatchObject({
+      state: 'valid',
+      evidence: 'self',
+      decidedBy: 'other',
+      decidedAt: now.toISOString(),
+      registeredBy: 'anna',
+    });
+    expect(calls().at(-1)).toEqual({ op: 'close', threadId, at: now.toISOString(), outcome: 'approved' });
+    expect([...store.state.cards.values()].map(c => [c.personId, c.state, c.outcome])).toEqual([
+      ['boss', 'handled', 'approved'],
+      ['other', 'handled', 'approved'],
+    ]);
+    expect(audits().slice(before)).toEqual([
+      {
+        actor: 'person:other',
+        action: 'competence.holding_approved',
+        subject: 'holding:' + id,
+        at: now.toISOString(),
+        details: { personId: 'anna', typeId: hlr },
+      },
+    ]);
+    const written = audits().length,
+      called = calls().length;
+    for (const decision of ['approve', 'reject'] as const) {
+      const attempt = own.decideHolding(boss, id, decision);
+      await expect(attempt).rejects.toBeInstanceOf(CompetenceError);
+      await expect(attempt).rejects.toThrow('Registreringen är redan granskad.');
+    }
+    await expect(own.approval(boss, id)).rejects.toThrow('Registreringen är redan granskad.');
+    expect(audits()).toHaveLength(written);
+    expect(calls()).toHaveLength(called);
+  });
+
+  test('rejected, it counts towards nothing and is listed to her alone', async () => {
+    const { hot } = await setup();
+    const id = await own.registerOwn(asAnna, { typeId: hot, issuedOn: '2026-01-10', expiresOn: '2031-01-09' });
+    const threadId = store.state.holdings.get(id)!.threadId!;
+    await own.decideHolding(boss, id, 'reject');
+    expect(store.state.holdings.get(id)).toMatchObject({ state: 'rejected', decidedBy: 'boss' });
+    expect(calls().at(-1)).toEqual({ op: 'close', threadId, at: now.toISOString(), outcome: 'rejected' });
+    expect(lastAudit()).toEqual({
+      actor: 'person:boss',
+      action: 'competence.holding_rejected',
+      subject: 'holding:' + id,
+      at: now.toISOString(),
+      details: { personId: 'anna', typeId: hot },
+    });
+    expect((await own.holdings(asAnna)).rows.map(r => [r.competence, r.status])).toEqual([
+      ['HLR', 'missing'],
+      ['Heta arbeten', 'rejected'],
+    ]);
+    expect((await own.holdings(boss, { person: 'anna.a' })).rows.map(r => r.status)).toEqual(['missing']);
+    expect((await own.matrix(boss)).rows.find(r => r.personId === 'anna')!.cells.map(c => c.pending)).toEqual([
+      undefined,
+    ]);
+    // A rejection is no holding to revoke, and a new registration of the type may wait again.
+    await expect(own.revokeHolding(boss, id)).rejects.toThrow('Du kan inte ändra det här intyget.');
+    await own.registerOwn(asAnna, { typeId: hot, issuedOn: '2026-02-10' });
+  });
+
+  test('only a manager she reports to now decides it, and anyone else is refused in the same words', async () => {
+    const { hlr } = await setup();
+    const id = await own.registerOwn(asAnna, { typeId: hlr, issuedOn: '2026-01-10' });
+    const managed = await own.registerHolding(boss, 'anna', { typeId: hlr, issuedOn: '2025-01-10' });
+    const written = audits().length,
+      called = calls().length;
+    const third = personaOf('third', 'manager', 'Tredje Chef');
+    for (const [persona, holdingId] of [
+      [third, id],
+      [asAnna, id],
+      [asBo, id],
+      [admin, id],
+      [boss, 'nope'],
+      // A manager's registration is no registration of hers to decide.
+      [boss, managed],
+    ] as const) {
+      const attempt = own.decideHolding(persona, holdingId, 'approve');
+      await expect(attempt).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(attempt).rejects.toThrow('Registreringen finns inte bland dem du kan granska.');
+      await expect(own.approval(persona, holdingId)).rejects.toThrow(
+        'Registreringen finns inte bland dem du kan granska.',
+      );
+    }
+    expect(store.state.holdings.get(id)?.state).toBe('pending');
+    expect(audits()).toHaveLength(written);
+    expect(calls()).toHaveLength(called);
+    // Her manager reads it as the approval's dialog shows it.
+    expect(await own.approval(boss, id)).toEqual({
+      holdingId: id,
+      personId: 'anna',
+      key: 'anna.a',
+      name: 'Anna Andersson',
+      typeId: hlr,
+      competence: 'HLR',
+      area: 'Akut',
+      issuedOn: '2026-01-10',
+      expiresOn: '2028-01-10',
+      registeredAt: now.toISOString(),
+    });
+    // A registration that waits is decided, never revoked.
+    await expect(own.revokeHolding(boss, id)).rejects.toThrow('Du kan inte ändra det här intyget.');
+  });
+
+  test('when she changes manager the former one decides nothing, the new one decides from the matrix, and every card closes', async () => {
+    const { hlr } = await setup();
+    above.set('anna', ['boss']);
+    const id = await own.registerOwn(asAnna, { typeId: hlr, issuedOn: '2026-01-10' });
+    // She moves to Olle alone: no new card is opened for him, Karin's stays until the registration is decided.
+    staff.set('boss', { units: [{ unitId: 'u1', unitLabel: 'Enhet 1', people: [bo] }] });
+    above.set('anna', ['other']);
+    await expect(own.decideHolding(boss, id, 'approve')).rejects.toThrow(
+      'Registreringen finns inte bland dem du kan granska.',
+    );
+    expect((await own.matrix(other)).rows.find(r => r.personId === 'anna')!.cells[0]!.pending).toBe(id);
+    await own.decideHolding(other, id, 'approve');
+    expect(calls().map(c => c.op)).toEqual(['open', 'close']);
+    expect([...store.state.cards.values()].map(c => [c.personId, c.state])).toEqual([['boss', 'handled']]);
+    expect(lastAudit()).toMatchObject({ actor: 'person:other', action: 'competence.holding_approved' });
+  });
+
+  test('she takes it back while it waits: the row is removed and every card closes; nobody else can, and a decided one cannot', async () => {
+    const { hlr, hot } = await setup();
+    const id = await own.registerOwn(asAnna, { typeId: hlr, issuedOn: '2026-01-10' });
+    const threadId = store.state.holdings.get(id)!.threadId!;
+    await expect(own.withdrawOwn(boss, id)).rejects.toThrow('Du har ingen sådan registrering.');
+    await expect(own.withdrawOwn(asBo, id)).rejects.toBeInstanceOf(ForbiddenError);
+    const before = audits().length;
+    await own.withdrawOwn(asAnna, id);
+    expect(store.state.holdings.has(id)).toBe(false);
+    expect(calls().at(-1)).toEqual({ op: 'close', threadId, at: now.toISOString(), outcome: 'withdrawn' });
+    expect([...store.state.cards.values()].every(c => c.state === 'handled' && c.outcome === 'withdrawn')).toBe(true);
+    expect(audits().slice(before)).toEqual([
+      {
+        actor: 'person:anna',
+        action: 'competence.holding_withdrawn',
+        subject: 'holding:' + id,
+        at: now.toISOString(),
+        details: { personId: 'anna', typeId: hlr },
+      },
+    ]);
+    // Taken back twice, or decided once taken back, is refused and writes nothing.
+    await expect(own.withdrawOwn(asAnna, id)).rejects.toThrow('Du har ingen sådan registrering.');
+    await expect(own.decideHolding(boss, id, 'approve')).rejects.toThrow(
+      'Registreringen finns inte bland dem du kan granska.',
+    );
+    expect(audits()).toHaveLength(before + 1);
+    // One that is decided stays.
+    const decided = await own.registerOwn(asAnna, { typeId: hot, issuedOn: '2026-01-10' });
+    await own.decideHolding(boss, decided, 'approve');
+    await expect(own.withdrawOwn(asAnna, decided)).rejects.toThrow(
+      'Registreringen är redan granskad och kan inte tas tillbaka.',
+    );
+    // A manager's registration of hers is no registration of her own.
+    const managed = await own.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2025-01-10' });
+    await expect(own.withdrawOwn(asAnna, managed)).rejects.toThrow('Du har ingen sådan registrering.');
+  });
+
+  test('what her own registration needs: whether anyone decides it, and the ones that wait', async () => {
+    const { hlr, hot } = await setup();
+    expect(await own.ownRegistrations(asAnna)).toEqual({ approver: true, pending: [] });
+    expect(await own.ownRegistrations(asDan)).toEqual({ approver: false, pending: [] });
+    const first = await own.registerOwn(asAnna, { typeId: hlr, issuedOn: '2026-01-10' });
+    const second = await own.registerOwn(asAnna, { typeId: hot, issuedOn: '2026-02-01', expiresOn: '2031-01-31' });
+    await own.decideHolding(boss, second, 'reject');
+    expect(await own.ownRegistrations(asAnna)).toEqual({
+      approver: true,
+      pending: [{ holdingId: first, typeId: hlr, competence: 'HLR', issuedOn: '2026-01-10', expiresOn: '2028-01-10' }],
+    });
+  });
+
+  test('a card that cannot be opened or closed rolls the registration and its audit row back', async () => {
+    const { hlr } = await setup();
+    store.sink.throwOn = 'open';
+    const holdings = store.state.holdings.size,
+      written = audits().length;
+    await expect(own.registerOwn(asAnna, { typeId: hlr, issuedOn: '2026-01-10' })).rejects.toThrow(
+      'card sink failed on open',
+    );
+    expect(store.state.holdings.size).toBe(holdings);
+    expect(audits()).toHaveLength(written);
+    store.sink.throwOn = undefined;
+    const id = await own.registerOwn(asAnna, { typeId: hlr, issuedOn: '2026-01-10' });
+    store.sink.throwOn = 'close';
+    await expect(own.decideHolding(boss, id, 'approve')).rejects.toThrow('card sink failed on close');
+    await expect(own.withdrawOwn(asAnna, id)).rejects.toThrow('card sink failed on close');
+    expect(store.state.holdings.get(id)).toMatchObject({ state: 'pending', decidedBy: null });
+    expect(actions().at(-1)).toBe('competence.holding_submitted');
+  });
+
+  test('erasure takes her registrations with every card, a taken-back one’s included, and a manager’s own approval cards with him; the export is version 5', async () => {
+    const { hlr, hot, degree } = await setup();
+    const waiting = await own.registerOwn(asAnna, { typeId: hlr, issuedOn: '2026-01-10' });
+    const approved = await own.registerOwn(asAnna, { typeId: hot, issuedOn: '2026-01-10' });
+    await own.decideHolding(boss, approved, 'approve');
+    // Taken back: the row goes, its closed cards stay in the managers' streams until she is erased.
+    const takenBack = await own.registerOwn(asAnna, { typeId: degree, issuedOn: '2015-06-05' });
+    await own.withdrawOwn(asAnna, takenBack);
+    expect([...store.state.cards.values()].filter(c => c.holdingId === takenBack)).toHaveLength(2);
+    const bos = await own.registerOwn(asBo, { typeId: hlr, issuedOn: '2026-01-10' });
+    const threads = [waiting, approved].map(id => store.state.holdings.get(id)!.threadId!).sort();
+
+    const doc = await own.exportDomain('operator:cli', ORG);
+    expect(doc.format).toBe('clew.competence/5');
+    expect(doc.holdings.find(h => h.id === approved)).toMatchObject({
+      evidence: 'self',
+      state: 'valid',
+      decidedBy: 'boss',
+      decidedAt: now.toISOString(),
+      threadId: expect.any(String),
+    });
+
+    store.deactivate('anna');
+    expect(await own.erasePerson('operator:cli', 'anna')).toEqual({
+      holdings: 2,
+      cleared: 0,
+      requirements: 1,
+      approvals: 2,
+    });
+    expect(calls().slice(-3)).toEqual([
+      { op: 'remove', threadIds: threads },
+      { op: 'removeAbout', subject: { entity: 'person', key: 'anna.a' } },
+      { op: 'removeOwned', personId: 'anna' },
+    ]);
+    expect([...store.state.cards.values()].map(c => c.holdingId)).toEqual([bos]);
+    expect(lastAudit()).toEqual({
+      actor: 'operator:cli',
+      action: 'competence.person_erased',
+      subject: 'person:anna',
+      at: now.toISOString(),
+      details: { holdings: 2, cleared: 0, requirements: 1, approvals: 2 },
+    });
+    // Karin, erased as a manager: her card of Bo's registration goes, and her id leaves what she decided.
+    await own.decideHolding(boss, bos, 'reject');
+    store.deactivate('boss');
+    expect(await own.erasePerson('operator:cli', 'boss')).toEqual({
+      holdings: 0,
+      cleared: 1,
+      requirements: 0,
+      approvals: 0,
+    });
+    expect(calls().at(-1)).toEqual({ op: 'removeOwned', personId: 'boss' });
+    expect(store.state.cards.size).toBe(0);
+    expect(store.state.holdings.get(bos)).toMatchObject({ state: 'rejected', decidedBy: null });
+  });
+
+  test('no audit row and no card call names a person or a competence', async () => {
+    const { hlr, hot } = await setup();
+    const a = await own.registerOwn(asAnna, { typeId: hlr, issuedOn: '2026-01-10' });
+    const b = await own.registerOwn(asAnna, { typeId: hot, issuedOn: '2026-01-10' });
+    await own.decideHolding(boss, a, 'approve');
+    await own.decideHolding(other, b, 'reject');
+    const c = await own.registerOwn(asBo, { typeId: hlr, issuedOn: '2026-01-10' });
+    await own.withdrawOwn(asBo, c);
+    const written = JSON.stringify({ audits: audits(), calls: calls() });
+    for (const name of [...NAMES, ...TYPE_NAMES]) expect(written).not.toContain(name);
   });
 });

@@ -296,6 +296,11 @@ export const threads = pgTable(
     uniqueIndex('thread_open_topic')
       .on(t.personId, t.topic)
       .where(sql`${t.state} = 'open' AND ${t.kind} = 'pushed'`),
+    // The cards of one approval in the competence module (D108 item 7), one per manager, are found by their shared topic
+    // whatever stream they are in; the index holds that module's cards alone.
+    index('thread_competence_topic')
+      .on(t.topic)
+      .where(sql`${t.connector} = 'competence'`),
     check('thread_state', sql`${t.state} IN ('open', 'handled', 'dismissed')`),
   ],
 );
@@ -956,7 +961,13 @@ export const competenceTypes = pgTable(
 /**
  * What one person holds of one type (D108 item 1): a competence and a certificate are the same record. Where it stands
  * is computed when read and never stored (item 4). `expires_on` is the issuer's own date only (item 3). The person's
- * rows go with the person; the people who registered or revoked a row are nulled by erasure.
+ * rows go with the person; the people who registered, revoked or decided a row are nulled by erasure.
+ *
+ * A row the person registered themselves (item 7) has evidence `self`: `pending` until the manager they report to
+ * decides it, then `valid` or `rejected`, with who decided (`decided_by`, the manager's attestation) and when
+ * (`decided_at`). Only such a row is pending or rejected, and only it is decided. `thread_id` is its approval's key: each
+ * manager's card is the thread `<thread_id>:<manager id>` with the topic `competence:approval:<thread_id>`, found by that
+ * topic, so it is no reference. One pending registration per person and type.
  *
  * A row copied from a source (item 9) carries the connector, the source's own row id, type id and label, and when it
  * was last read; it has no `registered_by`, its evidence is `system`, and its `type_id` is empty while no administrator
@@ -986,11 +997,27 @@ export const competenceHoldings = pgTable(
     sourceType: text('source_type'),
     sourceLabel: text('source_label'),
     readAt: timestamp('read_at', { withTimezone: true }),
+    // A person's own registration (item 7): the manager who decided it and when, and its approval's cards.
+    decidedBy: text('decided_by').references(() => people.id, { onDelete: 'set null' }),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    threadId: text('thread_id'),
   },
   t => [
     check('competence_holding_evidence', sql`${t.evidence} IN ('system', 'manager', 'self')`),
     check('competence_holding_state', sql`${t.state} IN ('pending', 'valid', 'rejected', 'revoked')`),
     check('competence_holding_period', sql`${t.expiresOn} IS NULL OR ${t.expiresOn} >= ${t.issuedOn}`),
+    // Only a person's own registration waits or is rejected.
+    check('competence_holding_own', sql`${t.state} NOT IN ('pending', 'rejected') OR ${t.evidence} = 'self'`),
+    // A person's own registration is decided exactly when it no longer waits; nothing else is decided or has cards. A
+    // decision keeps its time when its manager is erased.
+    check(
+      'competence_holding_decided',
+      sql`(${t.decidedBy} IS NULL OR ${t.decidedAt} IS NOT NULL) AND (${t.threadId} IS NULL OR ${t.evidence} = 'self') AND CASE WHEN ${t.evidence} = 'self' THEN (${t.state} = 'pending') = (${t.decidedAt} IS NULL) ELSE ${t.decidedAt} IS NULL END`,
+    ),
+    // One registration of a type waiting per person: a second is refused until the first is decided or taken back.
+    uniqueIndex('competence_holding_pending')
+      .on(t.personId, t.typeId)
+      .where(sql`${t.state} = 'pending'`),
     // A copied row has every column of its source and nobody who registered it; a row registered in Clew has none.
     check(
       'competence_holding_copy',

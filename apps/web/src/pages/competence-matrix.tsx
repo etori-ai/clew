@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router';
-import { useQuery } from '@tanstack/react-query';
+import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
+  CompetenceApproval,
+  CompetenceDecision,
   CompetenceMatrixCell,
   CompetenceMatrixColumn,
   CompetenceMatrixGroup,
@@ -14,6 +16,8 @@ import {
   ArrowDownTrayIcon,
   Button,
   Card,
+  Dialog,
+  DialogHeader,
   EmptyState,
   HStack,
   Icon,
@@ -22,6 +26,8 @@ import {
   Link,
   List,
   ListItem,
+  MetadataList,
+  MetadataListItem,
   MoreMenu,
   Selector,
   Table,
@@ -39,16 +45,20 @@ import {
   MATRIX_PATH,
   NEW,
   REQUIREMENT_PARAM,
+  approvalPageHref,
+  approveHref,
+  approveOf,
   matrixFileHref,
   matrixHref,
   matrixInputOf,
   requirementHref,
+  withoutApprove,
   withoutRequirement,
 } from '../competence-address';
 import { useAdminAction } from '../mutations';
 import { usePageTitle } from '../page-title';
 import { personPageFrom } from '../person-address';
-import { competenceMatrixQuery, competenceTypesQuery } from '../queries';
+import { competenceApprovalQuery, competenceMatrixQuery, competenceTypesQuery } from '../queries';
 import { keys } from '../query-keys';
 import { errorMessage, refused } from '../query-policy';
 import { registerHref } from '../register-address';
@@ -57,8 +67,16 @@ import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { AsyncContent, ContentSkeleton } from '../components/loading';
 import { usePagePanel } from '../components/page-panel';
 import { panelBesideQuery } from '../components/panel';
+import { DialogFrame } from '../components/dialog-frame';
 import { RegisterHolding } from '../components/register-holding';
-import { CellStatus, CompetenceHeader, PersonRequirementDialog, reasonWords } from './competence-parts';
+import {
+  CellStatus,
+  CompetenceHeader,
+  PersonRequirementDialog,
+  cellDay,
+  instantDay,
+  reasonWords,
+} from './competence-parts';
 
 /** The page's column at its widest: Astryx's comparison template caps the matrix at 1440 px, less the padding. */
 const COLUMN = 1440 - 2 * 32;
@@ -84,11 +102,15 @@ interface Confirming {
   /** The holding to revoke, or the requirement to remove. */
   id: string;
 }
-/** What every cell needs from the page: the address it is on, its control's place, and the way to ask to confirm. */
+/**
+ * What every cell needs from the page: the address it is on, its control's place, the way to ask to confirm, and the
+ * way to say that it opened the decision on a registration (so the focus comes back to it).
+ */
 interface CellContext {
   search: URLSearchParams;
   control: (personId: string, typeId: string) => (el: HTMLButtonElement | null) => void;
   confirm: (c: Confirming) => void;
+  review: (personId: string, typeId: string) => void;
 }
 
 /**
@@ -96,8 +118,10 @@ interface CellContext {
  * competence of the person, and holding what the manager can do there. "Registrera intyg" opens the registration over
  * the page with the person and the competence in the address (`register`, `competence`); "Återkalla intyget" is offered
  * where the holding that decides was registered in Clew, never for one copied from a source; "Ta bort kravet" where the
- * competence is required of the person by the manager's own requirement. The trigger is the cell's control, which
- * takes the focus back when a dialog or a confirmation opened from it closes.
+ * competence is required of the person by the manager's own requirement. Where the person's own registration of the
+ * competence waits for the manager's decision (D108 item 7), "Granska" comes first and opens the decision over the page
+ * with the registration in the address (`approve`). The trigger is the cell's control, which takes the focus back when
+ * a dialog or a confirmation opened from it closes.
  */
 function CellMenu({
   row,
@@ -117,6 +141,16 @@ function CellMenu({
       id: 'cell',
       title: reasonWords(cell),
       items: [
+        ...(cell.pending
+          ? [
+              {
+                id: 'review',
+                label: 'Granska',
+                href: approveHref(cell.pending, ctx.search),
+                onClick: () => ctx.review(row.personId, column.typeId),
+              },
+            ]
+          : []),
         {
           id: 'register',
           label: 'Registrera intyg',
@@ -312,6 +346,102 @@ function SetChoice({ data, onChoose }: { data: CompetenceMatrixOutput; onChoose:
 }
 
 /**
+ * The decision on a report's own registration (D108 item 7), a dialog over the matrix named in the address
+ * (`approve=<holding id>`): who registered it, the competence and its dates, and the two decisions. "Godkänn" decides at
+ * once; "Avvisa" asks first in Astryx's confirmation, which closes into this dialog. The server's refusal (decided by
+ * another of the person's managers meanwhile) is said beside the buttons. Open while `approval` is given.
+ */
+function ApprovalDialog({
+  approval,
+  error,
+  busy,
+  onDecide,
+  onClose,
+}: {
+  approval: CompetenceApproval | undefined;
+  error: string | null;
+  busy: boolean;
+  onDecide: (decision: CompetenceDecision) => Promise<void>;
+  onClose: () => void;
+}) {
+  const mobile = useMediaQuery(mobileQuery);
+  const [asking, setAsking] = useState(false);
+  useEffect(() => setAsking(false), [approval?.holdingId]);
+  const onOpenChange = (open: boolean) => {
+    if (!open) onClose();
+  };
+  const decide = async (decision: CompetenceDecision) => {
+    await onDecide(decision);
+    // Done, the page closes both; refused, the confirmation lets go and the refusal is said in the dialog.
+    setAsking(false);
+  };
+  return (
+    <>
+      <Dialog
+        isOpen={!!approval}
+        onOpenChange={onOpenChange}
+        width={480}
+        purpose="form"
+        variant={mobile ? 'fullscreen' : 'standard'}
+      >
+        <DialogFrame
+          header={
+            <DialogHeader
+              title="Granska intyg"
+              subtitle={approval ? `Registrerat av ${approval.name}` : undefined}
+              onOpenChange={onOpenChange}
+            />
+          }
+          error={error}
+          secondary={<Button size="sm" variant="ghost" label="Avbryt" onClick={onClose} />}
+          primary={
+            <>
+              <Button size="sm" variant="secondary" label="Avvisa" onClick={() => setAsking(true)} />
+              <Button
+                size="sm"
+                variant="primary"
+                label="Godkänn"
+                isLoading={busy && !asking}
+                onClick={() => void decide('approve')}
+              />
+            </>
+          }
+        >
+          {approval && (
+            <MetadataList columns="single">
+              <MetadataListItem label="Medarbetare">{approval.name}</MetadataListItem>
+              <MetadataListItem label="Kompetens">{approval.competence}</MetadataListItem>
+              <MetadataListItem label="Område">{approval.area}</MetadataListItem>
+              <MetadataListItem label="Utfärdat">{cellDay(approval.issuedOn)}</MetadataListItem>
+              <MetadataListItem label="Giltigt till">
+                {approval.expiresOn ? cellDay(approval.expiresOn) : 'Inget slutdatum'}
+              </MetadataListItem>
+              <MetadataListItem label="Registrerat">{instantDay(approval.registeredAt)}</MetadataListItem>
+            </MetadataList>
+          )}
+        </DialogFrame>
+      </Dialog>
+      <AlertDialog
+        isOpen={!!approval && asking}
+        onOpenChange={open => {
+          if (!open) setAsking(false);
+        }}
+        title="Avvisa intyget?"
+        description={
+          approval
+            ? `${approval.competence} för ${approval.name} räknas inte, och ${approval.name} ser att det är avvisat.`
+            : ''
+        }
+        actionLabel="Avvisa intyget"
+        cancelLabel="Avbryt"
+        isActionLoading={busy}
+        onAction={() => void decide('reject')}
+      />
+    </>
+  );
+}
+
+/**
  * Medarbetarnas kompetens at `/competence/matrix` (D108 item 11, D120 item 8), the second page of the place Kompetens:
  * the people who report to the reader against the competences required of at least one of them, built on Astryx's
  * `table-comparison` template. It is no declared view: its columns are chosen, and a cell writes (D95 item 4). At most
@@ -320,8 +450,11 @@ function SetChoice({ data, onChoose }: { data: CompetenceMatrixOutput; onChoose:
  * registers a certificate with the competence chosen (`register`, `competence`), revokes a holding registered in Clew
  * and removes the manager's own requirement on the person, each removal asked for in Astryx's confirmation first. The
  * header adds a requirement for one person in a dialog named in the address (`requirement=new`) and downloads the
- * matrix as shown as a file. Closing a dialog or a confirmation gives the focus back to the cell's control, or to the
- * page's heading where the cell has gone with what was removed (D83 rule 7). The table gives way to a list where it does
+ * matrix as shown as a file. A report's own registration that waits for the reader's decision (D108 item 7) is noted in
+ * its cell, whose menu opens the decision in a dialog named in the address (`approve`), as the approval's card in the
+ * reader's stream does; an address for a registration the reader may not decide, or one decided already, opens nothing
+ * and the page says why. Closing a dialog or a confirmation gives the focus back to the cell's control, or to the
+ * page's heading where the cell has gone with what was removed or where no cell opened it (D83 rule 7). The table gives way to a list where it does
  * not fit, on a phone and beside the panel, as Personal does, so at 320 px nothing scrolls sideways; on a wider window the
  * table scrolls sideways inside its own region, the names pinned, as the template's does.
  */
@@ -333,6 +466,7 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
   const nav = useRail({ current: { surface: 'competence' }, admin, manager: user.role === 'manager' });
   const [search] = useSearchParams();
   const navigate = useNavigate();
+  const client = useQueryClient();
   const input = matrixInputOf(search);
   const matrixQ = useQuery(competenceMatrixQuery(input));
   const typesQ = useQuery(competenceTypesQuery);
@@ -366,12 +500,53 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
   const addRequirement = useRef<HTMLButtonElement>(null);
   const [focusAfter, setFocusAfter] = useState<string | null>(null);
   const requiring = search.get(REQUIREMENT_PARAM) === NEW;
+  const approving = approveOf(search);
   useEffect(() => {
-    if (focusAfter === null || requiring) return;
+    if (focusAfter === null || requiring || approving) return;
     setFocusAfter(null);
     const target = focusAfter === REQUIREMENT_PARAM ? addRequirement.current : controls.current.get(focusAfter);
-    (target?.isConnected ? target : document.getElementById(TITLE_ID))?.focus();
-  }, [focusAfter, data, requiring]);
+    // A frame later, once the dialogs that closed have given the focus back where they took it from.
+    requestAnimationFrame(() => (target?.isConnected ? target : document.getElementById(TITLE_ID))?.focus());
+  }, [focusAfter, data, requiring, approving]);
+
+  // The decision on a report's own registration (D108 item 7), from a cell's menu or from the approval's card. The
+  // cell that opened it takes the focus back; opened by an address, nothing on the page did, so the heading does.
+  const reviewedFrom = useRef<string | null>(null);
+  const approvalQ = useQuery({ ...competenceApprovalQuery(approving ?? ''), enabled: !!approving && !off });
+  const [refusal, setRefusal] = useState<string | null>(null);
+  useEffect(() => {
+    if (approving) setRefusal(null);
+  }, [approving]);
+  // An address the reader may not decide, or one decided already, opens nothing: the page says why and lets go of it.
+  useEffect(() => {
+    if (!approving || !approvalQ.isError) return;
+    setRefusal(errorMessage(approvalQ.error, 'Registreringen kunde inte läsas.'));
+    reviewedFrom.current = null;
+    navigate(withoutApprove(search), { replace: true });
+  }, [approving, approvalQ.isError]);
+  const decision = useAdminAction({
+    // Not the approval's own read, which is let go of: the registration is decided, so it would only be refused.
+    invalidate: [['competence', 'matrix'], keys.viewAll, keys.entities.all, keys.threads, keys.attention, keys.areas],
+    toastId: 'competence:approval',
+  });
+  const closeApproval = () => {
+    if (approving) client.removeQueries({ queryKey: keys.competenceApproval(approving) });
+    decision.reset();
+    navigate(withoutApprove(search));
+    setFocusAfter(reviewedFrom.current ?? TITLE_ID);
+    reviewedFrom.current = null;
+  };
+  const decide = async (choice: CompetenceDecision) => {
+    const a = approvalQ.data;
+    if (!a) return;
+    await decision.run(async () => {
+      await api.competence.decide(a.holdingId, choice);
+      closeApproval();
+      return choice === 'approve'
+        ? `${a.competence} är godkänt för ${a.name}.`
+        : `${a.competence} är avvisat för ${a.name}.`;
+    });
+  };
 
   const [confirming, setConfirming] = useState<Confirming | null>(null);
   const change = useAdminAction({
@@ -403,6 +578,9 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
     confirm: c => {
       change.reset();
       setConfirming(c);
+    },
+    review: (personId, typeId) => {
+      reviewedFrom.current = cellKey(personId, typeId);
     },
   };
   const choose = (g: CompetenceMatrixGroup) =>
@@ -451,6 +629,11 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
                 {change.error && (
                   <Text as="p" role="alert" color="accent">
                     {change.error}
+                  </Text>
+                )}
+                {refusal && (
+                  <Text as="p" role="alert" color="accent">
+                    {refusal}
                   </Text>
                 )}
                 {off ? (
@@ -525,6 +708,13 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
           setFocusAfter(REQUIREMENT_PARAM);
         }}
       />
+      <ApprovalDialog
+        approval={approving && !off && !approvalQ.isError ? approvalQ.data : undefined}
+        error={decision.error}
+        busy={decision.busy}
+        onDecide={decide}
+        onClose={closeApproval}
+      />
       <AlertDialog
         isOpen={!!confirming}
         onOpenChange={open => {
@@ -545,4 +735,15 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
       />
     </Shell>
   );
+}
+
+/**
+ * The page of the approval's read (`/tools/competence.approval?input={"holding":…}`, D116), which the button on a
+ * manager's card of a report's own registration leads to (D108 item 7): the decision over the matrix, where the manager
+ * works, named in the address (`/competence/matrix?approve=<holding id>`). It replaces the address, so Back from the
+ * matrix returns to where the card was.
+ */
+export function ApprovalPage() {
+  const { search } = useLocation();
+  return <Navigate replace to={approvalPageHref(search)} />;
 }

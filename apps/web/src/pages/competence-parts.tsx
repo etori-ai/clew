@@ -61,13 +61,18 @@ export function CompetenceHeader({
 }
 
 const day = new Intl.DateTimeFormat('sv-SE', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+const instant = new Intl.DateTimeFormat('sv-SE', { day: 'numeric', month: 'short', year: 'numeric' });
+/** An instant as the day it falls on where the reader is: "3 mars 2026". */
+export const instantDay = (value: string) => instant.format(new Date(value));
 /** A calendar day as a cell says it: `2027-01-10` is "10 jan. 2027". */
 export const cellDay = (value: string) => day.format(new Date(value + 'T12:00:00Z'));
 /**
  * Where a person stands on a column, in words (D108 item 4): what needs the manager is a badge in its tone with its word
  * (Utgånget, Saknas, Går ut snart), so the colour never says it alone (1.4.1); Giltigt is plain text; a type neither
  * held nor required is "Krävs inte" in supporting text. Under it, the day it ends, and "Krävs inte" for a holding of a
- * type that is not required of the person.
+ * type that is not required of the person. Where the person's own registration of the type waits for the manager's
+ * decision (D108 item 7), "Att granska" beside it: the status is what it is without the registration, which counts
+ * towards nothing until it is approved.
  */
 export function CellStatus({ cell }: { cell: CompetenceMatrixCell }) {
   const status =
@@ -90,6 +95,7 @@ export function CellStatus({ cell }: { cell: CompetenceMatrixCell }) {
     <VStack gap={0.5} hAlign="start">
       {status}
       {lines.length > 0 && <Text type="supporting">{lines.join(' · ')}</Text>}
+      {cell.pending && <Badge variant="info" label="Att granska" />}
     </VStack>
   );
 }

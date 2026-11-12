@@ -14,15 +14,16 @@ import {
   literals,
 } from '@clew/contracts';
 import { systemContext } from '../../system-context';
-import { personStatus, swedishDayAndMonth, type CardIdentity } from './domain';
+import { APPROVAL_READ, personStatus, swedishDayAndMonth, type CardIdentity } from './domain';
 import type { CompetenceUsecases, UnitCoverageResult } from './usecases';
 
 /**
  * The competence module as Clew's built-in connector (D108 items 6 and 11 to 13): two reads with declared views, a read
  * about a person and one about a unit (D97) with the table a unit's row opens, the area whose figure says how much has
- * run out or is missing among a manager's reports, and the scan that turns what needs a person into a card. No read is a
- * model tool, and no view declares a `ref`, so no row can be added to a conversation as a chip. Writes are use cases
- * behind Clew's own routes, never capabilities. The use cases come built from composition (D25).
+ * run out or is missing among a manager's reports, and the scan that turns what needs a person into a card; and the read
+ * an approval's card opens, a person's own registration that waits for the reader (item 7). No read is a model tool, and
+ * no view declares a `ref`, so no row can be added to a conversation as a chip. Writes are use cases behind Clew's own
+ * routes, never capabilities. The use cases come built from composition (D25).
  */
 export const COMPETENCE_SOURCE = 'Kompetens';
 export const COMPETENCE_AREA = 'competence';
@@ -65,7 +66,14 @@ export const holdingsView: View = {
   empty: 'Det finns inga registrerade kompetenser.',
   fields: [
     { key: 'competence', label: 'Kompetens' },
-    { key: 'status', label: 'Status', format: 'status', tones: statusTones },
+    // A person's own registration that waits or was rejected (D108 item 7) is a state with a word of its own, drawn as
+    // a neutral badge: it needs nobody to act on the row.
+    {
+      key: 'status',
+      label: 'Status',
+      format: 'status',
+      tones: { ...statusTones, 'awaiting-approval': 'none', rejected: 'none' },
+    },
     { key: 'expiresOn', label: 'Giltigt till', format: 'date' },
     { key: 'issuedOn', label: 'Utfärdat', format: 'date' },
     { key: 'area', label: 'Område' },
@@ -277,6 +285,46 @@ function unitRow(c: UnitCoverageResult) {
     ...(below ? { below: `${below} mål` } : {}),
   };
 }
+/** What the read behind an approval's card takes: the registration, by its holding's id. */
+export const ApprovalInputSchema = Type.Object(
+  { holding: Type.String({ minLength: 1, maxLength: 80 }) },
+  { additionalProperties: false },
+);
+type ApprovalInput = Static<typeof ApprovalInputSchema>;
+export const ApprovalOutputSchema = Type.Object(
+  {
+    rows: Type.Array(
+      Type.Object(
+        {
+          name: Type.String({ minLength: 1, maxLength: 512 }),
+          competence: Type.String({ minLength: 1, maxLength: 120 }),
+          issuedOn: Type.String({ minLength: 10, maxLength: 10 }),
+          expiresOn: Type.Optional(Type.String({ minLength: 10, maxLength: 10 })),
+        },
+        { additionalProperties: false },
+      ),
+      { maxItems: 1 },
+    ),
+  },
+  { additionalProperties: false },
+);
+/**
+ * A person's own registration that waits for the reader's decision (D108 item 7), as the one row of a table: who, which
+ * competence, and its dates. It answers with rows, so a card's button that opens it leads to its page (D116), which the
+ * web serves as the approval over the matrix, where the decision is made.
+ */
+export const approvalView: View = {
+  kind: 'table',
+  title: 'name',
+  noun: { one: 'registrering', other: 'registreringar' },
+  empty: 'Registreringen väntar inte på ditt beslut.',
+  fields: [
+    { key: 'name', label: 'Medarbetare' },
+    { key: 'competence', label: 'Kompetens' },
+    { key: 'issuedOn', label: 'Utfärdat', format: 'date' },
+    { key: 'expiresOn', label: 'Giltigt till', format: 'date' },
+  ],
+};
 /** The persona a use case takes, built from the person's current grant as the talks connector does. */
 async function systemPersona(actor: Actor): Promise<AuthenticatedContext> {
   const persona = await systemContext(actor.id, 'connector:' + COMPETENCE_CONNECTOR);
@@ -380,6 +428,32 @@ export function competenceConnector(
       rows: (await competence.aboutUnits(await persona(actor), input.keys)).map(unitRow),
     }),
   };
+  const approval: Capability<ApprovalInput> = {
+    name: APPROVAL_READ,
+    kind: 'read',
+    title: 'Intyg att granska',
+    model: false,
+    description: 'Ett intyg som en medarbetare har registrerat själv och som väntar på ditt beslut.',
+    input: ApprovalInputSchema,
+    output: ApprovalOutputSchema,
+    view: approvalView,
+    scope: { roles: ['manager'] },
+    // Only a registration of someone who reports to the reader now (D99 item 4); the use case checks it, as Clew's own
+    // domains do (D117), since a holding named in a plain input is no person the registry resolves.
+    run: async (actor, input) => {
+      const a = await competence.approval(await persona(actor), input.holding);
+      return {
+        rows: [
+          {
+            name: a.name,
+            competence: a.competence,
+            issuedOn: a.issuedOn,
+            ...(a.expiresOn ? { expiresOn: a.expiresOn } : {}),
+          },
+        ],
+      };
+    },
+  };
   return {
     id: COMPETENCE_CONNECTOR,
     kind: 'core',
@@ -423,6 +497,7 @@ export function competenceConnector(
       aboutPerson as Capability,
       aboutUnit as Capability,
       coverage as Capability,
+      approval as Capability,
     ],
     /**
      * What needs a person (D108 item 12), derived from the dates and the requirements each time and never stored. A person

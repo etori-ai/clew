@@ -62,6 +62,10 @@ export const keys = {
   competenceShareTargets: ['competence', 'share-targets'] as const,
   /** The manager's matrix (D108 item 11), per set of columns. */
   competenceMatrix: (by: string | null, part: number | null) => ['competence', 'matrix', by, part] as const,
+  /** The reader's own registrations that wait for a decision (D108 item 7), and one a manager decides. */
+  competenceOwn: ['competence', 'own'] as const,
+  competenceOwnTypes: ['competence', 'own', 'types'] as const,
+  competenceApproval: (holdingId: string) => ['competence', 'approval', holdingId] as const,
   competenceAll: ['competence'] as const,
   /** Utvecklingssamtal (D96): the round, and action points per reader (`null`) or per person (their user name, else id). */
   talks: {

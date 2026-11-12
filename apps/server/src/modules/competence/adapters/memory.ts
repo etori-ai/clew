@@ -1,5 +1,8 @@
-import { RequirementTaken, ShareTargetTaken, TypeNameTaken } from '../model';
+import { foldEntityKey, type Subject } from '@clew/contracts';
+import { PendingTaken, RequirementTaken, ShareTargetTaken, TypeNameTaken } from '../model';
 import type {
+  ApprovalOutcome,
+  ApprovalWorkItemTx,
   CompetenceAudit,
   CompetenceStore,
   CompetenceTx,
@@ -19,8 +22,33 @@ import type {
 /**
  * The competence store in memory: the unit tests' adapter (D25), held to Postgres by
  * `tests/competence-store-contract.ts`. State is plain and seedable; a transaction is a snapshot that a throw restores,
- * the audit rows and the workflow starts included. Transactions run one at a time, as row locks would make them.
+ * the audit rows, the workflow starts and the approvals' cards included. Transactions run one at a time, as row locks
+ * would make them.
+ *
+ * The approvals' cards (`ApprovalWorkItemTx`, D108 item 7) are recorded here instead of written to a stream: every call
+ * in `state.calls`, each manager's card in `state.cards` by its id (`<threadId>:<manager id>`). A test makes the card
+ * sink throw with `sink.throwOn`.
  */
+export type ApprovalWorkItemCall =
+  | ({ op: 'open' } & Omit<Parameters<ApprovalWorkItemTx['open']>[0], 'managers'> & { managers: string[] })
+  | { op: 'close'; threadId: string; at: string; outcome: ApprovalOutcome }
+  | { op: 'remove'; threadIds: string[] }
+  | { op: 'removeAbout'; subject: Subject }
+  | { op: 'removeOwned'; personId: string };
+/** One manager's card of one approval. */
+export interface MemoryApprovalCard {
+  personId: string;
+  threadId: string;
+  holdingId: string;
+  /** The person the card is about, by key, when they have one. */
+  subject: Subject | null;
+  state: 'open' | 'handled';
+  outcome: ApprovalOutcome | null;
+}
+export interface MemoryApprovalSink {
+  /** The card call that throws, as a failing thread store would. */
+  throwOn?: ApprovalWorkItemCall['op'];
+}
 export interface MemoryCompetenceState {
   types: Map<string, TypeRecord>;
   holdings: Map<string, HoldingRecord>;
@@ -45,6 +73,9 @@ export interface MemoryCompetenceState {
   audit: CompetenceAudit[];
   /** The workflow starts committed (D86), each id once. */
   enqueued: WorkflowStart[];
+  /** The approvals' cards by card id, and every call to them in order (D108 item 7). */
+  cards: Map<string, MemoryApprovalCard>;
+  calls: ApprovalWorkItemCall[];
 }
 const byCreated = <T extends { createdAt: string; id: string }>(rows: T[]) =>
   rows.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
@@ -69,7 +100,10 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     shareTargets: new Map(),
     audit: [],
     enqueued: [],
+    cards: new Map(),
+    calls: [],
   };
+  const sink: MemoryApprovalSink = {};
   let tail = Promise.resolve();
   const serialized = async <T>(fn: () => Promise<T>): Promise<T> => {
     const previous = tail;
@@ -108,6 +142,69 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
       throw new Error('a copied holding is attested by its system and registered by nobody');
     if (holding.expiresOn !== null && holding.expiresOn < holding.issuedOn)
       throw new Error('holding ends before it begins');
+    if (holding.decidedBy !== null && !state.persons.has(holding.decidedBy))
+      throw new Error('holding references an unknown decider');
+    assertDecision(holding);
+  };
+  /** The checks `competence_holding_own` and `competence_holding_decided` (D108 item 7). */
+  const assertDecision = (h: HoldingRecord) => {
+    if ((h.state === 'pending' || h.state === 'rejected') && h.evidence !== 'self')
+      throw new Error("only a person's own registration waits or is rejected");
+    if (h.decidedBy !== null && h.decidedAt === null) throw new Error('a decision has its time');
+    if (h.threadId !== null && h.evidence !== 'self') throw new Error("only a person's own registration has cards");
+    if (h.evidence === 'self' ? (h.state === 'pending') !== (h.decidedAt === null) : h.decidedAt !== null)
+      throw new Error("a person's own registration is decided exactly when it no longer waits");
+  };
+  /** The unique index `competence_holding_pending`: one registration of a type waiting per person. */
+  const assertOnePending = (h: HoldingRecord) => {
+    if (h.state !== 'pending') return;
+    const other = [...state.holdings.values()].some(
+      x => x.id !== h.id && x.state === 'pending' && x.personId === h.personId && x.typeId === h.typeId,
+    );
+    if (other) throw new PendingTaken();
+  };
+  const fail = (op: ApprovalWorkItemCall['op']) => {
+    if (sink.throwOn === op) throw new Error(`card sink failed on ${op}`);
+  };
+  const workItems: ApprovalWorkItemTx = {
+    async open(input) {
+      fail('open');
+      state.calls.push(structuredClone({ op: 'open' as const, ...input, managers: [...input.managers] }));
+      for (const personId of input.managers)
+        state.cards.set(input.threadId + ':' + personId, {
+          personId,
+          threadId: input.threadId,
+          holdingId: input.holdingId,
+          subject: input.subject ? { ...input.subject } : null,
+          state: 'open',
+          outcome: null,
+        });
+    },
+    async close(threadId, at, outcome) {
+      fail('close');
+      state.calls.push({ op: 'close', threadId, at, outcome });
+      for (const card of state.cards.values())
+        if (card.threadId === threadId && card.state === 'open') Object.assign(card, { state: 'handled', outcome });
+    },
+    async remove(threadIds) {
+      fail('remove');
+      state.calls.push({ op: 'remove', threadIds: [...threadIds] });
+      for (const [id, card] of [...state.cards]) if (threadIds.includes(card.threadId)) state.cards.delete(id);
+    },
+    async removeAbout(subject) {
+      fail('removeAbout');
+      state.calls.push({ op: 'removeAbout', subject: { ...subject } });
+      // The index from entity to cards compares a person's key without regard to case (D97 item 6).
+      const key = foldEntityKey(subject.entity, subject.key);
+      for (const [id, card] of [...state.cards])
+        if (card.subject?.entity === subject.entity && foldEntityKey(card.subject.entity, card.subject.key) === key)
+          state.cards.delete(id);
+    },
+    async removeOwned(personId) {
+      fail('removeOwned');
+      state.calls.push({ op: 'removeOwned', personId });
+      for (const [id, card] of [...state.cards]) if (card.personId === personId) state.cards.delete(id);
+    },
   };
   const copied = () => [...state.holdings.values()].filter(h => h.copy);
   /** The codes of the positions a person holds, as `auth_person_position` joined to `auth_position` reads them. */
@@ -159,11 +256,22 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     async insertHolding(holding) {
       if (state.holdings.has(holding.id)) throw new Error('duplicate holding id');
       assertHolding(holding);
+      assertOnePending(holding);
       state.holdings.set(holding.id, structuredClone(holding));
     },
     async updateHolding(id, patch) {
       const h = state.holdings.get(id);
-      if (h) state.holdings.set(id, { ...h, ...patch });
+      if (!h) return;
+      const next = { ...h, ...patch };
+      if (next.decidedBy !== null && !state.persons.has(next.decidedBy))
+        throw new Error('holding references an unknown decider');
+      assertDecision(next);
+      assertOnePending(next);
+      state.holdings.set(id, next);
+    },
+    async deleteHolding(id) {
+      // A copied row goes only with its source or its person.
+      if (!state.holdings.get(id)?.copy) state.holdings.delete(id);
     },
     async copiedFrom(connectorId) {
       return byCreated(copied().filter(h => h.copy!.connectorId === connectorId)).map(h => structuredClone(h));
@@ -416,21 +524,20 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
           state.requirements.delete(id);
           requirements++;
         }
-      const cleared = new Set<string>();
+      const cleared = new Set<string>(),
+        threadIds = new Set<string>();
       for (const [id, h] of [...state.holdings]) {
         if (h.personId === personId) {
+          if (h.threadId) threadIds.add(h.threadId);
           state.holdings.delete(id);
           holdings++;
           continue;
         }
-        if (h.registeredBy === personId) {
-          h.registeredBy = null;
-          cleared.add(id);
-        }
-        if (h.revokedBy === personId) {
-          h.revokedBy = null;
-          cleared.add(id);
-        }
+        for (const column of ['registeredBy', 'revokedBy', 'decidedBy'] as const)
+          if (h[column] === personId) {
+            h[column] = null;
+            cleared.add(id);
+          }
       }
       // The requirements and share targets the person set keep standing, without their author.
       const actor = 'person:' + personId;
@@ -445,7 +552,12 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
           state.shareTargets.set(id, { ...t, createdBy: null });
           authored++;
         }
-      const erased: Erased = { holdings, cleared: cleared.size + authored, requirements };
+      const erased: Erased = {
+        holdings,
+        cleared: cleared.size + authored,
+        requirements,
+        threadIds: [...threadIds].sort(),
+      };
       return erased;
     },
     async exportOrganisation(organisationId) {
@@ -469,6 +581,7 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     async audit(entry) {
       state.audit.push(structuredClone(entry));
     },
+    workItems,
   };
   const transaction: CompetenceStore['transaction'] = fn =>
     serialized(async () => {
@@ -482,6 +595,9 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     });
   return {
     transaction,
+    sink,
+    /** The calls to the approvals' cards, in order. */
+    calls: () => structuredClone(state.calls),
     /** The current state; replaced (not mutated) when a transaction rolls back, so read it after the call. */
     get state() {
       return state;

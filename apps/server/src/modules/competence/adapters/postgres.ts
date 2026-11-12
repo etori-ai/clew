@@ -3,9 +3,11 @@ import { database, schema, type Transaction } from '@clew/db';
 import { enqueueWorkflow, type DurableQueue } from '@clew/db/durable';
 import { UNIT_KEY } from '@clew/contracts/scim-group-key';
 import {
+  PendingTaken,
   RequirementTaken,
   ShareTargetTaken,
   TypeNameTaken,
+  type ApprovalWorkItemTx,
   type CompetenceStore,
   type CompetenceTx,
   type HoldingRecord,
@@ -95,6 +97,7 @@ const holdingOf = ({ connectorId, sourceId, sourceType, sourceLabel, readAt, ...
   ...r,
   createdAt: r.createdAt.toISOString(),
   revokedAt: iso(r.revokedAt),
+  decidedAt: iso(r.decidedAt),
   copy:
     connectorId && sourceId && sourceType && sourceLabel && readAt
       ? { connectorId, sourceId, sourceType, sourceLabel, readAt: readAt.toISOString() }
@@ -105,6 +108,7 @@ const rowOf = ({ copy, ...h }: HoldingRecord): typeof holdings.$inferInsert => (
   ...h,
   createdAt: new Date(h.createdAt),
   revokedAt: date(h.revokedAt),
+  decidedAt: date(h.decidedAt),
   connectorId: copy?.connectorId ?? null,
   sourceId: copy?.sourceId ?? null,
   sourceType: copy?.sourceType ?? null,
@@ -122,11 +126,32 @@ const sourceOf = (r: SourceRow): SourceRecord => ({
 });
 
 /**
+ * A store with no approval cards (D108 item 7), for a caller that registers nothing of a person's own: a scheduled read,
+ * an operator's script, the store contract. Opening or closing a card is refused, since its approval would be lost; with
+ * no card there is nothing to remove. Composition builds the server's store with the cards (`competenceStoreWithCards`).
+ */
+const noCards: ApprovalWorkItemTx = {
+  async open() {
+    throw new Error('This competence store has no approval cards: build it with competenceStoreWithCards.');
+  },
+  async close() {
+    throw new Error('This competence store has no approval cards: build it with competenceStoreWithCards.');
+  },
+  async remove() {},
+  async removeAbout() {},
+  async removeOwned() {},
+};
+/**
  * The competence tables (D108) on one Postgres transaction. Reads that a write follows take a row lock. The catalogue's
  * order is Swedish and is sorted here, since the database's collation is not Clew's to choose. `durable` names the
- * engine's application and queue, so a workflow start commits with the transaction that decides it (D86).
+ * engine's application and queue, so a workflow start commits with the transaction that decides it (D86). `workItems` is
+ * the approvals' cards over the same transaction (D108 item 7).
  */
-export function competenceTx(tx: Transaction, durable: DurableQueue): CompetenceTx {
+export function competenceTx(
+  tx: Transaction,
+  durable: DurableQueue,
+  workItems: ApprovalWorkItemTx = noCards,
+): CompetenceTx {
   return {
     async types(organisationId, options = {}) {
       const rows = await tx
@@ -184,15 +209,28 @@ export function competenceTx(tx: Transaction, durable: DurableQueue): Competence
       return r ? holdingOf(r) : undefined;
     },
     async insertHolding(h) {
-      await tx.insert(holdings).values(rowOf(h));
+      await once(
+        () => tx.insert(holdings).values(rowOf(h)),
+        ['competence_holding_pending'],
+        () => new PendingTaken(),
+      );
     },
     async updateHolding(id, patch) {
       const set: Partial<typeof holdings.$inferInsert> = {};
       if ('state' in patch && patch.state !== undefined) set.state = patch.state;
       if ('revokedAt' in patch) set.revokedAt = date(patch.revokedAt ?? null);
       if ('revokedBy' in patch) set.revokedBy = patch.revokedBy ?? null;
+      if ('decidedAt' in patch) set.decidedAt = date(patch.decidedAt ?? null);
+      if ('decidedBy' in patch) set.decidedBy = patch.decidedBy ?? null;
       if (!Object.keys(set).length) return;
-      await tx.update(holdings).set(set).where(eq(holdings.id, id));
+      await once(
+        () => tx.update(holdings).set(set).where(eq(holdings.id, id)),
+        ['competence_holding_pending'],
+        () => new PendingTaken(),
+      );
+    },
+    async deleteHolding(id) {
+      await tx.delete(holdings).where(and(eq(holdings.id, id), isNull(holdings.connectorId)));
     },
     async copiedFrom(connectorId) {
       const rows = await tx
@@ -544,13 +582,16 @@ export function competenceTx(tx: Transaction, durable: DurableQueue): Competence
           .where(inArray(sources.connectorId, ids))
           .orderBy(asc(sources.connectorId))
           .for('update');
-      const removed = await tx.delete(holdings).where(eq(holdings.personId, personId)).returning({ id: holdings.id });
+      const removed = await tx
+        .delete(holdings)
+        .where(eq(holdings.personId, personId))
+        .returning({ id: holdings.id, threadId: holdings.threadId });
       const required = await tx
         .delete(requirements)
         .where(eq(requirements.personId, personId))
         .returning({ id: requirements.id });
       const cleared = new Set<string>();
-      for (const column of ['registeredBy', 'revokedBy'] as const)
+      for (const column of ['registeredBy', 'revokedBy', 'decidedBy'] as const)
         for (const r of await tx
           .update(holdings)
           .set({ [column]: null })
@@ -574,7 +615,12 @@ export function competenceTx(tx: Transaction, durable: DurableQueue): Competence
             .where(eq(targets.createdBy, actor))
             .returning({ id: targets.id })
         ).length;
-      return { holdings: removed.length, cleared: cleared.size + authored, requirements: required.length };
+      return {
+        holdings: removed.length,
+        cleared: cleared.size + authored,
+        requirements: required.length,
+        threadIds: [...new Set(removed.flatMap(r => (r.threadId ? [r.threadId] : [])))].sort(),
+      };
     },
     async exportOrganisation(organisationId) {
       const typeRows = await tx
@@ -620,8 +666,13 @@ export function competenceTx(tx: Transaction, durable: DurableQueue): Competence
         details: e.details ?? {},
       });
     },
+    workItems,
   };
 }
+/**
+ * The competence store over its own `database().transaction`, with no approval cards: for a caller that registers nothing
+ * of a person's own. The server's store shares the transaction with the thread store (`competenceStoreWithCards`).
+ */
 export function postgresCompetenceStore(durable: DurableQueue): CompetenceStore {
   return { transaction: fn => database().transaction(tx => fn(competenceTx(tx, durable))) };
 }

@@ -236,6 +236,31 @@ export const competenceMatrixQuery = (input: CompetenceMatrixInput) =>
     retry: false,
     placeholderData: keepPreviousData,
   });
+/**
+ * The reader's own registration (D108 item 7): whether anyone would decide it, and the ones that wait. `null` while the
+ * module is off for the person, which the page says on its own. Not retried.
+ */
+export const competenceOwnQuery = queryOptions({
+  queryKey: keys.competenceOwn,
+  queryFn: () => unlessRefused(api.competence.own()),
+  retry: false,
+});
+/** The types a person may register one of their own for (D108 item 7); `null` while the module is off for them. */
+export const competenceOwnTypesQuery = queryOptions({
+  queryKey: keys.competenceOwnTypes,
+  queryFn: () => unlessRefused(api.competence.ownTypes()),
+  retry: false,
+});
+/**
+ * A registration of a report's own as the manager who decides it reads it (D108 item 7). A refusal (not theirs to
+ * decide, or decided already) is the page's to say, so it is not retried.
+ */
+export const competenceApprovalQuery = (holdingId: string) =>
+  queryOptions({
+    queryKey: keys.competenceApproval(holdingId),
+    queryFn: () => api.competence.approval(holdingId),
+    retry: false,
+  });
 export const adminQueries = {
   connectors: queryOptions({ queryKey: keys.admin.connectors, queryFn: () => api.admin.connectors() }),
   units: queryOptions({ queryKey: keys.admin.units, queryFn: () => api.admin.units() }),
