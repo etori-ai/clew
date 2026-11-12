@@ -136,8 +136,8 @@ export async function beginLogin(returnTo: string | null) {
     nonce,
     code_challenge: await oidc.calculatePKCECodeChallenge(verifier),
     code_challenge_method: 'S256',
-    prompt: 'login',
-    max_age: '0',
+    // No `prompt` and no `max_age`: a sign-in follows the identity provider's own session (Q9 of the 2026-11-12 users
+    // review). An organisation that wants a fresh prompt, on shared computers for example, sets it in the provider.
     ui_locales: 'sv',
   });
   return { cookie, url };
@@ -156,7 +156,6 @@ export async function completeLogin(currentUrl: URL, cookie: string | undefined)
     expectedState: transaction.state,
     expectedNonce: transaction.nonce,
     idTokenExpected: true,
-    maxAge: 0,
   });
   return { ...(await openSession(tokens, 'login')), returnTo: transaction.returnTo };
 }
