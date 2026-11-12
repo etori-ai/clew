@@ -327,11 +327,11 @@ describe('current employments on a SCIM user', () => {
     const changed = [{ ...job, employmentPercentage: 62.5 }, second];
     expect((await patch(path, { op: 'replace', path: field, value: changed })).body[urn].employments).toEqual(changed);
     expect((await patch(path, { op: 'add', path: field, value: second })).body[urn].employments).toEqual(changed);
-    const bounds = [{ ...job, employmentPercentage: 0 }, { ...job, employmentPercentage: 100 }, job];
-    expect((await json('PUT', path, person(1, { [urn]: { employments: bounds } }))).body[urn].employments).toEqual(
-      bounds,
-    );
-    for (const invalid of [-1, 101, '60 %', null]) {
+    const percentages = [0, 0.5, 50, 100].map(employmentPercentage => ({ ...job, employmentPercentage }));
+    const employments = [...percentages, job];
+    const replaced = await json('PUT', path, person(1, { [urn]: { employments } }));
+    expect(replaced.body[urn].employments).toEqual(employments);
+    for (const invalid of [-1, 101, '50', '50%', '60 %', null]) {
       const result = await patch(path, {
         op: 'replace',
         path: field,

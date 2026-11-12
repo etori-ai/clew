@@ -1438,7 +1438,8 @@ export const schemaDocuments = (base: string) => [
           attribute('employmentType', 'string', { description: "The source's label for the form of employment." }),
           attribute('startDate', 'string', { description: 'First calendar day of this employment, YYYY-MM-DD.' }),
           attribute('employmentPercentage', 'decimal', {
-            description: 'Percentage of full-time hours for this employment, from 0 to 100 inclusive.',
+            description:
+              'Percentage of full-time hours for this employment. Send a JSON number from 0 to 100 inclusive without a percent sign. Use 50 for half time.',
           }),
         ],
       }),
