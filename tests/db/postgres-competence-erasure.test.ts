@@ -140,7 +140,7 @@ describe('erasing a person from the competence domain on Postgres (D108 item 14,
   test('the cards go with the holdings in one transaction, or neither does', async () => {
     await expect(
       store.transaction(async tx => {
-        expect(await tx.cards.removeOwn(person, 'operator:cli')).toBe(1);
+        expect(await tx.cards.removeOwn(person, 'operator:cli', at.toISOString())).toBe(1);
         throw new Error('crash');
       }),
     ).rejects.toThrow('crash');

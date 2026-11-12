@@ -11,6 +11,15 @@ competenceStoreContract('memory', async () => {
     async seedPerson(person) {
       store.addPerson(person);
     },
+    async seedCard(id, personId, connector) {
+      store.addCard(id, { personId, connector });
+    },
+    async cardsOf(personId) {
+      return [...store.state.cards]
+        .filter(([, card]) => card.personId === personId)
+        .map(([id]) => id)
+        .sort();
+    },
     async auditFor(subject) {
       return store
         .audit()

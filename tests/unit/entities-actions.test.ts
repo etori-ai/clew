@@ -20,6 +20,7 @@ import { entityRoutes, type EntityRouteDeps } from '../../apps/server/src/routes
 import { InputError } from '../../apps/server/src/context';
 import { fixtureConnectors } from '../fixture-connectors';
 import { memoryPersonKeys } from '../person-keys';
+import { startedDecision, startedTopic, takesStarted } from '../../apps/server/src/threads/domain';
 
 /**
  * An action about a person, started from the person's menu without the model (D97, D8): the real registry with small
@@ -442,6 +443,76 @@ describe('an action about a person, started from the menu', () => {
     );
     expect(w.approvals).toEqual([]);
     expect(w.asked.flag).toEqual([]);
+  });
+
+  test('an execute whose capability no longer takes the person where the card keeps them cannot be decided, and nothing is approved (D116)', async () => {
+    const w = world();
+    const hillevi = w.people.persona('hillevi');
+    const { threadId } = (await w.actions.start(hillevi, 'person', 'anna', 'hr.flag'))!;
+    // The card says which property of its input keeps the person: the capability's declaration as the card was made.
+    const card = (await w.access.read(hillevi, threadId))!;
+    expect(card.topic).toMatch(/^started:hr\.flag:.+:person:person$/);
+    const declared = w.registry.connector('hr')!;
+    const redeclare = (change: (flag: Capability) => Capability) =>
+      w.registry.replace({
+        ...declared,
+        capabilities: declared.capabilities.map(c => (c.name === 'hr.flag' ? change(c) : c)),
+      });
+    const changed = 'Åtgärden har ändrats sedan ärendet skapades. Inget har skickats.';
+    // No longer about a person: the card's id would reach the source as if it were a user name.
+    redeclare(({ about: _, ...flag }) => flag);
+    await expect(w.decisions.act(hillevi, threadId, 'decide')).rejects.toThrow(changed);
+    // What it would do is not asked either: the same input would be the wrong one.
+    await expect(w.decisions.effect(hillevi, threadId, 'decide')).rejects.toThrow(changed);
+    // About a person, in another property of its input.
+    redeclare(flag => ({
+      ...flag,
+      about: { entity: 'person', param: 'employee' },
+      input: {
+        type: 'object',
+        properties: { employee: { type: 'string' } },
+        required: ['employee'],
+        additionalProperties: false,
+      } as never,
+    }));
+    await expect(w.decisions.act(hillevi, threadId, 'decide')).rejects.toThrow(changed);
+    // About a unit, in the same property: the card's person id would be sent as a unit's.
+    redeclare(flag => ({ ...flag, about: { entity: 'unit', param: 'person' } }));
+    await expect(w.decisions.act(hillevi, threadId, 'decide')).rejects.toThrow(changed);
+    expect(w.approvals).toEqual([]);
+    expect(w.asked.flag).toEqual([]);
+    // Declared as the card was made, the decision goes through on the user name Anna has.
+    w.registry.replace(declared);
+    await w.decisions.act(hillevi, threadId, 'decide');
+    expect(w.approvals).toEqual([
+      expect.objectContaining({ payload: { person: 'anna.l' }, subject: { param: 'person', personId: 'anna' } }),
+    ]);
+  });
+
+  test("a started card's topic says where its person is, and only a started execute's decision reads it (D116)", () => {
+    const decide = { id: 'decide', kind: 'execute' as const, capability: 'hr.flag', input: { person: 'anna' } };
+    const topic = startedTopic('hr.flag', 'abc', 'person');
+    expect(topic).toBe('started:hr.flag:abc:person:person');
+    expect(startedDecision(topic, decide)).toEqual({ person: { param: 'person', personId: 'anna' } });
+    // An id the card does not hold in that property is no id: the directory finds nobody, and nothing is sent.
+    expect(startedDecision(topic, { ...decide, input: {} })).toEqual({ person: { param: 'person', personId: '' } });
+    // About a unit, or about nobody: the topic names no property, and there is nobody to resolve.
+    expect(startedDecision(startedTopic('units.close', 'abc'), { ...decide, capability: 'units.close' })).toEqual({});
+    // Another card, another action on a started card, another capability's topic and a propose are not started decisions.
+    expect(startedDecision('hr:absence-draft:1', decide)).toBeUndefined();
+    expect(startedDecision(topic, { ...decide, id: 'report' })).toBeUndefined();
+    expect(startedDecision(startedTopic('hr.flagged', 'abc', 'person'), decide)).toBeUndefined();
+    expect(startedDecision(topic, { ...decide, kind: 'propose' })).toBeUndefined();
+    // The capability as declared now must take the person where the card keeps them, and a card about no person
+    // must stay about none.
+    const person = { person: { param: 'person' } };
+    expect(takesStarted(person, { entity: 'person', param: 'person' })).toBe(true);
+    expect(takesStarted(person, { entity: 'person', param: 'employee' })).toBe(false);
+    expect(takesStarted(person, { entity: 'unit', param: 'person' })).toBe(false);
+    expect(takesStarted(person, undefined)).toBe(false);
+    expect(takesStarted({}, { entity: 'unit', param: 'unit' })).toBe(true);
+    expect(takesStarted({}, undefined)).toBe(true);
+    expect(takesStarted({}, { entity: 'person', param: 'person' })).toBe(false);
   });
 
   test('an action not about that kind, a key outside the rule and an action the reader may not call answer undefined and write nothing', async () => {

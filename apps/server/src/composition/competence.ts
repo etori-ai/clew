@@ -21,8 +21,7 @@ import { ledger } from './durable';
  */
 /** A person's own competence cards (D108 item 12), over the thread store's transaction that the competence one shares. */
 export const competenceCards = (tx: Transaction, thread: ThreadTx): CompetenceCardsTx => ({
-  async removeOwn(personId, actor) {
-    const at = clock().toISOString();
+  async removeOwn(personId, actor, at) {
     const own = and(eq(schema.threads.personId, personId), eq(schema.threads.connector, COMPETENCE_CONNECTOR));
     return (await removeCards(tx, thread, own, actor, at)).length;
   },

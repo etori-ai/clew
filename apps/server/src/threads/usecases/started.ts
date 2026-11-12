@@ -3,7 +3,7 @@ import type { AuthenticatedContext, ThreadAction, ThreadItem } from '@clew/contr
 import { actorOf, CapabilityError, pendingAsks, type Registry, type ThreadDraft } from '@clew/connectors';
 import { ThreadDraftSchema } from '@clew/connectors/protocol';
 import { InputError } from '../../context';
-import { STARTED_ACTION, startedTopic } from '../domain';
+import { STARTED_ACTION, startedTopic, takesStarted } from '../domain';
 import type { PersonKeys, ThreadStore } from '../model';
 import { keyedDrafts } from './keys';
 
@@ -40,8 +40,8 @@ export interface StartContext {
   asked?: Record<string, string>;
   /**
    * The person the action is about (D116): `input[param]` names them by Clew's key, their id, which is what the card
-   * keeps and its topic is made from, and `sourceKey` is their user name now, what the source is sent. An execute's id is
-   * resolved to the user name again when the person decides (`decisions.ts`).
+   * keeps and its topic is made from, and `sourceKey` is their user name now, what the source is sent. An execute's topic
+   * names `param`, and the id is resolved to the user name again when the person decides (`decisions.ts`).
    */
   person?: { param: string; personId: string; sourceKey: string };
 }
@@ -70,7 +70,14 @@ export function startedCards({ store, registry, run, digest, clock, ids, people 
     }
     const { connector, capability: chosen } = found;
     // A follower answers a fact with steps, and a reviewed execute needs rows the person picks: neither starts from a key.
-    if ((chosen.kind !== 'propose' && chosen.kind !== 'execute') || chosen.follows || chosen.review)
+    // A person goes where the capability takes them (D116), and only there, so the decision can resolve them again: a
+    // card it would refuse is never made.
+    if (
+      (chosen.kind !== 'propose' && chosen.kind !== 'execute') ||
+      chosen.follows ||
+      chosen.review ||
+      !takesStarted(person ? { person } : {}, chosen.about)
+    )
       throw new InputError('Åtgärden kan inte startas härifrån.');
     let draft: Omit<ThreadDraft, 'topic' | 'reason' | 'occurrences'>;
     let identity: unknown;
@@ -99,8 +106,13 @@ export function startedCards({ store, registry, run, digest, clock, ids, people 
       };
     }
     // The same action with the same input (for a propose, the same occurrence) under the same authority is one card. The
-    // input names a person by id (D116), so a rename leaves the topic as it was and a reused name gives another card.
-    const topic = startedTopic(capability, digest({ input, identity, authority: persona.authorizationVersion }));
+    // input names a person by id (D116), so a rename leaves the topic as it was and a reused name gives another card. An
+    // execute's topic also says which property of its input keeps the person, for the decision to resolve.
+    const topic = startedTopic(
+      capability,
+      digest({ input, identity, authority: persona.authorizationVersion }),
+      chosen.kind === 'execute' ? person?.param : undefined,
+    );
     const open = await store.openThread(persona.id, topic);
     if (open) return { threadId: open.id };
     const id = ids(),

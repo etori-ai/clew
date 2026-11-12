@@ -7,6 +7,9 @@ import type { AuthenticatedContext } from '../../packages/contracts/src';
 import type { ScanObservation, ThreadDraft } from '../../packages/connectors/src';
 import { memoryRefreshStore } from '../../apps/server/src/threads/adapters/refresh-memory';
 import { refreshUsecases } from '../../apps/server/src/threads/usecases/refresh';
+import type { PersonKeys } from '../../apps/server/src/threads/model';
+import type { UserRecord } from '../../apps/server/src/modules/people/domain';
+import { memoryPersonKeys } from '../person-keys';
 
 const actor = {
   id: 'a',
@@ -24,7 +27,8 @@ const draft = (revision = '1', period = '2026'): ThreadDraft => ({
   actions: [],
   occurrences: [{ key: 'case:1', revision, period }],
 });
-function world() {
+/** `people`: whose a source's key is (D116); without it a row names nobody. */
+function world(people?: PersonKeys) {
   let now = Date.parse('2026-11-05T12:00:00.000Z'),
     n = 0,
     allowed = true;
@@ -41,6 +45,7 @@ function world() {
     sources: async () => ['source'],
     system: (id: string) => (id === 'source' ? 'Ärendesystemet' : id),
     scan: async () => observation,
+    ...(people ? { people } : {}),
   };
   const uc = refreshUsecases(deps);
   return {
@@ -83,6 +88,82 @@ test("a scanned card's trigger names the system in words, the id stays on the th
   w.set([draft('2')]);
   await w.uc.tick();
   expect(w.store.threads.dump()[0]!.thread.trigger.source).toBe('Ärendesystemet');
+});
+/** A person of the memory directory, as SCIM provisioned them. */
+const user = (id: string, userName: string | null, organisationId = 'org'): UserRecord => ({
+  id,
+  organisationId,
+  externalId: null,
+  userName,
+  name: id,
+  email: null,
+  title: null,
+  enabled: true,
+  createdAt: '2026-11-01T00:00:00.000Z',
+  updatedAt: '2026-11-01T00:00:00.000Z',
+  phoneNumbers: [],
+  employments: [],
+});
+const row = (ref: string, key: string, entity: 'person' | 'unit' = 'person') => ({
+  ref,
+  label: ref,
+  detail: '',
+  selectable: false,
+  selected: false,
+  subject: { entity, key },
+});
+test("a scanned row that names a person by user name is kept by the id of whoever of the reader's organisation holds it (D116)", async () => {
+  const users = new Map(
+    [
+      user('a', 'chef'),
+      user('p-erik', 'erik.sandstrom'),
+      // Enabled or not, a holder is the holder: the card says who the source meant.
+      { ...user('p-leaver', 'asa.oberg'), enabled: false },
+      // The same user name in another organisation is somebody else's.
+      user('p-outside', 'ute.person', 'other-org'),
+    ].map(u => [u.id, u] as const),
+  );
+  const w = world(memoryPersonKeys({ users }));
+  w.set([
+    {
+      ...draft(),
+      items: [
+        // The source's own spelling: compared without regard to case.
+        row('erik', 'Erik.Sandstrom'),
+        row('leaver', 'asa.oberg'),
+        row('nobody', 'okand.person'),
+        row('outside', 'ute.person'),
+        row('unit', 'unit-1', 'unit'),
+      ],
+    },
+  ]);
+  await w.uc.request(actor);
+  await w.uc.tick();
+  const thread = w.store.threads.dump()[0]!.thread;
+  expect(thread.items.map(i => [i.ref, i.subject])).toEqual([
+    ['erik', { entity: 'person', key: 'p-erik' }],
+    ['leaver', { entity: 'person', key: 'p-leaver' }],
+    // A user name nobody of the reader's organisation holds names nobody: the row keeps its text and no subject.
+    ['nobody', undefined],
+    ['outside', undefined],
+    ['unit', { entity: 'unit', key: 'unit-1' }],
+  ]);
+  // The index from entity to cards keeps the id, never the source's key.
+  const naming = (key: string) => w.store.threads.threadsNaming('a', [{ entity: 'person', key }]);
+  expect((await naming('p-erik')).map(r => r.thread.id)).toEqual([thread.id]);
+  expect(await naming('Erik.Sandstrom')).toEqual([]);
+  expect(await naming('erik.sandstrom')).toEqual([]);
+  expect(await naming('p-outside')).toEqual([]);
+});
+test('without whose a key is, a scanned row names nobody (D116)', async () => {
+  const w = world();
+  w.set([{ ...draft(), items: [row('erik', 'erik.sandstrom'), row('unit', 'unit-1', 'unit')] }]);
+  await w.uc.request(actor);
+  await w.uc.tick();
+  expect(w.store.threads.dump()[0]!.thread.items.map(i => i.subject)).toEqual([
+    undefined,
+    { entity: 'unit', key: 'unit-1' },
+  ]);
 });
 test('an unchanged card is not rewritten when its stored copy has another key order or lacks an absent property', async () => {
   const w = world();

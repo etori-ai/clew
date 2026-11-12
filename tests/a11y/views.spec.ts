@@ -411,6 +411,10 @@ test.describe('1.4.10: a declared view at 320 px', () => {
  * D97 item 6: a view that says which property of a row holds a person's key links the row to the person. The planner's
  * table (`talks.talks`) declares it; a row that also opens a read keeps that on its name and gets the person as a link
  * of its own at the row's end, since one cell cannot be two links. A detail's heading links the same way.
+ *
+ * D116: the row holds the source's key, a user name, and the link goes to the person's id, which the server answers in
+ * `view.people` for the user names someone of the reader's organisation holds. The ids here differ from the user names,
+ * so a link built from the user name would fail, and a row whose user name nobody holds is text.
  */
 test.describe('a view row that names a person', () => {
   test.use({ viewport: desktop });
@@ -428,12 +432,16 @@ test.describe('a view row that names a person', () => {
       { key: 'at', label: 'När' },
     ],
     subject: { entity: 'person' as const, key: 'userName' },
+    // The ids of the people the rows name, by the user name the source sent (D116); `bo.ek` is held by nobody.
+    people: { 'anna.lindqvist': 'anna', 'karin.lindqvist': 'karin' },
   };
   const rows = [
-    { userName: 'anna', name: 'Anna Lindqvist', state: 'Bokat', at: 'mån 16 nov' },
-    { userName: 'karin', name: 'Karin Lindqvist', state: 'Saknas' },
+    { userName: 'anna.lindqvist', name: 'Anna Lindqvist', state: 'Bokat', at: 'mån 16 nov' },
+    { userName: 'karin.lindqvist', name: 'Karin Lindqvist', state: 'Saknas' },
     // A row without the key names nobody, and is not a link.
     { name: 'Utan användarnamn', state: 'Saknas' },
+    // Nor is a row whose user name nobody of the reader's organisation holds.
+    { userName: 'bo.ek', name: 'Bo Ek', state: 'Saknas' },
   ];
   const withOpen = {
     ...talks,
@@ -445,7 +453,7 @@ test.describe('a view row that names a person', () => {
     );
   const planner = `/?open=talks.talks&open-title=${title('Utvecklingssamtal')}`;
 
-  test('the name is the link to the person, with the page as the way back; a row without the key is text', async ({
+  test('the name is the link to the person by id, with the page as the way back; a row naming nobody is text', async ({
     page,
     api: _,
   }) => {
@@ -457,9 +465,14 @@ test.describe('a view row that names a person', () => {
       'href',
       /^\/people\/anna\?from=%2F%3Fopen%3Dtalks\.talks/,
     );
-    await expect(panel.getByRole('link', { name: 'Karin Lindqvist', exact: true })).toBeVisible();
+    await expect(panel.getByRole('link', { name: 'Karin Lindqvist', exact: true })).toHaveAttribute(
+      'href',
+      /^\/people\/karin\?from=/,
+    );
     await expect(panel.getByRole('link', { name: 'Utan användarnamn' })).toHaveCount(0);
     await expect(panel.getByText('Utan användarnamn')).toBeVisible();
+    await expect(panel.getByRole('link', { name: 'Bo Ek' })).toHaveCount(0);
+    await expect(panel.getByText('Bo Ek')).toBeVisible();
     await expectNoAxeViolations(page);
     await panel.getByRole('link', { name: 'Anna Lindqvist', exact: true }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Anna Lindqvist' })).toBeVisible();
@@ -485,6 +498,13 @@ test.describe('a view row that names a person', () => {
     // The row that names nobody and opens nothing has neither.
     const nobody = panel.getByRole('row').filter({ hasText: 'Utan användarnamn' });
     await expect(nobody.getByRole('link')).toHaveCount(0);
+    // A user name nobody holds still opens its read on the name, and has no person's link at the end.
+    const unheld = panel.getByRole('row').filter({ hasText: 'Bo Ek' });
+    await expect(unheld.getByRole('link', { name: 'Bo Ek', exact: true })).toHaveAttribute(
+      'href',
+      /open=talks\.commitments/,
+    );
+    await expect(unheld.getByRole('link', { name: 'Öppna Bo Ek' })).toHaveCount(0);
     await expectNoAxeViolations(page);
     // On a phone the table is its list: the person's link stands at the row's end.
     await page.setViewportSize(phone);
@@ -516,8 +536,9 @@ test.describe('a view row that names a person', () => {
             title: 'name',
             fields: [{ key: 'role', label: 'Befattning' }],
             subject: { entity: 'person', key: 'userName' },
+            people: { 'Anna.Lindqvist': 'anna' },
           },
-          output: { name: 'Anna Lindqvist', userName: 'anna', role: 'Lärare F–3' },
+          output: { name: 'Anna Lindqvist', userName: 'Anna.Lindqvist', role: 'Lärare F–3' },
         },
       }),
     );

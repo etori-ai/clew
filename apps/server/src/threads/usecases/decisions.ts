@@ -2,7 +2,6 @@ import {
   EffectOutputSchema,
   PreviewOutputSchema,
   SUBJECT_CHANGED,
-  subjectKeys,
   type AskValues,
   type AuthenticatedContext,
   type EffectPreview,
@@ -14,8 +13,9 @@ import {
 import { answersOf, asksFor, CapabilityError, givenBy, type Registry } from '@clew/connectors';
 import { Value } from 'typebox/value';
 import { InputError } from '../../context';
-import { startedPerson } from '../domain';
+import { startedDecision, takesStarted } from '../domain';
 import type { PersonKeys } from '../model';
+import { viewWithPeople } from './keys';
 
 export interface CardDecisionsDeps {
   documentPreview?: (persona: AuthenticatedContext, capability: string, ref: string) => Promise<DocumentReview>;
@@ -79,8 +79,13 @@ export function cardDecisions({ read, registry, run, approve, clock, documentPre
     const asks = found.capability.kind === 'read' ? [] : asksFor(found.capability, givenBy(found.capability, action));
     const answered = answersOf(asks, values, clock().toISOString(), found.capability.input);
     if ('problem' in answered) throw new InputError(answered.problem);
-    // A started action keeps the person by id (D116); the source is sent the user name the person has as this is decided.
-    const subject = startedPerson(t.topic, action, found.capability.about);
+    // A card started from an entity's menu keeps its person by id, in the input property its topic names (D116). The
+    // capability must still take the person there, or the card's id would reach the source as if it were a user name;
+    // the source is sent the user name the person has as this is decided.
+    const started = startedDecision(t.topic, action);
+    if (started && !takesStarted(started, found.capability.about))
+      throw new InputError('Åtgärden har ändrats sedan ärendet skapades. Inget har skickats.');
+    const subject = started?.person;
     const userName = subject && people ? await people.userName(subject.personId) : undefined;
     if (subject && !userName) throw new InputError('Personen finns inte längre i katalogen. Inget har skickats.');
     const payload = {
@@ -112,12 +117,10 @@ export function cardDecisions({ read, registry, run, approve, clock, documentPre
       const output = await run(persona, action.capability, payload),
         view = registry.viewFor(persona, action.capability);
       // A record that names a person links to them by id (D116).
-      const names = view ? subjectKeys(view, output) : [];
-      const held = names.length && people ? await people.holders(persona.id, names) : undefined;
       return {
         kind: found.capability.kind,
         output,
-        ...(view ? { view: held?.size ? { ...view, people: Object.fromEntries(held) } : view } : {}),
+        ...(view ? { view: await viewWithPeople(people, persona, view, output) } : {}),
       };
     }
     // A started action that dispatch refused because its user name had moved to someone else (D116) is decided again,

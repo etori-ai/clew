@@ -558,7 +558,12 @@ describe('erasure and export', () => {
   test("the cards the competence scan put in the person's own stream go with the holdings, and are counted (R1)", async () => {
     const seeded = memoryCompetenceStore({
       persons: [{ id: 'anna', organisationId: ORG, name: 'Anna', userName: 'anna.a' }],
-      cards: { anna: ['card-hlr', 'card-heta'], bo: ['card-bo'] },
+      cards: {
+        'card-heta': { personId: 'anna', connector: 'competence' },
+        'card-hlr': { personId: 'anna', connector: 'competence' },
+        'card-hr': { personId: 'anna', connector: 'hr' },
+        'card-bo': { personId: 'bo', connector: 'competence' },
+      },
     });
     const erasing = competenceUsecases({
       store: seeded,
@@ -567,11 +572,25 @@ describe('erasure and export', () => {
       ids: () => 'x',
     });
     expect(await erasing.erasePerson('operator:cli', 'anna')).toEqual({ holdings: 0, cleared: 0, cards: 2 });
-    expect([...seeded.state.cards.keys()]).toEqual(['bo']);
-    expect(seeded.audit().at(-1)).toMatchObject({
-      subject: 'person:anna',
-      details: { holdings: 0, cleared: 0, cards: 2 },
-    });
+    // Another connector's card of hers and a colleague's competence card stay.
+    expect([...seeded.state.cards.keys()].sort()).toEqual(['card-bo', 'card-hr']);
+    // A thread.removed row for each card, then the erasure's own, all at the erasure's time.
+    expect(seeded.audit()).toEqual([
+      ...['card-heta', 'card-hlr'].map(id => ({
+        actor: 'operator:cli',
+        action: 'thread.removed',
+        subject: `thread:${id}`,
+        at: now.toISOString(),
+        details: { reason: 'erasure' },
+      })),
+      {
+        actor: 'operator:cli',
+        action: 'competence.person_erased',
+        subject: 'person:anna',
+        at: now.toISOString(),
+        details: { holdings: 0, cleared: 0, cards: 2 },
+      },
+    ]);
   });
   test('an id the people table does not hold, a user name among them, erases nothing and writes no audit row (R1)', async () => {
     const { hot } = await catalogue();

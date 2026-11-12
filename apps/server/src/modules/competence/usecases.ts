@@ -437,7 +437,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
       return deps.store.transaction(async tx => {
         if (!(await tx.persons([personId])).length) return undefined;
         const erased = await tx.erasePerson(personId);
-        const cards = await tx.cards.removeOwn(personId, actor);
+        const cards = await tx.cards.removeOwn(personId, actor, at);
         const counted = { holdings: erased.holdings, cleared: erased.cleared, cards };
         await tx.audit({
           actor,

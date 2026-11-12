@@ -538,7 +538,18 @@ describe('an execute about a person that asks (D112)', () => {
       clock: () => T0,
       ids: () => 'card-1',
     });
-    const { threadId } = await started.startCard(persona(), 'talks2.book', { person: 'anna' }, { reason: 'Du valde' });
+    // The person goes where the capability takes them, by id, as the entity's menu passes them (D116); without them the
+    // decision could not resolve the person, and no card is made.
+    await expect(
+      started.startCard(persona(), 'talks2.book', { person: 'anna' }, { reason: 'Du valde' }),
+    ).rejects.toThrow('Åtgärden kan inte startas härifrån.');
+    expect(store.dump()).toEqual([]);
+    const { threadId } = await started.startCard(
+      persona(),
+      'talks2.book',
+      { person: 'anna' },
+      { reason: 'Du valde', person: { param: 'person', personId: 'anna', sourceKey: 'anna.l' } },
+    );
     // Without the answer the input is not yet whole: the card asks for it, and the decision supplies it.
     await expect(registry.validate(actorOf(persona()), 'talks2.book', { person: 'anna' })).rejects.toThrow(
       'Ogiltig förfrågan',

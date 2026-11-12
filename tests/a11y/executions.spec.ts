@@ -59,7 +59,7 @@ for (const [layout, viewport] of [
       const card = api.threads.find(t => t.id === 'fakturor')!;
       Object.assign(card, {
         title: 'Markera för uppföljning',
-        topic: 'started:hr.flag:fixture',
+        topic: 'started:hr.flag:fixture:person:person',
         items: [
           {
             ref: 'person:anna',

@@ -1,14 +1,17 @@
 import { and, eq, gt, inArray, isNotNull, isNull, like, not, or, sql, type SQL } from 'drizzle-orm';
-import { database, schema, type Transaction } from '@clew/db';
+import { database, schema, type Database, type Transaction } from '@clew/db';
 import { writeAudit } from '@clew/db/threads';
 import { UNIT_KEY } from '@clew/contracts/scim-group-key';
 import { unitGroupOf, type GroupRecord, type UserRecord, type UserSearch } from '../domain';
 import type { ProvisionStore, ProvisionTx, UserReads } from '../ports';
 
-/** Read the local user/grant tables; directory access is restricted to the actor's unit. */
-export const postgresUserReads = (): UserReads => ({
+/**
+ * Read the local user/grant tables; directory access is restricted to the actor's unit. `db` is the server's pool unless
+ * a test names another database.
+ */
+export const postgresUserReads = (db: () => Database = database): UserReads => ({
   async capabilities(personId) {
-    const [row] = await database()
+    const [row] = await db()
       .select({ capabilities: schema.accessGrants.capabilities })
       .from(schema.accessGrants)
       .where(eq(schema.accessGrants.personId, personId));
@@ -16,7 +19,7 @@ export const postgresUserReads = (): UserReads => ({
   },
   async directory(unitId) {
     return (
-      database()
+      db()
         .select({ id: schema.people.id, name: schema.people.name, role: schema.accessGrants.role })
         .from(schema.people)
         .innerJoin(schema.accessGrants, eq(schema.accessGrants.personId, schema.people.id))
@@ -25,7 +28,9 @@ export const postgresUserReads = (): UserReads => ({
     );
   },
   async userName(personId) {
-    const [row] = await database()
+    // A NUL is nobody's id, and PostgreSQL refuses to compare one.
+    if (personId.includes('\u0000')) return null;
+    const [row] = await db()
       .select({ userName: schema.people.userName })
       .from(schema.people)
       .where(eq(schema.people.id, personId));
@@ -35,25 +40,29 @@ export const postgresUserReads = (): UserReads => ({
     // A NUL names nobody, and PostgreSQL refuses to compare one.
     const names = [...new Set(userNames)].filter(name => name && !name.includes('\u0000'));
     if (!names.length || readerId.includes('\u0000')) return new Map();
-    // Each name as asked, beside the person of the reader's organisation it names: the same expression as the unique index
-    // on user names (`userMatch`), on both sides.
+    // Each name as asked beside the people of the reader's organisation it names: the same expression on both sides, in
+    // the composed form (NFC) and without regard to case under ICU's root collation, so that a decomposed å is å and Å
+    // and å are one letter on a database created with the C locale too (L12, L13).
     const asked = sql.join(
       names.map(name => sql`(${name}::text)`),
       sql`, `,
     );
-    const rows = await database().execute<{ asked: string; id: string }>(sql`
+    const rows = await db().execute<{ asked: string; id: string }>(sql`
       select asked.name as asked, holder.id as id
       from (values ${asked}) as asked(name)
-      join auth_person holder on lower(holder.user_name) = lower(asked.name)
+      join auth_person holder
+        on lower(normalize(holder.user_name, NFC) collate "und-x-icu")
+         = lower(normalize(asked.name, NFC) collate "und-x-icu")
       where holder.organisation_id = (select reader.organisation_id from auth_person reader where reader.id = ${readerId})`);
-    return new Map([...rows].map(r => [r.asked, r.id]));
+    const found = new Map<string, Set<string>>();
+    for (const r of rows) found.set(r.asked, (found.get(r.asked) ?? new Set<string>()).add(r.id));
+    // Two people the unique index let in with spellings that compare alike here (one stored decomposed, or Å and å on a
+    // C-locale database) leave the name naming nobody rather than either of them.
+    return new Map([...found].flatMap(([name, ids]) => (ids.size === 1 ? [[name, [...ids][0]!] as const] : [])));
   },
   async exists(personId) {
     if (personId.includes('\u0000')) return false;
-    const [row] = await database()
-      .select({ id: schema.people.id })
-      .from(schema.people)
-      .where(eq(schema.people.id, personId));
+    const [row] = await db().select({ id: schema.people.id }).from(schema.people).where(eq(schema.people.id, personId));
     return !!row;
   },
 });

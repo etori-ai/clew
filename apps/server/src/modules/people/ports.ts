@@ -23,9 +23,10 @@ export interface UserReads {
   userName(personId: string): Promise<string | null>;
   /**
    * Who holds these user names now in the reader's organisation, active or not (D116: a source's key is resolved to the
-   * person's id when a row or an action arrives), compared as a user name is everywhere in Clew, without regard to case;
-   * keyed by the name as asked. A name nobody of the reader's organisation holds is absent, and so is every name for a
-   * reader the people table does not hold.
+   * person's id when a row or an action arrives), compared without regard to case and in the composed form (NFC) on
+   * both sides; keyed by the name as asked. A name nobody of the reader's organisation holds is absent, and so is a name
+   * more than one of them holds in spellings that compare alike, and every name for a reader the people table does not
+   * hold.
    */
   holders(readerId: string, userNames: readonly string[]): Promise<Map<string, string>>;
   /** Whether the people table holds this person, active or not: an erasure refuses an id it does not (D116). */

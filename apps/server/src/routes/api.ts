@@ -52,7 +52,8 @@ import { executions } from '../composition/executions';
 import { jobs } from '../composition/jobs-across-systems';
 import { FactEnvelopeSchema, StepDraftSchema, type FactEnvelope } from '@clew/connectors/protocol';
 import { changesFor } from '../composition/changes';
-import { withPeople } from '../composition/person-keys';
+import { personKeys } from '../composition/person-keys';
+import { capabilityRoutes } from './capabilities';
 import { authenticate, AuthError, SESSION_COOKIE } from '../auth';
 import { getCookie } from 'hono/cookie';
 import { readDocument, reviewDocuments } from '../composition/documents';
@@ -299,44 +300,7 @@ api.get('/connectors', c => {
   });
 });
 /** Standing actions and panel views: run one capability directly. GET for reads (input as JSON in `input`), POST for the rest. */
-api.get('/cap/:name', async c => {
-  const name = c.req.param('name');
-  const found = registry.find(name);
-  if (!found || found.capability.kind !== 'read') return c.json({ error: 'Okänd förmåga.' }, 404);
-  let input: unknown = {};
-  const raw = c.req.query('input');
-  if (raw) {
-    try {
-      input = JSON.parse(raw);
-    } catch {
-      throw new InputError('Ogiltig förfrågan.');
-    }
-  }
-  // The output and, when the capability declares one, how to draw it (D38): the browser never guesses a declared view.
-  const persona = c.get('session').context;
-  const output = await runCapability(persona, name, input);
-  const view = registry.viewFor(actorOf(persona), name);
-  // A record that names a person links to them by id (D116).
-  return c.json({
-    output,
-    source: found.connector.source,
-    ...(view ? { view: await withPeople(persona, view, output) } : {}),
-  });
-});
-api.post('/cap/:name', async c => {
-  const name = c.req.param('name');
-  const found = registry.find(name);
-  if (!found || found.capability.kind === 'execute') return c.json({ error: 'Okänd förmåga.' }, 404);
-  const text = await c.req.raw.text();
-  if (text.length > 8000) throw new InputError('För stor förfrågan.');
-  let input: unknown = {};
-  try {
-    input = text ? JSON.parse(text) : {};
-  } catch {
-    throw new InputError('Ogiltig förfrågan.');
-  }
-  return c.json({ output: await runCapability(c.get('session').context, name, input) });
-});
+api.route('/cap', capabilityRoutes({ registry, run: runCapability, people: personKeys }));
 api.post('/threads/:id/act', async c => {
   const input = await body(c.req.raw, validators.act as unknown as (value: unknown) => value is ActInputType, 64_000);
   return c.json(

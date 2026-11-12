@@ -332,16 +332,19 @@ describe('an approved action about a person (D116)', () => {
     expect(await w.store.read(e.id)).toMatchObject({ state: 'unknown', reason: SUBJECT_CHANGED });
     expect(w.writes()).toBe(0);
     expect(w.store.audit().at(-1)).toMatchObject({ action: 'execution.unknown', details: { reason: SUBJECT_CHANGED } });
-    // A write the source did take is read back as it was: the lookup is no write.
-    const sent = world(undefined, new Map([['p-bo', 'bo.e']]));
+    // A write the source did take is read back as it was, though Bo's name moved after it reached the source: the lookup
+    // is no write, and it comes before the check of the name.
+    const boNames = new Map<string, string | null>([['p-bo', 'bo.e']]);
+    const sent = world(undefined, boNames);
     const done = await sent.approveAbout('p-bo', 'bo.e');
     await sent.store.transaction(async tx => {
       const row = (await tx.lock(done.id))!;
       await tx.update({ ...row, state: 'running', dispatchedAt: row.createdAt, leaseUntil: row.createdAt, attempt: 1 });
     });
     await sent.source.execute(persona, (await sent.store.read(done.id))!);
+    boNames.set('p-bo', 'bo.ek');
     await sent.uc.progress(done.id);
-    expect(await sent.uc.read(persona, done.id)).toMatchObject({ state: 'succeeded' });
+    expect(await sent.uc.read(persona, done.id)).toMatchObject({ state: 'succeeded', reason: null });
     expect(sent.writes()).toBe(1);
   });
   test('without a people port nothing about a person is ever sent', async () => {
