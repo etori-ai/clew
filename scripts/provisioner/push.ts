@@ -250,14 +250,15 @@ export interface PushSummary {
   groupsReplaced: number;
   groupsRemoved: number;
   /**
-   * The people Clew refused, each with the reason. Everybody else was sent: one row the source has wrong does not
-   * keep a leaver active or a newcomer out. A run with anybody here has not succeeded, and its caller says so.
+   * The people Clew refused, and the people returning to a unit that was not written, whom the example leaves inactive,
+   * each with the reason. Everybody else was sent: one row the source has wrong does not keep a leaver active or a
+   * newcomer out. A run with anybody here has not succeeded, and its caller says so.
    */
   refused: Array<{ externalId: string; userName: string; detail: string }>;
   /**
    * The units and groups that were not written as the source has them, each by its key with the reason: the directory
-   * has it wrong, or Clew refused it. Everything that does not depend on them was written and every removal made. A
-   * run with anything here has not succeeded either.
+   * has it wrong, or Clew refused it. Everything that does not depend on them was written, removals included. A run
+   * with anything here has not succeeded either.
    */
   groupsRefused: Array<{ externalId: string; detail: string }>;
 }

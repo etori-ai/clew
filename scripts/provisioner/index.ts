@@ -32,14 +32,18 @@ console.log(
   `Pushed the development directory to ${url}: ${summary.created} users created, ${summary.replaced} replaced, ${summary.deactivated} deactivated; ${summary.groupsCreated} groups created, ${summary.groupsReplaced} replaced, ${summary.groupsRemoved} removed.`,
 );
 if (summary.refused.length) {
-  console.error(`${summary.refused.length} of the people were not written. Everybody else was sent.`);
+  const n = summary.refused.length;
+  console.error(
+    `${n === 1 ? '1 person was' : `${n} people were`} not written as the directory has them. Everybody else was sent.`,
+  );
   for (const refused of summary.refused)
     console.error(`  ${refused.userName} (${refused.externalId}): ${refused.detail}`);
   process.exitCode = 1;
 }
 if (summary.groupsRefused.length) {
+  const n = summary.groupsRefused.length;
   console.error(
-    `${summary.groupsRefused.length} units or groups were not written as the directory has them. Everything else was sent, and every removal made.`,
+    `${n === 1 ? '1 unit or group was' : `${n} units or groups were`} not written as the directory has them. Everything that does not depend on them was sent.`,
   );
   for (const refused of summary.groupsRefused) console.error(`  ${refused.externalId}: ${refused.detail}`);
   process.exitCode = 1;
