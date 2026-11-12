@@ -1,10 +1,12 @@
 import { afterAll, beforeAll, describe, expect, mock, spyOn, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/postgres-js';
 import * as oidc from 'openid-client';
 import { SignJWT, exportJWK, generateKeyPair } from 'jose';
 import { database, schema } from '../../packages/db/src/index';
 import { randomToken, tokenDigest } from '../../apps/server/src/auth-crypto';
+import { failureDetails } from '../../apps/server/src/auth-refresh';
 import { logger } from '../../apps/server/src/logging';
 import { authRoutes } from '../../apps/server/src/routes/auth';
 
@@ -12,7 +14,8 @@ import { authRoutes } from '../../apps/server/src/routes/auth';
  * The sign-in and logout routes on PostgreSQL, through the server's own routes and database, with the identity provider
  * served in place of the network (L5 and L11 of the 2026-11-12 users review). A callback whose code the provider
  * refuses, or whose ID token fails a claim check, sends the person back to the sign-in page as before and is said in
- * one line with scope `auth`: the OAuth error, or the claim that failed, and never the token's claims. A sign-out at the
+ * one line with scope `auth`: the OAuth error, or the claim that failed, and never the token's claims; a statement that
+ * fails says PostgreSQL's SQLSTATE and never the values it was given, the subject among them. A sign-out at the
  * provider ends the sessions of its `sid` by either channel (D115): front-channel logout from a cross-site frame without
  * a cookie, back-channel logout as before, with its receipt against a replayed token. The server's logger is watched
  * while the file runs. Run with `bun run test:db` inside the devcontainer.
@@ -170,7 +173,73 @@ describe('a callback the provider or its ID token refuses', () => {
     const sessions = await database().select().from(schema.sessions).where(eq(schema.sessions.clientId, clientId));
     expect(sessions).toEqual([]);
   });
+  test("a statement that fails after the provider answered says PostgreSQL's SQLSTATE, never the statement's values", async () => {
+    said.length = 0;
+    // A subject PostgreSQL cannot hold, with a NUL byte, fails the sign-in's first statement, the lookup of its binding,
+    // whose values are the issuer and the subject; drizzle's error quotes them both.
+    tokenAnswer = async () =>
+      Response.json({
+        access_token: 'access-1',
+        token_type: 'Bearer',
+        expires_in: 300,
+        refresh_token: 'refresh-1',
+        id_token: await new SignJWT({ nonce: 'nonce-' + suffix, sid: 'sid-anna', ...claims })
+          .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
+          .setIssuer(issuer)
+          .setAudience(clientId)
+          .setSubject('sub-anna\u0000')
+          .setIssuedAt()
+          .setExpirationTime('5m')
+          .sign(keys.privateKey),
+      });
+    const response = await callback(await signInStarted());
+    expect(response.status).toBe(303);
+    expect(response.headers.get('location')).toBe('/login?reason=invalid');
+    expect(said).toEqual([
+      {
+        level: 'warn',
+        fields: { scope: 'auth', failure: { name: 'DrizzleQueryError', code: '22021' } },
+        message: 'sign-in failed at the callback',
+      },
+    ]);
+    expect(JSON.stringify(said)).not.toContain('anna');
+    expect(JSON.stringify(said)).not.toContain(suffix);
+  });
+  test("the database's errors as drizzle and postgres.js throw them say a code, and a connection's message, never a value", async () => {
+    // Nothing listens on this port: a database that cannot be reached.
+    const unreachable = drizzle({
+      connection: { url: 'postgres://clew:unused@127.0.0.1:9/clew', max: 1, connect_timeout: 2 },
+    });
+    try {
+      const lookup = await thrown(() =>
+        unreachable
+          .select({ personId: schema.identityBindings.personId })
+          .from(schema.identityBindings)
+          .where(and(eq(schema.identityBindings.issuer, issuer), eq(schema.identityBindings.subject, 'sub-anna'))),
+      );
+      expect(lookup.message).toContain('sub-anna');
+      expect(failureDetails(lookup)).toEqual({
+        name: 'DrizzleQueryError',
+        code: 'ECONNREFUSED',
+        cause: 'connect ECONNREFUSED 127.0.0.1:9',
+      });
+    } finally {
+      await unreachable.$client.end();
+    }
+    // PostgreSQL's own message can quote the value it refused.
+    const refused = await thrown(() => database().execute(sql`select ${'anna.berg@example.test'}::uuid`));
+    expect((refused.cause as Error).message).toBe('invalid input syntax for type uuid: "anna.berg@example.test"');
+    expect(failureDetails(refused)).toEqual({ name: 'DrizzleQueryError', code: '22P02' });
+  });
 });
+async function thrown(run: () => Promise<unknown>) {
+  try {
+    await run();
+  } catch (error) {
+    return error as Error;
+  }
+  throw new Error('The statement was expected to fail');
+}
 
 /** One of Anna's sessions, open for an hour, under the provider session `sid-anna` unless the test says otherwise. */
 async function session(name: string, values: Partial<typeof schema.sessions.$inferInsert> = {}) {

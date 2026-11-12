@@ -8,8 +8,8 @@
  * has no fresh token and answers 503 (L4 of the 2026-11-12 users review). No database connection is held while the
  * provider answers (L1): the row is read, the provider is asked, and the new tokens are stored only over the ones they
  * were refreshed from, so a refresh that another process made meanwhile wins and its tokens are used. What a log line
- * says about a failure at the provider is here too: `failureOf` for a refresh or a token exchange, `failureDetails` for
- * a sign-in or a logout (L11).
+ * says about a failure is here too: `failureOf` for a refresh or a token exchange, `failureDetails` for a sign-in or a
+ * logout (L11), which never carries a value a statement was given.
  */
 import {
   AuthorizationResponseError,
@@ -114,26 +114,51 @@ export function failureOf(error: unknown): { code: string; status?: number } {
   return { code: printable(code), ...(status ? { status } : {}) };
 }
 /**
+ * Whether an error's message can quote a value, so that a log line never carries it: a failed statement's
+ * (drizzle-orm's `DrizzleQueryError`: `Failed query: <statement>\nparams: <every value it was given>`, such as the
+ * subject and the user name a sign-in looks up) and PostgreSQL's own answer (postgres.js's `PostgresError`, as in
+ * `invalid input syntax for type uuid: "<the value>"`). A failed connection names the address it tried, and the
+ * driver's own errors their limit.
+ */
+const quotesValues = (error: Error, message: string) =>
+  ('query' in error && 'params' in error) || message.startsWith('Failed query:') || error.name === 'PostgresError';
+/** A message as a log line carries it: at most 300 characters, and none that can quote a value. */
+const messageOf = (error: Error) => {
+  const message = typeof error.message === 'string' ? error.message : '';
+  return message && !quotesValues(error, message) ? message.slice(0, 300) : undefined;
+};
+/** An error's name, or its class's where the class leaves `name` as `Error` (drizzle-orm's `DrizzleQueryError` does). */
+const nameOf = (error: Error) => {
+  const name = String(error.name),
+    kind: unknown = error.constructor === Error ? undefined : error.constructor?.name;
+  return name === 'Error' && typeof kind === 'string' && kind ? kind : name;
+};
+/**
  * What the log line of a failed sign-in or logout says (L11 of the 2026-11-12 users review), so that the hosting and
- * identity provider teams can tell a wrong client secret, a wrong redirect address, a clock that is off and a refused
- * logout token apart: the error's name, its code (openid-client's, jose's, the network's or Clew's own), the OAuth error
- * the provider answered with and the HTTP status, and the messages of the error and of its cause, which name a claim or
- * a parameter but never its value. Never the error itself, nor the provider's `error_description`: a failed claim check
- * carries the ID token's claims in its cause, a ResponseBodyError the provider's answer, jose's errors the logout
- * token's payload, and a description can name the account.
+ * identity provider teams can tell a wrong client secret, a wrong redirect address, a clock that is off, a refused
+ * logout token and a database that failed apart: the error's name, its code (openid-client's, jose's, the network's,
+ * PostgreSQL's SQLSTATE or Clew's own), the OAuth error the provider answered with and the HTTP status, and the messages
+ * of the error and of its cause where a message cannot quote a value. openid-client's, jose's and Clew's own name a
+ * claim or a parameter, never its value; a failed statement's and PostgreSQL's can (`quotesValues`), so a database
+ * failure says its SQLSTATE, or its connection's code and message, and nothing of the statement. Never the error
+ * itself, nor the provider's `error_description`: a failed claim check carries the ID token's claims in its cause, a
+ * ResponseBodyError the provider's answer, jose's errors the logout token's payload, a failed statement the values it
+ * was given, and a description can name the account.
  */
 export function failureDetails(error: unknown) {
   const cause = error instanceof Error ? error.cause : undefined;
   const code = codeOf(error) ?? codeOf(cause),
     oauthError = oauthErrorOf(error),
-    status = statusOf(error) ?? statusOf(cause);
+    status = statusOf(error) ?? statusOf(cause),
+    message = error instanceof Error ? messageOf(error) : undefined,
+    because = cause instanceof Error ? messageOf(cause) : undefined;
   return {
-    name: error instanceof Error ? printable(error.name) : typeof error,
+    name: error instanceof Error ? printable(nameOf(error)) : typeof error,
     ...(code ? { code: printable(code) } : {}),
     ...(oauthError ? { oauthError: printable(oauthError) } : {}),
     ...(status ? { status } : {}),
-    ...(error instanceof Error && error.message ? { message: error.message.slice(0, 300) } : {}),
-    ...(cause instanceof Error && cause.message ? { cause: cause.message.slice(0, 300) } : {}),
+    ...(message ? { message } : {}),
+    ...(because ? { cause: because } : {}),
   };
 }
 /** A token is refreshed in its last seconds; its row's expiry is capped at 300 seconds when it is stored. */

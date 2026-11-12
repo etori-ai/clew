@@ -25,7 +25,7 @@ import { logger } from '../logging';
 /**
  * Sign-in and logout. A sign-in or logout that fails is answered as the person or the provider needs it, and said in
  * one log line with scope `auth` (L11 of the 2026-11-12 users review): what failed, never the error itself, whose cause
- * can carry the ID token's claims (`failureDetails`).
+ * can carry the ID token's claims, nor the values of a statement that failed (`failureDetails`).
  */
 export const authRoutes = new Hono<Env>();
 authRoutes.get('/login', async c => {

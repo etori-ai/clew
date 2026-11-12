@@ -12,7 +12,7 @@ import { createLogger } from '../../apps/server/src/logging';
  * the libraries throw for it: openid-client redeems a code against a fake provider over a fake fetch, and jose checks a
  * logout token, as the server does. The server's own logger writes the line into memory. It carries what the hosting
  * and identity provider teams need to tell the failures apart, and never the ID token's claims, the provider's
- * description of the failure or the logout token's payload.
+ * description of the failure, the logout token's payload or the values of a statement that failed.
  */
 const issuer = 'https://idp.example.test',
   callback = 'https://clew.example.test/api/auth/callback';
@@ -73,6 +73,32 @@ function line(error: unknown) {
 const carriesNothingPersonal = (text: string) => {
   for (const value of personal) expect(text).not.toContain(value);
 };
+/**
+ * A failed statement as drizzle-orm 0.45.4 throws it (`errors.js`: the class leaves `name` as `Error`), and
+ * PostgreSQL's answer as postgres.js 4.1.1 throws it (`errors.js`: its fields assigned onto the error). The unit suite
+ * never imports the database libraries (D25), so both are written here as the libraries write them;
+ * `tests/db/sign-in-routes.test.ts` meets the real ones.
+ */
+class DrizzleQueryError extends Error {
+  query: string;
+  params: unknown[];
+  constructor(query: string, params: unknown[], cause: unknown) {
+    super(`Failed query: ${query}\nparams: ${params}`);
+    this.query = query;
+    this.params = params;
+    this.cause = cause;
+  }
+}
+class PostgresError extends Error {
+  constructor(fields: { severity: string; code: string; message: string }) {
+    super(fields.message);
+    this.name = 'PostgresError';
+    Object.assign(this, fields);
+  }
+}
+/** The first statement of a sign-in once the provider has answered (`signIn`): the binding of Anna's subject. */
+const bindingLookup =
+  'select "person_id" from "auth_identity_binding" where ("auth_identity_binding"."issuer" = $1 and "auth_identity_binding"."subject" = $2)';
 
 describe('the log line of a failed sign-in or logout', () => {
   test("a refused client secret says the OAuth error and the status, never the provider's description", async () => {
@@ -182,6 +208,52 @@ describe('the log line of a failed sign-in or logout', () => {
       message: 'unexpected "aud" claim value',
     });
     carriesNothingPersonal(text);
+  });
+  test("a database that cannot be reached says the connection's code and message, never the statement's values", () => {
+    const error = new DrizzleQueryError(
+      bindingLookup,
+      [issuer, 'sub-anna'],
+      Object.assign(new Error('connect ECONNREFUSED 10.0.0.5:5432'), {
+        errno: -111,
+        code: 'ECONNREFUSED',
+        syscall: 'connect',
+        address: '10.0.0.5',
+        port: 5432,
+      }),
+    );
+    // The error's message quotes the statement and every value it was given: the reason it is never logged.
+    expect(error.message).toContain('sub-anna');
+    const { text, json } = line(error);
+    expect(json.failure).toEqual({
+      name: 'DrizzleQueryError',
+      code: 'ECONNREFUSED',
+      cause: 'connect ECONNREFUSED 10.0.0.5:5432',
+    });
+    expect(text).not.toContain('auth_identity_binding');
+    expect(text).not.toContain(issuer);
+    carriesNothingPersonal(text);
+  });
+  test("a statement PostgreSQL refused says its SQLSTATE, never PostgreSQL's message, which can quote the value", () => {
+    const error = new DrizzleQueryError(
+      'select $1::uuid',
+      ['anna.berg@example.test'],
+      new PostgresError({
+        severity: 'ERROR',
+        code: '22P02',
+        message: 'invalid input syntax for type uuid: "anna.berg@example.test"',
+      }),
+    );
+    const { text, json } = line(error);
+    expect(json.failure).toEqual({ name: 'DrizzleQueryError', code: '22P02' });
+    carriesNothingPersonal(text);
+    // PostgreSQL's answer where nothing wrapped it says its SQLSTATE alone too.
+    const unwrapped = new PostgresError({
+      severity: 'ERROR',
+      code: '22P02',
+      message: 'invalid input syntax for type uuid: "anna.berg@example.test"',
+    });
+    expect(line(unwrapped).json.failure).toEqual({ name: 'PostgresError', code: '22P02' });
+    carriesNothingPersonal(line(unwrapped).text);
   });
   test("Clew's own refusal says its code and status", () => {
     expect(line(new AuthError(401, 'invalid')).json.failure).toEqual({
