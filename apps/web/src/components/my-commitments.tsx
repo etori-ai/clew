@@ -142,7 +142,7 @@ export function MyCommitments() {
  * The words under an action point: when it is due, whether it is from an earlier talk, and whom it concerns. A manager's
  * own point is about an employee, so it names them; one the other party owns says who answers for it; an employee's own
  * point is about themselves and names nobody. The employee's name, where it is said, leads to them (D97 item 6, artboard
- * M): the row carries their user name, which is the person's key.
+ * M): by the person's id, which `clew.commitments` gives every row (D116).
  */
 function Meta({ row }: { row: CommitmentEntry }) {
   const { pathname, search } = useLocation();
@@ -150,7 +150,7 @@ function Meta({ row }: { row: CommitmentEntry }) {
   if (row.carried) words.push('Från tidigare samtal');
   const lead = words.join(' · ');
   const name = (
-    <Link href={personPageHref(row.userName, { from: pathname + search })} hasUnderline>
+    <Link href={personPageHref(row.personId, { from: pathname + search })} hasUnderline>
       {row.name}
     </Link>
   );

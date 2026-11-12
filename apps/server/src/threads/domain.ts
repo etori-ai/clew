@@ -1,6 +1,5 @@
 import {
   dayRhythm,
-  foldEntityKey,
   sameSubject,
   stockholmClock,
   stockholmDate,
@@ -9,6 +8,8 @@ import {
   type RhythmPoint,
   type Subject,
   type Thread,
+  type ThreadAction,
+  type ThreadItem,
 } from '@clew/contracts';
 import type { AuditEntry, SubjectErasure, TimerIntent, WorkflowStart } from './model';
 
@@ -107,18 +108,56 @@ export function itemEvents(
 }
 
 /**
- * What a thread is indexed under (D97 item 6): every entity its rows or the thread itself name, once each, with the key as
- * Clew compares it (`foldEntityKey`). The thread store writes these rows with the thread's items.
+ * What a thread is indexed under (D97 item 6): every entity its rows or the thread itself name, once each, by Clew's key
+ * (D116: a person's id, a unit's id). The thread store writes these rows with the thread's items.
  */
 export function namedSubjects(thread: Pick<Thread, 'items' | 'subjects'>): Subject[] {
   const out = new Map<string, Subject>();
-  for (const s of [...thread.items.flatMap(i => (i.subject ? [i.subject] : [])), ...(thread.subjects ?? [])]) {
-    const key = foldEntityKey(s.entity, s.key);
-    out.set(`${s.entity}\u0000${key}`, { entity: s.entity, key });
-  }
+  for (const s of [...thread.items.flatMap(i => (i.subject ? [i.subject] : [])), ...(thread.subjects ?? [])])
+    out.set(`${s.entity}\u0000${s.key}`, { entity: s.entity, key: s.key });
   return [...out.values()];
 }
-/** The entities among `asked` that a thread's index rows name, each in the asked spelling and once. */
+/**
+ * The user names a source's rows name people by (D116), each once: what is resolved to Clew's key when the rows arrive.
+ */
+export const personNames = (items: readonly ThreadItem[]): string[] => [
+  ...new Set(items.flatMap(i => (i.subject?.entity === 'person' ? [i.subject.key] : []))),
+];
+/**
+ * A source's rows as Clew keeps them (D116): a row that names a person by the source's key, their user name, names them by
+ * Clew's key, their id, from `held` (the name as asked, to the id of whoever holds it now). A row whose name nobody holds
+ * names nobody, the rest of it kept as the source wrote it. A unit's id is both keys.
+ */
+export function keyedItems(items: readonly ThreadItem[], held: ReadonlyMap<string, string>): ThreadItem[] {
+  return items.map(item => {
+    if (item.subject?.entity !== 'person') return item;
+    const id = held.get(item.subject.key);
+    if (id) return { ...item, subject: { entity: 'person', key: id } };
+    const { subject: _, ...rest } = item;
+    return rest;
+  });
+}
+/** The one action of a card started from an execute (D97): the human decision itself. */
+export const STARTED_ACTION = 'decide';
+/** The topic of a card the person started with this capability (D97, D8): `started:<capability>:<digest>`. */
+export const startedTopic = (capability: string, digest: string) => `started:${capability}:${digest}`;
+/**
+ * The person a started execute names by Clew's key (D116): the card a person started from an entity's menu with an
+ * execute keeps the person's id in the input property the capability's `about` names, and the id is resolved to the user
+ * name when the person decides. Undefined for every other card and action, a started propose's included: their input is
+ * the source's own.
+ */
+export function startedPerson(
+  topic: string,
+  action: Pick<ThreadAction, 'id' | 'capability' | 'input'>,
+  about: { entity: string; param?: string | undefined } | undefined,
+): { param: string; personId: string } | undefined {
+  if (action.id !== STARTED_ACTION || !topic.startsWith(startedTopic(action.capability, ''))) return undefined;
+  if (about?.entity !== 'person' || !about.param) return undefined;
+  const id = action.input?.[about.param];
+  return typeof id === 'string' && id ? { param: about.param, personId: id } : undefined;
+}
+/** The entities among `asked` that a thread's index rows name, each once. */
 export function namedAmong(named: readonly Subject[], asked: readonly Subject[]): Subject[] {
   const out: Subject[] = [];
   for (const a of asked) if (named.some(n => sameSubject(n, a)) && !out.some(o => sameSubject(o, a))) out.push(a);

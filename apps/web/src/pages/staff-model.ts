@@ -40,7 +40,10 @@ export interface Mark {
   text: string;
 }
 
-/** A person's key is their user name, compared without regard to case (D97). */
+/**
+ * A source's row names its person by the source's key, the user name, compared without regard to case (D97); the page
+ * finds a person's row by `EntityRef.sourceKey`, and everything Clew keeps by `EntityRef.key`, the person's id (D116).
+ */
 const keyOf = (key: unknown) => (typeof key === 'string' ? key.toLowerCase() : '');
 /** One source's answer as the page uses it; a request that failed is a source that did not answer. */
 export function answerOf(rows: EntityRows | undefined, failed: boolean): Answer {
@@ -55,7 +58,7 @@ export function answerOf(rows: EntityRows | undefined, failed: boolean): Answer 
     ...(rows.note ? { note: rows.note } : {}),
   };
 }
-/** The person's row in a source's answer, if the source answered and knows them. */
+/** The person's row in a source's answer by their source key (`EntityRef.sourceKey`), if the source answered and knows them. */
 export const rowOf = (answer: Answer | undefined, key: string): Row | undefined =>
   answer?.status === 'ok' ? answer.rows.get(keyOf(key)) : undefined;
 
@@ -99,7 +102,7 @@ export function byNeed(entities: EntityRef[], lens: EntitySource, answer: Answer
   const title = titleField(lens.view);
   const others = lensMarks(lens.view).filter(f => f.key !== title?.key);
   const rank = (e: EntityRef) => {
-    const row = rowOf(answer, e.key);
+    const row = rowOf(answer, e.sourceKey);
     if (!row) return 4;
     const own = title ? fieldTone(title, row[title.key]) : 'none';
     if (own === 'alert') return 0;
@@ -221,7 +224,7 @@ export const countText = (kind: CountedKind, n: number): string =>
  * leads to the person's page at Behöver dig (D111, amended 2026-11-11), where each card opens beside that page.
  */
 export function cardLinkTexts(list: EntityList, key: string): CardLink[] {
-  const a = list.attention.find(x => keyOf(x.key) === keyOf(key));
+  const a = list.attention.find(x => x.key === key);
   if (!a) return [];
   const thread = a.threadId ? { threadId: a.threadId } : {};
   return [

@@ -52,6 +52,7 @@ import { executions } from '../composition/executions';
 import { jobs } from '../composition/jobs-across-systems';
 import { FactEnvelopeSchema, StepDraftSchema, type FactEnvelope } from '@clew/connectors/protocol';
 import { changesFor } from '../composition/changes';
+import { withPeople } from '../composition/person-keys';
 import { authenticate, AuthError, SESSION_COOKIE } from '../auth';
 import { getCookie } from 'hono/cookie';
 import { readDocument, reviewDocuments } from '../composition/documents';
@@ -315,7 +316,12 @@ api.get('/cap/:name', async c => {
   const persona = c.get('session').context;
   const output = await runCapability(persona, name, input);
   const view = registry.viewFor(actorOf(persona), name);
-  return c.json({ output, source: found.connector.source, ...(view ? { view } : {}) });
+  // A record that names a person links to them by id (D116).
+  return c.json({
+    output,
+    source: found.connector.source,
+    ...(view ? { view: await withPeople(persona, view, output) } : {}),
+  });
 });
 api.post('/cap/:name', async c => {
   const name = c.req.param('name');

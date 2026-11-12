@@ -26,5 +26,10 @@ export interface SearchDeps {
   sources: SearchSources;
   clock: () => Date;
   budget?: Partial<SearchBudget>;
+  /**
+   * Who holds these user names now in the reader's organisation (D116, composition: the people module's user reads): a
+   * hit names a person by the source's key, and the list by Clew's. Absent: a hit names no person.
+   */
+  people?: { holders(readerId: string, userNames: readonly string[]): Promise<Map<string, string>> };
 }
 export const DEFAULT_BUDGET: SearchBudget = { perSourceMs: 3_000, totalMs: 4_000 };

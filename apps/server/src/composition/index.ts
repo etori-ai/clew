@@ -45,6 +45,7 @@ import { executions } from './executions';
 import { reviewDocuments } from './documents';
 import { visibleThread } from '../threads/access';
 import { refresh } from './refresh';
+import { personKeys } from './person-keys';
 import { postgresAttention } from '../threads/adapters/attention-postgres';
 import { logPort } from '../logging';
 import { currentTraceId, telemetry } from '../telemetry';
@@ -65,6 +66,8 @@ const threadCore = threadUsecases({
   run: runCapability,
   clock,
   ids,
+  // A row names a person by user name; the card keeps their id (D116).
+  people: personKeys,
   calendar: {
     ensureProposalThread: calendar.ensureProposalThread,
     replan: calendar.replan,
@@ -91,6 +94,7 @@ export const threads = {
     approve: executions.approve,
     clock,
     documentPreview: reviewDocuments.preview,
+    people: personKeys,
   }),
   // A card the person starts without the model (D8, D97): a propose's draft, or an execute behind its decision.
   ...startedCards({
@@ -100,6 +104,7 @@ export const threads = {
     digest: value => createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 32),
     clock,
     ids,
+    people: personKeys,
   }),
 };
 const meetingFailed = logPort('asks', 'warn');

@@ -21,6 +21,15 @@ export interface UserReads {
    * one provisioned without one.
    */
   userName(personId: string): Promise<string | null>;
+  /**
+   * Who holds these user names now in the reader's organisation, active or not (D116: a source's key is resolved to the
+   * person's id when a row or an action arrives), compared as a user name is everywhere in Clew, without regard to case;
+   * keyed by the name as asked. A name nobody of the reader's organisation holds is absent, and so is every name for a
+   * reader the people table does not hold.
+   */
+  holders(readerId: string, userNames: readonly string[]): Promise<Map<string, string>>;
+  /** Whether the people table holds this person, active or not: an erasure refuses an id it does not (D116). */
+  exists(personId: string): Promise<boolean>;
 }
 /** A SCIM client (D68): the one thing that fills the provisioning tables, scoped to one organisation. */
 export interface Provisioner {

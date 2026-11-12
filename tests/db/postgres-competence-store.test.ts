@@ -23,7 +23,7 @@ competenceStoreContract('postgres', async () => {
   const prefix = 'test-comp-' + randomUUID().slice(0, 8);
   prefixes.push(prefix);
   return {
-    store: postgresCompetenceStore(),
+    store: postgresCompetenceStore(() => ({ removeOwn: async () => 0 })),
     prefix,
     async seedPerson(person) {
       await database().insert(schema.people).values(person);

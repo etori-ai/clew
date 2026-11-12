@@ -425,14 +425,20 @@ export function competenceUsecases(deps: CompetenceDeps) {
     },
 
     /**
-     * Erase one person from the domain (D108 item 14): their holdings, and their id on the holdings they registered or
-     * revoked for others. `actor` is the operator's.
+     * Erase one person from the domain (D108 item 14): their holdings, their id on the holdings they registered or
+     * revoked for others, and the cards the competence scan put in their own stream. `actor` is the operator's. An id
+     * the people table does not hold (a user name, a typo) erases nothing and writes no audit row: undefined.
      */
-    async erasePerson(actor: string, personId: string): Promise<{ holdings: number; cleared: number }> {
+    async erasePerson(
+      actor: string,
+      personId: string,
+    ): Promise<{ holdings: number; cleared: number; cards: number } | undefined> {
       const at = now().toISOString();
       return deps.store.transaction(async tx => {
+        if (!(await tx.persons([personId])).length) return undefined;
         const erased = await tx.erasePerson(personId);
-        const counted = { holdings: erased.holdings, cleared: erased.cleared };
+        const cards = await tx.cards.removeOwn(personId, actor);
+        const counted = { holdings: erased.holdings, cleared: erased.cleared, cards };
         await tx.audit({
           actor,
           action: 'competence.person_erased',

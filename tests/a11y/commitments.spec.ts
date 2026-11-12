@@ -69,10 +69,11 @@ for (const [layout, viewport] of [
       // A manager's own point concerns an employee and names them; one from an earlier talk and overdue says so.
       await expect(row(page, point('c-anna-2').text)).toContainText(`Samtal med ${point('c-anna-2').name}`);
       await expect(row(page, point('c-anna-2').text)).toContainText('Senast fre 27 nov.');
-      // The employee's name leads to them (D97 item 6, artboard M): their user name is the key, Hem the way back.
+      // The employee's name leads to them (D97 item 6, artboard M): by their id, never their user name (D116), Hem the
+      // way back.
       await expect(
         row(page, point('c-anna-2').text).getByRole('link', { name: point('c-anna-2').name, exact: true }),
-      ).toHaveAttribute('href', `/people/${point('c-anna-2').userName}?from=%2F`);
+      ).toHaveAttribute('href', `/people/${point('c-anna-2').personId}?from=%2F`);
       // A point about the reader names nobody, so nothing in it is a link.
       await expect(row(page, point('c-me-2').text).getByRole('link')).toHaveCount(0);
       await expect(row(page, point('c-me-3').text).getByRole('link')).toHaveCount(0);

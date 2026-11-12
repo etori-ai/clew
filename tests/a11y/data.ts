@@ -1432,7 +1432,8 @@ export const usersPeople = (): UserAdminRow[] => [
   {
     id: 'hillevi',
     name: 'Hillevi Berg',
-    userName: 'hillevi',
+    // Her user name differs from her id: her page is at her id (D116).
+    userName: 'hillevi.berg',
     externalId: 'dev:hillevi',
     email: 'hillevi@clew.test',
     title: 'Rektor',
@@ -1617,9 +1618,11 @@ export const entityActions = (): EntityAction[] => [
     param: 'person',
   },
 ];
-const entityPerson = (key: string, name: string, detail: string): EntityRef => ({
+/** A person of the list (D116): Clew's key is their id, the address; a source's rows name them by their user name. */
+const entityPerson = (key: string, userName: string, name: string, detail: string): EntityRef => ({
   kind: 'person',
   key,
+  sourceKey: userName,
   name,
   detail: `${detail} · ${ENTITY_UNIT.label}`,
   id: key,
@@ -1639,11 +1642,11 @@ export const entityList = (): EntityList => ({
     {
       ...ENTITY_UNIT,
       entities: [
-        entityPerson('anna', 'Anna Lindqvist', 'Lärare F–3'),
-        entityPerson('erik', 'Erik Sandström', 'Fritidspedagog'),
-        entityPerson('johan', 'Johan Byström', 'Lärare 4–6'),
-        entityPerson('karin', 'Karin Lindqvist', 'Speciallärare'),
-        entityPerson('maria', 'Maria Källström', 'Lärare 4–6'),
+        entityPerson('anna', 'anna.lindqvist', 'Anna Lindqvist', 'Lärare F–3'),
+        entityPerson('erik', 'erik.sandstrom', 'Erik Sandström', 'Fritidspedagog'),
+        entityPerson('johan', 'johan.bystrom', 'Johan Byström', 'Lärare 4–6'),
+        entityPerson('karin', 'karin.lindqvist', 'Karin Lindqvist', 'Speciallärare'),
+        entityPerson('maria', 'maria.kallstrom', 'Maria Källström', 'Lärare 4–6'),
       ],
     },
   ],
@@ -1654,7 +1657,10 @@ export const entityList = (): EntityList => ({
   lenses: [talkSource, presenceSource],
   actions: entityActions(),
 });
-/** `GET /api/entities/person/rows?capability=`: each source's rows, one per person it knows, in its own order. */
+/**
+ * `GET /api/entities/person/rows?capability=`: each source's rows, one per person it knows, in its own order, each by
+ * the person's user name, the key the source was asked with (D116).
+ */
 export const entityRows = (): Record<string, EntityRows> => ({
   [TALK_LENS]: {
     capability: TALK_LENS,
@@ -1662,29 +1668,29 @@ export const entityRows = (): Record<string, EntityRows> => ({
     heading: 'Utvecklingssamtal 2026',
     note: 'Senast lör 28 nov',
     rows: [
-      { key: 'anna', state: 'Bokat', at: '2026-11-16T10:00:00.000Z', next: 'mån 16 nov', open: 'Inga' },
-      { key: 'erik', state: 'Bokat', at: '2026-11-17T08:00:00.000Z', next: 'tis 17 nov', open: '1 öppen' },
+      { key: 'anna.lindqvist', state: 'Bokat', at: '2026-11-16T10:00:00.000Z', next: 'mån 16 nov', open: 'Inga' },
+      { key: 'erik.sandstrom', state: 'Bokat', at: '2026-11-17T08:00:00.000Z', next: 'tis 17 nov', open: '1 öppen' },
       {
-        key: 'johan',
+        key: 'johan.bystrom',
         state: 'Bokat',
         at: '2026-11-12T08:00:00.000Z',
         next: 'tors 12 nov',
         open: '3 öppna',
         overdue: '2 försenade',
       },
-      { key: 'karin', state: 'Saknas', next: 'Inte bokat', open: 'Inga' },
-      { key: 'maria', state: 'Hållet', at: '2026-11-04', next: 'Hållet 4 nov', open: '2 öppna' },
+      { key: 'karin.lindqvist', state: 'Saknas', next: 'Inte bokat', open: 'Inga' },
+      { key: 'maria.kallstrom', state: 'Hållet', at: '2026-11-04', next: 'Hållet 4 nov', open: '2 öppna' },
     ],
   },
   [PRESENCE_LENS]: {
     capability: PRESENCE_LENS,
     status: 'ok',
     rows: [
-      { key: 'anna', presence: 'I tjänst', today: 'På plats 07:30–16:00' },
-      { key: 'erik', presence: 'Sjuk · dag 1', today: 'Sjuk · dag 1, till fre 6 nov' },
-      { key: 'johan', presence: 'I tjänst', today: 'På plats', upcoming: 'Semester 21–23 dec' },
-      { key: 'karin', presence: 'I tjänst', today: 'På plats 08:00–16:30' },
-      { key: 'maria', presence: 'I tjänst', today: 'På plats 07:00–15:30' },
+      { key: 'anna.lindqvist', presence: 'I tjänst', today: 'På plats 07:30–16:00' },
+      { key: 'erik.sandstrom', presence: 'Sjuk · dag 1', today: 'Sjuk · dag 1, till fre 6 nov' },
+      { key: 'johan.bystrom', presence: 'I tjänst', today: 'På plats', upcoming: 'Semester 21–23 dec' },
+      { key: 'karin.lindqvist', presence: 'I tjänst', today: 'På plats 08:00–16:30' },
+      { key: 'maria.kallstrom', presence: 'I tjänst', today: 'På plats 07:00–15:30' },
     ],
   },
 });

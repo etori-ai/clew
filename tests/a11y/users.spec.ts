@@ -45,7 +45,7 @@ test.describe('users administration', () => {
         api.entityDetailOf = key =>
           key === 'hillevi'
             ? {
-                entity: { kind: 'person', key, name: 'Hillevi Berg' },
+                entity: { kind: 'person', key, sourceKey: 'hillevi.berg', name: 'Hillevi Berg' },
                 profile: {
                   email: 'hillevi@clew.test',
                   title: null,
@@ -73,6 +73,11 @@ test.describe('users administration', () => {
               }
             : undefined;
         await open(page, '/admin/users?role=manager');
+        // The address is her id, never her user name (D116).
+        await expect(page.getByRole('link', { name: 'Hillevi Berg', exact: true })).toHaveAttribute(
+          'href',
+          '/people/hillevi?from=%2Fadmin%2Fusers%3Frole%3Dmanager',
+        );
         await page.getByRole('link', { name: 'Hillevi Berg', exact: true }).click();
         const main = page.getByRole('main');
         await expect(main.getByRole('heading', { name: 'Hillevi Berg' })).toBeVisible();

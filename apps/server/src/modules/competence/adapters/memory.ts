@@ -18,17 +18,20 @@ export interface MemoryCompetenceState {
   types: Map<string, TypeRecord>;
   holdings: Map<string, HoldingRecord>;
   persons: Map<string, PersonRef>;
+  /** The competence cards in each person's own stream (D108 item 12), by person: card ids, what an erasure removes. */
+  cards: Map<string, string[]>;
   audit: CompetenceAudit[];
 }
 const byCreated = <T extends { createdAt: string; id: string }>(rows: T[]) =>
   rows.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
 const sv = (a: string, b: string) => a.localeCompare(b, 'sv');
 
-export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
+export function memoryCompetenceStore(seed: { persons?: PersonRef[]; cards?: Record<string, string[]> } = {}) {
   let state: MemoryCompetenceState = {
     types: new Map(),
     holdings: new Map(),
     persons: new Map((seed.persons ?? []).map(p => [p.id, { ...p }])),
+    cards: new Map(Object.entries(seed.cards ?? {}).map(([id, cards]) => [id, [...cards]])),
     audit: [],
   };
   let tail = Promise.resolve();
@@ -135,6 +138,13 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
         types,
         holdings: byCreated([...state.holdings.values()].filter(h => ids.has(h.typeId))),
       });
+    },
+    cards: {
+      async removeOwn(personId) {
+        const removed = state.cards.get(personId)?.length ?? 0;
+        state.cards.delete(personId);
+        return removed;
+      },
     },
     async audit(entry) {
       state.audit.push(structuredClone(entry));

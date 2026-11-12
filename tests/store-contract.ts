@@ -433,7 +433,7 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       });
       expect(listed.filter(row => row.kind === 'question')).toHaveLength(50);
     });
-    test('the index from entity to cards follows the rows it is written with: owner only, case, open work only (D97)', async () => {
+    test('the index from entity to cards follows the rows it is written with: owner only, exact keys, open work only (D97, D116)', async () => {
       const {
         store,
         people: [a, b],
@@ -461,10 +461,10 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       });
       const ids = async (person: string, subjects: Subject[]) =>
         (await store.threadsNaming(person, subjects)).map(n => [n.thread.id, n.subjects]);
-      // A person's key without regard to case, in the spelling asked; a unit's id exactly; the thread's own subject too.
-      expect(await ids(a, [{ ...anna, key: anna.key.toLowerCase() }])).toEqual([
-        [rows.id, [{ ...anna, key: anna.key.toLowerCase() }]],
-      ]);
+      // Clew's keys exactly (D116): a person's id, and a key in another case is another person; a unit's id; the thread's
+      // own subject too.
+      expect(await ids(a, [{ ...anna, key: anna.key.toLowerCase() }])).toEqual([]);
+      expect(await ids(a, [anna])).toEqual([[rows.id, [anna]]]);
       expect(await ids(a, [anna, erik, { ...skola, key: skola.key.toLowerCase() }])).toEqual([
         [own.id, [erik]],
         [rows.id, [anna]],
@@ -509,8 +509,10 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
         selected: true,
         subject,
       });
+      // Another person whose id differs from the erased one's only in case (D116: ids are compared exactly).
+      const other = { ...gone, key: gone.key.toLowerCase() };
       const mine = draft(a, { items: [row('r:1', gone), row('r:2', kept)], subjects: [gone, kept] });
-      const theirs = draft(b, { items: [row('r:3', { ...gone, key: gone.key.toLowerCase() })] });
+      const theirs = draft(b, { items: [row('r:3', gone), row('r:4', other)] });
       await store.transaction(async tx => {
         await tx.insertThread(mine);
         await tx.insertThread(theirs);
@@ -524,12 +526,15 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
         }),
       ).rejects.toThrow('after the audit row');
       expect((await store.threadsNaming(a, [gone])).map(n => n.thread.id)).toEqual([mine.id]);
-      expect((await store.readThread(b, theirs.id))!.items[0]!.subject).toEqual({
-        ...gone,
-        key: gone.key.toLowerCase(),
-      });
+      expect((await store.readThread(b, theirs.id))!.items.map(i => i.subject)).toEqual([gone, other]);
       expect(await auditFor('thread:' + mine.id)).toEqual([]);
+      // Another spelling of the id names nobody, and erases nothing.
       expect(await store.transaction(tx => tx.eraseSubject({ ...gone, key: gone.key.toUpperCase() }))).toEqual({
+        cards: 0,
+        rows: 0,
+        cardSubjects: 0,
+      });
+      expect(await store.transaction(tx => tx.eraseSubject(gone))).toEqual({
         cards: 2,
         rows: 2,
         cardSubjects: 1,
@@ -545,7 +550,8 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       expect(read.subjects).toEqual([kept]);
       // Nothing the person decided on moves.
       expect(read.updatedAt).toBe(mine.updatedAt);
-      expect((await store.readThread(b, theirs.id))!.items[0]!.subject).toBeUndefined();
+      expect((await store.readThread(b, theirs.id))!.items.map(i => i.subject)).toEqual([undefined, other]);
+      expect((await store.threadsNaming(b, [other])).map(n => n.thread.id)).toEqual([theirs.id]);
       expect(await store.transaction(tx => tx.eraseSubject(gone))).toEqual({ cards: 0, rows: 0, cardSubjects: 0 });
     });
     test('an audit row and a job commit with the writes they belong to, and roll back with them', async () => {

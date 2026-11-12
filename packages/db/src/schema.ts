@@ -564,6 +564,9 @@ export const executions = pgTable(
     // the one that approved it (dispatch, replay, read-back) and the one that last asked to check it (read-back only).
     approvingSession: text('approving_session'),
     checkingSession: text('checking_session'),
+    // The person a started action is about (D116): the payload's `param` holds the user name they had when it was
+    // decided, and dispatch checks that it still names them. Null for every other execution.
+    subject: jsonb('subject').$type<{ param: string; personId: string } | null>(),
   },
   t => [
     uniqueIndex('execution_decision').on(t.personId, t.decisionId),

@@ -1,5 +1,6 @@
 import { postgresThreadStore } from '../threads/adapters/postgres';
 import { subjectErasure } from '../threads/usecases/subjects';
+import { userReads } from './people';
 import { clock } from './ambient';
 import { ledger } from './durable';
 
@@ -9,4 +10,4 @@ import { ledger } from './durable';
  * the operator's erasure (`scripts/subject-erase.ts`) loads neither the registry nor the stream.
  */
 export const subjectStore = postgresThreadStore({ durable: ledger });
-export const subjects = subjectErasure({ store: subjectStore, clock });
+export const subjects = subjectErasure({ store: subjectStore, clock, people: userReads });

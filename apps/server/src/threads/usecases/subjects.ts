@@ -20,7 +20,7 @@ export interface SubjectCardsDeps {
   registry: Pick<Registry, 'visible' | 'allowed' | 'connector'>;
   clock: () => Date;
 }
-/** A card of the reader's that names some of the entities asked about, with those it names, in the asked spelling. */
+/** A card of the reader's that names some of the entities asked about, with those it names, by Clew's key (D116). */
 export type NamedCard = EntityCard & { subjects: Subject[] };
 /** How Hem files a card (D34) in the words of the entity's page: a requirement waits for the reader's decision, a proposal is Clew's, an event is for information. */
 const KIND: Record<CardKind, EntityCard['kind']> = { krav: 'act', forslag: 'proposal', handelse: 'fyi' };
@@ -61,26 +61,31 @@ export function subjectCards({ store, registry, clock }: SubjectCardsDeps) {
 export interface SubjectErasureDeps {
   store: Pick<ThreadStore, 'transaction'>;
   clock: () => Date;
+  /** Whether the people table holds a person (composition: the people module's user reads). */
+  people: { exists(personId: string): Promise<boolean> };
 }
 /** The audit action of an erased subject. */
 export const SUBJECT_ERASED = 'thread.subject_erased';
 
-export function subjectErasure({ store, clock }: SubjectErasureDeps) {
+export function subjectErasure({ store, clock, people }: SubjectErasureDeps) {
   /**
    * Erase one entity from every card (D97): the `subject` of each row that names it and the card's own, with the index,
-   * in one transaction with one audit row. The rows' text stays as the source wrote it, and a source that still names
-   * the entity names it again on its next scan. `recordedAs` is what the audit row is about, said as the audit trail says
-   * it elsewhere (`person:<Clew's id>` as `talks.person_erased` does, `unit:<id>`): the key itself, a user name, is never
-   * written there. `actor` is the operator's.
+   * in one transaction with one audit row about it (`person:<id>`, `unit:<id>`), counts only. An entity is named by
+   * Clew's key (D116): a person by their id, which reaches every card about them whatever user names they have held, and
+   * never another person's; a unit by its id. The rows' text stays as the source wrote it, and a source that still names
+   * the entity names it again on its next scan. A person id the people table does not hold (a user name, a typo) erases
+   * nothing and writes no audit row: undefined. A unit is erased by any id, since a removed unit may still be named.
+   * `actor` is the operator's.
    */
-  async function eraseSubject(actor: string, subject: Subject, recordedAs: string): Promise<SubjectErasure> {
+  async function eraseSubject(actor: string, subject: Subject): Promise<SubjectErasure | undefined> {
+    if (subject.entity === 'person' && !(await people.exists(subject.key))) return undefined;
     const at = clock().toISOString();
     return store.transaction(async tx => {
       const erased = await tx.eraseSubject(subject);
       await tx.writeAudit({
         actor,
         action: SUBJECT_ERASED,
-        subject: recordedAs,
+        subject: `${subject.entity}:${subject.key}`,
         at,
         details: { entity: subject.entity, ...erased },
       });

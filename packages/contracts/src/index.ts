@@ -406,11 +406,17 @@ export const SubjectSchema = object(
   'An entity a row names (D97): the web links the row to it. Clew never checks that the key exists; a reader only ever reaches an entity they may ask about.',
 );
 export type Subject = Static<typeof SubjectSchema>;
-/** A key as Clew compares it (D97): a person's user name without regard to case (RFC 7643's default), a unit's id exactly. */
-export const foldEntityKey = (entity: EntityKind, key: string) => (entity === 'person' ? key.toLowerCase() : key);
-/** Whether two subjects name the same entity. */
-export const sameSubject = (a: Subject, b: Subject) =>
-  a.entity === b.entity && foldEntityKey(a.entity, a.key) === foldEntityKey(b.entity, b.key);
+/**
+ * A key as a source sends it, compared as Clew compares it there (D97): a person's user name without regard to case (RFC
+ * 7643's default), a unit's id exactly. Only for what arrives from a source: Clew's own records key a person by the
+ * person's id (D116), compared exactly (`sameSubject`).
+ */
+export const foldSourceKey = (entity: EntityKind, key: string) => (entity === 'person' ? key.toLowerCase() : key);
+/**
+ * Whether two subjects of Clew's own records name the same entity (D116): a person by the person's id and a unit by its
+ * id, both compared exactly. A source's key (a person's user name) is resolved to the id when it arrives.
+ */
+export const sameSubject = (a: Subject, b: Subject) => a.entity === b.entity && a.key === b.key;
 
 /**
  * A declared view (D38): how a read capability's output is shown, said by the connector as data and drawn by Clew with
@@ -708,6 +714,23 @@ export function viewRows(view: View, output: unknown): Record<string, unknown>[]
   return (output[key] as unknown[]).filter(isViewRecord);
 }
 /**
+ * The keys a view's records name people by (`subject` on a person, D97 item 6), each once: a source's key, the user name,
+ * which Clew resolves to the person's id before a name links to their page (D116, `PanelViewSpec.people`).
+ */
+export function subjectKeys(view: View, output: unknown): string[] {
+  const subject = view.kind === 'table' || view.kind === 'list' || view.kind === 'detail' ? view.subject : undefined;
+  if (subject?.entity !== 'person') return [];
+  const records = view.kind === 'detail' ? (isViewRecord(output) ? [output] : []) : (viewRows(view, output) ?? []);
+  return [
+    ...new Set(
+      records.flatMap(r => {
+        const key = r[subject.key];
+        return typeof key === 'string' && key ? [key] : [];
+      }),
+    ),
+  ];
+}
+/**
  * The fields of a table or list that can mark a row (D97 item 2): those giving some value a `warn` or `alert` tone. A
  * read about an entity with one of them can mark the entity's row where an administrator chose the source.
  */
@@ -737,6 +760,12 @@ export type PanelViewSpec = View & {
   source: string;
   chip: boolean;
   rowViews?: boolean;
+  /**
+   * The people the output's records name (`subject` on a person, D97 item 6), from the key on the record (the source's,
+   * a user name) to Clew's key for the person, their id (D116), so a name links to `/people/<id>`. A key that names no
+   * current person of the reader's organisation is absent, and its record links nowhere.
+   */
+  people?: Record<string, string>;
 };
 
 /**
@@ -1191,10 +1220,16 @@ export const EntityPageSchema = object({
 export type EntityPage = Static<typeof EntityPageSchema>;
 /** How one source answered for a list or a section: it answered, it did not, or not in time. */
 const entityAnswer = Type.Union([Type.Literal('ok'), Type.Literal('unavailable'), Type.Literal('timeout')]);
-/** An entity as the browser gets it (D97). `detail` is one line ("Lärare 4–6 · Bergsåkers skola") when known; `id` is Clew's own id, never sent to a connector. */
+/**
+ * An entity as the browser gets it (D97). `key` is Clew's key (D116): a person's id, a unit's id; it is the address
+ * (`/people/<key>`, `/units/<key>`) and what "Just nu" and a card's row name. `sourceKey` is the key a source knows the
+ * entity by and answers its rows with (`row.key`): a person's `userName`, a unit's id. `detail` is one line ("Lärare
+ * 4–6 · Bergsåkers skola") when known; `id` is Clew's own id, never sent to a connector.
+ */
 export const EntityRefSchema = object({
   kind: EntityKind,
-  key: entityKey,
+  key: Type.String({ minLength: 1, maxLength: ENTITY_KEY_MAX }),
+  sourceKey: entityKey,
   name: Type.String(),
   detail: Type.Optional(Type.String()),
   id: Type.Optional(id),
@@ -1389,7 +1424,8 @@ export type EntityAction = Static<typeof EntityActionSchema>;
  * på" opens it. An entity without such a card is absent.
  */
 export const EntityAttentionSchema = object({
-  key: entityKey,
+  /** Clew's key of the entity (`EntityRef.key`): a person's id, a unit's id. */
+  key: Type.String({ minLength: 1, maxLength: ENTITY_KEY_MAX }),
   act: Type.Integer({ minimum: 0 }),
   proposals: Type.Integer({ minimum: 0 }),
   threadId: Type.Optional(id),
@@ -1404,7 +1440,10 @@ export const EntityListSchema = object({
   attention: Type.Array(EntityAttentionSchema),
 });
 export type EntityList = Static<typeof EntityListSchema>;
-/** `GET /api/entities/:kind/rows?capability=`: one source over every entity the reader may ask about. Each row carries `key`; an entity without a row is absent. */
+/**
+ * `GET /api/entities/:kind/rows?capability=`: one source over every entity the reader may ask about. Each row carries
+ * `key`, the source's key of its entity (`EntityRef.sourceKey`); an entity without a row is absent.
+ */
 export const EntityRowsSchema = object({
   capability: Type.String(),
   status: entityAnswer,
@@ -1813,6 +1852,11 @@ export type ReceiptRow = Static<typeof ReceiptRowSchema>;
 
 export const ThreadKind = Type.Union([Type.Literal('pushed'), Type.Literal('question')]);
 export const ThreadState = Type.Union([Type.Literal('open'), Type.Literal('handled'), Type.Literal('dismissed')]);
+/**
+ * Why dispatch did not send a started action (D116): the user name it was decided with no longer names the person it is
+ * about, renamed or given to someone else since, so the person decides again.
+ */
+export const SUBJECT_CHANGED = 'subject-changed';
 export const ExecutionSummarySchema = object({
   id,
   decisionId: Type.String(),

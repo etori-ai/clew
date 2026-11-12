@@ -109,7 +109,7 @@ function PersonDetails({ detail, from }: { detail: EntityDetail; from: string | 
             </MetadataListItem>
           )}
           <MetadataListItem label="Användarnamn">
-            <Text>{entity.key}</Text>
+            <Text>{entity.sourceKey}</Text>
           </MetadataListItem>
           {relation === 'managed' && (
             <MetadataListItem label="Chef">

@@ -33,7 +33,12 @@ export const registry = new Registry({
     logger.error({ scope: 'connectors', connector: id, topic, problem }, 'connector draft refused (D35)'),
 });
 /** The composite search (D26) lists its sources from the registry at call time, so a connector enabled by an administrator is searched from the next question on. */
-const search = searchUsecases({ sources: actor => registry.searchSources(actor), clock });
+const search = searchUsecases({
+  sources: actor => registry.searchSources(actor),
+  clock,
+  // A hit names a person by user name; the list links them by id (D116).
+  people: userReads,
+});
 /** The card an answer becomes is the stream's use case; the composition root fills this slot once the stream is built over the registry. */
 export const answerCards: AnswerCards = {};
 // Clew's core only (D61): every other system, the development fixtures included, is a connector row (D21, D23).

@@ -31,6 +31,31 @@ export const postgresUserReads = (): UserReads => ({
       .where(eq(schema.people.id, personId));
     return row?.userName ?? null;
   },
+  async holders(readerId, userNames) {
+    // A NUL names nobody, and PostgreSQL refuses to compare one.
+    const names = [...new Set(userNames)].filter(name => name && !name.includes('\u0000'));
+    if (!names.length || readerId.includes('\u0000')) return new Map();
+    // Each name as asked, beside the person of the reader's organisation it names: the same expression as the unique index
+    // on user names (`userMatch`), on both sides.
+    const asked = sql.join(
+      names.map(name => sql`(${name}::text)`),
+      sql`, `,
+    );
+    const rows = await database().execute<{ asked: string; id: string }>(sql`
+      select asked.name as asked, holder.id as id
+      from (values ${asked}) as asked(name)
+      join auth_person holder on lower(holder.user_name) = lower(asked.name)
+      where holder.organisation_id = (select reader.organisation_id from auth_person reader where reader.id = ${readerId})`);
+    return new Map([...rows].map(r => [r.asked, r.id]));
+  },
+  async exists(personId) {
+    if (personId.includes('\u0000')) return false;
+    const [row] = await database()
+      .select({ id: schema.people.id })
+      .from(schema.people)
+      .where(eq(schema.people.id, personId));
+    return !!row;
+  },
 });
 const userColumns = {
   id: schema.people.id,

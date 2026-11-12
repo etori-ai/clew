@@ -309,7 +309,7 @@ describe('action points', () => {
     });
     expect(store.state.commitments.get(forBoss)).toMatchObject({ ownerRole: 'manager', ownerId: 'boss' });
     const threadId = store.state.commitments.get(forAnna)!.threadId!;
-    // Either card is about the employee of the talk, by user name (D97 item 6), whoever owns it.
+    // Either card is about the employee of the talk, by Clew's key, their id (D97 item 6, D116), whoever owns it.
     expect(store.calls()[0]).toEqual({
       op: 'open',
       threadId,
@@ -317,13 +317,13 @@ describe('action points', () => {
       commitmentId: forAnna,
       dueOn: '2026-12-15',
       at: at(),
-      subject: { entity: 'person', key: 'anna.a' },
+      subject: { entity: 'person', key: 'anna' },
     });
     expect(store.calls()[1]).toMatchObject({
       op: 'open',
       personId: 'boss',
       commitmentId: forBoss,
-      subject: { entity: 'person', key: 'anna.a' },
+      subject: { entity: 'person', key: 'anna' },
     });
     expect(store.audit().filter(a => a.action === 'talks.commitment_added')).toEqual([
       {
@@ -342,10 +342,9 @@ describe('action points', () => {
       },
     ]);
     expect((await talks.round(boss)).rows.find(r => r.userName === 'anna.a')?.openCommitments).toBe(2);
-    // Someone provisioned without a user name cannot be asked about, so their action point's card names nobody.
+    // Someone provisioned without a user name is still named by id (D116): no source asks about them, but the card is theirs.
     await talks.addCommitment(boss, 'bo', { owner: 'manager', text: 'Boka ett möte', dueOn: '2027-01-15' });
-    expect(store.calls()[2]).toMatchObject({ op: 'open', personId: 'boss' });
-    expect(store.calls()[2]).not.toHaveProperty('subject');
+    expect(store.calls()[2]).toMatchObject({ op: 'open', personId: 'boss', subject: { entity: 'person', key: 'bo' } });
   });
 
   test('a blank or too long text, no round, an employee and a manager of another unit are refused, and nothing is written', async () => {
@@ -583,6 +582,19 @@ describe('erasure and export', () => {
       at: at(),
       details: counts,
     });
+  });
+
+  test('an id the people table does not hold, a user name among them, erases nothing and writes no audit row (R1)', async () => {
+    await open();
+    await talks.markHeld(boss, 'anna', { heldOn: '2026-11-03' });
+    const id = await talks.addCommitment(boss, 'anna', { owner: 'employee', text: 'Läsa boken', dueOn: '2026-12-15' });
+    const audit = store.audit().length,
+      calls = store.calls().length;
+    for (const key of ['nobody', 'anna.a', 'Anna.A'])
+      expect(await talks.erasePerson('operator:cli', key)).toBeUndefined();
+    expect(store.audit()).toHaveLength(audit);
+    expect(store.calls()).toHaveLength(calls);
+    expect(store.state.commitments.get(id)).toMatchObject({ employeeId: 'anna' });
   });
 
   test('the export is one versioned document with the text, and its audit row has counts', async () => {

@@ -578,7 +578,7 @@ test.describe('Personal', () => {
       await expect(showMenu(page)).toHaveText('Visa: Alla');
     });
     test('a person the lens has no row for comes last with nothing in its columns', async ({ page, api }) => {
-      api.entityRows[TALK_LENS]!.rows = api.entityRows[TALK_LENS]!.rows.filter(r => r.key !== 'anna');
+      api.entityRows[TALK_LENS]!.rows = api.entityRows[TALK_LENS]!.rows.filter(r => r.key !== 'anna.lindqvist');
       await open(page, LENS);
       const names = page.getByRole('table').getByRole('row').locator('a');
       await expect(names.last()).toHaveText('Anna Lindqvist');

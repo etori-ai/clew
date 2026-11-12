@@ -1179,7 +1179,8 @@ export class MockApi {
     if (key === 'rows') {
       const delay = this.entityRowsDelay[capability];
       if (delay) await new Promise(resolve => setTimeout(resolve, delay));
-      const known = new Set(list.groups.flatMap(g => g.entities.map(e => e.key)));
+      // A source is asked with each person's user name and answers with it (D116).
+      const known = new Set(list.groups.flatMap(g => g.entities.map(e => e.sourceKey)));
       const rows = this.entityRows[capability];
       const answer: EntityRows = silent
         ? { capability, status: silent, rows: [] }
@@ -1192,7 +1193,7 @@ export class MockApi {
     if (!detail) return missing();
     if (sub === undefined) return json(detail);
     if (sub !== 'section' || !detail.sections.some(s => s.capability === capability)) return missing();
-    const row = this.entityRows[capability]?.rows.find(r => r.key === detail.entity.key);
+    const row = this.entityRows[capability]?.rows.find(r => r.key === detail.entity.sourceKey);
     const section: EntitySection = silent
       ? { capability, status: silent }
       : { capability, status: 'ok', ...(row ? { row } : {}) };

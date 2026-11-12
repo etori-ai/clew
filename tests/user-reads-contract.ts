@@ -41,4 +41,28 @@ export function userReadsContract(label: string, prepare: () => Promise<{ reads:
     expect(await reads.userName(actors[1].id)).toBeNull();
     expect(await reads.userName('missing-' + actors[0].id)).toBeNull();
   });
+  test(
+    label + ": who holds a user name in the reader's organisation, by the name as asked, without regard to case (D116)",
+    async () => {
+      const { reads, actors } = await prepare();
+      const name = actors[0].id + '.login';
+      const asked = name.toUpperCase();
+      // Any reader of the organisation, the holder themself included; a name nobody holds and a NUL name nobody.
+      for (const reader of actors) {
+        const held = await reads.holders(reader.id, [asked, 'nobody-' + name, name + '\u0000']);
+        expect([...held]).toEqual([[asked, actors[0].id]]);
+      }
+      // A reader the people table does not hold reaches nobody, and an empty question reads nothing.
+      expect((await reads.holders('missing-' + actors[0].id, [name])).size).toBe(0);
+      expect((await reads.holders(actors[0].id, [])).size).toBe(0);
+    },
+  );
+  test(label + ': whether the people table holds a person, with or without a user name (D116)', async () => {
+    const { reads, actors } = await prepare();
+    expect(await reads.exists(actors[0].id)).toBe(true);
+    expect(await reads.exists(actors[1].id)).toBe(true);
+    expect(await reads.exists('missing-' + actors[0].id)).toBe(false);
+    // A user name is not an id.
+    expect(await reads.exists(actors[0].id + '.login')).toBe(false);
+  });
 }

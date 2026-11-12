@@ -542,7 +542,8 @@ describe('current employments on a SCIM user', () => {
       { unitId: 'office', employmentPercentage: 0 },
       { unitId: 'office' },
     ];
-    const path = '/Users/' + (await create(1, { title: 'Katalogtitel', [urn]: { employments } }));
+    const id = await create(1, { title: 'Katalogtitel', [urn]: { employments } });
+    const path = '/Users/' + id;
     await create(2);
     expect((await json('DELETE', '/Groups/' + office)).status).toBe(204);
     // The list did not change, so it is not asked about again: a rename goes through, and so does the daily PUT.
@@ -554,7 +555,8 @@ describe('current employments on a SCIM user', () => {
       userName: 'user2',
       name: 'User 2',
     } as Parameters<ReturnType<typeof staffUsecases>['person']>[0];
-    const seen = await staffUsecases({ store }).person(reader, 'user1', true);
+    // A person is read by their id (D116).
+    const seen = await staffUsecases({ store }).person(reader, id, true);
     // The employments carry the titles, so the core one is not shown beside them.
     expect(seen?.profile).toMatchObject({
       title: null,

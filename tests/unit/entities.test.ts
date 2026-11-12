@@ -10,7 +10,7 @@ import {
 } from '../../packages/connectors/src/index';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { staffUsecases } from '../../apps/server/src/modules/people/usecases';
-import { checkRows, chunk, listedKeys } from '../../apps/server/src/modules/entities/domain';
+import { checkRows, chunk, isKey, listedKeys } from '../../apps/server/src/modules/entities/domain';
 import { entityUsecases } from '../../apps/server/src/modules/entities/usecases';
 import type { EntityBudget } from '../../apps/server/src/modules/entities/model';
 
@@ -282,7 +282,7 @@ describe('the pure rules: keys, calls and what is kept of an answer', () => {
     expect(chunk(keys, 100).map(c => c.length)).toEqual([100, 100, 100, 100, 50]);
     expect(chunk([], 200)).toEqual([]);
   });
-  test('the list asks about each person once, never the deactivated or someone without a user name', () => {
+  test('the list asks about each person once, by id in Clew and user name at the source, never the deactivated or someone without a user name', () => {
     const reach = {
       units: [],
       managed: [
@@ -298,7 +298,21 @@ describe('the pure rules: keys, calls and what is kept of an answer', () => {
         { unitId: 'b', unitLabel: 'B', people: [{ id: '1', name: 'Anna', userName: 'ANNA', enabled: true }] },
       ],
     };
-    expect(listedKeys('person', reach)).toEqual(['anna']);
+    expect(listedKeys('person', reach)).toEqual([{ key: '1', sourceKey: 'anna' }]);
+    expect(listedKeys('unit', { units: [{ unitId: 'a', unitLabel: 'A', role: 'employee' }], managed: [] })).toEqual([
+      { key: 'a', sourceKey: 'a' },
+    ]);
+  });
+  test('a key with a NUL names no entity of either kind, and a person key is no longer than an id (D116)', () => {
+    for (const kind of ['person', 'unit'] as const) {
+      expect(isKey(kind, 'anna')).toBe(true);
+      expect(isKey(kind, '')).toBe(false);
+      expect(isKey(kind, 'an\u0000na')).toBe(false);
+      expect(isKey(kind, '\u0000')).toBe(false);
+    }
+    expect(isKey('person', 'x'.repeat(80))).toBe(true);
+    expect(isKey('person', 'x'.repeat(81))).toBe(false);
+    expect(isKey('unit', 'x'.repeat(81))).toBe(true);
   });
 });
 
@@ -311,9 +325,31 @@ describe('the list of people or units', () => {
         id: 'unit-skola',
         label: 'Bergsåkers skola',
         entities: [
-          { kind: 'person', key: 'anna', name: 'Anna Lindqvist', detail: 'Bergsåkers skola', id: 'anna' },
-          { kind: 'person', key: 'Erik.S', name: 'Erik Sund', detail: 'Bergsåkers skola', id: 'erik' },
-          { kind: 'person', key: 'maria', name: 'Maria Öst', detail: 'Bergsåkers skola', id: 'maria' },
+          // Clew's key is the id (D116); the source's key is the user name, in the directory's spelling.
+          {
+            kind: 'person',
+            key: 'anna',
+            sourceKey: 'anna',
+            name: 'Anna Lindqvist',
+            detail: 'Bergsåkers skola',
+            id: 'anna',
+          },
+          {
+            kind: 'person',
+            key: 'erik',
+            sourceKey: 'Erik.S',
+            name: 'Erik Sund',
+            detail: 'Bergsåkers skola',
+            id: 'erik',
+          },
+          {
+            kind: 'person',
+            key: 'maria',
+            sourceKey: 'maria',
+            name: 'Maria Öst',
+            detail: 'Bergsåkers skola',
+            id: 'maria',
+          },
         ],
       },
     ]);
@@ -361,7 +397,9 @@ describe('the list of people or units', () => {
       {
         id: 'units',
         label: 'Mina enheter',
-        entities: [{ kind: 'unit', key: 'unit-omsorg', name: 'Hemtjänsten', id: 'unit-omsorg' }],
+        entities: [
+          { kind: 'unit', key: 'unit-omsorg', sourceKey: 'unit-omsorg', name: 'Hemtjänsten', id: 'unit-omsorg' },
+        ],
       },
     ]);
   });
@@ -551,11 +589,12 @@ describe('one source over the whole list', () => {
 describe('the opened person or unit', () => {
   test('someone on a unit the reader manages: their unit, the actions, a section per source and the cards about them', async () => {
     const { entities, people, cardsAsked } = standard();
-    const detail = await entities.detail(people.persona('hillevi'), 'person', 'ANNA');
+    const detail = await entities.detail(people.persona('hillevi'), 'person', 'anna');
     expect(detail).toEqual({
       entity: {
         kind: 'person',
         key: 'anna',
+        sourceKey: 'anna',
         name: 'Anna Lindqvist',
         detail: 'Bergsåkers skola',
         id: 'anna',
@@ -601,7 +640,7 @@ describe('the opened person or unit', () => {
       { unitId: 'unit-skola', title: 'Samordnare' },
     ];
     for (const reader of ['hillevi', 'anna', 'hassan']) {
-      const profile = (await entities.detail(people.persona(reader), 'person', 'ANNA'))?.profile;
+      const profile = (await entities.detail(people.persona(reader), 'person', 'anna'))?.profile;
       expect(profile).toEqual({
         email: row.email,
         title: null,
@@ -614,24 +653,76 @@ describe('the opened person or unit', () => {
   });
   test('the reader themself, and another active person of the directory as a colleague', async () => {
     const { entities, people } = standard();
-    const self = await entities.detail(people.persona('hassan'), 'person', 'Hassan');
+    const self = await entities.detail(people.persona('hassan'), 'person', 'hassan');
     expect(self).toMatchObject({
       relation: 'self',
       entity: { key: 'hassan', id: 'hassan', name: 'Hassan Ali', unit: { id: 'unit-omsorg', label: 'Hemtjänsten' } },
       actions: [],
     });
-    const colleague = await entities.detail(people.persona('hassan'), 'person', 'erik.s');
+    const colleague = await entities.detail(people.persona('hassan'), 'person', 'erik');
     expect(colleague).toMatchObject({
       relation: 'colleague',
-      entity: { key: 'Erik.S', name: 'Erik Sund', detail: 'Bergsåkers skola', unit: { id: 'unit-skola' } },
+      entity: {
+        key: 'erik',
+        sourceKey: 'Erik.S',
+        name: 'Erik Sund',
+        detail: 'Bergsåkers skola',
+        unit: { id: 'unit-skola' },
+      },
     });
     expect(colleague?.sections.map(s => s.capability)).toEqual(['hr.absence', 'hr.skills', 'appraisals.round']);
+  });
+  test('a person is opened by their id only: a user name, in any spelling, names nobody (D116)', async () => {
+    const { entities, people, cardsAsked } = standard();
+    const hillevi = people.persona('hillevi');
+    for (const key of ['Erik.S', 'erik.s', 'ANNA', 'Hassan'])
+      expect(await entities.detail(hillevi, 'person', key)).toBeUndefined();
+    expect(await entities.section(hillevi, 'person', 'Erik.S', 'hr.skills')).toBeUndefined();
+    expect(cardsAsked).toEqual([]);
+  });
+  test('a renamed person keeps their address and the cards about them; a reused user name opens its new holder alone (D116)', async () => {
+    const w = world([connector('hr', 'Personalsystemet', [aboutRead('hr.absence', 'Frånvaro'), bookTalk])], {
+      directory: directory({ onSkola: [{ id: 'anna-2', name: 'Anna Nygren', userName: 'anna' }] }),
+    });
+    // Anna Lindqvist is renamed, and her old user name is given to someone else: the directory holds one of each.
+    w.people.state.users.get('anna')!.userName = 'anna.lindqvist';
+    const hillevi = w.people.persona('hillevi');
+    expect(await w.entities.detail(hillevi, 'person', 'anna')).toMatchObject({
+      entity: { key: 'anna', sourceKey: 'anna.lindqvist', name: 'Anna Lindqvist' },
+      cards: [{ threadId: 'thread-1' }],
+    });
+    expect(await w.entities.detail(hillevi, 'person', 'anna-2')).toMatchObject({
+      entity: { key: 'anna-2', sourceKey: 'anna', name: 'Anna Nygren' },
+      cards: [],
+    });
+    expect(w.cardsAsked).toEqual([
+      { entity: 'person', key: 'anna' },
+      { entity: 'person', key: 'anna-2' },
+    ]);
+    // The source is asked with the user name each holds now.
+    expect((await w.entities.section(hillevi, 'person', 'anna', 'hr.absence'))?.row).toMatchObject({
+      key: 'anna.lindqvist',
+    });
+    expect((await w.entities.section(hillevi, 'person', 'anna-2', 'hr.absence'))?.row).toMatchObject({ key: 'anna' });
   });
   test('an unknown key, a deactivated person, someone without a user name and another organisation are all not there', async () => {
     const { entities, people } = standard();
     const hillevi = people.persona('hillevi');
-    for (const key of ['nobody', 'bo', 'nameless', 'stranger', '', 'x'.repeat(257)])
+    for (const key of ['nobody', 'bo', 'nameless', 'stranger', '', 'x'.repeat(257), 'x'.repeat(81)])
       expect(await entities.detail(hillevi, 'person', key)).toBeUndefined();
+  });
+  test('a key with a NUL names nobody, and no source and no card is read for it (K3)', async () => {
+    const calls: string[][] = [];
+    const { entities, people, cardsAsked } = standard({ hr: { calls } });
+    const hillevi = people.persona('hillevi');
+    for (const key of ['anna\u0000', '\u0000anna', '\u0000']) {
+      expect(await entities.detail(hillevi, 'person', key)).toBeUndefined();
+      expect(await entities.section(hillevi, 'person', key, 'hr.absence')).toBeUndefined();
+      expect(await entities.detail(hillevi, 'unit', 'unit-skola' + key)).toBeUndefined();
+      expect(await entities.section(hillevi, 'unit', key, 'hr.absence')).toBeUndefined();
+    }
+    expect(calls).toEqual([]);
+    expect(cardsAsked).toEqual([]);
   });
   test('a unit the reader manages or belongs to, and no other', async () => {
     const { entities, people } = standard();
@@ -657,7 +748,7 @@ describe("one source's section on the opened entity", () => {
       ]),
     ]);
     const hillevi = w.people.persona('hillevi');
-    expect(await w.entities.section(hillevi, 'person', 'Anna', 'hr.skills')).toEqual({
+    expect(await w.entities.section(hillevi, 'person', 'anna', 'hr.skills')).toEqual({
       capability: 'hr.skills',
       status: 'ok',
       row: { key: 'anna', state: 'Bokat', count: 3 },

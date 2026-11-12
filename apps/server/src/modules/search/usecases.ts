@@ -1,7 +1,7 @@
 import { Value } from 'typebox/value';
 import { openRef, type Actor } from '@clew/connectors';
 import { SearchHitSchema, SearchOutputSchema, type SearchHit, type SearchResult } from '@clew/contracts';
-import { merge, sourceReport, type SourceOutcome } from './domain';
+import { hitNames, keyedHits, merge, sourceReport, type SourceOutcome } from './domain';
 import { DEFAULT_BUDGET, type SearchCall, type SearchDeps, type SearchSourceRef } from './model';
 import type { FetchInput, SearchInput } from './contracts';
 
@@ -54,7 +54,10 @@ export function searchUsecases(deps: SearchDeps) {
       const view = source?.open && openRef(source.open, row, source.source);
       return view ? { ...row, view } : row;
     });
-    return { rows, sources: sourceReport(outcomes) };
+    // A hit names a person by the source's key; the list names them by Clew's key, their id, or nobody (D116).
+    const names = hitNames(rows);
+    const held = names.length && deps.people ? await deps.people.holders(actor.id, names) : new Map<string, string>();
+    return { rows: keyedHits(rows, held), sources: sourceReport(outcomes) };
   }
   /** One hit back by its ref, from the connector that found it: what a document chip resolves to and what a card's link opens. */
   async function fetch(

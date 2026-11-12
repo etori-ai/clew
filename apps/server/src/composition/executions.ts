@@ -21,6 +21,7 @@ import { reviewDocuments } from './documents';
 import { projectExecution } from './execution-projection';
 import { watchCardSink } from './watch-card';
 import { calendarApproval, calendarSource } from './calendar';
+import { personKeys } from './person-keys';
 import { calendarOperations, type CalendarCommand } from '../modules/calendar/usecases/decisions';
 
 /** Object key order is not approved business content. Arrays preserve the approved order. */
@@ -125,6 +126,8 @@ export const executions = executionUsecases({
     createHash('sha256')
       .update(JSON.stringify(canonical(input)))
       .digest('hex'),
+  // A started action is sent only while its user name still names its person (D116).
+  people: personKeys,
 });
 calendarApproval.approve = executions.approve;
 calendarApproval.previous = async (p, id) => {

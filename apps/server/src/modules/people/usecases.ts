@@ -1034,14 +1034,14 @@ export function staffUsecases(deps: { store: ProvisionStore }) {
         };
       }),
     /**
-     * An active person in the reader's organisation, found by user name without regard to case (D97: a colleague is
-     * anyone active in the directory), with the unit they act in; undefined for nobody, someone in another organisation
-     * or a deactivated person. Read on every call, never cached.
+     * An active person in the reader's organisation, found by Clew's key, their id (D97: a colleague is anyone active in
+     * the directory; D116: an address names a person by id), with the unit they act in; undefined for nobody, someone in
+     * another organisation or a deactivated person. Read on every call, never cached.
      */
-    person: (persona: AuthenticatedContext, userName: string, includeProfile: boolean) =>
+    person: (persona: AuthenticatedContext, id: string, includeProfile: boolean) =>
       deps.store.transaction(async tx => {
-        const found = await tx.findUser('userName', userName);
-        if (!found || found.organisationId !== persona.organisationId || !found.enabled) return undefined;
+        const found = await tx.readUser(persona.organisationId, id);
+        if (!found || !found.enabled) return undefined;
         const grant = await tx.grant(found.id);
         const nodes =
           includeProfile && found.employments.length

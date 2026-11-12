@@ -9,7 +9,6 @@ import type {
   TalkState,
   TalksOutput,
 } from '@clew/contracts';
-import { ENTITY_KEY_MAX } from '@clew/contracts';
 import { ForbiddenError, InputError } from '../../context';
 import {
   commitmentRow,
@@ -39,8 +38,6 @@ const NOT_YOURS = 'Personen finns inte bland dem du är chef för.';
 const NO_ROUND = 'Det finns ingen öppen omgång av utvecklingssamtal.';
 const NOT_ALLOWED = 'Du kan inte ändra den här åtgärdspunkten.';
 const BAD_DAY = 'Ange ett giltigt datum.';
-/** The longest key a card may name a person by (D97, `SubjectSchema`): a longer user name names nobody. */
-const SUBJECT_KEY_MAX = ENTITY_KEY_MAX;
 /** The actor of a row written because a `due` timer fired; the convention of the other timer-driven rows. */
 const TIMER_ACTOR = 'system:scheduler';
 /** The version of the export document (D96 item 10); a breaking change is a new version. */
@@ -437,16 +434,15 @@ export function talkUsecases(deps: TalkDeps) {
         threadId = deps.ids();
       return deps.store.transaction(async tx => {
         const round = await openRoundOf(tx, persona.organisationId);
-        // The card is about the employee (D97 item 6), by the key another system knows them by; nobody without one.
+        // The card is about the employee (D97 item 6), by Clew's key, their id (D116): a rename or a reused user name
+        // moves nothing.
         await tx.workItems.open({
           threadId,
           personId: ownerId,
           commitmentId: id,
           dueOn: body.dueOn,
           at,
-          ...(employee.userName && [...employee.userName].length <= SUBJECT_KEY_MAX
-            ? { subject: { entity: 'person' as const, key: employee.userName } }
-            : {}),
+          subject: { entity: 'person' as const, key: employeeId },
         });
         await tx.insertCommitment({
           id,
@@ -503,14 +499,16 @@ export function talkUsecases(deps: TalkDeps) {
 
     /**
      * Erase one person from the domain (D96 item 10): their talks and every action point about them, the cards of
-     * those and of the ones they owned, and their name on other people's records. `actor` is the operator's.
+     * those and of the ones they owned, and their name on other people's records. `actor` is the operator's. An id the
+     * people table does not hold (a user name, a typo) erases nothing and writes no audit row: undefined.
      */
     async erasePerson(
       actor: string,
       personId: string,
-    ): Promise<{ talks: number; commitments: number; cleared: number; cards: number }> {
+    ): Promise<{ talks: number; commitments: number; cleared: number; cards: number } | undefined> {
       const at = now().toISOString();
       return deps.store.transaction(async tx => {
+        if (!(await tx.persons([personId])).length) return undefined;
         const erased = await tx.erasePerson(personId);
         if (erased.threadIds.length) await tx.workItems.remove(erased.threadIds);
         const counts = {
