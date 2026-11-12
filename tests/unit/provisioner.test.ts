@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { scimUsecases, staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { scimRoutes } from '../../apps/server/src/routes/scim';
@@ -13,6 +13,14 @@ import {
   type DirectoryPerson,
 } from '../../scripts/provisioner/directory';
 import { plan, push as reconcile, type PushOptions } from '../../scripts/provisioner/push';
+
+/**
+ * Most tests here push the whole development directory, two hundred and fifty people in over a hundred groups, two or
+ * three times through the routes. That is a second and a half on a developer's machine and four to six on CI's
+ * runner, which is on both sides of the five seconds a test gets by default: the suite failed there on a slow day
+ * without anything being wrong. So the tests of this file get the time a slow runner needs.
+ */
+setDefaultTimeout(30_000);
 
 // This isolated organisation belongs to the test writer.
 const scope = { userPrefix: 'dev:', groupPrefixes: ['unit:', 'unit-manager:', 'ad:', 'capability:'], groupKeys: [] };
@@ -269,7 +277,7 @@ describe('the synthetic provisioner', () => {
       ['scim.user.replaced', 'person:' + held('hassan').id, ['title']],
     ]);
     expect(grantOf('hillevi')).toEqual(grant);
-  }, 20_000);
+  });
   test('a changed directory moves roles, takes capabilities back, deactivates a leaver and removes an empty key group', async () => {
     const { store, client, grantOf } = stack();
     await push(client, developmentDirectory);
@@ -462,8 +470,7 @@ describe('the synthetic provisioner', () => {
     });
     expect(gone.refused).toEqual([]);
     expect(held(first!.userName)).toMatchObject({ enabled: false, email: first!.email });
-    // Three pushes of two hundred and fifty people: more than a test's five seconds on a slow runner.
-  }, 30_000);
+  });
   test("an account name given to somebody new is moved off the leaver's row first, whether the source keeps that row or not, and two people may swap", async () => {
     const { client, store } = stack();
     const scope = { userPrefix: 'e-', groupPrefixes: ['unit:s'], groupKeys: [] };
