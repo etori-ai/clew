@@ -1873,6 +1873,99 @@ export const CompetenceShareTargetBodySchema = object({
   minShare: Type.Integer({ minimum: 1, maximum: 100, description: 'The least share, in whole percent.' }),
 });
 export type CompetenceShareTargetBody = Static<typeof CompetenceShareTargetBodySchema>;
+/**
+ * The manager's matrix (D108 item 11): the people who report to the reader against the competence types required of
+ * at least one of them, at most this many columns at a time. Where more types are required, the reader chooses the
+ * types of one area or of one position, and a set larger than this is shown in parts.
+ */
+export const COMPETENCE_MATRIX_COLUMNS = 10;
+/** What a set of the matrix's columns is chosen by: an area of the catalogue, or a position the reports hold. */
+export const COMPETENCE_MATRIX_GROUPS = ['area', 'position'] as const;
+export type CompetenceMatrixGroupKind = (typeof COMPETENCE_MATRIX_GROUPS)[number];
+/**
+ * Where a person stands on one column (D108 items 4 and 6): one of the statuses, or `none` when they hold nothing of a
+ * type that is not required of them.
+ */
+export const COMPETENCE_MATRIX_STATUSES = [...COMPETENCE_STATUSES, 'none'] as const;
+export type CompetenceMatrixStatus = (typeof COMPETENCE_MATRIX_STATUSES)[number];
+const matrixBy = Type.String({
+  minLength: 1,
+  maxLength: 200,
+  description: '`area:<the area as the catalogue names it>` or `position:<the position id>`.',
+});
+const matrixPart = Type.Integer({ minimum: 1, maximum: 99 });
+/** One set of columns the reader may choose, as the selector offers it. */
+export const CompetenceMatrixGroupSchema = object({
+  by: matrixBy,
+  part: { ...matrixPart, description: 'Which part of a set larger than ten, from 1.' },
+  parts: { ...matrixPart, description: 'How many parts the set is shown in; 1 for a set of ten or fewer.' },
+  kind: literals(COMPETENCE_MATRIX_GROUPS),
+  label: Type.String({ minLength: 1, maxLength: 512, description: "Swedish. The area, or the position's label." }),
+  types: Type.Integer({ minimum: 1, maximum: COMPETENCE_MATRIX_COLUMNS, description: 'The columns of this part.' }),
+});
+export type CompetenceMatrixGroup = Static<typeof CompetenceMatrixGroupSchema>;
+/** One column: a competence type required of at least one of the reports. */
+export const CompetenceMatrixColumnSchema = object({
+  typeId: id,
+  name: competenceName,
+  area: competenceArea,
+  kind: CompetenceKind,
+});
+export type CompetenceMatrixColumn = Static<typeof CompetenceMatrixColumnSchema>;
+/** What requires a type of a person: a position they hold, a unit they are placed on, or their manager's requirement. */
+export const CompetenceMatrixReasonSchema = object({
+  on: literals(COMPETENCE_REQUIREMENT_TARGETS),
+  label: Type.Optional(
+    Type.String({ minLength: 1, maxLength: 512, description: "Swedish. The position's label or the unit's name." }),
+  ),
+  requirementId: Type.Optional({
+    ...id,
+    description: 'On a requirement set on the person alone: its id, which the manager may remove.',
+  }),
+});
+export type CompetenceMatrixReason = Static<typeof CompetenceMatrixReasonSchema>;
+/** How one person stands to one column. */
+export const CompetenceMatrixCellSchema = object({
+  typeId: id,
+  status: literals(COMPETENCE_MATRIX_STATUSES),
+  expiresOn: Type.Optional({ ...calendarDay, description: 'The last day the holding that decides is valid.' }),
+  required: Type.Boolean(),
+  through: Type.Array(CompetenceMatrixReasonSchema, { maxItems: 100 }),
+  holdingId: Type.Optional({ ...id, description: 'The holding that decides the status, when one does.' }),
+  evidence: Type.Optional(literals(COMPETENCE_EVIDENCE)),
+  revocable: Type.Boolean({
+    description: 'Whether the reader may revoke that holding: one registered in Clew, never one copied from a source.',
+  }),
+});
+export type CompetenceMatrixCell = Static<typeof CompetenceMatrixCellSchema>;
+/** One person who reports to the reader, with one cell per column in the columns' order. */
+export const CompetenceMatrixRowSchema = object({
+  personId: id,
+  key: { ...userName, description: "The user name, or Clew's id for a person provisioned without one." },
+  name: Type.String({ minLength: 1, maxLength: 512 }),
+  cells: Type.Array(CompetenceMatrixCellSchema, { maxItems: COMPETENCE_MATRIX_COLUMNS }),
+});
+export type CompetenceMatrixRow = Static<typeof CompetenceMatrixRowSchema>;
+export const CompetenceMatrixOutputSchema = object(
+  {
+    by: Type.Optional({ ...matrixBy, description: 'The set shown; absent when every required type fits.' }),
+    part: Type.Optional(matrixPart),
+    groups: Type.Array(CompetenceMatrixGroupSchema, {
+      maxItems: 2000,
+      description: 'The sets to choose from; empty when every required type fits in one view.',
+    }),
+    columns: Type.Array(CompetenceMatrixColumnSchema, { maxItems: COMPETENCE_MATRIX_COLUMNS }),
+    rows: Type.Array(CompetenceMatrixRowSchema, { maxItems: 5000 }),
+    required: Type.Integer({ minimum: 0, description: 'How many types are required of anyone, over every set.' }),
+  },
+  "The reader's reports against what is required of them (D108 item 11).",
+);
+export type CompetenceMatrixOutput = Static<typeof CompetenceMatrixOutputSchema>;
+/** What the matrix and its file are read with: the set of columns, and which part of a set larger than ten. */
+export interface CompetenceMatrixInput {
+  by?: string;
+  part?: number;
+}
 /** A Clew-side action the conversation proposes; executed only after the person confirms, through the thread endpoints. */
 export const ClewActionSchema = object({
   n: Type.Integer(),

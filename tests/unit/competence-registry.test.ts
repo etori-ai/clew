@@ -290,6 +290,74 @@ describe('the competence wiring (D108 item 13)', () => {
     expect(w.store.state.shareTargets.size).toBe(0);
   });
 
+  test('the matrix and its file (D108 item 11): a manager reads both, the file is audited, the query is checked', async () => {
+    const w = world();
+    await syncBundledRows(w.reconcile);
+    await w.admin.update(mikael, COMPETENCE_CONNECTOR, { state: 'enabled' });
+    w.store.addPosition({ id: 'pos-usk', organisationId: ORG, code: 'usk', label: 'Undersköterska' });
+    w.store.holdPosition('p-anna', 'pos-usk');
+    const added = await w.call(mikael, 'POST', '/types', { name: 'HLR', area: 'Akut', kind: 'course' });
+    const { id: typeId } = (await added.json()) as { id: string };
+    expect((await w.call(mikael, 'POST', '/requirements', { typeId, positionId: 'pos-usk' })).status).toBe(201);
+
+    const read = await w.call(hillevi, 'GET', '/matrix?by=area%3AAkut&part=1');
+    expect(read.status).toBe(200);
+    expect(read.headers.get('cache-control')).toContain('no-store');
+    expect(await read.json()).toEqual({
+      groups: [],
+      columns: [{ typeId, name: 'HLR', area: 'Akut', kind: 'course' }],
+      rows: [
+        {
+          personId: 'p-anna',
+          key: 'anna.lindqvist',
+          name: 'Anna Lindqvist',
+          cells: [
+            {
+              typeId,
+              status: 'missing',
+              required: true,
+              through: [{ on: 'position', label: 'Undersköterska' }],
+              revocable: false,
+            },
+          ],
+        },
+      ],
+      required: 1,
+    });
+    // Someone who manages nobody is refused in Swedish; a query outside its bounds is a 400.
+    const refused = await w.call(anna, 'GET', '/matrix');
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toEqual({
+      error: 'Medarbetarnas kompetens visas för den som är chef för en enhet.',
+      code: 'denied',
+    });
+    for (const query of ['?part=0', '?part=100', '?part=x', '?by=', `?by=${'a'.repeat(201)}`])
+      expect((await w.call(hillevi, 'GET', '/matrix' + query)).status).toBe(400);
+
+    const before = w.store.audit().length;
+    const file = await w.call(hillevi, 'GET', '/matrix.csv');
+    expect(file.status).toBe(200);
+    expect(file.headers.get('content-type')).toBe('text/csv; charset=utf-8');
+    expect(file.headers.get('content-disposition')).toBe('attachment; filename="kompetens-2026-11-10.csv"');
+    expect(file.headers.get('cache-control')).toContain('no-store');
+    // The byte order mark is kept, so a spreadsheet reads the file as UTF-8.
+    expect(new TextDecoder('utf-8', { ignoreBOM: true }).decode(await file.arrayBuffer())).toBe(
+      '﻿Namn;HLR\r\nAnna Lindqvist;Saknas\r\n',
+    );
+    expect(w.store.audit().slice(before)).toEqual([
+      {
+        actor: 'person:hillevi',
+        action: 'competence.matrix_exported',
+        subject: 'organisation:' + ORG,
+        at: T0,
+        details: { people: 1, types: 1 },
+      },
+    ]);
+    expect((await w.call(anna, 'GET', '/matrix.csv')).status).toBe(403);
+    expect((await w.call(hillevi, 'GET', '/matrix.csv?part=0')).status).toBe(400);
+    expect(w.store.audit().length).toBe(before + 1);
+  });
+
   test('switched off, the requirements and share targets are refused like every other route', async () => {
     const w = world();
     await syncBundledRows(w.reconcile);
@@ -300,6 +368,8 @@ describe('the competence wiring (D108 item 13)', () => {
       ['GET', '/share-targets'],
       ['POST', '/share-targets'],
       ['DELETE', '/share-targets/s1'],
+      ['GET', '/matrix'],
+      ['GET', '/matrix.csv'],
     ] as const) {
       const refused = await w.call(mikael, method, path, method === 'POST' ? {} : undefined);
       expect(refused.status).toBe(403);

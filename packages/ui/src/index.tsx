@@ -100,6 +100,7 @@ export {
   pixel,
   proportional,
   resolveColumnWidths,
+  useTableStickyColumns,
 } from '@astryxdesign/core/Table';
 export { Switch } from '@astryxdesign/core/Switch';
 export { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
@@ -137,6 +138,7 @@ export { Lightbox } from '@astryxdesign/core/Lightbox';
 export type { AnimatedLayout } from '@astryxdesign/core/hooks';
 // Glyphs beyond Astryx's registry come from Heroicons (MIT), the set Astryx's own templates draw with; each is named here once.
 export {
+  AcademicCapIcon,
   ArrowDownTrayIcon,
   ArrowPathIcon,
   ArrowsPointingOutIcon,

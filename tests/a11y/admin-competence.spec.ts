@@ -59,11 +59,15 @@ test.describe('Administration › Kompetens', () => {
       api.admin = true;
       api.competenceTypes = competenceCatalogue();
       await open(page, '/admin/connectors');
-      const row = page.getByRole('link', { name: 'Kompetens', exact: true });
+      // The row under Administration: the place Kompetens in the rail is the reader's own (D120 item 8), another link.
+      const row = page
+        .getByRole('navigation', { name: 'Sidonavigering' })
+        .getByRole('group', { name: 'Administration', exact: true })
+        .getByRole('link', { name: 'Kompetens', exact: true });
       await row.click();
       await expect(page).toHaveURL(/\/admin\/competence$/);
       await expect(page).toHaveTitle('Kompetens · Startsidan');
-      await expect(page.getByRole('link', { name: 'Kompetens', exact: true })).toHaveAttribute('aria-current', 'page');
+      await expect(row).toHaveAttribute('aria-current', 'page');
       await expect(page.getByRole('status').filter({ hasText: 'att registrera' })).toHaveText(
         '3 kompetenser att registrera, 1 arkiverade',
       );
@@ -83,6 +87,7 @@ test.describe('Administration › Kompetens', () => {
       api.admin = true;
       const kompetens = page
         .getByRole('navigation', { name: 'Sidonavigering' })
+        .getByRole('group', { name: 'Administration', exact: true })
         .getByRole('link', { name: 'Kompetens', exact: true });
       // Switched off (D108 item 13): no row, and the page itself still says why for an address from before.
       await open(page, '/admin/connectors');

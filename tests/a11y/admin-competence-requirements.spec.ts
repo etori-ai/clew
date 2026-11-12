@@ -79,7 +79,11 @@ test.describe('Administration › Kompetens › Krav', () => {
       await expect(page).toHaveTitle('Krav på kompetens · Startsidan');
       // The rail keeps Kompetens as the place, and the trail leads back to the catalogue.
       await expect(
-        page.getByRole('navigation', { name: 'Sidonavigering' }).getByRole('link', { name: 'Kompetens', exact: true }),
+        // Under Administration: the place Kompetens in the rail is the reader's own (D120 item 8), another link.
+        page
+          .getByRole('navigation', { name: 'Sidonavigering' })
+          .getByRole('group', { name: 'Administration', exact: true })
+          .getByRole('link', { name: 'Kompetens', exact: true }),
       ).toHaveAttribute('aria-current', 'page');
       await expect(
         page.getByRole('navigation', { name: 'Du är här' }).getByRole('link', { name: 'Kompetens' }),

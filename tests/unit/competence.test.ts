@@ -3,7 +3,10 @@ import {
   checkContract,
   CompetenceAttentionOutputSchema,
   CompetenceHoldingsOutputSchema,
+  CompetenceMatrixOutputSchema,
   type AuthenticatedContext,
+  type CompetenceMatrixCell,
+  type CompetenceMatrixOutput,
   type StaffOverview,
   type StaffPerson,
 } from '../../packages/contracts/src/index';
@@ -28,6 +31,8 @@ import {
   deciding,
   endOf,
   lineAbove,
+  matrixCellText,
+  matrixCsv,
   personStatus,
   requiredOf,
   statusOn,
@@ -1442,5 +1447,242 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
     await expect(competence.seedRequirement('operator:cli', ORG, { typeId: hlr, positionId: USK })).rejects.toThrow(
       'Det kravet finns redan.',
     );
+  });
+
+  describe('the matrix (D108 item 11)', () => {
+    /** A row copied from a source, as the copy writes one (D108 item 9). */
+    const copied = (id: string, personId: string, typeId: string, issuedOn: string, expiresOn: string) =>
+      store.transaction(async tx => {
+        if (!(await tx.source('lms')))
+          await tx.putSource({
+            connectorId: 'lms',
+            source: 'Lärplattformen',
+            run: null,
+            claimedAt: null,
+            leaseUntil: null,
+            startedAt: null,
+            finishedAt: null,
+            outcome: null,
+            counts: null,
+          });
+        await tx.putCopied([
+          {
+            id,
+            personId,
+            typeId,
+            issuedOn,
+            expiresOn,
+            evidence: 'system',
+            state: 'valid',
+            registeredBy: null,
+            createdAt: now.toISOString(),
+            revokedAt: null,
+            revokedBy: null,
+            copy: { connectorId: 'lms', sourceId: 'row-' + id, sourceType: 'c1', sourceLabel: 'Kurs', readAt: '' },
+          },
+        ]);
+      });
+    /** Each row's cells as [status, the end date, required, the reasons], in the columns' order. */
+    const cells = (m: CompetenceMatrixOutput) =>
+      Object.fromEntries(
+        m.rows.map(r => [
+          r.name,
+          r.cells.map(c => [c.status, c.expiresOn ?? null, c.required, c.through.map(t => t.label ?? t.on)]),
+        ]),
+      );
+
+    test('a manager reads their reports against the types required of any of them, each cell where the person stands', async () => {
+      directory();
+      const { hot, hlr, degree } = await catalogue();
+      await competence.addRequirement(admin, { typeId: hlr, positionId: USK });
+      await competence.addRequirement(admin, { typeId: hlr, unitId: 'u1' });
+      await competence.addRequirement(admin, { typeId: degree, positionId: SSK });
+      const onAnna = await competence.addRequirement(boss, { typeId: hot, personId: 'anna' });
+      // Anna's HLR ran out by the employer's 24 months; Bo's degree never ends; Bo holds Heta arbeten without its being
+      // required of him, copied from a source and ending within 90 days.
+      const annasHlr = await competence.registerHolding(boss, 'anna', { typeId: hlr, issuedOn: '2024-01-10' });
+      const bosDegree = await competence.registerHolding(boss, 'bo', { typeId: degree, issuedOn: '2015-06-05' });
+      await copied('c-hot', 'bo', hot, '2021-12-01', '2026-12-31');
+      const written = audits().length;
+
+      const m = await competence.matrix(boss);
+      expect(checkContract(CompetenceMatrixOutputSchema, m)).toBe(true);
+      // Every type fits: no sets to choose from. The columns in the catalogue's order, by area.
+      expect(m.by).toBeUndefined();
+      expect(m.groups).toEqual([]);
+      expect(m.required).toBe(3);
+      expect(m.columns).toEqual([
+        { typeId: hlr, name: 'HLR', area: 'Akut', kind: 'course' },
+        { typeId: degree, name: 'Socionomexamen', area: 'Examen', kind: 'degree' },
+        { typeId: hot, name: 'Heta arbeten', area: 'Säkerhet', kind: 'certificate' },
+      ]);
+      // The reports only: not the manager, not Cia, who is deactivated, not the other manager's Dan.
+      expect(m.rows.map(r => [r.personId, r.key, r.name])).toEqual([
+        ['anna', 'anna.a', 'Anna Andersson'],
+        ['bo', 'bo', 'Bo Berg'],
+      ]);
+      expect(cells(m)).toEqual({
+        'Anna Andersson': [
+          ['expired', '2026-01-10', true, ['Undersköterska', 'Enhet 1']],
+          ['none', null, false, []],
+          ['missing', null, true, ['person']],
+        ],
+        // Bo holds two positions and is under both sets.
+        'Bo Berg': [
+          ['missing', null, true, ['Undersköterska', 'Enhet 1']],
+          ['valid', null, true, ['Sjuksköterska']],
+          ['expiring', '2026-12-31', false, []],
+        ],
+      });
+      const [anna, bo] = m.rows;
+      // A manager's registration may be revoked by the reader, a copied row never; a requirement on the person alone
+      // carries its id, which the manager may remove.
+      expect(anna!.cells[0]).toMatchObject({ holdingId: annasHlr, evidence: 'manager', revocable: true });
+      expect(anna!.cells[2]!.through).toEqual([{ on: 'person', requirementId: onAnna }]);
+      expect(anna!.cells[2]).not.toHaveProperty('holdingId');
+      expect(bo!.cells[1]).toMatchObject({ holdingId: bosDegree, revocable: true });
+      expect(bo!.cells[2]).toMatchObject({ holdingId: 'c-hot', evidence: 'system', revocable: false });
+      // A read writes nothing.
+      expect(audits().length).toBe(written);
+
+      // Revoked, Anna's HLR is missing; with the requirement on her removed, Heta arbeten is required of nobody.
+      await competence.revokeHolding(boss, annasHlr);
+      await competence.removeRequirement(boss, onAnna);
+      const after = await competence.matrix(boss);
+      expect(after.columns.map(c => c.name)).toEqual(['HLR', 'Socionomexamen']);
+      expect(cells(after)['Anna Andersson']).toEqual([
+        ['missing', null, true, ['Undersköterska', 'Enhet 1']],
+        ['none', null, false, []],
+      ]);
+      // An archived type is required of nobody, so it is no column.
+      await competence.archiveType(admin, degree);
+      expect((await competence.matrix(boss)).columns.map(c => c.name)).toEqual(['HLR']);
+    });
+
+    test('only a manager reads it, and only their own reports', async () => {
+      directory();
+      const { hlr } = await catalogue();
+      await competence.addRequirement(admin, { typeId: hlr, positionId: USK });
+      for (const p of [asAnna, admin])
+        await expect(competence.matrix(p)).rejects.toThrow(
+          'Medarbetarnas kompetens visas för den som är chef för en enhet.',
+        );
+      await expect(competence.matrix(asAnna)).rejects.toBeInstanceOf(ForbiddenError);
+      const theirs = await competence.matrix(other);
+      expect(theirs.rows.map(r => r.name)).toEqual(['Dan Dahl']);
+      expect(cells(theirs)).toEqual({ 'Dan Dahl': [['missing', null, true, ['Undersköterska']]] });
+      // The day the line changes, the former manager reads nobody.
+      staff.set('boss', { units: [] });
+      await expect(competence.matrix(boss)).rejects.toBeInstanceOf(ForbiddenError);
+    });
+
+    test('more than ten required types are offered as sets by area and by position, ten at a time, the chosen one in the address', async () => {
+      directory();
+      const { hlr } = await catalogue();
+      await competence.addRequirement(admin, { typeId: hlr, positionId: USK });
+      const safety: string[] = [];
+      for (let i = 1; i <= 11; i++) {
+        const id = await competence.addType(admin, {
+          name: `Skydd ${String(i).padStart(2, '0')}`,
+          area: 'Säkerhet',
+          kind: 'certificate',
+        });
+        safety.push(id);
+        await competence.addRequirement(admin, { typeId: id, positionId: SSK });
+      }
+      const names = (m: CompetenceMatrixOutput) => m.columns.map(c => c.name);
+      const first = await competence.matrix(boss);
+      expect(checkContract(CompetenceMatrixOutputSchema, first)).toBe(true);
+      expect(first.required).toBe(12);
+      // Areas first in Swedish order, then the positions the reports hold, by label; a set of eleven in two parts.
+      expect(first.groups).toEqual([
+        { by: 'area:Akut', part: 1, parts: 1, kind: 'area', label: 'Akut', types: 1 },
+        { by: 'area:Säkerhet', part: 1, parts: 2, kind: 'area', label: 'Säkerhet', types: 10 },
+        { by: 'area:Säkerhet', part: 2, parts: 2, kind: 'area', label: 'Säkerhet', types: 1 },
+        { by: 'position:' + SSK, part: 1, parts: 2, kind: 'position', label: 'Sjuksköterska', types: 10 },
+        { by: 'position:' + SSK, part: 2, parts: 2, kind: 'position', label: 'Sjuksköterska', types: 1 },
+        { by: 'position:' + USK, part: 1, parts: 1, kind: 'position', label: 'Undersköterska', types: 1 },
+      ]);
+      // Nothing chosen: the first set.
+      expect([first.by, first.part, names(first)]).toEqual(['area:Akut', 1, ['HLR']]);
+      const safe = await competence.matrix(boss, { by: 'area:Säkerhet' });
+      expect([safe.by, safe.part]).toEqual(['area:Säkerhet', 1]);
+      expect(names(safe)).toEqual(Array.from({ length: 10 }, (_, i) => `Skydd ${String(i + 1).padStart(2, '0')}`));
+      expect(safe.rows.every(r => r.cells.length === 10)).toBe(true);
+      expect(names(await competence.matrix(boss, { by: 'area:Säkerhet', part: 2 }))).toEqual(['Skydd 11']);
+      expect(names(await competence.matrix(boss, { by: 'position:' + SSK, part: 2 }))).toEqual(['Skydd 11']);
+      expect(names(await competence.matrix(boss, { by: 'position:' + USK }))).toEqual(['HLR']);
+      // Anna does not hold the position the safety set is asked of: required of Bo, not of her.
+      expect(cells(safe)['Anna Andersson']![0]).toEqual(['none', null, false, []]);
+      expect(cells(safe)['Bo Berg']![0]).toEqual(['missing', null, true, ['Sjuksköterska']]);
+      // A part past the last is the set's first; an unknown set is the first set.
+      expect([(await competence.matrix(boss, { by: 'area:Säkerhet', part: 7 })).part]).toEqual([1]);
+      const unknown = await competence.matrix(boss, { by: 'area:Okänd' });
+      expect([unknown.by, names(unknown)]).toEqual(['area:Akut', ['HLR']]);
+      // Down to ten, every type fits again and no set is offered.
+      await competence.archiveType(admin, safety[10]!);
+      await competence.archiveType(admin, safety[9]!);
+      const fits = await competence.matrix(boss, { by: 'area:Säkerhet' });
+      expect([fits.by, fits.groups, fits.columns.length]).toEqual([undefined, [], 10]);
+    });
+
+    test('the export is the matrix as shown, with an audit row of counts that names nobody', async () => {
+      directory();
+      const { hot, hlr, degree } = await catalogue();
+      await competence.addRequirement(admin, { typeId: hlr, positionId: USK });
+      await competence.addRequirement(boss, { typeId: hot, personId: 'anna' });
+      await competence.registerHolding(boss, 'anna', { typeId: hlr, issuedOn: '2025-12-01', expiresOn: '2028-01-31' });
+      await competence.registerHolding(boss, 'bo', { typeId: degree, issuedOn: '2015-06-05' });
+      await copied('c-hot', 'bo', hot, '2021-12-01', '2026-12-31');
+      const file = await competence.exportMatrix(boss);
+      expect(file.filename).toBe('kompetens-2026-11-10.csv');
+      expect(file.text).toBe(
+        '﻿' +
+          [
+            'Namn;HLR;Heta arbeten',
+            'Anna Andersson;Giltigt till 2028-01-31;Saknas',
+            'Bo Berg;Saknas;Går ut snart 2026-12-31 (krävs inte)',
+          ].join('\r\n') +
+          '\r\n',
+      );
+      expect(lastAudit()).toEqual({
+        actor: 'person:boss',
+        action: 'competence.matrix_exported',
+        subject: 'organisation:' + ORG,
+        at: now.toISOString(),
+        details: { people: 2, types: 2 },
+      });
+      const written = audits().length;
+      await expect(competence.exportMatrix(asAnna)).rejects.toBeInstanceOf(ForbiddenError);
+      expect(audits().length).toBe(written);
+      const text = JSON.stringify(audits());
+      for (const name of [...NAMES, ...TYPE_NAMES, 'Undersköterska']) expect(text).not.toContain(name);
+    });
+
+    test('a field of the file a spreadsheet would read as a formula is kept as text, and one with a separator is quoted', () => {
+      const cell: CompetenceMatrixCell = {
+        typeId: 't',
+        status: 'none',
+        required: false,
+        through: [],
+        revocable: false,
+      };
+      expect(
+        matrixCsv({
+          columns: [{ typeId: 't', name: 'Truck; A', area: 'Fordon', kind: 'authorisation' }],
+          rows: [
+            { personId: 'p1', key: 'p1', name: '=HYPERLINK("x")', cells: [cell] },
+            {
+              personId: 'p2',
+              key: 'p2',
+              name: '-Eva',
+              cells: [{ ...cell, status: 'expired', expiresOn: '2026-01-01' }],
+            },
+          ],
+        }),
+      ).toBe('﻿Namn;"Truck; A"\r\n"\'=HYPERLINK(""x"")";Krävs inte\r\n\'-Eva;Utgånget 2026-01-01 (krävs inte)\r\n');
+      expect(matrixCellText({ status: 'valid', required: true })).toBe('Giltigt');
+      expect(matrixCellText({ status: 'missing', required: true })).toBe('Saknas');
+    });
   });
 });

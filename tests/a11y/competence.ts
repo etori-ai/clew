@@ -1,4 +1,6 @@
 import type {
+  CompetenceMatrixCell,
+  CompetenceMatrixOutput,
   CompetenceRequirementsOutput,
   CompetenceShareTarget,
   CompetenceSource,
@@ -8,7 +10,7 @@ import type {
 
 /**
  * Kompetens (D108) as the browser specs meet it: one person's holdings as the declared view, the catalogue, its sources,
- * and the requirements and share targets.
+ * the requirements and share targets, and the manager's matrix.
  */
 
 export const holdingsSpec: PanelViewSpec = {
@@ -158,3 +160,115 @@ export const competenceRequirements = (): CompetenceRequirementsOutput => ({
 export const competenceShareTargets = (): CompetenceShareTarget[] => [
   { id: 's-hlr-usk', typeId: 't-hlr', positionId: 'pos-usk', positionLabel: 'Undersköterska', minShare: 80 },
 ];
+/**
+ * The manager's matrix (D108 item 11) over three of the people Personal lists (`staffOverview()`): three columns, each
+ * state a cell can be in. Anna's HLR runs out soon and her Heta arbeten has run out, both registered by her manager and
+ * so revocable, and Fallskydd is required of her unit and missing; Erik's HLR was copied from the learning platform and
+ * cannot be revoked, and Fallskydd is required of him by his manager's own requirement; Lena holds Heta arbeten without
+ * its being required of her.
+ */
+const cell = (typeId: string, c: Partial<CompetenceMatrixCell> & Pick<CompetenceMatrixCell, 'status'>) =>
+  ({ typeId, required: false, through: [], revocable: false, ...c }) satisfies CompetenceMatrixCell;
+const onPosition = { on: 'position' as const, label: 'Undersköterska' };
+export const competenceMatrix = (): CompetenceMatrixOutput => ({
+  groups: [],
+  columns: [
+    { typeId: 't-hlr', name: 'HLR', area: 'Akut omhändertagande', kind: 'course' },
+    { typeId: 't-fall', name: 'Fallskydd', area: 'Säkerhet', kind: 'certificate' },
+    { typeId: 't-heta', name: 'Heta arbeten', area: 'Säkerhet', kind: 'certificate' },
+  ],
+  rows: [
+    {
+      personId: 'anna',
+      key: 'anna.lindqvist',
+      name: 'Anna Lindqvist',
+      cells: [
+        cell('t-hlr', {
+          status: 'expiring',
+          expiresOn: '2027-01-10',
+          required: true,
+          through: [onPosition],
+          holdingId: 'h-anna-hlr',
+          evidence: 'manager',
+          revocable: true,
+        }),
+        cell('t-fall', { status: 'missing', required: true, through: [{ on: 'unit', label: 'Skönsmons skola' }] }),
+        cell('t-heta', {
+          status: 'expired',
+          expiresOn: '2026-05-31',
+          required: true,
+          through: [onPosition],
+          holdingId: 'h-anna-heta',
+          evidence: 'manager',
+          revocable: true,
+        }),
+      ],
+    },
+    {
+      personId: 'erik',
+      key: 'erik.sandstrom',
+      name: 'Erik Sandström',
+      cells: [
+        cell('t-hlr', {
+          status: 'valid',
+          expiresOn: '2028-11-01',
+          required: true,
+          through: [onPosition],
+          holdingId: 'h-erik-hlr',
+          evidence: 'system',
+        }),
+        cell('t-fall', {
+          status: 'missing',
+          required: true,
+          through: [{ on: 'person', requirementId: 'r-erik-fall' }],
+        }),
+        cell('t-heta', { status: 'none' }),
+      ],
+    },
+    {
+      personId: 'lena',
+      key: 'lena.berg',
+      name: 'Lena Berg',
+      cells: [
+        cell('t-hlr', { status: 'missing', required: true, through: [onPosition] }),
+        cell('t-fall', { status: 'none' }),
+        cell('t-heta', {
+          status: 'valid',
+          holdingId: 'h-lena-heta',
+          evidence: 'manager',
+          revocable: true,
+        }),
+      ],
+    },
+  ],
+  required: 3,
+});
+/**
+ * The same matrix as it is when more is required than ten columns hold (the mock keeps the three columns and offers
+ * them in sets): by area and by position, the set in the address choosing the columns, the first when none is named.
+ */
+export const matrixSets = [
+  { by: 'area:Akut omhändertagande', part: 1, parts: 1, kind: 'area', label: 'Akut omhändertagande', types: 1 },
+  { by: 'area:Säkerhet', part: 1, parts: 1, kind: 'area', label: 'Säkerhet', types: 2 },
+  { by: 'position:pos-usk', part: 1, parts: 1, kind: 'position', label: 'Undersköterska', types: 2 },
+] as const;
+const setColumns: Record<string, string[]> = {
+  'area:Akut omhändertagande': ['t-hlr'],
+  'area:Säkerhet': ['t-fall', 't-heta'],
+  'position:pos-usk': ['t-hlr', 't-heta'],
+};
+/** The matrix the mock answers: whole, or in sets, with the set `by` names (the first when it names none it knows). */
+export function matrixAnswer(base: CompetenceMatrixOutput, sets: boolean, by: string | null): CompetenceMatrixOutput {
+  if (!sets) return base;
+  const chosen = matrixSets.find(s => s.by === by) ?? matrixSets[0];
+  const ids = setColumns[chosen.by]!;
+  const keep = base.columns.map((c, i) => (ids.includes(c.typeId) ? i : -1)).filter(i => i >= 0);
+  return {
+    by: chosen.by,
+    part: 1,
+    groups: matrixSets.map(s => ({ ...s })),
+    columns: keep.map(i => base.columns[i]!),
+    rows: base.rows.map(r => ({ ...r, cells: keep.map(i => r.cells[i]!) })),
+    required: 12,
+  };
+}

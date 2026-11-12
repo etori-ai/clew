@@ -73,7 +73,11 @@ test.describe('Administration › Kompetens › Källor', () => {
       await expect(page).toHaveTitle('Källor för kompetens · Startsidan');
       // The rail keeps Kompetens as the place, and the trail leads back to the catalogue.
       await expect(
-        page.getByRole('navigation', { name: 'Sidonavigering' }).getByRole('link', { name: 'Kompetens', exact: true }),
+        // Under Administration: the place Kompetens in the rail is the reader's own (D120 item 8), another link.
+        page
+          .getByRole('navigation', { name: 'Sidonavigering' })
+          .getByRole('group', { name: 'Administration', exact: true })
+          .getByRole('link', { name: 'Kompetens', exact: true }),
       ).toHaveAttribute('aria-current', 'page');
       await expect(
         page.getByRole('navigation', { name: 'Du är här' }).getByRole('link', { name: 'Kompetens' }),
@@ -120,7 +124,9 @@ test.describe('Administration › Kompetens › Källor', () => {
 
       await dialog.getByRole('button', { name: 'Spara', exact: true }).focus();
       await page.keyboard.press('Enter');
-      await expect(dialog.getByText('Välj en kompetens.', { exact: true })).toBeVisible();
+      // The field says what is missing; Astryx's live region of the dialog may repeat the words to announce them, so the
+      // field's own is the first of the two (as on Krav).
+      await expect(dialog.getByText('Välj en kompetens.', { exact: true }).first()).toBeVisible();
       const choice = dialog.getByRole('combobox', { name: /Kompetens i katalogen/ });
       await expect(choice).toBeFocused();
       expect(api.sourceWrites).toEqual([]);

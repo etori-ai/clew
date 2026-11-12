@@ -1,5 +1,12 @@
-import { queryOptions } from '@tanstack/react-query';
-import type { AskValues, Role, DocumentRequest, EntityKind, UsersAdminQueryType } from '@clew/contracts';
+import { keepPreviousData, queryOptions } from '@tanstack/react-query';
+import type {
+  AskValues,
+  CompetenceMatrixInput,
+  Role,
+  DocumentRequest,
+  EntityKind,
+  UsersAdminQueryType,
+} from '@clew/contracts';
 import { api } from './api';
 import { keys } from './query-keys';
 import { unlessRefused } from './query-policy';
@@ -218,6 +225,17 @@ export const competenceShareTargetsQuery = queryOptions({
   queryFn: () => api.competence.shareTargets(),
   retry: false,
 });
+/**
+ * The manager's matrix (D108 item 11) with the set of columns the address names. Refused to someone who manages nobody
+ * and while the module is off, which is the page's own state, so not retried.
+ */
+export const competenceMatrixQuery = (input: CompetenceMatrixInput) =>
+  queryOptions({
+    queryKey: keys.competenceMatrix(input.by ?? null, input.part ?? null),
+    queryFn: () => api.competence.matrix(input),
+    retry: false,
+    placeholderData: keepPreviousData,
+  });
 export const adminQueries = {
   connectors: queryOptions({ queryKey: keys.admin.connectors, queryFn: () => api.admin.connectors() }),
   units: queryOptions({ queryKey: keys.admin.units, queryFn: () => api.admin.units() }),

@@ -64,6 +64,8 @@ import type {
   Capability,
   CompetenceHoldingBody,
   CompetenceMappingBody,
+  CompetenceMatrixCell,
+  CompetenceMatrixOutput,
   CompetenceRequirementBody,
   CompetenceRequirementsOutput,
   CompetenceShareTarget,
@@ -90,7 +92,7 @@ import { THEME_BASE_COLORS, parseThemeFile, themeFileOf } from '../../packages/c
 import { personSearch, phonebook } from './phonebook';
 import { rooms, roomsSpec } from './rooms';
 import { fixtureViews } from './view-catalogue';
-import { holdingsOutput, holdingsSpec } from './competence';
+import { competenceMatrix, holdingsOutput, holdingsSpec, matrixAnswer } from './competence';
 import { errandsOutput, errandsSpec, smErrandOutput, smErrandSpec } from './errands';
 import { manifestReference } from '../../packages/connectors/src/reference';
 import { previewManifest } from '../../packages/connectors/src/preview';
@@ -290,6 +292,20 @@ export class MockApi {
   requirementWrites: Array<{ method: string; path: string; body?: unknown }> = [];
   /** The next write to a requirement or a share target answers 400 with this sentence; it resets itself after that one. */
   requirementFail: string | null = null;
+  /** The person's own holdings as `competence.holdings` answers them while the module is on. */
+  competenceHoldings: unknown = holdingsOutput;
+  /**
+   * Kompetens › Medarbetare (D108 item 11): the manager's matrix as the server answers it, changed by the writes from it
+   * as the server would change it; with `competenceMatrixSets` more is required than ten columns hold, so it is offered
+   * in sets (`matrixAnswer`).
+   */
+  competenceMatrix: CompetenceMatrixOutput = competenceMatrix();
+  competenceMatrixSets = false;
+  /** Every read of the matrix and every download of its file, as the query, in order. */
+  matrixReads: string[] = [];
+  matrixDownloads: string[] = [];
+  /** Every revocation of a holding, in order. */
+  holdingWrites: Array<{ method: string; path: string }> = [];
   /** Utvecklingssamtal (D96). False: the person has no talks system, so both reads are refused as the registry refuses them. */
   talksOffered = true;
   /** False: another system answers the profile; the reads are read-only (no `id`, a `link` on every row) and the writes refused. */
@@ -351,6 +367,57 @@ export class MockApi {
       release = resolve;
     });
     return release;
+  }
+  /** Every cell of the matrix through `change`; a column required of nobody and held by nobody goes, as the server's would. */
+  private changeMatrix(change: (cell: CompetenceMatrixCell, personId: string) => CompetenceMatrixCell) {
+    const m = this.competenceMatrix;
+    const rows = m.rows.map(r => ({ ...r, cells: r.cells.map(c => change(c, r.personId)) }));
+    const keep = m.columns.map((_, i) => rows.some(r => r.cells[i]!.required));
+    this.competenceMatrix = {
+      ...m,
+      columns: m.columns.filter((_, i) => keep[i]),
+      rows: rows.map(r => ({ ...r, cells: r.cells.filter((_, i) => keep[i]) })),
+      required: keep.filter(Boolean).length,
+    };
+  }
+  /** A manager's requirement on one person: their cell is required by it, a column added for a type not shown yet. */
+  private requirePerson(personId: string, typeId: string, requirementId: string) {
+    const m = this.competenceMatrix;
+    if (!m.columns.some(c => c.typeId === typeId)) {
+      const type = this.competenceTypes?.find(t => t.id === typeId);
+      if (!type) return;
+      this.competenceMatrix = {
+        ...m,
+        columns: [...m.columns, { typeId, name: type.name, area: type.area, kind: type.kind }],
+        rows: m.rows.map(r => ({
+          ...r,
+          cells: [...r.cells, { typeId, status: 'none', required: false, through: [], revocable: false }],
+        })),
+      };
+    }
+    this.changeMatrix((c, p) =>
+      p === personId && c.typeId === typeId
+        ? {
+            ...c,
+            required: true,
+            status: c.status === 'none' ? 'missing' : c.status,
+            through: [...c.through, { on: 'person', requirementId }],
+          }
+        : c,
+    );
+  }
+  /** The requirement on one person removed: their cell is no longer required by it. */
+  private unrequire(requirementId: string) {
+    this.changeMatrix(c => {
+      if (!c.through.some(r => r.requirementId === requirementId)) return c;
+      const through = c.through.filter(r => r.requirementId !== requirementId);
+      return {
+        ...c,
+        through,
+        required: through.length > 0,
+        status: !through.length && c.status === 'missing' ? 'none' : c.status,
+      };
+    });
   }
   private update(id: string, change: Partial<Thread>) {
     this.threads = this.threads.map(t => (t.id === id ? { ...t, ...change, updatedAt: NOW } : t));
@@ -888,6 +955,46 @@ export class MockApi {
         return json({ holdings: type?.holdings ?? 0 });
       }
     }
+    // Kompetens › Medarbetare (D108 item 11): the manager's matrix, its file, and a holding revoked from a cell. Someone
+    // who manages nobody is refused as the server refuses them.
+    if (path === '/competence/matrix' || path === '/competence/matrix.csv') {
+      if (this.employee || this.staffForbidden)
+        return route.fulfill({
+          status: 403,
+          json: { error: 'Medarbetarnas kompetens visas för den som är chef för en enhet.', code: 'denied' },
+        });
+      const answer = matrixAnswer(this.competenceMatrix, this.competenceMatrixSets, url.searchParams.get('by'));
+      if (path === '/competence/matrix') {
+        this.matrixReads.push(url.search);
+        return json(answer);
+      }
+      this.matrixDownloads.push(url.search);
+      return route.fulfill({
+        status: 200,
+        headers: {
+          'content-type': 'text/csv; charset=utf-8',
+          'content-disposition': 'attachment; filename="kompetens-2026-11-04.csv"',
+        },
+        body: '\ufeff' + ['Namn', ...answer.columns.map(c => c.name)].join(';') + '\r\n',
+      });
+    }
+    const revoking = /^\/competence\/holdings\/([^/]+)$/.exec(path);
+    if (revoking && route.request().method() === 'DELETE') {
+      const holdingId = decodeURIComponent(revoking[1]!);
+      this.holdingWrites.push({ method: 'DELETE', path });
+      this.changeMatrix(c =>
+        c.holdingId === holdingId
+          ? {
+              typeId: c.typeId,
+              status: c.required ? 'missing' : 'none',
+              required: c.required,
+              through: c.through,
+              revocable: false,
+            }
+          : c,
+      );
+      return route.fulfill({ status: 204, body: '' });
+    }
     // Kompetens › Krav (D108 item 6): the requirements and the share targets, each listed, added and removed.
     const requirementPath = /^\/competence\/(requirements|share-targets)(?:\/([^/]+))?$/.exec(path);
     if (requirementPath) {
@@ -906,6 +1013,11 @@ export class MockApi {
         const body = route.request().postDataJSON() as CompetenceRequirementBody & CompetenceShareTargetBody;
         const created = `${targets ? 'target' : 'requirement'}-new-${this.requirementWrites.length + 1}`;
         this.requirementWrites.push({ method, path, body });
+        // A manager's requirement on one person (D118): the person's cell in the matrix is required by it.
+        if (!targets && body.personId) {
+          this.requirePerson(body.personId, body.typeId, created);
+          return route.fulfill({ status: 201, json: { id: created } });
+        }
         const position = positions.find(p => p.id === body.positionId),
           unit = units.find(u => u.id === body.unitId);
         if (targets)
@@ -929,6 +1041,7 @@ export class MockApi {
       }
       if (method === 'DELETE' && id) {
         this.requirementWrites.push({ method, path });
+        if (!targets) this.unrequire(id);
         if (targets) this.competenceShareTargets = this.competenceShareTargets.filter(t => t.id !== id);
         else this.competenceRequirements.rows = this.competenceRequirements.rows.filter(r => r.id !== id);
         return route.fulfill({ status: 204, body: '' });
@@ -945,9 +1058,12 @@ export class MockApi {
       this.registered.push({ personId: decodeURIComponent(registering[1]!), body });
       return route.fulfill({ status: 201, json: { id: 'holding-' + this.registered.length } });
     }
-    // Kompetens (D108): one person's holdings, the view the person's section opens.
+    // Kompetens (D108): one person's holdings, the view the person's section opens; refused while the module is off, as
+    // the registry refuses a read of a connector that is switched off.
     if (path === '/cap/competence.holdings')
-      return json({ output: holdingsOutput, source: 'Kompetens', view: holdingsSpec });
+      return this.competenceTypes
+        ? json({ output: this.competenceHoldings, source: 'Kompetens', view: holdingsSpec })
+        : route.fulfill({ status: 400, json: { error: 'Okänd förmåga.' } });
     // Utvecklingssamtal (D96): the two composites and the built-in module's writes.
     if (path === '/cap/clew.talks' || path === '/cap/clew.commitments' || path.startsWith('/talks/'))
       return this.handleTalks(route, path, url);

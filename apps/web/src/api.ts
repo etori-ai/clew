@@ -84,6 +84,8 @@ import type {
 import type {
   CompetenceHoldingBody,
   CompetenceMappingBody,
+  CompetenceMatrixInput,
+  CompetenceMatrixOutput,
   CompetenceRequirementBody,
   CompetenceRequirementsOutput,
   CompetenceShareTargetBody,
@@ -102,6 +104,7 @@ import type {
 } from '@clew/contracts';
 
 import { ApiError } from './api-error';
+import { matrixQuery } from './competence-address';
 export { ApiError };
 export interface CorrectionExecution {
   id: string;
@@ -268,6 +271,11 @@ export const api = {
     /** A manager registers a certificate for a person who reports to them. */
     register: (personId: string, body: CompetenceHoldingBody) =>
       post<{ id: string }>(`/api/competence/people/${encodeURIComponent(personId)}/holdings`, body),
+    /** The manager a person reports to takes back a holding registered in Clew; a copied one is refused. */
+    revokeHolding: (id: string) => del<void>(`/api/competence/holdings/${encodeURIComponent(id)}`),
+    /** The manager's matrix (D108 item 11): their reports against what is required of them, the set of columns `by`. */
+    matrix: (input: CompetenceMatrixInput) =>
+      call<CompetenceMatrixOutput>(`/api/competence/matrix${matrixQuery(input)}`),
     /** The systems whose holdings are copied in (D108 item 9): each one's last read and its types with their mappings. */
     sources: () => call<CompetenceSourcesOutput>('/api/competence/sources'),
     /** Maps a type of a source to a catalogue type, or removes the mapping with `typeId: null`. */

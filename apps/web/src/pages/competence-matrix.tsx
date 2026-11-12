@@ -1,0 +1,521 @@
+import { useCallback, useEffect, useRef, useState, type ComponentProps } from 'react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router';
+import { useQuery } from '@tanstack/react-query';
+import type {
+  CompetenceMatrixCell,
+  CompetenceMatrixColumn,
+  CompetenceMatrixGroup,
+  CompetenceMatrixOutput,
+  CompetenceMatrixRow,
+  SessionUser,
+} from '@clew/contracts';
+import {
+  AlertDialog,
+  ArrowDownTrayIcon,
+  Button,
+  Card,
+  EmptyState,
+  HStack,
+  Icon,
+  Layout,
+  LayoutContent,
+  Link,
+  List,
+  ListItem,
+  MoreMenu,
+  Selector,
+  Table,
+  Text,
+  VStack,
+  pixel,
+  proportional,
+  resolveColumnWidths,
+  useMediaQuery,
+  useTableStickyColumns,
+} from '@clew/ui';
+import { api } from '../api';
+import {
+  MATRIX_PATH,
+  NEW,
+  REQUIREMENT_PARAM,
+  matrixFileHref,
+  matrixHref,
+  matrixInputOf,
+  requirementHref,
+  withoutRequirement,
+} from '../competence-address';
+import { useAdminAction } from '../mutations';
+import { usePageTitle } from '../page-title';
+import { personPageFrom } from '../person-address';
+import { competenceMatrixQuery, competenceTypesQuery } from '../queries';
+import { keys } from '../query-keys';
+import { errorMessage, refused } from '../query-policy';
+import { registerHref } from '../register-address';
+import { useRail } from '../components/nav';
+import { Shell, mobileQuery, shortQuery } from '../components/shell';
+import { AsyncContent, ContentSkeleton } from '../components/loading';
+import { usePagePanel } from '../components/page-panel';
+import { panelBesideQuery } from '../components/panel';
+import { RegisterHolding } from '../components/register-holding';
+import { CellStatus, CompetenceHeader, PersonRequirementDialog, reasonWords } from './competence-parts';
+
+/** The page's column at its widest: Astryx's comparison template caps the matrix at 1440 px, less the padding. */
+const COLUMN = 1440 - 2 * 32;
+/** The page's own padding on each side of the matrix, which the matrix's least width does not count. */
+const PADDING = 32;
+const TITLE_ID = 'matris-rubrik';
+/** The pinned column of names, and each competence's column: as wide as a badge, its day and the cell's menu. */
+const PERSON_WIDTH = pixel(220),
+  CELL_WIDTH = proportional(1, { minWidth: 176 });
+/** The least width the matrix needs as a table with this many columns, as Astryx's Table works it out. */
+const matrixMinWidth = (columns: number) =>
+  resolveColumnWidths([
+    { key: 'person', width: PERSON_WIDTH },
+    ...Array.from({ length: columns }, (_, i) => ({ key: `type-${i}`, width: CELL_WIDTH })),
+  ]).tableMinWidth;
+const cellKey = (personId: string, typeId: string) => personId + '\n' + typeId;
+type MenuItems = ComponentProps<typeof MoreMenu>['items'];
+/** A write a cell's menu asks to confirm: revoking the holding that decides, or removing the requirement on the person. */
+interface Confirming {
+  kind: 'revoke' | 'requirement';
+  row: CompetenceMatrixRow;
+  column: CompetenceMatrixColumn;
+  /** The holding to revoke, or the requirement to remove. */
+  id: string;
+}
+/** What every cell needs from the page: the address it is on, its control's place, and the way to ask to confirm. */
+interface CellContext {
+  search: URLSearchParams;
+  control: (personId: string, typeId: string) => (el: HTMLButtonElement | null) => void;
+  confirm: (c: Confirming) => void;
+}
+
+/**
+ * One cell's menu (Astryx's `MoreMenu`, as a row of the `table` template carries one): titled with what requires the
+ * competence of the person, and holding what the manager can do there. "Registrera intyg" opens the registration over
+ * the page with the person and the competence in the address (`register`, `competence`); "Återkalla intyget" is offered
+ * where the holding that decides was registered in Clew, never for one copied from a source; "Ta bort kravet" where the
+ * competence is required of the person by the manager's own requirement. The trigger is the cell's control, which
+ * takes the focus back when a dialog or a confirmation opened from it closes.
+ */
+function CellMenu({
+  row,
+  column,
+  cell,
+  ctx,
+}: {
+  row: CompetenceMatrixRow;
+  column: CompetenceMatrixColumn;
+  cell: CompetenceMatrixCell;
+  ctx: CellContext;
+}) {
+  const own = cell.through.find(r => r.on === 'person' && r.requirementId)?.requirementId;
+  const items: MenuItems = [
+    {
+      type: 'section',
+      id: 'cell',
+      title: reasonWords(cell),
+      items: [
+        {
+          id: 'register',
+          label: 'Registrera intyg',
+          href: registerHref(MATRIX_PATH, row.personId, ctx.search, column.typeId),
+        },
+        ...(cell.revocable && cell.holdingId
+          ? [
+              {
+                id: 'revoke',
+                label: 'Återkalla intyget',
+                onClick: () => ctx.confirm({ kind: 'revoke', row, column, id: cell.holdingId! }),
+              },
+            ]
+          : []),
+        ...(own
+          ? [
+              {
+                id: 'requirement',
+                label: 'Ta bort kravet',
+                onClick: () => ctx.confirm({ kind: 'requirement', row, column, id: own }),
+              },
+            ]
+          : []),
+      ],
+    },
+  ];
+  return (
+    <MoreMenu
+      ref={ctx.control(row.personId, column.typeId)}
+      label={`Åtgärder: ${column.name} för ${row.name}`}
+      size="sm"
+      alignment="end"
+      presentation="adaptive"
+      items={items}
+    />
+  );
+}
+
+/** A column's heading in two lines, as Personal draws one: the competence, and its area under it. */
+const columnHeader = (c: CompetenceMatrixColumn) => (
+  <VStack gap={0}>
+    <Text weight="semibold">{c.name}</Text>
+    <Text type="supporting" weight="normal">
+      {c.area}
+    </Text>
+  </VStack>
+);
+interface TableRow extends Record<string, unknown> {
+  id: string;
+  row: CompetenceMatrixRow;
+}
+
+/**
+ * The matrix as Astryx's `table-comparison` template draws one: the people down the side in a column pinned while the
+ * competences scroll past it (`useTableStickyColumns`), one column per competence, a grid of dividers, and each cell
+ * the person's status in words with its menu.
+ */
+function MatrixTable({ data, ctx }: { data: CompetenceMatrixOutput; ctx: CellContext }) {
+  const location = useLocation();
+  const sticky = useTableStickyColumns<TableRow>({ startKeys: ['person'] });
+  return (
+    <Card padding={0}>
+      <Table<TableRow>
+        data={data.rows.map(row => ({ id: row.personId, row }))}
+        idKey="id"
+        columns={[
+          {
+            key: 'person',
+            header: 'Medarbetare',
+            width: PERSON_WIDTH,
+            renderCell: r => (
+              <Link href={personPageFrom(location.pathname, location.search, r.row.key)} weight="semibold" hasUnderline>
+                {r.row.name}
+              </Link>
+            ),
+          },
+          ...data.columns.map((c, i) => ({
+            key: `type:${c.typeId}`,
+            header: columnHeader(c),
+            width: CELL_WIDTH,
+            renderCell: (r: TableRow) => (
+              <HStack gap={2} vAlign="center" justify="between">
+                <CellStatus cell={r.row.cells[i]!} />
+                <CellMenu row={r.row} column={c} cell={r.row.cells[i]!} ctx={ctx} />
+              </HStack>
+            ),
+          })),
+        ]}
+        density="balanced"
+        dividers="grid"
+        hasHover
+        plugins={{ sticky }}
+      />
+    </Card>
+  );
+}
+
+/**
+ * The matrix where the table does not fit (a phone, and beside the panel where the table would not keep its columns'
+ * widths), as Personal draws its rows there: one person per item, their name leading to their page, and their cells as
+ * the item's content, a short list of each competence with its status and its menu.
+ */
+function MatrixList({ data, ctx }: { data: CompetenceMatrixOutput; ctx: CellContext }) {
+  const location = useLocation();
+  return (
+    <Card padding={0}>
+      <List aria-label="Medarbetare" hasDividers>
+        {data.rows.map(row => (
+          <ListItem
+            key={row.personId}
+            itemKey={row.personId}
+            align="start"
+            label={
+              <Link href={personPageFrom(location.pathname, location.search, row.key)} weight="semibold">
+                {row.name}
+              </Link>
+            }
+            description={
+              <List aria-label={`Kompetens för ${row.name}`} density="compact" edge="flush">
+                {data.columns.map((c, i) => (
+                  <ListItem
+                    key={c.typeId}
+                    align="start"
+                    label={<Text>{c.name}</Text>}
+                    description={<CellStatus cell={row.cells[i]!} />}
+                    endContent={<CellMenu row={row} column={c} cell={row.cells[i]!} ctx={ctx} />}
+                  />
+                ))}
+              </List>
+            }
+          />
+        ))}
+      </List>
+    </Card>
+  );
+}
+
+/**
+ * The choice of the columns where more competences are required than ten (D108 item 11): the sets by area, then by
+ * position, each part of a set larger than ten its own choice. A choice rewrites the address in place, as a view's own
+ * controls do, so a reload and a link show the same columns and one step back leaves the page.
+ */
+function SetChoice({ data, onChoose }: { data: CompetenceMatrixOutput; onChoose: (g: CompetenceMatrixGroup) => void }) {
+  if (!data.groups.length) return null;
+  const chosen = data.groups.findIndex(g => g.by === data.by && g.part === data.part);
+  const named = (g: CompetenceMatrixGroup) => (g.parts > 1 ? `${g.label} (${g.part} av ${g.parts})` : g.label);
+  const options = (['area', 'position'] as const)
+    .map(kind => ({
+      type: 'section' as const,
+      title: kind === 'area' ? 'Område' : 'Befattning',
+      options: data.groups.flatMap((g, i) =>
+        g.kind === kind
+          ? [
+              {
+                value: String(i),
+                label: named(g),
+                description: g.types === 1 ? '1 kompetens' : `${g.types} kompetenser`,
+              },
+            ]
+          : [],
+      ),
+    }))
+    .filter(s => s.options.length > 0);
+  return (
+    <HStack>
+      <Selector
+        label="Visa kompetenser för"
+        description={`${data.columns.length} av ${data.required} kompetenser som krävs visas.`}
+        variant="secondary"
+        options={options}
+        value={String(chosen) as never}
+        onChange={value => {
+          const g = data.groups[Number(value)];
+          if (g) onChoose(g);
+        }}
+        presentation="adaptive"
+        hasSearch={data.groups.length > 8}
+        searchPlaceholder="Sök område eller befattning"
+        emptySearchText="Inget matchar"
+      />
+    </HStack>
+  );
+}
+
+/**
+ * Medarbetarnas kompetens at `/competence/matrix` (D108 item 11, D120 item 8), the second page of the place Kompetens:
+ * the people who report to the reader against the competences required of at least one of them, built on Astryx's
+ * `table-comparison` template. It is no declared view: its columns are chosen, and a cell writes (D95 item 4). At most
+ * ten columns at a time; where more are required, the reader chooses a set by area or by position, and the set is in
+ * the address (`by`, `part`). Each cell says where the person stands in words, never by colour alone, and its menu
+ * registers a certificate with the competence chosen (`register`, `competence`), revokes a holding registered in Clew
+ * and removes the manager's own requirement on the person, each removal asked for in Astryx's confirmation first. The
+ * header adds a requirement for one person in a dialog named in the address (`requirement=new`) and downloads the
+ * matrix as shown as a file. Closing a dialog or a confirmation gives the focus back to the cell's control, or to the
+ * page's heading where the cell has gone with what was removed (D83 rule 7). The table gives way to a list where it does
+ * not fit, on a phone and beside the panel, as Personal does, so at 320 px nothing scrolls sideways; on a wider window the
+ * table scrolls sideways inside its own region, the names pinned, as the template's does.
+ */
+export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin: boolean }) {
+  usePageTitle('Medarbetarnas kompetens');
+  const mobile = useMediaQuery(mobileQuery);
+  const short = useMediaQuery(shortQuery);
+  const manager = user.role === 'manager';
+  const nav = useRail({ current: { surface: 'competence' }, admin, manager });
+  const [search] = useSearchParams();
+  const navigate = useNavigate();
+  const input = matrixInputOf(search);
+  const matrixQ = useQuery(competenceMatrixQuery(input));
+  const typesQ = useQuery(competenceTypesQuery);
+  const panel = usePagePanel({ overlayOnly: short });
+  const data = matrixQ.data;
+  const off = matrixQ.isError && refused(matrixQ.error);
+  const tableBeside = useMediaQuery(panelBesideQuery(matrixMinWidth(data?.columns.length ?? 0) + 2 * PADDING));
+  const narrow = mobile || (panel.occupied && !tableBeside);
+
+  // Each cell's control, so a dialog or a confirmation opened from it can give it the focus back.
+  const controls = useRef(new Map<string, HTMLElement>());
+  const control = useCallback(
+    (personId: string, typeId: string) => (el: HTMLButtonElement | null) => {
+      if (el) controls.current.set(cellKey(personId, typeId), el);
+      else controls.current.delete(cellKey(personId, typeId));
+    },
+    [],
+  );
+  const opener = useCallback(
+    (personId: string, typeId: string | null) =>
+      typeId ? (controls.current.get(cellKey(personId, typeId)) ?? null) : null,
+    [],
+  );
+  // The focus after a confirmation, once the page has drawn what it changed: the cell's control, or the heading when
+  // the cell has gone with the column.
+  const [focusAfter, setFocusAfter] = useState<string | null>(null);
+  useEffect(() => {
+    if (focusAfter === null) return;
+    setFocusAfter(null);
+    (controls.current.get(focusAfter) ?? document.getElementById(TITLE_ID))?.focus();
+  }, [focusAfter, data]);
+
+  const [confirming, setConfirming] = useState<Confirming | null>(null);
+  const change = useAdminAction({
+    invalidate: [keys.competenceAll, keys.entities.all, keys.viewAll],
+    toastId: 'competence:matrix',
+  });
+  const cancel = () => {
+    if (!confirming) return;
+    setConfirming(null);
+    setFocusAfter(cellKey(confirming.row.personId, confirming.column.typeId));
+  };
+  const confirm = async () => {
+    if (!confirming) return;
+    const c = confirming;
+    await change.run(async () => {
+      if (c.kind === 'revoke') await api.competence.revokeHolding(c.id);
+      else await api.competence.removeRequirement(c.id);
+      return c.kind === 'revoke'
+        ? `${c.column.name} är återkallat för ${c.row.name}.`
+        : `${c.column.name} krävs inte längre av ${c.row.name}.`;
+    });
+    // Done or refused, the confirmation lets go: a refusal is said on the page, not behind a modal.
+    setConfirming(null);
+    setFocusAfter(cellKey(c.row.personId, c.column.typeId));
+  };
+  const ctx: CellContext = {
+    search,
+    control,
+    confirm: c => {
+      change.reset();
+      setConfirming(c);
+    },
+  };
+  const choose = (g: CompetenceMatrixGroup) =>
+    navigate(matrixHref({ by: g.by, part: g.part }), { replace: true, preventScrollReset: true });
+
+  const shown = data && data.rows.length > 0 && data.columns.length > 0;
+  const actions =
+    data && !off ? (
+      <HStack gap={2} wrap="wrap">
+        {shown && (
+          <Button
+            variant="secondary"
+            label="Ladda ner som CSV"
+            icon={<Icon icon={ArrowDownTrayIcon} size="sm" />}
+            href={matrixFileHref(data.by ? { by: data.by, ...(data.part ? { part: data.part } : {}) } : {})}
+          />
+        )}
+        {data.rows.length > 0 && (
+          <Button variant="primary" label="Lägg till krav för en person" href={requirementHref(search)} />
+        )}
+      </HStack>
+    ) : undefined;
+
+  return (
+    <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
+      <Layout
+        height={short ? 'auto' : 'fill'}
+        padding={mobile ? 3 : 8}
+        end={panel.end}
+        content={
+          <LayoutContent isScrollable={!short}>
+            <VStack hAlign="center">
+              <VStack gap={5} width="100%" maxWidth={COLUMN}>
+                <CompetenceHeader
+                  title="Medarbetarnas kompetens"
+                  titleId={TITLE_ID}
+                  page="matrix"
+                  manager={manager && !off}
+                  end={actions}
+                />
+                {change.error && (
+                  <Text as="p" role="alert" color="accent">
+                    {change.error}
+                  </Text>
+                )}
+                {off ? (
+                  <Card>
+                    <EmptyState
+                      headingLevel={2}
+                      title="Medarbetarnas kompetens visas inte för dig"
+                      description={errorMessage(
+                        matrixQ.error,
+                        'Medarbetarnas kompetens visas för den som är chef för en enhet.',
+                      )}
+                      actions={<Button label="Till Mina kompetenser" href="/competence" />}
+                    />
+                  </Card>
+                ) : matrixQ.isError ? (
+                  <VStack gap={2}>
+                    <Text as="p" role="alert">
+                      {errorMessage(matrixQ.error, 'Medarbetarnas kompetens kunde inte läsas.')}
+                    </Text>
+                    <HStack>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        label="Försök igen"
+                        isLoading={matrixQ.isFetching}
+                        onClick={() => void matrixQ.refetch()}
+                      />
+                    </HStack>
+                  </VStack>
+                ) : (
+                  <AsyncContent pending={matrixQ.isPending} fallback={<ContentSkeleton heading={false} />} gap={5}>
+                    {data && data.rows.length === 0 ? (
+                      <Card>
+                        <EmptyState
+                          headingLevel={2}
+                          title="Inga medarbetare att visa"
+                          description="Här ser den som är chef för en enhet sina medarbetares kompetens. Katalogen avgör vem som är chef; be systemförvaltaren om det inte stämmer."
+                        />
+                      </Card>
+                    ) : data && data.columns.length === 0 ? (
+                      <Card>
+                        <EmptyState
+                          headingLevel={2}
+                          title="Inget krävs av dina medarbetare"
+                          description="När en befattning, en enhet eller du kräver en kompetens av någon av dem visas den här, med var var och en står."
+                        />
+                      </Card>
+                    ) : data ? (
+                      <>
+                        <SetChoice data={data} onChoose={choose} />
+                        <VStack gap={0} aria-busy={matrixQ.isPlaceholderData}>
+                          {narrow ? <MatrixList data={data} ctx={ctx} /> : <MatrixTable data={data} ctx={ctx} />}
+                        </VStack>
+                      </>
+                    ) : null}
+                  </AsyncContent>
+                )}
+              </VStack>
+            </VStack>
+          </LayoutContent>
+        }
+      />
+      {panel.overlay}
+      {/* Registrera intyg (D108 item 7), from a cell with its competence chosen; closing gives the cell its focus back. */}
+      {manager && <RegisterHolding opener={opener} />}
+      <PersonRequirementDialog
+        isOpen={!!data && !off && search.get(REQUIREMENT_PARAM) === NEW}
+        people={data?.rows ?? []}
+        catalogue={typesQ.data?.rows ?? []}
+        onClose={() => navigate(withoutRequirement(search))}
+      />
+      <AlertDialog
+        isOpen={!!confirming}
+        onOpenChange={open => {
+          if (!open) cancel();
+        }}
+        title={confirming?.kind === 'revoke' ? 'Återkalla intyget?' : 'Ta bort kravet?'}
+        description={
+          !confirming
+            ? ''
+            : confirming.kind === 'revoke'
+              ? `${confirming.column.name} för ${confirming.row.name} räknas inte längre. Intyget finns kvar, markerat som återkallat.`
+              : `${confirming.column.name} krävs inte längre av ${confirming.row.name}. Det som är registrerat ligger kvar.`
+        }
+        actionLabel={confirming?.kind === 'revoke' ? 'Återkalla intyget' : 'Ta bort kravet'}
+        cancelLabel="Avbryt"
+        isActionLoading={change.busy}
+        onAction={() => void confirm()}
+      />
+    </Shell>
+  );
+}

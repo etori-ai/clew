@@ -11,6 +11,7 @@ import {
   type AuthenticatedContext,
   type CompetenceHoldingBody,
   type CompetenceMappingBody,
+  type CompetenceMatrixInput,
   type CompetenceRequirementBody,
   type CompetenceShareTargetBody,
   type CompetenceTypeBody,
@@ -21,8 +22,9 @@ import type { CompetenceUsecases } from '../modules/competence/usecases';
 
 /**
  * The competence module's own routes (D108): the catalogue an administrator keeps, the sources whose holdings are
- * copied in and their mappings to the catalogue (item 9), the requirements and share targets (item 6), and a manager's
- * registration of a certificate. A person's holdings, what needs attention and a unit's coverage have no route here:
+ * copied in and their mappings to the catalogue (item 9), the requirements and share targets (item 6), a manager's
+ * registration of a certificate, and the manager's matrix and its file (item 11), which is no declared view because its
+ * columns are chosen and a cell writes. A person's holdings, what needs attention and a unit's coverage have no route here:
  * Clew reads `competence.holdings`, `competence.attention` and `competence.coverage` through the capability route. Each
  * route parses, validates, calls one use case and maps its errors; the use cases own who may do what. Every route first
  * refuses unless the built-in module is switched on and visible to the person, so nothing of the domain is read or
@@ -47,6 +49,8 @@ export interface CompetenceRouteDeps {
     | 'shareTargets'
     | 'addShareTarget'
     | 'removeShareTarget'
+    | 'matrix'
+    | 'exportMatrix'
   >;
   /** Whether the built-in module is on for this person now (composition: `competenceWritable`). */
   writable: (persona: AuthenticatedContext) => Promise<boolean>;
@@ -84,6 +88,19 @@ function param(value: string | undefined) {
 function connector(value: string | undefined) {
   if (!value || value.length > 80 || !/^[a-z][a-z0-9-]*$/.test(value)) throw new InputError('Ogiltig förfrågan.');
   return value;
+}
+/** The matrix's set of columns (D108 item 11): `?by=` (1 to 200 characters) and `?part=` (1 to 99), each optional. */
+function matrixInput(by: string | undefined, part: string | undefined): CompetenceMatrixInput {
+  const input: CompetenceMatrixInput = {};
+  if (by !== undefined) {
+    if (!by || by.length > 200) throw new InputError('Ogiltig förfrågan.');
+    input.by = by;
+  }
+  if (part !== undefined) {
+    if (!/^[1-9]\d?$/.test(part)) throw new InputError('Ogiltig förfrågan.');
+    input.part = Number(part);
+  }
+  return input;
 }
 /** `?months=`: a whole number of months from 1 to 600, or `none` for no rule. */
 function months(value: string | undefined): number | null {
@@ -171,6 +188,25 @@ export function competenceRoutes(deps: CompetenceRouteDeps) {
   routes.delete('/share-targets/:id', async c => {
     await competence.removeShareTarget(c.get('session').context, param(c.req.param('id')));
     return c.body(null, 204);
+  });
+  // The manager's matrix (D108 item 11), and the same as a file: the download writes its audit row.
+  routes.get('/matrix', async c =>
+    c.json(
+      await competence.matrix(c.get('session').context, matrixInput(c.req.query('by'), c.req.query('part'))),
+      200,
+      privateHeaders,
+    ),
+  );
+  routes.get('/matrix.csv', async c => {
+    const file = await competence.exportMatrix(
+      c.get('session').context,
+      matrixInput(c.req.query('by'), c.req.query('part')),
+    );
+    return c.body(file.text, 200, {
+      ...privateHeaders,
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${file.filename}"`,
+    });
   });
   routes.onError((error, c) => failure(c, error));
   return routes;

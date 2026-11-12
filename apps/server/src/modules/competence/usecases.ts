@@ -7,6 +7,8 @@ import {
   type CompetenceHoldingsInput,
   type CompetenceHoldingsOutput,
   type CompetenceMappingBody,
+  type CompetenceMatrixInput,
+  type CompetenceMatrixOutput,
   type CompetenceReadCounts,
   type CompetenceReadOutcome,
   type CompetenceRequirement,
@@ -35,6 +37,8 @@ import {
   isCalendarDay,
   leaseUntil,
   lineAbove,
+  matrixCsv,
+  matrixOf,
   needsAttention,
   nextDailyCopy,
   normaliseArea,
@@ -135,6 +139,7 @@ const BAD_SHARE = 'Ange en andel mellan 1 och 100 procent.';
 const TARGET_TAKEN = 'Det finns redan ett andelsmål för den kompetensen och befattningen där.';
 const NO_TARGET = 'Andelsmålet finns inte.';
 const NOT_YOUR_UNIT = 'Enheten finns inte bland dem du är chef för.';
+const NOT_A_MANAGER_MATRIX = 'Medarbetarnas kompetens visas för den som är chef för en enhet.';
 /**
  * A unit's coverage (D108 items 6 and 8) as the read about a unit and its table answer it: counts only, each share
  * target with its position's label and the name of the unit it is set on (null: the whole organisation).
@@ -285,6 +290,39 @@ export function competenceUsecases(deps: CompetenceDeps) {
         unitLabel: t.target.unitId === null ? null : (unitLabel.get(t.target.unitId) ?? t.target.unitId),
       })),
     };
+  }
+  /**
+   * The manager's matrix today (D108 item 11): these people, the manager's reports, against what is required of them in
+   * their organisation, with the set of columns `input` names. Read in the transaction it is given.
+   */
+  async function matrixIn(
+    tx: CompetenceTx,
+    organisationId: string,
+    people: readonly StaffPerson[],
+    today: string,
+    input: CompetenceMatrixInput,
+  ): Promise<CompetenceMatrixOutput> {
+    const personIds = people.map(p => p.id);
+    const placed = await tx.placesOf(personIds);
+    const requirements = await tx.requirements(organisationId);
+    const holdings = await tx.holdingsOf(personIds);
+    const typeIds = new Set([
+      ...holdings.flatMap(h => (h.typeId === null ? [] : [h.typeId])),
+      ...requirements.map(r => r.typeId),
+    ]);
+    const types = new Map((await tx.typesById([...typeIds])).map(t => [t.id, t]));
+    return matrixOf({
+      people: people.map(p => ({ id: p.id, name: p.name, userName: p.userName })),
+      placed,
+      requirements,
+      types,
+      holdings,
+      positions: await tx.positions(organisationId),
+      units: await tx.units(organisationId),
+      today,
+      by: input.by,
+      part: input.part,
+    });
   }
   /**
    * Add a requirement as `actor` (D108 item 6). The type must be the organisation's and not archived, and the position or
@@ -1327,6 +1365,44 @@ export function competenceUsecases(deps: CompetenceDeps) {
             rows.push({ unitId: unit.unitId, unitLabel: unit.unitLabel, ...covered });
         }
         return rows;
+      });
+    },
+
+    /**
+     * The manager's matrix (D108 item 11): the people who report to the reader now against the types required of at
+     * least one of them, at most ten columns at a time, with the sets of columns to choose from where more are required
+     * (`matrixOf`). A manager's reports only (D99 item 4); anyone who manages nobody is refused. A read, so no audit row.
+     */
+    async matrix(persona: AuthenticatedContext, input: CompetenceMatrixInput = {}): Promise<CompetenceMatrixOutput> {
+      const { manages, people } = await reports(persona);
+      if (!manages) throw new ForbiddenError(NOT_A_MANAGER_MATRIX);
+      const today = swedishDay(now());
+      return deps.store.transaction(tx => matrixIn(tx, persona.organisationId, [...people.values()], today, input));
+    },
+
+    /**
+     * The matrix as shown, as a file to download (D108 item 11): the same read as `matrix` with the same set of columns,
+     * written as CSV. It names the manager's own reports, which is what it is for; its audit row, in the same
+     * transaction, counts the people and the columns and names nobody.
+     */
+    async exportMatrix(
+      persona: AuthenticatedContext,
+      input: CompetenceMatrixInput = {},
+    ): Promise<{ filename: string; text: string }> {
+      const { manages, people } = await reports(persona);
+      if (!manages) throw new ForbiddenError(NOT_A_MANAGER_MATRIX);
+      const at = now(),
+        today = swedishDay(at);
+      return deps.store.transaction(async tx => {
+        const matrix = await matrixIn(tx, persona.organisationId, [...people.values()], today, input);
+        await tx.audit({
+          actor: persona.principal.id,
+          action: 'competence.matrix_exported',
+          subject: 'organisation:' + persona.organisationId,
+          at: at.toISOString(),
+          details: { people: matrix.rows.length, types: matrix.columns.length },
+        });
+        return { filename: `kompetens-${today}.csv`, text: matrixCsv(matrix) };
       });
     },
 

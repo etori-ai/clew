@@ -30,6 +30,8 @@ import { AdminUsersPage } from './pages/admin/users';
 import { AdminOrganisationPage } from './pages/admin/organisation';
 import { AdminOrganisationUnitPage } from './pages/admin/organisation-unit';
 import { StaffPage } from './pages/staff';
+import { CompetencePage } from './pages/competence';
+import { CompetenceMatrixPage } from './pages/competence-matrix';
 import { PersonPage } from './pages/person';
 import { UnitPage } from './pages/unit';
 import { AdminModelPage } from './pages/admin/model';
@@ -235,6 +237,15 @@ function App() {
       <Route
         path="/staff"
         element={<Protected>{shell => <StaffPage user={shell.user} admin={shell.admin} />}</Protected>}
+      />
+      {/* Kompetens (D120 item 8): the reader's own, and a manager's matrix of their reports (D108 item 11); the server checks both. */}
+      <Route
+        path="/competence"
+        element={<Protected>{shell => <CompetencePage user={shell.user} admin={shell.admin} />}</Protected>}
+      />
+      <Route
+        path="/competence/matrix"
+        element={<Protected>{shell => <CompetenceMatrixPage user={shell.user} admin={shell.admin} />}</Protected>}
       />
       {/* A person as a page (D97 item 5, D111 rule 3): a name on Personal or on any row that names them; `section` is the chosen source. */}
       <Route

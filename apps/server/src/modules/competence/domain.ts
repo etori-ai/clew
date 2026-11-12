@@ -1,10 +1,16 @@
 import { COMPETENCE_CONNECTOR } from '@clew/connectors';
 import {
+  COMPETENCE_MATRIX_COLUMNS,
   COMPETENCE_ROW_STATUSES,
   daysUntil,
   stockholmDate,
   stockholmInstant,
   type CompetenceHoldingRow,
+  type CompetenceMatrixCell,
+  type CompetenceMatrixGroup,
+  type CompetenceMatrixOutput,
+  type CompetenceMatrixReason,
+  type CompetenceMatrixStatus,
   type CompetenceStatus,
   type CompetenceType,
 } from '@clew/contracts';
@@ -13,12 +19,14 @@ import {
   type HoldingRecord,
   type PersonRef,
   type Placed,
+  type PositionRecord,
   type RequirementRecord,
   type ShareTargetRecord,
   type SourceHolding,
   type SourceReadError,
   type TreeNode,
   type TypeRecord,
+  type UnitRecord,
   type WorkflowStart,
 } from './model';
 
@@ -167,21 +175,25 @@ export const needsAttention = (standing: Pick<Standing, 'status'>) => standing.s
 export const meets = (standing: Pick<Standing, 'status'>) =>
   standing.status === 'valid' || standing.status === 'expiring';
 /**
+ * The requirements that apply to one person (D108 item 6): those set on a position they hold, on a unit they are
+ * assigned to, and on them alone.
+ */
+export function requirementsOn(person: Placed, requirements: readonly RequirementRecord[]): RequirementRecord[] {
+  const positions = new Set(person.positionIds),
+    units = new Set(person.unitIds);
+  return requirements.filter(
+    r =>
+      (r.positionId !== null && positions.has(r.positionId)) ||
+      (r.unitId !== null && units.has(r.unitId)) ||
+      r.personId === person.personId,
+  );
+}
+/**
  * The types required of one person (D108 item 6), each once: those set on a position they hold, on a unit they are
  * assigned to, and on them alone. A person with two positions is under both sets.
  */
 export function requiredOf(person: Placed, requirements: readonly RequirementRecord[]): string[] {
-  const positions = new Set(person.positionIds),
-    units = new Set(person.unitIds);
-  const typeIds = new Set<string>();
-  for (const r of requirements)
-    if (
-      (r.positionId !== null && positions.has(r.positionId)) ||
-      (r.unitId !== null && units.has(r.unitId)) ||
-      r.personId === person.personId
-    )
-      typeIds.add(r.typeId);
-  return [...typeIds];
+  return [...new Set(requirementsOn(person, requirements).map(r => r.typeId))];
 }
 /**
  * A unit with every unit below it in the tree (D99 item 5), the unit first. A unit the tree does not name is itself
@@ -416,6 +428,186 @@ export function typeRow(type: TypeRecord): CompetenceType {
     ...(type.validityMonths ? { validityMonths: type.validityMonths } : {}),
     archived: type.archivedAt !== null,
   };
+}
+
+// The manager's matrix (D108 item 11).
+
+/** A report as the matrix names them: Clew's id, their name, and the user name another system knows them by. */
+export interface MatrixPerson {
+  id: string;
+  name: string;
+  userName: string | null;
+}
+/** One set of columns the matrix offers, with the types it holds in the order they are drawn. */
+interface MatrixSet extends CompetenceMatrixGroup {
+  typeIds: string[];
+}
+/** `items` in consecutive runs of at most `size`. */
+const runs = <T>(items: readonly T[], size: number): T[][] =>
+  Array.from({ length: Math.ceil(items.length / size) }, (_, i) => items.slice(i * size, (i + 1) * size));
+/** The order the reasons of a cell are listed in: positions, then units, then the person's own, each by name. */
+const REASON_ORDER = ['position', 'unit', 'person'] as const;
+/**
+ * The manager's matrix (D108 item 11): each report (`people`, every one of them, by name) against the types required
+ * of at least one of them, at most `COMPETENCE_MATRIX_COLUMNS` columns at a time. A required type that is archived or
+ * unknown is required of nobody, so it is no column. Where more types are required than fit, the reader chooses a set:
+ * the required types of one area, or those a requirement on one position asks for, of every position a report holds; a
+ * set larger than ten is shown in parts of ten. `by` and `part` name the set (an unknown one, or none, is the first, the
+ * first area). Each cell says where the person stands (the holding that decides, as `deciding` works it out, or
+ * `missing` where the type is required of them and nothing counts, or `none` where it is neither held nor required),
+ * what requires it of them, and whether the reader may revoke the holding: one registered in Clew may be, one copied
+ * from a source never (D108 item 9).
+ */
+export function matrixOf(input: {
+  people: readonly MatrixPerson[];
+  placed: readonly Placed[];
+  requirements: readonly RequirementRecord[];
+  types: ReadonlyMap<string, TypeRecord>;
+  holdings: readonly HoldingRecord[];
+  positions: readonly PositionRecord[];
+  units: readonly UnitRecord[];
+  today: string;
+  by?: string | undefined;
+  part?: number | undefined;
+}): CompetenceMatrixOutput {
+  const live = (typeId: string) => {
+    const type = input.types.get(typeId);
+    return type && type.archivedAt === null ? type : undefined;
+  };
+  const placed = new Map(input.placed.map(p => [p.personId, p]));
+  const placeOf = (personId: string): Placed => placed.get(personId) ?? { personId, unitIds: [], positionIds: [] };
+  /** The requirements on a type that is not archived, that apply to each person. */
+  const applying = new Map(
+    input.people.map(p => [p.id, requirementsOn(placeOf(p.id), input.requirements).filter(r => live(r.typeId))]),
+  );
+  const required = new Map([...applying].map(([id, rs]) => [id, [...new Set(rs.map(r => r.typeId))]]));
+  const all = orderTypes([...new Set([...required.values()].flat())].map(id => live(id)!));
+  const positionLabel = new Map(input.positions.map(p => [p.id, p.label])),
+    unitLabel = new Map(input.units.map(u => [u.id, u.label]));
+
+  const sets: MatrixSet[] = [];
+  let shown = all,
+    chosen: MatrixSet | undefined;
+  if (all.length > COMPETENCE_MATRIX_COLUMNS) {
+    const split = (by: string, kind: MatrixSet['kind'], label: string, types: readonly TypeRecord[]) =>
+      runs(types, COMPETENCE_MATRIX_COLUMNS).map((run, i, parts): MatrixSet => ({
+        by,
+        part: i + 1,
+        parts: parts.length,
+        kind,
+        label,
+        types: run.length,
+        typeIds: run.map(t => t.id),
+      }));
+    // `all` is in the catalogue's order, by area first, so its areas come in Swedish order.
+    for (const area of new Set(all.map(t => t.area)))
+      sets.push(
+        ...split(
+          'area:' + area,
+          'area',
+          area,
+          all.filter(t => t.area === area),
+        ),
+      );
+    const held = [...new Set(input.people.flatMap(p => placeOf(p.id).positionIds))]
+      .filter(id => positionLabel.has(id))
+      .sort((a, b) => sv(positionLabel.get(a)!, positionLabel.get(b)!) || a.localeCompare(b));
+    for (const positionId of held) {
+      const asked = new Set(input.requirements.filter(r => r.positionId === positionId).map(r => r.typeId));
+      const types = all.filter(t => asked.has(t.id));
+      if (types.length)
+        sets.push(...split('position:' + positionId, 'position', positionLabel.get(positionId)!, types));
+    }
+    chosen =
+      sets.find(s => s.by === input.by && s.part === (input.part ?? 1)) ??
+      sets.find(s => s.by === input.by) ??
+      sets[0]!;
+    const ids = new Set(chosen.typeIds);
+    shown = all.filter(t => ids.has(t.id));
+  }
+
+  const standings = deciding(input.holdings, input.types, input.today, required);
+  const at = new Map(standings.map(s => [s.personId + '\n' + s.type.id, s]));
+  const reason = (r: RequirementRecord): CompetenceMatrixReason =>
+    r.positionId !== null
+      ? { on: 'position', label: positionLabel.get(r.positionId) ?? r.positionId }
+      : r.unitId !== null
+        ? { on: 'unit', label: unitLabel.get(r.unitId) ?? r.unitId }
+        : { on: 'person', requirementId: r.id };
+  const cell = (personId: string, typeId: string): CompetenceMatrixCell => {
+    const through = applying
+      .get(personId)!
+      .filter(r => r.typeId === typeId)
+      .map(reason)
+      .sort(
+        (a, b) =>
+          REASON_ORDER.indexOf(a.on) - REASON_ORDER.indexOf(b.on) ||
+          sv(a.label ?? '', b.label ?? '') ||
+          (a.requirementId ?? '').localeCompare(b.requirementId ?? ''),
+      );
+    const standing = at.get(personId + '\n' + typeId);
+    const required = through.length > 0;
+    if (!standing) return { typeId, status: 'none', required, through, revocable: false };
+    if (standing.holding === null) return { typeId, status: 'missing', required, through, revocable: false };
+    return {
+      typeId,
+      status: standing.status,
+      ...(standing.end ? { expiresOn: standing.end } : {}),
+      required,
+      through,
+      holdingId: standing.holding.id,
+      evidence: standing.holding.evidence,
+      revocable: standing.holding.evidence !== 'system',
+    };
+  };
+  const rows = [...input.people]
+    .sort((a, b) => sv(a.name, b.name) || a.id.localeCompare(b.id))
+    .map(p => ({ personId: p.id, key: personKey(p), name: p.name, cells: shown.map(t => cell(p.id, t.id)) }));
+  return {
+    ...(chosen ? { by: chosen.by, part: chosen.part } : {}),
+    groups: sets.map(({ typeIds: _typeIds, ...group }) => group),
+    columns: shown.map(t => ({ typeId: t.id, name: t.name, area: t.area, kind: t.kind })),
+    rows,
+    required: all.length,
+  };
+}
+
+/** A cell of the matrix's file in words a person reads, the dates as `YYYY-MM-DD` so a spreadsheet can sort them. */
+const CSV_WORDS: Record<CompetenceMatrixStatus, string> = {
+  expired: 'Utgånget',
+  missing: 'Saknas',
+  expiring: 'Går ut snart',
+  valid: 'Giltigt',
+  none: 'Krävs inte',
+};
+export function matrixCellText(cell: Pick<CompetenceMatrixCell, 'status' | 'expiresOn' | 'required'>): string {
+  const word =
+    cell.status === 'valid' && cell.expiresOn
+      ? `Giltigt till ${cell.expiresOn}`
+      : cell.expiresOn && (cell.status === 'expired' || cell.status === 'expiring')
+        ? `${CSV_WORDS[cell.status]} ${cell.expiresOn}`
+        : CSV_WORDS[cell.status];
+  return !cell.required && cell.status !== 'none' ? `${word} (krävs inte)` : word;
+}
+/**
+ * One field of the file: a value a spreadsheet would read as a formula (`=`, `+`, `-`, `@`, a tab or a return first)
+ * is kept as text with a quote before it, and one with a separator, a quote or a line break is quoted.
+ */
+function csvField(value: string): string {
+  const text = /^[=+\-@\t\r]/.test(value) ? "'" + value : value;
+  return /[";\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+}
+/**
+ * The matrix as shown, as a file (D108 item 11): a heading row of "Namn" and the columns' names, then one row per
+ * person with their name and each cell in words. Separated by semicolons with a byte order mark and CRLF line ends,
+ * which a spreadsheet set up for Swedish opens as columns with å, ä and ö intact.
+ */
+export function matrixCsv(matrix: Pick<CompetenceMatrixOutput, 'columns' | 'rows'>): string {
+  const lines = [
+    ['Namn', ...matrix.columns.map(c => c.name)],
+    ...matrix.rows.map(r => [r.name, ...r.cells.map(matrixCellText)]),
+  ];
+  return '﻿' + lines.map(line => line.map(csvField).join(';')).join('\r\n') + '\r\n';
 }
 
 // The copy of what sources hold (D108 item 9).

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { CompetenceType } from '@clew/contracts';
@@ -8,7 +8,7 @@ import { api } from '../api';
 import { useAdminAction } from '../mutations';
 import { competenceTypesQuery, staffQuery } from '../queries';
 import { keys } from '../query-keys';
-import { registerOf, withoutRegister } from '../register-address';
+import { registerOf, registerTypeOf, withoutRegister } from '../register-address';
 import { DialogFrame } from './dialog-frame';
 import { mobileQuery } from './shell';
 
@@ -19,6 +19,10 @@ import { mobileQuery } from './shell';
  * with the focus on what opened it, which Astryx gives back. The way in is the page the competence module declares on
  * its read about a person (D97): "Registrera intyg" in the person's Kompetens section. The server computes where the holding stands; the form
  * only says what the certificate says.
+ *
+ * On the matrix (D108 item 11) a cell opens it for its person and its type (`?competence=<typeId>`), which the form
+ * starts on and the person may change; closing it gives the focus to the cell's own control (`opener`), since the menu
+ * row it was opened from is gone by then.
  *
  * The date fields take any day: a field that refused a day would drop what was typed without a word, and the form
  * would then register a certificate without the end date the person meant. A day that has not come, or an end before
@@ -38,12 +42,18 @@ const options = (types: CompetenceType[]) => {
 };
 const months = (n: number) => (n % 12 === 0 ? `${n / 12} år` : `${n} månader`);
 
-export function RegisterHolding() {
+export function RegisterHolding({
+  opener,
+}: {
+  /** The control on the page that opened the form for this person and type, which takes the focus when it closes. */
+  opener?: (personId: string, typeId: string | null) => HTMLElement | null;
+} = {}) {
   const mobile = useMediaQuery(mobileQuery);
   const [search] = useSearchParams();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const personId = registerOf(search);
+  const preset = registerTypeOf(search);
   // Read only when the address names someone: the people the reader manages, as the talk drawer reads them, and the
   // catalogue, which is refused (null) while the module is off for the reader.
   const staffQ = useQuery({ ...staffQuery, enabled: !!personId });
@@ -53,8 +63,13 @@ export function RegisterHolding() {
   // Nobody is named unless there is something to register: with the module off, or an empty catalogue, the address
   // opens nothing.
   const person = personId && types.length ? people.find(p => p.id === personId) : undefined;
-  const action = useAdminAction({ invalidate: [keys.entities.all, keys.viewAll], toastId: 'competence:register' });
-  const [typeId, setTypeId] = useState<string | undefined>(undefined);
+  const action = useAdminAction({
+    invalidate: [keys.entities.all, keys.viewAll, keys.competenceAll],
+    toastId: 'competence:register',
+  });
+  // The type the person chose; until they choose, the one the address starts on, while it can be registered.
+  const [picked, setTypeId] = useState<string | undefined>(undefined);
+  const typeId = picked ?? (preset && types.some(t => t.id === preset) ? preset : undefined);
   const [issuedOn, setIssuedOn] = useState<string | undefined>(undefined);
   const [expiresOn, setExpiresOn] = useState<string | undefined>(undefined);
   const [tried, setTried] = useState(false);
@@ -100,6 +115,27 @@ export function RegisterHolding() {
   const onOpenChange = (open: boolean) => {
     if (!open) close();
   };
+  // Astryx gives the focus back to what had it when the form opened. Opened from a menu's row, that is gone once the
+  // form closes, so the page's own control for this person and type takes it (`opener`) once the dialog has closed.
+  const openerRef = useRef(opener);
+  openerRef.current = opener;
+  const shown = useRef<{ personId: string; typeId: string | null } | null>(null);
+  useEffect(() => {
+    if (person) shown.current = { personId: person.id, typeId: preset };
+  }, [person?.id, preset]);
+  const [dialog, setDialog] = useState<HTMLDialogElement | null>(null);
+  const frame = useCallback((el: HTMLDivElement | null) => setDialog(el?.closest('dialog') ?? null), []);
+  useEffect(() => {
+    if (!dialog) return;
+    const closed = () => {
+      const cell = shown.current;
+      shown.current = null;
+      if (cell && openerRef.current)
+        requestAnimationFrame(() => openerRef.current?.(cell.personId, cell.typeId)?.focus());
+    };
+    dialog.addEventListener('close', closed);
+    return () => dialog.removeEventListener('close', closed);
+  }, [dialog]);
   return (
     <Dialog
       isOpen={!!person}
@@ -130,7 +166,7 @@ export function RegisterHolding() {
           </>
         }
       >
-        <VStack gap={3}>
+        <VStack gap={3} ref={frame}>
           <FormLayout direction="vertical" defaultOptionality="required">
             <Selector
               ref={typeField}
