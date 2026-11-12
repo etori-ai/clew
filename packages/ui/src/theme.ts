@@ -63,6 +63,12 @@ const clewBaseTheme = defineTheme({
   // By the pointer, not the width: a narrow window on a computer keeps its compact controls, a tablet does not.
   adaptations: {
     rules: [
+      // On a phone the page title is 24 px on a 32 px line (D115): Raleway at 800 is wide, and at the desktop's size a
+      // title and its controls (the calendar's week, Förslag and Ny bokning) no longer shared a line.
+      {
+        when: { width: { below: 'md' } },
+        value: { tokens: { '--text-heading-1-size': '1.5rem', '--text-heading-1-leading': '1.3333' } },
+      },
       {
         when: { pointer: 'coarse' },
         value: {
