@@ -1,5 +1,11 @@
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { SCIM_EMPLOYMENT_SCHEMA } from '@clew/contracts';
+import {
+  SCIM_EMPLOYMENT_SCHEMA,
+  type Capability as ClewCapability,
+  type DirectoryPhone as ClewPhone,
+  type Employment as ClewEmployment,
+} from '@clew/contracts';
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { scimUsecases, staffUsecases } from '../../apps/server/src/modules/people/usecases';
@@ -10,8 +16,11 @@ import {
   developmentDirectory,
   developmentScope,
   fullName,
+  type Capability,
   type Directory,
   type DirectoryPerson,
+  type DirectoryPhone,
+  type Employment,
 } from '../../scripts/provisioner/directory';
 import { plan, push as reconcile, type PushOptions } from '../../scripts/provisioner/push';
 
@@ -697,6 +706,80 @@ describe('the synthetic provisioner', () => {
         employments: [{ unitId: 'a', title: 'Rektor' }],
       });
       expect(store.state.grants.get(held('cia.ny').id)).toMatchObject({ unitId: 'a' });
+    });
+  });
+  describe('one row the source has wrong, and a second writer (the review of users and the organisation, 2026-11-12)', () => {
+    test('the check counts the active people in a group, and warns of who has left still holding a duty or a plain group, and of a capability outside the list (D85, D96)', async () => {
+      const { store, client, app } = stack();
+      // A provisioner that only deactivates: who leaves stays in every group they were in.
+      const person = async (userName: string) =>
+        (
+          await client.request('POST', '/Users', {
+            externalId: 'e-' + userName,
+            userName,
+            displayName: userName,
+            emails: [{ value: userName + '@clew.test', type: 'work' }],
+          })
+        ).body.id as string;
+      const chef = await person('chef'),
+        former = await person('former'),
+        gone = await person('gone');
+      const group = (externalId: string, ...members: string[]) =>
+        client.request('POST', '/Groups', {
+          externalId,
+          displayName: externalId,
+          members: members.map(value => ({ value })),
+        });
+      await group('unit:skola', chef);
+      await group('unit-manager:skola', chef, former);
+      await group('unit:kansli', former);
+      await group('capability:admin.users', former);
+      await group('ad:nyhetsbrev', gone, chef);
+      for (const id of [former, gone]) await client.request('DELETE', '/Users/' + id);
+      // A capability name outside the closed list, stored before the server began refusing it (D96).
+      store.state.groups.set('legacy', {
+        id: 'legacy',
+        organisationId: 'poc',
+        parentUnitId: null,
+        externalId: 'capability:admin.everything',
+        label: 'Stored before D96',
+        createdAt: '2026-11-09T06:00:00.000Z',
+        updatedAt: '2026-11-09T06:00:00.000Z',
+      });
+      const findings = await checkProvisioning('http://clew.local', client, (input, init) => app.request(input, init));
+      expect(findings.filter(f => f.level === 'ok').map(f => f.text)).toContain(
+        '6 groups: 2 unit, 1 unit-manager, 1 capability, 1 plain (0 without an externalId) and 1 with a key written wrong.',
+      );
+      expect(findings.filter(f => f.level === 'warn').map(f => f.text)).toEqual([
+        '1 unit or unit-manager group has no active members: unit:kansli.',
+        '1 deactivated user is still in unit-manager: or capability: groups, and making the user active again gives those duties back at once: former (unit-manager:skola, capability:admin.users).',
+        '1 deactivated user is still in plain groups, and a group an administrator maps to a capability gives it back when the user is made active again: gone.',
+        "1 group carries a key that is written wrong and gives nobody anything: 'capability:admin.everything'.",
+      ]);
+    });
+    test("the example declares the shapes Clew reads, and takes nothing of Clew's but the group keys and the capability names", () => {
+      // Held by the type checker: a shape that parts from Clew's contracts fails `bun run typecheck`.
+      type Same<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+      const same: [
+        Same<DirectoryPhone, ClewPhone>,
+        Same<Employment, ClewEmployment>,
+        Same<Capability, ClewCapability>,
+      ] = [true, true, true];
+      expect(same).toEqual([true, true, true]);
+      // A copy of the folder runs with one file of Clew's beside it, and that file imports nothing.
+      const imports = (file: URL) =>
+        [...readFileSync(file, 'utf8').matchAll(/\bfrom\s+'([^']+)'|\bimport\s*\(\s*'([^']+)'/g)].map(
+          match => match[1] ?? match[2],
+        );
+      const folder = new URL('../../scripts/provisioner/', import.meta.url);
+      for (const file of readdirSync(folder))
+        expect([
+          file,
+          imports(new URL(file, folder)).filter(
+            specifier => !specifier!.startsWith('./') && specifier !== '../../packages/contracts/src/scim-group-key',
+          ),
+        ]).toEqual([file, []]);
+      expect(imports(new URL('../../packages/contracts/src/scim-group-key.ts', import.meta.url))).toEqual([]);
     });
   });
   test("an account name given to somebody new is moved off the leaver's row first, whether the source keeps that row or not, and two people may swap", async () => {
