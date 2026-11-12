@@ -19,6 +19,7 @@ file as they stood there and have not been checked against the code since.
 | Does a view about one person count as "inside the source system" for the rule that names stay out of pushed text? | 2026-11-03 | Same |
 | Notifications: read and unread, retention, and kinds other than reminders and important links. | 2026-11-05 | [D39](../decisions/D39-compact-header-profile-and-reminders.md) |
 | May a person switch between several assignments, and how? | 2026-11-09 | Identity, [D68](../decisions/D68-people-are-pushed-into-clew-through-standard-scim.md) |
+| Does a person need several titles, and does a title belong to a placement on a unit with a period of its own (specialpedagog and utvecklingsledare on the same school, an acting manager for a month)? One title on the person is built. Waits for the review of how Clew describes people, positions and manager responsibility, and for what Metakatalogen can deliver: stable assignment ids, title codes, periods. | 2026-11-11 | [D110](../decisions/D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md) |
 | May Clew hold the `protected` fact at all, and where must it stay out? | 2026-11-09 | Same |
 | Which claim does the production identity provider carry for the account name (`OIDC_BINDING_CLAIM`)? | 2026-11-09 | Same |
 | Are people who should not be able to sign in pushed at all? Everyone pushed gets an account. | 2026-11-09 | Same |

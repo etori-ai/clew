@@ -44,6 +44,8 @@ export const ScimUserInputSchema = Type.Object(
       ),
     ),
     emails: Type.Optional(Type.Array(ScimEmailSchema)),
+    // D110: optional, and never a reason to refuse a person, so any value passes the schema and `titleOf` reads it.
+    title: Type.Optional(Type.Unknown()),
     active: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: true },
@@ -132,6 +134,7 @@ export interface ScimUser {
   displayName: string;
   name: { formatted: string };
   emails: Array<{ value: string; type: 'work'; primary: true }>;
+  title?: string;
   active: boolean;
   groups: Array<{ value: string; display: string; $ref: string }>;
   meta: ScimMeta;

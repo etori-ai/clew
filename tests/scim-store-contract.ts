@@ -28,6 +28,7 @@ export const userRow = (id: string, organisationId: string, extra: Partial<UserR
   userName: 'u:' + id,
   name: 'Name ' + id,
   email: id + '@example.test',
+  title: null,
   enabled: true,
   createdAt: T,
   updatedAt: T,
@@ -89,9 +90,17 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
           name: 'Renamed',
           enabled: false,
           userName: 'u:' + a,
+          title: null,
           updatedAt: '2026-11-09T07:00:00.000Z',
           createdAt: T,
         });
+        // D110: a title is set and cleared like any other field, and an update that does not name it leaves it.
+        await tx.updateUser(a, { title: 'Byggchef', updatedAt: '2026-11-09T08:00:00.000Z' });
+        await tx.updateUser(a, { name: 'Renamed again', updatedAt: '2026-11-09T08:00:00.000Z' });
+        expect((await tx.readUser(p + '-org', a))?.title).toBe('Byggchef');
+        expect((await tx.findUser('externalId', 'ext:' + a))?.title).toBe('Byggchef');
+        await tx.updateUser(a, { title: null, updatedAt: '2026-11-09T09:00:00.000Z' });
+        expect((await tx.readUser(p + '-org', a))?.title).toBeNull();
       });
       // The unique indexes hold without regard to case for userName, as the use case's own check does.
       await expect(
@@ -403,7 +412,9 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
       await h.store.transaction(async tx => {
         await tx.insertUser(userRow(anna, org, { name: 'Anna Berg', userName: p + '.ANNBER' }));
         await tx.insertUser(userRow(bo, org, { name: 'Bo Av', enabled: false }));
-        await tx.insertUser(userRow(zara, org, { name: 'Zara Öst', email: 'zara@skola.' + p + '.test' }));
+        await tx.insertUser(
+          userRow(zara, org, { name: 'Zara Öst', email: 'zara@skola.' + p + '.test', title: 'Biträdande rektor' }),
+        );
         await tx.insertUser(userRow(ake, org, { name: 'Åke 100% Lind' }));
         await tx.insertUser(userRow(orjan, org, { name: 'Örjan Ek', userName: null, email: null }));
         await tx.insertUser(userRow(other, p + '-elsewhere', { name: 'Anna Annan' }));
@@ -440,7 +451,7 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
           total: 1,
           rows: [],
         });
-        // Words: each one somewhere in the name, the user name or the e-mail, without regard to case, å included.
+        // Words: each one somewhere in the name, the title, the user name or the e-mail, without regard to case, å included.
         expect(await found({ words: ['BERG'] })).toEqual([anna]);
         expect(await found({ words: ['åke'] })).toEqual([ake]);
         expect(await found({ words: ['ÖST'] })).toEqual([zara]);
@@ -448,6 +459,10 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         expect(await found({ words: ['anna', 'öst'] })).toEqual([]);
         expect(await found({ words: [p + '.annber'] })).toEqual([anna]);
         expect(await found({ words: ['skola.' + p] })).toEqual([zara]);
+        // The title is one of the places a word is looked for (D110), å, ä and ö without regard to case there too.
+        expect(await found({ words: ['REKTOR'] })).toEqual([zara]);
+        expect(await found({ words: ['BITRÄDANDE', 'zara'] })).toEqual([zara]);
+        expect((await tx.searchUsers(org, { words: ['rektor'] }, every)).rows[0]?.title).toBe('Biträdande rektor');
         // A word is matched as written: a per cent sign is a per cent sign.
         expect(await found({ words: ['%'] })).toEqual([ake]);
         expect(await found({ words: ['100%'] })).toEqual([ake]);

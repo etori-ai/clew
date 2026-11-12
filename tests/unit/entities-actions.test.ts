@@ -40,6 +40,7 @@ function directory() {
       userName,
       name,
       email: null,
+      title: null,
       enabled: id !== 'bo',
       createdAt: T,
       updatedAt: T,

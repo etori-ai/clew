@@ -41,6 +41,9 @@ export const people = pgTable(
     externalId: text('external_id'),
     userName: text('user_name'),
     email: text('email'),
+    // D110: what the source calls the person's work, SCIM's `title`. Optional, shown and searched, never read for
+    // authority.
+    title: text('title'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

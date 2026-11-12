@@ -35,6 +35,7 @@ function directory(extra: { onSkola?: Person[] } = {}) {
       userName: p.userName,
       name: p.name,
       email: null,
+      title: null,
       enabled: p.enabled ?? true,
       createdAt: T,
       updatedAt: T,

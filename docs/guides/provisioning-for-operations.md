@@ -65,6 +65,7 @@ It does two things ([D109](../decisions/D109-a-provisioner-sends-a-change-when-i
 |---|---|---|---|
 | Each unit: id, name, id of the unit above | A group with the key `unit:<id>`, the name and its `parent`. A unit nobody is placed on, such as a heading over several departments, is sent as well. | `unit:100` Kommunen, `unit:110` Utbildning with parent `unit:100` | Yes |
 | Each person: stable id, account name, name, work address, whether they are active | A user with `externalId`, `userName`, `displayName`, `emails` and `active` | `e-1001`, `anna.berg`, Anna Berg, `anna.berg@example.org`, `true` | Send all five. On creation or full replacement Clew defaults `active` to `true` if omitted. |
+| Each person's title, where the source has one | The same user's `title`, in the source's own words | Anna is Skolchef, Omar Rektor, Lena Lärare | No. It is shown under the person's name and decides nothing: who is a manager comes from the manager group below. A title Clew cannot read is left out and never refuses the person. |
 | Where each person works | Membership of the group `unit:<id>` of that unit | Lena is a member of `unit:111` | Yes: a person with no unit exists and can do nothing |
 | Who leads each unit | Membership of the group `unit-manager:<id>` of that unit. Once, on the unit they lead; not on every unit below it. | Anna is a member of `unit:110` and of `unit-manager:110` | Yes, for anybody who is to see their reports |
 | Who administers Clew | A group with the key `capability:<name>`, such as `capability:admin.users`. Or any directory group, which an administrator then maps to a capability in Clew. | Anna is a member of `capability:admin.users` | At least one person with `admin.users`, or nobody can administer the installation |
@@ -118,8 +119,8 @@ function group(key, label, members = [], parent) {
     ...(parent && { [unit]: { parent } }),
   });
 }
-function person(externalId, userName, displayName) {
-  return create('/Users', { schemas: [core + 'User'], externalId, userName, displayName,
+function person(externalId, userName, displayName, title) {
+  return create('/Users', { schemas: [core + 'User'], externalId, userName, displayName, title,
     emails: [{ type: 'work', value: userName + '@example.org' }], active: true });
 }
 function place(groupId, ...users) {
@@ -131,9 +132,9 @@ await group('unit:100', 'Kommunen');
 const education = await group('unit:110', 'Utbildning', [], 'unit:100');
 const school = await group('unit:111', 'Centralskolan', [], 'unit:110');
 await group('unit:112', 'Skolbiblioteket', [], 'unit:110');
-const anna = await person('e-1001', 'anna.berg', 'Anna Berg');
-const omar = await person('e-1002', 'omar.ali', 'Omar Ali');
-const lena = await person('e-1003', 'lena.holm', 'Lena Holm');
+const anna = await person('e-1001', 'anna.berg', 'Anna Berg', 'Skolchef');
+const omar = await person('e-1002', 'omar.ali', 'Omar Ali', 'Rektor');
+const lena = await person('e-1003', 'lena.holm', 'Lena Holm', 'Lärare');
 await place(education, anna);
 await place(school, omar, lena);
 await group('unit-manager:110', 'Chefer Utbildning', [anna]);

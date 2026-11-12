@@ -844,7 +844,7 @@
       "number": 68,
       "path": "docs/decisions/D68-people-are-pushed-into-clew-through-standard-scim.md",
       "title": "D68 · People are pushed into Clew through standard SCIM, and mapping happens outside Clew",
-      "status": "accepted, built 2026-11-09 (the SCIM server, the derivation, the synthetic provisioner, binding at first login, Administration › Användare); the group keys are proposed until a real provisioner has used them; item 2 amended by D85 (2026-11-09): capabilities are mapped from groups in Clew, units and manager roles keep these keys; amended by D99 (2026-11-10): units form a tree, a `unit:` group names the unit above it and the provisioner no longer flattens a hierarchy; item 4 amended by D109 (2026-11-11): a provisioner sends a change when it happens, and the daily run is the reconciliation under it",
+      "status": "accepted, built 2026-11-09 (the SCIM server, the derivation, the synthetic provisioner, binding at first login, Administration › Användare); the group keys are proposed until a real provisioner has used them; item 2 amended by D85 (2026-11-09): capabilities are mapped from groups in Clew, units and manager roles keep these keys; amended by D99 (2026-11-10): units form a tree, a `unit:` group names the unit above it and the provisioner no longer flattens a hierarchy; item 4 amended by D109 (2026-11-11): a provisioner sends a change when it happens, and the daily run is the reconciliation under it; amended by [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md) (2026-11-11, provisional): a user has a sixth attribute, the optional `title`, which is shown and searched and decides nothing",
       "date": "2026-11-06",
       "area": "identity"
     },
@@ -1123,7 +1123,7 @@
       "number": 97,
       "path": "docs/decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md",
       "title": "D97 · A source says what its rows are about, and Clew places them",
-      "status": "accepted as the direction (product owner, 2026-11-10), built 2026-11-10 (see \"As built\"); the items under \"Open\" were taken provisionally for the build and are not decided; the placement of a person's action in its source's section (amended 2026-11-11) replaced by [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) item 5 (2026-11-11: every action in the page's header)",
+      "status": "accepted as the direction (product owner, 2026-11-10), built 2026-11-10 (see \"As built\"); the items under \"Open\" were taken provisionally for the build and are not decided; the placement of a person's action in its source's section (amended 2026-11-11) replaced by [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) item 5 (2026-11-11: every action in the page's header); item 9 amended by [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md) (2026-11-11, provisional: a person's title is one line Clew holds, pushed as SCIM's `title`; phone and employment facts are still read from their source)",
       "date": "2026-11-10",
       "area": "integrations, ui"
     },
@@ -1263,8 +1263,17 @@
       "area": "identity"
     },
     {
-      "key": "D111-where-something-opens-is-decided-by-what-it-is",
+      "key": "D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role",
       "number": 110,
+      "path": "docs/decisions/D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md",
+      "title": "D110 · A person's title is pushed as SCIM's `title` and kept apart from the role",
+      "status": "provisional (product owner, 2026-11-11: the user list should say what a person is called at work, and that is another fact than manager or employee; built against the freeze on new surface on his word), built 2026-11-11; one title per person and the standard attribute are choices made in the build and stand until he says otherwise; accepted once a real directory has pushed titles; no manual screen-reader pass yet",
+      "date": "2026-11-11",
+      "area": "identity, ui"
+    },
+    {
+      "key": "D111-where-something-opens-is-decided-by-what-it-is",
+      "number": 111,
       "path": "docs/decisions/D111-where-something-opens-is-decided-by-what-it-is.md",
       "title": "D111 · Where something opens is decided by what it is, never by the page it was clicked on",
       "status": "provisional (accepted when the rules have been used by people outside the repository: a manager on Personal and one connector author placing a view and a card from the author's page alone); rule 7 (\"no control chooses a surface\") and the panel's header replaced by [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) (2026-11-11: \"Öppna som sida\" is back and the panel holds the thing with the conversation about it); rules 1, 4, 6 and 8 stand, and rule 2 stands with D112's panel",
@@ -1273,7 +1282,7 @@
     },
     {
       "key": "D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel",
-      "number": 111,
+      "number": 112,
       "path": "docs/decisions/D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md",
       "title": "D112 · The interface is rebuilt on Astryx's templates: a queue, one detail shape, and one panel with the assistant in it",
       "status": "provisional (accepted when a manager has done a day's work in it and one connector author has declared an action that asks for input from the author's page alone)",
@@ -1823,6 +1832,12 @@
     {
       "path": "docs/decisions/D11-one-calendar-contract-two-adapters.md",
       "title": "D11 · One calendar contract, CalDAV and Microsoft 365 as adapters",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md",
+      "title": "D110 · A person's title is pushed as SCIM's `title` and kept apart from the role",
       "category": "decision-history",
       "headings": []
     },

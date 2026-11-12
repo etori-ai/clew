@@ -2206,6 +2206,8 @@ export interface UserAdminRow {
   userName: string | null;
   externalId: string | null;
   email: string | null;
+  /** D110: the person's title as the source words it; null when the source sent none. */
+  title: string | null;
   enabled: boolean;
   /** An identity binding exists, so the person has signed in (or was bound by the development seed). */
   bound: boolean;

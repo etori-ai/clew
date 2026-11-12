@@ -162,9 +162,9 @@ export const bySwedish = (a: string, b: string) => a.localeCompare(b, 'sv');
 /**
  * D100: what the people list of Administration › Användare is narrowed by, as a store reads it. Every part narrows
  * further and an absent part narrows nothing. `words` each match, without regard to case, somewhere in the name, the
- * user name or the e-mail. `unitIds` is an assignment on one of the units, `role` an assignment with that role, and
- * the two together one assignment that is both. `status` is the row's reading of access (`UserStatus`), `capability`
- * a capability on the grant.
+ * title (D110), the user name or the e-mail. `unitIds` is an assignment on one of the units, `role` an assignment
+ * with that role, and the two together one assignment that is both. `status` is the row's reading of access
+ * (`UserStatus`), `capability` a capability on the grant.
  */
 export interface UserSearch {
   words?: readonly string[];
@@ -277,6 +277,8 @@ export interface UserRecord {
   userName: string | null;
   name: string;
   email: string | null;
+  /** D110: the person's title as the source words it; null when the source sent none. */
+  title: string | null;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -293,12 +295,13 @@ export interface GroupRecord {
   createdAt: string;
   updatedAt: string;
 }
-/** The fields a provisioner sets on a person; D68 requires every one of them. */
+/** The fields a provisioner sets on a person; D68 requires every one of them but the title, which is optional (D110). */
 export interface UserFields {
   externalId: string;
   userName: string;
   name: string;
   email: string;
+  title: string | null;
   enabled: boolean;
 }
 export interface GroupFields {
@@ -334,19 +337,100 @@ const noWorkEmail = (emails: readonly unknown[] | undefined): never => {
     'invalidValue',
   );
 };
+const TITLE_LENGTH = 512;
+/**
+ * D110: a title is kept as sent, less the space around it and whatever is past 512 characters (counted as characters,
+ * so none is cut in half). A control character in it, a line break or the NUL that PostgreSQL cannot hold, becomes a
+ * space. An empty one, `null` and a value that is not text all mean the person has none. A title decides nothing, so
+ * it is never a reason to refuse a person or the other changes of the same request: a leaver is deactivated whatever
+ * stands in the title beside it.
+ */
+const titleOf = (value: unknown): string | null =>
+  typeof value === 'string'
+    ? Array.from(value.replace(/\p{Cc}+/gu, ' ').trim())
+        .slice(0, TITLE_LENGTH)
+        .join('')
+        .trimEnd() || null
+    : null;
+/**
+ * PostgreSQL holds no U+0000 in text. A required attribute that carries one is refused by name here, where the
+ * mistake is, and not by the store with a 500 that names nothing.
+ */
+const storable = (attribute: string, value: string | null) => {
+  if (value?.includes('\u0000'))
+    throw new ScimError(400, `Attribute '${attribute}' holds a NUL character, which cannot be stored.`, 'invalidValue');
+};
+const storableUser = (fields: UserFields): UserFields => {
+  storable('externalId', fields.externalId);
+  storable('userName', fields.userName);
+  storable('displayName', fields.name);
+  storable('emails', fields.email);
+  return fields;
+};
+const storableGroup = (fields: GroupFields): GroupFields => {
+  storable('externalId', fields.externalId);
+  storable('displayName', fields.label);
+  storable('parent', fields.parent);
+  for (const member of fields.members) storable('members', member);
+  return fields;
+};
+/**
+ * RFC 7643 §2.1: attribute names are case insensitive. A `PATCH` path is read that way already (`coreKey`); this does
+ * the same for a full representation, so `Title`, `Active` or `DisplayName` in a `POST` or a `PUT` is the attribute
+ * and not an unknown one that is ignored. That mattered most for the two a body may leave out: `Active: false` read
+ * as absent enabled the person, and `Title` read as absent cleared the title. A name written as the schema writes it
+ * wins over the same name in another case; a name Clew does not read, an extension's included, is left as it is.
+ */
+type Names = { readonly [name: string]: Names | true };
+const USER_NAMES: Names = {
+  schemas: true,
+  id: true,
+  externalId: true,
+  userName: true,
+  displayName: true,
+  name: { formatted: true, givenName: true, familyName: true },
+  emails: { value: true, type: true, primary: true },
+  title: true,
+  active: true,
+};
+const GROUP_NAMES: Names = {
+  schemas: true,
+  id: true,
+  externalId: true,
+  displayName: true,
+  members: { value: true, display: true, $ref: true },
+};
+function canonical(body: unknown, names: Names): unknown {
+  if (Array.isArray(body)) return body.map(item => canonical(item, names));
+  if (!body || typeof body !== 'object') return body;
+  const known = new Map(Object.keys(names).map(name => [name.toLowerCase(), name]));
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(body)) {
+    const name = known.get(key.toLowerCase());
+    if (name === undefined) out[key] = value;
+    else if (name === key || !Object.hasOwn(body, name)) {
+      const below = names[name]!;
+      out[name] = below === true ? value : canonical(value, below);
+    }
+  }
+  return out;
+}
+export const canonicalUser = (body: unknown) => canonical(body, USER_NAMES);
+export const canonicalGroup = (body: unknown) => canonical(body, GROUP_NAMES);
 /** A full user representation (POST, PUT) to the fields Clew holds, with D68's requirements checked by name. */
 export function userFields(input: ScimUserInput): UserFields {
   const name =
     input.displayName ??
     input.name?.formatted ??
     [input.name?.givenName, input.name?.familyName].filter(Boolean).join(' ');
-  return {
+  return storableUser({
     externalId: input.externalId ?? need('externalId'),
     userName: input.userName,
     name: name || need('displayName'),
     email: workEmail(input.emails) ?? noWorkEmail(input.emails),
+    title: titleOf(input.title),
     enabled: input.active ?? true,
-  };
+  });
 }
 /** The unit id a `unit:` group's key names; undefined for `unit-manager:` and every other key. */
 export const unitGroupOf = (externalId: string | null | undefined): string | undefined =>
@@ -387,12 +471,12 @@ const parentInExtension = (value: unknown, path: string | undefined) =>
 export function groupFields(input: ScimGroupInput): GroupFields {
   if (unitGroupOf(input.externalId) !== undefined && Object.keys(input).some(isBareParent)) throw bareParent();
   const extension = Object.entries(input).find(([name]) => unitExtensionTarget(name) === 'extension');
-  return {
+  return storableGroup({
     externalId: input.externalId ?? null,
     label: input.displayName,
     parent: parentInExtension(extension?.[1], SCIM.unit),
     members: [...new Set((input.members ?? []).map(m => m.value))],
-  };
+  });
 }
 /**
  * The keys a group's `externalId` may carry, checked at the boundary so a mistake fails where it is made.
@@ -623,11 +707,13 @@ const otherAddress = (key: string) => {
   return !!type && type[1] !== 'work';
 };
 /**
- * What a `remove` on a user is aimed at. Clew holds five attributes and requires them all (D68 item 1); every other
- * attribute, an extension's included, is not held, so removing it changes nothing and is accepted, as adding it is.
+ * What a `remove` on a user is aimed at. Clew requires five attributes (D68 item 1) and holds a sixth that it does
+ * not, the title (D110), which a `remove` clears. Every other attribute, an extension's included, is not held, so
+ * removing it changes nothing and is accepted, as adding it is.
  */
-const userRemoval = (key: string): 'required' | 'readOnly' | 'notHeld' => {
+const userRemoval = (key: string): 'required' | 'readOnly' | 'title' | 'notHeld' => {
   if (isReadOnly(key, 'user')) return 'readOnly';
+  if (key === 'title') return 'title';
   if (['username', 'externalid', 'displayname', 'active', 'emails', 'emails.value'].includes(key)) return 'required';
   return key.startsWith('emails[') && !otherAddress(key) ? 'required' : 'notHeld';
 };
@@ -649,8 +735,9 @@ export function applyUserPatch(
     else if (key === 'externalid') next.externalId = asString(value, path);
     else if (key === 'displayname' || key === 'name.formatted') next.name = asString(value, path);
     else if (key === 'active') next.enabled = asBoolean(value, path);
+    else if (key === 'title') next.title = titleOf(value);
     else if (key === 'emails') {
-      const list = Array.isArray(value) ? value : [value];
+      const list = [canonical(value, USER_NAMES.emails as Names)].flat();
       const sent = list
         .map(e =>
           e && typeof e === 'object'
@@ -663,7 +750,7 @@ export function applyUserPatch(
       if (!otherAddress(key)) next.email = asString(value, path);
     } else if (key === 'name') {
       // Given and family names are not held: a name object sets the name only through `formatted`, as the paths do.
-      const formatted = asObject(value, path).formatted;
+      const formatted = asObject(canonical(value, USER_NAMES.name as Names), path).formatted;
       if (formatted !== undefined) next.name = asString(formatted, 'name.formatted');
     } else if (isReadOnly(key, 'user')) {
       if (!pathless) throw readOnly(path);
@@ -678,12 +765,13 @@ export function applyUserPatch(
       const aim = userRemoval(coreKey(operation.path, 'user'));
       if (aim === 'readOnly') throw readOnly(operation.path);
       if (aim === 'required') throw required(operation.path);
+      if (aim === 'title') next.title = null;
       continue;
     }
     if (operation.path) set(operation.path, operation.value, false);
     else for (const [key, value] of Object.entries(asObject(operation.value, undefined))) set(key, value, true);
   }
-  return next;
+  return storableUser(next);
 }
 /**
  * PATCH on a group: `members` added, removed (by path filter or by value list) or replaced; the name and external id
@@ -760,7 +848,7 @@ export function applyGroupPatch(
   }
   if (bare && unitGroupOf(next.externalId) !== undefined) throw bareParent();
   if (!placed && unitGroupOf(next.externalId) === undefined) next.parent = null;
-  return { ...next, members: [...members] };
+  return storableGroup({ ...next, members: [...members] });
 }
 export function userResource(
   record: UserRecord,
@@ -775,6 +863,7 @@ export function userResource(
     displayName: record.name,
     name: { formatted: record.name },
     emails: record.email ? [{ value: record.email, type: 'work', primary: true }] : [],
+    ...(record.title ? { title: record.title } : {}),
     active: record.enabled,
     groups: groups.map(g => ({ value: g.id, display: g.label, $ref: `${base}/Groups/${g.id}` })),
     meta: {
@@ -875,6 +964,7 @@ export const schemaDocuments = (base: string) => [
         required: true,
         subAttributes: [attribute('value', 'string'), attribute('type', 'string'), attribute('primary', 'boolean')],
       }),
+      attribute('title', 'string'),
       attribute('active', 'boolean'),
       attribute('groups', 'complex', {
         multiValued: true,

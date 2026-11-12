@@ -435,7 +435,9 @@ export class MockApi {
         if (this.peopleRefused) return route.fulfill({ status: 400, json: { error: 'Ogiltig förfrågan.' } });
         const matching = this.people.filter(
           u =>
-            words.every(w => [u.name, u.userName, u.email].some(v => (v ?? '').toLocaleLowerCase('sv').includes(w))) &&
+            words.every(w =>
+              [u.name, u.title, u.userName, u.email].some(v => (v ?? '').toLocaleLowerCase('sv').includes(w)),
+            ) &&
             (!(asked.unitId || asked.role) ||
               u.assignments.some(
                 a => (!asked.unitId || a.unitId === asked.unitId) && (!asked.role || a.role === asked.role),

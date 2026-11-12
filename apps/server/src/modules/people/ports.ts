@@ -137,7 +137,9 @@ export interface ProvisionTx {
   insertUser(record: UserRecord): Promise<void>;
   updateUser(
     id: string,
-    fields: Partial<Pick<UserRecord, 'externalId' | 'userName' | 'name' | 'email' | 'enabled'>> & { updatedAt: string },
+    fields: Partial<Pick<UserRecord, 'externalId' | 'userName' | 'name' | 'email' | 'title' | 'enabled'>> & {
+      updatedAt: string;
+    },
   ): Promise<void>;
   userGroups(personId: string): Promise<Array<{ id: string; externalId: string | null; label: string }>>;
   // SCIM: groups. A group belongs to the organisation of the provisioner that pushed it, as its members do, so a client

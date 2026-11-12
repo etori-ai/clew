@@ -35,6 +35,7 @@ const userColumns = {
   userName: schema.people.userName,
   name: schema.people.name,
   email: schema.people.email,
+  title: schema.people.title,
   enabled: schema.people.enabled,
   createdAt: schema.people.createdAt,
   updatedAt: schema.people.updatedAt,
@@ -94,6 +95,7 @@ function userSearchConditions(search: UserSearch): Array<SQL | undefined> {
         folded(sql`${schema.people.name}`, pattern),
         folded(sql`${schema.people.userName}`, pattern),
         folded(sql`${schema.people.email}`, pattern),
+        folded(sql`${schema.people.title}`, pattern),
       );
     }),
     search.unitIds || search.role

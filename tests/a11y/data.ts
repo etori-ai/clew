@@ -1422,6 +1422,7 @@ export const usersPeople = (): UserAdminRow[] => [
     userName: 'hassan',
     externalId: 'dev:hassan',
     email: 'hassan@clew.test',
+    title: 'Undersköterska',
     enabled: true,
     bound: true,
     assignments: [{ unitId: 'unit-omsorg', unitLabel: 'Hemtjänst Centrum', role: 'employee' }],
@@ -1434,6 +1435,7 @@ export const usersPeople = (): UserAdminRow[] => [
     userName: 'hillevi',
     externalId: 'dev:hillevi',
     email: 'hillevi@clew.test',
+    title: 'Rektor',
     enabled: true,
     bound: true,
     assignments: [{ unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' }],
@@ -1446,6 +1448,7 @@ export const usersPeople = (): UserAdminRow[] => [
     userName: 'mikael',
     externalId: 'dev:mikael',
     email: 'mikael@clew.test',
+    title: 'Systemförvaltare',
     enabled: true,
     bound: false,
     assignments: [{ unitId: 'unit-it', unitLabel: 'IT och digitalisering', role: 'employee' }],
@@ -1458,6 +1461,7 @@ export const usersPeople = (): UserAdminRow[] => [
     userName: 'omar',
     externalId: 'dev:omar',
     email: 'omar@clew.test',
+    title: null,
     enabled: true,
     bound: false,
     assignments: [],
@@ -1465,7 +1469,10 @@ export const usersPeople = (): UserAdminRow[] => [
     capabilities: [],
   },
 ];
-/** Enough people for three pages: sixty on one unit, by name, after which nobody in `usersPeople` sorts. */
+/**
+ * Enough people for three pages: sixty on one unit, by name, after which nobody in `usersPeople` sorts. The first has
+ * a title longer than a narrow column (D110); the rest have none, as people do in a catalogue that sends no titles.
+ */
 export const manyPeople = (): UserAdminRow[] =>
   Array.from({ length: 60 }, (_, i) => {
     const n = String(i + 1).padStart(2, '0'),
@@ -1476,6 +1483,7 @@ export const manyPeople = (): UserAdminRow[] =>
       userName: 'person' + n,
       externalId: 'dev:p' + n,
       email: `person${n}@clew.test`,
+      title: i === 0 ? 'Verksamhetsutvecklare med ansvar för digitalisering och välfärdsteknik' : null,
       enabled: true,
       bound: false,
       assignments: [placed],
