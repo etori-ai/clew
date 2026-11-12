@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, isNotNull, isNull, like, not, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNotNull, isNull, like, not, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
 import { writeAudit } from '@clew/db/threads';
 import { UNIT_KEY } from '@clew/contracts/scim-group-key';
@@ -69,9 +69,18 @@ const groupRecord = (r: GroupRow): GroupRecord => ({
   createdAt: r.createdAt.toISOString(),
   updatedAt: r.updatedAt.toISOString(),
 });
-/** `userName` is compared without regard to case (RFC 7643: `caseExact: false`), `externalId` exactly; as the unique indexes do. */
+/**
+ * A user name or a group's name as it is compared without regard to case (RFC 7643: `caseExact: false`): folded by
+ * ICU's root locale, whatever collation the database was created with, which is the expression of the unique index on
+ * user names. A plain `lower` folds only A to Z under the locale C, where `Åsa` and `åsa` were two people (L13). The
+ * same expression on both sides of a comparison, so the two fold alike and the index serves it.
+ */
+const caseless = (value: SQLWrapper | string) => sql`lower(${value} collate "und-x-icu")`;
+/** `userName` is compared without regard to case, `externalId` exactly; as the unique indexes do. */
 const userMatch = (by: 'userName' | 'externalId', value: string) =>
-  by === 'userName' ? sql`lower(${schema.people.userName}) = lower(${value})` : eq(schema.people.externalId, value);
+  by === 'userName'
+    ? sql`${caseless(schema.people.userName)} = ${caseless(value)}`
+    : eq(schema.people.externalId, value);
 /**
  * The lock a derivation takes on a person and a write takes on a group. `NO KEY UPDATE`, not `UPDATE`: a membership or
  * assignment row inserted by another transaction holds a key-share lock on the person through its foreign key, and
@@ -472,7 +481,7 @@ export function postgresProvisionStore(): ProvisionStore {
         ? and(
             eq(schema.groups.organisationId, organisationId),
             filter.attribute === 'label'
-              ? sql`lower(${schema.groups.label}) = lower(${filter.value})`
+              ? sql`${caseless(schema.groups.label)} = ${caseless(filter.value)}`
               : eq(groupColumn[filter.attribute], filter.value),
           )
         : eq(schema.groups.organisationId, organisationId);

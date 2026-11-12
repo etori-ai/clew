@@ -73,6 +73,17 @@ test('a user name sent decomposed is stored composed, found by a filter in eithe
     scimType: 'uniqueness',
   });
 });
+test('a user name that differs only in the case of å, ä or ö is the same name: a filter finds the person and a second POST answers 409 (L13)', async () => {
+  // A plain `lower` folds only A to Z on a database created with the locale C, where the two were two people.
+  const created = await scim.createUser(p, user(20, `${prefix}.Åsa.Öberg`), BASE);
+  expect(
+    (await scim.listUsers(p, { filter: `userName eq "${prefix}.åsa.öberg"` }, BASE)).Resources.map(u => u.id),
+  ).toEqual([created.id]);
+  await expect(scim.createUser(p, user(21, `${prefix}.åsa.öberg`), BASE)).rejects.toMatchObject({
+    status: 409,
+    scimType: 'uniqueness',
+  });
+});
 test('the first sign-in binds the person whichever form the source and the identity provider each send the name in', async () => {
   const cases = [
     // Both send it decomposed: what matched before names were kept composed, and must still match.

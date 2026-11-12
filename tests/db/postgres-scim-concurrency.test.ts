@@ -385,6 +385,43 @@ test('concurrent user patches preserve the name and the deactivation', async () 
     'scim.user.patched',
   ]);
 });
+test("a person's externalId changed while a group write adds them, by PATCH and by PUT: the group write waits, and both are written (S4)", async () => {
+  const { prefix, deps, p, store, user, scim } = stack();
+  for (const [round, verb] of (['patch', 'put'] as const).entries()) {
+    const n = round + 1,
+      person = (await scim.createUser(p, user(n), BASE)).id,
+      group = await scim.createGroup(p, { externalId: `${prefix}:plain${n}`, displayName: 'Plain' }, BASE),
+      key = `${prefix}:${n}:moved`;
+    // The user write holds the person and stops before it writes the new key.
+    const holding = pausedBefore(store, 'updateUser'),
+      users = scimUsecases({ store: holding.store, ...deps }),
+      rekeyed =
+        verb === 'patch'
+          ? users.patchUser(
+              p,
+              person,
+              { schemas: [PATCH], Operations: [{ op: 'replace', path: 'externalId', value: key }] },
+              BASE,
+            )
+          : users.replaceUser(p, person, { ...user(n), externalId: key }, BASE);
+    await holding.atCall;
+    // The group write inserts the membership, whose foreign key holds a key-share lock on the person, and then waits
+    // for the person behind the user write. Writing the new key once needed `FOR UPDATE`, which waits for that
+    // key-share lock: PostgreSQL ended one of the two as a deadlock, and the route answered 500.
+    const added = scim.patchGroup(
+        p,
+        group.id,
+        { schemas: [PATCH], Operations: [{ op: 'add', path: 'members', value: [{ value: person }] }] },
+        BASE,
+      ),
+      addedWaited = await stillWaiting(settled(added), holding.release);
+    const [written, members] = await Promise.all([rekeyed, added]);
+    expect(addedWaited).toBe(true);
+    expect(written.externalId).toBe(key);
+    expect(members.members.map(m => m.value)).toEqual([person]);
+    expect(await scim.getUser(p, person, BASE)).toMatchObject({ externalId: key, groups: [{ value: group.id }] });
+  }
+});
 test('two membership changes for one person at once: the second derivation waits and reads what the first committed', async () => {
   const { prefix, deps, p, store, user, grant, scim } = stack();
   const person = (await scim.createUser(p, user(1), BASE)).id;

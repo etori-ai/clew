@@ -51,11 +51,19 @@ export const people = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  // Unique across the installation, because a login carries no organisation; `userName` without regard to case,
-  // RFC 7643's default for it (Keycloak lowercases account names, Entra does not).
+  // Unique across the installation, because a login carries no organisation.
   t => [
-    uniqueIndex('auth_person_external_id').on(t.externalId),
-    uniqueIndex('auth_person_user_name').on(sql`lower(${t.userName})`),
+    // Partial, though nulls never collide: PostgreSQL counts the column of a whole unique index as a key, so an update
+    // that changes it needs `FOR UPDATE` and waits for the key-share lock a membership insert holds on the person,
+    // while that insert's transaction waits for the person's row lock (S4). A partial index is no such key.
+    uniqueIndex('auth_person_external_id')
+      .on(t.externalId)
+      .where(sql`${t.externalId} is not null`),
+    // `userName` without regard to case, RFC 7643's default for it (Keycloak lowercases account names, Entra does
+    // not), folded by ICU's root locale whatever the database's own collation: under the locale C a plain `lower`
+    // folds only A to Z, and `Åsa` and `åsa` were two people (L13). Every comparison of a user name uses this one
+    // expression on both sides.
+    uniqueIndex('auth_person_user_name').on(sql`lower(${t.userName} collate "und-x-icu")`),
   ],
 );
 export const identityBindings = pgTable(

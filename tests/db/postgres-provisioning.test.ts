@@ -1,6 +1,6 @@
-import { afterAll } from 'bun:test';
+import { afterAll, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { eq, inArray, like } from 'drizzle-orm';
+import { eq, inArray, like, sql } from 'drizzle-orm';
 import { database, schema } from '../../packages/db/src/index';
 import { postgresProvisionStore } from '../../apps/server/src/modules/people/adapters/postgres';
 import { provisioningContract, type ProvisioningHarness } from '../provisioning-store-contract';
@@ -162,4 +162,20 @@ scimStoreContract('postgres', async () => {
         .values({ issuer: 'https://idp.test/' + prefix, subject: personId, personId });
     },
   };
+});
+/**
+ * What the store's comparisons and locks rely on, pinned on any database: a database created with the locale C is a
+ * supported one (D100), and only there does a plain `lower` leave å, ä and ö as they are, so the contract's case with
+ * them passes elsewhere whatever the index says.
+ */
+test('auth_person holds a source key unique where one is set, and a user name unique as ICU folds it whatever the database collates (S4, L13)', async () => {
+  const rows = await database().execute<{ indexname: string; indexdef: string }>(
+    sql`select indexname, indexdef from pg_indexes where tablename = 'auth_person' and indexname in ('auth_person_external_id', 'auth_person_user_name')`,
+  );
+  const defined = Object.fromEntries([...rows].map(row => [row.indexname, row.indexdef]));
+  // Partial, so that the column is no key to PostgreSQL's row locks: a new key is written beside a membership insert.
+  expect(defined.auth_person_external_id).toContain('UNIQUE INDEX auth_person_external_id');
+  expect(defined.auth_person_external_id).toEndWith('(external_id) WHERE (external_id IS NOT NULL)');
+  expect(defined.auth_person_user_name).toContain('UNIQUE INDEX auth_person_user_name');
+  expect(defined.auth_person_user_name).toEndWith('(lower((user_name COLLATE "und-x-icu")))');
 });

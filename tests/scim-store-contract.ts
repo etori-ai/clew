@@ -237,6 +237,44 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         expect((await tx.findGroup('externalId', 'g:' + g1))?.id).toBe(g2);
       });
     });
+    test('a user name and a group name are one name without regard to case, å, ä and ö included, to the lookup, the filter and the index (L13)', async () => {
+      const { store, prefix: p } = await make();
+      const org = p + '-org',
+        [a, b, g] = [p + '-a', p + '-b', p + '-g'],
+        // The two spellings differ only in the case of å, ä and ö, which a plain `lower` does not fold on a database
+        // created with the locale C.
+        name = p + '.Åsa.Öberg.Ärla',
+        folded = p + '.åsa.öberg.ärla',
+        duplicate = { code: '23505', constraint: 'auth_person_user_name' },
+        every = { startIndex: 1, count: 10 };
+      await store.transaction(async tx => {
+        await tx.insertUser(userRow(a, org, { userName: name }));
+        await tx.insertUser(userRow(b, org));
+        await tx.insertGroup(groupRow(g, org, { label: 'Åsa Öbergs Ängar' }));
+      });
+      await store.transaction(async tx => {
+        // As the first sign-in, the uniqueness check and the D97 lookup ask, across the installation, and as a filter.
+        expect((await tx.findUser('userName', folded))?.id).toBe(a);
+        expect((await tx.findUser('userName', name.toUpperCase()))?.id).toBe(a);
+        expect((await tx.listUsers(org, every, { attribute: 'userName', value: folded })).rows.map(r => r.id)).toEqual([
+          a,
+        ]);
+        expect(
+          (await tx.listGroups(org, every, { attribute: 'label', value: 'åsa öbergs ängar' })).rows.map(r => r.id),
+        ).toEqual([g]);
+      });
+      // The index holds the two spellings as one name, inserted or updated: a second person past the use case's
+      // check is refused, and the route answers 409 naming userName.
+      expect(
+        await violated(store.transaction(tx => tx.insertUser(userRow(p + '-c', org, { userName: folded })))),
+      ).toEqual(duplicate);
+      expect(await violated(store.transaction(tx => tx.updateUser(b, { userName: folded, updatedAt: T })))).toEqual(
+        duplicate,
+      );
+      // The person's own name in another case is no other person's.
+      await store.transaction(tx => tx.updateUser(a, { userName: folded, updatedAt: T }));
+      expect((await store.transaction(tx => tx.findUser('userName', name)))?.userName).toBe(folded);
+    });
     test('assignments carry their unit label, a binding is seen, and a group-capability row is added and removed once', async () => {
       const h = await make(),
         p = h.prefix,
