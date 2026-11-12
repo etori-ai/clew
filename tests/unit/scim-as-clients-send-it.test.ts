@@ -296,42 +296,123 @@ describe('current employments on a SCIM user', () => {
     school: await group({ externalId: 'unit:school', displayName: 'Skolan' }),
     office: await group({ externalId: 'unit:office', displayName: 'Kansliet' }),
   });
-  test('a missing PATCH value preserves both profile lists, including beside a deactivation', async () => {
-    const { create, group, json, patch } = app();
+  test('an add or replace without a value is refused on every user path and path-less, with one scimType, and waits beside a deactivation (Q1)', async () => {
+    const { create, group, json, patch, person, store } = app();
     await units(group);
     const phoneNumbers = [{ type: 'work', value: '010-100 00 01' }];
     const stored = { title: 'Pedagog', phoneNumbers, [urn]: { employments: jobs } };
-    const path = '/Users/' + (await create(1, stored));
-    for (const attribute of [
-      'phoneNumbers',
-      field,
-      'title',
-      'urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:manager',
-    ]) {
-      for (const op of ['add', 'replace']) {
-        expect(
-          await patch(path, { op: 'replace', path: 'displayName', value: 'Changed' }, { op, path: attribute }),
-        ).toMatchObject({ status: 400, body: { scimType: 'invalidSyntax' } });
-        expect((await json('GET', path)).body).toMatchObject({ ...stored, active: true, displayName: 'User 1' });
-      }
+    const id = await create(1, stored),
+      path = '/Users/' + id;
+    const held = async () => (await json('GET', path)).body;
+    const before = await held(),
+      audited = store.state.audit.length;
+    // Each list in every form it is named by, the title, what Clew requires, and an attribute Clew does not hold.
+    const missing: Array<[Record<string, unknown>, string]> = [];
+    for (const op of ['add', 'replace'])
+      for (const attribute of [
+        'phoneNumbers',
+        USER + ':phoneNumbers',
+        'phoneNumbers[type eq "work"]',
+        'phoneNumbers[type eq "work"].value',
+        'phoneNumbers[value eq "010-100 00 01"]',
+        urn,
+        field,
+        'title',
+        'displayName',
+        'userName',
+        'emails',
+        'active',
+        'urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:manager',
+      ])
+        missing.push([{ op, path: attribute }, `Operation '${op}' on '${attribute}' requires a value.`]);
+    for (const op of ['add', 'replace']) {
+      missing.push([{ op }, `Operation '${op}' without a path requires a value.`]);
+      // The extension's object says which of its attributes it sets; one that names none has no value for the list.
+      missing.push([{ op, path: urn, value: {} }, `Operation '${op}' on '${urn}' requires a value for 'employments'.`]);
+      missing.push([
+        { op, value: { [urn]: { other: 1 } } },
+        `Operation '${op}' on '${urn}' requires a value for 'employments'.`,
+      ]);
     }
-    expect(
-      await patch(
-        path,
-        { op: 'add', path: field },
-        { op: 'replace', path: 'active', value: false },
-        { op: 'replace', path: 'phoneNumbers' },
-      ),
-    ).toMatchObject({ status: 200 });
-    expect((await json('GET', path)).body).toMatchObject({ ...stored, active: false });
-    await patch(
-      path,
-      { op: 'replace', path: 'phoneNumbers', value: null },
-      { op: 'remove', path: field, value: [jobs[0]] },
+    missing.push([{ op: 'replace', value: 'Changed' }, 'A patch without a path needs an object value.']);
+    for (const [operation, detail] of missing) {
+      const answer = await patch(path, { op: 'replace', path: 'displayName', value: 'Changed' }, operation);
+      expect([answer.status, answer.body.scimType, answer.body.detail]).toEqual([400, 'invalidValue', detail]);
+      expect(await held()).toEqual(before);
+    }
+    expect(store.state.audit).toHaveLength(audited);
+    // Beside a deactivation each waits: the person is deactivated, in either order and in Okta's path-less form, and
+    // what the operation named is as it was.
+    for (const [operation] of missing)
+      for (const operations of [
+        [operation, { op: 'replace', path: 'active', value: false }],
+        [{ op: 'replace', value: { active: false } }, operation],
+      ]) {
+        const left = await patch(path, ...operations);
+        expect(left).toMatchObject({ status: 200, body: { ...stored, active: false, displayName: 'User 1' } });
+        await patch(path, { op: 'replace', path: 'active', value: true });
+      }
+    // An explicit null takes a list away, by its path and in the extension's object; so does a remove. (The URN holds
+    // a dot, so the answer is read by key and not by a property path.)
+    for (const [operation, gone] of [
+      [{ op: 'add', path: 'phoneNumbers', value: null }, 'phoneNumbers'],
+      [{ op: 'replace', path: urn, value: { Employments: null } }, urn],
+      [{ op: 'add', value: { [urn]: { employments: null } } }, urn],
+      [{ op: 'replace', path: field, value: null }, urn],
+      [{ op: 'remove', path: 'phoneNumbers' }, 'phoneNumbers'],
+      [{ op: 'remove', path: urn }, urn],
+    ] as const) {
+      await json('PUT', path, person(1, stored));
+      const taken = await patch(path, operation);
+      expect([taken.status, taken.body[gone]]).toEqual([200, undefined]);
+      expect(taken.body[gone === urn ? 'phoneNumbers' : urn]).toBeDefined();
+    }
+  });
+  test('a remove of a whole list that carries a value is refused and says how to take one entry away, and waits beside a deactivation (S6)', async () => {
+    const { create, group, json, patch, store } = app();
+    await units(group);
+    const phoneNumbers = [
+      { type: 'work', value: '010-100 00 01' },
+      { type: 'mobile', value: '070-100 00 02' },
+    ];
+    const stored = { phoneNumbers, [urn]: { employments: jobs } };
+    const path = '/Users/' + (await create(1, stored));
+    const audited = store.state.audit.length;
+    const phones =
+        /takes no value: it takes away every number\. To take away one number, remove phoneNumbers\[value eq "<number>"\]; to set the list, replace 'phoneNumbers'\.$/,
+      employments = new RegExp(
+        `takes no value: it takes away every employment\\. To change the list, replace '${field}' with the employments that remain\\.$`,
+      );
+    for (const [operation, detail] of [
+      [{ op: 'remove', path: 'phoneNumbers', value: [phoneNumbers[0]] }, phones],
+      [{ op: 'Remove', path: USER + ':PhoneNumbers', value: phoneNumbers[0] }, phones],
+      [{ op: 'remove', path: 'phoneNumbers', value: [] }, phones],
+      [{ op: 'remove', path: urn, value: { employments: [jobs[0]] } }, employments],
+      [{ op: 'remove', path: field, value: [jobs[0]] }, employments],
+    ] as const) {
+      const refused = await patch(path, operation);
+      expect([refused.status, refused.body.scimType]).toEqual([400, 'invalidValue']);
+      expect(refused.body.detail).toStartWith(`Operation 'remove' on '${operation.path}' takes no value`);
+      expect(refused.body.detail).toMatch(detail);
+      expect((await json('GET', path)).body).toMatchObject(stored);
+      // Beside a deactivation the person is deactivated and the list stays.
+      expect(await patch(path, operation, { op: 'replace', path: 'active', value: false })).toMatchObject({
+        status: 200,
+        body: { ...stored, active: false },
+      });
+      await patch(path, { op: 'replace', path: 'active', value: true });
+    }
+    expect(store.state.audit.slice(audited).map(row => row.action)).toEqual(
+      Array(5).fill(['scim.user.deactivated', 'scim.user.reactivated']).flat(),
     );
-    const cleared = (await json('GET', path)).body;
-    expect(cleared).not.toHaveProperty('phoneNumbers');
-    expect(cleared).not.toHaveProperty(urn);
+    // A filtered remove takes what its filter names; a remove with no value, or a value of null, takes the list.
+    expect((await patch(path, { op: 'remove', path: 'phoneNumbers[type eq "mobile"]' })).body.phoneNumbers).toEqual([
+      phoneNumbers[0],
+    ]);
+    expect((await patch(path, { op: 'remove', path: 'phoneNumbers', value: null })).body).not.toHaveProperty(
+      'phoneNumbers',
+    );
+    expect((await patch(path, { op: 'remove', path: field })).body[urn]).toBeUndefined();
   });
   test('employment type and start date belong to each job and can be withdrawn independently', async () => {
     const { create, group, json, patch, person } = app();
@@ -768,6 +849,51 @@ describe('names without regard to case, everywhere (RFC 7643 §2.1)', () => {
       (await json('POST', '/Users/.search', { FILTER: 'userName eq "user2"', Attributes: ['userName'] })).body
         .Resources,
     ).toEqual([{ schemas: [USER], id: b, userName: 'user2' }]);
+  });
+});
+describe('an add or replace without a value on a group (Q1)', () => {
+  test("is refused before anything reads it, so a unit keeps its key, its parent and its people's grants; null and remove still take them away", async () => {
+    const { create, json, patch, group, store } = app();
+    const person = await create(1);
+    await group({ externalId: 'unit:ksk', displayName: 'Kommunstyrelsekontoret' });
+    const school = await group({
+      externalId: 'unit:skola',
+      displayName: 'Skolan',
+      members: [{ value: person }],
+      [UNIT]: { parent: 'unit:ksk' },
+    });
+    const path = '/Groups/' + school,
+      held = async () => (await json('GET', path)).body,
+      before = await held(),
+      audited = store.state.audit.length;
+    expect(store.state.grants.get(person)).toMatchObject({ unitId: 'skola' });
+    const missing: Array<[Record<string, unknown>, string]> = [];
+    for (const op of ['add', 'replace']) {
+      for (const attribute of ['externalId', GROUP + ':externalId', UNIT + ':parent', UNIT, 'members', 'displayName'])
+        missing.push([{ op, path: attribute }, `Operation '${op}' on '${attribute}' requires a value.`]);
+      missing.push([{ op }, `Operation '${op}' without a path requires a value.`]);
+      // The extension's object that leaves `parent` out has no value for it, by the extension's path or path-less.
+      missing.push([{ op, path: UNIT, value: {} }, `Operation '${op}' on '${UNIT}' requires a value for 'parent'.`]);
+      missing.push([
+        { op, value: { [UNIT]: { other: 'x' } } },
+        `Operation '${op}' on '${UNIT}' requires a value for 'parent'.`,
+      ]);
+    }
+    for (const [operation, detail] of missing) {
+      const answer = await patch(path, { op: 'replace', path: 'displayName', value: 'Ny skola' }, operation);
+      expect([answer.status, answer.body.scimType, answer.body.detail]).toEqual([400, 'invalidValue', detail]);
+      expect(await held()).toEqual(before);
+    }
+    expect(store.state.audit).toHaveLength(audited);
+    expect(store.state.grants.get(person)).toMatchObject({ unitId: 'skola' });
+    // An explicit null is the way to make a unit a root, and to take a key away; the unit's people lose its grant then.
+    expect((await patch(path, { op: 'replace', path: UNIT + ':parent', value: null })).body[UNIT]).toBeUndefined();
+    await patch(path, { op: 'add', path: UNIT, value: { parent: 'unit:ksk' } });
+    expect((await patch(path, { op: 'replace', value: { [UNIT]: { Parent: null } } })).body[UNIT]).toBeUndefined();
+    const keyless = await patch(path, { op: 'replace', path: 'externalId', value: null });
+    expect(keyless).toMatchObject({ status: 200, body: { displayName: 'Skolan' } });
+    expect(keyless.body).not.toHaveProperty('externalId');
+    expect(store.state.grants.get(person)).toBeUndefined();
   });
 });
 describe('a path this server cannot evaluate is refused, not accepted and ignored', () => {

@@ -172,7 +172,7 @@ describe('SCIM users', () => {
         ?.attributes.map(a => a.name),
     ).toContain('title');
   });
-  test('a title never refuses a request: one that is not text is read as none, a long one is cut, and the changes beside it go through (D110)', async () => {
+  test("a title's value never refuses a request: one that is not text is read as none, a long one is cut, and the changes beside it go through; an operation on it without a value is refused as on every path, except beside a deactivation (D110, Q1)", async () => {
     const { scim, p, store } = harness();
     const patch = (id: string, Operations: unknown[]) =>
       scim.patchUser(p, id, { schemas: [SCIM.patch], Operations }, BASE);
@@ -204,6 +204,30 @@ describe('SCIM users', () => {
       action: 'scim.user.deactivated',
       details: { changed: ['title', 'enabled'], via: 'scim.user.patched' },
     });
+    // An `add` or `replace` on the title without a value is malformed, and refuses the rename beside it as it would on
+    // any path; beside a deactivation it waits, and the title stays as it was.
+    await patch(created.id, [
+      { op: 'replace', path: 'active', value: true },
+      { op: 'add', path: 'title', value: 'Rektor' },
+    ]);
+    for (const op of ['add', 'replace'])
+      await expect(
+        patch(created.id, [
+          { op: 'replace', path: 'displayName', value: 'Anna Ny' },
+          { op, path: 'title' },
+        ]),
+      ).rejects.toMatchObject({
+        status: 400,
+        scimType: 'invalidValue',
+        detail: `Operation '${op}' on 'title' requires a value.`,
+      });
+    expect(store.state.users.get(created.id)).toMatchObject({ name: 'Anna Berg', title: 'Rektor', enabled: true });
+    expect(
+      await patch(created.id, [
+        { op: 'replace', path: 'title' },
+        { op: 'replace', path: 'active', value: false },
+      ]),
+    ).toMatchObject({ active: false, title: 'Rektor' });
   });
   test('attribute names are read without regard to case in a full representation, as in a patch (RFC 7643 §2.1)', async () => {
     const { scim, p, store } = harness();

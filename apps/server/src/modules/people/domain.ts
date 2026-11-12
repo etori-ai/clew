@@ -407,6 +407,22 @@ const asObject = (value: unknown, path: string | undefined): Record<string, unkn
     'invalidValue',
   );
 };
+/**
+ * RFC 7644 §3.5.2.1 and §3.5.2.3 (D110 item 4): an `add` or a `replace` carries a value, on every resource and every
+ * path, and one without is malformed. It is refused before anything reads the value: read as `null`, a missing value
+ * once emptied a person's lists and took a unit's key or parent away, each with a 200. A JavaScript client sends it
+ * when a lookup answers `undefined`, since `JSON.stringify` leaves the member out. An explicit `null` and a `remove`
+ * are the ways to take an attribute away. `attribute` names the one attribute of an extension's object that the
+ * object left out. About one operation's value (`invalidValue`), so beside a deactivation it waits (D113).
+ */
+const noValue = (op: 'add' | 'replace', path: string | undefined, attribute?: string) =>
+  new ScimError(
+    400,
+    path === undefined
+      ? `Operation '${op}' without a path requires a value.`
+      : `Operation '${op}' on '${path}' requires a value${attribute ? ` for '${attribute}'` : ''}.`,
+    'invalidValue',
+  );
 interface Email {
   value: string;
   type?: string;
@@ -444,7 +460,8 @@ export function workEmail(emails: readonly Email[], whole: boolean): string | un
  * left out and never refuses the person, as a title is (D110): a number that is empty, `null`, not text or longer than
  * a number is; an entry with nothing in it. Having no phone number is not a mistake. What is refused is a request
  * that says something Clew cannot take as said: an employment without a unit or on a unit the organisation does not
- * hold (asked of the store), a list past `DETAIL_LIMIT`, `employments` written without the extension's URN.
+ * hold (asked of the store), a list past `DETAIL_LIMIT`, `employments` written without the extension's URN, an `add`
+ * or `replace` without a value and a `remove` of a whole list that carries a value.
  */
 const DETAIL_LIMIT = 50;
 function within<T>(rows: T[], attribute: string): T[] {
@@ -564,7 +581,9 @@ const EMPLOYMENT_LABEL_LENGTH = 512;
  * D110: a title is kept as sent, less the space around it and whatever is past 512 characters (counted as characters,
  * so none is cut in half). A control character in it, a line break or the NUL that PostgreSQL cannot hold, becomes a
  * space. An empty one, `null` and a value that is not text all mean the person has none. A title decides nothing, so
- * it is never a reason to refuse a person or the other changes of the same request.
+ * its value is never a reason to refuse a person or the other changes of the same request. An `add` or `replace` on
+ * `title` without a value is another matter: that operation is malformed, and refused as on every path (RFC 7644
+ * §3.5.2), except beside a deactivation (D113).
  */
 const titleOf = (value: unknown): string | null => shown(value, EMPLOYMENT_LABEL_LENGTH);
 /**
@@ -674,11 +693,17 @@ export function parentUnitOf(value: unknown): string | null {
     );
   return id;
 }
-/** The extension's object, whose one attribute is read without regard to case, as every attribute name is. */
-const parentInExtension = (value: unknown, path: string | undefined) => {
+/**
+ * The extension's object, whose one attribute is read without regard to case, as every attribute name is. In a body an
+ * object without `parent` names no parent. In a patch's `add` or `replace` (`op`) it is an operation without a value
+ * (RFC 7644 §3.5.2): read as no parent, it once made a unit a root with a 200. `parent: null` is the way to make a unit
+ * a root.
+ */
+const parentInExtension = (value: unknown, path: string | undefined, op?: 'add' | 'replace') => {
   if (value === undefined || value === null) return null;
   const extension = asObject(value, path),
     name = Object.keys(extension).find(key => key.toLowerCase() === 'parent');
+  if (name === undefined && op) throw noValue(op, path, 'parent');
   return parentUnitOf(name === undefined ? undefined : extension[name]);
 };
 /** The ids a `members` value names: a list of objects with a `value`, or of the ids themselves. */
@@ -1046,7 +1071,12 @@ function patchPhones(next: UserFields, path: string, op: 'add' | 'replace' | 're
   store([...(op === 'add' ? rows : others), ...phoneList(value, byType ? picked : undefined)]);
 }
 const employmentUrn = SCIM.employment.toLowerCase();
-/** The employments are replaced, added to or taken away as a list: an entry has no id to be picked by. */
+/**
+ * The employments are replaced, added to or taken away as a list: an entry has no id to be picked by. Named by the
+ * extension, the value is the extension's object, whose one attribute is read without regard to case: `null` there
+ * takes the list away, as it does by the attribute's own path, and an object that leaves the attribute out is an
+ * operation without a value (RFC 7644 §3.5.2), which once emptied the list with a 200.
+ */
 function patchEmployment(
   next: UserFields,
   key: string,
@@ -1062,14 +1092,41 @@ function patchEmployment(
         'invalidPath',
       ),
     );
-  const sent = op === 'remove' ? [] : employmentList(key === employmentUrn ? extensionEmployments(value) : value);
+  let list = value;
+  if (op !== 'remove' && key === employmentUrn) {
+    const extension = asObject(plain(value, { employments: true }, 'kept'), path);
+    if (!Object.hasOwn(extension, 'employments')) throw noValue(op, path, 'employments');
+    list = extension.employments;
+  }
+  const sent = op === 'remove' || list === null ? [] : employmentList(list);
   next.employments = within(
-    distinctEntries([...(op === 'add' ? next.employments : []), ...sent], employmentKey),
+    distinctEntries([...(op === 'add' && list !== null ? next.employments : []), ...sent], employmentKey),
     EMPLOYMENTS,
   );
 }
 const isPhonePath = (key: string) =>
   key === 'phonenumbers' || key.startsWith('phonenumbers[') || key.startsWith('phonenumbers.');
+/**
+ * A `remove` of a whole list (the numbers, or the employments, by any of the names they go by) takes the whole list
+ * away. One that carries a value reads like a removal of the entries it names, as on a group's `members`, and taking
+ * the whole list instead once answered 200; so it is refused, with the way to say it. A filtered `remove` of numbers
+ * takes what its filter names. About one operation's value, so beside a deactivation it waits (D113).
+ */
+function removedWithValue(key: string, path: string): ScimError | undefined {
+  if (key === 'phonenumbers')
+    return new ScimError(
+      400,
+      `Operation 'remove' on '${path}' takes no value: it takes away every number. To take away one number, remove phoneNumbers[value eq "<number>"]; to set the list, replace 'phoneNumbers'.`,
+      'invalidValue',
+    );
+  if (key === employmentUrn || key === employmentUrn + ':employments')
+    return new ScimError(
+      400,
+      `Operation 'remove' on '${path}' takes no value: it takes away every employment. To change the list, replace '${EMPLOYMENTS}' with the employments that remain.`,
+      'invalidValue',
+    );
+  return undefined;
+}
 /** Removal of other user attributes. A required value (D68) is refused and the optional title (D110) is cleared. */
 const userRemoval = (key: string, path: string): 'required' | 'readOnly' | 'title' | 'notHeld' => {
   if (isReadOnly(key, 'user')) return 'readOnly';
@@ -1109,8 +1166,7 @@ export function applyUserPatch(
   };
   const set = (path: string, value: unknown, op: 'add' | 'replace', pathless: boolean) => {
     const key = coreKey(path, 'user');
-    if (value === undefined)
-      throw beside(new ScimError(400, `Operation '${op}' on '${path}' requires a value.`, 'invalidSyntax'));
+    if (value === undefined) throw noValue(op, path);
     // RFC 7643 §2.5: a value of `null` is the attribute taken away.
     if (value === null) {
       if (pathless && isReadOnly(key, 'user')) return;
@@ -1171,14 +1227,23 @@ export function applyUserPatch(
   }
   for (const operation of operations) {
     const op = opOf(operation),
-      { path } = operation;
+      { path, value } = operation;
     if (op === 'remove') {
       if (!path) throw new ScimError(400, 'A remove operation needs a path.', 'noTarget');
-      attempt(() => unset(coreKey(path, 'user'), path));
-    } else if (path) attempt(() => set(path, operation.value, op, false));
+      attempt(() => {
+        const key = coreKey(path, 'user'),
+          refused = value === undefined || value === null ? undefined : removedWithValue(key, path);
+        if (refused) throw refused;
+        unset(key, path);
+      });
+    } else if (path) attempt(() => set(path, value, op, false));
     else
-      for (const [key, value] of Object.entries(asObject(operation.value, undefined)))
-        attempt(() => set(key, value, op, true));
+      // Read inside `attempt`, as the nested form is: a path-less value that is missing or no object is about that
+      // operation's value, and once kept a leaver active by refusing the deactivation beside it (D113).
+      attempt(() => {
+        if (value === undefined) throw noValue(op, undefined);
+        for (const [key, inner] of Object.entries(asObject(value, undefined))) attempt(() => set(key, inner, op, true));
+      });
   }
   if (wrong.length && !deactivates) throw wrong[0];
   if (deactivates) deactivating.add(next);
@@ -1200,9 +1265,9 @@ export function applyGroupPatch(
     next = { ...current },
     placed = false,
     bare = false;
-  /** `add` and `replace` on `members` say who: without a value, a `replace` would empty the group. */
+  /** `add` and `replace` on `members` say who: with `null`, a `replace` would empty the group. */
   const named = (value: unknown, path: string) => {
-    if (value === undefined || value === null)
+    if (value === null)
       throw new ScimError(
         400,
         `Path '${path}' needs a value: the members to set. To take everyone out, remove 'members'.`,
@@ -1211,11 +1276,12 @@ export function applyGroupPatch(
     return memberIds(value);
   };
   const setAttribute = (path: string, value: unknown, op: 'add' | 'replace', pathless: boolean) => {
+    if (value === undefined) throw noValue(op, path);
     const key = coreKey(path, 'group'),
       extension = unitExtensionTarget(path);
     if (isBareParent(key)) bare = true;
     else if (extension) {
-      next.parent = extension === 'parent' ? parentUnitOf(value) : parentInExtension(value, path);
+      next.parent = extension === 'parent' ? parentUnitOf(value) : parentInExtension(value, path, op);
       placed = true;
     } else if (pathless && (key === GROUP_URN || key === GROUP_URN + ':')) {
       for (const [name, inner] of Object.entries(asObject(value, path))) setAttribute(name, inner, op, true);
@@ -1223,10 +1289,9 @@ export function applyGroupPatch(
       if (op === 'add') for (const member of named(value, path)) members.add(member);
       else members = new Set(named(value, path));
     } else if (key === 'displayname') {
-      if (value === null || value === undefined) throw required(path);
+      if (value === null) throw required(path);
       next.label = asString(value, path);
-    } else if (key === 'externalid')
-      next.externalId = value === null || value === undefined ? null : asString(value, path);
+    } else if (key === 'externalid') next.externalId = value === null ? null : asString(value, path);
     else if (isReadOnly(key, 'group')) {
       if (!pathless) throw readOnly(path);
       repeated(key, value, id);
@@ -1236,6 +1301,8 @@ export function applyGroupPatch(
     const op = opOf(operation),
       path = operation.path && corePath(operation.path, 'group'),
       key = path?.toLowerCase();
+    // RFC 7644 §3.5.2: the value of an `add` or `replace` is checked before any branch reads it, a path-less one's too.
+    if (op !== 'remove' && operation.value === undefined) throw noValue(op, operation.path);
     if (path && key?.startsWith('members') && key !== 'members') {
       // Matched on the path as it was sent: the attribute's case does not matter, the id's does. Any other path under
       // `members` is one this server cannot evaluate, and saying so is the only honest answer: accepted and ignored,

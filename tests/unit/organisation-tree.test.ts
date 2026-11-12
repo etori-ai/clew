@@ -342,7 +342,22 @@ describe('the organisation tree over SCIM (D99)', () => {
     expect(await patch([{ op: 'remove', path: SCIM.unit.toUpperCase() + ':parent' }])).toBeUndefined();
     const fields = { externalId: 'unit:skola', label: 'Skolan', parent: 'ksk', members: [] };
     expect(applyGroupPatch(fields, [{ op: 'remove', path: SCIM.unit }]).parent).toBeNull();
-    expect(applyGroupPatch(fields, [{ op: 'replace', value: { [SCIM.unit]: {} } }]).parent).toBeNull();
+    // `null` makes a unit a root, by the parent's path, the extension's and in a path-less value (Q1).
+    for (const operation of [
+      { op: 'replace', path: SCIM.unit + ':parent', value: null },
+      { op: 'replace', path: SCIM.unit, value: null },
+      { op: 'replace', path: SCIM.unit, value: { Parent: null } },
+      { op: 'replace', value: { [SCIM.unit]: { parent: null } } },
+      { op: 'add', value: { [SCIM.unit]: null } },
+    ])
+      expect(applyGroupPatch(fields, [operation]).parent).toBeNull();
+    // An extension's object that leaves `parent` out says nothing about it, which an add or replace may not: it once
+    // made the unit a root with a 200.
+    for (const operation of [
+      { op: 'replace', value: { [SCIM.unit]: {} } },
+      { op: 'add', path: SCIM.unit, value: { other: 'x' } },
+    ])
+      expect(() => applyGroupPatch(fields, [operation])).toThrow("requires a value for 'parent'.");
     expect(() => applyGroupPatch(fields, [{ op: 'replace', path: SCIM.unit + ':parent', value: 'ksk' }])).toThrow(
       "'unit:<unitId>' (D99)",
     );
