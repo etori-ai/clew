@@ -21,7 +21,10 @@ export interface SchedulerDeps {
   pollMs?: number;
 }
 export const NIGHTLY = 'scan-utvecklingssamtal';
-/** The nightly clean-up of sign-in machinery (D117): sessions, login transactions and logout receipts past expiry. */
+/**
+ * The nightly clean-up of sign-in machinery (D117): sessions, login transactions and logout receipts past expiry. A
+ * night whose clean-up fails says so in one line and completes; the next night cleans what it left.
+ */
 export const SIGN_IN_CLEANUP = 'sign-in-cleanup';
 export function createScheduler(deps: SchedulerDeps) {
   const { jobs, people, threads, calendar, signIns, clock, log } = deps;
@@ -35,9 +38,11 @@ export function createScheduler(deps: SchedulerDeps) {
       }
       await scheduleNightly();
     } else if (job.kind === SIGN_IN_CLEANUP) {
-      // The next night first, so that a clean-up that fails still leaves the next one scheduled.
+      // The next night first. A clean-up that fails is said and left to that night, and the night completes: a job
+      // that threw would be claimed again by its workflow every few minutes for as long as the failure lasted, one more
+      // workflow each night, while the next night repeats the clean-up anyway.
       await scheduleCleanup();
-      await signIns.removeExpired(clock());
+      await signIns.removeExpired(clock()).catch(error => log('sign-in clean-up failed', error));
     } else if (job.kind === 'undo-expiry') {
       const threadId = threadIdOf(job);
       if (threadId) await calendar.closeUndoWindow(threadId);

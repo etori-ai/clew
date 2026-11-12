@@ -117,7 +117,7 @@ describe('the scheduler', () => {
       },
     ]);
   });
-  test('the sign-in clean-up removes what expired by its clock and schedules the next night, even when it fails', async () => {
+  test('the sign-in clean-up removes what expired by its clock and schedules the next night', async () => {
     const w = world();
     await w.jobs.schedule({
       id: 'sign-in-cleanup:2026-11-04',
@@ -130,15 +130,27 @@ describe('the scheduler', () => {
       ['sign-in-cleanup:2026-11-04', 'done', '2026-11-04T02:00:00.000Z'],
       ['sign-in-cleanup:2026-11-05', 'due', '2026-11-05T02:00:00.000Z'],
     ]);
-    // A night whose clean-up fails is finished with its error, and the next night is already scheduled.
+    expect(w.logged).toEqual([]);
+  });
+  test('a night whose clean-up fails says so and completes, and the next night is scheduled to clean what it left', async () => {
+    const w = world();
     w.failCleanup();
+    // As the engine's step runs a job (`runScheduledJob`): the run resolves, so the night completes in the ledger. A
+    // run that threw would be claimed again by its workflow every few minutes for as long as the failure lasted.
+    await w.scheduler.run({ id: 'sign-in-cleanup:2026-11-04', kind: SIGN_IN_CLEANUP, payload: {} });
+    expect(w.calls).toEqual(['clean:' + T0]);
+    expect(w.logged).toEqual([['sign-in clean-up failed', new Error('database unavailable')]]);
+    expect(w.jobs.rows.map(r => [r.id, r.status, r.runAt])).toEqual([
+      ['sign-in-cleanup:2026-11-05', 'due', '2026-11-05T02:00:00.000Z'],
+    ]);
+    // The next night fails too, and is done, never failed, where a tick runs it.
     w.advance(24 * 3600_000);
     await w.scheduler.tick();
     expect(w.jobs.rows.map(r => [r.id, r.status, r.error])).toEqual([
-      ['sign-in-cleanup:2026-11-04', 'done', undefined],
-      ['sign-in-cleanup:2026-11-05', 'failed', 'database unavailable'],
+      ['sign-in-cleanup:2026-11-05', 'done', undefined],
       ['sign-in-cleanup:2026-11-06', 'due', undefined],
     ]);
+    expect(w.logged).toHaveLength(2);
   });
   test('a tick runs what is due, in order, finishes each job and never lets one failure stop the rest', async () => {
     const w = world();
