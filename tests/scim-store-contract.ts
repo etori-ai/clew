@@ -46,6 +46,22 @@ export const groupRow = (id: string, organisationId: string, extra: Partial<Grou
   updatedAt: T,
   ...extra,
 });
+/**
+ * The unique index a write ran into, read as the SCIM route reads it to answer 409 with the attribute: Postgres names
+ * the constraint, and the driver may wrap the error once. Undefined when the write went through.
+ */
+const violated = (write: Promise<unknown>) =>
+  write.then(
+    () => undefined,
+    (error: unknown) => {
+      const e = error as {
+        code?: string;
+        constraint_name?: string;
+        cause?: { code?: string; constraint_name?: string };
+      };
+      return { code: e.code ?? e.cause?.code, constraint: e.constraint_name ?? e.cause?.constraint_name };
+    },
+  );
 export function scimStoreContract(name: string, make: () => Promise<ScimStoreHarness>) {
   describe(`${name} SCIM store`, () => {
     test('users are found, filtered and paged within their organisation only, and updated by field', async () => {
@@ -183,6 +199,42 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         expect(await tx.readGroup(p + '-org', g1)).toBeUndefined();
         expect(await tx.userGroups(b)).toEqual([]);
         expect(await tx.userGroups(a)).toEqual([{ id: g2, externalId: null, label: 'No external id' }]);
+      });
+    });
+    test("a group's key is held by one group across the installation, inserted or updated, and any number hold none (B2)", async () => {
+      const { store, prefix: p } = await make();
+      const [g1, g2] = [p + '-g1', p + '-g2'],
+        duplicate = { code: '23505', constraint: 'auth_group_external_id' };
+      await store.transaction(async tx => {
+        await tx.insertGroup(groupRow(g1, p + '-org'));
+        await tx.insertGroup(groupRow(g2, p + '-org'));
+        await tx.insertGroup(groupRow(p + '-n1', p + '-org', { externalId: null }));
+        await tx.insertGroup(groupRow(p + '-n2', p + '-org', { externalId: null }));
+      });
+      // A key is shared vocabulary (D68): another organisation's group with it is the same key.
+      expect(
+        await violated(
+          store.transaction(tx => tx.insertGroup(groupRow(p + '-g3', p + '-elsewhere', { externalId: 'g:' + g1 }))),
+        ),
+      ).toEqual(duplicate);
+      expect(
+        await violated(store.transaction(tx => tx.updateGroup(g2, { externalId: 'g:' + g1, updatedAt: T }))),
+      ).toEqual(duplicate);
+      // Neither write left anything; a group written again under its own key, and one without a key given a new name,
+      // are not duplicates.
+      await store.transaction(async tx => {
+        expect(await tx.readGroup(p + '-elsewhere', p + '-g3')).toBeUndefined();
+        expect((await tx.readGroup(p + '-org', g2))?.externalId).toBe('g:' + g2);
+        await tx.updateGroup(g1, { externalId: 'g:' + g1, label: 'Same key', updatedAt: T });
+        await tx.updateGroup(p + '-n1', { label: 'Still without a key', updatedAt: T });
+        expect((await tx.readGroup(p + '-org', g1))?.label).toBe('Same key');
+        expect((await tx.findGroup('externalId', 'g:' + g1))?.id).toBe(g1);
+      });
+      // A key let go is free for another group.
+      await store.transaction(async tx => {
+        await tx.updateGroup(g1, { externalId: null, updatedAt: T });
+        await tx.updateGroup(g2, { externalId: 'g:' + g1, updatedAt: T });
+        expect((await tx.findGroup('externalId', 'g:' + g1))?.id).toBe(g2);
       });
     });
     test('assignments carry their unit label, a binding is seen, and a group-capability row is added and removed once', async () => {
@@ -418,6 +470,16 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
           { id: lone, label: 'Unit ' + lone, parentId: null },
           { id: mid, label: 'Unit ' + mid, parentId: root },
           { id: root, label: 'Unit ' + root, parentId: null },
+        ]);
+        // Narrowed to the ids named (D114: the units a person's employments name), in unit id order whatever order they
+        // were named in; an id no unit of the organisation has, another organisation's unit among them, is absent.
+        expect(await tx.unitTree(org, [lone, p + '-nowhere', leaf, p + '-x', leaf])).toEqual([
+          { id: leaf, label: 'Unit ' + leaf, parentId: mid },
+          { id: lone, label: 'Unit ' + lone, parentId: null },
+        ]);
+        expect(await tx.unitTree(org, [p + '-nowhere'])).toEqual([]);
+        expect(await tx.unitTree(p + '-elsewhere', [p + '-x', leaf])).toEqual([
+          { id: p + '-x', label: 'Elsewhere', parentId: null },
         ]);
         expect(await tx.childUnits(root)).toEqual([{ id: mid, label: 'Unit ' + mid }]);
         expect(await tx.childUnits(leaf)).toEqual([]);

@@ -60,18 +60,28 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
     by === 'userName'
       ? u.userName !== null && u.userName.toLowerCase() === value.toLowerCase()
       : u.externalId === value;
+  const duplicateKey = (constraint: string) =>
+    Object.assign(new Error('duplicate key value violates unique constraint'), {
+      code: '23505',
+      constraint_name: constraint,
+    });
   /** The unique indexes of `auth_person`, so a race the use case did not catch fails here as it does on Postgres. */
   const assertUnique = (record: Pick<UserRecord, 'userName' | 'externalId'>, selfId: string) => {
     for (const u of state.users.values()) {
       if (u.id === selfId) continue;
       const byName = record.userName !== null && userMatches(u, 'userName', record.userName),
         byExternal = record.externalId !== null && u.externalId === record.externalId;
-      if (byName || byExternal)
-        throw Object.assign(new Error('duplicate key value violates unique constraint'), {
-          code: '23505',
-          constraint_name: byName ? 'auth_person_user_name' : 'auth_person_external_id',
-        });
+      if (byName || byExternal) throw duplicateKey(byName ? 'auth_person_user_name' : 'auth_person_external_id');
     }
+  };
+  /**
+   * The unique index of `auth_group` (B2): a key is one group's across the installation, any number of groups hold
+   * none. A change to group handling that lets a second group take a key fails here as it does on Postgres.
+   */
+  const assertUniqueGroup = (record: Pick<GroupRecord, 'externalId'>, selfId: string) => {
+    if (record.externalId === null) return;
+    for (const g of state.groups.values())
+      if (g.id !== selfId && g.externalId === record.externalId) throw duplicateKey('auth_group_external_id');
   };
   const groupsOf = (personId: string) =>
     [...state.members]
@@ -258,11 +268,15 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
     },
     async insertGroup(record) {
       if (state.groups.has(record.id)) throw new Error('duplicate group id');
+      assertUniqueGroup(record, record.id);
       state.groups.set(record.id, { ...record });
     },
     async updateGroup(id, fields) {
       const g = state.groups.get(id);
-      if (g) state.groups.set(id, { ...g, ...fields });
+      if (!g) return;
+      const next = { ...g, ...fields };
+      assertUniqueGroup(next, id);
+      state.groups.set(id, next);
     },
     async deleteGroup(id) {
       state.groups.delete(id);
