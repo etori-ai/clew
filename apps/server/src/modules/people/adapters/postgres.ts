@@ -156,7 +156,7 @@ const provisionerRecord = (r: { id: string; organisationId: string; label: strin
  * The provisioning tables and the grant projection (D68, D85) inside one Postgres transaction. `db` is the server's
  * pool unless a test names another database, as the store contract does with one created with the locale C (L13).
  */
-export function postgresProvisionStore(db?: Database): ProvisionStore {
+export function postgresProvisionStore(db: () => Database = database): ProvisionStore {
   const txOf = (tx: Transaction): ProvisionTx => ({
     async lockPerson(id) {
       const [row] = await tx
@@ -674,5 +674,5 @@ export function postgresProvisionStore(db?: Database): ProvisionStore {
       return removed.length > 0;
     },
   });
-  return { transaction: fn => (db ?? database()).transaction(tx => fn(txOf(tx))) };
+  return { transaction: fn => db().transaction(tx => fn(txOf(tx))) };
 }

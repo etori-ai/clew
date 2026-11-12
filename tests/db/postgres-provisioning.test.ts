@@ -140,30 +140,27 @@ provisioningContract('postgres', async (): Promise<ProvisioningHarness> => {
 import { scimStoreContract, type ScimStoreHarness } from '../scim-store-contract';
 import { cLocaleDatabase, type CLocaleDatabase } from './c-locale';
 /** The SCIM half's harness on the suite's database, or on `db` when a test names another. */
-const scimHarness = (prefix: string, db?: Database): ScimStoreHarness => {
-  const on = () => db ?? database();
-  return {
-    store: postgresProvisionStore(db),
-    prefix,
-    async seedProvisioner(p, digest, revoked, previous) {
-      await on()
-        .insert(schema.provisioners)
-        .values({
-          ...p,
-          tokenDigest: digest,
-          createdBy: 'test',
-          revokedAt: revoked ? new Date() : null,
-          previousTokenDigest: previous?.digest ?? null,
-          previousValidUntil: previous ? new Date(previous.until) : null,
-        });
-    },
-    async bind(personId) {
-      await on()
-        .insert(schema.identityBindings)
-        .values({ issuer: 'https://idp.test/' + prefix, subject: personId, personId });
-    },
-  };
-};
+const scimHarness = (prefix: string, db: () => Database = database): ScimStoreHarness => ({
+  store: postgresProvisionStore(db),
+  prefix,
+  async seedProvisioner(p, digest, revoked, previous) {
+    await db()
+      .insert(schema.provisioners)
+      .values({
+        ...p,
+        tokenDigest: digest,
+        createdBy: 'test',
+        revokedAt: revoked ? new Date() : null,
+        previousTokenDigest: previous?.digest ?? null,
+        previousValidUntil: previous ? new Date(previous.until) : null,
+      });
+  },
+  async bind(personId) {
+    await db()
+      .insert(schema.identityBindings)
+      .values({ issuer: 'https://idp.test/' + prefix, subject: personId, personId });
+  },
+});
 scimStoreContract('postgres', async () => {
   const prefix = 'test-scim-' + randomUUID().slice(0, 8);
   prefixes.push(prefix);
@@ -181,7 +178,7 @@ afterAll(async () => {
 });
 scimStoreContract('postgres created with the locale C', async () => {
   const { db } = await (cLocale ??= cLocaleDatabase());
-  return scimHarness('test-scim-c-' + randomUUID().slice(0, 8), db);
+  return scimHarness('test-scim-c-' + randomUUID().slice(0, 8), () => db);
 });
 /**
  * What the store's comparisons and locks rely on, pinned as the migrations define it: the user names' index folds as
