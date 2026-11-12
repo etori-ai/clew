@@ -1881,7 +1881,9 @@
       "path": "docs/decisions/D114-person-profiles-show-employments-and-categorised-phone-numbers.md",
       "title": "D114 · Person profiles show current employments and categorised phone numbers",
       "category": "decision-history",
-      "headings": []
+      "headings": [
+        "Employment and work placement in a municipality"
+      ]
     },
     {
       "path": "docs/decisions/D12-objects-chips-proposals.md",
@@ -3904,6 +3906,16 @@
         "Recommendation",
         "The choice, and its answer",
         "Validation"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-12-municipal-employment-and-work-placements.md",
+      "title": "Municipal employment, work placements and managerial responsibility",
+      "category": "review-history",
+      "headings": [
+        "Why a home unit alone is insufficient",
+        "What changes when someone moves",
+        "What Clew can establish today"
       ]
     },
     {

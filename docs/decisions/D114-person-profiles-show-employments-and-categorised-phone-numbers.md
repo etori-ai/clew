@@ -16,3 +16,9 @@ A person can hold several current employments, including two on the same unit. T
 This amends [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md). A core SCIM title already in the directory remains usable on its own. Assigning it to an employment requires the source to identify the unit. A real installation still needs to verify its mapping.
 
 **Not built.** An id for an employment; a filter that picks one employment in a `PATCH`.
+
+## Employment and work placement in a municipality
+
+For future directory mappings, each employment has an organisational home unit. A work placement belongs to that employment and identifies the unit where the person works for a given period. When someone works at their home unit, the home unit alone is sufficient. One employment can also cover work at several other units at the same time. Managerial responsibility and permission to act each have their own source. This distinction guides future modelling. Today's SCIM employment describes the job, and group memberships still determine Clew assignments and access under item 2.
+
+The reasons for this choice, the effect of a transfer or a temporary posting, and the questions for the first municipal directory are in [Municipal employment, work placements and managerial responsibility](../reviews/2026-11-12-municipal-employment-and-work-placements.md).
