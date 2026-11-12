@@ -1,26 +1,40 @@
 /**
  * Conformance check for a Clew connector service (D21, D23, D44). Uses the installation signing authority and
- * exercises the connector as a manager and an employee. The same
+ * exercises the connector as a manager and an employee, handed to the registry as the server hands a person (the whole
+ * context, provisioned groups included), so only the published actor reaches the service, as in production. The same
  * check runs behind "Testa anslutning" on the admin page (`packages/connectors/src/check.ts`).
  *
- *   bun scripts/connector-check.ts http://127.0.0.1:4010 --secret <shared secret> [--id hello]
- *       [--keys anna,erik,maria] [--as hillevi]
+ *   bun scripts/connector-check.ts http://127.0.0.1:4010 --secret <shared secret> [--id hello] [--keys anna,erik,maria]
+ *   bun scripts/connector-check.ts <url> --secret <shared secret> --id <registered connector> --keys <keys> --as <user name>
  *
- * A read about an entity (D97) is asked with keys: `--keys` are the user names (or unit ids) to ask in one batch, and
- * `--as` the user name of the person in this installation's directory to sign that batch as, someone who may see them.
- * Without `--as` the batch is signed as the check's own manager on a unit no installation has, for whom every real key
- * is out of scope; without `--keys` the rows are not checked, while an unknown key and another unit still are.
+ * A read about an entity (D97) is asked with keys: `--keys` are the user names (or unit ids) to ask in one batch. Without
+ * `--as` the batch is signed as the check's own manager on a unit no installation has, for whom every real key is out of
+ * scope; without `--keys` the rows are not checked, while an unknown key and another unit still are.
+ *
+ * `--as <user name>` signs the batch, and the unknown key asked after it, as that person of this installation, someone
+ * who may see the keys: Clew's installation key signs their identity as Clew signs it (id, name, unit, role and user name
+ * from their current grant), valid for two minutes, on every read about an entity the check makes, and, when the
+ * manifest declares `uses`, a callback grant for the connector `--id` names. The service and the system behind it
+ * cannot tell these reads from the person's own and record them as that person's, in whatever access log they keep. Use
+ * a test installation or a test account, never a real colleague. `--as` requires `--id`, a connector registered in this
+ * installation, so the service cannot choose the audience or the connector a callback is for, and before the first
+ * signed request the script writes one audit row: `connector.checked_as`, actor `operator:cli`, about
+ * `person:<their id>`, with the connector's id and counts only (`scripts/connector-check-as.ts`).
  */
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import { SignJWT } from 'jose';
 import { resolve } from 'node:path';
 import { sql } from 'drizzle-orm';
+import type { AuthenticatedContext } from '@clew/contracts';
 import { closeDatabase, database, schema } from '@clew/db';
+import { readConnector } from '@clew/db/connectors';
+import { writeAudit } from '@clew/db/threads';
 import { signingAuthority } from '../apps/server/src/connectors/signing';
 import { systemContext } from '../apps/server/src/system-context';
-import { actorOf, type Actor } from '../packages/connectors/src/index';
+import type { Actor } from '../packages/connectors/src/index';
 import { checkConnector } from '../packages/connectors/src/check';
+import { asProblem, checkAs, type CheckAsDeps } from './connector-check-as';
 
 const args = process.argv.slice(2);
 try {
@@ -39,7 +53,7 @@ const url = args
 const secret = option('secret') ?? process.env.CLEW_CONNECTOR_SECRET;
 if (!url || !secret) {
   console.error(
-    'Usage: bun scripts/connector-check.ts <url> --secret <shared secret> [--id <connector id>] [--keys a,b,c] [--as <user name>]',
+    'Usage: bun scripts/connector-check.ts <url> --secret <shared secret> [--id <connector id>] [--keys a,b,c] [--as <user name> with --id]',
   );
   process.exit(2);
 }
@@ -48,19 +62,14 @@ const keys = (option('keys') ?? '')
   .split(',')
   .map(k => k.trim())
   .filter(Boolean);
-const asUser = option('as');
-const ajv = addFormats(new Ajv({ strict: false }));
-
-/** The person `--as` names, as Clew signs them: their current grant, found by user name without regard to case. */
-async function personByUserName(userName: string): Promise<Actor> {
-  const found = await database()
-    .select({ id: schema.people.id })
-    .from(schema.people)
-    .where(sql`lower(${schema.people.userName}) = lower(${userName})`);
-  const persona = found.length === 1 ? await systemContext(found[0]!.id, 'operator:connector-check') : undefined;
-  if (!persona) throw new Error(`--as ${userName}: no person with that user name and a grant in this installation.`);
-  return actorOf(persona);
+const asUser = args.includes('--as') ? (option('as') ?? '') : undefined;
+// Refused before anything is fetched or signed: `--as` signs a real person, so it is bound to a registered connector.
+const problem = asProblem({ as: asUser, id });
+if (problem) {
+  console.error(problem);
+  process.exit(2);
 }
+const ajv = addFormats(new Ajv({ strict: false }));
 
 // The audience must be the manifest's id; without --id it is learnt from the manifest, so the signer is built after a first fetch.
 const { fetchManifest } = await import('../packages/connectors/src/remote');
@@ -78,15 +87,42 @@ const signer = (key: string) => (actor: Actor) =>
     .setIssuedAt()
     .setExpirationTime('2m')
     .sign(new TextEncoder().encode(key));
-const authority = await signingAuthority();
-let as: Actor | undefined;
+/** This installation's side of `--as`: the registered connector, the person by user name, the audit row. */
+const liveCheckAs: CheckAsDeps = {
+  registered: async id => !!(await readConnector(id)),
+  async person(userName) {
+    // Compared as a sign-in compares a user name: NFC-normalised, then lower-cased under the ICU root collation.
+    const found = await database()
+      .select({ id: schema.people.id })
+      .from(schema.people)
+      .where(
+        sql`lower(${schema.people.userName} COLLATE "und-x-icu") = lower(${userName.normalize('NFC')}::text COLLATE "und-x-icu")`,
+      );
+    return found.length === 1 ? systemContext(found[0]!.id, 'operator:connector-check') : undefined;
+  },
+  audit: entry => database().transaction(tx => writeAudit(tx, entry)),
+};
+// The person `--as` names, as the server hands them to the registry: their whole context. The audit row is written
+// here, before the check signs its first request.
+let as: AuthenticatedContext | undefined;
 try {
-  as = asUser ? await personByUserName(asUser) : undefined;
+  as = asUser
+    ? await checkAs(
+        {
+          id: audience,
+          userName: asUser,
+          keys: keys.length,
+          reads: manifest.capabilities.filter(c => c.kind === 'read' && c.about).length,
+        },
+        liveCheckAs,
+      )
+    : undefined;
 } catch (error) {
   console.error((error as Error).message);
   await closeDatabase();
   process.exit(2);
 }
+const authority = await signingAuthority();
 const report = await checkConnector({
   url,
   id: audience,
