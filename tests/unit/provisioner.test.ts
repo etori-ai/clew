@@ -1010,14 +1010,40 @@ describe('the synthetic provisioner', () => {
         { unitId: 'a', role: 'manager' },
       ]);
     });
-    test('somebody the source places on a unit that was not written keeps the units Clew holds, and one who returns to it stays inactive until it is written', async () => {
+    test('a unit that does not take the people the source adds to it leaves them on the units Clew holds them on, and only them', async () => {
+      const { store, client } = stack();
+      const units = ['a', 'b', 'c', 'd', 'e'].map(id => unit(id, 'Enhet ' + id));
+      const anna = someone('e-1', 'anna', 'a'),
+        bo = someone('e-2', 'bo', 'b', { alsoIn: ['c'] }),
+        rest = [someone('e-3', 'cia', 'd'), someone('e-4', 'dan', 'e')];
+      await reconcile(client, source(units, [anna, bo, ...rest]), scope);
+      const b = [...store.state.groups.values()].find(g => g.externalId === 'unit:b')!.id;
+      // Clew refuses the addition to B, for whatever reason it has.
+      const refusing: ScimClient = {
+        async request(method, path, body) {
+          const operations = (body as { Operations?: Array<{ op: string }> } | undefined)?.Operations;
+          if (method === 'PATCH' && path === '/Groups/' + b && operations?.some(o => o.op === 'add'))
+            throw new ScimClientError(400, 'invalidValue', 'Refused for the test.', null);
+          return client.request(method, path, body);
+        },
+      };
+      // Anna moves to B, and Bo, who is on B already, is no longer on C as well.
+      const summary = await reconcile(
+        refusing,
+        source(units, [{ ...anna, department: 'b' }, { ...bo, alsoIn: [] }, ...rest]),
+        scope,
+      );
+      expect(summary).toMatchObject({ groupsRefused: [{ externalId: 'unit:b', detail: 'Refused for the test.' }] });
+      expect(['unit:a', 'unit:b', 'unit:c'].map(key => holders(store, key))).toEqual([['anna'], ['bo'], []]);
+    });
+    test('somebody the source places on a unit that was not written stays on the units Clew holds them on, without the role the source withdrew, and one who returns to it stays inactive until it is written', async () => {
       const { store, client, grantOf } = stack();
       const units = ['gammal', 'a', 'b', 'c', 'd', 'e'].map(id => unit(id, 'Enhet ' + id));
-      const anna = someone('e-1', 'anna', 'gammal'),
+      const anna = someone('e-1', 'anna', 'gammal', { manager: true }),
         bo = someone('e-2', 'bo', 'a'),
-        rest = [someone('e-3', 'cia', 'b'), someone('e-4', 'dan', 'c'), someone('e-5', 'eva', 'd')];
+        rest = [someone('e-3', 'cia', 'b', { manager: true }), someone('e-4', 'dan', 'c'), someone('e-5', 'eva', 'd')];
       await reconcile(client, source(units, [anna, bo, ...rest]), scope);
-      // The source moves Anna to a unit it does not list and closes her old one, and Bo leaves.
+      // The source moves Anna, a manager, to a unit it does not list and closes her old one, and Bo leaves.
       const lost = { ...anna, department: 'okand' },
         log: string[] = [];
       const first = await reconcile(client, source(units.slice(1), [lost, { ...bo, active: false }, ...rest]), scope, {
@@ -1025,7 +1051,7 @@ describe('the synthetic provisioner', () => {
       });
       expect(first).toMatchObject({
         deactivated: 1,
-        groupsRemoved: 0,
+        groupsRemoved: 1,
         refused: [],
         groupsRefused: [
           {
@@ -1037,8 +1063,13 @@ describe('the synthetic provisioner', () => {
       expect(log).toContain(
         'kept group unit:gammal: somebody on it could not be placed on the unit the source gives them',
       );
-      expect([holders(store, 'unit:gammal'), holders(store, 'unit:a')]).toEqual([['anna'], []]);
-      expect(grantOf('anna')).toMatchObject({ unitId: 'gammal' });
+      // She stays on her old unit, so she is never without one, and her role on it goes as the source says.
+      expect([holders(store, 'unit:gammal'), holders(store, 'unit-manager:gammal'), holders(store, 'unit:a')]).toEqual([
+        ['anna'],
+        undefined,
+        [],
+      ]);
+      expect(grantOf('anna')).toMatchObject({ unitId: 'gammal', role: 'employee' });
       // Bo comes back to a new unit Clew refuses, while Anna's unit is still missing: he stays inactive.
       const back = await reconcile(
         client,
@@ -1064,11 +1095,11 @@ describe('the synthetic provisioner', () => {
         scope,
       );
       expect(right).toMatchObject({ groupsRemoved: 1, refused: [], groupsRefused: [] });
-      expect([grantOf('anna')?.unitId, grantOf('bo')?.unitId, held(store, 'bo').enabled]).toEqual([
-        'okand',
-        'ny',
-        true,
+      expect([grantOf('anna'), grantOf('bo')]).toMatchObject([
+        { unitId: 'okand', role: 'manager' },
+        { unitId: 'ny', role: 'employee' },
       ]);
+      expect(held(store, 'bo').enabled).toBe(true);
       expect(holders(store, 'unit:gammal')).toBeUndefined();
     });
     test('two people who held one account name in turn have both left: the first keeps the name Clew holds it under, and nothing is refused', async () => {
