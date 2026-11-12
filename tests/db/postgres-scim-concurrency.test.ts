@@ -196,6 +196,82 @@ test("a member who comes or goes moves the group's time of change in the store, 
   const read = await scim.getGroup(p, group.id, BASE);
   expect([read.meta.lastModified, read.members.length]).toEqual([changed.meta.lastModified, 1]);
 });
+test("a member's time of change moves in the store with the group write that lists the group on the member's resource, renames it there or takes it away (S13)", async () => {
+  const { p, user, scim } = stack();
+  const [a, b] = [(await scim.createUser(p, user(1), BASE)).id, (await scim.createUser(p, user(2), BASE)).id];
+  const group = await scim.createGroup(
+    p,
+    { externalId: `${p.id}:plain`, displayName: 'Plain', members: [{ value: a }] },
+    BASE,
+  );
+  expect((await scim.getUser(p, a, BASE)).meta.lastModified).toBe(group.meta.lastModified);
+  await new Promise(resolve => setTimeout(resolve, 5));
+  const changed = await scim.patchGroup(
+    p,
+    group.id,
+    {
+      schemas: [PATCH],
+      Operations: [
+        { op: 'add', path: 'members', value: [{ value: b }] },
+        { op: 'replace', path: 'displayName', value: 'Renamed' },
+      ],
+    },
+    BASE,
+  );
+  for (const id of [a, b]) {
+    const read = await scim.getUser(p, id, BASE);
+    expect([read.meta.lastModified, read.groups.map(g => g.display)]).toEqual([changed.meta.lastModified, ['Renamed']]);
+  }
+  await new Promise(resolve => setTimeout(resolve, 5));
+  await scim.deleteGroup(p, group.id);
+  for (const id of [a, b]) {
+    const read = await scim.getUser(p, id, BASE);
+    expect([read.meta.lastModified > changed.meta.lastModified, read.groups]).toEqual([true, []]);
+  }
+});
+test('groups that share their members, renamed while members come and go, written at once in different orders, all finish (S13)', async () => {
+  const { prefix, p, user, grant, scim } = stack();
+  const ids: string[] = [];
+  for (let n = 1; n <= 6; n++) ids.push((await scim.createUser(p, user(n), BASE)).id);
+  await database()
+    .insert(schema.groupCapabilities)
+    .values({ organisationId: p.organisationId, groupExternalId: `${prefix}:admins`, capability: 'admin.users' });
+  // A group that gives a capability (who comes or goes is derived, and every member touched), one that gives nothing
+  // (every member touched, nobody derived) and a unit (its new name derives every member): each holds the people in
+  // id order, in one pass, whichever of the two takes them.
+  const keys = [`${prefix}:admins`, `${prefix}:plain`, `unit:${prefix}-u`],
+    groups: string[] = [];
+  for (const externalId of keys)
+    groups.push((await scim.createGroup(p, { externalId, displayName: externalId }, BASE)).id);
+  const outOf = (round: number, k: number) => ids[(round + 2 * k) % ids.length]!;
+  let times: string[] = [];
+  for (let round = 0; round < 6; round++) {
+    const written = await Promise.all(
+      keys.map((externalId, k) =>
+        scim.replaceGroup(
+          p,
+          groups[k]!,
+          {
+            externalId,
+            displayName: `${externalId} ${round}`,
+            members: (k === 1 ? [...ids].reverse() : ids)
+              .filter(id => id !== outOf(round, k))
+              .map(value => ({ value })),
+          },
+          BASE,
+        ),
+      ),
+    );
+    times = written.map(g => g.meta.lastModified);
+  }
+  // Every write of the last round renamed its group, so each person's time is one of theirs.
+  for (const id of ids) expect(times).toContain((await scim.getUser(p, id, BASE)).meta.lastModified);
+  // And the grants are what the last round left: the unit's members act on it, with the capability if they have it.
+  for (const id of ids)
+    expect(await grant(id)).toEqual(
+      id === outOf(5, 2) ? undefined : { role: 'employee', capabilities: id === outOf(5, 0) ? [] : ['admin.users'] },
+    );
+});
 test('concurrent user patches preserve the name and the deactivation', async () => {
   const { deps, p, store, user, scim } = stack();
   const { id } = await scim.createUser(p, user(1), BASE);

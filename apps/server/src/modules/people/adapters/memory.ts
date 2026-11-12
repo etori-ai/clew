@@ -223,6 +223,12 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
       assertUnique(next, id);
       state.users.set(id, next);
     },
+    async touchUsers(ids, updatedAt) {
+      for (const id of ids) {
+        const u = state.users.get(id);
+        if (u) state.users.set(id, { ...u, updatedAt });
+      }
+    },
     async userGroups(personId) {
       return byId(groupsOf(personId).map(g => ({ id: g.id, externalId: g.externalId, label: g.label })));
     },

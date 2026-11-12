@@ -419,6 +419,24 @@ export function postgresProvisionStore(): ProvisionStore {
         .set({ ...fields, updatedAt: new Date(updatedAt) })
         .where(eq(schema.people.id, id));
     },
+    async touchUsers(ids, updatedAt) {
+      // Held in id order before they are written, the order in which a derivation locks people one at a time: two
+      // writes that share people queue behind each other instead of waiting on each other. Byte by byte (`collate
+      // "C"`), the order JavaScript's sort gives the ids Clew makes, whatever the database collates.
+      const sorted = [...new Set(ids)].sort();
+      for (let at = 0; at < sorted.length; at += MEMBER_BATCH) {
+        const held = tx
+          .select({ id: schema.people.id })
+          .from(schema.people)
+          .where(inArray(schema.people.id, sorted.slice(at, at + MEMBER_BATCH)))
+          .orderBy(sql`${schema.people.id} collate "C"`)
+          .for(ROW_LOCK);
+        await tx
+          .update(schema.people)
+          .set({ updatedAt: new Date(updatedAt) })
+          .where(inArray(schema.people.id, held));
+      }
+    },
     async userGroups(personId) {
       return tx
         .select({ id: schema.groups.id, externalId: schema.groups.externalId, label: schema.groups.label })

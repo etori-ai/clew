@@ -554,5 +554,35 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         await tx.lockUnits([p + '-unit-without-a-row', p + '-u', p + '-u']);
       });
     });
+    test("many people's time of change moves at once, in the transaction, and nothing else of them does (S13)", async () => {
+      const { store, prefix: p } = await make();
+      const [a, b, c, z] = [p + '-a', p + '-b', p + '-c', p + '-z'],
+        later = '2026-11-09T07:00:00.000Z',
+        row = (id: string, updatedAt = T) =>
+          userRow(id, p + '-org', { title: 'Lärare', phoneNumbers: [{ type: 'work', value: '1' }], updatedAt });
+      await store.transaction(async tx => {
+        for (const id of [a, b, c, z]) await tx.insertUser(row(id));
+      });
+      // More ids than one statement takes, most of them nobody's and one of them twice; the person who sorts last is in
+      // the second statement.
+      const nobody = Array.from({ length: 5200 }, (_, i) => p + '-nobody-' + i);
+      await store.transaction(async tx => {
+        await tx.touchUsers([z, ...nobody, c, a, c], later);
+        await tx.touchUsers([], later);
+      });
+      await store.transaction(async tx => {
+        for (const id of [a, c, z]) expect(await tx.readUser(p + '-org', id)).toEqual(row(id, later));
+        expect(await tx.readUser(p + '-org', b)).toEqual(row(b));
+      });
+      // Gone with the transaction that made it.
+      await expect(
+        store.transaction(async tx => {
+          await tx.touchUsers([b], later);
+          expect((await tx.readUser(p + '-org', b))?.updatedAt).toBe(later);
+          throw new Error('rolled back');
+        }),
+      ).rejects.toThrow('rolled back');
+      expect(await store.transaction(tx => tx.readUser(p + '-org', b))).toEqual(row(b));
+    });
   });
 }

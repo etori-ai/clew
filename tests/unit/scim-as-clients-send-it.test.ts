@@ -1583,4 +1583,80 @@ describe('what the review of users, the organisation and the guides found (2026-
       details: { capabilities: ['admin.connectors'] },
     });
   });
+  test("a member's time of change moves with each group write that changes the groups the member's resource lists, and with no other (S13)", async () => {
+    const { json, patch, create, store } = app();
+    const [stays, comes, goes, outside] = [await create(1), await create(2), await create(3), await create(4)];
+    const modified = async (id: string) => (await json('GET', '/Users/' + id)).body.meta.lastModified as string;
+    const times = async () => ({
+      stays: await modified(stays),
+      comes: await modified(comes),
+      goes: await modified(goes),
+      outside: await modified(outside),
+    });
+    const before = await times();
+    // A new group is on its members' resources from the time it was made. It once left their time where it was.
+    const created = await json('POST', '/Groups', {
+      schemas: [GROUP],
+      externalId: 'ad:g',
+      displayName: 'G',
+      members: [{ value: stays }, { value: goes }],
+    });
+    const g = '/Groups/' + created.body.id,
+      t1 = created.body.meta.lastModified;
+    expect(await times()).toEqual({ ...before, stays: t1, goes: t1 });
+    expect((await json('GET', '/Users/' + stays)).body.groups).toEqual([
+      expect.objectContaining({ value: created.body.id, display: 'G' }),
+    ]);
+    // Who comes and who goes, and not who stays.
+    const t2 = (
+      await patch(
+        g,
+        { op: 'add', path: 'members', value: [{ value: comes }] },
+        { op: 'remove', path: `members[value eq "${goes}"]` },
+      )
+    ).body.meta.lastModified;
+    expect(await times()).toEqual({ ...before, stays: t1, comes: t2, goes: t2 });
+    // A new name is the display every member's resource shows; the same name again is no change.
+    const t3 = (await patch(g, { op: 'replace', path: 'displayName', value: 'Gruppen' })).body.meta.lastModified;
+    await patch(g, { op: 'replace', path: 'displayName', value: 'Gruppen' });
+    expect(await times()).toEqual({ ...before, stays: t3, comes: t3, goes: t2 });
+    // A new key is no part of a member's resource.
+    const t4 = (await patch(g, { op: 'replace', path: 'externalId', value: 'ad:gruppen' })).body.meta.lastModified;
+    expect(t4 > t3).toBe(true);
+    expect(await times()).toEqual({ ...before, stays: t3, comes: t3, goes: t2 });
+    // A removed group is gone from its members' resources.
+    expect((await json('DELETE', g)).status).toBe(204);
+    const removed = await times();
+    expect(removed.stays > t4).toBe(true);
+    expect(removed).toEqual({ ...before, stays: removed.stays, comes: removed.stays, goes: t2 });
+    expect((await json('GET', '/Users/' + stays)).body.groups).toEqual([]);
+    // Neither is a unit's place in the tree.
+    for (const externalId of ['unit:a', 'unit:b'])
+      await json('POST', '/Groups', { schemas: [GROUP], externalId, displayName: externalId });
+    const unit = await json('POST', '/Groups', {
+      schemas: [GROUP, UNIT],
+      externalId: 'unit:c',
+      displayName: 'C',
+      members: [{ value: outside }],
+      [UNIT]: { parent: 'unit:a' },
+    });
+    const moved = await patch('/Groups/' + unit.body.id, { op: 'replace', path: UNIT + ':parent', value: 'unit:b' });
+    expect([moved.status, moved.body[UNIT], moved.body.meta.lastModified > unit.body.meta.lastModified]).toEqual([
+      200,
+      { parent: 'unit:b' },
+      true,
+    ]);
+    expect(await modified(outside)).toBe(unit.body.meta.lastModified);
+    // Each was a write of a group, and none of a user.
+    expect(store.state.audit.filter(row => row.action.startsWith('scim.')).map(row => row.action)).toEqual([
+      ...Array(4).fill('scim.user.created'),
+      'scim.group.created',
+      'scim.group.patched',
+      'scim.group.patched',
+      'scim.group.patched',
+      'scim.group.removed',
+      ...Array(3).fill('scim.group.created'),
+      'scim.group.patched',
+    ]);
+  });
 });

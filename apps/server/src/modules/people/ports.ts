@@ -146,6 +146,12 @@ export interface ProvisionTx {
       updatedAt: string;
     },
   ): Promise<void>;
+  /**
+   * Moves the time of change of these people to `updatedAt` and changes nothing else of them: a group write changes the
+   * groups their resource answers (RFC 7643 §3.1). The rows are held for the rest of the transaction, taken in id order
+   * as `lockPerson`'s callers take them, a few thousand a statement. An id that names nobody is passed over.
+   */
+  touchUsers(ids: readonly string[], updatedAt: string): Promise<void>;
   userGroups(personId: string): Promise<Array<{ id: string; externalId: string | null; label: string }>>;
   // SCIM: groups. A group belongs to the organisation of the provisioner that pushed it, as its members do, so a client
   // reads, lists and writes its own organisation's groups only; `externalId` is unique across the installation.
