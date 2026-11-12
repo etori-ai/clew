@@ -1,11 +1,17 @@
-import { and, asc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, like, ne, sql } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
 import { enqueueWorkflow, type DurableQueue } from '@clew/db/durable';
+import { UNIT_KEY } from '@clew/contracts/scim-group-key';
 import {
+  RequirementTaken,
+  ShareTargetTaken,
   TypeNameTaken,
   type CompetenceStore,
   type CompetenceTx,
   type HoldingRecord,
+  type Placed,
+  type RequirementRecord,
+  type ShareTargetRecord,
   type SourceMapping,
   type SourceReadCounts,
   type SourceRecord,
@@ -17,6 +23,13 @@ const {
   competenceHoldings: holdings,
   competenceSourceMappings: mappings,
   competenceSources: sources,
+  competenceRequirements: requirements,
+  competenceShareTargets: targets,
+  positions,
+  personPositions,
+  units,
+  groups,
+  assignments,
   people,
   audit,
 } = schema;
@@ -24,6 +37,8 @@ type TypeRow = typeof types.$inferSelect;
 type HoldingRow = typeof holdings.$inferSelect;
 type MappingRow = typeof mappings.$inferSelect;
 type SourceRow = typeof sources.$inferSelect;
+type RequirementRow = typeof requirements.$inferSelect;
+type TargetRow = typeof targets.$inferSelect;
 const iso = (at: Date | null) => (at === null ? null : at.toISOString());
 const date = (at: string | null) => (at === null ? null : new Date(at));
 const sv = (a: string, b: string) => a.localeCompare(b, 'sv');
@@ -49,6 +64,29 @@ async function named(write: () => Promise<unknown>) {
     throw error;
   }
 }
+/** Which unique index refused a write, or undefined for another error; the driver may wrap the error once. */
+function uniqueIndexOf(error: unknown): string | undefined {
+  const e = error as { code?: string; constraint_name?: string; cause?: { code?: string; constraint_name?: string } };
+  return (e?.code ?? e?.cause?.code) === '23505' ? (e?.constraint_name ?? e?.cause?.constraint_name) : undefined;
+}
+/** Run a write, turning a refusal of one of these unique indexes into `taken`. */
+async function once(write: () => Promise<unknown>, indexes: readonly string[], taken: () => Error) {
+  try {
+    await write();
+  } catch (error) {
+    const index = uniqueIndexOf(error);
+    if (index && indexes.includes(index)) throw taken();
+    throw error;
+  }
+}
+const REQUIREMENT_INDEXES = [
+  'competence_requirement_position',
+  'competence_requirement_unit',
+  'competence_requirement_person',
+];
+const TARGET_INDEXES = ['competence_share_target_unit', 'competence_share_target_organisation'];
+const requirementOf = (r: RequirementRow): RequirementRecord => ({ ...r, createdAt: r.createdAt.toISOString() });
+const targetOf = (r: TargetRow): ShareTargetRecord => ({ ...r, createdAt: r.createdAt.toISOString() });
 const typeOf = (r: TypeRow): TypeRecord => ({
   ...r,
   createdAt: r.createdAt.toISOString(),
@@ -370,6 +408,106 @@ export function competenceTx(tx: Transaction, durable: DurableQueue): Competence
           found.add(r.id);
       return found;
     },
+    async positions(organisationId) {
+      const rows = await tx.select().from(positions).where(eq(positions.organisationId, organisationId));
+      return rows.sort((a, b) => sv(a.label, b.label) || a.code.localeCompare(b.code));
+    },
+    async position(id) {
+      const [r] = await tx.select().from(positions).where(eq(positions.id, id));
+      return r;
+    },
+    async units(organisationId) {
+      const rows = await tx.select().from(units).where(eq(units.organisationId, organisationId));
+      return rows.sort((a, b) => sv(a.label, b.label) || a.id.localeCompare(b.id));
+    },
+    async unit(id) {
+      const [r] = await tx.select().from(units).where(eq(units.id, id));
+      return r;
+    },
+    async unitTree(organisationId) {
+      const rows = await tx
+        .select({ externalId: groups.externalId, parentId: groups.parentUnitId })
+        .from(groups)
+        .where(and(eq(groups.organisationId, organisationId), like(groups.externalId, UNIT_KEY + '%')));
+      return rows
+        .map(r => ({ id: r.externalId!.slice(UNIT_KEY.length), parentId: r.parentId }))
+        .sort((a, b) => a.id.localeCompare(b.id));
+    },
+    async placedOn(unitIds) {
+      const found = new Set<string>();
+      for (const slice of slices([...new Set(unitIds)]))
+        for (const r of await tx
+          .selectDistinct({ id: assignments.personId })
+          .from(assignments)
+          .innerJoin(people, eq(people.id, assignments.personId))
+          .where(and(inArray(assignments.unitId, slice), eq(people.enabled, true))))
+          found.add(r.id);
+      return [...found].sort();
+    },
+    async placesOf(personIds) {
+      const places = new Map<string, Placed>();
+      for (const slice of slices([...new Set(personIds)])) {
+        for (const r of await tx.select({ id: people.id }).from(people).where(inArray(people.id, slice)))
+          places.set(r.id, { personId: r.id, unitIds: [], positionIds: [] });
+        for (const r of await tx
+          .select({ personId: assignments.personId, unitId: assignments.unitId })
+          .from(assignments)
+          .where(inArray(assignments.personId, slice)))
+          places.get(r.personId)?.unitIds.push(r.unitId);
+        for (const r of await tx
+          .select({ personId: personPositions.personId, positionId: personPositions.positionId })
+          .from(personPositions)
+          .where(inArray(personPositions.personId, slice)))
+          places.get(r.personId)?.positionIds.push(r.positionId);
+      }
+      return [...places.values()].map(p => ({ ...p, unitIds: p.unitIds.sort(), positionIds: p.positionIds.sort() }));
+    },
+    async requirements(organisationId) {
+      const rows = await tx
+        .select()
+        .from(requirements)
+        .where(eq(requirements.organisationId, organisationId))
+        .orderBy(asc(requirements.createdAt), asc(requirements.id));
+      return rows.map(requirementOf);
+    },
+    async requirement(id) {
+      const [r] = await tx.select().from(requirements).where(eq(requirements.id, id)).for('update');
+      return r ? requirementOf(r) : undefined;
+    },
+    async insertRequirement(r) {
+      await once(
+        () => tx.insert(requirements).values({ ...r, createdAt: new Date(r.createdAt) }),
+        REQUIREMENT_INDEXES,
+        () => new RequirementTaken(),
+      );
+    },
+    async removeRequirement(id) {
+      const removed = await tx.delete(requirements).where(eq(requirements.id, id)).returning({ id: requirements.id });
+      return removed.length > 0;
+    },
+    async shareTargets(organisationId) {
+      const rows = await tx
+        .select()
+        .from(targets)
+        .where(eq(targets.organisationId, organisationId))
+        .orderBy(asc(targets.createdAt), asc(targets.id));
+      return rows.map(targetOf);
+    },
+    async shareTarget(id) {
+      const [r] = await tx.select().from(targets).where(eq(targets.id, id)).for('update');
+      return r ? targetOf(r) : undefined;
+    },
+    async insertShareTarget(t) {
+      await once(
+        () => tx.insert(targets).values({ ...t, createdAt: new Date(t.createdAt) }),
+        TARGET_INDEXES,
+        () => new ShareTargetTaken(),
+      );
+    },
+    async removeShareTarget(id) {
+      const removed = await tx.delete(targets).where(eq(targets.id, id)).returning({ id: targets.id });
+      return removed.length > 0;
+    },
     async erasePerson(personId) {
       // The row of every source the person has copied rows from, first and in one order, as the copy's write takes it:
       // a read that is writing finishes before the person's rows go, and never puts them back afterwards.
@@ -386,6 +524,10 @@ export function competenceTx(tx: Transaction, durable: DurableQueue): Competence
           .orderBy(asc(sources.connectorId))
           .for('update');
       const removed = await tx.delete(holdings).where(eq(holdings.personId, personId)).returning({ id: holdings.id });
+      const required = await tx
+        .delete(requirements)
+        .where(eq(requirements.personId, personId))
+        .returning({ id: requirements.id });
       const cleared = new Set<string>();
       for (const column of ['registeredBy', 'revokedBy'] as const)
         for (const r of await tx
@@ -394,7 +536,7 @@ export function competenceTx(tx: Transaction, durable: DurableQueue): Competence
           .where(eq(holdings[column], personId))
           .returning({ id: holdings.id }))
           cleared.add(r.id);
-      return { holdings: removed.length, cleared: cleared.size };
+      return { holdings: removed.length, cleared: cleared.size, requirements: required.length };
     },
     async exportOrganisation(organisationId) {
       const typeRows = await tx
@@ -413,10 +555,22 @@ export function competenceTx(tx: Transaction, durable: DurableQueue): Competence
         .from(mappings)
         .where(eq(mappings.organisationId, organisationId))
         .orderBy(asc(mappings.connectorId), asc(mappings.sourceType), asc(mappings.mappedAt));
+      const requirementRows = await tx
+        .select()
+        .from(requirements)
+        .where(eq(requirements.organisationId, organisationId))
+        .orderBy(asc(requirements.createdAt), asc(requirements.id));
+      const targetRows = await tx
+        .select()
+        .from(targets)
+        .where(eq(targets.organisationId, organisationId))
+        .orderBy(asc(targets.createdAt), asc(targets.id));
       return {
         types: typeRows.map(typeOf),
         holdings: holdingRows.map(r => holdingOf(r.holding)),
         mappings: mappingRows.map(mappingOf),
+        requirements: requirementRows.map(requirementOf),
+        shareTargets: targetRows.map(targetOf),
       };
     },
     async audit(e) {

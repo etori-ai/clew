@@ -2,7 +2,8 @@ import type { CompetenceTypeBody } from '@clew/contracts';
 
 /**
  * The development stack's competence data (D108), synthetic and in one place: the catalogue `competence-seed.ts` adds,
- * and how the development learning platform's courses map to it (`competence-map.ts --development`). Data only, so the
+ * the requirements and the share target it sets on the synthetic directory's positions (item 6), and how the
+ * development learning platform's courses map to it (`competence-map.ts --development`). Data only, so the
  * seed, the map script and the unit tests read the same lists. Nothing here is a real person's qualification.
  */
 export const DEVELOPMENT_ORGANISATION = 'poc';
@@ -33,4 +34,22 @@ export const DEVELOPMENT_MAPPINGS: ReadonlyArray<readonly [string, string]> = [
   ['clew-dev:lakemedel', 'Delegering läkemedel'],
   ['clew-dev:informationssakerhet', 'Informationssäkerhet'],
   ['clew-dev:livsmedelshygien', 'Livsmedelshygien'],
+];
+/**
+ * What the development catalogue requires of the synthetic directory's positions (D108 item 6), by the position's code
+ * (`scripts/provisioner/directory.ts`) and the type's name: enough for a manager's reports to lack something and for a
+ * unit's coverage to have something to count.
+ */
+export const DEVELOPMENT_REQUIREMENTS: ReadonlyArray<{ position: string; type: string }> = [
+  { position: 'underskoterska', type: 'HLR' },
+  { position: 'underskoterska', type: 'Brandskydd' },
+  { position: 'sjukskoterska', type: 'HLR' },
+  { position: 'sjukskoterska', type: 'Delegering läkemedel' },
+  { position: 'maskinforare', type: 'Arbete på väg' },
+  { position: 'maskinforare', type: 'Fallskydd' },
+  { position: 'enhetschef', type: 'Informationssäkerhet' },
+];
+/** A share target across the whole organisation: at least half of the undersköterskor hold a delegation. */
+export const DEVELOPMENT_SHARE_TARGETS: ReadonlyArray<{ position: string; type: string; minShare: number }> = [
+  { position: 'underskoterska', type: 'Delegering läkemedel', minShare: 50 },
 ];

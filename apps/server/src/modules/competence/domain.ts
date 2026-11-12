@@ -12,16 +12,21 @@ import {
   SOURCE_READ_ERRORS,
   type HoldingRecord,
   type PersonRef,
+  type Placed,
+  type RequirementRecord,
+  type ShareTargetRecord,
   type SourceHolding,
   type SourceReadError,
+  type TreeNode,
   type TypeRecord,
   type WorkflowStart,
 } from './model';
 
 /**
  * The rules of the competence domain (D108) as pure functions: when a holding ends, where it stands on a day, which of
- * several holdings of one type decides, what a type's name may be, and the refs, keys and rows the reads carry. No I/O,
- * no clock: the use case hands in every day.
+ * several holdings of one type decides, what is required of a person and what they lack (item 6), how a unit's branch is
+ * covered, what a type's name may be, and the refs, keys and rows the reads carry. No I/O, no clock: the use case hands
+ * in every day.
  */
 
 /** A holding that ends within this many days is expiring (D108 item 4). */
@@ -33,6 +38,9 @@ export const TYPE_AREA_MAX = 80;
 export const personKey = (person: Pick<PersonRef, 'id' | 'userName'>) => person.userName ?? person.id;
 /** `holding:competence:<holding id>`. */
 export const holdingRef = (holdingId: string) => `holding:${COMPETENCE_CONNECTOR}:${holdingId}`;
+/** A required type a person lacks is no holding: `holding:competence:missing:<person id>:<type id>`, stable while it lacks. */
+export const missingRef = (personId: string, typeId: string) =>
+  `holding:${COMPETENCE_CONNECTOR}:missing:${personId}:${typeId}`;
 
 /** The calendar day of an instant in Swedish time, `YYYY-MM-DD`. */
 export const swedishDay = (at: Date) => stockholmDate(at.toISOString());
@@ -77,8 +85,10 @@ export function endOf(
   if (holding.expiresOn) return holding.expiresOn;
   return type.validityMonths ? addMonths(holding.issuedOn, type.validityMonths) : null;
 }
+/** Where a holding stands: every status but `missing`, which is where a person stands without one. */
+export type HeldStatus = Exclude<CompetenceStatus, 'missing'>;
 /** Where a holding that ends on `end` stands on `today` (D108 item 4). The last day is still valid. */
-export function statusOn(end: string | null, today: string): CompetenceStatus {
+export function statusOn(end: string | null, today: string): HeldStatus {
   if (end === null) return 'valid';
   const days = daysUntil(end, today);
   return days < 0 ? 'expired' : days <= EXPIRING_DAYS ? 'expiring' : 'valid';
@@ -87,43 +97,200 @@ export function statusOn(end: string | null, today: string): CompetenceStatus {
 export const counts = (holding: Pick<HoldingRecord, 'state'>) => holding.state === 'valid';
 
 /** A holding with its type's end date and status worked out for one day. */
-export interface Standing {
+export interface HeldStanding {
+  personId: string;
   holding: HoldingRecord;
   type: TypeRecord;
   end: string | null;
-  status: CompetenceStatus;
+  status: HeldStatus;
 }
+/** A type required of a person (D108 item 6) that they hold nothing of that counts: no holding, no end. */
+export interface MissingStanding {
+  personId: string;
+  holding: null;
+  type: TypeRecord;
+  end: null;
+  status: 'missing';
+}
+/** Where a person stands on one type on one day: by the holding that decides, or missing where one is required. */
+export type Standing = HeldStanding | MissingStanding;
 /**
  * For each person and type, the one holding that decides (D108 item 9): of the ones that count, the one that ends last,
  * one that never ends before any that does, the most recently issued on a tie. Holdings of an unknown type are left out.
+ * With `required` (each person's required types, `requiredOf`), a required type the person has no deciding holding of is
+ * a `missing` standing (item 6); a required type that is archived or unknown is required of nobody, since nobody can be
+ * registered for it. An expired holding stays `expired`: the person had it.
  */
 export function deciding(
   holdings: readonly HoldingRecord[],
   types: ReadonlyMap<string, TypeRecord>,
   today: string,
+  required?: ReadonlyMap<string, readonly string[]>,
 ): Standing[] {
-  const best = new Map<string, Standing>();
-  const later = (a: Standing, b: Standing) => {
+  const best = new Map<string, HeldStanding>();
+  const later = (a: HeldStanding, b: HeldStanding) => {
     if (a.end !== b.end) return a.end === null || (b.end !== null && a.end > b.end);
     return (
       a.holding.issuedOn > b.holding.issuedOn ||
       (a.holding.issuedOn === b.holding.issuedOn && a.holding.id < b.holding.id)
     );
   };
+  const keyOf = (personId: string, typeId: string) => personId + '\n' + typeId;
   for (const holding of holdings) {
     // A copied row whose source type is not mapped has no type and counts towards nothing (item 9).
     const type = holding.typeId === null ? undefined : types.get(holding.typeId);
     if (!type || !counts(holding)) continue;
     const end = endOf(holding, type);
-    const standing: Standing = { holding, type, end, status: statusOn(end, today) };
-    const key = holding.personId + '\n' + holding.typeId;
+    const standing: HeldStanding = {
+      personId: holding.personId,
+      holding,
+      type,
+      end,
+      status: statusOn(end, today),
+    };
+    const key = keyOf(holding.personId, type.id);
     const current = best.get(key);
     if (!current || later(standing, current)) best.set(key, standing);
   }
-  return [...best.values()];
+  const missing: MissingStanding[] = [];
+  for (const [personId, typeIds] of required ?? [])
+    for (const typeId of new Set(typeIds)) {
+      const type = types.get(typeId);
+      if (!type || type.archivedAt !== null || best.has(keyOf(personId, typeId))) continue;
+      missing.push({ personId, holding: null, type, end: null, status: 'missing' });
+    }
+  return [...best.values(), ...missing];
 }
-/** Whether a standing needs a person: it has expired or expires within `EXPIRING_DAYS`. */
+/** Whether a standing needs a person: it has expired, is missing or expires within `EXPIRING_DAYS`. */
 export const needsAttention = (standing: Pick<Standing, 'status'>) => standing.status !== 'valid';
+/** Whether a standing meets what is required: a holding that counts and has not run out (expiring still meets it). */
+export const meets = (standing: Pick<Standing, 'status'>) =>
+  standing.status === 'valid' || standing.status === 'expiring';
+/**
+ * The types required of one person (D108 item 6), each once: those set on a position they hold, on a unit they are
+ * assigned to, and on them alone. A person with two positions is under both sets.
+ */
+export function requiredOf(person: Placed, requirements: readonly RequirementRecord[]): string[] {
+  const positions = new Set(person.positionIds),
+    units = new Set(person.unitIds);
+  const typeIds = new Set<string>();
+  for (const r of requirements)
+    if (
+      (r.positionId !== null && positions.has(r.positionId)) ||
+      (r.unitId !== null && units.has(r.unitId)) ||
+      r.personId === person.personId
+    )
+      typeIds.add(r.typeId);
+  return [...typeIds];
+}
+/**
+ * A unit with every unit below it in the tree (D99 item 5), the unit first. A unit the tree does not name is itself
+ * alone, and each unit is taken once, so a stored chain that were ever a cycle ends. The people module's rule, worked out
+ * here again since a module never imports another.
+ */
+export function branchOf(tree: readonly TreeNode[], unitId: string): string[] {
+  const below = new Map<string, string[]>();
+  for (const u of tree) if (u.parentId !== null) below.set(u.parentId, [...(below.get(u.parentId) ?? []), u.id]);
+  const branch = new Set([unitId]);
+  for (const id of branch) for (const next of below.get(id) ?? []) branch.add(next);
+  return [...branch];
+}
+/** A unit and every unit above it, the unit first; a chain that were ever a cycle ends. */
+export function lineAbove(tree: readonly TreeNode[], unitId: string): string[] {
+  const parent = new Map(tree.map(u => [u.id, u.parentId]));
+  const line: string[] = [];
+  for (let at: string | null | undefined = unitId; at && !line.includes(at); at = parent.get(at)) line.push(at);
+  return line;
+}
+/** A share target applies on a unit when it is set on that unit, on a unit above it, or on the whole organisation. */
+export const targetApplies = (target: Pick<ShareTargetRecord, 'unitId'>, above: readonly string[]) =>
+  target.unitId === null || above.includes(target.unitId);
+/** One required type over a branch: how many people it is required of, and how many of them meet it. */
+export interface RequirementCoverage {
+  type: TypeRecord;
+  under: number;
+  meeting: number;
+}
+/**
+ * One share target over a branch: how many people hold its position, how many of them meet its type, the share they are
+ * (whole percent, rounded down, so a share shown at the target meets it) and whether it reaches the least share. With
+ * nobody in the position, no share and no verdict.
+ */
+export interface TargetCoverage {
+  target: ShareTargetRecord;
+  type: TypeRecord;
+  holders: number;
+  meeting: number;
+  share: number | null;
+  met: boolean | null;
+}
+/** A unit's branch against what is required (D108 items 6 and 8, D99 item 5): counts only, never a person. */
+export interface UnitCoverage {
+  /** The people with at least one requirement, and of them the ones who meet every one. */
+  under: number;
+  meetingAll: number;
+  requirements: RequirementCoverage[];
+  targets: TargetCoverage[];
+}
+/**
+ * How a branch is covered (D108 items 6 and 8): for each type required of anyone in it, how many it is required of and
+ * how many meet it; for each share target that applies, the share of the position's holders who meet its type. `people`
+ * are the active people of the branch, each with every unit and position of theirs (a requirement on a unit outside the
+ * branch still applies to a person in it); `standings` are the holdings that decide for them (`deciding`). A requirement
+ * or a target whose type is archived or unknown counts towards nothing.
+ */
+export function coverageOf(input: {
+  people: readonly Placed[];
+  requirements: readonly RequirementRecord[];
+  targets: readonly ShareTargetRecord[];
+  types: ReadonlyMap<string, TypeRecord>;
+  standings: readonly Standing[];
+}): UnitCoverage {
+  const live = (typeId: string) => {
+    const type = input.types.get(typeId);
+    return type && type.archivedAt === null ? type : undefined;
+  };
+  const met = new Set(input.standings.filter(meets).map(s => s.personId + '\n' + s.type.id));
+  const meetsType = (personId: string, typeId: string) => met.has(personId + '\n' + typeId);
+  const byType = new Map<string, RequirementCoverage>();
+  let under = 0,
+    meetingAll = 0;
+  for (const person of input.people) {
+    const required = requiredOf(person, input.requirements).filter(id => live(id));
+    if (!required.length) continue;
+    under++;
+    if (required.every(id => meetsType(person.personId, id))) meetingAll++;
+    for (const typeId of required) {
+      const row = byType.get(typeId) ?? { type: live(typeId)!, under: 0, meeting: 0 };
+      row.under++;
+      if (meetsType(person.personId, typeId)) row.meeting++;
+      byType.set(typeId, row);
+    }
+  }
+  const targets: TargetCoverage[] = [];
+  for (const target of input.targets) {
+    const type = live(target.typeId);
+    if (!type) continue;
+    const holders = input.people.filter(p => p.positionIds.includes(target.positionId));
+    const meeting = holders.filter(p => meetsType(p.personId, target.typeId)).length;
+    targets.push({
+      target,
+      type,
+      holders: holders.length,
+      meeting,
+      share: holders.length ? Math.floor((meeting * 100) / holders.length) : null,
+      met: holders.length ? meeting * 100 >= target.minShare * holders.length : null,
+    });
+  }
+  const byName = (a: { type: TypeRecord }, b: { type: TypeRecord }) =>
+    sv(a.type.area, b.type.area) || sv(a.type.name, b.type.name) || a.type.id.localeCompare(b.type.id);
+  return {
+    under,
+    meetingAll,
+    requirements: [...byType.values()].sort(byName),
+    targets: targets.sort((a, b) => byName(a, b) || a.target.id.localeCompare(b.target.id)),
+  };
+}
 
 const sv = (a: string, b: string) => a.localeCompare(b, 'sv');
 /**
@@ -153,12 +320,25 @@ function copiedFrom(holding: HoldingRecord, sourceNames: ReadonlyMap<string, str
   const source = sourceNames.get(holding.copy.connectorId) ?? holding.copy.connectorId;
   return { source: [...source].slice(0, 120).join(''), readAt: holding.copy.readAt };
 }
-/** One standing as a read lists it; a copied one with its source and when it was read. */
+/**
+ * One standing as a read lists it; a copied one with its source and when it was read; a missing one with its type and
+ * no dates, since there is no holding.
+ */
 export function holdingRow(
   standing: Standing,
   person: Pick<PersonRef, 'id' | 'name' | 'userName'>,
   sourceNames: ReadonlyMap<string, string> = new Map(),
 ): CompetenceHoldingRow {
+  if (standing.holding === null)
+    return {
+      ref: missingRef(person.id, standing.type.id),
+      userName: personKey(person),
+      name: person.name,
+      competence: standing.type.name,
+      area: standing.type.area,
+      kind: standing.type.kind,
+      status: 'missing',
+    };
   return {
     ref: holdingRef(standing.holding.id),
     userName: personKey(person),
@@ -197,15 +377,34 @@ export function uncountedRow(
 /** A copied row that waits for its type: it is listed, but counts towards nothing until the type is mapped. */
 export const uncounted = (holding: HoldingRecord) =>
   holding.copy !== null && holding.typeId === null && counts(holding);
-/** What a person's standings add up to: how many have run out, how many soon will, and how many count at all. */
+/**
+ * What a person's standings add up to: how many have run out, how many required types they lack, how many soon run
+ * out, and how many holdings count at all (a missing type is no holding).
+ */
 export interface PersonSummary {
   expired: number;
+  missing: number;
   expiring: number;
   holdings: number;
 }
 export function summarise(standings: readonly Pick<Standing, 'status'>[]): PersonSummary {
   const count = (status: CompetenceStatus) => standings.filter(s => s.status === status).length;
-  return { expired: count('expired'), expiring: count('expiring'), holdings: standings.length };
+  return {
+    expired: count('expired'),
+    missing: count('missing'),
+    expiring: count('expiring'),
+    holdings: standings.length - count('missing'),
+  };
+}
+/**
+ * The one status that stands for a person (D108 items 4 and 6), in the precedence of `COMPETENCE_STATUSES`: expired,
+ * then missing, then expiring, then valid; `none` when they hold nothing and lack nothing.
+ */
+export function personStatus(summary: PersonSummary): CompetenceStatus | 'none' {
+  if (summary.expired) return 'expired';
+  if (summary.missing) return 'missing';
+  if (summary.expiring) return 'expiring';
+  return summary.holdings ? 'valid' : 'none';
 }
 /** One type as the catalogue lists it. */
 export function typeRow(type: TypeRecord): CompetenceType {

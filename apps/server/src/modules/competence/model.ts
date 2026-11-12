@@ -16,7 +16,9 @@ import type {
  * happens inside one `CompetenceStore` transaction together with its audit row. `adapters/postgres.ts` runs in the
  * server, `adapters/memory.ts` in the unit tests, both held to one store contract. Who reports to whom comes in as a
  * function filled in composition, so the module does not import the people module, and so do the sources whose
- * holdings are copied in (`HoldingsPort`, item 9), so it imports no connector and not the registry.
+ * holdings are copied in (`HoldingsPort`, item 9), so it imports no connector and not the registry. What requirements
+ * need of the directory (positions, assignments and the tree, items 5 and 6) is read through the store, as the people
+ * themselves are, and the branch under a unit is worked out in `domain.ts`.
  *
  * Every instant is an ISO string and every date a `YYYY-MM-DD` calendar day in Swedish time, both handed in by the use
  * case from `clock`; every id comes from `ids`. Where a holding stands (valid, expiring, expired) is never stored: the
@@ -119,6 +121,59 @@ export interface SourceTypeCount {
   label: string;
   holdings: number;
 }
+/**
+ * What is required of whom (D108 item 6): a type and exactly one of a position, a unit or one person. `minLevel` is the
+ * least level of a skill (D120 item 4), stored and unused until skills are built. `createdBy` is an actor string.
+ */
+export interface RequirementRecord {
+  id: string;
+  organisationId: string;
+  typeId: string;
+  positionId: string | null;
+  unitId: string | null;
+  personId: string | null;
+  minLevel: number | null;
+  createdBy: string;
+  createdAt: string;
+}
+/**
+ * A share target (D108 item 6): of the people who hold `positionId`, at least `minShare` percent hold `typeId`, on the
+ * branch of `unitId` or, null, across the whole organisation. It names no person.
+ */
+export interface ShareTargetRecord {
+  id: string;
+  organisationId: string;
+  typeId: string;
+  positionId: string;
+  unitId: string | null;
+  minShare: number;
+  createdBy: string;
+  createdAt: string;
+}
+/** A position of the organisation (D108 item 5), as SCIM wrote it. */
+export interface PositionRecord {
+  id: string;
+  organisationId: string;
+  code: string;
+  label: string;
+}
+/** A unit somebody is or was assigned to, by the name the directory holds for it. */
+export interface UnitRecord {
+  id: string;
+  organisationId: string;
+  label: string;
+}
+/** A node of the organisation tree (D99): a pushed unit and the unit above it, null on a root. */
+export interface TreeNode {
+  id: string;
+  parentId: string | null;
+}
+/** Where one person stands in the directory: the units they are assigned to and the positions they hold. */
+export interface Placed {
+  personId: string;
+  unitIds: string[];
+  positionIds: string[];
+}
 /** A durable workflow start committed with the transaction that decides it (D86); the memory store records it. */
 export interface WorkflowStart {
   workflow: string;
@@ -147,15 +202,19 @@ export interface Erased {
   holdings: number;
   /** Other people's holdings from which the person was removed (registered by, revoked by). */
   cleared: number;
+  /** Requirements set on the person alone (D108 item 6), removed with them. */
+  requirements: number;
 }
 /**
- * The whole domain for one organisation (D108 item 14), copied rows and the mappings of sources included; the use case
- * turns it into `clew.competence/2`.
+ * The whole domain for one organisation (D108 item 14), copied rows, the mappings of sources, the requirements and the
+ * share targets included; the use case turns it into `clew.competence/3`.
  */
 export interface CompetenceExport {
   types: TypeRecord[];
   holdings: HoldingRecord[];
   mappings: SourceMapping[];
+  requirements: RequirementRecord[];
+  shareTargets: ShareTargetRecord[];
 }
 /** What `CompetenceTx.forgetSource` removed (D108 item 9). */
 export interface Forgotten {
@@ -168,6 +227,21 @@ export class TypeNameTaken extends Error {
   constructor() {
     super('The organisation already has a competence type with this name.');
     this.name = 'TypeNameTaken';
+  }
+}
+
+/** The store's refusal of a requirement the type and its target already have (D108 item 6). */
+export class RequirementTaken extends Error {
+  constructor() {
+    super('The requirement exists already.');
+    this.name = 'RequirementTaken';
+  }
+}
+/** The store's refusal of a share target the type, position and unit (or the organisation) already have. */
+export class ShareTargetTaken extends Error {
+  constructor() {
+    super('The share target exists already.');
+    this.name = 'ShareTargetTaken';
   }
 }
 
@@ -249,13 +323,50 @@ export interface CompetenceTx {
   activeByUserName(userNames: readonly string[]): Promise<PersonRef[]>;
   /** Of these people, the ones not deactivated now. */
   activeIds(personIds: readonly string[]): Promise<Set<string>>;
+  // The directory as requirements read it (D108 items 5 and 6, D99): read here, as the people above are, so the module
+  // imports no other module; written only by the SCIM use cases.
+  /** The organisation's positions, by label in Swedish order. */
+  positions(organisationId: string): Promise<PositionRecord[]>;
+  /** One position; an unknown id is absent. */
+  position(id: string): Promise<PositionRecord | undefined>;
+  /** The organisation's units, by name in Swedish order. */
+  units(organisationId: string): Promise<UnitRecord[]>;
+  /** One unit; an unknown id is absent. */
+  unit(id: string): Promise<UnitRecord | undefined>;
+  /** The organisation's tree as pushed: every `unit:` group with the unit above it. */
+  unitTree(organisationId: string): Promise<TreeNode[]>;
+  /** The active people assigned to any of these units, each once. */
+  placedOn(unitIds: readonly string[]): Promise<string[]>;
+  /** For each of these people the units they are assigned to and the positions they hold; an unknown id is absent. */
+  placesOf(personIds: readonly string[]): Promise<Placed[]>;
+  // Requirements and share targets (D108 item 6).
+  /** Every requirement of the organisation, on a position, a unit or a person, oldest first. */
+  requirements(organisationId: string): Promise<RequirementRecord[]>;
+  /** One requirement, locked. */
+  requirement(id: string): Promise<RequirementRecord | undefined>;
+  /** Insert a requirement. One the type and its target already have is refused with `RequirementTaken`. */
+  insertRequirement(requirement: RequirementRecord): Promise<void>;
+  /** Remove a requirement; false when there was none. */
+  removeRequirement(id: string): Promise<boolean>;
+  /** Every share target of the organisation, oldest first. */
+  shareTargets(organisationId: string): Promise<ShareTargetRecord[]>;
+  /** One share target, locked. */
+  shareTarget(id: string): Promise<ShareTargetRecord | undefined>;
+  /** Insert a share target. One the type, position and unit (or the organisation) already have: `ShareTargetTaken`. */
+  insertShareTarget(target: ShareTargetRecord): Promise<void>;
+  /** Remove a share target; false when there was none. */
+  removeShareTarget(id: string): Promise<boolean>;
   // Erasure and export (D108 item 14).
   /**
-   * Remove the person's holdings, copied ones included, and remove them from other people's (null `registeredBy`,
-   * `revokedBy`). Takes the row lock of every source the person has copied rows from first, in the order of their ids.
+   * Remove the person's holdings, copied ones included, and the requirements set on them alone, and remove them from
+   * other people's holdings (null `registeredBy`, `revokedBy`). Takes the row lock of every source the person has copied
+   * rows from first, in the order of their ids.
    */
   erasePerson(personId: string): Promise<Erased>;
-  /** Every type of the organisation, archived included, every holding of its people, and its mappings. */
+  /**
+   * Every type of the organisation, archived included, every holding of its people, its mappings, its requirements and
+   * its share targets.
+   */
   exportOrganisation(organisationId: string): Promise<CompetenceExport>;
   audit(entry: CompetenceAudit): Promise<void>;
 }

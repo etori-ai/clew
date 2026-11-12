@@ -25,5 +25,17 @@ competenceStoreContract('memory', async () => {
     async enqueued() {
       return store.state.enqueued.map(s => s.id);
     },
+    async seedPosition(position) {
+      store.addPosition(position);
+    },
+    async holdPosition(personId, positionId) {
+      store.holdPosition(personId, positionId);
+    },
+    async seedUnit(unit) {
+      store.addUnit(unit);
+    },
+    async place(personId, unitId) {
+      store.assign(personId, unitId);
+    },
   };
 });

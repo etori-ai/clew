@@ -16,12 +16,19 @@ const prefixes: string[] = [];
 afterAll(async () => {
   const db = database();
   for (const p of prefixes) {
+    await db.delete(schema.competenceRequirements).where(like(schema.competenceRequirements.id, p + '%'));
+    await db.delete(schema.competenceShareTargets).where(like(schema.competenceShareTargets.id, p + '%'));
     await db.delete(schema.competenceHoldings).where(like(schema.competenceHoldings.id, p + '%'));
     await db.delete(schema.competenceSourceMappings).where(like(schema.competenceSourceMappings.connectorId, p + '%'));
     await db.delete(schema.competenceSources).where(like(schema.competenceSources.connectorId, p + '%'));
     await db.delete(schema.competenceTypes).where(like(schema.competenceTypes.id, p + '%'));
     await db.delete(schema.audit).where(like(schema.audit.subject, '%:' + p + '%'));
     await db.delete(schema.connectors).where(like(schema.connectors.id, p + '%'));
+    await db.delete(schema.assignments).where(like(schema.assignments.personId, p + '%'));
+    await db.delete(schema.personPositions).where(like(schema.personPositions.personId, p + '%'));
+    await db.delete(schema.groups).where(like(schema.groups.id, p + '%'));
+    await db.delete(schema.units).where(like(schema.units.id, p + '%'));
+    await db.delete(schema.positions).where(like(schema.positions.id, p + '%'));
     await db.delete(schema.people).where(like(schema.people.id, p + '%'));
   }
   await db.execute(sql`delete from dbos.workflow_status where application_name = ${application}`);
@@ -57,6 +64,28 @@ competenceStoreContract('postgres', async () => {
         sql`select workflow_uuid as id from dbos.workflow_status where application_name = ${application} order by workflow_uuid`,
       );
       return [...rows].map(r => r.id);
+    },
+    async seedPosition(position) {
+      await database().insert(schema.positions).values(position);
+    },
+    async holdPosition(personId, positionId) {
+      await database().insert(schema.personPositions).values({ personId, positionId });
+    },
+    async seedUnit({ parentId = null, pushed = true, ...unit }) {
+      await database().insert(schema.units).values(unit);
+      if (pushed)
+        await database()
+          .insert(schema.groups)
+          .values({
+            id: unit.id + '-group',
+            organisationId: unit.organisationId,
+            externalId: 'unit:' + unit.id,
+            label: unit.label,
+            parentUnitId: parentId,
+          });
+    },
+    async place(personId, unitId) {
+      await database().insert(schema.assignments).values({ personId, unitId, role: 'employee' });
     },
   };
 });
@@ -110,4 +139,51 @@ test('removing a connector removes what it put in the competence register, and n
   expect(await store.transaction(tx => tx.mappingsOf(p + '-lms'))).toEqual([]);
   expect(await store.transaction(tx => tx.source(p + '-lms'))).toBeUndefined();
   expect((await store.transaction(tx => tx.copiedFrom(p + '-hr'))).map(h => h.id)).toEqual([p + '-c2']);
+});
+
+/**
+ * D108 item 6: a requirement and a share target go with what they are set on. A position goes when its `position:` group
+ * does, so does what is required of its holders; a person's own requirement goes with the person's row.
+ */
+test('a requirement and a share target go with the position, and a requirement with the person, they are set on', async () => {
+  const p = 'test-comp-' + randomUUID().slice(0, 8);
+  prefixes.push(p);
+  const store = postgresCompetenceStore(durable);
+  const db = database();
+  const org = p + '-org';
+  await db.insert(schema.people).values({ id: p + '-anna', organisationId: org, name: 'Synthetic' });
+  await db.insert(schema.positions).values({ id: p + '-usk', organisationId: org, code: 'usk', label: 'Usk' });
+  const at = new Date().toISOString();
+  await store.transaction(async tx => {
+    await tx.insertType(typeRow(p + '-t1', org));
+    for (const [id, target] of [
+      [p + '-r1', { positionId: p + '-usk', personId: null }],
+      [p + '-r2', { positionId: null, personId: p + '-anna' }],
+    ] as const)
+      await tx.insertRequirement({
+        id,
+        organisationId: org,
+        typeId: p + '-t1',
+        unitId: null,
+        minLevel: null,
+        createdBy: 't',
+        createdAt: at,
+        ...target,
+      });
+    await tx.insertShareTarget({
+      id: p + '-s1',
+      organisationId: org,
+      typeId: p + '-t1',
+      positionId: p + '-usk',
+      unitId: null,
+      minShare: 40,
+      createdBy: 't',
+      createdAt: at,
+    });
+  });
+  await db.delete(schema.positions).where(eq(schema.positions.id, p + '-usk'));
+  expect((await store.transaction(tx => tx.requirements(org))).map(r => r.id)).toEqual([p + '-r2']);
+  expect(await store.transaction(tx => tx.shareTargets(org))).toEqual([]);
+  await db.delete(schema.people).where(eq(schema.people.id, p + '-anna'));
+  expect(await store.transaction(tx => tx.requirements(org))).toEqual([]);
 });

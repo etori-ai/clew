@@ -64,6 +64,10 @@ import type {
   Capability,
   CompetenceHoldingBody,
   CompetenceMappingBody,
+  CompetenceRequirementBody,
+  CompetenceRequirementsOutput,
+  CompetenceShareTarget,
+  CompetenceShareTargetBody,
   CompetenceSource,
   CompetenceType,
   CompetenceTypeBody,
@@ -276,6 +280,16 @@ export class MockApi {
   sourceWrites: Array<{ method: string; path: string; body?: unknown }> = [];
   /** The next write to a source answers 400 with this sentence; it resets itself after that one. */
   sourceFail: string | null = null;
+  /**
+   * Kompetens › Krav (D108 item 6): the requirements on positions and units with the positions and units to choose
+   * from, and the share targets, while the module is on.
+   */
+  competenceRequirements: CompetenceRequirementsOutput = { rows: [], positions: [], units: [] };
+  competenceShareTargets: CompetenceShareTarget[] = [];
+  /** Every write to the requirements and the share targets, in order: the method, the path and the body. */
+  requirementWrites: Array<{ method: string; path: string; body?: unknown }> = [];
+  /** The next write to a requirement or a share target answers 400 with this sentence; it resets itself after that one. */
+  requirementFail: string | null = null;
   /** Utvecklingssamtal (D96). False: the person has no talks system, so both reads are refused as the registry refuses them. */
   talksOffered = true;
   /** False: another system answers the profile; the reads are read-only (no `id`, a `link` on every row) and the writes refused. */
@@ -872,6 +886,52 @@ export class MockApi {
         }
         this.sourceWrites.push({ method, path, body });
         return json({ holdings: type?.holdings ?? 0 });
+      }
+    }
+    // Kompetens › Krav (D108 item 6): the requirements and the share targets, each listed, added and removed.
+    const requirementPath = /^\/competence\/(requirements|share-targets)(?:\/([^/]+))?$/.exec(path);
+    if (requirementPath) {
+      const method = route.request().method(),
+        targets = requirementPath[1] === 'share-targets',
+        id = requirementPath[2] ? decodeURIComponent(requirementPath[2]) : undefined;
+      if (method === 'GET' && !id)
+        return json(targets ? { rows: this.competenceShareTargets } : this.competenceRequirements);
+      if (this.requirementFail) {
+        const error = this.requirementFail;
+        this.requirementFail = null;
+        return route.fulfill({ status: 400, json: { error } });
+      }
+      const { positions, units } = this.competenceRequirements;
+      if (method === 'POST' && !id) {
+        const body = route.request().postDataJSON() as CompetenceRequirementBody & CompetenceShareTargetBody;
+        const created = `${targets ? 'target' : 'requirement'}-new-${this.requirementWrites.length + 1}`;
+        this.requirementWrites.push({ method, path, body });
+        const position = positions.find(p => p.id === body.positionId),
+          unit = units.find(u => u.id === body.unitId);
+        if (targets)
+          this.competenceShareTargets.push({
+            id: created,
+            typeId: body.typeId,
+            positionId: body.positionId!,
+            positionLabel: position?.label ?? body.positionId!,
+            ...(unit ? { unitId: unit.id, unitLabel: unit.label } : {}),
+            minShare: body.minShare,
+          });
+        else
+          this.competenceRequirements.rows.push({
+            id: created,
+            typeId: body.typeId,
+            on: body.unitId ? 'unit' : 'position',
+            targetId: (body.unitId ?? body.positionId)!,
+            targetLabel: (unit?.label ?? position?.label)!,
+          });
+        return route.fulfill({ status: 201, json: { id: created } });
+      }
+      if (method === 'DELETE' && id) {
+        this.requirementWrites.push({ method, path });
+        if (targets) this.competenceShareTargets = this.competenceShareTargets.filter(t => t.id !== id);
+        else this.competenceRequirements.rows = this.competenceRequirements.rows.filter(r => r.id !== id);
+        return route.fulfill({ status: 204, body: '' });
       }
     }
     const registering = /^\/competence\/people\/([^/]+)\/holdings$/.exec(path);

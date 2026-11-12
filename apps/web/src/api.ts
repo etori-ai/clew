@@ -84,6 +84,10 @@ import type {
 import type {
   CompetenceHoldingBody,
   CompetenceMappingBody,
+  CompetenceRequirementBody,
+  CompetenceRequirementsOutput,
+  CompetenceShareTargetBody,
+  CompetenceShareTargetsOutput,
   CompetenceSourcesOutput,
   CompetenceTypeBody,
   CompetenceTypePatch,
@@ -271,6 +275,18 @@ export const api = {
       put<{ holdings: number }>(`/api/competence/sources/${encodeURIComponent(connectorId)}/mapping`, body),
     /** "Läs in nu": a read of one source, started at once. */
     readSource: (connectorId: string) => post<void>(`/api/competence/sources/${encodeURIComponent(connectorId)}/read`),
+    /** The requirements on positions and units (D108 item 6), and the positions and units they can be set on. */
+    requirements: () => call<CompetenceRequirementsOutput>('/api/competence/requirements'),
+    /** Adds a requirement on one position, one unit or, for a manager, one of their reports. */
+    addRequirement: (body: CompetenceRequirementBody) => post<{ id: string }>('/api/competence/requirements', body),
+    /** Removes a requirement. */
+    removeRequirement: (id: string) => del<void>(`/api/competence/requirements/${encodeURIComponent(id)}`),
+    /** The share targets: a least share of a position's holders, on a unit's branch or the whole organisation. */
+    shareTargets: () => call<CompetenceShareTargetsOutput>('/api/competence/share-targets'),
+    /** Adds a share target. */
+    addShareTarget: (body: CompetenceShareTargetBody) => post<{ id: string }>('/api/competence/share-targets', body),
+    /** Removes a share target. */
+    removeShareTarget: (id: string) => del<void>(`/api/competence/share-targets/${encodeURIComponent(id)}`),
   },
   /** The manifest field by field (D60): a public document, read with the plain fetch since no session or token belongs on it. */
   manifestReference: async () => {

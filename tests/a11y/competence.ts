@@ -1,6 +1,15 @@
-import type { CompetenceSource, CompetenceType, PanelViewSpec } from '@clew/contracts';
+import type {
+  CompetenceRequirementsOutput,
+  CompetenceShareTarget,
+  CompetenceSource,
+  CompetenceType,
+  PanelViewSpec,
+} from '@clew/contracts';
 
-/** Kompetens (D108) as the browser specs meet it: one person's holdings as the declared view, and the catalogue. */
+/**
+ * Kompetens (D108) as the browser specs meet it: one person's holdings as the declared view, the catalogue, its sources,
+ * and the requirements and share targets.
+ */
 
 export const holdingsSpec: PanelViewSpec = {
   kind: 'list',
@@ -9,7 +18,12 @@ export const holdingsSpec: PanelViewSpec = {
   empty: 'Det finns inga registrerade kompetenser.',
   fields: [
     { key: 'competence', label: 'Kompetens' },
-    { key: 'status', label: 'Status', format: 'status', tones: { expired: 'alert', expiring: 'warn' } },
+    {
+      key: 'status',
+      label: 'Status',
+      format: 'status',
+      tones: { expired: 'alert', missing: 'alert', expiring: 'warn' },
+    },
     { key: 'expiresOn', label: 'Giltigt till', format: 'date' },
     { key: 'issuedOn', label: 'Utfärdat', format: 'date' },
     { key: 'area', label: 'Område' },
@@ -39,6 +53,16 @@ export const holdingsOutput = {
   rows: [
     holding('Heta arbeten', 'Säkerhet', 'expired', '2021-06-01', '2026-05-31'),
     holding('HLR', 'Akut omhändertagande', 'expiring', '2025-01-10', '2027-01-10'),
+    // Required of her (D108 item 6) and held by nobody's word: a missing row has no dates and no evidence.
+    {
+      ref: 'holding:competence:missing:p-anna:t-fall',
+      userName: 'anna.lindqvist',
+      name: 'Anna Lindqvist',
+      competence: 'Fallskydd',
+      area: 'Säkerhet',
+      kind: 'certificate',
+      status: 'missing',
+    },
     holding('Socionomexamen', 'Examen', 'valid', '2015-06-05'),
     {
       ...holding('Brandskydd', 'Säkerhet', 'valid', '2025-11-01', '2028-11-01'),
@@ -108,4 +132,29 @@ export const competenceSources = (): CompetenceSource[] => [
     },
     types: [],
   },
+];
+/**
+ * Administration › Kompetens › Krav (D108 item 6): two requirements on positions, one of them on a type since archived,
+ * one on a unit, and the positions and units the dialog offers.
+ */
+export const competenceRequirements = (): CompetenceRequirementsOutput => ({
+  rows: [
+    { id: 'r-hlr-usk', typeId: 't-hlr', on: 'position', targetId: 'pos-usk', targetLabel: 'Undersköterska' },
+    { id: 'r-old-ssk', typeId: 't-old', on: 'position', targetId: 'pos-ssk', targetLabel: 'Sjuksköterska' },
+    { id: 'r-fall-gata', typeId: 't-fall', on: 'unit', targetId: 'unit-gata', targetLabel: 'Gata och park' },
+  ],
+  positions: [
+    { id: 'pos-mask', code: 'maskinforare', label: 'Maskinförare' },
+    { id: 'pos-ssk', code: 'sjukskoterska', label: 'Sjuksköterska' },
+    { id: 'pos-usk', code: 'underskoterska', label: 'Undersköterska' },
+  ],
+  units: [
+    { id: 'unit-skola', label: 'Bergsåkers skola' },
+    { id: 'unit-gata', label: 'Gata och park' },
+    { id: 'unit-hemtjanst', label: 'Hemtjänst Norr' },
+  ],
+});
+/** One share target across the organisation. */
+export const competenceShareTargets = (): CompetenceShareTarget[] => [
+  { id: 's-hlr-usk', typeId: 't-hlr', positionId: 'pos-usk', positionLabel: 'Undersköterska', minShare: 80 },
 ];

@@ -1591,13 +1591,15 @@ export const CompetenceKind = literals(COMPETENCE_KINDS, {
 });
 export type CompetenceKind = (typeof COMPETENCE_KINDS)[number];
 /**
- * Where a holding stands on a day (D108 item 4), computed when read and never stored. The order here is the order a
- * list is drawn in: what needs a person first.
+ * Where a person stands on a type on a day (D108 items 4 and 6), computed when read and never stored. The order here is
+ * the order a list is drawn in and the precedence of one word for a person: what needs a person first. An expired
+ * holding comes before a missing one, since something the person was relied on for has lapsed; both come before one
+ * that is about to run out.
  */
-export const COMPETENCE_STATUSES = ['expired', 'expiring', 'valid'] as const;
+export const COMPETENCE_STATUSES = ['expired', 'missing', 'expiring', 'valid'] as const;
 export const CompetenceStatus = literals(COMPETENCE_STATUSES, {
   description:
-    '`expired`: the end date has passed. `expiring`: it ends within 90 days. `valid`: it ends later, or never.',
+    '`expired`: the end date has passed. `missing`: required of the person by a position, a unit or a requirement of their own, and they hold nothing of it that counts. `expiring`: it ends within 90 days. `valid`: it ends later, or never.',
 });
 export type CompetenceStatus = (typeof COMPETENCE_STATUSES)[number];
 /**
@@ -1650,16 +1652,23 @@ export const CompetenceHoldingRowSchema = object(
     kind: Type.Optional(
       literals(COMPETENCE_KINDS, { description: 'Absent for a copied holding whose type is not mapped.' }),
     ),
-    issuedOn: { ...calendarDay, description: 'The day it was issued.' },
+    issuedOn: Type.Optional({
+      ...calendarDay,
+      description: 'The day it was issued. Absent on a `missing` row, which is no holding.',
+    }),
     expiresOn: Type.Optional({
       ...calendarDay,
       description: "The last day it is valid: the issuer's date, else the employer's rule. Absent: it does not end.",
     }),
     status: literals(COMPETENCE_ROW_STATUSES, {
       description:
-        '`expired`, `expiring` or `valid` as computed today; `uncounted`: copied from a source whose type is not mapped to the catalogue, so it counts towards nothing.',
+        '`expired`, `missing`, `expiring` or `valid` as computed today (`missing`: a type required of the person that they hold nothing of that counts); `uncounted`: copied from a source whose type is not mapped to the catalogue, so it counts towards nothing.',
     }),
-    evidence: literals(COMPETENCE_EVIDENCE),
+    evidence: Type.Optional(
+      literals(COMPETENCE_EVIDENCE, {
+        description: 'How it is attested. Absent on a `missing` row, which is no holding.',
+      }),
+    ),
     source: Type.Optional(
       Type.String({
         minLength: 1,
@@ -1686,7 +1695,7 @@ export const CompetenceAttentionInputSchema = object({});
 export type CompetenceAttentionInput = Static<typeof CompetenceAttentionInputSchema>;
 export const CompetenceAttentionOutputSchema = object(
   { rows: Type.Array(CompetenceHoldingRowSchema, { maxItems: 500 }) },
-  "What has expired or expires within 90 days among the reader's reports (D108 item 11), the expired first.",
+  "What has expired, is missing or expires within 90 days among the reader's reports (D108 items 6 and 11), the expired first.",
 );
 export type CompetenceAttentionOutput = Static<typeof CompetenceAttentionOutputSchema>;
 /** An administrator adds a type to the catalogue (D108 item 2). */
@@ -1792,6 +1801,78 @@ export const CompetenceMappingBodySchema = object({
   typeId: Type.Union([id, Type.Null()]),
 });
 export type CompetenceMappingBody = Static<typeof CompetenceMappingBodySchema>;
+/**
+ * What a requirement is set on (D108 item 6): a position (everyone who holds it), a unit (everyone placed on it) or one
+ * person. A person with two positions is under both sets.
+ */
+export const COMPETENCE_REQUIREMENT_TARGETS = ['position', 'unit', 'person'] as const;
+export type CompetenceRequirementTarget = (typeof COMPETENCE_REQUIREMENT_TARGETS)[number];
+/** One requirement as Administration › Kompetens › Krav lists it. */
+export interface CompetenceRequirement {
+  id: string;
+  typeId: string;
+  on: CompetenceRequirementTarget;
+  /** The position's, the unit's or the person's id. */
+  targetId: string;
+  /** Swedish. The position's label or the unit's name; a one-person requirement is never listed to an administrator. */
+  targetLabel: string;
+}
+/** A position of the organisation (D108 item 5) as a requirement or a share target is set on it. */
+export interface CompetencePosition {
+  id: string;
+  code: string;
+  label: string;
+}
+/** A unit of the organisation as a requirement or a share target is set on it. */
+export interface CompetenceUnit {
+  id: string;
+  label: string;
+}
+/** The requirements set on positions and units, and the positions and units they can be set on. */
+export interface CompetenceRequirementsOutput {
+  rows: CompetenceRequirement[];
+  positions: CompetencePosition[];
+  units: CompetenceUnit[];
+}
+/**
+ * A requirement is added for exactly one of a position, a unit (an administrator with `admin.competence`) or one person
+ * (the manager that person reports to, D118). `personId` is Clew's id of the person.
+ */
+export const CompetenceRequirementBodySchema = object({
+  typeId: id,
+  positionId: Type.Optional(id),
+  unitId: Type.Optional(id),
+  personId: Type.Optional(id),
+});
+export type CompetenceRequirementBody = Static<typeof CompetenceRequirementBodySchema>;
+/**
+ * A share target (D108 item 6): of the people who hold a position, at least this share holds a type, on a unit's branch
+ * or across the whole organisation. Kept by an administrator with `admin.competence`; it names no person.
+ */
+export interface CompetenceShareTarget {
+  id: string;
+  typeId: string;
+  positionId: string;
+  positionLabel: string;
+  /** Absent: the whole organisation. */
+  unitId?: string;
+  unitLabel?: string;
+  /** The least share, in whole percent from 1 to 100. */
+  minShare: number;
+}
+export interface CompetenceShareTargetsOutput {
+  rows: CompetenceShareTarget[];
+}
+export const CompetenceShareTargetBodySchema = object({
+  typeId: id,
+  positionId: id,
+  unitId: Type.Optional({
+    ...id,
+    description: 'The unit whose branch the target is for. Absent: the whole organisation.',
+  }),
+  minShare: Type.Integer({ minimum: 1, maximum: 100, description: 'The least share, in whole percent.' }),
+});
+export type CompetenceShareTargetBody = Static<typeof CompetenceShareTargetBodySchema>;
 /** A Clew-side action the conversation proposes; executed only after the person confirms, through the thread endpoints. */
 export const ClewActionSchema = object({
   n: Type.Integer(),

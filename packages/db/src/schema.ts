@@ -1069,3 +1069,71 @@ export const competenceSources = pgTable(
     ),
   ],
 );
+/**
+ * What is required of whom (D108 item 6): a catalogue type and exactly one of a position (everyone who holds it), a unit
+ * (everyone placed on it) or one person. Kept by `admin.competence` for a position or a unit and by the manager a person
+ * reports to for that person (D118). One requirement per type and target. `min_level` is the least level a skill must
+ * be held at (D120 item 4), unused until skills are built. `created_by` is an actor string, as `competence_type.created_by`
+ * is. Goes with its type, its position, its unit or its person.
+ */
+export const competenceRequirements = pgTable(
+  'competence_requirement',
+  {
+    id: text('id').primaryKey(),
+    organisationId: text('organisation_id').notNull(),
+    typeId: text('type_id')
+      .notNull()
+      .references(() => competenceTypes.id, { onDelete: 'cascade' }),
+    positionId: text('position_id').references(() => positions.id, { onDelete: 'cascade' }),
+    unitId: text('unit_id').references(() => units.id, { onDelete: 'cascade' }),
+    personId: text('person_id').references(() => people.id, { onDelete: 'cascade' }),
+    minLevel: integer('min_level'),
+    createdBy: text('created_by').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  t => [
+    check('competence_requirement_target', sql`num_nonnulls(${t.positionId}, ${t.unitId}, ${t.personId}) = 1`),
+    check('competence_requirement_level', sql`${t.minLevel} IS NULL OR ${t.minLevel} BETWEEN 1 AND 3`),
+    uniqueIndex('competence_requirement_position')
+      .on(t.typeId, t.positionId)
+      .where(sql`${t.positionId} IS NOT NULL`),
+    uniqueIndex('competence_requirement_unit')
+      .on(t.typeId, t.unitId)
+      .where(sql`${t.unitId} IS NOT NULL`),
+    uniqueIndex('competence_requirement_person')
+      .on(t.typeId, t.personId)
+      .where(sql`${t.personId} IS NOT NULL`),
+    index('competence_requirement_organisation').on(t.organisationId),
+  ],
+);
+/**
+ * A share target (D108 item 6): of the people who hold a position, at least `min_share` percent hold a type, on a unit's
+ * branch or, with no unit, across the whole organisation. Kept by `admin.competence`; it names no person. One target per
+ * type, position and unit (or the organisation). Goes with its type, its position or its unit.
+ */
+export const competenceShareTargets = pgTable(
+  'competence_share_target',
+  {
+    id: text('id').primaryKey(),
+    organisationId: text('organisation_id').notNull(),
+    typeId: text('type_id')
+      .notNull()
+      .references(() => competenceTypes.id, { onDelete: 'cascade' }),
+    positionId: text('position_id')
+      .notNull()
+      .references(() => positions.id, { onDelete: 'cascade' }),
+    unitId: text('unit_id').references(() => units.id, { onDelete: 'cascade' }),
+    minShare: integer('min_share').notNull(),
+    createdBy: text('created_by').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  t => [
+    check('competence_share_target_share', sql`${t.minShare} BETWEEN 1 AND 100`),
+    uniqueIndex('competence_share_target_unit')
+      .on(t.typeId, t.positionId, t.unitId)
+      .where(sql`${t.unitId} IS NOT NULL`),
+    uniqueIndex('competence_share_target_organisation')
+      .on(t.organisationId, t.typeId, t.positionId)
+      .where(sql`${t.unitId} IS NULL`),
+  ],
+);

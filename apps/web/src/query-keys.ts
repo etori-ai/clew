@@ -57,6 +57,9 @@ export const keys = {
   competenceCatalogue: ['competence', 'catalogue'] as const,
   /** Administration › Kompetens › Källor (D108 item 9). */
   competenceSources: ['competence', 'sources'] as const,
+  /** Administration › Kompetens › Krav (D108 item 6): the requirements and the share targets. */
+  competenceRequirements: ['competence', 'requirements'] as const,
+  competenceShareTargets: ['competence', 'share-targets'] as const,
   competenceAll: ['competence'] as const,
   /** Utvecklingssamtal (D96): the round, and action points per reader (`null`) or per person (their user name, else id). */
   talks: {

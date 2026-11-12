@@ -14,18 +14,20 @@ import {
   literals,
 } from '@clew/contracts';
 import { systemContext } from '../../system-context';
-import { swedishDayAndMonth } from './domain';
-import type { CompetenceUsecases } from './usecases';
+import { personStatus, swedishDayAndMonth } from './domain';
+import type { CompetenceUsecases, UnitCoverageResult } from './usecases';
 
 /**
- * The competence module as Clew's built-in connector (D108 items 11 to 13): two reads with declared views and a third
- * about a person (D97), the area
- * whose figure says how much has run out among a manager's reports, and the scan that turns what needs a person into a
- * card. No read is a model tool, and neither view declares a `ref`, so no row can be added to a conversation as a chip.
- * Writes are use cases behind Clew's own routes, never capabilities. The use cases come built from composition (D25).
+ * The competence module as Clew's built-in connector (D108 items 6 and 11 to 13): two reads with declared views, a read
+ * about a person and one about a unit (D97) with the table a unit's row opens, the area whose figure says how much has
+ * run out or is missing among a manager's reports, and the scan that turns what needs a person into a card. No read is a
+ * model tool, and no view declares a `ref`, so no row can be added to a conversation as a chip. Writes are use cases
+ * behind Clew's own routes, never capabilities. The use cases come built from composition (D25).
  */
 export const COMPETENCE_SOURCE = 'Kompetens';
 export const COMPETENCE_AREA = 'competence';
+/** Where a holding stands, as a badge's tone: what has run out or is missing alerts, what soon will warns. */
+const statusTones = { expired: 'alert', missing: 'alert', expiring: 'warn' } as const;
 /**
  * A copied row's source and when it was last read (D108 item 9), so the time of the read shows wherever a copied row is
  * listed; empty on a row registered in Clew.
@@ -34,23 +36,27 @@ const copiedFields: ViewField[] = [
   { key: 'source', label: 'Källa' },
   { key: 'readAt', label: 'Inläst', format: 'instant', beside: true },
 ];
-/** What has run out or runs out soon among the manager's reports: the figure and the manager's card open it. */
+/**
+ * What has run out, is missing or runs out soon among the manager's reports: the figure and the manager's card open it.
+ * A missing row is a type required of the person that they hold nothing of (D108 item 6), with no dates.
+ */
 export const attentionView: View = {
   kind: 'table',
   title: 'name',
   noun: { one: 'intyg', other: 'intyg' },
-  empty: 'Inget har gått ut och inget går ut inom 90 dagar.',
+  empty: 'Inget saknas, inget har gått ut och inget går ut inom 90 dagar.',
   fields: [
     { key: 'name', label: 'Namn' },
     { key: 'competence', label: 'Kompetens' },
-    { key: 'status', label: 'Status', format: 'status', tones: { expired: 'alert', expiring: 'warn' } },
+    { key: 'status', label: 'Status', format: 'status', tones: statusTones },
     { key: 'expiresOn', label: 'Giltigt till', format: 'date' },
     ...copiedFields,
   ],
 };
 /**
- * One person's holdings: the reader's own with no input, a report's for their manager. A copied row whose type is not
- * mapped is listed under the source's label with the status `uncounted` ("räknas inte"), which has no tone.
+ * One person's holdings: the reader's own with no input, a report's for their manager. A type required of the person
+ * that they hold nothing of is a row with the status `missing` ("saknas"). A copied row whose type is not mapped is
+ * listed under the source's label with the status `uncounted` ("räknas inte"), which has no tone.
  */
 export const holdingsView: View = {
   kind: 'list',
@@ -59,7 +65,7 @@ export const holdingsView: View = {
   empty: 'Det finns inga registrerade kompetenser.',
   fields: [
     { key: 'competence', label: 'Kompetens' },
-    { key: 'status', label: 'Status', format: 'status', tones: { expired: 'alert', expiring: 'warn' } },
+    { key: 'status', label: 'Status', format: 'status', tones: statusTones },
     { key: 'expiresOn', label: 'Giltigt till', format: 'date' },
     { key: 'issuedOn', label: 'Utfärdat', format: 'date' },
     { key: 'area', label: 'Område' },
@@ -76,9 +82,14 @@ const KeysSchema = Type.Object(
   { additionalProperties: false },
 );
 type Keys = Static<typeof KeysSchema>;
-/** Where a person stands, in the word a person reads; only what has run out or soon will has a tone. */
+/**
+ * Where a person stands, in the word a person reads, in order of precedence (`personStatus`): something has run out,
+ * something required is missing, something runs out soon, all is valid, nothing is registered. Only the first three have
+ * a tone, so only they can be a mark.
+ */
 export const STANDING_WORDS = {
   expired: 'Utgånget',
+  missing: 'Saknas',
   expiring: 'Går ut snart',
   valid: 'Giltigt',
   none: 'Inget registrerat',
@@ -98,7 +109,7 @@ export const PersonCompetenceOutputSchema = Type.Object(
 );
 /**
  * One person's competence in a row: the status as a badge, the one value where only one has room; beside it how many
- * have run out or soon will; then how many are registered. A row opens the person's holdings.
+ * have run out, are missing or soon run out; then how many are registered. A row opens the person's holdings.
  */
 export const personView: View = {
   kind: 'list',
@@ -110,7 +121,11 @@ export const personView: View = {
       key: 'status',
       label: 'Kompetens',
       format: 'status',
-      tones: { [STANDING_WORDS.expired]: 'alert', [STANDING_WORDS.expiring]: 'warn' },
+      tones: {
+        [STANDING_WORDS.expired]: 'alert',
+        [STANDING_WORDS.missing]: 'alert',
+        [STANDING_WORDS.expiring]: 'warn',
+      },
       compact: true,
     },
     { key: 'due', label: 'Att åtgärda', beside: true },
@@ -118,10 +133,144 @@ export const personView: View = {
   ],
   open: { capability: COMPETENCE_CONNECTOR + '.holdings', title: 'Kompetenser', params: { person: 'key' } },
 };
-const dueWords = (expired: number, expiring: number) =>
-  [...(expired ? [`${expired} har gått ut`] : []), ...(expiring ? [`${expiring} går ut inom 90 dagar`] : [])].join(
-    ', ',
-  );
+const dueWords = (expired: number, missing: number, expiring: number) =>
+  [
+    ...(expired ? [`${expired} har gått ut`] : []),
+    ...(missing ? [`${missing} saknas`] : []),
+    ...(expiring ? [`${expiring} går ut inom 90 dagar`] : []),
+  ].join(', ');
+/** "a", "a och b", "a, b och c". */
+const listWords = (parts: readonly string[]) =>
+  parts.length < 2 ? (parts[0] ?? '') : `${parts.slice(0, -1).join(', ')} och ${parts.at(-1)}`;
+/**
+ * A unit's coverage in a row (D108 items 6 and 8): how many of the people of its branch that something is required of
+ * meet all of it, the ones who do not beside it, warning; then how many of the share targets that apply are reached,
+ * the ones that are not beside them, warning. Counts only: a row names nobody. A row opens the table per type and target.
+ */
+export const UnitCompetenceOutputSchema = Type.Object(
+  {
+    rows: Type.Array(
+      Type.Object(
+        {
+          key: Type.String({ minLength: 1, maxLength: 256 }),
+          covered: Type.String({ maxLength: 60 }),
+          short: Type.Optional(Type.String({ maxLength: 40 })),
+          targets: Type.Optional(Type.String({ maxLength: 60 })),
+          below: Type.Optional(Type.String({ maxLength: 40 })),
+        },
+        { additionalProperties: false },
+      ),
+      { maxItems: ENTITY_KEYS_MAX },
+    ),
+  },
+  { additionalProperties: false },
+);
+export const unitView: View = {
+  kind: 'list',
+  title: 'covered',
+  noun: { one: 'enhet', other: 'enheter' },
+  empty: 'Inga kompetenskrav gäller på enheten.',
+  fields: [
+    { key: 'covered', label: 'Uppfyller kraven' },
+    { key: 'short', label: 'Uppfyller inte', format: 'status', tones: { '*': 'warn' }, beside: true },
+    { key: 'targets', label: 'Andelsmål' },
+    { key: 'below', label: 'Under målet', format: 'status', tones: { '*': 'warn' }, beside: true },
+  ],
+  open: { capability: COMPETENCE_CONNECTOR + '.coverage', title: 'Kompetenstäckning', params: { unit: 'key' } },
+};
+/** What the table behind a unit's row takes: the unit, by id. */
+export const CoverageInputSchema = Type.Object(
+  { unit: Type.String({ minLength: 1, maxLength: 256 }) },
+  { additionalProperties: false },
+);
+type CoverageInput = Static<typeof CoverageInputSchema>;
+/** The words a coverage row says where it stands: met, not met, or nobody to count. */
+export const COVERAGE_WORDS = { met: 'Uppfyllt', short: 'Inte uppfyllt', none: 'Ingen att räkna' } as const;
+export const CoverageOutputSchema = Type.Object(
+  {
+    rows: Type.Array(
+      Type.Object(
+        {
+          id: Type.String({ minLength: 1, maxLength: 120 }),
+          competence: Type.String({ minLength: 1, maxLength: 120 }),
+          goal: Type.String({ maxLength: 200 }),
+          actual: Type.String({ maxLength: 60 }),
+          state: literals(Object.values(COVERAGE_WORDS)),
+        },
+        { additionalProperties: false },
+      ),
+      { maxItems: 500 },
+    ),
+  },
+  { additionalProperties: false },
+);
+/**
+ * A unit's branch per required type and per share target that applies (D108 items 6 and 8): what is asked, what is
+ * there, and whether it is met. A requirement asks it of everyone it is set on; a share target asks a least share of a
+ * position's holders, measured over this branch whether it is set on the unit, on one above it or on the organisation.
+ */
+export const coverageView: View = {
+  kind: 'table',
+  title: 'competence',
+  noun: { one: 'krav', other: 'krav' },
+  empty: 'Inga kompetenskrav gäller på enheten.',
+  fields: [
+    { key: 'competence', label: 'Kompetens' },
+    { key: 'goal', label: 'Vad som krävs' },
+    { key: 'actual', label: 'Uppfyller' },
+    {
+      key: 'state',
+      label: 'Läge',
+      format: 'status',
+      tones: { [COVERAGE_WORDS.met]: 'ok', [COVERAGE_WORDS.short]: 'warn' },
+    },
+  ],
+};
+const persons = (n: number) => `${n} ${n === 1 ? 'person' : 'personer'}`;
+const cut = (text: string, max: number) => ([...text].length > max ? [...text].slice(0, max - 1).join('') + '…' : text);
+/**
+ * The table's rows: the required types first, in the catalogue's order, then the share targets. A target set on a unit
+ * above, or on the whole organisation, says so: its share is still this branch's.
+ */
+export function coverageRows(c: UnitCoverageResult) {
+  return [
+    ...c.requirements.map(r => ({
+      id: 'requirement:' + r.type.id,
+      competence: r.type.name,
+      goal: `Krav för ${persons(r.under)}`,
+      actual: `${r.meeting} av ${r.under}`,
+      state: r.meeting === r.under ? COVERAGE_WORDS.met : COVERAGE_WORDS.short,
+    })),
+    ...c.targets.map(t => ({
+      id: 'target:' + t.target.id,
+      competence: t.type.name,
+      goal: cut(
+        `Minst ${t.target.minShare} % av dem med befattningen ${t.positionLabel}` +
+          (t.unitLabel === null
+            ? ', mål för hela organisationen'
+            : t.target.unitId !== c.unitId
+              ? `, mål för ${t.unitLabel}`
+              : ''),
+        200,
+      ),
+      actual: t.share === null ? 'Ingen har befattningen' : `${t.share} %, ${t.meeting} av ${t.holders}`,
+      state: t.met === null ? COVERAGE_WORDS.none : t.met ? COVERAGE_WORDS.met : COVERAGE_WORDS.short,
+    })),
+  ].slice(0, 500);
+}
+/** A unit's row: what is met of what is required, and of the share targets, in counts only. */
+function unitRow(c: UnitCoverageResult) {
+  const short = c.under - c.meetingAll;
+  const counted = c.targets.filter(t => t.met !== null);
+  const below = counted.filter(t => !t.met).length;
+  return {
+    key: c.unitId,
+    covered: c.under ? `${c.meetingAll} av ${persons(c.under)}` : 'Inga krav på någon',
+    ...(short ? { short: persons(short) } : {}),
+    ...(c.targets.length ? { targets: `${counted.length - below} av ${c.targets.length} nås` } : {}),
+    ...(below ? { below: `${below} mål` } : {}),
+  };
+}
 /** The persona a use case takes, built from the person's current grant as the talks connector does. */
 async function systemPersona(actor: Actor): Promise<AuthenticatedContext> {
   const persona = await systemContext(actor.id, 'connector:' + COMPETENCE_CONNECTOR);
@@ -140,7 +289,7 @@ export function competenceConnector(
     kind: 'read',
     title: 'Intyg att åtgärda',
     model: false,
-    description: 'Intyg och kompetenser som har gått ut eller går ut inom 90 dagar bland dem du är chef för.',
+    description: 'Intyg och kompetenser som har gått ut, saknas eller går ut inom 90 dagar bland dem du är chef för.',
     input: CompetenceAttentionInputSchema,
     output: CompetenceAttentionOutputSchema,
     view: attentionView,
@@ -168,7 +317,7 @@ export function competenceConnector(
     title: 'Kompetens',
     model: false,
     description:
-      'Var varje person du är chef för står: om något intyg har gått ut eller går ut inom 90 dagar, och hur många som är registrerade.',
+      'Var varje person du är chef för står: om något intyg har gått ut, saknas eller går ut inom 90 dagar, och hur många som är registrerade.',
     input: KeysSchema,
     output: PersonCompetenceOutputSchema,
     view: personView,
@@ -181,16 +330,49 @@ export function competenceConnector(
       const { rows } = await competence.aboutPeople(await persona(actor), input.keys);
       return {
         rows: rows.map(r => {
-          const due = dueWords(r.expired, r.expiring);
+          const due = dueWords(r.expired, r.missing, r.expiring);
           return {
             key: r.key,
-            status: STANDING_WORDS[r.expired ? 'expired' : r.expiring ? 'expiring' : r.holdings ? 'valid' : 'none'],
+            status: STANDING_WORDS[personStatus(r)],
             ...(due ? { due } : {}),
             held: r.holdings ? `${r.holdings} registrerade` : 'Inga',
           };
         }),
       };
     },
+  };
+  const coverage: Capability<CoverageInput> = {
+    name: COMPETENCE_CONNECTOR + '.coverage',
+    kind: 'read',
+    title: 'Kompetenstäckning',
+    model: false,
+    description:
+      'Hur många på en enhet du är chef för, och på enheterna under den, som uppfyller varje kompetenskrav, och hur andelsmålen nås.',
+    input: CoverageInputSchema,
+    output: CoverageOutputSchema,
+    view: coverageView,
+    scope: { roles: ['manager'] },
+    // Only a unit the reader manages, counted over its branch (D99 item 5); the use case checks it, as Clew's own
+    // domains do (D117), since a unit named in a plain input is not resolved by the registry.
+    run: async (actor, input) => ({ rows: coverageRows(await competence.coverage(await persona(actor), input.unit)) }),
+  };
+  const aboutUnit: Capability<Keys> = {
+    name: COMPETENCE_CONNECTOR + '.unit',
+    kind: 'read',
+    title: 'Kompetens',
+    model: false,
+    description:
+      'Hur många på varje enhet du är chef för, och på enheterna under den, som uppfyller kompetenskraven, och hur många andelsmål som nås.',
+    input: KeysSchema,
+    output: UnitCompetenceOutputSchema,
+    view: unitView,
+    scope: { roles: ['manager'] },
+    about: { entity: 'unit' },
+    // Only the units the reader manages (D117); the counts are their branches' and name nobody (D99 item 5).
+    unit: { admits: ['manages'] },
+    run: async (actor, input) => ({
+      rows: (await competence.aboutUnits(await persona(actor), input.keys)).map(unitRow),
+    }),
   };
   return {
     id: COMPETENCE_CONNECTOR,
@@ -203,33 +385,64 @@ export function competenceConnector(
         roles: ['manager', 'employee'],
         standing: [attention.name, holdings.name],
         schedules: [],
-        // Läget's tile (D54): how much has run out among the manager's reports. Nobody managed: no figure. Nothing
-        // due is said as a calm sentence, so the tile does not disappear the day the last certificate is renewed.
+        // Läget's tile (D54): how much has run out or is missing among the manager's reports, then what soon runs out.
+        // Nobody managed: no figure. Nothing due is said as a calm sentence, so the tile does not disappear the day the
+        // last certificate is renewed.
         figure: async actor => {
           if (actor.role !== 'manager') return null;
           const s = await competence.summary(await persona(actor));
           if (!s || !s.reports) return null;
-          if (!s.expired && !s.expiring) return { label: 'Inga intyg går ut inom 90 dagar.', tone: 'ok' };
+          if (!s.expired && !s.missing && !s.expiring)
+            return { label: 'Inga intyg saknas eller går ut inom 90 dagar.', tone: 'ok' };
+          const lacking = s.expired + s.missing;
           return {
-            label: s.expired ? 'Intyg som har gått ut' : 'Intyg som går ut inom 90 dagar',
-            value: String(s.expired || s.expiring),
-            ...(s.expired && s.expiring ? { comparison: `${s.expiring} till går ut inom 90 dagar` } : {}),
-            tone: s.expired ? 'alert' : 'warn',
+            label: s.expired
+              ? s.missing
+                ? 'Intyg som har gått ut eller saknas'
+                : 'Intyg som har gått ut'
+              : s.missing
+                ? 'Intyg som saknas'
+                : 'Intyg som går ut inom 90 dagar',
+            value: String(lacking || s.expiring),
+            ...(lacking && s.expiring ? { comparison: `${s.expiring} till går ut inom 90 dagar` } : {}),
+            tone: lacking ? 'alert' : 'warn',
             opens: attention.name,
           };
         },
       },
     ],
-    capabilities: [attention as Capability, holdings as Capability, aboutPerson as Capability],
+    capabilities: [
+      attention as Capability,
+      holdings as Capability,
+      aboutPerson as Capability,
+      aboutUnit as Capability,
+      coverage as Capability,
+    ],
     /**
-     * What needs a person (D108 item 12), derived from the dates each time and never stored: the card goes when a
-     * certificate is registered. A person gets one card per holding of their own, with its end date as the deadline.
-     * A manager gets one card that counts their reports' holdings and names nobody: its rows are the read it opens.
+     * What needs a person (D108 item 12), derived from the dates and the requirements each time and never stored: the
+     * card goes when a certificate is registered or the requirement is removed. A person gets one card per holding of
+     * their own that has run out or soon will, with its end date as the deadline, and one per required type they lack. A
+     * manager gets one card that counts their reports' and names nobody: its rows are the read it opens.
      */
     scan: async actor => {
       const reader = await persona(actor);
       const drafts: ThreadDraft[] = [];
+      const open = [
+        { id: 'open', label: 'Visa mina kompetenser', capability: holdings.name, kind: 'read', role: 'primary' },
+      ] as const;
       for (const s of await competence.ownAttention(reader)) {
+        if (s.holding === null) {
+          drafts.push({
+            topic: `${COMPETENCE_CONNECTOR}:missing:${s.type.id}`,
+            area: COMPETENCE_AREA,
+            title: `${s.type.name} saknas`,
+            summary:
+              'Det här krävs i ditt arbete men finns inte registrerat för dig. Prata med din chef om hur du får det.',
+            reason: 'Saknas',
+            actions: [...open],
+          });
+          continue;
+        }
         const day = swedishDayAndMonth(s.end!);
         const expired = s.status === 'expired';
         drafts.push({
@@ -241,23 +454,22 @@ export function competenceConnector(
             : 'Intyget behöver förnyas innan det går ut. Prata med din chef om nästa tillfälle.',
           reason: expired ? 'Har gått ut' : 'Går ut inom 90 dagar',
           deadline: s.end,
-          actions: [
-            { id: 'open', label: 'Visa mina kompetenser', capability: holdings.name, kind: 'read', role: 'primary' },
-          ],
+          actions: [...open],
         });
       }
       const s = actor.role === 'manager' ? await competence.summary(reader) : null;
-      if (s && (s.expired || s.expiring)) {
+      if (s && (s.expired || s.missing || s.expiring)) {
         const parts = [
           ...(s.expired ? [`${plural(s.expired, 'intyg har', 'intyg har')} gått ut`] : []),
+          ...(s.missing ? [`${plural(s.missing, 'intyg saknas', 'intyg saknas')}`] : []),
           ...(s.expiring ? [`${plural(s.expiring, 'intyg går', 'intyg går')} ut inom 90 dagar`] : []),
         ];
         drafts.push({
           topic: `${COMPETENCE_CONNECTOR}:attention`,
           area: COMPETENCE_AREA,
           title: 'Intyg att åtgärda bland dina medarbetare',
-          summary: `${parts.join(' och ')}, hos ${plural(s.people, 'person', 'personer')}.`,
-          reason: s.expired ? 'Intyg har gått ut' : 'Intyg går ut inom 90 dagar',
+          summary: `${listWords(parts)}, hos ${plural(s.people, 'person', 'personer')}.`,
+          reason: s.expired ? 'Intyg har gått ut' : s.missing ? 'Intyg saknas' : 'Intyg går ut inom 90 dagar',
           actions: [{ id: 'open', label: 'Visa intygen', capability: attention.name, kind: 'read', role: 'primary' }],
         });
       }

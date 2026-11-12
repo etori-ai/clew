@@ -43,6 +43,7 @@ import { PageHeader } from '../../components/page-header';
 import { mobileQuery } from '../../components/shell';
 import { AdminShell } from './shell';
 import { SOURCES_PATH } from './competence-sources';
+import { REQUIREMENTS_PATH } from './competence-requirements';
 
 /**
  * "Kompetens" (D108 items 2, 3 and 8): the catalogue of competence types, kept by whoever has `admin.competence`. A
@@ -372,6 +373,7 @@ export function AdminCompetencePage({ user }: { user: SessionUser }) {
         end={
           !refused && query.data ? (
             <HStack gap={2} wrap="wrap">
+              <Button variant="secondary" label="Krav" href={REQUIREMENTS_PATH} />
               <Button variant="secondary" label="Källor" href={SOURCES_PATH} />
               <Button variant="primary" label="Lägg till kompetens" href={editHref(NEW)} />
             </HStack>

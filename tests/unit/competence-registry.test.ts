@@ -220,4 +220,90 @@ describe('the competence wiring (D108 item 13)', () => {
     expect((await w.call(mikael, 'POST', `/types/${typeId}/archive`)).status).toBe(204);
     expect(w.store.state.types.get(typeId)?.archivedAt).not.toBeNull();
   });
+
+  test('the routes carry requirements and share targets (D108 item 6) and map each refusal', async () => {
+    const w = world();
+    await syncBundledRows(w.reconcile);
+    await w.admin.update(mikael, COMPETENCE_CONNECTOR, { state: 'enabled' });
+    w.store.addPosition({ id: 'pos-usk', organisationId: ORG, code: 'usk', label: 'Undersköterska' });
+    w.store.addUnit({ id: 'unit-skola', organisationId: ORG, label: 'Bergsåkers skola' });
+    const added = await w.call(mikael, 'POST', '/types', { name: 'HLR', area: 'Akut', kind: 'course' });
+    const { id: typeId } = (await added.json()) as { id: string };
+
+    const onPosition = await w.call(mikael, 'POST', '/requirements', { typeId, positionId: 'pos-usk' });
+    expect(onPosition.status).toBe(201);
+    const { id: requirementId } = (await onPosition.json()) as { id: string };
+    // A body outside the contract, a body naming no target, a taken one and a missing capability each have their answer.
+    expect((await w.call(mikael, 'POST', '/requirements', { typeId, positionId: 'pos-usk', minLevel: 2 })).status).toBe(
+      400,
+    );
+    const none = await w.call(mikael, 'POST', '/requirements', { typeId });
+    expect(none.status).toBe(400);
+    expect(((await none.json()) as { error: string }).error).toBe(
+      'Ett krav gäller en befattning, en enhet eller en person.',
+    );
+    const again = await w.call(mikael, 'POST', '/requirements', { typeId, positionId: 'pos-usk' });
+    expect(((await again.json()) as { error: string }).error).toBe('Det kravet finns redan.');
+    expect((await w.call(hillevi, 'POST', '/requirements', { typeId, unitId: 'unit-skola' })).status).toBe(403);
+    // One person: their manager, never the administrator (D118).
+    expect((await w.call(mikael, 'POST', '/requirements', { typeId, personId: 'p-anna' })).status).toBe(403);
+    const onAnna = await w.call(hillevi, 'POST', '/requirements', { typeId, personId: 'p-anna' });
+    expect(onAnna.status).toBe(201);
+
+    const listed = await w.call(mikael, 'GET', '/requirements');
+    expect(listed.status).toBe(200);
+    expect(listed.headers.get('cache-control')).toContain('no-store');
+    expect(await listed.json()).toEqual({
+      rows: [{ id: requirementId, typeId, on: 'position', targetId: 'pos-usk', targetLabel: 'Undersköterska' }],
+      positions: [{ id: 'pos-usk', code: 'usk', label: 'Undersköterska' }],
+      units: [{ id: 'unit-skola', label: 'Bergsåkers skola' }],
+    });
+    expect((await w.call(hillevi, 'GET', '/requirements')).status).toBe(403);
+    expect((await w.call(hillevi, 'DELETE', `/requirements/${requirementId}`)).status).toBe(403);
+    expect((await w.call(mikael, 'DELETE', `/requirements/${requirementId}`)).status).toBe(204);
+    expect((await w.call(mikael, 'DELETE', `/requirements/${requirementId}`)).status).toBe(400);
+
+    const target = await w.call(mikael, 'POST', '/share-targets', { typeId, positionId: 'pos-usk', minShare: 40 });
+    expect(target.status).toBe(201);
+    const { id: targetId } = (await target.json()) as { id: string };
+    for (const minShare of [0, 101, 12.5, '40'])
+      expect((await w.call(mikael, 'POST', '/share-targets', { typeId, positionId: 'pos-usk', minShare })).status).toBe(
+        400,
+      );
+    expect(
+      (
+        await w.call(hillevi, 'POST', '/share-targets', {
+          typeId,
+          positionId: 'pos-usk',
+          unitId: 'unit-skola',
+          minShare: 40,
+        })
+      ).status,
+    ).toBe(403);
+    const targets = await w.call(mikael, 'GET', '/share-targets');
+    expect(targets.headers.get('cache-control')).toContain('no-store');
+    expect(await targets.json()).toEqual({
+      rows: [{ id: targetId, typeId, positionId: 'pos-usk', positionLabel: 'Undersköterska', minShare: 40 }],
+    });
+    expect((await w.call(hillevi, 'DELETE', `/share-targets/${targetId}`)).status).toBe(403);
+    expect((await w.call(mikael, 'DELETE', `/share-targets/${targetId}`)).status).toBe(204);
+    expect(w.store.state.shareTargets.size).toBe(0);
+  });
+
+  test('switched off, the requirements and share targets are refused like every other route', async () => {
+    const w = world();
+    await syncBundledRows(w.reconcile);
+    for (const [method, path] of [
+      ['GET', '/requirements'],
+      ['POST', '/requirements'],
+      ['DELETE', '/requirements/r1'],
+      ['GET', '/share-targets'],
+      ['POST', '/share-targets'],
+      ['DELETE', '/share-targets/s1'],
+    ] as const) {
+      const refused = await w.call(mikael, method, path, method === 'POST' ? {} : undefined);
+      expect(refused.status).toBe(403);
+      expect(await refused.json()).toEqual({ error: NOT_ENABLED, code: 'denied' });
+    }
+  });
 });

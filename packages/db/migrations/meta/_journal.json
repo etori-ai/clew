@@ -393,6 +393,13 @@
       "when": 1794515888899,
       "tag": "0055_person_positions",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1794517251334,
+      "tag": "0056_competence_requirements",
+      "breakpoints": true
     }
   ]
 }

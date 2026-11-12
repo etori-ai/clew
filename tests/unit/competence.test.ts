@@ -16,11 +16,28 @@ import {
 import {
   attentionView,
   competenceConnector,
+  coverageView,
   holdingsView,
   personView,
+  unitView,
 } from '../../apps/server/src/modules/competence/capabilities';
-import { addMonths, deciding, endOf, statusOn } from '../../apps/server/src/modules/competence/domain';
-import type { HoldingRecord, TypeRecord } from '../../apps/server/src/modules/competence/model';
+import {
+  addMonths,
+  branchOf,
+  coverageOf,
+  deciding,
+  endOf,
+  lineAbove,
+  personStatus,
+  requiredOf,
+  statusOn,
+} from '../../apps/server/src/modules/competence/domain';
+import type {
+  HoldingRecord,
+  RequirementRecord,
+  ShareTargetRecord,
+  TypeRecord,
+} from '../../apps/server/src/modules/competence/model';
 import {
   CompetenceError,
   competenceUsecases,
@@ -178,7 +195,7 @@ describe('the dates', () => {
     });
     const types = new Map([[t.id, t]]);
     const pick = (holdings: HoldingRecord[]) =>
-      deciding(holdings, types, '2026-11-10').map(s => [s.holding.id, s.status]);
+      deciding(holdings, types, '2026-11-10').map(s => [s.holding?.id, s.status]);
     expect(pick([h('old', { expiresOn: '2026-01-01' }), h('new', { expiresOn: '2030-01-01' })])).toEqual([
       ['new', 'valid'],
     ]);
@@ -496,14 +513,14 @@ describe('the reads', () => {
       ['Anna Andersson', 'Heta arbeten', 'expired'],
       ['Anna Andersson', 'HLR', 'expiring'],
     ]);
-    expect(await competence.summary(boss)).toEqual({ expired: 1, expiring: 1, people: 1, reports: 2 });
+    expect(await competence.summary(boss)).toEqual({ expired: 1, missing: 0, expiring: 1, people: 1, reports: 2 });
     await competence.registerHolding(boss, 'anna', {
       typeId: types.hot,
       issuedOn: '2026-11-01',
       expiresOn: '2031-10-31',
     });
     expect((await competence.attention(boss)).rows.map(r => r.competence)).toEqual(['HLR']);
-    expect(await competence.summary(boss)).toEqual({ expired: 0, expiring: 1, people: 1, reports: 2 });
+    expect(await competence.summary(boss)).toEqual({ expired: 0, missing: 0, expiring: 1, people: 1, reports: 2 });
     // Another manager sees none of it, and someone who manages nobody is refused the list and has no summary.
     expect((await competence.attention(other)).rows).toEqual([]);
     await expect(competence.attention(asAnna)).rejects.toBeInstanceOf(ForbiddenError);
@@ -515,9 +532,9 @@ describe('the reads', () => {
     // Asked without regard to case; Bo has no user name, Cia is deactivated, Dan reports to another manager.
     const out = await competence.aboutPeople(boss, ['Anna.A', 'eve.e', 'bo', 'cia.c', 'dan.d', 'nobody', 'Anna.A']);
     expect(out.rows).toEqual([
-      { key: 'Anna.A', expired: 1, expiring: 1, holdings: 3 },
+      { key: 'Anna.A', expired: 1, missing: 0, expiring: 1, holdings: 3 },
       // Nothing registered yet: the row is where a first certificate is registered from.
-      { key: 'eve.e', expired: 0, expiring: 0, holdings: 0 },
+      { key: 'eve.e', expired: 0, missing: 0, expiring: 0, holdings: 0 },
     ]);
     // Someone who manages nobody, and another manager, reach none of them.
     expect((await competence.aboutPeople(asAnna, ['anna.a', 'eve.e'])).rows).toEqual([]);
@@ -547,17 +564,17 @@ describe('erasure and export', () => {
     await competence.registerHolding(boss, 'bo', { typeId: hot, issuedOn: '2026-01-10' });
     // Erasure is for a person the directory has deactivated (D108 item 14).
     store.deactivate('anna');
-    expect(await competence.erasePerson('operator:cli', 'anna')).toEqual({ holdings: 1, cleared: 0 });
+    expect(await competence.erasePerson('operator:cli', 'anna')).toEqual({ holdings: 1, cleared: 0, requirements: 0 });
     expect(lastAudit()).toEqual({
       actor: 'operator:cli',
       action: 'competence.person_erased',
       subject: 'person:anna',
       at: now.toISOString(),
-      details: { holdings: 1, cleared: 0 },
+      details: { holdings: 1, cleared: 0, requirements: 0 },
     });
     // The manager who registered is erased: the holdings stay, without her id.
     store.deactivate('boss');
-    expect(await competence.erasePerson('operator:cli', 'boss')).toEqual({ holdings: 0, cleared: 1 });
+    expect(await competence.erasePerson('operator:cli', 'boss')).toEqual({ holdings: 0, cleared: 1, requirements: 0 });
     expect([...store.state.holdings.values()].map(h => [h.personId, h.registeredBy])).toEqual([['bo', null]]);
   });
   test('the export is one versioned document of the organisation, audited with counts', async () => {
@@ -565,7 +582,7 @@ describe('erasure and export', () => {
     await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2026-01-10' });
     await competence.seedType('operator:test', 'org-2', { name: 'Annan', area: 'X', kind: 'course' });
     const doc = await competence.exportDomain('operator:cli', ORG);
-    expect(doc).toMatchObject({ format: 'clew.competence/2', exportedAt: now.toISOString(), organisationId: ORG });
+    expect(doc).toMatchObject({ format: 'clew.competence/3', exportedAt: now.toISOString(), organisationId: ORG });
     expect(doc.types.map(t => t.name).sort()).toEqual(['HLR', 'Heta arbeten', 'Socionomexamen']);
     expect(doc.holdings).toHaveLength(1);
     expect(lastAudit()).toEqual({
@@ -573,7 +590,7 @@ describe('erasure and export', () => {
       action: 'competence.exported',
       subject: 'organisation:' + ORG,
       at: now.toISOString(),
-      details: { types: 3, holdings: 1, mappings: 0 },
+      details: { types: 3, holdings: 1, mappings: 0, requirements: 0, shareTargets: 0 },
     });
   });
 });
@@ -633,11 +650,14 @@ describe('the built-in connector', () => {
       ['competence.attention', 'read', false, null],
       ['competence.holdings', 'read', false, null],
       ['competence.person', 'read', false, 'person'],
+      ['competence.unit', 'read', false, 'unit'],
+      ['competence.coverage', 'read', false, null],
     ]);
     for (const x of c.capabilities) expect(viewProblem(x, c.capabilities)).toBeUndefined();
-    // The read about a person takes the keys it is asked with, so it is no place in the menu.
-    expect(c.capabilities.map(x => menuEligible(x))).toEqual([true, true, false]);
-    expect('ref' in attentionView || 'ref' in holdingsView || 'ref' in personView).toBe(false);
+    // The reads about a person and a unit take the keys they are asked with, and the table a unit's row opens takes
+    // the unit, so none of them is a place in the menu.
+    expect(c.capabilities.map(x => menuEligible(x))).toEqual([true, true, false, false, false]);
+    expect([attentionView, holdingsView, personView, unitView, coverageView].some(v => 'ref' in v)).toBe(false);
   });
 
   test('the read about a person is placed by the registry: a section source with the dialog as its page, and words a person reads', async () => {
@@ -664,6 +684,7 @@ describe('the built-in connector', () => {
     // Only what has run out or soon will has a tone, so only that is a mark on a row.
     expect(personView.kind === 'list' && personView.fields[0]!.tones).toEqual({
       Utgånget: 'alert',
+      Saknas: 'alert',
       'Går ut snart': 'warn',
     });
   });
@@ -682,7 +703,7 @@ describe('the built-in connector', () => {
     const r = registry();
     const figureOf = async (p: AuthenticatedContext) =>
       (await r.areas(actor(p))).find(a => a.id === 'competence')?.figure ?? null;
-    expect(await figureOf(boss)).toMatchObject({ label: 'Inga intyg går ut inom 90 dagar.', tone: 'ok' });
+    expect(await figureOf(boss)).toMatchObject({ label: 'Inga intyg saknas eller går ut inom 90 dagar.', tone: 'ok' });
     const types = await world();
     expect(await figureOf(boss)).toMatchObject({
       label: 'Intyg som har gått ut',
@@ -735,5 +756,691 @@ describe('the built-in connector', () => {
     });
     await competence.updateType(admin, types.hlr, { validityMonths: null });
     expect(await registry().scan(actor(boss))).toEqual([]);
+  });
+});
+
+/**
+ * Requirements, the status `missing`, coverage and share targets (D108 items 4, 6 and 8). The directory as SCIM writes
+ * it: two positions, a tree where Enhet 3 stands under Enhet 1 and Enhet 2 is a root of its own; Anna on Enhet 1 and 2
+ * holding the undersköterska position, Bo on Enhet 1 holding both, Dan on Enhet 3 (another manager's report, in Karin's
+ * branch) holding the undersköterska position, Cia deactivated on Enhet 1, and the manager herself on Enhet 1.
+ */
+describe('requirements, missing and coverage (D108 item 6)', () => {
+  const USK = 'pos-usk',
+    SSK = 'pos-ssk';
+  function directory() {
+    store.addPosition({ id: USK, organisationId: ORG, code: 'usk', label: 'Undersköterska' });
+    store.addPosition({ id: SSK, organisationId: ORG, code: 'ssk', label: 'Sjuksköterska' });
+    store.addPosition({ id: 'pos-foreign', organisationId: 'org-2', code: 'usk', label: 'Undersköterska' });
+    store.addUnit({ id: 'u1', organisationId: ORG, label: 'Enhet 1', parentId: null });
+    store.addUnit({ id: 'u3', organisationId: ORG, label: 'Enhet 3', parentId: 'u1' });
+    store.addUnit({ id: 'u2', organisationId: ORG, label: 'Enhet 2', parentId: null });
+    store.addUnit({ id: 'u-foreign', organisationId: 'org-2', label: 'Annan enhet', parentId: null });
+    for (const [personId, unitId] of [
+      ['anna', 'u1'],
+      ['anna', 'u2'],
+      ['bo', 'u1'],
+      ['cia', 'u1'],
+      ['boss', 'u1'],
+      ['dan', 'u3'],
+    ])
+      store.assign(personId!, unitId!);
+    store.deactivate('cia');
+    store.holdPosition('anna', USK);
+    store.holdPosition('bo', USK);
+    store.holdPosition('bo', SSK);
+    store.holdPosition('dan', USK);
+  }
+  const ids = { organisationId: ORG, positionId: null, unitId: null, personId: null };
+
+  describe('the requirements an administrator keeps', () => {
+    test('an administrator adds one on a position and one on a unit after the step-up, each audited with ids only', async () => {
+      directory();
+      const { hlr, degree } = await catalogue();
+      const before = admin.authorized;
+      const onPosition = await competence.addRequirement(admin, { typeId: hlr, positionId: USK });
+      expect(store.state.requirements.get(onPosition)).toEqual({
+        id: onPosition,
+        organisationId: ORG,
+        typeId: hlr,
+        positionId: USK,
+        unitId: null,
+        personId: null,
+        minLevel: null,
+        createdBy: 'person:ada',
+        createdAt: now.toISOString(),
+      });
+      expect(lastAudit()).toEqual({
+        actor: 'person:ada',
+        action: 'competence.requirement_added',
+        subject: 'competence-requirement:' + onPosition,
+        at: now.toISOString(),
+        details: { ...ids, typeId: hlr, positionId: USK },
+      });
+      const onUnit = await competence.addRequirement(admin, { typeId: degree, unitId: 'u3' });
+      expect(lastAudit()).toEqual({
+        actor: 'person:ada',
+        action: 'competence.requirement_added',
+        subject: 'competence-requirement:' + onUnit,
+        at: now.toISOString(),
+        details: { ...ids, typeId: degree, unitId: 'u3' },
+      });
+      expect(admin.authorized).toBe(before + 2);
+    });
+
+    test('the list is the position and unit ones, with the positions and units to choose from; nobody else reads it', async () => {
+      directory();
+      const { hot, hlr } = await catalogue();
+      const onUnit = await competence.addRequirement(admin, { typeId: hlr, unitId: 'u2' });
+      const onPosition = await competence.addRequirement(admin, { typeId: hlr, positionId: USK });
+      // A requirement on one person is their manager's (D118): never listed to the administrator.
+      await competence.addRequirement(boss, { typeId: hot, personId: 'anna' });
+      expect(await competence.requirements(admin)).toEqual({
+        rows: [
+          { id: onPosition, typeId: hlr, on: 'position', targetId: USK, targetLabel: 'Undersköterska' },
+          { id: onUnit, typeId: hlr, on: 'unit', targetId: 'u2', targetLabel: 'Enhet 2' },
+        ],
+        positions: [
+          { id: SSK, code: 'ssk', label: 'Sjuksköterska' },
+          { id: USK, code: 'usk', label: 'Undersköterska' },
+        ],
+        units: [
+          { id: 'u1', label: 'Enhet 1' },
+          { id: 'u2', label: 'Enhet 2' },
+          { id: 'u3', label: 'Enhet 3' },
+        ],
+      });
+      for (const p of [boss, asAnna]) await expect(competence.requirements(p)).rejects.toBeInstanceOf(ForbiddenError);
+    });
+
+    test('exactly one target, a type, position and unit of the organisation, not archived and not twice; nothing written', async () => {
+      directory();
+      const { hot, hlr } = await catalogue();
+      await competence.addRequirement(admin, { typeId: hlr, positionId: USK });
+      await competence.archiveType(admin, hot);
+      const written = audits().length;
+      for (const [body, message] of [
+        [{ typeId: hlr }, 'Ett krav gäller en befattning, en enhet eller en person.'],
+        [{ typeId: hlr, positionId: SSK, unitId: 'u1' }, 'Ett krav gäller en befattning, en enhet eller en person.'],
+        [{ typeId: 'nope', positionId: SSK }, 'Kompetensen finns inte i katalogen.'],
+        [{ typeId: hot, positionId: SSK }, 'Kompetensen är arkiverad och kan inte krävas.'],
+        [{ typeId: hlr, positionId: 'nope' }, 'Befattningen finns inte.'],
+        [{ typeId: hlr, positionId: 'pos-foreign' }, 'Befattningen finns inte.'],
+        [{ typeId: hlr, unitId: 'nope' }, 'Enheten finns inte.'],
+        [{ typeId: hlr, unitId: 'u-foreign' }, 'Enheten finns inte.'],
+        [{ typeId: hlr, positionId: USK }, 'Det kravet finns redan.'],
+      ] as const) {
+        const attempt = competence.addRequirement(admin, body);
+        await expect(attempt).rejects.toBeInstanceOf(CompetenceError);
+        await expect(attempt).rejects.toThrow(message);
+      }
+      expect(store.state.requirements.size).toBe(1);
+      expect(audits()).toHaveLength(written);
+    });
+
+    test('a requirement on one person is set by the manager they report to, never by an administrator or for another’s report', async () => {
+      directory();
+      const { hot, hlr } = await catalogue();
+      const id = await competence.addRequirement(boss, { typeId: hot, personId: 'anna' });
+      expect(lastAudit()).toEqual({
+        actor: 'person:boss',
+        action: 'competence.requirement_added',
+        subject: 'competence-requirement:' + id,
+        at: now.toISOString(),
+        details: { ...ids, typeId: hot, personId: 'anna' },
+      });
+      const written = audits().length;
+      for (const [persona, body, message] of [
+        // The administrator's capability is no relation to a person (D118).
+        [admin, { typeId: hlr, personId: 'anna' }, 'Krav på en enskild person sätts av den som är personens chef.'],
+        [boss, { typeId: hlr, personId: 'dan' }, 'Personen finns inte bland dem du är chef för.'],
+        [boss, { typeId: hlr, personId: 'cia' }, 'Personen finns inte bland dem du är chef för.'],
+        [boss, { typeId: hlr, personId: 'boss' }, 'Personen finns inte bland dem du är chef för.'],
+        [asAnna, { typeId: hlr, personId: 'bo' }, 'Krav på en enskild person sätts av den som är personens chef.'],
+        // A manager is no administrator: a position or a unit is not theirs to set.
+        [boss, { typeId: hlr, positionId: USK }, undefined],
+        [boss, { typeId: hlr, unitId: 'u1' }, undefined],
+      ] as const) {
+        const attempt = competence.addRequirement(persona, body);
+        await expect(attempt).rejects.toBeInstanceOf(ForbiddenError);
+        if (message) await expect(attempt).rejects.toThrow(message);
+      }
+      expect(store.state.requirements.size).toBe(1);
+      expect(audits()).toHaveLength(written);
+    });
+
+    test('removal is the administrator’s for a position or a unit and the manager’s for one person, each audited once', async () => {
+      directory();
+      const { hot, hlr } = await catalogue();
+      const onPosition = await competence.addRequirement(admin, { typeId: hlr, positionId: USK });
+      const onAnna = await competence.addRequirement(boss, { typeId: hot, personId: 'anna' });
+      for (const [persona, id] of [
+        [boss, onPosition],
+        [asAnna, onPosition],
+        [admin, onAnna],
+        [other, onAnna],
+      ] as const)
+        await expect(competence.removeRequirement(persona, id)).rejects.toBeInstanceOf(ForbiddenError);
+      await competence.removeRequirement(admin, onPosition);
+      expect(lastAudit()).toEqual({
+        actor: 'person:ada',
+        action: 'competence.requirement_removed',
+        subject: 'competence-requirement:' + onPosition,
+        at: now.toISOString(),
+        details: { ...ids, typeId: hlr, positionId: USK },
+      });
+      await competence.removeRequirement(boss, onAnna);
+      expect(lastAudit()).toEqual({
+        actor: 'person:boss',
+        action: 'competence.requirement_removed',
+        subject: 'competence-requirement:' + onAnna,
+        at: now.toISOString(),
+        details: { ...ids, typeId: hot, personId: 'anna' },
+      });
+      expect(store.state.requirements.size).toBe(0);
+      await expect(competence.removeRequirement(admin, onPosition)).rejects.toThrow('Kravet finns inte.');
+    });
+  });
+
+  describe('share targets', () => {
+    test('an administrator adds, lists and removes them, each audited with ids and the share; nobody else', async () => {
+      directory();
+      const { hlr, degree } = await catalogue();
+      const everywhere = await competence.addShareTarget(admin, { typeId: hlr, positionId: USK, minShare: 60 });
+      expect(lastAudit()).toEqual({
+        actor: 'person:ada',
+        action: 'competence.share_target_added',
+        subject: 'competence-share-target:' + everywhere,
+        at: now.toISOString(),
+        details: { organisationId: ORG, typeId: hlr, positionId: USK, unitId: null, minShare: 60 },
+      });
+      const onUnit = await competence.addShareTarget(admin, {
+        typeId: degree,
+        positionId: SSK,
+        unitId: 'u1',
+        minShare: 50,
+      });
+      expect(await competence.shareTargets(admin)).toEqual({
+        rows: [
+          { id: everywhere, typeId: hlr, positionId: USK, positionLabel: 'Undersköterska', minShare: 60 },
+          {
+            id: onUnit,
+            typeId: degree,
+            positionId: SSK,
+            positionLabel: 'Sjuksköterska',
+            unitId: 'u1',
+            unitLabel: 'Enhet 1',
+            minShare: 50,
+          },
+        ],
+      });
+      const written = audits().length;
+      for (const [body, message] of [
+        [
+          { typeId: hlr, positionId: USK, minShare: 80 },
+          'Det finns redan ett andelsmål för den kompetensen och befattningen där.',
+        ],
+        [{ typeId: hlr, positionId: USK, minShare: 0 }, 'Ange en andel mellan 1 och 100 procent.'],
+        [{ typeId: hlr, positionId: USK, minShare: 12.5 }, 'Ange en andel mellan 1 och 100 procent.'],
+        [{ typeId: hlr, positionId: 'pos-foreign', minShare: 10 }, 'Befattningen finns inte.'],
+        [{ typeId: hlr, positionId: SSK, unitId: 'u-foreign', minShare: 10 }, 'Enheten finns inte.'],
+      ] as const)
+        await expect(competence.addShareTarget(admin, body)).rejects.toThrow(message);
+      for (const p of [boss, asAnna]) {
+        await expect(
+          competence.addShareTarget(p, { typeId: hlr, positionId: SSK, minShare: 10 }),
+        ).rejects.toBeInstanceOf(ForbiddenError);
+        await expect(competence.shareTargets(p)).rejects.toBeInstanceOf(ForbiddenError);
+        await expect(competence.removeShareTarget(p, everywhere)).rejects.toBeInstanceOf(ForbiddenError);
+      }
+      expect(audits()).toHaveLength(written);
+      await competence.removeShareTarget(admin, onUnit);
+      expect(lastAudit()).toEqual({
+        actor: 'person:ada',
+        action: 'competence.share_target_removed',
+        subject: 'competence-share-target:' + onUnit,
+        at: now.toISOString(),
+        details: { organisationId: ORG, typeId: degree, positionId: SSK, unitId: 'u1', minShare: 50 },
+      });
+      await expect(competence.removeShareTarget(admin, onUnit)).rejects.toThrow('Andelsmålet finns inte.');
+      expect([...store.state.shareTargets.keys()]).toEqual([everywhere]);
+    });
+  });
+
+  describe('missing', () => {
+    test('the precedence of the word for a person: expired, then missing, then expiring, then valid, then nothing', () => {
+      const of = (expired: number, missing: number, expiring: number, holdings: number) =>
+        personStatus({ expired, missing, expiring, holdings });
+      expect(of(1, 1, 1, 3)).toBe('expired');
+      expect(of(0, 1, 1, 2)).toBe('missing');
+      expect(of(0, 0, 1, 2)).toBe('expiring');
+      expect(of(0, 0, 0, 2)).toBe('valid');
+      expect(of(0, 0, 0, 0)).toBe('none');
+      expect(of(0, 2, 0, 0)).toBe('missing');
+    });
+
+    test('what is required of a person is the sets of their positions, their units and their own, each type once', () => {
+      const r = (id: string, typeId: string, target: Partial<RequirementRecord>): RequirementRecord => ({
+        id,
+        organisationId: ORG,
+        typeId,
+        positionId: null,
+        unitId: null,
+        personId: null,
+        minLevel: null,
+        createdBy: 'x',
+        createdAt: now.toISOString(),
+        ...target,
+      });
+      const requirements = [
+        r('1', 'hlr', { positionId: USK }),
+        r('2', 'iv', { positionId: SSK }),
+        r('3', 'fire', { unitId: 'u1' }),
+        r('4', 'hlr', { unitId: 'u1' }),
+        r('5', 'drive', { personId: 'bo' }),
+        r('6', 'other', { unitId: 'u2' }),
+      ];
+      // Two positions: under both sets.
+      expect(requiredOf({ personId: 'bo', unitIds: ['u1'], positionIds: [USK, SSK] }, requirements).sort()).toEqual([
+        'drive',
+        'fire',
+        'hlr',
+        'iv',
+      ]);
+      expect(requiredOf({ personId: 'anna', unitIds: [], positionIds: [] }, requirements)).toEqual([]);
+    });
+
+    test('a required type is missing until a holding counts; an expired one stays expired; an archived one is required of nobody', () => {
+      const type = (id: string, archivedAt: string | null = null): TypeRecord => ({
+        id,
+        organisationId: ORG,
+        name: id,
+        area: 'A',
+        kind: 'certificate',
+        validityMonths: null,
+        archivedAt,
+        createdBy: 'x',
+        createdAt: now.toISOString(),
+      });
+      const types = new Map(
+        ['held', 'old', 'pending', 'gone'].map(id => [id, type(id, id === 'gone' ? now.toISOString() : null)]),
+      );
+      const h = (id: string, typeId: string, extra: Partial<HoldingRecord> = {}): HoldingRecord => ({
+        id,
+        personId: 'anna',
+        typeId,
+        issuedOn: '2020-01-01',
+        expiresOn: null,
+        evidence: 'manager',
+        state: 'valid',
+        registeredBy: null,
+        createdAt: now.toISOString(),
+        revokedAt: null,
+        revokedBy: null,
+        copy: null,
+        ...extra,
+      });
+      const standings = deciding(
+        [h('a', 'held'), h('b', 'old', { expiresOn: '2025-01-01' }), h('c', 'pending', { state: 'pending' })],
+        types,
+        '2026-11-10',
+        new Map([['anna', ['held', 'old', 'pending', 'gone', 'unknown', 'held']]]),
+      );
+      expect(standings.map(s => [s.type.id, s.status, s.holding?.id ?? null])).toEqual([
+        ['held', 'valid', 'a'],
+        ['old', 'expired', 'b'],
+        // A pending holding counts towards nothing, so the type is still missing.
+        ['pending', 'missing', null],
+      ]);
+    });
+
+    test('a person’s own list has a row for each required type they lack, until one is registered or the type archived', async () => {
+      directory();
+      const { hot, hlr, degree } = await catalogue();
+      await competence.addRequirement(admin, { typeId: hlr, positionId: USK });
+      await competence.addRequirement(admin, { typeId: degree, unitId: 'u1' });
+      await competence.addRequirement(boss, { typeId: hot, personId: 'bo' });
+      // Anna's HLR ran out by the employer's 24 months: it stays expired, never missing.
+      await competence.registerHolding(boss, 'anna', { typeId: hlr, issuedOn: '2024-01-10' });
+      const mine = await competence.holdings(asAnna);
+      expect(checkContract(CompetenceHoldingsOutputSchema, mine)).toBe(true);
+      expect(mine.rows.map(r => [r.competence, r.status, r.expiresOn ?? null])).toEqual([
+        ['HLR', 'expired', '2026-01-10'],
+        ['Socionomexamen', 'missing', null],
+      ]);
+      expect(mine.rows[1]).toEqual({
+        ref: `holding:competence:missing:anna:${degree}`,
+        userName: 'anna.a',
+        name: 'Anna Andersson',
+        competence: 'Socionomexamen',
+        area: 'Examen',
+        kind: 'degree',
+        status: 'missing',
+      });
+      // Bo is under his position, his unit and his own requirement; his manager reads the same.
+      const ofBo = await competence.holdings(boss, { person: 'bo' });
+      expect(checkContract(CompetenceHoldingsOutputSchema, ofBo)).toBe(true);
+      expect(ofBo.rows.map(r => [r.competence, r.status])).toEqual([
+        ['Heta arbeten', 'missing'],
+        ['HLR', 'missing'],
+        ['Socionomexamen', 'missing'],
+      ]);
+      await competence.registerHolding(boss, 'bo', { typeId: degree, issuedOn: '2015-06-05' });
+      await competence.archiveType(admin, hot);
+      expect((await competence.holdings(asBo)).rows.map(r => [r.competence, r.status])).toEqual([
+        ['HLR', 'missing'],
+        ['Socionomexamen', 'valid'],
+      ]);
+    });
+
+    test('what is to act on among the reports counts missing beside expired and expiring, and names each in its row', async () => {
+      directory();
+      const { hot, degree } = await catalogue();
+      await competence.addRequirement(admin, { typeId: degree, positionId: USK });
+      await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2021-06-01', expiresOn: '2026-05-31' });
+      const out = await competence.attention(boss);
+      expect(checkContract(CompetenceAttentionOutputSchema, out)).toBe(true);
+      expect(out.rows.map(r => [r.name, r.competence, r.status])).toEqual([
+        ['Anna Andersson', 'Heta arbeten', 'expired'],
+        ['Anna Andersson', 'Socionomexamen', 'missing'],
+        ['Bo Berg', 'Socionomexamen', 'missing'],
+      ]);
+      expect(await competence.summary(boss)).toEqual({ expired: 1, missing: 2, expiring: 0, people: 2, reports: 2 });
+      expect((await competence.aboutPeople(boss, ['anna.a'])).rows).toEqual([
+        { key: 'anna.a', expired: 1, missing: 1, expiring: 0, holdings: 1 },
+      ]);
+    });
+  });
+
+  describe('the reads, the figure and the scan', () => {
+    const actor = (p: AuthenticatedContext): Actor => ({
+      id: p.id,
+      name: p.name,
+      unitId: p.unitId,
+      unitLabel: p.unitLabel,
+      role: p.role,
+    });
+    const personas = new Map([boss, other, asAnna, asBo].map(p => [p.id, p]));
+    const registry = () =>
+      new Registry().register(
+        competenceConnector(competence, async a => {
+          const p = personas.get(a.id);
+          if (!p) throw new Error('unknown');
+          return p;
+        }),
+      );
+
+    test('the read about a person says Saknas after Utgånget and before Går ut snart, with what is missing counted', async () => {
+      directory();
+      const { hot, hlr, degree } = await catalogue();
+      await competence.addRequirement(admin, { typeId: degree, positionId: USK });
+      await competence.registerHolding(boss, 'anna', { typeId: hlr, issuedOn: '2025-01-10' }); // expires in 61 days
+      const r = registry();
+      const read = async () =>
+        (await r.run<{ rows: unknown[] }>(actor(boss), 'competence.person', { keys: ['anna.a'] })).rows;
+      expect(await read()).toEqual([
+        { key: 'anna.a', status: 'Saknas', due: '1 saknas, 1 går ut inom 90 dagar', held: '1 registrerade' },
+      ]);
+      await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2021-06-01', expiresOn: '2026-05-31' });
+      expect(await read()).toEqual([
+        {
+          key: 'anna.a',
+          status: 'Utgånget',
+          due: '1 har gått ut, 1 saknas, 1 går ut inom 90 dagar',
+          held: '2 registrerade',
+        },
+      ]);
+    });
+
+    test('the figure and the manager’s card count what is missing and name nobody; the person gets a card per missing type', async () => {
+      directory();
+      const { hot, degree } = await catalogue();
+      await competence.addRequirement(admin, { typeId: degree, positionId: USK });
+      const r = registry();
+      const figureOf = async (p: AuthenticatedContext) =>
+        (await r.areas(actor(p))).find(a => a.id === 'competence')?.figure ?? null;
+      expect(await figureOf(boss)).toMatchObject({ label: 'Intyg som saknas', value: '2', tone: 'alert' });
+      const [card] = await r.scan(actor(boss));
+      expect(card).toMatchObject({
+        topic: 'competence:attention',
+        title: 'Intyg att åtgärda bland dina medarbetare',
+        summary: '2 intyg saknas, hos 2 personer.',
+        reason: 'Intyg saknas',
+      });
+      const text = JSON.stringify(card);
+      for (const name of [...NAMES, ...TYPE_NAMES]) expect(text).not.toContain(name);
+      // Anna's own card names the type she lacks; it has no deadline, since nothing runs out.
+      const [own] = await r.scan(actor(asAnna));
+      expect(own).toMatchObject({
+        topic: 'competence:missing:' + degree,
+        area: 'competence',
+        title: 'Socionomexamen saknas',
+        reason: 'Saknas',
+        actions: [
+          {
+            id: 'open',
+            label: 'Visa mina kompetenser',
+            capability: 'competence.holdings',
+            kind: 'read',
+            role: 'primary',
+          },
+        ],
+      });
+      expect(own).not.toHaveProperty('deadline');
+      // An expired holding beside it: both in the figure, the expired first in the card.
+      await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2021-06-01', expiresOn: '2026-05-31' });
+      expect(await figureOf(boss)).toMatchObject({
+        label: 'Intyg som har gått ut eller saknas',
+        value: '3',
+        tone: 'alert',
+      });
+      expect((await r.scan(actor(boss)))[0]).toMatchObject({
+        summary: '1 intyg har gått ut och 2 intyg saknas, hos 2 personer.',
+        reason: 'Intyg har gått ut',
+      });
+      expect((await r.scan(actor(asAnna))).map(d => d.title)).toEqual([
+        'Heta arbeten gick ut 31 maj',
+        'Socionomexamen saknas',
+      ]);
+    });
+
+    test('the read about a unit counts its branch and names nobody; its row opens the table per required type and target', async () => {
+      directory();
+      const { hlr, degree } = await catalogue();
+      await competence.addRequirement(admin, { typeId: hlr, positionId: USK });
+      await competence.addRequirement(admin, { typeId: degree, unitId: 'u3' });
+      const everywhere = await competence.addShareTarget(admin, { typeId: hlr, positionId: USK, minShare: 60 });
+      const onU1 = await competence.addShareTarget(admin, {
+        typeId: degree,
+        positionId: SSK,
+        unitId: 'u1',
+        minShare: 50,
+      });
+      await competence.addShareTarget(admin, { typeId: hlr, positionId: SSK, unitId: 'u2', minShare: 50 });
+      await competence.registerHolding(boss, 'anna', { typeId: hlr, issuedOn: '2026-01-10' });
+      await competence.registerHolding(boss, 'bo', { typeId: hlr, issuedOn: '2023-01-10' }); // expired by the rule
+      await competence.registerHolding(other, 'dan', { typeId: hlr, issuedOn: '2026-02-10' });
+      const r = registry();
+      expect(r.aboutReads(actor(boss), 'unit').map(x => x.name)).toEqual(['competence.unit']);
+      // Enhet 1's branch is Anna, Bo and Dan below it (Cia is deactivated; Karin is under nothing). Enhet 3 is not
+      // Karin's own, and an unknown key is nobody's: neither has a row.
+      const units = await r.run<{ rows: unknown[] }>(actor(boss), 'competence.unit', {
+        keys: ['u1', 'u2', 'u3', 'nope'],
+      });
+      expect(units.rows).toEqual([
+        { key: 'u1', covered: '1 av 3 personer', short: '2 personer', targets: '1 av 2 nås', below: '1 mål' },
+        // Nobody on Enhet 2 holds the sjuksköterska position: that target is neither reached nor missed.
+        { key: 'u2', covered: '1 av 1 person', targets: '1 av 2 nås' },
+      ]);
+      const text = JSON.stringify(units);
+      for (const name of NAMES) expect(text).not.toContain(name);
+      expect(unitView.kind === 'list' && unitView.open).toEqual({
+        capability: 'competence.coverage',
+        title: 'Kompetenstäckning',
+        params: { unit: 'key' },
+      });
+      const table = await r.run<{ rows: unknown[] }>(actor(boss), 'competence.coverage', { unit: 'u1' });
+      expect(table.rows).toEqual([
+        {
+          id: 'requirement:' + hlr,
+          competence: 'HLR',
+          goal: 'Krav för 3 personer',
+          actual: '2 av 3',
+          state: 'Inte uppfyllt',
+        },
+        {
+          id: 'requirement:' + degree,
+          competence: 'Socionomexamen',
+          goal: 'Krav för 1 person',
+          actual: '0 av 1',
+          state: 'Inte uppfyllt',
+        },
+        {
+          id: 'target:' + everywhere,
+          competence: 'HLR',
+          goal: 'Minst 60 % av dem med befattningen Undersköterska, mål för hela organisationen',
+          actual: '66 %, 2 av 3',
+          state: 'Uppfyllt',
+        },
+        {
+          id: 'target:' + onU1,
+          competence: 'Socionomexamen',
+          goal: 'Minst 50 % av dem med befattningen Sjuksköterska',
+          actual: '0 %, 0 av 1',
+          state: 'Inte uppfyllt',
+        },
+      ]);
+      // A target set on a unit above applies below it, measured over the branch read, and says where it is set.
+      const below = await r.run<{ rows: Array<Record<string, string>> }>(actor(other), 'competence.coverage', {
+        unit: 'u3',
+      });
+      expect(below.rows.find(x => x.id === 'target:' + onU1)).toEqual({
+        id: 'target:' + onU1,
+        competence: 'Socionomexamen',
+        goal: 'Minst 50 % av dem med befattningen Sjuksköterska, mål för Enhet 1',
+        actual: 'Ingen har befattningen',
+        state: 'Ingen att räkna',
+      });
+      // Only a unit the reader manages: Karin does not manage Enhet 3, Anna manages nothing.
+      await expect(competence.coverage(boss, 'u3')).rejects.toThrow('Enheten finns inte bland dem du är chef för.');
+      await expect(r.run(actor(asAnna), 'competence.coverage', { unit: 'u1' })).rejects.toThrow();
+      expect(await competence.aboutUnits(asAnna, ['u1'])).toEqual([]);
+    });
+
+    test('a unit where nothing is required and no target applies has no row', async () => {
+      directory();
+      await catalogue();
+      expect(
+        (await registry().run<{ rows: unknown[] }>(actor(boss), 'competence.unit', { keys: ['u1', 'u2'] })).rows,
+      ).toEqual([]);
+    });
+  });
+
+  test('the domain: a branch is the unit and everything below; the line above ends at the root; coverage counts', () => {
+    const tree = [
+      { id: 'root', parentId: null },
+      { id: 'a', parentId: 'root' },
+      { id: 'a1', parentId: 'a' },
+      { id: 'b', parentId: 'root' },
+      { id: 'loop1', parentId: 'loop2' },
+      { id: 'loop2', parentId: 'loop1' },
+    ];
+    expect(branchOf(tree, 'a').sort()).toEqual(['a', 'a1']);
+    expect(branchOf(tree, 'root').sort()).toEqual(['a', 'a1', 'b', 'root']);
+    expect(branchOf(tree, 'lost')).toEqual(['lost']);
+    expect(lineAbove(tree, 'a1')).toEqual(['a1', 'a', 'root']);
+    expect(lineAbove(tree, 'loop1')).toEqual(['loop1', 'loop2']);
+    const type: TypeRecord = {
+      id: 't',
+      organisationId: ORG,
+      name: 'T',
+      area: 'A',
+      kind: 'course',
+      validityMonths: null,
+      archivedAt: null,
+      createdBy: 'x',
+      createdAt: now.toISOString(),
+    };
+    const target: ShareTargetRecord = {
+      id: 's',
+      organisationId: ORG,
+      typeId: 't',
+      positionId: 'p',
+      unitId: null,
+      minShare: 34,
+      createdBy: 'x',
+      createdAt: now.toISOString(),
+    };
+    const people = ['x', 'y', 'z'].map(personId => ({ personId, unitIds: ['a'], positionIds: ['p'] }));
+    const held = { holding: null, type, end: null } as const;
+    const covered = coverageOf({
+      people,
+      requirements: [],
+      targets: [target],
+      types: new Map([['t', type]]),
+      standings: [{ ...held, personId: 'x', status: 'missing' as const }],
+    });
+    // Nobody meets it: 0 of 3. A share is rounded down, so 1 of 3 (33 %) misses 34 %.
+    expect(covered.targets.map(t => [t.share, t.met])).toEqual([[0, false]]);
+    expect(covered).toMatchObject({ under: 0, meetingAll: 0, requirements: [] });
+  });
+
+  test('erasure takes a person’s own requirements, the export is version 3 with requirements and targets, and no audit row names anyone', async () => {
+    directory();
+    const { hot, hlr } = await catalogue();
+    await competence.addRequirement(admin, { typeId: hlr, positionId: USK });
+    await competence.addRequirement(admin, { typeId: hlr, unitId: 'u1' });
+    const onBo = await competence.addRequirement(boss, { typeId: hot, personId: 'bo' });
+    const target = await competence.addShareTarget(admin, { typeId: hlr, positionId: SSK, unitId: 'u1', minShare: 40 });
+    await competence.removeShareTarget(admin, target);
+    await competence.addShareTarget(admin, { typeId: hlr, positionId: SSK, minShare: 40 });
+    await competence.removeRequirement(boss, onBo);
+    await competence.addRequirement(boss, { typeId: hot, personId: 'bo' });
+    const doc = await competence.exportDomain('operator:cli', ORG);
+    expect(doc.format).toBe('clew.competence/3');
+    expect(doc.requirements.map(r => [r.typeId, r.positionId, r.unitId, r.personId])).toEqual([
+      [hlr, USK, null, null],
+      [hlr, null, 'u1', null],
+      [hot, null, null, 'bo'],
+    ]);
+    expect(doc.shareTargets.map(t => [t.positionId, t.unitId, t.minShare])).toEqual([[SSK, null, 40]]);
+    expect(lastAudit().details).toEqual({ types: 3, holdings: 0, mappings: 0, requirements: 3, shareTargets: 1 });
+    store.deactivate('bo');
+    expect(await competence.erasePerson('operator:cli', 'bo')).toEqual({ holdings: 0, cleared: 0, requirements: 1 });
+    expect(lastAudit()).toEqual({
+      actor: 'operator:cli',
+      action: 'competence.person_erased',
+      subject: 'person:bo',
+      at: now.toISOString(),
+      details: { holdings: 0, cleared: 0, requirements: 1 },
+    });
+    expect([...store.state.requirements.values()].map(r => r.personId)).toEqual([null, null]);
+    const written = JSON.stringify(audits());
+    for (const name of [...NAMES, ...TYPE_NAMES, 'Undersköterska', 'Sjuksköterska', 'Enhet 1'])
+      expect(written).not.toContain(name);
+  });
+
+  test('an operator seeds a requirement and a share target for an organisation, audited with the operator as actor', async () => {
+    directory();
+    const { hlr } = await catalogue();
+    const id = await competence.seedRequirement('operator:cli', ORG, { typeId: hlr, positionId: USK });
+    expect(lastAudit()).toMatchObject({
+      actor: 'operator:cli',
+      action: 'competence.requirement_added',
+      subject: 'competence-requirement:' + id,
+    });
+    const target = await competence.seedShareTarget('operator:cli', ORG, {
+      typeId: hlr,
+      positionId: USK,
+      minShare: 75,
+    });
+    expect(lastAudit()).toMatchObject({
+      actor: 'operator:cli',
+      action: 'competence.share_target_added',
+      subject: 'competence-share-target:' + target,
+    });
+    await expect(competence.seedRequirement('operator:cli', ORG, { typeId: hlr, positionId: USK })).rejects.toThrow(
+      'Det kravet finns redan.',
+    );
   });
 });

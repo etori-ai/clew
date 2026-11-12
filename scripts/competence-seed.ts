@@ -2,10 +2,13 @@
  * Seed the competence domain of the development organisation (D108): a small catalogue and holdings for the people the
  * synthetic provisioner pushed, so that a manager's list, the figure and the cards have something to show. Some
  * holdings have expired, some expire within 90 days, most are valid; which person gets what follows from their place
- * in the list of people by id, so two runs on the same directory give the same result. Runs inside the app container
- * with the server's local settings (DATABASE_URL); the development seed (`dev-connectors.ts`) calls it. It adds the
- * types the organisation lacks and holdings for the people who have none, so it can be run again after the provisioner
- * has pushed more people. Every row is audited with the actor `operator:cli`.
+ * in the list of people by id, so two runs on the same directory give the same result. It also sets a handful of
+ * requirements on the directory's positions and one share target (item 6), so that some people lack something and a
+ * unit's coverage has something to count. Runs inside the app container with the server's local settings
+ * (DATABASE_URL); the development seed (`dev-connectors.ts`) calls it. It adds the types the organisation lacks, holdings
+ * for the people who have none, and the requirements and targets that are not there yet (a position the provisioner has
+ * not pushed is skipped), so it can be run again after the provisioner has pushed more. Every row is audited with the
+ * actor `operator:cli`.
  *
  *   bun scripts/competence-seed.ts [--organisation poc]
  *
@@ -14,7 +17,12 @@
 import { resolve } from 'node:path';
 import { and, asc, eq } from 'drizzle-orm';
 import { closeDatabase, database, schema } from '@clew/db';
-import { DEVELOPMENT_CATALOGUE, DEVELOPMENT_ORGANISATION } from './competence-development';
+import {
+  DEVELOPMENT_CATALOGUE,
+  DEVELOPMENT_ORGANISATION,
+  DEVELOPMENT_REQUIREMENTS,
+  DEVELOPMENT_SHARE_TARGETS,
+} from './competence-development';
 import { competence, competenceStore } from '../apps/server/src/composition/competence';
 
 export const OPERATOR = 'operator:cli';
@@ -73,7 +81,40 @@ export async function seedCompetence(organisationId: string, today = new Date())
     if (i % 13 === 0) await hold(person.id, 'Delegering läkemedel', daysFrom(today, i % 26 === 0 ? -340 : -100));
     if (i % 17 === 0) await hold(person.id, 'Socionomexamen', '2015-06-05');
   }
-  return { types, people: seeded, holdings };
+  return { types, people: seeded, holdings, ...(await seedRequirements(organisationId, ids)) };
+}
+
+/**
+ * The requirements and the share target of the development data (D108 item 6) that the organisation does not have yet,
+ * on the positions the provisioner pushed, by code. `typeIds` is the catalogue by name.
+ */
+async function seedRequirements(organisationId: string, typeIds: ReadonlyMap<string, string>) {
+  const { positions, required, targeted } = await competenceStore.transaction(async tx => ({
+    positions: new Map((await tx.positions(organisationId)).map(p => [p.code, p.id])),
+    required: new Set(
+      (await tx.requirements(organisationId)).flatMap(r => (r.positionId ? [r.typeId + '\n' + r.positionId] : [])),
+    ),
+    targeted: new Set(
+      (await tx.shareTargets(organisationId)).flatMap(t => (t.unitId === null ? [t.typeId + '\n' + t.positionId] : [])),
+    ),
+  }));
+  let requirements = 0,
+    targets = 0;
+  for (const r of DEVELOPMENT_REQUIREMENTS) {
+    const typeId = typeIds.get(r.type),
+      positionId = positions.get(r.position);
+    if (!typeId || !positionId || required.has(typeId + '\n' + positionId)) continue;
+    await competence.seedRequirement(OPERATOR, organisationId, { typeId, positionId });
+    requirements++;
+  }
+  for (const t of DEVELOPMENT_SHARE_TARGETS) {
+    const typeId = typeIds.get(t.type),
+      positionId = positions.get(t.position);
+    if (!typeId || !positionId || targeted.has(typeId + '\n' + positionId)) continue;
+    await competence.seedShareTarget(OPERATOR, organisationId, { typeId, positionId, minShare: t.minShare });
+    targets++;
+  }
+  return { requirements, targets };
 }
 
 if (import.meta.main) {
@@ -92,7 +133,7 @@ if (import.meta.main) {
   try {
     const seeded = await seedCompetence(organisationId);
     console.log(
-      `Seeded competence for organisation "${organisationId}": ${seeded.types} new types and ${seeded.holdings} holdings for ${seeded.people} people who had none.`,
+      `Seeded competence for organisation "${organisationId}": ${seeded.types} new types, ${seeded.holdings} holdings for ${seeded.people} people who had none, ${seeded.requirements} requirements and ${seeded.targets} share targets.`,
     );
   } catch (error) {
     console.error(`Could not seed: ${(error as Error).message}`);

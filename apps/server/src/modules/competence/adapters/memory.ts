@@ -1,4 +1,4 @@
-import { TypeNameTaken } from '../model';
+import { RequirementTaken, ShareTargetTaken, TypeNameTaken } from '../model';
 import type {
   CompetenceAudit,
   CompetenceStore,
@@ -6,9 +6,13 @@ import type {
   Erased,
   HoldingRecord,
   PersonRef,
+  PositionRecord,
+  RequirementRecord,
+  ShareTargetRecord,
   SourceMapping,
   SourceRecord,
   TypeRecord,
+  UnitRecord,
   WorkflowStart,
 } from '../model';
 
@@ -26,6 +30,17 @@ export interface MemoryCompetenceState {
   /** By `<connector>\n<organisation>\n<source type>`. */
   mappings: Map<string, SourceMapping>;
   sources: Map<string, SourceRecord>;
+  /** The directory as SCIM wrote it (D108 item 5, D99): positions, who holds them, units, the tree and assignments. */
+  positions: Map<string, PositionRecord>;
+  /** By person: the ids of the positions they hold. */
+  held: Map<string, Set<string>>;
+  units: Map<string, UnitRecord>;
+  /** The pushed `unit:` groups by unit id: the organisation and the unit above. */
+  tree: Map<string, { organisationId: string; parentId: string | null }>;
+  /** By person: the ids of the units they are assigned to. */
+  assigned: Map<string, Set<string>>;
+  requirements: Map<string, RequirementRecord>;
+  shareTargets: Map<string, ShareTargetRecord>;
   audit: CompetenceAudit[];
   /** The workflow starts committed (D86), each id once. */
   enqueued: WorkflowStart[];
@@ -44,6 +59,13 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     inactive: new Set(),
     mappings: new Map(),
     sources: new Map(),
+    positions: new Map(),
+    held: new Map(),
+    units: new Map(),
+    tree: new Map(),
+    assigned: new Map(),
+    requirements: new Map(),
+    shareTargets: new Map(),
     audit: [],
     enqueued: [],
   };
@@ -278,8 +300,124 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     async activeIds(personIds) {
       return new Set(personIds.filter(id => state.persons.has(id) && !state.inactive.has(id)));
     },
+    async positions(organisationId) {
+      return [...state.positions.values()]
+        .filter(p => p.organisationId === organisationId)
+        .sort((a, b) => sv(a.label, b.label) || a.code.localeCompare(b.code))
+        .map(p => ({ ...p }));
+    },
+    async position(id) {
+      const p = state.positions.get(id);
+      return p && { ...p };
+    },
+    async units(organisationId) {
+      return [...state.units.values()]
+        .filter(u => u.organisationId === organisationId)
+        .sort((a, b) => sv(a.label, b.label) || a.id.localeCompare(b.id))
+        .map(u => ({ ...u }));
+    },
+    async unit(id) {
+      const u = state.units.get(id);
+      return u && { ...u };
+    },
+    async unitTree(organisationId) {
+      return [...state.tree]
+        .filter(([, node]) => node.organisationId === organisationId)
+        .map(([id, node]) => ({ id, parentId: node.parentId }))
+        .sort((a, b) => a.id.localeCompare(b.id));
+    },
+    async placedOn(unitIds) {
+      const wanted = new Set(unitIds);
+      return [...state.assigned]
+        .filter(
+          ([personId, units]) =>
+            state.persons.has(personId) && !state.inactive.has(personId) && [...units].some(u => wanted.has(u)),
+        )
+        .map(([personId]) => personId)
+        .sort();
+    },
+    async placesOf(personIds) {
+      return [...new Set(personIds)]
+        .filter(id => state.persons.has(id))
+        .map(personId => ({
+          personId,
+          unitIds: [...(state.assigned.get(personId) ?? [])].sort(),
+          positionIds: [...(state.held.get(personId) ?? [])].sort(),
+        }));
+    },
+    async requirements(organisationId) {
+      return byCreated([...state.requirements.values()].filter(r => r.organisationId === organisationId)).map(r => ({
+        ...r,
+      }));
+    },
+    async requirement(id) {
+      const r = state.requirements.get(id);
+      return r && { ...r };
+    },
+    async insertRequirement(requirement) {
+      if (state.requirements.has(requirement.id)) throw new Error('duplicate requirement id');
+      const targets = [requirement.positionId, requirement.unitId, requirement.personId].filter(v => v !== null);
+      if (targets.length !== 1) throw new Error('a requirement names exactly one of a position, a unit and a person');
+      if (!state.types.has(requirement.typeId)) throw new Error('requirement references an unknown type');
+      if (requirement.positionId !== null && !state.positions.has(requirement.positionId))
+        throw new Error('requirement references an unknown position');
+      if (requirement.unitId !== null && !state.units.has(requirement.unitId))
+        throw new Error('requirement references an unknown unit');
+      if (requirement.personId !== null && !state.persons.has(requirement.personId))
+        throw new Error('requirement references an unknown person');
+      if (requirement.minLevel !== null && (requirement.minLevel < 1 || requirement.minLevel > 3))
+        throw new Error('a least level is 1 to 3');
+      const taken = [...state.requirements.values()].some(
+        r =>
+          r.typeId === requirement.typeId &&
+          r.positionId === requirement.positionId &&
+          r.unitId === requirement.unitId &&
+          r.personId === requirement.personId,
+      );
+      if (taken) throw new RequirementTaken();
+      state.requirements.set(requirement.id, { ...requirement });
+    },
+    async removeRequirement(id) {
+      return state.requirements.delete(id);
+    },
+    async shareTargets(organisationId) {
+      return byCreated([...state.shareTargets.values()].filter(t => t.organisationId === organisationId)).map(t => ({
+        ...t,
+      }));
+    },
+    async shareTarget(id) {
+      const t = state.shareTargets.get(id);
+      return t && { ...t };
+    },
+    async insertShareTarget(target) {
+      if (state.shareTargets.has(target.id)) throw new Error('duplicate share target id');
+      if (!state.types.has(target.typeId)) throw new Error('share target references an unknown type');
+      if (!state.positions.has(target.positionId)) throw new Error('share target references an unknown position');
+      if (target.unitId !== null && !state.units.has(target.unitId))
+        throw new Error('share target references an unknown unit');
+      if (!Number.isInteger(target.minShare) || target.minShare < 1 || target.minShare > 100)
+        throw new Error('a least share is 1 to 100');
+      const taken = [...state.shareTargets.values()].some(
+        t =>
+          t.typeId === target.typeId &&
+          t.positionId === target.positionId &&
+          t.unitId === target.unitId &&
+          (t.unitId !== null || t.organisationId === target.organisationId),
+      );
+      if (taken) throw new ShareTargetTaken();
+      state.shareTargets.set(target.id, { ...target });
+    },
+    async removeShareTarget(id) {
+      return state.shareTargets.delete(id);
+    },
     async erasePerson(personId) {
-      let holdings = 0;
+      let holdings = 0,
+        requirements = 0;
+      for (const [id, r] of [...state.requirements])
+        if (r.personId === personId) {
+          state.requirements.delete(id);
+          requirements++;
+        }
       const cleared = new Set<string>();
       for (const [id, h] of [...state.holdings]) {
         if (h.personId === personId) {
@@ -296,7 +434,7 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
           cleared.add(id);
         }
       }
-      const erased: Erased = { holdings, cleared: cleared.size };
+      const erased: Erased = { holdings, cleared: cleared.size, requirements };
       return erased;
     },
     async exportOrganisation(organisationId) {
@@ -313,6 +451,8 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
               a.sourceType.localeCompare(b.sourceType) ||
               a.mappedAt.localeCompare(b.mappedAt),
           ),
+        requirements: byCreated([...state.requirements.values()].filter(r => r.organisationId === organisationId)),
+        shareTargets: byCreated([...state.shareTargets.values()].filter(t => t.organisationId === organisationId)),
       });
     },
     async audit(entry) {
@@ -342,6 +482,27 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     /** SCIM deactivates a person (D68): they stay, and leave every list. */
     deactivate(personId: string) {
       state.inactive.add(personId);
+    },
+    /** A position of an organisation, as a `position:` group would have written it (D108 item 5). */
+    addPosition(position: PositionRecord) {
+      state.positions.set(position.id, { ...position });
+    },
+    /** The person holds the position, as their `position:` membership would have derived it. */
+    holdPosition(personId: string, positionId: string) {
+      state.held.set(personId, (state.held.get(personId) ?? new Set()).add(positionId));
+    },
+    /**
+     * A unit as SCIM writes it (D99): its row, under the name the directory holds, and its `unit:` group with the unit
+     * above it. `pushed: false` writes the row alone, as for a unit people are assigned to that no group names.
+     */
+    addUnit(unit: UnitRecord & { parentId?: string | null; pushed?: boolean }) {
+      const { parentId = null, pushed = true, ...row } = unit;
+      state.units.set(row.id, row);
+      if (pushed) state.tree.set(row.id, { organisationId: row.organisationId, parentId });
+    },
+    /** The person is assigned to the unit, as a `unit:` membership would have placed them. */
+    assign(personId: string, unitId: string) {
+      state.assigned.set(personId, (state.assigned.get(personId) ?? new Set()).add(unitId));
     },
     audit: () => structuredClone(state.audit),
   };

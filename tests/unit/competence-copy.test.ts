@@ -638,7 +638,7 @@ describe('status and reads with copied rows', () => {
     expect(mine.rows[1]).not.toHaveProperty('area');
     expect(mine.rows[1]).not.toHaveProperty('kind');
     expect(await competence.aboutPeople(boss, ['anna.a'])).toEqual({
-      rows: [{ key: 'anna.a', expired: 0, expiring: 0, holdings: 1 }],
+      rows: [{ key: 'anna.a', expired: 0, missing: 0, expiring: 0, holdings: 1 }],
     });
     expect((await competence.attention(boss)).rows).toEqual([]);
     // Mapped, the badge counts at once with the issuer's own end date: 51 days left, so it needs attention.
@@ -650,7 +650,7 @@ describe('status and reads with copied rows', () => {
     expect(due.rows.map(r => [r.name, r.competence, r.status, r.expiresOn, r.source, r.readAt])).toEqual([
       ['Anna Andersson', 'HLR-instruktör', 'expiring', '2026-12-31', 'Lärplattformen', read],
     ]);
-    expect(await competence.summary(boss)).toEqual({ expired: 0, expiring: 1, people: 1, reports: 3 });
+    expect(await competence.summary(boss)).toEqual({ expired: 0, missing: 0, expiring: 1, people: 1, reports: 3 });
     // The scan: Anna's own card for the badge.
     expect((await competence.ownAttention(asAnna)).map(s => s.type.name)).toEqual(['HLR-instruktör']);
   });
@@ -844,19 +844,19 @@ describe('the administration page and a read started by hand', () => {
 });
 
 describe('leaving', () => {
-  test('erasure takes the copied rows, the export is version 2 with copied rows and mappings, a removed source takes its own', async () => {
+  test('erasure takes the copied rows, the export carries copied rows and mappings, a removed source takes its own', async () => {
     const { hlr } = await catalogue();
     await competence.mapSourceType(admin, 'lms', { sourceType: 'clew-dev:hlr', typeId: hlr });
     platform();
     await competence.copySource(COPY_ACTOR, 'run-1', lms);
     const doc = await competence.exportDomain('operator:cli', ORG);
-    expect(doc.format).toBe('clew.competence/2');
+    expect(doc.format).toBe('clew.competence/3');
     expect(doc.holdings.map(h => [h.typeId, h.copy?.sourceId])).toEqual([
       [hlr, 'course:7:user:1'],
       [null, 'badge:4:user:1'],
     ]);
     expect(doc.mappings.map(m => m.sourceType)).toEqual(['clew-dev:hlr']);
-    expect(audits().at(-1)?.details).toEqual({ types: 2, holdings: 2, mappings: 1 });
+    expect(audits().at(-1)?.details).toEqual({ types: 2, holdings: 2, mappings: 1, requirements: 0, shareTargets: 0 });
 
     expect(await competence.forgetSource('operator:cli', 'lms')).toEqual({ holdings: 2, mappings: 1 });
     expect(copied()).toEqual([]);
@@ -874,7 +874,7 @@ describe('leaving', () => {
     await expect(competence.erasePerson('operator:cli', 'anna')).rejects.toBeInstanceOf(PersonStillActive);
     expect(copied()).toHaveLength(2);
     store.deactivate('anna');
-    expect(await competence.erasePerson('operator:cli', 'anna')).toEqual({ holdings: 2, cleared: 0 });
+    expect(await competence.erasePerson('operator:cli', 'anna')).toEqual({ holdings: 2, cleared: 0, requirements: 0 });
     expect(copied()).toEqual([]);
   });
 });

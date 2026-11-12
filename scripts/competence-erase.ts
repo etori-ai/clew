@@ -1,6 +1,6 @@
 /**
  * Erase one person from the competence domain (D108 item 14): their holdings, the rows copied from sources included,
- * and their id on the holdings they registered or revoked for others. Only a person the directory has deactivated is
+ * the requirements set on them alone (item 6), and their id on the holdings they registered or revoked for others. Only a person the directory has deactivated is
  * erased: an active person is refused, since the next read of a source would copy their holdings back. Runs inside
  * the app container with the server's local settings (DATABASE_URL); no route and no `package.json` entry. Audited (`competence.person_erased`, counts only) with the actor `operator:cli`.
  * It cannot be undone, so it needs `--confirm`.
@@ -36,7 +36,7 @@ if (!args.includes('--confirm')) {
 try {
   const erased = await competence.erasePerson(OPERATOR, personId);
   console.log(
-    `Erased person "${personId}" from the competence domain: ${erased.holdings} holdings removed, ${erased.cleared} other holdings cleared of their id.`,
+    `Erased person "${personId}" from the competence domain: ${erased.holdings} holdings and ${erased.requirements} requirements removed, ${erased.cleared} other holdings cleared of their id.`,
   );
 } catch (error) {
   console.error(`Could not erase: ${(error as Error).message}`);

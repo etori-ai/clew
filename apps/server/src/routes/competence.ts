@@ -4,11 +4,15 @@ import addFormats from 'ajv-formats';
 import {
   CompetenceHoldingBodySchema,
   CompetenceMappingBodySchema,
+  CompetenceRequirementBodySchema,
+  CompetenceShareTargetBodySchema,
   CompetenceTypeBodySchema,
   CompetenceTypePatchSchema,
   type AuthenticatedContext,
   type CompetenceHoldingBody,
   type CompetenceMappingBody,
+  type CompetenceRequirementBody,
+  type CompetenceShareTargetBody,
   type CompetenceTypeBody,
   type CompetenceTypePatch,
 } from '@clew/contracts';
@@ -17,11 +21,12 @@ import type { CompetenceUsecases } from '../modules/competence/usecases';
 
 /**
  * The competence module's own routes (D108): the catalogue an administrator keeps, the sources whose holdings are
- * copied in and their mappings to the catalogue (item 9), and a manager's registration of a certificate. A person's
- * holdings and what needs attention have no route here: Clew reads `competence.holdings` and `competence.attention`
- * through the capability route. Each route parses, validates, calls one use case and maps its errors; the use cases
- * own who may do what. Every route first refuses unless the built-in module is switched on and visible to the person,
- * so nothing of the domain is read or written while an administrator has it off.
+ * copied in and their mappings to the catalogue (item 9), the requirements and share targets (item 6), and a manager's
+ * registration of a certificate. A person's holdings, what needs attention and a unit's coverage have no route here:
+ * Clew reads `competence.holdings`, `competence.attention` and `competence.coverage` through the capability route. Each
+ * route parses, validates, calls one use case and maps its errors; the use cases own who may do what. Every route first
+ * refuses unless the built-in module is switched on and visible to the person, so nothing of the domain is read or
+ * written while an administrator has it off.
  */
 export interface CompetenceRouteDeps {
   competence: Pick<
@@ -36,6 +41,12 @@ export interface CompetenceRouteDeps {
     | 'sources'
     | 'mapSourceType'
     | 'readNow'
+    | 'requirements'
+    | 'addRequirement'
+    | 'removeRequirement'
+    | 'shareTargets'
+    | 'addShareTarget'
+    | 'removeShareTarget'
   >;
   /** Whether the built-in module is on for this person now (composition: `competenceWritable`). */
   writable: (persona: AuthenticatedContext) => Promise<boolean>;
@@ -49,6 +60,8 @@ const validators = {
   patch: ajv.compile<CompetenceTypePatch>(CompetenceTypePatchSchema),
   holding: ajv.compile<CompetenceHoldingBody>(CompetenceHoldingBodySchema),
   mapping: ajv.compile<CompetenceMappingBody>(CompetenceMappingBodySchema),
+  requirement: ajv.compile<CompetenceRequirementBody>(CompetenceRequirementBodySchema),
+  target: ajv.compile<CompetenceShareTargetBody>(CompetenceShareTargetBodySchema),
 };
 async function body<T>(request: Request, validate: (value: unknown) => value is T, max = 2000): Promise<T> {
   const text = await request.text();
@@ -134,6 +147,30 @@ export function competenceRoutes(deps: CompetenceRouteDeps) {
   routes.post('/sources/:connectorId/read', async c => {
     await competence.readNow(c.get('session').context, connector(c.req.param('connectorId')));
     return c.body(null, 202);
+  });
+  // What is required of whom (D108 item 6): on a position or a unit by an administrator, on one person by their manager.
+  routes.get('/requirements', async c =>
+    c.json(await competence.requirements(c.get('session').context), 200, privateHeaders),
+  );
+  routes.post('/requirements', async c => {
+    const input = await body(c.req.raw, validators.requirement);
+    return c.json({ id: await competence.addRequirement(c.get('session').context, input) }, 201);
+  });
+  routes.delete('/requirements/:id', async c => {
+    await competence.removeRequirement(c.get('session').context, param(c.req.param('id')));
+    return c.body(null, 204);
+  });
+  // Share targets (D108 item 6): a least share of a position's holders, on a unit's branch or the whole organisation.
+  routes.get('/share-targets', async c =>
+    c.json(await competence.shareTargets(c.get('session').context), 200, privateHeaders),
+  );
+  routes.post('/share-targets', async c => {
+    const input = await body(c.req.raw, validators.target);
+    return c.json({ id: await competence.addShareTarget(c.get('session').context, input) }, 201);
+  });
+  routes.delete('/share-targets/:id', async c => {
+    await competence.removeShareTarget(c.get('session').context, param(c.req.param('id')));
+    return c.body(null, 204);
   });
   routes.onError((error, c) => failure(c, error));
   return routes;

@@ -204,6 +204,20 @@ export const competenceSourcesQuery = queryOptions({
   queryFn: () => api.competence.sources(),
   retry: false,
 });
+/**
+ * Administration › Kompetens › Krav (D108 item 6): the requirements on positions and units, with the positions and
+ * units they can be set on, and the share targets. Refused the same way as the catalogue, and not retried.
+ */
+export const competenceRequirementsQuery = queryOptions({
+  queryKey: keys.competenceRequirements,
+  queryFn: () => api.competence.requirements(),
+  retry: false,
+});
+export const competenceShareTargetsQuery = queryOptions({
+  queryKey: keys.competenceShareTargets,
+  queryFn: () => api.competence.shareTargets(),
+  retry: false,
+});
 export const adminQueries = {
   connectors: queryOptions({ queryKey: keys.admin.connectors, queryFn: () => api.admin.connectors() }),
   units: queryOptions({ queryKey: keys.admin.units, queryFn: () => api.admin.units() }),
