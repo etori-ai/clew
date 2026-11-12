@@ -48,6 +48,10 @@ afterAll(async () => {
     await database()
       .delete(schema.jobs)
       .where(or(...created.map(p => like(schema.jobs.id, `attention:automatic:${p}:%`))));
+    // A deferred delivery's release job is scheduled with its audit row (D86).
+    await database()
+      .delete(schema.audit)
+      .where(or(...created.map(p => like(schema.audit.subject, `job:attention:automatic:${p}:%`))));
     if (organisations.length) {
       const rounds = await database()
         .select({ id: schema.talkRounds.id })

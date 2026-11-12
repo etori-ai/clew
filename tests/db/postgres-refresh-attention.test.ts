@@ -11,7 +11,7 @@ import type { AuthenticatedContext } from '../../packages/contracts/src';
 import { Registry, openGovernance, type ScanObservation } from '../../packages/connectors/src';
 import { threadAccess } from '../../apps/server/src/threads/access';
 import { draft } from '../store-contract';
-import { forgetTestWorkflows, testDurable } from './durable';
+import { enqueuedWorkflows, forgetTestWorkflows, testDurable } from './durable';
 import { openSecret, sealSecret } from '../../apps/server/src/auth-crypto';
 
 process.env.MASTER_KEY ??= randomBytes(32).toString('base64');
@@ -28,7 +28,7 @@ afterAll(async () => {
       .select()
       .from(schema.deliveries)
       .where(inArray(schema.deliveries.personId, people));
-    if (deliveries.length)
+    if (deliveries.length) {
       await database()
         .delete(schema.jobs)
         .where(
@@ -37,6 +37,15 @@ afterAll(async () => {
             deliveries.map(d => 'attention:' + d.batch),
           ),
         );
+      await database()
+        .delete(schema.audit)
+        .where(
+          inArray(
+            schema.audit.subject,
+            deliveries.map(d => 'job:attention:' + d.batch),
+          ),
+        );
+    }
     await database().delete(schema.threads).where(inArray(schema.threads.personId, people));
     await database().delete(schema.people).where(inArray(schema.people.id, people));
   }
@@ -182,6 +191,16 @@ test('attention budget, concurrent tabs, explicit reminders and delayed release 
   expect(rows.filter(d => d.state === 'ready')).toHaveLength(3);
   const bundled = rows.find(d => d.state === 'waiting')!;
   expect(bundled).toBeDefined();
+  // The bundle's release job started its `scheduledJob` workflow with the admission's commit (D86); the workflow's run
+  // is `apps/server/tests/attention-runtime.test.ts`, and the release is called directly below.
+  expect(await enqueuedWorkflows('job:attention:' + bundled.batch)).toEqual([
+    {
+      id: 'job:attention:' + bundled.batch,
+      workflow: 'scheduledJob',
+      status: 'ENQUEUED',
+      input: { id: 'attention:' + bundled.batch, dueAt: bundled.dueAt.toISOString() },
+    },
+  ]);
   const first = rows.find(row => row.state === 'ready')!;
   subjects.push('delivery:' + first.id);
   expect(

@@ -1,11 +1,18 @@
 import { and, eq, inArray, lte } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
+import type { DurableQueue } from '@clew/db/durable';
+import { scheduleJob } from '@clew/db/jobs';
 import { stockholmDate } from '@clew/contracts';
 import { admitAttention } from '../attention-domain';
 import type { ThreadTx } from '../model';
 const days = schema.attentionDays,
   deliveries = schema.deliveries;
-export const attentionTx = (tx: Transaction): Pick<ThreadTx, 'admitDelivery'> => ({
+/**
+ * Attention admission inside the caller's transaction (D47). A deferred delivery waits for its batch's release job,
+ * which is scheduled through `scheduleJob` like every other job, so the job's `scheduledJob` workflow starts with the
+ * same commit (D86) and is what releases the batch at its time; nothing polls for the row.
+ */
+export const attentionTx = (tx: Transaction, durable: DurableQueue): Pick<ThreadTx, 'admitDelivery'> => ({
   async admitDelivery(input) {
     if ((await tx.select({ id: deliveries.id }).from(deliveries).where(eq(deliveries.id, input.id))).length) return;
     let dueAt = input.at;
@@ -40,10 +47,11 @@ export const attentionTx = (tx: Transaction): Pick<ThreadTx, 'admitDelivery'> =>
       })
       .onConflictDoNothing();
     if (dueAt > input.at)
-      await tx
-        .insert(schema.jobs)
-        .values({ id: `attention:${batch}`, kind: 'attention-release', runAt: new Date(dueAt), payload: { batch } })
-        .onConflictDoNothing();
+      await scheduleJob(
+        { id: `attention:${batch}`, kind: 'attention-release', runAt: new Date(dueAt), payload: { batch } },
+        durable,
+        tx,
+      );
   },
 });
 export function postgresAttention() {

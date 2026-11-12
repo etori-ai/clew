@@ -76,8 +76,8 @@ One page of [implementation status](../status.md). Each entry says what works in
 
 ## Browser updates
 
-**Works in this checkout.** Authenticated SSE invalidates the query cache using committed revisions; authorization changes clear retained state. Persisted attention budget/bundles and batch claims prevent repeated announcements across tabs.
+**Works in this checkout.** Authenticated SSE invalidates the query cache using committed revisions; authorization changes clear retained state. Persisted attention budget/bundles and batch claims prevent repeated announcements across tabs. A delivery deferred by quiet hours or the budget is released at its time by its release job's workflow, which starts with the admission's commit (D86).
 
 **Limits and pending work.** At-most-once announcement can be lost after claim; the card remains. No push/email or live delivery SLO.
 
-**Evidence.** [D46](../../decisions/D46-browser-updates-use-committed-revisions.md), [revision contract](../../../tests/db/postgres-changes.test.ts), [browser evidence](../../../tests/a11y/reliability.spec.ts)
+**Evidence.** [D46](../../decisions/D46-browser-updates-use-committed-revisions.md), [revision contract](../../../tests/db/postgres-changes.test.ts), [browser evidence](../../../tests/a11y/reliability.spec.ts), [deferred release proof](../../../apps/server/tests/attention-runtime.test.ts)

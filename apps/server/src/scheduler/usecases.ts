@@ -2,7 +2,7 @@ import { Temporal } from 'temporal-polyfill';
 import { timeZone } from '@clew/calendar/dates';
 import type { CalendarUsecases } from '../modules/calendar/usecases/samtal';
 import type { ThreadUsecases } from '../threads/usecases/cards';
-import type { Job, JobQueue, People } from './model';
+import type { DurableJobs, Job, JobQueue, People } from './model';
 
 /**
  * Postgres-backed scheduler for v1 (D15). One nightly scan per person with a grant and one timer per undo window.
@@ -74,3 +74,27 @@ export function createScheduler(deps: SchedulerDeps) {
   return { run, scheduleNightly, tick, start, stop };
 }
 export type Scheduler = ReturnType<typeof createScheduler>;
+export interface JobRunnerDeps {
+  jobs: DurableJobs;
+  /** Releases a deferred attention batch (D47): the one job kind the scheduler's `run` does not own. */
+  release: (batch: string) => Promise<void>;
+  /** Every other kind: the scheduler's `run`. */
+  run: (job: Job) => Promise<void>;
+  clock: () => Date;
+}
+/**
+ * One job row's run, the activity its `scheduledJob` workflow calls once the row's time has come (D85, D86): claim the
+ * execution at the ledger's clock, run it by kind, complete it. `busy` makes the workflow wait and ask again; a row
+ * already done answers `done` and runs nothing, so a retried step changes nothing.
+ */
+export function createJobRunner({ jobs, release, run, clock }: JobRunnerDeps) {
+  return async function runScheduledJob(id: string): Promise<'done' | 'busy'> {
+    const job = await jobs.claimExecution(id, clock().toISOString());
+    if (!job) return 'done';
+    if (job === 'busy') return 'busy';
+    if (job.kind === 'attention-release' && typeof job.payload.batch === 'string') await release(job.payload.batch);
+    else await run(job);
+    await jobs.completed(id, job.attempt, clock().toISOString());
+    return 'done';
+  };
+}
