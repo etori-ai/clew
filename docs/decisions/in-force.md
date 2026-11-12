@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**107 in force**: 98 accepted and 9 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 10 proposed and not decided. 6 no longer in force.
+**108 in force**: 98 accepted and 10 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 10 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -70,6 +70,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D107 · An administrator issues, replaces and takes back a provisioner's key on the users page](D107-an-administrator-issues-replaces-and-takes-back-a-provisioners-key-on-the-users-page.md) | 2026-11-11 | provisional |  |
 | [D109 · A provisioner sends a change when it happens, and reconciles the whole source at least daily](D109-a-provisioner-sends-a-change-when-it-happens-and-reconciles-the-whole-source-daily.md) | 2026-11-11 | provisional |  |
 | [D110 · A person's title is pushed as SCIM's `title` and kept apart from the role](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md) | 2026-11-11 | provisional |  |
+| [D113 · A deactivation is never refused for what stands beside it, and the SCIM server says no to what it did not do](D113-a-deactivation-is-never-refused-for-what-stands-beside-it.md) | 2026-11-11 | provisional |  |
 
 ## Platform
 

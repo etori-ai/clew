@@ -117,6 +117,11 @@ export interface PushSummary {
   /** The groups Clew already held and this push kept, changed or not. */
   groupsReplaced: number;
   groupsRemoved: number;
+  /**
+   * The people Clew refused, each with the reason. Everybody else was sent: one row the source has wrong does not
+   * keep a leaver active or a newcomer out. A run with anybody here has not succeeded, and its caller says so.
+   */
+  refused: Array<{ externalId: string; userName: string; detail: string }>;
 }
 export interface PushOptions {
   log?: (line: string) => void;
@@ -162,7 +167,15 @@ export async function push(
   options: PushOptions = {},
 ): Promise<PushSummary> {
   const tally: Tally = {
-    summary: { created: 0, replaced: 0, deactivated: 0, groupsCreated: 0, groupsReplaced: 0, groupsRemoved: 0 },
+    summary: {
+      created: 0,
+      replaced: 0,
+      deactivated: 0,
+      groupsCreated: 0,
+      groupsReplaced: 0,
+      groupsRemoved: 0,
+      refused: [],
+    },
     users: new Set(),
     groups: new Set(),
   };
@@ -194,6 +207,8 @@ async function reconcile(
     scope.groupKeys.includes(key) || scope.groupPrefixes.some(prefix => key.startsWith(prefix));
   const planned = plan(directory),
     { summary } = tally;
+  // A second attempt after a 503 sends everybody again, so it says again who was refused.
+  summary.refused = [];
   for (const u of planned.users)
     if (!u.externalId.startsWith(scope.userPrefix))
       throw new Error(`User '${u.externalId}' is outside the source namespace.`);
@@ -269,35 +284,66 @@ async function reconcile(
   const ids = new Map(held.flatMap(u => (u.externalId ? [[u.externalId, u.id] as const] : [])));
   const disabled = new Set(held.filter(u => u.active === false).map(u => u.id)),
     rehires: string[] = [];
-  for (const user of planned.users) {
-    const id = ids.get(user.externalId);
-    if (id) {
-      const rehire = disabled.has(id) && user.body.active;
-      if (rehire) rehires.push(id);
-      await client.request('PUT', '/Users/' + id, rehire ? { ...user.body, active: false } : user.body);
-      if (!user.body.active && !disabled.has(id)) summary.deactivated++;
-      if (!tally.users.has(user.externalId)) summary.replaced++;
-    } else if (user.body.active) {
-      const { body } = await client.request('POST', '/Users', user.body);
-      ids.set(user.externalId, body.id);
-      summary.created++;
-      options.log?.(`created ${user.body.userName}`);
-    }
-    // Else the source keeps a person who left before Clew ever held them. Nothing is created: a disabled row would
-    // only hold their `userName` against the next person who is given it, and that push would stop on a 409.
-    tally.users.add(user.externalId);
+  // An account name that is given to somebody new is first moved off the row that holds it. A person who leaves is
+  // deactivated, not erased, and keeps their `userName`, which is unique in the installation, so without this the
+  // newcomer is refused with a 409. The old row takes its own `externalId` as its name: it is unique, it is never
+  // reused, and nobody signs in with it. This also untangles two people who swap names.
+  const lower = (name: string) => name.toLowerCase(),
+    taker = new Map(planned.users.filter(u => u.body.active).map(u => [lower(u.body.userName), u.externalId])),
+    givenAway = (userName: string, externalId: string) => (taker.get(lower(userName)) ?? externalId) !== externalId;
+  // The source may keep the leaver's row with the name it has given to somebody else: that row is sent parked too.
+  const users = planned.users.map(u =>
+    !u.body.active && givenAway(u.body.userName, u.externalId)
+      ? { ...u, body: { ...u.body, userName: u.externalId } }
+      : u,
+  );
+  const nameNow = new Map(users.map(u => [u.externalId, u.body.userName]));
+  for (const holder of held) {
+    const own = holder.externalId?.startsWith(scope.userPrefix);
+    if (!own || !givenAway(holder.userName, holder.externalId!)) continue;
+    if (lower(nameNow.get(holder.externalId!) ?? '') === lower(holder.userName)) continue;
+    await patch(client, '/Users/' + holder.id, [{ op: 'replace', path: 'userName', value: holder.externalId }]);
+    options.log?.(`moved the account name ${holder.userName} off ${holder.externalId}`);
   }
+  // Who has left the source, before anybody is created or changed: nothing that goes wrong below keeps them active.
   for (const user of leavers) {
     await patch(client, '/Users/' + user.id, [{ op: 'replace', path: 'active', value: false }]);
     summary.deactivated++;
     options.log?.(`deactivated ${user.userName}`);
+  }
+  for (const user of users) {
+    const id = ids.get(user.externalId);
+    try {
+      if (id) {
+        const rehire = disabled.has(id) && user.body.active;
+        await client.request('PUT', '/Users/' + id, rehire ? { ...user.body, active: false } : user.body);
+        if (rehire) rehires.push(id);
+        if (!user.body.active && !disabled.has(id)) summary.deactivated++;
+        if (!tally.users.has(user.externalId)) summary.replaced++;
+      } else if (user.body.active) {
+        const { body } = await client.request('POST', '/Users', user.body);
+        ids.set(user.externalId, body.id);
+        summary.created++;
+        options.log?.(`created ${user.body.userName}`);
+      }
+      // Else the source keeps a person who left before Clew ever held them. Nothing is created: a disabled row would
+      // only hold their `userName` against the next person who is given it.
+    } catch (error) {
+      // What Clew says is wrong about one person (a 400) or their name (a 409) is that person's alone. Everybody
+      // else is sent, and the run reports the refusals when it is done. Anything else stops the run.
+      if (!(error instanceof ScimClientError) || (error.status !== 400 && error.status !== 409)) throw error;
+      summary.refused.push({ externalId: user.externalId, userName: user.body.userName, detail: error.message });
+      options.log?.(`refused ${user.body.userName}: ${error.message}`);
+    }
+    tally.users.add(user.externalId);
   }
   // 3. Who is in which group, in two rounds. First everybody a group gains, in every group; then everybody a group
   // loses. A person who moves from one unit to another is in both for a moment and never in neither, so their grant
   // is not taken away and handed back, and they are not signed out in the middle of a push (D101).
   const trims: Array<{ id: string; operations: unknown[] }> = [];
   for (const group of planned.groups) {
-    const members = group.members.map(externalId => ids.get(externalId)!),
+    // A person Clew refused has no id, and is in no group until the source is right about them.
+    const members = group.members.flatMap(externalId => ids.get(externalId) ?? []),
       found = (await client.request('GET', '/Groups' + eq('externalId', group.externalId))).body.Resources?.[0];
     if (!found) {
       await client.request('POST', '/Groups', {

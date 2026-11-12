@@ -14,10 +14,24 @@ import {
   literals,
 } from '../../packages/contracts/src/index';
 import { ConnectorManifestSchema, ExecuteResultSchema, FigureSchema } from '../../packages/connectors/src/protocol';
-import { ScimPatchSchema } from '../../apps/server/src/modules/people/contracts';
 import { isKey } from '../../apps/server/src/modules/entities/domain';
 import { manifest as hello } from '../../connectors/hello/connector.mjs';
 import { manifest as phonebook } from '../../connectors/phonebook/connector.mjs';
+
+/** A list with a least and a most length, and an item with a typed field: what the length and type wordings are read from. */
+const BoundedListSchema = {
+  type: 'object',
+  required: ['schemas', 'Operations'],
+  properties: {
+    schemas: { type: 'array', items: { type: 'string' } },
+    Operations: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 500,
+      items: { type: 'object', required: ['op'], properties: { op: { type: 'string' } } },
+    },
+  },
+} as never;
 
 /**
  * What a value's problems are called is Clew's, not the validation library's: these words and paths reach an
@@ -128,11 +142,11 @@ describe('the problems of a value that fails a contract', () => {
     expect(lines(ConnectorManifestSchema, roles(['manager', 'manager']))).toEqual([
       '/capabilities/0/scope/roles: Expected array elements to be unique',
     ]);
-    expect(lines(ScimPatchSchema, { schemas: ['x'], Operations: [] })).toEqual([
+    expect(lines(BoundedListSchema, { schemas: ['x'], Operations: [] })).toEqual([
       '/Operations: Expected array length to be greater or equal to 1',
     ]);
     const operations = Array.from({ length: 501 }, () => ({ op: 'add' }));
-    expect(lines(ScimPatchSchema, { schemas: ['x'], Operations: operations })).toEqual([
+    expect(lines(BoundedListSchema, { schemas: ['x'], Operations: operations })).toEqual([
       '/Operations: Expected array length to be less or equal to 500',
     ]);
     const result = (undoMinutes: number) => ({ headline: 'Klart', rows: [], undoMinutes });
@@ -191,7 +205,7 @@ describe('the problems of a value that fails a contract', () => {
     // The limit is the call's own: the next caller is still told everything.
     expect(lines(ConnectorManifestSchema, values[0])).toHaveLength(22);
     const large = { schemas: ['x'], Operations: Array.from({ length: 20_000 }, () => ({ op: 1 })) };
-    expect(contractProblems(ScimPatchSchema, large, 1)).toEqual([
+    expect(contractProblems(BoundedListSchema, large, 1)).toEqual([
       { path: '/Operations/0/op', message: 'Expected string' },
     ]);
   });

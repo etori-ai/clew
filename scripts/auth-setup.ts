@@ -287,6 +287,11 @@ try {
     developmentDirectory,
     developmentScope,
   );
+  if (pushed.refused.length)
+    throw new Error(
+      'Clew refused people of the development directory: ' +
+        pushed.refused.map(r => `${r.userName} (${r.detail})`).join('; '),
+    );
   console.log(
     `Development directory pushed through SCIM: ${pushed.created} users created, ${pushed.replaced} replaced, ${pushed.deactivated} deactivated; ${pushed.groupsCreated} groups created, ${pushed.groupsReplaced} replaced, ${pushed.groupsRemoved} removed.`,
   );

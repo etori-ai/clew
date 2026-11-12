@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { scimUsecases, staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { scimRoutes } from '../../apps/server/src/routes/scim';
@@ -13,6 +13,14 @@ import {
   type DirectoryPerson,
 } from '../../scripts/provisioner/directory';
 import { plan, push as reconcile, type PushOptions } from '../../scripts/provisioner/push';
+
+/**
+ * Most tests here push the whole development directory, two hundred and fifty people in over a hundred groups, two or
+ * three times through the routes. That is a second and a half on a developer's machine and four to six on CI's
+ * runner, which is on both sides of the five seconds a test gets by default: the suite failed there on a slow day
+ * without anything being wrong. So the tests of this file get the time a slow runner needs.
+ */
+setDefaultTimeout(30_000);
 
 // This isolated organisation belongs to the test writer.
 const scope = { userPrefix: 'dev:', groupPrefixes: ['unit:', 'unit-manager:', 'ad:', 'capability:'], groupKeys: [] };
@@ -190,6 +198,7 @@ describe('the synthetic provisioner', () => {
       groupsCreated: 113,
       groupsReplaced: 0,
       groupsRemoved: 0,
+      refused: [],
     });
     expect(grantOf('hillevi')).toEqual({
       unitId: 'unit-skola',
@@ -228,6 +237,7 @@ describe('the synthetic provisioner', () => {
       groupsCreated: 0,
       groupsReplaced: 113,
       groupsRemoved: 0,
+      refused: [],
     });
     expect(store.state.audit.length).toBe(audited);
   });
@@ -413,7 +423,7 @@ describe('the synthetic provisioner', () => {
     expect(await push(client, truncated, { force: true })).toMatchObject({ deactivated: 60 });
     expect([...store.state.users.values()].filter(u => !u.enabled)).toHaveLength(60);
   });
-  test('a group with a foreign key is left alone, and a refused push surfaces the SCIM detail', async () => {
+  test('a group with a foreign key is left alone, and a person Clew refuses is reported while everybody else is sent', async () => {
     const { store, client } = stack();
     store.state.groups.set('foreign', {
       id: 'foreign',
@@ -430,7 +440,109 @@ describe('the synthetic provisioner', () => {
       ...developmentDirectory,
       people: developmentDirectory.people.map((p, i) => (i === 0 ? { ...p, email: '' } : p)),
     };
-    await expect(push(client, broken)).rejects.toMatchObject({ status: 400, scimType: 'invalidSyntax' });
+    // The source has lost one person's address, somebody has left and somebody has begun. One bad row is that
+    // person's alone: the leaver is deactivated, the newcomer created, and the run says who was refused and why.
+    const [first, , , leaver] = developmentDirectory.people,
+      newcomer = { ...first!, externalId: 'dev:ny', userName: 'ny.person', email: 'ny@clew.test', login: false };
+    const held = (userName: string) => [...store.state.users.values()].find(u => u.userName === userName);
+    const summary = await push(client, {
+      ...broken,
+      people: [...broken.people.filter(p => p !== leaver), newcomer],
+    });
+    expect(summary).toMatchObject({
+      created: 1,
+      deactivated: 1,
+      refused: [
+        {
+          externalId: first!.externalId,
+          userName: first!.userName,
+          detail: "Attribute 'emails.value' needs a non-empty string of at most 512 characters.",
+        },
+      ],
+    });
+    expect(held(leaver!.userName)?.enabled).toBe(false);
+    expect(held('ny.person')?.enabled).toBe(true);
+    expect(held(first!.userName)).toMatchObject({ enabled: true, email: first!.email });
+    // The same row for a person the source says has left is no obstacle: a deactivation is never refused (D113).
+    const gone = await push(client, {
+      ...broken,
+      people: [...broken.people.map((p, i) => (i === 0 ? { ...p, active: false } : p)), newcomer],
+    });
+    expect(gone.refused).toEqual([]);
+    expect(held(first!.userName)).toMatchObject({ enabled: false, email: first!.email });
+  });
+  test("an account name given to somebody new is moved off the leaver's row first, whether the source keeps that row or not, and two people may swap", async () => {
+    const { client, store } = stack();
+    const scope = { userPrefix: 'e-', groupPrefixes: ['unit:s'], groupKeys: [] };
+    const someone = (externalId: string, userName: string, active = true) => ({
+      active,
+      externalId,
+      userName,
+      givenName: 'P',
+      familyName: externalId,
+      email: externalId + '@clew.test',
+      department: 's',
+      manager: false,
+      capabilities: [],
+    });
+    const directory = (...people: ReturnType<typeof someone>[]): Directory => ({
+      complete: true,
+      units: [{ id: 's', label: 'Skolan' }],
+      groups: [],
+      people,
+    });
+    const names = () =>
+      Object.fromEntries([...store.state.users.values()].map(u => [u.externalId, [u.userName, u.enabled]]));
+    await reconcile(
+      client,
+      directory(someone('e-1', 'anna.berg'), someone('e-2', 'bo.ek'), someone('e-3', 'cia.dal')),
+      scope,
+    );
+    // Anna leaves and is gone from the source; her name goes to a new person in the same run.
+    const second = await reconcile(
+      client,
+      directory(someone('e-2', 'bo.ek'), someone('e-3', 'cia.dal'), someone('e-4', 'anna.berg')),
+      scope,
+    );
+    expect(second).toMatchObject({ created: 1, deactivated: 1, refused: [] });
+    expect(names()).toEqual({
+      'e-1': ['e-1', false],
+      'e-2': ['bo.ek', true],
+      'e-3': ['cia.dal', true],
+      'e-4': ['anna.berg', true],
+    });
+    // Bo leaves, the source keeps his row with the name it has given to a newcomer, and Cia and the new Anna swap.
+    const third = await reconcile(
+      client,
+      directory(
+        someone('e-2', 'bo.ek', false),
+        someone('e-3', 'anna.berg'),
+        someone('e-4', 'cia.dal'),
+        someone('e-5', 'bo.ek'),
+      ),
+      scope,
+    );
+    expect(third.refused).toEqual([]);
+    expect(names()).toEqual({
+      'e-1': ['e-1', false],
+      'e-2': ['e-2', false],
+      'e-3': ['anna.berg', true],
+      'e-4': ['cia.dal', true],
+      'e-5': ['bo.ek', true],
+    });
+    // An unchanged source is silent: the parked rows are left as they are.
+    const audited = store.state.audit.length;
+    await reconcile(
+      client,
+      directory(
+        someone('e-2', 'bo.ek', false),
+        someone('e-3', 'anna.berg'),
+        someone('e-4', 'cia.dal'),
+        someone('e-5', 'bo.ek'),
+      ),
+      scope,
+    );
+    expect(store.state.audit.length).toBe(audited);
   });
   test('retained and absent leavers stay disabled with installation IDs across reconciliations', async () => {
     const { client, store } = stack();
@@ -642,6 +754,8 @@ describe('the synthetic provisioner', () => {
         /^\d+ groups: 48 unit, \d+ unit-manager, \d+ capability, \d+ plain \(0 without an externalId\)\.$/,
       ),
       'Every active user is in a unit.',
+      // D110: a title Clew cannot read is left out and never refused, so the check is where a broken mapping shows.
+      '249 of 250 active users have a title.',
       // The area nobody is placed on has units below it, so it is a heading and not an emptied unit (D99).
       'The units form a tree: 1 root, 6 levels deep.',
     ]);

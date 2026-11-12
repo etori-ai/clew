@@ -279,9 +279,15 @@ describe('/scim/v2', () => {
       scimType: 'invalidSyntax',
       detail: 'The request body is not JSON.',
     });
-    expect(await (await call('POST', '/Users', { userName: 1 })).json()).toMatchObject({
+    expect(await (await call('POST', '/Users', [1])).json()).toMatchObject({
       status: '400',
       scimType: 'invalidSyntax',
+      detail: 'The request body is not a User resource.',
+    });
+    expect(await (await call('POST', '/Users', { ...anna, userName: 1 })).json()).toMatchObject({
+      status: '400',
+      scimType: 'invalidValue',
+      detail: "Attribute 'userName' needs a non-empty string of at most 512 characters.",
     });
     expect(await (await call('POST', '/Users', { ...anna, externalId: undefined })).json()).toMatchObject({
       status: '400',

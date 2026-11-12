@@ -300,6 +300,13 @@ describe('SCIM users', () => {
     await expect(scim.createGroup(p, { displayName: 'Enhet\u0000' }, BASE)).rejects.toMatchObject(
       refused('displayName'),
     );
+    // Nothing stored holds one, so a filter that asks for one is refused and an address with one names nothing.
+    await expect(scim.listUsers(p, { filter: 'userName eq "a\u0000"' }, BASE)).rejects.toMatchObject({
+      status: 400,
+      scimType: 'invalidFilter',
+    });
+    await expect(scim.getUser(p, created.id + '\u0000', BASE)).rejects.toMatchObject({ status: 404 });
+    await expect(scim.getGroup(p, 'g\u0000', BASE)).rejects.toMatchObject({ status: 404 });
   });
   test('refuses a user without externalId, display name or work address, naming the attribute', async () => {
     const { scim, p } = harness();
@@ -316,7 +323,19 @@ describe('SCIM users', () => {
     await expect(scim.createUser(p, { ...anna, emails: [] }, BASE)).rejects.toMatchObject({
       detail: "Attribute 'emails' is required.",
     });
-    await expect(scim.createUser(p, { userName: 7 }, BASE)).rejects.toMatchObject({
+    // A value of the wrong kind is said about its attribute, as a missing one is (RFC 7644 §3.12: `invalidValue`).
+    await expect(scim.createUser(p, { ...anna, userName: 7 }, BASE)).rejects.toMatchObject({
+      status: 400,
+      scimType: 'invalidValue',
+      detail: "Attribute 'userName' needs a non-empty string of at most 512 characters.",
+    });
+    const { userName, ...unnamed } = anna;
+    void userName;
+    await expect(scim.createUser(p, unnamed, BASE)).rejects.toMatchObject({
+      detail: "Attribute 'userName' is required.",
+    });
+    // What is not a resource at all is the one mistake about the message itself.
+    await expect(scim.createUser(p, ['not', 'a', 'user'], BASE)).rejects.toMatchObject({
       status: 400,
       scimType: 'invalidSyntax',
     });
@@ -657,7 +676,11 @@ describe('SCIM groups and derivation', () => {
     const ad = await scim.createGroup(p, { displayName: 'Any AD group', members: [{ value: a }] }, BASE);
     expect(ad.externalId).toBeUndefined();
     expect(store.state.grants.get(a)?.capabilities).toEqual(['admin.connectors']);
-    store.state.groupCapabilities.push({ groupExternalId: 'S-1-5-21-ad', capability: 'admin.users' });
+    store.state.groupCapabilities.push({
+      organisationId: 'sundsvall',
+      groupExternalId: 'S-1-5-21-ad',
+      capability: 'admin.users',
+    });
     await scim.patchGroup(
       p,
       ad.id,
