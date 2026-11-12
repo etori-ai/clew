@@ -890,10 +890,18 @@ export function applyUserPatch(
       if (email.sub === 'value') next.email = asString(value, path);
       else {
         const sent = emailList(value, path),
-          // A filter that picked the work address has said which one it is; a list says it by type.
-          work = key === 'emails' ? workEmail(sent) : sent[0]?.value;
-        // `add` appends (RFC 7644 §3.5.2.1): an address of another type is one Clew does not hold, and changes nothing.
+          filtered = key !== 'emails',
+          // A filter that picked the work address has said which one it is; a list says it by type. A value that
+          // says another type under a path that says work contradicts itself, and is not taken for the work address.
+          work = filtered ? sent.find(e => !e.type || e.type.toLowerCase() === 'work')?.value : workEmail(sent);
         if (work !== undefined) next.email = work;
+        else if (filtered && sent.length)
+          throw new ScimError(
+            400,
+            `Path '${path}' names the work address, and the value says it is of another type. It was not stored.`,
+            'invalidValue',
+          );
+        // `add` appends (RFC 7644 §3.5.2.1): an address of another type is one Clew does not hold, and changes nothing.
         else if (op === 'replace' || !sent.length) noWorkEmail(sent);
       }
     } else if (key === 'name') {

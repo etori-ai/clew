@@ -7,10 +7,11 @@ import { fullName, type Directory, type DirectoryPerson } from './directory';
  * `externalId` key, a person who left the directory is deactivated, and a group this provisioner owns that no longer
  * follows from the directory is removed. Clew learns nothing about the source: the mapping below is the whole of it.
  *
- * The order is D101's: the organisation first, as nodes without people; then the people; then who is placed where,
- * everybody added before anybody is removed, so a person who moves between two units is never on neither; then what
- * left the source. A push that would withdraw a large share of the people, or of a kind of group, is refused before
- * anything is written.
+ * The export is checked whole before the first write: complete, inside its own prefixes, every id once, and not
+ * withdrawing a large share of the people or of a kind of group. Then who has left is deactivated, before anything
+ * that could go wrong. Then D101's order: the organisation, as nodes without people; the people; who is placed where,
+ * everybody added before anybody is removed, so a person who moves between two units is never on neither; the groups
+ * that left the source; and last the people who return.
  */
 const SCIM_USER = 'urn:ietf:params:scim:schemas:core:2.0:User',
   SCIM_GROUP = 'urn:ietf:params:scim:schemas:core:2.0:Group',
@@ -36,6 +37,39 @@ export interface Plan {
 }
 /** From the directory's facts to SCIM resources: pure. */
 export function plan(directory: Directory): Plan {
+  // An id names one thing. Two rows with one person's id would be written as one person, the later row's name on the
+  // earlier row's placements as well as its own, and Clew cannot tell: both requests are well formed. A person with
+  // two employments is the usual way a source comes to list an id twice. So the export is refused whole, before the
+  // first write. Two active people with one account name likewise: only one of them could sign in.
+  const once = (what: string, ids: readonly string[], why: string) => {
+    const seen = new Set<string>(),
+      twice = new Set<string>();
+    for (const id of ids) (seen.has(id) ? twice : seen).add(id);
+    if (twice.size)
+      throw new Error(
+        `The source lists ${what} ${[...twice].map(id => `'${id}'`).join(', ')} more than once; ${why}. Nothing was written.`,
+      );
+  };
+  once(
+    'the unit',
+    directory.units.map(u => u.id),
+    'a unit id is one unit',
+  );
+  once(
+    'the group',
+    directory.groups.map(g => g.id),
+    'a group id is one group',
+  );
+  once(
+    'the person',
+    directory.people.map(p => p.externalId),
+    'a person id is one person, with all their placements on one row',
+  );
+  once(
+    'the account name',
+    directory.people.filter(p => p.active).map(p => p.userName.toLowerCase()),
+    'an account name is one active person',
+  );
   const groups = new Map<string, PlannedGroup>();
   const group = (externalId: string, displayName: string) => {
     const g = groups.get(externalId) ?? { externalId, displayName, members: [] };
@@ -219,7 +253,6 @@ async function reconcile(
   for await (const user of page(client, '/Users?attributes=externalId,userName,active')) held.push(user);
   const wanted = new Map(planned.users.map(u => [u.externalId, u.body.active])),
     own = held.filter(u => u.externalId?.startsWith(scope.userPrefix) && u.active !== false),
-    leavers = own.filter(u => !wanted.has(u.externalId!)),
     withdrawing = own.filter(u => wanted.get(u.externalId!) !== true).length;
   if (!options.force && excessive(withdrawing, own.length))
     throw new Error(
@@ -253,7 +286,18 @@ async function reconcile(
       throw new Error(
         `The source would remove ${count.removed} of ${count.held} owned ${kind}. Nothing was written. Confirm the complete export before using force.`,
       );
-  // 1. The organisation, from the root down (D99): each unit as a node with its name and the unit above it, and
+  const ids = new Map(held.flatMap(u => (u.externalId ? [[u.externalId, u.id] as const] : [])));
+  const disabled = new Set(held.filter(u => u.active === false).map(u => u.id));
+  // 1. Who has left, before anything else is written: the people who are gone from the source, and those it now says
+  // are inactive. The export has passed every check above, and a deactivation depends on nothing below. So nothing
+  // that goes wrong further down, a unit Clew refuses, a name that is taken, keeps a leaver active.
+  for (const user of own.filter(u => wanted.get(u.externalId!) !== true)) {
+    await patch(client, '/Users/' + user.id, [{ op: 'replace', path: 'active', value: false }]);
+    disabled.add(user.id);
+    summary.deactivated++;
+    options.log?.(`deactivated ${user.userName}`);
+  }
+  // 2. The organisation, from the root down (D99): each unit as a node with its name and the unit above it, and
   // nobody on it yet. A unit that moved or was renamed is patched, so the people on it are left as they are.
   for (const unit of planned.groups.filter(g => g.externalId.startsWith(UNIT))) {
     const found = listed.get(unit.externalId);
@@ -280,10 +324,7 @@ async function reconcile(
       );
     if (operations.length) await patch(client, '/Groups/' + found.id, operations);
   }
-  // 2. The people.
-  const ids = new Map(held.flatMap(u => (u.externalId ? [[u.externalId, u.id] as const] : [])));
-  const disabled = new Set(held.filter(u => u.active === false).map(u => u.id)),
-    rehires: string[] = [];
+  // 3. The people.
   // An account name that is given to somebody new is first moved off the row that holds it. A person who leaves is
   // deactivated, not erased, and keeps their `userName`, which is unique in the installation, so without this the
   // newcomer is refused with a 409. The old row takes its own `externalId` as its name: it is unique, it is never
@@ -299,26 +340,35 @@ async function reconcile(
   );
   const nameNow = new Map(users.map(u => [u.externalId, u.body.userName]));
   for (const holder of held) {
-    const own = holder.externalId?.startsWith(scope.userPrefix);
-    if (!own || !givenAway(holder.userName, holder.externalId!)) continue;
+    const mine = holder.externalId?.startsWith(scope.userPrefix);
+    if (!mine || !givenAway(holder.userName, holder.externalId!)) continue;
     if (lower(nameNow.get(holder.externalId!) ?? '') === lower(holder.userName)) continue;
     await patch(client, '/Users/' + holder.id, [{ op: 'replace', path: 'userName', value: holder.externalId }]);
     options.log?.(`moved the account name ${holder.userName} off ${holder.externalId}`);
   }
-  // Who has left the source, before anybody is created or changed: nothing that goes wrong below keeps them active.
-  for (const user of leavers) {
-    await patch(client, '/Users/' + user.id, [{ op: 'replace', path: 'active', value: false }]);
-    summary.deactivated++;
-    options.log?.(`deactivated ${user.userName}`);
-  }
+  /**
+   * One person's request. What Clew says is wrong about one person (a 400) or their name (a 409) is that person's
+   * alone: everybody else is sent, and the run reports the refusals when it is done. Anything else stops the run.
+   */
+  const sent = async (user: (typeof users)[number], request: () => Promise<void>) => {
+    try {
+      await request();
+      return true;
+    } catch (error) {
+      if (!(error instanceof ScimClientError) || (error.status !== 400 && error.status !== 409)) throw error;
+      summary.refused.push({ externalId: user.externalId, userName: user.body.userName, detail: error.message });
+      options.log?.(`refused ${user.body.userName}: ${error.message}`);
+      return false;
+    }
+  };
+  const rehires: Array<{ id: string; user: (typeof users)[number] }> = [];
   for (const user of users) {
     const id = ids.get(user.externalId);
-    try {
+    await sent(user, async () => {
       if (id) {
         const rehire = disabled.has(id) && user.body.active;
         await client.request('PUT', '/Users/' + id, rehire ? { ...user.body, active: false } : user.body);
-        if (rehire) rehires.push(id);
-        if (!user.body.active && !disabled.has(id)) summary.deactivated++;
+        if (rehire) rehires.push({ id, user });
         if (!tally.users.has(user.externalId)) summary.replaced++;
       } else if (user.body.active) {
         const { body } = await client.request('POST', '/Users', user.body);
@@ -328,16 +378,10 @@ async function reconcile(
       }
       // Else the source keeps a person who left before Clew ever held them. Nothing is created: a disabled row would
       // only hold their `userName` against the next person who is given it.
-    } catch (error) {
-      // What Clew says is wrong about one person (a 400) or their name (a 409) is that person's alone. Everybody
-      // else is sent, and the run reports the refusals when it is done. Anything else stops the run.
-      if (!(error instanceof ScimClientError) || (error.status !== 400 && error.status !== 409)) throw error;
-      summary.refused.push({ externalId: user.externalId, userName: user.body.userName, detail: error.message });
-      options.log?.(`refused ${user.body.userName}: ${error.message}`);
-    }
+    });
     tally.users.add(user.externalId);
   }
-  // 3. Who is in which group, in two rounds. First everybody a group gains, in every group; then everybody a group
+  // 4. Who is in which group, in two rounds. First everybody a group gains, in every group; then everybody a group
   // loses. A person who moves from one unit to another is in both for a moment and never in neither, so their grant
   // is not taken away and handed back, and they are not signed out in the middle of a push (D101).
   const trims: Array<{ id: string; operations: unknown[] }> = [];
@@ -372,7 +416,7 @@ async function reconcile(
     if (operations.length) trims.push({ id: found.id, operations });
   }
   for (const trim of trims) await patch(client, '/Groups/' + trim.id, trim.operations);
-  // 4. The groups that no longer follow from the source.
+  // 5. The groups that no longer follow from the source.
   // From the leaves up (D99): a unit goes once no unit that is also going still stands below it. The units that stay
   // were written above, so none of them names a unit that goes.
   while (gone.length) {
@@ -383,7 +427,11 @@ async function reconcile(
     summary.groupsRemoved++;
     options.log?.(`removed group ${group!.externalId}`);
   }
-  // A returning person regains access only after expired duties have been removed.
-  for (const id of rehires) await patch(client, '/Users/' + id, [{ op: 'replace', path: 'active', value: true }]);
+  // 6. A returning person regains access only after expired duties have been removed, and only with a row Clew takes.
+  // The row was sent above with `active: false`, and a request that deactivates is never refused for what stands
+  // beside it (D113): a wrong address in it was passed over and the old one kept. So the whole row is sent again, now
+  // as active, and what is wrong in it refuses the return and is reported, as it is for anybody else.
+  for (const { id, user } of rehires)
+    await sent(user, async () => void (await client.request('PUT', '/Users/' + id, user.body)));
   return summary;
 }

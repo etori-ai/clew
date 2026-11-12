@@ -471,6 +471,104 @@ describe('the synthetic provisioner', () => {
     expect(gone.refused).toEqual([]);
     expect(held(first!.userName)).toMatchObject({ enabled: false, email: first!.email });
   });
+  describe('what an outside review of the merged server found (2026-11-12)', () => {
+    const scope = { userPrefix: 'e-', groupPrefixes: ['unit:', 'unit-manager:'], groupKeys: [] };
+    const someone = (externalId: string, userName: string, department = 'a', extra: Partial<DirectoryPerson> = {}) => ({
+      active: true,
+      externalId,
+      userName,
+      givenName: userName,
+      familyName: 'X',
+      email: userName + '@clew.test',
+      department,
+      manager: false,
+      capabilities: [],
+      ...extra,
+    });
+    const source = (units: Array<{ id: string; label: string }>, ...people: DirectoryPerson[]): Directory => ({
+      complete: true,
+      units,
+      groups: [],
+      people,
+    });
+    const [a, b] = [
+      { id: 'a', label: 'Enhet A' },
+      { id: 'b', label: 'Enhet B' },
+    ];
+    test('an id that names two rows refuses the whole export before the first write: a person, a unit, a group, an active account name', async () => {
+      const { store, client } = stack();
+      await reconcile(client, source([a, b], someone('e-1', 'anna'), someone('e-2', 'bo')), scope);
+      const before = { audit: store.state.audit.length, users: store.state.users.size };
+      // A person with two employments, exported as two rows with one id: written, it was one person with the later
+      // row's name and both rows' placements, and nothing said so.
+      const twice: Array<[Directory, string]> = [
+        [source([a, b], someone('e-1', 'anna'), someone('e-1', 'bo', 'b')), "the person 'e-1' more than once"],
+        [source([a, b, { ...a }], someone('e-1', 'anna')), "the unit 'a' more than once"],
+        [source([a, b], someone('e-1', 'anna'), someone('e-3', 'ANNA', 'b')), "the account name 'anna' more than once"],
+        [
+          {
+            ...source([a], someone('e-1', 'anna')),
+            groups: [
+              { id: 'ad:x', label: 'X' },
+              { id: 'ad:x', label: 'Y' },
+            ],
+          },
+          "the group 'ad:x' more than once",
+        ],
+      ];
+      for (const [directory, message] of twice) {
+        expect(() => plan(directory)).toThrow(message);
+        await expect(
+          reconcile(client, directory, { ...scope, groupPrefixes: [...scope.groupPrefixes, 'ad:'] }),
+        ).rejects.toThrow('Nothing was written.');
+      }
+      expect({ audit: store.state.audit.length, users: store.state.users.size }).toEqual(before);
+      // A person who has left may keep the name somebody active now has: that is the reuse the example handles.
+      expect(() =>
+        plan(source([a], someone('e-1', 'anna', 'a', { active: false }), someone('e-2', 'anna'))),
+      ).not.toThrow();
+    });
+    test('who has left is deactivated although a unit is refused or a name is taken further down', async () => {
+      const { store, client } = stack();
+      const enabled = (userName: string) => [...store.state.users.values()].find(u => u.userName === userName)?.enabled;
+      // Twelve people, so that two who leave are an ordinary day and not what an emptied export looks like.
+      const staying = Array.from({ length: 10 }, (_, n) => someone('e-' + (n + 1), 'person' + (n + 1))),
+        [cia, dan] = [someone('e-11', 'cia'), someone('e-12', 'dan')];
+      await reconcile(client, source([a], ...staying, cia, dan), scope);
+      // Cia is gone from the source, Dan is still listed and marked inactive, and a new unit has a name Clew refuses.
+      await expect(
+        reconcile(client, source([a, { id: 'b', label: '   ' }], ...staying, { ...dan, active: false }), scope),
+      ).rejects.toThrow("Attribute 'displayName'");
+      expect([enabled('cia'), enabled('dan'), enabled('person1')]).toEqual([false, false, true]);
+      // The run failed and says so; the next one, with the unit put right, finds nothing left to deactivate.
+      const next = await reconcile(client, source([a, b], ...staying, { ...dan, active: false }), scope);
+      expect(next).toMatchObject({ deactivated: 0, refused: [] });
+    });
+    test('a person who returns is activated only with a row Clew takes, and a wrong one is reported and left inactive', async () => {
+      const { store, client } = stack();
+      const held = (userName: string) => [...store.state.users.values()].find(u => u.userName === userName)!;
+      const [anna, bo, cia] = [someone('e-1', 'anna'), someone('e-2', 'bo'), someone('e-3', 'cia')];
+      await reconcile(client, source([a], anna, bo, cia), scope);
+      await reconcile(client, source([a], anna, bo, { ...cia, active: false }), scope);
+      expect(held('cia').enabled).toBe(false);
+      // Cia is back, and the source has lost her address. The row is first sent as inactive, which Clew never
+      // refuses (D113) and which once let her back in with the old address and no word about the new one.
+      const wrong = await reconcile(client, source([a], anna, bo, { ...cia, email: '' }), scope);
+      expect(wrong.refused).toEqual([
+        {
+          externalId: 'e-3',
+          userName: 'cia',
+          detail: "Attribute 'emails.value' needs a non-empty string of at most 512 characters.",
+        },
+      ]);
+      expect(held('cia')).toMatchObject({ enabled: false, email: 'cia@clew.test' });
+      // With the source put right she returns, with her unit.
+      const right = await reconcile(client, source([a], anna, bo, { ...cia, email: 'cia.ny@clew.test' }), scope);
+      expect(right.refused).toEqual([]);
+      expect(held('cia')).toMatchObject({ enabled: true, email: 'cia.ny@clew.test' });
+      expect(store.state.grants.get(held('cia').id)).toMatchObject({ unitId: 'a' });
+    });
+  });
   test("an account name given to somebody new is moved off the leaver's row first, whether the source keeps that row or not, and two people may swap", async () => {
     const { client, store } = stack();
     const scope = { userPrefix: 'e-', groupPrefixes: ['unit:s'], groupKeys: [] };
