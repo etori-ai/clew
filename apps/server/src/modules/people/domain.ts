@@ -397,8 +397,8 @@ const asResource = (body: unknown, names: Names, what: string): Record<string, u
 };
 /**
  * A text attribute Clew stores: not empty, not only space, at most 512 characters, and nothing PostgreSQL cannot hold.
- * The limit is a provisioned key's (`PROVISIONED_KEY_LENGTH`), which every field that names a key takes, so a key
- * stored here is never refused where an administrator picks it (A6).
+ * The limit is a provisioned key's (`PROVISIONED_KEY_LENGTH`), which the administration fields that name a key take, so
+ * a key stored here is never refused where an administrator picks it (A6).
  */
 const asString = (value: unknown, path: string): string => {
   if (typeof value !== 'string' || !value.trim() || value.length > PROVISIONED_KEY_LENGTH)

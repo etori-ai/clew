@@ -2382,9 +2382,11 @@ export type UserStatus = (typeof USER_STATUSES)[number];
 export const USERS_PAGE_SIZES = [25, 50, 100] as const;
 /**
  * The most characters a key pushed over SCIM may hold (D68): a user's or a group's `externalId`, and so a unit id, which
- * is what follows `unit:` in its group's key. It is the SCIM server's limit for every text attribute it stores, and
- * every field that names a provisioned key takes it, so that a key SCIM stored is never refused where it is used: an
- * audience's units and groups, a group-capability row, the people list's unit and a preview's unit (A6).
+ * is what follows `unit:` in its group's key. It is the SCIM server's limit for every text attribute it stores. The
+ * administration fields that name such a key take it, so that an administrator can name every key SCIM stored: an
+ * audience's units and groups, a group-capability row, the people list's unit and a preview's unit (A6). An entity's
+ * key is shorter (`ENTITY_KEY_MAX`, D97): a unit whose id is longer than that is stored and may be named in those
+ * fields, but is never offered as an entity.
  */
 export const PROVISIONED_KEY_LENGTH = 512;
 /**
