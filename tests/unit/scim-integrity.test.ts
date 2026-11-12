@@ -212,6 +212,15 @@ describe('what a group write costs and what it leaves in the audit', () => {
       };
     };
     const derivedRows = () => store.state.audit.filter(row => row.action === 'grant.derived').length;
+    /** The `grant.derived` rows a write left, by person, in the order written. */
+    const derivedBy = async (write: () => Promise<unknown>) => {
+      const before = store.state.audit.length;
+      await write();
+      return store.state.audit
+        .slice(before)
+        .filter(row => row.action === 'grant.derived')
+        .map(row => [row.subject.slice('person:'.length), row.details]);
+    };
     // An all-staff group that grants nothing: created, joined, left, renamed, re-keyed and removed, nobody derived.
     // Created whole it was one derivation a member, six to nine store calls each.
     let plain!: { id: string };
@@ -338,6 +347,42 @@ describe('what a group write costs and what it leaves in the audit', () => {
       ),
     ).toMatchObject({ derived: 3, rules: 1 });
     expect(store.state.grants.get(staff[0]!)?.capabilities).toEqual(['admin.connectors']);
+    // Who leaves a mapped group is derived and loses what the row gave, and so does every member when the group is
+    // removed; so does the member of a removed capability group. Each with a row that says it.
+    const employee = (capabilities: string[]) => ({
+      unitId: 'a1',
+      role: 'employee',
+      capabilities,
+      assignments: 1,
+    });
+    let left!: unknown[];
+    expect(
+      await cost(async () => {
+        left = await derivedBy(() =>
+          scim.patchGroup(a, mapped.id, patch([{ op: 'remove', path: `members[value eq "${staff[1]}"]` }]), BASE),
+        );
+      }),
+    ).toMatchObject({ derived: 1, rules: 1, held: 1 });
+    expect(left).toEqual([[staff[1], employee([])]]);
+    let gone!: unknown[];
+    expect(
+      await cost(async () => {
+        gone = await derivedBy(() => scim.deleteGroup(a, mapped.id));
+      }),
+    ).toMatchObject({ derived: 2, rules: 1, held: 1 });
+    expect(gone).toEqual([
+      [staff[0], employee([])],
+      [staff[2], employee([])],
+    ]);
+    expect(staff.slice(0, 3).map(id => store.state.grants.get(id)?.capabilities)).toEqual([[], [], []]);
+    expect(store.state.grants.get(head)?.capabilities).toEqual(['admin.users']);
+    expect(
+      await cost(async () => {
+        gone = await derivedBy(() => scim.deleteGroup(a, admins.id));
+      }),
+    ).toMatchObject({ derived: 1, rules: 1, held: 1 });
+    expect(gone).toEqual([[head, { unitId: 'a1', role: 'manager', capabilities: [], assignments: 1 }]]);
+    expect(store.state.grants.get(head)?.capabilities).toEqual([]);
     // A unit group whose key is taken away, and one that is removed, derive every member: they lose the unit.
     expect(
       await cost(() => scim.patchGroup(a, unit.id, patch([{ op: 'remove', path: 'externalId' }]), BASE)),
