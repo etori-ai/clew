@@ -471,6 +471,185 @@ describe('the synthetic provisioner', () => {
     expect(gone.refused).toEqual([]);
     expect(held(first!.userName)).toMatchObject({ enabled: false, email: first!.email });
   });
+  describe('what an outside review of the merged server found (2026-11-12)', () => {
+    const scope = { userPrefix: 'e-', groupPrefixes: ['unit:', 'unit-manager:'], groupKeys: [] };
+    const someone = (externalId: string, userName: string, department = 'a', extra: Partial<DirectoryPerson> = {}) => ({
+      active: true,
+      externalId,
+      userName,
+      givenName: userName,
+      familyName: 'X',
+      email: userName + '@clew.test',
+      department,
+      manager: false,
+      capabilities: [],
+      ...extra,
+    });
+    const source = (units: Array<{ id: string; label: string }>, ...people: DirectoryPerson[]): Directory => ({
+      complete: true,
+      units,
+      groups: [],
+      people,
+    });
+    const [a, b] = [
+      { id: 'a', label: 'Enhet A' },
+      { id: 'b', label: 'Enhet B' },
+    ];
+    test('an id that names two rows refuses the whole export before the first write: a person, a unit, a group, an active account name', async () => {
+      const { store, client } = stack();
+      await reconcile(client, source([a, b], someone('e-1', 'anna'), someone('e-2', 'bo')), scope);
+      const before = { audit: store.state.audit.length, users: store.state.users.size };
+      // A person with two employments, exported as two rows with one id: written, it was one person with the later
+      // row's name and both rows' placements, and nothing said so.
+      const twice: Array<[Directory, string]> = [
+        [source([a, b], someone('e-1', 'anna'), someone('e-1', 'bo', 'b')), "the person 'e-1' more than once"],
+        [source([a, b, { ...a }], someone('e-1', 'anna')), "the unit 'a' more than once"],
+        [source([a, b], someone('e-1', 'anna'), someone('e-3', 'ANNA', 'b')), "the account name 'anna' more than once"],
+        [
+          {
+            ...source([a], someone('e-1', 'anna')),
+            groups: [
+              { id: 'ad:x', label: 'X' },
+              { id: 'ad:x', label: 'Y' },
+            ],
+          },
+          "the group 'ad:x' more than once",
+        ],
+      ];
+      for (const [directory, message] of twice) {
+        expect(() => plan(directory)).toThrow(message);
+        await expect(
+          reconcile(client, directory, { ...scope, groupPrefixes: [...scope.groupPrefixes, 'ad:'] }),
+        ).rejects.toThrow('Nothing was written.');
+      }
+      expect({ audit: store.state.audit.length, users: store.state.users.size }).toEqual(before);
+      // A person who has left may keep the name somebody active now has: that is the reuse the example handles.
+      expect(() =>
+        plan(source([a], someone('e-1', 'anna', 'a', { active: false }), someone('e-2', 'anna'))),
+      ).not.toThrow();
+    });
+    test('plain directory groups cannot use reserved SCIM keys, even without a generated group of the same name', async () => {
+      const { client, store } = stack();
+      const allowed = {
+        ...scope,
+        groupPrefixes: [...scope.groupPrefixes, 'capability:', 'ad:'],
+        groupKeys: ['protected'],
+      };
+      const empty = source([a, b], someone('e-1', 'anna'));
+      for (const id of ['unit:b', 'unit-manager:b', 'capability:admin.users', 'protected', ' Unit :b']) {
+        const directory = {
+          ...empty,
+          groups: [{ id, label: 'Newsletter' }],
+          people: [someone('e-1', 'anna', 'a', { groups: [id] })],
+        };
+        await expect(reconcile(client, directory, allowed, { force: true })).rejects.toThrow('reserved');
+        expect(store.state.groups.size).toBe(0);
+        expect(store.state.users.size).toBe(0);
+        expect(store.state.audit).toHaveLength(0);
+      }
+      const plain = { id: 'ad:unit:b', label: 'Newsletter' };
+      const result = await reconcile(client, { ...empty, groups: [plain] }, allowed);
+      expect(result.groupsCreated).toBe(3);
+    });
+    for (const interrupted of ['before commit', 'after commit'] as const) {
+      test(`a deactivation interrupted ${interrupted} is counted once across a 503 retry`, async () => {
+        const { client, store } = stack();
+        const anna = someone('e-1', 'anna'),
+          bo = someone('e-2', 'bo'),
+          cia = someone('e-3', 'cia');
+        await reconcile(client, source([a], anna, bo, cia), scope);
+        const leavers = source([a], anna, { ...cia, active: false });
+        let patches = 0;
+        const flaky: ScimClient = {
+          async request(method, path, body) {
+            if (method === 'PATCH' && path.startsWith('/Users/') && ++patches === 2) {
+              if (interrupted === 'after commit') await client.request(method, path, body);
+              throw new ScimClientError(503, undefined, 'Unavailable', '0');
+            }
+            return client.request(method, path, body);
+          },
+        };
+        expect((await reconcile(flaky, leavers, scope, { force: true })).deactivated).toBe(2);
+        expect(store.state.audit.filter(row => row.action === 'scim.user.deactivated')).toHaveLength(2);
+        expect((await reconcile(client, leavers, scope)).deactivated).toBe(0);
+      });
+    }
+    test('a lost response to a user create or group deletion preserves the completed run summary', async () => {
+      const anna = someone('e-1', 'anna'),
+        bo = someone('e-2', 'bo');
+      for (const lost of ['POST', 'DELETE'] as const) {
+        const { client } = stack();
+        await reconcile(client, source([a, b], anna), scope);
+        let interrupted = false;
+        const flaky: ScimClient = {
+          async request(method, path, body) {
+            const result = await client.request(method, path, body);
+            if (!interrupted && method === lost && (path === '/Users' || path.startsWith('/Groups/'))) {
+              interrupted = true;
+              throw new ScimClientError(503, undefined, 'Unavailable', '0');
+            }
+            return result;
+          },
+        };
+        const result = await reconcile(flaky, source([a], anna, bo), scope);
+        expect(interrupted).toBe(true);
+        expect(result).toEqual({
+          created: 1,
+          replaced: 1,
+          deactivated: 0,
+          groupsCreated: 0,
+          groupsReplaced: 1,
+          groupsRemoved: 1,
+          refused: [],
+        });
+      }
+    });
+    test('who has left is deactivated although a unit is refused or a name is taken further down', async () => {
+      const { store, client } = stack();
+      const enabled = (userName: string) => [...store.state.users.values()].find(u => u.userName === userName)?.enabled;
+      // Twelve people, so that two who leave are an ordinary day and not what an emptied export looks like.
+      const staying = Array.from({ length: 10 }, (_, n) => someone('e-' + (n + 1), 'person' + (n + 1))),
+        [cia, dan] = [someone('e-11', 'cia'), someone('e-12', 'dan')];
+      await reconcile(client, source([a], ...staying, cia, dan), scope);
+      // Cia is gone from the source, Dan is still listed and marked inactive, and a new unit has a name Clew refuses.
+      await expect(
+        reconcile(client, source([a, { id: 'b', label: '   ' }], ...staying, { ...dan, active: false }), scope),
+      ).rejects.toThrow("Attribute 'displayName'");
+      expect([enabled('cia'), enabled('dan'), enabled('person1')]).toEqual([false, false, true]);
+      // The run failed and says so; the next one, with the unit put right, finds nothing left to deactivate.
+      const next = await reconcile(client, source([a, b], ...staying, { ...dan, active: false }), scope);
+      expect(next).toMatchObject({ deactivated: 0, refused: [] });
+    });
+    test('a person who returns is activated only with a row Clew takes, and a wrong one is reported and left inactive', async () => {
+      const { store, client } = stack();
+      const held = (userName: string) => [...store.state.users.values()].find(u => u.userName === userName)!;
+      const [anna, bo, cia] = [someone('e-1', 'anna'), someone('e-2', 'bo'), someone('e-3', 'cia')];
+      await reconcile(client, source([a], anna, bo, cia), scope);
+      await reconcile(client, source([a], anna, bo, { ...cia, active: false }), scope);
+      expect(held('cia').enabled).toBe(false);
+      const returning = { ...cia, userName: 'cia.ny', title: 'Rektor', givenName: 'Ny' };
+      const before = { ...held('cia') };
+      const wrong = await reconcile(client, source([a], anna, bo, { ...returning, email: '' }), scope);
+      expect(wrong.refused).toEqual([
+        {
+          externalId: 'e-3',
+          userName: 'cia.ny',
+          detail: "Attribute 'emails.value' needs a non-empty string of at most 512 characters.",
+        },
+      ]);
+      expect(wrong.replaced).toBe(2);
+      expect(store.state.users.get(before.id)).toEqual(before);
+      const right = await reconcile(client, source([a], anna, bo, { ...returning, email: 'cia.ny@clew.test' }), scope);
+      expect(right).toMatchObject({ refused: [], replaced: 3 });
+      expect(held('cia.ny')).toMatchObject({
+        id: before.id,
+        enabled: true,
+        email: 'cia.ny@clew.test',
+        title: 'Rektor',
+      });
+      expect(store.state.grants.get(held('cia.ny').id)).toMatchObject({ unitId: 'a' });
+    });
+  });
   test("an account name given to somebody new is moved off the leaver's row first, whether the source keeps that row or not, and two people may swap", async () => {
     const { client, store } = stack();
     const scope = { userPrefix: 'e-', groupPrefixes: ['unit:s'], groupKeys: [] };
@@ -627,7 +806,7 @@ describe('the synthetic provisioner', () => {
         return result;
       },
     };
-    await push(interrupted, snapshot);
+    expect(await push(interrupted, snapshot)).toMatchObject({ groupsCreated: 1, groupsReplaced: 0 });
     expect(creates).toBe(1);
     expect([...store.state.groups.values()].map(g => g.externalId)).toEqual(['unit:test']);
     const proxy = scimClient(
@@ -798,7 +977,7 @@ describe('the synthetic provisioner', () => {
       id: 'legacy',
       organisationId: 'poc',
       parentUnitId: null,
-      externalId: 'Unit:old',
+      externalId: ' Unit :old',
       label: 'Stored before D96',
       createdAt: '2026-11-09T06:00:00.000Z',
       updatedAt: '2026-11-09T06:00:00.000Z',
@@ -813,7 +992,7 @@ describe('the synthetic provisioner', () => {
       '1 unit has a unit-manager: group and no unit: group, so the unit is shown by its id instead of a name: unit-nameless.',
       '1 unit or unit-manager group has no members: unit:unit-empty.',
       '1 unit has people and no manager, on the unit or on any unit above it, so its people report to nobody: unit:unit-adrift-below.',
-      "1 group carries a key that is written wrong and gives nobody anything: 'Unit:old'.",
+      "1 group carries a key that is written wrong and gives nobody anything: ' Unit :old'.",
     ]);
     // More roots than the source has: a unit written without its parent became one (D99).
     expect(

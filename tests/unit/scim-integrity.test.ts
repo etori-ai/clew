@@ -176,6 +176,45 @@ describe('what a group write costs and what it leaves in the audit', () => {
       scim.patchGroup(a, group.id, patch([{ op: 'add', path: 'members', value: [{ value: group.id }] }]), BASE),
     ).rejects.toMatchObject({ detail: expect.stringContaining('is a group') });
   });
+  test("a list that leaves out a person's groups does not read them: the daily comparison asks for three attributes", async () => {
+    const calls: Record<string, number> = {};
+    const { scim, a, person } = stack(store => ({
+      transaction: fn =>
+        store.transaction(tx =>
+          fn(
+            new Proxy(tx, {
+              get(target, name: string) {
+                const value = target[name as keyof ProvisionTx];
+                if (typeof value !== 'function') return value;
+                return (...args: unknown[]) => {
+                  calls[name] = (calls[name] ?? 0) + 1;
+                  return (value as (...a: unknown[]) => unknown).apply(target, args);
+                };
+              },
+            }),
+          ),
+        ),
+    }));
+    const first = await person(a);
+    for (let i = 0; i < 9; i++) await person(a);
+    const reads = async (query: Parameters<typeof scim.listUsers>[1]) => {
+      for (const key of Object.keys(calls)) delete calls[key];
+      const list = await scim.listUsers(a, query, BASE);
+      return [list.Resources.length, calls.userGroups ?? 0];
+    };
+    // As `push.ts` reads everybody before a run. It was one read of groups a person, to answer none of them.
+    expect(await reads({ attributes: 'externalId,userName,active' })).toEqual([10, 0]);
+    expect(await reads({ excludedAttributes: 'groups' })).toEqual([10, 0]);
+    expect(await reads({})).toEqual([10, 10]);
+    expect(await reads({ attributes: 'userName,groups.value' })).toEqual([10, 10]);
+    for (const key of Object.keys(calls)) delete calls[key];
+    expect(Object.keys(await scim.getUser(a, first, BASE, { attributes: 'userName' }))).toEqual([
+      'schemas',
+      'id',
+      'userName',
+    ]);
+    expect(calls.userGroups ?? 0).toBe(0);
+  });
   test('a second unit to lead, and who came into a plain group, are in the audit by person', async () => {
     const { store, scim, a, person, patch } = stack();
     const manager = await person(a);

@@ -1,13 +1,3 @@
-import {
-  CAPABILITIES,
-  isCapability,
-  type Capability,
-  type OrganisationOverview,
-  type OrganisationUnit,
-  type Role,
-  type UserStatus,
-} from '@clew/contracts';
-
 /**
  * Deriving a person's authority from what was pushed (D68) and mapped (D85). Pure: no I/O, no clock.
  *
@@ -19,10 +9,23 @@ import {
  * to capability) may give a capability. A person with no unit membership has no active grant, so a mapping mistake
  * fails closed.
  */
-export const UNIT_KEY = 'unit:',
-  MANAGER_KEY = 'unit-manager:',
-  CAPABILITY_KEY = 'capability:',
-  PROTECTED_KEY = 'protected';
+import {
+  CAPABILITIES,
+  isCapability,
+  type Capability,
+  type OrganisationOverview,
+  type OrganisationUnit,
+  type Role,
+  type UserStatus,
+} from '@clew/contracts';
+import {
+  UNIT_KEY,
+  MANAGER_KEY,
+  CAPABILITY_KEY,
+  PROTECTED_KEY,
+  reservedScimGroupKey,
+} from '@clew/contracts/scim-group-key';
+
 /** The unit a group's key names, whichever of the unit's two groups it is; undefined for any other key. */
 export const unitOfKey = (externalId: string | null | undefined): string | undefined =>
   externalId?.startsWith(MANAGER_KEY)
@@ -570,19 +573,15 @@ export function groupFields(body: unknown): GroupFields {
  * a reserved word in another case (`Unit:skola`, `Protected`) or with space in or before it (` unit:skola`,
  * `unit :skola`), `unit:` or `unit-manager:` without a unit id or with space around it, and `capability:` with a name outside the closed list. Any other `externalId` is a plain group.
  */
-const RESERVED_PREFIXES = [MANAGER_KEY, UNIT_KEY, CAPABILITY_KEY] as const;
 const refusedKey = (detail: string) => new ScimError(400, `${detail} The group was not stored.`, 'invalidValue');
 export function assertAcceptedKey(fields: GroupFields): void {
   const key = fields.externalId;
   if (key === null) return;
-  // Read without its space and in lower case to see what was meant: ` unit:x`, `unit :x` and `Protected ` are keys
-  // written wrong, not plain groups that give nobody anything.
-  const lower = key.replace(/\s+/g, '').toLowerCase();
-  if (lower === PROTECTED_KEY)
+  const prefix = reservedScimGroupKey(key);
+  if (prefix === PROTECTED_KEY)
     throw refusedKey(
       `The key '${PROTECTED_KEY}' is not accepted: Clew has not decided whether it may hold that fact (D93).`,
     );
-  const prefix = RESERVED_PREFIXES.find(p => lower.startsWith(p));
   if (!prefix) return;
   if (!key.startsWith(prefix)) throw refusedKey(`The key '${key}' must begin with '${prefix}' in lower case (D96).`);
   const rest = key.slice(prefix.length);
@@ -890,10 +889,15 @@ export function applyUserPatch(
       if (email.sub === 'value') next.email = asString(value, path);
       else {
         const sent = emailList(value, path),
-          // A filter that picked the work address has said which one it is; a list says it by type.
-          work = key === 'emails' ? workEmail(sent) : sent[0]?.value;
-        // `add` appends (RFC 7644 §3.5.2.1): an address of another type is one Clew does not hold, and changes nothing.
+          work = workEmail(sent);
         if (work !== undefined) next.email = work;
+        else if (key !== 'emails' && sent.length)
+          throw new ScimError(
+            400,
+            `Path '${path}' names the work address, and the value says it is of another type. It was not stored.`,
+            'invalidValue',
+          );
+        // `add` appends (RFC 7644 §3.5.2.1): an address of another type is one Clew does not hold, and changes nothing.
         else if (op === 'replace' || !sent.length) noWorkEmail(sent);
       }
     } else if (key === 'name') {

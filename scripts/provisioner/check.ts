@@ -3,6 +3,13 @@
  * points at Clew to see whether its mapping did what it meant. It only reads. A finding is `ok`, a `warn` (the push
  * was accepted and somebody will not get what the source intended) or a `fail` (the endpoint or the token is wrong).
  */
+import {
+  UNIT_KEY,
+  MANAGER_KEY,
+  CAPABILITY_KEY,
+  PROTECTED_KEY,
+  reservedScimGroupKey,
+} from '../../packages/contracts/src/scim-group-key';
 import { ScimClientError, type Fetch, type ScimClient } from './client';
 
 export interface Finding {
@@ -24,10 +31,6 @@ interface GroupRow {
   displayName: string;
   [UNIT_EXTENSION]?: { parent?: string };
 }
-const UNIT = 'unit:',
-  MANAGER = 'unit-manager:',
-  CAPABILITY = 'capability:',
-  RESERVED = [MANAGER, UNIT, CAPABILITY];
 const PAGE = 200;
 async function all<T>(client: ScimClient, path: string, query: string): Promise<T[]> {
   const rows: T[] = [];
@@ -84,9 +87,9 @@ export async function checkProvisioning(
   const active = users.filter(u => u.active),
     keyOf = new Map(groups.map(g => [g.id, g.externalId ?? ''])),
     keyed = (prefix: string) => groups.filter(g => g.externalId?.startsWith(prefix)),
-    units = keyed(UNIT),
-    managers = keyed(MANAGER),
-    capabilities = keyed(CAPABILITY),
+    units = keyed(UNIT_KEY),
+    managers = keyed(MANAGER_KEY),
+    capabilities = keyed(CAPABILITY_KEY),
     plain = groups.length - units.length - managers.length - capabilities.length;
   say(
     'ok',
@@ -102,7 +105,7 @@ export async function checkProvisioning(
     u =>
       !(u.groups ?? []).some(g => {
         const key = keyOf.get(g.value) ?? '';
-        return key.startsWith(UNIT) || key.startsWith(MANAGER);
+        return key.startsWith(UNIT_KEY) || key.startsWith(MANAGER_KEY);
       }),
   );
   if (unassigned.length)
@@ -121,8 +124,8 @@ export async function checkProvisioning(
         ? `${titled} of ${plural(active.length, 'active user', 'active users')} ${titled === 1 ? 'has' : 'have'} a title.`
         : 'No active user has a title: the source sends none, or sends one Clew could not read as text.',
     );
-  const named = new Set(units.map(g => g.externalId!.slice(UNIT.length)));
-  const unnamed = managers.map(g => g.externalId!.slice(MANAGER.length)).filter(id => !named.has(id));
+  const named = new Set(units.map(g => g.externalId!.slice(UNIT_KEY.length)));
+  const unnamed = managers.map(g => g.externalId!.slice(MANAGER_KEY.length)).filter(id => !named.has(id));
   if (unnamed.length)
     say(
       'warn',
@@ -130,7 +133,7 @@ export async function checkProvisioning(
     );
   // The tree (D99): which unit stands above which, as the unit groups say it.
   const above = new Map(
-    units.map(g => [g.externalId!.slice(UNIT.length), g[UNIT_EXTENSION]?.parent?.slice(UNIT.length)]),
+    units.map(g => [g.externalId!.slice(UNIT_KEY.length), g[UNIT_EXTENSION]?.parent?.slice(UNIT_KEY.length)]),
   );
   const hasBelow = new Set([...above.values()].filter((id): id is string => id !== undefined));
   const depthOf = (id: string) => {
@@ -151,10 +154,10 @@ export async function checkProvisioning(
   if (expected.roots !== undefined && roots.length !== expected.roots)
     say(
       'warn',
-      `The tree has ${plural(roots.length, 'root', 'roots')} where ${expected.roots} ${expected.roots === 1 ? 'was' : 'were'} expected. Check the parent links. Roots: ${some(roots.map(id => UNIT + id)) || 'none'}.`,
+      `The tree has ${plural(roots.length, 'root', 'roots')} where ${expected.roots} ${expected.roots === 1 ? 'was' : 'were'} expected. Check the parent links. Roots: ${some(roots.map(id => UNIT_KEY + id)) || 'none'}.`,
     );
   // A unit with units below it may be a heading nobody is placed on; one without is a unit somebody should be in.
-  const empty = [...units.filter(g => !hasBelow.has(g.externalId!.slice(UNIT.length))), ...managers].filter(
+  const empty = [...units.filter(g => !hasBelow.has(g.externalId!.slice(UNIT_KEY.length))), ...managers].filter(
     g => !membersOf.get(g.id),
   );
   if (empty.length)
@@ -166,10 +169,10 @@ export async function checkProvisioning(
   // Deactivated people lead nobody and are counted nowhere, as Administration › Organisation reads the same tree.
   const activeIn = new Map<string, number>();
   for (const u of active) for (const g of u.groups ?? []) activeIn.set(g.value, (activeIn.get(g.value) ?? 0) + 1);
-  const led = new Set(managers.filter(g => activeIn.get(g.id)).map(g => g.externalId!.slice(MANAGER.length)));
+  const led = new Set(managers.filter(g => activeIn.get(g.id)).map(g => g.externalId!.slice(MANAGER_KEY.length)));
   const leaderless = units.filter(g => {
     if (!activeIn.get(g.id)) return false;
-    let at: string | undefined = g.externalId!.slice(UNIT.length);
+    let at: string | undefined = g.externalId!.slice(UNIT_KEY.length);
     for (let hops = 0; at !== undefined && hops <= above.size; at = above.get(at), hops++)
       if (led.has(at)) return false;
     return true;
@@ -182,8 +185,9 @@ export async function checkProvisioning(
   // Stored before the server began refusing them (D96): they mean nothing, and the next write of them is refused.
   const miswritten = groups.filter(g => {
     const key = g.externalId ?? '',
-      prefix = RESERVED.find(p => key.toLowerCase().startsWith(p));
-    if (!prefix) return key.toLowerCase() === 'protected';
+      prefix = reservedScimGroupKey(key);
+    if (!prefix) return false;
+    if (prefix === PROTECTED_KEY) return true;
     const rest = key.slice(prefix.length);
     return !key.startsWith(prefix) || !rest || rest !== rest.trim();
   });

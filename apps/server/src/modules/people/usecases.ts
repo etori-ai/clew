@@ -21,6 +21,7 @@ import {
   type UsersAdminQueryType,
   USERS_PAGE_SIZES,
 } from '@clew/contracts';
+import { MANAGER_KEY, UNIT_KEY } from '@clew/contracts/scim-group-key';
 import { ForbiddenError, InputError } from '../../context';
 import { SCIM, ScimError, type ScimGroup, type ScimList, type ScimUser } from './contracts';
 import {
@@ -47,8 +48,6 @@ import {
   unitOfKey,
   userFields,
   userResource,
-  MANAGER_KEY,
-  UNIT_KEY,
   type Derived,
   type GroupFields,
   type GroupRecord,
@@ -149,7 +148,6 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
       }),
   };
 }
-export type ProvisioningUsecases = ReturnType<typeof provisioningUsecases>;
 
 /**
  * The SCIM 2.0 server (RFC 7644; D68): one use case per operation, the provisioner first. Each mutation runs in one
@@ -294,8 +292,15 @@ export function scimUsecases(deps: {
     if ((await tx.unitLabels([id], p.organisationId))[id] !== fields.label)
       await tx.writeUnits(p.organisationId, [{ id, label: fields.label }]);
   };
-  const userView = async (tx: ProvisionTx, record: UserRecord, base: string) =>
-    userResource(record, await tx.userGroups(record.id), base);
+  /**
+   * A person's groups are not read when the client asked to have them left out. The daily comparison lists everybody
+   * with three attributes, and reading each person's groups for it was one query a person to answer nothing.
+   */
+  const userView = async (tx: ProvisionTx, record: UserRecord, base: string, projection?: Projection) =>
+    project(
+      userResource(record, leavesOut(projection, 'groups') ? [] : await tx.userGroups(record.id), base),
+      projection,
+    );
   /** The members are not read when the client asked to have them left out (Entra does, for large groups). */
   const groupView = async (tx: ProvisionTx, record: GroupRecord, base: string, projection?: Projection) =>
     project(
@@ -383,13 +388,12 @@ export function scimUsecases(deps: {
     // Only who comes is asked about: who is already in the group was asked about when they came.
     await membersExist(tx, p, added);
     if (!renamed && !moved && !added.length && !removed.length) return groupView(tx, current, base);
-    if (renamed || moved)
-      await tx.updateGroup(current.id, {
-        externalId: fields.externalId,
-        label: fields.label,
-        parentUnitId: fields.parent,
-        updatedAt: at,
-      });
+    // The time of the change is the group's whoever caused it: a member who came or went changes the resource a
+    // client reads, and `meta.lastModified` once went back to the old time on the next read (RFC 7643 §3.1).
+    await tx.updateGroup(current.id, {
+      ...(renamed || moved ? { externalId: fields.externalId, label: fields.label, parentUnitId: fields.parent } : {}),
+      updatedAt: at,
+    });
     if (added.length || removed.length) await tx.setGroupMembers(current.id, fields.members);
     await tx.audit({
       actor: actorOf(p),
@@ -423,7 +427,6 @@ export function scimUsecases(deps: {
     );
   }
   return {
-    ...derivation,
     /**
      * The provisioner behind a bearer token, or undefined when none is active for it. Being seen is recorded: the
      * time at most once a minute, and an audit row (`provisioner.seen`) when a run begins, which is the one trace a
@@ -471,7 +474,7 @@ export function scimUsecases(deps: {
         return userResource(record, [], base);
       }),
     getUser: (p: Provisioner, id: string, base: string, projection?: Projection) =>
-      deps.store.transaction(async tx => project(await userView(tx, await userOr404(tx, p, id), base), projection)),
+      deps.store.transaction(async tx => userView(tx, await userOr404(tx, p, id), base, projection)),
     listUsers: (p: Provisioner, query: ScimQuery, base: string): Promise<ScimList<ScimUser>> =>
       deps.store.transaction(async tx => {
         const filter = parseFilter(query.filter, ['userName', 'externalId']) as
@@ -479,7 +482,7 @@ export function scimUsecases(deps: {
           page = pageOf(query);
         const listed = await tx.listUsers(p.organisationId, page, filter);
         const Resources: ScimUser[] = [];
-        for (const row of listed.rows) Resources.push(project(await userView(tx, row, base), query));
+        for (const row of listed.rows) Resources.push(await userView(tx, row, base, query));
         return {
           schemas: [SCIM.list],
           totalResults: listed.total,

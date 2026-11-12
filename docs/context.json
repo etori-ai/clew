@@ -3892,6 +3892,20 @@
       ]
     },
     {
+      "path": "docs/reviews/2026-11-12-outside-review-of-the-merged-scim-server.md",
+      "title": "Review: an outside reading of the merged SCIM server and its example provisioner · 2026-11-12",
+      "category": "review-history",
+      "headings": [
+        "Question",
+        "Assessment",
+        "Findings and what was done",
+        "What the review does not say",
+        "Left as it is",
+        "Follow-up on PR 36",
+        "Outcome"
+      ]
+    },
+    {
       "path": "docs/reviews/README.md",
       "title": "Reviews and explorations",
       "category": "review-history",

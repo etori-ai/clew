@@ -1,5 +1,3 @@
-import { Type, type Static } from 'typebox';
-
 /**
  * The SCIM 2.0 contract Clew serves (RFC 7643, RFC 7644; D68): the names, the error and the resources it answers.
  * What a provisioner may send is read in `domain.ts`, attribute by attribute and the same way for a full

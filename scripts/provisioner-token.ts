@@ -14,6 +14,7 @@ import { database, closeDatabase } from '@clew/db';
 import { provisioners } from '@clew/db/auth';
 import { writeAudit } from '@clew/db/threads';
 import { randomToken, tokenDigest } from '../apps/server/src/auth-crypto';
+import { postgresProvisionStore } from '../apps/server/src/modules/people/adapters/postgres';
 
 const USAGE =
   'Usage: bun scripts/provisioner-token.ts add <id> --organisation <organisationId> --label "<text>" | list | rotate <id> [--grace-hours <n>] | revoke <id>';
@@ -49,31 +50,22 @@ try {
       label = option('label') ?? id!;
     if (!organisationId) throw new Error('--organisation is required: the organisation this provisioner fills.');
     const token = randomToken();
-    await database().transaction(async tx => {
-      const [existing] = await tx
-        .select({ id: provisioners.id })
-        .from(provisioners)
-        .where(and(eq(provisioners.id, id!), isNull(provisioners.revokedAt)));
-      if (existing)
-        throw new Error(
-          `Provisioner '${id}' already has an active token; use 'rotate ${id}' to replace it without a gap, or revoke it first.`,
-        );
-      const fresh = {
+    // Issued by the store's own operation, the one the users page issues with (D107): the id is taken or not in the
+    // write itself, so of two issues at once one is refused. This script used to look first and write afterwards.
+    await postgresProvisionStore().transaction(async tx => {
+      const issued = await tx.issueProvisioner({
+        id: id!,
         organisationId,
         label,
         tokenDigest: tokenDigest(token),
         createdBy: 'bootstrap:cli',
-        createdAt: new Date(),
-        revokedAt: null,
-        lastSeenAt: null,
-        previousTokenDigest: null,
-        previousValidUntil: null,
-      };
-      await tx
-        .insert(provisioners)
-        .values({ id: id!, ...fresh })
-        .onConflictDoUpdate({ target: provisioners.id, set: fresh });
-      await writeAudit(tx, {
+        createdAt: new Date().toISOString(),
+      });
+      if (!issued)
+        throw new Error(
+          `Provisioner '${id}' already has an active token, or the id is another organisation's; use 'rotate ${id}' to replace a token without a gap, revoke it first, or choose another id.`,
+        );
+      await tx.audit({
         actor: 'bootstrap:cli',
         action: 'provisioner.added',
         subject: 'provisioner:' + id,
