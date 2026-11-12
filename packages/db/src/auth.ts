@@ -1,5 +1,5 @@
 import { and, eq, gt, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
-import { database, type Transaction } from './index';
+import { database, type Database, type Transaction } from './index';
 import {
   people,
   accessGrants,
@@ -90,31 +90,33 @@ export interface SignIn {
  * bound here, and the sign-in is refused with `identity-conflict` naming both, the claim's value and the subject, and
  * nothing is rebound (L2); an operator settles it with `scripts/identity-rebind.ts`. A claim that names nobody, or no
  * claim, does not refuse: the subject is the identity, and the provider may rename before Clew does. A subject seen for
- * the first time binds by the claim (`bindFirstLogin`). Compared at each sign-in, never on each request.
+ * the first time binds by the claim (`bindFirstLogin`). Compared at each sign-in, never on each request. `db` is the
+ * server's pool unless a test names another database.
  */
 export async function signIn(
   issuer: string,
   subject: string,
   claim: string,
   value: string | undefined,
+  db: Database = database(),
 ): Promise<SignIn> {
   const name = value?.normalize('NFC');
-  const [bound] = await database()
+  const [bound] = await db
     .select({ personId: identityBindings.personId })
     .from(identityBindings)
     .where(and(eq(identityBindings.issuer, issuer), eq(identityBindings.subject, subject)));
-  if (!bound) return name ? bindFirstLogin(issuer, subject, claim, name) : {};
+  if (!bound) return name ? bindFirstLogin(issuer, subject, claim, name, db) : {};
   if (name) {
-    const named = await database().select({ id: people.id }).from(people).where(sameUserName(name));
+    const named = await db.select({ id: people.id }).from(people).where(sameUserName(name));
     const [claimed] = named;
     if (claimed && !named.some(p => p.id === bound.personId)) {
-      await database().transaction(tx =>
+      await db.transaction(tx =>
         refuseConflict(tx, { issuer, claim, value: name, subject, claimed: claimed.id, holder: bound.personId }),
       );
       return { personId: bound.personId };
     }
   }
-  return accessOf(database(), bound.personId);
+  return accessOf(db, bound.personId);
 }
 async function accessOf(db: Reader, personId: string): Promise<SignIn> {
   const access = await readAccess(personId, db);
@@ -144,20 +146,26 @@ async function refuseConflict(
   });
 }
 /**
- * First login (D68 item 6): the verified subject binds to the one enabled, provisioned person whose `userName` equals the
- * configured claim's value (`sameUserName`). Exactly one match, never an e-mail address, one binding per person and
+ * First login (D68 item 6): the verified subject binds to the one enabled, provisioned person whose `userName` equals
+ * the configured claim's value (`sameUserName`). Exactly one match, never an e-mail address, one binding per person and
  * issuer; a subject that differs from the person's binding, or that another person holds, is refused and audited,
  * because a change of subject needs an operator (`scripts/identity-rebind.ts`). Everything it reads, the access
  * included, goes through its own transaction: a second connection asked for inside it waits for the pool, and enough
  * first sign-ins at once held every connection while waiting for one (L1).
  */
-export async function bindFirstLogin(issuer: string, subject: string, claim: string, value: string): Promise<SignIn> {
+export async function bindFirstLogin(
+  issuer: string,
+  subject: string,
+  claim: string,
+  value: string,
+  db: Database = database(),
+): Promise<SignIn> {
   const name = value.normalize('NFC');
-  return database().transaction(async tx => {
+  return db.transaction(async tx => {
     const matches = await tx.select({ id: people.id, enabled: people.enabled }).from(people).where(sameUserName(name));
     const [person] = matches;
     if (matches.length !== 1 || !person || !person.enabled) {
-      // The claim is the account name the IdP vouched for, not a person Clew knows; it is what an operator needs to see.
+      // The claim is the account name the IdP vouched for, not a person Clew knows: what an operator needs to see.
       await tx.insert(authenticationAudit).values({ action: 'identity-unmatched', actor: 'claim:' + name });
       return matches.length === 1 && person ? { personId: person.id } : {};
     }

@@ -1,19 +1,22 @@
 import { afterAll, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { and, eq, inArray, like } from 'drizzle-orm';
+import { resolve } from 'node:path';
+import { and, eq, inArray, like, sql } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { database, schema } from '../../packages/db/src/index';
 import { bindFirstLogin, signIn } from '../../packages/db/src/auth';
 
 /**
  * Binding at sign-in (D68 item 6) on PostgreSQL. A first login binds the verified subject to the one enabled person
- * whose userName equals the claim, without regard to case and folded under ICU, so Å and å are one letter on a C-locale
- * database too (L13). A later sign-in is the bound person unless the claim names another person (L2). A changed
- * subject, a subject another person holds and a claim that names someone else are refused with `identity-conflict` on
- * the claimed person, and its `identity.conflict` audit row carries the claim's value, the refused subject and whoever
- * holds that subject (L10). An unknown, disabled or e-mail claim is `identity-unmatched` with the claim value. A
- * refused sign-in returns the person it concerned, when one is known, for the `login-denied` row the server writes; a
- * bound person without a grant is refused that way, with no row here. Run with `bun run test:db` inside the
- * devcontainer.
+ * whose userName equals the claim, without regard to case and folded under ICU, so Å and å are one letter on a
+ * database created with the C locale too, which one case creates for itself (L13). A later sign-in is the bound person
+ * unless the claim names another person (L2). A changed subject, a subject another person holds and a claim that names
+ * someone else are refused with `identity-conflict` on the claimed person, and its `identity.conflict` audit row
+ * carries the claim's value, the refused subject and whoever holds that subject (L10). An unknown, disabled or e-mail
+ * claim is `identity-unmatched` with the claim value. A refused sign-in returns the person it concerned, when one is
+ * known, for the `login-denied` row the server writes; a bound person without a grant is refused that way, with no row
+ * here. Run with `bun run test:db` inside the devcontainer.
  */
 if (!process.env.DATABASE_URL)
   throw new Error('DATABASE_URL is not set. Run `bun run test:db` inside the devcontainer.');
@@ -111,7 +114,7 @@ test('the first login binds exactly one enabled person by userName and audits it
   expect(await signIn(issuer, 'sub-bo', claim, prefix + ':bo')).toEqual({ personId: bo });
   expect(await actions()).toEqual(['identity-bound anna', 'identity-bound bo']);
 });
-test('Å and å are one letter, and a decomposed claim is the same name, on a C-locale database too', async () => {
+test('Å and å are one letter, and a decomposed claim is the same name', async () => {
   expect((await signIn(issuer, 'sub-asa', claim, prefix + ':åsa.öberg')).access?.person.id).toBe(asa);
   expect(await holderOf('sub-asa')).toBe(asa);
   // A later sign-in whose claim is the same name in capitals and decomposed (NFD) is still the bound person.
@@ -120,6 +123,35 @@ test('Å and å are one letter, and a decomposed claim is the same name, on a C-
   expect((await signIn(issuer, 'sub-asa', claim, decomposed)).access?.person.id).toBe(asa);
   expect((await actions()).filter(a => a.endsWith(' asa'))).toEqual(['identity-bound asa']);
 });
+test('Å and å are one letter on a database created with the C locale, where lower() folds only A to Z', async () => {
+  // A database of its own, created with the C locale and migrated, since the suite's database may fold Å by itself.
+  const name = 'clew_test_c_locale_' + randomUUID().replaceAll('-', '').slice(0, 12),
+    url = new URL(process.env.DATABASE_URL!);
+  url.pathname = '/' + name;
+  await db.execute(sql.raw(`create database ${name} template template0 encoding 'UTF8' locale 'C'`));
+  const c = drizzle({ connection: { url: url.toString(), max: 2, onnotice: () => undefined } });
+  try {
+    const [locale] = await c.execute<{ collation: string; folds: boolean }>(
+      sql`select datcollate as collation, lower('Å') = 'å' as folds from pg_database where datname = current_database()`,
+    );
+    expect(locale).toEqual({ collation: 'C', folds: false });
+    await migrate(c, { migrationsFolder: resolve(import.meta.dir, '../../packages/db/migrations') });
+    await c
+      .insert(schema.people)
+      .values({ id: asa, organisationId: 'test', name: 'Åsa Öberg', userName: prefix + ':Åsa.Öberg', externalId: asa });
+    await c
+      .insert(schema.accessGrants)
+      .values({ personId: asa, unitId: 'u', unitLabel: 'U', role: 'employee', capabilities: [] });
+    expect((await signIn(issuer, 'sub-asa', claim, prefix + ':åsa.öberg', c)).access?.person.id).toBe(asa);
+    const decomposed = (prefix + ':ÅSA.ÖBERG').normalize('NFD');
+    expect((await signIn(issuer, 'sub-asa', claim, decomposed, c)).access?.person.id).toBe(asa);
+    const bound = await c.select().from(schema.authenticationAudit);
+    expect(bound.map(a => a.action + ' ' + a.actor)).toEqual(['identity-bound person:' + asa]);
+  } finally {
+    await c.$client.end();
+    await db.execute(sql.raw(`drop database if exists ${name} with (force)`));
+  }
+}, 30_000);
 test('a changed subject, an unknown, disabled or e-mail claim and a subject another person holds are refused', async () => {
   // Anna's subject changed: refused, and the audit row carries the claim's value and the refused subject.
   expect(await signIn(issuer, 'sub-anna-2', claim, prefix + ':anna')).toEqual({ personId: anna });
