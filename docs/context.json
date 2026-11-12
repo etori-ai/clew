@@ -3959,6 +3959,22 @@
       ]
     },
     {
+      "path": "docs/reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md",
+      "title": "Review: users, the organisation and the provisioning guides, in two rounds · 2026-11-12",
+      "category": "review-history",
+      "headings": [
+        "Question",
+        "Method",
+        "Assessment",
+        "Findings",
+        "Decisions the fixes need",
+        "Recommended order",
+        "Found in passing, outside the area",
+        "Left as it is",
+        "Outcome"
+      ]
+    },
+    {
       "path": "docs/reviews/README.md",
       "title": "Reviews and explorations",
       "category": "review-history",
