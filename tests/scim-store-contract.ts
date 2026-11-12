@@ -280,14 +280,14 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
       });
       await store.transaction(async tx => {
         // As the first sign-in, the uniqueness check and the D97 lookup ask, across the installation, and as a filter.
-        expect((await tx.findUser('userName', folded))?.id).toBe(a);
-        expect((await tx.findUser('userName', name.toUpperCase()))?.id).toBe(a);
-        expect((await tx.listUsers(org, every, { attribute: 'userName', value: folded })).rows.map(r => r.id)).toEqual([
-          a,
-        ]);
-        expect(
-          (await tx.listGroups(org, every, { attribute: 'label', value: 'åsa öbergs ängar' })).rows.map(r => r.id),
-        ).toEqual([g]);
+        // In lower case and in capitals, so that each side's folding is shown: a value in capitals that is not folded
+        // as the stored name is misses it on a database created with the locale C.
+        for (const value of [folded, name.toUpperCase()]) {
+          expect((await tx.findUser('userName', value))?.id).toBe(a);
+          expect((await tx.listUsers(org, every, { attribute: 'userName', value })).rows.map(r => r.id)).toEqual([a]);
+        }
+        for (const value of ['åsa öbergs ängar', 'ÅSA ÖBERGS ÄNGAR'])
+          expect((await tx.listGroups(org, every, { attribute: 'label', value })).rows.map(r => r.id)).toEqual([g]);
       });
       // The index holds the two spellings as one name, inserted or updated: a second person past the use case's
       // check is refused, and the route answers 409 naming userName.

@@ -5,6 +5,7 @@ import { database, schema } from '../../packages/db/src/index';
 import { bindFirstLogin } from '../../packages/db/src/auth';
 import { postgresProvisionStore } from '../../apps/server/src/modules/people/adapters/postgres';
 import { scimUsecases } from '../../apps/server/src/modules/people/usecases';
+import { cLocaleDatabase } from './c-locale';
 
 /**
  * One user name in one Unicode form, NFC, from the source to the sign-in (L12), on PostgreSQL. The SCIM boundary
@@ -73,17 +74,38 @@ test('a user name sent decomposed is stored composed, found by a filter in eithe
     scimType: 'uniqueness',
   });
 });
-test('a user name that differs only in the case of å, ä or ö is the same name: a filter finds the person and a second POST answers 409 (L13)', async () => {
-  // A plain `lower` folds only A to Z on a database created with the locale C, where the two were two people.
-  const created = await scim.createUser(p, user(20, `${prefix}.Åsa.Öberg`), BASE);
-  expect(
-    (await scim.listUsers(p, { filter: `userName eq "${prefix}.åsa.öberg"` }, BASE)).Resources.map(u => u.id),
-  ).toEqual([created.id]);
-  await expect(scim.createUser(p, user(21, `${prefix}.åsa.öberg`), BASE)).rejects.toMatchObject({
+/** A user name that differs only in the case of å, ä or ö is the same name, to a filter and to a second POST (L13). */
+async function oneNameInEitherCase(on: ReturnType<typeof scimUsecases>, n: number) {
+  const created = await on.createUser(p, user(n, `${prefix}.Åsa.Öberg`), BASE);
+  for (const value of [`${prefix}.åsa.öberg`, `${prefix}.ÅSA.ÖBERG`])
+    expect((await on.listUsers(p, { filter: `userName eq "${value}"` }, BASE)).Resources.map(u => u.id)).toEqual([
+      created.id,
+    ]);
+  await expect(on.createUser(p, user(n + 1, `${prefix}.åsa.öberg`), BASE)).rejects.toMatchObject({
     status: 409,
     scimType: 'uniqueness',
   });
+}
+test('a user name that differs only in the case of å, ä or ö is the same name: a filter finds the person and a second POST answers 409 (L13)', async () => {
+  await oneNameInEitherCase(scim, 20);
 });
+test('the same on a database created with the locale C, where a plain lower() folds only A to Z (L13)', async () => {
+  // The suite's database folds å, ä and ö by itself, so only this one shows a comparison that leaves it the folding.
+  const c = await cLocaleDatabase();
+  try {
+    await oneNameInEitherCase(
+      scimUsecases({
+        store: postgresProvisionStore(c.db),
+        clock: () => new Date(),
+        ids: () => `${prefix}-${++seq}`,
+        digest: (token: string) => token,
+      }),
+      30,
+    );
+  } finally {
+    await c.drop();
+  }
+}, 30_000);
 test('the first sign-in binds the person whichever form the source and the identity provider each send the name in', async () => {
   const cases = [
     // Both send it decomposed: what matched before names were kept composed, and must still match.

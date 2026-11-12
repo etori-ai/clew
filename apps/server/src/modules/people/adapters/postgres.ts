@@ -1,5 +1,5 @@
 import { and, eq, gt, inArray, isNotNull, isNull, like, not, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
-import { database, schema, type Transaction } from '@clew/db';
+import { database, schema, type Database, type Transaction } from '@clew/db';
 import { writeAudit } from '@clew/db/threads';
 import { UNIT_KEY } from '@clew/contracts/scim-group-key';
 import { unitGroupOf, type GroupRecord, type UserRecord, type UserSearch } from '../domain';
@@ -151,8 +151,11 @@ const provisionerRecord = (r: { id: string; organisationId: string; label: strin
   ...r,
   lastSeenAt: r.lastSeenAt?.toISOString() ?? null,
 });
-/** The provisioning tables and the grant projection (D68, D85) inside one Postgres transaction. */
-export function postgresProvisionStore(): ProvisionStore {
+/**
+ * The provisioning tables and the grant projection (D68, D85) inside one Postgres transaction. `db` is the server's
+ * pool unless a test names another database, as the store contract does with one created with the locale C (L13).
+ */
+export function postgresProvisionStore(db?: Database): ProvisionStore {
   const txOf = (tx: Transaction): ProvisionTx => ({
     async lockPerson(id) {
       const [row] = await tx
@@ -670,5 +673,5 @@ export function postgresProvisionStore(): ProvisionStore {
       return removed.length > 0;
     },
   });
-  return { transaction: fn => database().transaction(tx => fn(txOf(tx))) };
+  return { transaction: fn => (db ?? database()).transaction(tx => fn(txOf(tx))) };
 }
