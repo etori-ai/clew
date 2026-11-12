@@ -751,9 +751,16 @@ const memberIds = (value: unknown): string[] =>
         'members.value',
       ),
     );
-export function groupFields(body: unknown): GroupFields {
+/**
+ * A full group representation (POST, PUT) to the fields Clew holds. `current` is the group a `PUT` replaces: an
+ * `externalId` the body leaves out, sends as `null` or sends empty is the one Clew holds, for every group as for a user
+ * (D113 rule 3). Read as no key, it once took a unit's key, and the grants and mappings it gave, away with a 200; only a
+ * `PATCH` that removes the key or sets it to `null` takes it away. A `POST` needs a key: a group without one can never
+ * be mapped or found again, and the next `POST` of it would make another.
+ */
+export function groupFields(body: unknown, current?: Pick<GroupFields, 'externalId'>): GroupFields {
   const input = asResource(body, GROUP_NAMES, 'Group');
-  const externalId = optional(input.externalId, 'externalId') ?? null;
+  const externalId = optional(input.externalId, 'externalId') ?? (current ? current.externalId : need('externalId'));
   if (unitGroupOf(externalId) !== undefined && Object.keys(input).some(isBareParent)) throw bareParent();
   const extension = Object.entries(input).find(([name]) => unitExtensionTarget(name) === 'extension');
   return {

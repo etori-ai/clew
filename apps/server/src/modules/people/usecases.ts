@@ -624,9 +624,10 @@ export function scimUsecases(deps: {
         };
       }),
     replaceGroup: (p: Provisioner, id: string, body: unknown, base: string) =>
-      deps.store.transaction(async tx =>
-        writeGroup(tx, p, await groupOr404(tx, p, id, true), groupFields(body), 'scim.group.replaced', base),
-      ),
+      deps.store.transaction(async tx => {
+        const current = await groupOr404(tx, p, id, true);
+        return writeGroup(tx, p, current, groupFields(body, current), 'scim.group.replaced', base);
+      }),
     patchGroup: (p: Provisioner, id: string, body: unknown, base: string) =>
       deps.store.transaction(async tx => {
         // Locked before its members are read: a patch is a read and a write, and two of them must not interleave.

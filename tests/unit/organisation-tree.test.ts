@@ -250,13 +250,17 @@ describe('the organisation tree over SCIM (D99)', () => {
       });
     }
     await unit('ksk', 'Kommunstyrelsekontoret', null);
-    for (const externalId of ['unit-manager:ksk-it', 'capability:admin.users', 'ad:plain', undefined]) {
+    for (const externalId of ['unit-manager:ksk-it', 'capability:admin.users', 'ad:plain']) {
       const misplaced = await refusal(
         scim.createGroup(p, { externalId, displayName: 'Other', [SCIM.unit]: { parent: 'unit:ksk' } }, BASE),
       );
       expect(misplaced).toMatchObject({ status: 400, scimType: 'invalidValue' });
       expect(misplaced.detail).toContain("carried by a 'unit:' group only");
     }
+    // A group without a key is no group a POST makes (S2), parent or not.
+    expect(
+      await refusal(scim.createGroup(p, { displayName: 'Other', [SCIM.unit]: { parent: 'unit:ksk' } }, BASE)),
+    ).toMatchObject({ status: 400, scimType: 'invalidValue', detail: "Attribute 'externalId' is required." });
     expect((await refusal(unit('ksk-it', 'IT', 'ksk-it'))).detail).toContain('cannot be its own parent');
     // Another organisation's unit is no parent here, and the refusal does not say that it exists.
     const other = { id: 'other', organisationId: 'timra', label: 'Timrå' };
@@ -420,6 +424,23 @@ describe('the organisation tree over SCIM (D99)', () => {
       expect(rekeyed).toMatchObject({ status: 400, scimType: 'invalidValue' });
       expect(rekeyed.detail).toContain("The unit 'ksk' still has 2 units below it");
     }
+    // A PATCH that takes the key away is refused the same way; a PUT that leaves it out keeps it, and the tree (S2).
+    const unkeyed = await refusal(
+      scim.patchGroup(
+        p,
+        groups.get('ksk')!,
+        { schemas: [SCIM.patch], Operations: [{ op: 'remove', path: 'externalId' }] },
+        BASE,
+      ),
+    );
+    expect(unkeyed).toMatchObject({ status: 400, scimType: 'invalidValue' });
+    expect(unkeyed.detail).toContain("The unit 'ksk' still has 2 units below it");
+    for (const externalId of [undefined, null, ''])
+      expect(
+        (await scim.replaceGroup(p, groups.get('ksk')!, { externalId, displayName: 'Kommunstyrelsekontoret' }, BASE))
+          .externalId,
+      ).toBe('unit:ksk');
+    expect((await scim.getGroup(p, groups.get('it')!, BASE))[SCIM.unit]).toEqual({ parent: 'unit:ksk' });
     expect(store.state.groups.get(groups.get('ksk')!)?.externalId).toBe('unit:ksk');
     await scim.deleteGroup(p, groups.get('it')!);
     expect((await refusal(scim.deleteGroup(p, groups.get('ksk')!))).detail).toContain(

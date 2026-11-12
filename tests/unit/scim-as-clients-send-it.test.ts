@@ -776,15 +776,23 @@ describe('null is the same as absent (RFC 7643 §2.5)', () => {
     // `active: null` is absent, which enables as a body without it does.
     expect((await json('PUT', '/Users/' + id, { ...person(1), active: null })).body.active).toBe(true);
     const member = await create(2);
-    const group = await json('POST', '/Groups', {
+    const plain = {
       schemas: [GROUP],
       externalId: null,
       displayName: 'Plain',
       members: [{ value: member, display: null, $ref: null }, null],
       [UNIT]: null,
+    };
+    // A key of null is no key, and a POST needs one (S2).
+    expect(await json('POST', '/Groups', plain)).toMatchObject({
+      status: 400,
+      body: { scimType: 'invalidValue', detail: "Attribute 'externalId' is required." },
     });
+    const group = await json('POST', '/Groups', { ...plain, externalId: 'ad:plain' });
     expect(group).toMatchObject({ status: 201, body: { displayName: 'Plain', members: [{ value: member }] } });
-    expect((await json('POST', '/Groups', { displayName: 'Empty', members: null })).status).toBe(201);
+    expect(
+      (await json('POST', '/Groups', { externalId: 'ad:empty', displayName: 'Empty', members: null })).status,
+    ).toBe(201);
   });
   test('in a patch, null takes the attribute away: a title is cleared, a required one is refused, and a path of null is no path', async () => {
     const { create, patch, group } = app();
@@ -1493,5 +1501,86 @@ describe('what the review of users, the organisation and the guides found (2026-
         expect(answer).toMatchObject({ status: 400, body: { scimType: 'invalidValue', detail } });
     expect((await json('GET', path)).body[UNIT]).toEqual({ parent: 'unit:root' });
     expect(logged).toEqual([]);
+  });
+  test('a group PUT that leaves the key out, or sends it null or empty, keeps the one Clew holds, for every group; a POST without one is refused, and only a PATCH remove or null takes it away (S2)', async () => {
+    const { json, patch, create, group, store } = app();
+    const person = await create(1);
+    store.state.groupCapabilities.push({
+      organisationId: 'org',
+      groupExternalId: 'ad:admins',
+      capability: 'admin.users',
+    });
+    const keys = ['unit:skola', 'unit-manager:skola', 'capability:admin.connectors', 'ad:admins', 'ad:audience'];
+    const ids = new Map<string, string>();
+    for (const externalId of keys)
+      ids.set(externalId, await group({ externalId, displayName: externalId, members: [{ value: person }] }));
+    const granted = structuredClone(store.state.grants.get(person));
+    expect(granted).toEqual({
+      unitId: 'skola',
+      unitLabel: 'unit:skola',
+      role: 'manager',
+      capabilities: ['admin.connectors', 'admin.users'],
+    });
+    // A reconciliation that sends every group without its key, as Okta's update sends a user without one.
+    for (const externalId of keys)
+      for (const sent of [{}, { externalId: null }, { externalId: '' }]) {
+        const answer = await json('PUT', '/Groups/' + ids.get(externalId), {
+          schemas: [GROUP],
+          ...sent,
+          displayName: externalId,
+          members: [{ value: person }],
+        });
+        expect([answer.status, answer.body.externalId]).toEqual([200, externalId]);
+      }
+    expect(store.state.grants.get(person)).toEqual(granted);
+    expect(store.state.audit.filter(row => row.action === 'scim.group.replaced')).toEqual([]);
+    // Only space is no key Clew can hold, as for a user.
+    expect(
+      await json('PUT', '/Groups/' + ids.get('ad:audience'), { displayName: 'ad:audience', externalId: ' ' }),
+    ).toMatchObject({
+      status: 400,
+      body: {
+        scimType: 'invalidValue',
+        detail: "Attribute 'externalId' needs a non-empty string of at most 512 characters.",
+      },
+    });
+    // A POST without a key would make a group nobody can map or find again, and the next one another.
+    const groups = store.state.groups.size,
+      rows = store.state.audit.length;
+    for (const sent of [{}, { externalId: null }, { externalId: '' }])
+      expect(
+        await json('POST', '/Groups', {
+          schemas: [GROUP],
+          ...sent,
+          displayName: 'Utan nyckel',
+          members: [{ value: person }],
+        }),
+      ).toMatchObject({
+        status: 400,
+        body: { scimType: 'invalidValue', detail: "Attribute 'externalId' is required." },
+      });
+    expect([store.state.groups.size, store.state.audit.length]).toEqual([groups, rows]);
+    // A PATCH that sets the key empty is refused; one that removes it, or sets it to null, takes it away.
+    const audience = '/Groups/' + ids.get('ad:audience');
+    expect(await patch(audience, { op: 'replace', path: 'externalId', value: '' })).toMatchObject({
+      status: 400,
+      body: { scimType: 'invalidValue' },
+    });
+    expect((await json('GET', audience)).body.externalId).toBe('ad:audience');
+    const removed = await patch(audience, { op: 'remove', path: 'externalId' });
+    expect(removed.status).toBe(200);
+    expect(removed.body).not.toHaveProperty('externalId');
+    // A group that has no key keeps none through a PUT that sends none.
+    const kept = await json('PUT', audience, { displayName: 'ad:audience', members: [{ value: person }] });
+    expect(kept.status).toBe(200);
+    expect(kept.body).not.toHaveProperty('externalId');
+    const cleared = await patch('/Groups/' + ids.get('ad:admins'), { op: 'replace', path: 'externalId', value: null });
+    expect(cleared.body).not.toHaveProperty('externalId');
+    expect(store.state.grants.get(person)?.capabilities).toEqual(['admin.connectors']);
+    expect(store.state.audit.at(-1)).toMatchObject({
+      action: 'grant.derived',
+      subject: 'person:' + person,
+      details: { capabilities: ['admin.connectors'] },
+    });
   });
 });
