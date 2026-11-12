@@ -1,4 +1,4 @@
-import { and, eq, gt, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, eq, gt, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 import { database, type Database, type Transaction } from './index';
 import {
   people,
@@ -345,25 +345,26 @@ export async function backchannelRevoke(input: {
       await tx.insert(authenticationAudit).values({ actor: 'person:' + row.personId, action: 'backchannel-logout' });
   });
 }
-export async function pruneAuthentication() {
-  const now = new Date();
-  await database().delete(loginTransactions).where(lte(loginTransactions.expiresAt, now));
-  await database().delete(logoutReceipts).where(lte(logoutReceipts.expiresAt, now));
-  await database().transaction(async tx => {
-    const expired = await tx
-      .update(sessions)
-      .set({ revokedAt: now, tokens: '' })
-      .where(and(isNull(sessions.revokedAt), or(lte(sessions.expiresAt, now), lte(sessions.idleExpiresAt, now))))
-      .returning({ personId: sessions.personId });
-    if (expired.length)
-      await tx
-        .insert(authenticationAudit)
-        .values(expired.map(row => ({ actor: 'person:' + row.personId, action: 'expired' })));
+/**
+ * The nightly clean-up of sign-in machinery (D117; L3 of the 2026-11-12 users review), in one transaction: every
+ * session past either expiry is removed with its sealed tokens, and one that was still open is ended with an `expired`
+ * row in the authentication log; login transactions and logout receipts past their expiry are removed. The
+ * authentication log itself is kept, since how long sign-in history is kept is the organisation's decision (Q7). One
+ * statement removes the sessions and writes their rows, so however many sessions expired, it is one request. `db` is
+ * the server's pool unless a test names another database.
+ */
+export async function removeExpiredSignIns(now: Date, db: Database = database()) {
+  const at = now.toISOString();
+  await db.transaction(async tx => {
+    await tx.execute(sql`
+      with removed as (
+        delete from ${sessions}
+         where ${sessions.expiresAt} <= ${at}::timestamptz or ${sessions.idleExpiresAt} <= ${at}::timestamptz
+        returning person_id, revoked_at
+      )
+      insert into ${authenticationAudit} (actor, action)
+      select 'person:' || person_id, 'expired' from removed where revoked_at is null`);
+    await tx.delete(loginTransactions).where(lte(loginTransactions.expiresAt, now));
+    await tx.delete(logoutReceipts).where(lte(logoutReceipts.expiresAt, now));
   });
-  await database()
-    .delete(sessions)
-    .where(lte(sessions.expiresAt, new Date(Date.now() - 86400_000)));
-  await database()
-    .delete(authenticationAudit)
-    .where(lte(authenticationAudit.createdAt, new Date(Date.now() - 30 * 86400_000)));
 }

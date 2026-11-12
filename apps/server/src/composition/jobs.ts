@@ -14,16 +14,17 @@ export async function runScheduledJob(id: string): Promise<'done' | 'busy'> {
   return 'done';
 }
 /**
- * The nightly scan is scheduled at boot (idempotent by date; the job reschedules the next one when it runs). Every job
- * row starts its workflow inside the transaction that writes it (D86), so nothing here polls for delivery; the retry is
- * only for a database that is not reachable yet.
+ * The nightly scan and the nightly clean-up of sign-in data (D117) are scheduled at boot (idempotent by date; each job
+ * reschedules the next one when it runs). Every job row starts its workflow inside the transaction that writes it
+ * (D86), so nothing here polls for delivery; the retry is only for a database that is not reachable yet.
  */
 export function startJobs() {
   const seed = async () => {
     try {
       await scheduler.scheduleNightly();
+      await scheduler.scheduleCleanup();
     } catch (error) {
-      logger.error({ scope: 'scheduler', error }, 'nightly scan could not be scheduled, retrying');
+      logger.error({ scope: 'scheduler', error }, 'nightly work could not be scheduled, retrying');
       setTimeout(() => void seed(), 2000).unref();
     }
   };

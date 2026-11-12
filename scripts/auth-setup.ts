@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { rename, writeFile } from 'node:fs/promises';
 import { and, eq, isNull } from 'drizzle-orm';
 import { database, closeDatabase } from '@clew/db';
-import { ABSOLUTE_MS, IDLE_MS, people, provisioners, identityBindings, pruneAuthentication } from '@clew/db/auth';
+import { ABSOLUTE_MS, IDLE_MS, people, provisioners, identityBindings, removeExpiredSignIns } from '@clew/db/auth';
 import { insertConnector, readConnector } from '@clew/db/connectors';
 import { writeAudit } from '@clew/db/threads';
 import { randomToken, sealSecret, tokenDigest } from '../apps/server/src/auth-crypto';
@@ -336,7 +336,8 @@ try {
     AUTH_DEV_ACCOUNTS: devAccounts.join(','),
   });
   await writeSettings(testFile, { ...settings, ...testPasswords });
-  await pruneAuthentication();
+  // The server's nightly clean-up (D117), run once now so a development database starts without expired sign-in data.
+  await removeExpiredSignIns(new Date());
   console.log(
     'Keycloak realm, client and accounts are ready; each account binds to its person at first login. Secrets written to ignored, owner-only files.',
   );
