@@ -33,7 +33,8 @@ import {
   tokenDigest,
 } from './auth-crypto';
 import { delegationFor } from './auth-exchange';
-import { grantEnded, sessionRefresher } from './auth-refresh';
+import { authorizationUrl, redeemCode } from './auth-login';
+import { failureOf, grantEnded, refreshGrant, sessionRefresher } from './auth-refresh';
 import { frontendOrigins } from './auth-origin';
 
 /** Ported from startsidan `packages/platform/src/auth.ts`: Authorization Code + PKCE, opaque server session cookie, sealed tokens. */
@@ -130,16 +131,13 @@ export async function beginLogin(returnTo: string | null) {
       returnTo: localReturnTo(returnTo),
       expiresAt: new Date(Date.now() + LOGIN_TRANSACTION_MS),
     });
-  const url = oidc.buildAuthorizationUrl(config, {
-    redirect_uri: settings.callback,
+  // No `prompt` and no `max_age` (auth-login.ts): a sign-in follows the identity provider's own session (Q9).
+  const url = await authorizationUrl(config, {
+    callback: settings.callback,
     scope: settings.scope,
     state,
     nonce,
-    code_challenge: await oidc.calculatePKCECodeChallenge(verifier),
-    code_challenge_method: 'S256',
-    // No `prompt` and no `max_age`: a sign-in follows the identity provider's own session (Q9 of the 2026-11-12 users
-    // review). An organisation that wants a fresh prompt, on shared computers for example, sets it in the provider.
-    ui_locales: 'sv',
+    verifier,
   });
   return { cookie, url };
 }
@@ -152,12 +150,8 @@ export async function completeLogin(currentUrl: URL, cookie: string | undefined)
   // The request reaches the BFF through the Vite proxy on another port. The callback is always the configured public URL.
   const callback = new URL(settings.callback);
   callback.search = currentUrl.search;
-  const tokens = await oidc.authorizationCodeGrant(config, callback, {
-    pkceCodeVerifier: transaction.verifier,
-    expectedState: transaction.state,
-    expectedNonce: transaction.nonce,
-    idTokenExpected: true,
-  });
+  // The ID token's `auth_time` is not required (auth-login.ts, Q9).
+  const tokens = await redeemCode(config, callback, transaction);
   return { ...(await openSession(tokens, 'login')), returnTo: transaction.returnTo };
 }
 /**
@@ -270,24 +264,15 @@ export async function devLogin(userName: string, returnTo: string | null) {
   return { ...(await openSession(tokens, 'login-dev')), returnTo: localReturnTo(returnTo) };
 }
 /**
- * The session's IdP tokens, refreshed in their last seconds (`auth-refresh.ts`): only `invalid_grant`, a changed
- * subject, a row that is gone or tokens that can no longer be opened end the session; a provider that cannot answer
- * keeps it, and is logged at most once a minute.
+ * The session's IdP tokens, refreshed in their last seconds (`auth-refresh.ts`): only an ending answer from the
+ * provider (`grantEnded`), a changed subject, a row that is gone or tokens that can no longer be opened end the
+ * session; a provider that cannot answer keeps it, and is logged at most once a minute with its code (`failureOf`).
  */
 let refreshFailedAt = 0;
 const refresher = sessionRefresher<SessionRecord>({
   clock: Date.now,
   read: readSession,
-  async grant(refreshToken) {
-    const tokens = await oidc.refreshTokenGrant(await oidcConfiguration(), refreshToken);
-    return {
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token,
-      id_token: tokens.id_token,
-      expires_in: tokens.expires_in,
-      subject: tokens.claims()?.sub,
-    };
-  },
+  grant: refreshGrant(oidcConfiguration),
   ended: grantEnded,
   store: storeRefreshedTokens,
   async end(digest, action) {
@@ -296,18 +281,11 @@ const refresher = sessionRefresher<SessionRecord>({
   },
   open: decryptTokens,
   seal: encryptTokens,
+  sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),
   failed(error) {
     if (Date.now() - refreshFailedAt < 60_000) return;
     refreshFailedAt = Date.now();
-    const code =
-      error instanceof oidc.ResponseBodyError
-        ? error.error
-        : error instanceof oidc.ClientError && error.code
-          ? error.code
-          : error instanceof Error
-            ? error.name
-            : 'unknown';
-    logger.warn({ scope: 'auth', code }, 'token refresh failed; sessions are kept and delegation waits');
+    logger.warn({ scope: 'auth', ...failureOf(error) }, 'token refresh failed; sessions are kept and delegation waits');
   },
 });
 /**
@@ -346,11 +324,10 @@ const delegation = delegationFor({
         ...(typeof r.expires_in === 'number' ? { expires_in: r.expires_in } : {}),
       };
     } catch (e) {
-      const code = e instanceof oidc.ResponseBodyError ? e.error : e instanceof Error ? e.name : 'unknown';
       const last = exchangeFailures.get(audience) ?? 0;
       if (Date.now() - last > 60_000) {
         exchangeFailures.set(audience, Date.now());
-        logger.error({ scope: 'auth', audience, code }, 'token exchange failed');
+        logger.error({ scope: 'auth', audience, ...failureOf(e) }, 'token exchange failed');
       }
       throw new AuthError(503, 'unavailable');
     }
