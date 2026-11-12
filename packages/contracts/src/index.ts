@@ -1488,7 +1488,12 @@ export const EntityDetailSchema = object({
   profile: Type.Optional(PersonProfileSchema),
   entity: object({
     ...EntityRefSchema.properties,
-    unit: Type.Optional(object({ id: Type.String(), label: Type.String() })),
+    /**
+     * A person's unit: the reader's own for the reader, the unit the reader manages that the person is placed on, else
+     * the person's own, also for someone who reports to the reader from below (D99). `opens` when the reader may open
+     * the unit's page (`/units/<id>`): a unit they manage or belong to.
+     */
+    unit: Type.Optional(object({ id: Type.String(), label: Type.String(), opens: Type.Optional(Type.Literal(true)) })),
   }),
   relation: Type.Union([
     Type.Literal('managed'),

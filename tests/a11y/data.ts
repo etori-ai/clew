@@ -1700,7 +1700,8 @@ export function entityDetail(list: EntityList, key: string): EntityDetail | unde
   const entity = group?.entities.find(e => e.key === key);
   if (!group || !entity) return undefined;
   return {
-    entity: { ...entity, unit: { id: group.id, label: group.label } },
+    // A unit the reader manages: its page opens for them.
+    entity: { ...entity, unit: { id: group.id, label: group.label, opens: true } },
     relation: 'managed',
     actions: list.actions,
     sections: [talkSource, presenceSource, competenceSource],

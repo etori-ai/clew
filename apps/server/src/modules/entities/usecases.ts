@@ -118,9 +118,9 @@ export function entityUsecases(deps: EntityDeps) {
 
   /**
    * The entity behind Clew's key (D116: a person's id, a unit's id), and how the reader stands to it; undefined outside
-   * the rule. A person: the reader (`self`), someone on a unit the reader manages (`managed`) or another active person of
-   * the directory (`colleague`). A unit: one the reader manages or belongs to (`member`). A key that cannot name an
-   * entity of the kind (a NUL in it, or too long) names nobody, before anything is read.
+   * the rule. A person: the reader (`self`), someone on a unit the reader manages (`managed`), also from below (D99), or
+   * another active person of the directory (`colleague`). A unit: one the reader manages or belongs to (`member`). A key
+   * that cannot name an entity of the kind (a NUL in it, or too long) names nobody, before anything is read.
    */
   async function resolve(
     persona: AuthenticatedContext,
@@ -136,15 +136,24 @@ export function entityUsecases(deps: EntityDeps) {
     const person = await deps.directory.person(persona, key, includeProfile);
     if (!person || person.id !== key || !personKey(person) || !person.userName) return undefined;
     const self = person.id === persona.id;
-    const managed = self ? undefined : managedPerson(await deps.directory.reach(persona), person.id);
+    const reach = self ? undefined : await deps.directory.reach(persona);
+    const managed = reach && managedPerson(reach, person.id);
+    // Where the person is: the reader's own unit for the reader, the unit the reader manages that they are placed on,
+    // else their own unit, also for someone who reports to the reader from below (D99), whom that card does not place.
     const unit =
       self && persona.unitId
         ? { unitId: persona.unitId, unitLabel: persona.unitLabel }
-        : (managed?.unit ?? person.unit);
+        : managed?.placed
+          ? managed.unit
+          : person.unit;
+    // Its page opens, as `/units/<id>` answers, only for a unit the reader manages or belongs to: the reader's own always.
+    const opens = !!unit && (!reach || !!memberUnit(reach, unit.unitId));
     return {
       entity: {
         ...personRef({ ...person, userName: person.userName }, unit),
-        ...(unit ? { unit: { id: unit.unitId, label: unit.unitLabel } } : {}),
+        ...(unit
+          ? { unit: { id: unit.unitId, label: unit.unitLabel, ...(opens ? { opens: true as const } : {}) } }
+          : {}),
       },
       relation: self ? 'self' : managed ? 'managed' : 'colleague',
       ...(person.profile ? { profile: person.profile } : {}),

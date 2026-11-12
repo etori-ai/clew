@@ -82,7 +82,8 @@ test.describe('users administration', () => {
         const main = page.getByRole('main');
         await expect(main.getByRole('heading', { name: 'Hillevi Berg' })).toBeVisible();
         const jobs = main.getByRole('region', { name: 'Anställningar' });
-        await expect(jobs.getByRole('listitem')).toHaveCount(2);
+        // Astryx's List, named for its section, so VoiceOver on Safari keeps the list and its count (W6).
+        await expect(jobs.getByRole('list', { name: 'Anställningar' }).getByRole('listitem')).toHaveCount(2);
         await expect(jobs.getByRole('listitem').nth(0)).toContainText('Rektor');
         await expect(jobs.getByRole('listitem').nth(0)).toContainText('Tillsvidare');
         await expect(jobs.getByRole('listitem').nth(0).locator('time')).toHaveText('1 februari 2019');
@@ -99,6 +100,7 @@ test.describe('users administration', () => {
           'href',
           'mailto:hillevi@clew.test',
         );
+        await expectNoAxeViolations(page);
         await main.getByRole('link', { name: 'Användare', exact: true }).click();
         await expect(page).toHaveURL(/\/admin\/users\?role=manager$/);
       });

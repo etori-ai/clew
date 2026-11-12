@@ -10,7 +10,7 @@ import {
   test,
 } from './support';
 import { PRESENCE_LENS, SILENT_SECTION, TALK_LENS } from './data';
-import { CONTACT, POINTS, People, pointsOutput, pointsSpec } from './person-data';
+import { CONTACT, FRITIDS, LONG_PHONE_CATEGORY, POINTS, People, pointsOutput, pointsSpec } from './person-data';
 
 /**
  * The opened person (D112 item 5, board Person; D97 item 5, D111 rule 3: a person is a page only), in the work item's
@@ -18,7 +18,8 @@ import { CONTACT, POINTS, People, pointsOutput, pointsSpec } from './person-data
  * column with "Behöver dig" and then every source's section one under the other, each with its source's badge; the
  * details rail with the directory's facts and the unit, behind "Visa detaljer" where it does not fit or while the panel
  * holds something. `?section=` scrolls to a section and gives its heading the focus. The shared mock answers the list;
- * `person-data.ts` answers the person and their sections, with Kontakt and the talk's action points beside the mock's
+ * `person-data.ts` answers the person and their sections, with Johan's profile (D114: Anställningar and
+ * Kontaktuppgifter, a long phone category among the numbers), Kontakt and the talk's action points beside the mock's
  * sources and Kompetenssystemet silent until a test lets it answer. Keyboard, focus, announcements, axe and reflow. An
  * address that drew the person beside Personal's list leads here (`staff.spec.ts`).
  */
@@ -42,7 +43,34 @@ const sectionsOf = (page: Page) =>
 const region = (page: Page, name: string) => page.getByRole('region', { name, exact: true });
 /** The way back at the top of the page's header (board Person: "‹ Personal"). */
 const wayBack = (page: Page, name: string) => page.getByRole('main').getByRole('link', { name, exact: true });
-const EVERY_SECTION = ['Behöver dig', 'Utvecklingssamtal', 'Frånvaro', 'Kontakt', 'Kompetenser'];
+const EVERY_SECTION = [
+  'Behöver dig',
+  'Anställningar',
+  'Kontaktuppgifter',
+  'Utvecklingssamtal',
+  'Frånvaro',
+  'Kontakt',
+  'Kompetenser',
+];
+/**
+ * Each number under Kontaktuppgifter with how many lines its text is drawn on, counted by the tops of its text's line
+ * boxes: one each, however long a category is (W2).
+ */
+const numberLines = (page: Page) =>
+  region(page, 'Kontaktuppgifter')
+    .locator('a[href^="tel:"]')
+    .evaluateAll(links =>
+      links.map(a => {
+        const tops = new Set<number>();
+        const walk = document.createTreeWalker(a, NodeFilter.SHOW_TEXT);
+        for (let node = walk.nextNode(); node; node = walk.nextNode()) {
+          const text = document.createRange();
+          text.selectNodeContents(node);
+          for (const r of text.getClientRects()) if (r.width > 0) tops.add(Math.round(r.top));
+        }
+        return [a.textContent?.trim(), tops.size];
+      }),
+    );
 /** The work item about Johan under Behöver dig, by its title as the stream has it. */
 const ITEM = 'Planera utvecklingssamtal vecka 45';
 
@@ -84,6 +112,23 @@ test.describe('the person as a page', () => {
     await expect(region(page, 'Utvecklingssamtal').getByText('Clew', { exact: true }).first()).toBeVisible();
     await expect(region(page, 'Kontakt').getByText('Katalogen', { exact: true }).first()).toBeVisible();
     await expect(region(page, 'Kompetenser').getByText('Kompetenssystemet svarade inte.')).toBeVisible();
+    // The profile (D114): each employment an item of a list named for the section, its unit or, for a unit since
+    // removed, the word as its name, its first day a date in the house format, its percentage with at most two decimals.
+    const jobs = region(page, 'Anställningar').getByRole('list', { name: 'Anställningar' });
+    await expect(jobs.getByRole('listitem')).toHaveCount(2);
+    await expect(jobs.getByRole('listitem').nth(0)).toContainText('Bergsåkers skola');
+    await expect(jobs.getByRole('listitem').nth(0).locator('time')).toHaveText('15 augusti 2018');
+    await expect(jobs.getByRole('listitem').nth(0)).toContainText(/Sysselsättningsgrad\s*57\s%/);
+    await expect(jobs.getByRole('listitem').nth(1)).toContainText('Anställning');
+    await expect(jobs.getByRole('listitem').nth(1)).toContainText('Vikariat');
+    await expect(jobs.getByRole('listitem').nth(1)).toContainText(/43\s%/);
+    const contacts = region(page, 'Kontaktuppgifter');
+    await expect(contacts.getByText(LONG_PHONE_CATEGORY, { exact: true })).toBeVisible();
+    await expect(contacts.getByRole('link', { name: '070-000 00 03' })).toHaveAttribute('href', 'tel:0700000003');
+    await expect(contacts.getByRole('link', { name: 'johan.bystrom@clew.test' })).toHaveAttribute(
+      'href',
+      'mailto:johan.bystrom@clew.test',
+    );
     // The talks section keeps its fuller read and its way in.
     await expect(region(page, 'Utvecklingssamtal').getByText('Skicka underlag om schemaläggning')).toBeVisible();
     await expect(region(page, 'Utvecklingssamtal').getByRole('link', { name: 'Öppna samtalet' })).toBeVisible();
@@ -147,7 +192,7 @@ test.describe('the person as a page', () => {
     await open(page, `/people/johan?section=${CONTACT}&from=%2Fstaff&card=samtal-svar`);
     const panel = page.getByRole('complementary', { name: 'Ärende' });
     await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Ärende' })).toBeFocused();
-    await expect(page.getByRole('heading', { level: 2, name: 'Kontakt' })).toBeInViewport();
+    await expect(page.getByRole('heading', { level: 2, name: 'Kontakt', exact: true })).toBeInViewport();
     // An address naming a section that has nothing about the person: the section is left out and the page stands.
     people.empty = [PRESENCE_LENS];
     await open(page, `/people/johan?section=${PRESENCE_LENS}&from=%2Fstaff`);
@@ -198,6 +243,32 @@ test.describe('the person as a page', () => {
     await expect(details).not.toContainText('Chef');
     await expect(details.getByText('Bergsåkers skola', { exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: /Bergsåkers skola/ })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+  });
+
+  test('someone who reports to the reader from below is placed on their own unit, in the header, under Tillhör and in Anställningar alike, named and not linked, with the reader as their manager (D99)', async ({
+    page,
+    api: _,
+  }) => {
+    const people = new People();
+    people.fromBelow = true;
+    await people.route(page);
+    await open(page, '/people/johan?from=%2Fstaff');
+    const main = page.getByRole('main');
+    await expect(page.getByRole('heading', { level: 1, name: 'Johan Byström' })).toBeVisible();
+    // The header: the way back to Personal, then his own unit, never the reader's.
+    await expect(wayBack(page, 'Personal')).toHaveAttribute('href', '/staff');
+    await expect(main.getByText(FRITIDS.label, { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('Bergsåkers skola', { exact: true })).toHaveCount(0);
+    const jobs = region(page, 'Anställningar').getByRole('list', { name: 'Anställningar' });
+    await expect(jobs.getByRole('listitem')).toHaveText([new RegExp(`^${FRITIDS.label}`)]);
+    // The rail: the reader is his manager, and his unit is named, not linked, since the reader may not open it.
+    const details = page.getByRole('complementary', { name: 'Detaljer' });
+    await expect(details).toContainText('Chef');
+    await expect(details.locator('[aria-level="2"]').filter({ hasText: /^Tillhör$/ })).toBeVisible();
+    await expect(details.getByText(FRITIDS.label, { exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: new RegExp(FRITIDS.label) })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: /^Enhet:/ })).toHaveCount(0);
     await expectNoAxeViolations(page);
   });
 
@@ -269,6 +340,7 @@ test.describe('the person as a page', () => {
     await book.click();
     await expect(page).toHaveURL(`${here}&card=entity-calendar-bookMeeting-johan`);
     await expect(panel.getByText('Boka möte: Johan Byström').first()).toBeVisible();
+    await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Ärende' })).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(page).toHaveURL(here);
     await expect(book).toBeFocused();
@@ -330,7 +402,13 @@ test.describe('the person as a page', () => {
     people.empty = [PRESENCE_LENS, TALK_LENS];
     await people.route(page);
     await open(page, '/people/johan?from=%2Fstaff');
-    expect(await sectionsOf(page)).toEqual(['Behöver dig', 'Kontakt', 'Kompetenser']);
+    expect(await sectionsOf(page)).toEqual([
+      'Behöver dig',
+      'Anställningar',
+      'Kontaktuppgifter',
+      'Kontakt',
+      'Kompetenser',
+    ]);
     const main = page.getByRole('main');
     await expect(main.getByRole('button', { name: 'Boka möte', exact: true })).toBeVisible();
     await expect(main.getByRole('button', { name: 'Registrera frånvaro', exact: true })).toBeVisible();
@@ -489,6 +567,15 @@ test.describe('1.4.10 reflow', () => {
     await open(page, '/people/johan?from=%2Fstaff');
     await expect(page.getByRole('heading', { level: 1, name: 'Johan Byström' })).toBeVisible();
     expect(await reflowProblems(page)).toEqual([]);
+    // Anställningar and Kontaktuppgifter are drawn; a long phone category wraps in its own column and leaves every
+    // number on one line (W2).
+    await expect(region(page, 'Anställningar').getByRole('listitem')).toHaveCount(2);
+    await expect(region(page, 'Kontaktuppgifter').getByText(LONG_PHONE_CATEGORY, { exact: true })).toBeVisible();
+    expect(await numberLines(page)).toEqual([
+      ['060-19 20 00', 1],
+      ['070-000 00 00', 1],
+      ['070-000 00 03', 1],
+    ]);
     await open(page, `/people/johan?from=%2Fstaff&section=${TALK_LENS}`);
     await expect(page.getByText('Skicka underlag om schemaläggning')).toBeVisible();
     expect(await reflowProblems(page)).toEqual([]);

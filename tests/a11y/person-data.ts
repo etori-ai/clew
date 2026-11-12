@@ -1,6 +1,6 @@
 import type { Page, Route } from '@playwright/test';
 import type { MockApi } from './support';
-import type { EntityDetail, EntitySection, EntitySource, PanelViewSpec, View } from '@clew/contracts';
+import type { EntityDetail, EntitySection, EntitySource, PanelViewSpec, PersonProfile, View } from '@clew/contracts';
 import { PRESENCE_LENS, SILENT_SECTION, TALK_LENS, entityDetail, entityList, entityRows, talkSource } from './data';
 
 /**
@@ -64,6 +64,36 @@ export const pointsOutput = {
   ],
 };
 
+/** A long category the directory may send for a number (D114 item 3): it wraps in its own column (W2). */
+export const LONG_PHONE_CATEGORY = 'Beredskapstelefon för elevhälsan och fritidshemmet';
+/**
+ * Johan's profile as the directory sent it (D114): a core title and two employments without titles of their own, the
+ * second on a unit since removed, and his e-mail and three numbers, the third under a long category, so that every run
+ * of the page (axe, keyboard, reflow) draws both sections. The percentage is a 0–1 fraction multiplied by 100, as a
+ * provisioner sends it: 0.57 × 100 is 56.99999999999999 in binary floating point.
+ */
+export const johanProfile = (): PersonProfile => ({
+  email: 'johan.bystrom@clew.test',
+  title: 'Lärare 4–6',
+  phoneNumbers: [
+    { type: 'work', value: '060-19 20 00' },
+    { type: 'mobile', value: '070-000 00 00' },
+    { type: LONG_PHONE_CATEGORY, value: '070-000 00 03' },
+  ],
+  employments: [
+    {
+      unitId: 'unit-skola',
+      unitLabel: 'Bergsåkers skola',
+      employmentType: 'Tillsvidare',
+      startDate: '2018-08-15',
+      employmentPercentage: 0.57 * 100,
+    },
+    { unitId: 'unit-nedlagd', employmentType: 'Vikariat', employmentPercentage: 0.43 * 100 },
+  ],
+});
+/** The unit Johan leads when he reports to the reader from below (D99): not one the reader manages or belongs to. */
+export const FRITIDS = { id: 'unit-fritidshem', label: 'Bergsåkers fritidshem' };
+
 /**
  * The person routes for one test: the opened person with the extra sections, each section's answer (with a delay or
  * a silence per source, and a count of the reads), the talk's action points, and a colleague's reading (artboard G).
@@ -71,6 +101,11 @@ export const pointsOutput = {
 export class People {
   /** The reader is a colleague (artboard G): one action, the directory's section, no cards. */
   colleague = false;
+  /**
+   * Johan reports to the reader from below (D99): he leads a unit under one the reader manages, so the server names his
+   * own unit, which the reader may not open, and the reader is still his manager.
+   */
+  fromBelow = false;
   /** How long a source takes to answer, by capability. */
   delay: Record<string, number> = {};
   /** Sources that do not answer, by capability. */
@@ -86,6 +121,8 @@ export class People {
     if (this.colleague)
       return {
         ...base,
+        // The colleague's unit is not one the reader manages or belongs to, so its page does not open for them.
+        entity: { ...base.entity, unit: { id: base.entity.unit!.id, label: base.entity.unit!.label } },
         relation: 'colleague',
         actions: [
           {
@@ -100,8 +137,9 @@ export class People {
         sections: [contactSource],
         cards: [],
       };
-    return {
+    const managed: EntityDetail = {
       ...base,
+      ...(key === 'johan' ? { profile: johanProfile() } : {}),
       actions: [
         {
           capability: 'calendar.bookMeeting',
@@ -120,6 +158,18 @@ export class People {
         contactSource,
         competence,
       ],
+    };
+    if (!this.fromBelow) return managed;
+    const profile = managed.profile ?? johanProfile();
+    return {
+      ...managed,
+      entity: { ...managed.entity, detail: `Lärare 4–6 · ${FRITIDS.label}`, unit: FRITIDS },
+      profile: {
+        ...profile,
+        employments: [
+          { unitId: FRITIDS.id, unitLabel: FRITIDS.label, employmentType: 'Tillsvidare', employmentPercentage: 100 },
+        ],
+      },
     };
   }
   private section(key: string, capability: string): EntitySection {

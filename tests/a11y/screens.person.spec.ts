@@ -14,7 +14,7 @@ test.describe('screens', () => {
     await new People().route(page);
     await page.setViewportSize({ width: 1440, height: 900 });
     await open(page, '/people/johan?section=directory.contact&from=%2Fstaff');
-    await page.getByRole('heading', { level: 2, name: 'Kontakt' }).waitFor();
+    await page.getByRole('heading', { level: 2, name: 'Kontakt', exact: true }).waitFor();
     await page.screenshot({ path: out('person-page-1440') });
     await open(page, '/people/johan?section=clew.talkPeople&from=%2Fstaff');
     await page.getByRole('heading', { level: 2, name: 'Utvecklingssamtal' }).waitFor();
@@ -38,7 +38,7 @@ test.describe('screens', () => {
     await people.route(page);
     await page.setViewportSize({ width: 1440, height: 900 });
     await open(page, '/people/johan');
-    await page.getByRole('heading', { level: 2, name: 'Kontakt' }).waitFor();
+    await page.getByRole('heading', { level: 2, name: 'Kontakt', exact: true }).waitFor();
     await page.screenshot({ path: out('person-colleague-page-1440') });
   });
 });

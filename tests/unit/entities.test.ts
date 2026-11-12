@@ -91,7 +91,20 @@ function directory(extra: { onSkola?: Person[] } = {}) {
       },
     };
   };
-  return { staff, persona, state: s };
+  /** A node of the tree (D99): the unit and the `unit:` group that names its parent. */
+  const node = (unitId: string, label: string, parentUnitId: string | null) => {
+    s.units.set(unitId, { organisationId: 'poc', label });
+    s.groups.set('group-' + unitId, {
+      id: 'group-' + unitId,
+      organisationId: 'poc',
+      externalId: 'unit:' + unitId,
+      label,
+      parentUnitId,
+      createdAt: T,
+      updatedAt: T,
+    });
+  };
+  return { staff, persona, state: s, place: person, node };
 }
 
 interface SourceOptions {
@@ -598,7 +611,8 @@ describe('the opened person or unit', () => {
         name: 'Anna Lindqvist',
         detail: 'Bergsåkers skola',
         id: 'anna',
-        unit: { id: 'unit-skola', label: 'Bergsåkers skola' },
+        // The reader manages it, so its page opens for them.
+        unit: { id: 'unit-skola', label: 'Bergsåkers skola', opens: true },
       },
       relation: 'managed',
       profile: { email: null, phoneNumbers: [], title: null, employments: [] },
@@ -656,7 +670,12 @@ describe('the opened person or unit', () => {
     const self = await entities.detail(people.persona('hassan'), 'person', 'hassan');
     expect(self).toMatchObject({
       relation: 'self',
-      entity: { key: 'hassan', id: 'hassan', name: 'Hassan Ali', unit: { id: 'unit-omsorg', label: 'Hemtjänsten' } },
+      entity: {
+        key: 'hassan',
+        id: 'hassan',
+        name: 'Hassan Ali',
+        unit: { id: 'unit-omsorg', label: 'Hemtjänsten', opens: true },
+      },
       actions: [],
     });
     const colleague = await entities.detail(people.persona('hassan'), 'person', 'erik');
@@ -670,7 +689,70 @@ describe('the opened person or unit', () => {
         unit: { id: 'unit-skola' },
       },
     });
+    // Hassan neither manages nor belongs to the school, so its page is named and does not open for him.
+    expect(colleague?.entity.unit).toEqual({ id: 'unit-skola', label: 'Bergsåkers skola' });
     expect(colleague?.sections.map(s => s.capability)).toEqual(['hr.absence', 'hr.skills', 'appraisals.round']);
+    // A colleague on the reader's own unit: its page opens, as the unit's address answers it.
+    expect((await entities.detail(people.persona('anna'), 'person', 'erik'))?.entity.unit).toEqual({
+      id: 'unit-skola',
+      label: 'Bergsåkers skola',
+      opens: true,
+    });
+  });
+  test('someone who reports to the reader from below is shown on their own unit, which opens only for a reader who manages or belongs to it (D99, W1)', async () => {
+    const people = directory();
+    // Fritidshemmet stands under the school and Lena leads it, so she reports to Hillevi from below.
+    people.node('unit-skola', 'Bergsåkers skola', null);
+    people.node('unit-fritids', 'Fritidshemmet', 'unit-skola');
+    people.place({ id: 'lena', name: 'Lena Berg', userName: 'lena' }, 'unit-fritids', 'manager');
+    const w = world([connector('hr', 'Personalsystemet', [aboutRead('hr.absence', 'Frånvaro')])], {
+      directory: people,
+    });
+    const hillevi = people.persona('hillevi');
+    const lena = await w.entities.detail(hillevi, 'person', 'lena');
+    expect(lena).toMatchObject({ relation: 'managed', entity: { key: 'lena', detail: 'Fritidshemmet' } });
+    expect(lena?.entity.unit).toEqual({ id: 'unit-fritids', label: 'Fritidshemmet' });
+    // A colleague who opens her reads the same unit.
+    expect((await w.entities.detail(people.persona('hassan'), 'person', 'lena'))?.entity.unit).toEqual({
+      id: 'unit-fritids',
+      label: 'Fritidshemmet',
+    });
+    // Placed on Fritidshemmet as well, Hillevi belongs to it, and its page opens for her.
+    people.state.assignments.set('hillevi', [
+      ...people.state.assignments.get('hillevi')!,
+      { unitId: 'unit-fritids', role: 'employee' },
+    ]);
+    expect((await w.entities.detail(hillevi, 'person', 'lena'))?.entity.unit).toEqual({
+      id: 'unit-fritids',
+      label: 'Fritidshemmet',
+      opens: true,
+    });
+  });
+  test('someone placed on a unit the reader manages is shown on it, also when they report from below on a card that comes first (D99, W1)', async () => {
+    const people = directory();
+    // Hillevi also leads Arkivet, whose card comes before the school's; Sara leads Arkivdepån under it and is placed on
+    // the school as well.
+    people.node('unit-skola', 'Bergsåkers skola', null);
+    people.node('unit-arkiv', 'Arkivet', null);
+    people.node('unit-depa', 'Arkivdepån', 'unit-arkiv');
+    people.state.assignments.set('hillevi', [
+      ...people.state.assignments.get('hillevi')!,
+      { unitId: 'unit-arkiv', role: 'manager' },
+    ]);
+    people.place({ id: 'sara', name: 'Sara Ek', userName: 'sara' }, 'unit-depa', 'manager');
+    people.place({ id: 'sara', name: 'Sara Ek', userName: 'sara' }, 'unit-skola', 'employee');
+    const w = world([connector('hr', 'Personalsystemet', [aboutRead('hr.absence', 'Frånvaro')])], {
+      directory: people,
+    });
+    const hillevi = people.persona('hillevi');
+    const reach = await people.staff.reach(hillevi);
+    expect(reach.managed.map(u => [u.unitLabel, u.people.find(p => p.id === 'sara')?.below?.length ?? 0])).toEqual([
+      ['Arkivet', 1],
+      ['Bergsåkers skola', 0],
+    ]);
+    const sara = await w.entities.detail(hillevi, 'person', 'sara');
+    expect(sara).toMatchObject({ relation: 'managed', entity: { key: 'sara', detail: 'Bergsåkers skola' } });
+    expect(sara?.entity.unit).toEqual({ id: 'unit-skola', label: 'Bergsåkers skola', opens: true });
   });
   test('a person is opened by their id only: a user name, in any spelling, names nobody (D116)', async () => {
     const { entities, people, cardsAsked } = standard();

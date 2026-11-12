@@ -63,7 +63,7 @@ export const unitRef = (unit: DirectoryUnit): EntityRef => ({
   ...([...unit.unitId].length <= 80 ? { id: unit.unitId } : {}),
 });
 /** A person who can be asked about: active, with a user name that fits a key. */
-export const askable = (person: DirectoryPerson): person is DirectoryPerson & { userName: string } =>
+export const askable = <P extends DirectoryPerson>(person: P): person is P & { userName: string } =>
   !!personKey(person);
 
 /** The units the reader manages or belongs to, each once, by label in Swedish order. */
@@ -103,16 +103,27 @@ export function listedKeys(kind: EntityKind, reach: Reach): Listed[] {
         if (askable(p) && !listed.has(p.id)) listed.set(p.id, { key: p.id, sourceKey: p.userName });
   return [...listed.values()];
 }
-/** A person on a unit the reader manages, by Clew's key (their id), with the first such unit in the list's order. */
-export function managedPerson(
-  reach: Reach,
-  id: string,
-): { person: DirectoryPerson & { userName: string }; unit: DirectoryUnit } | undefined {
+/** A person found on a unit the reader manages, with that unit; `placed` is false for someone who reports from below. */
+export interface Managed {
+  person: DirectoryPerson & { userName: string };
+  unit: DirectoryUnit;
+  placed: boolean;
+}
+/**
+ * A person on a unit the reader manages, by Clew's key (their id), with the unit of the first card in the list's order
+ * that they are placed on, else of the first they report to from below (D99 item 4). Someone who reports from below is
+ * not on that unit, so it does not say where they work.
+ */
+export function managedPerson(reach: Reach, id: string): Managed | undefined {
+  let fromBelow: Managed | undefined;
   for (const unit of reach.managed)
     for (const person of unit.people)
-      if (askable(person) && person.id === id)
-        return { person, unit: { unitId: unit.unitId, unitLabel: unit.unitLabel } };
-  return undefined;
+      if (askable(person) && person.id === id) {
+        const found = { person, unit: { unitId: unit.unitId, unitLabel: unit.unitLabel }, placed: !person.below };
+        if (found.placed) return found;
+        fromBelow ??= found;
+      }
+  return fromBelow;
 }
 /** A unit the reader manages or belongs to, by its id. */
 export const memberUnit = (reach: Reach, key: string) => readerUnits(reach).find(u => u.unitId === key);

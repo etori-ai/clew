@@ -22,8 +22,13 @@ export interface DirectoryUnit {
 /** Where the reader stands: every unit they are assigned to, and the units they manage with the people on them except the reader. */
 export interface Reach {
   units: Array<DirectoryUnit & { role: 'manager' | 'employee' }>;
-  managed: Array<DirectoryUnit & { people: DirectoryPerson[] }>;
+  managed: Array<DirectoryUnit & { people: ManagedPerson[] }>;
 }
+/**
+ * A person on a unit the reader manages. `below` is set for someone who is not placed on that unit and reports to its
+ * manager from a unit below it (D99 item 4), with the units they report from; it is absent for someone placed on it.
+ */
+export type ManagedPerson = DirectoryPerson & { below?: DirectoryUnit[] };
 /**
  * The directory (composition: the people module's `staffUsecases`). `person` finds an active person of the reader's
  * organisation by Clew's key, their id (D116), with the unit they act in; undefined when there is no such active person.
