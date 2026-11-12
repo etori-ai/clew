@@ -372,12 +372,11 @@ export async function frontchannelRevoke(input: { issuer: string; clientId: stri
  * session past either expiry is removed with its sealed tokens, and one that was still open is ended with an `expired`
  * row in the authentication log; login transactions and logout receipts past their expiry are removed. The
  * authentication log itself is kept, since how long sign-in history is kept is the organisation's decision (Q7). One
- * statement removes the sessions and writes their rows, so however many sessions expired, it is one request. `db` is
- * the server's pool unless a test names another database.
+ * statement removes the sessions and writes their rows, so however many sessions expired, it is one request.
  */
-export async function removeExpiredSignIns(now: Date, db: Database = database()) {
+export async function removeExpiredSignIns(now: Date) {
   const at = now.toISOString();
-  await db.transaction(async tx => {
+  await database().transaction(async tx => {
     await tx.execute(sql`
       with removed as (
         delete from ${sessions}
