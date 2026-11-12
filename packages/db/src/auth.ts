@@ -272,6 +272,23 @@ export async function touchSession(digest: string) {
     .returning();
   return row;
 }
+/**
+ * A session's refreshed IdP tokens, stored over the ones they were refreshed from (L1, L4): no connection is held while
+ * the provider answers, so the row is compared instead of locked. Undefined when the session no longer holds those
+ * tokens, because another request refreshed it meanwhile, or has ended.
+ */
+export async function storeRefreshedTokens(
+  digest: string,
+  previous: string,
+  next: { tokens: string; tokenExpiresAt: Date },
+) {
+  const [row] = await database()
+    .update(sessions)
+    .set(next)
+    .where(and(activeSession(digest), eq(sessions.tokens, previous)))
+    .returning();
+  return row;
+}
 export async function consumeLogin(digest: string) {
   const [row] = await database().delete(loginTransactions).where(eq(loginTransactions.digest, digest)).returning();
   return row && row.expiresAt > new Date() ? row : undefined;

@@ -7,7 +7,6 @@ import {
   ABSOLUTE_MS,
   IDLE_MS,
   LOGIN_TRANSACTION_MS,
-  activeSession,
   auditAuth,
   backchannelRevoke,
   consumeLogin,
@@ -18,6 +17,7 @@ import {
   readGroups,
   revokeSession,
   sessions,
+  storeRefreshedTokens,
   authenticationAudit,
   people,
   type SessionRecord,
@@ -33,6 +33,7 @@ import {
   tokenDigest,
 } from './auth-crypto';
 import { delegationFor } from './auth-exchange';
+import { grantEnded, sessionRefresher } from './auth-refresh';
 import { frontendOrigins } from './auth-origin';
 
 /** Ported from startsidan `packages/platform/src/auth.ts`: Authorization Code + PKCE, opaque server session cookie, sealed tokens. */
@@ -267,47 +268,52 @@ export async function devLogin(userName: string, returnTo: string | null) {
   }
   return { ...(await openSession(tokens, 'login-dev')), returnTo: localReturnTo(returnTo) };
 }
-async function refreshSession(row: SessionRecord): Promise<SessionRecord> {
-  if (row.tokenExpiresAt.getTime() > Date.now() + 15_000) return row;
-  try {
-    const config = await oidcConfiguration();
-    return await database().transaction(async tx => {
-      // Row lock serializes refresh-token rotation across processes and simultaneous tabs.
-      const [current] = await tx.select().from(sessions).where(activeSession(row.digest)).for('update');
-      if (!current) throw new AuthError(401, 'expired');
-      if (current.tokenExpiresAt.getTime() > Date.now() + 15_000) return current;
-      const previous = decryptTokens(current.tokens, current.digest);
-      const tokens = await oidc.refreshTokenGrant(config, previous.refresh_token);
-      const claims = tokens.claims();
-      if (claims && claims.sub !== current.subject) throw new AuthError(401, 'invalid');
-      const [updated] = await tx
-        .update(sessions)
-        .set({
-          tokens: encryptTokens(
-            {
-              access_token: tokens.access_token,
-              refresh_token: tokens.refresh_token ?? previous.refresh_token,
-              id_token: tokens.id_token ?? previous.id_token,
-            },
-            current.digest,
-          ),
-          tokenExpiresAt: new Date(Date.now() + Math.min(tokens.expires_in ?? 60, 300) * 1000),
-        })
-        .where(activeSession(current.digest))
-        .returning();
-      if (!updated) throw new AuthError(401, 'expired');
-      return updated;
-    });
-  } catch {
-    delegation.forget(row.digest);
-    await revokeSession(row.digest, 'refresh-failed');
-    throw new AuthError(401, 'expired');
-  }
-}
+/**
+ * The session's IdP tokens, refreshed in their last seconds (`auth-refresh.ts`): only `invalid_grant`, a changed subject,
+ * a row that is gone or tokens that can no longer be opened end the session; a provider that cannot answer keeps it, and
+ * is logged at most once a minute.
+ */
+let refreshFailedAt = 0;
+const refresher = sessionRefresher<SessionRecord>({
+  clock: Date.now,
+  read: readSession,
+  async grant(refreshToken) {
+    const tokens = await oidc.refreshTokenGrant(await oidcConfiguration(), refreshToken);
+    return {
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      id_token: tokens.id_token,
+      expires_in: tokens.expires_in,
+      subject: tokens.claims()?.sub,
+    };
+  },
+  ended: grantEnded,
+  store: storeRefreshedTokens,
+  async end(digest, action) {
+    delegation.forget(digest);
+    await revokeSession(digest, action);
+  },
+  open: decryptTokens,
+  seal: encryptTokens,
+  failed(error) {
+    if (Date.now() - refreshFailedAt < 60_000) return;
+    refreshFailedAt = Date.now();
+    const code =
+      error instanceof oidc.ResponseBodyError
+        ? error.error
+        : error instanceof oidc.ClientError && error.code
+          ? error.code
+          : error instanceof Error
+            ? error.name
+            : 'unknown';
+    logger.warn({ scope: 'auth', code }, 'token refresh failed; sessions are kept and delegation waits');
+  },
+});
 /**
  * Delegation (D26): a connector that acts as the person gets a token bound to its own audience, by RFC 8693 token exchange at
- * the IdP from the session's access token. The subject token is read fresh (and refreshed under the same row lock as every
- * request); the IdP's answer is never logged, only its error code, at most once a minute per audience.
+ * the IdP from the session's access token. The subject token is read fresh (and refreshed by the same refresher as every
+ * request, so it answers 503 while the IdP cannot refresh it); the IdP's answer is never logged, only its error code, at
+ * most once a minute per audience.
  */
 const TOKEN_EXCHANGE = 'urn:ietf:params:oauth:grant-type:token-exchange';
 const ACCESS_TOKEN_TYPE = 'urn:ietf:params:oauth:token-type:access_token';
@@ -315,11 +321,14 @@ const exchangeFailures = new Map<string, number>();
 const delegation = delegationFor({
   clock: Date.now,
   async subjectToken(digest) {
-    let row = await readSession(digest);
+    const row = await readSession(digest);
     if (!row) throw new AuthError(401, 'expired');
     if (!row.tokens) return undefined;
-    row = await refreshSession(row);
-    return decryptTokens(row.tokens, row.digest).access_token;
+    const refreshed = await refresher.refresh(row);
+    if (refreshed.state === 'ended') throw new AuthError(401, 'expired');
+    // The provider could not refresh the token: the session stands, but no connector gets a token until it can.
+    if (refreshed.state === 'unavailable') throw new AuthError(503, 'unavailable');
+    return decryptTokens(refreshed.row.tokens, refreshed.row.digest).access_token;
   },
   async exchange(subject, audience) {
     const config = await oidcConfiguration();
@@ -388,7 +397,11 @@ export async function authenticate(raw: string | undefined) {
     throw new AuthError(401, 'expired');
   }
   if (row.issuer !== settings.issuer || row.clientId !== settings.clientId) throw new AuthError(401, 'expired');
-  row = await refreshSession(row);
+  // Clew's own authorization reads the session and the person, never the IdP's tokens: a refresh the provider cannot
+  // answer leaves the session as it is, and only delegation waits for the provider.
+  const refreshed = await refresher.refresh(row);
+  if (refreshed.state === 'ended') throw new AuthError(401, 'expired');
+  row = refreshed.row;
   const access = await resolveSubject(row.issuer, row.subject);
   if (!access || access.person.id !== row.personId) {
     await revokeSession(digest, 'access-revoked');
