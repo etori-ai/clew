@@ -206,10 +206,10 @@ export class RebindRefused extends Error {
 /**
  * An operator binds a person to a new sign-in account (Q8 of the 2026-11-12 users review, amending D68 item 6): the
  * person's binding under the issuer moves to the new subject, with one `identity.rebound` audit row about the person
- * (issuer, old subject, new subject, the operator's name), in one transaction. Refused, writing nothing, for a person id
- * the people table does not hold and for a subject already bound to another person. Never automatic and never on a page:
- * `scripts/identity-rebind.ts` is its one caller. The person's sessions under the old subject end at their next request,
- * because that subject no longer resolves to them.
+ * (issuer, old subject, new subject, the operator's name), in one transaction. Refused, writing nothing, for a person
+ * id the people table does not hold and for a subject already bound to another person. Never automatic and never on a
+ * page: `scripts/identity-rebind.ts` is its one caller. The person's sessions under the old subject end at their next
+ * request, because that subject no longer resolves to them.
  */
 export async function rebindIdentity(
   actor: string,

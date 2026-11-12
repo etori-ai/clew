@@ -170,8 +170,9 @@ async function openSession(tokens: oidc.TokenEndpointResponse & oidc.TokenEndpoi
   if (!claims || !tokens.refresh_token || !tokens.id_token || typeof claims.sub !== 'string')
     throw new AuthError(401, 'invalid');
   // A subject seen before is its person, unless the configured claim names another person; a first login binds to the
-  // provisioned person whose userName equals the claim (D68 item 6). No match, two matches, a changed subject or a claim
-  // that names someone else is a denied login, never a new user, and `login-denied` names the person when one is known.
+  // provisioned person whose userName equals the claim (D68 item 6). No match, two matches, a changed subject or a
+  // claim that names someone else is a denied login, never a new user, and `login-denied` names the person when one is
+  // known.
   const claim = settings.bindingClaim,
     value = claims[claim];
   const { access, personId } = await signIn(
@@ -269,9 +270,9 @@ export async function devLogin(userName: string, returnTo: string | null) {
   return { ...(await openSession(tokens, 'login-dev')), returnTo: localReturnTo(returnTo) };
 }
 /**
- * The session's IdP tokens, refreshed in their last seconds (`auth-refresh.ts`): only `invalid_grant`, a changed subject,
- * a row that is gone or tokens that can no longer be opened end the session; a provider that cannot answer keeps it, and
- * is logged at most once a minute.
+ * The session's IdP tokens, refreshed in their last seconds (`auth-refresh.ts`): only `invalid_grant`, a changed
+ * subject, a row that is gone or tokens that can no longer be opened end the session; a provider that cannot answer
+ * keeps it, and is logged at most once a minute.
  */
 let refreshFailedAt = 0;
 const refresher = sessionRefresher<SessionRecord>({
@@ -310,10 +311,10 @@ const refresher = sessionRefresher<SessionRecord>({
   },
 });
 /**
- * Delegation (D26): a connector that acts as the person gets a token bound to its own audience, by RFC 8693 token exchange at
- * the IdP from the session's access token. The subject token is read fresh (and refreshed by the same refresher as every
- * request, so it answers 503 while the IdP cannot refresh it); the IdP's answer is never logged, only its error code, at
- * most once a minute per audience.
+ * Delegation (D26): a connector that acts as the person gets a token bound to its own audience, by RFC 8693 token
+ * exchange at the IdP from the session's access token. The subject token is read fresh (and refreshed by the same
+ * refresher as every request, so it answers 503 while the IdP cannot refresh it); the IdP's answer is never logged,
+ * only its error code, at most once a minute per audience.
  */
 const TOKEN_EXCHANGE = 'urn:ietf:params:oauth:grant-type:token-exchange';
 const ACCESS_TOKEN_TYPE = 'urn:ietf:params:oauth:token-type:access_token';

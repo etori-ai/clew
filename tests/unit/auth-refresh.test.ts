@@ -11,7 +11,8 @@ import {
  * Refreshing a session's IdP tokens (L1 and L4 of the 2026-11-12 users review). The real openid-client asks a token
  * endpoint that answers what each test says over a fake fetch, so every class of failure is the error the library
  * throws for it; the session rows live in a map. Only `invalid_grant`, a changed subject and a row that is gone end the
- * session; everything else keeps it and its tokens, and the refresh says `unavailable`, which delegation answers with 503.
+ * session; everything else keeps it and its tokens, and the refresh says `unavailable`, which delegation answers with
+ * 503.
  */
 type Row = RefreshRow & { personId: string };
 const issuer = 'https://idp.example.test';

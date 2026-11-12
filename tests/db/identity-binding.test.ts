@@ -10,9 +10,10 @@ import { bindFirstLogin, signIn } from '../../packages/db/src/auth';
  * database too (L13). A later sign-in is the bound person unless the claim names another person (L2). A changed
  * subject, a subject another person holds and a claim that names someone else are refused with `identity-conflict` on
  * the claimed person, and its `identity.conflict` audit row carries the claim's value, the refused subject and whoever
- * holds that subject (L10). An unknown, disabled or e-mail claim is `identity-unmatched` with the claim value. A refused
- * sign-in returns the person it concerned, when one is known, for the `login-denied` row the server writes; a bound
- * person without a grant is refused that way, with no row here. Run with `bun run test:db` inside the devcontainer.
+ * holds that subject (L10). An unknown, disabled or e-mail claim is `identity-unmatched` with the claim value. A
+ * refused sign-in returns the person it concerned, when one is known, for the `login-denied` row the server writes; a
+ * bound person without a grant is refused that way, with no row here. Run with `bun run test:db` inside the
+ * devcontainer.
  */
 if (!process.env.DATABASE_URL)
   throw new Error('DATABASE_URL is not set. Run `bun run test:db` inside the devcontainer.');

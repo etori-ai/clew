@@ -6,11 +6,11 @@ import { revokeSession, storeRefreshedTokens } from '../../packages/db/src/auth'
 import { encryptTokens, randomToken, tokenDigest } from '../../apps/server/src/auth-crypto';
 
 /**
- * Refreshing a session's IdP tokens on PostgreSQL (L1 and L4 of the 2026-11-12 users review). No connection is held while
- * the provider answers, so new tokens are stored only over the ones they were refreshed from. A provider that cannot be
- * reached keeps the session and its tokens: the person's own requests go on, and delegation answers 503. The provider
- * here is a name that does not resolve, so every refresh fails to connect; the failure classes of an answering provider
- * are in `tests/unit/auth-refresh.test.ts`. Run with `bun run test:db` inside the devcontainer.
+ * Refreshing a session's IdP tokens on PostgreSQL (L1 and L4 of the 2026-11-12 users review). No connection is held
+ * while the provider answers, so new tokens are stored only over the ones they were refreshed from. A provider that
+ * cannot be reached keeps the session and its tokens: the person's own requests go on, and delegation answers 503. The
+ * provider here is a name that does not resolve, so every refresh fails to connect; the failure classes of an answering
+ * provider are in `tests/unit/auth-refresh.test.ts`. Run with `bun run test:db` inside the devcontainer.
  */
 if (!process.env.DATABASE_URL)
   throw new Error('DATABASE_URL is not set. Run `bun run test:db` inside the devcontainer.');

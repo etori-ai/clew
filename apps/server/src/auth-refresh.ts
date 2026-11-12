@@ -1,12 +1,13 @@
 /**
- * Refreshing a session's IdP tokens (D26), pure over its deps so each kind of failure is unit-tested without an identity
- * provider; the live deps are wired in `auth.ts`. Only three things end the session: the provider's answer that the
- * grant is gone (`invalid_grant`), a refreshed ID token for another subject, and a session row that is gone (and, as
- * before, sealed tokens that can no longer be opened, which no refresh can use). A provider that cannot be reached, times out, refuses the client (`invalid_client` after a secret rotation), limits the rate or
- * fails keeps the session and its tokens, because Clew's own authorization never reads them; until a refresh succeeds
- * delegation has no fresh token and answers 503 (L4 of the 2026-11-12 users review). No database connection is held
- * while the provider answers (L1): the row is read, the provider is asked, and the new tokens are stored only over the
- * ones they were refreshed from, so a refresh that another process made meanwhile wins and its tokens are used.
+ * Refreshing a session's IdP tokens (D26), pure over its deps so each kind of failure is unit-tested without an
+ * identity provider; the live deps are wired in `auth.ts`. Only three things end the session: the provider's answer
+ * that the grant is gone (`invalid_grant`), a refreshed ID token for another subject, and a session row that is gone
+ * (and, as before, sealed tokens that can no longer be opened, which no refresh can use). A provider that cannot be
+ * reached, times out, refuses the client (`invalid_client` after a secret rotation), limits the rate or fails keeps the
+ * session and its tokens, because Clew's own authorization never reads them; until a refresh succeeds delegation has no
+ * fresh token and answers 503 (L4 of the 2026-11-12 users review). No database connection is held while the provider
+ * answers (L1): the row is read, the provider is asked, and the new tokens are stored only over the ones they were
+ * refreshed from, so a refresh that another process made meanwhile wins and its tokens are used.
  */
 import { ResponseBodyError } from 'openid-client';
 
@@ -48,7 +49,9 @@ export interface RefreshDeps<Row extends RefreshRow> {
 }
 /** `fresh`: the row's tokens are current. `unavailable`: the provider could not answer; the row is unchanged. */
 export type Refreshed<Row> = { state: 'fresh'; row: Row } | { state: 'unavailable'; row: Row } | { state: 'ended' };
-/** The provider's answer that the refresh token, or the session behind it, is gone: the one answer that ends a session. */
+/**
+ * The provider's answer that the refresh token, or the session behind it, is gone: the one answer that ends a session.
+ */
 export const grantEnded = (error: unknown) => error instanceof ResponseBodyError && error.error === 'invalid_grant';
 /** A token is refreshed in its last seconds; its row's expiry is capped at 300 seconds when it is stored. */
 const WINDOW_MS = 15_000;
