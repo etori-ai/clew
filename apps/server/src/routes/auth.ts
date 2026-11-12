@@ -11,6 +11,7 @@ import {
   devLogin,
   listDevAccounts,
   logout,
+  receiveFrontChannelLogout,
   receiveLogout,
   verifyMutation,
   LOGIN_COOKIE,
@@ -123,5 +124,20 @@ authRoutes.post('/backchannel-logout', async c => {
   } catch (error) {
     logger.warn({ scope: 'auth', failure: failureDetails(error) }, 'back-channel logout refused');
     return c.json({ error: 'Ogiltig utloggning.' }, 400, { 'Cache-Control': 'no-store' });
+  }
+});
+/**
+ * OpenID Connect Front-Channel Logout 1.0 (D115): the identity provider loads this address in a cross-site frame when
+ * the person signs out there, with `iss` and `sid` in the query (`receiveFrontChannelLogout`). No cookie reaches the
+ * frame and the request changes nothing the person asked for, so nothing here asks for a session, an origin or a CSRF
+ * token. The answer is empty and never cached; another issuer is refused with 400.
+ */
+authRoutes.get('/frontchannel-logout', async c => {
+  try {
+    await receiveFrontChannelLogout(c.req.query('iss'), c.req.query('sid'));
+    return c.body(null, 200, { 'Cache-Control': 'no-store' });
+  } catch (error) {
+    logger.warn({ scope: 'auth', failure: failureDetails(error) }, 'front-channel logout refused');
+    return c.body(null, 400, { 'Cache-Control': 'no-store' });
   }
 });

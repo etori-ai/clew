@@ -4,11 +4,12 @@ import { authRoutes } from '../../apps/server/src/routes/auth';
 import { logger } from '../../apps/server/src/logging';
 
 /**
- * The sign-in and logout routes where they refuse before the database is read (L11 of the 2026-11-12 users review):
- * each refusal is answered as before and said in one line with scope `auth`, carrying what failed and never the
- * token's claims. The identity provider answers over a fake fetch, and a provider at another address answers 500. The
- * server's logger is watched while the file runs. Failures that need a sign-in in the database are in
- * `tests/db/sign-in-routes.test.ts`.
+ * The sign-in and logout routes where they answer before the database is read (L5 and L11 of the 2026-11-12 users
+ * review): each refusal is answered as before and said in one line with scope `auth`, carrying what failed and never
+ * the token's claims, and front-channel logout (D115) refuses another issuer and ends nothing without a `sid`. The
+ * identity provider answers over a fake fetch, and a provider at another address answers 500. The server's logger is
+ * watched while the file runs. What needs the database, a sign-in that reached the provider and the sessions a logout
+ * ends, is in `tests/db/sign-in-routes.test.ts`.
  */
 const settings: Record<string, string> = {
   OIDC_ISSUER: 'https://idp.example.test/realms/routes',
@@ -67,6 +68,11 @@ const logoutToken = (audience: string) =>
     .sign(keys.privateKey);
 const backchannel = (body: string, type = 'application/x-www-form-urlencoded') =>
   authRoutes.request('/backchannel-logout', { method: 'POST', headers: { 'Content-Type': type }, body });
+/** The provider's frame, as a browser loads it: cross-site, with no cookie of Clew's. */
+const frontchannel = (query: string) =>
+  authRoutes.request('/frontchannel-logout' + query, {
+    headers: { 'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'iframe' },
+  });
 
 describe('a refused sign-in or logout is said in one line', () => {
   test('a sign-in that cannot start, because the provider answers with an error, is said at error level', async () => {
@@ -137,5 +143,37 @@ describe('a refused sign-in or logout is said in one line', () => {
         message: 'back-channel logout refused',
       },
     ]);
+  });
+});
+describe('front-channel logout (D115) where it ends nothing', () => {
+  test('another issuer is refused with 400 and said, whatever the sid', async () => {
+    for (const query of ['?iss=https://other.example.test/realms/routes&sid=sid-anna', '?iss=&sid=sid-anna']) {
+      said.length = 0;
+      const response = await frontchannel(query);
+      expect(response.status).toBe(400);
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(await response.text()).toBe('');
+      expect(said).toEqual([
+        {
+          level: 'warn',
+          fields: { scope: 'auth', failure: { name: 'AuthError', code: 'invalid', status: 401, message: 'invalid' } },
+          message: 'front-channel logout refused',
+        },
+      ]);
+    }
+  });
+  test('a sid without the issuer that would vouch for it is refused', async () => {
+    const response = await frontchannel('?sid=sid-anna');
+    expect(response.status).toBe(400);
+    expect(said).toHaveLength(1);
+  });
+  test('without a sid it answers 200, empty and never cached, and nothing is said', async () => {
+    for (const query of ['?iss=' + encodeURIComponent(issuer), '?iss=' + encodeURIComponent(issuer) + '&sid=', '']) {
+      const response = await frontchannel(query);
+      expect(response.status).toBe(200);
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(await response.text()).toBe('');
+    }
+    expect(said).toEqual([]);
   });
 });

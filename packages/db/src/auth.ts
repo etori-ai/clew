@@ -314,6 +314,34 @@ export async function consumeLogin(digest: string) {
   const [row] = await database().delete(loginTransactions).where(eq(loginTransactions.digest, digest)).returning();
   return row && row.expiresAt > new Date() ? row : undefined;
 }
+/**
+ * Ends the open sessions an identity provider's logout names, by the provider's session id (`sid`), the subject or
+ * both, under this installation's issuer and client, each with a row in the authentication log whose action says which
+ * logout ended it. Both logout channels end sessions here (D115). A logout that names neither is refused, since it
+ * would end every session of the client.
+ */
+async function endProviderSessions(
+  tx: Transaction,
+  input: { issuer: string; clientId: string; sid?: string; subject?: string },
+  action: 'backchannel-logout' | 'frontchannel-logout',
+) {
+  if (!input.sid && !input.subject) throw new Error('A provider logout must name a sid or a subject');
+  const ended = await tx
+    .update(sessions)
+    .set({ revokedAt: new Date(), tokens: '' })
+    .where(
+      and(
+        eq(sessions.issuer, input.issuer),
+        eq(sessions.clientId, input.clientId),
+        isNull(sessions.revokedAt),
+        input.sid ? eq(sessions.sid, input.sid) : undefined,
+        input.subject ? eq(sessions.subject, input.subject) : undefined,
+      ),
+    )
+    .returning({ personId: sessions.personId });
+  if (ended.length)
+    await tx.insert(authenticationAudit).values(ended.map(row => ({ actor: 'person:' + row.personId, action })));
+}
 export async function backchannelRevoke(input: {
   issuer: string;
   clientId: string;
@@ -328,22 +356,16 @@ export async function backchannelRevoke(input: {
       .onConflictDoNothing()
       .returning();
     if (!inserted.length) return;
-    const revoked = await tx
-      .update(sessions)
-      .set({ revokedAt: new Date(), tokens: '' })
-      .where(
-        and(
-          eq(sessions.issuer, input.issuer),
-          eq(sessions.clientId, input.clientId),
-          isNull(sessions.revokedAt),
-          input.sid ? eq(sessions.sid, input.sid) : undefined,
-          input.subject ? eq(sessions.subject, input.subject) : undefined,
-        ),
-      )
-      .returning({ personId: sessions.personId });
-    for (const row of revoked)
-      await tx.insert(authenticationAudit).values({ actor: 'person:' + row.personId, action: 'backchannel-logout' });
+    await endProviderSessions(tx, input, 'backchannel-logout');
   });
+}
+/**
+ * OpenID Connect Front-Channel Logout 1.0 (D115): the open sessions of the provider's `sid` end as a back-channel
+ * logout ends them, each with a `frontchannel-logout` row. No receipt is kept: the request carries no token that could
+ * be replayed, and a second request for sessions that have ended ends nothing.
+ */
+export async function frontchannelRevoke(input: { issuer: string; clientId: string; sid: string }) {
+  await database().transaction(tx => endProviderSessions(tx, input, 'frontchannel-logout'));
 }
 /**
  * The nightly clean-up of sign-in machinery (D117; L3 of the 2026-11-12 users review), in one transaction: every

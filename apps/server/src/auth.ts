@@ -10,6 +10,7 @@ import {
   auditAuth,
   backchannelRevoke,
   consumeLogin,
+  frontchannelRevoke,
   loginTransactions,
   readSession,
   resolveSubject,
@@ -473,6 +474,20 @@ export async function receiveLogout(token: string) {
     subject: payload.sub,
     jti: payload.jti,
   });
+}
+/**
+ * OpenID Connect Front-Channel Logout 1.0 (D115): when the person signs out at the identity provider, the provider
+ * loads Clew's front-channel logout address in a frame with its `iss` and the `sid` of its session; Microsoft Entra ID
+ * has no back-channel logout, so this is how a sign-out there reaches Clew. With the configured issuer and a `sid`,
+ * every session of that `sid` ends as a back-channel logout ends it. Without a `sid` nothing ends: no cookie reaches a
+ * cross-site frame, so nothing else names the session. Another issuer, or a `sid` without an issuer, is refused and
+ * ends nothing.
+ */
+export async function receiveFrontChannelLogout(iss: string | undefined, sid: string | undefined) {
+  const settings = authSettings();
+  if ((iss !== undefined || sid) && iss !== settings.issuer) throw new AuthError(401, 'invalid');
+  if (!sid) return;
+  await frontchannelRevoke({ issuer: settings.issuer, clientId: settings.clientId, sid });
 }
 /** Session persistence the auth routes need, re-exported so routes never import the database package (D20). */
 export { LOGIN_TRANSACTION_MS, readSession, revokeSession, touchSession } from '@clew/db/auth';
