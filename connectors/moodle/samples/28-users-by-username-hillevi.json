@@ -1,0 +1,43 @@
+{
+  "description": "Hillevi alone by username, as the connector asks for one person with its default match field.",
+  "request": {
+    "method": "POST",
+    "path": "/webservice/rest/server.php",
+    "headers": {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Accept": "application/json"
+    },
+    "body": "wstoken=%3Cthe+service+account+token%3E&moodlewsrestformat=json&moodlewssettingraw=true&wsfunction=core_user_get_users_by_field&field=username&values%5B0%5D=hillevi"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": [
+      {
+        "id": 3,
+        "username": "hillevi",
+        "firstname": "Hillevi",
+        "lastname": "Berg",
+        "fullname": "Hillevi Berg",
+        "initials": "HB",
+        "department": "unit-skola",
+        "idnumber": "hillevi",
+        "firstaccess": 0,
+        "lastaccess": 0,
+        "auth": "manual",
+        "suspended": false,
+        "confirmed": true,
+        "lang": "en",
+        "theme": "",
+        "timezone": "99",
+        "mailformat": 1,
+        "trackforums": 0,
+        "country": "SE",
+        "profileimageurlsmall": "http://localhost:3024/theme/image.php/boost/core/1794494761/u/f2",
+        "profileimageurl": "http://localhost:3024/theme/image.php/boost/core/1794494761/u/f1"
+      }
+    ]
+  }
+}

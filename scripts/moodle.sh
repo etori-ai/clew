@@ -14,13 +14,23 @@ WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'clew_moodle')\gexec
 SELECT 'CREATE DATABASE clew_moodle OWNER clew_moodle ENCODING ''UTF8'' TEMPLATE template0'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'clew_moodle')\gexec
 SQL
-    # The first start installs Moodle into the empty database, which takes a minute or two.
-    compose up -d --build --wait moodle
+    # The container installs Moodle into an empty database as it starts, which takes a minute or two, and upgrades an
+    # installed one. It is recreated on every start, so a database that was made again under a running container (a
+    # new PostgreSQL volume) is installed into and not left empty.
+    compose up -d --build --wait --force-recreate moodle
     sh "$0" seed
     ;;
   seed)
     moodle=$(compose ps -q moodle)
-    test -n "$moodle"
+    if [ -z "$moodle" ]; then
+      echo 'Moodle is not running. Run: sh scripts/moodle.sh start' >&2
+      exit 1
+    fi
+    pg=$(compose ps -q postgres)
+    if [ "$(docker exec "$pg" psql -U clew -d postgres -Atc "SELECT 1 FROM pg_database WHERE datname = 'clew_moodle'")" != 1 ]; then
+      echo 'The database clew_moodle is not there (a new PostgreSQL volume?). Run: sh scripts/moodle.sh start' >&2
+      exit 1
+    fi
     # Everyone on Hillevi's unit gets an account, and who that is comes from the development directory: the app
     # container prints the list (the same one the calendar seed uses), the seed creates the rest.
     app=$(compose ps -q app)

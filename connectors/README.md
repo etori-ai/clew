@@ -14,6 +14,7 @@ All of them use protocol 2. "Reads", "writes" and "proposes" count the capabilit
 | Folder | Id | Source | What it does | Capabilities | Where it runs |
 |---|---|---|---|---|---|
 | [nextcloud-approval](nextcloud-approval/README.md) | `nextcloud-approval` | Nextcloud | Files waiting for the person's approval in Nextcloud's Approval app. The first connector to a product that was not written for Clew (D101). | 3 reads, 2 writes, scan | Compose service on port 4052 in the `calendar` profile, against the development stack's own Nextcloud. Registered by hand. |
+| [moodle](moodle/README.md) | `moodle` | Lärplattformen | The courses a person has completed and when, one course in detail with a link to it, and the badges they hold with their end, from Moodle LMS, read as one service account: a section on the opened person (D97) and the first source of the competence holdings profile (D108). | 4 reads | Compose service `moodle-connector` on port 4053 in the `moodle` profile, against the development stack's own Moodle. Registered by hand. |
 
 ## Written for a real system, not yet run against it
 
@@ -52,8 +53,8 @@ the first six in process through `tests/fixture-connectors.ts`.
 
 ## Generated manifests
 
-`bun run docs:generate` writes a complete manifest for `hello`, `phonebook`, the six fixture systems and `appraisals`
-to [docs/generated](../docs/generated/README.md). The other connectors are not in that list.
+`bun run docs:generate` writes a complete manifest for `hello`, `phonebook`, the six fixture systems, `appraisals` and
+`moodle` to [docs/generated](../docs/generated/README.md). The other connectors are not in that list.
 
 ## Adding a folder here
 

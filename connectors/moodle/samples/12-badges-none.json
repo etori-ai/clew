@@ -1,0 +1,22 @@
+{
+  "description": "Hassan holds no badge.",
+  "request": {
+    "method": "POST",
+    "path": "/webservice/rest/server.php",
+    "headers": {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Accept": "application/json"
+    },
+    "body": "wstoken=%3Cthe+service+account+token%3E&moodlewsrestformat=json&moodlewssettingraw=true&wsfunction=core_badges_get_user_badges&userid=4"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "badges": [],
+      "warnings": []
+    }
+  }
+}

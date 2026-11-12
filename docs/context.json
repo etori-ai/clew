@@ -168,6 +168,17 @@
         "appraisals.round",
         "appraisals.person"
       ]
+    },
+    {
+      "id": "moodle",
+      "source": "connectors/moodle/connector.mjs",
+      "manifest": "docs/generated/moodle.manifest.json",
+      "capabilities": [
+        "moodle.person",
+        "moodle.courses",
+        "moodle.course",
+        "moodle.holdings"
+      ]
     }
   ],
   "duplicateDecisionNumbers": [
@@ -1436,6 +1447,35 @@
       "title": "Intranet connector (fixture)",
       "category": "integrator-guide",
       "headings": []
+    },
+    {
+      "path": "connectors/moodle/README.md",
+      "title": "moodle: what a learning platform knows about a person, as a Clew connector",
+      "category": "integrator-guide",
+      "headings": [
+        "What it answers",
+        "Finding the person",
+        "Who may be answered about",
+        "What it cannot see",
+        "Call volume and time",
+        "Errors",
+        "What Moodle needs",
+        "Configuration",
+        "The stand-in",
+        "Run and check",
+        "Checked against the development Moodle",
+        "What Moodle could not say",
+        "What it never does",
+        "The scheduled copy"
+      ]
+    },
+    {
+      "path": "connectors/moodle/samples/README.md",
+      "title": "Moodle LMS: recorded requests and responses",
+      "category": "integrator-guide",
+      "headings": [
+        "What the recordings say"
+      ]
     },
     {
       "path": "connectors/nextcloud-approval/README.md",
@@ -2973,7 +3013,8 @@
         "Sick-leave statistics",
         "Errands",
         "News",
-        "Nextcloud Approval"
+        "Nextcloud Approval",
+        "Learning platform (Moodle)"
       ]
     },
     {

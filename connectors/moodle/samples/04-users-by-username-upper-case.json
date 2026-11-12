@@ -1,0 +1,23 @@
+{
+  "description": "A username value with an upper-case letter is refused for the whole batch: HTTP 200 with invalidparameter.",
+  "request": {
+    "method": "POST",
+    "path": "/webservice/rest/server.php",
+    "headers": {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Accept": "application/json"
+    },
+    "body": "wstoken=%3Cthe+service+account+token%3E&moodlewsrestformat=json&moodlewssettingraw=true&wsfunction=core_user_get_users_by_field&field=username&values%5B0%5D=HILLEVI&values%5B1%5D=mikael"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "exception": "core\\exception\\invalid_parameter_exception",
+      "errorcode": "invalidparameter",
+      "message": "Invalid parameter value detected"
+    }
+  }
+}

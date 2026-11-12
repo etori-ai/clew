@@ -32,6 +32,10 @@ set_config('enablecompletion', 1);
 set_config('enablebadges', 1);
 set_config('timezone', 'Europe/Stockholm');
 set_config('country', 'SE');
+// A person may not change their own idnumber: the connector finds a person by it where an installation chooses
+// idnumber over username. Unlocked, anyone could take a colleague's idnumber. The seeded accounts sign in with the
+// manual method.
+set_config('field_lock_idnumber', 'locked', 'auth_manual');
 
 // The people. The three personas that can sign in to Clew and the named people of Hillevi's unit; whoever else the
 // development directory puts on the unit is handed over by `moodle.sh seed` in CLEW_MOODLE_PEOPLE as
@@ -85,6 +89,22 @@ foreach ($courses as $short => [$full]) {
         'fullname' => $full, 'shortname' => $short, 'idnumber' => 'clew-dev:' . $short, 'category' => $category->id,
         'enablecompletion' => 1, 'format' => 'topics', 'numsections' => 1, 'visible' => 1,
     ]);
+}
+// What each course is about, as a teacher writes it on the course page: HTML, which a connector reads as plain text.
+$summaries = [
+    'brandskydd' => '<p>Att <strong>förebygga</strong> brand, larma och släcka. Repeteras vart tredje år.</p>',
+    'hlr' => '<p>Hjärt-lungräddning på vuxen och barn, och hur hjärtstartaren används.</p><p>Repeteras varje år.</p>',
+    'informationssakerhet' => '<p>Att hantera uppgifter om elever, brukare och kollegor säkert: lösenord, e-post &amp; utskrifter.</p>',
+    'livsmedelshygien' => '<p>Hygien i kök och servering enligt livsmedelslagen.</p>',
+    'lakemedel' => '<p>Delegering av läkemedelshantering: <em>iordningställa</em>, administrera och dokumentera.</p>',
+];
+foreach ($courseRows as $short => $course) {
+    if ($course->summary !== $summaries[$short] || (int) $course->summaryformat !== FORMAT_HTML) {
+        $DB->update_record('course', (object) [
+            'id' => $course->id, 'summary' => $summaries[$short], 'summaryformat' => FORMAT_HTML,
+        ]);
+        rebuild_course_cache((int) $course->id, true);
+    }
 }
 
 // One competency per course in a framework of its own, completed when the course is.
@@ -190,11 +210,21 @@ foreach (['hillevi', 'anna', 'johan'] as $holder) {
     }
 }
 
+// Johan's has run out: given 400 days ago, so its year ended 35 days back. Moodle stamps a badge with the moment it is
+// given and has no way to give one in the past, so the two dates are set on the row, counted from today on every run.
+if (isset($users['johan'])) {
+    $given = $now - 400 * $day;
+    $issued = ['badgeid' => $badgeId, 'userid' => $users['johan']->id];
+    $DB->set_field('badge_issued', 'dateissued', $given, $issued);
+    $DB->set_field('badge_issued', 'dateexpire', $given + 365 * $day, $issued);
+}
+
 // The service account. A role with read capabilities only, an external service that lists exactly the functions a
 // connector may call, restricted to this one user, and a token. Nothing here is an administrator.
 $capabilities = [
     'webservice/rest:use', 'moodle/user:viewdetails', 'moodle/user:viewalldetails', 'moodle/user:viewhiddendetails',
-    'moodle/course:view', 'moodle/course:viewparticipants', 'moodle/site:accessallgroups', 'report/completion:view',
+    'moodle/course:view', 'moodle/course:viewhiddencourses', 'moodle/course:viewparticipants',
+    'moodle/site:accessallgroups', 'report/completion:view',
     'moodle/competency:competencyview', 'moodle/competency:usercompetencyview', 'moodle/competency:evidenceview',
     'moodle/competency:coursecompetencyview', 'moodle/badges:viewotherbadges', 'moodle/badges:viewbadges',
 ];

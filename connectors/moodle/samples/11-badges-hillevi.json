@@ -1,0 +1,49 @@
+{
+  "description": "Hillevi's badges: the one she holds, with the day it was issued and the day it expires.",
+  "request": {
+    "method": "POST",
+    "path": "/webservice/rest/server.php",
+    "headers": {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Accept": "application/json"
+    },
+    "body": "wstoken=%3Cthe+service+account+token%3E&moodlewsrestformat=json&moodlewssettingraw=true&wsfunction=core_badges_get_user_badges&userid=3"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "badges": [
+        {
+          "id": 1,
+          "name": "HLR-instruktör",
+          "description": "Får leda arbetsplatsens utbildning i hjärt-lungräddning.",
+          "timecreated": 0,
+          "timemodified": 0,
+          "issuername": "Lärplattformen (utveckling)",
+          "issuerurl": "http://localhost:3024",
+          "issuercontact": "moodle-admin@clew.test",
+          "type": 1,
+          "attachment": 1,
+          "notification": 1,
+          "status": 0,
+          "uniquehash": "22aab6f23bea1a2f15f8048a6171e84ea380bd00",
+          "dateissued": 1794494796,
+          "dateexpire": 1826030796,
+          "visible": 0,
+          "recipientid": 3,
+          "recipientfullname": "Hillevi Berg",
+          "version": "1",
+          "language": "sv",
+          "imagecaption": "",
+          "badgeurl": "http://localhost:3024/webservice/pluginfile.php/1/badges/badgeimage/1/f3",
+          "alignment": [],
+          "relatedbadges": []
+        }
+      ],
+      "warnings": []
+    }
+  }
+}

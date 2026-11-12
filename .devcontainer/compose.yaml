@@ -302,6 +302,25 @@ services:
       NEXTCLOUD_PUBLIC_URL: http://localhost:3021
     ports:
       - "127.0.0.1:4052:4052"
+  # The Moodle connector: what the learning platform knows about a person, read through Moodle's web service API as the
+  # seed's service account `clew-connector`, so it is in the moodle profile, beside the Moodle it needs. Stateless. Not
+  # registered by `dev:connectors`: the command is in connectors/moodle/README.md. People are matched on Moodle's
+  # username, which the seed sets to the Clew user name; a course links to the host's published Moodle.
+  moodle-connector:
+    <<: *fixture
+    profiles: ["moodle"]
+    working_dir: /workspace/connectors/moodle
+    volumes:
+      - ${CLEW_HOST_WORKSPACE:-..}:/workspace:ro
+    environment:
+      <<: *fixture-environment
+      MOODLE_ADAPTER: moodle
+      MOODLE_URL: http://moodle
+      MOODLE_ALLOW_HTTP: "true"
+      MOODLE_TOKEN: ${CLEW_DEV_MOODLE_TOKEN:-c1e0de0000000000000000000000d0e5}
+      MOODLE_PUBLIC_URL: http://localhost:3024
+    ports:
+      - "127.0.0.1:4053:4053"
 
 volumes:
   node_modules:

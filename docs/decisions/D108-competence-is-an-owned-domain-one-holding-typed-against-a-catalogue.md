@@ -146,8 +146,8 @@ and a manager's attestation exists nowhere else.
 
 **Open.**
 - Item 9's schedule and shape: how often a source is read, whether a source can answer everyone at once or only a
-  batch of people, and how old a copied row may be before it is shown as unknown. Neither the learning platform's
-  nor ID06's interface has been read.
+  batch of people, and how old a copied row may be before it is shown as unknown. The learning platform's interface
+  has been read (Moodle LMS, "As built, 2026-11-12"); ID06's has not.
 - The key on the wire for item 10, `externalId` or `userName` (D97, open), and which way ID06 is read; its interface
   has not been read.
 - How a deactivation reaches an owned domain to start item 14's timer. Talks has the same need and is erased by an
@@ -226,6 +226,29 @@ phone and 320 px).
 an opened person has no browser spec of its own: the specs open the form by its address. Merging two types, bringing
 an archived type back, and revoking a holding from the product (the route exists). The erasure timer of item 14: an
 operator runs the script. The read log of item 15. Everything under "Order" after its first step.
+
+**As built, 2026-11-12: a first source for the holdings profile.** `connectors/moodle` answers `moodle.holdings` from
+Moodle LMS, the learning platform the development stack now runs, read through its web service API as one service
+account: for the keys asked (user names, at most 25), one row per person the platform knows, carrying the key and every
+holding of that person, each with the source's row id (`course:<id>:user:<id>`, `badge:<id>:user:<id>`), its type id
+(a course's `idnumber`, else `course:<id>`; `badge:<id>`), the type's label, its kind (`course` or `badge`), the day
+issued and, for a badge that has one, the day it ends. A person the platform does not know is no row and a person who
+holds nothing a row without holdings, so item 9's copy can tell "holds nothing" from "unknown", the concern under
+"Alternatives". It cannot tell "withdrawn" from "not seen": Moodle leaves out ended enrolments, courses the service
+account cannot enter, badges the holder keeps private and, when switched off, course badges, all without a word. So
+the answer says `withdrawalsReported: false`, and item 9's "a source that withdraws a row marks it revoked" cannot be
+applied to this source: a holding missing from a later read must not be revoked. A row marked `partial` says only that
+something of that person was refused or could not be dated in this answer; a row without it is not thereby complete.
+What reading Moodle showed for the open questions: it answers a batch of people, not everyone at once; a completion's
+day costs one call per person and course; and only a badge has an end date. On protocol 3
+([D117](D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md)) the connector
+answers only the keys Clew vouches for as `self` or `managed`, and the profile's `keys` list is something protocol 3
+cannot declare on a read that is not about a person, so through Clew `moodle.holdings` is sent no relation and answers
+no row. D117 places item 9's copy as a read the installation makes with no actor and no key in its input, which this
+read is not: the copy would need a read without keys that answers every holding, and a way for the connector to know
+the call is the installation's own, which protocol 3 does not give. The shape is the connector's own: the protocol does
+not list the profile, and nothing in Clew copies it yet. Item 9's schedule, store and type mapping, and the fixture item
+9 asks for, are still not built.
 
 **Replaces.** Amends [D68](D68-people-are-pushed-into-clew-through-standard-scim.md) item 2 and
 [D96](D96-a-key-written-wrong-is-refused-at-the-scim-boundary.md) (a key written wrong): `position:` is a fourth
