@@ -43,7 +43,6 @@ file as they stood there and have not been checked against the code since.
 | On a phone, is the panel a sheet or the end drawer? D112 item 12 says a sheet; it is built as Astryx's end `Drawer`, full height with the page showing at its edge, as on every narrow window. | 2026-11-11 | [D112](../decisions/D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) item 12, [Interface spaces](../reference/interface-spaces.md#widths) |
 | Does the amendment to D6 stand? The development sign-in was built as a list of personas through the local Keycloak's password grant, not as the accepted form that mints a session without Keycloak. | 2026-11-11 | [D6](../decisions/D06-dev-login-local-only.md) |
 | How far may the assistant act alone, and who sets the level? The direction is chosen, the governance is not designed. | 2026-11-10 | [D104](../decisions/D104-the-model-does-the-work-a-floor-holds-without-it-and-the-assistant-may-act-alone-within-limits.md) |
-| The competence domain (D108) is on `main` although the freeze on new surface holds: it was built on a branch cut before the freeze reached `main` and brought in on 2026-11-11 without the product owner's word. May it stay, switched off as it is, or is it taken out until the first real integration works? | 2026-11-11 | [D108](../decisions/D108-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md), [D101](../decisions/D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) |
 | D108 makes competence a core domain although checklist questions 3 and 4 are not a plain yes, copies what sources hold as a cache against D97's weighed alternative, and puts a position on the person against D97 item 9. Are those three accepted? | 2026-11-11 | [D108](../decisions/D108-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md) |
 | For competence before real data: how long a holding is kept after a person is deactivated, the secrecy rule, what a new manager may read of earlier holdings, and a review by an HR practitioner (checklist questions 6 and 11). | 2026-11-11 | Same |
 
@@ -59,13 +58,6 @@ changes: [D18](../decisions/D18-errands-are-a-clew-owned-passthrough-domain.md),
 [D82](../decisions/D82-sick-leave-statistics-come-through-an-absence-connector-that-reads-only-aggregates.md),
 [D87](../decisions/D87-one-header-shared-by-the-portal-and-the-intranet.md) and
 [D99](../decisions/D99-an-unresolved-job-step-reaches-a-person-and-is-finished-forward.md).
-
-## Before the freeze on new surface lifts
-
-[D101](../decisions/D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md)
-holds new surface until the first real integration works end to end. What remains is listed in the
-[Nextcloud Approval entry](../reference/status/connectors.md#nextcloud-approval) of the implementation status; it is not
-repeated here.
 
 ## Accessibility
 

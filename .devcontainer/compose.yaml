@@ -115,6 +115,43 @@ services:
       interval: 5s
       timeout: 3s
       retries: 60
+  # Moodle LMS (GPL-3.0-or-later, a separate process), a learning platform that was not written for Clew: what people
+  # have completed, the badges they hold and the competencies they are rated on, read through Moodle's own web service
+  # API. Its own profile, its database in the stack's PostgreSQL (Moodle 5.3 needs PostgreSQL 17 or later).
+  # `sh scripts/moodle.sh start` creates the database, builds, starts and seeds it. MOODLE_HOSTS lists the addresses it
+  # answers under: the host's published port first, then its name on the compose network, where a connector calls it.
+  moodle:
+    image: clew-moodle:local
+    build:
+      context: ./moodle
+    profiles: ["moodle"]
+    init: true
+    mem_limit: 768m
+    memswap_limit: 768m
+    environment:
+      CLEW_POC: "true"
+      MOODLE_DB_HOST: postgres
+      MOODLE_DB_NAME: clew_moodle
+      MOODLE_DB_USER: clew_moodle
+      MOODLE_DB_PASSWORD: moodle-local-only
+      MOODLE_ADMIN_USER: moodle-admin
+      MOODLE_ADMIN_PASSWORD: Moodle-admin-local-only-1
+      MOODLE_HOSTS: "localhost:3024 127.0.0.1:3024 moodle"
+      # The token the seed gives the service account a connector calls as. Development only.
+      MOODLE_DEV_TOKEN: ${CLEW_DEV_MOODLE_TOKEN:-c1e0de0000000000000000000000d0e5}
+    volumes:
+      - moodle_data:/var/www/moodledata
+      - ${CLEW_HOST_WORKSPACE:-..}/.devcontainer/moodle:/opt/clew-moodle:ro
+    ports:
+      - "127.0.0.1:3024:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "-H", "Host: moodle", "http://localhost/login/index.php"]
+      interval: 5s
+      timeout: 5s
+      retries: 120
   # The local fake of Microsoft Graph (D69): scripts/fake-graph.ts over the dev image. It needs no account or network and
   # runs in the base stack beside the fixture connectors: Mikael's calendar is Microsoft 365 over it (a mixed estate, D11),
   # CALENDAR_ADAPTER=microsoft365 on the BFF binds everyone to it. It seeds its own meetings and rooms as it starts, and
@@ -261,6 +298,7 @@ volumes:
   bun_cache:
   postgres_clusters:
   calendar_data:
+  moodle_data:
   hr_state:
   finance_state:
   incidents_state:
