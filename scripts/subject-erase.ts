@@ -58,8 +58,7 @@ try {
     const found = await database()
       .select({ id: schema.people.id })
       .from(schema.people)
-      // Folded as the unique index folds user names, whatever the database's collation (L13).
-      .where(sql`lower(${schema.people.userName} collate "und-x-icu") = lower(${key} collate "und-x-icu")`);
+      .where(sql`lower(${schema.people.userName}) = lower(${key})`);
     const id = found[0]?.id;
     if (id && personOption && personOption !== id)
       throw new Error(`the user name belongs to person "${id}", not to "${personOption}"`);

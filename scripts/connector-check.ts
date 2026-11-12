@@ -56,8 +56,7 @@ async function personByUserName(userName: string): Promise<Actor> {
   const found = await database()
     .select({ id: schema.people.id })
     .from(schema.people)
-    // Folded as the unique index folds user names, whatever the database's collation (L13).
-    .where(sql`lower(${schema.people.userName} collate "und-x-icu") = lower(${userName} collate "und-x-icu")`);
+    .where(sql`lower(${schema.people.userName}) = lower(${userName})`);
   const persona = found.length === 1 ? await systemContext(found[0]!.id, 'operator:connector-check') : undefined;
   if (!persona) throw new Error(`--as ${userName}: no person with that user name and a grant in this installation.`);
   return actorOf(persona);
