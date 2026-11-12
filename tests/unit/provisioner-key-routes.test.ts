@@ -122,6 +122,26 @@ describe('the routes of the provisioners’ keys (D107)', () => {
       'provisioner.revoked',
     ]);
   });
+  test('an address whose id is not of a provisioner’s shape, a NUL included, names no provisioner and is answered as an unknown one (K3)', async () => {
+    const { store, post } = stack();
+    await post('/', { id: 'metakatalogen', label: 'Metakatalogen' });
+    for (const id of [
+      'metakatalogen%00',
+      '%00',
+      'Metakatalogen',
+      'm',
+      'meta%20katalogen',
+      '-metakatalogen',
+      'x'.repeat(65),
+    ]) {
+      await refused(await post(`/${id}/rotate`, { graceHours: 0 }), 400, 'Katalogen finns inte.');
+      await refused(await post(`/${id}/revoke`), 400, 'Katalogen finns inte.');
+    }
+    // Before the body is read: an address that names nothing is that, whatever is sent with it.
+    await refused(await post('/metakatalogen%00/rotate', '{not json'), 400, 'Katalogen finns inte.');
+    expect(store.state.audit.map(a => a.action)).toEqual(['provisioner.added']);
+    expect([...store.state.provisioners.keys()]).toEqual(['digest:route-token-1']);
+  });
   test('without admin.users every one of the three is refused, and nothing is written', async () => {
     const { store, post } = stack();
     await post('/', { id: 'metakatalogen', label: 'Metakatalogen' });

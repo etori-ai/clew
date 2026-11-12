@@ -185,6 +185,71 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         expect(await tx.userGroups(a)).toEqual([{ id: g2, externalId: null, label: 'No external id' }]);
       });
     });
+    test("an organisation's groups are named by external id in one read, and searched by name or external id (D85)", async () => {
+      const { store, prefix: p } = await make();
+      const [org, elsewhere] = [p + '-org', p + '-elsewhere'],
+        [ekonomi, skola, atkomst, also, percent] = [
+          'S-1-5-21-' + p + '-ekonomi',
+          'unit:' + p + '-skola',
+          'capability:' + p + '-a',
+          'g-' + p + '-z',
+          p + '-100%_procent',
+        ];
+      await store.transaction(async tx => {
+        await tx.insertGroup(groupRow(p + '-s1', org, { externalId: ekonomi, label: 'Ekonomi' }));
+        await tx.insertGroup(groupRow(p + '-s2', org, { externalId: skola, label: 'Älvsbyns skola' }));
+        await tx.insertGroup(groupRow(p + '-s3', org, { externalId: atkomst, label: 'Åtkomst' }));
+        await tx.insertGroup(groupRow(p + '-s4', org, { externalId: also, label: 'Ekonomi' }));
+        await tx.insertGroup(groupRow(p + '-s5', org, { externalId: null, label: 'Ekonomi utan id' }));
+        await tx.insertGroup(groupRow(p + '-s6', org, { externalId: percent, label: 'Hundra procent' }));
+        await tx.insertGroup(
+          groupRow(p + '-s7', elsewhere, { externalId: 'S-1-5-21-' + p + '-annan', label: 'Ekonomi' }),
+        );
+      });
+      await store.transaction(async tx => {
+        // Named by their own group, any number in one read; another organisation's group and a gone one are absent.
+        expect(await tx.groupLabels(org, [ekonomi, skola, 'S-1-5-21-' + p + '-annan', p + '-gone'])).toEqual(
+          new Map([
+            [ekonomi, 'Ekonomi'],
+            [skola, 'Älvsbyns skola'],
+          ]),
+        );
+        expect(await tx.groupLabels(org, [])).toEqual(new Map());
+        const many = Array.from({ length: 2500 }, (_, i) => p + '-missing-' + i);
+        expect([...(await tx.groupLabels(org, [...many, skola])).keys()]).toEqual([skola]);
+        expect(await tx.groupLabels(elsewhere, [ekonomi, 'S-1-5-21-' + p + '-annan'])).toEqual(
+          new Map([['S-1-5-21-' + p + '-annan', 'Ekonomi']]),
+        );
+        // No words is every group with an external id, by name as Swedish orders it (å and ä after z), and one name
+        // by external id compared character by character (an upper-case letter before a lower-case one).
+        expect(await tx.searchGroups(org, [], 10)).toEqual([
+          { externalId: ekonomi, label: 'Ekonomi' },
+          { externalId: also, label: 'Ekonomi' },
+          { externalId: percent, label: 'Hundra procent' },
+          { externalId: atkomst, label: 'Åtkomst' },
+          { externalId: skola, label: 'Älvsbyns skola' },
+        ]);
+        const found = async (words: string[], limit = 10) =>
+          (await tx.searchGroups(org, words, limit)).map(g => g.externalId);
+        expect(await found([], 2)).toEqual([ekonomi, also]);
+        // Each word in the name or the external id, without regard to case, å, ä and ö included.
+        expect(await found(['EKONOMI'])).toEqual([ekonomi, also]);
+        expect(await found(['s-1-5-21'])).toEqual([ekonomi]);
+        expect(await found(['ÄLVSBYNS', 'skola'])).toEqual([skola]);
+        expect(await found(['ÅTKOMST'])).toEqual([atkomst]);
+        expect(await found(['ekonomi', 'skola'])).toEqual([]);
+        // A word is matched as written: a per cent sign and an underscore are themselves.
+        expect(await found(['%'])).toEqual([percent]);
+        expect(await found(['_'])).toEqual([percent]);
+        expect(await found(['100%_'])).toEqual([percent]);
+        // A group without an external id carries no meaning and another organisation's group is not there.
+        expect(await found(['utan'])).toEqual([]);
+        expect(await found(['annan'])).toEqual([]);
+        expect((await tx.searchGroups(elsewhere, ['ekonomi'], 10)).map(g => g.externalId)).toEqual([
+          'S-1-5-21-' + p + '-annan',
+        ]);
+      });
+    });
     test('assignments carry their unit label, a binding is seen, and a group-capability row is added and removed once', async () => {
       const h = await make(),
         p = h.prefix,
