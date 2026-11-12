@@ -1,6 +1,8 @@
 import { calendar, fireTimer } from '../composition';
+import { competence } from '../composition/competence';
 import { executions } from '../composition/executions';
 import { runScheduledJob } from '../composition/jobs';
+import { COPY_ACTOR } from '../modules/competence/usecases';
 import { bindActivities } from './workflows';
 
 /**
@@ -18,5 +20,10 @@ export function bindLiveActivities() {
     checkObligation: threadId => calendar.obligationCheck(threadId),
     remindInvitees: (threadId, due) => calendar.remindInvitees(threadId, 'assistant:obligation', due),
     returnObligation: (threadId, why) => calendar.returnObligation(threadId, why),
+    /** The competence copy (D108 item 9): the next day's run, the sources to read, and one source read to the end. */
+    scheduleCompetenceCopy: () => competence.scheduleCopy(),
+    competenceSources: only => competence.copySources(only),
+    copyHoldings: async (run, source, signal) =>
+      (await competence.copySource(COPY_ACTOR, run, source, signal ? { signal } : {})).outcome,
   });
 }

@@ -105,6 +105,8 @@ Background work uses [systemContext](../../apps/server/src/system-context.ts), b
 
 A valid delegated search therefore does not prove the source can support unattended scans, watches or actions. Establish and test the source's background authorization arrangement before enabling those features.
 
+One kind of background read has no person at all: a read the installation makes itself ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md)), today the holdings profile that Clew's competence register copies. It is not a capability, so no person's path, the callback route included, can name it; only the core's `holdingsSources` and `readHoldings` reach it. Its assertion carries no actor: subject `clew:installation`, `caller: "installation"`, no callback grant, bound to its request like every assertion, and the verifier tells it from a person's both ways.
+
 ## Retained data and revocation
 
 Clew rechecks authority before releasing protected results. Persisted source cards/messages retain the authority that produced them; a new unit assignment or renewed grant does not make the old snapshot readable. Legacy snapshots without provenance are hidden, and fresh scans create new authorized projections.

@@ -14,7 +14,7 @@ import {
   type ManifestIssue,
 } from '../../packages/connectors/src/protocol';
 import { previewManifest } from '../../packages/connectors/src/preview';
-import { RULES, manifestReference } from '../../packages/connectors/src/reference';
+import { HOLDINGS_EXAMPLE, RULES, manifestReference } from '../../packages/connectors/src/reference';
 import { ManifestError, manifestProblems, parseManifest } from '../../packages/connectors/src/remote';
 import { protocolRoutes } from '../../apps/server/src/routes/protocol';
 import { manifest as hello } from '../../connectors/hello/connector.mjs';
@@ -711,6 +711,39 @@ describe('a capability about an entity (D97)', () => {
         'a person declared on a read about a unit',
         edited(talks, m => (m.capabilities[2].person = { admits: ['managed'] })),
         { path: 'capabilities[2].person', anchor: 'rule-person-not-a-unit' },
+      ],
+      // The reads Clew makes as the installation (D119).
+      [
+        'an installation read on protocol 2',
+        edited(talks, m => {
+          m.protocol = 2;
+          m.installation = [{ ...structuredClone(HOLDINGS_EXAMPLE), name: 'appraisals.holdings' }];
+        }),
+        { path: 'installation', anchor: 'rule-installation-on-3' },
+      ],
+      [
+        'an installation read that is no profile',
+        edited(
+          talks,
+          m => (m.installation = [{ ...structuredClone(HOLDINGS_EXAMPLE), name: 'appraisals.everything' }]),
+        ),
+        { path: 'installation[0].name', anchor: 'rule-installation-profile' },
+      ],
+      [
+        'a holdings read that takes keys',
+        edited(talks, m => {
+          m.installation = [{ ...structuredClone(HOLDINGS_EXAMPLE), name: 'appraisals.holdings' }];
+          m.installation[0].input = { type: 'object', properties: { keys: { type: 'array' } } };
+        }),
+        { path: 'installation[0].input', anchor: 'rule-installation-holdings-input' },
+      ],
+      [
+        'a holdings read whose rows carry a name',
+        edited(talks, m => {
+          m.installation = [{ ...structuredClone(HOLDINGS_EXAMPLE), name: 'appraisals.holdings' }];
+          m.installation[0].output.properties.rows.items.properties.name = { type: 'string' };
+        }),
+        { path: 'installation[0].output', anchor: 'rule-installation-holdings-output' },
       ],
     ];
     const placed = new Set<string>();

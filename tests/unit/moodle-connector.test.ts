@@ -3,8 +3,15 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
-import { openRef, type Relation, type ViewOpen } from '@clew/contracts';
 import {
+  HoldingsOutputSchema,
+  openRef,
+  type HoldingsOutput as Page,
+  type Relation,
+  type ViewOpen,
+} from '@clew/contracts';
+import {
+  InstallationReadError,
   Registry,
   openGovernance,
   placesOf,
@@ -14,7 +21,7 @@ import {
 import { checkConnector } from '../../packages/connectors/src/check';
 import { namedInputs } from '../../packages/connectors/src/named';
 import { manifestProblems, parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
-import { createConnector } from '../../connectors/moodle/connector.mjs';
+import { OVERLAP, createConnector } from '../../connectors/moodle/connector.mjs';
 import {
   ItemUnreadable,
   SourceRefused,
@@ -26,11 +33,19 @@ import {
   createMoodleLearning,
   formOf,
   parseCompletion,
+  parseListedAccounts,
   plainText,
   unescapeText,
 } from '../../connectors/moodle/moodle.mjs';
-import { HoldingsOutput, manifest as moodleManifest } from '../../connectors/moodle/manifest.mjs';
-import { assertionFor, signedRequest, testJwks } from '../connector-authority';
+import { HOLDINGS_PAGE, HoldingsOutput, manifest as moodleManifest } from '../../connectors/moodle/manifest.mjs';
+import {
+  assertionFor,
+  installationAssertionFor,
+  installationRequest,
+  signedRequest,
+  testAuthority,
+  testJwks,
+} from '../connector-authority';
 
 /**
  * The Moodle connector: what a learning platform knows about a person, read as one service account. Who may be asked
@@ -123,9 +138,6 @@ const vouch = (actor: Actor, keys: string[]) => ({
 });
 
 type Row = Record<string, unknown>;
-type Holding = { id: string; type: string; label: string; kind: string; issuedOn: string; expiresOn?: string };
-type HoldingsRow = { key: string; holdings: Holding[]; partial?: true };
-type HoldingsAnswer = { withdrawalsReported: false; rows: HoldingsRow[] };
 
 function stack(options: Parameters<typeof createConnector>[0] = {}) {
   const learning = createFixtureLearning({ now: () => at });
@@ -137,6 +149,7 @@ function stack(options: Parameters<typeof createConnector>[0] = {}) {
       url: 'http://moodle-connector',
       key: secret,
       assert: assertionFor(ID, secret),
+      installation: installationAssertionFor(ID, secret),
       fetch: connectorFetch,
     }),
   );
@@ -165,16 +178,35 @@ function stack(options: Parameters<typeof createConnector>[0] = {}) {
     });
     return service.handle(signal ? new Request(request, { signal }) : request);
   };
-  /**
-   * The holdings profile, called as Clew would call it if it could vouch for its keys. It cannot: protocol 3 declares a
-   * list of people only on a read about a person, so through the registry the read gets no `about` (tested below).
-   */
-  const holdingsAnswer = async (actor: Actor, keys: string[]) => {
-    const response = await post(actor, `${ID}.holdings`, { keys }, { about: vouch(actor, keys) });
-    if (response.status !== 200) throw new Error('holdings answered ' + response.status);
-    return ((await response.json()) as { output: HoldingsAnswer }).output;
+  /** One page of every holding, read as the installation through Clew's registry, as the competence register reads it (D119). */
+  const page = (cursor?: string) => registry.readHoldings(ID, cursor);
+  /** Every page to the end, following `next`. */
+  const sweep = async () => {
+    const pages: Page[] = [];
+    let cursor: string | undefined;
+    do {
+      const answer = await page(cursor);
+      pages.push(answer);
+      cursor = answer.next;
+    } while (cursor && pages.length < 200);
+    return pages;
   };
-  const holdings = async (actor: Actor, keys: string[]) => (await holdingsAnswer(actor, keys)).rows;
+  /** Every row of every page, in order. */
+  const rows = async () => (await sweep()).flatMap(p => p.rows);
+  /** The row of one account in the first page. */
+  const row = async (key: string) => (await page()).rows.find(r => r.key === key);
+  /** Straight to the service's installation route, as Clew sends a read it makes itself (D119). */
+  const asInstallation = async (
+    input: object,
+    { signal, name = `${ID}.holdings` } = {} as { signal?: AbortSignal; name?: string },
+  ) => {
+    const request = await installationRequest(`http://moodle-connector/clew/installation/${name}`, {
+      id: ID,
+      key: secret,
+      body: { input },
+    });
+    return service.handle(signal ? new Request(request, { signal }) : request);
+  };
   return {
     registry,
     learning,
@@ -183,9 +215,12 @@ function stack(options: Parameters<typeof createConnector>[0] = {}) {
     personRows,
     courses,
     course,
-    holdings,
-    holdingsAnswer,
     post,
+    page,
+    sweep,
+    rows,
+    row,
+    asInstallation,
   };
 }
 
@@ -203,6 +238,7 @@ function wrapped(
   return {
     inner,
     accounts: through('accounts') as LearningSource['accounts'],
+    everyone: through('everyone') as LearningSource['everyone'],
     courses: through('courses') as LearningSource['courses'],
     completion: through('completion') as LearningSource['completion'],
     completionStatus: through('completionStatus') as LearningSource['completionStatus'],
@@ -212,7 +248,7 @@ function wrapped(
 }
 
 describe('the Moodle connector', () => {
-  test('declares protocol 3, what each read admits, and that none of them is a tool', () => {
+  test('declares protocol 3, what each read admits, that none of them is a tool, and the holdings read for the installation alone', () => {
     expect(manifestProblems(moodleManifest, ID)).toEqual([]);
     const m = parseManifest(moodleManifest, ID);
     expect([m.protocol, m.kind, m.source, m.scan, m.areas]).toEqual([3, 'passthrough', 'Lärplattformen', false, []]);
@@ -220,17 +256,19 @@ describe('the Moodle connector', () => {
       ['moodle.person', 'read', false, { entity: 'person' }, 'list'],
       ['moodle.courses', 'read', false, null, 'list'],
       ['moodle.course', 'read', false, null, 'detail'],
-      ['moodle.holdings', 'read', false, null, null],
     ]);
     // A person reads their own; a manager their direct reports; never a colleague (D117).
     expect(m.capabilities.map(c => [c.name, c.person ?? null])).toEqual([
       ['moodle.person', { admits: ['self', 'managed'] }],
       ['moodle.courses', { param: 'person', admits: ['self', 'managed'] }],
       ['moodle.course', { param: 'person', admits: ['self', 'managed'] }],
-      ['moodle.holdings', null],
     ]);
-    // Clew resolves the three; the holdings' list of people is not something protocol 3 can declare on a read that is
-    // not about a person, so nobody in it is resolved, and it gets no `about`.
+    // The holdings profile is the installation's read (D119): not a capability, so no person's path can name it.
+    expect(m.installation!.map(r => [r.name, r.title])).toEqual([['moodle.holdings', 'Genomförda kurser och märken']]);
+    const { registry } = stack();
+    expect(registry.find('moodle.holdings')).toBeUndefined();
+    expect(registry.capabilitiesFor(hillevi).map(c => c.capability.name)).not.toContain('moodle.holdings');
+    // Clew resolves the three; the installation's read names nobody.
     expect([...namedInputs(m).entries()].map(([name, n]) => [name, n.keys, n.params, n.admits])).toEqual([
       ['moodle.person', true, [], ['self', 'managed']],
       ['moodle.courses', false, ['person'], ['self', 'managed']],
@@ -367,17 +405,33 @@ describe('the Moodle connector', () => {
       expect((await post(hillevi, 'moodle.course', input, { about })).status).toBe(400);
   });
 
-  test('moodle.holdings: per person the platform knows, every completed course and badge with its days; holding nothing and being unknown are told apart; absence is never a withdrawal', async () => {
-    const { holdingsAnswer } = stack();
-    const answer = await holdingsAnswer(hillevi, ['hillevi', 'lisa', 'nobody', 'erik']);
+  test('moodle.holdings, read as the installation: every account a page at a time, each with its completed courses and badges and their days; holding nothing is a row; absence is never a withdrawal', async () => {
+    const { page } = stack();
+    const answer = await page();
+    // The connector's own declaration and the protocol's profile (D119), both of which Clew checks every page against.
     expect(ajv.validate(HoldingsOutput as object, answer)).toBe(true);
+    expect(ajv.validate(JSON.parse(JSON.stringify(HoldingsOutputSchema)), answer)).toBe(true);
     // The source says outright that it reports no withdrawals: a holding missing next time is not revoked.
     expect(answer.withdrawalsReported).toBe(false);
-    expect(ajv.validate(HoldingsOutput as object, { rows: answer.rows })).toBe(false);
-    const rows = answer.rows;
-    expect(rows.map(r => r.key)).toEqual(['hillevi', 'lisa', 'erik']);
-    const [h, lisa, erik] = rows;
-    expect(h!.holdings).toEqual([
+    // Every account of the stand-in, in Moodle's id order, keyed by its username; one page, so no `next`.
+    expect(answer.rows.map(r => r.key)).toEqual([
+      'hillevi',
+      'hassan',
+      'mikael',
+      'anna',
+      'erik',
+      'maria',
+      'johan',
+      'karin',
+      'sara',
+      'lisa',
+    ]);
+    expect(answer.next).toBeUndefined();
+    // Moodle's guest account is listed with everyone and answered by no row: nothing is partial because of it.
+    expect(answer.rows.map(r => r.key)).not.toContain('guest');
+    expect(answer.rows.some(r => r.partial)).toBe(false);
+    const h = answer.rows[0]!;
+    expect(h.holdings).toEqual([
       {
         id: 'course:2:user:3',
         type: 'clew-dev:brandskydd',
@@ -417,11 +471,11 @@ describe('the Moodle connector', () => {
         expiresOn: ago(-265),
       },
     ]);
-    expect(h!.partial).toBeUndefined();
-    // Lisa has an account and holds nothing: a row with no holdings. "nobody" has no account: no row at all.
-    expect(lisa).toEqual({ key: 'lisa', holdings: [] });
+    expect(h.partial).toBeUndefined();
+    // Lisa has an account and holds nothing: a row with no holdings, so the register can tell her from someone unknown.
+    expect(answer.rows.find(r => r.key === 'lisa')).toEqual({ key: 'lisa', holdings: [] });
     // A badge keeps its end date after it has run out: the register decides what that means.
-    expect(erik!.holdings.find(x => x.kind === 'badge')).toEqual({
+    expect(answer.rows.find(r => r.key === 'erik')!.holdings.find(x => x.kind === 'badge')).toEqual({
       id: 'badge:2:user:7',
       type: 'badge:2',
       label: 'Heta arbeten',
@@ -429,43 +483,126 @@ describe('the Moodle connector', () => {
       issuedOn: ago(400),
       expiresOn: ago(35),
     });
-    // Nothing about the person beyond the key: no name, no Moodle user name.
-    expect(JSON.stringify(rows)).not.toContain('Hillevi');
+    // Nothing about the person beyond the key: no name.
+    expect(JSON.stringify(answer)).not.toContain('Hillevi');
+    // With idnumber as the match field, the key is the idnumber: Sara's employee number.
+    expect((await stack({ match: 'idnumber' }).page()).rows.map(r => r.key)).toContain('1007');
   });
 
-  test('moodle.holdings through Clew: protocol 3 cannot declare its list of people, so Clew vouches for nobody and the read answers no row', async () => {
-    const { registry, learning } = stack();
-    const before = { ...learning.controls.calls };
-    expect(await registry.run(hillevi, 'moodle.holdings', { keys: ['hillevi', 'anna'] })).toEqual({
-      withdrawalsReported: false,
-      rows: [],
-    });
-    // Nothing was looked up.
-    expect(learning.controls.calls).toEqual(before);
+  test('pages to the end: every account once, in id order, `next` until the last page, and the same cursor gives the same page', async () => {
+    const { page, sweep, learning } = stack();
+    for (let i = 1; i <= 60; i++) learning.controls.add(`extra${i}`, `extra${i}`);
+    const pages = await sweep();
+    // Moodle's guest account is listed first and answered by no row, so the first page has one row fewer.
+    expect(pages.map(p => p.rows.length)).toEqual([HOLDINGS_PAGE - 1, HOLDINGS_PAGE, 21]);
+    expect(pages.map(p => p.next !== undefined)).toEqual([true, true, false]);
+    const keys = pages.flatMap(p => p.rows.map(r => r.key));
+    expect(keys).toHaveLength(70);
+    expect(new Set(keys).size).toBe(70);
+    expect(keys.slice(0, 3)).toEqual(['hillevi', 'hassan', 'mikael']);
+    expect(keys.at(-1)).toBe('extra60');
+    // A cursor is the last account answered and its place: the same cursor reads the same page again.
+    expect(pages[0]!.next).toMatch(/^\d+:\d+$/);
+    expect(await page(pages[0]!.next)).toEqual(pages[1]!);
+    // A cursor that is not one is refused by Clew against the declaration, before the connector is asked.
+    const before = learning.controls.calls.everyone;
+    await expect(page('not-a-cursor')).rejects.toMatchObject({ code: 'invalid' });
+    expect(learning.controls.calls.everyone).toBe(before);
+    // An account added during the read comes last, on a later page.
+    const first = await page();
+    learning.controls.add('newcomer', 'newcomer');
+    const rest: string[] = [];
+    for (let cursor = first.next; cursor;) {
+      const next = await page(cursor);
+      rest.push(...next.rows.map(r => r.key));
+      cursor = next.next;
+    }
+    expect(rest.at(-1)).toBe('newcomer');
+    expect([...first.rows.map(r => r.key), ...rest]).toHaveLength(71);
+  });
+
+  test('accounts deleted before the cursor never make a page pass over one, even more than the overlap', async () => {
+    const { page, learning } = stack();
+    for (let i = 1; i <= 60; i++) learning.controls.add(`extra${i}`, `extra${i}`);
+    const first = await page();
+    const firstKeys = first.rows.map(r => r.key);
+    // Three accounts the first page answered are deleted: everyone after them moves up three places.
+    for (const name of ['anna', 'erik', 'extra1']) learning.controls.remove(name);
+    const second = await page(first.next);
+    expect(second.rows[0]!.key).toBe('extra15');
+    // More than the overlap are deleted before the next cursor: the page steps back and still starts where it should.
+    for (const name of second.rows.slice(0, OVERLAP + 5).map(r => r.key)) learning.controls.remove(name);
+    const calls = learning.controls.calls.everyone;
+    const third = await page(second.next);
+    expect(third.rows[0]!.key).toBe('extra40');
+    expect(learning.controls.calls.everyone - calls).toBe(2);
+    // Nobody was passed over: every account still there and not yet answered is on the third page.
+    expect(third.rows.map(r => r.key)).toEqual(Array.from({ length: 21 }, (_, i) => `extra${40 + i}`));
+    expect(third.next).toBeUndefined();
+    expect(firstKeys).toContain('anna');
+  });
+
+  test('an account Moodle withholds has no row, two accounts sharing a key are no one, and a suspended account is answered', async () => {
+    const { page, learning, post } = stack();
+    // Moodle's guest account is nobody's, for a person's read too, whatever Clew vouches.
+    const guest = await post(
+      hillevi,
+      'moodle.person',
+      { keys: ['guest'] },
+      { about: { entity: 'person', relations: { guest: 'managed' } } },
+    );
+    expect(((await guest.json()) as { output: { rows: Row[] } }).output.rows).toEqual([]);
+    learning.controls.withhold('karin');
+    learning.controls.suspend('johan');
+    const keys = (await page()).rows.map(r => r.key);
+    // Karin's details are withheld from the service account: no key, so no row, and the page goes on past her.
+    expect(keys).not.toContain('karin');
+    expect(keys).toContain('sara');
+    // Johan's account is suspended: what he completed stays true, and his row is there.
+    const johan = (await page()).rows.find(r => r.key === 'johan')!;
+    expect(johan.holdings.length).toBeGreaterThan(0);
+    // Matched on idnumber, two accounts whose idnumbers differ only in case are no one, as in every read.
+    const twins = stack({ match: 'idnumber' });
+    twins.learning.controls.add('kim.a', 'kim');
+    twins.learning.controls.add('kim.b', 'Kim');
+    const twinKeys = (await twins.page()).rows.map(r => r.key);
+    expect(twinKeys).not.toContain('kim');
+    expect(twinKeys).not.toContain('Kim');
+    expect(twinKeys).toContain('lisa');
   });
 
   test('a completed course whose day cannot be read is left out and the row says it is partial', async () => {
-    const { holdings, learning } = stack();
-    const before = (await holdings(hillevi, ['maria']))[0]!;
+    const { row, learning } = stack();
+    const before = (await row('maria'))!;
     expect(before.partial).toBeUndefined();
     expect(before.holdings).toHaveLength(4);
     // Maria's welcome course records no completion; marked complete anyway, Moodle has no day to give for it.
     learning.controls.complete('maria', 8, 3);
-    const [row] = await holdings(hillevi, ['maria']);
-    expect(row!.partial).toBe(true);
-    expect(row!.holdings).toEqual(before.holdings);
+    const after = (await row('maria'))!;
+    expect(after.partial).toBe(true);
+    expect(after.holdings).toEqual(before.holdings);
   });
 
-  test("one person's or one course's refusal leaves that item out and marks the person partial; the rest of the batch stands", async () => {
-    const { holdings, personRows, courses, learning, post } = stack();
-    const full = await holdings(hillevi, ['hillevi', 'anna']);
+  test("one person's or one course's refusal leaves that item out and marks the person partial; the rest of the page stands", async () => {
+    const { row, page, personRows, courses, learning, post } = stack();
+    const full = (await page()).rows;
+    const of = (key: string) => full.find(r => r.key === key)!;
     // Moodle withholds one course's completion for Hillevi, and Anna's whole course list.
     learning.controls.unreadable('completion', 'hillevi', 2);
     learning.controls.unreadable('courses', 'anna');
-    const [h, a] = await holdings(hillevi, ['hillevi', 'anna']);
-    expect(h!.partial).toBe(true);
-    expect(h!.holdings.map(x => x.id)).toEqual(full[0]!.holdings.map(x => x.id).filter(id => id !== 'course:2:user:3'));
-    expect(a).toEqual({ key: 'anna', holdings: full[1]!.holdings.filter(x => x.kind === 'badge'), partial: true });
+    const h = (await row('hillevi'))!;
+    expect(h.partial).toBe(true);
+    expect(h.holdings.map(x => x.id)).toEqual(
+      of('hillevi')
+        .holdings.map(x => x.id)
+        .filter(id => id !== 'course:2:user:3'),
+    );
+    expect(await row('anna')).toEqual({
+      key: 'anna',
+      holdings: of('anna').holdings.filter(x => x.kind === 'badge'),
+      partial: true,
+    });
+    expect(await row('maria')).toEqual(of('maria'));
     // No true count for Anna, so no row; Hillevi's stands.
     expect((await personRows(hillevi, ['hillevi', 'anna'])).map(r => r.key)).toEqual(['hillevi']);
     // Hillevi's list shows the course without the day Moodle withheld.
@@ -478,10 +615,166 @@ describe('the Moodle connector', () => {
     ).toBe(503);
     // Badges refused for one person: their courses stand.
     learning.controls.unreadable('badges', 'erik');
-    const [e] = await holdings(hillevi, ['erik']);
-    expect(e!.partial).toBe(true);
-    expect(e!.holdings.every(x => x.kind === 'course')).toBe(true);
-    expect(e!.holdings.length).toBeGreaterThan(0);
+    const e = (await row('erik'))!;
+    expect(e.partial).toBe(true);
+    expect(e.holdings.every(x => x.kind === 'course')).toBe(true);
+    expect(e.holdings.length).toBeGreaterThan(0);
+  });
+
+  test("a failing page is refused in the protocol's kinds: down is unavailable, a refused token denied; a failing call stops the rest", async () => {
+    const { page, learning, asInstallation } = stack();
+    learning.controls.outage();
+    await expect(page()).rejects.toBeInstanceOf(InstallationReadError);
+    await expect(page()).rejects.toMatchObject({ code: 'unavailable', message: 'Lärplattformen svarar inte just nu.' });
+    expect((await asInstallation({})).status).toBe(503);
+    learning.controls.outage(false);
+    learning.controls.refuse();
+    // The connector says "Lärplattformen godtar inte anslutningens behörighet."; Clew keeps the kind and says it in its
+    // own words, so nothing a connector writes reaches a log or an administrator (D91).
+    expect((await (await asInstallation({})).json()).error.message).toBe(
+      'Lärplattformen godtar inte anslutningens behörighet.',
+    );
+    await expect(page()).rejects.toMatchObject({ code: 'denied', message: 'Lärplattformen godtar inte Clews intyg.' });
+    learning.controls.refuse(false);
+    // Input that is not the profile's, straight to the service.
+    for (const input of [{ cursor: 'x' }, { cursor: 7 }, { keys: ['anna'] }, { cursor: '1:1', more: true }])
+      expect((await asInstallation(input)).status).toBe(400);
+    // A call that fails the page stops it: nothing still queued is started.
+    const started: string[] = [];
+    const source = wrapped(async (method, call) => {
+      started.push(method);
+      if (method === 'courses') throw new SourceUnavailable('down');
+      return call();
+    });
+    const one = stack({ source, concurrency: 1 });
+    expect((await one.asInstallation({})).status).toBe(503);
+    expect(started).toEqual(['everyone', 'accounts', 'courses']);
+  });
+
+  test('a page stops taking accounts halfway to its deadline and answers those it finished; the read moves on to the end', async () => {
+    // Every Moodle call takes a while: a page cannot finish all ten accounts before its deadline.
+    const slow = wrapped(async (_method, call) => {
+      await new Promise(resolve => setTimeout(resolve, 8));
+      return call();
+    });
+    const { sweep } = stack({
+      source: slow,
+      concurrency: 2,
+      deadlines: { person: 3000, courses: 3000, course: 3000, holdings: 120 },
+    });
+    const pages = await sweep();
+    expect(pages.length).toBeGreaterThan(1);
+    expect(pages.flatMap(p => p.rows.map(r => r.key))).toEqual([
+      'hillevi',
+      'hassan',
+      'mikael',
+      'anna',
+      'erik',
+      'maria',
+      'johan',
+      'karin',
+      'sara',
+      'lisa',
+    ]);
+    expect(pages.flatMap(p => p.rows).every(r => !r.partial)).toBe(true);
+  });
+
+  test('a deadline inside the first account answers what was read of it, marked partial, and moves on; nothing read at all is unavailable', async () => {
+    // Courses never answer by themselves, only the page's deadline ends them; badges do answer.
+    const source = wrapped(async (method, call, { signal }) => {
+      if (method === 'courses')
+        return new Promise((_, reject) =>
+          signal?.addEventListener('abort', () => reject(new SourceUnavailable('stopped'))),
+        );
+      return call();
+    });
+    const { page } = stack({ source, deadlines: { person: 3000, courses: 3000, course: 3000, holdings: 60 } });
+    const first = await page();
+    expect(first.rows).toEqual([
+      {
+        key: 'hillevi',
+        holdings: [
+          {
+            id: 'badge:1:user:3',
+            type: 'badge:1',
+            label: 'HLR-instruktör',
+            kind: 'badge',
+            issuedOn: ago(100),
+            expiresOn: ago(-265),
+          },
+        ],
+        partial: true,
+      },
+    ]);
+    expect(first.next).toMatch(/^3:\d+$/);
+    // Neither her courses nor her badges answer in time: nothing of her was read, and she is still answered, partial
+    // and empty, so the cursor moves past her. Answered unavailable, the sweep would stop at her on every try.
+    const slow = new Set(['courses', 'badges']);
+    const silent = wrapped(async (method, call, { signal }) =>
+      slow.has(method)
+        ? new Promise((_, reject) => signal?.addEventListener('abort', () => reject(new SourceUnavailable('stopped'))))
+        : call(),
+    );
+    const stalled = stack({ source: silent, deadlines: { person: 3000, courses: 3000, course: 3000, holdings: 60 } });
+    const past = await stalled.page();
+    expect(past.rows).toEqual([{ key: 'hillevi', holdings: [], partial: true }]);
+    expect(past.next).toMatch(/^3:\d+$/);
+    // The next page begins after her.
+    slow.clear();
+    const after = await stalled.page(past.next);
+    expect(after.rows[0]?.key).not.toBe('hillevi');
+    expect(after.rows.length).toBeGreaterThan(0);
+  });
+
+  test("only the installation is answered: a person's assertion on its route, the installation's on a person's route, and one bound to another body or name are refused", async () => {
+    const { service, registry, learning, asInstallation } = stack();
+    const url = 'http://moodle-connector/clew/installation/moodle.holdings';
+    const text = JSON.stringify({ input: {} });
+    const send = (token: string, at = url, body = text) =>
+      service.handle(
+        new Request(at, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: 'Bearer ' + token,
+            'x-clew-connector-key': secret,
+          },
+          body,
+        }),
+      );
+    const authority = await testAuthority(secret);
+    const before = { ...learning.controls.calls };
+    // A person's assertion, valid and bound to this very request, whoever the person is: refused, nothing read.
+    for (const actor of [hillevi, anna, rektor])
+      expect(
+        (await send(await authority.assert(ID, actor, [], [], { body: text, capability: 'moodle.holdings' }))).status,
+      ).toBe(401);
+    expect(learning.controls.calls).toEqual(before);
+    // The installation's own assertion, on a person's route: not a person, so refused there.
+    const personUrl = 'http://moodle-connector/clew/capabilities/moodle.person';
+    const personBody = JSON.stringify({ actor: hillevi, input: { keys: ['hillevi'] } });
+    const onPersonRoute = await authority.installation(ID, { body: personBody, capability: 'moodle.person' });
+    expect((await send(onPersonRoute, personUrl, personBody)).status).toBe(401);
+    // Bound to another body, or to another name: refused.
+    const installation = await authority.installation(ID, { body: text, capability: 'moodle.holdings' });
+    expect((await send(installation, url, JSON.stringify({ input: { cursor: '3:1' } }))).status).toBe(401);
+    expect((await send(installation, 'http://moodle-connector/clew/installation/moodle.other')).status).toBe(401);
+    // Signed by another installation: refused.
+    const foreign = await (
+      await testAuthority('another-secret-entirely')
+    ).installation(ID, { body: text, capability: 'moodle.holdings' });
+    expect((await send(foreign)).status).toBe(401);
+    // No assertion at all.
+    expect((await send('')).status).toBe(401);
+    // The installation's own, as Clew sends it: answered. A name it does not declare: not found.
+    expect((await send(installation)).status).toBe(200);
+    expect((await asInstallation({}, { name: 'moodle.everything' })).status).toBe(404);
+    // Through Clew, no person can name it on any path: it is not a capability.
+    for (const actor of [hillevi, anna, rektor]) {
+      await expect(registry.run(actor, 'moodle.holdings', {})).rejects.toThrow(REFUSED_BY_CLEW);
+      await expect(registry.validate(actor, 'moodle.holdings', {})).rejects.toThrow(REFUSED_BY_CLEW);
+      await expect(registry.clewFor(actor, {}, ID).call('moodle.holdings', {})).rejects.toThrow(REFUSED_BY_CLEW);
+    }
   });
 
   // Who may be asked about is Clew's (D117): every call that names a person carries, in a body the assertion is bound
@@ -618,6 +911,7 @@ describe('the Moodle connector', () => {
         ];
         return all.filter(a => values.includes(a.idnumber));
       },
+      everyone: async () => [],
       courses: async () => [],
       completion: async () => null,
       completionStatus: async () => null,
@@ -675,8 +969,9 @@ describe('the Moodle connector', () => {
       response = await post(hillevi, 'moodle.person', input, { about });
       expect(response.status).toBe(400);
     }
-    expect((await post(hillevi, 'moodle.holdings', { keys: Array(26).fill('a') }, { about })).status).toBe(400);
     expect((await post(hillevi, 'moodle.courses', {}, { about })).status).toBe(400);
+    // The holdings read is the installation's (D119): on a person's route it is no capability at all.
+    expect((await post(hillevi, 'moodle.holdings', {})).status).toBe(404);
     expect((await post(hillevi, 'moodle.nothing', {})).status).toBe(404);
   });
 
@@ -706,14 +1001,25 @@ describe('the Moodle connector', () => {
     expect((await service.handle(valid)).status).toBe(200);
   });
 
-  test('call volume: one lookup per batch, one call per person for moodle.person, two plus one per completed course for holdings', async () => {
-    const { learning, personRows, holdings } = stack();
+  test('call volume: one lookup per batch, one call per person for moodle.person; for a page of holdings one list, one lookup, two per account and one per completed course', async () => {
+    const { learning, personRows, page } = stack();
     const calls = learning.controls.calls;
     await personRows(hillevi, ['hillevi', 'anna', 'erik', 'nobody']);
-    expect({ ...calls }).toEqual({ accounts: 1, courses: 3, completion: 0, badges: 0, course: 0 });
-    await holdings(hillevi, ['hillevi', 'anna']);
-    // Hillevi has five completed courses and Anna four.
-    expect({ ...calls }).toEqual({ accounts: 2, courses: 5, completion: 9, badges: 2, course: 0 });
+    expect({ ...calls }).toEqual({ accounts: 1, everyone: 0, courses: 3, completion: 0, badges: 0, course: 0 });
+    for (const key of Object.keys(calls)) calls[key as keyof typeof calls] = 0;
+    const answer = await page();
+    // Ten accounts, and one completion call for each completed course: every one of them is dated in the stand-in.
+    const completed = answer.rows.flatMap(r => r.holdings).filter(h => h.kind === 'course').length;
+    expect(answer.rows).toHaveLength(10);
+    expect(answer.rows.some(r => r.partial)).toBe(false);
+    expect({ ...calls }).toEqual({
+      accounts: 1,
+      everyone: 1,
+      courses: 10,
+      completion: completed,
+      badges: 10,
+      course: 0,
+    });
   });
 
   test('never more Moodle calls open at once than the concurrency allows', async () => {
@@ -729,9 +1035,8 @@ describe('the Moodle connector', () => {
         open--;
       }
     });
-    const { holdings } = stack({ source, concurrency: 2 });
-    const rows = await holdings(hillevi, ['hillevi', 'karin', 'johan', 'anna', 'erik', 'maria']);
-    expect(rows).toHaveLength(6);
+    const { page } = stack({ source, concurrency: 2 });
+    expect((await page()).rows).toHaveLength(10);
     expect(most).toBe(2);
     expect(() => createConnector({ secret, concurrency: 0 })).toThrow('from 1 to 16');
   });
@@ -774,7 +1079,7 @@ describe('the Moodle connector', () => {
     });
     const { post } = stack({ source, concurrency: 1 });
     const keys = ['hillevi', 'anna', 'erik', 'maria'];
-    const response = await post(hillevi, 'moodle.holdings', { keys }, { about: vouch(hillevi, keys) });
+    const response = await post(hillevi, 'moodle.person', { keys }, { about: vouch(hillevi, keys) });
     expect(response.status).toBe(503);
     expect(started).toEqual(['accounts', 'courses']);
   });
@@ -813,6 +1118,7 @@ describe('the Moodle connector', () => {
       assertForeign: assertionFor(ID, 'another-secret-entirely'),
       fetch: connectorFetch,
       about: { keys: ['hillevi', 'anna', 'erik'], as: hillevi },
+      assertInstallation: installationAssertionFor(ID, secret),
     });
     const about = report.findings
       .filter(f => f.text.startsWith('moodle.person about'))
@@ -827,6 +1133,31 @@ describe('the Moodle connector', () => {
     ]);
     expect(report.findings.filter(f => f.level === 'fail')).toEqual([]);
     expect(report.ok).toBe(true);
+    // The installation's read (D119): its page as Clew reads it, counted and not shown, and a person refused on its route.
+    expect(
+      report.findings
+        .filter(f => f.text.startsWith('moodle.holdings'))
+        .map(f => `${f.level} ${f.text.replace(/\d+ ms$/, 'n ms')}`),
+    ).toEqual([
+      'ok moodle.holdings as the installation: 1 page, 10 rows, 34 holdings, 0 partial, the last page reached, withdrawalsReported false, n ms',
+      "ok moodle.holdings as the installation: a person's assertion on its route is refused (401)",
+    ]);
+    const item = report.items.find(i => i.capability === 'moodle.holdings')!;
+    expect(item).toMatchObject({ level: 'ok', label: 'Genomförda kurser och märken' });
+    expect(item.description).not.toContain('hillevi');
+    // Without the installation's signer the page is not read, and the person is still refused.
+    const unsigned = await checkConnector({
+      key: secret,
+      url: 'http://moodle-connector',
+      id: ID,
+      assert: assertionFor(ID, secret),
+      assertForeign: assertionFor(ID, 'another-secret-entirely'),
+      fetch: connectorFetch,
+    });
+    expect(unsigned.findings.filter(f => f.text.startsWith('moodle.holdings')).map(f => f.level)).toEqual([
+      'warn',
+      'ok',
+    ]);
   });
 });
 
@@ -893,14 +1224,15 @@ function sentAsRecorded(call: Sent, n: string) {
 }
 /**
  * A Moodle that answers by what is asked: the recordings indexed by their parameters. Left out: 14, made with a refused
- * token, whose parameters are those of 17, and 22 to 25, made while a name was changed for the recording.
+ * token, whose parameters are those of 17, 22 to 25, made while a name was changed for the recording, and 34, made
+ * before the service account could list the site's accounts.
  */
 function recordedMoodle(
   override: (params: URLSearchParams) => (() => Promise<Response>) | undefined = () => undefined,
 ) {
   const byParams = new Map(
     readdirSync(SAMPLES)
-      .filter(f => f.endsWith('.json') && !/^(14|22|23|24|25)-/.test(f))
+      .filter(f => f.endsWith('.json') && !/^(14|22|23|24|25|34)-/.test(f))
       .map(f => JSON.parse(readFileSync(join(SAMPLES, f), 'utf8')) as Sample)
       .map(s => [paramsOf(s.request.body), s] as const),
   );
@@ -1127,64 +1459,121 @@ describe("the Moodle API adapter, against Moodle's recorded answers", () => {
     expect(() => createMoodleLearning({ token: TOKEN })).toThrow('MOODLE_URL');
   });
 
-  test("behind the connector: Hillevi's holdings, her list and two of her courses from the recorded answers", async () => {
-    const { source, asked } = recordedMoodle();
-    const { holdingsAnswer, courses, course } = stack({ source, publicUrl: PUBLIC });
-    expect(await holdingsAnswer(hillevi, ['hillevi'])).toEqual({
-      withdrawalsReported: false,
-      rows: [
+  test("lists the site's accounts a window at a time, in id order, and an empty window past the end (30 to 32); refused without the right to list them (34)", async () => {
+    const { source, calls } = recorded('30', '31', '32');
+    const first = await source.everyone(0, 26);
+    expect(first.map(a => a.id)).toEqual(Array.from({ length: 17 }, (_, i) => i + 1));
+    expect(first[2]).toEqual({ id: 3, username: 'hillevi', idnumber: 'hillevi' });
+    // The guest has no idnumber; nobody's full name is kept.
+    expect(first[0]).toEqual({ id: 1, username: 'guest', idnumber: '' });
+    expect(JSON.stringify(first)).not.toContain('Berg');
+    expect((await source.everyone(5, 6)).map(a => a.username)).toEqual([
+      'anna',
+      'erik',
+      'maria',
+      'johan',
+      'karin',
+      'lars.bergstrom',
+    ]);
+    expect(await source.everyone(100, 26)).toEqual([]);
+    for (const [i, n] of ['30', '31', '32'].entries()) sentAsRecorded(calls[i]!, n);
+    // The guest is listed with everyone (30) and no read answers it; were another such account asked, its badges are that
+    // one account's refusal (35) and its courses none (36).
+    await expect(recorded('35').source.badges(1)).rejects.toBeInstanceOf(ItemUnreadable);
+    expect(await recorded('36').source.courses(1)).toEqual([]);
+    // An account whose details are withheld comes with its id alone, and keeps its place.
+    expect(parseListedAccounts([{ id: 40, fullname: 'Dold' }])).toEqual([{ id: 40, username: '', idnumber: '' }]);
+    // Without moodle/site:viewparticipants the list is refused: the service's matter, not one person's.
+    await expect(recorded('34').source.everyone(0, 5)).rejects.toBeInstanceOf(SourceRefused);
+  });
+
+  test("behind the connector: the first page of every holding, Hillevi's list and two of her courses from the recorded answers", async () => {
+    // The site's list (30) and its keys but the guest's (33) as recorded; Hillevi's courses, completions and badges (05,
+    // 07, 18 to 20, 11); for every other account the recorded answers of an account with nothing (06, 12), since the
+    // development Moodle's other accounts were not recorded one by one. Nothing is asked of the guest.
+    const { source, asked } = recordedMoodle(params => {
+      const fn = params.get('wsfunction');
+      const user = params.get('userid');
+      if (user === '1') throw new Error('The guest account was asked about.');
+      if (fn === 'core_enrol_get_users_courses' && user !== '3') return async () => answer(sample('06'));
+      if (fn === 'core_badges_get_user_badges' && user !== '3') return async () => answer(sample('12'));
+      return undefined;
+    });
+    const { page, courses, course } = stack({ source, publicUrl: PUBLIC });
+    const first = await page();
+    expect(first.next).toBeUndefined();
+    expect(first.withdrawalsReported).toBe(false);
+    expect(first.rows.map(r => r.key)).toEqual([
+      'moodle-admin',
+      'hillevi',
+      'hassan',
+      'mikael',
+      'anna',
+      'erik',
+      'maria',
+      'johan',
+      'karin',
+      'lars.bergstrom',
+      'maria.eriksson',
+      'omar.hosseini',
+      'petra.karlsson',
+      'sven.lundgren',
+      'yusuf.lindqvist',
+      'clew-connector',
+    ]);
+    // Moodle's guest account (user 1 in 30) has no row, so nothing is partial; everyone else but Hillevi holds nothing.
+    expect(first.rows.some(r => r.partial)).toBe(false);
+    const others = first.rows.filter(r => r.key !== 'hillevi');
+    expect(others.every(r => r.holdings.length === 0 && !r.partial)).toBe(true);
+    expect(first.rows.find(r => r.key === 'hillevi')).toEqual({
+      key: 'hillevi',
+      holdings: [
         {
-          key: 'hillevi',
-          holdings: [
-            {
-              id: 'course:6:user:3',
-              type: 'clew-dev:lakemedel',
-              label: 'Läkemedelshantering, delegeringsutbildning',
-              kind: 'course',
-              issuedOn: '2025-10-08',
-            },
-            {
-              id: 'course:5:user:3',
-              type: 'clew-dev:livsmedelshygien',
-              label: 'Livsmedelshygien',
-              kind: 'course',
-              issuedOn: '2023-11-08',
-            },
-            {
-              id: 'course:3:user:3',
-              type: 'clew-dev:hlr',
-              label: 'Hjärt-lungräddning med hjärtstartare',
-              kind: 'course',
-              issuedOn: '2024-12-12',
-            },
-            {
-              id: 'course:2:user:3',
-              type: 'clew-dev:brandskydd',
-              label: 'Brandskydd, grundutbildning',
-              kind: 'course',
-              issuedOn: '2026-10-03',
-            },
-            {
-              id: 'badge:1:user:3',
-              type: 'badge:1',
-              label: 'HLR-instruktör',
-              kind: 'badge',
-              issuedOn: '2026-11-12',
-              expiresOn: '2027-11-12',
-            },
-          ],
+          id: 'course:6:user:3',
+          type: 'clew-dev:lakemedel',
+          label: 'Läkemedelshantering, delegeringsutbildning',
+          kind: 'course',
+          issuedOn: '2025-10-08',
+        },
+        {
+          id: 'course:5:user:3',
+          type: 'clew-dev:livsmedelshygien',
+          label: 'Livsmedelshygien',
+          kind: 'course',
+          issuedOn: '2023-11-08',
+        },
+        {
+          id: 'course:3:user:3',
+          type: 'clew-dev:hlr',
+          label: 'Hjärt-lungräddning med hjärtstartare',
+          kind: 'course',
+          issuedOn: '2024-12-12',
+        },
+        {
+          id: 'course:2:user:3',
+          type: 'clew-dev:brandskydd',
+          label: 'Brandskydd, grundutbildning',
+          kind: 'course',
+          issuedOn: '2026-10-03',
+        },
+        {
+          id: 'badge:1:user:3',
+          type: 'badge:1',
+          label: 'HLR-instruktör',
+          kind: 'badge',
+          issuedOn: '2026-11-12',
+          expiresOn: '2027-11-12',
         },
       ],
     });
-    expect(asked.sort()).toEqual([
-      'core_badges_get_user_badges',
-      'core_completion_get_course_completion_status',
-      'core_completion_get_course_completion_status',
-      'core_completion_get_course_completion_status',
-      'core_completion_get_course_completion_status',
-      'core_enrol_get_users_courses',
-      'core_user_get_users_by_field',
-    ]);
+    const count = (fn: string) => asked.filter(a => a === fn).length;
+    expect([
+      count('core_enrol_get_enrolled_users'),
+      count('core_user_get_users_by_field'),
+      count('core_enrol_get_users_courses'),
+      count('core_badges_get_user_badges'),
+      count('core_completion_get_course_completion_status'),
+    ]).toEqual([1, 1, 16, 16, 4]);
     const link = (id: number) => `${PUBLIC}/course/view.php?id=${id}`;
     expect((await courses(hillevi, 'hillevi')).map(r => [r.name, r.status, r.date, r.course, r.link])).toEqual([
       ['Informationssäkerhet för medarbetare', 'Pågår', undefined, '4', link(4)],
@@ -1213,16 +1602,19 @@ describe("the Moodle API adapter, against Moodle's recorded answers", () => {
     });
   });
 
-  test('behind the connector: Moodle withholding one course leaves the rest of the batch whole', async () => {
-    const { source } = recordedMoodle(params =>
-      params.get('wsfunction') === 'core_completion_get_course_completion_status' && params.get('courseid') === '2'
-        ? moodleSays('nopermissions')
-        : undefined,
-    );
-    const { holdings } = stack({ source });
-    const [row] = await holdings(hillevi, ['hillevi']);
-    expect(row!.partial).toBe(true);
-    expect(row!.holdings.map(x => x.id)).toEqual([
+  test('behind the connector: Moodle withholding one course leaves the rest of the page whole', async () => {
+    const { source } = recordedMoodle(params => {
+      const fn = params.get('wsfunction');
+      if (fn === 'core_completion_get_course_completion_status' && params.get('courseid') === '2')
+        return moodleSays('nopermissions');
+      if (fn === 'core_enrol_get_users_courses' && params.get('userid') !== '3')
+        return async () => answer(sample('06'));
+      if (fn === 'core_badges_get_user_badges' && params.get('userid') !== '3') return async () => answer(sample('12'));
+      return undefined;
+    });
+    const row = (await stack({ source }).page()).rows.find(r => r.key === 'hillevi')!;
+    expect(row.partial).toBe(true);
+    expect(row.holdings.map(x => x.id)).toEqual([
       'course:6:user:3',
       'course:5:user:3',
       'course:3:user:3',

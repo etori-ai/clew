@@ -1,9 +1,16 @@
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
-import { ENTITY_KEYS_MAX, rowsKey, type Ask } from '@clew/contracts';
+import {
+  ENTITY_KEYS_MAX,
+  HOLDINGS_PER_ROW_MAX,
+  HOLDINGS_ROWS_MAX,
+  HOLDING_KINDS,
+  rowsKey,
+  type Ask,
+} from '@clew/contracts';
 import { menuProblem, viewProblem, type ViewSubject } from './views';
 import { namedInputs, plainStringProperty } from './named';
-import { PROTOCOL_VERSION, protocolTerms } from './protocol';
+import { INSTALLATION_PROFILES, PROTOCOL_VERSION, protocolTerms } from './protocol';
 
 /** Rules shared by manifest preview, remote loading and in-process registration. No installation state. */
 interface Descriptor {
@@ -23,6 +30,8 @@ interface Descriptor {
       effect?: string;
     }
   >;
+  /** The reads Clew makes as the installation (D119); never capabilities. */
+  installation?: Array<{ name: string; input: unknown; output: unknown }>;
   facts?: Array<{ kind: string; attributes: object }>;
   areas: Array<{ id: string; standing: string[] }>;
   documents?: unknown;
@@ -210,6 +219,70 @@ function effectProblem(c: Descriptor['capabilities'][number], connector: Descrip
   return undefined;
 }
 
+/** The properties a schema lists. */
+const listed = (schema: Schema | undefined) => Object.keys(schema?.properties ?? {});
+/** Whether a schema's `enum` or `const`, where it has one, stays within `allowed`. */
+const within = (schema: (Schema & { enum?: unknown; const?: unknown }) | undefined, allowed: readonly unknown[]) =>
+  !schema ||
+  ((!Array.isArray(schema.enum) || schema.enum.every(v => allowed.includes(v))) &&
+    (schema.const === undefined || allowed.includes(schema.const)));
+/**
+ * Why an installation read named `<id>.holdings` does not fit the holdings profile (D108 item 9, D119), at load: its
+ * input takes `{ cursor? }` and nothing else, and its output is a HoldingsOutput with nothing more and bounds no wider.
+ * Clew also validates every answer against the profile itself; this catches a declaration that could never fit.
+ */
+function holdingsProblems(read: { name: string; input: unknown; output: unknown }): string[] {
+  const problems: string[] = [];
+  const input = asSchema(read.input);
+  if (
+    input?.type !== 'object' ||
+    listed(input).some(k => k !== 'cursor') ||
+    (Array.isArray(input.required) && input.required.length > 0) ||
+    (listed(input).includes('cursor') && !plainStringProperty(read.input, 'cursor'))
+  )
+    problems.push(
+      `Installation read ${read.name}: the holdings profile takes { cursor? }, an object whose only property is an optional string cursor and which requires nothing (D119).`,
+    );
+  const output = asSchema(read.output);
+  const rows = asSchema(output?.properties?.rows) as (Schema & { maxItems?: unknown }) | undefined;
+  const row = asSchema(rows?.items);
+  const held = asSchema(row?.properties?.holdings) as (Schema & { maxItems?: unknown }) | undefined;
+  const holding = asSchema(held?.items);
+  const reported = asSchema(output?.properties?.withdrawalsReported) as (Schema & { const?: unknown }) | undefined;
+  if (
+    output?.type !== 'object' ||
+    !requires(output, 'rows') ||
+    !requires(output, 'withdrawalsReported') ||
+    listed(output).some(k => !['rows', 'next', 'withdrawalsReported'].includes(k)) ||
+    !(reported?.type === 'boolean' || typeof reported?.const === 'boolean') ||
+    (listed(output).includes('next') && asSchema(output.properties?.next)?.type !== 'string') ||
+    rows?.type !== 'array' ||
+    row?.type !== 'object' ||
+    !requires(row, 'key') ||
+    !requires(row, 'holdings') ||
+    listed(row).some(k => !['key', 'holdings', 'partial'].includes(k)) ||
+    asSchema(row.properties?.key)?.type !== 'string' ||
+    held?.type !== 'array' ||
+    holding?.type !== 'object' ||
+    ['id', 'type', 'label', 'kind', 'issuedOn'].some(k => !requires(holding, k)) ||
+    listed(holding).some(k => !['id', 'type', 'label', 'kind', 'issuedOn', 'expiresOn'].includes(k)) ||
+    !within(asSchema(holding.properties?.kind), HOLDING_KINDS)
+  )
+    problems.push(
+      `Installation read ${read.name}: the holdings profile answers a HoldingsOutput: rows (each a required string key and holdings, optionally partial), withdrawalsReported (a boolean) and optionally next (a string), each holding requiring id, type, label, kind (one of ${HOLDING_KINDS.join(', ')}) and issuedOn, optionally expiresOn, and nothing else (D119).`,
+    );
+  else if (
+    typeof rows.maxItems !== 'number' ||
+    rows.maxItems > HOLDINGS_ROWS_MAX ||
+    typeof held.maxItems !== 'number' ||
+    held.maxItems > HOLDINGS_PER_ROW_MAX
+  )
+    problems.push(
+      `Installation read ${read.name}: a page of the holdings profile is bounded: rows declares maxItems at most ${HOLDINGS_ROWS_MAX} and holdings at most ${HOLDINGS_PER_ROW_MAX} (D119).`,
+    );
+  return problems;
+}
+
 export function connectorProblems(
   connector: Descriptor,
   compile: (schema: object) => unknown = schemaCompiler(),
@@ -279,6 +352,27 @@ export function connectorProblems(
         problems.push(
           `Capability ${name}: ${param} names a ${inputs.entity}, so it must be a plain string property of the input: listed under properties with type string, in an object schema without allOf, anyOf, oneOf or patternProperties (D117).`,
         );
+  }
+  // The reads Clew makes as the installation (D119): a profile Clew knows, named for this connector, unique across both
+  // lists, of the profile's shape. Added under protocol 3, so a manifest on 2 cannot declare one.
+  const installation = connector.installation ?? [];
+  if (installation.length && !protocolTerms(connector.protocol ?? PROTOCOL_VERSION).installation)
+    problems.push(
+      `Installation reads were added under protocol 3 (D119); a manifest on protocol ${connector.protocol} cannot declare installation.`,
+    );
+  for (const read of installation) {
+    if (names.has(read.name)) problems.push(`Capability ${read.name} is already registered.`);
+    names.add(read.name);
+    const profile = read.name.startsWith(connector.id + '.') ? read.name.slice(connector.id.length + 1) : undefined;
+    if (!profile || !(INSTALLATION_PROFILES as readonly string[]).includes(profile)) {
+      problems.push(
+        `Installation read ${read.name}: Clew reads only its profiles as the installation, named for this connector: ${INSTALLATION_PROFILES.map(p => `${connector.id}.${p}`).join(', ')} (D119).`,
+      );
+      continue;
+    }
+    schemaProblem(`Installation read ${read.name} input`, read.input as object);
+    schemaProblem(`Installation read ${read.name} output`, read.output as object);
+    if (profile === 'holdings') problems.push(...holdingsProblems(read));
   }
   for (const f of connector.facts ?? []) {
     if (!f.kind.startsWith(connector.id + ':'))

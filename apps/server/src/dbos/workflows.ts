@@ -6,9 +6,10 @@
  * A workflow function must be deterministic between checkpoints: the clock is `DBOS.now()`, waits are `DBOS.sleep`,
  * and a changed workflow body is a new application version (see `runtime.ts`).
  *
- * The four workflows the ledger starts from inside its transactions (D86: `scheduledJob`, `durableReminder`,
- * `approvedExecution`, `jobWatch`) are registered with portable serialization: `dbos.enqueue_workflow` writes their
- * input as plain JSON, and their names are the contract between the store adapters and this file.
+ * The five workflows the ledger starts from inside its transactions (D86: `scheduledJob`, `durableReminder`,
+ * `approvedExecution`, `jobWatch`, and the competence copy `competenceCopy`) are registered with portable
+ * serialization: `dbos.enqueue_workflow` writes their input as plain JSON, and their names are the contract between the
+ * store adapters and this file.
  */
 import { DBOS } from '@dbos-inc/dbos-sdk';
 
@@ -19,6 +20,11 @@ export interface ObligationStep {
   due: string[];
   next: string;
 }
+/** A source the competence copy reads (D108 item 9): its connector id and its name as a person reads it. */
+export interface CopySourceRef {
+  connectorId: string;
+  source: string;
+}
 /** The use cases the workflows call between waits. */
 export interface Activities {
   fireTimer(id: string, generation: number): Promise<unknown>;
@@ -28,6 +34,9 @@ export interface Activities {
   checkObligation(threadId: string): Promise<ObligationStep>;
   remindInvitees(threadId: string, due: string[]): Promise<unknown>;
   returnObligation(threadId: string, why: 'answered' | 'deadline'): Promise<unknown>;
+  scheduleCompetenceCopy(): Promise<unknown>;
+  competenceSources(only: string | null): Promise<CopySourceRef[]>;
+  copyHoldings(run: string, source: CopySourceRef, signal?: AbortSignal): Promise<string>;
 }
 let bound: Partial<Activities> = {};
 /** Composition binds the live use cases; a runtime test binds what it measures. Later bindings replace earlier ones by name. */
@@ -41,15 +50,20 @@ function activity<K extends keyof Activities>(name: K): Activities[K] {
     return fn(...args);
   }) as Activities[K];
 }
-/** One checkpointed call of a use case. Retries are the step's; a step that still fails ends the workflow in ERROR, where an operator resumes it. */
-const step = <T>(name: keyof Activities, run: () => Promise<T>, maxAttempts = 5) =>
+/**
+ * One checkpointed call of a use case. Retries are the step's; a step that still fails ends the workflow in ERROR, where
+ * an operator resumes it. An attempt is timed out after a minute unless `timeoutMS` is null: the engine would start the
+ * next attempt beside one that is still running, so a step that reads a whole source has no timeout of its own and
+ * relies on the source's own per-call timeout.
+ */
+const step = <T>(name: keyof Activities, run: () => Promise<T>, maxAttempts = 5, timeoutMS: number | null = 60_000) =>
   DBOS.runStep(run, {
     name,
     retriesAllowed: maxAttempts > 1,
     maxAttempts,
     intervalSeconds: 1,
     backoffRate: 2,
-    timeoutMS: 60_000,
+    ...(timeoutMS === null ? {} : { timeoutMS }),
   });
 /** Absolute time: a delayed start never restarts the requested duration (D47). */
 async function sleepUntil(at: string) {
@@ -118,6 +132,44 @@ export const jobWatch = DBOS.registerWorkflow(
     }
   },
   { name: 'jobWatch', serialization: 'portable' },
+);
+
+/**
+ * The competence module's copy of what sources hold (D108 item 9): wait until the run's time, list the sources that
+ * answer the holdings profile (none while the module is off), then read each in a step of its own. A daily run first
+ * asks for the next day's; if that step fails after its retries the read goes on, and the server's hourly guard asks
+ * for the next day's run again (`startCompetenceCopy`), so the chain does not end with one failure. A source that does
+ * not answer is recorded by the use case and read again at the next run, never retried here: the step's own retries
+ * cover the database, and a source whose step still fails is left for the next run while the others are read. Two runs
+ * never read one source at once, because the use case holds a lease on it; the engine's recovery of a run after a
+ * restart re-enters the same step, and the same run may take its own lease again. Started from inside a transaction
+ * (D86) by the store, so it is registered with portable serialization and its name is the contract with the store.
+ */
+export const competenceCopy = DBOS.registerWorkflow(
+  async (input: { run: string; dueAt: string; connectorId?: string; daily?: true }): Promise<void> => {
+    await sleepUntil(input.dueAt);
+    if (input.daily)
+      try {
+        await step('scheduleCompetenceCopy', () => activity('scheduleCompetenceCopy')(), 3);
+      } catch {
+        // Recorded as the step's error; the hourly guard asks for the next day's run again.
+      }
+    const sources = await step('competenceSources', () => activity('competenceSources')(input.connectorId ?? null));
+    // No step timeout: a timed-out attempt would run on beside the next. Each page has the read's own deadline, and
+    // cancelling the workflow aborts the page under way through the step's signal, so a read always ends.
+    for (const source of sources)
+      try {
+        await step(
+          'copyHoldings',
+          () => activity('copyHoldings')(input.run, source, DBOS.stepStatus?.cancelSignal),
+          3,
+          null,
+        );
+      } catch {
+        // One source's failure is that source's: its lease lapses, the next run reads it, and the others are read now.
+      }
+  },
+  { name: 'competenceCopy', serialization: 'portable' },
 );
 
 /**

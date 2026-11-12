@@ -1,7 +1,7 @@
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import type { AuthenticatedContext } from '@clew/contracts';
-import { actorOf, CapabilityError, COMPETENCE_CONNECTOR, Registry } from '@clew/connectors';
+import { actorOf, CapabilityError, COMPETENCE_CONNECTOR, Registry, type HoldingsReader } from '@clew/connectors';
 import { InputError } from '../context';
 import { calendarConnector } from '../modules/calendar/connector';
 import { calendar, events } from '../composition/calendar';
@@ -83,6 +83,15 @@ export const bundledIds = bundled.map(m => m.id);
 /** The bundled connectors whose row is created disabled: an administrator switches them on (D108 item 13). */
 export const offAtFirstBoot: readonly string[] = [COMPETENCE_CONNECTOR];
 export { actorOf };
+/**
+ * The holdings port (D108 item 9, D119) over the live registry: the sources that answer the holdings profile for the
+ * installation, and one page of one of them read as the installation. For composition to hand the competence register's
+ * scheduled copy; no route, card, tool or connector is given it.
+ */
+export const holdingsReader: HoldingsReader = {
+  holdingsSources: () => registry.holdingsSources(),
+  readHoldings: (connectorId, cursor, options) => registry.readHoldings(connectorId, cursor, options),
+};
 
 const ajv = addFormats(new Ajv({ allErrors: false, strict: false }));
 /** Whether a capability's input schema accepts `{}`: the conformance check calls only the reads that do (the same rule as `scripts/connector-check.ts`). */

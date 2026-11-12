@@ -4,6 +4,7 @@ import addFormats from 'ajv-formats';
 import { FactEnvelopeSchema, FollowResponseSchema } from '../../packages/connectors/src/protocol';
 import {
   HANDWRITTEN_EXAMPLES,
+  HOLDINGS_EXAMPLE,
   RULES,
   TypeBoxType,
   anchorOf,
@@ -97,6 +98,18 @@ const aboutManifest = {
       person: HANDWRITTEN_EXAMPLES['capabilities[].person'],
     },
   ],
+};
+
+/** A learning platform that answers the holdings profile as the installation's read (D119), from the handwritten example. */
+const holdingsManifest = {
+  protocol: 3,
+  id: 'lms',
+  kind: 'passthrough',
+  source: 'Lärplattformen',
+  scan: false,
+  areas: [],
+  capabilities: [],
+  installation: HANDWRITTEN_EXAMPLES['installation'],
 };
 
 describe('the field list', () => {
@@ -324,6 +337,13 @@ describe('the field list', () => {
     };
     expect(manifestProblems(manifest, 'hr')).toEqual([]);
     expect(() => new Registry().register(remoteConnector(parseManifest(manifest, 'hr'), transport))).not.toThrow();
+    // The example of `installation` (D119): the holdings profile, which loads as the installation's read and nothing else.
+    expect(HANDWRITTEN_EXAMPLES['installation']).toEqual([HOLDINGS_EXAMPLE]);
+    expect(manifestProblems(holdingsManifest, 'lms')).toEqual([]);
+    const lms = remoteConnector(parseManifest(holdingsManifest, 'lms'), transport);
+    expect(lms.capabilities).toEqual([]);
+    expect(lms.installation!.map(r => r.name)).toEqual(['lms.holdings']);
+    expect(() => new Registry().register(lms)).not.toThrow();
     // The examples of `about` (D97): a read asked with keys and an action that takes one.
     expect(manifestProblems(aboutManifest, 'hr')).toEqual([]);
     expect(() => new Registry().register(remoteConnector(parseManifest(aboutManifest, 'hr'), transport))).not.toThrow();
@@ -565,6 +585,31 @@ describe('the rules', () => {
       }),
       'hr',
     ],
+    // The installation's reads (D119), on a manifest that declares the holdings profile.
+    'installation-on-3': [
+      broken(holdingsManifest, m => {
+        m.protocol = 2;
+      }),
+      'lms',
+    ],
+    'installation-profile': [
+      broken(holdingsManifest, m => {
+        m.installation[0].name = 'lms.everything';
+      }),
+      'lms',
+    ],
+    'installation-holdings-input': [
+      broken(holdingsManifest, m => {
+        m.installation[0].input = keysInput;
+      }),
+      'lms',
+    ],
+    'installation-holdings-output': [
+      broken(holdingsManifest, m => {
+        m.installation[0].output.properties.rows.items.properties.name = { type: 'string' };
+      }),
+      'lms',
+    ],
   };
   test('every loader rule has a probe and the loader refuses it', () => {
     expect(Object.keys(probes).sort()).toEqual(
@@ -578,6 +623,7 @@ describe('the rules', () => {
         problems: expect.arrayContaining([expect.any(String)]),
       });
     for (const m of examples) expect(manifestProblems(m, m.id)).toEqual([]);
+    expect(manifestProblems(holdingsManifest, 'lms')).toEqual([]);
   });
 });
 
@@ -639,6 +685,7 @@ describe('the renderings', () => {
       'areas[]',
       'capabilities[]',
       'capabilities[].view',
+      'installation[]',
       'facts[]',
       'delegation',
       'header',
@@ -660,7 +707,7 @@ describe('the renderings', () => {
     expect(data.headers.get('access-control-allow-origin')).toBe('*');
     const body = await data.json();
     expect(body.fields.map((f: { path: string }) => f.path)).toEqual(paths);
-    expect(body.sections.length).toBe(7);
+    expect(body.sections.length).toBe(8);
     const redirect = await protocolRoutes.request('http://clew.local/manifest-reference', { redirect: 'manual' });
     expect(redirect.status).toBe(302);
     expect(redirect.headers.get('location')).toBe('/protocol/manifest');

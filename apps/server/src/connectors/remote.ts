@@ -30,6 +30,10 @@ export const assertionFor =
   (connectorId: string, uses: string[] = []) =>
   async (actor: Actor, chain: string[] = [], binding?: AssertionBinding) =>
     (await signingAuthority()).assert(connectorId, actor, uses, chain, binding);
+/** The installation's own assertion for one connector's read it makes itself (D119), bound to the request. */
+export const installationAssertionFor =
+  (connectorId: string) => async (binding: AssertionBinding & { capability: string }) =>
+    (await signingAuthority()).installation(connectorId, binding);
 export const verifyAssertion = async (token: string) => (await signingAuthority()).verify(token);
 
 /** What the loader needs from a row: the secret already opened. The admin use cases and the CLI build the same shape. */
@@ -71,6 +75,14 @@ export function registerConnector(
       assert: authority
         ? (actor, chain, binding) => authority.assert(source.id, actor, manifest.uses, chain, binding)
         : assertionFor(source.id, manifest.uses),
+      // Signed only for the reads the manifest declares under `installation` (D119); the registry calls nothing else so.
+      ...(manifest.installation?.length
+        ? {
+            installation: authority
+              ? binding => authority.installation(source.id, binding)
+              : installationAssertionFor(source.id),
+          }
+        : {}),
       ...(fetchImpl ? { fetch: fetchImpl } : {}),
     }),
   );

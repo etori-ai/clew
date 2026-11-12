@@ -1600,6 +1600,13 @@ export const CompetenceStatus = literals(COMPETENCE_STATUSES, {
     '`expired`: the end date has passed. `expiring`: it ends within 90 days. `valid`: it ends later, or never.',
 });
 export type CompetenceStatus = (typeof COMPETENCE_STATUSES)[number];
+/**
+ * Where a row of a read stands (D108 items 4 and 9): one of the statuses, or `uncounted` for a holding copied from a
+ * source whose type no administrator has mapped to the catalogue yet. It is listed under the source's own label and
+ * counts towards nothing. Last in the order a list is drawn in.
+ */
+export const COMPETENCE_ROW_STATUSES = [...COMPETENCE_STATUSES, 'uncounted'] as const;
+export type CompetenceRowStatus = (typeof COMPETENCE_ROW_STATUSES)[number];
 /** How a holding is attested (D108 items 7 and 9): read from a system, registered by a manager, or the person's own word. */
 export const COMPETENCE_EVIDENCE = ['system', 'manager', 'self'] as const;
 export type CompetenceEvidence = (typeof COMPETENCE_EVIDENCE)[number];
@@ -1635,16 +1642,33 @@ export const CompetenceHoldingRowSchema = object(
     }),
     userName: { ...userName, description: 'The person who holds it, by their provisioned user name.' },
     name: Type.String({ minLength: 1, maxLength: 512, description: "The person's name." }),
-    competence: { ...competenceName, description: "The type's name." },
-    area: competenceArea,
-    kind: CompetenceKind,
+    competence: {
+      ...competenceName,
+      description: "The type's name; for a copied holding whose type is not mapped, the source's own label.",
+    },
+    area: Type.Optional({ ...competenceArea, description: 'Absent for a copied holding whose type is not mapped.' }),
+    kind: Type.Optional(
+      literals(COMPETENCE_KINDS, { description: 'Absent for a copied holding whose type is not mapped.' }),
+    ),
     issuedOn: { ...calendarDay, description: 'The day it was issued.' },
     expiresOn: Type.Optional({
       ...calendarDay,
       description: "The last day it is valid: the issuer's date, else the employer's rule. Absent: it does not end.",
     }),
-    status: CompetenceStatus,
+    status: literals(COMPETENCE_ROW_STATUSES, {
+      description:
+        '`expired`, `expiring` or `valid` as computed today; `uncounted`: copied from a source whose type is not mapped to the catalogue, so it counts towards nothing.',
+    }),
     evidence: literals(COMPETENCE_EVIDENCE),
+    source: Type.Optional(
+      Type.String({
+        minLength: 1,
+        maxLength: 120,
+        description:
+          'Swedish. The system it was copied from, as a person reads it (D108 item 9). Absent: registered in Clew.',
+      }),
+    ),
+    readAt: Type.Optional({ ...instant, description: 'When it was last read from that system. Absent with `source`.' }),
   },
   'One holding of one person (D108).',
 );
@@ -1695,6 +1719,79 @@ export const CompetenceHoldingBodySchema = object({
   expiresOn: Type.Optional(calendarDay),
 });
 export type CompetenceHoldingBody = Static<typeof CompetenceHoldingBodySchema>;
+/**
+ * How one read of a source ended (D108 item 9). `complete`: read to the end with nothing marked partial. `partial`: read
+ * to the end, but the source marked some of it partial, so nothing was revoked. `failed`: a page could not be read; what
+ * was read before it is kept and nothing is revoked, and the source is read again at the next run.
+ */
+export const COMPETENCE_READ_OUTCOMES = ['complete', 'partial', 'failed'] as const;
+export type CompetenceReadOutcome = (typeof COMPETENCE_READ_OUTCOMES)[number];
+/**
+ * What one read of a source did for one organisation, in counts only (D108 item 9): never a name or a key. A source is
+ * the installation's, so its read is too; each organisation is told what the read did with its own people.
+ */
+export interface CompetenceReadCounts {
+  /** Holdings the source answered for people of the organisation it may keep rows for. */
+  read: number;
+  /** New or changed in Clew's copy. */
+  stored: number;
+  /** Already in the copy as read. */
+  unchanged: number;
+  /** Holdings that could not be used: an id, a type, a label or a date the copy cannot hold. */
+  invalid: number;
+  /** Types of the source with no mapping to the catalogue among what was read. */
+  unmapped: number;
+  /** Copied rows the source no longer has, revoked: only after a complete read of a source that reports withdrawals. */
+  revoked: number;
+  /**
+   * People of the organisation the source answered for who are outside the source's audience or the competence
+   * module's (D23): nothing of theirs is kept.
+   */
+  outside: number;
+  /** Copied rows deleted because their person has left an audience or is no longer active. */
+  removed: number;
+}
+/** One source's last read as the administration shows it. */
+export interface CompetenceSourceRead {
+  /** When the read began and ended. */
+  startedAt: string;
+  finishedAt: string;
+  outcome: CompetenceReadOutcome;
+  /** Keys that matched no active person: counted, never stored. They belong to no organisation, so every one is told. */
+  unmatched: number;
+  /** What the read did for the administrator's own organisation. */
+  counts: CompetenceReadCounts;
+}
+/** One type of a source (D108 item 9): its id and label in the source, how many copied holdings carry it, and its mapping. */
+export interface CompetenceSourceType {
+  sourceType: string;
+  label: string;
+  /** Holdings of active people of the organisation that carry it now, revoked ones not counted. */
+  holdings: number;
+  /** The catalogue type it is mapped to; absent while it is not mapped and its holdings count towards nothing. */
+  typeId?: string;
+}
+/** One system that answers, or answered, the holdings profile, as Administration › Kompetens › Källor lists it. */
+export interface CompetenceSource {
+  connectorId: string;
+  /** Swedish. The system's name as a person reads it. */
+  source: string;
+  /** Whether it answers the profile now: a source that does not is listed for its copied rows and mappings alone. */
+  answering: boolean;
+  /** A read is under way now. */
+  reading: boolean;
+  lastRead?: CompetenceSourceRead;
+  types: CompetenceSourceType[];
+}
+export interface CompetenceSourcesOutput {
+  rows: CompetenceSource[];
+}
+/** An administrator maps one type of a source to a catalogue type, or removes the mapping with `typeId: null`. */
+export const CompetenceMappingBodySchema = object({
+  sourceType: Type.String({ minLength: 1, maxLength: 200 }),
+  typeId: Type.Union([id, Type.Null()]),
+});
+export type CompetenceMappingBody = Static<typeof CompetenceMappingBodySchema>;
 /** A Clew-side action the conversation proposes; executed only after the person confirms, through the thread endpoints. */
 export const ClewActionSchema = object({
   n: Type.Integer(),
@@ -3198,6 +3295,23 @@ export interface SiteHeaderView {
   /** The connector the header came from, or null for the default. */
   source: { id: string; label: string } | null;
 }
+
+// The holdings profile (D108 item 9, D119), in a file of its own. Named one by one, as below.
+export {
+  HOLDINGS_CURSOR_MAX,
+  HOLDINGS_PER_ROW_MAX,
+  HOLDINGS_ROWS_MAX,
+  HOLDING_KINDS,
+  HoldingSchema,
+  HoldingsInputSchema,
+  HoldingsOutputSchema,
+  HoldingsRowSchema,
+  type Holding,
+  type HoldingKind,
+  type HoldingsInput,
+  type HoldingsOutput,
+  type HoldingsRow,
+} from './holdings';
 
 // Named one by one: the server runs under Node through tsx, where a star re-export's names are not visible to an importer.
 export {

@@ -20,6 +20,32 @@ export const assertionFor =
   (id: string, label: string) =>
   async (actor: Actor, chain: string[] = [], binding?: AssertionBinding) =>
     (await testAuthority(label)).assert(id, actor, id === 'hello' ? ['calendar.today'] : [], chain, binding);
+/** The installation's own assertion for one connector (D119): no actor, bound to the request it is sent with. */
+export const installationAssertionFor =
+  (id: string, label: string) => async (binding: AssertionBinding & { capability: string }) =>
+    (await testAuthority(label)).installation(id, binding);
+/**
+ * A read Clew makes as the installation, as it sends it (D119): `{ input }` to `/clew/installation/{name}`, the body
+ * serialised once and the installation's assertion bound to it and to the name. For suites that call a handler directly.
+ */
+export async function installationRequest(
+  url: string,
+  options: { id: string; body: unknown; key?: string; label?: string; headers?: Record<string, string> },
+) {
+  const text = JSON.stringify(options.body);
+  const capability = decodeURIComponent(new URL(url).pathname.split('/clew/installation/')[1] ?? '');
+  const token = await (await testAuthority(options.label)).installation(options.id, { body: text, capability });
+  return new Request(url, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: 'Bearer ' + token,
+      ...(options.key ? { 'x-clew-connector-key': options.key } : {}),
+      ...options.headers,
+    },
+    body: text,
+  });
+}
 /**
  * A request to a connector service as Clew sends it (D117): the body serialised once and the assertion bound to it and,
  * on a capability's route, to the capability. For suites that call a service's handler directly.

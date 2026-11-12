@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**112 in force**: 98 accepted and 14 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 10 proposed and not decided. 6 no longer in force.
+**113 in force**: 98 accepted and 15 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 10 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -53,6 +53,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D89 · An errand connector acts as the person, and the case system decides access](D89-an-errand-connector-acts-as-the-person-and-the-case-system-decides-access.md) | 2026-11-09 | accepted |  |
 | [D97 · A source says what its rows are about, and Clew places them](D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md) | 2026-11-10 | accepted | [D99](README.md), [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md), [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md), [D115](D115-the-assistant-resolves-a-person-the-asker-names-and-hands-the-model-the-work-about-them-not-health-rows.md), [D117](D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md) |
 | [D117 · The core decides who a source may be asked about, on every call, and signs the relation](D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md) | 2026-11-12 | provisional |  |
+| [D119 · The installation reads as itself, through a read no person can reach](D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md) | 2026-11-12 | provisional | [D108](D108-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md) |
 
 ## Identity
 
@@ -158,7 +159,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D82 · Sick-leave statistics come through an absence connector that reads only aggregates](D82-sick-leave-statistics-come-through-an-absence-connector-that-reads-only-aggregates.md) | integrations | 2026-11-06 | [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) |
 | [D87 · One header shared by the portal and the intranet, built with Astryx and embedded as a custom element](D87-one-header-shared-by-the-portal-and-the-intranet.md) | ui | 2026-11-09 | [D88](D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md) |
 | [D99 · An unresolved job step reaches a person and is finished forward; no connector is asked for rollback](D99-an-unresolved-job-step-reaches-a-person-and-is-finished-forward.md) | integrations, product | 2026-11-10 |  |
-| [D108 · Competence is an owned domain: one holding for competences and certificates, typed against a catalogue](D108-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md) | product, identity, integrations | 2026-11-11 | [D101](README.md) |
+| [D108 · Competence is an owned domain: one holding for competences and certificates, typed against a catalogue](D108-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md) | product, identity, integrations | 2026-11-11 | [D101](README.md), [D119](D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md) |
 
 ## No longer in force
 

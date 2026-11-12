@@ -17,7 +17,7 @@ The manifest field by field, with examples and the rules between fields, is [man
 - [timesheet manifest](timesheet.manifest.json), from [connector.mjs](../../connectors/timesheet/connector.mjs): 5 capabilities; no scan.
 - [payroll manifest](payroll.manifest.json), from [connector.mjs](../../connectors/payroll/connector.mjs): 3 capabilities; no scan.
 - [appraisals manifest](appraisals.manifest.json), from [connector.mjs](../../connectors/appraisals/connector.mjs): 4 capabilities; no scan.
-- [moodle manifest](moodle.manifest.json), from [connector.mjs](../../connectors/moodle/connector.mjs): 4 capabilities; no scan.
+- [moodle manifest](moodle.manifest.json), from [connector.mjs](../../connectors/moodle/connector.mjs): 3 capabilities; no scan.
 
 These JSON files are complete, generated inputs, not abbreviated pseudocode. They contain no credentials. The [signed walkthrough](../../scripts/docs-smoke.ts) runs the phone book fixture; the [quickstart](../guides/creating-a-connector.md) explains how to adapt it.
 
@@ -25,12 +25,13 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 
 | Field | Required | Shape | Description |
 |---|---|---|---|
-| `protocol` | yes | 3 / 2 | The version of this contract the manifest is written to, not of the connector (D60). This instance loads 3, and 2 for a window: a connector on 2 is loaded, shown with a warning in administration and in the conformance check, sent no `about` in its request bodies and held to the looser rules of 2. An additive change keeps the number; a break is a new one. 3 (D117) binds the request assertion to its body and capability, sends `about` in the body of a call whose input names people or units, and refuses a manifest in which an input that names someone is not a plain string property. |
+| `protocol` | yes | 3 / 2 | The version of this contract the manifest is written to, not of the connector (D60). This instance loads 3, and 2 for a window: a connector on 2 is loaded, shown with a warning in administration and in the conformance check, sent no `about` in its request bodies and held to the looser rules of 2. An additive change keeps the number; a break is a new one. 3 (D117) binds the request assertion to its body and capability, sends `about` in the body of a call whose input names people or units, and refuses a manifest in which an input that names someone is not a plain string property. `installation` (D119) was added to 3 as an optional field: a manifest without it is read as before. |
 | `id` | yes | string | Stable and lowercase. Must match the id Clew was configured with, and prefixes every capability name. |
 | `kind` | yes | "passthrough" / "derived" | Who owns the data (D3): `passthrough` when it lives in the connected system and Clew keeps refs and audit rows only; `derived` when the connector computes it from other sources. `core` is Clew's own and never a remote connector. |
 | `source` | yes | string | Swedish. The system as shown on cards: "Personalsystemet". |
 | `areas` | yes | array of object | The areas this connector gives a person: each names and marks the connector's cards, is a choice in Hem's area filter, and holds its standing capabilities, schedules and figure. Where each shows is in docs/guides/where-things-open.md. Empty is allowed for a connector that only answers questions. |
 | `capabilities` | yes | array of object | What the connector can do, one entry per operation. The name is the contract (D37): a break is a new name, never a changed one. |
+| `installation` | no | array of object | The reads Clew makes as the installation itself, with no person behind the call (D119), one per profile: today `<id>.holdings`, every holding the source has, a page at a time, for Clew's competence register (D108 item 9). Added under protocol 3; a manifest without it is untouched, and one on 2 cannot declare it. |
 | `uses` | no | array of string | The exact capability names of other connectors this one calls back through `POST /api/connectors/call` while serving a request (D37), such as `calendar.today`. A name not listed is refused; an `execute` can never be called back. |
 | `facts` | no | array of object | The fact kinds this connector creates (D55), each prefixed with its id. |
 | `scan` | yes | boolean | Whether Clew should POST /clew/scan for each person nightly and on first visit. |

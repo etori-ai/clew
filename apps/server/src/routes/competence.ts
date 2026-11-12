@@ -3,10 +3,12 @@ import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import {
   CompetenceHoldingBodySchema,
+  CompetenceMappingBodySchema,
   CompetenceTypeBodySchema,
   CompetenceTypePatchSchema,
   type AuthenticatedContext,
   type CompetenceHoldingBody,
+  type CompetenceMappingBody,
   type CompetenceTypeBody,
   type CompetenceTypePatch,
 } from '@clew/contracts';
@@ -14,16 +16,26 @@ import { failure, InputError, privateHeaders, protectedRoute, type Env } from '.
 import type { CompetenceUsecases } from '../modules/competence/usecases';
 
 /**
- * The competence module's own routes (D108): the catalogue an administrator keeps, and a manager's registration of a
- * certificate. A person's holdings and what needs attention have no route here: Clew reads `competence.holdings` and
- * `competence.attention` through the capability route. Each route parses, validates, calls one use case and maps its
- * errors; the use cases own who may do what. Every route first refuses unless the built-in module is switched on and
- * visible to the person, so nothing of the domain is read or written while an administrator has it off.
+ * The competence module's own routes (D108): the catalogue an administrator keeps, the sources whose holdings are
+ * copied in and their mappings to the catalogue (item 9), and a manager's registration of a certificate. A person's
+ * holdings and what needs attention have no route here: Clew reads `competence.holdings` and `competence.attention`
+ * through the capability route. Each route parses, validates, calls one use case and maps its errors; the use cases
+ * own who may do what. Every route first refuses unless the built-in module is switched on and visible to the person,
+ * so nothing of the domain is read or written while an administrator has it off.
  */
 export interface CompetenceRouteDeps {
   competence: Pick<
     CompetenceUsecases,
-    'types' | 'addType' | 'updateType' | 'archiveType' | 'validityImpact' | 'registerHolding' | 'revokeHolding'
+    | 'types'
+    | 'addType'
+    | 'updateType'
+    | 'archiveType'
+    | 'validityImpact'
+    | 'registerHolding'
+    | 'revokeHolding'
+    | 'sources'
+    | 'mapSourceType'
+    | 'readNow'
   >;
   /** Whether the built-in module is on for this person now (composition: `competenceWritable`). */
   writable: (persona: AuthenticatedContext) => Promise<boolean>;
@@ -36,6 +48,7 @@ const validators = {
   type: ajv.compile<CompetenceTypeBody>(CompetenceTypeBodySchema),
   patch: ajv.compile<CompetenceTypePatch>(CompetenceTypePatchSchema),
   holding: ajv.compile<CompetenceHoldingBody>(CompetenceHoldingBodySchema),
+  mapping: ajv.compile<CompetenceMappingBody>(CompetenceMappingBodySchema),
 };
 async function body<T>(request: Request, validate: (value: unknown) => value is T, max = 2000): Promise<T> {
   const text = await request.text();
@@ -52,6 +65,11 @@ async function body<T>(request: Request, validate: (value: unknown) => value is 
 /** A path id as the contracts take one: 1 to 80 characters. */
 function param(value: string | undefined) {
   if (!value || value.length > 80) throw new InputError('Ogiltig förfrågan.');
+  return value;
+}
+/** A connector's id in the path, as the connector table holds one. */
+function connector(value: string | undefined) {
+  if (!value || value.length > 80 || !/^[a-z][a-z0-9-]*$/.test(value)) throw new InputError('Ogiltig förfrågan.');
   return value;
 }
 /** `?months=`: a whole number of months from 1 to 600, or `none` for no rule. */
@@ -105,6 +123,17 @@ export function competenceRoutes(deps: CompetenceRouteDeps) {
   routes.delete('/holdings/:id', async c => {
     await competence.revokeHolding(c.get('session').context, param(c.req.param('id')));
     return c.body(null, 204);
+  });
+  // The sources whose holdings are copied in (D108 item 9): what each holds and its mappings, and a read started now.
+  routes.get('/sources', async c => c.json(await competence.sources(c.get('session').context), 200, privateHeaders));
+  routes.put('/sources/:connectorId/mapping', async c => {
+    const connectorId = connector(c.req.param('connectorId')),
+      input = await body(c.req.raw, validators.mapping);
+    return c.json(await competence.mapSourceType(c.get('session').context, connectorId, input), 200);
+  });
+  routes.post('/sources/:connectorId/read', async c => {
+    await competence.readNow(c.get('session').context, connector(c.req.param('connectorId')));
+    return c.body(null, 202);
   });
   routes.onError((error, c) => failure(c, error));
   return routes;

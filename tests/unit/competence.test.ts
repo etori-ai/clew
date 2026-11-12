@@ -173,6 +173,7 @@ describe('the dates', () => {
       createdAt: now.toISOString(),
       revokedAt: null,
       revokedBy: null,
+      copy: null,
       ...extra,
     });
     const types = new Map([[t.id, t]]);
@@ -347,6 +348,7 @@ describe('a manager registers a certificate', () => {
       createdAt: now.toISOString(),
       revokedAt: null,
       revokedBy: null,
+      copy: null,
     });
     expect(lastAudit()).toEqual({
       actor: 'person:boss',
@@ -543,6 +545,8 @@ describe('erasure and export', () => {
     const { hot } = await catalogue();
     await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2026-01-10' });
     await competence.registerHolding(boss, 'bo', { typeId: hot, issuedOn: '2026-01-10' });
+    // Erasure is for a person the directory has deactivated (D108 item 14).
+    store.deactivate('anna');
     expect(await competence.erasePerson('operator:cli', 'anna')).toEqual({ holdings: 1, cleared: 0 });
     expect(lastAudit()).toEqual({
       actor: 'operator:cli',
@@ -552,6 +556,7 @@ describe('erasure and export', () => {
       details: { holdings: 1, cleared: 0 },
     });
     // The manager who registered is erased: the holdings stay, without her id.
+    store.deactivate('boss');
     expect(await competence.erasePerson('operator:cli', 'boss')).toEqual({ holdings: 0, cleared: 1 });
     expect([...store.state.holdings.values()].map(h => [h.personId, h.registeredBy])).toEqual([['bo', null]]);
   });
@@ -560,7 +565,7 @@ describe('erasure and export', () => {
     await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2026-01-10' });
     await competence.seedType('operator:test', 'org-2', { name: 'Annan', area: 'X', kind: 'course' });
     const doc = await competence.exportDomain('operator:cli', ORG);
-    expect(doc).toMatchObject({ format: 'clew.competence/1', exportedAt: now.toISOString(), organisationId: ORG });
+    expect(doc).toMatchObject({ format: 'clew.competence/2', exportedAt: now.toISOString(), organisationId: ORG });
     expect(doc.types.map(t => t.name).sort()).toEqual(['HLR', 'Heta arbeten', 'Socionomexamen']);
     expect(doc.holdings).toHaveLength(1);
     expect(lastAudit()).toEqual({
@@ -568,7 +573,7 @@ describe('erasure and export', () => {
       action: 'competence.exported',
       subject: 'organisation:' + ORG,
       at: now.toISOString(),
-      details: { types: 3, holdings: 1 },
+      details: { types: 3, holdings: 1, mappings: 0 },
     });
   });
 });
@@ -580,6 +585,7 @@ test('no audit row carries a name: of a person or of a type', async () => {
   await competence.updateType(admin, hlr, { name: 'Fallskydd', validityMonths: 36 });
   await competence.revokeHolding(boss, id);
   await competence.archiveType(admin, hot);
+  store.deactivate('bo');
   await competence.erasePerson('operator:cli', 'bo');
   await competence.exportDomain('operator:cli', ORG);
   const written = JSON.stringify(audits());

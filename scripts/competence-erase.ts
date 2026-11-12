@@ -1,7 +1,8 @@
 /**
- * Erase one person from the competence domain (D108 item 14): their holdings, and their id on the holdings they
- * registered or revoked for others. Runs inside the app container with the server's local settings (DATABASE_URL); no
- * route and no `package.json` entry. Audited (`competence.person_erased`, counts only) with the actor `operator:cli`.
+ * Erase one person from the competence domain (D108 item 14): their holdings, the rows copied from sources included,
+ * and their id on the holdings they registered or revoked for others. Only a person the directory has deactivated is
+ * erased: an active person is refused, since the next read of a source would copy their holdings back. Runs inside
+ * the app container with the server's local settings (DATABASE_URL); no route and no `package.json` entry. Audited (`competence.person_erased`, counts only) with the actor `operator:cli`.
  * It cannot be undone, so it needs `--confirm`.
  *
  *   bun scripts/competence-erase.ts --person <person id> --confirm

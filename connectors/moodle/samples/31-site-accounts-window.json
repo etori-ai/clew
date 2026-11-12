@@ -1,0 +1,56 @@
+{
+  "description": "A window in the middle of the list: six accounts from place 5, in id order. Moodle pages the list by place (limitfrom), not by id.",
+  "request": {
+    "method": "POST",
+    "path": "/webservice/rest/server.php",
+    "headers": {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Accept": "application/json"
+    },
+    "body": "wstoken=%3Cthe+service+account+token%3E&moodlewsrestformat=json&moodlewssettingraw=true&wsfunction=core_enrol_get_enrolled_users&courseid=1&options%5B0%5D%5Bname%5D=userfields&options%5B0%5D%5Bvalue%5D=id%2Cusername%2Cidnumber&options%5B1%5D%5Bname%5D=sortby&options%5B1%5D%5Bvalue%5D=id&options%5B2%5D%5Bname%5D=limitfrom&options%5B2%5D%5Bvalue%5D=5&options%5B3%5D%5Bname%5D=limitnumber&options%5B3%5D%5Bvalue%5D=6"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": [
+      {
+        "id": 6,
+        "username": "anna",
+        "fullname": "Anna Lindqvist",
+        "idnumber": "anna"
+      },
+      {
+        "id": 7,
+        "username": "erik",
+        "fullname": "Erik Sandström",
+        "idnumber": "erik"
+      },
+      {
+        "id": 8,
+        "username": "maria",
+        "fullname": "Maria Källström",
+        "idnumber": "maria"
+      },
+      {
+        "id": 9,
+        "username": "johan",
+        "fullname": "Johan Byström",
+        "idnumber": "johan"
+      },
+      {
+        "id": 10,
+        "username": "karin",
+        "fullname": "Karin Lindqvist",
+        "idnumber": "karin"
+      },
+      {
+        "id": 11,
+        "username": "lars.bergstrom",
+        "fullname": "Lars Bergström",
+        "idnumber": "lars.bergstrom"
+      }
+    ]
+  }
+}

@@ -8,6 +8,10 @@ under "Obligatoriska utbildningar" with a summary each, dated completions and th
 out. Every call was a POST from the host to `http://localhost:3024/webservice/rest/server.php` as the seed's service
 account `clew-connector` (no administrator; a role with read capabilities only, admitted to the external service
 `clew`), and every one but 23 and 25 asked for text as stored (`moodlewssettingraw=true`), as the connector does.
+Samples 30 to 36 were added later that day for the installation's read of every holding (D119), after the seed gave the
+service account `moodle/site:viewparticipants`: sent from inside the development stack (the connector's container) to
+`http://moodle`, with the same account and token. 34 is the answer the same account got before that right was given,
+written down from the answer as it came.
 
 Each `NN-*.json` holds `description`, `request` (method, path, headers and the form body) and `response` (status, the
 content type and the body as Moodle sent it, parsed). The token is replaced by `<the service account token>` in every
@@ -43,6 +47,13 @@ the same days, with other seconds.
 | 27 | Same | A course id that does not exist: `courses: []`, not an error |
 | 28 | `core_user_get_users_by_field`, `username` | One person by username, as the connector asks by default |
 | 29 | `core_course_get_courses_by_field`, `id` | Course 6, completed by Hillevi, with a summary that has inline HTML |
+| 30 | `core_enrol_get_enrolled_users`, course 1 | The site's accounts from place 0, as the installation's first page asks: all seventeen in id order, Moodle's guest account (user 1), the administrator and the service account among them; `id`, `username`, `idnumber` and always the full name |
+| 31 | Same | A window of six from place 5: Moodle pages the list by place (`limitfrom`), not by id |
+| 32 | Same | A window past the end: an empty list, not an error |
+| 33 | `core_user_get_users_by_field`, `username` | The first page's sixteen keys (every account of 30 but the guest's, which no read answers), looked up as the installation's read checks each finds its own account |
+| 34 | `core_enrol_get_enrolled_users`, course 1 | Before `moodle/site:viewparticipants` was given: `nopermissions` |
+| 35 | `core_badges_get_user_badges` | The guest's badges: `guestsarenotallowed`, an error about that one account. Why the installation's read leaves the guest out |
+| 36 | `core_enrol_get_users_courses` | The guest's courses: an empty list |
 
 ## What the recordings say
 
@@ -69,6 +80,14 @@ the same days, with other seconds.
   holder's choice (the three seeded badges have `mdl_badge_issued.visible = 1`): Moodle strips another person's badge
   record for a viewer who may not configure badges, and `visible` falls back to 0. Moodle has no relation the account
   can read that says whom a manager manages; Clew says it on every call (D117).
+
+- **The site's accounts are the front page's participants.** On course 1 every account Moodle has not deleted counts as
+  enrolled, suspended ones included (`get_enrolled_join` in `lib/enrollib.php`), so `core_enrol_get_enrolled_users`
+  lists the whole site in id order, a window at a time (30 to 32). It needs `moodle/site:viewparticipants` (34). The
+  function leaves out `suspended` even when asked for it, so whether an account is suspended comes from the lookup (33).
+- **The guest is an account like the others in the list** (30, user 1), but Moodle refuses to read its badges (35). It is
+  Moodle's own account for visitors, the local account named `guest` that `isguestuser()` recognises (`$CFG->siteguest`,
+  set when Moodle is installed; the name cannot be changed), and nobody's, so no read of the connector answers it.
 
 The site information (`core_webservice_get_site_info`) is not recorded: its answer carries the account's private access
 key.

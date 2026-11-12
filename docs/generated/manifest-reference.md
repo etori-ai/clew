@@ -986,12 +986,13 @@ export const lon = {
 
 #### `protocol`
 
-The version of this contract the manifest is written to, not of the connector (D60). This instance loads 3, and 2 for a window: a connector on 2 is loaded, shown with a warning in administration and in the conformance check, sent no `about` in its request bodies and held to the looser rules of 2. An additive change keeps the number; a break is a new one. 3 (D117) binds the request assertion to its body and capability, sends `about` in the body of a call whose input names people or units, and refuses a manifest in which an input that names someone is not a plain string property.
+The version of this contract the manifest is written to, not of the connector (D60). This instance loads 3, and 2 for a window: a connector on 2 is loaded, shown with a warning in administration and in the conformance check, sent no `about` in its request bodies and held to the looser rules of 2. An additive change keeps the number; a break is a new one. 3 (D117) binds the request assertion to its body and capability, sends `about` in the body of a call whose input names people or units, and refuses a manifest in which an input that names someone is not a plain string property. `installation` (D119) was added to 3 as an optional field: a manifest without it is read as before.
 
 - Type: 3 / 2
 - required
 - Pairs with:
   - **The protocol number is one this instance loads.** A manifest on a retired or unknown number is refused, naming the number, the accepted ones and the reason. This instance loads 3 and 2. ([D60](../decisions/D60-the-instance-serves-its-connector-protocol.md))
+  - **Installation reads came with protocol 3.** `installation` was added under protocol 3 as an optional field: a manifest without it is read as before, and a manifest on 2 that declares it is refused. Declare protocol 3 and carry the verifier of 3. ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md))
 
 Example:
 
@@ -1009,6 +1010,7 @@ Stable and lowercase. Must match the id Clew was configured with, and prefixes e
 - Pairs with:
   - **The id is the registered id.** An administrator registers the connector under an id; a manifest with another id is refused. ([D23](../decisions/D23-connectors-are-managed-in-the-database.md))
   - **Every capability name starts with the id.** A capability is named `<id>.<verb>`. The name is the contract: keep it for a compatible change, choose a new name for a break. ([D37](../decisions/README.md))
+  - **An installation read is one of the profiles Clew reads as the installation.** Each entry of `installation` is named `<id>.<profile>` for a profile Clew reads with no person behind the call: today only `<id>.holdings`. No name is both a capability and an installation read, and neither list names one twice. ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md))
 
 Example:
 
@@ -1338,6 +1340,7 @@ Example:
   - **Every capability name starts with the id.** A capability is named `<id>.<verb>`. The name is the contract: keep it for a compatible change, choose a new name for a break. ([D37](../decisions/README.md))
   - **Standing actions are capabilities of this manifest.** Every name under an area's `standing` must be a capability declared in the same manifest.
   - **A profile read and the header are about no entity.** `<id>.search`, `<id>.fetch`, `<id>.errands`, `<id>.talks`, `<id>.commitments`, `<id>.news`, a capability with `kinds` and the read the header names have shapes of their own and cannot declare `about`. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
+  - **An installation read is one of the profiles Clew reads as the installation.** Each entry of `installation` is named `<id>.<profile>` for a profile Clew reads with no person behind the call: today only `<id>.holdings`. No name is both a capability and an installation read, and neither list names one twice. ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md))
   - **search and fetch make a search source.** A `read` named `<id>.search` with `kinds` is a source of Clew's composite search: its output is a `SearchOutput`, and `<id>.fetch` takes one of its refs back and returns one `SearchHit`. ([D26](../decisions/D26-questions-over-documents-are-search-not-knowledge.md))
   - **news makes a news source.** A `read` named `<id>.news` that takes `{}` is a source of Clew's news: its output is a `NewsOutput`, rows of `ref`, `title`, `sender`, `publishedAt` and an optional `link`, and nothing else. Clew asks every news source in the person's scope as the person, at once and under a short budget, and lists the rows as `clew.news`, newest first: the three newest under "Nyheter" on Hem, all of them on "Alla nyheter". An answer that is not a `NewsOutput`, a source that fails and a source that is late contribute nothing, and no error is shown. A row with `link` leaves Clew in a new tab; without one it opens the read the view's `open` names (by convention `<id>.newsItem`) beside the page. While `clew.news` is registered the model is offered it and never the per-source read. ([D112](../decisions/D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md))
 
@@ -2805,6 +2808,101 @@ Example:
 "Inga träffar i telefonboken."
 ```
 
+### installation[]
+
+#### `installation`
+
+The reads Clew makes as the installation itself, with no person behind the call (D119), one per profile: today `<id>.holdings`, every holding the source has, a page at a time, for Clew's competence register (D108 item 9). Added under protocol 3; a manifest without it is untouched, and one on 2 cannot declare it.
+
+- Type: array of object
+- optional
+- Constraints: at most 1 items
+- Pairs with:
+  - **Installation reads came with protocol 3.** `installation` was added under protocol 3 as an optional field: a manifest without it is read as before, and a manifest on 2 that declares it is refused. Declare protocol 3 and carry the verifier of 3. ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md))
+  - **Clew calls an installation read as itself, never as a person.** Clew posts an installation read to `/clew/installation/{name}` with `{ input }` and an assertion whose subject is `clew:installation` and whose `caller` claim is `installation`, with no `actor`, bound to the body and the name. Answer it to that assertion only, and answer a person's assertion there with 401: the verifier of 3 tells them apart (`verify.installation`). The read is not a capability: no page, card, tool, job or other connector's callback can name it, whoever the person is. A page of `<id>.holdings` answers every account it reaches, a row without holdings for one that holds nothing; with `withdrawalsReported: false` Clew never reads a missing holding as revoked. Answer a cursor you no longer know as `invalid`; Clew then starts again from the first page. ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md))
+
+#### `installation[].name`
+
+`<connector id>.<profile>`, one of the profiles Clew reads as the installation. Today only `<id>.holdings` (D108 item 9): a read that takes a HoldingsInput (`{}`, then `{ cursor }`) and answers a HoldingsOutput, one page of every account the source has with every holding it can see, the cursor of the next page in `next`, and whether a holding missing later means it was withdrawn (`withdrawalsReported`). Clew's competence register copies the pages. Unique across `capabilities` and `installation`.
+
+- Type: string
+- required
+- Constraints: matches `^[a-z][a-z0-9-]*\.[a-zA-Z][a-zA-Z0-9]*$`; at most 80 characters
+- Pairs with:
+  - **An installation read is one of the profiles Clew reads as the installation.** Each entry of `installation` is named `<id>.<profile>` for a profile Clew reads with no person behind the call: today only `<id>.holdings`. No name is both a capability and an installation read, and neither list names one twice. ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md))
+  - **The holdings read takes a cursor and nothing else.** `<id>.holdings` takes `{}` for the first page and `{ cursor }` after: its input is an object whose only property is an optional plain string `cursor`, and it requires nothing. It never takes a key or a person: the read answers every account the source has. ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md))
+  - **Clew calls an installation read as itself, never as a person.** Clew posts an installation read to `/clew/installation/{name}` with `{ input }` and an assertion whose subject is `clew:installation` and whose `caller` claim is `installation`, with no `actor`, bound to the body and the name. Answer it to that assertion only, and answer a person's assertion there with 401: the verifier of 3 tells them apart (`verify.installation`). The read is not a capability: no page, card, tool, job or other connector's callback can name it, whoever the person is. A page of `<id>.holdings` answers every account it reaches, a row without holdings for one that holds nothing; with `withdrawalsReported: false` Clew never reads a missing holding as revoked. Answer a cursor you no longer know as `invalid`; Clew then starts again from the first page. ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md))
+
+Example:
+
+```json
+"moodle.holdings"
+```
+
+#### `installation[].title`
+
+Swedish. What Clew reads, as an administrator reads it: "Genomförda kurser och märken".
+
+- Type: string
+- required
+- Constraints: 1 to 200 characters
+
+Example:
+
+```json
+"Genomförda kurser och märken"
+```
+
+#### `installation[].description`
+
+Swedish. What the read answers, for the administrator.
+
+- Type: string
+- required
+- Constraints: 1 to 200 characters
+
+Example:
+
+```json
+"Alla konton i Lärplattformen med genomförda kurser och märken, dag för utfärdande och slutdag, för kompetensregistret."
+```
+
+#### `installation[].input`
+
+JSON Schema of the input, which must fit the profile's (for `<id>.holdings`: an object whose only property is an optional string `cursor`, requiring nothing). Clew validates every call against it.
+
+- Type: object (free keys)
+- required
+- Pairs with:
+  - **The holdings read takes a cursor and nothing else.** `<id>.holdings` takes `{}` for the first page and `{ cursor }` after: its input is an object whose only property is an optional plain string `cursor`, and it requires nothing. It never takes a key or a person: the read answers every account the source has. ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md))
+
+Example:
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "cursor": {
+      "type": "string",
+      "pattern": "^[0-9]{1,10}:[0-9]{1,9}$",
+      "maxLength": 21
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}
+```
+
+#### `installation[].output`
+
+JSON Schema of the output, which must fit the profile's (for `<id>.holdings`: HoldingsOutput, the same fields or fewer of the optional ones, constraints as tight or tighter). Clew validates every answer against it and against the profile.
+
+- Type: object (free keys)
+- required
+- Pairs with:
+  - **The holdings read answers the profile, a bounded page at a time.** `<id>.holdings` answers a `HoldingsOutput`: `rows`, each with a string `key` (the value of your match field for the account, what Clew compares with a user name), `holdings` and optionally `partial: true`; `withdrawalsReported`, a boolean; and `next`, the cursor of the following page, absent on the last. Each holding has `id`, `type`, `label`, `kind` and `issuedOn`, and optionally `expiresOn`, and nothing else: no name, no free text. `rows` declares `maxItems` of at most 100 and `holdings` at most 500. Clew checks every answer against the profile too. ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md))
+  - **Clew calls an installation read as itself, never as a person.** Clew posts an installation read to `/clew/installation/{name}` with `{ input }` and an assertion whose subject is `clew:installation` and whose `caller` claim is `installation`, with no `actor`, bound to the body and the name. Answer it to that assertion only, and answer a person's assertion there with 401: the verifier of 3 tells them apart (`verify.installation`). The read is not a capability: no page, card, tool, job or other connector's callback can name it, whoever the person is. A page of `<id>.holdings` answers every account it reaches, a row without holdings for one that holds nothing; with `withdrawalsReported: false` Clew never reads a missing holding as revoked. Answer a cursor you no longer know as `invalid`; Clew then starts again from the first page. ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md))
+
 ### facts[]
 
 #### `facts`
@@ -2938,6 +3036,11 @@ Where Clew applies each: when the manifest is loaded, when the connector is regi
 - **The effect is a read of this connector that takes the same input** (loader; `capabilities[].effect`, `capabilities[].kind`, `capabilities[].model`) ([D112](../decisions/D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md)): `effect` may be declared only on an `execute`. It names a `read` of this manifest whose input schema is the execute's own and which declares `model: false`. A read writes nothing: Clew calls it before the person decides.
 - **A follower is about no entity** (loader; `capabilities[].about`, `capabilities[].follows`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): `follows` and `about` exclude each other: a follower is asked with a `FactEnvelope`, not with keys.
 - **A profile read and the header are about no entity** (loader; `capabilities[].about`, `capabilities[].name`, `capabilities[].kinds`, `header.capability`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): `<id>.search`, `<id>.fetch`, `<id>.errands`, `<id>.talks`, `<id>.commitments`, `<id>.news`, a capability with `kinds` and the read the header names have shapes of their own and cannot declare `about`.
+- **Installation reads came with protocol 3** (loader; `protocol`, `installation`) ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md)): `installation` was added under protocol 3 as an optional field: a manifest without it is read as before, and a manifest on 2 that declares it is refused. Declare protocol 3 and carry the verifier of 3.
+- **An installation read is one of the profiles Clew reads as the installation** (loader; `installation[].name`, `id`, `capabilities[].name`) ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md)): Each entry of `installation` is named `<id>.<profile>` for a profile Clew reads with no person behind the call: today only `<id>.holdings`. No name is both a capability and an installation read, and neither list names one twice.
+- **The holdings read takes a cursor and nothing else** (loader; `installation[].name`, `installation[].input`) ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md)): `<id>.holdings` takes `{}` for the first page and `{ cursor }` after: its input is an object whose only property is an optional plain string `cursor`, and it requires nothing. It never takes a key or a person: the read answers every account the source has.
+- **The holdings read answers the profile, a bounded page at a time** (loader; `installation[].output`) ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md)): `<id>.holdings` answers a `HoldingsOutput`: `rows`, each with a string `key` (the value of your match field for the account, what Clew compares with a user name), `holdings` and optionally `partial: true`; `withdrawalsReported`, a boolean; and `next`, the cursor of the following page, absent on the last. Each holding has `id`, `type`, `label`, `kind` and `issuedOn`, and optionally `expiresOn`, and nothing else: no name, no free text. `rows` declares `maxItems` of at most 100 and `holdings` at most 500. Clew checks every answer against the profile too.
+- **Clew calls an installation read as itself, never as a person** (call; `installation`, `installation[].name`, `installation[].output`) ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md)): Clew posts an installation read to `/clew/installation/{name}` with `{ input }` and an assertion whose subject is `clew:installation` and whose `caller` claim is `installation`, with no `actor`, bound to the body and the name. Answer it to that assertion only, and answer a person's assertion there with 401: the verifier of 3 tells them apart (`verify.installation`). The read is not a capability: no page, card, tool, job or other connector's callback can name it, whoever the person is. A page of `<id>.holdings` answers every account it reaches, a row without holdings for one that holds nothing; with `withdrawalsReported: false` Clew never reads a missing holding as revoked. Answer a cursor you no longer know as `invalid`; Clew then starts again from the first page.
 - **scan: true means you serve the scan route** (check; `scan`, `areas[].id`) ([D35](../decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md)): With `scan: true` Clew posts `/clew/scan` per person, nightly and on first visit. Each draft names an `area` of this manifest, its `topic` is the same for the same occurrence, and its actions name capabilities of this connector only. An execute action that is the person's read receipt for something published carries `acknowledgement: { publishedAt }` (D112), at most one per draft: Hem then lifts the open item above its blocks, with that action as its button, until it is pressed. Such an item is a notice: its `summary` is the text the person reads, first in the item (paragraphs separated by a blank line), its first `read` with `target: 'link'` is drawn after that text as the way to the whole of it, and its `reason` is the provenance line under "Varför ser jag detta?" (who published it, when). On any item, a single row that only repeats the title (no detail, no subject, not selectable) is not drawn. The conformance check runs the scan twice and compares.
 - **figure: true means you serve the figure route** (call; `areas[].figure`): For an area with `figure: true` Clew posts `/clew/figure` with the area id and draws the answer as the area's tile on Hem (D54): `label` and `tone`, and optionally `value` (one number and its unit, formatted by you), `comparison`, `progress` and `opens`, a read of yours whose view needs no input, which the tile then links to. Without `value` the label is a sentence. Clew says the tone in its own words. A connector that does not answer shows the warning tile, never an error; an administrator can switch an area's figure off.
 - **Callbacks reach only what uses lists** (call; `uses`) ([D37](../decisions/README.md)): While serving a request, a connector may call back `POST /api/connectors/call` with the `callback` grant from the assertion, for the exact names in `uses` and as the same person. Anything else, and every `execute`, is refused.

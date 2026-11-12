@@ -9,6 +9,13 @@ const ENDPOINT = '/webservice/rest/server.php';
 /** How many values one core_user_get_users_by_field call asks for. */
 const LOOKUP_BATCH = 50;
 /**
+ * Moodle's front page course (`SITEID`), which Moodle installs as course 1. Every account is "enrolled" on it, so its
+ * participants are the site's accounts: the list the installation's read of every holding walks (D119).
+ */
+export const SITE_COURSE = 1;
+/** The user fields asked for when the site's accounts are listed: what finds a person, nothing more. */
+const LISTED_FIELDS = 'id,username,idnumber';
+/**
  * The error codes that mean the connector's own token or account is refused, whatever is asked: an unknown or expired
  * token (14), a function the service does not list or an account the service does not admit (15), the service account
  * suspended, deleted, unconfirmed or not set up.
@@ -29,9 +36,11 @@ const REFUSED = new Set([
 /**
  * The error codes Moodle gives for one person or one course while the rest can be read: a right withheld in one
  * course's or one user's context, a course the account cannot enter, a person deleted or not confirmed
- * (`core_user::require_active_user`), the completion report closed for them.
+ * (`core_user::require_active_user`), the completion report closed for them, and the guest account, whose badges Moodle
+ * will not read (35): the site's list of accounts, which the installation's read walks, has the guest in it.
  */
 const ITEM = new Set([
+  'guestsarenotallowed',
   'nopermissions',
   'requireloginerror',
   'restrictedcontextexception',
@@ -105,6 +114,20 @@ export function parseAccounts(body) {
         suspended: raw.suspended === true,
       },
     ];
+  });
+}
+
+/**
+ * The accounts in a core_enrol_get_enrolled_users answer for the front page (30 to 32): id, username and idnumber, in
+ * the order asked (by id). An account whose details the service account may not see comes with its id and full name
+ * only; it is kept with an empty username so the list's positions stay as Moodle counts them. The full name is not read.
+ */
+export function parseListedAccounts(body) {
+  if (!Array.isArray(body)) throw new SourceUnavailable("Moodle answered the site's accounts without a list.");
+  return body.flatMap(raw => {
+    const id = positive(raw?.id);
+    if (!id) return [];
+    return [{ id, username: typeof raw.username === 'string' ? raw.username : '', idnumber: text(raw.idnumber) }];
   });
 }
 
@@ -192,8 +215,9 @@ export function parseBadges(body) {
 }
 
 /**
- * Moodle's form encoding of a call: arrays as `name[0]`, `name[1]` (01). `moodlewssettingraw` asks for text as it is
- * stored: without it Moodle escapes a course's or a badge's name for HTML ("&amp;"), and Clew draws text, not HTML.
+ * Moodle's form encoding of a call: arrays as `name[0]`, `name[1]` (01), an array of objects as `name[0][key]` (30).
+ * `moodlewssettingraw` asks for text as it is stored: without it Moodle escapes a course's or a badge's name for HTML
+ * ("&amp;"), and Clew draws text, not HTML.
  */
 export function formOf(token, wsfunction, params = {}) {
   const body = new URLSearchParams({
@@ -203,7 +227,12 @@ export function formOf(token, wsfunction, params = {}) {
     wsfunction,
   });
   for (const [name, value] of Object.entries(params)) {
-    if (Array.isArray(value)) value.forEach((v, i) => body.append(`${name}[${i}]`, String(v)));
+    if (Array.isArray(value))
+      value.forEach((v, i) => {
+        if (v && typeof v === 'object')
+          for (const [key, inner] of Object.entries(v)) body.append(`${name}[${i}][${key}]`, String(inner));
+        else body.append(`${name}[${i}]`, String(v));
+      });
     else body.append(name, String(value));
   }
   return body;
@@ -317,6 +346,36 @@ export function createMoodleLearning({
         }
       }
       return found;
+    },
+
+    /**
+     * The site's accounts in id order, `count` from position `from` (30 to 32): the front page's participants, which
+     * are every account Moodle has not deleted, suspended ones included. One call per window, with the user fields that
+     * find a person and nothing else. It needs `moodle/site:viewparticipants`; a refusal is the service's, not one
+     * person's, since the read of every holding cannot go on without it.
+     */
+    async everyone(from, count, { signal } = {}) {
+      try {
+        return parseListedAccounts(
+          await call(
+            'core_enrol_get_enrolled_users',
+            {
+              courseid: SITE_COURSE,
+              options: [
+                { name: 'userfields', value: LISTED_FIELDS },
+                { name: 'sortby', value: 'id' },
+                { name: 'limitfrom', value: from },
+                { name: 'limitnumber', value: count },
+              ],
+            },
+            signal,
+          ),
+        );
+      } catch (error) {
+        throw error instanceof MoodleException && ITEM.has(error.code)
+          ? new SourceRefused("Moodle refused the service account the site's accounts: " + error.code + '.')
+          : unexpected(error);
+      }
     },
 
     /**

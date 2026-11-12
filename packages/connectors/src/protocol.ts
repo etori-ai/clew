@@ -32,6 +32,10 @@ import {
   MetricsSchema,
   SeriesSchema,
   ActivitySchema,
+  HoldingSchema,
+  HoldingsInputSchema,
+  HoldingsOutputSchema,
+  HoldingsRowSchema,
   literals,
   type ConnectorHealth,
 } from '@clew/contracts';
@@ -51,6 +55,7 @@ import {
  * Routes a connector serves (all JSON, all under the base URL Clew is configured with):
  *   GET  /clew/manifest                 -> ConnectorManifest
  *   POST /clew/capabilities/{name}      CallRequest  -> CallResponse
+ *   POST /clew/installation/{name}      InstallationCallRequest -> CallResponse (only for manifest.installation, D119)
  *   POST /clew/scan                     ScanRequest  -> ScanResponse        (only when manifest.scan is true)
  *   POST /clew/figure                   FigureRequest -> FigureResponse     (only for areas with figure: true)
  * Every POST carries an installation-signed RS256 bearer assertion and X-Clew-Connector-Key (transport only).
@@ -58,10 +63,24 @@ import {
  * the assertion was issued for this request: its `body` claim the SHA-256 of the exact body, its `capability` claim the
  * capability of the route (D117). When the input names people or units, Clew has already left out every key the caller
  * may not ask about, and the body's `about` says how the caller stands to each key sent (`CallAbout`).
+ * On `/clew/installation/{name}` no person is behind the call (D119): the assertion carries no `actor`, its subject is
+ * `clew:installation` and its `caller` claim `installation`, bound to the body and the name as every call is. Answer it
+ * only to that assertion, and never answer a person's assertion there.
  * A callback uses the separate signed `callback` claim, never the request assertion, and only targets declared
  * in `uses`. See docs/guides/authorization.md and docs/reference/connector-protocol.md.
  */
 export const PROTOCOL_VERSION = 3;
+/** The route Clew posts a read it makes as the installation to (D119): never the person's route. */
+export const INSTALLATION_ROUTE = '/clew/installation/';
+/** The subject of the installation's own assertion (D119). Not a person's id: Clew signs a person with their id. */
+export const INSTALLATION_SUBJECT = 'clew:installation';
+/** The claim that says an assertion is the installation's own and not a person's (D119). */
+export const INSTALLATION_CALLER = 'installation';
+/**
+ * The reads a connector may declare for the installation (D119), as `<id>.<profile>`: the profiles Clew reads with no
+ * person behind the call. The holdings profile of D108 item 9 is the first and, for now, the only one.
+ */
+export const INSTALLATION_PROFILES = ['holdings'] as const;
 /** The protocol before it (D60): still loaded for a stated window, its connectors shown with a warning (`PROTOCOL_DEPRECATED`). */
 export const PROTOCOL_PREVIOUS = 2;
 const object = <T extends Record<string, import('typebox').TSchema>>(properties: T, description?: string) =>
@@ -355,11 +374,34 @@ export const DelegationSchema = object(
   },
   'The connector acts as the person against its system with a token Clew obtains by token exchange.',
 );
+/**
+ * A read Clew makes as the installation itself, with no person behind the call (D119). Reads only, never a tool, never
+ * on a person's page: it is not a capability, so nothing a person, the model or another connector reaches can call it.
+ */
+export const ManifestInstallationReadSchema = object(
+  {
+    name: Type.String({
+      pattern: '^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$',
+      maxLength: 80,
+      description:
+        "`<connector id>.<profile>`, one of the profiles Clew reads as the installation. Today only `<id>.holdings` (D108 item 9): a read that takes a HoldingsInput (`{}`, then `{ cursor }`) and answers a HoldingsOutput, one page of every account the source has with every holding it can see, the cursor of the next page in `next`, and whether a holding missing later means it was withdrawn (`withdrawalsReported`). Clew's competence register copies the pages. Unique across `capabilities` and `installation`.",
+    }),
+    title: swedish('Swedish. What Clew reads, as an administrator reads it: "Genomförda kurser och märken".'),
+    description: swedish('Swedish. What the read answers, for the administrator.'),
+    input: jsonSchemaOf(
+      "JSON Schema of the input, which must fit the profile's (for `<id>.holdings`: an object whose only property is an optional string `cursor`, requiring nothing). Clew validates every call against it.",
+    ),
+    output: jsonSchemaOf(
+      "JSON Schema of the output, which must fit the profile's (for `<id>.holdings`: HoldingsOutput, the same fields or fewer of the optional ones, constraints as tight or tighter). Clew validates every answer against it and against the profile.",
+    ),
+  },
+  'A read Clew makes as the installation, with no person behind it (D119): posted to `/clew/installation/{name}` with an assertion whose subject is `clew:installation` and whose `caller` claim is `installation`, bound to the body and the name. Answer it to that assertion only. Never a model tool and never on a page: no person, administrator included, can call it by name, and it reaches no `capabilities` path. `model: false` and a read are implied.',
+);
 export const ConnectorManifestSchema = Type.Object(
   {
     protocol: Type.Union([Type.Literal(PROTOCOL_VERSION), Type.Literal(PROTOCOL_PREVIOUS)], {
       description:
-        'The version of this contract the manifest is written to, not of the connector (D60). This instance loads 3, and 2 for a window: a connector on 2 is loaded, shown with a warning in administration and in the conformance check, sent no `about` in its request bodies and held to the looser rules of 2. An additive change keeps the number; a break is a new one. 3 (D117) binds the request assertion to its body and capability, sends `about` in the body of a call whose input names people or units, and refuses a manifest in which an input that names someone is not a plain string property.',
+        'The version of this contract the manifest is written to, not of the connector (D60). This instance loads 3, and 2 for a window: a connector on 2 is loaded, shown with a warning in administration and in the conformance check, sent no `about` in its request bodies and held to the looser rules of 2. An additive change keeps the number; a break is a new one. 3 (D117) binds the request assertion to its body and capability, sends `about` in the body of a call whose input names people or units, and refuses a manifest in which an input that names someone is not a plain string property. `installation` (D119) was added to 3 as an optional field: a manifest without it is read as before.',
     }),
     id: Type.String({
       pattern: '^[a-z][a-z0-9-]*$',
@@ -380,6 +422,13 @@ export const ConnectorManifestSchema = Type.Object(
       description:
         'What the connector can do, one entry per operation. The name is the contract (D37): a break is a new name, never a changed one.',
     }),
+    installation: Type.Optional(
+      Type.Array(ManifestInstallationReadSchema, {
+        maxItems: INSTALLATION_PROFILES.length,
+        description:
+          "The reads Clew makes as the installation itself, with no person behind the call (D119), one per profile: today `<id>.holdings`, every holding the source has, a page at a time, for Clew's competence register (D108 item 9). Added under protocol 3; a manifest without it is untouched, and one on 2 cannot declare it.",
+      }),
+    ),
     uses: Type.Optional(
       Type.Array(Type.String({ pattern: '^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$' }), {
         uniqueItems: true,
@@ -436,6 +485,15 @@ export const DocumentReadRequestSchema = object({
   about: Type.Optional(CallAboutSchema),
 });
 export type CallRequest = Static<typeof CallRequestSchema>;
+/**
+ * What Clew posts to `/clew/installation/{name}` (D119): the input alone. No actor and no `about`: no person is behind
+ * the call, nobody is resolved, and the assertion says it is the installation's own.
+ */
+export const InstallationCallRequestSchema = object(
+  { input: Type.Unknown() },
+  "The body of a read Clew makes as the installation (D119): the input, validated against the read's declared input. There is no actor; the verified assertion's `caller` claim is `installation` and its subject `clew:installation`.",
+);
+export type InstallationCallRequest = Static<typeof InstallationCallRequestSchema>;
 export const ProtocolErrorSchema = object({
   code: Type.Union([
     Type.Literal('invalid'),
@@ -580,6 +638,8 @@ export function protocolSchema() {
       Actor: ActorSchema,
       CallAbout: CallAboutSchema,
       CallRequest: CallRequestSchema,
+      InstallationCallRequest: InstallationCallRequestSchema,
+      ManifestInstallationRead: ManifestInstallationReadSchema,
       CallResponse: CallResponseSchema,
       ProtocolError: ProtocolErrorSchema,
       ExecuteResult: ExecuteResultSchema,
@@ -609,6 +669,10 @@ export function protocolSchema() {
       TalksOutput: TalksOutputSchema,
       CommitmentRow: CommitmentRowSchema,
       CommitmentsOutput: CommitmentsOutputSchema,
+      Holding: HoldingSchema,
+      HoldingsRow: HoldingsRowSchema,
+      HoldingsInput: HoldingsInputSchema,
+      HoldingsOutput: HoldingsOutputSchema,
       Delegation: DelegationSchema,
       View: ViewSchema,
       Menu: MenuHintSchema,
@@ -645,10 +709,16 @@ export const PROTOCOL_DEPRECATED: Readonly<Record<number, string>> = {
  * without `about` (a closed object), so its bodies carry none; and the plain-string rule for inputs that name someone is
  * not a refusal for it, since the registry refuses anything but a string there at every call regardless.
  */
-export function protocolTerms(protocol: number): { about: boolean; strictNamedInputs: boolean; deprecated?: string } {
+export function protocolTerms(protocol: number): {
+  about: boolean;
+  strictNamedInputs: boolean;
+  /** Whether the manifest may declare `installation` (D119): added under 3, so never a connector on 2. */
+  installation: boolean;
+  deprecated?: string;
+} {
   return protocol === PROTOCOL_PREVIOUS
-    ? { about: false, strictNamedInputs: false, deprecated: PROTOCOL_DEPRECATED[protocol] }
-    : { about: true, strictNamedInputs: true };
+    ? { about: false, strictNamedInputs: false, installation: false, deprecated: PROTOCOL_DEPRECATED[protocol] }
+    : { about: true, strictNamedInputs: true, installation: true };
 }
 /**
  * The health of a connector that answered with a valid manifest (D60): `ok`, or on the previous protocol the warning
@@ -865,6 +935,19 @@ export const ManifestPreviewSchema = object(
           menu: Type.Array(object({ capability: Type.String(), label: Type.String(), icon: MenuIconSchema }), {
             description: 'The rows an administrator could put in the menu.',
           }),
+          installation: Type.Optional(
+            Type.Array(
+              object({
+                name: Type.String(),
+                title: Type.String(),
+                check: Type.String({ description: 'What the conformance check does with it.' }),
+              }),
+              {
+                description:
+                  'The reads Clew would make as the installation itself (D119), present when the manifest declares any: never offered to a person, the model or another connector.',
+              },
+            ),
+          ),
         },
         'Present when ok: the manifest as Clew would hold it.',
       ),
@@ -964,7 +1047,7 @@ export function openApiDocument(options: OpenApiOptions = {}) {
       {
         name: 'Connector',
         description:
-          "Routes the connector serves and Clew calls. All JSON, all under the registered base URL. Every POST carries `Authorization: Bearer <assertion>` and `X-Clew-Connector-Key`; take the actor from the verified assertion, never from the body, and check that the assertion's `body` claim is the SHA-256 of the body received (D117).",
+          "Routes the connector serves and Clew calls. All JSON, all under the registered base URL. Every POST carries `Authorization: Bearer <assertion>` and `X-Clew-Connector-Key`; take the actor from the verified assertion, never from the body, and check that the assertion's `body` claim is the SHA-256 of the body received (D117). On `/clew/installation/{name}` there is no actor: the assertion is the installation's own (D119).",
       },
       {
         name: 'Clew',
@@ -1016,6 +1099,46 @@ export function openApiDocument(options: OpenApiOptions = {}) {
             '400': json('CallResponse', 'Invalid input: `error.code` is `invalid`.'),
             ...refused,
             '404': json('CallResponse', 'An unknown ref or capability: `error.code` is `not-found`.'),
+          },
+        },
+      },
+      '/clew/installation/{name}': {
+        servers: connector,
+        post: {
+          tags: ['Connector'],
+          operationId: 'readAsInstallation',
+          summary: 'A read Clew makes as the installation, with no person behind it',
+          description:
+            "Only for a read the manifest declares under `installation` (D119), today `<id>.holdings`. No actor: the assertion's subject is `clew:installation`, its `caller` claim `installation`, and it carries no `actor` and no `callback`; it is bound to the body and to `{name}` as every request is. Answer only that assertion here: a person's assertion, whoever they are, is refused with 401, and the installation's assertion is never valid on `/clew/capabilities/{name}`. Clew never reaches this route on a person's behalf: the read is not a capability, so neither a page, a card, the model nor another connector's callback can name it.",
+          security: [{ installationAssertion: [], connectorKey: [] }],
+          parameters: [
+            {
+              name: 'name',
+              in: 'path',
+              required: true,
+              schema: { type: 'string', pattern: '^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$' },
+              description: "The full name from the manifest's `installation`, `<id>.<profile>`.",
+            },
+          ],
+          requestBody: body('InstallationCallRequest'),
+          responses: {
+            '200': json(
+              'CallResponse',
+              "The output, validated against the read's declared output and its profile (`HoldingsOutput` for `<id>.holdings`).",
+            ),
+            '400': json(
+              'CallResponse',
+              'Invalid input, such as a cursor the source does not know: `error.code` is `invalid`.',
+            ),
+            '401': {
+              description:
+                "The transport key or the assertion was rejected, and a person's assertion on this route. Required: the conformance check probes both.",
+            },
+            '404': json(
+              'CallResponse',
+              'A name the connector does not declare for the installation: `error.code` is `not-found`.',
+            ),
+            '503': refused['503'],
           },
         },
       },
@@ -1190,6 +1313,13 @@ export function openApiDocument(options: OpenApiOptions = {}) {
           bearerFormat: 'JWT',
           description:
             "RS256 assertion signed by the installation: who is acting (`actor`), for which connector, for at most two minutes, bound to one request (D117): `body` is the SHA-256 of the exact request body, base64url, and on `/clew/capabilities/{name}` `capability` is that name. Verify against `/api/connectors/jwks`, and recompute both from the request received; the body's `input` and `about` (`CallAbout`) are then Clew's.",
+        },
+        installationAssertion: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          description:
+            "RS256 assertion signed by the installation for a read it makes itself (D119): `sub` is `clew:installation`, `caller` is `installation`, there is no `actor` and no `callback`, for this connector only and for at most two minutes, and it is bound to one request as every assertion is: `body` is the SHA-256 of the exact request body, base64url, and `capability` the name on `/clew/installation/{name}`. Verify against `/api/connectors/jwks`. A person's assertion never verifies as this one, and this one never verifies as a person's.",
         },
         connectorKey: {
           type: 'apiKey',

@@ -5,6 +5,9 @@
 // The port (each method takes `{ signal }` last: when it aborts, the call stops and throws SourceUnavailable):
 //   accounts(field, values)    the accounts whose `field` ("username" or "idnumber") equals one of `values`, compared as
 //                              Moodle compares it (exactly); [{ id, username, idnumber, suspended }]
+//   everyone(from, count)      every account of the site in id order, deleted ones left out and suspended ones kept,
+//                              `count` of them from position `from`: [{ id, username, idnumber }]; an account whose
+//                              details the service account may not see comes with its id alone (empty username)
 //   courses(userId)            the courses the account is enrolled in: [{ id, name, idnumber, completed, tracked }],
 //                              `tracked` when the course records completion
 //   completion(userId, courseId)  when the account completed the course, in Unix seconds; null when it has not, is not
@@ -32,7 +35,8 @@ const DAY = 86_400;
 
 /**
  * The seed's people (.devcontainer/moodle/seed.php), in its order, with the user name as `username` and `idnumber`;
- * then two the stand-in adds: `sara`, whose idnumber is an employee number, and `lisa`, who has an account and no course.
+ * then two the stand-in adds: `sara`, whose idnumber is an employee number, and `lisa`, who has an account and no course;
+ * and Moodle's own guest account, user 1, as every Moodle has it.
  * Nothing here says who reports to whom: that is Clew's to say on each call (D117).
  */
 const PEOPLE = ['hillevi', 'hassan', 'mikael', 'anna', 'erik', 'maria', 'johan', 'karin'];
@@ -58,13 +62,18 @@ export function createFixtureLearning({ now = () => Date.now() } = {}) {
   const accounts = [];
   let nextUser = 3;
   const account = (username, idnumber) => {
-    const a = { id: nextUser++, username, idnumber, suspended: false };
+    const a = { id: nextUser++, username, idnumber, suspended: false, deleted: false, withheld: false };
     accounts.push(a);
     return a;
   };
+  /** What a lookup answers of an account, as Moodle's user lookup does. */
+  const looked = a => ({ id: a.id, username: a.username, idnumber: a.idnumber, suspended: a.suspended });
   for (const username of PEOPLE) account(username, username);
   const sara = account('sara', '1007');
   account('lisa', 'lisa');
+  // Moodle's guest account, which it creates first at install: listed with everyone, its badges refused (35).
+  const guest = { id: 1, username: 'guest', idnumber: '', suspended: false, deleted: false, withheld: false };
+  accounts.push(guest);
 
   const MANDATORY = 'Obligatoriska utbildningar';
   const courses = SEED_COURSES.map(([short, name], i) => ({
@@ -125,7 +134,7 @@ export function createFixtureLearning({ now = () => Date.now() } = {}) {
   let refused = false;
   /** What the platform refuses for one item: `courses:<user>`, `badges:<user>`, `completion:<user>:<course>`. */
   const unreadable = new Set();
-  const calls = { accounts: 0, courses: 0, completion: 0, badges: 0, course: 0 };
+  const calls = { accounts: 0, everyone: 0, courses: 0, completion: 0, badges: 0, course: 0 };
   const gate = (method, signal, item) => {
     calls[method]++;
     if (signal?.aborted) throw new SourceUnavailable('The call was stopped.');
@@ -139,8 +148,21 @@ export function createFixtureLearning({ now = () => Date.now() } = {}) {
       gate('accounts', signal);
       if (field !== 'idnumber' && field !== 'username') throw new Error('Unknown field ' + field);
       const wanted = new Set(values);
-      // Moodle returns the accounts in its own order (by id), not in the order asked.
-      return accounts.filter(a => a[field] !== '' && wanted.has(a[field])).map(a => ({ ...a }));
+      // Moodle returns the accounts in its own order (by id), not in the order asked, and never a deleted one.
+      return accounts.filter(a => !a.deleted && !a.withheld && a[field] !== '' && wanted.has(a[field])).map(looked);
+    },
+    // Every account in id order, a window of the list at a time, as the site's participants are listed in Moodle.
+    async everyone(from, count, { signal } = {}) {
+      gate('everyone', signal);
+      return accounts
+        .filter(a => !a.deleted)
+        .sort((a, b) => a.id - b.id)
+        .slice(from, from + count)
+        .map(a =>
+          a.withheld
+            ? { id: a.id, username: '', idnumber: '' }
+            : { id: a.id, username: a.username, idnumber: a.idnumber },
+        );
     },
     async courses(userId, { signal } = {}) {
       gate('courses', signal, `courses:${userId}`);
@@ -183,6 +205,8 @@ export function createFixtureLearning({ now = () => Date.now() } = {}) {
     },
     async badges(userId, { signal } = {}) {
       gate('badges', signal, `badges:${userId}`);
+      if (userId === guest.id)
+        throw new ItemUnreadable('The learning platform refused the guest: guestsarenotallowed.');
       return badgeTypes.flatMap(b => {
         const held = issued.get(`${userId}:${b.id}`);
         if (!held) return [];
@@ -219,7 +243,25 @@ export function createFixtureLearning({ now = () => Date.now() } = {}) {
       },
       /** Another account with the given username and idnumber. */
       add(username, idnumber) {
-        return { ...account(username, idnumber) };
+        return looked(account(username, idnumber));
+      },
+      /** An account is suspended: it cannot sign in, and everything it completed stays. */
+      suspend(username) {
+        const user = byName(username);
+        if (!user) throw new Error('No such account');
+        user.suspended = true;
+      },
+      /** An account is deleted, as Moodle deletes one: gone from every list and lookup. */
+      remove(username) {
+        const user = byName(username);
+        if (!user) throw new Error('No such account');
+        user.deleted = true;
+      },
+      /** The service account may not see an account's details: the list gives its id alone. */
+      withhold(username) {
+        const user = byName(username);
+        if (!user) throw new Error('No such account');
+        user.withheld = true;
       },
       /** How many times each method was called. */
       calls,

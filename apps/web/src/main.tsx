@@ -37,6 +37,7 @@ import { AdminProviderPage } from './pages/admin/provider';
 import { NotAdmin } from './pages/admin/shell';
 import { AdminAppearancePage } from './pages/admin/appearance';
 import { AdminCompetencePage } from './pages/admin/competence';
+import { AdminCompetenceSourcesPage } from './pages/admin/competence-sources';
 import { loadBranding, useBranding } from './branding';
 
 type Shell = { session: BrowserSession; user: SessionUser; admin: boolean; capabilities: Capability[] };
@@ -302,6 +303,12 @@ function App() {
         path="/admin/competence"
         element={admin(shell => (
           <AdminCompetencePage user={shell.user} />
+        ))}
+      />
+      <Route
+        path="/admin/competence/sources"
+        element={admin(shell => (
+          <AdminCompetenceSourcesPage user={shell.user} />
         ))}
       />
       <Route

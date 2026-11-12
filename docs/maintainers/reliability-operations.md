@@ -75,6 +75,26 @@ Durable work stores the value and compares it exactly. When it differs, a queued
 
 The nightly scan runs for enabled people with a grant and an identity binding (`granted()` in `apps/server/src/scheduler/adapters/postgres.ts`, `tests/db/scheduler-people.test.ts`). A person pushed in through provisioning who has never signed in is not scanned.
 
+## The competence copy
+
+The daily copy of what sources hold (D108 item 9) is a `competenceCopy` workflow per day, `competence-copy:<day>` at
+04:00 Swedish time. The server asks for the next one at boot and every hour after, and each daily run asks for the
+next before it reads, so a run that ends in `ERROR`, or a day on which no instance ran, is followed by the next day's
+within the hour without an operator. A source's own failure is recorded on its row of `competence_source` (outcome
+`failed`, the kind in the run's audit row `competence.source_read`) and never stops the other sources. A lease left by
+a run that died lapses after fifteen minutes, and a failure on Clew's side (the database, the directory behind the
+audiences) is recorded `failed` with the kind `storage` and lets go of the source at once. `bun scripts/competence-read.ts`
+asks for a run now and prints each source's counts; `scripts/competence-erase.ts` erases only a person the directory has
+deactivated.
+
+Copied rows are a cache (D108 items 9 and 14): the next read deletes those of a person the directory has deactivated or
+who has left the source's or the module's audience, whatever the source says. A provisioner fault that deactivates many
+people before 04:00 therefore deletes their copied rows at the daily read. Once the directory is put right, the next
+read copies back what the source still holds, as new rows (new ids and creation dates; the source's row ids, days and
+labels, so the statuses are as before); what the source no longer holds does not come back. Holdings registered in Clew
+are not affected. If such a fault is found before 04:00, switching Kompetens off under Anslutna system until the
+directory is right stops the read.
+
 ## Reproduce the synthetic upgrade and restore rehearsal
 
 Use only the disposable development/CI stack with `CLEW_POC=true`. The script refuses existing database names and requires a fixture marker before cleanup. It never restores over the application database.

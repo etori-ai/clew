@@ -11,11 +11,19 @@ competenceStoreContract('memory', async () => {
     async seedPerson(person) {
       store.addPerson(person);
     },
+    async deactivate(personId) {
+      store.deactivate(personId);
+    },
+    // The memory store keeps no connector rows: what refers to one is held to nothing here.
+    async seedConnector() {},
     async auditFor(subject) {
       return store
         .audit()
         .filter(a => a.subject === subject)
         .map(a => ({ actor: a.actor, action: a.action }));
+    },
+    async enqueued() {
+      return store.state.enqueued.map(s => s.id);
     },
   };
 });

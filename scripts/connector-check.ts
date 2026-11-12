@@ -11,7 +11,9 @@
  * With `--as` the batch passes this installation's rule of who may be asked about (D117): a key that person may not ask
  * about is left out, as Clew leaves it out. Without `--as` the batch is signed as the check's own manager on a unit no
  * installation has, and the check vouches for no key, so nothing real is sent; without `--keys` the rows are not
- * checked, while an unknown key and another unit, sent past the rule and without a relation, still are.
+ * checked, while an unknown key and another unit, sent past the rule and without a relation, still are. A read the
+ * manifest declares for the installation (D119) is read as Clew reads it, its first two pages at most, and a person's
+ * assertion on its route must be refused.
  */
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
@@ -99,6 +101,8 @@ const report = await checkConnector({
   key: secret,
   assert: (actor, chain, binding) => authority.assert(audience, actor, manifest.uses, chain, binding),
   assertForeign: signer('wrong-secret-wrong-secret'),
+  // The reads the manifest declares for the installation (D119): their first pages, read as Clew reads them.
+  assertInstallation: binding => authority.installation(audience, binding),
   acceptsEmptyInput: schema => !!ajv.compile(schema)({}),
   about: { keys, ...(as ? { as, relations: relations.relate } : {}) },
 });

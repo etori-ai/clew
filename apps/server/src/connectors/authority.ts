@@ -1,7 +1,7 @@
 import { createHash, createPrivateKey, createPublicKey, randomUUID } from 'node:crypto';
 import { importPKCS8, SignJWT, jwtVerify, createLocalJWKSet, type JSONWebKeySet } from 'jose';
 import { Value } from 'typebox/value';
-import { ActorSchema } from '@clew/connectors/protocol';
+import { ActorSchema, INSTALLATION_CALLER, INSTALLATION_SUBJECT } from '@clew/connectors/protocol';
 import type { Actor } from '@clew/connectors';
 import type { AssertionBinding } from '@clew/connectors/remote';
 
@@ -73,6 +73,28 @@ export async function connectorAuthority(pem: string, kid: string, previous: JSO
         ...(binding ? { body: bodyDigest(binding.body) } : {}),
         ...(binding?.capability ? { capability: binding.capability } : {}),
       });
+    },
+    /**
+     * The installation's own assertion, for a read Clew makes with no person behind it (D119): subject
+     * `clew:installation`, `caller: "installation"`, no `actor` and no `callback`, so it verifies as nobody's person
+     * and grants no callback. Bound to its one request as every assertion is (D117): the binding is required.
+     */
+    async installation(connectorId: string, binding: AssertionBinding & { capability: string }) {
+      if (typeof binding?.body !== 'string' || typeof binding.capability !== 'string' || !binding.capability)
+        throw new AssertionError('An installation assertion is bound to its request.');
+      return new SignJWT({
+        caller: INSTALLATION_CALLER,
+        body: bodyDigest(binding.body),
+        capability: binding.capability,
+      })
+        .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid })
+        .setIssuer('clew')
+        .setAudience(connectorId)
+        .setSubject(INSTALLATION_SUBJECT)
+        .setJti(randomUUID())
+        .setIssuedAt()
+        .setExpirationTime('2m')
+        .sign(privateKey);
     },
     async verify(token: string): Promise<CallbackGrant> {
       try {

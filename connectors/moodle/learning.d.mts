@@ -45,6 +45,12 @@ export interface CourseInfo {
   /** Plain text. */
   summary: string;
 }
+/** An account as the site's list gives it (D119): an empty username when its details are withheld. */
+export interface ListedAccount {
+  id: number;
+  username: string;
+  idnumber: string;
+}
 export interface CallOptions {
   /** Stops the call: it then throws SourceUnavailable. */
   signal?: AbortSignal;
@@ -52,6 +58,8 @@ export interface CallOptions {
 /** The learning-platform port: one service account, no person's token. */
 export interface LearningSource {
   accounts(field: MatchField, values: string[], options?: CallOptions): Promise<Account[]>;
+  /** Every account of the site in id order, `count` of them from position `from`; deleted ones left out. */
+  everyone(from: number, count: number, options?: CallOptions): Promise<ListedAccount[]>;
   courses(userId: number, options?: CallOptions): Promise<Course[]>;
   /** Unix seconds, or null when not completed, not enrolled or not dated. */
   completion(userId: number, courseId: number, options?: CallOptions): Promise<number | null>;
@@ -65,7 +73,10 @@ export interface FixtureControls {
   unreadable(what: 'courses' | 'badges' | 'completion', username: string, courseId?: number): void;
   complete(username: string, courseId: number, daysAgo?: number): void;
   add(username: string, idnumber: string): Account;
-  calls: { accounts: number; courses: number; completion: number; badges: number; course: number };
+  suspend(username: string): void;
+  remove(username: string): void;
+  withhold(username: string): void;
+  calls: { accounts: number; everyone: number; courses: number; completion: number; badges: number; course: number };
   account(username: string): Account | undefined;
 }
 export declare function createFixtureLearning(options?: { now?: () => number }): LearningSource & {

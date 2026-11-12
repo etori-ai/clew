@@ -14,22 +14,13 @@
 import { resolve } from 'node:path';
 import { and, asc, eq } from 'drizzle-orm';
 import { closeDatabase, database, schema } from '@clew/db';
-import type { CompetenceTypeBody } from '@clew/contracts';
+import { DEVELOPMENT_CATALOGUE, DEVELOPMENT_ORGANISATION } from './competence-development';
 import { competence, competenceStore } from '../apps/server/src/composition/competence';
 
 export const OPERATOR = 'operator:cli';
 /** The organisation the development directory provisions into (`scripts/auth-setup.ts`). */
-export const DEVELOPMENT_ORGANISATION = 'poc';
-const CATALOGUE: CompetenceTypeBody[] = [
-  { name: 'HLR', area: 'Akut omhändertagande', kind: 'course', validityMonths: 24 },
-  { name: 'Brandskydd', area: 'Säkerhet', kind: 'course', validityMonths: 36 },
-  { name: 'Heta arbeten', area: 'Säkerhet', kind: 'certificate' },
-  { name: 'Fallskydd', area: 'Säkerhet', kind: 'certificate' },
-  { name: 'Arbete på väg', area: 'Säkerhet', kind: 'certificate' },
-  { name: 'Yrkeskompetensbevis (YKB)', area: 'Fordon', kind: 'certificate' },
-  { name: 'Delegering läkemedel', area: 'Vård', kind: 'authorisation', validityMonths: 12 },
-  { name: 'Socionomexamen', area: 'Examen', kind: 'degree' },
-];
+export { DEVELOPMENT_ORGANISATION };
+const CATALOGUE = DEVELOPMENT_CATALOGUE;
 const day = (at: Date) => at.toISOString().slice(0, 10);
 const daysFrom = (today: Date, days: number) => day(new Date(today.getTime() + days * 86_400_000));
 

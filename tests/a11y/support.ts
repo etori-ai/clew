@@ -63,6 +63,8 @@ import type {
   AppearanceAdminView,
   Capability,
   CompetenceHoldingBody,
+  CompetenceMappingBody,
+  CompetenceSource,
   CompetenceType,
   CompetenceTypeBody,
   CompetenceTypePatch,
@@ -268,6 +270,12 @@ export class MockApi {
   registered: Array<{ personId: string; body: CompetenceHoldingBody }> = [];
   /** The next registration answers 400 with this sentence; it resets itself after that one. */
   registerFail: string | null = null;
+  /** Kompetens › Källor (D108 item 9): the systems whose holdings are copied in, while the module is on. */
+  competenceSources: CompetenceSource[] = [];
+  /** Every write to the sources' mappings and every read started by hand, in order. */
+  sourceWrites: Array<{ method: string; path: string; body?: unknown }> = [];
+  /** The next write to a source answers 400 with this sentence; it resets itself after that one. */
+  sourceFail: string | null = null;
   /** Utvecklingssamtal (D96). False: the person has no talks system, so both reads are refused as the registry refuses them. */
   talksOffered = true;
   /** False: another system answers the profile; the reads are read-only (no `id`, a `link` on every row) and the writes refused. */
@@ -836,6 +844,35 @@ export class MockApi {
       });
       this.catalogueWrites.push({ method: 'POST', path, body });
       return route.fulfill({ status: 201, json: { id } });
+    }
+    // Kompetens › Källor (D108 item 9): the sources, a mapping and a read started by hand.
+    if (path === '/competence/sources' && route.request().method() === 'GET')
+      return json({ rows: this.competenceSources });
+    const sourcePath = /^\/competence\/sources\/([^/]+)\/(mapping|read)$/.exec(path);
+    if (sourcePath) {
+      const source = this.competenceSources.find(s => s.connectorId === decodeURIComponent(sourcePath[1]!)),
+        method = route.request().method();
+      if (this.sourceFail) {
+        const error = this.sourceFail;
+        this.sourceFail = null;
+        return route.fulfill({ status: 400, json: { error } });
+      }
+      if (!source) return route.fulfill({ status: 400, json: { error: 'Källan svarar inte om intyg just nu.' } });
+      if (sourcePath[2] === 'read' && method === 'POST') {
+        source.reading = true;
+        this.sourceWrites.push({ method, path });
+        return route.fulfill({ status: 202, body: '' });
+      }
+      if (sourcePath[2] === 'mapping' && method === 'PUT') {
+        const body = route.request().postDataJSON() as CompetenceMappingBody;
+        const type = source.types.find(t => t.sourceType === body.sourceType);
+        if (type) {
+          if (body.typeId === null) delete type.typeId;
+          else type.typeId = body.typeId;
+        }
+        this.sourceWrites.push({ method, path, body });
+        return json({ holdings: type?.holdings ?? 0 });
+      }
     }
     const registering = /^\/competence\/people\/([^/]+)\/holdings$/.exec(path);
     if (registering && route.request().method() === 'POST') {

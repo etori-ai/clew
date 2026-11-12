@@ -55,6 +55,8 @@ export const keys = {
   /** Kompetens (D108): the catalogue a certificate is registered from, and the administrator's whole catalogue. */
   competenceTypes: ['competence', 'types'] as const,
   competenceCatalogue: ['competence', 'catalogue'] as const,
+  /** Administration › Kompetens › Källor (D108 item 9). */
+  competenceSources: ['competence', 'sources'] as const,
   competenceAll: ['competence'] as const,
   /** Utvecklingssamtal (D96): the round, and action points per reader (`null`) or per person (their user name, else id). */
   talks: {

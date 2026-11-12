@@ -2,23 +2,26 @@
 
 A connector to [Moodle LMS](https://moodle.org/), the open source learning platform (GPL-3.0-or-later): the courses a
 person has completed and when, the courses under way, one course in detail, and the badges they hold with the day each
-runs out. Its id is `moodle`. It is the first source of the reserved profile `<id>.holdings` that Clew's competence
-register is to copy ([D108](../../docs/decisions/D108-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md)
-item 9), and it gives the opened person a section "Utbildningar" captioned "Lärplattformen"
-([D97](../../docs/decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)).
+runs out. Its id is `moodle`. It gives the opened person a section "Utbildningar" captioned "Lärplattformen"
+([D97](../../docs/decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)), and it is the first
+source of the holdings profile, `<id>.holdings`, that Clew's competence register copies
+([D108](../../docs/decisions/D108-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md) item 9): a read
+Clew makes as the installation itself, with no person behind it
+([D119](../../docs/decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md)).
 
 It reads as **one service account** through Moodle's REST web service API, with the account's token from configuration;
 it never needs the person's token. It speaks protocol 3: who may be asked about is Clew's to decide
 ([D117](../../docs/decisions/D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md)),
-and the connector answers only the people a verified request vouches for. Nothing is stored between requests. No
+and the connector answers only the people a verified request vouches for; the installation's read answers every
+account, and only to the installation's own assertion. Nothing is stored between requests. No
 dependencies beyond Node; nothing here imports the rest of the repository.
 
-How Moodle actually answers is recorded in [samples/](samples/README.md): 29 real exchanges, cited below by number.
+How Moodle actually answers is recorded in [samples/](samples/README.md): 36 real exchanges, cited below by number.
 
 | File | Holds |
 |---|---|
-| `manifest.mjs` | The contract: four reads, their views, the holdings shape |
-| `connector.mjs` | The reads, matching a person, who may be answered about, deadlines, and HTTP error handling |
+| `manifest.mjs` | The contract: three reads a person makes, their views, and the installation's read of the holdings profile |
+| `connector.mjs` | The reads, matching a person, who may be answered about, the installation's pages, deadlines, and HTTP error handling |
 | `learning.mjs` | The learning-platform port, its errors, and an in-memory stand-in shaped like the development seed |
 | `moodle.mjs` | Moodle's REST API behind the port: the only code here that knows it |
 | `server.mjs` | Serves it over HTTP, stops a read when Clew goes away, and reads the configuration |
@@ -30,13 +33,13 @@ How Moodle actually answers is recorded in [samples/](samples/README.md): 29 rea
 | `moodle.person` "Utbildningar" | A section on the opened person; a lens and a column on Personal when an administrator offers them | About a person (D97), asked with up to 50 keys: one row per key the platform knows, `completed` and `ongoing` course counts. Its row opens `moodle.courses` |
 | `moodle.courses` "Kurser och märken" | The list under the section: course or badge, "Kurs" or "Märke", status, day, "Gäller till", and "Öppna i Lärplattformen" | One person's courses: "Pågår" (enrolled, not completed), "Genomförd" with the day; badges "Giltigt" or "Utgånget" (a warning tone) with the day issued and the day they run out. A course's row carries the person's key as asked and the course id, which open `moodle.course`, and a link to the course in Moodle. A badge's row opens nothing and links nowhere |
 | `moodle.course` "Kurs" | A `detail` view: the course name as heading, then Kategori, Status, Genomförd (the day), Villkor, Om kursen, and the link | One person's one course: its category, status, the day it was completed, the completion criteria with which are met and when ("Markerad som klar av Teacher: uppfyllt 26 apr. 2026"), at most 12, and its summary as plain text, at most 600 characters |
-| `moodle.holdings` | Nothing: the profile Clew's competence register is to copy | Up to 25 keys: `withdrawalsReported: false`, and one row per key vouched for that the platform knows, with every holding it can see: `id` (the source's row id), `type` (the source's type id), `label`, `kind` (`course` or `badge`), `issuedOn` and, when there is one, `expiresOn`. Through Clew today it answers no row ("Who may be answered about") |
+| `moodle.holdings` (under `installation`) | Nothing: the installation's read, which Clew's competence register copies (D119) | Every account the service account can see, a page of at most 25 at a time in Moodle's id order: one row per account, keyed by the value of the match field, with every holding it can see: `id` (the source's row id), `type` (the source's type id), `label`, `kind` (`course` or `badge`), `issuedOn` and, when there is one, `expiresOn`; `next` for the following page, absent on the last; `withdrawalsReported: false`. Not a capability: no person reaches it ("The installation's read of every holding") |
 
-All four are `model: false`. The view kinds are `list` and `detail`, from the closed catalogue (D100); `detail` is the
+The three reads a person makes are `model: false`, and the installation's read is never a tool. The view kinds are `list` and `detail`, from the closed catalogue (D100); `detail` is the
 kind for one record, and an array field in it is drawn as one line, which is how the criteria are shown. Course and
 badge names, a course's category and summary, and a criterion's title (an activity's or a role's name, as the site
 names it: "Teacher" on the development Moodle, whose service account reads in English) are the only source text in an
-answer; no person's name leaves the connector, and a holdings row names its person by the key Clew asked with. The
+answer; no person's name leaves the connector, and a holdings row names its account by the value of the match field. The
 summary is a teacher's text, which is why `moodle.course` is never a tool.
 
 **Badges have no drill-down.** A badge's row already holds everything Moodle says of it to another person (the name,
@@ -52,7 +55,8 @@ not used as a type, so the two kinds never collide.
 
 **Unknown and holding nothing are different answers.** A key the platform has no account for is no row, as D97 says for
 a key it does not know (and for one the caller may not ask about). A person with an account and nothing completed is a
-row: zeros in `moodle.person`, `holdings: []` in `moodle.holdings`.
+row: zeros in `moodle.person`, `holdings: []` in `moodle.holdings`, where every account the platform lists has a row
+unless it is withheld or ambiguous ("The installation's read of every holding").
 
 **Absence is never a withdrawal.** Every holdings answer says `withdrawalsReported: false`: this source cannot report
 that something was withdrawn, because Moodle leaves things out without saying so ("What it cannot see"). A holding
@@ -88,7 +92,7 @@ it came by, and carries in its body, which the assertion is bound to, how the ca
 | `moodle.person` | `keys` (about a person) | `self`, `managed` |
 | `moodle.courses` | `person` (`person.param`) | `self`, `managed` |
 | `moodle.course` | `person` (`person.param`) | `self`, `managed` |
-| `moodle.holdings` | nothing Clew can resolve | nothing: see below |
+| `moodle.holdings` | nobody: it is the installation's | no person at all: see below |
 
 - **Answered:** exactly the keys the verified request vouches for as `self` (the caller) or `managed` (a direct report
   as D99 has it, which Clew works out: a manager of several units reaches the reports on each, a manager higher in the
@@ -105,11 +109,12 @@ it came by, and carries in its body, which the assertion is bound to, how the ca
   a course the person is not enrolled in, one that does not exist, and one the list would not show (enrolled, never
   completed, recording no completion), checking the caller's course id against the person's own enrolments before
   anything about the course is read.
-- **`moodle.holdings` is answered by Clew with no `about`.** Its `keys` list names people, but protocol 3 can declare a
-  list of people only on a read about a person; a read that is not one names a single person in `person.param`, and the
-  loader refuses `person.param: "keys"` because `keys` is not a plain string property. So Clew resolves nobody in it,
-  and the read, fail-closed, answers no row through Clew. It stays for the profile's shape (D108 item 9); see "The
-  scheduled copy" for how D117 places a caller that would read it.
+- **`moodle.holdings` answers the installation, and nobody else** (D119). It is declared under `installation`, not
+  among the capabilities, so Clew's registry offers it to no person: a person, an administrator included, who names it
+  on any path is refused as for a name nobody declared. Clew posts it to `/clew/installation/moodle.holdings` with the
+  installation's own assertion (no `actor`, subject `clew:installation`, `caller: "installation"`), bound to the body
+  and the name; the connector verifies it with `verify.installation` and answers any other assertion there, a person's
+  however valid, with 401. The installation's assertion is in turn refused on a person's route.
 
 ### Known limits
 
@@ -118,7 +123,13 @@ it came by, and carries in its body, which the assertion is bound to, how the ca
 - **Suspended accounts are answered.** A suspended Moodle account is found and its holdings returned: what it completed
   stays true. A user name that Clew gives to someone new after its first holder left would inherit that account, its
   courses and its badges, until the old account is renamed or deleted in Moodle.
-- **A Moodle account with no person in Clew** is never asked about, since Clew vouches only for people it knows.
+- **A Moodle account with no person in Clew** is never asked about by a person's read, since Clew vouches only for
+  people it knows. The installation's read answers every account but Moodle's guest account, the administrator and
+  the service account included; Clew matches the keys to its people and has no use for the others.
+- **Moodle's guest account is nobody's.** No read answers it: the local account named `guest`, which Moodle creates at
+  install, keeps in `$CFG->siteguest` and recognises in `isguestuser()`, and whose name cannot be changed. A key that
+  finds it is no one, and the installation's read lists it with everyone (30) and leaves it out. A remote account of an
+  MNet peer named `guest` is left out too, since the list does not say which host an account is from.
 
 ## What it cannot see
 
@@ -134,6 +145,8 @@ not hold":
   the record for a non-owner, not the holder's choice.
 - **Course badges, when switched off.** With `badges_allowcoursebadges` off a course's badges are left out, and with
   badges switched off altogether the answer is no badges.
+- **Accounts whose details are withheld.** The site's list (30) gives an account the service account may not see the
+  details of with its id and full name only: no username, so no key and no row in the installation's read.
 
 ## Call volume and time
 
@@ -145,7 +158,7 @@ course (07). The connector therefore asks only what each read needs:
 | `moodle.person`, N keys | 1 lookup (per 50 values) + N `core_enrol_get_users_courses`. No completion date is read |
 | `moodle.courses`, one person | 1 lookup + 1 courses + 1 badges + 1 per completed course |
 | `moodle.course`, one course | 1 lookup + 1 courses + 1 `core_course_get_courses_by_field` + 1 completion status |
-| `moodle.holdings`, N keys | 1 lookup + N courses + N badges + 1 per completed course |
+| `moodle.holdings`, one page of N accounts (N ≤ 25) | 1 list of the site's accounts (rarely more, below) + 1 lookup (per 50 values) + N courses + N badges + 1 per completed course |
 
 The courses call asks for no participant counts (`returnusercount=0`), which Moodle would otherwise count per course.
 At most `MOODLE_CONCURRENCY` (default 4) calls are open at once for one read, and each call has three seconds. A read
@@ -154,8 +167,8 @@ item 7), and 8 for the others, inside the ten seconds Clew waits for any call. W
 closes the connection, or when one call fails the read, the calls under way are aborted, nothing still queued is
 started, and the read answers that the platform did not answer. Clew sends at most 50 keys per `moodle.person` call
 and at most four calls at once, so a list of 200 people is at most 16 open calls to Moodle. A holdings batch of 25
-people with five completed courses each is 176 calls; Clew's copy of item 9 should spread its batches. On the
-development stack, `moodle.person` for nine keys took 80 to 117 ms.
+people with five completed courses each would be 177 calls; the installation's read bounds a page in time as well
+("The installation's read of every holding"). On the development stack, `moodle.person` for nine keys took 80 to 117 ms.
 
 ## Errors
 
@@ -164,22 +177,25 @@ code and never passes Moodle's message on. One bad course or person never fails 
 
 | Moodle | The connector answers |
 |---|---|
-| `invalidtoken`, `accessexception` (a function the service does not list, or an account it does not admit), the service account suspended, deleted, unconfirmed or not set up, or the right to read people refused | `denied`, HTTP 401: "Lärplattformen godtar inte anslutningens behörighet." An operator's matter |
+| `invalidtoken`, `accessexception` (a function the service does not list, or an account it does not admit), the service account suspended, deleted, unconfirmed or not set up, the right to read people refused, or the site's accounts refused (34) | `denied`, HTTP 401: "Lärplattformen godtar inte anslutningens behörighet." An operator's matter |
 | No answer within three seconds or the read's deadline, a status other than 200, a body that is not JSON, any error code not below | `unavailable`, HTTP 503: "Lärplattformen svarar inte just nu." |
-| For one course or one person: `nopermissions`, `requireloginerror`, `restrictedcontextexception`, `cannotviewreport`, `accessdenied`, `usernotconfirmed`, `userdeleted` | That item is left out and the person's holdings row says `partial`; a person whose course list is refused has no `moodle.person` row; a completed course whose day is refused is listed without it. In `moodle.courses` and `moodle.course`, one person's own list refused is `unavailable`: a list with a part silently missing would read as whole |
+| For one course or one person: `nopermissions`, `requireloginerror`, `restrictedcontextexception`, `cannotviewreport`, `accessdenied`, `usernotconfirmed`, `userdeleted`, and `guestsarenotallowed`, which Moodle gives for a guest's badges (35) | That item is left out and the person's holdings row says `partial`; a person whose course list is refused has no `moodle.person` row; a completed course whose day is refused is listed without it. In `moodle.courses` and `moodle.course`, one person's own list refused is `unavailable`: a list with a part silently missing would read as whole |
 | `usernotenroled`, `invalidrecordunknown`, `nocriteriaset` on a completion (09, 10) | No date: the course is not completed for this person |
 | `invalidrecordunknown` or `badgesdisabled` on badges (13) | No badges |
 | A person not found or not to be answered about; a course not theirs or not there | `not-found`, HTTP 404 |
-| Input not as declared | `invalid`, HTTP 400 |
+| Input not as declared, a cursor among it | `invalid`, HTTP 400 |
+| On `/clew/installation/{name}`: any assertion but the installation's own, bound to the request | `denied`, HTTP 401, before anything is read |
 
 ## What Moodle needs
 
 A Moodle account for the connector that is no administrator, with a role at system level that may read people,
-courses, completions and badges; an external service with "authorised users only" that lists the five functions below
-and admits that account; and a token for it. The development seed's role (`clewconnector` in
-`.devcontainer/moodle/seed.php`) grants `webservice/rest:use`, `moodle/user:viewdetails`, `moodle/user:viewalldetails`,
-`moodle/user:viewhiddendetails`, `moodle/course:view`, `moodle/course:viewhiddencourses` (without it a hidden course is
-silently missing), `moodle/course:viewparticipants`, `moodle/site:accessallgroups`, `report/completion:view`,
+courses, completions and badges and list the site's accounts; an external service with "authorised users only" that
+lists the six functions below and admits that account; and a token for it. The development seed's role
+(`clewconnector` in `.devcontainer/moodle/seed.php`) grants `webservice/rest:use`, `moodle/user:viewdetails`,
+`moodle/user:viewalldetails`, `moodle/user:viewhiddendetails`, `moodle/course:view`, `moodle/course:viewhiddencourses`
+(without it a hidden course is silently missing), `moodle/course:viewparticipants`, `moodle/site:viewparticipants`
+(the site's accounts for the installation's read; without it that read is refused, 34), `moodle/site:accessallgroups`,
+`report/completion:view`,
 `moodle/badges:viewotherbadges`, `moodle/badges:viewbadges` and four competency capabilities this connector does not
 use; whether fewer suffice has not been tried.
 
@@ -196,7 +212,8 @@ use.
 | `core_enrol_get_users_courses` | A person's courses, completed or not (05, 06, 24, 25) |
 | `core_completion_get_course_completion_status` | The day a course was completed and its criteria (07 to 10, 18 to 20) |
 | `core_course_get_courses_by_field` | One course's category and summary (26, 27, 29) |
-| `core_badges_get_user_badges` | A person's badges with their days (11 to 13, 21 to 23) |
+| `core_badges_get_user_badges` | A person's badges with their days (11 to 13, 21 to 23, 35) |
+| `core_enrol_get_enrolled_users` | The site's accounts, a window at a time, as the front page's participants (30 to 32, 34) |
 
 Every call asks for text as it is stored (`moodlewssettingraw=true`), since Clew draws text and not HTML: a course name
 then comes as stored (24; without it, `&amp;` in 25). A badge's name is escaped by Moodle whatever is asked (22, 23),
@@ -250,15 +267,22 @@ set). The last command creates a draft registration; set its audience and enable
 system, where "Utbildningar" can also be offered as a lens on Personal. A changed environment (such as
 `MOODLE_PUBLIC_URL`) takes effect when the container is created again, not on a restart.
 
+The conformance check also reads the installation's first pages, as Clew reads them, and reports counts only, and it
+posts a person's assertion to `/clew/installation/moodle.holdings`, which must be refused (401).
+
 Tests: `bun test tests/unit/moodle-connector.test.ts`: the connector over the stand-in through Clew's registry, given a
 small directory that says how each reader stands to each person, and straight to the service as Clew calls it (the
-rows, an unknown person against one holding nothing, `withdrawalsReported`, one course opened from its row and every way
-of not finding one; self, managed, a colleague refused by Clew, a manager of two units and one higher in the tree
-reaching their reports because Clew says so; no `about`, a relation it does not answer, `self` for someone else's
-account, a forged `about`, an assertion for another capability and one without Clew's body claim; holdings answering no
-row through Clew; the match field and case twins, one person or course refused within a batch, deadlines, fail-fast and
-Clew going away, error mapping, call volume and concurrency, the conformance check), and the API adapter against the
-recorded exchanges, request for request, alone and behind the connector.
+rows, an unknown person against one holding nothing, one course opened from its row and every way of not finding one;
+self, managed, a colleague refused by Clew, a manager of two units and one higher in the tree reaching their reports
+because Clew says so; no `about`, a relation it does not answer, `self` for someone else's account, a forged `about`, an
+assertion for another capability and one without Clew's body claim; the installation's read: every account a page at a
+time to the end, the same cursor giving the same page, accounts added during a read, accounts deleted before the cursor
+and more than the overlap, a withheld account, idnumber twins, a suspended account, partial rows, a failing page, the
+time budget and a deadline inside the first account, a person's assertion on its route and the installation's on a
+person's, and no person reaching it through Clew; the match field and case twins, one person or course refused within
+a batch, deadlines, fail-fast and Clew going away, error mapping, call volume and concurrency, the conformance check),
+and the API adapter against the recorded exchanges, request for request, alone and behind the connector.
+`tests/unit/installation-read.test.ts` holds the registry's side and the verifier.
 
 ## Checked against the development Moodle
 
@@ -289,9 +313,22 @@ On 2026-11-12 against Moodle LMS 5.3.1 as seeded by `.devcontainer/moodle/seed.p
 - With a badge and a course renamed to contain "&", `moodle.courses` through the running service answered
   "HLR- & AED-instruktör" and "Informationssäkerhet & dataskydd för medarbetare"; both were named back (before the move
   to protocol 3).
+- The installation's read (D119), later that day: the seed's role given `moodle/site:viewparticipants` (34 is the
+  refusal before it), and the connector of this change run in process inside the development stack against
+  `http://moodle`, through a registry with an installation signing key of its own. `holdingsSources()` named `moodle`;
+  `readHoldings` answered every account in one page. Its first run answered 17 rows and failed nothing but marked the
+  guest's row partial, since Moodle refuses the guest's badges (35, found by that run, which before had failed the
+  whole page on it); Moodle's guest account was then left out of every read. Read again after that: 16 rows (the
+  administrator, the seven seeded people and the eight handed over for Hillevi's unit, and the service account), 50
+  holdings (47 dated courses, 3 badges), no partial row, `withdrawalsReported: false`, no `next`. 81 Moodle calls (1
+  list, 1 lookup, 16 courses, 16 badges, 47 completions) in 569 to 684 ms over three runs. A person naming it through
+  the registry was refused ("Okänd förmåga."), and a person's assertion posted to its route answered 401. The
+  conformance check in process passed with "1 page, 16 rows, 50 holdings, 0 partial" and the person refused. The running
+  compose service still serves the checkout on `main`, and was not restarted.
 
 Not verified: the section and the course detail on a page in the browser, a screen reader on them, a Moodle with more
-than a few hundred completions, `MOODLE_MATCH_FIELD=idnumber` against the real Moodle (the stand-in and the recorded
+than a few hundred completions or more than one page of accounts (the paging, the overlap and the time budget are
+tested on the stand-in only), `MOODLE_MATCH_FIELD=idnumber` against the real Moodle (the stand-in and the recorded
 lookups only), a Moodle site with extended username characters, a course whose completion has several criteria (the
 recorded courses have one each), the per-item refusals against a real Moodle (stand-in and synthetic answers only), the
 deadline and disconnect against a slow real Moodle, and the running Clew's own registration on protocol 3 (refreshed
@@ -314,14 +351,48 @@ by hand).
 It does not write to Moodle, store or cache anything between requests, log request or response bodies, pass on Moodle's
 error text, or name a person in an answer beyond the key Clew asked with.
 
-## The scheduled copy
+## The installation's read of every holding
 
-D108 item 9's copy runs on a schedule with nobody signed in, and is not built. D117 says how such a caller fits: a read
-the installation makes, with no actor and no key in its input, so nothing in it is resolved; what it brings back is
-shown under Clew's own rules; and if such a read ever had to name people, the rule would need an answer for a system
-caller, decided then. `moodle.holdings` is not that read: it takes keys and answers only those vouched for as `self` or
-`managed`, so a caller that is nobody gets no row. A copy as D117 describes it would be a read without keys that answers
-every holding the platform has, and the connector would need a way to tell that the call is the installation's own,
-which protocol 3 does not give it. Both are left for when the copy is built.
+D108 item 9's copy runs on a schedule with nobody signed in, and reads `moodle.holdings` as the installation (D119): no
+actor, no key, a cursor. A page answers the site's accounts in Moodle's id order, at most 25 (`HOLDINGS_PAGE`), each with
+every holding the platform can see, and `next` until the last page.
+
+**How it lists everyone.** Moodle has no call that lists every account a page at a time by id, and no bulk read of
+completion dates. The cheapest correct listing its web service offers is the front page's participants:
+`core_enrol_get_enrolled_users` on course 1 (`SITEID`), on which every account Moodle has not deleted counts as enrolled,
+suspended ones included, sorted by id, with only `id,username,idnumber` asked for (30 to 32). It needs
+`moodle/site:viewparticipants`. The alternatives read: `core_user_get_users` matches on `email LIKE '%'` (an account
+without an e-mail is left out), has no paging and loads every account's courses; `core_user_get_users_by_field` by
+ranges of ids cannot tell the end of the list from a run of deleted accounts; a course's participants miss accounts on no
+course; a report builder report could give completion dates in bulk, but only as dates formatted for a reader, from a
+report an administrator must build first.
+
+**The cursor** is `<id>:<place>`: the id of the last account answered and its place in Moodle's list. Moodle pages that
+list by place, and an account deleted before the cursor moves every later one up a place, so a page reads from 10 places
+earlier (`OVERLAP`) and skips the accounts already answered. If even that window starts past an account not yet
+answered, more than 10 were deleted since: the page steps back four times as far, to the list's start at worst. Accounts
+are added at the end of the list, so a new one comes on a later page. The same cursor reads the same page again while
+Moodle does not change. A cursor that is not one is `invalid`.
+
+**Who has a row.** An account's key is the value of the match field. Each key of a page is checked as every read checks
+one: it must find its own account and no other, looked up as Moodle spells it and in lower case (33). So two accounts on
+a page whose keys differ only in case are no one, as is an account whose key also finds a lower-case twin elsewhere; an
+account whose details the service account may not see has no key; neither has a row, and the page goes on past them.
+Moodle's guest account has no row either: it is listed with everyone and nobody's. A suspended account is answered: what it completed stays true. The limit under "Known limits" stays: a user name Clew
+gives to someone new while the old account is suspended and not renamed carries that account's rows. Each holding's `id`
+names the Moodle account (`course:<id>:user:<user id>`), never the user name, so rows of two accounts never merge, but
+which person a row is copied to is Clew's to decide.
+
+**Cost and time.** One page of N accounts is 1 list call (one more per step back, rarely), 1 lookup (per 50 values), N
+course lists, N badge lists and one completion call per completed course: for 25 accounts with five completed courses
+each, 177 calls. The calls go through the read's limit (`MOODLE_CONCURRENCY`, default 4) with half as many accounts
+worked on at once. A page has eight seconds (`DEADLINES.holdings`), inside the ten Clew waits, and starts no account
+after half of it, except the first: a slow Moodle gives shorter pages, and the read still moves on. If the deadline
+passes before the first account is finished, the page answers that account with what was read of it, marked `partial`,
+and moves past it, so one account with very many courses cannot stop the read; with nothing of it read the account is
+answered `partial` and empty, and the read moves past it all the same, since an `unavailable` page would stop the sweep
+at that account on every try. A call that fails fails the page (`unavailable`, or `denied` when Moodle refuses the token or the list of
+accounts), and Clew asks the same cursor again later. On the development Moodle a page of 16 accounts took 0.4 to 0.7 s
+and 81 calls.
 
 Node's official image is MIT. The connector has no other dependency.

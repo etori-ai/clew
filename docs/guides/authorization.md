@@ -22,6 +22,8 @@ Every POST must pass both checks:
 | `capability` | On `/clew/capabilities/{name}`, that name; absent on every other route. An assertion for one capability is refused on another. |
 | `callback` | Optional separate signed grant, present when dependencies are declared. |
 
+On `/clew/installation/{name}` there is no person ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md)): the assertion is the installation's own. It has the same `alg`, `iss`, `aud`, lifetime, `jti`, `body` and `capability` (the name in the route), and `sub` is `clew:installation`, `caller` is `installation`, and there is no `actor` and no `callback`. Accept it there and nowhere else, and accept nothing else there: a person's assertion on that route is 401, however valid. The sample verifier's `verify.installation(token, key, request)` says whether a request is the installation's; its `verify(token, key, request)` refuses an assertion with a `caller` claim.
+
 Use the verified actor for all work. A forged `body.actor` must not alter it. Recheck the capability's role and enforce record-level source authorization, unit boundaries and protected-record rules. A manifest role filter is coarse; `manager` alone does not authorize every unit. Validate refs and current source revisions even when a request came through Clew.
 
 Map the actor to your source by `userName` when you key people on the directory's user name, comparing without regard to case. It is optional: a person provisioned without one has none, and you then refuse or answer nothing rather than guess from the display name. D97 leaves open whether the person's key on the wire stays `userName` or becomes the stable `externalId`, which the actor does not carry.

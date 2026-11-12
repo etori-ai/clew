@@ -195,6 +195,15 @@ export const competenceCatalogueQuery = queryOptions({
   queryFn: () => api.competence.types(),
   retry: false,
 });
+/**
+ * Administration › Kompetens › Källor (D108 item 9): the systems whose holdings are copied in, with their last read and
+ * their types. Refused the same way as the catalogue, and not retried for the same reason.
+ */
+export const competenceSourcesQuery = queryOptions({
+  queryKey: keys.competenceSources,
+  queryFn: () => api.competence.sources(),
+  retry: false,
+});
 export const adminQueries = {
   connectors: queryOptions({ queryKey: keys.admin.connectors, queryFn: () => api.admin.connectors() }),
   units: queryOptions({ queryKey: keys.admin.units, queryFn: () => api.admin.units() }),

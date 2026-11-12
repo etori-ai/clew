@@ -176,8 +176,7 @@
       "capabilities": [
         "moodle.person",
         "moodle.courses",
-        "moodle.course",
-        "moodle.holdings"
+        "moodle.course"
       ]
     }
   ],
@@ -1262,7 +1261,7 @@
       "number": 108,
       "path": "docs/decisions/D108-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md",
       "title": "D108 · Competence is an owned domain: one holding for competences and certificates, typed against a catalogue",
-      "status": "proposed, and built against the freeze on new surface: [D101](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) (the first real integration) item 4 allows no new owned domain, administration page or rail destination until its loop works, and this record is all three. It was begun on a branch cut before that freeze reached `main`, continued in the same working session after the freeze was pointed out, and brought into `main` on 2026-11-11 on that session's instruction, with the question whether it may pass the freeze asked and not answered by the product owner. The module is switched off until an administrator enables it. The product owner lifted the freeze on 2026-11-12, so it stays on `main`. The direction below was set in that working session on 2026-11-11 and is not yet confirmed by the product owner (decided in the session: a core module shipped with Clew and switched on per installation, competences and certificates in it, a position on the person, the catalogue with the main administrator, search for HR and staffing, a person's own registration approved by their manager, erasure a period after deactivation, the matrix as a page of its own, a review by an HR practitioner before real data); the items marked \"proposed\" are the author's and were not discussed, the items under \"Open\" are not decided; built 2026-11-11 on synthetic data: the catalogue with its page, a manager's registration, the computed status, the reads, the figure, the scan, erasure and export (see \"As built\"); positions, requirements, sources and a person's own registration not built",
+      "status": "proposed, and built against the freeze on new surface: [D101](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) (the first real integration) item 4 allows no new owned domain, administration page or rail destination until its loop works, and this record is all three. It was begun on a branch cut before that freeze reached `main`, continued in the same working session after the freeze was pointed out, and brought into `main` on 2026-11-11 on that session's instruction, with the question whether it may pass the freeze asked and not answered by the product owner. The module is switched off until an administrator enables it. The product owner lifted the freeze on 2026-11-12, so it stays on `main`. The direction below was set in that working session on 2026-11-11 and is not yet confirmed by the product owner (decided in the session: a core module shipped with Clew and switched on per installation, competences and certificates in it, a position on the person, the catalogue with the main administrator, search for HR and staffing, a person's own registration approved by their manager, erasure a period after deactivation, the matrix as a page of its own, a review by an HR practitioner before real data); the items marked \"proposed\" are the author's and were not discussed, the items under \"Open\" are not decided; built 2026-11-11 on synthetic data: the catalogue with its page, a manager's registration, the computed status, the reads, the figure, the scan, erasure and export (see \"As built\"); built 2026-11-12, provisional: item 9 from source to status, the installation's read of the holdings profile ([D119](D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md)), the copy of what a source holds, its daily read and the mapping of a source's types on Administration › Kompetens › Källor (see the three \"As built, 2026-11-12\" sections), read end to end in process against the development Moodle but not yet by the running server; positions, requirements, coverage, the matrix, a person's own registration, search and the read log not built",
       "date": "2026-11-11",
       "area": "product, identity, integrations"
     },
@@ -1344,6 +1343,15 @@
       "path": "docs/decisions/D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md",
       "title": "D117 · The core decides who a source may be asked about, on every call, and signs the relation",
       "status": "provisional (built 2026-11-12 on branch `about-relation` against the product owner's rule \"a user can view and edit their own data and nothing else; a manager their employees'\", revised the same day after an independent review; accepted once a connector outside the repository has been called under it and reads the relation)",
+      "date": "2026-11-12",
+      "area": "integrations, identity"
+    },
+    {
+      "key": "D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach",
+      "number": 119,
+      "path": "docs/decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md",
+      "title": "D119 · The installation reads as itself, through a read no person can reach",
+      "status": "provisional (built 2026-11-12 on branch `holdings-caller` for D108 item 9's copy of every source's holdings; accepted once a connector outside the repository answers an installation read and the competence register's copy has run on it)",
       "date": "2026-11-12",
       "area": "integrations, identity"
     }
@@ -1466,7 +1474,7 @@
         "Checked against the development Moodle",
         "What Moodle could not say",
         "What it never does",
-        "The scheduled copy"
+        "The installation's read of every holding"
       ]
     },
     {
@@ -1969,6 +1977,12 @@
     {
       "path": "docs/decisions/D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md",
       "title": "D117 · The core decides who a source may be asked about, on every call, and signs the relation",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md",
+      "title": "D119 · The installation reads as itself, through a read no person can reach",
       "category": "decision-history",
       "headings": []
     },
@@ -2875,6 +2889,7 @@
         "Provisioning",
         "Entities: lenses, columns and erasure",
         "Changing the authorization fingerprint",
+        "The competence copy",
         "Reproduce the synthetic upgrade and restore rehearsal"
       ]
     },
@@ -2918,6 +2933,7 @@
         "Served by the instance",
         "HTTP routes",
         "Manifest semantics",
+        "Reads the installation makes",
         "Reads and actions about an entity",
         "What a write asks, and what it says it will do",
         "Document and semantic views",

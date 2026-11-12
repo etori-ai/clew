@@ -373,30 +373,23 @@
           }
         ]
       }
-    },
+    }
+  ],
+  "installation": [
     {
       "name": "moodle.holdings",
-      "kind": "read",
       "title": "Genomförda kurser och märken",
-      "description": "Genomförda kurser och märken per person i Lärplattformen, med dag för utfärdande och slutdag, för kompetensregistret.",
-      "model": false,
-      "scope": {},
+      "description": "Alla konton i Lärplattformen med genomförda kurser och märken, dag för utfärdande och slutdag, för kompetensregistret.",
       "input": {
         "type": "object",
         "properties": {
-          "keys": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 512
-            },
-            "maxItems": 25
+          "cursor": {
+            "type": "string",
+            "pattern": "^[0-9]{1,10}:[0-9]{1,9}$",
+            "maxLength": 21
           }
         },
-        "required": [
-          "keys"
-        ],
+        "required": [],
         "additionalProperties": false
       },
       "output": {
@@ -477,6 +470,12 @@
               ],
               "additionalProperties": false
             }
+          },
+          "next": {
+            "type": "string",
+            "pattern": "^[0-9]{1,10}:[0-9]{1,9}$",
+            "maxLength": 21,
+            "description": "The cursor of the following page; absent on the last."
           }
         },
         "required": [

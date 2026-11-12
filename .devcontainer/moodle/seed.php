@@ -221,9 +221,12 @@ if (isset($users['johan'])) {
 
 // The service account. A role with read capabilities only, an external service that lists exactly the functions a
 // connector may call, restricted to this one user, and a token. Nothing here is an administrator.
+// `moodle/site:viewparticipants` lets it list the site's accounts a page at a time (core_enrol_get_enrolled_users on the
+// front page), which is how the connector answers the installation's read of every holding (D119).
 $capabilities = [
     'webservice/rest:use', 'moodle/user:viewdetails', 'moodle/user:viewalldetails', 'moodle/user:viewhiddendetails',
     'moodle/course:view', 'moodle/course:viewhiddencourses', 'moodle/course:viewparticipants',
+    'moodle/site:viewparticipants',
     'moodle/site:accessallgroups', 'report/completion:view',
     'moodle/competency:competencyview', 'moodle/competency:usercompetencyview', 'moodle/competency:evidenceview',
     'moodle/competency:coursecompetencyview', 'moodle/badges:viewotherbadges', 'moodle/badges:viewbadges',

@@ -1,11 +1,22 @@
 import { Value } from 'typebox/value';
 import { MAX_DOCUMENT_BYTES, contractProblems, type DocumentContent } from '@clew/contracts';
-import { CapabilityError, type Actor, type Capability, type Clew, type Connector } from './index';
+import {
+  CapabilityError,
+  InstallationReadError,
+  installationReadText,
+  type Actor,
+  type Capability,
+  type Clew,
+  type Connector,
+  type InstallationRead,
+  type SourceErrorCode,
+} from './index';
 import { connectorProblems } from './validation';
 import {
   CallResponseSchema,
   FigureResponseSchema,
   ConnectorManifestSchema,
+  INSTALLATION_ROUTE,
   PROTOCOL_ACCEPTED,
   PROTOCOL_RETIRED,
   protocolTerms,
@@ -30,6 +41,11 @@ export interface RemoteTransport {
    * it was issued for (D117): the exact body it is sent with and, on a capability's route, the capability's name.
    */
   assert: (actor: Actor, chain?: string[], binding?: AssertionBinding) => Promise<string>;
+  /**
+   * The installation's own assertion for a read it makes itself (D119): no actor, subject `clew:installation`, bound to
+   * the request like every assertion. Without it the connector's installation reads answer `denied` and are never sent.
+   */
+  installation?: (binding: AssertionBinding & { capability: string }) => Promise<string>;
   fetch?: FetchLike;
   /** Milliseconds before a call counts as unavailable. */
   timeoutMs?: number;
@@ -167,6 +183,70 @@ function failWith(json: unknown, source: string): never {
   throw new CapabilityError(error.message);
 }
 
+const ERROR_CODES: readonly SourceErrorCode[] = ['invalid', 'denied', 'not-found', 'unavailable', 'unknown'];
+/**
+ * A read Clew makes as the installation (D119): posted to `/clew/installation/{name}` with the input alone and the
+ * installation's assertion, bound to the body and the name. Every failure keeps the protocol's error kind, so the
+ * register that copies the pages can tell a cursor the source no longer knows (`invalid`) from a source that is down
+ * (`unavailable`) or one that refuses (`denied`): a connector that answers 401 without the protocol's error body has
+ * refused Clew's assertion, which is `denied` too.
+ */
+function installationRead(
+  manifest: ConnectorManifest,
+  declared: NonNullable<ConnectorManifest['installation']>[number],
+  transport: RemoteTransport,
+): InstallationRead {
+  const source = manifest.source;
+  const down = () => new InstallationReadError('unavailable', installationReadText('unavailable', source));
+  return {
+    name: declared.name,
+    title: declared.title,
+    description: declared.description,
+    input: declared.input as never,
+    output: declared.output as never,
+    run: async (input, { signal }) => {
+      if (!transport.installation) throw new InstallationReadError('denied', installationReadText('denied', source));
+      // The body is serialised once: the assertion is bound to exactly these bytes and this name (D117, D119).
+      const text = JSON.stringify({ input });
+      let response: Response;
+      try {
+        response = await (transport.fetch ?? fetch)(
+          transport.url + INSTALLATION_ROUTE + encodeURIComponent(declared.name),
+          {
+            method: 'POST',
+            redirect: 'error',
+            headers: {
+              'content-type': 'application/json',
+              accept: 'application/json',
+              authorization: 'Bearer ' + (await transport.installation({ body: text, capability: declared.name })),
+              ...(transport.key ? { 'x-clew-connector-key': transport.key } : {}),
+            },
+            body: text,
+            signal: AbortSignal.any([AbortSignal.timeout(transport.timeoutMs ?? 10_000), ...(signal ? [signal] : [])]),
+          },
+        );
+      } catch {
+        throw down();
+      }
+      let json: unknown;
+      try {
+        json = await response.json();
+      } catch {
+        if (response.status === 401) throw new InstallationReadError('denied', installationReadText('denied', source));
+        throw down();
+      }
+      if (Value.Check(CallResponseSchema, json) && 'output' in json && response.status < 300) return json.output;
+      // The kind is the connector's; the words are Clew's. A connector's own message never travels further, into a
+      // log, an audit row or an administrator's check (D91): it is not known what it carries.
+      const error = (json as { error?: { code?: unknown } } | null)?.error;
+      const code = ERROR_CODES.find(c => c === error?.code);
+      if (code && code !== 'unavailable') throw new InstallationReadError(code, installationReadText(code, source));
+      if (response.status === 401) throw new InstallationReadError('denied', installationReadText('denied', source));
+      throw down();
+    },
+  };
+}
+
 /** Build the `Connector` the registry runs: every operation is a call to the service as the acting person. */
 export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTransport): Connector {
   const source = manifest.source;
@@ -285,6 +365,10 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
       : {}),
     uses: manifest.uses ?? [],
     protocol: manifest.protocol,
+    // Kept apart from `capabilities` (D119): only the registry's installation entry points reach these.
+    ...(manifest.installation?.length
+      ? { installation: manifest.installation.map(r => installationRead(manifest, r, transport)) }
+      : {}),
     ...(manifest.facts ? { facts: manifest.facts } : {}),
     ...(manifest.header ? { header: manifest.header.capability } : {}),
     ...(manifest.delegation ? { delegation: manifest.delegation } : {}),

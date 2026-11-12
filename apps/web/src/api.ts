@@ -83,6 +83,8 @@ import type {
 } from '@clew/contracts';
 import type {
   CompetenceHoldingBody,
+  CompetenceMappingBody,
+  CompetenceSourcesOutput,
   CompetenceTypeBody,
   CompetenceTypePatch,
   CompetenceTypesOutput,
@@ -180,6 +182,7 @@ async function converseStream(
 }
 const post = <T>(path: string, body?: unknown) => call<T>(path, { method: 'POST', body: JSON.stringify(body ?? {}) });
 const patch = <T>(path: string, body: unknown) => call<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
+const put = <T>(path: string, body: unknown) => call<T>(path, { method: 'PUT', body: JSON.stringify(body) });
 const del = <T>(path: string) => call<T>(path, { method: 'DELETE' });
 /** A read capability's output alone, through the same route the panel's views use (`/api/cap/<name>?input=`). */
 const read = <T>(name: string, input: unknown) =>
@@ -261,6 +264,13 @@ export const api = {
     /** A manager registers a certificate for a person who reports to them. */
     register: (personId: string, body: CompetenceHoldingBody) =>
       post<{ id: string }>(`/api/competence/people/${encodeURIComponent(personId)}/holdings`, body),
+    /** The systems whose holdings are copied in (D108 item 9): each one's last read and its types with their mappings. */
+    sources: () => call<CompetenceSourcesOutput>('/api/competence/sources'),
+    /** Maps a type of a source to a catalogue type, or removes the mapping with `typeId: null`. */
+    mapSourceType: (connectorId: string, body: CompetenceMappingBody) =>
+      put<{ holdings: number }>(`/api/competence/sources/${encodeURIComponent(connectorId)}/mapping`, body),
+    /** "Läs in nu": a read of one source, started at once. */
+    readSource: (connectorId: string) => post<void>(`/api/competence/sources/${encodeURIComponent(connectorId)}/read`),
   },
   /** The manifest field by field (D60): a public document, read with the plain fetch since no session or token belongs on it. */
   manifestReference: async () => {

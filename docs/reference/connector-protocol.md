@@ -29,6 +29,7 @@ Paths are relative to the registered connector base URL. Bodies and responses ar
 |---|---|---|---|
 | `GET /clew/manifest` | No body | `ConnectorManifest` | Always; no user assertion required. Keep credentials and source data out of the manifest. |
 | `POST /clew/capabilities/{name}` | `CallRequest` (`actor`, `input`) | `CallResponse` (`output` or `error`) | For declared capabilities; `{name}` is the full capability name. |
+| `POST /clew/installation/{name}` | `InstallationCallRequest` (`input` only) | `CallResponse` | For a read declared under `installation` ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md)): Clew reads as the installation, with no person behind the call. See [Reads the installation makes](#reads-the-installation-makes). |
 | `POST /clew/scan` | `ScanRequest` | `ScanResponse` (`drafts`, optional `observation`) | When `scan: true`. |
 | `POST /clew/figure` | `FigureRequest` (`actor`, `area`) | `FigureResponse` (`figure` or null) | For an area declaring `figure: true`. |
 | `POST /clew/capabilities/<header capability>` | `CallRequest` | `CallResponse` whose `output` is a `SiteHeaderOutput` (`site`, `items` with their `children`, optional `logo`; a place or page may say `purpose: "toolbox"`, the intranet's page of tools, which Hem links to under Verktygslådan) | When the manifest declares `header: { capability }` ([D88](../decisions/D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md)): the read that gives Clew its shared header for the acting person. A read without input; the first enabled declaring connector in registration order answers. |
@@ -51,6 +52,49 @@ The [manifest field reference](../generated/manifest-reference.md) covers every 
 - `asks` and `effect` follow the rules in [What a write asks, and what it says it will do](#what-a-write-asks-and-what-it-says-it-will-do).
 
 JSON Schema validation alone does not prove these relationships or source authorization. Use the conformance checker and targeted behavioral tests.
+
+## Reads the installation makes
+
+Some reads have no person behind them: Clew reads them as the installation itself, on a schedule
+([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md)). A manifest declares
+them apart from its capabilities, under `installation`, as `{ name, title, description, input, output }`: a read is
+implied, so is `model: false`, and there is no scope, view or `about`, since nobody is asked about and nobody looks.
+Clew reads only the profiles it knows this way; today one, the holdings profile:
+
+| Profile | Takes | Answers |
+|---|---|---|
+| `<id>.holdings` ([D108](../decisions/D108-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md) item 9) | `HoldingsInput`: `{}` for the first page, `{ cursor }` with the `next` of the page before | `HoldingsOutput`: `rows`, each `{ key, holdings: [{ id, type, label, kind, issuedOn, expiresOn? }], partial? }` with `key` the value of your match field for the account; `next`, absent on the last page; `withdrawalsReported` |
+
+An installation read is not a capability. Clew's registry keeps it apart, so no page, card, tool, job or other
+connector's callback can name it, and a person who tries, an administrator included, is refused as for a name nobody
+declared. Clew posts it to `/clew/installation/{name}` with `{ "input": … }` and nothing else, and an assertion that is
+the installation's own: subject `clew:installation`, `caller: "installation"`, no `actor`, no `callback`, bound to the
+body and the name as every assertion is. Answer it to that assertion only; answer a person's assertion there with 401,
+and never accept the installation's assertion on `/clew/capabilities/{name}`. The [verifier](../../connectors/hello/verification.mjs)
+does both: `verify(token, key, request)` is the person, `verify.installation(token, key, request)` the installation.
+
+```json
+{ "input": { "cursor": "27:25" } }
+```
+
+```json
+{ "output": { "rows": [{ "key": "anna", "holdings": [{ "id": "course:2:user:6", "type": "clew-dev:brandskydd", "label": "Brandskydd, grundutbildning", "kind": "course", "issuedOn": "2026-10-03" }] }],
+              "next": "52:50", "withdrawalsReported": false } }
+```
+
+A page carries at most 100 rows and a row at most 500 holdings. An account that holds nothing is a row without
+holdings; an account the page does not answer for has no row. Say `withdrawalsReported: false` when your system leaves
+things out without saying so: Clew then never reads a missing holding as revoked. Answer a cursor you no longer know as
+`invalid`: Clew starts again from the first page. Keep a page well inside Clew's ten seconds. The loader refuses a
+manifest on protocol 2 that declares `installation`, a name that is not one of the profiles, and a declaration whose
+input takes anything but an optional string `cursor` or whose output is not the profile's (no field it lacks, bounds no
+wider). Clew checks every answer against the declaration and the profile; of a refusal it keeps the error's `code` and
+says it in its own words, never your `message`. The conformance check reads the first two pages as Clew does, reports
+counts only, and fails a connector that answers a person's assertion on the route. The verifier in the template binds
+an assertion to the route exactly: the request's path must be `/clew/capabilities/<name>` or
+`/clew/installation/<name>` from its start, so a connector served under a path prefix passes the verifier the request
+with the prefix taken off. Example:
+[connectors/moodle](../../connectors/moodle/README.md#the-installations-read-of-every-holding).
 
 ## Reads and actions about an entity
 
@@ -152,6 +196,7 @@ A successful execute's `output` has the `ExecuteResult` shape: a headline, per-r
 | Errands | `<id>.errands`, `$defs.ErrandsOutput` and `$defs.ErrandRow`; every case system in the person's scope is shown as one list, `clew.errands` ([D89](../decisions/D89-an-errand-connector-acts-as-the-person-and-the-case-system-decides-access.md)). |
 | News | `<id>.news`, taking `{}`, `$defs.NewsOutput` and `$defs.NewsRow`: a headline, its sender, when it was published and an optional `link`, nothing else. Every news source in the person's scope is shown as one list, `clew.news`, newest first: the three newest under "Nyheter" on Hem and all of them on "Alla nyheter". A source that fails or answers out of shape contributes nothing. A row with `link` leaves Clew; without one it opens the read the view's `open` names, by convention `<id>.newsItem`. One model tool, `clew.news`, reading a summary ([D112, amended 2026-11-11](../decisions/D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md)); example [connectors/communication](../../connectors/communication/README.md). |
 | Read receipts | On a `ThreadDraft` action of kind `execute`, `acknowledgement: { publishedAt }` says the action is the person's read receipt for something published; at most one per draft. Hem lifts the most urgent open item with one above its blocks until it is pressed ([D112, amended 2026-11-11](../decisions/D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md)). A draft that marks a read, or two actions, is refused and reported. |
+| Holdings | `<id>.holdings` under the manifest's `installation`, `$defs.HoldingsInput`, `$defs.HoldingsOutput`, `$defs.HoldingsRow`, `$defs.Holding`: every account and what it holds, read a page at a time by the installation itself, for Clew's competence register ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md), [Reads the installation makes](#reads-the-installation-makes)); example [connectors/moodle](../../connectors/moodle/README.md). |
 | Talks | `<id>.talks` (the round and one row per person a manager is due a talk with) and `<id>.commitments` (action points), `$defs.TalksOutput`, `$defs.TalkRow`, `$defs.CommitmentsOutput`, `$defs.CommitmentRow`. Rows are keyed on the SCIM user name. One system answers per installation: Clew's own module while it is enabled, otherwise the single connector that declares either read; Clew then shows that system read-only and a row opens its `link`. Neither read is ever a model tool. `<id>.talks` may be limited to managers; `<id>.commitments` must be callable by everyone. [D96](../decisions/D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md); example [connectors/appraisals](../../connectors/appraisals/README.md). |
 | Views and menu tools | `$defs.View` and `$defs.Menu`; [walkthrough](../guides/example-custom-directory.md). Menu placement is an administrator choice. |
 | Callbacks | `uses: string[]`, `$defs.CallbackRequest`, a separate callback grant; [authorization](../guides/authorization.md). |
@@ -168,6 +213,8 @@ A successful execute's `output` has the `ExecuteResult` shape: a headline, per-r
 - `CallRequest` and `DocumentReadRequest` are closed objects, and gained `about`: a connector that validates the request body against the published schema of 2 refuses every call that carries it. Use the schema of 3. Clew never sends `about` to a connector whose manifest says 2.
 - Every request assertion carries `body` (the SHA-256 of the exact request body, base64url) and, on `/clew/capabilities/{name}`, `capability`. Verify both against the request: the [verifier](../../connectors/hello/verification.mjs) of 3 does when it is handed the request, and refuses an assertion without them, so a connector built from it answers 401 to a Clew that speaks only 2. An older Clew also refuses a manifest that says 3, which is the clearer of the two failures.
 - The loader refuses a manifest on 3 in which an input that names a person or a unit, declared or not (the `person` of a `<id>.commitments` read included), is not a plain string property of the input schema. A manifest on 2 is loaded without this rule; the registry still refuses anything but a string there at every call.
+
+**`installation` is additive to 3** ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md), 2026-11-12): an optional manifest field, a route and request shape of its own, and new `$defs`; checked against the published schema of 3, nothing a connector without installation reads receives or declares changed. A manifest on 2 cannot declare it.
 
 A connector on 2 is loaded, works, gets no `about`, and shows as "Följer ett äldre protokoll" in Administration › Anslutna system (health `protocol-outdated`, with the window and these steps) and as a warning in the conformance check. The differences live in one function, `protocolTerms` in `packages/connectors/src/protocol.ts`. Update the verifier, trusted Clew URL and manifest before refreshing the registration. Keep the transport secret separate from signing authority.
 

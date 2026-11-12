@@ -12,6 +12,7 @@ import {
   primaryKey,
   index,
   uniqueIndex,
+  foreignKey,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import type {
@@ -924,6 +925,12 @@ export const competenceTypes = pgTable(
  * What one person holds of one type (D108 item 1): a competence and a certificate are the same record. Where it stands
  * is computed when read and never stored (item 4). `expires_on` is the issuer's own date only (item 3). The person's
  * rows go with the person; the people who registered or revoked a row are nulled by erasure.
+ *
+ * A row copied from a source (item 9) carries the connector, the source's own row id, type id and label, and when it
+ * was last read; it has no `registered_by`, its evidence is `system`, and its `type_id` is empty while no administrator
+ * has mapped the source's type. Unique on the connector and the source's row id, so a read can be repeated. It refers to
+ * the source's row in `competence_source`, which the copy writes before any row, and goes with it, so with the
+ * connector's row when an administrator removes the connector.
  */
 export const competenceHoldings = pgTable(
   'competence_holding',
@@ -932,9 +939,7 @@ export const competenceHoldings = pgTable(
     personId: text('person_id')
       .notNull()
       .references(() => people.id, { onDelete: 'cascade' }),
-    typeId: text('type_id')
-      .notNull()
-      .references(() => competenceTypes.id),
+    typeId: text('type_id').references(() => competenceTypes.id),
     issuedOn: date('issued_on', { mode: 'string' }).notNull(),
     expiresOn: date('expires_on', { mode: 'string' }),
     evidence: text('evidence').$type<'system' | 'manager' | 'self'>().notNull(),
@@ -943,12 +948,92 @@ export const competenceHoldings = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     revokedBy: text('revoked_by').references(() => people.id, { onDelete: 'set null' }),
+    // Through the source's row, not the connector's (`competence_holding_source_fk` below).
+    connectorId: text('connector_id'),
+    sourceId: text('source_id'),
+    sourceType: text('source_type'),
+    sourceLabel: text('source_label'),
+    readAt: timestamp('read_at', { withTimezone: true }),
   },
   t => [
     check('competence_holding_evidence', sql`${t.evidence} IN ('system', 'manager', 'self')`),
     check('competence_holding_state', sql`${t.state} IN ('pending', 'valid', 'rejected', 'revoked')`),
     check('competence_holding_period', sql`${t.expiresOn} IS NULL OR ${t.expiresOn} >= ${t.issuedOn}`),
+    // A copied row has every column of its source and nobody who registered it; a row registered in Clew has none.
+    check(
+      'competence_holding_copy',
+      sql`(${t.connectorId} IS NULL AND ${t.sourceId} IS NULL AND ${t.sourceType} IS NULL AND ${t.sourceLabel} IS NULL AND ${t.readAt} IS NULL) OR (${t.connectorId} IS NOT NULL AND ${t.sourceId} IS NOT NULL AND ${t.sourceType} IS NOT NULL AND ${t.sourceLabel} IS NOT NULL AND ${t.readAt} IS NOT NULL AND ${t.evidence} = 'system' AND ${t.registeredBy} IS NULL)`,
+    ),
+    // Only a copied row may wait for its type: a holding registered in Clew always names one.
+    check('competence_holding_typed', sql`${t.typeId} IS NOT NULL OR ${t.connectorId} IS NOT NULL`),
+    // A copied row refers to its source's row, not the connector's: removing the connector deletes the source's row
+    // first, which a read's write holds while it writes, and only then the copied rows, so a removal waits for the write
+    // and never deadlocks with it. Named, since the name Postgres would make is longer than its 63 characters.
+    foreignKey({
+      name: 'competence_holding_source_fk',
+      columns: [t.connectorId],
+      foreignColumns: [competenceSources.connectorId],
+    }).onDelete('cascade'),
     index('competence_holding_person').on(t.personId),
     index('competence_holding_type').on(t.typeId),
+    uniqueIndex('competence_holding_source')
+      .on(t.connectorId, t.sourceId)
+      .where(sql`${t.connectorId} IS NOT NULL`),
+    index('competence_holding_source_type').on(t.connectorId, t.sourceType),
+  ],
+);
+/**
+ * A source's type mapped to the catalogue (D108 item 9), per organisation, since a type belongs to one: kept by
+ * `admin.competence`. A copied row takes its type from here when it is read and when the mapping changes. `mapped_by`
+ * is an actor string, as `competence_type.created_by` is. Gone with the connector's row.
+ */
+export const competenceSourceMappings = pgTable(
+  'competence_source_mapping',
+  {
+    connectorId: text('connector_id')
+      .notNull()
+      .references(() => connectors.id, { onDelete: 'cascade' }),
+    organisationId: text('organisation_id').notNull(),
+    sourceType: text('source_type').notNull(),
+    typeId: text('type_id')
+      .notNull()
+      .references(() => competenceTypes.id),
+    mappedBy: text('mapped_by').notNull(),
+    mappedAt: timestamp('mapped_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  // Named: the name Postgres would make is longer than its 63 characters and would be cut.
+  t => [primaryKey({ name: 'competence_source_mapping_pk', columns: [t.connectorId, t.organisationId, t.sourceType] })],
+);
+/**
+ * Each source the copy reads (D108 item 9): the read under way, if any, as a lease so two runs never read one source
+ * at once (`run`, `claimed_at`, `lease_until`), and the last read that finished (`started_at` to `finished_at`, its
+ * outcome and its counts, never a name or a key). Gone with the connector's row.
+ */
+export const competenceSources = pgTable(
+  'competence_source',
+  {
+    connectorId: text('connector_id')
+      .primaryKey()
+      .references(() => connectors.id, { onDelete: 'cascade' }),
+    source: text('source').notNull(),
+    run: text('run'),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    leaseUntil: timestamp('lease_until', { withTimezone: true }),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+    outcome: text('outcome').$type<'complete' | 'partial' | 'failed'>(),
+    // `{ unmatched, total, organisations }`: counts only, the whole read's and each organisation's (D108 item 9).
+    counts: jsonb('counts').$type<Record<string, unknown>>(),
+  },
+  t => [
+    check('competence_source_outcome', sql`${t.outcome} IS NULL OR ${t.outcome} IN ('complete', 'partial', 'failed')`),
+    check(
+      'competence_source_claim',
+      sql`(${t.run} IS NULL) = (${t.claimedAt} IS NULL) AND (${t.run} IS NULL) = (${t.leaseUntil} IS NULL)`,
+    ),
+    check(
+      'competence_source_last_read',
+      sql`(${t.outcome} IS NULL) = (${t.startedAt} IS NULL) AND (${t.outcome} IS NULL) = (${t.finishedAt} IS NULL) AND (${t.outcome} IS NULL) = (${t.counts} IS NULL)`,
+    ),
   ],
 );

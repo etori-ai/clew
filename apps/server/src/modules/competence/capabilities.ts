@@ -10,6 +10,7 @@ import {
   type CompetenceAttentionInput,
   type CompetenceHoldingsInput,
   type View,
+  type ViewField,
   literals,
 } from '@clew/contracts';
 import { systemContext } from '../../system-context';
@@ -25,6 +26,14 @@ import type { CompetenceUsecases } from './usecases';
  */
 export const COMPETENCE_SOURCE = 'Kompetens';
 export const COMPETENCE_AREA = 'competence';
+/**
+ * A copied row's source and when it was last read (D108 item 9), so the time of the read shows wherever a copied row is
+ * listed; empty on a row registered in Clew.
+ */
+const copiedFields: ViewField[] = [
+  { key: 'source', label: 'Källa' },
+  { key: 'readAt', label: 'Inläst', format: 'instant', beside: true },
+];
 /** What has run out or runs out soon among the manager's reports: the figure and the manager's card open it. */
 export const attentionView: View = {
   kind: 'table',
@@ -36,9 +45,13 @@ export const attentionView: View = {
     { key: 'competence', label: 'Kompetens' },
     { key: 'status', label: 'Status', format: 'status', tones: { expired: 'alert', expiring: 'warn' } },
     { key: 'expiresOn', label: 'Giltigt till', format: 'date' },
+    ...copiedFields,
   ],
 };
-/** One person's holdings: the reader's own with no input, a report's for their manager. */
+/**
+ * One person's holdings: the reader's own with no input, a report's for their manager. A copied row whose type is not
+ * mapped is listed under the source's label with the status `uncounted` ("räknas inte"), which has no tone.
+ */
 export const holdingsView: View = {
   kind: 'list',
   title: 'competence',
@@ -50,6 +63,7 @@ export const holdingsView: View = {
     { key: 'expiresOn', label: 'Giltigt till', format: 'date' },
     { key: 'issuedOn', label: 'Utfärdat', format: 'date' },
     { key: 'area', label: 'Område' },
+    ...copiedFields,
   ],
 };
 /**

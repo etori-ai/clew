@@ -4,14 +4,16 @@
 // which a Moodle user cannot change, `idnumber` as the alternative. Who may be asked about is Clew's to decide (D117):
 // every call that names a person carries, in a body the assertion is bound to, how the caller stands to each key, and
 // this connector answers a key only when that relation is `self` or `managed`. It keeps no copy of the organisation.
-// Nothing is stored or cached between requests.
+// One read is the installation's own (D119): every account and what it holds, a page at a time, answered only to Clew's
+// assertion that no person is behind the call. Nothing is stored or cached between requests.
 import { createVerifier } from './verification.mjs';
 import { ItemUnreadable, SourceRefused, SourceUnavailable, createFixtureLearning } from './learning.mjs';
 import {
   CONNECTOR,
   CRITERIA_MAX,
   DEFAULT_SOURCE,
-  HOLDINGS_KEYS_MAX,
+  HOLDINGS_PAGE,
+  HOLDINGS_PER_ROW,
   KIND,
   PERSON_KEYS_MAX,
   STATUS,
@@ -31,6 +33,23 @@ export const MATCH_FIELDS = ['username', 'idnumber'];
 export const DEADLINES = { person: 3000, courses: 8000, course: 8000, holdings: 8000 };
 /** The relations (D117) under which a person is answered about: their own, and a manager's direct report. */
 export const ANSWERED = ['self', 'managed'];
+/**
+ * How many places before the cursor a page of the installation's holdings read starts to read Moodle's list (D119).
+ * Moodle pages its list of accounts by place, and an account deleted before the cursor moves every later one up a place:
+ * reading from earlier and skipping what was answered keeps a page from passing over an account. When more were deleted
+ * than this, the page steps back further, to the list's start at worst.
+ */
+export const OVERLAP = 10;
+/**
+ * Moodle's guest account, as `isguestuser()` knows it: the local account named `guest`, which Moodle creates at install
+ * and keeps in `$CFG->siteguest`, and whose name cannot be changed. It is nobody's: no read answers it (D119).
+ */
+export const GUEST = 'guest';
+const isGuest = account => account?.username === GUEST;
+/** The route of a read Clew makes as the installation (D119). */
+const INSTALLATION_ROUTE = '/clew/installation/';
+/** The cursor as the manifest declares it (`cursorPattern`), its two numbers taken apart. */
+const CURSOR = /^([0-9]{1,10}):([0-9]{1,9})$/;
 const KEY_MAX = 512;
 /** A course idnumber that looks like one of this connector's own type ids is not used as one: the type would be ambiguous. */
 const OWN_TYPE = /^(course|badge):[0-9]+$/;
@@ -66,7 +85,7 @@ const stopped = () => new SourceUnavailable('The read was stopped.');
 /**
  * At most `n` source calls at once for one read, however the work below fans out. Each call gets the read's signal;
  * once it aborts (the deadline, Clew going away) nothing still queued is started. A call that fails the read (anything
- * but one item refused) calls `failed` before the next call can start, which aborts the read.
+ * but one item refused) calls `failed` with its error before the next call can start, which aborts the read.
  */
 function limiter(n, signal, failed) {
   let active = 0;
@@ -82,7 +101,7 @@ function limiter(n, signal, failed) {
       Promise.resolve()
         .then(() => task(signal))
         .then(resolve, error => {
-          if (!(error instanceof ItemUnreadable)) failed();
+          if (!(error instanceof ItemUnreadable)) failed(error);
           reject(error);
         })
         .finally(() => {
@@ -183,22 +202,31 @@ export function createConnector({
    * must be the signed caller's own. Every read finds its people here.
    */
   async function find(actor, keys, run, relations) {
+    const asked = keys.filter(key => ANSWERED.includes(relations.get(fold(key))));
+    return (await accountsOf(asked, run)).filter(
+      ({ key, account }) => relations.get(fold(key)) !== 'self' || signedAs(actor, account[match]),
+    );
+  }
+  /**
+   * The one Moodle account behind each key, in the order given, a key given twice (in any case) once: each key looked up
+   * as given and in lower case, since Moodle compares exactly, and a key that matches no account, or more than one
+   * without regard to case, is no one. Moodle's guest account is no one's. The rule every read finds an account by, the
+   * person's and the installation's.
+   */
+  async function accountsOf(keys, run) {
     const asked = [];
     const seen = new Set();
     for (const key of keys) {
-      if (seen.has(fold(key)) || !ANSWERED.includes(relations.get(fold(key)))) continue;
+      if (seen.has(fold(key))) continue;
       seen.add(fold(key));
       asked.push(key);
     }
     if (!asked.length) return [];
     const values = [...new Set(asked.flatMap(k => [k, fold(k)]))];
-    const accounts = await run(signal => source.accounts(match, values, { signal }));
+    const accounts = (await run(signal => source.accounts(match, values, { signal }))).filter(a => !isGuest(a));
     return asked.flatMap(key => {
       const candidates = accounts.filter(a => typeof a[match] === 'string' && fold(a[match]) === fold(key));
-      if (candidates.length !== 1) return [];
-      const account = candidates[0];
-      if (relations.get(fold(key)) === 'self' && !signedAs(actor, account[match])) return [];
-      return [{ key, account }];
+      return candidates.length === 1 ? [{ key, account: candidates[0] }] : [];
     });
   }
 
@@ -348,55 +376,230 @@ export function createConnector({
         ...courseLink(courseId),
       };
     },
+  };
 
-    // The holdings profile (D108 item 9): per person the platform knows, every completed course with the day it was
-    // completed and every badge with the day it was issued and, when it has one, the day it runs out. What Moodle
-    // refuses for one person or one course is left out and the person's row says `partial`; the answer as a whole says
-    // that this source reports no withdrawals.
-    holdings: async (actor, input, run, relations) => {
-      const keys = keysOf(input, HOLDINGS_KEYS_MAX);
-      const people = await find(actor, keys, run, relations);
-      const rows = await Promise.all(
-        people.map(async ({ key, account }) => {
-          const id = account.id;
-          const [courses, badges] = await Promise.all([
-            orUnreadable(() => run(signal => source.courses(id, { signal }))),
-            orUnreadable(() => run(signal => source.badges(id, { signal }))),
-          ]);
-          const dated = await Promise.all(
-            (courses ?? [])
-              .filter(c => c.completed)
-              .map(async c => ({
-                course: c,
-                at: c.tracked ? await orUnreadable(() => run(signal => source.completion(id, c.id, { signal }))) : null,
-              })),
-          );
-          const holdings = [
-            ...dated
-              .filter(d => d.at)
-              .map(({ course, at }) => ({
+  /**
+   * One account's holdings (D108 item 9): every completed course with the day it was completed, every badge with the day
+   * it was issued and, when it has one, the day it runs out. `progress` keeps what has come back so far, so a page whose
+   * deadline passes in the middle of its first account can still answer what was read of it.
+   */
+  async function holdingsOf(account, run, progress) {
+    const id = account.id;
+    await Promise.all([
+      orUnreadable(() => run(signal => source.courses(id, { signal }))).then(c => (progress.courses = c ?? null)),
+      orUnreadable(() => run(signal => source.badges(id, { signal }))).then(b => (progress.badges = b ?? null)),
+    ]);
+    await Promise.all(
+      (progress.courses ?? [])
+        .filter(c => c.completed)
+        .map(async c =>
+          progress.dated.set(
+            c.id,
+            c.tracked
+              ? ((await orUnreadable(() => run(signal => source.completion(id, c.id, { signal })))) ?? null)
+              : null,
+          ),
+        ),
+    );
+  }
+  /**
+   * The row of one account from what was read of it: a completed course without a day, a list Moodle refused or one not
+   * read in time is left out and the row says `partial`, as is anything past the most a row carries.
+   */
+  function rowOf(key, account, progress) {
+    const id = account.id;
+    const completed = (progress.courses ?? []).filter(c => c.completed);
+    const holdings = [
+      ...completed.flatMap(course => {
+        const at = progress.dated.get(course.id);
+        return at
+          ? [
+              {
                 id: `course:${course.id}:user:${id}`,
                 type: courseType(course),
                 label: clip(course.name, 400),
                 kind: 'course',
                 issuedOn: dayOf(at),
-              })),
-            ...(badges ?? []).map(b => ({
-              id: `badge:${b.id}:user:${id}`,
-              type: `badge:${b.id}`,
-              label: clip(b.name, 400),
-              kind: 'badge',
-              issuedOn: dayOf(b.issuedAt),
-              ...(b.expiresAt !== null ? { expiresOn: dayOf(b.expiresAt) } : {}),
-            })),
-          ];
-          const partial = !courses || !badges || dated.some(d => !d.at);
-          return { key, holdings, ...(partial ? { partial: true } : {}) };
-        }),
+              },
+            ]
+          : [];
+      }),
+      ...(progress.badges ?? []).map(b => ({
+        id: `badge:${b.id}:user:${id}`,
+        type: `badge:${b.id}`,
+        label: clip(b.name, 400),
+        kind: 'badge',
+        issuedOn: dayOf(b.issuedAt),
+        ...(b.expiresAt !== null ? { expiresOn: dayOf(b.expiresAt) } : {}),
+      })),
+    ];
+    const partial =
+      !progress.courses ||
+      !progress.badges ||
+      completed.some(c => !progress.dated.get(c.id)) ||
+      holdings.length > HOLDINGS_PER_ROW;
+    return { key, holdings: holdings.slice(0, HOLDINGS_PER_ROW), ...(partial ? { partial: true } : {}) };
+  }
+
+  /**
+   * The accounts after the one with id `after`, read from Moodle's list in id order from the place `at` the cursor
+   * gives, `OVERLAP` places earlier so that an account deleted before it does not make the page pass over one. If even
+   * that window starts past an account not yet answered (more were deleted), it steps back further, to the start at
+   * worst. Accounts are added at the end of the list, so none appears before the cursor.
+   */
+  async function accountsAfter(after, at, run) {
+    for (let back = OVERLAP; ; back *= 4) {
+      // Every step at least four times further back, so the list's start is reached in a few calls at most.
+      const from = back >= at ? 0 : at - back;
+      const count = at - from + HOLDINGS_PAGE + 1;
+      const listed = await run(signal => source.everyone(from, count, { signal }));
+      if (from === 0 || (listed.length && listed[0].id <= after)) return { from, listed };
+    }
+  }
+
+  // The reads Clew makes as the installation itself (D119): no actor, no `about`, nobody to answer about but everyone.
+  const installation = {
+    // The holdings profile (D108 item 9): a page of the site's accounts in Moodle's id order, each with every holding
+    // the platform can see, and the cursor of the next page. An account Moodle withholds the details of has no key and
+    // no row; an account whose key matches another account without regard to case is no one, as in every read. A page
+    // stops taking accounts halfway to its deadline and answers those it finished, so a slow Moodle gives shorter pages
+    // and the read still moves on; if the deadline passes before the first account is finished, that account is
+    // answered with what was read of it, nothing if nothing was, and marked partial. A failing call fails the page.
+    holdings: async (input, run, read) => {
+      if (Object.keys(input).some(k => k !== 'cursor')) throw new Invalid('Ogiltig förfrågan.');
+      const cursor =
+        input.cursor === undefined ? undefined : CURSOR.exec(typeof input.cursor === 'string' ? input.cursor : '');
+      if (input.cursor !== undefined && !cursor) throw new Invalid('Ogiltig förfrågan.');
+      const after = cursor ? Number(cursor[1]) : 0;
+      const at = cursor ? Number(cursor[2]) : 0;
+      if (!Number.isSafeInteger(after) || !Number.isSafeInteger(at)) throw new Invalid('Ogiltig förfrågan.');
+      const { from, listed } = await accountsAfter(after, at, run);
+      const unseen = listed.filter(a => a.id > after);
+      const page = unseen.slice(0, HOLDINGS_PAGE);
+      // A key Moodle gave for each account, checked as every read checks one: it must find this account and no other.
+      // Two accounts of the page whose keys differ only in case are no one; one on another page is found by the lookup
+      // when it is spelt in lower case, as in a person's read.
+      // Moodle's guest account is left out: it is nobody's, and Moodle will not read its badges (35).
+      const spelt = page.filter(
+        a => !isGuest(a) && typeof a[match] === 'string' && a[match] !== '' && a[match].length <= KEY_MAX,
       );
-      return { withdrawalsReported: false, rows };
+      const twice = new Set(spelt.map(a => fold(a[match])).filter((k, i, all) => all.indexOf(k) !== i));
+      const keyed = spelt.filter(a => !twice.has(fold(a[match])));
+      const found = new Map(
+        (
+          await accountsOf(
+            keyed.map(a => a[match]),
+            run,
+          )
+        ).map(({ key, account }) => [account.id, key]),
+      );
+      const work = page.map(account => {
+        const key = keyed.includes(account) ? found.get(account.id) : undefined;
+        return { account, key, done: key === undefined, progress: { dated: new Map() } };
+      });
+      // A pool of accounts at a time, each with its calls through the read's limiter; no account is started once half
+      // the deadline has passed, except the first, so every page moves on.
+      let next = 0;
+      let started = 0;
+      const begun = Date.now();
+      const worker = async () => {
+        while (next < work.length && !read.signal.aborted) {
+          const item = work[next];
+          if (!item.done && started > 0 && Date.now() - begun >= read.deadline / 2) return;
+          next++;
+          if (item.done) continue;
+          started++;
+          await holdingsOf(item.account, run, item.progress);
+          item.done = true;
+        }
+      };
+      const settled = await Promise.allSettled(Array.from({ length: Math.max(1, Math.ceil(concurrency / 2)) }, worker));
+      // A call that failed the page fails it; so does anything that is not Moodle being stopped.
+      const failure = read.failure();
+      if (failure) throw failure;
+      const broken = settled.find(s => s.status === 'rejected' && !(s.reason instanceof SourceUnavailable));
+      if (broken) throw broken.reason;
+      if (settled.some(s => s.status === 'rejected') && !read.expired()) throw stopped();
+      // The accounts finished, in order, up to the first that is not.
+      let answered = work.findIndex(item => !item.done);
+      if (answered < 0) answered = work.length;
+      const rows = work
+        .slice(0, answered)
+        .flatMap(item => (item.key ? [rowOf(item.key, item.account, item.progress)] : []));
+      if (answered < work.length && !work.slice(0, answered).some(item => item.key)) {
+        // The deadline passed inside the page's first account (only accounts without a row before it): what was read of
+        // it, marked partial, even when that is nothing. Answering the page unavailable instead would stop the sweep at
+        // this account on every try, so a slow account would hold back every account after it for good.
+        const first = work[answered];
+        rows.push({ ...rowOf(first.key, first.account, first.progress), partial: true });
+        answered++;
+      }
+      const last = work[answered - 1];
+      const ended = answered === work.length && unseen.length <= HOLDINGS_PAGE;
+      return {
+        withdrawalsReported: false,
+        rows,
+        ...(ended || !last ? {} : { next: `${last.account.id}:${from + listed.indexOf(last.account) + 1}` }),
+      };
     },
   };
+
+  /** The error of a read as the protocol answers it. Moodle's own error text never leaves. */
+  function answerFor(error) {
+    if (error instanceof Invalid) return fail('invalid', error.message, 400);
+    if (error instanceof NotFound)
+      return fail('not-found', `Personen finns inte i ${sourceLabel}, eller så får du inte se uppgifterna.`, 404);
+    if (error instanceof SourceRefused)
+      return fail('denied', `${sourceLabel} godtar inte anslutningens behörighet.`, 401);
+    if (!(error instanceof SourceUnavailable)) console.error(`${CONNECTOR} connector: unexpected`, error?.name);
+    return fail('unavailable', `${sourceLabel} svarar inte just nu.`, 503);
+  }
+  const objectInput = body =>
+    body && typeof body.input === 'object' && body.input && !Array.isArray(body.input) ? body.input : {};
+  const shortName = name => (name.startsWith(CONNECTOR + '.') ? name.slice(CONNECTOR.length + 1) : '');
+
+  /**
+   * A read Clew makes as the installation (D119): answered only when the assertion is the installation's own, bound to
+   * this body and this name. A person's assertion, whoever they are, is refused as an invalid credential is, before
+   * anything is read, and so is one bound to another body or another name.
+   */
+  async function installationCall(request, url, assertion, key) {
+    if (!(await verify.installation(assertion, key, request))) return fail('denied', 'Ogiltigt behörighetsbevis.', 401);
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return fail('invalid', 'Ogiltig förfrågan.', 400);
+    }
+    const short = shortName(decodeURIComponent(url.pathname.slice(INSTALLATION_ROUTE.length)));
+    const read = Object.hasOwn(installation, short) ? installation[short] : undefined;
+    if (!read) return fail('not-found', 'Okänd förmåga.', 404);
+    // As a person's read: stopped at the deadline, when Clew goes away, or when a call fails it. The page also needs to
+    // know which of the three it was, since the deadline alone still answers what was finished.
+    const done = new AbortController();
+    const deadline = deadlines[short];
+    const timeout = AbortSignal.timeout(deadline);
+    const signal = AbortSignal.any([done.signal, timeout, request.signal]);
+    let failure;
+    const run = limiter(concurrency, signal, error => {
+      if (!signal.aborted) failure ??= error;
+      done.abort();
+    });
+    try {
+      return json({
+        output: await read(objectInput(body), run, {
+          signal,
+          deadline,
+          failure: () => failure,
+          expired: () => timeout.aborted && !request.signal.aborted,
+        }),
+      });
+    } catch (error) {
+      return answerFor(error);
+    } finally {
+      done.abort();
+    }
+  }
 
   // HTTP boundary: route, verify Clew, dispatch under the read's deadline and translate errors. Moodle's own error text
   // never leaves.
@@ -408,7 +611,10 @@ export function createConnector({
     // The assertion must have been issued for exactly this body and this capability (D117), so the `input` and the
     // `about` read below are Clew's. A Clew on protocol 2 signs no body and is refused here.
     const assertion = (request.headers.get('authorization') ?? '').replace(/^Bearer /, '');
-    const actor = await verify(assertion, request.headers.get('x-clew-connector-key'), request);
+    const key = request.headers.get('x-clew-connector-key');
+    if (url.pathname.startsWith(INSTALLATION_ROUTE)) return installationCall(request, url, assertion, key);
+    // A person's call: the installation's own assertion is never one (D119), and the verifier refuses it.
+    const actor = await verify(assertion, key, request);
     if (!actor) return fail('denied', 'Ogiltigt behörighetsbevis.', 401);
 
     let body;
@@ -420,10 +626,9 @@ export function createConnector({
     const name = url.pathname.startsWith('/clew/capabilities/')
       ? decodeURIComponent(url.pathname.slice('/clew/capabilities/'.length))
       : '';
-    const short = name.startsWith(CONNECTOR + '.') ? name.slice(CONNECTOR.length + 1) : '';
+    const short = shortName(name);
     const capability = Object.hasOwn(capabilities, short) ? capabilities[short] : undefined;
     if (!capability) return fail('not-found', 'Okänd förmåga.', 404);
-    const input = body && typeof body.input === 'object' && body.input && !Array.isArray(body.input) ? body.input : {};
 
     // The read stops at its deadline, when Clew goes away, or when one of its calls has failed it: whatever is still
     // queued is not started, and what is under way is aborted.
@@ -433,19 +638,13 @@ export function createConnector({
       return json({
         output: await capability(
           actor,
-          input,
+          objectInput(body),
           limiter(concurrency, signal, () => done.abort()),
           relationsOf(body?.about),
         ),
       });
     } catch (error) {
-      if (error instanceof Invalid) return fail('invalid', error.message, 400);
-      if (error instanceof NotFound)
-        return fail('not-found', `Personen finns inte i ${sourceLabel}, eller så får du inte se uppgifterna.`, 404);
-      if (error instanceof SourceRefused)
-        return fail('denied', `${sourceLabel} godtar inte anslutningens behörighet.`, 401);
-      if (!(error instanceof SourceUnavailable)) console.error(`${CONNECTOR} connector: unexpected`, error?.name);
-      return fail('unavailable', `${sourceLabel} svarar inte just nu.`, 503);
+      return answerFor(error);
     } finally {
       done.abort();
     }

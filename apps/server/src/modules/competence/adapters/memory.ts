@@ -6,30 +6,46 @@ import type {
   Erased,
   HoldingRecord,
   PersonRef,
+  SourceMapping,
+  SourceRecord,
   TypeRecord,
+  WorkflowStart,
 } from '../model';
 
 /**
  * The competence store in memory: the unit tests' adapter (D25), held to Postgres by
  * `tests/competence-store-contract.ts`. State is plain and seedable; a transaction is a snapshot that a throw restores,
- * the audit rows included. Transactions run one at a time, as row locks would make them.
+ * the audit rows and the workflow starts included. Transactions run one at a time, as row locks would make them.
  */
 export interface MemoryCompetenceState {
   types: Map<string, TypeRecord>;
   holdings: Map<string, HoldingRecord>;
   persons: Map<string, PersonRef>;
+  /** People SCIM has deactivated (D68): they stay, and the copy matches nobody to them. */
+  inactive: Set<string>;
+  /** By `<connector>\n<organisation>\n<source type>`. */
+  mappings: Map<string, SourceMapping>;
+  sources: Map<string, SourceRecord>;
   audit: CompetenceAudit[];
+  /** The workflow starts committed (D86), each id once. */
+  enqueued: WorkflowStart[];
 }
 const byCreated = <T extends { createdAt: string; id: string }>(rows: T[]) =>
   rows.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
 const sv = (a: string, b: string) => a.localeCompare(b, 'sv');
+const mappingKey = (connectorId: string, organisationId: string, sourceType: string) =>
+  connectorId + '\n' + organisationId + '\n' + sourceType;
 
 export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
   let state: MemoryCompetenceState = {
     types: new Map(),
     holdings: new Map(),
     persons: new Map((seed.persons ?? []).map(p => [p.id, { ...p }])),
+    inactive: new Set(),
+    mappings: new Map(),
+    sources: new Map(),
     audit: [],
+    enqueued: [],
   };
   let tail = Promise.resolve();
   const serialized = async <T>(fn: () => Promise<T>): Promise<T> => {
@@ -57,6 +73,20 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     );
     if (taken) throw new TypeNameTaken();
   };
+  /** The foreign keys and checks Postgres holds a holding to. */
+  const assertHolding = (holding: HoldingRecord) => {
+    if (holding.typeId !== null && !state.types.has(holding.typeId))
+      throw new Error('holding references an unknown type');
+    if (!state.persons.has(holding.personId)) throw new Error('holding references an unknown person');
+    if (holding.typeId === null && !holding.copy) throw new Error('only a copied holding may lack a type');
+    if (holding.copy && !state.sources.has(holding.copy.connectorId))
+      throw new Error("a copied holding refers to its source's row");
+    if (holding.copy && (holding.evidence !== 'system' || holding.registeredBy !== null))
+      throw new Error('a copied holding is attested by its system and registered by nobody');
+    if (holding.expiresOn !== null && holding.expiresOn < holding.issuedOn)
+      throw new Error('holding ends before it begins');
+  };
+  const copied = () => [...state.holdings.values()].filter(h => h.copy);
   const tx: CompetenceTx = {
     async types(organisationId, options = {}) {
       return [...state.types.values()]
@@ -84,28 +114,169 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
       state.types.set(id, next);
     },
     async holdingsOf(personIds) {
-      return byCreated([...state.holdings.values()].filter(h => personIds.includes(h.personId))).map(h => ({ ...h }));
+      return byCreated([...state.holdings.values()].filter(h => personIds.includes(h.personId))).map(h =>
+        structuredClone(h),
+      );
     },
     async holdingsOfType(typeId) {
-      return byCreated([...state.holdings.values()].filter(h => h.typeId === typeId)).map(h => ({ ...h }));
+      return byCreated([...state.holdings.values()].filter(h => h.typeId === typeId)).map(h => structuredClone(h));
     },
     async holding(id) {
       const h = state.holdings.get(id);
-      return h && { ...h };
+      return h && structuredClone(h);
     },
     async insertHolding(holding) {
       if (state.holdings.has(holding.id)) throw new Error('duplicate holding id');
-      // The row refers to its type and its person, as the foreign keys make it in Postgres.
-      if (!state.types.has(holding.typeId)) throw new Error('holding references an unknown type');
-      if (!state.persons.has(holding.personId)) throw new Error('holding references an unknown person');
-      state.holdings.set(holding.id, { ...holding });
+      assertHolding(holding);
+      state.holdings.set(holding.id, structuredClone(holding));
     },
     async updateHolding(id, patch) {
       const h = state.holdings.get(id);
       if (h) state.holdings.set(id, { ...h, ...patch });
     },
+    async copiedFrom(connectorId) {
+      return byCreated(copied().filter(h => h.copy!.connectorId === connectorId)).map(h => structuredClone(h));
+    },
+    async copiedPeople(connectorId) {
+      return [
+        ...new Set(
+          copied()
+            .filter(h => h.copy!.connectorId === connectorId)
+            .map(h => h.personId),
+        ),
+      ];
+    },
+    async removeCopied(connectorId, holdingIds) {
+      let n = 0;
+      for (const id of holdingIds) {
+        const h = state.holdings.get(id);
+        if (h?.copy?.connectorId === connectorId) {
+          state.holdings.delete(id);
+          n++;
+        }
+      }
+      return n;
+    },
+    async putCopied(rows) {
+      for (const row of rows) {
+        if (!row.copy) throw new Error('a copied row carries its source');
+        assertHolding(row);
+        const other = copied().find(
+          h =>
+            h.id !== row.id && h.copy!.connectorId === row.copy!.connectorId && h.copy!.sourceId === row.copy!.sourceId,
+        );
+        if (other) throw new Error('the source row is copied already');
+        state.holdings.set(row.id, structuredClone(row));
+      }
+    },
+    async touchCopied(connectorId, sourceIds, at) {
+      const ids = new Set(sourceIds);
+      for (const h of copied())
+        if (h.copy!.connectorId === connectorId && ids.has(h.copy!.sourceId)) h.copy = { ...h.copy!, readAt: at };
+    },
+    async retypeCopied(connectorId, organisationId, sourceType, typeId) {
+      if (typeId !== null && !state.types.has(typeId)) throw new Error('mapping references an unknown type');
+      let n = 0;
+      for (const h of copied())
+        if (
+          h.copy!.connectorId === connectorId &&
+          h.copy!.sourceType === sourceType &&
+          state.persons.get(h.personId)?.organisationId === organisationId
+        ) {
+          h.typeId = typeId;
+          n++;
+        }
+      return n;
+    },
+    async sourceTypes(organisationId) {
+      const counted = new Map<string, { connectorId: string; sourceType: string; label: string; holdings: number }>();
+      const labelReadAt = new Map<string, string>();
+      for (const h of copied()) {
+        if (h.state === 'revoked' || state.inactive.has(h.personId)) continue;
+        if (state.persons.get(h.personId)?.organisationId !== organisationId) continue;
+        const key = h.copy!.connectorId + '\n' + h.copy!.sourceType;
+        const row = counted.get(key) ?? {
+          connectorId: h.copy!.connectorId,
+          sourceType: h.copy!.sourceType,
+          label: h.copy!.sourceLabel,
+          holdings: 0,
+        };
+        // The label read last wins, as the source names the type now; on a tie the greatest, as Postgres picks it.
+        const seen = labelReadAt.get(key);
+        if (
+          seen === undefined ||
+          h.copy!.readAt > seen ||
+          (h.copy!.readAt === seen && h.copy!.sourceLabel > row.label)
+        ) {
+          row.label = h.copy!.sourceLabel;
+          labelReadAt.set(key, h.copy!.readAt);
+        }
+        row.holdings++;
+        counted.set(key, row);
+      }
+      return [...counted.values()].sort(
+        (a, b) => a.connectorId.localeCompare(b.connectorId) || a.sourceType.localeCompare(b.sourceType),
+      );
+    },
+    async mappings(organisationId, connectorId) {
+      return [...state.mappings.values()]
+        .filter(
+          m => m.organisationId === organisationId && (connectorId === undefined || m.connectorId === connectorId),
+        )
+        .map(m => ({ ...m }));
+    },
+    async mappingsOf(connectorId) {
+      return [...state.mappings.values()].filter(m => m.connectorId === connectorId).map(m => ({ ...m }));
+    },
+    async putMapping(mapping) {
+      if (!state.types.has(mapping.typeId)) throw new Error('mapping references an unknown type');
+      state.mappings.set(mappingKey(mapping.connectorId, mapping.organisationId, mapping.sourceType), { ...mapping });
+    },
+    async removeMapping(connectorId, organisationId, sourceType) {
+      return state.mappings.delete(mappingKey(connectorId, organisationId, sourceType));
+    },
+    async sources() {
+      return [...state.sources.values()]
+        .sort((a, b) => a.connectorId.localeCompare(b.connectorId))
+        .map(s => structuredClone(s));
+    },
+    async source(connectorId) {
+      const s = state.sources.get(connectorId);
+      return s && structuredClone(s);
+    },
+    async putSource(record) {
+      state.sources.set(record.connectorId, structuredClone(record));
+    },
+    async forgetSource(connectorId) {
+      let holdings = 0,
+        mappings = 0;
+      for (const h of copied())
+        if (h.copy!.connectorId === connectorId) {
+          state.holdings.delete(h.id);
+          holdings++;
+        }
+      for (const [key, m] of [...state.mappings])
+        if (m.connectorId === connectorId) {
+          state.mappings.delete(key);
+          mappings++;
+        }
+      state.sources.delete(connectorId);
+      return { holdings, mappings };
+    },
+    async enqueue(start) {
+      if (!state.enqueued.some(s => s.id === start.id)) state.enqueued.push(structuredClone(start));
+    },
     async persons(ids) {
       return ids.flatMap(id => (state.persons.has(id) ? [{ ...state.persons.get(id)! }] : []));
+    },
+    async activeByUserName(userNames) {
+      const wanted = new Set(userNames.map(n => n.toLowerCase()));
+      return [...state.persons.values()]
+        .filter(p => p.userName !== null && wanted.has(p.userName.toLowerCase()) && !state.inactive.has(p.id))
+        .map(p => ({ ...p }));
+    },
+    async activeIds(personIds) {
+      return new Set(personIds.filter(id => state.persons.has(id) && !state.inactive.has(id)));
     },
     async erasePerson(personId) {
       let holdings = 0;
@@ -130,10 +301,18 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     },
     async exportOrganisation(organisationId) {
       const types = byCreated([...state.types.values()].filter(t => t.organisationId === organisationId));
-      const ids = new Set(types.map(t => t.id));
+      const ofOrganisation = (personId: string) => state.persons.get(personId)?.organisationId === organisationId;
       return structuredClone({
         types,
-        holdings: byCreated([...state.holdings.values()].filter(h => ids.has(h.typeId))),
+        holdings: byCreated([...state.holdings.values()].filter(h => ofOrganisation(h.personId))),
+        mappings: [...state.mappings.values()]
+          .filter(m => m.organisationId === organisationId)
+          .sort(
+            (a, b) =>
+              a.connectorId.localeCompare(b.connectorId) ||
+              a.sourceType.localeCompare(b.sourceType) ||
+              a.mappedAt.localeCompare(b.mappedAt),
+          ),
       });
     },
     async audit(entry) {
@@ -159,6 +338,10 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     /** A person the domain can name, as provisioning would have written them. */
     addPerson(person: PersonRef) {
       state.persons.set(person.id, { ...person });
+    },
+    /** SCIM deactivates a person (D68): they stay, and leave every list. */
+    deactivate(personId: string) {
+      state.inactive.add(personId);
     },
     audit: () => structuredClone(state.audit),
   };

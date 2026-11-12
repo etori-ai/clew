@@ -1,4 +1,5 @@
-import { and, eq, gt, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
+import type { ConnectorAudience } from '@clew/contracts';
 import { database } from './index';
 import {
   people,
@@ -61,6 +62,70 @@ export async function readGroups(personId: string): Promise<string[]> {
     .where(and(eq(groupMembers.personId, personId), isNotNull(groups.externalId)))
     .orderBy(groups.externalId);
   return rows.map(r => r.externalId!);
+}
+/**
+ * What a connector's audience is decided on (D23, `inAudience` in `@clew/connectors`) for a batch of people: each active
+ * person with an access grant, with the grant's role and unit and the external ids of their provisioned groups. A person
+ * who is deactivated or has no grant is left out, as `readAccess` leaves them out of a session.
+ */
+export async function readAudienceFacts(
+  personIds: readonly string[],
+): Promise<Array<{ personId: string; role: 'manager' | 'employee'; unitId: string; groups: string[] }>> {
+  const facts = [];
+  const ids = [...new Set(personIds)];
+  for (let i = 0; i < ids.length; i += 1000) {
+    const slice = ids.slice(i, i + 1000);
+    const granted = await database()
+      .select({ personId: accessGrants.personId, role: accessGrants.role, unitId: accessGrants.unitId })
+      .from(accessGrants)
+      .innerJoin(people, eq(people.id, accessGrants.personId))
+      .where(and(inArray(accessGrants.personId, slice), eq(people.enabled, true)));
+    if (!granted.length) continue;
+    const memberships = await database()
+      .select({ personId: groupMembers.personId, externalId: groups.externalId })
+      .from(groupMembers)
+      .innerJoin(groups, eq(groups.id, groupMembers.groupId))
+      .where(
+        and(
+          inArray(
+            groupMembers.personId,
+            granted.map(g => g.personId),
+          ),
+          isNotNull(groups.externalId),
+        ),
+      );
+    const of = new Map<string, string[]>();
+    for (const m of memberships) of.set(m.personId, [...(of.get(m.personId) ?? []), m.externalId!]);
+    for (const g of granted) facts.push({ ...g, groups: of.get(g.personId) ?? [] });
+  }
+  return facts;
+}
+/**
+ * Whether an organisation has an active person with an access grant inside every one of these audiences: the same
+ * rule as `inAudience` over `readAudienceFacts` (a role, the grant's unit or a group's external id, any of them; `all`
+ * admits everyone), asked as one query.
+ */
+export async function organisationInAudiences(organisationId: string, audiences: readonly ConnectorAudience[]) {
+  const inside = (audience: ConnectorAudience) => {
+    if (audience.mode === 'all') return sql`true`;
+    const any = [
+      ...(audience.roles?.length ? [inArray(accessGrants.role, audience.roles)] : []),
+      ...(audience.units?.length ? [inArray(accessGrants.unitId, audience.units)] : []),
+      ...(audience.groups?.length
+        ? [
+            sql`exists (select 1 from ${groupMembers} join ${groups} on ${groups.id} = ${groupMembers.groupId} where ${groupMembers.personId} = ${people.id} and ${inArray(groups.externalId, audience.groups)})`,
+          ]
+        : []),
+    ];
+    return any.length ? or(...any)! : sql`false`;
+  };
+  const [row] = await database()
+    .select({ id: people.id })
+    .from(people)
+    .innerJoin(accessGrants, eq(accessGrants.personId, people.id))
+    .where(and(eq(people.organisationId, organisationId), eq(people.enabled, true), ...audiences.map(inside)))
+    .limit(1);
+  return !!row;
 }
 export async function resolveSubject(issuer: string, subject: string) {
   const [row] = await database()

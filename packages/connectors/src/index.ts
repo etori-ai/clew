@@ -38,6 +38,8 @@ import {
   DocumentBundleSchema,
   ENTITY_KEY_MAX,
   ENTITY_KEYS_MAX,
+  HoldingsInputSchema,
+  HoldingsOutputSchema,
   MAX_DOCUMENT_BYTES,
   SiteHeaderOutputSchema,
   contractProblems,
@@ -45,6 +47,7 @@ import {
   isEntityKind,
   type DocumentRequest,
   type DocumentContent,
+  type HoldingsOutput,
   type SiteHeaderOutput,
 } from '@clew/contracts';
 import { Value } from 'typebox/value';
@@ -405,6 +408,26 @@ export interface Connector {
   header?: string;
   /** The protocol a remote connector's manifest is written to (D60); absent for Clew's own, which follow the current one. */
   protocol?: number;
+  /**
+   * The reads Clew makes as the installation itself (D119), apart from `capabilities`: no person's path reaches them.
+   * Only `Registry.holdingsSources` and `Registry.readHoldings` call them.
+   */
+  installation?: InstallationRead<any, any>[];
+}
+/**
+ * A read Clew makes as the installation itself, with no person behind the call (D119): no actor, nobody resolved, no
+ * delegated token. Not a capability, so it is never in `capabilities`, never a tool, a view, a card's action or a
+ * callback's target. Today only the holdings profile, `<id>.holdings` (D108 item 9).
+ */
+export interface InstallationRead<I = unknown, O = unknown> {
+  /** `<connector id>.<profile>`, one of `INSTALLATION_PROFILES`. */
+  name: string;
+  /** Swedish, as an administrator reads it. */
+  title: string;
+  description: string;
+  input: TSchema;
+  output: TSchema;
+  run: (input: I, context: { signal?: AbortSignal }) => Promise<O>;
 }
 
 export class CapabilityError extends Error {
@@ -413,6 +436,63 @@ export class CapabilityError extends Error {
     this.name = 'CapabilityError';
   }
 }
+/** The protocol's error kinds (`ProtocolError.code`). */
+export type SourceErrorCode = 'invalid' | 'denied' | 'not-found' | 'unavailable' | 'unknown';
+/**
+ * Why a read made as the installation gave no answer (D119), in the protocol's error kinds: `not-found` (no enabled
+ * connector declares it for the installation), `invalid` (the input was refused, Clew's or the source's: a cursor the
+ * source does not know), `denied` (the source refused Clew's assertion or its own credential: an operator's matter),
+ * `unavailable` (no answer in time, or a source that is down), `unknown` (anything else, an answer outside the declared
+ * shape or the profile among them). The message is Swedish and names no person.
+ */
+export class InstallationReadError extends CapabilityError {
+  constructor(
+    readonly code: SourceErrorCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'InstallationReadError';
+  }
+}
+/**
+ * What each kind of failure of a read made as the installation says (D119), in Clew's words: a connector's own message
+ * is never passed on, into a log, an audit row or an administrator's check, since nobody knows what it carries (D91).
+ * `source` is the connector's name as the administration shows it.
+ */
+export function installationReadText(code: SourceErrorCode, source: string): string {
+  switch (code) {
+    case 'invalid':
+      return `${source} godtog inte förfrågan.`;
+    case 'denied':
+      return `${source} godtar inte Clews intyg.`;
+    case 'not-found':
+      return UNKNOWN;
+    case 'unavailable':
+      return `${source} svarar inte just nu.`;
+    default:
+      return 'Källans svar kunde inte verifieras.';
+  }
+}
+/** An enabled connector that answers the holdings profile for the installation (D119). */
+export interface HoldingsSource {
+  connectorId: string;
+  /** The system as a person reads it: the connector's `source`. */
+  source: string;
+}
+/**
+ * The port Clew's competence register copies every source's holdings through (D108 item 9, D119). Only the core holds
+ * it: composition binds it to the registry, and nothing a person, the model or a connector reaches can call it.
+ * `readHoldings` reads one page as the installation, validated against the read's declaration and the profile, and
+ * throws `InstallationReadError` with the protocol's error kind.
+ */
+export interface HoldingsReader {
+  holdingsSources(): Promise<HoldingsSource[]>;
+  readHoldings(connectorId: string, cursor?: string, options?: { signal?: AbortSignal }): Promise<HoldingsOutput>;
+}
+/** The schemas of each profile Clew reads as the installation (D119), checked on every call besides the declaration. */
+const INSTALLATION_PROFILE_SCHEMAS: Record<string, { input: TSchema; output: TSchema }> = {
+  holdings: { input: HoldingsInputSchema, output: HoldingsOutputSchema },
+};
 
 /**
  * What an administrator decided about a connector (D23): on or off, who sees it, whether it pushes cards and offers
@@ -487,12 +567,17 @@ export interface RegistryOptions {
   relations?: RelationResolver;
 }
 
-export class Registry {
+export class Registry implements HoldingsReader {
   private readonly ajv = addFormats(new Ajv({ allErrors: false, strict: false, addUsedSchema: false }));
   private validators = new WeakMap<object, ReturnType<Ajv['compile']>>();
   private refresh: () => Promise<void> = async () => {};
   private connectors = new Map<string, Connector>();
   private capabilities = new Map<string, { connector: Connector; capability: Capability<any, any> }>();
+  /**
+   * The reads Clew makes as the installation (D119), kept apart from `capabilities`: every person's path looks a name
+   * up there, so a name here is as unknown to it as a name nobody declared.
+   */
+  private installationReads = new Map<string, { connector: Connector; read: InstallationRead<any, any> }>();
   private governed = new Map<string, Governance>();
   /** The inputs of each capability that name an entity (D117), drawn from the declarations at installation. */
   private named = new Map<string, NamedInputs>();
@@ -573,14 +658,16 @@ export class Registry {
   private check(connector: Connector) {
     const problems = connectorProblems(connector, schema => this.validator(schema));
     if (problems.length) throw new Error(problems[0]);
-    for (const c of connector.capabilities) {
-      const existing = this.capabilities.get(c.name);
+    // One name space for both: a person's name and the installation's never collide, whichever connector declares them.
+    for (const name of [...connector.capabilities, ...(connector.installation ?? [])].map(c => c.name)) {
+      const existing = this.capabilities.get(name) ?? this.installationReads.get(name);
       if (existing && existing.connector.id !== connector.id)
-        throw new Error(`Capability ${c.name} is already registered.`);
+        throw new Error(`Capability ${name} is already registered.`);
     }
   }
   private install(connector: Connector) {
     for (const c of connector.capabilities) this.capabilities.set(c.name, { connector, capability: c });
+    for (const r of connector.installation ?? []) this.installationReads.set(r.name, { connector, read: r });
     for (const [name, inputs] of namedInputs(connector)) this.named.set(name, inputs);
     this.connectors.set(connector.id, connector);
     return this;
@@ -599,6 +686,7 @@ export class Registry {
       this.capabilities.delete(c.name);
       this.named.delete(c.name);
     }
+    for (const r of found.installation ?? []) this.installationReads.delete(r.name);
     this.connectors.delete(id);
     return true;
   }
@@ -1233,6 +1321,70 @@ export class Registry {
     return [...this.connectors.values()].some(
       c => this.governance(c.id).state === 'enabled' && c.facts?.some(f => f.kind === kind),
     );
+  }
+  /**
+   * The connectors that answer the holdings profile for the installation (D108 item 9, D119): enabled, declaring
+   * `<id>.holdings` under `installation`, the read not switched off. By connector id. The call itself names nobody,
+   * so no audience narrows it; what it answers is about people, so the competence register keeps a row only for a
+   * person inside the connector's audience (D23, composition's `admitted`).
+   */
+  async holdingsSources(): Promise<HoldingsSource[]> {
+    await this.refresh();
+    return [...this.installationReads.values()]
+      .filter(
+        ({ connector, read }) => read.name === connector.id + '.holdings' && this.answers(connector.id, read.name),
+      )
+      .map(({ connector }) => ({ connectorId: connector.id, source: connector.source }))
+      .sort((a, b) => compare(a.connectorId, b.connectorId));
+  }
+  /**
+   * One page of every holding one source has, read as the installation (D119): `{}` for the first page, `{ cursor }`
+   * with the `next` of the page before. Validated against the read's declaration and the profile; refused with
+   * `InstallationReadError` in the protocol's error kinds. The core's alone: no person's path leads here.
+   */
+  async readHoldings(
+    connectorId: string,
+    cursor?: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<HoldingsOutput> {
+    return this.asInstallation<HoldingsOutput>(
+      connectorId + '.holdings',
+      cursor === undefined ? {} : { cursor },
+      options,
+    );
+  }
+  /** Whether a connector answers one of its installation reads now: enabled, and the read not switched off (D23, D119). */
+  private answers(connectorId: string, name: string) {
+    const governance = this.governance(connectorId);
+    return governance.state === 'enabled' && governance.capabilities[name]?.enabled !== false;
+  }
+  /**
+   * Run a read the installation makes itself (D119). The one way into `installationReads`, and private: a person's path
+   * (`run`, `validate`, `document`, `clewFor`, `scan`, `header`) never comes here, and this never takes an actor, so
+   * nothing a person, the model or a connector sends can name such a read. The input and the answer are checked against
+   * the declaration and the profile, and the governance again after the answer, as a person's call is.
+   */
+  private async asInstallation<O>(name: string, input: unknown, context: { signal?: AbortSignal }): Promise<O> {
+    await this.refresh();
+    const found = this.installationReads.get(name);
+    if (!found || !this.answers(found.connector.id, name)) throw new InstallationReadError('not-found', UNKNOWN);
+    const profile = INSTALLATION_PROFILE_SCHEMAS[name.slice(found.connector.id.length + 1)];
+    if (!this.validator(found.read.input)(input) || (profile && !this.validator(profile.input)(input)))
+      throw new InstallationReadError('invalid', 'Ogiltig förfrågan till ' + name + '.');
+    let output: unknown;
+    try {
+      output = await found.read.run(input, context.signal ? { signal: context.signal } : {});
+    } catch (error) {
+      if (error instanceof InstallationReadError) throw error;
+      throw new InstallationReadError('unavailable', `${found.connector.source} svarar inte just nu.`);
+    }
+    if (!this.validator(found.read.output)(output) || (profile && !this.validator(profile.output)(output)))
+      throw new InstallationReadError('unknown', 'Källans svar kunde inte verifieras.');
+    // An administrator can switch the connector off while it answers: nothing is released under the old decision.
+    await this.refresh();
+    if (this.installationReads.get(name)?.connector !== found.connector || !this.answers(found.connector.id, name))
+      throw new InstallationReadError('not-found', UNKNOWN);
+    return output as O;
   }
   /** The read a row of this capability's view opens (D38), when the person may call it. */
   private opens(actor: Actor, capability: Capability): ViewOpen | undefined {

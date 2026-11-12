@@ -35,7 +35,7 @@ import { scim } from './composition/people';
 import { talkRoutes } from './routes/talks';
 import { talks } from './composition/talks';
 import { competenceRoutes } from './routes/competence';
-import { competence } from './composition/competence';
+import { competence, startCompetenceCopy } from './composition/competence';
 
 // Local secrets written by `bun run auth:setup`. Never committed, never read by the browser bundle.
 for (const file of ['.env.local']) {
@@ -64,6 +64,7 @@ const startup = startupReadiness({
     startDurableRuntime();
     watchConnectors(connectorReconcile);
     startJobs();
+    startCompetenceCopy();
     startAssistantProbe();
     startRefresh();
     void loadConnectors(registry)

@@ -11,6 +11,9 @@ import type {
 } from '@clew/contracts';
 import {
   CapabilityError,
+  InstallationReadError,
+  installationReadText,
+  type SourceErrorCode,
   Registry,
   UNKNOWN,
   namedInputs,
@@ -20,7 +23,13 @@ import {
   type RelationResolver,
 } from './index';
 import { fetchManifest, remoteConnector, type AssertionBinding, type FetchLike } from './remote';
-import { PROTOCOL_VERSION, protocolTerms, type AboutPlace, type ConnectorManifest } from './protocol';
+import {
+  INSTALLATION_ROUTE,
+  PROTOCOL_VERSION,
+  protocolTerms,
+  type AboutPlace,
+  type ConnectorManifest,
+} from './protocol';
 import { menuRowOf, placesOf, rowsKey, viewRows, viewOutputProblem } from './views';
 
 /**
@@ -39,6 +48,11 @@ export interface CheckOptions {
   id?: string;
   assert: (actor: Actor, chain?: string[], binding?: AssertionBinding) => Promise<string>;
   assertForeign: (actor: Actor) => Promise<string>;
+  /**
+   * The installation's own assertion (D119), for the reads the manifest declares under `installation`: the check reads
+   * their first pages as Clew would. Absent, they are not read; a person's assertion on their route is probed either way.
+   */
+  assertInstallation?: (binding: AssertionBinding & { capability: string }) => Promise<string>;
   fetch?: FetchLike;
   /** Validates `{}` against a capability's input schema with a real validator. Absent, a schema that lists `required` properties is taken to need input. */
   acceptsEmptyInput?: (schema: object) => boolean;
@@ -190,7 +204,13 @@ export async function checkConnector(
       `Använder personens egen behörighet mot ${manifest.delegation.audience}. Kontrollen har ingen inloggning och kan inte pröva det, så nekade svar är väntade.`,
     );
   }
-  const remote = remoteConnector(manifest, { url, key: options.key, assert: options.assert, fetch: fetchImpl });
+  const remote = remoteConnector(manifest, {
+    url,
+    key: options.key,
+    assert: options.assert,
+    ...(options.assertInstallation ? { installation: options.assertInstallation } : {}),
+    fetch: fetchImpl,
+  });
   const registry = new Registry({
     onRefused: (_id, topic, problem) => {
       if (topic.startsWith('figure:')) {
@@ -566,6 +586,70 @@ export async function checkConnector(
       'Verktyg i menyn',
       `${tools.map(t => t.row!.label).join(', ')} kan väljas till menyn av en administratör.`,
     );
+  }
+  // The reads Clew makes as the installation (D119): the first pages as Clew reads them, and a person's assertion on
+  // their route, which the connector itself must refuse. What the pages hold stays out (D23, D44): counts only.
+  for (const read of manifest.installation ?? []) {
+    const head = `${read.name} as the installation`;
+    const row = newRow();
+    if (!options.assertInstallation) {
+      warn(`${head}: not read; the check was given no installation signer`);
+      row.note('warn', 'Kontrollen kunde inte läsa som installationen.');
+    } else
+      try {
+        const started = Date.now();
+        const pages = [await registry.readHoldings(manifest.id)];
+        if (pages[0]!.next) pages.push(await registry.readHoldings(manifest.id, pages[0]!.next));
+        const ms = Date.now() - started;
+        const keys = pages.flatMap(p => p.rows.map(r => r.key.toLowerCase()));
+        const holdings = pages.reduce((n, p) => n + p.rows.reduce((m, r) => m + r.holdings.length, 0), 0);
+        const partial = pages.reduce((n, p) => n + p.rows.filter(r => r.partial).length, 0);
+        ok(
+          `${head}: ${pages.length} ${pages.length === 1 ? 'page' : 'pages'}, ${keys.length} rows, ${holdings} holdings, ${partial} partial, ${pages.at(-1)!.next ? 'more pages follow' : 'the last page reached'}, withdrawalsReported ${pages[0]!.withdrawalsReported}, ${ms} ms`,
+        );
+        row.note(
+          'ok',
+          `Svarar Clew som installationen: ${count(keys.length, 'konto', 'konton')} på ${count(pages.length, 'sida', 'sidor')}.`,
+        );
+        if (new Set(keys).size !== keys.length) {
+          fail(`${head}: a key is answered twice across the pages read`);
+          row.note('fail', 'Samma konto besvaras två gånger.');
+        }
+        if (pages[0]!.withdrawalsReported) {
+          ok(`${head}: says a holding missing later was withdrawn`);
+          row.note('ok', 'Säger när något har dragits tillbaka.');
+        } else row.note('ok', 'Säger inte när något har dragits tillbaka, så Clew återkallar inget som saknas.');
+      } catch (error) {
+        // The kind and Clew's words for it; never the connector's own message (D91).
+        const code: SourceErrorCode = error instanceof InstallationReadError ? error.code : 'unknown';
+        fail(`${head}: the read failed (${code})`);
+        row.note('fail', `Läsningen som installationen gav fel: ${installationReadText(code, manifest.source)}`);
+      }
+    // The connector itself must refuse a person on this route: a valid assertion, bound to this very request, of the
+    // check's manager. Clew never sends one there; a connector that answers it would answer anyone it is handed.
+    try {
+      const text = JSON.stringify({ input: {} });
+      const r = await fetchImpl(url + INSTALLATION_ROUTE + encodeURIComponent(read.name), {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer ' + (await options.assert(CHECK_MANAGER, [], { body: text, capability: read.name })),
+          ...(options.key ? { 'x-clew-connector-key': options.key } : {}),
+        },
+        body: text,
+      });
+      if (r.status === 401) {
+        ok(`${head}: a person's assertion on its route is refused (401)`);
+        row.note('ok', 'En persons anrop nekas.');
+      } else {
+        fail(`${head}: a person's assertion on its route answered ${r.status}, expected 401`);
+        row.note('fail', `En persons anrop fick svaret ${r.status}. Tjänsten ska svara 401.`);
+      }
+    } catch (error) {
+      fail(`${head}: the person probe failed: ${(error as Error).message}`);
+      row.note('fail', `En persons anrop kunde inte prövas: ${(error as Error).message}`);
+    }
+    item(row.level, 'capabilities', read.title, rowText(row), read.name);
   }
   // A foreign/invalid signature must be refused by the connector itself, not only by Clew.
   const first = manifest.capabilities[0];

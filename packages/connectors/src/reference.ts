@@ -226,7 +226,66 @@ export const HANDWRITTEN_EXAMPLES: Record<string, unknown> = {
   'capabilities[].asks[].options[].value': 'approve',
   'capabilities[].asks[].options[].label': 'Godkänn',
   'capabilities[].effect': 'hr.bookTalkEffect',
+  'installation[].name': 'lms.holdings',
+  'installation[].title': 'Genomförda kurser och märken',
+  'installation[].description': 'Alla konton med genomförda kurser och märken, för kompetensregistret.',
+  'installation[].input': {
+    type: 'object',
+    properties: { cursor: { type: 'string', maxLength: 64 } },
+    additionalProperties: false,
+  },
 };
+/**
+ * The installation's read of the holdings profile (D119) as a manifest declares it: the example of `installation`,
+ * loaded by the reference's test, and its output's shape, the profile's own fields with the bounds of a page.
+ */
+export const HOLDINGS_EXAMPLE = {
+  name: 'lms.holdings',
+  title: 'Genomförda kurser och märken',
+  description: 'Alla konton med genomförda kurser och märken, för kompetensregistret.',
+  input: HANDWRITTEN_EXAMPLES['installation[].input'],
+  output: {
+    type: 'object',
+    properties: {
+      rows: {
+        type: 'array',
+        maxItems: 50,
+        items: {
+          type: 'object',
+          properties: {
+            key: { type: 'string' },
+            holdings: {
+              type: 'array',
+              maxItems: 200,
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                  type: { type: 'string' },
+                  label: { type: 'string' },
+                  kind: { enum: ['course'] },
+                  issuedOn: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+                  expiresOn: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+                },
+                required: ['id', 'type', 'label', 'kind', 'issuedOn'],
+                additionalProperties: false,
+              },
+            },
+            partial: { const: true },
+          },
+          required: ['key', 'holdings'],
+          additionalProperties: false,
+        },
+      },
+      next: { type: 'string', maxLength: 64 },
+      withdrawalsReported: { type: 'boolean' },
+    },
+    required: ['rows', 'withdrawalsReported'],
+    additionalProperties: false,
+  },
+};
+HANDWRITTEN_EXAMPLES['installation'] = [HOLDINGS_EXAMPLE];
+HANDWRITTEN_EXAMPLES['installation[].output'] = HOLDINGS_EXAMPLE.output;
 
 /** The rules between fields, as Clew applies them. Each `loader` rule is proven by a test that breaks it and reads the problem. */
 export const RULES: Rule[] = [
@@ -485,6 +544,46 @@ export const RULES: Rule[] = [
     enforced: 'loader',
     decision: 'D97',
     text: '`<id>.search`, `<id>.fetch`, `<id>.errands`, `<id>.talks`, `<id>.commitments`, `<id>.news`, a capability with `kinds` and the read the header names have shapes of their own and cannot declare `about`.',
+  },
+  {
+    id: 'installation-on-3',
+    title: 'Installation reads came with protocol 3',
+    fields: ['protocol', 'installation'],
+    enforced: 'loader',
+    decision: 'D119',
+    text: '`installation` was added under protocol 3 as an optional field: a manifest without it is read as before, and a manifest on 2 that declares it is refused. Declare protocol 3 and carry the verifier of 3.',
+  },
+  {
+    id: 'installation-profile',
+    title: 'An installation read is one of the profiles Clew reads as the installation',
+    fields: ['installation[].name', 'id', 'capabilities[].name'],
+    enforced: 'loader',
+    decision: 'D119',
+    text: 'Each entry of `installation` is named `<id>.<profile>` for a profile Clew reads with no person behind the call: today only `<id>.holdings`. No name is both a capability and an installation read, and neither list names one twice.',
+  },
+  {
+    id: 'installation-holdings-input',
+    title: 'The holdings read takes a cursor and nothing else',
+    fields: ['installation[].name', 'installation[].input'],
+    enforced: 'loader',
+    decision: 'D119',
+    text: '`<id>.holdings` takes `{}` for the first page and `{ cursor }` after: its input is an object whose only property is an optional plain string `cursor`, and it requires nothing. It never takes a key or a person: the read answers every account the source has.',
+  },
+  {
+    id: 'installation-holdings-output',
+    title: 'The holdings read answers the profile, a bounded page at a time',
+    fields: ['installation[].output'],
+    enforced: 'loader',
+    decision: 'D119',
+    text: '`<id>.holdings` answers a `HoldingsOutput`: `rows`, each with a string `key` (the value of your match field for the account, what Clew compares with a user name), `holdings` and optionally `partial: true`; `withdrawalsReported`, a boolean; and `next`, the cursor of the following page, absent on the last. Each holding has `id`, `type`, `label`, `kind` and `issuedOn`, and optionally `expiresOn`, and nothing else: no name, no free text. `rows` declares `maxItems` of at most 100 and `holdings` at most 500. Clew checks every answer against the profile too.',
+  },
+  {
+    id: 'installation-call',
+    title: 'Clew calls an installation read as itself, never as a person',
+    fields: ['installation', 'installation[].name', 'installation[].output'],
+    enforced: 'call',
+    decision: 'D119',
+    text: "Clew posts an installation read to `/clew/installation/{name}` with `{ input }` and an assertion whose subject is `clew:installation` and whose `caller` claim is `installation`, with no `actor`, bound to the body and the name. Answer it to that assertion only, and answer a person's assertion there with 401: the verifier of 3 tells them apart (`verify.installation`). The read is not a capability: no page, card, tool, job or other connector's callback can name it, whoever the person is. A page of `<id>.holdings` answers every account it reaches, a row without holdings for one that holds nothing; with `withdrawalsReported: false` Clew never reads a missing holding as revoked. Answer a cursor you no longer know as `invalid`; Clew then starts again from the first page.",
   },
   {
     id: 'scan-route',
@@ -874,7 +973,8 @@ const SECTIONS: Array<{ id: string; title: string; holds: (path: string) => bool
   {
     id: 'document',
     title: 'The document',
-    holds: p => !p.includes('.') && !['areas', 'capabilities', 'facts', 'delegation', 'header'].includes(p),
+    holds: p =>
+      !p.includes('.') && !['areas', 'capabilities', 'installation', 'facts', 'delegation', 'header'].includes(p),
   },
   { id: 'areas', title: 'areas[]', holds: p => p.startsWith('areas') },
   {
@@ -883,6 +983,7 @@ const SECTIONS: Array<{ id: string; title: string; holds: (path: string) => bool
     holds: p => p.startsWith('capabilities') && !p.startsWith('capabilities[].view'),
   },
   { id: 'view', title: 'capabilities[].view', holds: p => p.startsWith('capabilities[].view') },
+  { id: 'installation', title: 'installation[]', holds: p => p.startsWith('installation') },
   { id: 'facts', title: 'facts[]', holds: p => p.startsWith('facts') },
   { id: 'delegation', title: 'delegation', holds: p => p.startsWith('delegation') },
   { id: 'header', title: 'header', holds: p => p.startsWith('header') },

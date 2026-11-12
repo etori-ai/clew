@@ -22,7 +22,7 @@
   "tags": [
     {
       "name": "Connector",
-      "description": "Routes the connector serves and Clew calls. All JSON, all under the registered base URL. Every POST carries `Authorization: Bearer <assertion>` and `X-Clew-Connector-Key`; take the actor from the verified assertion, never from the body, and check that the assertion's `body` claim is the SHA-256 of the body received (D117)."
+      "description": "Routes the connector serves and Clew calls. All JSON, all under the registered base URL. Every POST carries `Authorization: Bearer <assertion>` and `X-Clew-Connector-Key`; take the actor from the verified assertion, never from the body, and check that the assertion's `body` claim is the SHA-256 of the body received (D117). On `/clew/installation/{name}` there is no actor: the assertion is the installation's own (D119)."
     },
     {
       "name": "Clew",
@@ -163,6 +163,100 @@
           },
           "404": {
             "description": "An unknown ref or capability: `error.code` is `not-found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The source is unavailable: `error.code` is `unavailable`. For a write this does not say whether the effect happened.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/clew/installation/{name}": {
+      "servers": [
+        {
+          "url": "{connector}",
+          "description": "The base URL the connector is registered with in Clew. Every path below is relative to it.",
+          "variables": {
+            "connector": {
+              "default": "http://127.0.0.1:4020"
+            }
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Connector"
+        ],
+        "operationId": "readAsInstallation",
+        "summary": "A read Clew makes as the installation, with no person behind it",
+        "description": "Only for a read the manifest declares under `installation` (D119), today `<id>.holdings`. No actor: the assertion's subject is `clew:installation`, its `caller` claim `installation`, and it carries no `actor` and no `callback`; it is bound to the body and to `{name}` as every request is. Answer only that assertion here: a person's assertion, whoever they are, is refused with 401, and the installation's assertion is never valid on `/clew/capabilities/{name}`. Clew never reaches this route on a person's behalf: the read is not a capability, so neither a page, a card, the model nor another connector's callback can name it.",
+        "security": [
+          {
+            "installationAssertion": [],
+            "connectorKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$"
+            },
+            "description": "The full name from the manifest's `installation`, `<id>.<profile>`."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstallationCallRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The output, validated against the read's declared output and its profile (`HoldingsOutput` for `<id>.holdings`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, such as a cursor the source does not know: `error.code` is `invalid`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The transport key or the assertion was rejected, and a person's assertion on this route. Required: the conformance check probes both."
+          },
+          "404": {
+            "description": "A name the connector does not declare for the installation: `error.code` is `not-found`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -770,7 +864,7 @@
                 "const": 2
               }
             ],
-            "description": "The version of this contract the manifest is written to, not of the connector (D60). This instance loads 3, and 2 for a window: a connector on 2 is loaded, shown with a warning in administration and in the conformance check, sent no `about` in its request bodies and held to the looser rules of 2. An additive change keeps the number; a break is a new one. 3 (D117) binds the request assertion to its body and capability, sends `about` in the body of a call whose input names people or units, and refuses a manifest in which an input that names someone is not a plain string property."
+            "description": "The version of this contract the manifest is written to, not of the connector (D60). This instance loads 3, and 2 for a window: a connector on 2 is loaded, shown with a warning in administration and in the conformance check, sent no `about` in its request bodies and held to the looser rules of 2. An additive change keeps the number; a break is a new one. 3 (D117) binds the request assertion to its body and capability, sends `about` in the body of a call whose input names people or units, and refuses a manifest in which an input that names someone is not a plain string property. `installation` (D119) was added to 3 as an optional field: a manifest without it is read as before."
           },
           "id": {
             "type": "string",
@@ -2920,6 +3014,57 @@
             },
             "description": "What the connector can do, one entry per operation. The name is the contract (D37): a break is a new name, never a changed one."
           },
+          "installation": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "title",
+                "description",
+                "input",
+                "output"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
+                  "maxLength": 80,
+                  "description": "`<connector id>.<profile>`, one of the profiles Clew reads as the installation. Today only `<id>.holdings` (D108 item 9): a read that takes a HoldingsInput (`{}`, then `{ cursor }`) and answers a HoldingsOutput, one page of every account the source has with every holding it can see, the cursor of the next page in `next`, and whether a holding missing later means it was withdrawn (`withdrawalsReported`). Clew's competence register copies the pages. Unique across `capabilities` and `installation`."
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "Swedish. What Clew reads, as an administrator reads it: \"Genomförda kurser och märken\"."
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "Swedish. What the read answers, for the administrator."
+                },
+                "input": {
+                  "type": "object",
+                  "patternProperties": {
+                    "^.*$": {}
+                  },
+                  "description": "JSON Schema of the input, which must fit the profile's (for `<id>.holdings`: an object whose only property is an optional string `cursor`, requiring nothing). Clew validates every call against it."
+                },
+                "output": {
+                  "type": "object",
+                  "patternProperties": {
+                    "^.*$": {}
+                  },
+                  "description": "JSON Schema of the output, which must fit the profile's (for `<id>.holdings`: HoldingsOutput, the same fields or fewer of the optional ones, constraints as tight or tighter). Clew validates every answer against it and against the profile."
+                }
+              },
+              "additionalProperties": false,
+              "description": "A read Clew makes as the installation, with no person behind it (D119): posted to `/clew/installation/{name}` with an assertion whose subject is `clew:installation` and whose `caller` claim is `installation`, bound to the body and the name. Answer it to that assertion only. Never a model tool and never on a page: no person, administrator included, can call it by name, and it reaches no `capabilities` path. `model: false` and a read are implied."
+            },
+            "maxItems": 1,
+            "description": "The reads Clew makes as the installation itself, with no person behind the call (D119), one per profile: today `<id>.holdings`, every holding the source has, a page at a time, for Clew's competence register (D108 item 9). Added under protocol 3; a manifest without it is untouched, and one on 2 cannot declare it."
+          },
           "uses": {
             "type": "array",
             "items": {
@@ -3239,6 +3384,63 @@
           }
         },
         "additionalProperties": false
+      },
+      "InstallationCallRequest": {
+        "type": "object",
+        "required": [
+          "input"
+        ],
+        "properties": {
+          "input": {}
+        },
+        "additionalProperties": false,
+        "description": "The body of a read Clew makes as the installation (D119): the input, validated against the read's declared input. There is no actor; the verified assertion's `caller` claim is `installation` and its subject `clew:installation`."
+      },
+      "ManifestInstallationRead": {
+        "type": "object",
+        "required": [
+          "name",
+          "title",
+          "description",
+          "input",
+          "output"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
+            "maxLength": 80,
+            "description": "`<connector id>.<profile>`, one of the profiles Clew reads as the installation. Today only `<id>.holdings` (D108 item 9): a read that takes a HoldingsInput (`{}`, then `{ cursor }`) and answers a HoldingsOutput, one page of every account the source has with every holding it can see, the cursor of the next page in `next`, and whether a holding missing later means it was withdrawn (`withdrawalsReported`). Clew's competence register copies the pages. Unique across `capabilities` and `installation`."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Swedish. What Clew reads, as an administrator reads it: \"Genomförda kurser och märken\"."
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Swedish. What the read answers, for the administrator."
+          },
+          "input": {
+            "type": "object",
+            "patternProperties": {
+              "^.*$": {}
+            },
+            "description": "JSON Schema of the input, which must fit the profile's (for `<id>.holdings`: an object whose only property is an optional string `cursor`, requiring nothing). Clew validates every call against it."
+          },
+          "output": {
+            "type": "object",
+            "patternProperties": {
+              "^.*$": {}
+            },
+            "description": "JSON Schema of the output, which must fit the profile's (for `<id>.holdings`: HoldingsOutput, the same fields or fewer of the optional ones, constraints as tight or tighter). Clew validates every answer against it and against the profile."
+          }
+        },
+        "additionalProperties": false,
+        "description": "A read Clew makes as the installation, with no person behind it (D119): posted to `/clew/installation/{name}` with an assertion whose subject is `clew:installation` and whose `caller` claim is `installation`, bound to the body and the name. Answer it to that assertion only. Never a model tool and never on a page: no person, administrator included, can call it by name, and it reaches no `capabilities` path. `model: false` and a read are implied."
       },
       "CallResponse": {
         "anyOf": [
@@ -6081,6 +6283,306 @@
         },
         "additionalProperties": false,
         "description": "What `<id>.commitments` returns: the action points the reader may see, as the system lets them see them."
+      },
+      "Holding": {
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "label",
+          "kind",
+          "issuedOn"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "The source's own id of this row, stable from one read to the next: a repeated read gives the same id, and two people never share one."
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "The source's own id of what is held (a course, a badge, a licence class), stable across reads. Clew maps it to its catalogue."
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400,
+            "description": "The type's name as the source writes it. Shown until the type is mapped to the catalogue."
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "certificate"
+              },
+              {
+                "type": "string",
+                "const": "degree"
+              },
+              {
+                "type": "string",
+                "const": "course"
+              },
+              {
+                "type": "string",
+                "const": "authorisation"
+              },
+              {
+                "type": "string",
+                "const": "badge"
+              }
+            ],
+            "description": "What the source says the holding is."
+          },
+          "issuedOn": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "maxLength": 10,
+            "description": "The day it was issued or completed, `YYYY-MM-DD`."
+          },
+          "expiresOn": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "maxLength": 10,
+            "description": "The day it ends, where the issuer set one. Absent when the source keeps no end."
+          }
+        },
+        "additionalProperties": false,
+        "description": "One holding of one person, as the source keeps it: no name, no free text, no document."
+      },
+      "HoldingsRow": {
+        "type": "object",
+        "required": [
+          "key",
+          "holdings"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "The value of the source's match field for this account: what Clew compares with a person's provisioned user name, without regard to case."
+          },
+          "holdings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "type",
+                "label",
+                "kind",
+                "issuedOn"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "The source's own id of this row, stable from one read to the next: a repeated read gives the same id, and two people never share one."
+                },
+                "type": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "The source's own id of what is held (a course, a badge, a licence class), stable across reads. Clew maps it to its catalogue."
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 400,
+                  "description": "The type's name as the source writes it. Shown until the type is mapped to the catalogue."
+                },
+                "kind": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "certificate"
+                    },
+                    {
+                      "type": "string",
+                      "const": "degree"
+                    },
+                    {
+                      "type": "string",
+                      "const": "course"
+                    },
+                    {
+                      "type": "string",
+                      "const": "authorisation"
+                    },
+                    {
+                      "type": "string",
+                      "const": "badge"
+                    }
+                  ],
+                  "description": "What the source says the holding is."
+                },
+                "issuedOn": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                  "maxLength": 10,
+                  "description": "The day it was issued or completed, `YYYY-MM-DD`."
+                },
+                "expiresOn": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                  "maxLength": 10,
+                  "description": "The day it ends, where the issuer set one. Absent when the source keeps no end."
+                }
+              },
+              "additionalProperties": false,
+              "description": "One holding of one person, as the source keeps it: no name, no free text, no document."
+            },
+            "maxItems": 500,
+            "description": "Every holding of this account the source can see; empty when it holds nothing."
+          },
+          "partial": {
+            "type": "boolean",
+            "const": true,
+            "description": "Something of this account was refused or could not be dated, and is left out of this answer. Its absence does not make the row complete."
+          }
+        },
+        "additionalProperties": false,
+        "description": "One account of the source: a row without holdings is an account that holds nothing, and an account with no row is one the source did not answer for."
+      },
+      "HoldingsInput": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "Where the next page starts, as the source wrote it in the previous page's `next`. Opaque to Clew, which sends it back unchanged."
+          }
+        },
+        "additionalProperties": false,
+        "description": "What `<id>.holdings` takes (D119): `{}` for the first page, then `{ cursor }` with the `next` of the page before."
+      },
+      "HoldingsOutput": {
+        "type": "object",
+        "required": [
+          "rows",
+          "withdrawalsReported"
+        ],
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "key",
+                "holdings"
+              ],
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "description": "The value of the source's match field for this account: what Clew compares with a person's provisioned user name, without regard to case."
+                },
+                "holdings": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "type",
+                      "label",
+                      "kind",
+                      "issuedOn"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "The source's own id of this row, stable from one read to the next: a repeated read gives the same id, and two people never share one."
+                      },
+                      "type": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "The source's own id of what is held (a course, a badge, a licence class), stable across reads. Clew maps it to its catalogue."
+                      },
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 400,
+                        "description": "The type's name as the source writes it. Shown until the type is mapped to the catalogue."
+                      },
+                      "kind": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "const": "certificate"
+                          },
+                          {
+                            "type": "string",
+                            "const": "degree"
+                          },
+                          {
+                            "type": "string",
+                            "const": "course"
+                          },
+                          {
+                            "type": "string",
+                            "const": "authorisation"
+                          },
+                          {
+                            "type": "string",
+                            "const": "badge"
+                          }
+                        ],
+                        "description": "What the source says the holding is."
+                      },
+                      "issuedOn": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                        "maxLength": 10,
+                        "description": "The day it was issued or completed, `YYYY-MM-DD`."
+                      },
+                      "expiresOn": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                        "maxLength": 10,
+                        "description": "The day it ends, where the issuer set one. Absent when the source keeps no end."
+                      }
+                    },
+                    "additionalProperties": false,
+                    "description": "One holding of one person, as the source keeps it: no name, no free text, no document."
+                  },
+                  "maxItems": 500,
+                  "description": "Every holding of this account the source can see; empty when it holds nothing."
+                },
+                "partial": {
+                  "type": "boolean",
+                  "const": true,
+                  "description": "Something of this account was refused or could not be dated, and is left out of this answer. Its absence does not make the row complete."
+                }
+              },
+              "additionalProperties": false,
+              "description": "One account of the source: a row without holdings is an account that holds nothing, and an account with no row is one the source did not answer for."
+            },
+            "maxItems": 100,
+            "description": "The accounts of this page, each once."
+          },
+          "next": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "The cursor of the following page. Absent on the last page."
+          },
+          "withdrawalsReported": {
+            "type": "boolean",
+            "description": "Whether a holding missing from a later read means it was withdrawn. When false, absence is never a revocation: the source leaves things out without saying so."
+          }
+        },
+        "additionalProperties": false,
+        "description": "What `<id>.holdings` answers (D119): one page of accounts and their holdings, with the cursor of the next."
       },
       "Delegation": {
         "type": "object",
@@ -9110,6 +9612,31 @@
                   "additionalProperties": false
                 },
                 "description": "The rows an administrator could put in the menu."
+              },
+              "installation": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "name",
+                    "title",
+                    "check"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "check": {
+                      "type": "string",
+                      "description": "What the conformance check does with it."
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "description": "The reads Clew would make as the installation itself (D119), present when the manifest declares any: never offered to a person, the model or another connector."
               }
             },
             "additionalProperties": false,
@@ -9126,6 +9653,12 @@
         "scheme": "bearer",
         "bearerFormat": "JWT",
         "description": "RS256 assertion signed by the installation: who is acting (`actor`), for which connector, for at most two minutes, bound to one request (D117): `body` is the SHA-256 of the exact request body, base64url, and on `/clew/capabilities/{name}` `capability` is that name. Verify against `/api/connectors/jwks`, and recompute both from the request received; the body's `input` and `about` (`CallAbout`) are then Clew's."
+      },
+      "installationAssertion": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "RS256 assertion signed by the installation for a read it makes itself (D119): `sub` is `clew:installation`, `caller` is `installation`, there is no `actor` and no `callback`, for this connector only and for at most two minutes, and it is bound to one request as every assertion is: `body` is the SHA-256 of the exact request body, base64url, and `capability` the name on `/clew/installation/{name}`. Verify against `/api/connectors/jwks`. A person's assertion never verifies as this one, and this one never verifies as a person's."
       },
       "connectorKey": {
         "type": "apiKey",
