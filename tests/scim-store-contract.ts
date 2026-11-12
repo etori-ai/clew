@@ -602,7 +602,8 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
           total: 1,
           rows: [],
         });
-        // Words: each one somewhere in the name, the title, the user name or the e-mail, without regard to case, å included.
+        // Words: each one somewhere in the name, the title, the user name, the e-mail or an employment's title, without
+        // regard to case, å included.
         expect(await found({ words: ['BERG'] })).toEqual([anna]);
         expect(await found({ words: ['åke'] })).toEqual([ake]);
         expect(await found({ words: ['ÖST'] })).toEqual([zara]);

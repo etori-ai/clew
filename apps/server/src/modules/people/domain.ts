@@ -187,9 +187,9 @@ export const bySwedish = (a: string, b: string) => a.localeCompare(b, 'sv');
 /**
  * D100: what the people list of Administration › Användare is narrowed by, as a store reads it. Every part narrows
  * further and an absent part narrows nothing. `words` each match, without regard to case, somewhere in the name, the
- * title (D110), the user name or the e-mail. `unitIds` is an assignment on one of the units, `role` an assignment
- * with that role, and the two together one assignment that is both. `status` is the row's reading of access
- * (`UserStatus`), `capability` a capability on the grant.
+ * title (D110), the user name, the e-mail or the title of one of the person's employments (D114). `unitIds` is an
+ * assignment on one of the units, `role` an assignment with that role, and the two together one assignment that is
+ * both. `status` is the row's reading of access (`UserStatus`), `capability` a capability on the grant.
  */
 export interface UserSearch {
   words?: readonly string[];
