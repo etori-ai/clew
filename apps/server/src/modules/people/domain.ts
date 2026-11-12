@@ -1,13 +1,13 @@
 /**
  * Deriving a person's authority from what was pushed (D68) and mapped (D85). Pure: no I/O, no clock.
  *
- * A group's meaning is a key in its `externalId`: `unit:<unitId>` makes the member an employee of that unit and names
- * it with the group's `displayName`; `unit-manager:<unitId>` makes the member its manager, which wins over `unit:` for
- * the same unit; `capability:<name>` gives a capability of the closed list; `protected` was to keep the person out of
- * lists others see, and D93 refuses that key at the boundary until Clew decides whether it may hold the fact, so the
- * flag below is false in any installation provisioned since. Any other group gives nothing here; a rules row (group
- * to capability) may give a capability. A person with no unit membership has no active grant, so a mapping mistake
- * fails closed.
+ * A group's meaning is a key in its `externalId`, and three keys carry one: `unit:<unitId>` makes the member an
+ * employee of that unit and names it with the group's `displayName`; `unit-manager:<unitId>` makes the member its
+ * manager, which wins over `unit:` for the same unit; `capability:<name>` gives a capability of the closed list. The
+ * key `protected` is refused at the SCIM boundary (D93), and so is a key written wrong, such as a reserved word in
+ * another case or a capability outside the list (D96): neither is stored, so neither reaches this derivation, and the
+ * `protected` flag below stays false. Any other group gives nothing here; a rules row (group to capability) may give a
+ * capability. A person with no unit membership has no active grant, so a mapping mistake fails closed.
  */
 import {
   CAPABILITIES,
@@ -141,9 +141,10 @@ export function deriveAuthority(
   };
 }
 /**
- * Whether a group with this key can give its members anything: a key `deriveAuthority` reads (`unit:`, `unit-manager:`,
- * `capability:`, `protected`), or one a D85 row of the organisation names. A write of any other group moves nobody's
- * grant, whatever it does to the group, so nobody is derived for it.
+ * Whether a group with this key can give its members anything: a key with meaning (`unit:`, `unit-manager:`,
+ * `capability:`), or one a D85 row of the organisation names. A write of any other group moves nobody's grant, whatever
+ * it does to the group, so nobody is derived for it. `protected` is matched only because `deriveAuthority` reads it: the
+ * SCIM boundary refuses that key (D93), and a key written wrong (D96), so no stored group carries either.
  */
 export function givesAuthority(key: string | null, rules: readonly GroupCapabilityRule[]): boolean {
   return (
