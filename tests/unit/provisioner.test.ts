@@ -1052,7 +1052,7 @@ describe('the synthetic provisioner', () => {
     expect(warned.filter(f => f.level === 'fail')).toEqual([]);
     expect(warned.filter(f => f.level === 'warn').map(f => f.text)).toEqual([
       '1 active user has no unit: or unit-manager: group and can do nothing in Clew: lost.',
-      '1 employment names a unit that is no longer held. Reconcile lost (unit-closed) with the directory.',
+      '1 employment names a unit that is no longer held. Send current employments for the affected users: lost (unit-closed).',
       '1 unit has a unit-manager: group and no unit: group, so the unit is shown by its id instead of a name: unit-nameless.',
       '1 unit or unit-manager group has no members: unit:unit-empty.',
       '1 unit has people and no manager, on the unit or on any unit above it, so its people report to nobody: unit:unit-adrift-below.',
@@ -1263,6 +1263,11 @@ test('the profile guide changes one of two work numbers and one of two employmen
     schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
     Operations: [{ op: 'replace', value: phones }],
   });
+  expect((await client.request('GET', path)).body.phoneNumbers).toEqual([
+    { type: 'work', value: '070-174 06 05' },
+    { type: 'work', value: '070-174 06 06' },
+    { type: 'Jour', value: '070-174 06 07' },
+  ]);
   await client.request('PATCH', path, changePhone);
   await client.request('PATCH', path, changeEmployment);
   const { body } = await client.request('GET', path);

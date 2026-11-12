@@ -1392,7 +1392,7 @@ export const schemaDocuments = (base: string) => [
         multiValued: true,
         required: true,
         description:
-          'Clew publishes the first work address. Otherwise it prefers untyped addresses, then any remaining addresses. Within each fallback it takes the primary address or the first.',
+          'Clew publishes the first work address. Otherwise it prefers untyped addresses, then any remaining addresses. Within each fallback it takes the primary address or the first. The selected address is returned with type "work" and primary true.',
         subAttributes: [attribute('value', 'string'), attribute('type', 'string'), attribute('primary', 'boolean')],
       }),
       attribute('phoneNumbers', 'complex', {

@@ -46,3 +46,9 @@ Twelve focused tests for phone numbers, employments and the synthetic Mikael pas
 4. **Employment change events.** The protocol guide lists the unit, title, employment type, start date and percentage as triggers for sending the current jobs. The acceptance check asks the writer to compare a two-job GET with the source. The executable example verifies both jobs after a percentage changes.
 
 Both list descriptions explain the effect of an unfiltered `remove` with a value. The provisioning checker names the user and the missing unit for reconciliation. The 33 focused tests for SCIM clients, the guide examples, the checker and e-mail selection passed against the in-memory implementation.
+
+## Pre-merge review of the fixes
+
+Claude Opus 5.5 reviewed the patch at `9cb77d4` through the terminal with extra-high effort. It reported no blocking code defects and identified documentation and coverage gaps. The guide now explains how missing values on unknown paths are handled, when a primary phone filter is ambiguous, and which parts of the returned e-mail and phone numbers to compare with the source.
+
+The follow-up tests exercise a missing value on a title and an unknown path, a deactivation alongside an ambiguous phone update, discovery and read-back for a primary home e-mail, and the initial phone list in the worked example. The earlier [e-mail selection test](../../tests/unit/scim.test.ts) also covers the second of two non-work addresses being primary. GitHub CI on `9cb77d4` ran the full check and the PostgreSQL reliability workflow successfully.

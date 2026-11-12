@@ -214,10 +214,12 @@ describe('phone numbers on a SCIM user', () => {
     const shared = { ...work, value: mobile.value };
     const phoneNumbers = [mobile, second, shared];
     const path = '/Users/' + (await create(1, { phoneNumbers }));
-    const byType = 'phoneNumbers[type eq "mobile" and primary eq true].value';
+    const byType = 'phoneNumbers[type eq "mobile" and primary eq true]';
     for (const operation of [
-      { op: 'replace', path: byType, value: '070-100 00 04' },
-      { op: 'add', path: byType, value: '070-100 00 04' },
+      { op: 'replace', path: byType + '.value', value: '070-100 00 04' },
+      { op: 'add', path: byType + '.value', value: '070-100 00 04' },
+      { op: 'add', path: byType, value: { value: '070-100 00 04' } },
+      { op: 'replace', path: byType + '.type', value: 'work' },
       { op: 'remove', path: `phoneNumbers[value eq "${mobile.value}" and primary eq false]` },
     ]) {
       expect(await patch(path, operation)).toMatchObject({ status: 400, body: { scimType: 'invalidPath' } });
@@ -226,6 +228,10 @@ describe('phone numbers on a SCIM user', () => {
     const corrected = [mobile, { ...second, value: '070-100 00 04' }, shared];
     await patch(path, { op: 'replace', path: 'phoneNumbers', value: corrected });
     expect((await json('GET', path)).body.phoneNumbers).toEqual(corrected);
+    expect(
+      await patch(path, { op: 'remove', path: byType }, { op: 'replace', path: 'active', value: false }),
+    ).toMatchObject({ status: 200 });
+    expect((await json('GET', path)).body).toMatchObject({ active: false, phoneNumbers: corrected });
     await patch(path, { op: 'replace', path: 'phoneNumbers[type eq "mobile"].value', value: second.value });
     expect((await json('GET', path)).body.phoneNumbers).toEqual([second, shared]);
   });
@@ -294,12 +300,17 @@ describe('current employments on a SCIM user', () => {
     const { create, group, json, patch } = app();
     await units(group);
     const phoneNumbers = [{ type: 'work', value: '010-100 00 01' }];
-    const stored = { phoneNumbers, [urn]: { employments: jobs } };
+    const stored = { title: 'Pedagog', phoneNumbers, [urn]: { employments: jobs } };
     const path = '/Users/' + (await create(1, stored));
-    for (const list of ['phoneNumbers', field]) {
+    for (const attribute of [
+      'phoneNumbers',
+      field,
+      'title',
+      'urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:manager',
+    ]) {
       for (const op of ['add', 'replace']) {
         expect(
-          await patch(path, { op: 'replace', path: 'displayName', value: 'Changed' }, { op, path: list }),
+          await patch(path, { op: 'replace', path: 'displayName', value: 'Changed' }, { op, path: attribute }),
         ).toMatchObject({ status: 400, body: { scimType: 'invalidSyntax' } });
         expect((await json('GET', path)).body).toMatchObject({ ...stored, active: true, displayName: 'User 1' });
       }
@@ -955,6 +966,25 @@ describe('what an outside review of the merged server found (2026-11-12)', () =>
     });
     expect(replaced.body.meta.lastModified > read.meta.lastModified).toBe(true);
     expect((await json('GET', '/Groups/' + g)).body.meta.lastModified).toBe(replaced.body.meta.lastModified);
+  });
+  test('a fallback address reads back as the published work address described by discovery', async () => {
+    const { create, json } = app();
+    const id = await create(1, {
+      emails: [
+        { value: 'first@example.org', type: 'home' },
+        { value: 'selected@example.org', type: 'home', primary: true },
+      ],
+    });
+    expect((await json('GET', '/Users/' + id)).body.emails).toEqual([
+      { value: 'selected@example.org', type: 'work', primary: true },
+    ]);
+    const schema = await json('GET', '/Schemas/' + USER);
+    expect(schema.body.attributes).toContainEqual(
+      expect.objectContaining({
+        name: 'emails',
+        description: expect.stringContaining('returned with type "work" and primary true'),
+      }),
+    );
   });
   test('email lists use the same work and primary preference for filtered and unfiltered PATCH paths', async () => {
     const { create, patch } = app();
