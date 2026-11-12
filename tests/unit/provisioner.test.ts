@@ -1010,27 +1010,34 @@ describe('the synthetic provisioner', () => {
         { unitId: 'a', role: 'manager' },
       ]);
     });
-    test('a unit that does not take the people the source adds to it leaves them on the units Clew holds them on, and only them', async () => {
+    test('a unit that does not take the people the source adds to it leaves them on the units Clew holds them on, and only them, and is reported once', async () => {
       const { store, client } = stack();
       const units = ['a', 'b', 'c', 'd', 'e'].map(id => unit(id, 'Enhet ' + id));
       const anna = someone('e-1', 'anna', 'a'),
         bo = someone('e-2', 'bo', 'b', { alsoIn: ['c'] }),
+        eva = someone('e-6', 'eva', 'b'),
         rest = [someone('e-3', 'cia', 'd'), someone('e-4', 'dan', 'e')];
-      await reconcile(client, source(units, [anna, bo, ...rest]), scope);
+      await reconcile(client, source(units, [anna, bo, eva, ...rest]), scope);
       const b = [...store.state.groups.values()].find(g => g.externalId === 'unit:b')!.id;
-      // Clew refuses the addition to B, for whatever reason it has.
+      // Clew refuses every change to B's people, for whatever reason it has.
       const refusing: ScimClient = {
         async request(method, path, body) {
-          const operations = (body as { Operations?: Array<{ op: string }> } | undefined)?.Operations;
-          if (method === 'PATCH' && path === '/Groups/' + b && operations?.some(o => o.op === 'add'))
+          if (method === 'PATCH' && path === '/Groups/' + b)
             throw new ScimClientError(400, 'invalidValue', 'Refused for the test.', null);
           return client.request(method, path, body);
         },
       };
-      // Anna moves to B, Bo, who is on B already, is no longer on C as well, and somebody new begins on B.
+      // Anna moves to B, Bo, who is on B already, is no longer on C as well, Eva moves from B to E, and somebody new
+      // begins on B.
       const summary = await reconcile(
         refusing,
-        source(units, [{ ...anna, department: 'b' }, { ...bo, alsoIn: [] }, ...rest, someone('e-5', 'ny', 'b')]),
+        source(units, [
+          { ...anna, department: 'b' },
+          { ...bo, alsoIn: [] },
+          { ...eva, department: 'e' },
+          ...rest,
+          someone('e-5', 'ny', 'b'),
+        ]),
         scope,
       );
       expect(summary).toMatchObject({
@@ -1044,7 +1051,13 @@ describe('the synthetic provisioner', () => {
         ],
         groupsRefused: [{ externalId: 'unit:b', detail: 'Refused for the test.' }],
       });
-      expect(['unit:a', 'unit:b', 'unit:c'].map(key => holders(store, key))).toEqual([['anna'], ['bo'], []]);
+      // Eva is on E as well now, and stays on B only because Clew would not take her off it.
+      expect(['unit:a', 'unit:b', 'unit:c', 'unit:e'].map(key => holders(store, key))).toEqual([
+        ['anna'],
+        ['bo', 'eva'],
+        [],
+        ['dan', 'eva'],
+      ]);
     });
     test('somebody the source places on a unit that was not written stays on the units Clew holds them on, without the role the source withdrew, and one who returns to it stays inactive until it is written', async () => {
       const { store, client, grantOf } = stack();
