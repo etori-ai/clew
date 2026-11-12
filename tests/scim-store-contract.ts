@@ -238,6 +238,31 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         expect((await tx.findGroup('externalId', 'g:' + g1))?.id).toBe(g2);
       });
     });
+    test("a person's source key is one person's across the installation, inserted or updated, any number hold none, and the index refuses by its name (S4)", async () => {
+      const { store, prefix: p } = await make();
+      const [a, b] = [p + '-a', p + '-b'],
+        duplicate = { code: '23505', constraint: 'auth_person_external_id' };
+      await store.transaction(async tx => {
+        await tx.insertUser(userRow(a, p + '-org'));
+        await tx.insertUser(userRow(b, p + '-org'));
+        await tx.insertUser(userRow(p + '-n1', p + '-org', { externalId: null }));
+        await tx.insertUser(userRow(p + '-n2', p + '-org', { externalId: null }));
+      });
+      // The index is partial (S4), and under the name the SCIM route reads to answer 409 naming externalId.
+      expect(
+        await violated(
+          store.transaction(tx => tx.insertUser(userRow(p + '-c', p + '-elsewhere', { externalId: 'ext:' + a }))),
+        ),
+      ).toEqual(duplicate);
+      expect(
+        await violated(store.transaction(tx => tx.updateUser(b, { externalId: 'ext:' + a, updatedAt: T }))),
+      ).toEqual(duplicate);
+      await store.transaction(async tx => {
+        await tx.updateUser(p + '-n1', { name: 'Still without a key', updatedAt: T });
+        expect((await tx.findUser('externalId', 'ext:' + a))?.id).toBe(a);
+        expect((await tx.readUser(p + '-org', b))?.externalId).toBe('ext:' + b);
+      });
+    });
     test('a user name and a group name are one name without regard to case, å, ä and ö included, to the lookup, the filter and the index (L13)', async () => {
       const { store, prefix: p } = await make();
       const org = p + '-org',
