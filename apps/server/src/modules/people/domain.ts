@@ -12,6 +12,7 @@
 import {
   CAPABILITIES,
   EmploymentSchema,
+  PROVISIONED_KEY_LENGTH,
   checkContract,
   isCapability,
   type Capability,
@@ -393,10 +394,18 @@ const asResource = (body: unknown, names: Names, what: string): Record<string, u
   if (read && typeof read === 'object' && !Array.isArray(read)) return read as Record<string, unknown>;
   throw new ScimError(400, `The request body is not a ${what} resource.`, 'invalidSyntax');
 };
-/** A text attribute Clew stores: not empty, not only space, at most 512 characters, and nothing PostgreSQL cannot hold. */
+/**
+ * A text attribute Clew stores: not empty, not only space, at most 512 characters, and nothing PostgreSQL cannot hold.
+ * The limit is a provisioned key's (`PROVISIONED_KEY_LENGTH`), which every field that names a key takes, so a key
+ * stored here is never refused where an administrator picks it (A6).
+ */
 const asString = (value: unknown, path: string): string => {
-  if (typeof value !== 'string' || !value.trim() || value.length > 512)
-    throw new ScimError(400, `Attribute '${path}' needs a non-empty string of at most 512 characters.`, 'invalidValue');
+  if (typeof value !== 'string' || !value.trim() || value.length > PROVISIONED_KEY_LENGTH)
+    throw new ScimError(
+      400,
+      `Attribute '${path}' needs a non-empty string of at most ${PROVISIONED_KEY_LENGTH} characters.`,
+      'invalidValue',
+    );
   if (/\p{Cs}/u.test(value))
     throw new ScimError(400, `Attribute '${path}' contains an invalid Unicode character.`, 'invalidValue');
   if (value.includes('\u0000'))

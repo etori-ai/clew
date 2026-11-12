@@ -2381,10 +2381,17 @@ export type UserStatus = (typeof USER_STATUSES)[number];
 /** D100: how many people a page of the list may hold; the first is the default. */
 export const USERS_PAGE_SIZES = [25, 50, 100] as const;
 /**
+ * The most characters a key pushed over SCIM may hold (D68): a user's or a group's `externalId`, and so a unit id, which
+ * is what follows `unit:` in its group's key. It is the SCIM server's limit for every text attribute it stores, and
+ * every field that names a provisioned key takes it, so that a key SCIM stored is never refused where it is used: an
+ * audience's units and groups, a group-capability row, the people list's unit and a preview's unit (A6).
+ */
+export const PROVISIONED_KEY_LENGTH = 512;
+/**
  * D100: the most a question about the people may hold. The page holds what it sends to the same limits, so that
  * nothing a person types or an address names is refused as a malformed request.
  */
-export const USERS_QUERY_LIMITS = { text: 200, unitId: 512, page: 1_000_000 } as const;
+export const USERS_QUERY_LIMITS = { text: 200, unitId: PROVISIONED_KEY_LENGTH, page: 1_000_000 } as const;
 /**
  * D100: one page of Administration › Användare, asked for in a request body so that a searched name is never part of
  * an address. Every part narrows the list further. `text` is words matched without regard to case against name, user
@@ -2415,8 +2422,10 @@ export interface UsersAdminPage {
   page: number;
   pageSize: number;
 }
+/** A unit id or a group's key as an administrator names one: any key SCIM stored (A6). */
+const provisionedKey = Type.String({ minLength: 1, maxLength: PROVISIONED_KEY_LENGTH });
 export const GroupCapabilityInput = Type.Object(
-  { groupExternalId: Type.String({ minLength: 1, maxLength: 512 }), capability: CapabilitySchema },
+  { groupExternalId: provisionedKey, capability: CapabilitySchema },
   { additionalProperties: false },
 );
 export type GroupCapabilityInputType = Static<typeof GroupCapabilityInput>;
@@ -2425,12 +2434,8 @@ export const ConnectorAudienceSchema = Type.Union([
   object({
     mode: Type.Literal('selected'),
     roles: Type.Optional(Type.Array(RoleSchema, { uniqueItems: true, maxItems: 2 })),
-    units: Type.Optional(
-      Type.Array(Type.String({ minLength: 1, maxLength: 80 }), { uniqueItems: true, maxItems: 200 }),
-    ),
-    groups: Type.Optional(
-      Type.Array(Type.String({ minLength: 1, maxLength: 80 }), { uniqueItems: true, maxItems: 200 }),
-    ),
+    units: Type.Optional(Type.Array(provisionedKey, { uniqueItems: true, maxItems: 200 })),
+    groups: Type.Optional(Type.Array(provisionedKey, { uniqueItems: true, maxItems: 200 })),
   }),
 ]);
 export type ConnectorAudience = Static<typeof ConnectorAudienceSchema>;
@@ -2506,7 +2511,10 @@ export const RotateSecretInput = object({ secret: connectorSecret });
 export type RotateSecretInput = Static<typeof RotateSecretInput>;
 export const RefreshManifestInput = object({ apply: Type.Optional(Type.Boolean()) });
 export type RefreshManifestInput = Static<typeof RefreshManifestInput>;
-export const PreviewQuery = object({ role: RoleSchema, unitId: Type.Optional(Type.String({ maxLength: 80 })) });
+export const PreviewQuery = object({
+  role: RoleSchema,
+  unitId: Type.Optional(Type.String({ maxLength: PROVISIONED_KEY_LENGTH })),
+});
 export type PreviewQuery = Static<typeof PreviewQuery>;
 export type CheckLevel = 'ok' | 'warn' | 'fail';
 /** One line of a check's log: the conformance check's English lines for the CLI, a provider test's Swedish ones for the page. */
