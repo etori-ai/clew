@@ -452,6 +452,17 @@ describe('what an outside review of the merged server found (2026-11-12)', () =>
     expect(replaced.body.meta.lastModified > read.meta.lastModified).toBe(true);
     expect((await json('GET', '/Groups/' + g)).body.meta.lastModified).toBe(replaced.body.meta.lastModified);
   });
+  test('email lists use the same work and primary preference for filtered and unfiltered PATCH paths', async () => {
+    const { create, patch } = app();
+    const id = await create(1);
+    const untyped = [{ value: 'first@x.se' }, { value: 'primary@x.se', primary: true }];
+    for (const path of ['emails', 'emails[type eq "work"]', 'emails[primary eq true]']) {
+      const write = (value: Array<{ value: string; type?: string; primary?: boolean }>) =>
+        patch('/Users/' + id, { op: 'replace', path, value });
+      expect((await write([...untyped, { value: 'work@x.se', type: 'Work' }])).body.emails[0].value).toBe('work@x.se');
+      expect((await write(untyped)).body.emails[0].value).toBe('primary@x.se');
+    }
+  });
   test('a value that says home under a path that says work is not stored as the work address', async () => {
     const { create, patch } = app();
     const id = await create(1);

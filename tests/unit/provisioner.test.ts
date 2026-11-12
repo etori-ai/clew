@@ -528,6 +528,82 @@ describe('the synthetic provisioner', () => {
         plan(source([a], someone('e-1', 'anna', 'a', { active: false }), someone('e-2', 'anna'))),
       ).not.toThrow();
     });
+    test('plain directory groups cannot use reserved SCIM keys, even without a generated group of the same name', async () => {
+      const { client, store } = stack();
+      const allowed = {
+        ...scope,
+        groupPrefixes: [...scope.groupPrefixes, 'capability:', 'ad:'],
+        groupKeys: ['protected'],
+      };
+      const empty = source([a, b], someone('e-1', 'anna'));
+      for (const id of ['unit:b', 'unit-manager:b', 'capability:admin.users', 'protected', ' Unit :b']) {
+        const directory = {
+          ...empty,
+          groups: [{ id, label: 'Newsletter' }],
+          people: [someone('e-1', 'anna', 'a', { groups: [id] })],
+        };
+        await expect(reconcile(client, directory, allowed, { force: true })).rejects.toThrow('reserved');
+        expect(store.state.groups.size).toBe(0);
+        expect(store.state.users.size).toBe(0);
+        expect(store.state.audit).toHaveLength(0);
+      }
+      const plain = { id: 'ad:unit:b', label: 'Newsletter' };
+      const result = await reconcile(client, { ...empty, groups: [plain] }, allowed);
+      expect(result.groupsCreated).toBe(3);
+    });
+    for (const interrupted of ['before commit', 'after commit'] as const) {
+      test(`a deactivation interrupted ${interrupted} is counted once across a 503 retry`, async () => {
+        const { client, store } = stack();
+        const anna = someone('e-1', 'anna'),
+          bo = someone('e-2', 'bo'),
+          cia = someone('e-3', 'cia');
+        await reconcile(client, source([a], anna, bo, cia), scope);
+        const leavers = source([a], anna, { ...cia, active: false });
+        let patches = 0;
+        const flaky: ScimClient = {
+          async request(method, path, body) {
+            if (method === 'PATCH' && path.startsWith('/Users/') && ++patches === 2) {
+              if (interrupted === 'after commit') await client.request(method, path, body);
+              throw new ScimClientError(503, undefined, 'Unavailable', '0');
+            }
+            return client.request(method, path, body);
+          },
+        };
+        expect((await reconcile(flaky, leavers, scope, { force: true })).deactivated).toBe(2);
+        expect(store.state.audit.filter(row => row.action === 'scim.user.deactivated')).toHaveLength(2);
+        expect((await reconcile(client, leavers, scope)).deactivated).toBe(0);
+      });
+    }
+    test('a lost response to a user create or group deletion preserves the completed run summary', async () => {
+      const anna = someone('e-1', 'anna'),
+        bo = someone('e-2', 'bo');
+      for (const lost of ['POST', 'DELETE'] as const) {
+        const { client } = stack();
+        await reconcile(client, source([a, b], anna), scope);
+        let interrupted = false;
+        const flaky: ScimClient = {
+          async request(method, path, body) {
+            const result = await client.request(method, path, body);
+            if (!interrupted && method === lost && (path === '/Users' || path.startsWith('/Groups/'))) {
+              interrupted = true;
+              throw new ScimClientError(503, undefined, 'Unavailable', '0');
+            }
+            return result;
+          },
+        };
+        const result = await reconcile(flaky, source([a], anna, bo), scope);
+        expect(interrupted).toBe(true);
+        expect(result).toEqual({
+          created: 1,
+          replaced: 1,
+          deactivated: 0,
+          groupsCreated: 0,
+          groupsReplaced: 1,
+          groupsRemoved: 1,
+          refused: [],
+        });
+      }
+    });
     test('who has left is deactivated although a unit is refused or a name is taken further down', async () => {
       const { store, client } = stack();
       const enabled = (userName: string) => [...store.state.users.values()].find(u => u.userName === userName)?.enabled;
@@ -551,22 +627,27 @@ describe('the synthetic provisioner', () => {
       await reconcile(client, source([a], anna, bo, cia), scope);
       await reconcile(client, source([a], anna, bo, { ...cia, active: false }), scope);
       expect(held('cia').enabled).toBe(false);
-      // Cia is back, and the source has lost her address. The row is first sent as inactive, which Clew never
-      // refuses (D113) and which once let her back in with the old address and no word about the new one.
-      const wrong = await reconcile(client, source([a], anna, bo, { ...cia, email: '' }), scope);
+      const returning = { ...cia, userName: 'cia.ny', title: 'Rektor', givenName: 'Ny' };
+      const before = { ...held('cia') };
+      const wrong = await reconcile(client, source([a], anna, bo, { ...returning, email: '' }), scope);
       expect(wrong.refused).toEqual([
         {
           externalId: 'e-3',
-          userName: 'cia',
+          userName: 'cia.ny',
           detail: "Attribute 'emails.value' needs a non-empty string of at most 512 characters.",
         },
       ]);
-      expect(held('cia')).toMatchObject({ enabled: false, email: 'cia@clew.test' });
-      // With the source put right she returns, with her unit.
-      const right = await reconcile(client, source([a], anna, bo, { ...cia, email: 'cia.ny@clew.test' }), scope);
-      expect(right.refused).toEqual([]);
-      expect(held('cia')).toMatchObject({ enabled: true, email: 'cia.ny@clew.test' });
-      expect(store.state.grants.get(held('cia').id)).toMatchObject({ unitId: 'a' });
+      expect(wrong.replaced).toBe(2);
+      expect(store.state.users.get(before.id)).toEqual(before);
+      const right = await reconcile(client, source([a], anna, bo, { ...returning, email: 'cia.ny@clew.test' }), scope);
+      expect(right).toMatchObject({ refused: [], replaced: 3 });
+      expect(held('cia.ny')).toMatchObject({
+        id: before.id,
+        enabled: true,
+        email: 'cia.ny@clew.test',
+        title: 'Rektor',
+      });
+      expect(store.state.grants.get(held('cia.ny').id)).toMatchObject({ unitId: 'a' });
     });
   });
   test("an account name given to somebody new is moved off the leaver's row first, whether the source keeps that row or not, and two people may swap", async () => {
@@ -725,7 +806,7 @@ describe('the synthetic provisioner', () => {
         return result;
       },
     };
-    await push(interrupted, snapshot);
+    expect(await push(interrupted, snapshot)).toMatchObject({ groupsCreated: 1, groupsReplaced: 0 });
     expect(creates).toBe(1);
     expect([...store.state.groups.values()].map(g => g.externalId)).toEqual(['unit:test']);
     const proxy = scimClient(
@@ -896,7 +977,7 @@ describe('the synthetic provisioner', () => {
       id: 'legacy',
       organisationId: 'poc',
       parentUnitId: null,
-      externalId: 'Unit:old',
+      externalId: ' Unit :old',
       label: 'Stored before D96',
       createdAt: '2026-11-09T06:00:00.000Z',
       updatedAt: '2026-11-09T06:00:00.000Z',
@@ -911,7 +992,7 @@ describe('the synthetic provisioner', () => {
       '1 unit has a unit-manager: group and no unit: group, so the unit is shown by its id instead of a name: unit-nameless.',
       '1 unit or unit-manager group has no members: unit:unit-empty.',
       '1 unit has people and no manager, on the unit or on any unit above it, so its people report to nobody: unit:unit-adrift-below.',
-      "1 group carries a key that is written wrong and gives nobody anything: 'Unit:old'.",
+      "1 group carries a key that is written wrong and gives nobody anything: ' Unit :old'.",
     ]);
     // More roots than the source has: a unit written without its parent became one (D99).
     expect(

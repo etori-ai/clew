@@ -21,6 +21,7 @@ import {
   type UsersAdminQueryType,
   USERS_PAGE_SIZES,
 } from '@clew/contracts';
+import { MANAGER_KEY, UNIT_KEY } from '@clew/contracts/scim-group-key';
 import { ForbiddenError, InputError } from '../../context';
 import { SCIM, ScimError, type ScimGroup, type ScimList, type ScimUser } from './contracts';
 import {
@@ -47,8 +48,6 @@ import {
   unitOfKey,
   userFields,
   userResource,
-  MANAGER_KEY,
-  UNIT_KEY,
   type Derived,
   type GroupFields,
   type GroupRecord,

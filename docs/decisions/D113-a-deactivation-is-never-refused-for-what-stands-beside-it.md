@@ -37,13 +37,11 @@ access the source has taken away, nor tell a provisioner that something was done
 with the old name, and nothing tells the directory that the name was refused. That is the right way round for a
 person who has left, and it is why the rule covers a request that deactivates and no other.
 
-**What follows for a provisioner.** A request that says `active: false` checks nothing else, so it must never be
-used to put a row in place. The example provisioner did exactly that for a person who returns: it sent the row as
-inactive, removed the old duties and then set `active` alone. A returner whose address the source had lost came back
-with the old address and no refusal, where the same mistake about a person who had never left was refused. An outside
-review found it the day after this record was written
-([review](../reviews/2026-11-12-outside-review-of-the-merged-scim-server.md)). The example now sends the whole row
-again as active, and the guide says so.
+**What follows for a provisioner.** During deactivation, Clew can apply valid profile fields while passing over an
+invalid one. Staging a return with `active: false` could therefore rename a person even when Clew later refused
+their return. The example uses the existing SCIM id to update memberships and remove old duties, then sends the
+complete profile once with `active: true`. A refusal leaves the account inactive and is visible in the run report.
+[Review of the provisioner](../reviews/2026-11-12-outside-review-of-the-merged-scim-server.md).
 
 **Not covered.** A `userName` or `externalId` that is taken (409) beside a deactivation still refuses the request:
 the conflict is found against the store, after the request is read. A provisioner that deactivates and renames a

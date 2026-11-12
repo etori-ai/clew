@@ -1,3 +1,9 @@
+import {
+  UNIT_KEY,
+  MANAGER_KEY,
+  CAPABILITY_KEY,
+  reservedScimGroupKey,
+} from '../../packages/contracts/src/scim-group-key';
 import { ScimClientError, type ScimClient } from './client';
 import { fullName, type Directory, type DirectoryPerson } from './directory';
 
@@ -70,6 +76,12 @@ export function plan(directory: Directory): Plan {
     directory.people.filter(p => p.active).map(p => p.userName.toLowerCase()),
     'an account name is one active person',
   );
+  for (const { id } of directory.groups) {
+    if (reservedScimGroupKey(id))
+      throw new Error(
+        `Directory group '${id}' uses a reserved SCIM key. Give the plain group its own key. Nothing was written.`,
+      );
+  }
   const groups = new Map<string, PlannedGroup>();
   const group = (externalId: string, displayName: string) => {
     const g = groups.get(externalId) ?? { externalId, displayName, members: [] };
@@ -95,29 +107,29 @@ export function plan(directory: Directory): Plan {
   };
   for (const unit of directory.units) {
     depthOf(unit.id);
-    const node = group('unit:' + unit.id, unit.label);
-    if (unit.parent !== undefined) node.parent = 'unit:' + unit.parent;
+    const node = group(UNIT_KEY + unit.id, unit.label);
+    if (unit.parent !== undefined) node.parent = UNIT_KEY + unit.parent;
   }
   for (const g of directory.groups) group(g.id, g.label);
   for (const p of directory.people) {
     if (typeof p.active !== 'boolean') throw new Error(`Missing active state for '${p.externalId}'.`);
     if (!p.active) continue;
     const home = unitOf(p, p.department, 'department');
-    group('unit:' + home.id, home.label).members.push(p.externalId);
+    group(UNIT_KEY + home.id, home.label).members.push(p.externalId);
     for (const id of p.alsoIn ?? []) {
       const unit = unitOf(p, id, 'unit');
-      group('unit:' + unit.id, unit.label).members.push(p.externalId);
+      group(UNIT_KEY + unit.id, unit.label).members.push(p.externalId);
     }
     for (const id of [...(p.manager ? [home.id] : []), ...(p.alsoManages ?? [])]) {
       const unit = unitOf(p, id, 'unit');
-      group('unit-manager:' + unit.id, 'Chefer · ' + unit.label).members.push(p.externalId);
+      group(MANAGER_KEY + unit.id, 'Chefer · ' + unit.label).members.push(p.externalId);
     }
     for (const id of p.groups ?? []) {
       const g = directory.groups.find(g => g.id === id);
       if (!g) throw new Error(`${p.userName} has group '${id}', which the directory does not list.`);
       group(g.id, g.label).members.push(p.externalId);
     }
-    for (const c of p.capabilities) group('capability:' + c, 'Clew · ' + c).members.push(p.externalId);
+    for (const c of p.capabilities) group(CAPABILITY_KEY + c, 'Clew · ' + c).members.push(p.externalId);
   }
   return {
     users: directory.people.map(p => ({ externalId: p.externalId, body: userBody(p) })),
@@ -128,10 +140,9 @@ export function plan(directory: Directory): Plan {
       .sort((a, b) => levelOf(a, depth) - levelOf(b, depth) || a.externalId.localeCompare(b.externalId)),
   };
 }
-const UNIT = 'unit:';
 /** A unit group's depth in the tree; every other group sorts after the last unit. */
 const levelOf = (g: PlannedGroup, depth: ReadonlyMap<string, number>) =>
-  g.externalId.startsWith(UNIT) ? (depth.get(g.externalId.slice(UNIT.length)) ?? 0) : Number.MAX_SAFE_INTEGER;
+  g.externalId.startsWith(UNIT_KEY) ? (depth.get(g.externalId.slice(UNIT_KEY.length)) ?? 0) : Number.MAX_SAFE_INTEGER;
 const userBody = (p: DirectoryPerson) => ({
   schemas: [SCIM_USER],
   externalId: p.externalId,
@@ -170,12 +181,12 @@ export interface PushOptions {
 const withdrawalShare = 0.2;
 const excessive = (withdrawn: number, held: number) =>
   withdrawn > 0 && (withdrawn === held || withdrawn > Math.max(1, held * withdrawalShare));
-/** What a push has counted so far, kept from the attempt a 503 interrupted to the one that follows it. */
-interface Tally {
-  summary: PushSummary;
-  /** The `externalId` of every user and group already counted as created or replaced. */
-  users: Set<string>;
-  groups: Set<string>;
+/** The first complete read, kept across a 503 so a committed write with a lost response is counted correctly. */
+interface PushRun {
+  initial?: {
+    users: ReadonlySet<string>;
+    counts: Pick<PushSummary, 'deactivated' | 'groupsCreated' | 'groupsReplaced' | 'groupsRemoved'>;
+  };
 }
 const eq = (attribute: string, value: string) =>
   `?filter=${encodeURIComponent(`${attribute} eq "${value.replace(/(["\\])/g, '\\$1')}"`)}`;
@@ -200,21 +211,9 @@ export async function push(
   scope: SourceScope,
   options: PushOptions = {},
 ): Promise<PushSummary> {
-  const tally: Tally = {
-    summary: {
-      created: 0,
-      replaced: 0,
-      deactivated: 0,
-      groupsCreated: 0,
-      groupsReplaced: 0,
-      groupsRemoved: 0,
-      refused: [],
-    },
-    users: new Set(),
-    groups: new Set(),
-  };
+  const run: PushRun = {};
   try {
-    return await reconcile(client, directory, scope, options, tally);
+    return await reconcile(client, directory, scope, options, run);
   } catch (error) {
     if (!(error instanceof ScimClientError) || error.status !== 503 || !error.retryAfter) throw error;
     const header = error.retryAfter.trim();
@@ -222,8 +221,8 @@ export async function push(
     if (!Number.isFinite(delay) || delay > 60_000) throw error;
     await new Promise(resolve => setTimeout(resolve, Math.max(0, delay)));
     // Everything is read again, in case the service committed a write before the proxy answered 503. The summary
-    // goes on from what the first attempt counted, so it says what the push did and not what its second half did.
-    return reconcile(client, directory, scope, options, tally);
+    // compares the completed run with its first read.
+    return reconcile(client, directory, scope, options, run);
   }
 }
 
@@ -232,17 +231,14 @@ async function reconcile(
   directory: Directory,
   scope: SourceScope,
   options: PushOptions,
-  tally: Tally,
+  run: PushRun,
 ): Promise<PushSummary> {
   if (directory.complete !== true) throw new Error('Incomplete source snapshot. Nothing was written.');
   if (!scope.userPrefix || scope.groupPrefixes.some(prefix => !prefix))
     throw new Error('Source ownership requires nonempty prefixes.');
   const ownsGroup = (key: string) =>
     scope.groupKeys.includes(key) || scope.groupPrefixes.some(prefix => key.startsWith(prefix));
-  const planned = plan(directory),
-    { summary } = tally;
-  // A second attempt after a 503 sends everybody again, so it says again who was refused.
-  summary.refused = [];
+  const planned = plan(directory);
   for (const u of planned.users)
     if (!u.externalId.startsWith(scope.userPrefix))
       throw new Error(`User '${u.externalId}' is outside the source namespace.`);
@@ -253,10 +249,10 @@ async function reconcile(
   for await (const user of page(client, '/Users?attributes=externalId,userName,active')) held.push(user);
   const wanted = new Map(planned.users.map(u => [u.externalId, u.body.active])),
     own = held.filter(u => u.externalId?.startsWith(scope.userPrefix) && u.active !== false),
-    withdrawing = own.filter(u => wanted.get(u.externalId!) !== true).length;
-  if (!options.force && excessive(withdrawing, own.length))
+    withdrawals = own.filter(u => wanted.get(u.externalId!) !== true);
+  if (!options.force && excessive(withdrawals.length, own.length))
     throw new Error(
-      `The source lists ${planned.users.length} people and Clew holds ${own.length} active ones from it, so this push would deactivate ${withdrawing}. Nothing was written. An empty or truncated export looks like this; push again with force once a person has decided that the source is right.`,
+      `The source lists ${planned.users.length} people and Clew holds ${own.length} active ones from it, so this push would deactivate ${withdrawals.length}. Nothing was written. An empty or truncated export looks like this; push again with force once a person has decided that the source is right.`,
     );
   // What Clew holds of this writer's groups, read once as well: which to remove, and each unit as it stands.
   const keep = new Set(planned.groups.map(g => g.externalId)),
@@ -266,9 +262,9 @@ async function reconcile(
   for await (const g of page(client, '/Groups?excludedAttributes=members')) {
     if (!g.externalId || !ownsGroup(g.externalId)) continue;
     // Units and plain groups are independent exports. Managers and capabilities are derived from people.
-    const kind = g.externalId.startsWith(UNIT)
+    const kind = g.externalId.startsWith(UNIT_KEY)
       ? 'units'
-      : g.externalId.startsWith('unit-manager:') || g.externalId.startsWith('capability:')
+      : g.externalId.startsWith(MANAGER_KEY) || g.externalId.startsWith(CAPABILITY_KEY)
         ? 'role groups'
         : 'directory groups';
     const count = counts.get(kind) ?? { held: 0, removed: 0 },
@@ -288,18 +284,30 @@ async function reconcile(
       );
   const ids = new Map(held.flatMap(u => (u.externalId ? [[u.externalId, u.id] as const] : [])));
   const disabled = new Set(held.filter(u => u.active === false).map(u => u.id));
+  if (!run.initial) {
+    const keptGroups = listed.size - gone.length;
+    run.initial = {
+      users: new Set(ids.keys()),
+      counts: {
+        deactivated: withdrawals.length,
+        groupsCreated: keep.size - keptGroups,
+        groupsReplaced: keptGroups,
+        groupsRemoved: gone.length,
+      },
+    };
+  }
+  const initial = run.initial;
+  const summary: PushSummary = { ...initial.counts, created: 0, replaced: 0, refused: [] };
   // 1. Who has left, before anything else is written: the people who are gone from the source, and those it now says
   // are inactive. The export has passed every check above, and a deactivation depends on nothing below. So nothing
   // that goes wrong further down, a unit Clew refuses, a name that is taken, keeps a leaver active.
-  for (const user of own.filter(u => wanted.get(u.externalId!) !== true)) {
+  for (const user of withdrawals) {
     await patch(client, '/Users/' + user.id, [{ op: 'replace', path: 'active', value: false }]);
-    disabled.add(user.id);
-    summary.deactivated++;
     options.log?.(`deactivated ${user.userName}`);
   }
   // 2. The organisation, from the root down (D99): each unit as a node with its name and the unit above it, and
   // nobody on it yet. A unit that moved or was renamed is patched, so the people on it are left as they are.
-  for (const unit of planned.groups.filter(g => g.externalId.startsWith(UNIT))) {
+  for (const unit of planned.groups.filter(g => g.externalId.startsWith(UNIT_KEY))) {
     const found = listed.get(unit.externalId);
     if (!found) {
       await client.request('POST', '/Groups', {
@@ -308,8 +316,6 @@ async function reconcile(
         displayName: unit.displayName,
         ...(unit.parent ? { [SCIM_UNIT]: { parent: unit.parent } } : {}),
       });
-      tally.groups.add(unit.externalId);
-      summary.groupsCreated++;
       options.log?.(`created group ${unit.externalId}`);
       continue;
     }
@@ -350,43 +356,36 @@ async function reconcile(
    * One person's request. What Clew says is wrong about one person (a 400) or their name (a 409) is that person's
    * alone: everybody else is sent, and the run reports the refusals when it is done. Anything else stops the run.
    */
-  const sent = async (user: (typeof users)[number], request: () => Promise<void>) => {
+  const sendPerson = async (user: (typeof users)[number], id: string | undefined) => {
     try {
-      await request();
-      return true;
+      if (id) {
+        await client.request('PUT', '/Users/' + id, user.body);
+      } else {
+        if (!user.body.active) return;
+        const { body } = await client.request('POST', '/Users', user.body);
+        ids.set(user.externalId, body.id);
+        options.log?.(`created ${user.body.userName}`);
+      }
+      if (initial.users.has(user.externalId)) summary.replaced++;
+      else summary.created++;
     } catch (error) {
       if (!(error instanceof ScimClientError) || (error.status !== 400 && error.status !== 409)) throw error;
       summary.refused.push({ externalId: user.externalId, userName: user.body.userName, detail: error.message });
       options.log?.(`refused ${user.body.userName}: ${error.message}`);
-      return false;
     }
   };
   const rehires: Array<{ id: string; user: (typeof users)[number] }> = [];
   for (const user of users) {
     const id = ids.get(user.externalId);
-    await sent(user, async () => {
-      if (id) {
-        const rehire = disabled.has(id) && user.body.active;
-        await client.request('PUT', '/Users/' + id, rehire ? { ...user.body, active: false } : user.body);
-        if (rehire) rehires.push({ id, user });
-        if (!tally.users.has(user.externalId)) summary.replaced++;
-      } else if (user.body.active) {
-        const { body } = await client.request('POST', '/Users', user.body);
-        ids.set(user.externalId, body.id);
-        summary.created++;
-        options.log?.(`created ${user.body.userName}`);
-      }
-      // Else the source keeps a person who left before Clew ever held them. Nothing is created: a disabled row would
-      // only hold their `userName` against the next person who is given it.
-    });
-    tally.users.add(user.externalId);
+    if (id && disabled.has(id) && user.body.active) rehires.push({ id, user });
+    else await sendPerson(user, id);
   }
   // 4. Who is in which group, in two rounds. First everybody a group gains, in every group; then everybody a group
   // loses. A person who moves from one unit to another is in both for a moment and never in neither, so their grant
   // is not taken away and handed back, and they are not signed out in the middle of a push (D101).
   const trims: Array<{ id: string; operations: unknown[] }> = [];
   for (const group of planned.groups) {
-    // A person Clew refused has no id, and is in no group until the source is right about them.
+    // A refused newcomer has no SCIM id. An inactive returner already has one for the membership update.
     const members = group.members.flatMap(externalId => ids.get(externalId) ?? []),
       found = (await client.request('GET', '/Groups' + eq('externalId', group.externalId))).body.Resources?.[0];
     if (!found) {
@@ -396,13 +395,9 @@ async function reconcile(
         displayName: group.displayName,
         members: asMembers(members),
       });
-      tally.groups.add(group.externalId);
-      summary.groupsCreated++;
       options.log?.(`created group ${group.externalId}`);
       continue;
     }
-    if (!tally.groups.has(group.externalId)) summary.groupsReplaced++;
-    tally.groups.add(group.externalId);
     const has = new Set<string>((found.members ?? []).map((m: { value: string }) => m.value)),
       wants = new Set(members),
       gained = members.filter(id => !has.has(id)),
@@ -424,14 +419,9 @@ async function reconcile(
       next = gone.findIndex(g => !parents.has(g.externalId)),
       [group] = gone.splice(next === -1 ? 0 : next, 1);
     await client.request('DELETE', '/Groups/' + group!.id);
-    summary.groupsRemoved++;
     options.log?.(`removed group ${group!.externalId}`);
   }
   // 6. A returning person regains access only after expired duties have been removed, and only with a row Clew takes.
-  // The row was sent above with `active: false`, and a request that deactivates is never refused for what stands
-  // beside it (D113): a wrong address in it was passed over and the old one kept. So the whole row is sent again, now
-  // as active, and what is wrong in it refuses the return and is reported, as it is for anybody else.
-  for (const { id, user } of rehires)
-    await sent(user, async () => void (await client.request('PUT', '/Users/' + id, user.body)));
+  for (const { id, user } of rehires) await sendPerson(user, id);
   return summary;
 }

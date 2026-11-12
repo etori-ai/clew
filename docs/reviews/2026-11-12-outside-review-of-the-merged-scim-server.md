@@ -31,7 +31,7 @@ address, then the tidying.
 |---|---|---|---|---|
 | 1 | Two source rows with one person id become one person with both rows' placements | Yes: Anna and Bo with one id became one person named Bo, placed on both units, with no refusal | Rightly first. A person with two employments exported as two rows is an ordinary source. It is the example's fault and not the server's, which sees two well-formed requests, and it is the code a directory team copies | The export is refused whole when a person id, a unit id, a group id or an active account name occurs twice |
 | 2 | A failure that has nothing to do with them keeps leavers active | Yes: a unit with a blank name stopped the run, and the person who had left stayed enabled | Rightly first. The day before, leavers were moved before the people and left behind the units and the renaming | Who has left, and who the source now marks inactive, is deactivated straight after the checks, before anything else is written |
-| 3 | A person who returns is let in with stale required attributes | Yes: a returner with no address in the source was activated with the old address and nothing was reported; the same mistake for a person who never left is refused | Worth more than the reviewer gave it. It is what D113 does to any provisioner that sends a row as inactive and then sets `active` alone | The example sends the whole row again as active at the end; a row Clew refuses leaves the person inactive and is reported. D113 and the guide say that a request with `active: false` checks nothing else |
+| 3 | A person who returns is let in with stale required attributes | Yes: a returner with no address in the source was activated with the old address and nothing was reported; the same mistake for a person who never left is refused | Worth more than the reviewer gave it. It is what D113 does to any provisioner that sends a row as inactive and then sets `active` alone | The example submits the full active profile once memberships are reconciled. A refused return leaves the account inactive and is reported |
 | 4 | A group's `meta.lastModified` goes back after a member change | Yes: the `PATCH` answered the new time and the next `GET` the old one | Real, older than this work, and missed by four reviews. Less urgent than the reviewer has it: neither Entra nor Okta compares these times | The group's time is written whenever a member comes or goes; a repeat that changes nothing leaves it |
 | 5 | A value that says `home` under a path that says `work` is stored as the work address | Yes | Introduced the day before, by the fix that was to keep a private address out. The request contradicts itself and will be rare, and the guide promises it never happens | Refused with `invalidValue`; beside a deactivation it is passed over like any wrong value |
 | 6 | The token script looks first and writes afterwards, so two issues at once can both report success | From reading | True, and unlikely: one person runs it by hand once. The gain is one way of issuing instead of two | The script issues with the store's own operation, the one the users page uses |
@@ -51,6 +51,17 @@ address, then the tidying.
 - A returner whose row Clew refuses is already a member of their new groups, added before the activation that then
   fails. They are inactive, so nothing is open to them; the memberships are right once the source is.
 - Everything listed as left in [the full review](2026-11-11-scim-full-review.md) still stands.
+
+## Follow-up on PR 36
+
+- Ordinary directory groups can no longer collide with a unit, manager or capability group or use the reserved
+  `protected` key. The planner and server recognise the same reserved spellings before the planner writes anything.
+- A returning person keeps their SCIM id during membership reconciliation. One final profile write validates all
+  required fields before activation. A regression test changes the account name and title alongside an invalid
+  email and checks the stored person and the refusal count.
+- Filtered email lists use the same explicit-work and untyped-primary preference as a full profile.
+- The push summary compares a completed run against its first read. The retry tests cover a 503 on either side
+  of a committed withdrawal and a lost response when creating a resource.
 
 ## Outcome
 
