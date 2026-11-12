@@ -588,7 +588,7 @@ async function reconcile(
       refuseGroup(key, error.message);
     }
   }
-  /** What this run leaves named as it stands: the units, which are named above alone, and what was refused by now. */
+  /** What this run leaves named as it stands: every unit and group refused by now, each unit step 2 did not write too. */
   const unnamed = new Set(refusedKeys);
   // 3. The people.
   // An account name that is given to somebody new is first moved off the row that holds it. A person who leaves is
@@ -779,9 +779,9 @@ async function reconcile(
         if (!refusal(error)) throw error;
         refuseGroup(key, error.message);
       }
-    // A unit is named in step 2 alone. A group refused before this step, and the managers' group of a unit refused
-    // before it, keep the names they have.
-    const leaveName = isUnit(key) || unnamed.has(key) || unnamed.has(unitOf(key));
+    // A group refused before this step keeps the name it has, and so does the managers' group of a unit refused before
+    // it: a unit is named in step 2, and one step 2 named is read here with its new name.
+    const leaveName = unnamed.has(key) || unnamed.has(unitOf(key));
     trims.push({
       key,
       id: found.id,
