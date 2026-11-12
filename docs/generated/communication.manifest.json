@@ -186,7 +186,7 @@
       "name": "communication.news",
       "kind": "read",
       "title": "Nyheter",
-      "description": "Kommunens nyheter som den inloggade får läsa: rubrik, avsändare och när de publicerades.",
+      "description": "Kommunens nyheter som den inloggade får läsa: rubrik, avsändare, när de publicerades och länk till hela texten.",
       "model": false,
       "scope": {},
       "input": {
@@ -215,6 +215,10 @@
                 "publishedAt": {
                   "type": "string",
                   "format": "date-time"
+                },
+                "link": {
+                  "type": "string",
+                  "pattern": "^https://"
                 }
               },
               "required": [
@@ -332,6 +336,39 @@
             "label": "Text"
           }
         ]
+      }
+    },
+    {
+      "name": "communication.open",
+      "kind": "read",
+      "title": "Läs hela nyheten",
+      "description": "Länk till meddelandet i sin helhet i kommunikationssystemet.",
+      "model": false,
+      "scope": {},
+      "input": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "pattern": "^communication:notice:"
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "additionalProperties": false
       }
     },
     {

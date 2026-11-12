@@ -1,6 +1,6 @@
 # D99 · Units form a tree pushed over SCIM, and a manager works with their direct reports
 
-**Status:** accepted (product owner, 2026-11-10: units form a tree, the tree is pushed as resources of its own, a manager works with their direct reports and not with everyone below), built 2026-11-10 (the parent on the unit group, the SCIM extension and its refusals, the reporting line in Personal, talks and the calendar's team, the development directory as a tree, the check, Administration › Organisation; see "As built"); the transport in item 2 is proposed until a real provisioner has used it, the branch of item 5 has no user yet, and the items under "Open" are not decided; the order of a push and whose a unit is are D101 (2026-11-11) · **Date:** 2026-11-10 · **Area:** identity, product
+**Status:** accepted (product owner, 2026-11-10: units form a tree, the tree is pushed as resources of its own, a manager works with their direct reports and not with everyone below), built 2026-11-10 (the parent on the unit group, the SCIM extension and its refusals, the reporting line in Personal, talks and the calendar's team, the development directory as a tree, the check, Administration › Organisation; see "As built"); the transport in item 2 is proposed until a real provisioner has used it, the branch of item 5 has no user yet, and the items under "Open" are not decided; the order of a push and whose a unit is are D101 (2026-11-11); item 6 amended 2026-11-12 (product owner): a unit's people moved from an overlay over the tree to the unit's own page, `/admin/organisation/<unitId>`, see the amendment · **Date:** 2026-11-10 · **Area:** identity, product
 
 **Decision.** A unit in Clew has at most one parent, so the units of an installation form a tree, or several. The
 provisioner pushes the tree explicitly; Clew never infers it from the people that arrive. Who a manager works with
@@ -163,6 +163,32 @@ deactivated people named beside the count.
 manager with a report from below (the use case was read against the development database; the page was run on
 fixtures). A provisioner against a real source. The two figures in `docs/architecture/figures/` that draw the group
 keys do not show the parent.
+
+**Amended 2026-11-12: a unit's people are a page, not an overlay.** The product owner, looking at the overlay of item
+6: "should an organisation really open in a sidebar? This can get extremely crammed, an organisation might have
+hundreds of employees. The sidebar needs to be for peeking or some kind of instant actions, otherwise a full route is
+needed." The overlay was 480 px wide, three lines per person and no search. Item 6 now reads: a row of the tree leads
+to the unit's own page under Administration, `/admin/organisation/<unitId>`, behind `admin.users` and read only as the
+tree is; the drawer and the sheet are gone, and the row itself is the peek (who leads the unit, how many are on it).
+The page names who leads the unit (each name leads to the person's page; for a unit led from above, the unit that leads
+it), how many are placed on it and in its branch, the unit it is part of and the units directly below it, each a link
+to its own page, and the tree's marks for the unit in the tree's words, with "Till Användare" narrowed to the unit
+where people are on it but nobody leads it or no unit group names it. The people are the overlay's three groups and
+their order, each a heading over a table (a list on a phone, as on Användare): who leads the unit, the others placed
+on it, and who reports to its managers from the units below, with the note that says who those are. One search box
+narrows all three by name, user name, role and e-mail. A group longer than 25 is paged, the page of each group and
+the page size in the address (`managers-page`, `employees-page`, `reports-page`, `size`), so a person's way back
+returns to the same rows; the words searched for are not, as on Användare. The server is unchanged: the page reads
+the tree and `GET /api/admin/organisation/units/:id`, which answers one unit's people and reports, never the
+organisation's, so the search and the pages run in the browser. `/admin/organisation?unit=<unitId>` leads to the page
+in its own place in the history. Arriving by a link, the page's heading takes the focus; going back to the tree, by
+Back or by the trail, the tree opens down to the unit and its row takes the focus. What else the person had opened in
+the tree is not kept: Astryx's `TreeList` holds its own expansion and does not report it. The rule the product owner
+stated is recorded for every surface in [D111](D111-where-something-opens-is-decided-by-what-it-is.md) (amended
+2026-11-12) and in [interface spaces](../reference/interface-spaces.md) rule 11. Code:
+`apps/web/src/pages/admin/organisation-unit.tsx` and `organisation-model.ts`; tests:
+`apps/web/tests/organisation-model.test.ts` and `tests/a11y/organisation.spec.ts`, rewritten for the page, with a unit
+of 412 people.
 
 **Replaces.** Amends [D68](D68-people-are-pushed-into-clew-through-standard-scim.md): the provisioner no longer
 flattens a hierarchy, a `unit:` group gains a parent, and a group as a member of a group stays refused. Amends

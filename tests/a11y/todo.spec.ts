@@ -240,7 +240,7 @@ test.describe('the panel beside the page', () => {
     await expectNoAxeViolations(page);
   });
 
-  test('a view an answer names opens beside the transcript, the conversation stays, and a view that is a tool offers no page', async ({
+  test('a list an answer names is its page, under the tool’s name where it is one, and Back returns to the conversation as it was (D116)', async ({
     page,
     api,
   }) => {
@@ -250,31 +250,34 @@ test.describe('the panel beside the page', () => {
     await composer(page).press('Enter');
     const log = page.getByRole('log');
     await expect(log).toContainText('Sök i telefonboken: 2 rader.');
-    const address = page.url();
-    await log.getByRole('button', { name: 'Visa allt' }).click();
-    const panel = page.getByRole('complementary', { name: 'Sök i telefonboken' });
-    await expect(panel.getByRole('searchbox')).toHaveValue('lärare');
-    // Beside the transcript a table is its list: the panel is as narrow as a phone.
-    await expect(panel.getByRole('table')).toHaveCount(0);
-    await expect(panel.getByRole('listitem').filter({ hasText: 'Anna Lindqvist' })).toBeVisible();
+    const conversation = new URL(page.url()).pathname;
+    // "Visa allt" is a link to the list's page, with the conversation as the way back: no panel beside the transcript.
+    const all = log.getByRole('link', { name: 'Visa allt' });
+    await expect(all).toHaveAttribute(
+      'href',
+      new RegExp(
+        `^/tools/phonebook\\.directory\\?input=.*&from=${encodeURIComponent(conversation).replace(/\./g, '\\.')}$`,
+      ),
+    );
+    await all.click();
+    await expect(page).toHaveURL(/\/tools\/phonebook\.directory\?input=/);
+    await expect(page.getByRole('complementary')).toHaveCount(0);
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    expect(page.url().startsWith(address)).toBe(true);
-    await expect(log).toContainText('Sök i telefonboken: 2 rader.');
-    await expect(panel.getByRole('heading', { level: 2, name: 'Sök i telefonboken' })).toBeFocused();
+    const main = page.getByRole('main');
+    // The directory is a tool in the rail: its page carries the row's name and the rail marks it.
+    await expect(main.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveText('Telefonbok');
+    await expect(page.getByRole('navigation', { name: 'Sidonavigering' }).locator('a[aria-current="page"]')).toHaveText(
+      'Telefonbok',
+    );
+    await expect(main.getByRole('searchbox')).toHaveValue('lärare');
+    await expect(main.getByRole('table')).toBeVisible();
+    await expect(main.getByRole('link', { name: 'Samtalet' })).toHaveAttribute('href', conversation);
     await expectNoAxeViolations(page);
-    // No control chooses a surface (D111 rule 7): the tool is in the rail where an administrator put it.
-    await expect(panel.getByText('Öppna som sida')).toHaveCount(0);
-    await expect(panel.locator('a[href^="/tools/"]')).toHaveCount(0);
-    // The box is in use while the panel is open, and typing there never loses the panel.
-    await composer(page).fill('Vem är på plats?');
-    await composer(page).press('Enter');
-    await expect(answer(page)).toBeVisible();
-    await expect(panel).toBeVisible();
-    // Esc in the panel lets go of the panel, not of the conversation.
-    await panel.getByRole('searchbox').focus();
-    await page.keyboard.press('Escape');
-    await expect(panel).toHaveCount(0);
-    await expect(answer(page)).toBeVisible();
+    // Back is the conversation as it was, with the focus on the link that led away.
+    await page.goBack();
+    await expect(page).toHaveURL(conversation);
+    await expect(log).toContainText('Sök i telefonboken: 2 rader.');
+    await expect(log.getByRole('link', { name: 'Visa allt' })).toBeFocused();
   });
 
   test("Fråga Clew on a tool's page asks about the page in the panel; the conversation goes on with the view beside it, searched as it was", async ({
@@ -295,12 +298,11 @@ test.describe('the panel beside the page', () => {
     await expect(box).toBeFocused();
     expect(api.asked.at(-1)?.chips?.map(c => c.ref)).toEqual(['capability:phonebook.directory']);
     await expectNoAxeViolations(page);
-    // "Fortsätt som samtal" leads to the conversation with the view beside it, searched as it was on the page.
+    // "Fortsätt som samtal" leads to the conversation. The directory is a table, a page of its own (D116), so it is not
+    // drawn beside the transcript: the conversation keeps it as its chip.
     await panel.getByRole('link', { name: 'Fortsätt som samtal' }).click();
-    await expect(page).toHaveURL(
-      /\/conversations\/[^/?]+\?open=phonebook\.directory&open-title=Telefonbok&open-input=/,
-    );
-    await expect(page.getByRole('complementary', { name: 'Telefonbok' }).getByRole('searchbox')).toHaveValue('lärare');
+    await expect(page).toHaveURL(/\/conversations\/[^/?]+$/);
+    await expect(page.getByRole('complementary', { name: 'Telefonbok' })).toHaveCount(0);
     await expect(answer(page)).toBeVisible();
   });
 });

@@ -1913,6 +1913,52 @@ export const newsItemOutput = {
   publishedAt: '2026-11-03T09:00:00.000Z',
   body: 'Från 1 december går skolbussarna efter vintertidtabellen.',
 };
+/**
+ * A notice (D112, amended 2026-11-11 and 2026-11-12), as the communication fixture pushes one: its text as the summary,
+ * a few paragraphs; its reason saying who published it, when, and that a receipt is required; its one row the notice
+ * itself, with nothing to say beyond its title; "Jag har läst" as the read receipt and "Läs hela nyheten" as the read
+ * that leads out of Clew to the whole of it.
+ */
+export const NOTICE_PUBLISHED = '2026-11-03T05:30:00.000Z';
+export const NOTICE_LINK = 'https://kommunikation.example.invalid/meddelanden/rutin';
+export const NOTICE_TEXT = [
+  'Från den 1 december gäller en ny rutin för läkemedelshantering i hemtjänsten och på förvaltningens boenden.',
+  'Varje dos signeras direkt efter att den har getts. En dos som inte kunde ges rapporteras till ansvarig sjuksköterska under samma pass.',
+  'I den fullständiga rutinen finns checklistor och kontaktuppgifter. Bekräfta att du har tagit del av rutinen.',
+];
+export const NOTICE_REASON = 'Publicerat av Vård och omsorg 2026-11-03 06:30 · läskvitto krävs';
+export function asNotice(base: Thread, id = base.id, over: Partial<Thread> = {}): Thread {
+  const ref = `communication:notice:${id}`;
+  return {
+    ...base,
+    id,
+    topic: id,
+    summary: NOTICE_TEXT.join('\n\n'),
+    trigger: { ...base.trigger, reason: NOTICE_REASON },
+    items: [{ ref, label: over.title ?? base.title, detail: '', selectable: false, selected: true }],
+    actions: [
+      {
+        id: 'ack',
+        label: 'Jag har läst',
+        capability: 'communication.acknowledge',
+        kind: 'execute',
+        role: 'primary',
+        usesItems: true,
+        acknowledgement: { publishedAt: NOTICE_PUBLISHED },
+      },
+      {
+        id: 'open',
+        label: 'Läs hela nyheten',
+        capability: 'communication.open',
+        kind: 'read',
+        role: 'secondary',
+        target: 'link',
+        input: { ref },
+      },
+    ],
+    ...over,
+  };
+}
 /** "Alla nyheter" placed in the rail under Verktyg by an administrator (D40), as the registry lists it. */
 export const newsMenuRow: MenuEntry = {
   connector: 'clew',

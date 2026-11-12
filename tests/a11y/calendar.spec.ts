@@ -9,6 +9,7 @@ import {
   open,
   phone,
   reflowProblems,
+  silentSaidIn,
   test,
 } from './support';
 import type { Page } from '@playwright/test';
@@ -433,4 +434,83 @@ test.describe('an entry opened from the grid (D112 item 9)', () => {
     await expect(dialog.getByRole('button', { name: 'Boka' })).toBeInViewport({ ratio: 1 });
     await expect(dialog.getByRole('button', { name: 'Avbryt' })).toBeInViewport({ ratio: 1 });
   });
+});
+
+/**
+ * The calendar that does not answer says so in the page's own head, with since when and Försök igen, and the grid keeps
+ * what it has (D116, amended 2026-11-12): no banner over the page. A person with no calendar gets the page's answer, not
+ * a warning; the rail draws Kalender while the calendar is the person's to see (D23).
+ */
+test.describe('Kalender when the calendar does not answer, and for a person with no calendar', () => {
+  const said = async (page: Page, words: string) =>
+    (await announcements(page)).filter(text => text.includes(words)).length;
+  const rail = (page: Page) => page.getByRole('navigation', { name: 'Sidonavigering' });
+
+  test('the head says that the calendar does not answer, with Försök igen, which reads the week again; nothing is drawn as a free week, and it is said once', async ({
+    page,
+    api,
+  }) => {
+    await page.setViewportSize(desktop);
+    api.calendar = 'silent';
+    await open(page, '/calendar?view=week');
+    // In the page, not the live region that says it once (4.1.3).
+    const notice = page.getByRole('main').getByText('Kalendern svarar inte', { exact: true });
+    await expect(notice).toBeVisible();
+    // In the page's head, under its title, and nowhere above the page.
+    const title = (await page.getByRole('heading', { level: 1 }).boundingBox())!;
+    expect((await notice.boundingBox())!.y).toBeGreaterThan(title.y);
+    expect(await silentSaidIn(page)).not.toContain('outside main');
+    await expect(page.getByRole('button', { name: 'Ny bokning' })).toBeVisible();
+    // Nothing read: no empty grid that would pass for a free week, but what the page can say.
+    await expect(heading(page, 2, 'Kalendern kan inte visas just nu')).toBeVisible();
+    await expect.poll(() => said(page, 'Kalendern svarar inte')).toBe(1);
+    await expectNoAxeViolations(page);
+    api.calendar = 'ok';
+    await page.getByRole('button', { name: 'Försök igen' }).click();
+    await expect(notice).toHaveCount(0);
+    await expect(page.getByText('Morgonmöte ledningsgrupp').first()).toBeVisible();
+    expect(await said(page, 'Kalendern svarar inte')).toBe(1);
+  });
+
+  test('since when the calendar last answered, when the statuses say it', async ({ page, api }) => {
+    await page.setViewportSize(desktop);
+    api.calendar = 'silent';
+    api.sources = [
+      { connector: 'calendar', state: 'idle', lastSuccess: '2026-11-04T05:00:00.000Z', error: 'unavailable' },
+    ];
+    await open(page, '/calendar?view=week');
+    await expect(page.getByText('Kalendern svarar inte sedan 06:00', { exact: true })).toBeVisible();
+    await expect.poll(() => said(page, 'Kalendern svarar inte')).toBe(1);
+  });
+
+  test('the head with the notice reflows at 320 px', async ({ page, api }) => {
+    await page.setViewportSize(narrow);
+    api.calendar = 'silent';
+    await open(page, '/calendar?view=week');
+    await expect(page.getByRole('main').getByText('Kalendern svarar inte', { exact: true })).toBeVisible();
+    expect(await reflowProblems(page)).toEqual([]);
+  });
+
+  for (const [state, line, inRail] of [
+    ['hidden', 'En administratör kopplar kalendern under Anslutna system.', false],
+    ['unbound', 'En administratör kopplar ditt kalenderkonto.', true],
+  ] as const)
+    test(`with no calendar (${state}) the page says so and who connects one, with no warning and no grid`, async ({
+      page,
+      api,
+    }) => {
+      await page.setViewportSize(desktop);
+      api.calendar = state;
+      await open(page, '/calendar');
+      await expect(heading(page, 1, 'Kalender')).toBeVisible();
+      await expect(heading(page, 2, 'Ingen kalender är kopplad till dig')).toBeVisible();
+      await expect(page.getByText(line, { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Ny bokning' })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Försök igen' })).toHaveCount(0);
+      expect(await silentSaidIn(page)).toEqual([]);
+      expect(await said(page, 'svarar inte')).toBe(0);
+      await expect(page).toHaveTitle('Kalender · Startsidan');
+      await expect(rail(page).getByRole('link', { name: 'Kalender', exact: true })).toHaveCount(inRail ? 1 : 0);
+      await expectNoAxeViolations(page);
+    });
 });

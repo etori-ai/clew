@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import type { Thread } from '@clew/contracts';
 import {
   announcements,
@@ -11,10 +11,22 @@ import {
   open,
   phone,
   reflowProblems,
+  silentSaidIn,
   test,
   type MockApi,
 } from './support';
-import { ENTITY_UNIT, NEWS_LINK, TOOLBOX_HREF, newsMenuRow, newsOutput, siteHeaderWithToolbox, user } from './data';
+import {
+  ENTITY_UNIT,
+  NEWS_LINK,
+  NOTICE_LINK,
+  NOTICE_TEXT,
+  TOOLBOX_HREF,
+  asNotice,
+  newsMenuRow,
+  newsOutput,
+  siteHeaderWithToolbox,
+  user,
+} from './data';
 import { menuRows } from './phonebook';
 import { Units } from './unit-data';
 
@@ -22,44 +34,26 @@ import { Units } from './unit-data';
  * Hem with the parts of the prototype's version 1.0 (D112, amended 2026-11-11, board Hem10): the item that asks for a
  * read receipt as a callout between the box and the blocks, "Behöver dig", "I dag" and "Nyheter" side by side, Läget
  * with its way to the unit's page as Dialogstöd's figures, Verktygslådan with the person's tools, and under them what
- * D112 kept. "Anpassa startsidan" is not built, so nothing here looks for it.
+ * D112 kept. "Anpassa startsidan" is not built, so nothing here looks for it. A work item opened from Hem ("Läs", a row)
+ * opens in the panel beside Hem, and the person stays on Hem (amended 2026-11-12).
  */
 const rail = (page: Page) => page.getByRole('navigation', { name: 'Sidonavigering' });
 const news = (page: Page) => page.getByRole('region', { name: 'Nyheter' });
 const callout = (page: Page) => page.getByRole('region', { name: 'Viktigt' });
 const toasts = (page: Page) => page.getByRole('region', { name: 'Aviseringar' });
+/** The panel from the one width where it stands beside the page (1336 px), and the drawer below it. */
+const wide = { width: 1440, height: 900 };
+const beside = (page: Page) => page.getByRole('complementary', { name: 'Ärende', exact: true });
+/** The panel's name for a work item, the heading that takes the focus when it opens. */
+const panelName = (surface: Locator) => surface.locator('[aria-level="2"]').filter({ hasText: /^Ärende$/ });
 
-/** "Ny rutin för läkemedelshantering" as the communication fixture pushes it now: its "Jag har läst" is the read receipt. */
-const PUBLISHED = '2026-11-03T05:30:00.000Z';
-const receiptItem = (api: MockApi, id = 'rutin', over: Partial<Thread> = {}): Thread => {
-  const base = api.threads.find(t => t.id === 'rutin')!;
-  return {
-    ...base,
+/** "Ny rutin för läkemedelshantering" as the communication fixture pushes it now: a notice with its read receipt. */
+const receiptItem = (api: MockApi, id = 'rutin', over: Partial<Thread> = {}): Thread =>
+  asNotice(
+    api.threads.find(t => t.id === 'rutin')!,
     id,
-    topic: id,
-    items: [
-      {
-        ref: `communication:notice:${id}`,
-        label: base.title,
-        detail: 'kräver läskvitto',
-        selectable: false,
-        selected: true,
-      },
-    ],
-    actions: [
-      {
-        id: 'ack',
-        label: 'Jag har läst',
-        capability: 'communication.acknowledge',
-        kind: 'execute',
-        role: 'primary',
-        usesItems: true,
-        acknowledgement: { publishedAt: PUBLISHED },
-      },
-    ],
-    ...over,
-  };
-};
+    over,
+  );
 /** Everything the board draws: a receipt to give, news from two sources, two tools in the rail. */
 function everything(api: MockApi) {
   api.threads = api.threads.map(t => (t.id === 'rutin' ? receiptItem(api) : t));
@@ -223,8 +217,8 @@ test.describe('Hem with the parts of version 1.0', () => {
     const lifted = callout(page);
     await expect(lifted).toContainText('Ny rutin för läkemedelshantering');
     await expect(lifted).toContainText('Kommunikation · publicerad 3 november · läskvitto krävs');
-    // Läs opens the item in Att göra, as every row on Hem does.
-    await expect(lifted.getByRole('link', { name: 'Läs', exact: true })).toHaveAttribute('href', '/todo?item=rutin');
+    // Läs opens the item beside Hem, as every row on Hem does (amended 2026-11-12).
+    await expect(lifted.getByRole('link', { name: 'Läs', exact: true })).toHaveAttribute('href', '/?card=rutin');
     // The lifted item is not a row under the blocks too.
     await expect(page.getByRole('region', { name: 'Behöver dig' }).locator('#work-rutin')).toHaveCount(0);
     await expectNoAxeViolations(page);
@@ -287,10 +281,10 @@ test.describe('Hem with the parts of version 1.0', () => {
     await expect(lage.getByRole('link', { name: user.unitLabel, exact: true })).toHaveAttribute('href', href);
     const dialogue = lage.getByRole('link', { name: 'Öppna dialogstödet' });
     await expect(dialogue).toHaveAttribute('href', href);
-    // A tile keeps opening what it opened before (D54): the view beside Hem.
+    // A tile opens the view it names (D54): a table is its own page, with Hem as the way back (D116).
     await expect(lage.getByRole('link', { name: /^Personal: Sjukfrånvaro/ })).toHaveAttribute(
       'href',
-      /^\/\?open=hr\.absenceOverview/,
+      '/tools/hr.absenceOverview?title=Fr%C3%A5nvaro+per+person&from=%2F',
     );
     await dialogue.focus();
     await page.keyboard.press('Enter');
@@ -336,6 +330,272 @@ test.describe('Hem with the parts of version 1.0', () => {
   });
 });
 
+/**
+ * A work item opened from Hem opens beside Hem (D112, amended 2026-11-12; the product owner: "what I as a user expect,
+ * beside Hem"): "Läs" on the callout and every row under "Behöver dig" put the item in the panel every page has
+ * (`/?card=<id>`), the same work item Att göra's reading pane draws, with its buttons, its receipt and its box, and the
+ * person stays on Hem. A notice leads with its text and its way to the whole of it.
+ */
+/**
+ * D116: a list or a table opened from Hem is its view's page, never the panel; Back returns to Hem with the focus on
+ * the link that opened it. One thing (a budget) still opens beside Hem.
+ */
+test.describe('Läget leads to a list’s page, and one thing beside Hem', () => {
+  test.use({ viewport: desktop });
+  const talks = {
+    kind: 'table' as const,
+    capability: 'talks.talks',
+    connector: 'talks',
+    source: 'Utvecklingssamtal',
+    chip: false,
+    title: 'name',
+    noun: { one: 'person', other: 'personer' },
+    fields: [
+      { key: 'name', label: 'Namn' },
+      { key: 'state', label: 'Samtal', format: 'status' as const, tones: { Saknas: 'warn' as const } },
+      { key: 'at', label: 'När' },
+    ],
+  };
+  const rows = [
+    { name: 'Anna Lindqvist', state: 'Bokat', at: 'mån 16 nov' },
+    { name: 'Karin Lindqvist', state: 'Saknas' },
+  ];
+  const serve = (page: Page) =>
+    page.route('**/api/cap/talks.talks*', route =>
+      route.fulfill({ json: { source: 'Utvecklingssamtal', view: talks, output: { rows } } }),
+    );
+  const tileOf = (page: Page) =>
+    page
+      .getByRole('region', { name: 'Läget' })
+      .getByRole('link', { name: /^Utvecklingssamtal: Utvecklingssamtal hållna/ });
+  const PAGE = '/tools/talks.talks?title=Utvecklingssamtal&from=%2F';
+
+  test('a tile whose view is a table leads to the view’s page, which names Hem as its way back; Back returns to Hem with the focus on the tile', async ({
+    page,
+    api: _,
+  }) => {
+    await serve(page);
+    await open(page, '/');
+    const tile = tileOf(page);
+    await expect(tile).toHaveAttribute('href', PAGE);
+    await tile.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(PAGE);
+    const main = page.getByRole('main');
+    // The page, not the panel: its heading takes the focus, and nothing lies beside or over it.
+    await expect(heading(page, 1, 'Utvecklingssamtal')).toBeFocused();
+    await expect(page).toHaveTitle('Utvecklingssamtal · Startsidan');
+    await expect(main.getByRole('columnheader')).toHaveText(['Namn', 'Samtal', 'När']);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByRole('complementary')).toHaveCount(0);
+    // The way back names Hem, as a person's page names its own, and the rail stands on the place it came from.
+    await expect(main.getByRole('link', { name: 'Hem', exact: true })).toHaveAttribute('href', '/');
+    await expect(rail(page).locator('a[aria-current="page"]')).toContainText('Hem');
+    await expectNoAxeViolations(page);
+    await page.goBack();
+    await expect(page).toHaveURL('/');
+    await expect(tileOf(page)).toBeFocused();
+    // The page's own way back does the same. (A tile is pressed where its text is drawn: ClickableCard lays it over the
+    // card's own link.)
+    await page.getByRole('region', { name: 'Läget' }).getByText('1 av 4', { exact: true }).click();
+    await expect(page).toHaveURL(PAGE);
+    await page.getByRole('main').getByRole('link', { name: 'Hem', exact: true }).click();
+    await expect(page).toHaveURL('/');
+    await expect(tileOf(page)).toBeFocused();
+  });
+
+  test('the view’s page reached from a tile reflows at 320 px with no axe violations', async ({ page, api: _ }) => {
+    await page.setViewportSize(narrow);
+    await serve(page);
+    await open(page, '/');
+    await tileOf(page).focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(PAGE);
+    const main = page.getByRole('main');
+    await expect(heading(page, 1, 'Utvecklingssamtal')).toBeVisible();
+    // At 320 px the table is its list.
+    await expect(main.getByRole('table')).toHaveCount(0);
+    await expect(main.getByRole('listitem').filter({ hasText: 'Karin Lindqvist' })).toContainText('Saknas');
+    expect(await reflowProblems(page)).toEqual([]);
+    await expectNoAxeViolations(page);
+  });
+
+  test('a tile whose view is one thing opens it beside Hem, with no page of its own offered', async ({
+    page,
+    api: _,
+  }) => {
+    await open(page, '/');
+    const tile = page.getByRole('region', { name: 'Läget' }).getByRole('link', { name: /^Budget: Förbrukat av ramen/ });
+    await expect(tile).toHaveAttribute('href', '/?open=finance.budget&open-title=Budget+mot+prognos');
+    await tile.focus();
+    await page.keyboard.press('Enter');
+    const panel = page.getByRole('dialog', { name: 'Budget mot prognos' });
+    await expect(panel).toBeVisible();
+    await expect(page).toHaveURL('/?open=finance.budget&open-title=Budget+mot+prognos');
+    await expect(panel.getByRole('link', { name: 'Öppna som sida' })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(tile).toBeFocused();
+  });
+});
+
+test.describe('a work item opened from Hem, beside Hem', () => {
+  test.use({ viewport: wide });
+
+  test('Läs opens the notice beside Hem, led by its text and its link out, and Esc gives the focus back to Läs', async ({
+    page,
+    api,
+  }) => {
+    everything(api);
+    api.cardReads.open = { output: { url: NOTICE_LINK } };
+    await open(page, '/');
+    const read = callout(page).getByRole('link', { name: 'Läs', exact: true });
+    await read.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL('/?card=rutin');
+    const panel = beside(page);
+    const item = panel.getByRole('article', { name: 'Ärende: Ny rutin för läkemedelshantering' });
+    await expect(item).toBeVisible();
+    await expect(panelName(panel)).toBeFocused();
+    // The person is still on Hem: its heading, the callout and the blocks, with nothing over the page.
+    await expect(heading(page, 1, 'Vad vill du få gjort?')).toBeVisible();
+    await expect(callout(page)).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Behöver dig' })).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(rail(page).getByRole('link', { name: /^Hem/ })).toHaveAttribute('aria-current', 'page');
+    // The same work item as Att göra's pane: Öppna som sida with Hem as the way back, its buttons, the box at the foot.
+    await expect(item.getByRole('link', { name: 'Öppna som sida' })).toHaveAttribute(
+      'href',
+      '/items/rutin?from=%2F%3Fcard%3Drutin',
+    );
+    const ack = item.getByRole('button', { name: 'Jag har läst' });
+    await expect(ack).toHaveCount(1);
+    await expect(panel.getByRole('textbox', { name: 'Fråga Clew' })).toBeVisible();
+    // A notice reads as a notice: its text first, under no heading of its own, then the way to the whole of it, marked
+    // as leaving Clew and drawn once; "Varför ser jag detta?" is the provenance line; a row that only repeats the title
+    // is not drawn.
+    const first = item.getByText(NOTICE_TEXT[0]!, { exact: true });
+    const last = item.getByText(NOTICE_TEXT.at(-1)!, { exact: true });
+    const whole = item.getByRole('button', { name: /^Läs hela nyheten\s*\(öppnas i ny flik\)$/ });
+    const why = item.getByRole('region', { name: 'Varför ser jag detta?' });
+    await expect(whole).toHaveCount(1);
+    const y = async (l: Locator) => (await l.boundingBox())!.y;
+    expect(await y(first)).toBeGreaterThan(await y(ack));
+    expect(await y(whole)).toBeGreaterThan(await y(last));
+    expect(await y(why)).toBeGreaterThan(await y(whole));
+    await expect(why).toContainText(
+      'Publicerat av Vård och omsorg 2026-11-03 06:30 · läskvitto krävs. Ärendet kom från Kommunikation',
+    );
+    await expect(why).not.toContainText(NOTICE_TEXT[0]!);
+    await expect(item.getByRole('heading', { name: 'Rader' })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+    // The way to the whole notice opens it in a new tab, once, and Hem and the panel stay as they were.
+    await page.evaluate(() => {
+      const opened: string[] = [];
+      Object.assign(window, { opened });
+      window.open = (url?: string | URL) => {
+        opened.push(String(url));
+        return null;
+      };
+    });
+    await whole.focus();
+    await page.keyboard.press('Enter');
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { opened: string[] }).opened))
+      .toEqual([NOTICE_LINK]);
+    await expect(page).toHaveURL('/?card=rutin');
+    // Esc lets go of the item, and the focus is back on Läs.
+    await page.keyboard.press('Escape');
+    await expect(panel).toHaveCount(0);
+    await expect(page).toHaveURL('/');
+    await expect(read).toBeFocused();
+  });
+
+  test('a row under Behöver dig opens its item beside Hem, marked as the current row; another row takes its place; ✕ gives the focus back to the row', async ({
+    page,
+    api: _,
+  }) => {
+    await open(page, '/');
+    const needs = page.getByRole('region', { name: 'Behöver dig' });
+    await expect(needs.getByRole('listitem')).toHaveCount(3);
+    const fakturor = needs.getByRole('link', { name: /^Attestera 3 fakturor/ });
+    await expect(fakturor).toHaveAttribute('href', '/?card=fakturor');
+    await fakturor.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL('/?card=fakturor');
+    const panel = beside(page);
+    await expect(panel.locator('#card-fakturor').getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
+    await expect(panelName(panel)).toBeFocused();
+    await expect(needs.locator('#work-fakturor')).toHaveAttribute('aria-current', 'true');
+    await expect(heading(page, 1, 'Vad vill du få gjort?')).toBeVisible();
+    await expectNoAxeViolations(page);
+    // Another row takes its place in the panel; the page stays.
+    const omtanke = needs.getByRole('link', { name: /^Omtankesamtal med Anna Lindqvist/ });
+    await omtanke.click();
+    await expect(page).toHaveURL('/?card=omtanke');
+    await expect(panel.locator('#card-omtanke')).toBeVisible();
+    await expect(panel.locator('#card-fakturor')).toHaveCount(0);
+    await expect(needs.locator('#work-fakturor')).not.toHaveAttribute('aria-current', 'true');
+    // ✕ lets go of it, and the focus is back on the row that opened it.
+    await panel.getByRole('button', { name: 'Stäng panelen' }).click();
+    await expect(page).toHaveURL('/');
+    await expect(panel).toHaveCount(0);
+    await expect(omtanke).toBeFocused();
+    // The address is the state: Back opens it again.
+    await page.goBack();
+    await expect(page).toHaveURL('/?card=omtanke');
+    await expect(beside(page).locator('#card-omtanke')).toBeVisible();
+    // All of them are still one link away in Att göra.
+    await expect(needs.getByRole('link', { name: 'Alla 6 i Att göra' })).toHaveAttribute('href', '/todo');
+  });
+
+  test('the receipt given beside Hem: the item shows it, Hem lets go of the callout as for its own button, and closing leaves the focus on Behöver dig', async ({
+    page,
+    api,
+  }) => {
+    everything(api);
+    await open(page, '/');
+    await callout(page).getByRole('link', { name: 'Läs', exact: true }).click();
+    const panel = beside(page);
+    const item = panel.locator('#card-rutin');
+    const ack = item.getByRole('button', { name: 'Jag har läst' });
+    await ack.focus();
+    await page.keyboard.press('Enter');
+    await expect.poll(() => api.acted.map(a => [a.threadId, a.body.actionId])).toEqual([['rutin', 'ack']]);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    // The receipt stands on the item beside Hem, the notice's text still under it, and the focus stays with the item.
+    await expect(item.getByText('Läskvittot är registrerat.', { exact: true })).toBeVisible();
+    await expect(item.getByRole('list', { name: 'Kvitto, rad för rad' })).toContainText('kvitterat 09:00');
+    await expect(item.getByText(NOTICE_TEXT[0]!, { exact: true })).toBeVisible();
+    await expect(item.locator('#card-rutin-title')).toBeFocused();
+    // Hem says it as it does for the callout's own button, and lets go of the callout once the receipt had its moment.
+    await expect(toasts(page).getByText(/^Läskvittot är registrerat\. Ärendet ligger under Klart\./)).toBeVisible();
+    await expect(callout(page)).toHaveCount(0, { timeout: 10_000 });
+    await expect(page.getByRole('region', { name: 'Behöver dig' }).locator('#work-rutin')).toHaveCount(0);
+    await expectNoAxeViolations(page);
+    // Nothing on Hem leads back to the item now: closing it leaves the focus on Behöver dig.
+    await page.keyboard.press('Escape');
+    await expect(panel).toHaveCount(0);
+    await expect(page).toHaveURL('/');
+    await expect(page.locator('#behover-dig')).toBeFocused();
+  });
+
+  test('a work item in Hem’s address is beside Hem after a load; one that is gone says so there', async ({
+    page,
+    api: _,
+  }) => {
+    await open(page, '/?card=ledighet');
+    await expect(page).toHaveURL('/?card=ledighet');
+    await expect(
+      beside(page).getByRole('article', { name: 'Ärende: Ledighetsansökan från Johan Byström' }),
+    ).toBeVisible();
+    await expect(heading(page, 1, 'Vad vill du få gjort?')).toBeVisible();
+    await open(page, '/?card=borta');
+    await expect(beside(page).getByText('Ärendet finns inte längre bland dina ärenden.')).toBeVisible();
+    await expectNoAxeViolations(page);
+  });
+});
+
 test.describe('Hem with the parts of version 1.0, narrow', () => {
   test('at 320 px nothing reflows past the edge or is cut', async ({ page, api }) => {
     everything(api);
@@ -345,6 +605,24 @@ test.describe('Hem with the parts of version 1.0, narrow', () => {
     await expect(callout(page)).toBeVisible();
     await expect(news(page)).toBeVisible();
     expect(await reflowProblems(page)).toEqual([]);
+  });
+
+  test('at 320 px the notice opened from Hem is the drawer over it, and nothing in it reflows past the edge', async ({
+    page,
+    api,
+  }) => {
+    everything(api);
+    await page.setViewportSize(narrow);
+    await open(page, '/');
+    await callout(page).getByRole('link', { name: 'Läs', exact: true }).click();
+    await expect(page).toHaveURL('/?card=rutin');
+    const drawer = page.getByRole('dialog', { name: 'Ärende', exact: true });
+    await expect(drawer.getByRole('article', { name: 'Ärende: Ny rutin för läkemedelshantering' })).toBeVisible();
+    await expect(drawer.getByText(NOTICE_TEXT[0]!, { exact: true })).toBeVisible();
+    await page.evaluate(() => Promise.all(document.getAnimations().map(a => a.finished)));
+    expect(await reflowProblems(page, drawer)).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await expectNoAxeViolations(page);
   });
 });
 
@@ -369,5 +647,127 @@ test.describe('Hem with the parts of version 1.0 on a phone', () => {
     expect((await row.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await expectNoAxeViolations(page);
+  });
+
+  test('Läs opens the item in the end drawer over Hem, as on every page, and ✕ gives the focus back to Läs', async ({
+    page,
+    api,
+  }) => {
+    everything(api);
+    await open(page, '/');
+    const read = callout(page).getByRole('link', { name: 'Läs', exact: true });
+    await read.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL('/?card=rutin');
+    const drawer = page.getByRole('dialog', { name: 'Ärende', exact: true });
+    await expect(drawer.getByRole('button', { name: 'Jag har läst' })).toBeVisible();
+    await expect.poll(() => drawer.evaluate(el => el.contains(document.activeElement))).toBe(true);
+    await expect(page.getByRole('complementary', { name: 'Ärende', exact: true })).toHaveCount(0);
+    await page.evaluate(() => Promise.all(document.getAnimations().map(a => a.finished)));
+    await expectNoAxeViolations(page);
+    await drawer.getByRole('button', { name: 'Stäng panelen' }).click();
+    await expect(drawer).toHaveCount(0);
+    await expect(page).toHaveURL('/');
+    await expect(read).toBeFocused();
+  });
+});
+
+/**
+ * A system that does not answer is said where its content is missing (D116, amended 2026-11-12), never as a banner at
+ * the top of the page: "I dag" stays and says that the calendar does not answer, with Försök igen; the first time in a
+ * session it is said aloud once. A person with no calendar is told so in "I dag", with who connects one, and no warning.
+ */
+test.describe('I dag when the calendar does not answer, and for a person with no calendar', () => {
+  test.use({ viewport: desktop });
+  const day = (page: Page) => page.getByRole('region', { name: 'I dag' });
+  const said = async (page: Page, words: string) =>
+    (await announcements(page)).filter(text => text.includes(words)).length;
+
+  test('I dag stays and says that the calendar does not answer, with Försök igen, which reads the day again; it is said once, and nothing tops the page', async ({
+    page,
+    api,
+  }) => {
+    api.calendar = 'silent';
+    await open(page, '/');
+    await expect(day(page).getByRole('heading', { name: 'I dag' })).toBeVisible();
+    await expect(day(page).getByText('Kalendern svarar inte', { exact: true })).toBeVisible();
+    // Said in the block where the day would be, and nowhere else: no banner above the page.
+    expect(await silentSaidIn(page)).toEqual(['I dag']);
+    await expect.poll(() => said(page, 'Kalendern svarar inte')).toBe(1);
+    await expectNoAxeViolations(page);
+    // To Att göra and back by the rail: the session has said it once, so it is not said again.
+    const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
+    await rail.getByRole('link', { name: /^Att göra/ }).click();
+    await expect(page).toHaveURL('/todo');
+    await rail.getByRole('link', { name: /^Hem/ }).click();
+    await expect(day(page).getByText('Kalendern svarar inte', { exact: true })).toBeVisible();
+    expect(await said(page, 'Kalendern svarar inte')).toBe(1);
+    // The calendar answers again: Försök igen reads the day, and the meetings stand where the sentence was.
+    api.calendar = 'ok';
+    await day(page).getByRole('button', { name: 'Försök igen' }).click();
+    await expect(day(page).getByText('Rektorsmöte')).toBeVisible();
+    await expect(day(page).getByText('Kalendern svarar inte', { exact: true })).toHaveCount(0);
+    await expect(day(page).getByRole('link', { name: 'Kalender', exact: true })).toBeVisible();
+  });
+
+  test('when the calendar has not answered since a known time it says since when, and once aloud', async ({
+    page,
+    api,
+  }) => {
+    api.calendar = 'silent';
+    api.sources = [
+      { connector: 'calendar', state: 'idle', lastSuccess: '2026-11-04T05:00:00.000Z', error: 'unavailable' },
+    ];
+    await open(page, '/');
+    await expect(day(page).getByText('Kalendern svarar inte sedan 06:00', { exact: true })).toBeVisible();
+    // One system, said once, whether the cards' statuses or the day's own read noticed it first.
+    await expect.poll(() => said(page, 'Kalendern svarar inte')).toBe(1);
+    await expectNoAxeViolations(page);
+  });
+
+  test('a person whose calendar is not switched on for them: I dag says so and who connects one, with no warning, and the rail has no Kalender', async ({
+    page,
+    api,
+  }) => {
+    api.calendar = 'hidden';
+    await open(page, '/');
+    await expect(day(page).getByText('Ingen kalender är kopplad till dig.', { exact: true })).toBeVisible();
+    await expect(
+      day(page).getByText('En administratör kopplar kalendern under Anslutna system.', { exact: true }),
+    ).toBeVisible();
+    await expect(day(page).getByRole('button', { name: 'Försök igen' })).toHaveCount(0);
+    await expect(day(page).getByRole('link', { name: 'Kalender', exact: true })).toHaveCount(0);
+    expect(await silentSaidIn(page)).toEqual([]);
+    expect(await said(page, 'svarar inte')).toBe(0);
+    await expect(
+      page.getByRole('navigation', { name: 'Sidonavigering' }).getByRole('link', { name: 'Kalender', exact: true }),
+    ).toHaveCount(0);
+    await expectNoAxeViolations(page);
+  });
+
+  test('an account with no calendar bound: I dag says so and who binds one, and the rail keeps Kalender', async ({
+    page,
+    api,
+  }) => {
+    api.calendar = 'unbound';
+    await open(page, '/');
+    await expect(day(page).getByText('Ingen kalender är kopplad till dig.', { exact: true })).toBeVisible();
+    await expect(day(page).getByText('En administratör kopplar ditt kalenderkonto.', { exact: true })).toBeVisible();
+    expect(await silentSaidIn(page)).toEqual([]);
+    expect(await said(page, 'svarar inte')).toBe(0);
+    await expect(
+      page.getByRole('navigation', { name: 'Sidonavigering' }).getByRole('link', { name: 'Kalender', exact: true }),
+    ).toBeVisible();
+    await expectNoAxeViolations(page);
+  });
+
+  test('a silent calendar and no calendar reflow at 320 px', async ({ page, api }) => {
+    await page.setViewportSize(narrow);
+    for (const state of ['silent', 'hidden'] as const) {
+      api.calendar = state;
+      await open(page, '/');
+      await expect(day(page).getByRole('heading', { name: 'I dag' })).toBeVisible();
+      expect(await reflowProblems(page, day(page)), state).toEqual([]);
+    }
   });
 });

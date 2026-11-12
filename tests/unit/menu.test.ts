@@ -351,6 +351,47 @@ describe('who gets a row', () => {
   });
 });
 
+describe('every read a person may open is a view with a page of its own (D116)', () => {
+  const registry = () =>
+    new Registry().register(
+      remoteConnector(parseManifest(phonebookManifest, 'phonebook'), {
+        url: 'http://phonebook',
+        assert: sign(SECRET, 'phonebook'),
+        fetch: async () => Response.json({}),
+      }),
+    );
+  const on = (over: object = {}) => ({
+    state: 'enabled' as const,
+    audience: { mode: 'all' as const },
+    scanEnabled: true,
+    toolsEnabled: true,
+    capabilities: {},
+    ...over,
+  });
+  test('each read with its title and the kind of view it declares, placed in the menu or not', () => {
+    const r = registry();
+    r.govern('phonebook', on());
+    expect(r.views(actorOf(hassan))).toEqual([
+      { capability: 'phonebook.directory', title: 'Sök i telefonboken', kind: 'table' },
+      { capability: 'phonebook.team', title: 'Mitt teams kontaktlista', kind: 'list' },
+      { capability: 'phonebook.person', title: 'Kontaktkort', kind: 'detail' },
+      { capability: 'phonebook.search', title: 'Sök person', kind: 'list' },
+      // A read that declares no view is listed without a kind: it opens beside the page, and a page if it has rows.
+      { capability: 'phonebook.fetch', title: 'Hämta person' },
+    ]);
+  });
+  test('a read the person may not call is missing, exactly as one that does not exist', () => {
+    const r = registry();
+    r.govern('phonebook', on({ audience: { mode: 'selected', units: ['unit-it'] } }));
+    expect(r.views(actorOf(hassan))).toEqual([]);
+    expect(r.views(actorOf(mikael)).map(v => v.capability)).toContain('phonebook.directory');
+    r.govern('phonebook', on({ capabilities: { 'phonebook.directory': { enabled: false } } }));
+    expect(r.views(actorOf(hassan)).map(v => v.capability)).not.toContain('phonebook.directory');
+    r.govern('phonebook', on({ state: 'disabled' }));
+    expect(r.views(actorOf(hassan))).toEqual([]);
+  });
+});
+
 describe('the administrator chooses, view by view', () => {
   test('a new connector lists the views that can be tools, all off; choosing one is one audit row and the row is there for the audience at once', async () => {
     const { admin, store, registry } = world();

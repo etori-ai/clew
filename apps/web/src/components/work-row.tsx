@@ -2,6 +2,7 @@ import { useRef, type ReactNode } from 'react';
 import type { Thread } from '@clew/contracts';
 import { Badge, Link, List, ListItem, StatusDot, Text, VStack } from '@clew/ui';
 import type { RowFacts } from '../work-items';
+import { staleWhy, useSilentSources } from './silent-sources';
 
 /**
  * A row that is one link (D112 items 2 and 3, boards Inbox and Main): the title is the row's one link and its one tab
@@ -67,7 +68,8 @@ export function LinkRow({
 
 /**
  * A work item as a row (D112 items 2 and 3, boards Inbox and Main): the state dot, the title, why it is here, when it
- * is due and where it comes from, as the one link row.
+ * is due and where it comes from, as the one link row. An open item whose system does not answer says at the end of its
+ * why line that it may be old (D116, amended 2026-11-12), in words, as a reminder's wait is said there.
  */
 export function WorkRow({
   thread,
@@ -83,6 +85,8 @@ export function WorkRow({
   href: string;
   isSelected?: boolean;
 }) {
+  const silent = useSilentSources().of(thread.connector);
+  const stale = thread.state === 'open' && !!silent;
   return (
     <LinkRow
       id={`work-${thread.id}`}
@@ -91,7 +95,7 @@ export function WorkRow({
       title={thread.title}
       isSelected={isSelected}
       startContent={<StatusDot variant={facts.state.variant} label={facts.state.label} tooltip={facts.state.label} />}
-      description={facts.why}
+      description={stale ? staleWhy(facts.why) : facts.why}
       endContent={
         <VStack gap={1} hAlign="end">
           {facts.due && <Badge variant={facts.due.variant} label={facts.due.label} />}

@@ -148,31 +148,29 @@ test.describe('2.4.3 focus order', () => {
   });
 });
 
-test.describe('D26 a source becomes a chip', () => {
-  test("Lägg till i samtalet in the sources view beside a conversation puts the passage in the box's drawer and says so on the row", async ({
+test.describe('D26 the sources beside a conversation (D116)', () => {
+  test('the sources opened beside a conversation are their own page, and the keyboard follows the way back to the conversation', async ({
     page,
     api: _,
   }) => {
-    // Beside a conversation's own box (D112 item 7): elsewhere the sources view has its own box in the panel.
+    // The hits are rows: a list is a page, never the panel, so the address that opened them beside the conversation
+    // leads to the search's page. A passage no longer goes into that conversation's box from here.
     await open(
       page,
       '/conversations/fraga?open=clew.search&open-title=K%C3%A4llor&open-input=%7B%22query%22%3A%22fall%22%7D',
     );
-    const panel = page.getByRole('dialog');
-    const add = panel
-      .getByRole('list', { name: 'Källor' })
-      .getByRole('listitem')
-      .nth(0)
-      .getByRole('button', { name: 'Lägg till i samtalet' });
-    await add.focus();
+    await expect(page).toHaveURL(/^[^?]*\/tools\/clew\.search\?.*&from=%2Fconversations%2Ffraga$/);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    const main = page.getByRole('main');
+    const rows = main.getByRole('list', { name: 'Källor' }).getByRole('listitem');
+    await expect(rows).toHaveCount(3);
+    await expect(main.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
+    const back = main.getByRole('link', { name: 'Samtalet' });
+    await expect(back).toHaveAttribute('href', '/conversations/fraga');
+    // The way back is a link the keyboard follows to the conversation.
+    await back.focus();
     await page.keyboard.press('Enter');
-    await expect(panel.getByRole('button', { name: 'I samtalet', exact: true })).toHaveCount(1);
-    await panel.getByRole('button', { name: 'Stäng' }).click();
-    await expect(
-      page
-        .getByRole('group', { name: 'Objekt i samtalet' })
-        .or(page.getByText('Rutin vid fall i ordinärt boende').first()),
-    ).toBeVisible();
+    await expect(page).toHaveURL('/conversations/fraga');
   });
 });
 
@@ -219,18 +217,18 @@ test.describe('D97 a hit about a person', () => {
     // No source answers a subject on a hit yet: the suite's search does, merged from two sources (artboard P).
     await page.route('**/api/cap/clew.search*', route => route.fulfill({ json: { output: mergedSearch } }));
     const input = encodeURIComponent(JSON.stringify({ query: 'byström' }));
-    await open(page, `/?open=clew.search&open-title=K%C3%A4llor&open-input=${input}`);
-    const hits = page.getByRole('dialog').getByRole('list', { name: 'Källor' }).getByRole('listitem');
+    await open(page, `/tools/clew.search?input=${input}&title=K%C3%A4llor&from=%2F`);
+    const hits = page.getByRole('main').getByRole('list', { name: 'Källor' }).getByRole('listitem');
     await expect(hits).toHaveCount(2);
     const person = hits.nth(0);
     const name = person.getByRole('link', { name: 'Johan Byström', exact: true });
-    // Hem with the search open beside it is the way back.
-    await expect(name).toHaveAttribute('href', /^\/people\/johan\?from=%2F%3Fopen%3Dclew\.search%26/);
+    // The search's own page is the way back (D116), without a way back of its own.
+    await expect(name).toHaveAttribute('href', /^\/people\/johan\?from=%2Ftools%2Fclew\.search%3Finput%3D/);
     await expect(person.getByText('Telefonboken · Personalsystemet', { exact: true })).toBeVisible();
     // The hit leads to the person instead of one source's record: no contact card, no link out.
     await expect(person.getByRole('link', { name: 'Kontaktkort' })).toHaveCount(0);
     await expect(person.getByRole('link', { name: /Öppna/ })).toHaveCount(0);
-    // On Hem the panel asks about the sources in its own box: no hit goes into a conversation from here (D112 item 7).
+    // The page has no conversation's box beside it: no hit goes into a conversation from here (D112 item 7).
     await expect(person.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
     // A document from one source is drawn as before.
     const document = hits.nth(1);

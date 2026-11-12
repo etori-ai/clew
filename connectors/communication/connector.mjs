@@ -56,11 +56,18 @@ export function createConnector({
         })),
       };
     },
-    // The news profile (D112): the notices the person may read as news, newest first. A record seeded before notices
-    // had a sender carries the system's own name.
+    // The news profile (D112): the notices the person may read as news, newest first, each with its link when the system
+    // shows it in full (Clew then leads the row there; without one the row opens `communication.newsItem` in Clew). A
+    // record seeded before notices had a sender carries the system's own name.
     'communication.news': actor => ({
       rows: forActor(actor)
-        .map(n => ({ ref: n.ref, title: n.title, sender: n.sender ?? manifest.source, publishedAt: n.publishedAt }))
+        .map(n => ({
+          ref: n.ref,
+          title: n.title,
+          sender: n.sender ?? manifest.source,
+          publishedAt: n.publishedAt,
+          ...(n.link ? { link: n.link } : {}),
+        }))
         .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt)),
     }),
     'communication.newsItem': (actor, input) => {
@@ -73,6 +80,12 @@ export function createConnector({
         publishedAt: n.publishedAt,
         body: n.body,
       };
+    },
+    // The notice in full in the system (D111 rule 8): the work item's link out, "Läs hela nyheten".
+    'communication.open': (actor, input) => {
+      const n = forActor(actor).find(x => x.ref === input.ref);
+      if (!n?.link) throw new Invalid('Meddelandet finns inte i sin helhet.');
+      return { url: n.link };
     },
     'communication.lookup': (actor, input) => {
       const op = state.get('op:' + input.operationId);
@@ -133,13 +146,16 @@ export function createConnector({
     return forActor(actor)
       .filter(n => n.requiresReceipt && !mine[n.ref])
       .map(n => {
+        // The work item is the notice (D112, amended 2026-11-12): its text is the summary, paragraphs and all, the
+        // reason says who published it and when, and its one row is the notice itself, which the receipt names. With a
+        // link the whole of it is a read that leads out of Clew, which Clew draws after the text.
         const draft = {
           topic: `communication:${n.ref}`,
           area: 'important-now',
           title: n.title,
           summary: n.body,
-          reason: `Publicerat ${new Date(n.publishedAt).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Stockholm' })} · läskvitto krävs`,
-          items: [{ ref: n.ref, label: n.title, detail: 'kräver läskvitto', selectable: false, selected: true }],
+          reason: `Publicerat av ${n.sender ?? manifest.source} ${new Date(n.publishedAt).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Stockholm' })} · läskvitto krävs`,
+          items: [{ ref: n.ref, label: n.title, detail: '', selectable: false, selected: true }],
           actions: [
             {
               id: 'ack',
@@ -149,6 +165,19 @@ export function createConnector({
               role: 'primary',
               usesItems: true,
             },
+            ...(n.link
+              ? [
+                  {
+                    id: 'open',
+                    label: 'Läs hela nyheten',
+                    capability: 'communication.open',
+                    kind: 'read',
+                    role: 'secondary',
+                    target: 'link',
+                    input: { ref: n.ref },
+                  },
+                ]
+              : []),
           ],
         };
         // The receipt is the item's point (D112): the action says so, with when the notice was published, so Hem can

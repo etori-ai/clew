@@ -45,6 +45,8 @@ export const FIXTURES: Array<[id: string, port: number, options?: { enable: bool
   ['communication', 4043],
   ['timesheet', 4044],
   ['payroll', 4046],
+  // The Qlik connector (D82) on its made-up statistics: sick-leave aggregates per unit, no Qlik behind it.
+  ['qlik', 4048],
   // The intranet (D88): the connector that gives Clew its shared header.
   ['intranet', 4049],
   // The appraisal system (D96 item 9): Clew's built-in talks module answers while it is enabled, so this one is

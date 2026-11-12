@@ -1,6 +1,6 @@
 # D73 · The review is a page in the shell, with an address
 
-**Status:** accepted, built 2026-11-07 on `main` as a page, rebuilt the same day as a drawer (see the amendment), and on a phone as a sheet stacked over the card's sheet (see the second amendment) · **Date:** 2026-11-07 · **Area:** ui
+**Status:** accepted, built 2026-11-07 on `main` as a page, rebuilt the same day as a drawer (see the amendment), and on a phone as a sheet stacked over the card's sheet (see the second amendment); a page again since 2026-11-12, `/items/<threadId>/review`, under the product owner's rule that a task a person works through is a page with its own address ([D116](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md); see the amendment of that date) · **Date:** 2026-11-07 · **Area:** ui
 
 **Decision.** The review of several rows one at a time ([D70](D70-one-press-confirms-on-the-row-and-rows-with-a-document-are-reviewed-one-at-a-time.md)
 item 2) is no longer a fullscreen `Dialog` over Hem with state of its own. It is a page in the one shell, with the
@@ -240,3 +240,61 @@ that read another address. Evidence: `apps/web/tests/review-address.test.ts`, `a
 `tests/a11y/review.spec.ts` (over Hem from a row and from the card, beside Personal, in a conversation's answer, over
 the drawer on Kalender where Esc closes the review and then the card, the address from before), `tests/a11y/documents.spec.ts`
 (from a Klart row, closing to `/?tab=done&card=<threadId>`). No screen-reader pass.
+
+**Amended 2026-11-12: a page again, at the work item's address.** The product owner stated on 2026-11-12 that a side
+panel, a drawer or a sheet is for peeking at one thing or an instant action, and that otherwise a full route is
+needed: a task a person works through is a page with its own address ([D116](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md), recorded the same day). They
+approved turning the review into a page "to simplify the flows". The surfaces of the two amendments of 2026-11-07 and
+the overlay of the amendment of 2026-11-11 are replaced. What is written, when, through which endpoint and with which
+evidence stands, as do [D70](D70-one-press-confirms-on-the-row-and-rows-with-a-document-are-reviewed-one-at-a-time.md)
+items 1, 3 and 4, the selection rule of 2026-11-11 and the review contract and recovery of
+[D79](D79-semantic-views-and-versioned-document-review.md) and
+[D80](D80-recover-rejected-rows-without-replaying-confirmed-writes.md).
+
+1. **The address** is `/items/<threadId>/review`, the work item's page with `review` after it. The step is `step` as
+   before (1-based, the first left out, rewritten with `replace`, so Back leaves the review), and `from` is the page the
+   item was shown on, kept as the item's own page keeps it. "Granska N" and each row under "Dokument" are links to it
+   wherever the item is drawn: Att göra's pane, the panel beside a page, the item's page, a conversation's answer. A row
+   under Dokument names its step even for the first row, so the way back can tell it from "Granska N".
+2. **The page** follows Astryx's `form-wizard` template with the work item page's details rail (`work-item-detail`, as
+   `WorkItemPage` composes it). The pinned header holds the trail back (the page the item was shown on, by its name when
+   Clew has one, else the item's title), "Granska N rader" as the page's h1 and the tab's title, the subtitle, the status
+   and the count, the progress (a `Stepper` below five rows, a `ProgressBar` from five) and Föregående, Nästa and
+   Översikt. The content holds the row with its document, the summary on the last step. "Hittills" stands in a 340 px
+   rail beside it, and under it at 1024 px and below. The decision's buttons and Skicka are in the pinned footer. On a
+   phone nothing is pinned above the step and the page stacks; on a short screen nothing is pinned. No `Drawer`,
+   `BottomSheet` or ✕.
+3. **The decisions are the person's draft for the session.** They are kept per work item in the tab's session storage,
+   with a copy in memory for a browser that refuses storage: each row's decision and, for an approval on a versioned
+   document, the record and document revisions it was taken on. A reload, Back and Forward, a person or a link opened on
+   the way all find them. The draft belongs to the rows as they were seen (each row's ref, revision, label and detail);
+   when those change it is dropped. It is cleared on Skicka and when the session ends. The evidence is never kept (D79):
+   when the page no longer holds an approval's evidence, Skicka reads that row's documents again and sends the fresh
+   evidence only if the revisions are the ones the approval was taken on; otherwise the approval is taken back and the
+   page says which row must be reviewed again.
+4. **The way back** is the browser's own: Back from any step is the item where it was shown, and the item gives the
+   focus to the control that led to the review (`reviewLeftFor`, held while the page is shown, as a unit's page holds
+   the organisation tree's way back). "Tillbaka till ärendet" on a sent review and Skicka's answer go back one step when
+   the page was reached by a link, else replace the page with the item where it was shown. "Granska avvisade igen"
+   replaces the page with the new item's review. An item whose review is begun says "Fortsätt granska", leading to the
+   first row not yet judged, and shows the draft as its ticks.
+5. **The addresses from before** lead to the page in their own place in the history: `?review=<threadId>&step=<n>` on
+   any page, with that page as `from`, and `/cards/<threadId>/review?step=<n>`, with the item's own page as the way
+   back. Nothing on the server builds either.
+
+Weighed and left: the decisions in the page's memory only (a reload, which a page makes likely, would lose them); the
+evidence kept with them (D79 keeps no durable evidence, and a fresh read of the same revisions is as good); the
+decisions in the history entry's state (lost when the person leaves by a link and comes back by another); a prompt
+before leaving with decisions not sent (the draft is there when the person comes back).
+
+Built: the route in `apps/web/src/main.tsx`, the page `apps/web/src/pages/review.tsx`, the address
+`apps/web/src/review-address.ts`, the draft and the way back `apps/web/src/review-session.ts`; "Granska N", "Fortsätt
+granska", the ticks and the focus on the way back in `apps/web/src/components/card.tsx`, the rows under Dokument in
+`apps/web/src/components/work-item.tsx`. `apps/web/src/components/review-overlay.tsx` and its mount are gone, as is
+`reviewOverCard`. The server is unchanged. Evidence: `apps/web/tests/review-address.test.ts`,
+`apps/web/tests/review-session.test.ts`, `tests/a11y/review.spec.ts` (3 and 12 rows by keyboard, a changed decision,
+Skicka with the check and the receipt, a refusal, a sent review with a rejected row and its retry, a reload, Back and
+Forward and a way out and back keeping the decisions, a change to the rows dropping them, Back with the focus on
+"Granska N" and on a row under Dokument, beside Personal and in a conversation's answer, the old addresses, the phone,
+320 px), `tests/a11y/documents.spec.ts` (an approval sent after a reload with a fresh read, and taken back when the
+record has moved on), `tests/a11y/item.spec.ts`. No screen-reader pass.

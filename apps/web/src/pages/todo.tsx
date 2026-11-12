@@ -52,6 +52,7 @@ import { useRail } from '../components/nav';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { PageHeader } from '../components/page-header';
 import { WorkList, WorkRow } from '../components/work-row';
+import { silentLine, useSilentSources } from '../components/silent-sources';
 import { BriefSkeleton } from '../components/brief';
 import { AsyncContent } from '../components/loading';
 import { cardBody } from '../components/card-panel';
@@ -287,8 +288,11 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   }, [area, filter, rows.length]);
 
   const failed = threadsQ.isError && threadsQ.data === undefined;
-  // A source not heard from is said over the rows, and an empty pile is then never said to be nothing (D8).
+  // A source not read yet is said over the rows, and an empty pile is then never said to be nothing (D8). One that does
+  // not answer is said on its own rows, and in the empty pile by name (D116, amended 2026-11-12).
   const sourcesLine = sourcesNotice(threadsQ.data?.sources);
+  const silent = useSilentSources().list;
+  const silentWords = silent.length ? `${silent.map(silentLine).join('. ')}.` : null;
   const count = (t: TodoTab) => piles[t].filter(x => !area || x.area === area).length;
   // Klart has no count (board Inbox): what is done is not a call to look. On a phone the strip has the short words
   // alone (board PhoneInbox): with the counts the three do not fit 320 px under the text-spacing overrides (1.4.12), and
@@ -351,8 +355,16 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
           isCompact
           headingLevel={2}
           icon={<Icon icon={InboxIcon} size="lg" />}
-          title={words || area ? 'Inget som stämmer med valet' : sourcesLine ? 'Inväntar källornas besked' : 'Tomt här'}
-          description={words || area ? 'Ändra filtret eller välj ett annat system.' : (sourcesLine ?? empty[tab])}
+          title={
+            words || area
+              ? 'Inget som stämmer med valet'
+              : sourcesLine || silentWords
+                ? 'Inväntar källornas besked'
+                : 'Tomt här'
+          }
+          description={
+            words || area ? 'Ändra filtret eller välj ett annat system.' : (silentWords ?? sourcesLine ?? empty[tab])
+          }
         />
       ) : (
         <WorkList label={tabTitle[tab]}>

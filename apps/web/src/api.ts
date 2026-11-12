@@ -36,6 +36,7 @@ import type {
 import type {
   MenuEntry,
   SystemMark,
+  ViewEntry,
   PanelViewSpec,
   SnoozeInput,
   SnoozePreset,
@@ -297,7 +298,7 @@ export const api = {
   chooseModel: (modelId: string | null) => patch<AssistantStatus>('/api/assistant/model', { modelId }),
   today: () => call<TodayView>('/api/today'),
   attention: () => call<Attention>('/api/attention'),
-  areas: () => call<{ areas: Area[]; menu?: MenuEntry[]; systems?: SystemMark[] }>('/api/areas'),
+  areas: () => call<{ areas: Area[]; menu?: MenuEntry[]; systems?: SystemMark[]; views?: ViewEntry[] }>('/api/areas'),
   connectors: () => call<{ connectors: unknown[]; tools: string[] }>('/api/connectors'),
   /** The human decision on a work item's action (D45/D47), with the person's answers to its asks (D112) in `values`. */
   act: (id: string, actionId: string, refs?: string[], reviews?: ReviewEvidence[], values?: AskValues) =>

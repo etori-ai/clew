@@ -43,4 +43,24 @@ test.describe('4.1.3 status messages', () => {
       .poll(() => announcements(page))
       .toContainEqual(expect.stringContaining('Jag påminner dig i morgon 06:00.'));
   });
+
+  test('a system that does not answer is said once in the session, politely, from whichever page first shows it', async ({
+    page,
+    api,
+  }) => {
+    // Nothing on the page announces itself any more (D116, amended 2026-11-12: no banner), so the first time a system is
+    // seen silent it is said once: "<system> svarar inte".
+    api.sources = [{ connector: 'hr', state: 'idle', lastSuccess: '2026-11-04T05:00:00.000Z', error: 'unavailable' }];
+    const said = async () => (await announcements(page)).filter(text => text.includes('svarar inte'));
+    await open(page, '/');
+    await expect.poll(said).toEqual(['Personalsystemet svarar inte']);
+    const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
+    await rail.getByRole('link', { name: /^Att göra/ }).click();
+    await expect(page).toHaveURL('/todo');
+    await rail.getByRole('link', { name: 'Kalender', exact: true }).click();
+    await expect(page).toHaveURL(/\/calendar/);
+    await rail.getByRole('link', { name: /^Hem/ }).click();
+    await expect(page).toHaveURL('/');
+    expect(await said()).toEqual(['Personalsystemet svarar inte']);
+  });
 });

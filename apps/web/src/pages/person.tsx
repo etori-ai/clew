@@ -1,7 +1,7 @@
 import { useCallback, type ReactNode } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { EntityDetail, SessionUser } from '@clew/contracts';
+import type { EntityDetail, OrganisationOverview, SessionUser } from '@clew/contracts';
 import {
   Avatar,
   Button,
@@ -22,6 +22,7 @@ import { keys } from '../query-keys';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { NEEDS_YOU, insideClew, originOf, personPageHref, toolOf, unitPageHref } from '../person-address';
+import { organisationUnitOf } from './admin/organisation-model';
 import { useRail, type RailCurrent } from '../components/nav';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { FieldValue } from '../components/view';
@@ -182,13 +183,20 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
   const panel = usePagePanel({ overlayOnly: short, onChange: cardChanged, pageThing });
   const missing = read.isError && read.error instanceof ApiError && read.error.status === 404;
   const answers = useSectionAnswers(detail?.entity.key, detail?.sections ?? []);
-  const origin = originOf(from, useQuery(areasQuery).data?.menu);
+  // A unit's page under Organisation is named by the unit when the tree has been read in this tab, else "Organisation".
+  const fromUnit = from ? organisationUnitOf(from.split('?')[0]!) : null;
+  const unitLabel = fromUnit
+    ? client.getQueryData<OrganisationOverview>(keys.admin.organisation)?.units.find(u => u.unitId === fromUnit)
+        ?.unitLabel
+    : undefined;
+  const menu = useQuery(areasQuery).data?.menu;
+  const origin = from && unitLabel ? { label: unitLabel, href: from } : originOf(from, menu);
   const tool = toolOf(from);
   // The rail marks the place the person was opened from; without one, Personal for the reader's own people.
   const current: RailCurrent =
     from?.split('?')[0] === '/admin/users'
       ? { surface: 'admin', section: 'anvandare' }
-      : from?.split('?')[0] === '/admin/organisation'
+      : from?.split('?')[0] === '/admin/organisation' || fromUnit
         ? { surface: 'admin', section: 'organisation' }
         : from?.startsWith('/staff')
           ? { surface: 'staff' }

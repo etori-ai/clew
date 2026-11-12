@@ -2,7 +2,9 @@
 
 **Status:** accepted, built 2026-11-06 on `main` (the foundation, the row and the card, a card across systems,
 Anslutna system and the phone); the figure forms, the views and answers, the calendar family and the mark on small
-places are built by the sessions that own those files (see "Not built here") · **Date:** 2026-11-06 · **Area:** ui
+places are built by the sessions that own those files (see "Not built here"); artboard 8's banner for a silent system
+(item 4 of "The small places") replaced 2026-11-12 by [D116](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md)'s amendment: a system that does not answer is said
+where its content is missing · **Date:** 2026-11-06 · **Area:** ui
 
 **Decision.** The design pattern drawn on the canvas **Clew · hierarki, områden och figurer** (Claude Design,
 https://claude.ai/artifact/YVw6FJL6YjKZprBAiAEA2f, twelve artboards) and written up in

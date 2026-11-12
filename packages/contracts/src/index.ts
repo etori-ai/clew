@@ -788,6 +788,32 @@ export const MenuEntrySchema = object({
 });
 export type MenuEntry = Static<typeof MenuEntrySchema>;
 /**
+ * A read a person may open, as the browser gets it (D116): its title and, when it declares how it is drawn (D38), the
+ * kind of its view. Every one has a page of its own at `/tools/<capability>`; one that answers with rows (a `table` or a
+ * `list`) is opened there, anything else beside the page it was opened from. Only for a person who may call the read: a
+ * read the person may not call is missing from the list exactly as one that does not exist.
+ */
+export const ViewEntrySchema = object({
+  capability: Type.String(),
+  title: Type.String(),
+  kind: Type.Optional(
+    Type.Union([
+      Type.Literal('table'),
+      Type.Literal('list'),
+      Type.Literal('detail'),
+      Type.Literal('record'),
+      Type.Literal('text'),
+      Type.Literal('document'),
+      Type.Literal('metrics'),
+      Type.Literal('series'),
+      Type.Literal('activity'),
+    ]),
+  ),
+});
+export type ViewEntry = Static<typeof ViewEntrySchema>;
+/** Whether a view answers with rows (a `table` or a `list`): a list a person works through, which is a page (D116). */
+export const answersWithRows = (kind: string | undefined): boolean => kind === 'table' || kind === 'list';
+/**
  * A connected system as the browser gets it for its mark (D71): the source's word and its place in the order the
  * administrator registered the systems, which gives the mark its hue. `ordinal` is null for Clew's own (the house).
  */

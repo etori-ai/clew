@@ -22,7 +22,7 @@ The project review of 2026-11-10 found that none of these had met its system. Ea
 | Folder | Id | Source | What it does | Capabilities | Where it runs |
 |---|---|---|---|---|---|
 | [supportmanagement](supportmanagement/README.md) | `sm` | Ärendesystemet | A person's errands, shown under "Mina ärenden". Acts as the person; the case system decides access (D35, D89). | 2 reads | Its own `compose.yaml`. Not in the development stack. |
-| [qlik](qlik/README.md) | `qlik` | Qlik | Sick-leave rates per unit and month for managers, aggregates only (D82). | 3 reads | Its own `compose.yaml`. Not in the development stack. |
+| [qlik](qlik/README.md) | `qlik` | Qlik | Sick-leave rates per unit and month for managers, aggregates only (D82). | 3 reads | In the development stack on its made-up statistics (`QLIK_ADAPTER=fixture`), registered by `bun run dev:connectors`; its own `compose.yaml` runs it against Qlik. |
 | [eneo](eneo/README.md) | `eneo` | Eneo | Eneo's retrieval over the person's knowledge bases as a search source (D14, D26). | 3 reads | Its own `compose.yaml`. Not in the development stack. |
 
 ## Examples for people who write connectors
@@ -41,7 +41,7 @@ the first six in process through `tests/fixture-connectors.ts`.
 
 | Folder | Id | Source | Stands in for | Capabilities | Port |
 |---|---|---|---|---|---|
-| [hr](hr/README.md) | `hr` | Personalsystemet | Absences, leave requests, delegations and shifts | 8 reads, 7 writes, 2 proposes, scan | 4040 |
+| [hr](hr/README.md) | `hr` | Personalsystemet | Absences, leave requests, delegations, shifts and the rehabilitation routine | 10 reads, 7 writes, 2 proposes, scan | 4040 |
 | [finance](finance/README.md) | `finance` | Ekonomisystemet | Invoices to review and budget figures | 11 reads, 3 writes, scan | 4041 |
 | [incidents](incidents/README.md) | `incidents` | Avvikelsesystemet | Deviations and incidents | 2 reads, 2 writes, scan | 4042 |
 | [communication](communication/README.md) | `communication` | Kommunikation | Notices with read receipts ("Viktigt nu"), and the same notices as news (the news profile, D112) | 4 reads, 1 write, scan | 4043 |

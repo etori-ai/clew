@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
-import { useNavigate } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ClewObject } from '@clew/contracts';
 import {
@@ -365,7 +364,9 @@ export function Composer({
 /**
  * "Menar du" under the box while the person types (G): what the router finds without the model (D8), an open card that
  * matches first, then the connectors' standing actions, then the questions a connector answers, then an earlier conversation to continue. A read
- * opens its view, everything else is asked in the box, a conversation opens. Nothing here waits for the model.
+ * opens its view (a list or a table on its own page, one thing beside the page, D116), everything else is asked in the
+ * box, a conversation opens. What leads somewhere is a link, so it can be opened in a new tab. Nothing here waits for
+ * the model.
  */
 export function Suggestions({
   viewHref,
@@ -375,7 +376,6 @@ export function Suggestions({
   cardHref: (threadId: string) => string;
 }) {
   const talk = useConversation();
-  const navigate = useNavigate();
   const completions = useQuery(completionsQuery).data;
   const threads = useQuery(threadsQuery).data?.threads;
   const query = talk.value
@@ -403,12 +403,12 @@ export function Suggestions({
   };
   // The card the push already made comes first: asking for it and being told about it land on the same card (G).
   const cards = (threads ?? []).filter(t => t.state === 'open' && t.kind === 'pushed' && hits(t.title));
-  const rows = [
+  const rows: { key: string; label: string; detail: string; href?: string; go?: () => void }[] = [
     ...cards.map(t => ({
       key: 'card:' + t.id,
       label: t.title,
       detail: `${t.trigger.source} · öppnar ärendet`,
-      go: () => navigate(cardHref(t.id)),
+      href: cardHref(t.id),
     })),
     ...completions.do
       .filter(d => hits(d.text))
@@ -416,7 +416,7 @@ export function Suggestions({
         key: 'do:' + d.capability,
         label: d.text,
         detail: `${d.source} · ${d.kind === 'read' ? 'öppnar vyn' : 'öppnar ärendet'}`,
-        go: () => (d.kind === 'read' ? navigate(viewHref(d.capability, d.text)) : talk.ask(d.text)),
+        ...(d.kind === 'read' ? { href: viewHref(d.capability, d.text) } : { go: () => talk.ask(d.text) }),
       })),
     ...completions.ask
       .filter(a => hits(a.text))
@@ -432,7 +432,7 @@ export function Suggestions({
         key: 'recent:' + r.conversationId,
         label: `Fortsätt samtalet · ${r.title}`,
         detail: when(r.at),
-        go: () => navigate(`/conversations/${r.conversationId}`),
+        href: `/conversations/${r.conversationId}`,
       })),
   ].slice(0, 4);
   if (rows.length === 0) return null;
@@ -451,7 +451,7 @@ export function Suggestions({
           key={r.key}
           label={<Text>{r.label}</Text>}
           endContent={<Text type="supporting">{r.detail}</Text>}
-          onClick={r.go}
+          {...(r.href ? { href: r.href } : { onClick: r.go })}
         />
       ))}
     </List>

@@ -11,6 +11,74 @@ export const WARD = 'Björken';
 // (D52: synthetic). The figure on Hem reads it (D54); the absence per person stays in the view it opens.
 export const sickLeaveOf = { [UNIT]: { percent: 4.2, target: 4.0, change: 0.3, since: 'oktober' } };
 
+/**
+ * The municipality's rehabilitation routine as the HR system holds it (D52: synthetic, made up for the fixture): what
+ * the manager does at each point of a short and a long sick leave, and when someone is back. Policy text, not a record
+ * about anyone, so the model may read it (D115). Rule 4.2 is the one the scan's omtankesamtal card follows.
+ */
+export const REHAB_ROUTINE = {
+  name: 'Rehabiliteringsrutinen',
+  owner: 'HR-avdelningen',
+  reviewedAt: '2026-03-02',
+  rows: [
+    {
+      ref: 'hr:rehab-step:1',
+      section: 'Kort sjukfrånvaro',
+      at: 'Dag 1',
+      title: 'Kontakta medarbetaren',
+      detail:
+        'Ring medarbetaren samma dag som sjukanmälan kommer. Fråga hur hen mår, hur länge frånvaron väntas vara och om något i arbetet kan göra det lättare att komma tillbaka. Fråga aldrig om diagnos. Se till att sjukanmälan är registrerad i personalsystemet.',
+    },
+    {
+      ref: 'hr:rehab-step:2',
+      section: 'Kort sjukfrånvaro',
+      at: 'Dag 8',
+      title: 'Be om läkarintyg',
+      detail:
+        'Från dag 8 behövs läkarintyg. Påminn medarbetaren om att skicka in det och håll kontakten minst en gång i veckan.',
+    },
+    {
+      ref: 'hr:rehab-step:3',
+      section: 'Upprepad korttidsfrånvaro',
+      at: 'Tredje perioden på sex månader',
+      title: 'Boka ett omtankesamtal',
+      detail:
+        'Efter den tredje korta sjukfrånvaron på sex månader bokar du ett omtankesamtal inom två veckor (rutin 4.2). Samtalet handlar om hur medarbetaren mår och om arbetet, inte om diagnos. Skriv ner vad ni kommer överens om.',
+    },
+    {
+      ref: 'hr:rehab-step:4',
+      section: 'Lång sjukfrånvaro',
+      at: 'Dag 15',
+      title: 'Anmäl till Försäkringskassan',
+      detail:
+        'Från dag 15 betalar Försäkringskassan sjukpenning. Anmäl sjukfallet till Försäkringskassan inom en vecka och håll kontakten med medarbetaren minst varannan vecka.',
+    },
+    {
+      ref: 'hr:rehab-step:5',
+      section: 'Lång sjukfrånvaro',
+      at: 'Senast dag 30',
+      title: 'Gör en plan för återgång i arbete',
+      detail:
+        'Väntas frånvaron bli 60 dagar eller längre gör du en plan för återgång i arbete tillsammans med medarbetaren. Ta hjälp av HR och företagshälsovården.',
+    },
+    {
+      ref: 'hr:rehab-step:6',
+      section: 'Lång sjukfrånvaro',
+      at: 'Dag 90 och dag 180',
+      title: 'Följ upp planen',
+      detail:
+        'Följ upp planen med medarbetaren. Pröva tillsammans med HR anpassningar av arbetet och andra arbetsuppgifter i kommunen.',
+    },
+    {
+      ref: 'hr:rehab-step:7',
+      section: 'Tillbaka i arbete',
+      at: 'Första veckan',
+      title: 'Ha ett uppföljningssamtal',
+      detail: 'Ha ett samtal den första veckan efter återgången och följ upp att anpassningarna fungerar.',
+    },
+  ],
+};
+
 /** The calendar date in Stockholm, which is where the people in this fixture work. */
 export const dateIn = date => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm' }).format(date);
 export const addDays = (day, n) => new Date(Date.parse(day + 'T12:00:00Z') + n * 86400000).toISOString().slice(0, 10);

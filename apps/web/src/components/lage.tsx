@@ -15,7 +15,7 @@ type Props = {
   unitLabel: string;
   /** The session's unit: its name in the heading links to the unit's page (D97, artboard M). Without it the name is text. */
   unitId?: string | undefined;
-  /** Where a tile with `opens` leads: the view in the panel, in the address (D50). */
+  /** Where a tile with `opens` leads: a list or a table to its own page, one thing beside the page (D116). */
   viewHref: (capability: string, title: string) => string;
   /** At most two tiles across: a phone (artboard 11), one under the other when two would be too narrow (320 px). */
   twoAcross?: boolean;

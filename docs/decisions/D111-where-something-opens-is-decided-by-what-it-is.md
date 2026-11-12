@@ -1,6 +1,6 @@
 # D111 · Where something opens is decided by what it is, never by the page it was clicked on
 
-**Status:** provisional (accepted when the rules have been used by people outside the repository: a manager on Personal and one connector author placing a view and a card from the author's page alone); rule 7 ("no control chooses a surface") and the panel's header replaced by [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) (2026-11-11: "Öppna som sida" is back and the panel holds the thing with the conversation about it); rules 1, 4, 6 and 8 stand, and rule 2 stands with D112's panel · **Date:** 2026-11-11 · **Area:** ui
+**Status:** provisional (accepted when the rules have been used by people outside the repository: a manager on Personal and one connector author placing a view and a card from the author's page alone); rule 7 ("no control chooses a surface") and the panel's header replaced by [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) (2026-11-11: "Öppna som sida" is back and the panel holds the thing with the conversation about it); rules 1, 4, 6 and 8 stand, and rule 2 stands with D112's panel; amended 2026-11-12 (product owner): a panel, a drawer or a sheet is for peeking at one thing or an instant action, and a list that can grow gets a full route, first applied to a unit under Administration › Organisation ([D99, the organisation tree](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md)), and taken up the same day by [D116](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md) (provisional), which replaces rule 2 for a view that answers with rows (a list or a table is a page), answer 2's "Tillbaka", answer 4's view and table in the card's place, and choice 5 (a record or a document in the panel links to its page); rule 5's review ("Granska N") is a page since 2026-11-12 under that rule ([D73](D73-the-review-is-a-page-in-the-shell-with-an-address.md) as amended that day), and one person's utvecklingssamtal still lies over the page · **Date:** 2026-11-11 · **Area:** ui
 
 **Decision.** Eight rules place everything a person opens in Clew. They refine
 [D83](D83-interface-spaces-have-stable-navigation-roles.md), whose spaces stand; what changes is that the space no
@@ -16,7 +16,10 @@ longer depends on the page the control was on.
 4. **Starting something never moves the person.** An action about a person or a unit makes a card, and the card
    opens beside the page where it was started.
 5. **Focused work lies over the page it was started on.** "Granska N" and one person's utvecklingssamtal open over
-   whichever page they were opened from and close to what was under them.
+   whichever page they were opened from and close to what was under them. (Since 2026-11-12 "Granska N" leads to the
+   review's own page, `/items/<threadId>/review`, with the item's page as its way back, under
+   [D116](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md)'s rule and
+   [D73](D73-the-review-is-a-page-in-the-shell-with-an-address.md) as amended that day; the talk still lies over the page.)
 6. **Opening is not asking.** A card goes into the question box only with "Lägg till i samtalet", which is offered
    only where the page has a box. Asking opens the conversation with what the person was looking at beside it, and
    closing it returns them.
@@ -40,7 +43,7 @@ The product owner answered the seven choices of the
 
 For a connector author the rules are one table with no column for the page: a read's view and a card open beside
 the page; a row's own view takes the list's place there; a name leads to the person's or unit's page; a card's read
-lies over the card; a decision runs on the card; a review lies over the page; an entity read is a section of the
+lies over the card; a decision runs on the card; a review lies over the page (its own page since 2026-11-12); an entity read is a section of the
 entity's page; an entity action makes a card beside the page; a link out is a new tab.
 
 The rules are built in the order of the review's list, one change per item, and each change amends the page it
@@ -102,3 +105,18 @@ Seen live again at 18:00, a second card opened beside a person's page still turn
 (its amendment of 2026-11-11), so answer 3 holds on every page, Hem included, and opening another thing replaces what
 the panel holds under answer 2's one header.
 
+**Amended 2026-11-12: a list that can grow gets a page.** The product owner, looking at a unit's people in a drawer
+over Administration › Organisation: "should an organisation really open in a sidebar? This can get extremely crammed,
+an organisation might have hundreds of employees. The sidebar needs to be for peeking or some kind of instant actions,
+otherwise a full route is needed." A ninth rule: **a panel, a drawer or a sheet is for peeking at one thing or for an
+instant action; a list that can grow, or something a person works in, gets a full route** with an address of its own.
+The first place changed for it is a unit of the organisation tree, now a page at `/admin/organisation/<unitId>`
+([D99, the organisation tree](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md),
+amended the same day). Rule 5 and answer 5 above, the wide drawer for a review and a talk, are not yet weighed against
+it; that waits for the product owner ([open questions](../maintainers/open-questions.md)). The panel's one thing (answer
+3) already meets it.
+
+The same day the rule became its own record, [D116](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md): a list or a table is a page wherever it is opened from,
+every view has an address, the panel holds one thing and no longer drills from a list into a row, and a record or a
+document in the panel links to its page. The amendment above stands as the rule's first application and is read
+through D116.

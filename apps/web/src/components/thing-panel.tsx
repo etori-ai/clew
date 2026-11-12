@@ -1,8 +1,11 @@
 import { useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
+import { useQuery } from '@tanstack/react-query';
 import type { Thread, ViewRef } from '@clew/contracts';
 import { Button, ChatLayout, Icon, SparklesIcon, VStack } from '@clew/ui';
-import { viewSearch, withAsk, withCard } from '../panel-address';
+import { areasQuery } from '../queries';
+import { viewSearch, withAsk, withCard, withoutView } from '../panel-address';
+import { opensAsPage, viewPageHref } from '../view-address';
 import {
   ConversationContext,
   useModelConfigured,
@@ -73,8 +76,17 @@ export function ThingWithConversation({
   const { pathname, search } = useLocation();
   const conversationId = talk.conversation?.id;
   const subjectThread = subject.chips.find(c => c.kind === 'thread')?.threadId;
+  const views = useQuery(areasQuery).data?.views;
+  // An answer's view (D116): a list or a table is its own page, with the page the panel is on as the way back; one thing
+  // is shown beside the conversation on its own page, where a long exchange continues.
+  const viewHref = (v: ViewRef) =>
+    opensAsPage(views, v.capability)
+      ? viewPageHref(v, withoutView(pathname, search))
+      : conversationId
+        ? `/conversations/${conversationId}${viewSearch(v)}`
+        : viewSearch(v);
   const openView = (view: ViewRef) => {
-    if (conversationId) navigate(`/conversations/${conversationId}${viewSearch(view)}`);
+    if (conversationId || opensAsPage(views, view.capability)) navigate(viewHref(view));
   };
   const renderCard = (t: Thread) =>
     t.id === subjectThread ? null : cardBody(t, { place: 'answer', level: 3, compact: true, onChange: () => {} });
@@ -89,7 +101,7 @@ export function ThingWithConversation({
       subject={subject.chips.map(c => c.ref)}
       onOpenView={openView}
       renderCard={renderCard}
-      viewHref={v => (conversationId ? `/conversations/${conversationId}${viewSearch(v)}` : viewSearch(v))}
+      viewHref={viewHref}
       onDraft={onDraft}
     />
   );

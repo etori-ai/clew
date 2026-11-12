@@ -4,11 +4,24 @@ import { actorOf } from '@clew/connectors';
 import type { AssistantDeps } from './ports';
 
 export type FixedAnswer = { title: string; body: string; reason: string; source: string; forslagThreadId?: string };
+/** A question that asks what to do ("vad gör jag", "vad ska jag göra", "hur gör jag"): never answered with a figure (D115). */
+export const asksWhatToDo = (q: string) =>
+  /\b(vad|hur)\s+(gör|ska|bör|borde|behöver|måste)\s+(jag|man|vi)(?![\p{L}])/iu.test(q);
+/**
+ * Whether a question is about the figures (D54, narrowed by D115): it names a figure's subject ("sjukfrånvaron",
+ * "budgeten", "läget"), does not ask what to do, and names nobody the asker manages. "Anna har varit sjuk, vad gör
+ * jag?" is about Anna, not the unit's sick leave.
+ */
+export const asksForFigures = (q: string, namesPerson: boolean) =>
+  !namesPerson &&
+  !asksWhatToDo(q) &&
+  /frånvaro|budget|ramen|tillbud|vikarie|läget|siffr|nyckeltal/.test(q.toLowerCase());
 /** The first-session intent router: a few questions answered from the calendar and the areas' figures (D54). Deterministic, no model. */
 export async function routeFixed(
   deps: AssistantDeps,
   persona: AuthenticatedContext,
   question: string,
+  options: { namesPerson?: boolean } = {},
 ): Promise<FixedAnswer | undefined> {
   const q = question.toLowerCase();
   const now = deps.clock().toISOString();
@@ -45,7 +58,7 @@ export async function routeFixed(
       ...(open && thread ? { forslagThreadId: thread.id } : {}),
     };
   }
-  if (/frånvaro|\bsjuk|budget|ramen|tillbud|vikarie|läget|siffr|nyckeltal/.test(q)) {
+  if (asksForFigures(q, options.namesPerson ?? false)) {
     // The figures the person's connectors answer (D54), as Läget draws them; one whose words the question names, else all.
     const figures = (await deps.registry.areas(actorOf(persona)))
       .filter(a => a.figure?.value && !a.figure.unavailable)

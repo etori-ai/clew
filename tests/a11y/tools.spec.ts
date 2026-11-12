@@ -226,16 +226,55 @@ test.describe('a tool as a page', () => {
     await expectNoAxeViolations(page);
   });
 
-  test("a view that is not in the person's menu has no page: the page says so and leads home", async ({
+  test('a view not placed in the rail has a page of its own all the same, under its own title or the one it was opened under (D116)', async ({
     page,
     api: _,
   }) => {
+    // No row in the menu: the directory is still a read the person may open.
     await open(page, directory);
-    await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveText('Verktyget finns inte');
-    await expect(page).toHaveTitle('Verktyget finns inte · Startsidan');
-    await expect(page.getByRole('table')).toHaveCount(0);
-    await expect(page.getByRole('link', { name: 'Till startsidan' })).toHaveAttribute('href', '/');
+    const title = page.locator('h1:not([aria-level]), [aria-level="1"]');
+    await expect(title).toHaveText('Sök i telefonboken');
+    await expect(page).toHaveTitle('Sök i telefonboken · Startsidan');
+    await expect(page.getByRole('row')).toHaveCount(15);
+    // Opened from nowhere it names no way back, and the rail marks nothing under Verktyg.
+    await expect(page.getByRole('main').getByRole('link', { name: 'Hem', exact: true })).toHaveCount(0);
+    await expect(rail(page).locator('a[aria-current="page"]')).toHaveCount(0);
     await expectNoAxeViolations(page);
+    // Opened from Hem under another name: that name, Hem as the way back, and Hem marked in the rail.
+    await open(page, `${directory}?title=Telefonlistan&from=%2F`);
+    await expect(title).toHaveText('Telefonlistan');
+    await expect(page.getByRole('main').getByRole('link', { name: 'Hem', exact: true })).toHaveAttribute('href', '/');
+    await expect(rail(page).locator('a[aria-current="page"]')).toContainText('Hem');
+    // Its own search keeps the name and the way back.
+    await page.getByRole('searchbox', { name: 'Sök i telefonboken' }).fill('lärare');
+    await expect(page.getByRole('row')).toHaveCount(3);
+    await expect(page).toHaveURL(/\/tools\/phonebook\.directory\?input=.*&title=Telefonlistan&from=%2F$/);
+  });
+
+  test('a read the person may not open says the same as one that does not exist, and neither is asked for', async ({
+    page,
+    api,
+  }) => {
+    api.views = api.views.filter(v => v.capability !== 'phonebook.directory');
+    const asked: string[] = [];
+    page.on('request', request => {
+      const path = new URL(request.url()).pathname;
+      if (path.startsWith('/api/cap/')) asked.push(path);
+    });
+    const missing = async (path: string) => {
+      await open(page, path);
+      const title = page.locator('h1:not([aria-level]), [aria-level="1"]');
+      await expect(title).toHaveText('Verktyget finns inte');
+      await expect(page).toHaveTitle('Verktyget finns inte · Startsidan');
+      await expect(page.getByRole('table')).toHaveCount(0);
+      await expect(page.getByRole('link', { name: 'Till startsidan' })).toHaveAttribute('href', '/');
+      return page.getByRole('main').innerText();
+    };
+    const notTheirs = await missing(`${directory}?title=Telefonbok&from=%2F`);
+    await expectNoAxeViolations(page);
+    const unknown = await missing('/tools/nothing.here?title=Telefonbok&from=%2F');
+    expect(notTheirs).toBe(unknown);
+    expect(asked.filter(p => p.endsWith('/phonebook.directory') || p.endsWith('/nothing.here'))).toEqual([]);
   });
 
   test('the keyboard reaches the field, the choice, each name and each number, in the order they are read', async ({

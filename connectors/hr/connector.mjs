@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto';
 import { createVerifier } from './verification.mjs';
 import { manifest, ABSENCE_FACT, CONNECTOR, KEYS_MAX, SICK_DAYS, sickOnDay } from './manifest.mjs';
-import { addDays, dateIn, daysBetween, period, seed, shortDate, sickLeaveOf } from './fixture.mjs';
+import { addDays, dateIn, daysBetween, period, REHAB_ROUTINE, seed, shortDate, sickLeaveOf } from './fixture.mjs';
 import { memoryState } from './state.mjs';
 
 export { manifest };
@@ -246,6 +246,8 @@ export function createConnector({
       return { today: { start: mine.start, end: mine.end, ward: mine.ward, colleagues } };
     },
     'hr.myBalance': () => ({ vacationDaysLeft: 6, mustUseBy: today().slice(0, 4) + '-12-31' }),
+    // The rehabilitation routine (D115): the same policy text for every manager, about nobody.
+    'hr.rehabRoutine': () => structuredClone(REHAB_ROUTINE),
     // A read about a person (D97): one row per key that is an employee of the manager's unit here, by user name without
     // regard to case, with the key as it was asked. Anyone else, an unknown key and a key asked twice are no row.
     'hr.person': (actor, input) => {

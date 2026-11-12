@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { obligationStep, obligationSteps, replySummary, type CalendarEvent, type Thread } from '@clew/contracts';
 import {
@@ -22,6 +23,7 @@ import {
   List,
   ListItem,
   MoreMenu,
+  StackItem,
   Step,
   Stepper,
   Text,
@@ -40,6 +42,7 @@ import { calendarWeekQuery } from '../queries';
 import { useThreadAction } from '../mutations';
 import { executionStatus } from '../execution-status';
 import { useMarks } from '../marks';
+import { itemPageHref } from '../work-items';
 
 type Props = {
   thread: Thread;
@@ -189,6 +192,13 @@ export function ThreadCard({ thread, compact, headingLevel = 3, beside = false, 
   const count = selected.length,
     plural = count === 1 ? 'inbjudan' : 'inbjudningar';
   const status = statusLine(thread);
+  // Beside a page the proposal is a peek, with the way to its own page as every work item has it (D112 item 4, D116);
+  // on that page itself, and in an answer, there is nowhere further to go.
+  const { pathname, search } = useLocation();
+  const toPage =
+    beside && pathname !== `/items/${encodeURIComponent(thread.id)}`
+      ? itemPageHref(thread.id, pathname + search)
+      : null;
   const body = (
     <VStack
       gap={2}
@@ -214,9 +224,20 @@ export function ThreadCard({ thread, compact, headingLevel = 3, beside = false, 
       </HStack>
       {thread.kind === 'pushed' && (
         <>
-          <Heading level={2} accessibilityLevel={headingLevel}>
-            {lead}
-          </Heading>
+          {toPage ? (
+            <HStack gap={3} vAlign="start" wrap="wrap">
+              <StackItem size="fill">
+                <Heading level={2} accessibilityLevel={headingLevel}>
+                  {lead}
+                </Heading>
+              </StackItem>
+              <Button size="sm" variant="secondary" label="Öppna som sida" href={toPage} />
+            </HStack>
+          ) : (
+            <Heading level={2} accessibilityLevel={headingLevel}>
+              {lead}
+            </Heading>
+          )}
           {rest && (
             <Text as="p" color="secondary">
               {rest}

@@ -275,6 +275,8 @@ api.get('/areas', async c => {
     areas: await listAreas(context),
     menu: registry.menu(actorOf(context)),
     systems: registry.systems(actorOf(context)),
+    // Every read the person may open as a view (D116): what decides whether something opened is a page or a peek beside one.
+    views: registry.views(actorOf(context)),
   });
 });
 /** The registry as data: what the architecture derives everything from. Read-only, and only what the caller can see (D23). */

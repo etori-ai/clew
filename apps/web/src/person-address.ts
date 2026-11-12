@@ -113,7 +113,8 @@ export function originLabel(path: string | null): string | null {
   if (!path) return null;
   const pathname = path.split('?')[0]!;
   if (pathname === '/admin/users') return 'Användare';
-  if (pathname === '/admin/organisation') return 'Organisation';
+  // A unit's page under Organisation, when the page that knows the unit's name has not given it (`person.tsx`).
+  if (pathname === '/admin/organisation' || pathname.startsWith('/admin/organisation/')) return 'Organisation';
   if (pathname === '/staff') return 'Personal';
   if (pathname === '/') return 'Hem';
   if (pathname === '/todo') return 'Att göra';

@@ -8,22 +8,26 @@ import {
   open,
   phone,
   reflowProblems,
+  silentSaidIn,
   test,
 } from './support';
 
 import { manifest as communication } from '../../connectors/communication/connector.mjs';
 
 const title = (text: string) => encodeURIComponent(text);
-const directory = `/?open=phonebook.directory&open-title=${title('Sök i telefonboken')}`;
-const team = `/?open=phonebook.team&open-title=${title('Mitt teams kontaktlista')}`;
+/** A list or a table is its view's page (D116), opened from Hem with Hem as the way back. */
+const directory = `/tools/phonebook.directory?title=${title('Sök i telefonboken')}&from=%2F`;
+const team = `/tools/phonebook.team?title=${title('Mitt teams kontaktlista')}&from=%2F`;
+/** One thing is a peek beside the page it was opened from. */
 const card = `/?open=phonebook.person&open-title=Kontaktkort&open-input=${encodeURIComponent(JSON.stringify({ ref: 'person:p1003' }))}`;
 
 /**
  * Declared views (D38): a connector says what its output holds and Startsidan draws it. The phone book is the example:
  * the mocked API is answered by the connector itself, so what is tested is its real manifest drawn by the one renderer.
- * Everything here works without a model.
+ * A table or a list is the view's own page, one record lies in the panel beside the page (D116). Everything here works
+ * without a model.
  */
-test.describe('a declared view in the side panel', () => {
+test.describe('a declared table or list on its page', () => {
   test.use({ viewport: desktop });
 
   test('a table is a table: named columns, numbers that call, addresses that write, and no axe violations', async ({
@@ -31,9 +35,9 @@ test.describe('a declared view in the side panel', () => {
     api: _,
   }) => {
     await open(page, directory);
-    const panel = page.getByRole('dialog', { name: 'Sök i telefonboken' });
-    // No "Samtal" column of chips: a row goes into a conversation only beside a conversation's own box (D112 item 7),
-    // and on Hem the view has its own box in the panel.
+    const panel = page.getByRole('main');
+    await expect(panel.getByRole('heading', { level: 1, name: 'Sök i telefonboken' })).toBeVisible();
+    // No "Samtal" column of chips: a row goes into a conversation only beside a conversation's own box (D112 item 7).
     await expect(panel.getByRole('columnheader')).toHaveText(['Namn', 'Titel', 'Enhet', 'Telefon', 'Mobil', 'E-post']);
     await expect(panel.getByRole('row')).toHaveCount(15);
     await expect(panel.getByRole('link', { name: '0980-319 203' })).toHaveAttribute('href', 'tel:0980319203');
@@ -50,13 +54,15 @@ test.describe('a declared view in the side panel', () => {
     page,
     api: _,
   }) => {
-    await open(page, directory);
-    const panel = page.getByRole('dialog', { name: 'Sök i telefonboken' });
+    await open(page, '/');
+    await page.goto(directory);
+    const panel = page.getByRole('main');
     const field = panel.getByRole('searchbox', { name: 'Sök i telefonboken' });
     await field.fill('lärare');
     await expect(panel.getByRole('row')).toHaveCount(3);
     await expect(field).toBeFocused();
-    await expect(page).toHaveURL(/input=.*l%C3%A4rare/);
+    // The search is in the address with the page's name and its way back kept.
+    await expect(page).toHaveURL(/input=.*l%C3%A4rare.*&title=S%C3%B6k.*&from=%2F$/);
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('2 kontakter'));
     // The choice is the capability's own input too: "Min enhet" narrows to the unit Startsidan knows the person by.
     await field.fill('');
@@ -70,47 +76,46 @@ test.describe('a declared view in the side panel', () => {
       .poll(() => announcements(page))
       .toContainEqual(expect.stringContaining('Inga träffar i telefonboken.'));
     await expectNoAxeViolations(page);
-    // Back undoes nothing but the view: one step leaves the panel, however much was typed.
-    await page.keyboard.press('Escape');
-    await expect(page.getByRole('dialog')).toHaveCount(0);
+    // A search replaces the address: one step back leaves the page, however much was typed.
+    await page.goBack();
+    await expect(page).toHaveURL('/');
   });
 
-  test('a row opens the contact card of the same connector, and Tillbaka returns to the rows as they were', async ({
+  test('a row opens the contact card beside the list, one thing with no way into another, and ✕ returns to the rows as they were', async ({
     page,
     api: _,
   }) => {
-    await open(page, `${directory}&open-input=${encodeURIComponent(JSON.stringify({ query: 'lärare' }))}`);
-    const panel = page.getByRole('dialog', { name: 'Sök i telefonboken' });
+    await open(page, directory.replace('?', `?input=${encodeURIComponent(JSON.stringify({ query: 'lärare' }))}&`));
+    const panel = page.getByRole('main');
     await expect(panel.getByRole('searchbox')).toHaveValue('lärare');
     await panel.getByRole('link', { name: 'Anna Lindqvist' }).click();
     const contact = page.getByRole('dialog', { name: 'Kontaktkort' });
     await expect(contact.getByText('Anna Lindqvist')).toBeVisible();
-    // The panel stayed open and the view in it changed: the new view is named aloud and focus is on its name at the
-    // panel's start, as beside the page (the panel's one header, which holds one thing: no menu of open things, D66's
-    // tabs withdrawn). The way back is under it.
+    // The contact card is one thing beside the list's page (D116): the focus is on its name at the panel's start, which
+    // says it, and there is no "Tillbaka" inside the panel, since the list it came from is the page under it.
     await expect(contact.getByRole('heading', { level: 2, name: 'Kontaktkort', exact: true })).toBeFocused();
     await expect(contact.getByRole('navigation')).toHaveCount(0);
-    await expect(contact.getByRole('button', { name: 'Tillbaka' })).toBeVisible();
-    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Kontaktkort'));
+    await expect(contact.getByRole('button', { name: 'Tillbaka' })).toHaveCount(0);
     await expect(contact.getByText('Rum')).toBeVisible();
     await expect(contact.getByRole('link', { name: '0980-319 203' })).toHaveAttribute('href', 'tel:0980319203');
     await expect(contact.getByRole('link', { name: /Öppna i telefonboken/ })).toHaveAttribute('target', '_blank');
+    // A contact card is no record: no page of its own is offered in the panel.
+    await expect(contact.getByRole('link', { name: 'Öppna som sida' })).toHaveCount(0);
     await expectNoAxeViolations(page);
-    await contact.getByRole('button', { name: 'Tillbaka' }).click();
-    await expect(page.getByRole('dialog', { name: 'Sök i telefonboken' }).getByRole('row')).toHaveCount(3);
-    await expect(page.getByRole('dialog', { name: 'Sök i telefonboken' }).getByRole('searchbox')).toHaveValue('lärare');
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(panel.getByRole('row')).toHaveCount(3);
+    await expect(panel.getByRole('searchbox')).toHaveValue('lärare');
     // Back on the rows, focus is on the name that led away.
-    await expect(
-      page.getByRole('dialog', { name: 'Sök i telefonboken' }).getByRole('link', { name: 'Anna Lindqvist' }),
-    ).toBeFocused();
+    await expect(panel.getByRole('link', { name: 'Anna Lindqvist' })).toBeFocused();
   });
 
   test('the keyboard reaches the field, the choice, each name and each number, in the order they are read', async ({
     page,
     api: _,
   }) => {
-    await open(page, `${directory}&open-input=${encodeURIComponent(JSON.stringify({ query: 'lindqvist' }))}`);
-    const panel = page.getByRole('dialog', { name: 'Sök i telefonboken' });
+    await open(page, directory.replace('?', `?input=${encodeURIComponent(JSON.stringify({ query: 'lindqvist' }))}&`));
+    const panel = page.getByRole('main');
     await panel.getByRole('searchbox').focus();
     const stops: string[] = [];
     for (let i = 0; i < 7; i++) {
@@ -122,7 +127,7 @@ test.describe('a declared view in the side panel', () => {
         }),
       );
     }
-    // A row goes into a conversation only beside a conversation's own box (D112 item 7); here the view has its own box.
+    // A row goes into a conversation only beside a conversation's own box (D112 item 7); a view's page has none.
     expect(stops.join(' | ')).toContain('Anna Lindqvist | 0980-319 203 | anna.lindqvist@kommun.example');
     expect(stops).not.toContain('Lägg till i samtalet');
   });
@@ -131,8 +136,8 @@ test.describe('a declared view in the side panel', () => {
     page,
     api: _,
   }) => {
-    await open(page, `/?open=calendar.rooms&open-title=${title('Mötesrum')}`);
-    const panel = page.getByRole('dialog', { name: 'Mötesrum' });
+    await open(page, `/tools/calendar.rooms?title=${title('Mötesrum')}`);
+    const panel = page.getByRole('main');
     await expect(panel.getByRole('columnheader')).toHaveText(['Rum', 'Platser', 'Utrustning']);
     await expect(panel.getByRole('row')).toHaveCount(8);
     await expect(panel.getByRole('row').filter({ hasText: 'Boken' })).toContainText('projektor, mikrofon, hörslinga');
@@ -146,8 +151,8 @@ test.describe('a declared view in the side panel', () => {
     page,
     api: _,
   }) => {
-    await open(page, `/?open=clew.errands&open-title=${title('Mina ärenden')}`);
-    const panel = page.getByRole('dialog', { name: 'Mina ärenden' });
+    await open(page, `/tools/clew.errands?title=${title('Mina ärenden')}&from=%2F`);
+    const panel = page.getByRole('main');
     await expect(panel.getByRole('listitem')).toHaveCount(3);
     // What waits on the person is first and is the only row with a toned badge; the system is a word on every row.
     const first = panel.getByRole('listitem').first();
@@ -167,46 +172,49 @@ test.describe('a declared view in the side panel', () => {
     // A short list is never read as the whole truth.
     await expect(panel.getByText('Verksamhetssystemet svarade inte.')).toBeVisible();
     await expectNoAxeViolations(page);
-    // Keyboard: the row's link opens the errand, read live from its own system.
+    // Keyboard: the row's link opens the errand beside the list, read live from its own system.
     await panel.getByRole('link', { name: 'IK-26110007 · Behörighet, Beställning' }).focus();
     await page.keyboard.press('Enter');
-    await expect(page.getByText('Ny medarbetare behöver konto i elevregistret')).toBeVisible();
+    await expect(page).toHaveURL(/^[^?]*\/tools\/clew\.errands\?.*open=sm\.errand/);
+    await expect(page.getByRole('dialog').getByText('Ny medarbetare behöver konto i elevregistret')).toBeVisible();
     await expectNoAxeViolations(page);
   });
 
-  test('a list is a list, and beside a conversation a row goes into its box as any found thing does', async ({
+  test('a list opened beside a conversation is its page, with the conversation as the way back', async ({
     page,
     api: _,
   }) => {
-    // Beside a conversation's own box (D112 item 7): on Hem the view has its own box in the panel instead.
-    await open(page, team.replace(/^\/\?/, '/conversations/fraga?'));
-    const panel = page.getByRole('dialog', { name: 'Mitt teams kontaktlista' });
+    // An address from before D116 that opened the list beside the conversation leads to the list's page instead,
+    // replacing itself, and names the conversation as the way back.
+    await open(page, `/conversations/fraga?open=phonebook.team&open-title=${title('Mitt teams kontaktlista')}`);
+    await expect(page).toHaveURL(
+      `/tools/phonebook.team?title=${title('Mitt teams kontaktlista').replace(/%20/g, '+')}&from=%2Fconversations%2Ffraga`,
+    );
+    const panel = page.getByRole('main');
+    await expect(panel.getByRole('heading', { level: 1, name: 'Mitt teams kontaktlista' })).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(panel.getByRole('listitem')).toHaveCount(5);
     await expect(panel.getByRole('searchbox')).toHaveCount(0);
     await expect(panel.getByRole('listitem').filter({ hasText: 'Hassan Ali' })).toContainText('Lärare');
     await expect(
       panel.getByRole('listitem').filter({ hasText: 'Hassan Ali' }).getByRole('link', { name: '070-174 06 12' }),
     ).toHaveAttribute('href', 'tel:0701740612');
+    await expect(panel.getByRole('link', { name: 'Samtalet' })).toHaveAttribute('href', '/conversations/fraga');
     await expectNoAxeViolations(page);
-    await panel
-      .getByRole('listitem')
-      .filter({ hasText: 'Hassan Ali' })
-      .getByRole('button', { name: 'Lägg till i samtalet' })
-      .click();
-    await expect(
-      panel.getByRole('listitem').filter({ hasText: 'Hassan Ali' }).getByRole('button', { name: 'I samtalet' }),
-    ).toBeDisabled();
   });
 
   test('a name typed in the box finds the person: the hit opens the contact card here, and has no review date to miss', async ({
     page,
     api: _,
   }) => {
+    // The hits are rows: an address that opened them beside Hem is the search's page (D116).
     await open(
       page,
       `/?open=clew.search&open-title=${title('Källor')}&open-input=${encodeURIComponent(JSON.stringify({ query: 'Anna Lindqvist' }))}`,
     );
-    const hits = page.getByRole('dialog', { name: 'Källor' });
+    await expect(page).toHaveURL(/^[^?]*\/tools\/clew\.search\?input=.*&title=K%C3%A4llor&from=%2F$/);
+    const hits = page.getByRole('main');
+    await expect(hits.getByRole('heading', { level: 1, name: 'Källor' })).toBeVisible();
     await expect(hits.getByText('Lärare · Bergsåkers skola')).toBeVisible();
     await expect(hits.getByText('Granskningsdatum saknas')).toHaveCount(0);
     await expect(hits.getByRole('link', { name: 'Öppna i Telefonboken' })).toBeVisible();
@@ -260,8 +268,12 @@ test.describe('a declared view under an answer', () => {
     ).toHaveAttribute('href', 'tel:0980319203');
     await expect(log.getByRole('searchbox')).toHaveCount(0);
     await expectNoAxeViolations(page);
-    await log.getByRole('button', { name: 'Visa allt' }).click();
-    await expect(page.getByRole('dialog', { name: 'Sök i telefonboken' }).getByRole('searchbox')).toHaveValue('lärare');
+    // "Visa allt" is a link to the list's page, with the conversation as the way back (D116).
+    const all = log.getByRole('link', { name: 'Visa allt' });
+    await expect(all).toHaveAttribute('href', /^\/tools\/phonebook\.directory\?input=.*&from=%2Fconversations%2F/);
+    await all.click();
+    await expect(page.getByRole('main').getByRole('searchbox')).toHaveValue('lärare');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
   });
 });
 
@@ -272,15 +284,16 @@ const notices = (communication as { capabilities: Array<{ name: string; view?: o
 test.describe("the view's header and its values (D71, artboards 4 and 7)", () => {
   test.use({ viewport: desktop });
 
-  test('the header names the area, the source and the count on one line, and a seat count reads with its unit', async ({
+  test('the page names the view, its system and its count, and a seat count reads with its unit', async ({
     page,
     api: _,
   }) => {
-    await open(page, `/?open=calendar.rooms&open-title=${title('Mötesrum')}`);
-    const panel = page.getByRole('dialog', { name: 'Mötesrum' });
-    // The calendar is Clew's own: the house chip, the room's word from the menu, the system and the count in rooms.
-    await expect(panel.getByText('Kalendern · 7 rum')).toBeVisible();
-    await expect(panel.getByText('Mötesrum', { exact: true }).last()).toBeVisible();
+    await open(page, `/tools/calendar.rooms?title=${title('Mötesrum')}`);
+    const panel = page.getByRole('main');
+    // On the view's page (board Tool): the title with the system's chip on its line, and the count in rooms.
+    await expect(panel.getByRole('heading', { level: 1, name: 'Mötesrum' })).toBeVisible();
+    await expect(panel.getByText('Kalendern', { exact: true }).first()).toBeVisible();
+    await expect(panel.getByText('7 rum', { exact: true })).toBeVisible();
     await expect(panel.getByRole('row').filter({ hasText: 'Tallen' }).getByRole('cell').nth(1)).toHaveText(
       '12 platser',
     );
@@ -323,9 +336,9 @@ test.describe("the view's header and its values (D71, artboards 4 and 7)", () =>
         },
       }),
     );
-    await open(page, `/?open=communication.notices&open-title=${title('Viktigt nu')}`);
-    const panel = page.getByRole('dialog', { name: 'Viktigt nu' });
-    await expect(panel.getByText('Kommunikation · 2 meddelanden')).toBeVisible();
+    await open(page, `/tools/communication.notices?title=${title('Viktigt nu')}&from=%2F`);
+    const panel = page.getByRole('main');
+    await expect(panel.getByText('2 meddelanden', { exact: true })).toBeVisible();
     const rows = panel.getByRole('listitem');
     await expect(rows.filter({ hasText: 'Ny rutin vid hot och våld' })).toContainText('Kvitterad');
     await expect(rows.filter({ hasText: 'Enkät om matsalen' })).toContainText('Inte kvitterad');
@@ -333,31 +346,25 @@ test.describe("the view's header and its values (D71, artboards 4 and 7)", () =>
     await expectNoAxeViolations(page);
   });
 
-  test('a system that does not answer is a warning banner at the top of the page, and it is spoken once', async ({
+  test('a system that does not answer is said on its work items, not over the page, and spoken once', async ({
     page,
     api,
   }) => {
     api.sources = [
       { connector: 'finance', state: 'idle', lastSuccess: '2026-11-04T05:00:00.000Z', error: 'unavailable' },
     ];
-    await open(page, '/');
-    await expect(page.getByText('Ekonomisystemet svarar inte sedan 06:00', { exact: true })).toBeVisible();
-    await expect(
-      page.getByText(
-        'Ärendena under Budget kan vara gamla. Det du skickar köas och läses tillbaka när systemet svarar.',
-        {
-          exact: true,
-        },
-      ),
-    ).toBeVisible();
-    await expect
-      .poll(() => announcements(page))
-      .toContainEqual(expect.stringContaining('Ekonomisystemet svarar inte sedan 06:00'));
-    await expect(page.getByRole('button', { name: 'Försök igen' })).toBeVisible();
+    await open(page, '/todo');
+    // D116, amended 2026-11-12: no banner at the top of the page (D71 artboard 8's rule is replaced); the rows say it.
+    await expect(page.locator('#work-fakturor')).toContainText('kan vara gammal');
+    expect(await silentSaidIn(page)).toEqual([]);
+    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Ekonomisystemet svarar inte'));
     await expectNoAxeViolations(page);
   });
 
-  test("the banner waits for the system's name when the areas answer after the statuses", async ({ page, api }) => {
+  test("the announcement waits for the system's name when the areas answer after the statuses", async ({
+    page,
+    api,
+  }) => {
     api.sources = [
       { connector: 'finance', state: 'idle', lastSuccess: '2026-11-04T05:00:00.000Z', error: 'unavailable' },
     ];
@@ -370,36 +377,34 @@ test.describe("the view's header and its values (D71, artboards 4 and 7)", () =>
         if (document.body?.textContent?.includes('finance svarar inte')) shown.push('finance svarar inte');
       }).observe(document, { subtree: true, childList: true, characterData: true });
     });
-    await open(page, '/');
-    await expect(page.getByText('Ekonomisystemet svarar inte sedan 06:00', { exact: true })).toBeVisible();
-    await expect
-      .poll(() => announcements(page))
-      .toContainEqual(expect.stringContaining('Ekonomisystemet svarar inte sedan 06:00'));
-    // Drawn and spoken once, so never with the connector's id.
+    await open(page, '/todo');
+    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Ekonomisystemet svarar inte'));
+    // Said once, so never with the connector's id.
     expect(await page.evaluate(() => (window as unknown as { idShown: string[] }).idShown)).toEqual([]);
     expect((await announcements(page)).filter(text => text.includes('finance svarar inte'))).toEqual([]);
   });
 });
 
 test.describe('1.4.10: a declared view at 320 px', () => {
-  for (const [name, path] of [
-    ['the table, drawn as a list', directory],
-    ['the list', team],
-    ['the contact card', card],
+  for (const [name, path, where] of [
+    ['the table on its page, drawn as a list', directory, 'main'],
+    ['the list on its page', team, 'main'],
+    ['the contact card beside the page', card, 'dialog'],
   ] as const)
     test(`${name} reflows`, async ({ page, api: _ }) => {
       await page.setViewportSize(narrow);
       await open(page, path);
-      await expect(page.getByRole('dialog')).toBeVisible();
-      await expect(page.getByRole('dialog').getByRole('table')).toHaveCount(0);
-      await expect(page.getByRole('dialog').getByRole('link', { name: '0980-319 203' })).toBeVisible();
+      const surface = page.getByRole(where);
+      await expect(surface).toBeVisible();
+      await expect(surface.getByRole('table')).toHaveCount(0);
+      await expect(surface.getByRole('link', { name: '0980-319 203' })).toBeVisible();
       expect(await reflowProblems(page)).toEqual([]);
       await expectNoAxeViolations(page);
     });
   test('the combined errand list reflows, with the missing system still named', async ({ page, api: _ }) => {
     await page.setViewportSize(narrow);
-    await open(page, `/?open=clew.errands&open-title=${title('Mina ärenden')}`);
-    const dialog = page.getByRole('dialog');
+    await open(page, `/tools/clew.errands?title=${title('Mina ärenden')}&from=%2F`);
+    const dialog = page.getByRole('main');
     await expect(dialog.getByRole('link', { name: 'IK-26110007 · Behörighet, Beställning' })).toBeVisible();
     await expect(dialog.getByText('Verksamhetssystemet svarade inte.')).toBeVisible();
     expect(await reflowProblems(page)).toEqual([]);
@@ -443,7 +448,7 @@ test.describe('a view row that names a person', () => {
     page.route('**/api/cap/talks.talks*', route =>
       route.fulfill({ json: { source: 'Utvecklingssamtal', view, output: { rows } } }),
     );
-  const planner = `/?open=talks.talks&open-title=${title('Utvecklingssamtal')}`;
+  const planner = `/tools/talks.talks?title=${title('Utvecklingssamtal')}&from=%2F`;
 
   test('the name is the link to the person, with the page as the way back; a row without the key is text', async ({
     page,
@@ -451,11 +456,12 @@ test.describe('a view row that names a person', () => {
   }) => {
     await serve(page, talks);
     await open(page, planner);
-    const panel = page.getByRole('dialog', { name: 'Utvecklingssamtal' });
+    const panel = page.getByRole('main');
     await expect(panel.getByRole('columnheader')).toHaveText(['Namn', 'Samtal', 'När']);
+    // The way back from the person is the list's page, without a way back of its own.
     await expect(panel.getByRole('link', { name: 'Anna Lindqvist', exact: true })).toHaveAttribute(
       'href',
-      /^\/people\/anna\?from=%2F%3Fopen%3Dtalks\.talks/,
+      /^\/people\/anna\?from=%2Ftools%2Ftalks\.talks/,
     );
     await expect(panel.getByRole('link', { name: 'Karin Lindqvist', exact: true })).toBeVisible();
     await expect(panel.getByRole('link', { name: 'Utan användarnamn' })).toHaveCount(0);
@@ -471,12 +477,13 @@ test.describe('a view row that names a person', () => {
   }) => {
     await serve(page, withOpen);
     await open(page, planner);
-    const panel = page.getByRole('dialog', { name: 'Utvecklingssamtal' });
+    const panel = page.getByRole('main');
     await expect(panel.getByRole('columnheader')).toHaveText(['Namn', 'Samtal', 'När', 'Person']);
     const anna = panel.getByRole('row').filter({ hasText: 'Anna Lindqvist' });
+    // The row's own read is a list (the person's action points): its page, with the planner as the way back (D116).
     await expect(anna.getByRole('link', { name: 'Anna Lindqvist', exact: true })).toHaveAttribute(
       'href',
-      /open=talks\.commitments/,
+      /^\/tools\/talks\.commitments\?input=.*&from=%2Ftools%2Ftalks\.talks/,
     );
     await expect(anna.getByRole('link', { name: 'Öppna Anna Lindqvist' })).toHaveAttribute(
       'href',
@@ -488,7 +495,7 @@ test.describe('a view row that names a person', () => {
     await expectNoAxeViolations(page);
     // On a phone the table is its list: the person's link stands at the row's end.
     await page.setViewportSize(phone);
-    const sheet = page.getByRole('dialog', { name: 'Utvecklingssamtal' });
+    const sheet = page.getByRole('main');
     const item = sheet.getByRole('listitem').filter({ hasText: 'Anna Lindqvist' });
     await expect(item.getByRole('link', { name: 'Öppna Anna Lindqvist' })).toHaveAttribute(
       'href',
@@ -496,7 +503,7 @@ test.describe('a view row that names a person', () => {
     );
     await expect(item.getByRole('link', { name: 'Anna Lindqvist', exact: true })).toHaveAttribute(
       'href',
-      /open=talks\.commitments/,
+      /^\/tools\/talks\.commitments\?/,
     );
     await page.evaluate(() => Promise.all(document.getAnimations().map(a => a.finished)));
     await expectNoAxeViolations(page);

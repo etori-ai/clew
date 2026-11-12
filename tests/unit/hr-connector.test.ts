@@ -437,4 +437,44 @@ describe('the HR fixture connector', () => {
     });
     expect(state.get<{ seededOn: string }>('records').seededOn).toBe('2026-12-14');
   });
+  test('the rehabilitation routine (D115) is policy text for the manager: a list with a menu row, handed whole to the model, about nobody', async () => {
+    const { registry } = stack();
+    const declared = parseManifest(hrManifest, 'hr').capabilities.find(c => c.name === 'hr.rehabRoutine')!;
+    expect([declared.kind, declared.model, declared.scope.roles, declared.about, declared.view?.kind]).toEqual([
+      'read',
+      true,
+      ['manager'],
+      undefined,
+      'list',
+    ]);
+    // The model reads the output itself, not a summary: the routine holds nothing about any employee.
+    expect(declared.view?.modelReads).toBeUndefined();
+    // Its row in the menu, which an administrator places (D40).
+    expect(declared.menu).toEqual({ label: 'Rehabrutinen', icon: 'book' });
+    expect(registry.tools(hillevi).map(t => t.name)).toContain('hr.rehabRoutine');
+    type Step = { ref: string; section: string; at: string; title: string; detail: string };
+    const routine = await registry.run<{ name: string; owner: string; reviewedAt: string; rows: Step[] }>(
+      hillevi,
+      'hr.rehabRoutine',
+      {},
+    );
+    expect([routine.name, routine.owner, routine.reviewedAt]).toEqual([
+      'Rehabiliteringsrutinen',
+      'HR-avdelningen',
+      '2026-03-02',
+    ]);
+    expect(routine.rows.map(r => [r.at, r.title])).toEqual([
+      ['Dag 1', 'Kontakta medarbetaren'],
+      ['Dag 8', 'Be om läkarintyg'],
+      ['Tredje perioden på sex månader', 'Boka ett omtankesamtal'],
+      ['Dag 15', 'Anmäl till Försäkringskassan'],
+      ['Senast dag 30', 'Gör en plan för återgång i arbete'],
+      ['Dag 90 och dag 180', 'Följ upp planen'],
+      ['Första veckan', 'Ha ett uppföljningssamtal'],
+    ]);
+    // The same text for every manager and no employee's name or ref in it.
+    expect(await registry.run(stranger, 'hr.rehabRoutine', {})).toEqual(routine);
+    expect(JSON.stringify(routine)).not.toMatch(/hr:emp:|Lindqvist|Sandström/);
+    await expect(registry.run(hassan, 'hr.rehabRoutine', {})).rejects.toThrow(/behörighet/);
+  });
 });

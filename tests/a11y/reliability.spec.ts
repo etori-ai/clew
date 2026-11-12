@@ -56,9 +56,9 @@ test('two tabs and a reconnect announce a persisted reminder once; Visa opens it
       .getByRole('region', { name: 'Aviseringar' })
       .getByRole('button', { name: 'Visa', exact: true })
       .click();
-    // Visa opens the card over the page the toast was on, Kalender; from Hem, which holds no card, the work item in Att
-    // göra (D111, D112).
-    await expect(winner).toHaveURL(winner === page ? '/calendar?card=ledighet' : '/todo?item=ledighet');
+    // Visa opens the card over the page the toast was on, Kalender or Hem, in that page's panel (D111 rule 2; D112,
+    // amended 2026-11-12).
+    await expect(winner).toHaveURL(winner === page ? '/calendar?card=ledighet' : '/?card=ledighet');
     await expect(winner.getByRole('article', { name: 'Ärende: ' + thread.title })).toBeVisible();
     await Promise.all([page.reload(), second.reload()]);
     await expect(page.getByRole('region', { name: 'Aviseringar' }).getByText(body)).toHaveCount(0);
@@ -104,10 +104,20 @@ test('an empty local view with an unavailable source says it is awaiting evidenc
   api.threads = [];
   api.sources = [{ connector: 'reference', lastSuccess: null, state: 'failed', error: 'unavailable' }];
   await open(page, '/');
-  // Hem never says that nothing needs the person while a source has not answered (D8).
+  // Hem never says that nothing needs the person while a source has not answered (D8); with nothing to draw it names the
+  // source where its work items would be (D116, amended 2026-11-12), by its system's name or, unseen, as a source.
   const needs = page.getByRole('region', { name: 'Behöver dig' });
   await expect(needs.getByText('Inväntar källornas besked.')).toBeVisible();
-  await expect(needs.getByRole('status')).toContainText('Någon källa kunde inte kontrolleras');
+  await expect(needs.getByText('En källa svarar inte.', { exact: true })).toBeVisible();
   await expect(page.getByText('Inget behöver dig just nu.', { exact: true })).toHaveCount(0);
+  await expectNoAxeViolations(page);
+});
+test('a source not read yet is said over the work, and the pile is never called empty', async ({ page, api }) => {
+  api.threads = [];
+  api.sources = [{ connector: 'finance', lastSuccess: null, state: 'pending', error: null }];
+  await open(page, '/');
+  const needs = page.getByRole('region', { name: 'Behöver dig' });
+  await expect(needs.getByRole('status')).toHaveText('Källorna kontrolleras. Sparade uppgifter visas under tiden.');
+  await expect(needs.getByText('Inväntar källornas besked.')).toBeVisible();
   await expectNoAxeViolations(page);
 });

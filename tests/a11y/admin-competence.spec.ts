@@ -76,6 +76,31 @@ test.describe('Administration › Kompetens', () => {
       await expect(table.getByRole('row', { name: /Heta arbeten/ })).toContainText('Ingen regel');
       await expect(table.getByRole('row', { name: /Äldre brandskydd/ }).getByText('Arkiverad')).toBeVisible();
     });
+    test('the rail draws Kompetens only while the module is on and the person holds admin.competence; an old link still gets the page’s answer', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      const kompetens = page
+        .getByRole('navigation', { name: 'Sidonavigering' })
+        .getByRole('link', { name: 'Kompetens', exact: true });
+      // Switched off (D108 item 13): no row, and the page itself still says why for an address from before.
+      await open(page, '/admin/connectors');
+      await expect(
+        page.getByRole('navigation', { name: 'Sidonavigering' }).getByRole('link', { name: 'Anslutna system' }),
+      ).toBeVisible();
+      await expect(kompetens).toHaveCount(0);
+      await open(page, '/admin/competence');
+      await expect(page.getByText(/Kompetens är inte påslaget i den här installationen\./).first()).toBeVisible();
+      // Switched on: the row is there for the person who holds the capability.
+      api.competenceTypes = competenceCatalogue();
+      await open(page, '/admin/connectors');
+      await expect(kompetens).toBeVisible();
+      // On, but without admin.competence: no row.
+      api.capabilities = ['admin.connectors', 'admin.users', 'admin.appearance'];
+      await open(page, '/admin/connectors');
+      await expect(kompetens).toHaveCount(0);
+    });
     test('a type is added by keyboard: what is missing is said on its field, then it is saved and listed', async ({
       page,
       api,

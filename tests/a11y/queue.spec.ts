@@ -8,15 +8,17 @@ import {
   openNav,
   phone,
   reflowProblems,
+  silentSaidIn,
   test,
 } from './support';
+import { NOTICE_REASON, NOTICE_TEXT, asNotice } from './data';
 
 /**
  * Att göra (D112 item 3, board Inbox, the `table-inbox` template): a queue that indexes a reading pane. The piles are
  * tabs that lead to their address; a row is one link, and choosing it puts the work item in the pane and in the
  * address (`/todo?item=`). Where the pane does not fit beside the list (the template measures the page's own box,
  * 900 px), the row leads to the item as its page, alone on the surface, with the way back to the list. Keyboard, focus, announcements, axe and
- * reflow at 320 px, and the addresses of Hem from before D112.
+ * reflow at 320 px, the addresses of Hem's tabs from before D112, and a notice's layout in the pane.
  */
 const wide = { width: 1440, height: 900 };
 /** The page's box is under 900 px beside the rail: one surface. */
@@ -249,16 +251,15 @@ test.describe('Att göra where the pane does not fit', () => {
     });
 });
 
-test.describe('the addresses that led to a card on Hem', () => {
+// A work item alone in Hem's address is Hem's own since 2026-11-12, beside Hem in its panel (`hem.spec.ts`).
+test.describe('the addresses of Hem’s old tabs', () => {
   test.use({ viewport: desktop });
 
   for (const [from, to] of [
-    ['/?card=ledighet', /\/todo\?item=ledighet$/],
     ['/?tab=waiting', /\/todo\?tab=waiting$/],
     ['/?tab=snoozed', /\/todo\?tab=waiting$/],
     ['/?tab=done&card=attest', /\/todo\?tab=done&item=attest$/],
     ['/?area=personal', /\/todo\?area=personal$/],
-    ['/cards/fakturor/review', /\/todo\?item=fakturor&review=fakturor$/],
   ] as const)
     test(`${from} leads to Att göra`, async ({ page, api: _ }) => {
       await page.goto(from);
@@ -270,20 +271,136 @@ test.describe('the addresses that led to a card on Hem', () => {
 test.describe('Hem leads to Att göra', () => {
   test.use({ viewport: wide });
 
-  test('Behöver dig on Hem is the three most urgent items, each leading to it in Att göra, and the way to all of them', async ({
+  test('Behöver dig on Hem is the three most urgent items, each opening beside Hem, and the way to all of them in Att göra', async ({
     page,
     api: _,
   }) => {
     await open(page, '/');
     const block = page.getByRole('region', { name: 'Behöver dig' });
     await expect(block.getByRole('listitem')).toHaveCount(3);
-    await expect(block.getByRole('link', { name: /^Attestera 3 fakturor/ })).toHaveAttribute(
-      'href',
-      '/todo?item=fakturor',
+    // A row opens its item in the panel beside Hem (D112, amended 2026-11-12; `hem.spec.ts`).
+    await expect(block.getByRole('link', { name: /^Attestera 3 fakturor/ })).toHaveAttribute('href', '/?card=fakturor');
+    const all = block.getByRole('link', { name: 'Alla 6 i Att göra' });
+    await expect(all).toHaveAttribute('href', '/todo');
+    await all.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/\/todo$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Att göra' })).toBeVisible();
+    await expect(queue(page).getByRole('listitem')).toHaveCount(6);
+  });
+});
+
+/**
+ * A notice (D112, amended 2026-11-12): a work item whose execute is the person's read receipt leads with its text, the
+ * thing to read, and the way to the whole of it after the text; "Varför ser jag detta?" is its provenance line and a row
+ * that only repeats its title is not drawn. The receipt's button stays among the item's buttons, reached from the text.
+ */
+test.describe('Att göra: a notice in the reading pane', () => {
+  test.use({ viewport: wide });
+
+  test('the notice leads with its text and its link out; the receipt stays among the buttons and is reached from the text; no row repeats the title', async ({
+    page,
+    api,
+  }) => {
+    api.threads = api.threads.map(t => (t.id === 'rutin' ? asNotice(t) : t));
+    await open(page, '/todo?item=rutin');
+    const pane = page.getByRole('complementary', { name: 'Valt ärende' });
+    const item = pane.locator('#card-rutin');
+    const ack = item.getByRole('button', { name: 'Jag har läst' });
+    const whole = item.getByRole('button', { name: /^Läs hela nyheten\s*\(öppnas i ny flik\)$/ });
+    const why = item.getByRole('region', { name: 'Varför ser jag detta?' });
+    await expect(ack).toBeVisible();
+    // Drawn once, after the text, not among the buttons too.
+    await expect(whole).toHaveCount(1);
+    const y = async (l: import('@playwright/test').Locator) => (await l.boundingBox())!.y;
+    const first = item.getByText(NOTICE_TEXT[0]!, { exact: true });
+    expect(await y(first)).toBeGreaterThan(await y(ack));
+    expect(await y(whole)).toBeGreaterThan(await y(item.getByText(NOTICE_TEXT.at(-1)!, { exact: true })));
+    expect(await y(why)).toBeGreaterThan(await y(whole));
+    await expect(why).toContainText(NOTICE_REASON);
+    await expect(why).not.toContainText(NOTICE_TEXT[1]!);
+    await expect(item.getByRole('heading', { name: 'Rader' })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+    // The keyboard goes from the receipt to the link out after the text, and from there back to the receipt.
+    await ack.focus();
+    let steps = 0;
+    while (steps < 10 && !(await whole.evaluate(el => el === document.activeElement))) {
+      await page.keyboard.press('Tab');
+      steps++;
+    }
+    await expect(whole).toBeFocused();
+    for (let i = 0; i < steps; i++) await page.keyboard.press('Shift+Tab');
+    await expect(ack).toBeFocused();
+    // An item that is not a notice keeps its lead under Varför ser jag detta? and its rows.
+    await open(page, '/todo?item=fakturor');
+    const invoices = pane.locator('#card-fakturor');
+    await expect(invoices.getByRole('region', { name: 'Varför ser jag detta?' })).toContainText(
+      'Alla matchar sina beställningar och ryms i budgeten.',
     );
-    await expect(block.getByRole('link', { name: 'Alla 6 i Att göra' })).toHaveAttribute('href', '/todo');
-    await block.getByRole('link', { name: /^Omtankesamtal med Anna Lindqvist/ }).click();
-    await expect(page).toHaveURL(/\/todo\?item=omtanke$/);
-    await expect(page.getByRole('complementary', { name: 'Valt ärende' }).locator('#card-omtanke')).toBeVisible();
+    await expect(invoices.getByRole('heading', { name: 'Rader' })).toBeVisible();
+    await expect(invoices.getByRole('button', { name: /^Öppna i ekonomisystemet/ })).toHaveCount(1);
+  });
+});
+
+/**
+ * A system that does not answer is said on the work items that come from it (D116, amended 2026-11-12): "kan vara
+ * gammal" at the end of the row's why line, and in the item's head with since when, never as a banner over the page or
+ * a sentence over the list. The first time a system is seen silent in the session it is said aloud once.
+ */
+test.describe('Att göra when a system does not answer', () => {
+  test.use({ viewport: wide });
+
+  test('its work items may be old, said on their rows and in their heads with since when; two systems at once are said once together and stack nothing over the page', async ({
+    page,
+    api,
+  }) => {
+    api.sources = [
+      { connector: 'hr', state: 'idle', lastSuccess: '2026-11-04T05:00:00.000Z', error: 'unavailable' },
+      { connector: 'finance', state: 'idle', lastSuccess: null, error: 'timeout' },
+    ];
+    await open(page, '/todo');
+    await expect(page.locator('#work-omtanke')).toContainText('· kan vara gammal');
+    await expect(page.locator('#work-fakturor')).toContainText('· kan vara gammal');
+    expect(await queue(page).getByRole('listitem').filter({ hasNotText: 'kan vara gammal' }).count()).toBeGreaterThan(
+      0,
+    );
+    // No sentence over the list and nothing over the page: the rows say it.
+    expect(await silentSaidIn(page)).toEqual([]);
+    await expect
+      .poll(() => announcements(page))
+      .toContainEqual(expect.stringContaining('Personalsystemet och Ekonomisystemet svarar inte'));
+    await expectNoAxeViolations(page);
+    const pane = page.getByRole('complementary', { name: 'Valt ärende' });
+    await row(page, 'Omtankesamtal med Anna Lindqvist').click();
+    await expect(
+      pane.getByText('Kan vara gammal · Personalsystemet svarar inte sedan 06:00', { exact: true }),
+    ).toBeVisible();
+    expect(await silentSaidIn(page)).toEqual(['Ärende: Omtankesamtal med Anna Lindqvist']);
+    await expectNoAxeViolations(page);
+    await row(page, 'Attestera 3 fakturor, 48 200 kr').click();
+    await expect(pane.getByText('Kan vara gammal · Ekonomisystemet svarar inte', { exact: true })).toBeVisible();
+    // Said once in the session, together, and not again as the items open.
+    expect((await announcements(page)).filter(text => text.includes('svarar inte'))).toHaveLength(1);
+  });
+
+  test('with nothing left to draw the empty pile says it waits and names the system that does not answer', async ({
+    page,
+    api,
+  }) => {
+    api.threads = [];
+    api.sources = [{ connector: 'hr', state: 'idle', lastSuccess: '2026-11-04T05:00:00.000Z', error: 'unavailable' }];
+    await open(page, '/todo');
+    await expect(page.getByRole('heading', { level: 2, name: 'Inväntar källornas besked' })).toBeVisible();
+    await expect(page.getByText('Personalsystemet svarar inte sedan 06:00.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Inget behöver dig just nu.', { exact: true })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+  });
+
+  test('the marks reflow at 320 px', async ({ page, api }) => {
+    await page.setViewportSize(narrow);
+    api.sources = [{ connector: 'hr', state: 'idle', lastSuccess: '2026-11-04T05:00:00.000Z', error: 'unavailable' }];
+    await open(page, '/todo');
+    await expect(page.locator('#work-omtanke')).toContainText('kan vara gammal');
+    expect(await reflowProblems(page)).toEqual([]);
   });
 });

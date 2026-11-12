@@ -85,6 +85,7 @@
         "hr.withdrawAbsence",
         "hr.myShift",
         "hr.myBalance",
+        "hr.rehabRoutine",
         "hr.renewDelegation",
         "hr.lookup",
         "hr.person"
@@ -131,6 +132,7 @@
         "communication.acknowledge",
         "communication.news",
         "communication.newsItem",
+        "communication.open",
         "communication.lookup"
       ]
     },
@@ -250,7 +252,7 @@
       "number": 8,
       "path": "docs/decisions/D08-every-action-works-without-the-model.md",
       "title": "D8 · Every action works without the model",
-      "status": "accepted, refined by D104 (2026-11-10, provisional: the model is the main way work gets done, a floor of core features holds without it, and the assistant may act alone within governed limits; nothing is built, so the rules below still bind what is built)",
+      "status": "accepted, refined by D104 (2026-11-10, provisional: the model is the main way work gets done, a floor of core features holds without it, and the assistant may act alone within governed limits; nothing is built, so the rules below still bind what is built); the banner the shell drew under this record for a connected system that does not answer (D71 artboard 8) is replaced 2026-11-12 by [D116](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md)'s amendment (said where the system's content is missing); the model's own banner stands",
       "date": "2026-11-03",
       "area": "product"
     },
@@ -862,7 +864,7 @@
       "number": 70,
       "path": "docs/decisions/D70-one-press-confirms-on-the-row-and-rows-with-a-document-are-reviewed-one-at-a-time.md",
       "title": "D70 · One press confirms on the row, and rows with a document are reviewed one at a time",
-      "status": "accepted, built 2026-11-06 on `main`",
+      "status": "accepted, built 2026-11-06 on `main`; item 2's review is a page of its own since 2026-11-12 (see the amendment of that date)",
       "date": "2026-11-06",
       "area": "ui"
     },
@@ -889,7 +891,7 @@
       "number": 73,
       "path": "docs/decisions/D73-the-review-is-a-page-in-the-shell-with-an-address.md",
       "title": "D73 · The review is a page in the shell, with an address",
-      "status": "accepted, built 2026-11-07 on `main` as a page, rebuilt the same day as a drawer (see the amendment), and on a phone as a sheet stacked over the card's sheet (see the second amendment)",
+      "status": "accepted, built 2026-11-07 on `main` as a page, rebuilt the same day as a drawer (see the amendment), and on a phone as a sheet stacked over the card's sheet (see the second amendment); a page again since 2026-11-12, `/items/<threadId>/review`, under the product owner's rule that a task a person works through is a page with its own address ([D116](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md); see the amendment of that date)",
       "date": "2026-11-07",
       "area": "ui"
     },
@@ -943,7 +945,7 @@
       "number": 79,
       "path": "docs/decisions/D79-semantic-views-and-versioned-document-review.md",
       "title": "D79 · Semantic views and versioned document review",
-      "status": "accepted for implementation",
+      "status": "accepted for implementation; amended 2026-11-12: a review's decisions outlive a reload, its evidence does not (see the amendment)",
       "date": "2026-11-08",
       "area": "integrations, ui, authorization"
     },
@@ -1123,7 +1125,7 @@
       "number": 97,
       "path": "docs/decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md",
       "title": "D97 · A source says what its rows are about, and Clew places them",
-      "status": "accepted as the direction (product owner, 2026-11-10), built 2026-11-10 (see \"As built\"); the items under \"Open\" were taken provisionally for the build and are not decided; the placement of a person's action in its source's section (amended 2026-11-11) replaced by [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) item 5 (2026-11-11: every action in the page's header); item 9 amended by [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md) (2026-11-11, provisional: a person's title is one line Clew holds, pushed as SCIM's `title`; phone and employment facts are still read from their source); item 8's rule of who may be asked about amended by [D117](D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md) (2026-11-12, provisional: the registry applies it to every call, `managed` is D99's direct reports only, a capability says which relations it admits, and the source is told each key's relation in a request the assertion binds)",
+      "status": "accepted as the direction (product owner, 2026-11-10), built 2026-11-10 (see \"As built\"); the items under \"Open\" were taken provisionally for the build and are not decided; the placement of a person's action in its source's section (amended 2026-11-11) replaced by [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) item 5 (2026-11-11: every action in the page's header); item 9 amended by [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md) (2026-11-11, provisional: a person's title is one line Clew holds, pushed as SCIM's `title`; phone and employment facts are still read from their source); item 7 refined for the assistant by [D115](D115-the-assistant-resolves-a-person-the-asker-names-and-hands-the-model-the-work-about-them-not-health-rows.md) (2026-11-12, provisional: a question that names one of the asker's people tells the model who they are and the asker's open work about them by title, last day and buttons; a read about the person still never reaches the model); item 8's rule of who may be asked about amended by [D117](D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md) (2026-11-12, provisional: the registry applies it to every call, `managed` is D99's direct reports only, a capability says which relations it admits, and the source is told each key's relation in a request the assertion binds)",
       "date": "2026-11-10",
       "area": "integrations, ui"
     },
@@ -1150,7 +1152,7 @@
       "number": 99,
       "path": "docs/decisions/D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md",
       "title": "D99 · Units form a tree pushed over SCIM, and a manager works with their direct reports",
-      "status": "accepted (product owner, 2026-11-10: units form a tree, the tree is pushed as resources of its own, a manager works with their direct reports and not with everyone below), built 2026-11-10 (the parent on the unit group, the SCIM extension and its refusals, the reporting line in Personal, talks and the calendar's team, the development directory as a tree, the check, Administration › Organisation; see \"As built\"); the transport in item 2 is proposed until a real provisioner has used it, the branch of item 5 has no user yet, and the items under \"Open\" are not decided; the order of a push and whose a unit is are D101 (2026-11-11)",
+      "status": "accepted (product owner, 2026-11-10: units form a tree, the tree is pushed as resources of its own, a manager works with their direct reports and not with everyone below), built 2026-11-10 (the parent on the unit group, the SCIM extension and its refusals, the reporting line in Personal, talks and the calendar's team, the development directory as a tree, the check, Administration › Organisation; see \"As built\"); the transport in item 2 is proposed until a real provisioner has used it, the branch of item 5 has no user yet, and the items under \"Open\" are not decided; the order of a push and whose a unit is are D101 (2026-11-11); item 6 amended 2026-11-12 (product owner): a unit's people moved from an overlay over the tree to the unit's own page, `/admin/organisation/<unitId>`, see the amendment",
       "date": "2026-11-10",
       "area": "identity, product"
     },
@@ -1276,7 +1278,7 @@
       "number": 111,
       "path": "docs/decisions/D111-where-something-opens-is-decided-by-what-it-is.md",
       "title": "D111 · Where something opens is decided by what it is, never by the page it was clicked on",
-      "status": "provisional (accepted when the rules have been used by people outside the repository: a manager on Personal and one connector author placing a view and a card from the author's page alone); rule 7 (\"no control chooses a surface\") and the panel's header replaced by [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) (2026-11-11: \"Öppna som sida\" is back and the panel holds the thing with the conversation about it); rules 1, 4, 6 and 8 stand, and rule 2 stands with D112's panel",
+      "status": "provisional (accepted when the rules have been used by people outside the repository: a manager on Personal and one connector author placing a view and a card from the author's page alone); rule 7 (\"no control chooses a surface\") and the panel's header replaced by [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) (2026-11-11: \"Öppna som sida\" is back and the panel holds the thing with the conversation about it); rules 1, 4, 6 and 8 stand, and rule 2 stands with D112's panel; amended 2026-11-12 (product owner): a panel, a drawer or a sheet is for peeking at one thing or an instant action, and a list that can grow gets a full route, first applied to a unit under Administration › Organisation ([D99, the organisation tree](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md)), and taken up the same day by [D116](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md) (provisional), which replaces rule 2 for a view that answers with rows (a list or a table is a page), answer 2's \"Tillbaka\", answer 4's view and table in the card's place, and choice 5 (a record or a document in the panel links to its page); rule 5's review (\"Granska N\") is a page since 2026-11-12 under that rule ([D73](D73-the-review-is-a-page-in-the-shell-with-an-address.md) as amended that day), and one person's utvecklingssamtal still lies over the page",
       "date": "2026-11-11",
       "area": "ui"
     },
@@ -1285,7 +1287,7 @@
       "number": 112,
       "path": "docs/decisions/D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md",
       "title": "D112 · The interface is rebuilt on Astryx's templates: a queue, one detail shape, and one panel with the assistant in it",
-      "status": "provisional (accepted when a manager has done a day's work in it and one connector author has declared an action that asks for input from the author's page alone)",
+      "status": "provisional (accepted when a manager has done a day's work in it and one connector author has declared an action that asks for input from the author's page alone); items 6 and 7 refined by [D116](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md) (2026-11-12, provisional: a tool's page is every view's page, and the panel holds a view only when the view is one thing; a list or a table opened anywhere is its page)",
       "date": "2026-11-11",
       "area": "ui"
     },
@@ -1306,6 +1308,24 @@
       "status": "provisional (product owner, 2026-11-12, who directed the build against the freeze on new surface of D101 and settled items 3, 5 and 6 after the [review of the same day](../reviews/2026-11-12-scim-and-the-guides-before-the-handover.md)); implemented with the synthetic provisioner; accepted once a real directory has sent employments and numbers; no manual screen-reader pass yet",
       "date": "2026-11-12",
       "area": "identity, ui"
+    },
+    {
+      "key": "D115-the-assistant-resolves-a-person-the-asker-names-and-hands-the-model-the-work-about-them-not-health-rows",
+      "number": 115,
+      "path": "docs/decisions/D115-the-assistant-resolves-a-person-the-asker-names-and-hands-the-model-the-work-about-them-not-health-rows.md",
+      "title": "D115 · The assistant resolves a person the asker names among their own people, and hands the model the work about them, never a source's health rows",
+      "status": "provisional (product owner, 2026-11-12: make a question like \"Anna har varit sjuk i två veckor, vad gör jag?\" work with an ordinary model first; the freeze on new surface lifted on his word for what it needs), built 2026-11-12; accepted when a manager outside the repository has asked about one of their people with an open-weight model configured and found the answer useful; item 8, a model marked as safe for health data, is the intended next step and is not built",
+      "date": "2026-11-12",
+      "area": "product"
+    },
+    {
+      "key": "D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address",
+      "number": 116,
+      "path": "docs/decisions/D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md",
+      "title": "D116 · A panel is a peek at one thing; a list is a page, and every view has an address",
+      "status": "provisional (product owner, 2026-11-12; accepted when a manager outside the repository has worked through a list reached from Hem and back, and one connector author has known from the guide alone where their table and their record open; no manual screen-reader pass yet); amended 2026-11-12 (product owner): a system that does not answer is said where its content is missing, not as a banner at the top of the page, which replaces [D71](D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md)'s artboard 8 rule and the banner drawn under [D8](D08-every-action-works-without-the-model.md) for it",
+      "date": "2026-11-12",
+      "area": "ui"
     },
     {
       "key": "D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation",
@@ -1893,6 +1913,18 @@
       "headings": [
         "Employment and work placement in a municipality"
       ]
+    },
+    {
+      "path": "docs/decisions/D115-the-assistant-resolves-a-person-the-asker-names-and-hands-the-model-the-work-about-them-not-health-rows.md",
+      "title": "D115 · The assistant resolves a person the asker names among their own people, and hands the model the work about them, never a source's health rows",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md",
+      "title": "D116 · A panel is a peek at one thing; a list is a page, and every view has an address",
+      "category": "decision-history",
+      "headings": []
     },
     {
       "path": "docs/decisions/D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md",
@@ -2992,7 +3024,8 @@
         "Sources about an entity",
         "The opened person and the unit page",
         "Subjects on cards and their erasure",
-        "Actions about a person"
+        "Actions about a person",
+        "The assistant asked about a person"
       ]
     },
     {

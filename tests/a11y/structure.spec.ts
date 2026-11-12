@@ -22,6 +22,8 @@ test.describe('2.4.2 page titled', () => {
     ['/todo?tab=done', 'Att göra · Startsidan'],
     ['/calendar', 'Vecka 45 · Kalender · Startsidan'],
     ['/?open=hr.whoIsOn&open-title=Bemanning', 'Bemanning · Startsidan'],
+    // A list's own page (D116), placed in the rail or not.
+    ['/tools/incidents.deviations?title=Avvikelser&from=%2F', 'Avvikelser · Startsidan'],
   ] as const;
   for (const [path, title] of titles)
     test(`${path} has its own title`, async ({ page, api: _ }) => {
@@ -76,10 +78,9 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expect(rail.getByRole('link', { name: 'Kalender' })).toHaveAttribute('href', '/calendar');
     // Without a tool an administrator placed there is no Verktyg (D40).
     await expect(rail.getByRole('group', { name: 'Verktyg' })).toHaveCount(0);
-    // Samtal is one disclosure, open, with the conversations; a conversation the data says nothing about has no dot.
-    const talks = rail.getByRole('button', { name: 'Samtal' });
-    await expect(talks).toHaveAttribute('aria-expanded', 'true');
-    const talk = rail.getByRole('link', { name: 'Vem är på plats i dag?' });
+    // Samtal is a section of the rail with the conversations as its rows; a conversation the data says nothing about has
+    // no dot.
+    const talk = rail.getByRole('group', { name: 'Samtal' }).getByRole('link', { name: 'Vem är på plats i dag?' });
     await expect(talk).toHaveAttribute('href', '/conversations/fraga');
     await expect(rail.getByRole('listitem').filter({ has: talk }).getByRole('img')).toHaveCount(0);
     for (const gone of ['Behöver dig', 'Jag föreslår', 'Till kännedom', 'Inte nu', 'Alla samtal'])
@@ -101,11 +102,12 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await open(page, '/');
     await expect(heading(page, 1, 'Vad vill du få gjort?')).toBeVisible();
     await expect(heading(page, 2, 'Behöver dig')).toBeVisible();
-    // A row is one link to its work item in Att göra (D112 item 2); none is the current one on Hem.
+    // A row is one link to its work item beside Hem (D112 item 2, amended 2026-11-12); none is the current one while
+    // nothing is open beside Hem.
     const row = page.locator('#work-omtanke');
     await expect(row.getByRole('link', { name: /^Omtankesamtal med Anna Lindqvist/ })).toHaveAttribute(
       'href',
-      '/todo?item=omtanke',
+      '/?card=omtanke',
     );
     await expect(row).not.toHaveAttribute('aria-current', 'true');
     // The whole row is the target of that one link, named by the title alone; the badge and the source stay in the row.
@@ -116,11 +118,12 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     const box = (await row.boundingBox())!;
     expect(box.height).toBeGreaterThanOrEqual(44);
     await row.getByText('Tre sjukperioder på sex månader').click();
-    await expect(page).toHaveURL(/\/todo\?item=omtanke$/);
+    await expect(page).toHaveURL(/\/\?card=omtanke$/);
+    await expect(page.getByRole('article', { name: 'Ärende: Omtankesamtal med Anna Lindqvist' })).toBeVisible();
     await open(page, '/');
     const edge = (await page.locator('#work-fakturor').boundingBox())!;
     await page.mouse.click(edge.x + edge.width - 4, edge.y + edge.height / 2);
-    await expect(page).toHaveURL(/\/todo\?item=fakturor$/);
+    await expect(page).toHaveURL(/\/\?card=fakturor$/);
     await open(page, '/todo?tab=done');
     await expect(heading(page, 1, 'Att göra')).toBeVisible();
     await expect(page.getByRole('list', { name: 'Klart' }).getByRole('listitem')).toHaveCount(2);
@@ -224,7 +227,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expectNoAxeViolations(page);
   });
 
-  test('typing in the box offers what the router finds without the model, the open card first, and each row is a button', async ({
+  test('typing in the box offers what the router finds without the model, the open card first; a row that leads somewhere is a link, one that asks is a button', async ({
     page,
     api: _,
   }) => {
@@ -232,9 +235,13 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await composer(page).fill('attestera');
     const offers = page.getByRole('list', { name: 'Menar du' });
     await expect(offers.getByRole('listitem').first()).toContainText('Attestera 3 fakturor, 48 200 kr');
+    // An action is asked in the box: a button. The open card is somewhere to go: a link, so it opens in a new tab too (D116).
     await expect(offers.getByRole('button', { name: /Attestera fakturor/ })).toBeVisible();
-    await offers.getByRole('button', { name: /Attestera 3 fakturor/ }).click();
-    await expect(page).toHaveURL(/^[^?]*\/todo\?item=fakturor$/);
+    const card = offers.getByRole('link', { name: /Attestera 3 fakturor/ });
+    await expect(card).toHaveAttribute('href', '/?card=fakturor');
+    await card.click();
+    // The card opens beside Hem (D112, amended 2026-11-12).
+    await expect(page).toHaveURL(/^[^?]*\/\?card=fakturor$/);
   });
 
   test('a row reaches the box by @, which with nothing typed offers only what the page shows', async ({
@@ -267,7 +274,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expect(page.getByRole('article', { name: /^Assistenten/ })).toContainText('saknar beställning');
   });
 
-  test('the rail searches conversations and cards and opens what is picked: from Hem the work item in Att göra', async ({
+  test('the rail searches conversations and cards and opens what is picked: from Hem the work item beside Hem', async ({
     page,
     api: _,
   }) => {
@@ -279,7 +286,9 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     const search = page.getByRole('combobox', { name: 'Sök i samtal och ärenden' });
     await search.fill('fakturor');
     await page.getByRole('option', { name: /Attestera 3 fakturor/ }).click();
-    await expect(page).toHaveURL(/\/todo\?item=fakturor$/);
+    // Over the page the person is on (D111 rule 2), Hem's panel too since 2026-11-12 (D112, amended).
+    await expect(page).toHaveURL(/\/\?card=fakturor$/);
+    await expect(page.getByRole('article', { name: 'Ärende: Attestera 3 fakturor, 48 200 kr' })).toBeVisible();
   });
 
   test('a card picked in the rail’s search opens over the page the person is on, which stays (D111 rule 2)', async ({
@@ -355,7 +364,12 @@ test.describe('D26 questions answered from documents', () => {
     await expect(bubble.getByRole('link').first()).toHaveAttribute('href', /intra\.example/);
     await expect(bubble.getByText('MAS', { exact: true })).toBeVisible();
     await expect(bubble.getByText('12 mars 2026', { exact: true })).toBeVisible();
-    await expect(bubble.getByRole('button', { name: 'Visa källor' })).toBeVisible();
+    // "Visa källor" is a link. The search declares no view, so it names the sources beside the conversation, and the
+    // panel sends them on to the search's own page when they arrive as rows (D116, views.spec).
+    await expect(bubble.getByRole('link', { name: 'Visa källor' })).toHaveAttribute(
+      'href',
+      /^\/conversations\/[^?]+\?open=clew\.search&open-title=K%C3%A4llor&open-input=/,
+    );
     await expect(
       page.getByRole('group', { name: 'Följdfrågor' }).getByRole('button', { name: 'Och om hen slagit i huvudet?' }),
     ).toBeVisible();
@@ -369,9 +383,12 @@ test.describe('D26 questions answered from documents', () => {
     page,
     api: _,
   }) => {
+    // The hits are rows, so they are the search's page (D116): the address that opened them beside Hem leads there.
     await open(page, '/?open=clew.search&open-title=K%C3%A4llor&open-input=%7B%22query%22%3A%22fall%22%7D');
-    const panel = page.getByRole('dialog');
-    await expect(panel.getByRole('heading', { name: 'Källor' })).toBeVisible();
+    await expect(page).toHaveURL(/^[^?]*\/tools\/clew\.search\?/);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    const panel = page.getByRole('main');
+    await expect(panel.getByRole('heading', { level: 1, name: 'Källor' })).toBeVisible();
     const rows = panel.getByRole('list', { name: 'Källor' }).getByRole('listitem');
     await expect(rows).toHaveCount(3);
     await expect(rows.nth(0)).toContainText('Rutin vid fall i ordinärt boende · Vid fall');
@@ -381,9 +398,9 @@ test.describe('D26 questions answered from documents', () => {
       'target',
       '_blank',
     );
-    // On Hem the sources view has its own box in the panel: a passage goes into a conversation only beside one (D112 item 7).
+    // A passage goes into a conversation only beside a conversation's own box (D112 item 7); the page has "Fråga Clew".
     await expect(rows.nth(0).getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
-    await expect(panel.getByRole('textbox', { name: 'Fråga Clew' })).toBeVisible();
+    await expect(panel.getByRole('link', { name: 'Fråga Clew' })).toBeVisible();
     await expect(rows.nth(2)).toContainText('2 år sedan');
     await expect(rows.nth(2).getByRole('link', { name: 'Öppna' })).toHaveCount(0);
     await expect(panel.getByText(/^SharePoint svarade inte\./)).toBeVisible();
@@ -431,7 +448,8 @@ test.describe('D54 Läget: the areas’ figures from their connectors', () => {
     api.areas = [...api.areas, { ...api.areas[0]!, id: 'tom', title: 'Tom', figure: null }];
     await open(page, '/');
     const region = lage(page);
-    // A tile with `opens` is a link to the view in the panel (D50); the others are groups, the sentence among them.
+    // A tile with `opens` is a link to its view: a list or a table on its page, one thing beside Hem (D116); the others
+    // are groups, the sentence among them.
     const tiles = region.locator(TILES);
     expect(await tiles.evaluateAll(list => list.map(el => el.getAttribute('aria-label')))).toEqual([
       'Viktigt nu: Inget nytt sedan i går.',
@@ -442,10 +460,7 @@ test.describe('D54 Läget: the areas’ figures from their connectors', () => {
     ]);
     await expect(region.getByRole('group', { name: /^Tom/ })).toHaveCount(0);
     const absence = region.getByRole('link', { name: /^Personal: Sjukfrånvaro/ });
-    await expect(absence).toHaveAttribute(
-      'href',
-      /^\/\?open=hr\.absenceOverview&open-title=Fr%C3%A5nvaro\+per\+person$/,
-    );
+    await expect(absence).toHaveAttribute('href', '/tools/hr.absenceOverview?title=Fr%C3%A5nvaro+per+person&from=%2F');
     // The tile as drawn (artboard 3): the chip, the tone with its word, the label over the value, the comparison, the view with a chevron.
     const card = region.locator('.astryx-clickable-card').filter({ hasText: 'Sjukfrånvaro' });
     await expect(card.getByText('Personal', { exact: true })).toBeVisible();
@@ -463,9 +478,9 @@ test.describe('D54 Läget: the areas’ figures from their connectors', () => {
     await expect(samtal.getByText(/^(Lugnt|Bevaka|Behöver dig)$/)).toHaveCount(0);
     await expect(region.getByRole('group', { name: /^Viktigt nu/ }).getByRole('link')).toHaveCount(0);
     await expectNoAxeViolations(page);
-    // The whole tile opens its view in the panel, without the model: a click on its text follows the link.
+    // The whole tile opens its view's page, without the model: a click on its text follows the link.
     await card.getByText('4,2 %', { exact: true }).click();
-    await expect(page).toHaveURL(/open=hr\.absenceOverview/);
+    await expect(page).toHaveURL(/^[^?]*\/tools\/hr\.absenceOverview\?/);
   });
   test('a source that does not answer is the warning tile, never an empty one; Sedan i går lists the figures to watch', async ({
     page,

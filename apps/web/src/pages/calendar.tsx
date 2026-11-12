@@ -1,12 +1,20 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
-import { keepPreviousData, useQueries, useQuery, type UseQueryResult } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useIsFetching,
+  useQueries,
+  useQuery,
+  useQueryClient,
+  type UseQueryResult,
+} from '@tanstack/react-query';
 import type { CalendarEvent, Proposal, SessionUser, Thread } from '@clew/contracts';
 import {
   Badge,
   Button,
   DatePicker,
   DropdownMenu,
+  EmptyState,
   EventCalendar,
   HStack,
   Icon,
@@ -39,10 +47,11 @@ import {
   weekStart,
 } from '@clew/calendar/dates';
 import { api } from '../api';
-import { calendarWeekQuery, threadsQuery } from '../queries';
+import { areasQuery, calendarWeekQuery, threadsQuery } from '../queries';
+import { keys } from '../query-keys';
 import { pickProposalThread } from '../thread-cache';
 import { useThreadAction } from '../mutations';
-import { errorMessage } from '../query-policy';
+import { errorMessage, noCalendar } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { useMarks } from '../marks';
 import { ENTRY_PARAM, viewSearch, withEntry } from '../panel-address';
@@ -58,6 +67,7 @@ import { AskClew } from '../components/thing-panel';
 import { Unfold } from '../components/unfold';
 import { useThingHead } from '../components/thing-head';
 import type { ChipRef } from '../components/conversation-context';
+import { SilentNotice, useSaySilent, useSilentSources } from '../components/silent-sources';
 
 /** The three views as the URL names them, so a view is addressable and the back button works. */
 type View = 'day' | 'week' | 'month';
@@ -100,7 +110,12 @@ const combineWeeks = (results: UseQueryResult<Week>[]) => {
       }),
     proposals: parts[0]?.proposals ?? EMPTY_PROPOSALS,
     pending: results.some(r => r.isPending),
-    failed: results.find(r => r.isError && r.data === undefined)?.error,
+    /** A week that could not be read, whether or not an earlier answer is still on the grid. */
+    failed: results.find(r => r.isError)?.error,
+    /** Whether any week on screen has been read: what the grid can show while the calendar does not answer. */
+    read: parts.length > 0,
+    /** When the calendar last answered for a week that now fails, if this page read it before. */
+    lastRead: Math.max(0, ...results.filter(r => r.isError && r.data !== undefined).map(r => r.dataUpdatedAt)),
   };
 };
 const selectProposalThread = (data: { threads: Thread[] }) => pickProposalThread(data.threads);
@@ -352,21 +367,49 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
         ? monthLabel(anchor)
         : `Vecka ${weekNumber(anchor)} · ${rangeLabel(anchor, 5)}`;
   const shortTitle = view === 'week' ? `Vecka ${weekNumber(anchor)}` : capital(title);
-  usePageTitle(
-    `${shortTitle} · Kalender`,
-    view === 'week'
-      ? `Vecka ${weekNumber(anchor)}, ${rangeLabel(anchor, 5)}`
-      : `${view === 'day' ? 'Dagvy' : 'Månadsvy'}, ${title}`,
-  );
   /** The weeks the view needs: one for a day or a week, every week the month grid shows. */
   const weeks = useMemo(() => (view === 'month' ? weeksOfMonth(anchor) : [weekStart(anchor)]), [view, anchor]);
   // Each week is one query, shared with the cards on the start page; the previous answer stays on the grid while the next week loads, and answers can no longer land out of order.
-  const { events, proposals, failed, pending } = useQueries({
+  const { events, proposals, failed, pending, lastRead, read } = useQueries({
     queries: weeks.map(w => ({ ...calendarWeekQuery(w), placeholderData: keepPreviousData })),
     combine: combineWeeks,
   });
-  const readError = failed ? errorMessage(failed, 'Kalendern kunde inte läsas.') : null;
-  const error = moveError ?? readError;
+  /**
+   * A week that cannot be read (D116, amended 2026-11-12). The person has no calendar when the registry does not show it
+   * to them (D23) or their account has none bound: the page says so, without a warning. Any other failure is the calendar
+   * not answering, said in the page's head with since when and "Försök igen", once aloud in the session; the grid keeps
+   * what it has.
+   */
+  const client = useQueryClient();
+  const systems = useQuery(areasQuery).data?.systems;
+  const calendarHidden =
+    (!!systems && !systems.some(s => s.connector === 'calendar')) || noCalendar(failed) === 'hidden';
+  const withoutCalendar = calendarHidden || noCalendar(failed) === 'unbound';
+  const calendarSilent = !!failed && !withoutCalendar;
+  const silent = useSilentSources();
+  const say = useSaySilent();
+  const calendarName = marks.system('calendar')?.source ?? 'Kalendern';
+  const calendarSince = silent.of('calendar')?.since ?? (lastRead ? new Date(lastRead).toISOString() : null);
+  const retrying = useIsFetching({ queryKey: keys.calendarAll }) > 0;
+  useEffect(() => {
+    if (calendarSilent && silent.named) say([{ connector: 'calendar', source: calendarName }]);
+  }, [calendarSilent, silent.named, calendarName, say]);
+  const silentHead = calendarSilent ? (
+    <SilentNotice
+      silent={{ source: calendarName, since: calendarSince }}
+      retrying={retrying}
+      onRetry={() => void client.refetchQueries({ queryKey: keys.calendarAll, type: 'active' })}
+    />
+  ) : null;
+  const error = moveError;
+  usePageTitle(
+    withoutCalendar ? 'Kalender' : `${shortTitle} · Kalender`,
+    withoutCalendar
+      ? 'Kalender'
+      : view === 'week'
+        ? `Vecka ${weekNumber(anchor)}, ${rangeLabel(anchor, 5)}`
+        : `${view === 'day' ? 'Dagvy' : 'Månadsvy'}, ${title}`,
+  );
   const items = useMemo(() => agendaItems(events, proposals), [events, proposals]);
   // The entry the panel holds (`entry`): looked up among the loaded weeks, and kept while another week is on screen.
   const entryId = params.get(ENTRY_PARAM);
@@ -557,21 +600,25 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
           </HStack>
         }
         meta={
-          <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
-            {steps}
-            {/* Three labels do not fit 320 px with text spacing (1.4.12), so a phone gets an adaptive menu, as the piles do (D31 §5). */}
-            <DropdownMenu
-              presentation="adaptive"
-              button={{ label: `Vy: ${viewLabels[view]}`, size: 'sm', variant: 'secondary' }}
-              items={views.map(v => ({ id: v, label: viewLabels[v], onClick: () => go({ view: v }) }))}
-            />
-          </HStack>
+          <VStack gap={2}>
+            <HStack justify="between" vAlign="center" gap={2} wrap="wrap">
+              {steps}
+              {/* Three labels do not fit 320 px with text spacing (1.4.12), so a phone gets an adaptive menu, as the piles do (D31 §5). */}
+              <DropdownMenu
+                presentation="adaptive"
+                button={{ label: `Vy: ${viewLabels[view]}`, size: 'sm', variant: 'secondary' }}
+                items={views.map(v => ({ id: v, label: viewLabels[v], onClick: () => go({ view: v }) }))}
+              />
+            </HStack>
+            {silentHead}
+          </VStack>
         }
       />
     </VStack>
   ) : (
     <PageHeader
       title={capital(title)}
+      meta={silentHead}
       end={
         <HStack gap={3} vAlign="center" wrap="wrap">
           {steps}
@@ -589,6 +636,36 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
       }
     />
   );
+  // A person with no calendar (D116, amended 2026-11-12): the page says so and who connects one, and draws no grid or
+  // controls that would only fail.
+  if (withoutCalendar)
+    return (
+      <Shell user={user} nav={nav}>
+        <Layout
+          height="fill"
+          padding={mobile ? 3 : 8}
+          header={
+            <LayoutHeader hasDivider>
+              <PageHeader title="Kalender" />
+            </LayoutHeader>
+          }
+          content={
+            <LayoutContent>
+              <EmptyState
+                headingLevel={2}
+                icon={<Icon icon="calendar" size="lg" />}
+                title="Ingen kalender är kopplad till dig"
+                description={
+                  calendarHidden
+                    ? 'En administratör kopplar kalendern under Anslutna system.'
+                    : 'En administratör kopplar ditt kalenderkonto.'
+                }
+              />
+            </LayoutContent>
+          }
+        />
+      </Shell>
+    );
   return (
     <Shell user={user} nav={nav}>
       {/* The same gutter as every page (D74, D63 item 13): the Layout's padding reaches the header, so the title stands 32 px in from the rail and 32 px down on a desktop, 12 on a phone. */}
@@ -605,27 +682,37 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
                   {error}
                 </Text>
               )}
-              <AsyncContent
-                pending={pending}
-                fallback={<ContentSkeleton label="Hämtar kalendern …" rows={7} heading={false} />}
-              >
-                <EventCalendar
-                  view={calendarView}
-                  date={anchor}
-                  items={items}
-                  label={capital(title)}
-                  dayHeadingLevel={2}
-                  accessiblePath={
-                    proposed.length
-                      ? 'Förslag i sidhuvudet leder till varje förslag; Retur på en post öppnar den.'
-                      : 'Retur på en post öppnar den.'
-                  }
-                  selectedId={entryId ?? undefined}
-                  onItemClick={item => navigate(withEntry(pathname, search, item.id))}
-                  onMoveProposal={proposed.length ? moveProposal : undefined}
-                  onSelectRange={mobile ? undefined : (start, end) => setBooking({ start, end })}
+              {/* Nothing read while the calendar does not answer: no empty grid that would pass for a free week. */}
+              {calendarSilent && !read ? (
+                <EmptyState
+                  headingLevel={2}
+                  icon={<Icon icon="calendar" size="lg" />}
+                  title="Kalendern kan inte visas just nu"
+                  description="Mötena visas här när kalendern svarar igen."
                 />
-              </AsyncContent>
+              ) : (
+                <AsyncContent
+                  pending={pending}
+                  fallback={<ContentSkeleton label="Hämtar kalendern …" rows={7} heading={false} />}
+                >
+                  <EventCalendar
+                    view={calendarView}
+                    date={anchor}
+                    items={items}
+                    label={capital(title)}
+                    dayHeadingLevel={2}
+                    accessiblePath={
+                      proposed.length
+                        ? 'Förslag i sidhuvudet leder till varje förslag; Retur på en post öppnar den.'
+                        : 'Retur på en post öppnar den.'
+                    }
+                    selectedId={entryId ?? undefined}
+                    onItemClick={item => navigate(withEntry(pathname, search, item.id))}
+                    onMoveProposal={proposed.length ? moveProposal : undefined}
+                    onSelectRange={mobile ? undefined : (start, end) => setBooking({ start, end })}
+                  />
+                </AsyncContent>
+              )}
             </VStack>
           </LayoutContent>
         }

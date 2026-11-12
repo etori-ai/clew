@@ -148,7 +148,7 @@ AI can help explain the evidence or prepare a proposal. The final invoice decisi
 
 ## Implementation seams and decisions
 
-Extend the existing [contract](../../packages/contracts/src/index.ts), [connector protocol](../../packages/connectors/src/protocol.ts), [finance fixture](../../connectors/finance/manifest.mjs) and [review overlay](../../apps/web/src/components/review-overlay.tsx). Keep a shared document reader independent of review decisions. Add server-owned review evidence and source revision preconditions to the approved-intent path rather than treating the renderer's state as authority.
+Extend the existing [contract](../../packages/contracts/src/index.ts), [connector protocol](../../packages/connectors/src/protocol.ts), [finance fixture](../../connectors/finance/manifest.mjs) and review overlay (`review-overlay.tsx`, replaced on 2026-11-12 by the review's [page](../../apps/web/src/pages/review.tsx)). Keep a shared document reader independent of review decisions. Add server-owned review evidence and source revision preconditions to the approved-intent path rather than treating the renderer's state as authority.
 
 The first implementation decision should settle the binary retrieval contract, review evidence/version binding, fallback policy and narrow Astryx renderer exception. The catalogue supplies candidates; this walkthrough does not prescribe a final endpoint shape or introduce a general page builder.
 

@@ -28,6 +28,7 @@ import type {
   ThreadAction,
   ThreadItem,
   View,
+  ViewEntry,
   ViewOpen,
 } from '@clew/contracts';
 import type { Figure } from './protocol';
@@ -1313,6 +1314,20 @@ export class Registry {
         });
     }
     return out.sort((a, b) => a.label.localeCompare(b.label, 'sv'));
+  }
+  /**
+   * The reads a person may open as a view (D116): every read capability they may call, with its title and the kind of
+   * view it declares (D38). Each has a page of its own; the browser opens one that answers with rows there and anything
+   * else beside the page it was opened from. A read the person may not call is missing, as one that does not exist is.
+   */
+  views(actor: Actor): ViewEntry[] {
+    return this.capabilitiesFor(actor)
+      .filter(({ capability }) => capability.kind === 'read')
+      .map(({ capability }) => ({
+        capability: capability.name,
+        title: capability.title,
+        ...(capability.view ? { kind: capability.view.kind } : {}),
+      }));
   }
   /**
    * Tool definitions for the model: `model: true` capabilities the person may call, from connectors whose tools are on (D8).

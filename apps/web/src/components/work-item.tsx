@@ -40,16 +40,17 @@ import {
 } from '@clew/ui';
 import { today } from '@clew/calendar/dates';
 import { api } from '../api';
-import { itemEventsQuery } from '../queries';
+import { areasQuery, itemEventsQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { executionStatus } from '../execution-status';
 import { useMarks } from '../marks';
 import { mobileQuery, shortQuery } from '../media';
 import { readOf, withRead, withoutRead } from '../panel-address';
-import { withReview } from '../review-address';
+import { documentHref } from '../review-address';
 import { canUndoReceipt, receiptComplete } from '../receipt-state';
 import { entityHref } from '../person-address';
-import { dueOf, itemPageHref, stateOf } from '../work-items';
+import { dueOf, itemPageHref, noticeOf, rowsSaySomething, stateOf } from '../work-items';
+import { opensAsPage, readPageHref } from '../view-address';
 import { useConversation } from './conversation-context';
 import {
   ActionRow,
@@ -57,6 +58,7 @@ import {
   SystemLine,
   TimerNote,
   clock,
+  leavingMark,
   reviewedAction,
   rowSystems,
   snoozedLabel,
@@ -68,6 +70,7 @@ import {
 import { CardRead, unfoldsInCard, useCardRead } from './card-read';
 import { useThingHead } from './thing-head';
 import { Unfold } from './unfold';
+import { StaleMark, useSilentSources } from './silent-sources';
 
 /**
  * A work item (D112 item 4, the `work-item-detail` template, boards WorkItem, Inbox, PhoneItem and ActReceipt): one
@@ -76,8 +79,10 @@ import { Unfold } from './unfold';
  * main column. As a page (`WorkItemPage`, `/items/<threadId>`) the same header and column get the details rail, which
  * moves behind an information button into a fullscreen dialog where the window is narrow, and on a phone the buttons
  * are pinned to the foot. The main column holds, each only when it has something to say: the receipt after a decision,
- * "Varför ser jag detta?", the rows, "Dokument" and "Händelser". Every fact comes from the item itself or from its
- * audit rows (`/api/threads/<id>/events`); nothing is guessed, and a field with nothing behind it is not drawn.
+ * a notice's text with its way to the whole of it (D112, amended 2026-11-12), "Varför ser jag detta?", the rows (not
+ * when their one row is the item itself, `rowsSaySomething`), "Dokument" and "Händelser". Every fact comes from the item
+ * itself or from its audit rows (`/api/threads/<id>/events`); nothing is guessed, and a field with nothing behind it is
+ * not drawn.
  */
 
 /** The template's own line for the details rail (`work-item-detail`: a dialog at 1024 px and below). */
@@ -134,7 +139,10 @@ function useWorkItem(thread: Thread, onChange: (thread: Thread) => void, idBase:
   const unfolded = asked?.threadId === thread.id ? asked.actionId : null;
   const read = useCardRead(thread, unfolded);
   const readSection = `read-${idBase}-${thread.id}`;
-  const openRead = read.action && !read.url && !(read.shown && !unfoldsInCard(read.shown.view)) ? read.action.id : null;
+  const openRead =
+    read.action && !read.url && !(read.shown && !unfoldsInCard(read.shown.view, read.shown.output))
+      ? read.action.id
+      : null;
   const onRead = (a: Thread['actions'][number]) =>
     navigate(unfolded === a.id ? withoutRead(pathname, search) : withRead(pathname, search, thread.id, a.id), {
       replace: true,
@@ -152,17 +160,52 @@ function useWorkItem(thread: Thread, onChange: (thread: Thread) => void, idBase:
   const mark = marks.ofThread(thread);
   const systems = rowSystems(thread, marks);
   const from = pathname + search;
+  // A read that answers with rows is a page (D116): its button leads there, with the page the item is on as the way back.
+  const views = useQuery(areasQuery).data?.views;
+  const readHref = (a: Thread['actions'][number]) =>
+    a.kind === 'read' && a.target !== 'link' && opensAsPage(views, a.capability)
+      ? readPageHref(thread, a, withoutRead(pathname, search))
+      : undefined;
   const unfold = read.action ? (
-    <CardRead action={read.action} read={read} id={readSection} animatedLayout={animatedLayout} onFold={fold} />
+    <CardRead
+      action={read.action}
+      read={read}
+      id={readSection}
+      animatedLayout={animatedLayout}
+      onFold={fold}
+      page={readPageHref(thread, read.action, withoutRead(pathname, search))}
+    />
   ) : null;
-  return { root, head, title, actions, mark, systems, from, openRead, readSection, unfold, animatedLayout };
+  // A notice leads with its text, and its link out stands after the text instead of among the buttons.
+  const notice = noticeOf(thread);
+  const omit = notice?.out ? [notice.out.id] : undefined;
+  return {
+    root,
+    head,
+    title,
+    actions,
+    mark,
+    systems,
+    from,
+    openRead,
+    readHref,
+    readSection,
+    unfold,
+    animatedLayout,
+    notice,
+    omit,
+  };
 }
 type ItemState = ReturnType<typeof useWorkItem>;
 
-/** The status (the state the queue's dot shows, as text with its dot) and the badges: when it is due, its area, what it is about. */
+/**
+ * The status (the state the queue's dot shows, as text with its dot) and the badges: when it is due, its area, what it is
+ * about; and, while the item's system does not answer, that it may be old and since when (D116, amended 2026-11-12).
+ */
 function StatusLine({ thread, item }: { thread: Thread; item: ItemState }) {
   const now = new Date().toISOString(),
     day = today();
+  const silent = useSilentSources().of(thread.connector);
   const state = stateOf(thread, now, day);
   const about = aboutOne(thread);
   const draft = thread.messages.at(-1)?.meta?.draft;
@@ -193,6 +236,7 @@ function StatusLine({ thread, item }: { thread: Thread; item: ItemState }) {
       <AreaChip ordinal={item.mark.ordinal} icon={item.mark.icon} label={item.mark.title} />
       {about && <Badge variant="neutral" label={about.label} />}
       {draft && open && <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label="Att bekräfta" />}
+      {silent && open && <StaleMark silent={silent} />}
     </HStack>
   );
 }
@@ -268,18 +312,49 @@ function Receipt({ thread, actions, systems }: { thread: Thread; actions: Action
   );
 }
 
-/** "Varför ser jag detta?" (board WorkItem), open: the source's reason, where and when it came, and the item's lead. */
-function Why({ thread }: { thread: Thread }) {
+/**
+ * "Varför ser jag detta?" (board WorkItem), open: the source's reason, where and when it came, and the item's lead. A
+ * notice's lead is its text, drawn first in the column, so here it is the provenance line alone.
+ */
+function Why({ thread, notice }: { thread: Thread; notice: boolean }) {
   return (
     <VStack gap={2}>
       <Text as="p">
         {thread.trigger.reason.replace(/\.$/, '')}. Ärendet kom från {thread.trigger.source}{' '}
         {whenWord(thread.trigger.at)}.
       </Text>
-      {thread.summary && thread.summary !== thread.trigger.reason && (
+      {!notice && thread.summary && thread.summary !== thread.trigger.reason && (
         <Text as="p" color="secondary">
           {thread.summary}
         </Text>
+      )}
+    </VStack>
+  );
+}
+
+/**
+ * A notice's text (D112, amended 2026-11-12): what the person is asked to read, first in the column and under no
+ * heading of its own, a paragraph per paragraph of the source's text, and after it the item's link out to the whole of
+ * it, marked as leaving Clew as every link out is (D111 rule 8). The receipt's button stays among the item's buttons.
+ */
+function NoticeText({ notice, item }: { notice: NonNullable<ItemState['notice']>; item: ItemState }) {
+  const out = notice.out;
+  return (
+    <VStack gap={3}>
+      {notice.paragraphs.map((p, i) => (
+        <Text key={i} as="p">
+          {p}
+        </Text>
+      ))}
+      {out && (
+        <HStack>
+          <Button
+            variant="secondary"
+            label={out.label}
+            clickAction={() => item.actions.perform(out)}
+            {...leavingMark(out)}
+          />
+        </HStack>
       )}
     </VStack>
   );
@@ -342,7 +417,8 @@ function Rows({ thread, actions, item }: { thread: Thread; actions: Actions; ite
 
 /**
  * "Dokument": the document behind each row the item reviews one at a time (D70), where its action names a `preview`
- * read. Each opens the review over the page at that row, where the document is drawn beside the decision (D73).
+ * read. Each leads to the review's page at that row, where the document is drawn with the decision (D73, amended
+ * 2026-11-12), and Back gives the focus to the row again.
  */
 function Documents({ thread }: { thread: Thread }) {
   const { pathname, search } = useLocation();
@@ -353,7 +429,7 @@ function Documents({ thread }: { thread: Thread }) {
         <ClickableCard
           key={row.ref}
           label={`Öppna underlaget för ${row.label}`}
-          href={withReview(pathname, search, thread.id, step)}
+          href={documentHref(thread.id, step, pathname + search)}
           padding={3}
         >
           <HStack gap={3} vAlign="center">
@@ -499,17 +575,19 @@ function MainColumn({
   visual: 2 | 3 | 4;
   idBase: string;
 }) {
-  const { actions } = item;
+  const { actions, notice } = item;
   const receipt = thread.receipt;
   const documents = reviewedAction(thread)?.preview ? thread.items.some(i => i.selectable) : false;
   const id = (part: string) => `${idBase}-${thread.id}-${part}`;
   const sections: ReactNode[] = [
+    // A notice's text is what the item is for: it stays after the receipt, to be read again.
+    notice && (notice.paragraphs.length > 0 || notice.out) && <NoticeText key="text" notice={notice} item={item} />,
     !receipt && (
       <ItemSection key="why" id={id('why')} title="Varför ser jag detta?" level={level} visual={visual}>
-        <Why thread={thread} />
+        <Why thread={thread} notice={!!notice} />
       </ItemSection>
     ),
-    !receipt && thread.items.length > 0 && (
+    !receipt && rowsSaySomething(thread) && (
       <ItemSection key="rows" id={id('rows')} title="Rader" level={level} visual={visual}>
         <Rows thread={thread} actions={actions} item={item} />
       </ItemSection>
@@ -612,7 +690,14 @@ export function WorkItem({
       </VStack>
       <StatusLine thread={thread} item={item} />
       <Notes thread={thread} item={item} />
-      <ActionRow thread={thread} actions={item.actions} openRead={item.openRead} readSection={item.readSection} />
+      <ActionRow
+        thread={thread}
+        actions={item.actions}
+        openRead={item.openRead}
+        readHref={item.readHref}
+        readSection={item.readSection}
+        omit={item.omit}
+      />
     </>
   );
   return (
@@ -797,7 +882,9 @@ export function WorkItemPage({
       actions={item.actions}
       pinned={pinned}
       openRead={item.openRead}
+      readHref={item.readHref}
       readSection={item.readSection}
+      omit={item.omit}
     />
   );
   const trail = (

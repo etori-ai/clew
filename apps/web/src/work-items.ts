@@ -6,6 +6,7 @@ import {
   stockholmDate,
   streamGroup,
   unresolvedExecution,
+  type CardAction,
   type Thread,
 } from '@clew/contracts';
 import { weekNumber } from '@clew/calendar/dates';
@@ -51,8 +52,6 @@ export function todoHref(next: TodoState, search: URLSearchParams | string = '')
   const s = q.toString();
   return s ? `/todo?${s}` : '/todo';
 }
-/** The work item's own address in the queue: the reading pane beside the list, or the item alone where it does not fit. */
-export const itemHref = (threadId: string) => todoHref({ item: threadId });
 /**
  * The work item as a page (D112 item 4): `/items/<threadId>`, with `from` the address it was opened from, for the way
  * back, as a person's page keeps it (`person-address.ts`): a path inside Clew with its own search, never a `from` of its own.
@@ -63,16 +62,17 @@ export function itemPageHref(threadId: string, from?: string | null): string {
 }
 
 /**
- * Where an address of Hem from before D112 leads, or null when it is Hem's own: a card opened on Hem (`card`) is the
- * work item in Att göra, and Hem's tabs (`tab`) and area (`area`) are Att göra's. What lies over the card (its review,
- * a read unfolded in it, a view opened from one of its rows) goes along.
+ * Where an address of Hem from before D112 leads, or null when it is Hem's own: Hem's tabs (`tab`) and area (`area`)
+ * are Att göra's, and a card that came with them is the work item there. A work item alone in Hem's address (`card`)
+ * is Hem's own: it is open in the panel beside Hem (D112, amended 2026-11-12). What lies over the card (its review, a
+ * read unfolded in it, a view opened from one of its rows) goes along to Att göra.
  */
 export function todoFromHem(search: URLSearchParams | string): string | null {
   const from = new URLSearchParams(search);
   const card = from.get('card'),
     tab = from.get('tab'),
     area = from.get('area');
-  if (!card && !tab && !area) return null;
+  if (!tab && !area) return null;
   const q = new URLSearchParams();
   const tabbed = tab ? tabOf(tab) : 'needs-you';
   if (tabbed !== 'needs-you') q.set('tab', tabbed);
@@ -95,6 +95,47 @@ export const doneOf = (threads: readonly Thread[]): Thread[] =>
   threads
     .filter(t => t.kind === 'pushed' && t.state !== 'open' && !unresolvedExecution(t))
     .sort((a, b) => (b.handledAt ?? b.updatedAt).localeCompare(a.handledAt ?? a.updatedAt));
+
+/** The execute a work item marks as the person's read receipt (D112, amended 2026-11-11), when it has one. */
+export const receiptAction = (thread: Pick<Thread, 'actions'>): CardAction | undefined =>
+  thread.actions.find(a => a.kind === 'execute' && !!a.acknowledgement);
+
+/** A text as its paragraphs: a blank line ends one, a single line break is a space within it. */
+export const paragraphsOf = (text: string): string[] =>
+  text
+    .split(/\n[^\S\n]*\n/)
+    .map(p => p.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+
+/**
+ * A notice (D112, amended 2026-11-12): a work item whose execute is the person's read receipt. What the person is asked
+ * to read is its text, the source's `summary`, which leads the item as paragraphs, and the item's first read that leads
+ * out of Clew (`target: 'link'`) is the way to the whole of it, drawn after the text. Null for every other work item.
+ */
+export function noticeOf(thread: Pick<Thread, 'actions' | 'summary'>): {
+  paragraphs: string[];
+  out: CardAction | undefined;
+} | null {
+  if (!receiptAction(thread)) return null;
+  return {
+    paragraphs: paragraphsOf(thread.summary),
+    out: thread.actions.find(a => a.kind === 'read' && a.target === 'link'),
+  };
+}
+
+const sameWords = (a: string, b: string) =>
+  a.replace(/\s+/g, ' ').trim().toLocaleLowerCase('sv-SE') === b.replace(/\s+/g, ' ').trim().toLocaleLowerCase('sv-SE');
+/**
+ * Whether a work item's rows say anything the item does not already say (D112, amended 2026-11-12). They do unless the
+ * item has one row and that row is the item itself: its label is the item's title, it cannot be chosen, it names no
+ * person or unit, and it has no detail. Such a row only repeats the heading, so "Rader" is not drawn; any row with a fact
+ * of its own (a detail, a subject, a choice) is drawn, and so are two rows or more.
+ */
+export function rowsSaySomething(thread: Pick<Thread, 'title' | 'items'>): boolean {
+  if (thread.items.length !== 1) return thread.items.length > 1;
+  const [only] = thread.items;
+  return !(sameWords(only!.label, thread.title) && !only!.selectable && !only!.subject && !only!.detail.trim());
+}
 
 export type DotVariant = 'success' | 'warning' | 'error' | 'accent' | 'neutral';
 /** What a row says about the work item, each from the thread itself: nothing here is guessed. */
@@ -168,14 +209,13 @@ export function whyOf(thread: Thread, now: string): string {
 }
 
 /**
- * A source the cards come from that has not answered (D8): said where the work is drawn, in the words Hem has used, so
- * an empty pile is never taken for nothing to do. Null when every source answered.
+ * A source the cards come from that has not been read yet (D8): said where the work is drawn, so an empty pile is never
+ * taken for nothing to do. Null when every source has answered once. A source that does not answer is said on its own
+ * rows and in the empty pile instead (`silent-sources.tsx`, D116 amended 2026-11-12), not in a sentence over the list.
  */
 export function sourcesNotice(sources: readonly { lastSuccess: string | null; error: string | null }[] | undefined) {
-  if (!sources?.some(s => !s.lastSuccess || s.error)) return null;
-  return sources.some(s => s.error)
-    ? 'Någon källa kunde inte kontrolleras. Sparade uppgifter visas och kontrolleras igen.'
-    : 'Källorna kontrolleras. Sparade uppgifter visas under tiden.';
+  if (!sources?.some(s => !s.lastSuccess && !s.error)) return null;
+  return 'Källorna kontrolleras. Sparade uppgifter visas under tiden.';
 }
 
 export const rowFacts = (thread: Thread, now: string, today: string): RowFacts => ({

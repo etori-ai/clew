@@ -87,6 +87,11 @@ export interface PromptContext {
   objects: string[];
   /** The work item's actions may be filled in as a draft (D112 item 8): the prompt says how and that nothing is sent. */
   drafts?: boolean;
+  /**
+   * The asker manages people (D115): the lines about the people the question names, and whether the model may look a
+   * name up itself. Absent for someone who manages nobody.
+   */
+  people?: { lines: string[]; lookup: boolean };
 }
 /** The Swedish system prompt: who is asking, what day it is, the rules, and the chipped objects as "Du tittar på". */
 export function systemPrompt(ctx: PromptContext): string {
@@ -116,6 +121,18 @@ export function systemPrompt(ctx: PromptContext): string {
     '- Nämn källor som inte svarade, om sökverktyget rapporterar några.',
     '- Avsluta med en sista rad "Följdfrågor: fråga ett | fråga två | fråga tre": högst tre korta frågor personen kan ställa härnäst. Bara när sökverktyget användes.',
   ];
+  if (ctx.people)
+    lines.push(
+      'När personen frågar om en medarbetare:',
+      ...(ctx.people.lookup
+        ? [
+            '- Vem det är står under "Medarbetare som personen nämnde". Står det inte där, slå upp namnet som personen skrev det med verktyget clew__findPerson.',
+          ]
+        : ['- Vem det är står under "Medarbetare som personen nämnde".']),
+      '- Kan namnet vara flera medarbetare: räkna upp namnen och fråga vem personen menar. Heter ingen så: säg det.',
+      '- Uppgifter om medarbetarnas hälsa och frånvaro lämnas inte till dig. Utgå från det personen själv skrev, gissa aldrig och fråga aldrig om diagnos.',
+      '- Frågar personen vad hen ska göra: läs rutinen med det verktyg som har den och säg kort vad den säger att chefen gör nu. Finns ett öppet ärende om medarbetaren, peka på det och på dess knapp; ärendet visas för personen i samtalet.',
+    );
   if (ctx.drafts)
     lines.push(
       'När personen vill att en av ärendets åtgärder görs:',
@@ -124,6 +141,12 @@ export function systemPrompt(ctx: PromptContext): string {
     );
   if (ctx.objects.length)
     lines.push('', 'Du tittar på (det personen lagt till i samtalet):', ...ctx.objects.map(o => `- ${o}`));
+  if (ctx.people?.lines.length)
+    lines.push(
+      '',
+      'Medarbetare som personen nämnde (bland dem personen är chef för):',
+      ...ctx.people.lines.map(o => `- ${o}`),
+    );
   return lines.join('\n');
 }
 /**

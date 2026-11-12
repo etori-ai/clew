@@ -535,3 +535,60 @@ test.describe('an action about a person or a unit that asks', () => {
     await expect(page).toHaveURL('/staff?card=entity-hr-registerAbsence-karin');
   });
 });
+
+/**
+ * Pressing an action on a work item whose system does not answer (D45, D47; D116, amended 2026-11-12): the dialog's
+ * last step and a decision on its way say that what the person sends is queued and read back when the system answers.
+ */
+test.describe('an action on a work item whose system does not answer', () => {
+  test.use({ viewport: WIDE });
+  const silentHr = (api: MockApi) => {
+    api.sources = [{ connector: 'hr', state: 'idle', lastSuccess: '2026-11-04T05:00:00.000Z', error: 'unavailable' }];
+  };
+
+  test('the last step says since when the system is silent and that what is sent is queued and read back', async ({
+    page,
+    api,
+  }) => {
+    silentHr(api);
+    await open(page, '/todo?item=omtanke');
+    await pane(page).getByRole('button', { name: 'Boka samtalet' }).click();
+    const dialog = dialogOf(page);
+    await dialog.getByRole('textbox', { name: 'Plats' }).fill('Bergsåkers skola, rum 12');
+    await dialog.getByRole('button', { name: 'Nästa' }).click();
+    await expect(dialog.getByText('Personalsystemet svarar inte sedan 06:00', { exact: true })).toBeVisible();
+    await expect(
+      dialog.getByText('Det du skickar köas och läses tillbaka när systemet svarar.', { exact: true }),
+    ).toBeVisible();
+    await expectNoAxeViolations(page);
+  });
+
+  test('a decision on its way says that it is queued, where the item says the source has not confirmed it', async ({
+    page,
+    api,
+  }) => {
+    silentHr(api);
+    api.threads = api.threads.map(t =>
+      t.id === 'omtanke'
+        ? {
+            ...t,
+            execution: {
+              id: 'x1',
+              decisionId: 'd1',
+              operation: 'hr.bookTalk',
+              state: 'pending',
+              reason: null,
+              compensates: null,
+            },
+          }
+        : t,
+    );
+    await open(page, '/todo?item=omtanke');
+    await expect(
+      pane(page).getByText('Ditt beslut är sparat. Det du skickar köas och läses tillbaka när systemet svarar.', {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expectNoAxeViolations(page);
+  });
+});

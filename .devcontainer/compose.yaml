@@ -264,6 +264,16 @@ services:
       - ${CLEW_HOST_WORKSPACE:-..}:/workspace:ro
     ports:
       - "127.0.0.1:4049:4049"
+  # The Qlik connector (D82) in its fixture mode: made-up sick-leave aggregates per unit and month, no Qlik behind it
+  # (QLIK_ADAPTER defaults to "fixture"). A real connector, not a fixture of the stack: it runs here so its reads and
+  # its figure can be seen beside the others. No state of its own.
+  qlik:
+    <<: *fixture
+    working_dir: /workspace/connectors/qlik
+    volumes:
+      - ${CLEW_HOST_WORKSPACE:-..}:/workspace:ro
+    ports:
+      - "127.0.0.1:4048:4048"
   # The appraisal system (D96 items 8 and 9): a generic third-party system answering the talks profile, so an
   # administrator can switch from Clew's built-in module to it. Stateless; registered as a draft, not enabled.
   # 4051: 4050 is the SupportManagement connector's.

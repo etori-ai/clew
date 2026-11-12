@@ -1,83 +1,69 @@
 /**
- * The review of a card's rows one at a time (D70 item 2) lies over the page it was opened on (D73, amended 2026-11-11
- * under D111 rule 5): its address is that page's own with the card as `review` and the step as `step`, 1-based, the
- * rows in the card's order and the last step Skicka; the first step leaves `step` out. Closing it is the same address
- * without the two, so what was under it is there again as it was: Hem's tab, Personal's lens, a person's section and
- * way back, a conversation, and the card open in the page's panel. Everything else in the address is the
- * page's own and is kept. `/cards/:threadId/review`, the address before that amendment, is a cold link that leads to
- * Hem with the card beside it and the review over both (`legacyReview`).
+ * The review of a work item's rows one at a time (D70 item 2) is a page of its own since 2026-11-12 (D73, amended under
+ * the product owner's rule that a task a person works through is a page with its own address): `/items/<threadId>/review`,
+ * the work item's page with `review` after it. `step` is the step (1-based, the rows in the item's order and the last
+ * step Skicka; the first step leaves it out), rewritten in place as the person moves, so Back leaves the review; `from`
+ * is the page the work item was shown on, for the way back, as the item's own page keeps it (`itemPageHref`): a path
+ * inside Clew with its own search, never a `from` of its own.
+ *
+ * Two addresses from before lead here, in their own place in the history: `?review=<threadId>&step=<n>` on any page
+ * (the review as an overlay over that page, 2026-11-07 to 2026-11-12), with that page as `from`, and
+ * `/cards/<threadId>/review?step=<n>` (the review's first page, 2026-11-07), with the item's own page as the way back.
  */
 export const REVIEW_PARAM = 'review';
 export const STEP_PARAM = 'step';
-/** Every name the review's part of an address uses: what closing it takes away. */
+/** The names the review used in another page's address before it was a page; such an address leads here. */
 export const REVIEW_KEYS: readonly string[] = [REVIEW_PARAM, STEP_PARAM];
-/** The panel's card (`panel-address.ts`), which the review keeps, names again or lets go of. */
-const CARD = 'card';
-/** Att göra's chosen work item (`work-items.ts`, D112), which the review treats as the panel's card. */
-const ITEM = 'item';
 
 const address = (pathname: string, query: URLSearchParams) => {
   const q = query.toString();
   return q ? `${pathname}?${q}` : pathname;
 };
-const stepIn = (q: URLSearchParams, step: number) => {
-  if (step > 0) q.set(STEP_PARAM, String(step + 1));
-  else q.delete(STEP_PARAM);
+/**
+ * `from` as the way back keeps it: a path inside Clew, never another site, without a `from` of its own (the rule of
+ * `wayBack` in `person-address.ts`, kept here so this module imports nothing: the panel's addresses import it).
+ */
+const wayBack = (path: string | null | undefined): string | null => {
+  if (!path || !path.startsWith('/') || path.startsWith('//') || path.startsWith('/\\')) return null;
+  const at = path.indexOf('?');
+  if (at < 0) return path;
+  const q = new URLSearchParams(path.slice(at + 1));
+  if (!q.has('from')) return path;
+  q.delete('from');
+  return address(path.slice(0, at), q);
+};
+const reviewPath = (threadId: string) => `/items/${encodeURIComponent(threadId)}/review`;
+/** The review's address with `step` as given (1-based, as the address holds it), or none for the first step. */
+const reviewAt = (threadId: string, from: string | null | undefined, step: string | null) => {
+  const q = new URLSearchParams();
+  const back = wayBack(from);
+  if (back) q.set('from', back);
+  if (step !== null && step !== '1') q.set(STEP_PARAM, step);
+  return address(reviewPath(threadId), q);
 };
 
-/** The card whose review the address names, or null when it names none. */
-export function reviewOf(search: URLSearchParams | string): string | null {
-  return new URLSearchParams(search).get(REVIEW_PARAM) || null;
+/** The review of a work item at a step (0-based; the first is left out of the address), with the page it was shown on. */
+export function reviewHref(threadId: string, { step = 0, from }: { step?: number; from?: string | null } = {}): string {
+  return reviewAt(threadId, from, step > 0 ? String(step + 1) : null);
 }
 /**
- * The page with this card's review over it, at a step (0-based; the first step is left out of the address). The card
- * stays where it is drawn: beside the page or in its sheet, or in a conversation's answer.
+ * A row's document under Dokument: the review at that row (0-based), its step named even for the first row, so the
+ * way back tells it apart from "Granska N" and gives the focus to the row that was pressed.
  */
-export function withReview(pathname: string, search: URLSearchParams | string, threadId: string, step = 0): string {
+export function documentHref(threadId: string, step: number, from?: string | null): string {
+  const q = new URLSearchParams();
+  const back = wayBack(from);
+  if (back) q.set('from', back);
+  q.set(STEP_PARAM, String(step + 1));
+  return address(reviewPath(threadId), q);
+}
+/** The same review at another step (0-based): the address of the page it is on, `step` rewritten, the rest kept. */
+export function withStep(pathname: string, search: URLSearchParams | string, step: number): string {
   const q = new URLSearchParams(search);
-  q.set(REVIEW_PARAM, threadId);
-  stepIn(q, step);
+  if (step > 0) q.set(STEP_PARAM, String(step + 1));
+  else q.delete(STEP_PARAM);
   return address(pathname, q);
 }
-/**
- * The page with the review closed: the same address without `review` and `step`. When the card is gone (`cardGone`,
- * deleted in its source or never there), the panel lets go of it too, so the page is not left saying so beside it.
- */
-export function withoutReview(pathname: string, search: URLSearchParams | string, cardGone?: string): string {
-  const q = new URLSearchParams(search);
-  REVIEW_KEYS.forEach(k => q.delete(k));
-  if (cardGone && q.get(CARD) === cardGone) q.delete(CARD);
-  if (cardGone && q.get(ITEM) === cardGone) q.delete(ITEM);
-  return address(pathname, q);
-}
-/**
- * "Granska avvisade igen" (D80): the new card's review in the old one's place on the same page, from its first step,
- * and the new card in the panel where the panel held the old one.
- */
-export function withRetriedReview(
-  pathname: string,
-  search: URLSearchParams | string,
-  from: string,
-  to: string,
-): string {
-  const q = new URLSearchParams(search);
-  q.set(REVIEW_PARAM, to);
-  q.delete(STEP_PARAM);
-  if (q.get(CARD) === from) q.set(CARD, to);
-  if (q.get(ITEM) === from) q.set(ITEM, to);
-  return address(pathname, q);
-}
-/**
- * Where `/cards/:threadId/review?step=n`, a link from before the review lay over its page, leads: the work item in Att
- * göra (D112) with the review over it, at the step it named. Nothing else of its query is kept.
- */
-export function legacyReview(threadId: string, search: URLSearchParams | string): string {
-  const q = new URLSearchParams({ item: threadId, [REVIEW_PARAM]: threadId });
-  const step = new URLSearchParams(search).get(STEP_PARAM);
-  if (step !== null) q.set(STEP_PARAM, step);
-  return address('/todo', q);
-}
-
 /** The step the address names, 0-based, among `steps`; null when it names none of them. */
 export function stepOf(search: URLSearchParams, steps: number): number | null {
   const raw = search.get(STEP_PARAM);
@@ -87,32 +73,37 @@ export function stepOf(search: URLSearchParams, steps: number): number | null {
   return step < steps ? step : null;
 }
 
+/** The work item whose review the address of another page named (the overlay's address), or null. */
+export function reviewOf(search: URLSearchParams | string): string | null {
+  return new URLSearchParams(search).get(REVIEW_PARAM) || null;
+}
 /**
- * What the review hands back to the card under it when it is closed with ✕, Esc or the scrim (D73): its decisions, the
- * rows chosen for approval and the rows left behind. There is no selection on the server, so they ride in the router's
- * navigation state of the one entry it leads to, where the card reads them, wherever it is drawn (beside the page, in
- * its sheet, in the shell's drawer, in a conversation's answer), and puts the focus back on its "Granska N".
+ * Where an address that laid the review over a page leads (`?review=<threadId>&step=<n>`): the review's page at that
+ * step, the page under it as the way back. Null for every other address.
  */
-export type ReviewReturn = { review: { threadId: string; approved: string[]; left: string[] } };
-
-export const reviewReturn = (threadId: string, approved: string[], left: string[]): ReviewReturn => ({
-  review: { threadId, approved, left },
-});
-
-/** What the review handed back to this card, or null when the address was reached some other way. The state's own object, so it is the same one on every render of the entry. */
-export function returnedReview(state: unknown, threadId: string): ReviewReturn['review'] | null {
-  const review = (state as Partial<ReviewReturn> | null)?.review;
-  return review && review.threadId === threadId && Array.isArray(review.approved) && Array.isArray(review.left)
-    ? review
-    : null;
+export function reviewPageFrom(pathname: string, search: URLSearchParams | string): string | null {
+  const q = new URLSearchParams(search);
+  const threadId = reviewOf(q);
+  if (!threadId) return null;
+  const step = q.get(STEP_PARAM);
+  REVIEW_KEYS.forEach(k => q.delete(k));
+  return reviewAt(threadId, address(pathname, q), step);
+}
+/** Where `/cards/:threadId/review?step=n`, the review's first address, leads: its page at the step it named. */
+export function legacyReview(threadId: string, search: URLSearchParams | string): string {
+  return reviewAt(threadId, null, new URLSearchParams(search).get(STEP_PARAM));
 }
 
 /**
- * The card's selection after a review (D73, amended 2026-11-11): a row chosen for approval is ticked, a row left behind
- * is not, and a row the review never judged keeps the tick it had. So a review that is opened and closed again leaves
- * the card as it was, with the rows the source marked still ticked, where it used to clear every tick.
+ * "Granska avvisade igen" (D80): the new item's review in the old one's place, from its first step, with the way back
+ * to where the old item was shown, now showing the new one: its page, Att göra's pane, or the panel beside a page.
  */
-export const selectionAfterReview = (selected: string[], review: Pick<ReviewReturn['review'], 'approved' | 'left'>) => [
-  ...selected.filter(ref => !review.approved.includes(ref) && !review.left.includes(ref)),
-  ...review.approved,
-];
+export function retriedReviewHref(from: string | null, was: string, now: string): string {
+  if (!from) return reviewHref(now);
+  const at = from.indexOf('?');
+  const path = at < 0 ? from : from.slice(0, at);
+  const q = new URLSearchParams(at < 0 ? '' : from.slice(at));
+  for (const key of ['item', 'card']) if (q.get(key) === was) q.set(key, now);
+  const page = path === `/items/${encodeURIComponent(was)}` ? `/items/${encodeURIComponent(now)}` : path;
+  return reviewHref(now, { from: address(page, q) });
+}

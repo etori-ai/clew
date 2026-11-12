@@ -1,12 +1,14 @@
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { desktop, expect, expectNoAxeViolations, narrow, open, phone, reflowProblems, short, test } from './support';
+import { NOTICE_REASON, NOTICE_TEXT, asNotice } from './data';
 
 /**
  * A work item as a page (D112 item 4, board WorkItem, `/items/<threadId>`, the `work-item-detail` template): reached
  * with "Öppna som sida" from Att göra's reading pane and from the panel beside a page, with `from` as the way back. The
- * page is the item's header (the trail, the title, the status and badges, the buttons), the main column (Varför ser
- * jag detta?, the rows, Dokument, Händelser) and the details rail; at 1024 px and below the rail is behind "Visa
- * detaljer" in a fullscreen dialog, and on a phone the buttons are pinned to the foot (board PhoneItem, D112 item 12).
+ * page is the item's header (the trail, the title, the status and badges, the buttons), the main column (a notice's
+ * text, Varför ser jag detta?, the rows, Dokument, Händelser) and the details rail; at 1024 px and below the rail is
+ * behind "Visa detaljer" in a fullscreen dialog, and on a phone the buttons are pinned to the foot (board PhoneItem,
+ * D112 item 12).
  */
 const wide = { width: 1440, height: 900 };
 const tablet = { width: 1024, height: 768 };
@@ -104,6 +106,28 @@ test.describe('the work item as a page', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Omtankesamtal med Anna Lindqvist' })).toBeVisible();
   });
 
+  test('a calendar proposal beside a page links to its page as every work item does, and not on that page itself (D116)', async ({
+    page,
+    api,
+  }) => {
+    const proposal = api.threads.find(t => t.proposals.length > 0)!;
+    await open(page, `/?card=${proposal.id}`);
+    const panel = page.getByRole('complementary', { name: 'Ärende' });
+    await expect(panel.locator(`#card-${proposal.id}`)).toBeVisible();
+    const asPage = panel.getByRole('link', { name: 'Öppna som sida' });
+    await expect(asPage).toHaveAttribute('href', `/items/${proposal.id}?from=%2F%3Fcard%3D${proposal.id}`);
+    await expectNoAxeViolations(page);
+    await asPage.click();
+    await expect(page).toHaveURL(`/items/${proposal.id}?from=%2F%3Fcard%3D${proposal.id}`);
+    await expect(page.getByRole('heading', { level: 1, name: proposal.title })).toBeVisible();
+    // On its own page the proposal is the page: there is no further page to lead to.
+    await expect(page.getByRole('main').getByRole('link', { name: 'Öppna som sida' })).toHaveCount(0);
+    await expect(page.getByRole('main').getByRole('link', { name: 'Hem', exact: true })).toHaveAttribute(
+      'href',
+      `/?card=${proposal.id}`,
+    );
+  });
+
   test('a decided item shows its receipt row by row, and its Händelser read the decision back', async ({
     page,
     api: _,
@@ -119,6 +143,46 @@ test.describe('the work item as a page', () => {
     await expect(page.getByRole('list', { name: 'Händelser, de senaste först' })).toContainText(
       'fick inget säkert besked från Ekonomisystemet',
     );
+    await expectNoAxeViolations(page);
+  });
+
+  test('a notice as a page: its text first in the column, the way to the whole of it after the text and in the rail, its receipt in the header, and the text still there after it', async ({
+    page,
+    api,
+  }) => {
+    api.threads = api.threads.map(t => (t.id === 'rutin' ? asNotice(t) : t));
+    await open(page, '/items/rutin');
+    await expect(page.getByRole('heading', { level: 1, name: 'Ny rutin för läkemedelshantering' })).toBeFocused();
+    const main = page.getByRole('main');
+    const ack = main.getByRole('button', { name: 'Jag har läst' });
+    await expect(ack).toBeVisible();
+    // The text first in the column, under no heading of its own; then Varför ser jag detta? as the provenance line.
+    const y = async (l: Locator) => (await l.boundingBox())!.y;
+    const first = main.getByText(NOTICE_TEXT[0]!, { exact: true });
+    const why = main.getByRole('region', { name: 'Varför ser jag detta?' });
+    expect(await y(first)).toBeGreaterThan(await y(ack));
+    expect(await y(why)).toBeGreaterThan(await y(main.getByText(NOTICE_TEXT.at(-1)!, { exact: true })));
+    await expect(why).toContainText(NOTICE_REASON);
+    await expect(why).not.toContainText(NOTICE_TEXT[0]!);
+    await expect(page.getByRole('heading', { level: 2, name: 'Rader' })).toHaveCount(0);
+    // The way to the whole of it after the text, marked as leaving Clew, and under Öppna i källan in the rail; not
+    // among the header's buttons.
+    const out = /^Läs hela nyheten\s*\(öppnas i ny flik\)$/;
+    const details = page.getByRole('complementary', { name: 'Detaljer' });
+    await expect(page.getByRole('button', { name: out })).toHaveCount(2);
+    await expect(details.getByRole('button', { name: out })).toHaveCount(1);
+    expect(await y(main.getByRole('button', { name: out }).first())).toBeGreaterThan(await y(first));
+    // One outline: the title, then the column's sections and the rail's, each one level under it.
+    const levels = await outline(page);
+    expect(levels.filter(l => l === 1)).toHaveLength(1);
+    for (let i = 1; i < levels.length; i++) expect(levels[i]! - levels[i - 1]!).toBeLessThanOrEqual(1);
+    await expectNoAxeViolations(page);
+    // The receipt: the source's answer on the item, and the text still there to read again.
+    await ack.focus();
+    await page.keyboard.press('Enter');
+    await expect(main.getByText('Läskvittot är registrerat.', { exact: true })).toBeVisible();
+    await expect(first).toBeVisible();
+    await expect(why).toHaveCount(0);
     await expectNoAxeViolations(page);
   });
 
@@ -207,23 +271,27 @@ test.describe('the work item page at 320 px and on a short screen', () => {
       expect(await reflowProblems(page)).toEqual([]);
     });
 
-  test('on a desktop the page has no axe violations with the review over it', async ({ page, api }) => {
+  test('on a desktop a row under Dokument leads to the review’s page at that row, and Back to the row', async ({
+    page,
+    api,
+  }) => {
     await page.setViewportSize(desktop);
     const card = api.threads.find(t => t.id === 'fakturor')!;
     card.actions = card.actions.map(a =>
       a.id === 'approve' ? { ...a, review: 'each' as const, preview: 'finance.preview' } : a,
     );
     await open(page, '/items/fakturor');
-    // Dokument: each row's document opens the review over the page at that row.
+    // Dokument: each row's document leads to the review's page at that row (D73, amended 2026-11-12).
     const documents = page.getByRole('region', { name: 'Dokument' });
-    await documents.getByRole('link', { name: 'Öppna underlaget för Skolmaterial Norrland AB · 18 300 kr' }).focus();
+    const row = documents.getByRole('link', { name: 'Öppna underlaget för Skolmaterial Norrland AB · 18 300 kr' });
+    await row.focus();
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL('/items/fakturor?review=fakturor&step=2');
-    const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
-    await expect(review.getByRole('heading', { name: 'Skolmaterial Norrland AB · 18 300 kr' })).toBeVisible();
+    await expect(page).toHaveURL('/items/fakturor/review?from=%2Fitems%2Ffakturor&step=2');
+    await expect(page.getByRole('heading', { level: 1, name: 'Granska 3 rader' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Skolmaterial Norrland AB · 18 300 kr' })).toBeVisible();
     await expectNoAxeViolations(page);
-    await page.keyboard.press('Escape');
+    await page.goBack();
     await expect(page).toHaveURL('/items/fakturor');
-    await expect(page.getByRole('link', { name: 'Granska 3' })).toBeFocused();
+    await expect(row).toBeFocused();
   });
 });

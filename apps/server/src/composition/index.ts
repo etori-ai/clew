@@ -23,6 +23,8 @@ import { memoryModelHealth } from '../assistant/adapters/memory';
 import { modelUsecases } from '../assistant/usecases/models';
 import type { KeySealer } from '../assistant/ports';
 import { assistantUsecases } from '../assistant';
+import { personKey } from '../modules/entities/domain';
+import { staff } from './people';
 import { postgresJobQueue, postgresPeople } from '../scheduler/adapters/postgres';
 import { createScheduler } from '../scheduler/usecases';
 import { postgresThreadStore } from '../threads/adapters/postgres';
@@ -251,6 +253,14 @@ export const assistant = assistantUsecases({
   ids,
   log: logPort('assistant', 'error'),
   trace: currentTraceId,
+  // The people the asker manages (D115): Personal's list, read on every turn; only people who can be asked about (D97).
+  people: async persona =>
+    (await staff.reach(persona)).managed.flatMap(unit =>
+      unit.people.flatMap(p => {
+        const key = personKey(p);
+        return key ? [{ key, name: p.name, unit: unit.unitLabel }] : [];
+      }),
+    ),
 });
 /** The models' health probe (D8), started by main.ts beside the server: once at boot, then every minute. */
 export const startAssistantProbe = (intervalMs = 60_000) => {

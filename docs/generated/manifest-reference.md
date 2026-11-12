@@ -1068,7 +1068,7 @@ Whether Clew should POST /clew/scan for each person nightly and on first visit.
 - Type: boolean
 - required
 - Pairs with:
-  - **scan: true means you serve the scan route.** With `scan: true` Clew posts `/clew/scan` per person, nightly and on first visit. Each draft names an `area` of this manifest, its `topic` is the same for the same occurrence, and its actions name capabilities of this connector only. An execute action that is the person's read receipt for something published carries `acknowledgement: { publishedAt }` (D112), at most one per draft: Hem then lifts the open item above its blocks, with that action as its button, until it is pressed. The conformance check runs the scan twice and compares. ([D35](../decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md))
+  - **scan: true means you serve the scan route.** With `scan: true` Clew posts `/clew/scan` per person, nightly and on first visit. Each draft names an `area` of this manifest, its `topic` is the same for the same occurrence, and its actions name capabilities of this connector only. An execute action that is the person's read receipt for something published carries `acknowledgement: { publishedAt }` (D112), at most one per draft: Hem then lifts the open item above its blocks, with that action as its button, until it is pressed. Such an item is a notice: its `summary` is the text the person reads, first in the item (paragraphs separated by a blank line), its first `read` with `target: 'link'` is drawn after that text as the way to the whole of it, and its `reason` is the provenance line under "Varför ser jag detta?" (who published it, when). On any item, a single row that only repeats the title (no detail, no subject, not selectable) is not drawn. The conformance check runs the scan twice and compares. ([D35](../decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md))
 
 Example:
 
@@ -1132,7 +1132,7 @@ Stable and lowercase. Hem's area filter names it in its address (`/?area=<id>`),
 - required
 - Constraints: matches `^[a-z][a-z0-9-]*$`; at most 40 characters
 - Pairs with:
-  - **scan: true means you serve the scan route.** With `scan: true` Clew posts `/clew/scan` per person, nightly and on first visit. Each draft names an `area` of this manifest, its `topic` is the same for the same occurrence, and its actions name capabilities of this connector only. An execute action that is the person's read receipt for something published carries `acknowledgement: { publishedAt }` (D112), at most one per draft: Hem then lifts the open item above its blocks, with that action as its button, until it is pressed. The conformance check runs the scan twice and compares. ([D35](../decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md))
+  - **scan: true means you serve the scan route.** With `scan: true` Clew posts `/clew/scan` per person, nightly and on first visit. Each draft names an `area` of this manifest, its `topic` is the same for the same occurrence, and its actions name capabilities of this connector only. An execute action that is the person's read receipt for something published carries `acknowledgement: { publishedAt }` (D112), at most one per draft: Hem then lifts the open item above its blocks, with that action as its button, until it is pressed. Such an item is a notice: its `summary` is the text the person reads, first in the item (paragraphs separated by a blank line), its first `read` with `target: 'link'` is drawn after that text as the way to the whole of it, and its `reason` is the provenance line under "Varför ser jag detta?" (who published it, when). On any item, a single row that only repeats the title (no detail, no subject, not selectable) is not drawn. The conformance check runs the scan twice and compares. ([D35](../decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md))
 
 Example:
 
@@ -2068,6 +2068,17 @@ For `status`: the tone per value (a yes/no value is keyed `true` and `false`). T
 - Type: map of string to "ok" / "warn" / "alert" / "none"
 - optional
 
+Example:
+
+```json
+{
+  "Kort sjukfrånvaro": "none",
+  "Upprepad korttidsfrånvaro": "none",
+  "Lång sjukfrånvaro": "none",
+  "Tillbaka i arbete": "none"
+}
+```
+
 #### `capabilities[].view.fields[].unit`
 
 For `number`: the unit drawn after the value, so a row reads "12 platser" and never "Platser: 12". Only where the unit alone says what the number is.
@@ -2927,7 +2938,7 @@ Where Clew applies each: when the manifest is loaded, when the connector is regi
 - **The effect is a read of this connector that takes the same input** (loader; `capabilities[].effect`, `capabilities[].kind`, `capabilities[].model`) ([D112](../decisions/D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md)): `effect` may be declared only on an `execute`. It names a `read` of this manifest whose input schema is the execute's own and which declares `model: false`. A read writes nothing: Clew calls it before the person decides.
 - **A follower is about no entity** (loader; `capabilities[].about`, `capabilities[].follows`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): `follows` and `about` exclude each other: a follower is asked with a `FactEnvelope`, not with keys.
 - **A profile read and the header are about no entity** (loader; `capabilities[].about`, `capabilities[].name`, `capabilities[].kinds`, `header.capability`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): `<id>.search`, `<id>.fetch`, `<id>.errands`, `<id>.talks`, `<id>.commitments`, `<id>.news`, a capability with `kinds` and the read the header names have shapes of their own and cannot declare `about`.
-- **scan: true means you serve the scan route** (check; `scan`, `areas[].id`) ([D35](../decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md)): With `scan: true` Clew posts `/clew/scan` per person, nightly and on first visit. Each draft names an `area` of this manifest, its `topic` is the same for the same occurrence, and its actions name capabilities of this connector only. An execute action that is the person's read receipt for something published carries `acknowledgement: { publishedAt }` (D112), at most one per draft: Hem then lifts the open item above its blocks, with that action as its button, until it is pressed. The conformance check runs the scan twice and compares.
+- **scan: true means you serve the scan route** (check; `scan`, `areas[].id`) ([D35](../decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md)): With `scan: true` Clew posts `/clew/scan` per person, nightly and on first visit. Each draft names an `area` of this manifest, its `topic` is the same for the same occurrence, and its actions name capabilities of this connector only. An execute action that is the person's read receipt for something published carries `acknowledgement: { publishedAt }` (D112), at most one per draft: Hem then lifts the open item above its blocks, with that action as its button, until it is pressed. Such an item is a notice: its `summary` is the text the person reads, first in the item (paragraphs separated by a blank line), its first `read` with `target: 'link'` is drawn after that text as the way to the whole of it, and its `reason` is the provenance line under "Varför ser jag detta?" (who published it, when). On any item, a single row that only repeats the title (no detail, no subject, not selectable) is not drawn. The conformance check runs the scan twice and compares.
 - **figure: true means you serve the figure route** (call; `areas[].figure`): For an area with `figure: true` Clew posts `/clew/figure` with the area id and draws the answer as the area's tile on Hem (D54): `label` and `tone`, and optionally `value` (one number and its unit, formatted by you), `comparison`, `progress` and `opens`, a read of yours whose view needs no input, which the tile then links to. Without `value` the label is a sentence. Clew says the tone in its own words. A connector that does not answer shows the warning tile, never an error; an administrator can switch an area's figure off.
 - **Callbacks reach only what uses lists** (call; `uses`) ([D37](../decisions/README.md)): While serving a request, a connector may call back `POST /api/connectors/call` with the `callback` grant from the assertion, for the exact names in `uses` and as the same person. Anything else, and every `execute`, is refused.
 - **search and fetch make a search source** (call; `capabilities[].kinds`, `capabilities[].name`) ([D26](../decisions/D26-questions-over-documents-are-search-not-knowledge.md)): A `read` named `<id>.search` with `kinds` is a source of Clew's composite search: its output is a `SearchOutput`, and `<id>.fetch` takes one of its refs back and returns one `SearchHit`.

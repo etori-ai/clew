@@ -492,7 +492,7 @@ export const RULES: Rule[] = [
     fields: ['scan', 'areas[].id'],
     enforced: 'check',
     decision: 'D35',
-    text: "With `scan: true` Clew posts `/clew/scan` per person, nightly and on first visit. Each draft names an `area` of this manifest, its `topic` is the same for the same occurrence, and its actions name capabilities of this connector only. An execute action that is the person's read receipt for something published carries `acknowledgement: { publishedAt }` (D112), at most one per draft: Hem then lifts the open item above its blocks, with that action as its button, until it is pressed. The conformance check runs the scan twice and compares.",
+    text: "With `scan: true` Clew posts `/clew/scan` per person, nightly and on first visit. Each draft names an `area` of this manifest, its `topic` is the same for the same occurrence, and its actions name capabilities of this connector only. An execute action that is the person's read receipt for something published carries `acknowledgement: { publishedAt }` (D112), at most one per draft: Hem then lifts the open item above its blocks, with that action as its button, until it is pressed. Such an item is a notice: its `summary` is the text the person reads, first in the item (paragraphs separated by a blank line), its first `read` with `target: 'link'` is drawn after that text as the way to the whole of it, and its `reason` is the provenance line under \"Varför ser jag detta?\" (who published it, when). On any item, a single row that only repeats the title (no detail, no subject, not selectable) is not drawn. The conformance check runs the scan twice and compares.",
   },
   {
     id: 'figure-route',

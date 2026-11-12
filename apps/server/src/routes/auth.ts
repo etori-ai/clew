@@ -68,10 +68,13 @@ authRoutes.get('/dev/login', async c => {
 });
 authRoutes.get('/session', protectedRoute(), c => {
   const session = c.get('session');
-  // `admin` only decides whether the browser shows the entry point; every admin call is checked again on the server (D23).
+  // `admin` and `capabilities` only decide which entry points the browser draws (Administration and its rows); every
+  // admin call is checked again on the server (D23, D85).
+  const held = CAPABILITIES.filter(c => session.context.capabilities.includes(c));
   return c.json({
     user: sessionUser(session.context),
-    admin: CAPABILITIES.some(c => session.context.capabilities.includes(c)),
+    admin: held.length > 0,
+    capabilities: held,
     csrfToken: session.csrfToken,
     sessionKey: session.sessionKey,
     expiresAt: session.context.expiresAt,

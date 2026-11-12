@@ -12,12 +12,12 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import type { PanelViewSpec, Thread, ViewRef } from '@clew/contracts';
 import { Button, HStack, Text, VStack, type AgendaItem } from '@clew/ui';
-import { threadsQuery, viewQuery } from '../queries';
+import { areasQuery, threadsQuery, viewQuery } from '../queries';
 import { errorMessage } from '../query-policy';
-import { panelOf, readOf, viewSearch, withView, withoutPanel, withoutRead, type PanelRef } from '../panel-address';
+import { panelOf, viewSearch, withoutPanel, type PanelRef } from '../panel-address';
+import { openedAsPage, opensAsPage, viewOpenHref, viewPageHref } from '../view-address';
 import { cardBody } from './card-panel';
-import { unfoldsInCard, useCardRead } from './card-read';
-import { PanelBody, usePanel, type PanelFrame } from './panel';
+import { PanelBody, answersWithRowsOf, usePanel, type PanelFrame } from './panel';
 import { Unfold } from './unfold';
 import type { ThingSubject } from './conversation-context';
 
@@ -28,17 +28,24 @@ export const itemSubject = (thread: Pick<Thread, 'id' | 'title'>): ThingSubject 
   chips: [{ ref: 'thread:' + thread.id, kind: 'thread', label: thread.title, threadId: thread.id }],
   search: '?card=' + encodeURIComponent(thread.id),
 });
-/** A view as what the box beside it asks about: its capability as the chip, and the view beside the conversation's page. */
-export const viewSubject = (view: {
-  capability: string;
-  title: string;
-  input: Record<string, unknown>;
-}): ThingSubject => ({
+/**
+ * A view as what the box beside it asks about: its capability as the chip, and one thing beside the conversation's page.
+ * A list or a table is a page of its own (D116), never beside the conversation: the conversation about it continues
+ * with the chip alone (`page`).
+ */
+export const viewSubject = (
+  view: {
+    capability: string;
+    title: string;
+    input: Record<string, unknown>;
+  },
+  page = false,
+): ThingSubject => ({
   // A search typed in the view refines the same view: the conversation about it goes on.
   key: `view:${view.capability}`,
   label: view.title.toLocaleLowerCase('sv-SE'),
   chips: [{ ref: 'capability:' + view.capability, kind: 'capability', label: view.title }],
-  search: viewSearch(view),
+  search: page ? '' : viewSearch(view),
 });
 /**
  * A thing a page holds in the panel itself (D112 items 7 and 9): Kalender's event or proposal (`entry` in the address),
@@ -73,7 +80,6 @@ export interface ShownView {
   spec: PanelViewSpec | undefined;
   source: string | undefined;
   input: Record<string, unknown>;
-  via: boolean;
   address: string;
 }
 
@@ -82,11 +88,7 @@ export interface ShownView {
  * arrived: typing in a view's own field keeps its rows, and a view that takes another's place does so with its title,
  * in one step, so the panel stays open between a row and its contact card and focus can follow.
  */
-export function useView(
-  capability: string | null,
-  inputJson: string | null,
-  at: { title: string; via: boolean; address: string },
-) {
+export function useView(capability: string | null, inputJson: string | null, at: { title: string; address: string }) {
   const query = useQuery({
     ...viewQuery(capability ?? '', inputJson),
     enabled: !!capability,
@@ -105,7 +107,6 @@ export function useView(
       spec: arrived.view,
       source: arrived.source,
       input,
-      via: at.via,
       address: at.address,
     };
   return {
@@ -166,12 +167,15 @@ export interface PagePanelSlot {
 /**
  * The panel of a page (D50, D83 rule 1; the product owner, 2026-11-11: where something opens is decided by what it is,
  * never by the page it was clicked on). The address names what the panel holds the same way on every page
- * (`panel-address.ts`): `open` is a view and `card` is a card; the panel holds one opened thing. The card is drawn as
- * Hem draws it, from the same cache (D33), so a decision made beside any page is the decision made on Hem, and one of
- * its own reads unfolds inside it (`open-card` with `open-action`, `card-read.tsx`). A view's own row is a link to its
- * view in the same panel wherever the view is drawn, also in a card's read. Closing lets go of the top layer only: the
- * view leaves the card, the card leaves the page. What differs per page comes in as options, and the panel itself is
- * `usePanel`, which decides from the one width `BESIDE_FROM` whether it stands beside the page or over it.
+ * (`panel-address.ts`): `open` is a view and `card` is a card; the panel holds one opened thing, to peek at (D116, the
+ * product owner, 2026-11-12: "The sidebar needs to be for peeking or some kind of instant actions, otherwise a full
+ * route is needed"). A view that answers with rows is never drawn here: an address that opens one beside the page (a
+ * saved link from before, a read whose kind was not known) is replaced by the view's own page. A record or a document
+ * links to its page from the panel's header. The card is drawn as Hem draws it, from the same cache (D33), so a
+ * decision made beside any page is the decision made on Hem, and one of its own reads unfolds inside it (`open-card`
+ * with `open-action`, `card-read.tsx`). Closing lets go of the top layer only: the view leaves the card, the card
+ * leaves the page. What differs per page comes in as options, and the panel itself is `usePanel`, which decides from
+ * the one width `BESIDE_FROM` whether it stands beside the page or over it.
  */
 function usePanelOnPage({
   overlayOnly = false,
@@ -192,29 +196,32 @@ function usePanelOnPage({
   const viewRef = ref?.kind === 'view' ? ref : null;
   /** The card the address names: in the panel unless a view lies over it. */
   const cardId = search.get('card') ?? undefined;
-  /** A card's read the address unfolds, in whichever card is drawn. */
-  const asked = readOf(search);
-  // A declared view with a search field (D38) asks again as the person types: the rows on screen stay until the next
-  // ones arrive, so the panel and the field's focus stay put.
-  const side = useView(viewRef?.capability ?? null, viewRef ? search.get('open-input') : null, {
+  const views = useQuery(areasQuery).data?.views;
+  // A view the person's reads say is a list or a table is not read here at all; any other is read, and sent on to its
+  // page below if it answers with rows after all.
+  const listed = !!viewRef && opensAsPage(views, viewRef.capability);
+  const side = useView(viewRef && !listed ? viewRef.capability : null, viewRef ? search.get('open-input') : null, {
     title: viewRef?.title ?? '',
-    via: viewRef?.via ?? false,
     address,
   });
-  const threadsQ = useQuery({ ...threadsQuery, enabled: !!cardId || !!asked });
+  const threadsQ = useQuery({ ...threadsQuery, enabled: !!cardId });
   const threads = threadsQ.data?.threads;
   const thread = cardId ? threads?.find(t => t.id === cardId) : undefined;
-  // The read the card asks for, the same request: a table is not unfolded in the card but drawn in its place here.
-  const read = useCardRead(asked ? threads?.find(t => t.id === asked.threadId) : undefined, asked?.actionId ?? null);
-  const table = read.action && read.shown && !unfoldsInCard(read.shown.view) ? read.shown : null;
+  // A view that answered with rows is a page (D116): the address that opened it beside this page is replaced by the
+  // view's page, with this page as its way back, so Back leads to where the person was before they opened it.
+  const rows = listed || (!!side.shown && answersWithRowsOf(side.shown.spec, side.shown.output));
+  const page = rows ? openedAsPage(pathname, search) : null;
+  useLayoutEffect(() => {
+    if (page) navigate(page, { replace: true });
+  }, [page]);
   const changed = useRef(onChange);
   changed.current = onChange;
   const changedCard = useCallback((t: Thread) => changed.current?.(t), []);
   const held = useRef<{ frame: PanelFrame; card: Thread | null; view: { title: string } | null } | null>(null);
 
   const close = () => navigate(withoutPanel(pathname, search));
-  /** Where a row's own view leads (`view.open`): the same page with that view in the panel, and the way back to this one. */
-  const hrefFor = (v: ViewRef) => withView(pathname, search, v, true);
+  /** Where a row of the thing in the panel leads (a record's line that opens a read): a list to its page, one thing in its place. */
+  const hrefFor = (v: ViewRef) => viewOpenHref(views, pathname, search, v);
   const failed = (
     id: string,
     title: string,
@@ -247,15 +254,25 @@ function usePanelOnPage({
   let card: Thread | null = null;
   let view: { title: string } | null = null;
   if (viewRef) {
-    const shown = side.shown;
+    const shown = rows ? null : side.shown;
     if (shown) {
       view = shown;
+      // A record or a document is one thing too large to read beside a page alone: its own page is a link in the
+      // panel's header, worded as a work item's link to its page (D116). A record is its view's page with its input.
+      const whole = shown.spec?.kind === 'record' || shown.spec?.kind === 'document';
       frame = {
         // Named by the view on screen, not by the one on its way: focus follows a view when its rows are there to land on.
         id: `view:${shown.capability}`,
         title: shown.title,
         address: shown.address,
-        wide: shown.spec?.kind === 'table',
+        ...(whole
+          ? {
+              page: viewPageHref(
+                { capability: shown.capability, title: shown.title, input: shown.input },
+                pathname + location.search,
+              ),
+            }
+          : {}),
         onClose: close,
         // What the box beside it asks about: the view, by its capability (D112 item 7).
         subject: viewSubject({ capability: shown.capability, title: shown.title, input: shown.input }),
@@ -270,23 +287,7 @@ function usePanelOnPage({
               inline={inline}
               isLoading={side.isLoading}
               onOpenItem={onOpenItem}
-              /* A declared view (D38): its controls rewrite the address, so the view stays addressable and the back button undoes a search. */
-              onInput={
-                shown.capability === viewRef.capability
-                  ? input =>
-                      navigate(
-                        withView(
-                          pathname,
-                          search,
-                          { capability: shown.capability, title: shown.title, input },
-                          shown.via,
-                        ),
-                        { replace: true },
-                      )
-                  : undefined
-              }
               hrefFor={hrefFor}
-              onBack={shown.via ? () => navigate(-1) : undefined}
             />
           </Unfold>
         ),
@@ -296,34 +297,6 @@ function usePanelOnPage({
         isFetching: false,
         refetch: side.retry,
       });
-  } else if (table && read.action && asked) {
-    // A card's read that answered with a table (`unfoldsInCard`): in the card's place, as every read was before, and ✕
-    // folds it back into the card. The address is replaced as the card replaces it when it unfolds a read.
-    view = { title: read.action.label };
-    const readOfThread = threads?.find(t => t.id === asked.threadId);
-    frame = {
-      id: `action:${asked.threadId}:${asked.actionId}`,
-      title: read.action.label,
-      address,
-      wide: true,
-      onClose: () => navigate(withoutRead(pathname, search), { replace: true }),
-      // The read is the work item's: the box beside it asks about the item (D112 item 7).
-      ...(readOfThread ? { subject: itemSubject(readOfThread) } : {}),
-      /* A card's read has no controls: its input is the card's. Its rows' own views are links, as in any view. */
-      body: (inline, folded) => (
-        <Unfold folded={folded}>
-          <PanelBody
-            output={table.output}
-            view={table.view}
-            input={{}}
-            inline={inline}
-            isLoading={false}
-            onOpenItem={onOpenItem}
-            hrefFor={hrefFor}
-          />
-        </Unfold>
-      ),
-    };
   }
   if (!frame && cardId && (!pageSays || ref?.kind === 'card')) {
     if (thread) {
@@ -343,7 +316,8 @@ function usePanelOnPage({
           cardBody(thread, { place: 'panel', compact: true, level: 3, onChange: changedCard, folded }),
       };
     }
-    // The stream did not answer, or has answered and has no such card: said in the card's place, as a person is.
+    // The stream did not answer, or has answered and has no such card: said in the card's place, as a person is. A page
+    // that says its own failures (Hem) says the stream's in its alert; that the card is gone only the panel can say.
     else if (!pageSays && threadsQ.isError)
       frame = failed(
         `card:${cardId}`,
@@ -352,7 +326,7 @@ function usePanelOnPage({
         threadsQ,
         'card',
       );
-    else if (!pageSays && threads)
+    else if ((!pageSays || ref?.kind === 'card') && threads)
       frame = {
         id: `card:${cardId}`,
         kind: 'card',
@@ -373,10 +347,10 @@ function usePanelOnPage({
       ...(own.subject ? { subject: own.subject } : {}),
       body: (inline, folded) => own.body?.(inline, folded) ?? null,
     };
-  // Where the panel says what failed (`failures: 'panel'`), what was on screen stays while a view is on its way, as a
-  // view's rows stay while it asks again: a row's view opened from a card's read takes the card's place in one step,
-  // and the card under it is not drawn, named and given the focus in between.
-  const onItsWay = !!viewRef && !side.shown && !side.failed;
+  // Where the panel says what failed (`failures: 'panel'`), what was on screen stays while a view is on its way: a row's
+  // view opened from a card's read takes the card's place in one step, and the card under it is not drawn, named and
+  // given the focus in between. A view on its way to its own page keeps it too, until the page has taken its place.
+  const onItsWay = !!viewRef && (!side.shown || rows) && !side.failed;
   if (!pageSays) {
     if (onItsWay && held.current) ({ frame, card, view } = held.current);
     else held.current = frame ? { frame, card, view } : null;

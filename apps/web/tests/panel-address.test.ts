@@ -7,7 +7,6 @@ import {
   panelOf,
   panelSearch,
   readOf,
-  reviewOverCard,
   viewSearch,
   withAsk,
   withCard,
@@ -16,6 +15,7 @@ import {
   withView,
   withoutPanel,
   withoutRead,
+  withoutView,
 } from '../src/panel-address';
 
 describe('a card opens over the page the person is on (D111 rule 2)', () => {
@@ -40,8 +40,12 @@ describe('a card opens over the page the person is on (D111 rule 2)', () => {
     expect(
       cardOverPage('/staff', '?show=clew.talkPeople&card=samtal&open-card=samtal&open-action=pattern', 'ledighet'),
     ).toBe('/staff?show=clew.talkPeople&card=ledighet');
-    // Hem holds no card since D112: the item is the work item in Att göra's pane, and on Att göra it takes the pane.
-    expect(cardOverPage('/', '?tab=done&card=fakturor&review=fakturor&step=2', 'ledighet')).toBe('/todo?item=ledighet');
+    // On Hem the item is beside Hem in its panel (D112, amended 2026-11-12), in the place of what was open there; on
+    // Att göra it takes the reading pane.
+    expect(cardOverPage('/', '', 'ledighet')).toBe('/?card=ledighet');
+    expect(
+      cardOverPage('/', '?open=hr.whoIsOn&open-title=Bemanning&card=fakturor&review=fakturor&step=2', 'ledighet'),
+    ).toBe('/?card=ledighet');
     expect(cardOverPage('/todo', '?tab=waiting&item=fakturor&review=fakturor&step=2', 'ledighet')).toBe(
       '/todo?tab=waiting&item=ledighet',
     );
@@ -53,18 +57,6 @@ describe('a card opens over the page the person is on (D111 rule 2)', () => {
     );
     expect(cardOverPage('/people/karin', '?from=%2Fstaff&talk=karin', 'ledighet')).toBe(
       '/people/karin?from=%2Fstaff&card=ledighet',
-    );
-  });
-});
-
-describe("a row's Granska N opens its card beside the page and the review over it (D111 rule 5)", () => {
-  test('the card in the panel, as the row’s title opens it, and the review of that card', () => {
-    expect(reviewOverCard('/', '', 'fakturor')).toBe('/?card=fakturor&review=fakturor');
-    expect(reviewOverCard('/', '?tab=done&area=ekonomi', 'fakturor')).toBe(
-      '/?tab=done&area=ekonomi&card=fakturor&review=fakturor',
-    );
-    expect(reviewOverCard('/', '?open=hr.whoIsOn&open-title=Bemanning&card=other', 'fakturor')).toBe(
-      '/?card=fakturor&review=fakturor',
     );
   });
 });
@@ -111,10 +103,8 @@ describe('a card’s own read unfolds inside the card (D111, amended 2026-11-11)
   });
   test('a row’s own view in the read lies over the card, which keeps its read; ✕ peels the view, then the card', () => {
     const unfolded = '?card=t1&open-card=t1&open-action=pattern';
-    const view = withView('/staff', unfolded, { capability: 'directory.contact', title: 'Kontakt' }, true);
-    expect(view).toBe(
-      '/staff?card=t1&open-card=t1&open-action=pattern&open=directory.contact&open-title=Kontakt&via=1',
-    );
+    const view = withView('/staff', unfolded, { capability: 'directory.contact', title: 'Kontakt' });
+    expect(view).toBe('/staff?card=t1&open-card=t1&open-action=pattern&open=directory.contact&open-title=Kontakt');
     expect(panelOf(new URLSearchParams(view.slice('/staff'.length)))?.kind).toBe('view');
     expect(withoutPanel('/staff', view.slice('/staff'.length))).toBe(`/staff${unfolded}`);
     expect(withoutPanel('/staff', unfolded)).toBe('/staff');
@@ -129,7 +119,6 @@ describe('a card’s own read unfolds inside the card (D111, amended 2026-11-11)
     expect(panelSearch('?show=x&card=t1&open-card=t1&open-action=pattern')).toBe(
       '?card=t1&open-card=t1&open-action=pattern',
     );
-    expect(reviewOverCard('/', '?card=t1&open-card=t1&open-action=pattern', 't2')).toBe('/?card=t2&review=t2');
   });
 });
 
@@ -166,5 +155,24 @@ describe("a page's own thing in the panel (D112 items 7 and 9)", () => {
     expect(viewSearch({ capability: 'calendar.week', title: 'Vecka 45', input: { from: '2026-11-02' } })).toBe(
       '?open=calendar.week&open-title=Vecka+45&open-input=%7B%22from%22%3A%222026-11-02%22%7D',
     );
+  });
+});
+
+describe('the panel holds one thing to peek at, never a drill into a list (D116)', () => {
+  test('a view opened over another takes its place, and an old drill-in mark is let go of', () => {
+    const drilled = '?open=phonebook.directory&open-title=Telefonbok&via=1';
+    expect(withView('/', drilled, { capability: 'phonebook.person', title: 'Kontaktkort', input: { ref: 'p1' } })).toBe(
+      '/?open=phonebook.person&open-title=Kontaktkort&open-input=%7B%22ref%22%3A%22p1%22%7D',
+    );
+    expect(panelOf(new URLSearchParams(drilled))).toEqual({
+      kind: 'view',
+      capability: 'phonebook.directory',
+      title: 'Telefonbok',
+      input: {},
+    });
+  });
+  test('without the view the page keeps everything else, the card in its panel too', () => {
+    expect(withoutView('/', '?card=t1&open=a.b&open-title=A&open-input=%7B%7D&via=1')).toBe('/?card=t1');
+    expect(withoutView('/people/anna', '?from=%2Fstaff')).toBe('/people/anna?from=%2Fstaff');
   });
 });

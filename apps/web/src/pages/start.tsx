@@ -25,14 +25,15 @@ import {
   useToast,
 } from '@clew/ui';
 import { addDays, displayDate, shortDayLabel, timeLabel, today } from '@clew/calendar/dates';
-import { errorMessage } from '../query-policy';
+import { errorMessage, noCalendar } from '../query-policy';
 import { areasQuery, assistantQuery, threadsQuery, todayQuery } from '../queries';
 import { applyThread } from '../thread-cache';
 import { keys } from '../query-keys';
 import { groupThreads } from '../stream';
 import { useReceiptArrivals } from '../linger';
-import { withCard, withView } from '../panel-address';
-import { itemHref, needsYouOf, rowFacts, sourcesNotice, todoHref } from '../work-items';
+import { withCard } from '../panel-address';
+import { viewOpenHref, type ViewTarget } from '../view-address';
+import { needsYouOf, rowFacts, sourcesNotice, todoHref } from '../work-items';
 import { Composer, Suggestions } from '../components/composer';
 import { PageHeader } from '../components/page-header';
 import { titled, useConversation, type ConversationState } from '../components/conversation-context';
@@ -61,7 +62,8 @@ import { usePagePanel } from '../components/page-panel';
 import { cardBody } from '../components/card-panel';
 import { EventDialog } from '../components/calendar/event-dialog';
 import type { AgendaItem } from '@clew/ui';
-import { Today } from '../components/today';
+import { NoCalendar, Today } from '../components/today';
+import { SilentNotice, silentLine, useSaySilent, useSilentSources } from '../components/silent-sources';
 import { Since } from '../components/since';
 import { Lage } from '../components/lage';
 import { NewsBlock } from '../components/news';
@@ -86,11 +88,14 @@ const EMPTY_AREAS: Area[] = [];
  * The start page (D34, D50, D112). At `/` the column is Hem, the `ai-chat-landing` template (D112 item 2, board Main,
  * amended 2026-11-11 by board Hem10): one heading, the box under it, the one item that asks for the person's read
  * receipt as a callout (Fokusnyhet), and three blocks side by side that stack when narrow: "Behöver dig", the three most
- * urgent work items, each leading to it in Att göra, "I dag", the day as the calendar family draws it (D32), and
- * "Nyheter", the newest news from the person's news sources. The work list itself is Att göra's (`/todo`). Under the
- * blocks Läget's figures stand for Dialogstöd, then Verktygslådan, the person's tools, and then what D112 keeps as it
- * was until it is decided: Mina ärenden, the person's own action points and Sedan i går. A view opened from them is in
- * the panel beside Hem; opening it is not asking about it (D111 rule 6).
+ * urgent work items, "I dag", the day as the calendar family draws it (D32), and "Nyheter", the newest news from the
+ * person's news sources. The work list itself is Att göra's (`/todo`). Under the blocks Läget's figures stand for
+ * Dialogstöd, then Verktygslådan, the person's tools, and then what D112 keeps as it was until it is decided: Mina
+ * ärenden, the person's own action points and Sedan i går. A work item opened from Hem (a row, "Läs", the day's link to
+ * an item, a suggestion under the box) and one thing opened from it (a piece of news, an errand, a budget) are in the
+ * panel beside Hem, so the person stays on Hem (D112, amended 2026-11-12); opening it is not asking about it (D111
+ * rule 6). A list or a table opened from Hem (a tile of Läget, a suggestion, an answer's "Visa allt") is its own page,
+ * with Hem as the way back (D116).
  * A conversation takes the column at `/conversations/:id` (D31), with what it is about in the panel: the view an answer
  * names, the card or view that was open when it was asked, or the page it was asked on. The address is the state
  * throughout (`panel-address.ts`).
@@ -120,18 +125,21 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const [search] = useSearchParams();
   const here = location.pathname;
   const conversationId = params.conversationId && params.conversationId !== 'new' ? params.conversationId : null;
-  // `via` marks a view opened from another view (a row's contact card): the panel then offers the way back to it.
-  const viewHref = (capability: string, title: string, input?: Record<string, unknown>, via = false) =>
-    withView(here, search, { capability, title, input }, via);
+  // A view opened from this page (D116): a table or a list is its own page with this one as the way back, anything else
+  // is beside the page in the panel.
+  const viewHref = (v: ViewTarget & { title: string }) => viewOpenHref(areasQ.data?.views, here, search, v);
+  // A work item opened from Hem is beside Hem, in the panel every page has (D112, amended 2026-11-12): `?card=`.
+  const cardHref = (threadId: string) => withCard(here, search, threadId);
   // An entry opened from the panel's day view (D32): the same dialog as on the calendar page, over the panel.
   const [openItem, setOpenItem] = useState<{ item: AgendaItem; dayItems: AgendaItem[] } | null>(null);
   const toast = useToast();
   const announce = useAnnounce();
-  // A card's own button changed it (in the panel beside a conversation, or in an answer): when that took the focused
-  // button away, the focus goes back to the box rather than to nothing (2.4.3). Told before the cache is written.
-  const changed = useRef<number>(0);
-  const replace = useCallback((_: Thread) => {
-    changed.current = Date.now();
+  // A card's own button changed it (in the panel beside Hem or a conversation, in an answer, in the callout): when that
+  // took the focused button away, the focus goes to the item's title where the item is beside the page, else back to
+  // the box, rather than to nothing (2.4.3). Told before the cache is written.
+  const changed = useRef<{ at: number; id: string } | null>(null);
+  const replace = useCallback((t: Thread) => {
+    changed.current = { at: Date.now(), id: t.id };
   }, []);
   // The conversation changes cards too (a draft, a dismissal): it tells this page first, the same way a card's own button does.
   const { setThreadListener } = talk;
@@ -140,9 +148,13 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     return () => setThreadListener(null);
   }, [setThreadListener, replace]);
   useEffect(() => {
-    const at = changed.current;
-    changed.current = 0;
-    if (at && Date.now() - at <= 2_000 && document.activeElement === document.body) talk.focus();
+    const was = changed.current;
+    changed.current = null;
+    if (!was || Date.now() - was.at > 2_000 || document.activeElement !== document.body) return;
+    // The item in the panel beside the page (`card-<id>`): its title, which the receipt now stands under.
+    const beside = document.getElementById(`card-${was.id}-title`);
+    if (beside) beside.focus();
+    else talk.focus();
   }, [threads]);
   // A receipt that has just arrived (D70): the row keeps its place for a moment, and a toast says where the item went,
   // with the way there and the way back. The toast stays until closed (2.2.1), as the Avfärda toast does.
@@ -160,7 +172,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     // the item as it changes: they are said here, once, as the toast appears (4.1.3).
     if (thread.receipt) announce(receiptMessage({ ...thread, receipt: thread.receipt }));
   });
-  const openView = (v: ViewRef) => navigate(viewHref(v.capability, v.title, v.input));
+  const openView = (v: ViewRef) => navigate(viewHref(v));
   const marks = useMarks();
   const now = new Date().toISOString();
   const todayDate = today();
@@ -178,14 +190,22 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const closedToday = useMemo(() => all.handledToday.filter(t => t.kind !== 'question'), [all.handledToday]);
 
   /**
-   * The panel (D50): the view the address names, or in a conversation the card that was open when the question was
-   * asked. Hem itself holds no card: a card in Hem's address is the work item in Att göra (`todoFromHem`). With nothing
-   * open there is no panel.
+   * The panel (D50): the work item or the view the address names, or in a conversation the card that was open when the
+   * question was asked. A work item opened from Hem is beside Hem (D112, amended 2026-11-12), the same `?card=` every
+   * page has; only Hem's old tabs lead to Att göra (`todoFromHem`). With nothing open there is no panel. Closed after
+   * the item left Hem's rows (its receipt given beside Hem), nothing leads back to it: the focus goes to "Behöver dig".
    */
   const slot = usePagePanel({
     overlayOnly: short,
     failures: 'page',
     onChange: replace,
+    onClosed: () => {
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && active !== document.body && active.isConnected) return;
+      const needs = document.getElementById('behover-dig');
+      if (needs) needs.focus();
+      else talk.focus();
+    },
     onOpenItem: (item, dayItems) => setOpenItem({ item, dayItems }),
     // On a conversation's own page the panel is the transcript's artifact (D112 item 7): the conversation's box is the
     // one to ask in, so the thing beside it has none of its own. On Hem a view opened beside it gets its box.
@@ -204,16 +224,36 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const card = (t: Thread) => cardBody(t, { place: 'answer', level: 2, compact: mobile, onChange: replace });
   const assistantDown = !!assistant && assistant.configured && !assistant.available;
   const sources = threadsQ.data?.sources;
-  // A source not heard from is said where the work is, and the page never says that nothing needs the person then.
+  // A source not read yet is said where the work is, and the page never says that nothing needs the person then; one
+  // that does not answer is said on its own rows, and here only when nothing is left to draw (D116, amended 2026-11-12).
   const sourcesLine = sourcesNotice(sources);
+  const silent = useSilentSources();
+  const say = useSaySilent();
+  /**
+   * The day's calendar (D116, amended 2026-11-12). The person has none when the registry does not show it to them (D23)
+   * or their account has none bound; then "I dag" says so, without a warning. A day that cannot be read otherwise is the
+   * calendar not answering: said in the block, since when it last answered (its status with the cards, else this page's
+   * last read of the day), with "Försök igen", and once in the session aloud.
+   */
+  const systems = areasQ.data?.systems;
+  const calendarHidden =
+    (!!systems && !systems.some(s => s.connector === 'calendar')) || noCalendar(dayQ.error) === 'hidden';
+  const withoutCalendar = calendarHidden || noCalendar(dayQ.error) === 'unbound';
+  const calendarSilent = dayQ.isError && !withoutCalendar;
+  const calendarName = marks.system('calendar')?.source ?? 'Kalendern';
+  const calendarSince = silent.of('calendar')?.since ?? (dayQ.data ? new Date(dayQ.dataUpdatedAt).toISOString() : null);
+  useEffect(() => {
+    if (calendarSilent && silent.named) say([{ connector: 'calendar', source: calendarName }]);
+  }, [calendarSilent, silent.named, calendarName, say]);
 
   // The box's context for `@`: the work items Hem shows.
   const near = [...(focus ? [focus] : []), ...first].map(t => 'thread:' + t.id);
   // On a phone the box is docked at the foot (G on the phone): the heading sits right above it.
   const docked = mobile && !short;
   /**
-   * "Behöver dig" (D112 item 2, board Main): the three most urgent work items as rows, each leading to the item in Att
-   * göra, and the way to all of them. While the cards load the block keeps its shape.
+   * "Behöver dig" (D112 item 2, board Main): the three most urgent work items as rows, each opening the item in the
+   * panel beside Hem (amended 2026-11-12), marked while it is open there, and the way to all of them in Att göra. While
+   * the cards load the block keeps its shape.
    */
   const needsBlock = (
     <Card padding={4}>
@@ -237,13 +277,21 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
             </Text>
           )}
           {first.length === 0 ? (
-            <Text as="p" color="secondary">
-              {sourcesLine
-                ? 'Inväntar källornas besked.'
-                : focus
-                  ? 'Inget mer behöver dig just nu.'
-                  : 'Inget behöver dig just nu.'}
-            </Text>
+            <VStack gap={1}>
+              <Text as="p" color="secondary">
+                {sourcesLine || silent.list.length
+                  ? 'Inväntar källornas besked.'
+                  : focus
+                    ? 'Inget mer behöver dig just nu.'
+                    : 'Inget behöver dig just nu.'}
+              </Text>
+              {/* With nothing to draw, the system that does not answer is named where its work items would be. */}
+              {silent.list.length > 0 && (
+                <Text as="p" type="supporting">
+                  {`${silent.list.map(silentLine).join('. ')}.`}
+                </Text>
+              )}
+            </VStack>
           ) : (
             <WorkList label="Behöver dig">
               {first.map(t => (
@@ -252,7 +300,8 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
                   thread={t}
                   facts={rowFacts(t, now, todayDate)}
                   source={marks.ofThread(t).source}
-                  href={itemHref(t.id)}
+                  href={cardHref(t.id)}
+                  isSelected={slot.card?.id === t.id}
                 />
               ))}
             </WorkList>
@@ -261,10 +310,32 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       </VStack>
     </Card>
   );
-  /** "I dag" (board Main): the day as the calendar family draws it (D32), with the way to Kalender. */
-  const dayBlock = (dayQ.isPending || day) && (
-    <AsyncContent pending={loadingThreads || dayQ.isPending} fallback={<AsideSkeleton kind="today" />}>
-      {day && <Today view={day} threads={threads} cardHref={itemHref} />}
+  /**
+   * "I dag" (board Main): the day as the calendar family draws it (D32), with the way to Kalender. It is always drawn: a
+   * day that cannot be read says why in the block (D116, amended 2026-11-12) instead of leaving its place to the others.
+   */
+  const dayBlock = (
+    <AsyncContent
+      pending={loadingThreads || (dayQ.isPending && !calendarHidden)}
+      fallback={<AsideSkeleton kind="today" />}
+    >
+      <Today
+        view={withoutCalendar ? null : day}
+        threads={threads}
+        cardHref={cardHref}
+        calendar={!withoutCalendar}
+        notice={
+          withoutCalendar ? (
+            <NoCalendar hidden={calendarHidden} />
+          ) : calendarSilent ? (
+            <SilentNotice
+              silent={{ source: calendarName, since: calendarSince }}
+              retrying={dayQ.isFetching}
+              onRetry={() => void dayQ.refetch()}
+            />
+          ) : undefined
+        }
+      />
     </AsyncContent>
   );
   // The landing (D112 item 2, amended 2026-11-11, board Hem10): one heading, the box under it (docked at the foot on a
@@ -282,7 +353,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
           {!docked && (
             <VStack gap={2}>
               <Composer place="landing" near={near} roomy />
-              <Suggestions viewHref={viewHref} cardHref={itemHref} />
+              <Suggestions viewHref={(capability, title) => viewHref({ capability, title })} cardHref={cardHref} />
             </VStack>
           )}
         </VStack>
@@ -293,13 +364,13 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
         </Text>
       )}
       {/* Fokusnyhet (board Hem10): between the box and the blocks, while an item asks for the person's read receipt. */}
-      {focus && <FocusNews thread={focus} onChange={replace} />}
-      {/* The three blocks side by side where they fit, one under the other where they do not; a block that has nothing
-          to draw (the day without a calendar, news without a source) leaves its place to the others. */}
+      {focus && <FocusNews thread={focus} href={cardHref(focus.id)} onChange={replace} />}
+      {/* The three blocks side by side where they fit, one under the other where they do not; news without a source
+          leaves its place to the others, while the day is always drawn and says why when it cannot be read. */}
       <Grid columns={{ minWidth: 280, max: 3, repeat: 'fit' }} gap={4} align="start">
         {needsBlock}
         {dayBlock}
-        <NewsBlock hrefFor={ref => viewHref(ref.capability, ref.title, ref.input)} />
+        <NewsBlock hrefFor={viewHref} />
       </Grid>
       {/* Dialogstöd's figures are Läget (D54), its heading leading to the unit's page; then the person's tools. */}
       <Lage
@@ -309,13 +380,13 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
         now={now}
         unitLabel={user.unitLabel}
         unitId={user.unitId || undefined}
-        viewHref={(capability, title) => viewHref(capability, title)}
+        viewHref={(capability, title) => viewHref({ capability, title })}
         twoAcross={mobile}
       />
       <Toolbox />
       {/* What D112 keeps as it was until decided, under the board's parts: Mina ärenden (D90), the person's own action
           points (D96 item 7), then Sedan i går. */}
-      <MyErrands areas={areas} hrefFor={ref => viewHref(ref.capability, ref.title, ref.input)} />
+      <MyErrands areas={areas} hrefFor={viewHref} />
       <MyCommitments />
       <AsyncContent pending={loadingThreads} fallback={<AsideSkeleton kind="since" />}>
         <Since
@@ -399,7 +470,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     <Transcript
       onOpenView={openView}
       renderCard={t => (panelCard?.id === t.id ? null : card(t))}
-      viewHref={v => viewHref(v.capability, v.title, v.input, true)}
+      viewHref={viewHref}
       onDraft={draft => {
         if (!drawn(draft.threadId)) navigate(withCard(here, search, draft.threadId));
       }}
@@ -462,7 +533,10 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
                   scrollButton={null}
                   composer={
                     <VStack gap={2}>
-                      <Suggestions viewHref={viewHref} cardHref={itemHref} />
+                      <Suggestions
+                        viewHref={(capability, title) => viewHref({ capability, title })}
+                        cardHref={cardHref}
+                      />
                       <Composer place="landing" near={near} />
                     </VStack>
                   }

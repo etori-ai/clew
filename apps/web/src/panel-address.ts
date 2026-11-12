@@ -1,19 +1,20 @@
 import type { ViewRef } from '@clew/contracts';
-import { REVIEW_KEYS, withReview } from './review-address';
+import { REVIEW_KEYS } from './review-address';
 import { TALK_PARAM } from './talk-address';
 
 /**
  * What the panel holds is named in the address (D50), the same way on every page (`usePagePanel`, the shell's drawer):
- * `open` is a view (with `open-title`, `open-input` and `via`, the names a tool's page already uses, D42) and `card` is
- * a card. A view lies over a card: closing the view leaves the card, closing the card leaves the page. The panel holds
- * one opened thing (D111, amended 2026-11-11). Everything else in the address is the page's own and is kept.
+ * `open` is a view (with `open-title` and `open-input`, the names a tool's page already uses, D42) and `card` is a
+ * card. A view lies over a card: closing the view leaves the card, closing the card leaves the page. The panel holds
+ * one opened thing (D111, amended 2026-11-11), and only a thing to peek at: a view that answers with rows is a page of
+ * its own (D116, `view-address.ts`), never `open`. Everything else in the address is the page's own and is kept.
  *
  * `open-card` with `open-action` is one of a card's own reads unfolded inside that card (D111, amended 2026-11-11),
  * wherever the card is drawn: beside the page, in Hem's sheet, in a conversation's answer. It is the card's state, not
  * a thing in the panel: it stays under a view opened from one of its rows, and goes when the card goes.
  */
 export type PanelRef =
-  | { kind: 'view'; capability: string; title: string; input: Record<string, unknown>; via: boolean }
+  | { kind: 'view'; capability: string; title: string; input: Record<string, unknown> }
   | { kind: 'card'; threadId: string }
   /** A thing the page itself holds open in the panel: Kalender's event or proposal (`entry`, D112 item 9). */
   | { kind: 'entry'; id: string }
@@ -25,6 +26,7 @@ export interface ReadRef {
   actionId: string;
 }
 
+/** `via` marked a view opened from another one in the panel, before D116 ended that: dropped wherever a view is. */
 const VIEW_KEYS = ['open', 'open-title', 'open-input', 'via'];
 const READ_KEYS = ['open-card', 'open-action'];
 /** A page's own things in the panel: a calendar entry, and the page itself asked about. Anything opened takes their place. */
@@ -34,8 +36,9 @@ const OWN_KEYS = [ENTRY_PARAM, ASK_PARAM];
 /** Every name the panel's part of an address uses: what a page drops when it opens its own thing in the panel's place. */
 const PANEL_KEYS: readonly string[] = [...VIEW_KEYS, 'card', ...READ_KEYS, ...OWN_KEYS];
 /**
- * What lies over the page and the panel and holds the focus (D111 rule 5): a card's review (`review-address.ts`) and
- * one person's talk (`talk-address.ts`). Closing one leaves the page's address as it was under it.
+ * What lies over the page and the panel and holds the focus (D111 rule 5): one person's talk (`talk-address.ts`), and
+ * a card's review as its address named it before the review was a page (`review-address.ts`, which leads such an
+ * address to the review's page). Closing one leaves the page's address as it was under it.
  */
 const FOCUSED_KEYS: readonly string[] = [...REVIEW_KEYS, TALK_PARAM];
 const parse = (json: string | null): Record<string, unknown> => {
@@ -65,7 +68,6 @@ export function panelOf(search: URLSearchParams): PanelRef | null {
       capability: open,
       title: search.get('open-title') ?? open,
       input: parse(search.get('open-input')),
-      via: search.get('via') === '1',
     };
   const card = search.get('card');
   if (card) return { kind: 'card', threadId: card };
@@ -96,21 +98,23 @@ export function readOf(search: URLSearchParams): ReadRef | null {
   return threadId && actionId ? { threadId, actionId } : null;
 }
 /**
- * The same page with a view in the panel. `via` marks a view opened from another one, or from a card's read, which
- * then offers the way back. A card's unfolded read stays: closing the view shows the card as it was.
+ * The same page with a view in the panel, in the place of the view that was there: one thing to peek at (D116). A
+ * card's unfolded read stays: closing the view shows the card as it was.
  */
 export function withView(
   pathname: string,
   search: URLSearchParams | string,
   view: Pick<ViewRef, 'capability' | 'title'> & { input?: Record<string, unknown> | undefined },
-  via = false,
 ): string {
   const q = without(search, [...VIEW_KEYS, ...OWN_KEYS]);
   q.set('open', view.capability);
   q.set('open-title', view.title);
   if (view.input && Object.keys(view.input).length) q.set('open-input', JSON.stringify(view.input));
-  if (via) q.set('via', '1');
   return address(pathname, q);
+}
+/** The same page without the view in its panel, everything else kept: the way back from a view's own page (D116). */
+export function withoutView(pathname: string, search: URLSearchParams | string): string {
+  return address(pathname, without(search, VIEW_KEYS));
 }
 /** The same page with one of a card's reads unfolded in the card; any other read of any card folds. */
 export function withRead(
@@ -149,29 +153,19 @@ export function withCard(pathname: string, search: URLSearchParams | string, thr
 }
 /**
  * A card opened from something that belongs to no page (the bell, a toast, the rail's search), over the page the person
- * is on (D111 rule 2): that page's address with the card in its panel. A review or a talk lying over the page is let go
- * of, so the card asked for is the thing in front. On Att göra the card is the work item in its reading pane (D112),
- * on Hem, which no longer holds a card, it is the work item in Att göra, and on the item's own page it is that page.
+ * is on (D111 rule 2): that page's address with the card in its panel, on Hem too (D112, amended 2026-11-12). A review
+ * or a talk lying over the page is let go of, so the card asked for is the thing in front. On Att göra the card is the
+ * work item in its reading pane (D112), and on the item's own page it is that page.
  */
 export function cardOverPage(pathname: string, search: URLSearchParams | string, threadId: string): string {
   // On the item's own page (D112 item 4) the item is the page: nothing opens over it.
   if (pathname === `/items/${encodeURIComponent(threadId)}`) return address(pathname, without(search, FOCUSED_KEYS));
-  if (pathname === '/todo' || pathname === '/') {
-    const q = pathname === '/todo' ? without(search, [...FOCUSED_KEYS, ...PANEL_KEYS]) : new URLSearchParams();
+  if (pathname === '/todo') {
+    const q = without(search, [...FOCUSED_KEYS, ...PANEL_KEYS]);
     q.set('item', threadId);
     return address('/todo', q);
   }
   return withCard(pathname, without(search, FOCUSED_KEYS), threadId);
-}
-/**
- * Where a row's "Granska N" leads (D111 rule 5): the row's card in the page's panel, as the row's title opens it, and the
- * card's review over the page. The review hands its decisions back to the card and its receipt shows there, so a review
- * opened from a row closes to that card beside the page, as one opened from the card itself does.
- */
-export function reviewOverCard(pathname: string, search: URLSearchParams | string, threadId: string): string {
-  const q = without(search, [...VIEW_KEYS, ...READ_KEYS, ...OWN_KEYS]);
-  q.set('card', threadId);
-  return withReview(pathname, q, threadId);
 }
 /**
  * `target`, another address of the same page, with what the panel holds in `search` kept: a move within the page (a

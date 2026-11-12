@@ -6,7 +6,9 @@ import { areasQuery } from '../queries';
 import { errorMessage, refused } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
-import { toolHref, useRail } from '../components/nav';
+import { useRail } from '../components/nav';
+import { viewOpenHref, withViewInput } from '../view-address';
+import { useShownForTheWayBack } from '../way-back';
 import { DeclaredView } from '../components/view';
 import { RAIL, panelBesideQuery } from '../components/panel';
 import { usePagePanel, useView, viewSubject, type OwnThing } from '../components/page-panel';
@@ -36,8 +38,10 @@ export function NewsPage({ user, admin = false }: { user: SessionUser; admin?: b
   const navigate = useNavigate();
   const location = useLocation();
   const address = location.pathname + location.search;
+  useShownForTheWayBack(address);
+  const areas = useQuery(areasQuery).data;
   // Placed in the rail, the list carries the administrator's row's name; otherwise its own.
-  const entry = useQuery(areasQuery).data?.menu?.find(e => e.capability === NEWS_CAPABILITY);
+  const entry = areas?.menu?.find(e => e.capability === NEWS_CAPABILITY);
   const title = entry?.label ?? TITLE;
   const nav = useRail({
     current: { surface: 'verktyg', view: NEWS_CAPABILITY },
@@ -45,7 +49,7 @@ export function NewsPage({ user, admin = false }: { user: SessionUser; admin?: b
     manager: user.role === 'manager',
   });
   const inputJson = search.get('input');
-  const main = useView(NEWS_CAPABILITY, inputJson, { title, via: false, address });
+  const main = useView(NEWS_CAPABILITY, inputJson, { title, address });
   const list = main.shown?.capability === NEWS_CAPABILITY ? main.shown : null;
   const missing = !!main.failed && refused(main.failed);
   const pageThing: OwnThing | null = missing
@@ -54,7 +58,8 @@ export function NewsPage({ user, admin = false }: { user: SessionUser; admin?: b
         id: `page:tool:${NEWS_CAPABILITY}`,
         title,
         subtitle: 'Verktyget på sidan',
-        subject: viewSubject({ capability: NEWS_CAPABILITY, title, input: main.shown?.input ?? {} }),
+        // The news is a list, a page of its own (D116): the conversation about it continues without it beside.
+        subject: viewSubject({ capability: NEWS_CAPABILITY, title, input: main.shown?.input ?? {} }, true),
       };
   const slot = usePagePanel({ overlayOnly: short, failures: 'page', pageThing });
   const heading = slot.view?.title ?? (missing ? 'Inga nyheter för dig' : title);
@@ -105,8 +110,11 @@ export function NewsPage({ user, admin = false }: { user: SessionUser; admin?: b
                           tableQuery={slot.occupied ? tableBesideQuery : tableQuery}
                           title={title}
                           pageAction={<AskClew />}
-                          onInput={next => navigate(toolHref(NEWS_CAPABILITY, next), { replace: true })}
-                          hrefFor={v => toolHref(NEWS_CAPABILITY, list.input, v)}
+                          onInput={next =>
+                            navigate(withViewInput(location.pathname, location.search, next), { replace: true })
+                          }
+                          /* A piece of news is one thing: beside the list, in the panel (D116). */
+                          hrefFor={v => viewOpenHref(areas?.views, location.pathname, location.search, v)}
                         />
                       ) : (
                         <EmptyState headingLevel={2} title="Inget att visa" />

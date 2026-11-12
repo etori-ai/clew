@@ -23,7 +23,7 @@ The relevant research already separates ownership: connectors supply business in
 | Review placement | Addressable desktop drawer and tall mobile sheet stacked over the card | Reuse these placements and keep review state above their layout |
 | Cross-system jobs | Assembly, approval, execution and watches in the backend | User-facing approval and progress screens remain a separate development track |
 
-The latest amendments to [D73](../decisions/D73-the-review-is-a-page-in-the-shell-with-an-address.md) and the [review overlay](../../apps/web/src/components/review-overlay.tsx) govern placement. Its original title describes a page that was subsequently replaced. The [implementation status](../reference/status.md) remains the current feature reference.
+The latest amendments to [D73](../decisions/D73-the-review-is-a-page-in-the-shell-with-an-address.md) and the review overlay (`review-overlay.tsx`, replaced on 2026-11-12 by the review's [page](../../apps/web/src/pages/review.tsx)) govern placement. Its original title describes a page that was subsequently replaced. The [implementation status](../reference/status.md) remains the current feature reference.
 
 ## What Eneo does
 

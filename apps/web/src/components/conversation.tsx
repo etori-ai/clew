@@ -252,6 +252,7 @@ function ViewEmbed({
   onShowAll,
 }: {
   view: ViewRef;
+  /** Where the view and its rows lead (D116): a list to its own page, one thing beside the page. */
   hrefFor?: ((view: ViewRef) => string) | undefined;
   onShowAll: () => void;
 }) {
@@ -263,7 +264,11 @@ function ViewEmbed({
   if (!read.data?.view)
     return (
       <HStack>
-        <Button size="sm" label="Visa allt" onClick={onShowAll} />
+        {hrefFor ? (
+          <Button size="sm" label="Visa allt" href={hrefFor(view)} />
+        ) : (
+          <Button size="sm" label="Visa allt" onClick={onShowAll} />
+        )}
       </HStack>
     );
   return (
@@ -273,6 +278,7 @@ function ViewEmbed({
         output={read.data.output}
         limit={EMBED_ROWS}
         onShowAll={onShowAll}
+        showAllHref={hrefFor?.(view)}
         {...(hrefFor ? { hrefFor } : {})}
       />
     </Card>
@@ -409,7 +415,9 @@ export function Transcript({
                           <Button
                             size="sm"
                             label={m.meta.view.declared ? 'Visa allt' : `Visa ${m.meta.view.title.toLowerCase()}`}
-                            onClick={() => onOpenView(m.meta!.view!)}
+                            {...(viewHref
+                              ? { href: viewHref(m.meta.view) }
+                              : { onClick: () => onOpenView(m.meta!.view!) })}
                           />
                         )}
                         {m.meta?.sources && m.meta.sources.length > 0 && (
