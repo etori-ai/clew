@@ -3,10 +3,12 @@ import { enqueueWorkflow, type DurableQueue } from './durable';
 import { audit, jobs } from './schema';
 
 /**
- * Idempotent: a job id is a natural key such as `scan:hillevi:2026-11-04`, so repeated scheduling is harmless. The
- * row's `scheduledJob` workflow (`job:<id>`) is enqueued in the same transaction (D86); the row keeps the engine's
- * ownership status (`temporal`, the historical name) and remains the evidence of what was scheduled. A job runs only
- * through that workflow; nothing polls the table.
+ * Idempotent: a job id is a natural key such as `scan:2026-11-04`, so repeated scheduling is harmless. A job id never
+ * carries a person's name or user name, at most their id, as `attention:automatic:<personId>:<dueAt>` does, because it
+ * is written as `job:<id>` into the audit row's subject and the workflow id on the durable engine's spans. The row's
+ * `scheduledJob` workflow (`job:<id>`) is enqueued in the same transaction (D86); the row keeps the engine's ownership
+ * status (`temporal`, the historical name) and remains the evidence of what was scheduled. A job runs only through that
+ * workflow; nothing polls the table.
  */
 export async function scheduleJob(
   input: { id: string; kind: string; runAt: Date; payload?: Record<string, unknown> },
