@@ -115,8 +115,9 @@ sessions; the connector sends `Clew`.
   1. moves the old account's files and shares to the new one with
      `occ files:transfer-ownership <old account> <new account>`, which moves every file and folder, the outgoing shares
      and the incoming user shares, so the files shared with the person for approval reach the new account;
-  2. puts the new account wherever a rule names the old one, as approver or requester. A rule that names a group or a
-     circle needs only the new account added to it, which is why naming groups in rules spares this step;
+  2. puts the new account wherever a rule names the old one, as approver or requester, and into every group or circle
+     the old one was in. Rules that name a group or a circle as approver have not been verified with this connector
+     ([Unverified](#unverified));
   3. deletes the old account once nothing is left on it.
 
   A decision already made stays recorded under the old account id (`state` names who decided by account id). Clew
@@ -129,9 +130,11 @@ sessions; the connector sends `Clew`.
   must be kept to another account first, and take the leaver out of every rule that names the account, so that a new
   account under the same id does not take the leaver's place in it.
 
-Whether `Actor` should carry a key that never changes, so that a connector can tell people apart rather than names, is
-an open question ([open questions](../../docs/maintainers/open-questions.md#waiting-for-the-product-owner), the row on
-`Actor` in protocol 2).
+`Actor` already carries Clew's own id, which never changes and is never reused, but Nextcloud does not know it. Whether
+`Actor` should also carry a key that the source can know and that never changes, such as the directory's `externalId`,
+so that a connector could find the person's account without relying on the user name, is an open question
+([open questions](../../docs/maintainers/open-questions.md#waiting-for-the-product-owner), the row on `Actor` in
+protocol 2).
 
 ## Configuration
 
