@@ -12,6 +12,8 @@ import { fullName, type Directory, type DirectoryPerson } from './directory';
  * left the source. A push that would withdraw a large share of the people, or of a kind of group, is refused before
  * anything is written.
  */
+/** D114: the extension a user's current employments travel in. */
+const SCIM_EMPLOYMENT_SCHEMA = 'urn:clew:params:scim:schemas:extension:employment:2.0:User';
 const SCIM_USER = 'urn:ietf:params:scim:schemas:core:2.0:User',
   SCIM_GROUP = 'urn:ietf:params:scim:schemas:core:2.0:Group',
   SCIM_PATCH = 'urn:ietf:params:scim:api:messages:2.0:PatchOp',
@@ -98,17 +100,24 @@ const UNIT = 'unit:';
 /** A unit group's depth in the tree; every other group sorts after the last unit. */
 const levelOf = (g: PlannedGroup, depth: ReadonlyMap<string, number>) =>
   g.externalId.startsWith(UNIT) ? (depth.get(g.externalId.slice(UNIT.length)) ?? 0) : Number.MAX_SAFE_INTEGER;
-const userBody = (p: DirectoryPerson) => ({
-  schemas: [SCIM_USER],
-  externalId: p.externalId,
-  userName: p.userName,
-  displayName: fullName(p),
-  name: { formatted: fullName(p), givenName: p.givenName, familyName: p.familyName },
-  emails: [{ value: p.email, type: 'work', primary: true }],
-  // D110: the standard attribute, sent when the source holds one. A `PUT` without it clears the title in Clew.
-  ...(p.title ? { title: p.title } : {}),
-  active: p.active,
-});
+function userBody(p: DirectoryPerson) {
+  const employments = p.employments ?? [];
+  // Every employment travels in the extension with its own title, and Clew shows those. The core `title` is what a
+  // source without employments sends; here a person with one employment carries the same title there too.
+  const title = employments.length === 1 ? employments[0]!.title : undefined;
+  return {
+    schemas: employments.length ? [SCIM_USER, SCIM_EMPLOYMENT_SCHEMA] : [SCIM_USER],
+    externalId: p.externalId,
+    userName: p.userName,
+    displayName: fullName(p),
+    name: { formatted: fullName(p), givenName: p.givenName, familyName: p.familyName },
+    emails: [{ value: p.email, type: 'work', primary: true }],
+    phoneNumbers: p.phoneNumbers ?? [],
+    ...(employments.length ? { [SCIM_EMPLOYMENT_SCHEMA]: { employments } } : {}),
+    ...(title ? { title } : {}),
+    active: p.active,
+  };
+}
 export interface PushSummary {
   created: number;
   replaced: number;

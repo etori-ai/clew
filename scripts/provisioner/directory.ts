@@ -1,12 +1,11 @@
-import type { Capability } from '@clew/contracts';
+import type { Capability, DirectoryPhone, Employment } from '@clew/contracts';
 
 /**
  * The development stack's directory: what a municipality's source (Metakatalogen in Sundsvall, D68) knows about its
  * people. A person has a unit and a manager flag, the two facts the provisioner turns into D68's `unit:` and
  * `unit-manager:` groups; may work in or manage further units; may be in plain directory groups, which mean nothing in
  * Clew until an administrator maps one to a capability (D85) or names it in an audience (D23); and may hold Clew
- * capabilities that become `capability:` groups; and has a title, what the source calls their work, which the
- * provisioner sends as SCIM's `title` (D110) and which decides nothing. Two hundred and fifty people in forty-eight
+ * capabilities that become `capability:` groups; and may have several current employments, each with its own unit and title (D114). Two hundred and fifty people in forty-eight
  * units: three personas with a Keycloak account (`login`), seven written by hand for the names a real directory
  * holds, and the rest generated deterministically, so every manager has a team, the users page has something to page
  * and a group has anything from no members to eighty.
@@ -40,8 +39,8 @@ export interface DirectoryPerson {
   givenName: string;
   familyName: string;
   email: string;
-  /** What the source calls the person's work; absent where the source holds none. */
-  title?: string;
+  phoneNumbers?: DirectoryPhone[];
+  employments?: Employment[];
   /** The unit the person works in. */
   department: string;
   /** Whether the person manages that unit. */
@@ -197,11 +196,11 @@ const UNITS: UnitPlan[] = [
  * plain-group rules were written for those first units and are theirs alone.
  */
 const TREE_UNITS = new Set(UNITS.slice(UNITS.findIndex(u => u.id === ROOT)).map(u => u.id));
-/** The second generated person of the unit on the left also works in the unit on the right. */
-const SECOND_UNIT: Record<string, string> = {
-  'unit-bibliotek': 'unit-kommunikation',
-  'unit-skola-haga': 'unit-skola-nacksta',
-  'unit-omsorg': 'unit-omsorg-norr',
+/** The second generated person in each of these units holds another employment and is assigned to both units. */
+const SECOND_EMPLOYMENT: Partial<Record<string, Employment>> = {
+  'unit-bibliotek': { unitId: 'unit-kommunikation', title: 'Webbredaktör' },
+  'unit-skola-haga': { unitId: 'unit-skola-nacksta', title: 'Lärare' },
+  'unit-omsorg': { unitId: 'unit-omsorg-norr', title: 'Samordnare' },
 };
 const areaGroup = (area: Area) => 'ad:forvaltning-' + area;
 const GROUPS: DirectoryGroup[] = [
@@ -328,7 +327,11 @@ const personas: DirectoryPerson[] = [
     givenName: 'Hillevi',
     familyName: 'Berg',
     email: 'hillevi@clew.test',
-    title: 'Rektor',
+    phoneNumbers: [
+      { type: 'work', value: '010-000 00 01' },
+      { type: 'mobile', value: '070-000 00 02' },
+    ],
+    employments: [{ unitId: 'unit-skola', title: 'Rektor' }],
     department: 'unit-skola',
     manager: true,
     groups: ['ad:alla-chefer', 'ad:rektorer'],
@@ -342,7 +345,8 @@ const personas: DirectoryPerson[] = [
     givenName: 'Hassan',
     familyName: 'Ali',
     email: 'hassan@clew.test',
-    title: 'Undersköterska',
+    phoneNumbers: [{ type: 'mobile', value: '070-000 00 03' }],
+    employments: [{ unitId: 'unit-omsorg', title: 'Undersköterska' }],
     department: 'unit-omsorg',
     manager: false,
     capabilities: [],
@@ -355,7 +359,27 @@ const personas: DirectoryPerson[] = [
     givenName: 'Mikael',
     familyName: 'Lund',
     email: 'mikael@clew.test',
-    title: 'Systemförvaltare',
+    phoneNumbers: [
+      { type: 'work', value: '010-000 00 04' },
+      { type: 'work', value: '010-000 00 05' },
+      { type: 'Jour', value: '070-000 00 06' },
+    ],
+    employments: [
+      {
+        unitId: 'unit-it',
+        title: 'Systemförvaltare',
+        employmentType: 'Tillsvidare',
+        startDate: '2019-02-01',
+        employmentPercentage: 60,
+      },
+      {
+        unitId: 'unit-it',
+        title: 'Projektsamordnare',
+        employmentType: 'Vikariat',
+        startDate: '2026-09-01',
+        employmentPercentage: 40,
+      },
+    ],
     department: 'unit-it',
     manager: false,
     groups: ['ad:intranat-redaktorer'],
@@ -383,7 +407,7 @@ const named = (
   givenName,
   familyName,
   email: userName + '@clew.test',
-  ...(title ? { title } : {}),
+  employments: [{ unitId: department, ...(title ? { title } : {}) }],
   department,
   manager: false,
   capabilities: [],
@@ -504,7 +528,7 @@ const nameOf = (k: number) => {
 /**
  * Fills every unit up to its size after the hand-written people. The first generated people of a unit manage it (one,
  * or as many as the unit says; none where a persona does or another unit's manager does, and that manager then
- * manages both). Plain groups follow `MEMBERSHIPS`, a second unit `SECOND_UNIT`; the IT manager administers
+ * manages both). Plain groups follow `MEMBERSHIPS`, a second job `SECOND_EMPLOYMENT`; the IT manager administers
  * connectors and the second person at the kansli administers users. Deterministic, so the tests can count.
  */
 function generated(): DirectoryPerson[] {
@@ -525,6 +549,9 @@ function generated(): DirectoryPerson[] {
             ? ['ad:alla-chefer']
             : []
           : MEMBERSHIPS.filter(([, when]) => when(seat)).map(([group]) => group);
+      const employments: Employment[] = [{ unitId: unit.id, title: titleOf(unit.id, n, managers) }];
+      const secondEmployment = n === 1 ? SECOND_EMPLOYMENT[unit.id] : undefined;
+      if (secondEmployment) employments.push(secondEmployment);
       people.push({
         active: true,
         externalId: 'dev:' + userName,
@@ -532,11 +559,11 @@ function generated(): DirectoryPerson[] {
         givenName,
         familyName,
         email: userName + '@clew.test',
-        title: titleOf(unit.id, n, managers),
+        employments,
         department: unit.id,
         manager: seat.manager,
         ...(seat.manager && alsoManages.length ? { alsoManages } : {}),
-        ...(n === 1 && SECOND_UNIT[unit.id] ? { alsoIn: [SECOND_UNIT[unit.id]!] } : {}),
+        ...(secondEmployment ? { alsoIn: [secondEmployment.unitId] } : {}),
         ...(groups.length ? { groups } : {}),
         capabilities:
           unit.id === 'unit-it' && seat.manager

@@ -7,6 +7,7 @@ import type {
   Membership,
   Placement,
   TreeUnit,
+  UserFields,
   UserRecord,
   UserSearch,
 } from './domain';
@@ -141,7 +142,7 @@ export interface ProvisionTx {
   insertUser(record: UserRecord): Promise<void>;
   updateUser(
     id: string,
-    fields: Partial<Pick<UserRecord, 'externalId' | 'userName' | 'name' | 'email' | 'title' | 'enabled'>> & {
+    fields: Partial<Pick<UserRecord, keyof UserFields>> & {
       updatedAt: string;
     },
   ): Promise<void>;
@@ -197,8 +198,8 @@ export interface ProvisionTx {
   // The organisation tree (D99). A node is a `unit:` group; its parent is on the group.
   /** The units directly below a unit: the `unit:` groups that name it as their parent, by unit id. */
   childUnits(unitId: string): Promise<Array<{ id: string; label: string }>>;
-  /** Every node of the organisation's tree, by unit id. */
-  unitTree(organisationId: string): Promise<TreeUnit[]>;
+  /** Nodes of the organisation's tree, optionally narrowed to the named ids, in unit id order. */
+  unitTree(organisationId: string, ids?: readonly string[]): Promise<TreeUnit[]>;
   /**
    * Every person of the organisation with each unit they are assigned to, by person id and then unit id; a person
    * assigned to none is one row with `unitId` and `role` null.

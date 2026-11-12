@@ -229,6 +229,8 @@ describe('what a group write costs and what it leaves in the audit', () => {
         userName: null,
         name: 'Legacy ' + id,
         email: null,
+        phoneNumbers: [],
+        employments: [],
         title: null,
         enabled: true,
         createdAt: '2026-11-01T00:00:00.000Z',

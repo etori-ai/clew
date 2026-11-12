@@ -1,6 +1,8 @@
 # D110 · A person's title is pushed as SCIM's `title` and kept apart from the role
 
-**Status:** provisional (product owner, 2026-11-11: the user list should say what a person is called at work, and that is another fact than manager or employee; built against the freeze on new surface on his word), built 2026-11-11; one title per person and the standard attribute are choices made in the build and stand until he says otherwise; accepted once a real directory has pushed titles; no manual screen-reader pass yet · **Date:** 2026-11-11 · **Area:** identity, ui
+**Status:** provisional (product owner, 2026-11-11: the user list should say what a person is called at work, and that is another fact than manager or employee; built against the freeze on new surface on his word), built 2026-11-11; amended by D114 on 2026-11-12 for multiple employments and titles on the profile; accepted once a real directory has pushed titles; no manual screen-reader pass yet · **Date:** 2026-11-11 · **Area:** identity, ui
+
+**Amended 2026-11-12.** [D114](D114-person-profiles-show-employments-and-categorised-phone-numbers.md) gives each current employment its own optional title on the profile.
 
 **Decision.** Clew holds two facts about a person's work and never lets one stand in for the other.
 

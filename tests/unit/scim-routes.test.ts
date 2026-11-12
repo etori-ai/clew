@@ -69,7 +69,7 @@ describe('/scim/v2', () => {
     expect((await call('GET', '/ResourceTypes/Group')).status).toBe(200);
     expect((await call('GET', '/ResourceTypes/Device')).status).toBe(404);
     const schemas = await (await call('GET', '/Schemas')).json();
-    expect(schemas.totalResults).toBe(3);
+    expect(schemas.totalResults).toBe(4);
     expect((await call('GET', '/Schemas/urn:ietf:params:scim:schemas:core:2.0:User')).status).toBe(200);
     // D99: the unit extension is named on Group and can be read by its URN.
     const group = await (await call('GET', '/ResourceTypes/Group')).json();

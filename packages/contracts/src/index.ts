@@ -1421,8 +1421,29 @@ export const EntityCardSchema = object({
   kind: Type.Union([Type.Literal('act'), Type.Literal('proposal'), Type.Literal('fyi')]),
 });
 export type EntityCard = Static<typeof EntityCardSchema>;
+/** Employment data is descriptive. Unit memberships remain the authority for access. */
+export const SCIM_EMPLOYMENT_SCHEMA = 'urn:clew:params:scim:schemas:extension:employment:2.0:User';
+const DirectoryPhoneSchema = object({ type: Type.String(), value: Type.String() });
+export type DirectoryPhone = Static<typeof DirectoryPhoneSchema>;
+export const EmploymentSchema = object({
+  unitId: Type.String(),
+  title: Type.Optional(Type.String()),
+  employmentType: Type.Optional(Type.String()),
+  startDate: Type.Optional(Type.String({ format: 'date', maxLength: 10 })),
+  employmentPercentage: Type.Optional(Type.Number({ minimum: 0, maximum: 100 })),
+});
+export type Employment = Static<typeof EmploymentSchema>;
+const PersonProfileSchema = object({
+  email: Type.Union([Type.String(), Type.Null()]),
+  phoneNumbers: Type.Array(DirectoryPhoneSchema),
+  /** `unitLabel` is absent when the unit has been removed since the directory sent the employment. */
+  employments: Type.Array(object({ ...EmploymentSchema.properties, unitLabel: Type.Optional(Type.String()) })),
+  title: Type.Union([Type.String(), Type.Null()]),
+});
+export type PersonProfile = Static<typeof PersonProfileSchema>;
 /** `GET /api/entities/:kind/:key`: the opened entity, how the reader stands to it, its actions, one section per source and the cards about it. */
 export const EntityDetailSchema = object({
+  profile: Type.Optional(PersonProfileSchema),
   entity: object({
     ...EntityRefSchema.properties,
     unit: Type.Optional(object({ id: Type.String(), label: Type.String() })),
@@ -2206,7 +2227,7 @@ export interface UserAdminRow {
   userName: string | null;
   externalId: string | null;
   email: string | null;
-  /** D110: the person's title as the source words it; null when the source sent none. */
+  /** D110, D114: what the person is called at work: the titles of their employments, or the core title; null without one. */
   title: string | null;
   enabled: boolean;
   /** An identity binding exists, so the person has signed in (or was bound by the development seed). */

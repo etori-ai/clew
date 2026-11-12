@@ -24,6 +24,8 @@ import { usePageTitle } from '../page-title';
 import { NEEDS_YOU, insideClew, originOf, personPageHref, toolOf, unitPageHref } from '../person-address';
 import { useRail, type RailCurrent } from '../components/nav';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
+import { FieldValue } from '../components/view';
+import { fieldValue } from '../components/panel-labels';
 import { ContentSkeleton } from '../components/loading';
 import { RAIL, panelBesideQuery } from '../components/panel';
 import { usePagePanel, type OwnThing } from '../components/page-panel';
@@ -49,6 +51,27 @@ import {
 
 /** The details rail's width beside the column (`EntityPage`). */
 const DETAILS = 340;
+const employmentPercent = new Intl.NumberFormat('sv-SE', {
+  style: 'unit',
+  unit: 'percent',
+  maximumSignificantDigits: 21,
+});
+const phoneLabel = new Map([
+  ['work', 'Arbete'],
+  ['mobile', 'Mobil'],
+  ['home', 'Hem'],
+  ['fax', 'Fax'],
+  ['pager', 'Personsökare'],
+  ['other', 'Övrigt'],
+]);
+/**
+ * The line under the name. The employments carry their own titles in their section (D114), so it is the core title
+ * only where no employment has one.
+ */
+const shownTitle = (detail: EntityDetail): string | null =>
+  detail.profile?.employments.some(employment => employment.title)
+    ? null
+    : (detail.profile?.title ?? personTitle(detail.entity) ?? null);
 /**
  * A section's fuller read is drawn as a table where the column has the 1024 px a tool's page gives it beside the rail:
  * a window of 1280 px plus the details rail.
@@ -65,7 +88,7 @@ const TABLE_BESIDE_QUERY = panelBesideQuery(1280 - RAIL);
  */
 function PersonDetails({ detail, from }: { detail: EntityDetail; from: string | null }) {
   const { entity, relation } = detail;
-  const title = personTitle(entity);
+  const title = shownTitle(detail);
   const unit = entity.unit;
   const opens = !!unit && (relation === 'managed' || relation === 'self');
   const body = unit && (
@@ -162,15 +185,20 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
   const origin = originOf(from, useQuery(areasQuery).data?.menu);
   const tool = toolOf(from);
   // The rail marks the place the person was opened from; without one, Personal for the reader's own people.
-  const current: RailCurrent = from?.startsWith('/staff')
-    ? { surface: 'staff' }
-    : tool
-      ? { surface: 'verktyg', view: tool }
-      : from === '/' || from?.startsWith('/?')
-        ? { surface: 'start' }
-        : !from && detail?.relation === 'managed'
+  const current: RailCurrent =
+    from?.split('?')[0] === '/admin/users'
+      ? { surface: 'admin', section: 'anvandare' }
+      : from?.split('?')[0] === '/admin/organisation'
+        ? { surface: 'admin', section: 'organisation' }
+        : from?.startsWith('/staff')
           ? { surface: 'staff' }
-          : { surface: 'verktyg', view: null };
+          : tool
+            ? { surface: 'verktyg', view: tool }
+            : from === '/' || from?.startsWith('/?')
+              ? { surface: 'start' }
+              : !from && detail?.relation === 'managed'
+                ? { surface: 'staff' }
+                : { surface: 'verktyg', view: null };
   const nav = useRail({ current, admin, manager: user.role === 'manager' });
   usePageTitle(detail ? detail.entity.name : missing ? 'Personen finns inte' : null);
   // The section the address names takes the focus, unless something opened over or beside the page holds it.
@@ -232,6 +260,80 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
             },
           ]
         : []),
+      ...(detail.profile?.employments.length
+        ? [
+            {
+              key: 'employments',
+              node: (
+                <PageSection title="Anställningar" headingRef={headingRef('employments')}>
+                  <VStack as="ul" gap={2}>
+                    {detail.profile.employments.map((employment, index) => (
+                      <VStack as="li" key={index} gap={0}>
+                        {(employment.title || employment.unitLabel) && (
+                          <Text weight="semibold">{employment.title ?? employment.unitLabel}</Text>
+                        )}
+                        {employment.title && employment.unitLabel && (
+                          <Text color="secondary">{employment.unitLabel}</Text>
+                        )}
+                        {(employment.employmentType ||
+                          employment.startDate ||
+                          employment.employmentPercentage !== undefined) && (
+                          <MetadataList>
+                            {employment.employmentType && (
+                              <MetadataListItem label="Anställningsform">{employment.employmentType}</MetadataListItem>
+                            )}
+                            {employment.startDate && (
+                              <MetadataListItem label="Startdatum">
+                                <time dateTime={employment.startDate}>{fieldValue(employment.startDate)}</time>
+                              </MetadataListItem>
+                            )}
+                            {employment.employmentPercentage !== undefined && (
+                              <MetadataListItem label="Sysselsättningsgrad">
+                                {employmentPercent.format(employment.employmentPercentage)}
+                              </MetadataListItem>
+                            )}
+                          </MetadataList>
+                        )}
+                      </VStack>
+                    ))}
+                  </VStack>
+                </PageSection>
+              ),
+            },
+          ]
+        : []),
+      ...(detail.profile && (detail.profile.email || detail.profile.phoneNumbers.length > 0)
+        ? [
+            {
+              key: 'contact',
+              node: (
+                <PageSection title="Kontaktuppgifter" headingRef={headingRef('contact')}>
+                  <MetadataList>
+                    {detail.profile.email && (
+                      <MetadataListItem label="E-post">
+                        <FieldValue
+                          field={{ key: 'email', label: 'E-post', format: 'email' }}
+                          value={detail.profile.email}
+                        />
+                      </MetadataListItem>
+                    )}
+                    {detail.profile.phoneNumbers.map(phone => (
+                      <MetadataListItem
+                        key={JSON.stringify([phone.type, phone.value])}
+                        label={phoneLabel.get(phone.type) ?? phone.type}
+                      >
+                        <FieldValue
+                          field={{ key: 'phone', label: 'Telefon', format: 'phone' }}
+                          value={phone.value.replace(/^tel:/i, '')}
+                        />
+                      </MetadataListItem>
+                    ))}
+                  </MetadataList>
+                </PageSection>
+              ),
+            },
+          ]
+        : []),
       ...drawnSections(answers).map(a => ({
         key: a.source.capability,
         node: (
@@ -252,7 +354,7 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
         place={detail.entity.unit?.label}
         icon={<Avatar name={name} size="lg" tooltip={false} aria-hidden />}
         title={name}
-        subtitle={personTitle(detail.entity)}
+        subtitle={shownTitle(detail) ?? undefined}
         actions={
           // On a phone "Åtgärder" is the width of the column, "Fråga Clew" under it.
           mobile ? (

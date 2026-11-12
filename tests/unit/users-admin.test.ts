@@ -19,6 +19,8 @@ function stack() {
       userName: id,
       name,
       email: id + '@x.test',
+      phoneNumbers: [],
+      employments: [],
       title: null,
       enabled: true,
       createdAt: T,
@@ -181,6 +183,30 @@ describe('Användare', () => {
       ['Hillevi Berg', 'Rektor'],
     ]);
     expect(store.state.audit).toEqual([]);
+  });
+  test('the row shows every title of a person’s employments, each once, and a word is looked for in each of them (D114)', async () => {
+    const { usecases, admin, store } = stack();
+    const hillevi = store.state.users.get('hillevi')!;
+    hillevi.title = 'Katalogtitel';
+    hillevi.employments = [
+      { unitId: 'unit-skola', title: 'Rektor' },
+      { unitId: 'unit-skola' },
+      { unitId: 'unit-it', title: 'Projektledare' },
+      { unitId: 'unit-ekonomi', title: 'Rektor' },
+    ];
+    // Employments without a title leave the core one to stand.
+    store.state.users.get('mikael')!.title = 'Systemförvaltare';
+    store.state.users.get('mikael')!.employments = [{ unitId: 'unit-it' }];
+    const titles = async (text?: string) =>
+      (await usecases.people(admin, text === undefined ? undefined : { text })).rows.flatMap(u =>
+        u.title ? [[u.name, u.title]] : [],
+      );
+    expect(await titles()).toEqual([
+      ['Hillevi Berg', 'Rektor, Projektledare'],
+      ['Mikael Lund', 'Systemförvaltare'],
+    ]);
+    expect(await titles('projektLEDARE')).toEqual([['Hillevi Berg', 'Rektor, Projektledare']]);
+    expect(await titles('systemförvaltare')).toEqual([['Mikael Lund', 'Systemförvaltare']]);
   });
   test('the list is narrowed by words, role, status and capability, and says how many match of how many there are', async () => {
     const { usecases, admin, store } = stack();

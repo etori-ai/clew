@@ -38,6 +38,8 @@ const userColumns = {
   userName: schema.people.userName,
   name: schema.people.name,
   email: schema.people.email,
+  phoneNumbers: schema.people.phoneNumbers,
+  employments: schema.people.employments,
   title: schema.people.title,
   enabled: schema.people.enabled,
   createdAt: schema.people.createdAt,
@@ -99,6 +101,8 @@ function userSearchConditions(search: UserSearch): Array<SQL | undefined> {
         folded(sql`${schema.people.userName}`, pattern),
         folded(sql`${schema.people.email}`, pattern),
         folded(sql`${schema.people.title}`, pattern),
+        // D114: the titles of the person's employments, which the list shows before the core title.
+        sql`exists (select 1 from jsonb_array_elements(${schema.people.employments}) as job where ${folded(sql`job->>'title'`, pattern)})`,
       );
     }),
     search.unitIds || search.role
@@ -570,7 +574,7 @@ export function postgresProvisionStore(): ProvisionStore {
         .orderBy(schema.groups.externalId);
       return rows.map(r => ({ id: unitGroupOf(r.externalId)!, label: r.label }));
     },
-    async unitTree(organisationId) {
+    async unitTree(organisationId, ids) {
       const rows = await tx
         .select({
           externalId: schema.groups.externalId,
@@ -578,7 +582,17 @@ export function postgresProvisionStore(): ProvisionStore {
           parentUnitId: schema.groups.parentUnitId,
         })
         .from(schema.groups)
-        .where(and(eq(schema.groups.organisationId, organisationId), isUnitGroup))
+        .where(
+          and(
+            eq(schema.groups.organisationId, organisationId),
+            ids
+              ? inArray(
+                  schema.groups.externalId,
+                  ids.map(id => UNIT_KEY + id),
+                )
+              : isUnitGroup,
+          ),
+        )
         .orderBy(schema.groups.externalId);
       return rows.map(r => ({ id: unitGroupOf(r.externalId)!, label: r.label, parentId: r.parentUnitId }));
     },

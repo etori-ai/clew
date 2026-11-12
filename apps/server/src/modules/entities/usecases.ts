@@ -14,7 +14,6 @@ import {
   chunk,
   columnsOf,
   combine,
-  foldKey,
   groupsOf,
   isKey,
   lensesOf,
@@ -31,7 +30,7 @@ import {
 import { DEFAULT_BUDGET, type EntityDeps } from './model';
 
 type Answer = ({ status: 'ok' } & Checked) | { status: 'unavailable' | 'timeout' };
-type Found = { entity: EntityDetail['entity']; relation: EntityDetail['relation'] };
+type Found = Pick<EntityDetail, 'entity' | 'relation' | 'profile'>;
 
 /**
  * Entities (D97): a person or a unit, and what the sources that declare `about` say of it, placed by Clew. Who may be
@@ -122,39 +121,33 @@ export function entityUsecases(deps: EntityDeps) {
    * (`self`), someone on a unit the reader manages (`managed`) or another active person of the directory (`colleague`).
    * A unit: one the reader manages or belongs to (`member`).
    */
-  async function resolve(persona: AuthenticatedContext, kind: EntityKind, key: string): Promise<Found | undefined> {
+  async function resolve(
+    persona: AuthenticatedContext,
+    kind: EntityKind,
+    key: string,
+    includeProfile = false,
+  ): Promise<Found | undefined> {
     if (!isKey(key)) return undefined;
     if (kind === 'unit') {
       const unit = memberUnit(await deps.directory.reach(persona), key);
       return unit && { entity: { ...unitRef(unit) }, relation: 'member' };
     }
-    if (persona.userName && foldKey('person', persona.userName) === foldKey('person', key)) {
-      const unit = persona.unitId ? { unitId: persona.unitId, unitLabel: persona.unitLabel } : null;
-      return {
-        entity: {
-          ...personRef({ id: persona.id, name: persona.name, userName: persona.userName, enabled: true }, unit),
-          ...(unit ? { unit: { id: unit.unitId, label: unit.unitLabel } } : {}),
-        },
-        relation: 'self',
-      };
-    }
-    const managed = managedPerson(await deps.directory.reach(persona), key);
-    if (managed)
-      return {
-        entity: {
-          ...personRef(managed.person, managed.unit),
-          unit: { id: managed.unit.unitId, label: managed.unit.unitLabel },
-        },
-        relation: 'managed',
-      };
-    const colleague = await deps.directory.colleague(persona, key);
-    if (!colleague || colleague.id === persona.id || !personKey(colleague)) return undefined;
+    const person = await deps.directory.person(persona, key, includeProfile);
+    if (!person || !personKey(person) || !person.userName) return undefined;
+    const self = person.id === persona.id;
+    if (self && persona.userName?.toLowerCase() !== person.userName.toLowerCase()) return undefined;
+    const managed = self ? undefined : managedPerson(await deps.directory.reach(persona), key);
+    const unit =
+      self && persona.unitId
+        ? { unitId: persona.unitId, unitLabel: persona.unitLabel }
+        : (managed?.unit ?? person.unit);
     return {
       entity: {
-        ...personRef({ ...colleague, userName: colleague.userName! }, colleague.unit),
-        ...(colleague.unit ? { unit: { id: colleague.unit.unitId, label: colleague.unit.unitLabel } } : {}),
+        ...personRef({ ...person, userName: person.userName }, unit),
+        ...(unit ? { unit: { id: unit.unitId, label: unit.unitLabel } } : {}),
       },
-      relation: 'colleague',
+      relation: self ? 'self' : managed ? 'managed' : 'colleague',
+      ...(person.profile ? { profile: person.profile } : {}),
     };
   }
 
@@ -214,7 +207,7 @@ export function entityUsecases(deps: EntityDeps) {
     kind: EntityKind,
     key: string,
   ): Promise<EntityDetail | undefined> {
-    const found = await resolve(persona, kind, key);
+    const found = await resolve(persona, kind, key, true);
     if (!found) return undefined;
     const actor = actorOf(persona);
     const [reads, actions, cards] = await Promise.all([

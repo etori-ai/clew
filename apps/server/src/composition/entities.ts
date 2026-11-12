@@ -19,7 +19,7 @@ import { clock } from './ambient';
  */
 const cardsAbout = subjectCards({ store: subjectStore, registry, clock });
 export const entities = entityUsecases({
-  directory: { reach: persona => staff.reach(persona), colleague: (persona, key) => staff.colleague(persona, key) },
+  directory: staff,
   sources: {
     reads: async (actor, kind) => {
       await registry.refreshGovernance();
