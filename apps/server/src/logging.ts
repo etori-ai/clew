@@ -15,6 +15,21 @@ function failedStatement(error: unknown): FailedStatement | undefined {
   return undefined;
 }
 /**
+ * The stack frames of a failed statement: what follows the stack's header, `<name>: <message>`. The header is cut off
+ * by the message's length, not told apart from the frames line by line, because a value in the message may read like a
+ * frame (a newline, indentation and `at `). A stack that does not begin with its message gives no frames.
+ */
+function framesOf(statement: FailedStatement) {
+  const stack = statement.stack ?? '',
+    header = `: ${statement.message}`,
+    at = statement.message ? stack.indexOf(header) : -1;
+  if (at < 0 || stack.slice(0, at).includes('\n')) return [];
+  return stack
+    .slice(at + header.length)
+    .split('\n')
+    .filter(line => /^\s+at /.test(line));
+}
+/**
  * What a failed statement may say outside the process: its type, the statement as written (column names and
  * placeholders), its stack frames, and the database's SQLSTATE and constraint. Its message and stack name every value it
  * was given, as `params` does, and the database's detail may repeat them: a person's name, e-mail, phone numbers or
@@ -25,7 +40,7 @@ function statementWithoutValues(statement: FailedStatement) {
   return {
     type: statement.constructor.name,
     query: statement.query,
-    frames: (statement.stack ?? '').split('\n').filter(line => /^\s+at /.test(line)),
+    frames: framesOf(statement),
     code: typeof cause?.code === 'string' ? cause.code : undefined,
     constraint: typeof cause?.constraint_name === 'string' ? cause.constraint_name : undefined,
   };

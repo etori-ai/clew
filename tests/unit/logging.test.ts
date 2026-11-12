@@ -103,6 +103,25 @@ describe('a failed statement in a log line or a span (D91)', () => {
     expect(leaks(JSON.stringify(lines))).toEqual([]);
     expect(lines[0]!.error).toMatchObject({ type: 'DrizzleQueryError', message: 'Failed query', query });
   });
+  test('a value that reads like a stack frame stays out of the line and the span, which keep the real frames', () => {
+    const { lines, port } = capture();
+    // Free text such as an action point may hold a newline followed by indentation and "at ".
+    const error = new DrizzleQueryError(query, [
+      'Mål för Anna Lindqvist:\n   at least two courses with Anna Lindqvist',
+    ]);
+    expect(error.stack).toContain('\n   at least two courses with Anna Lindqvist\n');
+    port('threads', 'error')('scan failed', error);
+    const valueless = withoutValues(error);
+    for (const written of [JSON.stringify(lines), valueless.message + valueless.stack]) {
+      expect(leaks(written)).toEqual([]);
+      expect(written).not.toContain('at least');
+    }
+    const logged = (lines[0]!.error as { stack: string }).stack.split('\n');
+    expect(logged[0]).toBe('DrizzleQueryError: Failed query');
+    expect(logged.length).toBeGreaterThan(1);
+    expect(logged.slice(1).every(line => /^ {4}at /.test(line))).toBe(true);
+    expect(valueless.stack!.split('\n').slice(1)).toEqual(logged.slice(1));
+  });
   test('the error a span records says the statement and its SQLSTATE, and any other error is left as it is', () => {
     const valueless = withoutValues(failed());
     expect(leaks(valueless.message + valueless.stack)).toEqual([]);
