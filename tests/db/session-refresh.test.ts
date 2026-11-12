@@ -1,16 +1,18 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { eq, inArray } from 'drizzle-orm';
-import { database, schema } from '../../packages/db/src/index';
+import { database, databaseAnswers, schema } from '../../packages/db/src/index';
 import { revokeSession, storeRefreshedTokens } from '../../packages/db/src/auth';
-import { encryptTokens, randomToken, tokenDigest } from '../../apps/server/src/auth-crypto';
+import { decryptTokens, encryptTokens, randomToken, tokenDigest } from '../../apps/server/src/auth-crypto';
 
 /**
- * Refreshing a session's IdP tokens on PostgreSQL (L1 and L4 of the 2026-11-12 users review). No connection is held
- * while the provider answers, so new tokens are stored only over the ones they were refreshed from. A provider that
- * cannot be reached keeps the session and its tokens: the person's own requests go on, and delegation answers 503. The
- * provider here is a name that does not resolve, so every refresh fails to connect; the failure classes of an answering
- * provider are in `tests/unit/auth-refresh.test.ts`. Run with `bun run test:db` inside the devcontainer.
+ * Refreshing a session's IdP tokens on PostgreSQL (L1 and L4 of the 2026-11-12 users review), through the server's own
+ * `authenticate`. No connection is held while the provider answers, so new tokens are stored only over the ones they
+ * were refreshed from, and more sessions than the pool has connections can wait for the provider at once. A provider
+ * that cannot be reached keeps the session and its tokens: the person's own requests go on, and delegation answers
+ * 503. The provider is a name that does not resolve, so every refresh fails to connect, except where a test answers
+ * for it in place of the network; the failure classes of an answering provider are in
+ * `tests/unit/auth-refresh.test.ts`. Run with `bun run test:db` inside the devcontainer.
  */
 if (!process.env.DATABASE_URL)
   throw new Error('DATABASE_URL is not set. Run `bun run test:db` inside the devcontainer.');
@@ -113,4 +115,59 @@ test('a provider that cannot be reached keeps the session and its tokens, and de
   expect(after.tokenExpiresAt.getTime()).toBe(before.tokenExpiresAt.getTime());
   // Nothing ended the session, so the authentication log has no row of it.
   expect(await logged()).toBe(rows);
+}, 20_000);
+test('refreshes waiting for the provider hold no connection, more of them at once than the pool has', async () => {
+  const { authenticate } = await import('../../apps/server/src/auth');
+  const issuer = settings.OIDC_ISSUER!;
+  // Eight sessions refresh at once against the pool's five connections.
+  const waiting = await Promise.all(Array.from({ length: 8 }, () => session('real')));
+  const answer = Promise.withResolvers<void>();
+  let asked = 0;
+  const network = globalThis.fetch;
+  // The identity provider, in place of the network: discovery answers at once, the token endpoint when the test says.
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = input instanceof Request ? input.url : String(input);
+    if (url === issuer + '/.well-known/openid-configuration')
+      return Response.json({
+        issuer,
+        authorization_endpoint: issuer + '/auth',
+        token_endpoint: issuer + '/token',
+        jwks_uri: issuer + '/certs',
+      });
+    if (url !== issuer + '/token') return network(input, init);
+    asked++;
+    await Promise.race([
+      answer.promise,
+      new Promise((_, reject) => init?.signal?.addEventListener('abort', () => reject(init.signal!.reason))),
+    ]);
+    return Response.json({
+      access_token: 'access-2',
+      token_type: 'Bearer',
+      expires_in: 300,
+      refresh_token: 'refresh-2',
+    });
+  }) as typeof fetch;
+  const signedIn = Promise.allSettled(waiting.map(s => authenticate(s.raw)));
+  try {
+    for (const until = Date.now() + 4000; asked < waiting.length && Date.now() < until;)
+      await new Promise(resolve => setTimeout(resolve, 10));
+    // Every refresh is at the provider, none holds a connection, and the database answers the next query.
+    expect(asked).toBe(waiting.length);
+    expect(await databaseAnswers(1000)).toBe(true);
+    answer.resolve();
+    expect((await signedIn).map(s => s.status === 'fulfilled' && s.value.context.id)).toEqual(
+      waiting.map(() => person),
+    );
+    for (const { digest } of waiting)
+      expect(decryptTokens((await row(digest)).tokens, digest)).toEqual({
+        access_token: 'access-2',
+        refresh_token: 'refresh-2',
+        id_token: 'id-1',
+      });
+  } finally {
+    // Whatever was asserted, every request ends before the provider is the network's again.
+    answer.resolve();
+    await signedIn;
+    globalThis.fetch = network;
+  }
 }, 20_000);

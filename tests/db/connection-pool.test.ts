@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { inArray, like, sql } from 'drizzle-orm';
 import { database, databaseAnswers, schema } from '../../packages/db/src/index';
 import { bindFirstLogin } from '../../packages/db/src/auth';
+import { healthRoutes } from '../../apps/server/src/routes/health';
 
 /**
  * The pool's five connections (L1 of the 2026-11-12 users review). A first sign-in's binding runs in a transaction that
@@ -55,8 +56,8 @@ test('more first sign-ins at once than the pool has connections all finish', asy
     .where(inArray(schema.identityBindings.personId, ids));
   expect(bindings).toHaveLength(ids.length);
 }, 15_000);
-test('the readiness check says when the database does not answer because every connection is held', async () => {
-  expect(await databaseAnswers(1000)).toBe(true);
+/** Holds every connection of the pool in an open transaction until `release` is called. */
+async function holdThePool() {
   const release = Promise.withResolvers<void>();
   let holding = 0;
   const held = Array.from({ length: 5 }, () =>
@@ -67,11 +68,38 @@ test('the readiness check says when the database does not answer because every c
     }),
   );
   while (holding < 5) await new Promise(resolve => setTimeout(resolve, 10));
+  return async () => {
+    release.resolve();
+    await Promise.all(held);
+  };
+}
+test('the readiness check says when the database does not answer because every connection is held', async () => {
+  expect(await databaseAnswers(1000)).toBe(true);
+  const release = await holdThePool();
   const started = Date.now();
   expect(await databaseAnswers(200)).toBe(false);
   expect(Date.now() - started).toBeLessThan(2000);
-  release.resolve();
-  await Promise.all(held);
+  await release();
   // The query that timed out was never sent, and the pool serves the next one.
   expect(await databaseAnswers(1000)).toBe(true);
 }, 10_000);
+test('/api/ready answers 503 while every connection is held and 200 again once one is free', async () => {
+  let started = false;
+  const probes = healthRoutes({ started: () => started, databaseAnswers });
+  const ready = async () => {
+    const response = await probes.request('/ready');
+    return [response.status, await response.json()];
+  };
+  // Not ready before startup has finished, whatever the database says.
+  expect(await ready()).toEqual([503, { ready: false }]);
+  started = true;
+  expect(await ready()).toEqual([200, { ready: true }]);
+  const release = await holdThePool();
+  const asked = Date.now();
+  expect(await ready()).toEqual([503, { ready: false }]);
+  expect(Date.now() - asked).toBeLessThan(3000);
+  // The process itself still answers.
+  expect((await probes.request('/health')).status).toBe(200);
+  await release();
+  expect(await ready()).toEqual([200, { ready: true }]);
+}, 15_000);
