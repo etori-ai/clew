@@ -12,44 +12,120 @@ The repository ships one: [`scripts/provisioner/`](../../scripts/provisioner), w
 
 ## What Clew expects
 
-**Users** (`/scim/v2/Users`, RFC 7643 core schema). Clew holds six attributes of a user. Four are required, and Clew names the one that is missing or wrong in the error; `active` is read as `true` when it is left out; `title` is optional.
+### Users
+
+`/scim/v2/Users`, the core schema of RFC 7643. Clew requires four attributes. `active` defaults to `true`. `title`, `phoneNumbers` and the employment extension are optional: they are shown, and never read for access.
 
 | Attribute | Meaning in Clew |
 |---|---|
 | `externalId` | The source's stable id for the person, never reused. Clew finds the person by it on later pushes. |
 | `userName` | What a login is matched on. Unique across the installation and matched without regard to case, the standard's default for `userName`; a login carries no organisation. |
 | `displayName` (or `name.formatted`) | The name shown in the product. |
-| `emails` | Send an approved work address. Clew takes the address with `type: "work"`, otherwise an address **without a type**, the primary before the first. An address of any other type (`home`, `other`) is never taken, and a user with such addresses alone is refused with a 400 that says so. |
+| `emails` | Clew holds one address for a person and shows it. It takes the address with `type: "work"`; otherwise one **without a type**, the primary before the first; otherwise the primary, or the first, of what was sent. Clew does not judge an address by its type: send the one colleagues should see. A user with no address at all is refused. |
 | `active` | Not required: left out, it is `true`. `false` deactivates. `DELETE` also deactivates, because audit rows and threads reference the person; nothing is erased. A `PUT` without `active` re-enables, since the source is the authority. `true` and `false` may be sent as the words in any case (`"False"`), as Microsoft Entra does. |
+| `title` | What the source calls the person's work, in its own words: Byggchef, Rektor, Specialpedagog. For a source that has one title per person. A source that knows each employment sends [those](#current-employments), and their titles are then the ones shown. It decides nothing: whether a person is a manager comes from the `unit-manager:` group and never from a title. |
+| `phoneNumbers` | The numbers the directory publishes to colleagues, each with a `type` and a `value`. See [Phone numbers](#phone-numbers). |
 
-The sixth is held and not required ([D110](../decisions/D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md)):
-
-| Attribute | Meaning in Clew |
-|---|---|
-| `title` | What the source calls the person's work, in its own words: Byggchef, Rektor, Specialpedagog. One per person. Shown under the person's name and found by the search on Administration › Användare. It decides nothing: whether a person is a manager comes from the `unit-manager:` group and never from a title. |
-
-An empty string, `null`, a `remove` and a `PUT` without it all clear the title. A title never refuses a request: text past 512 characters is cut there, a control character becomes a space, and a value that is not text is read as no title. The price is that a mapping which sends something Clew cannot read shows only as people without a title; the [check](#checking-a-push) counts them.
-
-**How a request is read.** The same rules hold for a full representation (`POST`, `PUT`) and for a `PATCH`.
-
-- **Unknown attributes are ignored.** Extension schemas and attributes Clew does not hold (a phone number, `name.middleName`, the enterprise extension's `manager`) are accepted and change nothing, whatever the operation.
-- **Names are read without regard to case**, as the standard says (RFC 7643 §2.1): `Title`, `Active` and `DisplayName` are `title`, `active` and `displayName`. That holds for the attributes of a body, the nested ones (`emails[].Value`, `members[].Value`, the unit extension's `Parent`), a `PATCH` path, the PatchOp message's own `Operations`, `op`, `path` and `value`, and a `.search` body.
-- **`null` is the same as leaving the attribute out** (RFC 7643 §2.5), so a serializer that writes every empty field as `null` is not refused for it. In a `PATCH`, a value of `null` takes the attribute away, as a `remove` does.
-- **A required attribute that is wrong is refused by name**, with 400 `invalidValue`: one that is missing, empty, only space, longer than 512 characters, not text, or holding a NUL character. The same holds for a group's name, key, parent and members. A body that is not a JSON object at all answers 400 `invalidSyntax`.
-- **A required attribute cannot be taken away.** A `remove` of one, or a value of `null`, answers 400 `mutability`.
-- **A deactivation is never refused for what stands beside it** ([D113](../decisions/D113-a-deactivation-is-never-refused-for-what-stands-beside-it.md)). A request that says `active: false` deactivates the person even when it also takes a required attribute away or sets one wrongly; that attribute is left as it was. Entra sends a leaver's emptied mailbox in the same `PATCH` as the deactivation, and a `PUT` of a leaver whose address is gone from the source is the same case. Valid attributes in the same request can still change. For a returning person, reconcile memberships first and send the full profile once with `active: true`.
-- **A `PUT` that leaves out `externalId` keeps the one Clew holds.** Okta's update sends none. A `POST` needs it.
-- **A path-less `PATCH` may repeat the resource's own `id`, `schemas` and `meta`**, as Okta does; an `id` that names another resource is refused.
+An empty string, `null`, a `remove` and a `PUT` without it all clear the title. A title never refuses a request: text past 512 characters is cut there, a control character becomes a space, and a value that is not text is read as no title. [Title handling (D110)](../decisions/D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md).
 
 Clew holds one name per person. Send `displayName` (or `name.formatted`). Without either, `name.givenName` and `name.familyName` are joined into the name. A `PUT` is a full replacement, so it reads the name again from what it carries; a `PATCH` of `name.givenName` or `name.familyName` alone changes nothing.
 
-**Deactivation, not deletion.** `DELETE /Users/<id>` deactivates, and the resource stays readable with `active: false`, where the standard expects a 404 afterwards. Three consequences follow. A client that deletes and then posts the same `userName` gets 409 `uniqueness`, so find the person by filter first and `PUT` or `PATCH`, as `push.ts` does. A deactivated person keeps the `userName` until a `PATCH` changes it, so a recycled account name has to be moved off the old row before a new person can take it ([how the example does it](#what-a-provisioner-does-on-every-reconciliation)). And a `PUT` of a deactivated person without `active: false` re-enables them: a provisioner that pushes everyone present undoes an administrator's `DELETE` on the next run, which is D68's intent, and the audit row says `scim.user.reactivated`.
+### Phone numbers
+
+```json
+{
+  "phoneNumbers": [
+    { "type": "work", "value": "070-174 06 05" },
+    { "type": "mobile", "value": "070-174 06 06" },
+    { "type": "Jour", "value": "070-174 06 07" }
+  ]
+}
+```
+
+- **Every number that is sent is shown** on the person's profile, to everybody who is signed in to the organisation, whatever its `type`. Which numbers are published is decided in the source. Clew does not leave one out for being called `home`.
+- **`value` is shown as it is sent**, less the space around it and a leading `tel:`. Write a number the way the organisation writes it.
+- **`type`** is one of the standard's (`work`, `mobile`, `home`, `fax`, `pager`, `other`, in any case) or the directory's own word, such as `Jour`, which is shown as written. A number without a type is listed as "Övrigt". A type may occur several times.
+- **A person without a number is not a mistake.** A number Clew cannot read (empty, `null`, not text, longer than 512 characters) is left out, and the person is stored. The [check](#checking-a-push) says how many people have a number.
+- **A list holds at most 50 numbers**, each once.
+- **To change the numbers, send the list.** A `PUT` replaces it, and so does a `PATCH` with `replace` on `phoneNumbers`; `add` appends, and `remove` clears it. A filter picks numbers by type or by value: `phoneNumbers[type eq "mobile"].value` is every number of that type, and with `add` or `replace` it sets the person's first one, as Microsoft Entra sends it; `phoneNumbers[value eq "070-174 06 05"].value` is that number. A value that is set to nothing takes the number away. Any other path under `phoneNumbers` answers 400 `invalidPath`.
+
+### Current employments
+
+Send one entry per current employment in the user's employment extension. The directory chooses which employment details to publish to signed-in colleagues. This example creates Mikael with `POST /scim/v2/Users` in a test installation where the group `unit:9540` already exists and the account name and external id are available.
+
+```json
+{
+  "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User", "urn:clew:params:scim:schemas:extension:employment:2.0:User"],
+  "externalId": "demo:1001",
+  "userName": "mikael",
+  "displayName": "Mikael Lund",
+  "emails": [{ "type": "work", "value": "mikael@example.org" }],
+  "active": true,
+  "urn:clew:params:scim:schemas:extension:employment:2.0:User": {
+    "employments": [
+      { "unitId": "9540", "title": "Systemförvaltare", "employmentType": "Tillsvidare", "startDate": "2019-02-01", "employmentPercentage": 60 },
+      { "unitId": "9540", "title": "Projektsamordnare", "employmentType": "Vikariat", "startDate": "2026-09-01", "employmentPercentage": 40 }
+    ]
+  }
+}
+```
+
+- **`unitId` is the unit's id**: what follows `unit:` in the `externalId` of the unit's group, written exactly as there. It is required. The unit must be one Clew holds for the organisation, so a unit is sent before an employment names it; an employment on any other unit answers 400 `invalidValue` and names the unit.
+- **An employment gives no access.** It says where a person works and what they are called. What a person may do comes from membership of the `unit:` and `unit-manager:` groups, which is sent as [the groups below](#groups) say: a person with an employment on a unit and no membership of its group can do nothing there.
+- **The titles of the employments are the person's titles** in the product: on the profile each with its unit, and in the list on Administration › Användare and its search, each title once. Where no employment carries a title, the core `title` is shown.
+- **The list is sent whole.** A `PUT` replaces it, and one without the extension clears it. In a `PATCH`, `replace` on `urn:clew:params:scim:schemas:extension:employment:2.0:User:employments` replaces it, `add` appends and `remove` clears it. An entry has no id, so one cannot be picked by a filter, and two entries that say the same are one. A list holds at most 50.
+- **The attribute is named with its URN.** `employments` by itself, in a body or as a `PATCH` path, answers 400 `invalidPath` with the name to use.
+- **Each employment can carry its own details.** Send `employmentType` as the source's label (such as `Vikariat`) and `startDate` as the first calendar day of this employment in `YYYY-MM-DD` format. Both are optional. An empty entry is left out. An entry with details needs a `unitId`. Clew omits an unreadable date. The date is displayed on the profile. The provisioner sends changes to placements and access when they take effect.
+- **`employmentPercentage` measures this job's share of full-time hours.** Send a JSON number from 0 to 100 inclusive. Use `60` for 60 % or `62.5` for 62.5 %. A supplied `0` displays as 0 %. Omit the field when unknown and the profile hides the percentage row for that employment. There is no default. Clew omits out-of-range values and strings such as `"60 %"`. Each employment is independent, so the percentages may total more or less than 100.
+- **When a unit is removed**, send the employments of its people first. The profile shows any remaining employment details without a unit name, and the [check](#checking-a-push) names the affected employment.
+
+[Employments and phone numbers (D114)](../decisions/D114-person-profiles-show-employments-and-categorised-phone-numbers.md).
+
+#### Updating employment details
+
+Suppose the first job changes from 60 % to 62.5 % and the second job stays at 40 %. Send this body to `PATCH /scim/v2/Users/{id}` using the user `id` returned by Clew. Include both jobs and every detail the source still publishes.
+
+```json
+{
+  "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+  "Operations": [{
+    "op": "replace",
+    "path": "urn:clew:params:scim:schemas:extension:employment:2.0:User:employments",
+    "value": [
+      { "unitId": "9540", "title": "Systemförvaltare", "employmentType": "Tillsvidare", "startDate": "2019-02-01", "employmentPercentage": 62.5 },
+      { "unitId": "9540", "title": "Projektsamordnare", "employmentType": "Vikariat", "startDate": "2026-09-01", "employmentPercentage": 40 }
+    ]
+  }]
+}
+```
+
+To withdraw only the second job's percentage, keep its entry and omit `employmentPercentage` from that entry in the replacement. To withdraw the second job itself, omit its whole entry. Read back `GET /scim/v2/Users/{id}` to see the resulting list.
+
+### How a request is read
+
+The same rules hold for a full representation (`POST`, `PUT`) and for a `PATCH`.
+
+- **Unknown attributes are ignored.** Extension schemas and attributes Clew does not hold (`name.middleName`, the enterprise extension's `manager`) are accepted and change nothing, whatever the operation.
+- **Names are read without regard to case**, as the standard says (RFC 7643 §2.1): `Title`, `Active` and `DisplayName` are `title`, `active` and `displayName`. That holds for the attributes of a body, the nested ones (`emails[].Value`, `members[].Value`, the unit extension's `Parent`), a `PATCH` path, the PatchOp message's own `Operations`, `op`, `path` and `value`, and a `.search` body.
+- **`null` is the same as leaving the attribute out** (RFC 7643 §2.5), so a serializer that writes every empty field as `null` is not refused for it. In a `PATCH`, a value of `null` takes the attribute away, as a `remove` does.
+- **A required attribute that is wrong is refused by name**, with 400 `invalidValue`: one that is missing, empty, only space, longer than 512 characters, not text, or holding a NUL character. The same holds for a group's name, key, parent and members. A body that is not a JSON object at all answers 400 `invalidSyntax`.
+- **What is only shown never refuses a person for being empty.** A title, a phone number or an employment entry with nothing readable in it is left out, and the rest of the request is stored. What is refused is a request that says something Clew cannot take as said: an employment on a unit it does not hold, a list past its limit.
+- **A required attribute cannot be taken away.** A `remove` of one, or a value of `null`, answers 400 `mutability`.
+- **A deactivation is never refused for what stands beside it** ([D113](../decisions/D113-a-deactivation-is-never-refused-for-what-stands-beside-it.md)). A request that says `active: false` deactivates the person even when it also takes a required attribute away, sets one wrongly or names an employment on a unit Clew does not hold; that attribute is left as it was. Entra sends a leaver's emptied mailbox in the same `PATCH` as the deactivation, and a `PUT` of a leaver whose address is gone from the source is the same case. Valid attributes in the same request can still change. For a returning person, reconcile memberships first and send the full profile once with `active: true`.
+- **A `PUT` that leaves out `externalId` keeps the one Clew holds.** Okta's update sends none. A `POST` needs it.
+- **A path-less `PATCH` may repeat the resource's own `id`, `schemas` and `meta`**, as Okta does; an `id` that names another resource is refused.
+
+### Deactivation, not deletion
+
+`DELETE /Users/<id>` deactivates, and the resource stays readable with `active: false`, where the standard expects a 404 afterwards. Three consequences follow. A client that deletes and then posts the same `userName` gets 409 `uniqueness`, so find the person by filter first and `PUT` or `PATCH`, as `push.ts` does. A deactivated person keeps the `userName` until a `PATCH` changes it, so a recycled account name has to be moved off the old row before a new person can take it ([how the example does it](#what-a-provisioner-does-on-every-reconciliation)). And a `PUT` of a deactivated person without `active: false` re-enables them: a provisioner that pushes everyone present undoes an administrator's `DELETE` on the next run, which is D68's intent, and the audit row says `scim.user.reactivated`.
+
+### Groups
 
 ![What a pushed group means: keys in externalId give units, manager roles and capabilities; any other group may be mapped by an administrator](../architecture/figures/group-keys.svg)
 
 *Figure 2: What a group means is carried by a key in its `externalId`: a unit, a manager's role or a capability. Any other group means nothing until an administrator maps it.*
 
-**Groups** (`/scim/v2/Groups`). Every group is stored as pushed. Meaning is carried by a key in the group's `externalId`:
+`/scim/v2/Groups`. Every group is stored as pushed. Meaning is carried by a key in the group's `externalId`:
 
 | `externalId` | A member gets | `displayName` |
 |---|---|---|
@@ -62,6 +138,8 @@ Clew holds one name per person. Send `displayName` (or `name.formatted`). Withou
 A person with no `unit:` or `unit-manager:` membership exists but can do nothing, so a mapping mistake fails closed. Several memberships give several assignments; until a person can switch, the active one is a managed unit before an employed one, then the first unit id in text order. Text order is not numeric order: `10` comes before `9`.
 
 **Keys are exact, and one written wrong is refused** ([D96](../decisions/D96-a-key-written-wrong-is-refused-at-the-scim-boundary.md)). The prefixes are lower case with the id or name directly after the colon. `Unit:skola`, ` unit:skola` or `unit :skola` with space in or before the prefix, `unit:` with nothing after it, `unit: skola` and `capability:` with a name outside the list answer 400 `invalidValue` with the key and the reason in `detail`, instead of becoming a plain group that gives nobody anything.
+
+### The organisation tree
 
 **Units form a tree, and you push it** ([D99](../decisions/D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md)). An organisation is a tree, and Clew holds it as you send it: every unit is a `unit:` group, also a unit nobody is placed on (a heading such as "Avdelningar"), and a unit below another names the one above it in an extension schema on the group:
 
@@ -85,20 +163,22 @@ A person with no `unit:` or `unit-manager:` membership exists but can do nothing
 
 **A group's members are people, named by Clew's id.** A member's `value` is the `id` Clew answered when the person was created, not the source's id: a source id answers 400 `invalidValue` with `Member '<id>' is not a user of this organisation.` Find the id with `GET /Users?filter=externalId eq "<source id>"`. A group as a member of a group is refused with 400 `invalidValue`; send the people. The tree is the `parent` above, not nesting.
 
-**Transport.**
+### Transport
 
 - **Filters.** `filter` supports one equality: `userName eq "…"` or `externalId eq "…"` on users, `externalId eq "…"` or `displayName eq "…"` on groups. `userName` and `displayName` are matched without regard to case, `externalId` exactly. The attribute may carry its schema's URN, and the value is a JSON string. Anything else answers 400 `invalidFilter`.
 - **Pages.** `startIndex` and `count` page, at most 200 rows.
 - **Narrowing an answer.** `attributes` and `excludedAttributes` narrow what any request answers: a read, a list, a `.search` body, and a `POST`, `PUT` or `PATCH` too. `excludedAttributes=members` changes a large group without having all its members sent back.
 - **`PATCH`.** A path per operation, the schema-qualified form, and the path-less object form that Microsoft Entra and Okta send. One message carries at most 500 operations; more answers 400 `invalidSyntax`.
 - **Members.** Two paths are read: `members`, with a list of `{ "value": "<id>" }` to `add`, `remove` or `replace`, and `members[value eq "<id>"]`, to `remove` one. Any other path under `members` (another filter, two values joined by `or`, a trailing `.value`) answers 400 `invalidPath`: Clew does not answer yes to a removal it did not make. `add` and `replace` need a value; `replace` with an empty list empties the group, and so does `remove` on `members` without a value.
-- **E-mail.** Clew holds one address. `emails`, `emails.value` and `emails[type eq "work"].value` (or `primary eq true`) are that address. A path that names another type, such as `emails[type eq "home"].value`, is an address Clew does not hold and changes nothing, and `add` of such an address likewise. For a list submitted at a work or primary filter, Clew uses the same preference as for a full profile (explicit work, then untyped primary, then first untyped). A filtered list containing only another explicit type is refused with 400 `invalidValue`. Any other filter answers 400 `invalidPath`.
+- **E-mail.** Clew holds one address. `emails`, `emails.value` and `emails[type eq "work"].value` (or `primary eq true`) are that address, and `replace` on `emails` with a list picks from the list as a body does. A path that names another type, such as `emails[type eq "home"].value`, is beside the one address and changes nothing, and `add` of an address of another type likewise. A list sent to a work or primary filter is read by the same preference (work, then one without a type), and one that holds only another type is refused with 400 `invalidValue`: the path says work and the value says otherwise. Any other filter answers 400 `invalidPath`.
 - **Not offered.** Bulk, `/Me` and a search across resource types answer 501. Sorting and ETags are not offered either, and `ServiceProviderConfig` says so. A method an address does not take answers 405 with `Allow`.
 - **Errors** are the standard's error resource with `scimType` and an English `detail`. While the server starts, or cannot check a token, it answers 503 with `Retry-After`.
 
 **Concurrent writes.** User PUT, PATCH and DELETE lock the person's row before reading current fields. Group writes lock their group, and grant derivation serialises changes for each person. Independent patches preserve each other's attributes. Two changes to the same attribute take effect in commit order. The writer must order its source events and snapshot replay.
 
-**Authentication.** A bearer token issued to the provisioner by a Clew administrator, for this purpose alone. An administrator with `admin.users` issues it on Administration › Användare ("Lägg till katalog"), where it is shown once, and replaces it or takes it back there ([D107](../decisions/D107-an-administrator-issues-replaces-and-takes-back-a-provisioners-key-on-the-users-page.md)). The first token of an installation, before anybody is an administrator, comes from a script that is run inside Clew's app container (in the development stack, with `docker exec -w /workspace clew-app-1` in front):
+### Authentication
+
+A bearer token issued to the provisioner by a Clew administrator, for this purpose alone. An administrator with `admin.users` issues it on Administration › Användare ("Lägg till katalog"), where it is shown once, and replaces it or takes it back there ([D107](../decisions/D107-an-administrator-issues-replaces-and-takes-back-a-provisioners-key-on-the-users-page.md)). The first token of an installation, before anybody is an administrator, comes from a script that is run inside Clew's app container (in the development stack, with `docker exec -w /workspace clew-app-1` in front):
 
 ```bash
 bun scripts/provisioner-token.ts add metakatalogen --organisation sundsvall --label "Metakatalogen"
@@ -119,21 +199,23 @@ A change in the source is sent to Clew when it happens, not saved for a nightly 
 | A person begins | `POST /Users`, then `PATCH` `add` on the `unit:` group they are placed on |
 | A name, a user name or a work address changes | `PATCH /Users/<id>` |
 | A title is set, changed or taken away | `PATCH /Users/<id>`: `replace` on `title`, or `remove` |
+| A phone number is added, changed or taken away | `PATCH /Users/<id>`: `replace` on `phoneNumbers` with the numbers the person now has |
+| An employment begins, ends or gets another title | `PATCH /Users/<id>`: `replace` on `urn:clew:params:scim:schemas:extension:employment:2.0:User:employments` with the employments the person now has |
 | A person leaves | `PATCH /Users/<id>` with `active` `false` |
-| A person moves to another unit | `PATCH` `add` on the unit they join, then `PATCH` `remove` on the unit they leave |
+| A person moves to another unit | `PATCH` `add` on the unit they join, then `PATCH` `remove` on the unit they leave; their employments, when the source sends them, with a `PATCH` on the user |
 | A person becomes a manager, or stops being one | `PATCH` `add` or `remove` on `unit-manager:<id>` |
 | A person gains or loses a capability | `PATCH` `add` or `remove` on the capability's group |
 | A unit is added | `POST /Groups` with its `parent`, once the unit above exists |
 | A unit is renamed or moved | `PATCH` its `displayName` or its `parent` |
-| A unit is removed | `DELETE` both of its groups, `unit:<id>` and `unit-manager:<id>`, once nothing stands below it and its people have been placed elsewhere. Clew removes the group it is asked to and no other: a manager group left behind keeps its members as managers of a unit that is gone. |
+| A unit is removed | `DELETE` both of its groups, `unit:<id>` and `unit-manager:<id>`, once nothing stands below it, its people have been placed elsewhere and their employments have been sent. Clew removes the group it is asked to and no other: a manager group left behind keeps its members as managers of a unit that is gone. |
 
-A unit, a manager's role and a capability are memberships, and SCIM changes a membership on the group, not on the person: a user's `groups` are read only. A source that holds the unit and the manager flag as fields on the person turns a change of such a field into the group requests above. A change that takes effect on a day (an acting manager from the first of the month) is sent on that day: Clew holds no dates of validity.
+A unit, a manager's role and a capability are memberships, and SCIM changes a membership on the group, not on the person: a user's `groups` are read only. An employment is the other way round: it is an attribute of the user, and it places nobody. A source that holds the unit and the manager flag as fields on the person turns a change of such a field into the group requests above. A change that takes effect on a day (an acting manager from the first of the month) is sent on that day: Clew holds no dates of validity.
 
 ## What a provisioner does on every reconciliation
 
 Beside the changes, the whole source is compared with what Clew holds at least once a day. A change that was lost on the way, because the provisioner was down or a request failed and was not sent again, is found by nothing else, and the run leaves an unchanged person’s fields, memberships and grant intact. It still sends a full replacement for each present person.
 
-The organisation first, then the people, then who is placed where ([D101](../decisions/D101-a-provisioner-pushes-the-organisation-first-and-adds-before-it-removes-and-a-unit-belongs-to-one-organisation.md)). Read the organisation from the source as a list of its own: each unit with its id, its name and the id of the unit above it.
+The organisation first, then the people, then who is placed where, so that a unit exists when an employment or a membership names it ([D101](../decisions/D101-a-provisioner-pushes-the-organisation-first-and-adds-before-it-removes-and-a-unit-belongs-to-one-organisation.md)). Read the organisation from the source as a list of its own: each unit with its id, its name and the id of the unit above it.
 
 1. **Check the export whole, before the first write.** Read the people Clew holds (`GET /Users`, a page at a time, with `attributes=externalId,userName,active` so that nobody's groups are read) and compare with the source. Stop here when the run would deactivate far too many (see the guard below), and when an id names two rows: two people with one `externalId`, two units or two groups with one id, or two active people with one account name. Clew cannot see the first of those. Both rows are well-formed requests, and the result is one person with the later row's name and both rows' placements. A person with two employments is the usual way a source comes to list an id twice: give them one row with both placements. Plain directory groups also need their own keys. The example refuses `unit:`, `unit-manager:`, `capability:` and the exact key `protected` in that list, including case and spacing variants. A key such as `ad:newsletter` is available for an ordinary group.
 2. **Deactivate who has left**, before anything else is written: each person Clew knows under this provisioner's `externalId` space who is gone from the source, and each the source now says is inactive. `PATCH` `active` to `false`. A deactivation depends on nothing that follows, so nothing that goes wrong further down, a unit Clew refuses or a name that is taken, keeps a leaver active.
@@ -163,10 +245,10 @@ bun scripts/provisioner-check.ts https://clew.example/scim/v2 --roots 1
 
 `--roots <n>` says how many roots the source's tree has; the check warns when the count differs in either direction. Compare exact parent links separately.
 
-The check reads what the installation holds, over SCIM alone, and changes nothing: that the endpoint and the token answer, how many users and groups of each kind there are, which active users have no unit (and so no access), how many active users have a title, which managed units no `unit:` group names, how many roots and levels the tree has, which unit groups are empty (a unit with units below it may be a heading and is not named), which units have people and no manager on them or above them, and which stored groups carry a key written wrong. An administrator sees the same tree in the product, on Administration › Organisation. It authenticates as the provisioner, so it counts as a call from it; issue the check a token under an id of its own to leave the provisioner's last-seen time alone.
+The check reads what the installation holds, over SCIM alone, and changes nothing: that the endpoint and the token answer, how many users and groups of each kind there are, which active users have no unit (and so no access), how many active users have a title, a phone number and an employment, which employments name a unit that is no longer held, which managed units no `unit:` group names, how many roots and levels the tree has, which unit groups are empty (a unit with units below it may be a heading and is not named), which units have people and no manager on them or above them, and which stored groups carry a key written wrong. An administrator sees the same tree in the product, on Administration › Organisation. It authenticates as the provisioner, so it counts as a call from it; issue the check a token under an id of its own to leave the provisioner's last-seen time alone.
 
 ## The example
 
-`scripts/provisioner/directory.ts` is the development stack's source: two hundred and fifty people in forty-eight units that form a tree of six levels at its deepest (the municipality, its five administrations, departments under three of them, an area under a department, the units people work in, and a group under a unit), with a manager on every level, so a head of an administration has heads of departments below them who have unit managers below them; a department nobody leads, a unit led from the one above it, and two administrations whose units stand directly under them, since the depth differs between branches; each person with a unit, a manager flag and a title after the unit they work in (one person has none), some working in or managing a second unit, one unit with two managers, everyone in plain directory groups (`ad:…`, which mean nothing in Clew until an administrator maps or names them) that run from nobody to eighty-seven members, a few with Clew capabilities, seven written by hand with the names a generator does not come up with (a hyphen, an apostrophe, accents, a very long name, two people with one name), and three of them personas with a Keycloak account. `push.ts` maps those facts to the groups above (`plan()`, pure: the units from the root down) and pushes them in the order above (`push()`, idempotent: the organisation, the people, additions before removals, removing from the leaves up, with the guard against an empty or truncated source, and with the people Clew refused reported at the end), through `client.ts`, the SCIM client. `bun run auth:setup` runs it in-process after creating the Keycloak accounts; `bun run dev:provision` runs it over HTTP against a running `bun run dev`. `tests/unit/provisioner.test.ts` runs it against the routes on the memory store and is the shape a provisioner's own tests can take: no network, no vendor account. Its last test is of another kind: it runs the Bash blocks of the [operations walkthrough](provisioning-for-operations.md) with `bash`, `curl` and `python3` against the same routes on a loopback port.
+`scripts/provisioner/directory.ts` is the development stack's source: two hundred and fifty people in forty-eight units that form a tree of six levels at its deepest (the municipality, its five administrations, departments under three of them, an area under a department, the units people work in, and a group under a unit), with a manager on every level, so a head of an administration has heads of departments below them who have unit managers below them; a department nobody leads, a unit led from the one above it, and two administrations whose units stand directly under them, since the depth differs between branches; each person with a unit, a manager flag and an employment with a title after the unit they work in (one person has no title), some working in or managing a second unit, four with two employments and three with phone numbers, one unit with two managers, everyone in plain directory groups (`ad:…`, which mean nothing in Clew until an administrator maps or names them) that run from nobody to eighty-seven members, a few with Clew capabilities, seven written by hand with the names a generator does not come up with (a hyphen, an apostrophe, accents, a very long name, two people with one name), and three of them personas with a Keycloak account. `push.ts` maps those facts to the groups above (`plan()`, pure: the units from the root down) and pushes them in the order above (`push()`, idempotent: the organisation, the people, additions before removals, removing from the leaves up, with the guard against an empty or truncated source, and with the people Clew refused reported at the end), through `client.ts`, the SCIM client. `bun run auth:setup` runs it in-process after creating the Keycloak accounts; `bun run dev:provision` runs it over HTTP against a running `bun run dev`. `tests/unit/provisioner.test.ts` runs it against the routes on the memory store and is the shape a provisioner's own tests can take: no network, no vendor account. Its last test is of another kind: it runs the Bash blocks of the [operations walkthrough](provisioning-for-operations.md) with `bash`, `curl` and `python3` against the same routes on a loopback port.
 
 To write yours, supply a complete source snapshot with explicit `active` values, an approved work address and a `SourceScope` for `push`. List exact keys for shared prefixes that have different owners. The example removes expired duties before re-enabling a returning person. Serialize snapshots with event delivery and persist the last confirmed source cursor. Log the last successful full run and the oldest outstanding change. [Operations handover](provisioning-for-operations.md) includes recovery by HTTP outcome and an executable installation check.

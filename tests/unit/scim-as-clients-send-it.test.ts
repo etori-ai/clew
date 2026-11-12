@@ -1,6 +1,7 @@
+import { SCIM_EMPLOYMENT_SCHEMA } from '@clew/contracts';
 import { describe, expect, test } from 'bun:test';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
-import { scimUsecases } from '../../apps/server/src/modules/people/usecases';
+import { scimUsecases, staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { scimRoutes } from '../../apps/server/src/routes/scim';
 
 /**
@@ -33,8 +34,8 @@ function app(authenticate?: () => never) {
       headers: { authorization, ...(body !== undefined ? { 'content-type': 'application/scim+json' } : {}) },
       body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
     });
-  const json = async (method: string, path: string, body?: unknown) => {
-    const response = await call(method, path, body);
+  const json = async (method: string, path: string, body?: unknown, authorization?: string) => {
+    const response = await call(method, path, body, authorization);
     return { status: response.status, body: response.status === 204 ? undefined : await response.json() };
   };
   const person = (n: number, extra: Record<string, unknown> = {}) => ({
@@ -53,6 +54,454 @@ function app(authenticate?: () => never) {
     (await json('POST', '/Groups', { schemas: [GROUP], ...body })).body.id as string;
   return { call, json, store, person, create, patch, group, logged };
 }
+describe('phone numbers on a SCIM user', () => {
+  const work = { type: 'work', value: '010-100 00 01' };
+  const mobile = { type: 'mobile', value: '070-100 00 02' };
+  test('discovery, create, read and full replacement preserve every category and several numbers of one type', async () => {
+    const { json, person } = app();
+    const schema = (await json('GET', '/Schemas/' + USER)).body;
+    expect(schema.attributes).toContainEqual(
+      expect.objectContaining({ name: 'phoneNumbers', multiValued: true, required: false }),
+    );
+    const created = await json(
+      'POST',
+      '/Users',
+      person(1, {
+        PhoneNumbers: [
+          { Type: 'HOME', Value: 'private' },
+          { value: 'untyped' },
+          { Type: 'MOBILE', Value: mobile.value },
+          work,
+          { type: 'work', value: 'second' },
+        ],
+      }),
+    );
+    const all = [
+      { type: 'home', value: 'private' },
+      { type: 'other', value: 'untyped' },
+      mobile,
+      work,
+      { type: 'work', value: 'second' },
+    ];
+    expect(created).toMatchObject({ status: 201, body: { phoneNumbers: all } });
+    const path = '/Users/' + created.body.id;
+    expect((await json('GET', path)).body.phoneNumbers).toEqual(all);
+    expect((await json('GET', '/Users?attributes=phoneNumbers.value')).body.Resources[0].phoneNumbers).toEqual(
+      all.map(({ value }) => ({ value })),
+    );
+    expect((await json('PUT', path, person(1, { phoneNumbers: [mobile] }))).body.phoneNumbers).toEqual([mobile]);
+    expect((await json('PUT', path, person(1))).body).not.toHaveProperty('phoneNumbers');
+    expect((await json('GET', path)).body).not.toHaveProperty('phoneNumbers');
+  });
+  test('patches can update one type, append to the list, replace it, or clear it', async () => {
+    const { create, patch, json, store } = app();
+    const id = await create(1, { phoneNumbers: [work] }),
+      path = '/Users/' + id;
+    const added = await patch(path, { op: 'Add', value: { phoneNumbers: [mobile] } });
+    expect(added.body.phoneNumbers).toEqual([work, mobile]);
+    expect(store.state.audit.at(-1)?.details).toEqual({
+      changed: ['phoneNumbers'],
+      userName: 'user1',
+      externalId: 'e-1',
+    });
+    const audited = store.state.audit.length;
+    await patch(
+      path,
+      { op: 'add', path: 'phoneNumbers', value: [mobile] },
+      { op: 'remove', path: 'phoneNumbers[type eq "pager"]' },
+    );
+    expect(store.state.audit.length).toBe(audited);
+    const changed = await patch(path, {
+      op: 'replace',
+      path: USER + ':PhoneNumbers[Type eq "Mobile"].Value',
+      value: '070-100 00 03',
+    });
+    expect(changed.body.phoneNumbers).toEqual([work, { type: 'mobile', value: '070-100 00 03' }]);
+    const removed = await patch(path, { op: 'remove', path: 'phoneNumbers[type eq "work"]' });
+    expect(removed.body.phoneNumbers).toEqual([{ type: 'mobile', value: '070-100 00 03' }]);
+    expect((await patch(path, { op: 'replace', value: { phoneNumbers: [work] } })).body.phoneNumbers).toEqual([work]);
+    expect(
+      (await patch(path, { op: 'replace', path: 'phoneNumbers[type eq "work"].value', value: null })).body,
+    ).not.toHaveProperty('phoneNumbers');
+    await patch(path, { op: 'add', path: 'phoneNumbers[type eq "mobile"]', value: { Value: mobile.value } });
+    await patch(path, { op: 'remove', path: 'phoneNumbers' });
+    expect((await json('GET', path)).body).not.toHaveProperty('phoneNumbers');
+  });
+  test('two numbers with the same category can be managed independently and reused in another category', async () => {
+    const { patch, create, json } = app();
+    const second = { type: 'work', value: '010-100 00 03' };
+    const duty = { type: 'Jour', value: work.value };
+    const path = '/Users/' + (await create(1, { phoneNumbers: [work, second, duty] }));
+    await patch(path, { op: 'add', path: 'phoneNumbers', value: [second, mobile] });
+    const result = await patch(path, { op: 'remove', path: `phoneNumbers[value eq "${second.value}"]` });
+    expect(result.body.phoneNumbers).toEqual([work, duty, mobile]);
+    await patch(path, { op: 'remove', path: 'phoneNumbers[type eq "jour"]' });
+    expect((await json('GET', path)).body.phoneNumbers).toEqual([work, mobile]);
+  });
+  test('a number Clew cannot read is left out and refuses nobody, and one that is emptied is taken away', async () => {
+    const { patch, json, person } = app();
+    // The fields of a directory that holds no number for somebody: empty, null, a number, only space, far too long.
+    const none = [
+      { type: 'mobile', value: '' },
+      { type: 'mobile', value: null },
+      { type: 'work', value: 46701000002 },
+      { value: '   ' },
+      { type: 'work', value: '1'.repeat(513) },
+      null,
+      7,
+    ];
+    const created = await json('POST', '/Users', person(1, { phoneNumbers: [...none, mobile] }));
+    expect(created).toMatchObject({ status: 201, body: { phoneNumbers: [mobile] } });
+    const path = '/Users/' + created.body.id;
+    expect(await json('PUT', path, person(1, { displayName: 'Renamed', phoneNumbers: none }))).toMatchObject({
+      status: 200,
+      body: { displayName: 'Renamed' },
+    });
+    expect((await json('GET', path)).body).not.toHaveProperty('phoneNumbers');
+    // A number is kept as sent, less the space around it; a type that cannot be read is the one for those without.
+    const read = await json(
+      'PUT',
+      path,
+      person(1, {
+        phoneNumbers: [
+          { type: ' Mobile ', value: ' 070-100\t00 02 ' },
+          { type: 5, value: '1' },
+          { type: 'x'.repeat(80), value: '2' },
+          { type: 'mobile', value: '070-100 00 02' },
+        ],
+      }),
+    );
+    expect(read.body.phoneNumbers).toEqual([
+      mobile,
+      { type: 'other', value: '1' },
+      { type: 'x'.repeat(64), value: '2' },
+    ]);
+    // Emptied in the source: the number is taken away, by its type or by its value.
+    await json('PUT', path, person(1, { phoneNumbers: [work, mobile] }));
+    expect(
+      (await patch(path, { op: 'replace', path: 'phoneNumbers[type eq "mobile"].value', value: '' })).body.phoneNumbers,
+    ).toEqual([work]);
+    expect(
+      (await patch(path, { op: 'replace', path: `phoneNumbers[value eq "${work.value}"].value`, value: '  ' })).body,
+    ).not.toHaveProperty('phoneNumbers');
+    // Entra sends a person's first number of a type by its filter.
+    expect(
+      (await patch(path, { op: 'Add', path: 'phoneNumbers[type eq "mobile"].value', value: mobile.value })).body
+        .phoneNumbers,
+    ).toEqual([mobile]);
+    // Clew holds a type and a value: another sub-attribute is nothing to change, and `primary` in a filter is not asked.
+    expect(
+      (await patch(path, { op: 'replace', path: 'phoneNumbers[type eq "mobile"].display', value: 'Shown' })).body
+        .phoneNumbers,
+    ).toEqual([mobile]);
+    expect(
+      (
+        await patch(path, {
+          op: 'replace',
+          path: 'phoneNumbers[type eq "mobile" and primary eq true].value',
+          value: '070-9',
+        })
+      ).body.phoneNumbers,
+    ).toEqual([{ type: 'mobile', value: '070-9' }]);
+    expect(
+      (await patch(path, { op: 'replace', path: 'phoneNumbers[type eq "mobile"].type', value: 'Jour' })).body
+        .phoneNumbers,
+    ).toEqual([{ type: 'Jour', value: '070-9' }]);
+  });
+  test('what a request gets wrong about the numbers is refused by name, and never beside a deactivation', async () => {
+    const { create, patch, json, person } = app();
+    const path = '/Users/' + (await create(1, { phoneNumbers: [mobile] }));
+    const many = Array.from({ length: 51 }, (_, n) => ({ type: 'work', value: 'n' + n }));
+    const wrong: Array<[unknown, string, RegExp]> = [
+      [
+        { op: 'replace', path: 'phoneNumbers[unsupported eq "x"].value', value: '123' },
+        'invalidPath',
+        /^Path 'phoneNumbers\[unsupported eq "x"\]\.value' is not supported: use 'phoneNumbers'/,
+      ],
+      [{ op: 'replace', path: 'phoneNumbers.value', value: '123' }, 'invalidPath', /is not supported/],
+      [
+        { op: 'replace', path: 'phoneNumbers[value eq "nobody"].value', value: '123' },
+        'noTarget',
+        /^No phone number matches the filter of /,
+      ],
+      [
+        { op: 'add', path: 'phoneNumbers[type eq "mobile"]', value: { type: 'work', value: '1' } },
+        'invalidValue',
+        /^The number's type 'work' is not the one the path names, 'mobile'\.$/,
+      ],
+      [
+        { op: 'add', path: 'phoneNumbers', value: many },
+        'invalidValue',
+        /^Attribute 'phoneNumbers' carries at most 50 entries\.$/,
+      ],
+    ];
+    for (const [operation, scimType, detail] of wrong) {
+      const refused = await patch(path, operation);
+      expect(refused).toMatchObject({ status: 400, body: { scimType } });
+      expect(refused.body.detail).toMatch(detail);
+      expect((await json('GET', path)).body.phoneNumbers).toEqual([mobile]);
+      // In either order, the person is deactivated and the numbers are as they were (D113).
+      expect(await patch(path, operation, { op: 'replace', path: 'active', value: false })).toMatchObject({
+        status: 200,
+        body: { active: false, phoneNumbers: [mobile] },
+      });
+      await patch(path, { op: 'replace', path: 'active', value: true });
+    }
+    expect(await json('PUT', path, person(1, { phoneNumbers: many }))).toMatchObject({
+      status: 400,
+      body: { detail: "Attribute 'phoneNumbers' carries at most 50 entries." },
+    });
+    expect(await json('PUT', path, person(1, { active: false, phoneNumbers: many }))).toMatchObject({
+      status: 200,
+      body: { active: false, phoneNumbers: [mobile] },
+    });
+  });
+});
+describe('current employments on a SCIM user', () => {
+  const urn = SCIM_EMPLOYMENT_SCHEMA,
+    field = urn + ':employments';
+  const jobs = [
+    { unitId: 'school', title: 'Lärare' },
+    { unitId: 'school', title: 'Samordnare' },
+  ];
+  /** The two units the employments of these tests are on: a unit is sent before an employment names it. */
+  const units = async (group: ReturnType<typeof app>['group']) => ({
+    school: await group({ externalId: 'unit:school', displayName: 'Skolan' }),
+    office: await group({ externalId: 'unit:office', displayName: 'Kansliet' }),
+  });
+  test('employment type and start date belong to each job and can be withdrawn independently', async () => {
+    const { create, group, json, patch, person } = app();
+    await units(group);
+    const base = { unitId: 'school', title: 'Lärare' };
+    const first = { ...base, employmentType: 'Tillsvidare', startDate: '2024-02-29' };
+    const id = await create(1, {
+      [urn]: { employments: [{ ...base, EmploymentType: 'Tillsvidare', StartDate: first.startDate }] },
+    });
+    const path = '/Users/' + id;
+    const otherType = { ...first, employmentType: 'Vikariat' };
+    const otherDate = { ...first, startDate: '2025-02-28' };
+    const add = { op: 'add', path: field, value: [otherType, otherDate] };
+    for (let attempt = 0; attempt < 2; attempt++) {
+      expect((await patch(path, add)).body[urn].employments).toEqual([first, otherType, otherDate]);
+    }
+    expect((await json('GET', path + '?attributes=' + field + '.startDate')).body[urn].employments).toEqual(
+      [first, otherType, otherDate].map(({ startDate }) => ({ startDate })),
+    );
+    const schema = (await json('GET', '/Schemas/' + urn)).body;
+    for (const name of ['employmentType', 'startDate']) {
+      expect(schema.attributes[0].subAttributes).toContainEqual(
+        expect.objectContaining({ name, type: 'string', required: false }),
+      );
+    }
+    const typeOnly = { ...base, employmentType: 'Vikariat' };
+    const dateOnly = { ...base, startDate: first.startDate };
+    const changed = await patch(path, {
+      op: 'replace',
+      path: field,
+      value: [
+        { ...typeOnly, startDate: '2025-02-29' },
+        { ...dateOnly, employmentType: null },
+      ],
+    });
+    expect(changed.body[urn].employments).toEqual([typeOnly, dateOnly]);
+    expect((await json('PUT', path, person(1, { [urn]: { employments: [base] } }))).body[urn].employments).toEqual([
+      base,
+    ]);
+  });
+  test('each employment carries its own optional percentage of full time', async () => {
+    const { create, group, json, patch, person } = app();
+    await units(group);
+    const job = { unitId: 'school', title: 'Lärare' };
+    const first = { ...job, employmentPercentage: 60 };
+    const second = { ...job, employmentPercentage: 40 };
+    const id = await create(1, { [urn]: { employments: [{ ...job, EmploymentPercentage: 60 }, second] } });
+    const path = '/Users/' + id;
+    expect((await json('GET', path)).body[urn].employments).toEqual([first, second]);
+    expect((await json('GET', path + '?attributes=' + field + '.employmentPercentage')).body[urn].employments).toEqual([
+      { employmentPercentage: 60 },
+      { employmentPercentage: 40 },
+    ]);
+    expect((await json('GET', '/Schemas/' + urn)).body.attributes[0].subAttributes).toContainEqual(
+      expect.objectContaining({ name: 'employmentPercentage', type: 'decimal', required: false }),
+    );
+    const changed = [{ ...job, employmentPercentage: 62.5 }, second];
+    expect((await patch(path, { op: 'replace', path: field, value: changed })).body[urn].employments).toEqual(changed);
+    expect((await patch(path, { op: 'add', path: field, value: second })).body[urn].employments).toEqual(changed);
+    const bounds = [{ ...job, employmentPercentage: 0 }, { ...job, employmentPercentage: 100 }, job];
+    expect((await json('PUT', path, person(1, { [urn]: { employments: bounds } }))).body[urn].employments).toEqual(
+      bounds,
+    );
+    for (const invalid of [-1, 101, '60 %', null]) {
+      const result = await patch(path, {
+        op: 'replace',
+        path: field,
+        value: [{ ...job, employmentPercentage: invalid }],
+      });
+      expect(result.body[urn].employments).toEqual([job]);
+    }
+  });
+  test('each title stays with its unit through create, projection, patch, retry and full replacement', async () => {
+    const { json, create, patch, person, store, group } = app();
+    await units(group);
+    const id = await create(1, { [urn]: { employments: jobs }, title: 'Katalogtitel' });
+    const path = '/Users/' + id;
+    expect((await json('GET', path)).body).toMatchObject({ schemas: [USER, urn], [urn]: { employments: jobs } });
+    expect((await json('GET', path + '?attributes=' + urn + ':employments.title')).body[urn]).toEqual({
+      employments: jobs.map(({ title }) => ({ title })),
+    });
+    expect((await json('GET', '/ResourceTypes/User')).body.schemaExtensions).toContainEqual({
+      schema: urn,
+      required: false,
+    });
+    expect((await json('GET', '/Schemas/' + urn)).body.id).toBe(urn);
+    // Two entries that say the same are one, in a body and in a patch: an entry has no id to tell them apart by.
+    const twins = await create(2, { [urn]: { employments: [jobs[0], jobs[0]] } });
+    const kept = await patch('/Users/' + twins, { op: 'add', path: field, value: [jobs[1], jobs[1]] });
+    expect(kept.body[urn].employments).toEqual(jobs);
+    const job = { unitId: 'office' };
+    const change = { op: 'add', path: field, value: [job] };
+    expect((await patch(path, change)).body[urn].employments).toEqual([...jobs, job]);
+    const count = store.state.audit.length;
+    await patch(path, change);
+    expect(store.state.audit).toHaveLength(count);
+    // One entry by itself is a list of one, as it is for every multi-valued attribute.
+    expect((await patch(path, { op: 'replace', path: field, value: job })).body[urn].employments).toEqual([job]);
+    expect((await patch(path, { op: 'remove', path: field })).body.schemas).toEqual([USER]);
+    await patch(path, { op: 'replace', value: { [urn]: { Employments: jobs } } });
+    expect((await json('PUT', path, person(1))).body[urn]).toBeUndefined();
+  });
+  test('an entry with nothing in it is left out; one that names no unit, or a unit Clew does not hold, is refused with the reason', async () => {
+    const { json, create, patch, person, group, store } = app();
+    await units(group);
+    // A serializer's empty rows say nothing, and refuse nobody.
+    const empty = [{}, { unitId: null, title: null }, { unitId: '', title: '  ' }, null];
+    const id = await create(1, { [urn]: { employments: [...empty, jobs[0]] } });
+    const path = '/Users/' + id;
+    expect((await json('GET', path)).body[urn].employments).toEqual([jobs[0]]);
+    const refusals: Array<[unknown[], string, RegExp]> = [
+      // A title with no unit says something Clew cannot place.
+      [[{ title: 'Lärare' }], 'invalidValue', /^An employment needs a 'unitId': .* is sent as the user's 'title'\.$/],
+      [
+        [{ unitId: 'nowhere', title: 'Lärare' }],
+        'invalidValue',
+        /^An employment names 'nowhere', which is no unit of this organisation\. 'unitId' is what follows 'unit:' .*\(D114\)\. The user was not stored\.$/,
+      ],
+      // Written as the key is, not as the group's externalId.
+      [
+        [jobs[0], { unitId: 'unit:school' }, { unitId: 'School' }],
+        'invalidValue',
+        /^Employments name 'unit:school', 'School', which are no units of this organisation\./,
+      ],
+      [
+        Array.from({ length: 51 }, (_, n) => ({ unitId: 'school', title: 'T' + n })),
+        'invalidValue',
+        /carries at most 50 entries\.$/,
+      ],
+    ];
+    for (const [employments, scimType, detail] of refusals) {
+      for (const refused of [
+        await json('POST', '/Users', person(9, { [urn]: { employments } })),
+        await json('PUT', path, person(1, { [urn]: { employments } })),
+        await patch(path, { op: 'replace', path: field, value: employments }),
+      ]) {
+        expect(refused).toMatchObject({ status: 400, body: { scimType } });
+        expect(refused.body.detail).toMatch(detail);
+      }
+      // Beside a deactivation the list is left as it was (D113), by a patch and by a full replacement.
+      for (const left of [
+        await patch(
+          path,
+          { op: 'replace', path: field, value: employments },
+          { op: 'replace', path: 'active', value: false },
+        ),
+        await json('PUT', path, person(1, { active: false, [urn]: { employments } })),
+      ]) {
+        expect(left).toMatchObject({ status: 200, body: { active: false, [urn]: { employments: [jobs[0]] } } });
+        await json('PUT', path, person(1, { [urn]: { employments: [jobs[0]] } }));
+      }
+    }
+    expect((await json('GET', '/Users?filter=' + encodeURIComponent('externalId eq "e-9"'))).body.totalResults).toBe(0);
+    // Another organisation's unit is no unit of this one.
+    store.state.provisioners.set('digest:other', { id: 'other', organisationId: 'other-org', label: 'Other' });
+    await json(
+      'POST',
+      '/Groups',
+      { schemas: [GROUP], externalId: 'unit:theirs', displayName: 'Theirs' },
+      'Bearer other',
+    );
+    expect((await patch(path, { op: 'add', path: field, value: [{ unitId: 'theirs' }] })).body.detail).toMatch(
+      /^An employment names 'theirs', which is no unit of this organisation\./,
+    );
+  });
+  test("'employments' without the extension's URN is refused and says how it is written, where it once answered 200 and stored nothing", async () => {
+    const { json, create, patch, person, group } = app();
+    await units(group);
+    const path = '/Users/' + (await create(1, { [urn]: { employments: [jobs[0]] } }));
+    const detail = `Use '${field}' for a person's employments.`;
+    for (const refused of [
+      await json('POST', '/Users', person(2, { employments: jobs })),
+      await json('PUT', path, person(1, { Employments: jobs })),
+      await patch(path, { op: 'replace', path: 'employments', value: jobs }),
+      await patch(path, { op: 'replace', path: 'employments[unitId eq "school"].title', value: 'Rektor' }),
+      await patch(path, { op: 'remove', path: 'employments' }),
+      await patch(path, { op: 'add', value: { employments: jobs } }),
+    ])
+      expect(refused).toMatchObject({ status: 400, body: { scimType: 'invalidPath', detail } });
+    // An entry cannot be picked: the list is sent whole.
+    expect(
+      await patch(path, { op: 'replace', path: field + '[unitId eq "school"].title', value: 'Rektor' }),
+    ).toMatchObject({
+      status: 400,
+      body: {
+        scimType: 'invalidPath',
+        detail: expect.stringContaining(`send the whole list of employments to '${field}'`),
+      },
+    });
+    expect((await json('GET', path)).body[urn].employments).toEqual([jobs[0]]);
+    expect(
+      await patch(
+        path,
+        { op: 'replace', path: 'employments', value: jobs },
+        { op: 'replace', path: 'active', value: false },
+      ),
+    ).toMatchObject({
+      status: 200,
+      body: { active: false },
+    });
+  });
+  test('a unit removed afterwards does not stop the person’s other changes, and the profile shows the title without it', async () => {
+    const { json, create, patch, person, group, store } = app();
+    const { office } = await units(group);
+    const employments = [
+      jobs[0],
+      { unitId: 'office', title: 'Registrator' },
+      { unitId: 'office', employmentPercentage: 0 },
+      { unitId: 'office' },
+    ];
+    const path = '/Users/' + (await create(1, { title: 'Katalogtitel', [urn]: { employments } }));
+    await create(2);
+    expect((await json('DELETE', '/Groups/' + office)).status).toBe(204);
+    // The list did not change, so it is not asked about again: a rename goes through, and so does the daily PUT.
+    expect((await patch(path, { op: 'replace', path: 'displayName', value: 'Renamed' })).status).toBe(200);
+    expect((await json('PUT', path, person(1, { title: 'Katalogtitel', [urn]: { employments } }))).status).toBe(200);
+    const reader = {
+      id: 'id-4',
+      organisationId: 'org',
+      userName: 'user2',
+      name: 'User 2',
+    } as Parameters<ReturnType<typeof staffUsecases>['person']>[0];
+    const seen = await staffUsecases({ store }).person(reader, 'user1', true);
+    // The employments carry the titles, so the core one is not shown beside them.
+    expect(seen?.profile).toMatchObject({
+      title: null,
+      employments: [
+        { ...jobs[0], unitLabel: 'Skolan' },
+        { unitId: 'office', title: 'Registrator' },
+        { unitId: 'office', employmentPercentage: 0 },
+      ],
+    });
+  });
+});
 describe('a deactivation is never refused for what stands beside it (D113)', () => {
   test('a patch that deactivates goes through although it takes a required attribute away, sets one wrongly or names a path Clew cannot read', async () => {
     const { create, patch, store } = app();
@@ -61,7 +510,7 @@ describe('a deactivation is never refused for what stands beside it (D113)', () 
       // Entra, when the mailbox of a leaver is emptied with the account.
       [{ op: 'Remove', path: 'emails[type eq "work"].value' }],
       [{ op: 'replace', path: 'displayName', value: '' }],
-      [{ op: 'replace', path: 'emails', value: [{ value: 'private@home.se', type: 'home' }] }],
+      [{ op: 'replace', path: 'emails', value: [] }],
       [{ op: 'replace', path: 'emails[value eq "user1@x.se"].value', value: 'other@x.se' }],
       [{ op: 'replace', value: { displayName: null, userName: 7 } }],
     ];
@@ -300,14 +749,14 @@ describe('a path this server cannot evaluate is refused, not accepted and ignore
     ).toBe('Nya chefer');
     expect((await patch('/Groups/' + g, { op: 'replace', path: 'members', value: [] })).body.members).toEqual([]);
   });
-  test('under emails: the work address by its filter, another type left alone, and nothing private stored as the work address', async () => {
+  test('under emails: the one address by its filter, another type beside it left alone, and a list that replaces it taken as sent', async () => {
     const { create, patch } = app();
     const id = await create(1);
     const email = async (...operations: unknown[]) => {
       const answer = await patch('/Users/' + id, ...operations);
       return answer.status === 200 ? answer.body.emails[0].value : answer.body.scimType;
     };
-    // A filter that is not exactly the work address once stored a private address as it.
+    // A filter that names another type than the one address Clew holds once replaced that address.
     for (const path of [
       'emails[type eq "home" and primary eq true].value',
       'emails[type eq "home"].value',
@@ -332,9 +781,11 @@ describe('a path this server cannot evaluate is refused, not accepted and ignore
     expect(await email({ op: 'replace', path: 'emails[type eq "work"].display', value: 'Shown' })).toBe('d@x.se');
     // `add` appends: a home address beside the work one is an address Clew does not hold, and changes nothing.
     expect(await email({ op: 'add', path: 'emails', value: [{ value: 'h@home.se', type: 'home' }] })).toBe('d@x.se');
+    // `replace` gives the whole list, and what its one address is called is the source's to answer for (D114).
     expect(await email({ op: 'replace', path: 'emails', value: [{ value: 'h@home.se', type: 'home' }] })).toBe(
-      'invalidValue',
+      'h@home.se',
     );
+    expect(await email({ op: 'replace', path: 'emails[type eq "work"].value', value: 'd@x.se' })).toBe('d@x.se');
     // What a list carries is checked as a body's is: no literal "null", no number, no empty address, no 500.
     for (const value of [
       42,

@@ -28,6 +28,8 @@ export const userRow = (id: string, organisationId: string, extra: Partial<UserR
   userName: 'u:' + id,
   name: 'Name ' + id,
   email: id + '@example.test',
+  phoneNumbers: [],
+  employments: [],
   title: null,
   enabled: true,
   createdAt: T,
@@ -48,15 +50,21 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
   describe(`${name} SCIM store`, () => {
     test('users are found, filtered and paged within their organisation only, and updated by field', async () => {
       const { store, prefix: p } = await make();
+      const work = { type: 'work', value: '010-100 00 01' };
+      const mobile = { type: 'mobile', value: '070-100 00 02' };
       const [a, b, c, other] = [p + '-a', p + '-b', p + '-c', p + '-other'];
       await store.transaction(async tx => {
-        await tx.insertUser(userRow(a, p + '-org'));
+        await tx.insertUser(userRow(a, p + '-org', { phoneNumbers: [work, mobile] }));
         await tx.insertUser(userRow(b, p + '-org'));
         await tx.insertUser(userRow(c, p + '-org', { enabled: false }));
         await tx.insertUser(userRow(other, p + '-elsewhere'));
       });
       await store.transaction(async tx => {
         expect((await tx.readUser(p + '-org', a))?.userName).toBe('u:' + a);
+        expect(await tx.readUser(p + '-org', a)).toMatchObject({
+          phoneNumbers: [work, mobile],
+        });
+        await tx.updateUser(a, { phoneNumbers: [work], updatedAt: T });
         // Which of many ids are users of the organisation, in one read: its own people, deactivated ones too, and
         // nobody else's.
         expect((await tx.usersAmong(p + '-org', [c, other, a, p + '-nobody'])).sort()).toEqual([a, c]);
@@ -85,6 +93,7 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
           { attribute: 'externalId', value: 'ext:' + a },
         );
         expect(filtered.rows.map(r => r.id)).toEqual([a]);
+        expect(filtered.rows[0]).toMatchObject({ phoneNumbers: [work] });
         const byName = await tx.listUsers(
           p + '-org',
           { startIndex: 1, count: 10 },
@@ -107,6 +116,18 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         expect((await tx.findUser('externalId', 'ext:' + a))?.title).toBe('Byggchef');
         await tx.updateUser(a, { title: null, updatedAt: '2026-11-09T09:00:00.000Z' });
         expect((await tx.readUser(p + '-org', a))?.title).toBeNull();
+        // D114: the employments are a list in the directory's order, set whole and left by an update that names none.
+        const jobs = [
+          { unitId: 'school', title: 'Lärare' },
+          { unitId: 'school', title: 'Samordnare' },
+          { unitId: 'office' },
+        ];
+        await tx.updateUser(a, { employments: jobs, updatedAt: '2026-11-09T10:00:00.000Z' });
+        await tx.updateUser(a, { name: 'Renamed once more', updatedAt: '2026-11-09T10:00:00.000Z' });
+        expect((await tx.readUser(p + '-org', a))?.employments).toEqual(jobs);
+        expect((await tx.findUser('externalId', 'ext:' + a))?.employments).toEqual(jobs);
+        await tx.updateUser(a, { employments: [], updatedAt: '2026-11-09T11:00:00.000Z' });
+        expect((await tx.readUser(p + '-org', a))?.employments).toEqual([]);
       });
       // The unique indexes hold without regard to case for userName, as the use case's own check does.
       await expect(
@@ -435,7 +456,16 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         await tx.insertUser(
           userRow(zara, org, { name: 'Zara Öst', email: 'zara@skola.' + p + '.test', title: 'Biträdande rektor' }),
         );
-        await tx.insertUser(userRow(ake, org, { name: 'Åke 100% Lind' }));
+        await tx.insertUser(
+          userRow(ake, org, {
+            name: 'Åke 100% Lind',
+            employments: [
+              { unitId: u1 },
+              { unitId: u1, title: 'Vaktmästare' },
+              { unitId: u2, title: 'Säkerhetsombud' },
+            ],
+          }),
+        );
         await tx.insertUser(userRow(orjan, org, { name: 'Örjan Ek', userName: null, email: null }));
         await tx.insertUser(userRow(other, p + '-elsewhere', { name: 'Anna Annan' }));
         await tx.writeUnits(org, [
@@ -483,6 +513,10 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         expect(await found({ words: ['REKTOR'] })).toEqual([zara]);
         expect(await found({ words: ['BITRÄDANDE', 'zara'] })).toEqual([zara]);
         expect((await tx.searchUsers(org, { words: ['rektor'] }, every)).rows[0]?.title).toBe('Biträdande rektor');
+        // D114: and in the title of each of a person's employments, as the list shows them.
+        expect(await found({ words: ['SÄKERHETSOMBUD'] })).toEqual([ake]);
+        expect(await found({ words: ['vaktmästare', 'åke'] })).toEqual([ake]);
+        expect(await found({ words: ['vaktmästare', 'zara'] })).toEqual([]);
         // A word is matched as written: a per cent sign is a per cent sign.
         expect(await found({ words: ['%'] })).toEqual([ake]);
         expect(await found({ words: ['100%'] })).toEqual([ake]);

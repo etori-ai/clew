@@ -31,6 +31,8 @@ function directory() {
       userName: p.userName,
       name: p.name,
       email: null,
+      phoneNumbers: [],
+      employments: [],
       title: null,
       enabled: p.enabled ?? true,
       createdAt: T0,
@@ -182,7 +184,7 @@ function world() {
   });
   const cardsAbout = subjectCards({ store, registry, clock });
   const entities = entityUsecases({
-    directory: { reach: p => people.staff.reach(p), colleague: (p, key) => people.staff.colleague(p, key) },
+    directory: people.staff,
     sources: { reads: async () => [], actions: async () => [] },
     read: async () => ({}),
     // As composition wires them: the thread store's index from entity to cards.

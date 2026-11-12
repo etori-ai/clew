@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import {
   CAPABILITIES,
   contractProblems,
@@ -20,6 +21,7 @@ import {
   type UsersAdminPage,
   type UsersAdminQueryType,
   USERS_PAGE_SIZES,
+  type PersonProfile,
 } from '@clew/contracts';
 import { MANAGER_KEY, UNIT_KEY } from '@clew/contracts/scim-group-key';
 import { ForbiddenError, InputError } from '../../context';
@@ -46,6 +48,8 @@ import {
   searchWords,
   unitGroupOf,
   unitOfKey,
+  saysInactive,
+  titlesOf,
   userFields,
   userResource,
   type Derived,
@@ -312,11 +316,32 @@ export function scimUsecases(deps: {
     userName: u.userName ?? u.id,
     name: u.name,
     email: u.email ?? '',
+    phoneNumbers: u.phoneNumbers,
+    employments: u.employments,
     title: u.title,
     enabled: u.enabled,
   });
   const changedKeys = <T extends object>(before: T, after: T) =>
-    (Object.keys(after) as Array<keyof T>).filter(k => before[k] !== after[k]).map(String);
+    (Object.keys(after) as Array<keyof T>).filter(k => !isDeepStrictEqual(before[k], after[k])).map(String);
+  /**
+   * D114: an employment names a unit this organisation holds, by the id its `unit:` group carries. One that names no
+   * such unit is refused where it is written, with the units it got wrong: stored, it would show a colleague an id
+   * where a unit's name belongs. Asked when a request changes the list, so a unit that has since been removed does not
+   * stop the person's other changes; the check names such an employment.
+   */
+  const unknownUnits = async (tx: ProvisionTx, p: Provisioner, employments: UserFields['employments']) => {
+    const named = [...new Set(employments.map(job => job.unitId))];
+    if (!named.length) return undefined;
+    const held = new Set((await tx.unitTree(p.organisationId, named)).map(unit => unit.id)),
+      unknown = named.filter(id => !held.has(id));
+    if (!unknown.length) return undefined;
+    const listed = unknown.slice(0, 5).map(id => `'${id}'`);
+    return new ScimError(
+      400,
+      `${unknown.length === 1 ? 'An employment names' : 'Employments name'} ${listed.join(', ')}${unknown.length > listed.length ? ` and ${unknown.length - listed.length} more` : ''}, which ${unknown.length === 1 ? 'is no unit' : 'are no units'} of this organisation. 'unitId' is what follows '${UNIT_KEY}' in the externalId of the unit's group, and the unit is sent before an employment names it (D114). The user was not stored.`,
+      'invalidValue',
+    );
+  };
   async function writeUser(
     tx: ProvisionTx,
     p: Provisioner,
@@ -326,7 +351,13 @@ export function scimUsecases(deps: {
     base: string,
   ) {
     const held = fieldsOf(current),
-      fields = read(held),
+      sent = read(held),
+      wrongUnit = isDeepStrictEqual(held.employments, sent.employments)
+        ? undefined
+        : await unknownUnits(tx, p, sent.employments);
+    // D113: beside a deactivation the list is left as it was, and the person is deactivated.
+    if (wrongUnit && !saysInactive(sent)) throw wrongUnit;
+    const fields = wrongUnit ? { ...sent, employments: held.employments } : sent,
       changed = changedKeys(held, fields),
       at = now(),
       // Only what changed is checked and written. A row from before provisioning holds no `externalId`: a patch of
@@ -455,6 +486,8 @@ export function scimUsecases(deps: {
       deps.store.transaction(async tx => {
         const fields = userFields(body);
         await uniqueUser(tx, fields);
+        const wrongUnit = await unknownUnits(tx, p, fields.employments);
+        if (wrongUnit) throw wrongUnit;
         const at = now(),
           record: UserRecord = {
             id: deps.ids(),
@@ -672,7 +705,7 @@ export function usersAdminUsecases(deps: {
       userName: u.userName,
       externalId: u.externalId,
       email: u.email,
-      title: u.title,
+      title: titlesOf(u).join(', ') || null,
       enabled: u.enabled,
       bound: await tx.bound(u.id),
       assignments: await tx.assignmentsOf(u.id),
@@ -1001,16 +1034,38 @@ export function staffUsecases(deps: { store: ProvisionStore }) {
         };
       }),
     /**
-     * Another person in the reader's organisation, found by user name without regard to case (D97: a colleague is
+     * An active person in the reader's organisation, found by user name without regard to case (D97: a colleague is
      * anyone active in the directory), with the unit they act in; undefined for nobody, someone in another organisation
      * or a deactivated person. Read on every call, never cached.
      */
-    colleague: (persona: AuthenticatedContext, userName: string) =>
+    person: (persona: AuthenticatedContext, userName: string, includeProfile: boolean) =>
       deps.store.transaction(async tx => {
         const found = await tx.findUser('userName', userName);
         if (!found || found.organisationId !== persona.organisationId || !found.enabled) return undefined;
         const grant = await tx.grant(found.id);
+        const nodes =
+          includeProfile && found.employments.length
+            ? await tx.unitTree(persona.organisationId, [...new Set(found.employments.map(row => row.unitId))])
+            : [];
+        const labels = new Map(nodes.map(unit => [unit.id, unit.label]));
+        const profile = includeProfile
+          ? {
+              phoneNumbers: found.phoneNumbers,
+              email: found.email,
+              // The core title where no employment carries one; the employments say their own.
+              title: found.employments.some(row => row.title) ? null : found.title,
+              // A removed unit has no name to show. Keep any employment details that still describe the job.
+              employments: found.employments.flatMap((row): PersonProfile['employments'] => {
+                const unitLabel = labels.get(row.unitId);
+                if (unitLabel !== undefined) return [{ ...row, unitLabel }];
+                return row.title || row.employmentType || row.startDate || row.employmentPercentage !== undefined
+                  ? [row]
+                  : [];
+              }),
+            }
+          : undefined;
         return {
+          ...(profile ? { profile } : {}),
           id: found.id,
           name: found.name,
           userName: found.userName,

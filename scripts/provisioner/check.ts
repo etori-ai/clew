@@ -21,8 +21,12 @@ interface UserRow {
   userName: string;
   active: boolean;
   title?: string;
+  phoneNumbers?: Array<{ value: string }>;
+  [EMPLOYMENT_EXTENSION]?: { employments?: Array<{ unitId: string; title?: string }> };
   groups?: Array<{ value: string }>;
 }
+/** D114: the extension a user's current employments travel in. Written out here so the check needs nothing of Clew's. */
+const EMPLOYMENT_EXTENSION = 'urn:clew:params:scim:schemas:extension:employment:2.0:User';
 /** D99: the extension a `unit:` group names the unit above it in. */
 const UNIT_EXTENSION = 'urn:clew:params:scim:schemas:extension:unit:2.0:Group';
 interface GroupRow {
@@ -82,7 +86,11 @@ export async function checkProvisioning(
     'ok',
     `The token is accepted. PATCH ${config.patch?.supported ? 'yes' : 'no'}, filter ${config.filter?.supported ? `yes (at most ${config.filter.maxResults} rows a page)` : 'no'}, bulk ${config.bulk?.supported ? 'yes' : 'no'}, sort ${config.sort?.supported ? 'yes' : 'no'}, ETags ${config.etag?.supported ? 'yes' : 'no'}.`,
   );
-  const users = await all<UserRow>(client, '/Users', 'attributes=userName,active,title,groups.value'),
+  const users = await all<UserRow>(
+      client,
+      '/Users',
+      `attributes=userName,active,title,groups.value,phoneNumbers.value,${EMPLOYMENT_EXTENSION}:employments`,
+    ),
     groups = await all<GroupRow>(client, '/Groups', 'excludedAttributes=members');
   const active = users.filter(u => u.active),
     keyOf = new Map(groups.map(g => [g.id, g.externalId ?? ''])),
@@ -115,8 +123,10 @@ export async function checkProvisioning(
     );
   else if (active.length) say('ok', 'Every active user is in a unit.');
   // A title Clew cannot read is left out and never refused (D110), so a mapping that sends none, or sends something
-  // else in its place, shows here and nowhere else.
-  const titled = active.filter(u => u.title).length;
+  // else in its place, shows here and nowhere else. A person's title is the titles of their employments, or the core
+  // `title` (D114): what the user list shows.
+  const jobsOf = (u: UserRow) => u[EMPLOYMENT_EXTENSION]?.employments ?? [];
+  const titled = active.filter(u => u.title || jobsOf(u).some(job => job.title)).length;
   if (active.length)
     say(
       'ok',
@@ -124,7 +134,25 @@ export async function checkProvisioning(
         ? `${titled} of ${plural(active.length, 'active user', 'active users')} ${titled === 1 ? 'has' : 'have'} a title.`
         : 'No active user has a title: the source sends none, or sends one Clew could not read as text.',
     );
+  // D114: phone numbers and employments are shown on a person's profile. What Clew cannot read of them is left out
+  // without a refusal, so the counts are where a mapping that sends nothing readable shows.
+  if (active.length)
+    say(
+      'ok',
+      `Phone numbers on ${active.filter(u => u.phoneNumbers?.length).length} of ${plural(active.length, 'active user', 'active users')}, employments on ${active.filter(u => jobsOf(u).length).length}.`,
+    );
   const named = new Set(units.map(g => g.externalId!.slice(UNIT_KEY.length)));
+  // An employment is refused when it is written on a unit Clew does not hold; a unit removed afterwards leaves it.
+  const adrift = active.flatMap(u =>
+    jobsOf(u)
+      .filter(job => !named.has(job.unitId))
+      .map(job => `${u.userName} (${job.unitId})`),
+  );
+  if (adrift.length)
+    say(
+      'warn',
+      `${plural(adrift.length, 'employment names', 'employments name')} a unit that is no longer held, so the profile shows the title without a unit: ${some(adrift)}.`,
+    );
   const unnamed = managers.map(g => g.externalId!.slice(MANAGER_KEY.length)).filter(id => !named.has(id));
   if (unnamed.length)
     say(

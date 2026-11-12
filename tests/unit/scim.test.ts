@@ -343,33 +343,43 @@ describe('SCIM users', () => {
       scim.createUser(p, { ...anna, name: { givenName: 'Anna', familyName: 'Berg' }, displayName: undefined }, BASE),
     ).resolves.toMatchObject({ displayName: 'Anna Berg' });
   });
-  test('only a work or source-selected untyped address becomes the work address', async () => {
+  test('one address is held: the work one, then one without a type, then what was sent, whatever it is called (D114)', async () => {
     const { scim, p } = harness();
     const home = { value: 'home@example.org', type: 'home', primary: true };
-    await expect(scim.createUser(p, { ...anna, emails: [home] }, BASE)).rejects.toMatchObject({
-      status: 400,
-      scimType: 'invalidValue',
-    });
-    // An address was sent, so the answer says which kind is taken and not that the attribute is missing.
-    await expect(
-      scim.createUser(p, { ...anna, emails: [{ value: 'other@example.org', type: 'other', primary: true }] }, BASE),
-    ).rejects.toMatchObject({
-      status: 400,
-      scimType: 'invalidValue',
-      detail:
-        "Attribute 'emails' needs a work address: one with type 'work', or one without a type. An address of another type is not stored as the work address.",
-    });
-    const created = await scim.createUser(p, { ...anna, emails: [home, { value: 'selected@example.org' }] }, BASE);
+    const one = (n: number, emails: unknown) => ({ ...anna, externalId: 'mk-e' + n, userName: 'e' + n, emails });
+    // What an address is called is the source's to answer for: a person is not refused for it.
+    expect((await scim.createUser(p, one(1, [home]), BASE)).emails).toEqual([
+      { value: 'home@example.org', type: 'work', primary: true },
+    ]);
+    // Of addresses that are neither work nor without a type, the primary before the first.
+    expect(
+      (await scim.createUser(p, one(2, [{ value: 'other@example.org', type: 'other' }, home]), BASE)).emails[0]?.value,
+    ).toBe('home@example.org');
+    const created = await scim.createUser(p, one(3, [home, { value: 'selected@example.org' }]), BASE);
     expect(created.emails[0]?.value).toBe('selected@example.org');
-    await expect(
-      scim.patchUser(
-        p,
-        created.id,
-        { schemas: [SCIM.patch], Operations: [{ op: 'replace', path: 'emails', value: [home] }] },
-        BASE,
-      ),
-    ).rejects.toMatchObject({ status: 400 });
-    expect((await scim.getUser(p, created.id, BASE)).emails).toEqual(created.emails);
+    expect(
+      (
+        await scim.createUser(
+          p,
+          one(4, [home, { value: 'selected@example.org' }, { value: 'work@example.org', type: 'Work' }]),
+          BASE,
+        )
+      ).emails[0]?.value,
+    ).toBe('work@example.org');
+    // A `replace` gives the whole list, as a body does.
+    const replaced = await scim.patchUser(
+      p,
+      created.id,
+      { schemas: [SCIM.patch], Operations: [{ op: 'replace', path: 'emails', value: [home] }] },
+      BASE,
+    );
+    expect(replaced.emails[0]?.value).toBe('home@example.org');
+    // No address at all is still a missing attribute.
+    await expect(scim.createUser(p, one(5, []), BASE)).rejects.toMatchObject({
+      status: 400,
+      scimType: 'invalidValue',
+      detail: "Attribute 'emails' is required.",
+    });
   });
   test('userName and externalId are unique across the installation, userName without regard to case', async () => {
     const { scim, p } = harness();
@@ -865,7 +875,16 @@ describe('SCIM groups and derivation', () => {
   });
 });
 describe('SCIM patch and filter rules', () => {
-  const fields = { externalId: 'e', userName: 'u', name: 'N', email: 'n@x.test', title: null, enabled: true };
+  const fields = {
+    externalId: 'e',
+    userName: 'u',
+    name: 'N',
+    email: 'n@x.test',
+    phoneNumbers: [],
+    employments: [],
+    title: null,
+    enabled: true,
+  };
   test('user patches take paths, schema-qualified paths and the path-less object form; unknown attributes are ignored', () => {
     expect(
       applyUserPatch(fields, [

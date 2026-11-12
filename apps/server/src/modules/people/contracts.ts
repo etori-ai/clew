@@ -1,3 +1,5 @@
+import { SCIM_EMPLOYMENT_SCHEMA, type DirectoryPhone, type Employment } from '@clew/contracts';
+
 /**
  * The SCIM 2.0 contract Clew serves (RFC 7643, RFC 7644; D68): the names, the error and the resources it answers.
  * What a provisioner may send is read in `domain.ts`, attribute by attribute and the same way for a full
@@ -6,6 +8,7 @@
  * the product.
  */
 export const SCIM = {
+  employment: SCIM_EMPLOYMENT_SCHEMA,
   user: 'urn:ietf:params:scim:schemas:core:2.0:User',
   group: 'urn:ietf:params:scim:schemas:core:2.0:Group',
   list: 'urn:ietf:params:scim:api:messages:2.0:ListResponse',
@@ -74,13 +77,15 @@ export interface ScimMeta {
   location: string;
 }
 export interface ScimUser {
-  schemas: [typeof SCIM.user];
+  schemas: [typeof SCIM.user] | [typeof SCIM.user, typeof SCIM.employment];
   id: string;
   externalId?: string;
   userName: string;
   displayName: string;
   name: { formatted: string };
   emails: Array<{ value: string; type: 'work'; primary: true }>;
+  phoneNumbers?: DirectoryPhone[];
+  [SCIM.employment]?: { employments: Employment[] };
   title?: string;
   active: boolean;
   groups: Array<{ value: string; display: string; $ref: string }>;

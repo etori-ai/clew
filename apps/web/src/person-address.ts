@@ -112,6 +112,8 @@ export function entityHref(subject: Subject, from?: string | null): string | nul
 export function originLabel(path: string | null): string | null {
   if (!path) return null;
   const pathname = path.split('?')[0]!;
+  if (pathname === '/admin/users') return 'Användare';
+  if (pathname === '/admin/organisation') return 'Organisation';
   if (pathname === '/staff') return 'Personal';
   if (pathname === '/') return 'Hem';
   if (pathname === '/todo') return 'Att göra';

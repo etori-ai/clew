@@ -37,6 +37,66 @@ test.describe('users administration', () => {
   ] as const)
     test.describe(layout, () => {
       test.use({ viewport });
+      test('a name opens the profile with every employment and contact number, and returns to the filtered list', async ({
+        page,
+        api,
+      }) => {
+        api.admin = true;
+        api.entityDetailOf = key =>
+          key === 'hillevi'
+            ? {
+                entity: { kind: 'person', key, name: 'Hillevi Berg' },
+                profile: {
+                  email: 'hillevi@clew.test',
+                  title: null,
+                  phoneNumbers: [
+                    { type: 'work', value: '010-000 00 01' },
+                    { type: 'work', value: '010-000 00 02' },
+                    { type: 'Jour', value: '070-000 00 03' },
+                  ],
+                  employments: [
+                    {
+                      unitId: 'skola',
+                      unitLabel: 'Skolan',
+                      title: 'Rektor',
+                      employmentType: 'Tillsvidare',
+                      startDate: '2019-02-01',
+                      employmentPercentage: 60,
+                    },
+                    { unitId: 'skola', unitLabel: 'Skolan', title: 'Samordnare', employmentPercentage: 40 },
+                  ],
+                },
+                relation: 'self',
+                actions: [],
+                cards: [],
+                sections: [],
+              }
+            : undefined;
+        await open(page, '/admin/users?role=manager');
+        await page.getByRole('link', { name: 'Hillevi Berg', exact: true }).click();
+        const main = page.getByRole('main');
+        await expect(main.getByRole('heading', { name: 'Hillevi Berg' })).toBeVisible();
+        const jobs = main.getByRole('region', { name: 'Anställningar' });
+        await expect(jobs.getByRole('listitem')).toHaveCount(2);
+        await expect(jobs.getByRole('listitem').nth(0)).toContainText('Rektor');
+        await expect(jobs.getByRole('listitem').nth(0)).toContainText('Tillsvidare');
+        await expect(jobs.getByRole('listitem').nth(0).locator('time')).toHaveText('1 februari 2019');
+        await expect(jobs.getByRole('listitem').nth(1).getByText('Startdatum')).toHaveCount(0);
+        await expect(jobs.getByRole('listitem').nth(1)).toContainText('Samordnare');
+        await expect(jobs.getByRole('listitem').nth(0)).toContainText('60 %');
+        await expect(jobs.getByRole('listitem').nth(1)).toContainText('40 %');
+        await expect(jobs.getByText('Skolan', { exact: true })).toHaveCount(2);
+        const contacts = main.getByRole('region', { name: 'Kontaktuppgifter' });
+        await expect(contacts.locator('a[href^="tel:"]')).toHaveCount(3);
+        await expect(contacts.getByRole('link', { name: '010-000 00 02' })).toHaveAttribute('href', 'tel:0100000002');
+        await expect(contacts.getByText('Jour', { exact: true })).toBeVisible();
+        await expect(contacts.getByRole('link', { name: 'hillevi@clew.test' })).toHaveAttribute(
+          'href',
+          'mailto:hillevi@clew.test',
+        );
+        await main.getByRole('link', { name: 'Användare', exact: true }).click();
+        await expect(page).toHaveURL(/\/admin\/users\?role=manager$/);
+      });
       test('the page has no axe violations and every focus stop is marked', async ({ page, api }) => {
         api.admin = true;
         await open(page, '/admin/users');

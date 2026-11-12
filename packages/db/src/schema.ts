@@ -16,6 +16,8 @@ import {
 import { sql } from 'drizzle-orm';
 import type {
   ConnectorAudience,
+  DirectoryPhone,
+  Employment,
   InstallationTheme,
   LogoMediaType,
   ConnectorHealth,
@@ -41,6 +43,8 @@ export const people = pgTable(
     externalId: text('external_id'),
     userName: text('user_name'),
     email: text('email'),
+    phoneNumbers: jsonb('phone_numbers').$type<DirectoryPhone[]>().notNull().default([]),
+    employments: jsonb('employments').$type<Employment[]>().notNull().default([]),
     // D110: what the source calls the person's work, SCIM's `title`. Optional, shown and searched, never read for
     // authority.
     title: text('title'),

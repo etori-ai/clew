@@ -50,9 +50,10 @@ The format fits a source that can answer yes to the first three. Each answer cha
 | Can the units be delivered as a list of their own, each with an id, a name and the id of the unit above it? | Clew holds the organisation as a tree and never works it out from the people. A tree that exists only as a path on each person has to be turned into units in the provisioner. | "Yes: the table of units above." |
 | Do unit ids survive a reorganisation? | Everything in Clew that names a unit follows the id. A unit that moves keeps its id and changes only the unit above it; a unit that gets a new id is a new unit to Clew. | "Yes. `111` stays `111` when Centralskolan moves to another administration." |
 | What does the source's manager flag refer to, and where is a manager placed: on the unit they lead, or on the one above? | A manager must be sent as manager of the unit they lead. Who a person reports to is read from that and from the tree. | "Each unit names its manager. Anna is placed on `110` and leads `110`." |
-| Does a person ever have a second placement, or act as manager for a period? | Both are memberships the provisioner adds and removes. Clew holds no dates, so the period lives in the source. | "Yes, with a start and an end date. The provisioner adds the membership on the first day and removes it on the last." |
+| Does a person ever have a second placement, or act as manager for a period? | The source owns the validity period. The provisioner adds and removes memberships on the effective dates. An employment start date is displayed on the profile and does not schedule a membership. | "Yes, with a start and an end date. The provisioner adds the membership on the first day and removes it on the last." |
 | Can the source tell the provisioner that something changed (an event, a change log, a question for what changed since a time)? | A change is sent to Clew when it happens. A source that can only be read as a whole gives a provisioner that has to compare often to come close. | "Yes: a change log that can be read from a given time." |
 | Is an account name ever given to a new person? | A person who leaves is deactivated, not erased, and keeps the account name, which is unique in the installation. The provisioner has to move it off the old row first; the example renames the old row to its own source id. | "No." Or: "Yes, after two years; the provisioner renames the old row first." |
+| Which phone numbers and employment details does the source publish to colleagues? | Both lists are optional. Clew shows the supplied details to signed-in colleagues. Each employment references a unit by its source id. | "Work numbers and mobiles. One entry per current job, with its unit id, title, employment type, start date and percentage where known." |
 | Which claim in the identity provider's ID token carries the account name? | A first sign-in is matched on it, against the `userName` the provisioner sent. The two must be the same value for the same person. | "`preferred_username`, which holds `anna.berg`." |
 
 ## The directory team: a provisioner
@@ -74,13 +75,15 @@ It does two things ([D109](../decisions/D109-a-provisioner-sends-a-change-when-i
 |---|---|---|---|
 | Each unit: id, name, id of the unit above | A group with the key `unit:<id>`, the name and its `parent`. A unit nobody is placed on, such as a heading over several departments, is sent as well. | `unit:100` Kommunen, `unit:110` Utbildning with parent `unit:100` | Yes |
 | Each person: stable id, account name, name, work address, whether they are active | A user with `externalId`, `userName`, `displayName`, `emails` and `active` | `e-1001`, `anna.berg`, Anna Berg, `anna.berg@example.org`, `true` | The first four are required. `active` is read as `true` when it is left out, so send it for everybody. |
-| Each person's title, where the source has one | The same user's `title`, in the source's own words | Anna is Skolchef, Omar Rektor, Lena Lärare | No. It is shown under the person's name and decides nothing: who is a manager comes from the manager group below. A title Clew cannot read is left out and never refuses the person. |
-| Where each person works | Membership of the group `unit:<id>` of that unit | Lena is a member of `unit:111` | Yes: a person with no unit exists and can do nothing |
+| The organisational unit each person is assigned to | Membership of the group `unit:<id>` of that unit | Lena is a member of `unit:111` | Yes: a person with no unit exists and can do nothing |
 | Who leads each unit | Membership of the group `unit-manager:<id>` of that unit. Once, on the unit they lead; not on every unit below it. | Anna is a member of `unit:110` and of `unit-manager:110` | Yes, for anybody who is to see their reports |
 | Who administers Clew | A group with the key `capability:<name>`, such as `capability:admin.users`. Or any directory group, which an administrator then maps to a capability in Clew. | Anna is a member of `capability:admin.users` | At least one person in that capability group. The first administrator can come from nowhere else: mapping a directory group takes an administrator. |
 | Other directory groups | Plain groups. They mean nothing until an administrator maps one or uses it as the audience of a connected system. | `ad:larare` | No |
+| Each person's current employments, each with its unit and optional title, employment type, start date and percentage of full-time hours | One entry per employment in the user's [employment extension](writing-a-provisioner.md#current-employments) | `{"unitId":"111","title":"Rektor"}` for Omar | Optional. Each employment's supplied details appear on the profile. The user list shows the titles. Send the unit first and manage access through group membership. |
+| One title per person, where the source has no employments | The user's `title`, in the source's own words | `Rektor` | No. It is shown where no employment carries a title, and decides nothing: who is a manager comes from the manager group. |
+| Phone numbers published to colleagues | The user's [`phoneNumbers`](writing-a-provisioner.md#phone-numbers), each with a `type` and a `value` | `{"type":"work","value":"070-174 06 02"}` | No. Every number sent is shown on the profile to everybody in the organisation, whatever its type: what is published is decided in the source. A person without a number is sent without one. |
 
-Clew’s organisational model uses the SCIM Group resource and its own unit extension. Enterprise User attributes such as `department`, `division`, `organization` and `manager` can be accepted without creating a placement or reporting line. Convert the source tree into unit groups, and nested directory groups into explicit person memberships. An installation supports one organisation with one or more root units. The token selects the organisation. A person needs an enabled account and an employee or manager assignment to sign in. The first administrator also needs `admin.users`. Select an approved work address at the source. Clew accepts an explicitly typed work address or an untyped address selected for that purpose. A home-only list is refused.
+Clew’s organisational model uses the SCIM Group resource and its own unit extension. Enterprise User attributes such as `department`, `division`, `organization` and `manager` can be accepted without creating a placement or reporting line. Convert the source tree into unit groups, and nested directory groups into explicit person memberships. An installation supports one organisation with one or more root units. The token selects the organisation. A person needs an enabled account and an employee or manager assignment to sign in. The first administrator also needs `admin.users`. Clew holds one address for a person and shows it: the one with type `work`, else one without a type, else the first that was sent. It does not judge an address or a phone number by its type, so send the ones colleagues should see.
 
 A group's members are named by the id Clew gave the person when it was created, not by the source's id. The provisioner looks it up by the source id (`GET /Users?filter=externalId eq "e-1001"`) and keeps it.
 
@@ -115,7 +118,7 @@ id_of() {
 scim "$CLEW/ServiceProviderConfig" >/dev/null
 ```
 
-**Create all four units, three people and their memberships.** A child's `parent` holds its parent's **external group key**. Membership values are **Clew user IDs**. Membership requests target a **Clew group ID**.
+**Create all four units, three people and their memberships.** A child's `parent` holds its parent's **external group key**. Membership values are **Clew user IDs**. Membership requests target a **Clew group ID**. Each person is sent with an employment, which names its unit by the **unit id** and places nobody: the membership does that.
 
 ```bash
 bun - <<'TS'
@@ -123,6 +126,7 @@ import { scimClient } from './scripts/provisioner/client';
 const client = scimClient(process.env.CLEW, process.env.CLEW_PROVISIONER_TOKEN);
 const core = 'urn:ietf:params:scim:schemas:core:2.0:';
 const unit = 'urn:clew:params:scim:schemas:extension:unit:2.0:Group';
+const employment = 'urn:clew:params:scim:schemas:extension:employment:2.0:User';
 const patchSchema = 'urn:ietf:params:scim:api:messages:2.0:PatchOp';
 
 async function create(path, data) {
@@ -137,9 +141,11 @@ function group(key, label, members = [], parent) {
     ...(parent && { [unit]: { parent } }),
   });
 }
-function person(externalId, userName, displayName, title) {
-  return create('/Users', { schemas: [core + 'User'], externalId, userName, displayName, title,
-    emails: [{ type: 'work', value: userName + '@example.org' }], active: true });
+function person(externalId, userName, displayName, unitId, title, phone) {
+  return create('/Users', { schemas: [core + 'User', employment], externalId, userName, displayName,
+    emails: [{ type: 'work', value: userName + '@example.org' }],
+    phoneNumbers: [{ type: 'work', value: phone }],
+    [employment]: { employments: [{ unitId, title }] }, active: true });
 }
 function place(groupId, ...users) {
   return client.request('PATCH', '/Groups/' + groupId, { schemas: [patchSchema],
@@ -150,9 +156,9 @@ await group('unit:100', 'Kommunen');
 const education = await group('unit:110', 'Utbildning', [], 'unit:100');
 const school = await group('unit:111', 'Centralskolan', [], 'unit:110');
 await group('unit:112', 'Skolbiblioteket', [], 'unit:110');
-const anna = await person('e-1001', 'anna.berg', 'Anna Berg', 'Skolchef');
-const omar = await person('e-1002', 'omar.ali', 'Omar Ali', 'Rektor');
-const lena = await person('e-1003', 'lena.holm', 'Lena Holm', 'Lärare');
+const anna = await person('e-1001', 'anna.berg', 'Anna Berg', '110', 'Skolchef', '070-174 06 01');
+const omar = await person('e-1002', 'omar.ali', 'Omar Ali', '111', 'Rektor', '070-174 06 02');
+const lena = await person('e-1003', 'lena.holm', 'Lena Holm', '111', 'Lärare', '070-174 06 03');
 await place(education, anna);
 await place(school, omar, lena);
 await group('unit-manager:110', 'Chefer Utbildning', [anna]);
@@ -174,6 +180,7 @@ bun scripts/provisioner-check.ts "$CLEW" --roots 1 | sed '1d'
   ok   7 groups: 4 unit, 2 unit-manager, 1 capability, 0 plain (0 without an externalId).
   ok   Every active user is in a unit.
   ok   3 of 3 active users have a title.
+  ok   Phone numbers on 3 of 3 active users, employments on 3.
   ok   The units form a tree: 1 root, 3 levels deep.
   warn 1 unit or unit-manager group has no members: unit:112.
 
@@ -190,15 +197,16 @@ Send a change when it happens. Updating a person’s name takes one request. Cre
 |---|---|
 | A person begins | `POST /Users`, then `PATCH` `add` on the group of their unit |
 | A name, an account name or an address changes | `PATCH /Users/<id>` |
-| A title is set, changed or taken away | `PATCH /Users/<id>`: `replace` on `title`, or `remove` |
+| A core title or a phone number changes | `PATCH /Users/<id>` with `replace` on `title` or on the complete `phoneNumbers` list |
+| An employment changes, including its percentage, or ends | Replace the person's complete current employment list. The [worked example](writing-a-provisioner.md#updating-employment-details) shows the request and how to withdraw one value or one job. |
 | A person leaves | `PATCH /Users/<id>` that sets `active` to `false` |
-| A person moves to another unit | `PATCH` `add` on the unit they join, then `PATCH` `remove` on the unit they leave |
+| A person moves to another unit | `PATCH` `add` on the unit they join, then `PATCH` `remove` on the unit they leave. Their employment, when it is sent, with a `PATCH` on the user. |
 | A person becomes a manager, or stops being one | `PATCH` `add` or `remove` on `unit-manager:<id>` |
 | A unit is added, renamed or moved | `POST /Groups`, or `PATCH` its `displayName` or its `parent`. A move keeps the unit's id. |
-| A unit is removed | `DELETE` both of its groups, `unit:<id>` and `unit-manager:<id>`, once its people are placed elsewhere and no unit stands below it |
-| A change that takes effect on a day, such as an acting manager from the first of the month | The same requests, sent on that day. Clew holds no dates. |
+| A unit is removed | `DELETE` both of its groups, `unit:<id>` and `unit-manager:<id>`, once its people are placed elsewhere, their employments have been sent and no unit stands below it |
+| A change that takes effect on a day, such as an acting manager from the first of the month | Send the membership change on its effective date. Clew applies it when the request arrives. |
 
-In the same Bash session, move Lena to the library, then move the library under Centralskolan. Each membership change targets the group. A unit move changes only the fully qualified parent path. Read the unit back to verify its parent and members. A full group `PUT` replaces its members, and a unit `PUT` without its extension makes it a root.
+In the same Bash session, move Lena to the library, then move the library under Centralskolan. Each membership change targets the group; her employment is an attribute of her own and is sent to her. A unit move changes only the fully qualified parent path. Read the unit back to verify its parent and members. A full group `PUT` replaces its members, and a unit `PUT` without its extension makes it a root.
 
 ```bash
 library=$(id_of Groups unit:112)
@@ -206,11 +214,13 @@ school=$(id_of Groups unit:111)
 lena=$(id_of Users e-1003)
 omar=$(id_of Users e-1002)
 extension=urn:clew:params:scim:schemas:extension:unit:2.0:Group
+employment=urn:clew:params:scim:schemas:extension:employment:2.0:User
 patch() {
   scim -X PATCH "$CLEW/$1" --data "{\"schemas\":[\"urn:ietf:params:scim:api:messages:2.0:PatchOp\"],\"Operations\":[$2]}" >/dev/null
 }
 patch "Groups/$library" "{\"op\":\"add\",\"path\":\"members\",\"value\":[{\"value\":\"$lena\"}]}"
 patch "Groups/$school" "{\"op\":\"remove\",\"path\":\"members[value eq \\\"$lena\\\"]\"}"
+patch "Users/$lena" "{\"op\":\"replace\",\"path\":\"$employment:employments\",\"value\":[{\"unitId\":\"112\",\"title\":\"Bibliotekarie\"}]}"
 patch "Groups/$library" "{\"op\":\"replace\",\"path\":\"$extension:parent\",\"value\":\"unit:111\"}"
 scim "$CLEW/Groups/$library" | python3 -c '
 import json, sys
@@ -248,7 +258,7 @@ On an unchanged export the example still sends a `PUT` for each present person. 
 
 ### What Clew answers when something is wrong
 
-Every refusal is the standard's error resource, with the reason in `detail`. Nothing is stored when a request is refused. These are the answers to the mistakes a first provisioner makes:
+Every refusal is the standard's error resource, with the reason in `detail`. Nothing is stored when a request is refused. A field that is merely empty is not a mistake: a person without a phone number or a title is stored without one. These are the answers to the mistakes a first provisioner makes:
 
 | The request | Status | `detail` |
 |---|---|---|
@@ -258,12 +268,15 @@ Every refusal is the standard's error resource, with the reason in `detail`. Not
 | A capability Clew does not have | 400 `invalidValue` | `The key 'capability:admin.everything' names no capability of this installation; the capabilities are …`, followed by the list |
 | The key `protected` | 400 `invalidValue` | `The key 'protected' is not accepted: Clew has not decided whether it may hold that fact (D93). The group was not stored.` |
 | A person without an address | 400 `invalidValue` | `Attribute 'emails' is required.` |
-| A required attribute that is empty, only space, longer than 512 characters or not text | 400 `invalidValue` | `Attribute 'displayName' needs a non-empty string of at most 512 characters.` |
-| A person whose only addresses have another type than `work`, such as `home` | 400 `invalidValue` | `Attribute 'emails' needs a work address: one with type 'work', or one without a type. An address of another type is not stored as the work address.` |
+| A required attribute that is only space, longer than 512 characters or not text. An empty one answers that it is required. | 400 `invalidValue` | `Attribute 'displayName' needs a non-empty string of at most 512 characters.` |
 | A person whose account name somebody already has, in any case, also a person who has left | 409 `uniqueness` | `A user with this userName already exists.` |
 | A member named by the source's id and not by Clew's | 400 `invalidValue` | `Member 'e-1001' is not a user of this organisation.` |
 | A group as a member of a group | 400 `invalidValue` | `Member '<id>' is a group. Nested groups are not supported: send the people as members.` |
 | A path under `members` other than `members` and `members[value eq "<id>"]` | 400 `invalidPath` | `Path '…' is not supported: use 'members' with a list of values, or members[value eq "<id>"] to remove one.` |
+| An employment on a unit that has not been sent, or with the id written as the group's key (`unit:111`) | 400 `invalidValue` | `An employment names 'unit:111', which is no unit of this organisation. 'unitId' is what follows 'unit:' in the externalId of the unit's group, and the unit is sent before an employment names it (D114). The user was not stored.` |
+| An employment with a title and no `unitId` | 400 `invalidValue` | `An employment needs a 'unitId': the id of the unit, which is what follows 'unit:' in the externalId of its group. A title that belongs to no unit is sent as the user's 'title'.` |
+| `employments` written without the extension's URN, in a body or as a path | 400 `invalidPath` | `Use 'urn:clew:params:scim:schemas:extension:employment:2.0:User:employments' for a person's employments.` |
+| More than 50 phone numbers, or employments, on one person | 400 `invalidValue` | `Attribute 'phoneNumbers' carries at most 50 entries.` |
 | More than 500 operations in one `PATCH` | 400 `invalidSyntax` | `A PatchOp body carries between 1 and 500 Operations.` |
 | Removing a unit that still has units below it | 409 | `The unit '110' still has 2 units below it ('unit:111', 'unit:112'); move or remove them first, a tree is removed from the leaves up (D99). The group was not removed.` |
 | A body over 4 MB | 413 | `The request body is too large.` |
@@ -279,7 +292,7 @@ Every refusal is the standard's error resource, with the reason in `detail`. Not
 
 ### Done when
 
-- The check counts the roots the source has and names nothing you cannot explain: no active person without a unit, no managed unit without its unit group, and no unit whose people report to nobody unless the source says so. It also says how many active people have a title; compare that with the source, since a title Clew cannot read is left out without a refusal.
+- The check counts the roots the source has and names nothing you cannot explain: no active person without a unit, no managed unit without its unit group, and no unit whose people report to nobody unless the source says so. It also says how many active people have a title, a phone number and an employment; compare those with the source, since what Clew cannot read of them is left out without a refusal.
 
   ```bash
   bun scripts/provisioner-check.ts "$CLEW" --roots 1
@@ -403,7 +416,7 @@ There is no recipe for running Clew in production yet: the repository's compose 
 - [Writing a provisioner](writing-a-provisioner.md): the attributes, the group keys, the organisation tree, the transport and every refusal.
 - [scripts/provisioner/](../../scripts/provisioner): an example to start from, with its tests.
 - [scripts/provisioner-check.ts](../../scripts/provisioner-check.ts): reads what was sent, over SCIM alone, and changes nothing. It is run from a checkout of the repository.
-- Administration › Användare: the provisioners and when each last called, the people with title, unit, role and capabilities, and whether each has signed in.
+- Administration › Användare: the provisioners and when each last called, the people with their titles, unit, role and capabilities, and whether each has signed in. A name opens the person's profile, with the employments and the phone numbers as they were sent.
 - Administration › Organisation: the tree as it was sent, and what was left wrong.
 
 ## Not decided yet
@@ -413,6 +426,5 @@ These are open on Clew's side and change what is sent or how an installation is 
 - Whether people who are not meant to sign in should be sent at all. Sending a User creates a local person. Usable access requires an active account, a unit assignment and a matching identity at sign-in.
 - Whether Clew may hold the fact that a person is protected. Until it is answered, do not send it.
 - Whether a person with several placements can switch between them. Today they act as one: a unit they lead before a unit they work in, then the first unit id in text order (`10` before `9`).
-- Whether a person needs several titles, or a title for each placement with a period of its own. Today it is one title per person.
 - Whether one installation can hold several organisations. Today it is one.
 - How a person whose account at the identity provider was replaced is bound to the new one. Today nothing in Clew does it.

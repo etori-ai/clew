@@ -68,3 +68,4 @@ Dated evidence, design explorations and recommendations. They are historical con
 - [Review: the panel beside the page against what Astryx ships · 2026-11-11](2026-11-11-the-panel-beside-the-page-against-what-astryx-ships.md)
 - [Review: `typebox` 1.x instead of `@sinclair/typebox` 0.34 · 2026-11-11](2026-11-11-typebox-1-instead-of-sinclair-typebox.md)
 - [Review: an outside reading of the merged SCIM server and its example provisioner · 2026-11-12](2026-11-12-outside-review-of-the-merged-scim-server.md)
+- [Review: SCIM and the two guides before they are handed to the directory team · 2026-11-12](2026-11-12-scim-and-the-guides-before-the-handover.md)

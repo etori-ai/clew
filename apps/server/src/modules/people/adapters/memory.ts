@@ -276,7 +276,7 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
       for (const p of personIds) state.members.add(memberKey(groupId, p));
     },
     async searchUsers(organisationId, search, p) {
-      const folded = (value: string | null) => (value ?? '').toLocaleLowerCase('sv');
+      const folded = (value: string | null | undefined) => (value ?? '').toLocaleLowerCase('sv');
       const matching = [...state.users.values()]
         .filter(u => {
           if (u.organisationId !== organisationId) return false;
@@ -285,7 +285,9 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
             status = !u.enabled ? 'disabled' : !granted ? 'no-access' : bound ? 'signed-in' : 'not-signed-in';
           return (
             (search.words ?? []).every(word =>
-              [u.name, u.userName, u.email, u.title].some(value => folded(value).includes(folded(word))),
+              [u.name, u.userName, u.email, u.title, ...u.employments.map(job => job.title)].some(value =>
+                folded(value).includes(folded(word)),
+              ),
             ) &&
             (!(search.unitIds || search.role) ||
               (state.assignments.get(u.id) ?? []).some(
@@ -323,10 +325,12 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
         .map(g => ({ id: unitGroupOf(g.externalId)!, label: g.label }))
         .sort((a, b) => a.id.localeCompare(b.id));
     },
-    async unitTree(organisationId) {
+    async unitTree(organisationId, ids) {
+      const wanted = ids && new Set(ids);
       return [...state.groups.values()]
         .filter(g => g.organisationId === organisationId && unitGroupOf(g.externalId) !== undefined)
         .map(g => ({ id: unitGroupOf(g.externalId)!, label: g.label, parentId: g.parentUnitId }))
+        .filter(unit => !wanted || wanted.has(unit.id))
         .sort((a, b) => a.id.localeCompare(b.id));
     },
     async placements(organisationId) {

@@ -35,6 +35,8 @@ function directory(extra: { onSkola?: Person[] } = {}) {
       userName: p.userName,
       name: p.name,
       email: null,
+      phoneNumbers: [],
+      employments: [],
       title: null,
       enabled: p.enabled ?? true,
       createdAt: T,
@@ -205,7 +207,7 @@ function world(
   const card: EntityCard = { threadId: 'thread-1', title: 'Sjukanmälan', source: 'Personalsystemet', kind: 'act' };
   const logged: unknown[][] = [];
   const entities = entityUsecases({
-    directory: { reach: p => people.staff.reach(p), colleague: (p, key) => people.staff.colleague(p, key) },
+    directory: people.staff,
     sources: {
       reads: async (actor, kind) => registry.aboutReads(actor, kind),
       actions: async (actor, kind) => registry.aboutActions(actor, kind),
@@ -560,6 +562,7 @@ describe('the opened person or unit', () => {
         unit: { id: 'unit-skola', label: 'Bergsåkers skola' },
       },
       relation: 'managed',
+      profile: { email: null, phoneNumbers: [], title: null, employments: [] },
       actions: [expect.objectContaining({ capability: 'hr.book', param: 'person' })],
       sections: [
         expect.objectContaining({ capability: 'hr.absence', source: 'Personalsystemet' }),
@@ -569,6 +572,45 @@ describe('the opened person or unit', () => {
       cards: [{ threadId: 'thread-1', title: 'Sjukanmälan', source: 'Personalsystemet', kind: 'act' }],
     });
     expect(cardsAsked).toEqual([{ entity: 'person', key: 'anna' }]);
+  });
+  test('an authorised profile shows the work address, every number and each employment on its named unit', async () => {
+    const { people, entities } = standard();
+    people.state.groups.set('school', {
+      id: 'school',
+      organisationId: 'poc',
+      externalId: 'unit:unit-skola',
+      label: 'Skolans nya namn',
+      parentUnitId: null,
+      createdAt: T,
+      updatedAt: T,
+    });
+    const row = people.state.users.get('anna')!;
+    row.email = 'anna@example.test';
+    row.phoneNumbers = [
+      { type: 'work', value: '010-1' },
+      { type: 'work', value: '010-2' },
+    ];
+    row.employments = [
+      {
+        unitId: 'unit-skola',
+        title: 'Lärare',
+        employmentType: 'Tillsvidare',
+        startDate: '2019-02-01',
+        employmentPercentage: 60,
+      },
+      { unitId: 'unit-skola', title: 'Samordnare' },
+    ];
+    for (const reader of ['hillevi', 'anna', 'hassan']) {
+      const profile = (await entities.detail(people.persona(reader), 'person', 'ANNA'))?.profile;
+      expect(profile).toEqual({
+        email: row.email,
+        title: null,
+        phoneNumbers: row.phoneNumbers,
+        employments: row.employments.map(job => ({ ...job, unitLabel: 'Skolans nya namn' })),
+      });
+    }
+    row.enabled = false;
+    expect(await entities.detail(people.persona('hassan'), 'person', 'anna')).toBeUndefined();
   });
   test('the reader themself, and another active person of the directory as a colleague', async () => {
     const { entities, people } = standard();

@@ -1267,7 +1267,7 @@
       "number": 110,
       "path": "docs/decisions/D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md",
       "title": "D110 · A person's title is pushed as SCIM's `title` and kept apart from the role",
-      "status": "provisional (product owner, 2026-11-11: the user list should say what a person is called at work, and that is another fact than manager or employee; built against the freeze on new surface on his word), built 2026-11-11; one title per person and the standard attribute are choices made in the build and stand until he says otherwise; accepted once a real directory has pushed titles; no manual screen-reader pass yet",
+      "status": "provisional (product owner, 2026-11-11: the user list should say what a person is called at work, and that is another fact than manager or employee; built against the freeze on new surface on his word), built 2026-11-11; amended by D114 on 2026-11-12 for multiple employments and titles on the profile; accepted once a real directory has pushed titles; no manual screen-reader pass yet",
       "date": "2026-11-11",
       "area": "identity, ui"
     },
@@ -1297,6 +1297,15 @@
       "status": "provisional (chosen in the build that followed [the full review of the SCIM server](../reviews/2026-11-11-scim-full-review.md), which the product owner asked for on 2026-11-11; he has not read the three rules), built 2026-11-11; accepted once a real directory has sent a leaver through it",
       "date": "2026-11-11",
       "area": "identity"
+    },
+    {
+      "key": "D114-person-profiles-show-employments-and-categorised-phone-numbers",
+      "number": 114,
+      "path": "docs/decisions/D114-person-profiles-show-employments-and-categorised-phone-numbers.md",
+      "title": "D114 · Person profiles show current employments and categorised phone numbers",
+      "status": "provisional (product owner, 2026-11-12, who directed the build against the freeze on new surface of D101 and settled items 3, 5 and 6 after the [review of the same day](../reviews/2026-11-12-scim-and-the-guides-before-the-handover.md)); implemented with the synthetic provisioner; accepted once a real directory has sent employments and numbers; no manual screen-reader pass yet",
+      "date": "2026-11-12",
+      "area": "identity, ui"
     }
   ],
   "documents": [
@@ -1865,6 +1874,12 @@
     {
       "path": "docs/decisions/D113-a-deactivation-is-never-refused-for-what-stands-beside-it.md",
       "title": "D113 · A deactivation is never refused for what stands beside it, and the SCIM server says no to what it did not do",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D114-person-profiles-show-employments-and-categorised-phone-numbers.md",
+      "title": "D114 · Person profiles show current employments and categorised phone numbers",
       "category": "decision-history",
       "headings": []
     },
@@ -3902,6 +3917,20 @@
         "What the review does not say",
         "Left as it is",
         "Follow-up on PR 36",
+        "Outcome"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-12-scim-and-the-guides-before-the-handover.md",
+      "title": "Review: SCIM and the two guides before they are handed to the directory team · 2026-11-12",
+      "category": "review-history",
+      "headings": [
+        "Question",
+        "Method",
+        "Assessment",
+        "Findings",
+        "Recommended",
+        "Left as it is",
         "Outcome"
       ]
     },

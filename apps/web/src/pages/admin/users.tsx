@@ -37,6 +37,7 @@ import {
   useMediaQuery,
   useToast,
 } from '@clew/ui';
+import { PersonNameLink } from '../../components/person-name-link';
 import { api } from '../../api';
 import { adminQueries } from '../../queries';
 import { keys } from '../../query-keys';
@@ -294,7 +295,7 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
       width: proportional(2, { minWidth: 220 }),
       renderCell: (r: Row) => (
         <VStack gap={0} hAlign="start">
-          <Text weight="semibold">{r.u.name}</Text>
+          <PersonNameLink person={r.u} />
           {r.u.title && <Text type="supporting">{r.u.title}</Text>}
           <Text type="code" color="secondary">
             {r.u.userName ?? r.u.id}
@@ -586,7 +587,7 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
               {users.map(u => (
                 <ListItem
                   key={u.id}
-                  label={<Text weight="semibold">{u.name}</Text>}
+                  label={<PersonNameLink person={u} />}
                   description={
                     <VStack gap={0} hAlign="start">
                       {u.title && <Text type="supporting">{u.title}</Text>}

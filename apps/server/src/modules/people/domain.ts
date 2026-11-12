@@ -11,8 +11,12 @@
  */
 import {
   CAPABILITIES,
+  EmploymentSchema,
+  checkContract,
   isCapability,
   type Capability,
+  type DirectoryPhone,
+  type Employment,
   type OrganisationOverview,
   type OrganisationUnit,
   type Role,
@@ -263,8 +267,12 @@ export function organisationOf(
 
 import { SCIM, SCIM_MAX_RESULTS, ScimError, type ScimGroup, type ScimPatchOperation, type ScimUser } from './contracts';
 
+interface DirectoryDetails {
+  phoneNumbers: DirectoryPhone[];
+  employments: Employment[];
+}
 /** A person as the store holds it for SCIM: the provisioning columns of `auth_person`. Instants are ISO strings. */
-export interface UserRecord {
+export interface UserRecord extends DirectoryDetails {
   id: string;
   organisationId: string;
   externalId: string | null;
@@ -289,8 +297,8 @@ export interface GroupRecord {
   createdAt: string;
   updatedAt: string;
 }
-/** The fields a provisioner sets on a person; D68 requires every one of them but the title, which is optional (D110). */
-export interface UserFields {
+/** The fields a provisioner sets on a person. Contact numbers, employments and the core title are optional. */
+export interface UserFields extends DirectoryDetails {
   externalId: string;
   userName: string;
   name: string;
@@ -318,7 +326,14 @@ const need = (attribute: string): never => {
  * kept as it stands and not looked into.
  */
 type Names = { readonly [name: string]: Names | true };
-const EMAIL_NAMES: Names = { value: true, type: true, primary: true, display: true },
+const CONTACT_NAMES: Names = { value: true, type: true, primary: true, display: true },
+  EMPLOYMENT_NAMES: Names = {
+    unitId: true,
+    title: true,
+    employmentType: true,
+    startDate: true,
+    employmentPercentage: true,
+  },
   MEMBER_NAMES: Names = { value: true, display: true, $ref: true, type: true },
   NAME_NAMES: Names = { formatted: true, givenName: true, familyName: true };
 const USER_NAMES: Names = {
@@ -328,7 +343,9 @@ const USER_NAMES: Names = {
   userName: true,
   displayName: true,
   name: NAME_NAMES,
-  emails: EMAIL_NAMES,
+  emails: CONTACT_NAMES,
+  phoneNumbers: CONTACT_NAMES,
+  [SCIM.employment]: { employments: EMPLOYMENT_NAMES },
   title: true,
   active: true,
 };
@@ -363,6 +380,8 @@ const asResource = (body: unknown, names: Names, what: string): Record<string, u
 const asString = (value: unknown, path: string): string => {
   if (typeof value !== 'string' || !value.trim() || value.length > 512)
     throw new ScimError(400, `Attribute '${path}' needs a non-empty string of at most 512 characters.`, 'invalidValue');
+  if (/\p{Cs}/u.test(value))
+    throw new ScimError(400, `Attribute '${path}' contains an invalid Unicode character.`, 'invalidValue');
   if (value.includes('\u0000'))
     throw new ScimError(400, `Attribute '${path}' holds a NUL character, which cannot be stored.`, 'invalidValue');
   return value;
@@ -391,55 +410,161 @@ interface Email {
   type?: string;
   primary?: boolean;
 }
-/** The addresses of a body or of a patch value, each an object with a `value` or the address itself. */
-const emailList = (value: unknown, path: string): Email[] =>
+/** SCIM contact values in a body or patch, with case-insensitive attribute names and shorthand string values. */
+const contactEntries = (value: unknown, path: string): Record<string, unknown>[] =>
   (Array.isArray(value) ? value : [value])
     .filter(item => item !== null && item !== undefined)
-    .map(item => {
-      if (typeof item === 'string') return { value: asString(item, path + '.value') };
-      const email = asObject(plain(item, EMAIL_NAMES, 'dropped'), path);
-      return {
-        value: asString(email.value, path + '.value'),
-        ...(typeof email.type === 'string' ? { type: email.type } : {}),
-        ...(email.primary === true || String(email.primary).toLowerCase() === 'true' ? { primary: true } : {}),
-      };
-    });
+    .map(item => (typeof item === 'string' ? { value: item } : asObject(plain(item, CONTACT_NAMES, 'dropped'), path)));
+const emailList = (value: unknown, path: string): Email[] =>
+  contactEntries(value, path).map(email => ({
+    value: asString(email.value, path + '.value'),
+    ...(typeof email.type === 'string' ? { type: email.type } : {}),
+    ...(email.primary === true || String(email.primary).toLowerCase() === 'true' ? { primary: true } : {}),
+  }));
 /**
- * The work address: `type: "work"` first; otherwise an address without a type, the primary before the first. An
- * address of any other type (`home`, `other`) is never taken, so a private address is not stored as the work one;
- * `emailTarget` reads a PATCH path the same way.
+ * The one address Clew holds, of the addresses a client sent: `type: "work"` first; otherwise one without a type, the
+ * primary before the first. `whole` says the list is all the person has (a body, a `replace`): then an address of any
+ * other type is taken before none at all, the primary before the first. What an address is called is the source's to
+ * answer for (D114); Clew does not refuse a person for it. Without `whole` the list is added to what is held, and an
+ * address of another type is beside the one Clew holds.
  */
-export function workEmail(emails: readonly Email[]): string | undefined {
+export function workEmail(emails: readonly Email[], whole: boolean): string | undefined {
   const untyped = emails.filter(email => !email.type);
   return (
     emails.find(email => email.type?.toLowerCase() === 'work') ??
     untyped.find(email => email.primary) ??
-    untyped[0]
+    untyped[0] ??
+    (whole ? (emails.find(email => email.primary) ?? emails[0]) : undefined)
   )?.value;
 }
-/** No address at all is a missing attribute; addresses of other types alone are a value Clew does not take. */
-const noWorkEmail = (emails: readonly unknown[] | undefined): never => {
-  if (!emails?.length) return need('emails');
-  throw new ScimError(
-    400,
-    "Attribute 'emails' needs a work address: one with type 'work', or one without a type. An address of another type is not stored as the work address.",
-    'invalidValue',
-  );
+/**
+ * D114: a person's phone numbers and employments are shown and decide nothing, so what Clew cannot read in them is
+ * left out and never refuses the person, as a title is (D110): a number that is empty, `null`, not text or longer than
+ * a number is; an entry with nothing in it. Having no phone number is not a mistake. What is refused is a request
+ * that says something Clew cannot take as said: an employment without a unit or on a unit the organisation does not
+ * hold (asked of the store), a list past `DETAIL_LIMIT`, `employments` written without the extension's URN.
+ */
+const DETAIL_LIMIT = 50;
+function within<T>(rows: T[], attribute: string): T[] {
+  if (rows.length > DETAIL_LIMIT)
+    throw new ScimError(400, `Attribute '${attribute}' carries at most ${DETAIL_LIMIT} entries.`, 'invalidValue');
+  return rows;
+}
+/** Text as it is shown: a control character or half a surrogate pair becomes a space, cut at `length` characters. */
+const shown = (value: unknown, length: number): string | null =>
+  typeof value === 'string'
+    ? Array.from(value.replace(/[\p{Cc}\p{Cs}]+/gu, ' ').trim())
+        .slice(0, length)
+        .join('')
+        .trimEnd() || null
+    : null;
+const canonicalPhoneTypes = new Set(['work', 'mobile', 'home', 'fax', 'pager', 'other']);
+const PHONE_LENGTH = 512,
+  PHONE_TYPE_LENGTH = 64;
+/** A number as sent, less the space around it; one cut short would be another number, so one too long is none. */
+const phoneValue = (value: unknown): string | undefined => {
+  const text = shown(value, PHONE_LENGTH + 1);
+  return text && Array.from(text).length <= PHONE_LENGTH ? text : undefined;
 };
-const TITLE_LENGTH = 512;
+/** The category: the standard's in lower case, the directory's own as written, "other" where none can be read. */
+const phoneType = (value: unknown, fallback?: string): string => {
+  const type = shown(value, PHONE_TYPE_LENGTH) ?? shown(fallback, PHONE_TYPE_LENGTH) ?? 'other';
+  return canonicalPhoneTypes.has(type.toLowerCase()) ? type.toLowerCase() : type;
+};
+/** The numbers of a body or of a patch value: objects with a `value`, or the numbers themselves. */
+function phoneList(value: unknown, targetType?: string): DirectoryPhone[] {
+  return (Array.isArray(value) ? value : [value]).flatMap(item => {
+    const entry =
+      typeof item === 'string'
+        ? { value: item }
+        : item && typeof item === 'object' && !Array.isArray(item)
+          ? (plain(item, CONTACT_NAMES, 'dropped') as Record<string, unknown>)
+          : {};
+    const number = phoneValue(entry.value);
+    if (!number) return [];
+    const type = phoneType(entry.type, targetType);
+    if (targetType && targetType.toLowerCase() !== type.toLowerCase())
+      throw new ScimError(
+        400,
+        `The number's type '${type}' is not the one the path names, '${targetType}'.`,
+        'invalidValue',
+      );
+    return [{ type, value: number }];
+  });
+}
+
+/** The directory's order, each entry once: two that are the same cannot be told apart, and a retried add adds nothing. */
+function distinctEntries<T>(rows: T[], key: (row: T) => string): T[] {
+  const seen = new Set<string>();
+  return rows.filter(row => {
+    const id = key(row);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+const phoneKey = (row: DirectoryPhone) => JSON.stringify([row.type.toLowerCase(), row.value]);
+const employmentKey = (row: Employment) =>
+  JSON.stringify([row.unitId, row.title, row.employmentType, row.startDate, row.employmentPercentage]);
+const EMPLOYMENTS = SCIM.employment + ':employments';
+/** The employments of a body or of a patch value: a list, or the one entry by itself. */
+function employmentList(value: unknown): Employment[] {
+  if (value === undefined || value === null) return [];
+  return (Array.isArray(value) ? value : [value]).flatMap(item => {
+    if (item === null || item === undefined) return [];
+    const row = asObject(plain(item, EMPLOYMENT_NAMES, 'dropped'), EMPLOYMENTS),
+      title = titleOf(row.title),
+      employmentType = shown(row.employmentType, EMPLOYMENT_LABEL_LENGTH),
+      startDate = checkContract(EmploymentSchema.properties.startDate, row.startDate) ? row.startDate : undefined,
+      employmentPercentage = checkContract(EmploymentSchema.properties.employmentPercentage, row.employmentPercentage)
+        ? row.employmentPercentage
+        : undefined;
+    if (row.unitId === undefined || row.unitId === '') {
+      if (!title && !employmentType && !startDate && employmentPercentage === undefined) return [];
+      throw new ScimError(
+        400,
+        `An employment needs a 'unitId': the id of the unit, which is what follows '${UNIT_KEY}' in the externalId of its group. A title that belongs to no unit is sent as the user's 'title'.`,
+        'invalidValue',
+      );
+    }
+    return [
+      {
+        unitId: asString(row.unitId, EMPLOYMENTS + '.unitId'),
+        ...(title ? { title } : {}),
+        ...(employmentType ? { employmentType } : {}),
+        ...(startDate ? { startDate } : {}),
+        ...(employmentPercentage !== undefined ? { employmentPercentage } : {}),
+      },
+    ];
+  });
+}
+function extensionEmployments(value: unknown): unknown {
+  if (value === undefined || value === null) return [];
+  return asObject(plain(value, { employments: true }, 'dropped'), SCIM.employment).employments;
+}
+/**
+ * `employments` named without the extension's URN. Ignored as an attribute Clew does not hold, it would answer that a
+ * person's employments were stored while none were; so it is refused, as a bare `parent` is on a unit.
+ */
+const isBareEmployments = (name: string) => /^employments(?:[.[]|$)/.test(name.trim().toLowerCase());
+const bareEmployments = () =>
+  beside(new ScimError(400, `Use '${EMPLOYMENTS}' for a person's employments.`, 'invalidPath'));
+/**
+ * What a person is called at work, as the product shows and searches it: the titles of the employments, each once in
+ * the directory's order; the core `title` where no employment carries one (D110, D114).
+ */
+export function titlesOf(person: { title: string | null; employments: readonly Employment[] }): string[] {
+  const titles = [...new Set(person.employments.flatMap(job => (job.title ? [job.title] : [])))];
+  return titles.length ? titles : person.title ? [person.title] : [];
+}
+const EMPLOYMENT_LABEL_LENGTH = 512;
 /**
  * D110: a title is kept as sent, less the space around it and whatever is past 512 characters (counted as characters,
  * so none is cut in half). A control character in it, a line break or the NUL that PostgreSQL cannot hold, becomes a
  * space. An empty one, `null` and a value that is not text all mean the person has none. A title decides nothing, so
  * it is never a reason to refuse a person or the other changes of the same request.
  */
-const titleOf = (value: unknown): string | null =>
-  typeof value === 'string'
-    ? Array.from(value.replace(/\p{Cc}+/gu, ' ').trim())
-        .slice(0, TITLE_LENGTH)
-        .join('')
-        .trimEnd() || null
-    : null;
+const titleOf = (value: unknown): string | null => shown(value, EMPLOYMENT_LABEL_LENGTH);
 /**
  * D113: a deactivation is never refused for what stands beside it. A request that says `active: false` and also
  * carries an attribute Clew cannot take (an address that is gone, a name that is empty, a required attribute removed)
@@ -455,6 +580,9 @@ function beside(error: ScimError) {
 }
 const standsBeside = (error: unknown): error is ScimError =>
   error instanceof ScimError && (error.scimType === 'invalidValue' || besideErrors.has(error));
+/** The fields of a request that said `active: false`, for what is asked of the store after the request is read. */
+const deactivating = new WeakSet<UserFields>();
+export const saysInactive = (fields: UserFields) => deactivating.has(fields);
 /**
  * A full user representation (POST, PUT) to the fields Clew holds, with D68's requirements checked by name. `current`
  * is the person a `PUT` replaces: an `externalId` the body leaves out is kept (Okta's update sends none), and so is
@@ -464,21 +592,21 @@ export function userFields(body: unknown, current?: UserFields): UserFields {
   const input = asResource(body, USER_NAMES, 'User');
   const enabled = input.active === undefined ? true : asBoolean(input.active, 'active');
   const kept = enabled ? undefined : current;
-  const read = (key: 'externalId' | 'userName' | 'name' | 'email', from: () => string): string => {
+  const read = <T>(previous: T | undefined, from: () => T): T => {
     try {
       return from();
     } catch (error) {
-      if (kept?.[key] && standsBeside(error)) return kept[key];
+      if (previous !== undefined && standsBeside(error)) return previous;
       throw error;
     }
   };
-  return {
+  const fields: UserFields = {
     externalId: read(
-      'externalId',
+      kept?.externalId || undefined,
       () => optional(input.externalId, 'externalId') ?? (current?.externalId || need('externalId')),
     ),
-    userName: read('userName', () => asString(input.userName ?? need('userName'), 'userName')),
-    name: read('name', () => {
+    userName: read(kept?.userName || undefined, () => asString(input.userName ?? need('userName'), 'userName')),
+    name: read(kept?.name || undefined, () => {
       const name = input.name === undefined ? {} : asObject(input.name, 'name'),
         part = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
       return (
@@ -490,13 +618,25 @@ export function userFields(body: unknown, current?: UserFields): UserFields {
         )
       );
     }),
-    email: read('email', () => {
+    email: read(kept?.email || undefined, () => {
       const emails = input.emails === undefined ? [] : emailList(input.emails, 'emails');
-      return workEmail(emails) ?? noWorkEmail(emails);
+      return workEmail(emails, true) ?? need('emails');
+    }),
+    phoneNumbers: read(kept?.phoneNumbers, () =>
+      within(distinctEntries(phoneList(input.phoneNumbers), phoneKey), 'phoneNumbers'),
+    ),
+    employments: read(kept?.employments, () => {
+      if (Object.keys(input).some(isBareEmployments)) throw bareEmployments();
+      return within(
+        distinctEntries(employmentList(extensionEmployments(input[SCIM.employment])), employmentKey),
+        EMPLOYMENTS,
+      );
     }),
     title: titleOf(input.title),
     enabled,
   };
+  if (!enabled) deactivating.add(fields);
+  return fields;
 }
 /** The unit id a `unit:` group's key names; undefined for `unit-manager:` and every other key. */
 export const unitGroupOf = (externalId: string | null | undefined): string | undefined =>
@@ -684,8 +824,9 @@ const projectionPaths = (list: string | undefined) =>
     .map(name => {
       // The unit extension (D99) is named by its URN, which has a dot of its own ('2.0'): the URN is the attribute, and
       // what follows it the sub-attribute.
-      if (name === UNIT_EXTENSION || name.startsWith(UNIT_EXTENSION + ':'))
-        return { top: UNIT_EXTENSION, sub: name.slice(UNIT_EXTENSION.length + 1) || undefined };
+      for (const urn of [UNIT_EXTENSION, employmentUrn])
+        if (name === urn || name.startsWith(urn + ':'))
+          return { top: urn, sub: name.slice(urn.length + 1) || undefined };
       const [top, ...sub] = name.split('.');
       return { top: top!, sub: sub.join('.') || undefined };
     });
@@ -693,7 +834,16 @@ const projectionPaths = (list: string | undefined) =>
 const narrow = (value: unknown, subs: readonly string[], keep: boolean): unknown => {
   if (Array.isArray(value)) return value.map(v => narrow(v, subs, keep));
   if (!value || typeof value !== 'object') return value;
-  return Object.fromEntries(Object.entries(value).filter(([k]) => subs.includes(k.toLowerCase()) === keep));
+  const projected: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    const name = key.toLowerCase();
+    const children = subs.filter(path => path.startsWith(name + '.')).map(path => path.slice(name.length + 1));
+    if (subs.includes(name)) {
+      if (keep) projected[key] = entry;
+    } else if (children.length) projected[key] = narrow(entry, children, keep);
+    else if (!keep) projected[key] = entry;
+  }
+  return projected;
 };
 export function project<T extends object>(resource: T, projection: Projection = {}): T {
   const wanted = projectionPaths(projection.attributes),
@@ -803,8 +953,8 @@ const repeated = (key: string, value: unknown, id: string | undefined) => {
  * - `emails`, `emails.value`, and a filter that picks the work address (`type eq "work"`, `primary eq true`, or both)
  *   are that address;
  * - a filter that names another type (`type eq "home"`) is an address Clew does not hold, which is nothing to change;
- * - any other filter is one this server cannot evaluate, and is refused: read as the work address, it once stored a
- *   private address as the work one.
+ * - any other filter is one this server cannot evaluate, and is refused: read as the one address, it once replaced it
+ *   with another.
  * `sub` is the sub-attribute after the filter; without one the value is the address as an object.
  */
 const emailTarget = (key: string, path: string): { held: boolean; sub: string | undefined } | undefined => {
@@ -828,10 +978,89 @@ const emailTarget = (key: string, path: string): { held: boolean; sub: string | 
   );
 };
 /**
- * What taking a user's attribute away is aimed at, by a `remove` or by a value of `null`. Clew requires five
- * attributes (D68 item 1) and holds a sixth that it does not, the title (D110), which is cleared. Every other
- * attribute, an extension's included, is not held, so removing it changes nothing and is accepted, as adding it is.
+ * A path under `phoneNumbers`: the list, or the numbers a filter picks, by type (every number of that category) or by
+ * value (one number). A number set to nothing is taken away, as an emptied field in the source is. Clew holds a type
+ * and a value for a number: `and primary eq …` in a filter is not asked about, and another sub-attribute (`display`,
+ * `primary`) is nothing to change.
  */
+function patchPhones(next: UserFields, path: string, op: 'add' | 'replace' | 'remove', value?: unknown) {
+  const target = corePath(path, 'user');
+  const store = (rows: DirectoryPhone[]) => {
+    next.phoneNumbers = within(distinctEntries(rows, phoneKey), 'phoneNumbers');
+  };
+  if (target.toLowerCase() === 'phonenumbers')
+    return store(op === 'remove' ? [] : [...(op === 'add' ? next.phoneNumbers : []), ...phoneList(value)]);
+  const match =
+    /^phonenumbers\[\s*(type|value)\s+eq\s+("(?:[^"\\]|\\.)*")(?:\s+and\s+primary\s+eq\s+(?:true|false))?\s*\](?:\.([a-z$]+))?$/i.exec(
+      target,
+    );
+  let filter: unknown;
+  try {
+    filter = match && JSON.parse(match[2]!);
+  } catch {
+    filter = undefined;
+  }
+  if (!match || typeof filter !== 'string')
+    throw beside(
+      new ScimError(
+        400,
+        `Path '${path}' is not supported: use 'phoneNumbers', phoneNumbers[type eq "<type>"] or phoneNumbers[value eq "<number>"], with '.value' or '.type' after a filter.`,
+        'invalidPath',
+      ),
+    );
+  const picked = filter,
+    byType = match[1]!.toLowerCase() === 'type',
+    matches = (row: DirectoryPhone) =>
+      byType ? row.type.toLowerCase() === picked.toLowerCase() : row.value === picked,
+    rows = next.phoneNumbers,
+    others = rows.filter(row => !matches(row)),
+    sub = match[3]?.toLowerCase();
+  if (sub !== undefined && sub !== 'value' && sub !== 'type') return;
+  const noTarget = () => beside(new ScimError(400, `No phone number matches the filter of '${path}'.`, 'noTarget'));
+  if (sub === 'type') {
+    // A type taken away, or set to nothing readable, leaves the number in the category for those without one.
+    if (op !== 'remove' && !rows.some(matches)) throw noTarget();
+    const type = op === 'remove' ? 'other' : phoneType(value);
+    return store(rows.map(row => (matches(row) ? { ...row, type } : row)));
+  }
+  if (op === 'remove') return store(others);
+  if (sub === 'value') {
+    const number = phoneValue(value);
+    if (!number) return store(others);
+    if (rows.some(matches)) return store(rows.map(row => (matches(row) ? { ...row, value: number } : row)));
+    // Entra adds a person's first number of a type as `phoneNumbers[type eq "mobile"].value`.
+    if (byType) return store([...rows, { type: phoneType(picked), value: number }]);
+    throw noTarget();
+  }
+  if (op === 'replace' && !byType && !rows.some(matches)) throw noTarget();
+  store([...(op === 'add' ? rows : others), ...phoneList(value, byType ? picked : undefined)]);
+}
+const employmentUrn = SCIM.employment.toLowerCase();
+/** The employments are replaced, added to or taken away as a list: an entry has no id to be picked by. */
+function patchEmployment(
+  next: UserFields,
+  key: string,
+  path: string,
+  op: 'add' | 'replace' | 'remove',
+  value?: unknown,
+) {
+  if (key !== employmentUrn && key !== employmentUrn + ':employments')
+    throw beside(
+      new ScimError(
+        400,
+        `Path '${path}' is not supported: send the whole list of employments to '${EMPLOYMENTS}'.`,
+        'invalidPath',
+      ),
+    );
+  const sent = op === 'remove' ? [] : employmentList(key === employmentUrn ? extensionEmployments(value) : value);
+  next.employments = within(
+    distinctEntries([...(op === 'add' ? next.employments : []), ...sent], employmentKey),
+    EMPLOYMENTS,
+  );
+}
+const isPhonePath = (key: string) =>
+  key === 'phonenumbers' || key.startsWith('phonenumbers[') || key.startsWith('phonenumbers.');
+/** Removal of other user attributes. A required value (D68) is refused and the optional title (D110) is cleared. */
 const userRemoval = (key: string, path: string): 'required' | 'readOnly' | 'title' | 'notHeld' => {
   if (isReadOnly(key, 'user')) return 'readOnly';
   if (key === 'title') return 'title';
@@ -860,6 +1089,9 @@ export function applyUserPatch(
     deactivates = false;
   const wrong: ScimError[] = [];
   const unset = (key: string, path: string) => {
+    if (isPhonePath(key)) return patchPhones(next, path, 'remove');
+    if (key === employmentUrn || key.startsWith(employmentUrn + ':')) return patchEmployment(next, key, path, 'remove');
+    if (isBareEmployments(key)) throw bareEmployments();
     const aim = userRemoval(key, path);
     if (aim === 'readOnly') throw readOnly(path);
     if (aim === 'required') throw required(path);
@@ -876,6 +1108,10 @@ export function applyUserPatch(
       for (const [name, inner] of Object.entries(asObject(value, path))) attempt(() => set(name, inner, op, true));
       return;
     }
+    if (isPhonePath(key)) return patchPhones(next, path, op, value);
+    if (key === employmentUrn || key.startsWith(employmentUrn + ':'))
+      return patchEmployment(next, key, path, op, value);
+    if (isBareEmployments(key)) throw bareEmployments();
     const email = emailTarget(key, path);
     if (key === 'username') next.userName = asString(value, path);
     else if (key === 'externalid') next.externalId = asString(value, path);
@@ -889,7 +1125,10 @@ export function applyUserPatch(
       if (email.sub === 'value') next.email = asString(value, path);
       else {
         const sent = emailList(value, path),
-          work = workEmail(sent);
+          // A filter that picked the work address has said which one it is; a list says it by type. `replace` on
+          // `emails` gives the whole list, as a body does; `add` appends (RFC 7644 §3.5.2.1), and an address of another
+          // type is then beside the one Clew holds and changes nothing.
+          work = workEmail(sent, key === 'emails' && op === 'replace');
         if (work !== undefined) next.email = work;
         else if (key !== 'emails' && sent.length)
           throw new ScimError(
@@ -897,8 +1136,7 @@ export function applyUserPatch(
             `Path '${path}' names the work address, and the value says it is of another type. It was not stored.`,
             'invalidValue',
           );
-        // `add` appends (RFC 7644 §3.5.2.1): an address of another type is one Clew does not hold, and changes nothing.
-        else if (op === 'replace' || !sent.length) noWorkEmail(sent);
+        else if (!sent.length) need('emails');
       }
     } else if (key === 'name') {
       // Given and family names are not held: a name object sets the name only through `formatted`, as the paths do.
@@ -931,6 +1169,7 @@ export function applyUserPatch(
         attempt(() => set(key, value, op, true));
   }
   if (wrong.length && !deactivates) throw wrong[0];
+  if (deactivates) deactivating.add(next);
   return next;
 }
 /**
@@ -1027,13 +1266,15 @@ export function userResource(
   base: string,
 ): ScimUser {
   return {
-    schemas: [SCIM.user],
+    schemas: record.employments.length ? [SCIM.user, SCIM.employment] : [SCIM.user],
+    ...(record.employments.length ? { [SCIM.employment]: { employments: record.employments } } : {}),
     id: record.id,
     ...(record.externalId ? { externalId: record.externalId } : {}),
     userName: record.userName ?? record.id,
     displayName: record.name,
     name: { formatted: record.name },
     emails: record.email ? [{ value: record.email, type: 'work', primary: true }] : [],
+    ...(record.phoneNumbers.length ? { phoneNumbers: record.phoneNumbers } : {}),
     ...(record.title ? { title: record.title } : {}),
     active: record.enabled,
     groups: groups.map(g => ({ value: g.id, display: g.label, $ref: `${base}/Groups/${g.id}` })),
@@ -1094,7 +1335,7 @@ export const resourceTypes = (base: string) => [
     endpoint: '/Users',
     description: 'A person who may sign in to Clew.',
     schema: SCIM.user,
-    schemaExtensions: [],
+    schemaExtensions: [{ schema: SCIM.employment, required: false }],
     meta: { resourceType: 'ResourceType', location: `${base}/ResourceTypes/User` },
   },
   {
@@ -1142,6 +1383,13 @@ export const schemaDocuments = (base: string) => [
         required: true,
         subAttributes: [attribute('value', 'string'), attribute('type', 'string'), attribute('primary', 'boolean')],
       }),
+      attribute('phoneNumbers', 'complex', {
+        multiValued: true,
+        subAttributes: [
+          attribute('value', 'string'),
+          attribute('type', 'string', { canonicalValues: [...canonicalPhoneTypes] }),
+        ],
+      }),
       attribute('title', 'string'),
       attribute('active', 'boolean'),
       attribute('groups', 'complex', {
@@ -1175,6 +1423,27 @@ export const schemaDocuments = (base: string) => [
       }),
     ],
     meta: { resourceType: 'Schema', location: `${base}/Schemas/${SCIM.group}` },
+  },
+  {
+    schemas: [SCIM.schema],
+    id: SCIM.employment,
+    name: 'Employment',
+    description: 'Current employments with their unit and optional details about each job.',
+    attributes: [
+      attribute('employments', 'complex', {
+        multiValued: true,
+        subAttributes: [
+          attribute('unitId', 'string', { required: true, caseExact: true }),
+          attribute('title', 'string'),
+          attribute('employmentType', 'string', { description: "The source's label for the form of employment." }),
+          attribute('startDate', 'string', { description: 'First calendar day of this employment, YYYY-MM-DD.' }),
+          attribute('employmentPercentage', 'decimal', {
+            description: 'Percentage of full-time hours for this employment, from 0 to 100 inclusive.',
+          }),
+        ],
+      }),
+    ],
+    meta: { resourceType: 'Schema', location: `${base}/Schemas/${SCIM.employment}` },
   },
   {
     schemas: [SCIM.schema],

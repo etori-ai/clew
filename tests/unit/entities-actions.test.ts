@@ -40,6 +40,8 @@ function directory() {
       userName,
       name,
       email: null,
+      phoneNumbers: [],
+      employments: [],
       title: null,
       enabled: id !== 'bo',
       createdAt: T,
@@ -239,7 +241,7 @@ function world(options: { fixture?: boolean } = {}) {
     ids: () => `card-${++n}`,
   });
   const entities = entityUsecases({
-    directory: { reach: p => people.staff.reach(p), colleague: (p, key) => people.staff.colleague(p, key) },
+    directory: people.staff,
     sources: {
       reads: async (actor, kind) => registry.aboutReads(actor, kind),
       actions: async (actor, kind) => registry.aboutActions(actor, kind),

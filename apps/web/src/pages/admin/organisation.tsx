@@ -31,6 +31,7 @@ import {
   useMediaQuery,
   type TreeListItemData,
 } from '@clew/ui';
+import { PersonNameLink } from '../../components/person-name-link';
 import { adminQueries } from '../../queries';
 import { errorMessage } from '../../query-policy';
 import { usePageTitle } from '../../page-title';
@@ -116,7 +117,7 @@ const group = (heading: string, unitLabel: string, members: StaffPerson[], note?
           <ListItem
             key={p.id}
             startContent={<Avatar name={p.name} size="sm" tooltip={false} />}
-            label={<Text weight="semibold">{p.name}</Text>}
+            label={<PersonNameLink person={p} />}
             description={
               <VStack gap={0} hAlign="start">
                 <Text type="code" color="secondary">
