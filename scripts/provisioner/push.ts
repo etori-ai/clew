@@ -2,6 +2,7 @@ import {
   UNIT_KEY,
   MANAGER_KEY,
   CAPABILITY_KEY,
+  POSITION_KEY,
   reservedScimGroupKey,
 } from '../../packages/contracts/src/scim-group-key';
 import { ScimClientError, type ScimClient } from './client';
@@ -12,6 +13,9 @@ import { fullName, type Directory, type DirectoryPerson } from './directory';
  * facts to D68's contract and nothing else. Idempotent: a person is created or replaced by `externalId`, a group by its
  * `externalId` key, a person who left the directory is deactivated, and a group this provisioner owns that no longer
  * follows from the directory is removed. Clew learns nothing about the source: the mapping below is the whole of it.
+ *
+ * A position (D108 item 5) is a `position:<code>` group under the source's own code and name, sent for every position
+ * the source lists, held or not.
  *
  * The export is checked whole before the first write: complete, inside its own prefixes, every id once, and not
  * withdrawing a large share of the people or of a kind of group. Then who has left is deactivated, before anything
@@ -69,6 +73,17 @@ export function plan(directory: Directory): Plan {
     'a group id is one group',
   );
   once(
+    'the position',
+    (directory.positions ?? []).map(position => position.code),
+    'a position code is one position',
+  );
+  // D108 item 5: Clew takes a code as it is sent, so one it would refuse is the source's to put right first.
+  for (const { code } of directory.positions ?? [])
+    if (!code || code !== code.trim())
+      throw new Error(
+        `The position code '${code}' is empty or has space around it, which Clew refuses after '${POSITION_KEY}' (D96). Nothing was written.`,
+      );
+  once(
     'the person',
     directory.people.map(p => p.externalId),
     'a person id is one person, with all their placements on one row',
@@ -113,6 +128,8 @@ export function plan(directory: Directory): Plan {
     if (unit.parent !== undefined) node.parent = UNIT_KEY + unit.parent;
   }
   for (const g of directory.groups) group(g.id, g.label);
+  // D108 item 5: every position the source lists, held or not, under the source's own code and name.
+  for (const position of directory.positions ?? []) group(POSITION_KEY + position.code, position.label);
   for (const p of directory.people) {
     if (typeof p.active !== 'boolean') throw new Error(`Missing active state for '${p.externalId}'.`);
     if (!p.active) continue;
@@ -132,6 +149,11 @@ export function plan(directory: Directory): Plan {
       group(g.id, g.label).members.push(p.externalId);
     }
     for (const c of p.capabilities) group(CAPABILITY_KEY + c, 'Clew · ' + c).members.push(p.externalId);
+    for (const code of p.positions ?? []) {
+      const position = directory.positions?.find(x => x.code === code);
+      if (!position) throw new Error(`${p.userName} has position '${code}', which the directory does not list.`);
+      group(POSITION_KEY + position.code, position.label).members.push(p.externalId);
+    }
   }
   return {
     users: directory.people.map(p => ({ externalId: p.externalId, body: userBody(p) })),
@@ -270,12 +292,14 @@ async function reconcile(
   const counts = new Map<string, { held: number; removed: number }>();
   for await (const g of page(client, '/Groups?excludedAttributes=members')) {
     if (!g.externalId || !ownsGroup(g.externalId)) continue;
-    // Units and plain groups are independent exports. Managers and capabilities are derived from people.
+    // Units, positions and plain groups are independent exports. Managers and capabilities are derived from people.
     const kind = g.externalId.startsWith(UNIT_KEY)
       ? 'units'
-      : g.externalId.startsWith(MANAGER_KEY) || g.externalId.startsWith(CAPABILITY_KEY)
-        ? 'role groups'
-        : 'directory groups';
+      : g.externalId.startsWith(POSITION_KEY)
+        ? 'positions'
+        : g.externalId.startsWith(MANAGER_KEY) || g.externalId.startsWith(CAPABILITY_KEY)
+          ? 'role groups'
+          : 'directory groups';
     const count = counts.get(kind) ?? { held: 0, removed: 0 },
       parent: string | undefined = g[SCIM_UNIT]?.parent;
     count.held++;

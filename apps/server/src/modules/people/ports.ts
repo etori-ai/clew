@@ -1,3 +1,4 @@
+import type { Position } from '@clew/contracts';
 import type {
   Assignment,
   DerivedUnit,
@@ -79,6 +80,21 @@ export interface ProvisionTx {
   grant(personId: string): Promise<(Omit<Grant, 'capabilities'> & { capabilities: string[] }) | undefined>;
   /** Upsert the projection, or remove it when the person has no active assignment. */
   writeGrant(personId: string, grant: Grant | undefined): Promise<void>;
+  // Positions (D108 item 5): what a `position:<code>` group says a person is. A code is the organisation's, as a unit
+  // id is; the row's id is the store's own and never leaves it here.
+  /** The positions the person holds, by code. */
+  positionsOf(personId: string): Promise<Position[]>;
+  /** The labels of the organisation's position rows for these codes; a code without a row is absent. */
+  positionLabels(organisationId: string, codes: readonly string[]): Promise<Record<string, string>>;
+  /** Upsert by organisation and code: a code without a row gets one, a known code takes the label given. */
+  writePositions(organisationId: string, positions: readonly Position[]): Promise<void>;
+  /** Removes the organisation's rows for these codes, and with them every person's hold of them. */
+  removePositions(organisationId: string, codes: readonly string[]): Promise<void>;
+  /**
+   * The person holds exactly the positions of these codes in the organisation, written over what they held. A code
+   * without a row is not held, so a position is written before anyone is given it.
+   */
+  replacePositions(personId: string, organisationId: string, codes: readonly string[]): Promise<void>;
   audit(entry: { actor: string; action: string; subject: string; details: Record<string, unknown> }): Promise<void>;
   // SCIM: who is calling.
   /**

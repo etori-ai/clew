@@ -246,6 +246,52 @@ export function postgresProvisionStore(): ProvisionStore {
         .values({ personId, ...values })
         .onConflictDoUpdate({ target: schema.accessGrants.personId, set: values });
     },
+    async positionsOf(personId) {
+      return (
+        tx
+          .select({ code: schema.positions.code, label: schema.positions.label })
+          .from(schema.personPositions)
+          .innerJoin(schema.positions, eq(schema.positions.id, schema.personPositions.positionId))
+          .where(eq(schema.personPositions.personId, personId))
+          // By the code as text, without a locale: the order the memory adapter and the derivation use.
+          .orderBy(sql`${schema.positions.code} collate "C"`)
+      );
+    },
+    async positionLabels(organisationId, codes) {
+      if (!codes.length) return {};
+      const rows = await tx
+        .select({ code: schema.positions.code, label: schema.positions.label })
+        .from(schema.positions)
+        .where(and(eq(schema.positions.organisationId, organisationId), inArray(schema.positions.code, [...codes])));
+      return Object.fromEntries(rows.map(r => [r.code, r.label]));
+    },
+    async writePositions(organisationId, positions) {
+      for (const p of positions)
+        await tx
+          .insert(schema.positions)
+          .values({ id: crypto.randomUUID(), organisationId, code: p.code, label: p.label })
+          .onConflictDoUpdate({
+            target: [schema.positions.organisationId, schema.positions.code],
+            set: { label: p.label },
+          });
+    },
+    async removePositions(organisationId, codes) {
+      if (!codes.length) return;
+      // The holds go with the row (`on delete cascade`).
+      await tx
+        .delete(schema.positions)
+        .where(and(eq(schema.positions.organisationId, organisationId), inArray(schema.positions.code, [...codes])));
+    },
+    async replacePositions(personId, organisationId, codes) {
+      await tx.delete(schema.personPositions).where(eq(schema.personPositions.personId, personId));
+      if (!codes.length) return;
+      const rows = await tx
+        .select({ id: schema.positions.id })
+        .from(schema.positions)
+        .where(and(eq(schema.positions.organisationId, organisationId), inArray(schema.positions.code, [...codes])));
+      if (rows.length)
+        await tx.insert(schema.personPositions).values(rows.map(row => ({ personId, positionId: row.id })));
+    },
     audit: entry => writeAudit(tx, entry),
     async provisioner(tokenDigest, at) {
       const [row] = await tx

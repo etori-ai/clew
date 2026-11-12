@@ -1,6 +1,6 @@
 import { afterAll } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { eq, inArray, like } from 'drizzle-orm';
+import { eq, inArray, like, or } from 'drizzle-orm';
 import { database, schema } from '../../packages/db/src/index';
 import { postgresProvisionStore } from '../../apps/server/src/modules/people/adapters/postgres';
 import { provisioningContract, type ProvisioningHarness } from '../provisioning-store-contract';
@@ -32,6 +32,10 @@ afterAll(async () => {
       await db.delete(schema.assignments).where(inArray(schema.assignments.personId, people));
       await db.delete(schema.accessGrants).where(inArray(schema.accessGrants.personId, people));
     }
+    // D108 item 5: the positions of the run's organisations, and those whose code carries the prefix; holds go with them.
+    await db
+      .delete(schema.positions)
+      .where(or(like(schema.positions.organisationId, p + '%'), like(schema.positions.code, '%' + p + '%')));
     await db.delete(schema.groups).where(like(schema.groups.id, '%' + p + '%'));
     await db.delete(schema.provisioners).where(like(schema.provisioners.id, p + '%'));
     await db.delete(schema.units).where(like(schema.units.id, p + '%'));

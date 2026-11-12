@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { activeOf, deriveAuthority, sameGrant } from '../../apps/server/src/modules/people/domain';
+import {
+  activeOf,
+  deriveAuthority,
+  derivePositions,
+  sameGrant,
+  samePositions,
+} from '../../apps/server/src/modules/people/domain';
 import { memberKey, memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { provisioningContract, type ProvisioningHarness } from '../provisioning-store-contract';
 
@@ -56,6 +62,32 @@ describe('deriveAuthority', () => {
       ]),
     ).toEqual({ unitId: 'm', role: 'manager' });
     expect(activeOf([])).toBeUndefined();
+  });
+  test('a position group gives a position by its code and its group name, and nothing of the grant (D108 item 5)', () => {
+    const d = deriveAuthority(
+      [
+        { externalId: 'unit:u1', label: 'Enhet 1' },
+        { externalId: 'position:usk', label: 'Undersköterska' },
+        { externalId: 'position:mf', label: 'Maskinförare' },
+        // Stored before the key was read: what D96 refuses now gives nothing.
+        { externalId: 'position:', label: 'Empty key' },
+        { externalId: 'position: ssk', label: 'Space after the colon' },
+        { externalId: 'Position:hl', label: 'Another case' },
+        { externalId: 'positional:x', label: 'A plain group' },
+      ],
+      [],
+    );
+    expect(d.positions).toEqual([
+      { code: 'mf', label: 'Maskinförare' },
+      { code: 'usk', label: 'Undersköterska' },
+    ]);
+    expect(d.grant).toEqual({ unitId: 'u1', unitLabel: 'Enhet 1', role: 'employee', capabilities: [] });
+    expect(derivePositions([{ externalId: 'unit:u1', label: 'Enhet 1' }])).toEqual([]);
+    // Compared by code: a relabelled position is the same one, a code more or less is not.
+    expect(samePositions([{ code: 'usk', label: 'USK' }], [{ code: 'usk', label: 'Undersköterska' }])).toBe(true);
+    expect(samePositions([], [{ code: 'usk', label: 'Undersköterska' }])).toBe(false);
+    expect(samePositions([{ code: 'usk', label: 'USK' }], [])).toBe(false);
+    expect(samePositions([], [])).toBe(true);
   });
   test('sameGrant compares authority and label, not identity', () => {
     const g = { unitId: 'u', unitLabel: 'U', role: 'manager' as const, capabilities: ['admin.users' as const] };

@@ -43,8 +43,10 @@ import {
   organisationOf,
   pageOf,
   parseFilter,
+  positionOfKey,
   project,
   sameGrant,
+  samePositions,
   searchWords,
   unitGroupOf,
   unitOfKey,
@@ -70,6 +72,8 @@ import type { Provisioner, ProvisionStore, ProvisionTx } from './ports';
  * fact that produced it. An unchanged grant writes no audit row; a changed one writes `grant.derived` on the person
  * with the new unit, role and capabilities, or `removed: true` when the person has no unit left (fail closed). A
  * `protected` key never reaches these tables (D93), so the derived flag stays false and is never written to the audit row.
+ * A person's positions (D108 item 5) are derived beside the grant and apart from it: a changed set of codes writes
+ * `positions.derived` with the codes, an unchanged one nothing, and the grant never reads them.
  */
 export function provisioningUsecases(deps: { store: ProvisionStore }) {
   async function deriveWithin(tx: ProvisionTx, actor: string, personId: string): Promise<Derived | undefined> {
@@ -127,6 +131,27 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
               assignments: derived.assignments.length,
             }
           : { removed: true },
+      });
+    }
+    // D108 item 5: what the person is, from the `position:` groups they are in, whatever unit they are placed on. A
+    // position's row is its group's and is written with the group; one pushed before Clew read the key gets its row
+    // here, from the group's name. Compared by code, so a renamed position writes nothing on the people who hold it.
+    if (derived.positions.length) {
+      const known = await tx.positionLabels(
+          person.organisationId,
+          derived.positions.map(p => p.code),
+        ),
+        unwritten = derived.positions.filter(p => known[p.code] !== p.label);
+      if (unwritten.length) await tx.writePositions(person.organisationId, unwritten);
+    }
+    if (!samePositions(await tx.positionsOf(personId), derived.positions)) {
+      const codes = derived.positions.map(p => p.code);
+      await tx.replacePositions(personId, person.organisationId, codes);
+      await tx.audit({
+        actor,
+        action: 'positions.derived',
+        subject: 'person:' + personId,
+        details: { positions: codes },
       });
     }
     return derived;
@@ -297,6 +322,26 @@ export function scimUsecases(deps: {
       await tx.writeUnits(p.organisationId, [{ id, label: fields.label }]);
   };
   /**
+   * D108 item 5: a `position:` group is a position of the organisation, named by the group's name. Unlike a unit row,
+   * the position's row is written whether anyone holds it or not: the organisation's positions are the ones its source
+   * sends. A position needs no check of the organisation beyond the group's (D101): it has one key, and a group's key
+   * is unique across the installation, so one organisation holds a code at a time. Written before anyone is derived,
+   * so a holder is given the row as it now reads.
+   */
+  const namePosition = async (tx: ProvisionTx, p: Provisioner, fields: GroupFields) => {
+    const code = positionOfKey(fields.externalId);
+    if (code !== undefined && (await tx.positionLabels(p.organisationId, [code]))[code] !== fields.label)
+      await tx.writePositions(p.organisationId, [{ code, label: fields.label }]);
+  };
+  /**
+   * The position a group stops carrying, once the people who held it through the group have been derived without it:
+   * the group was removed or took another key. Its row goes, and with it nothing a person still holds.
+   */
+  const dropPosition = async (tx: ProvisionTx, p: Provisioner, was: string | null, now: string | null) => {
+    const code = positionOfKey(was);
+    if (code !== undefined && code !== positionOfKey(now)) await tx.removePositions(p.organisationId, [code]);
+  };
+  /**
    * A person's groups are not read when the client asked to have them left out. The daily comparison lists everybody
    * with three attributes, and reading each person's groups for it was one query a person to answer nothing.
    */
@@ -418,6 +463,9 @@ export function scimUsecases(deps: {
       at = now();
     // Only who comes is asked about: who is already in the group was asked about when they came.
     await membersExist(tx, p, added);
+    // Also on a write that changes nothing else: a `position:` group stored before Clew read the key gets its row on
+    // the next write of it, as D96 has a key written wrong refused on its next write.
+    await namePosition(tx, p, fields);
     if (!renamed && !moved && !added.length && !removed.length) return groupView(tx, current, base);
     // The time of the change is the group's whoever caused it: a member who came or went changes the resource a
     // client reads, and `meta.lastModified` once went back to the old time on the next read (RFC 7643 §3.1).
@@ -450,6 +498,7 @@ export function scimUsecases(deps: {
       const assigned = [...fields.members, ...(await managersOfUnit(tx, fields.externalId))];
       await nameUnit(tx, p, fields, assigned);
       await derivation.deriveAll(tx, actorOf(p), [...before, ...assigned]);
+      await dropPosition(tx, p, current.externalId, fields.externalId);
     } else await derivation.deriveAll(tx, actorOf(p), [...added, ...removed]);
     return groupView(
       tx,
@@ -598,6 +647,7 @@ export function scimUsecases(deps: {
         });
         const assigned = [...fields.members, ...(await managersOfUnit(tx, fields.externalId))];
         await nameUnit(tx, p, fields, assigned);
+        await namePosition(tx, p, fields);
         await derivation.deriveAll(tx, actorOf(p), assigned);
         return groupView(tx, record, base);
       }),
@@ -642,7 +692,8 @@ export function scimUsecases(deps: {
       }),
     /**
      * Removes the group; its members are re-derived and lose what it gave them. The group-capability rows stay (D85).
-     * A `unit:` group with units below it is not removed (D99): the answer is 409 and names them.
+     * A `unit:` group with units below it is not removed (D99): the answer is 409 and names them. A `position:` group
+     * takes its position with it (D108 item 5), once its members have been derived without it.
      */
     deleteGroup: (p: Provisioner, id: string) =>
       deps.store.transaction(async tx => {
@@ -663,6 +714,7 @@ export function scimUsecases(deps: {
           details: { externalId: current.externalId, displayName: current.label, members: members.length },
         });
         await derivation.deriveAll(tx, actorOf(p), members);
+        await dropPosition(tx, p, current.externalId, null);
       }),
   };
 }
@@ -706,6 +758,7 @@ export function usersAdminUsecases(deps: {
       externalId: u.externalId,
       email: u.email,
       title: titlesOf(u).join(', ') || null,
+      positions: await tx.positionsOf(u.id),
       enabled: u.enabled,
       bound: await tx.bound(u.id),
       assignments: await tx.assignmentsOf(u.id),

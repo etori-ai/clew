@@ -539,6 +539,70 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         expect(await found({ words: ['zara'], role: 'manager' })).toEqual([]);
       });
     });
+    test('positions are written by organisation and code, relabelled in place, held by a person as a whole set and removed with their holds (D108 item 5)', async () => {
+      const { store, prefix: p } = await make();
+      const [org, elsewhere] = [p + '-org', p + '-elsewhere'],
+        [a, b] = [p + '-a', p + '-b'],
+        [usk, ssk] = [
+          { code: 'usk', label: 'Undersköterska' },
+          { code: 'ssk', label: 'Sjuksköterska' },
+        ];
+      await store.transaction(async tx => {
+        await tx.insertUser(userRow(a, org));
+        await tx.insertUser(userRow(b, org));
+        await tx.writePositions(org, [usk, ssk]);
+        // Another organisation's rows are its own, under the same code or one this organisation does not have.
+        await tx.writePositions(elsewhere, [
+          { code: 'usk', label: 'Annans' },
+          { code: 'only-there', label: 'Bara där' },
+        ]);
+        expect(await tx.positionLabels(org, ['usk', 'ssk', 'only-there', 'nowhere'])).toEqual({
+          usk: 'Undersköterska',
+          ssk: 'Sjuksköterska',
+        });
+        expect(await tx.positionLabels(elsewhere, ['usk', 'ssk'])).toEqual({ usk: 'Annans' });
+        expect(await tx.positionLabels(org, [])).toEqual({});
+        // A person holds the codes of their organisation that have a row, by code.
+        await tx.replacePositions(a, org, ['usk', 'ssk', 'only-there', 'nowhere']);
+        await tx.replacePositions(b, org, ['usk']);
+        expect(await tx.positionsOf(a)).toEqual([ssk, usk]);
+        expect(await tx.positionsOf(p + '-nobody')).toEqual([]);
+      });
+      await store.transaction(async tx => {
+        // A label is written over in place, and whoever holds the position keeps it.
+        await tx.writePositions(org, [{ code: 'usk', label: 'Undersköterska, hemtjänst' }]);
+        expect(await tx.positionsOf(b)).toEqual([{ code: 'usk', label: 'Undersköterska, hemtjänst' }]);
+        expect(await tx.positionLabels(elsewhere, ['usk'])).toEqual({ usk: 'Annans' });
+        // A replacement is the whole set, and an empty one holds nothing.
+        await tx.replacePositions(a, org, ['usk']);
+        expect((await tx.positionsOf(a)).map(x => x.code)).toEqual(['usk']);
+        await tx.replacePositions(b, org, []);
+        expect(await tx.positionsOf(b)).toEqual([]);
+        await tx.replacePositions(b, org, ['ssk']);
+        // A removed code takes its holds with it, in its own organisation only.
+        await tx.removePositions(org, ['usk']);
+        await tx.removePositions(org, []);
+        expect(await tx.positionsOf(a)).toEqual([]);
+        expect(await tx.positionsOf(b)).toEqual([ssk]);
+        expect(await tx.positionLabels(org, ['usk', 'ssk'])).toEqual({ ssk: 'Sjuksköterska' });
+        expect(await tx.positionLabels(elsewhere, ['usk', 'only-there'])).toEqual({
+          usk: 'Annans',
+          'only-there': 'Bara där',
+        });
+      });
+      // A transaction that fails writes no position and no hold.
+      await expect(
+        store.transaction(async tx => {
+          await tx.writePositions(org, [{ code: 'mf', label: 'Maskinförare' }]);
+          await tx.replacePositions(a, org, ['mf']);
+          throw new Error('source said no');
+        }),
+      ).rejects.toThrow('source said no');
+      await store.transaction(async tx => {
+        expect(await tx.positionLabels(org, ['mf'])).toEqual({});
+        expect(await tx.positionsOf(a)).toEqual([]);
+      });
+    });
     test('a locked person and a locked group read as they do unlocked', async () => {
       const { store, prefix: p } = await make();
       await store.transaction(async tx => {

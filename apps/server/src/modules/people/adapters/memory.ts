@@ -1,4 +1,5 @@
 import {
+  byCode,
   bySwedish,
   unitGroupOf,
   type Assignment,
@@ -24,6 +25,10 @@ export interface MemoryProvisionState {
   units: Map<string, { organisationId: string; label: string }>;
   assignments: Map<string, Assignment[]>;
   grants: Map<string, Omit<Grant, 'capabilities'> & { capabilities: string[] }>;
+  /** D108 item 5: the organisations' positions, by the store's id; a code is unique within its organisation. */
+  positions: Map<string, { organisationId: string; code: string; label: string }>;
+  /** The ids of the positions each person holds, by person id. */
+  personPositions: Map<string, string[]>;
   /** By token digest; `previous` is a rotated-out digest that still answers until `until`. */
   provisioners: Map<
     string,
@@ -44,6 +49,8 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
     units: new Map(),
     assignments: new Map(),
     grants: new Map(),
+    positions: new Map(),
+    personPositions: new Map(),
     provisioners: new Map(),
     bindings: new Set(),
     audit: [],
@@ -79,6 +86,9 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
       .filter(([, p]) => p === personId)
       .map(([g]) => state.groups.get(g))
       .filter((g): g is GroupRecord => !!g);
+  /** The organisation's position rows of these codes, with their ids. */
+  const positionRows = (organisationId: string, codes: readonly string[]) =>
+    [...state.positions].filter(([, row]) => row.organisationId === organisationId && codes.includes(row.code));
   const provisionerRow = (p: Provisioner & { lastSeenAt?: string | null }) => ({
     id: p.id,
     organisationId: p.organisationId,
@@ -131,6 +141,38 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
     async writeGrant(personId, grant) {
       if (grant) state.grants.set(personId, { ...grant, capabilities: [...grant.capabilities] });
       else state.grants.delete(personId);
+    },
+    async positionsOf(personId) {
+      return (state.personPositions.get(personId) ?? [])
+        .flatMap(id => {
+          const row = state.positions.get(id);
+          return row ? [{ code: row.code, label: row.label }] : [];
+        })
+        .sort(byCode);
+    },
+    async positionLabels(organisationId, codes) {
+      return Object.fromEntries(positionRows(organisationId, codes).map(([, row]) => [row.code, row.label]));
+    },
+    async writePositions(organisationId, positions) {
+      for (const p of positions) {
+        const [held] = positionRows(organisationId, [p.code]);
+        state.positions.set(held?.[0] ?? crypto.randomUUID(), { organisationId, code: p.code, label: p.label });
+      }
+    },
+    async removePositions(organisationId, codes) {
+      const gone = new Set(positionRows(organisationId, codes).map(([id]) => id));
+      for (const id of gone) state.positions.delete(id);
+      for (const [personId, ids] of state.personPositions)
+        state.personPositions.set(
+          personId,
+          ids.filter(id => !gone.has(id)),
+        );
+    },
+    async replacePositions(personId, organisationId, codes) {
+      state.personPositions.set(
+        personId,
+        positionRows(organisationId, codes).map(([id]) => id),
+      );
     },
     async audit(entry) {
       state.audit.push(structuredClone(entry));

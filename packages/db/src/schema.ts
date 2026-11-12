@@ -143,6 +143,38 @@ export const groupMembers = pgTable(
   },
   t => [primaryKey({ columns: [t.groupId, t.personId] }), index('auth_group_member_person').on(t.personId)],
 );
+/**
+ * D108 item 5: a position of the organisation, a code and a label and nothing else, as a `position:<code>` group pushes
+ * it; the label is the group's name. The row follows its group: written when the group is, removed when the group is
+ * removed or takes another key. The code is unique within the organisation, and since a group's key is unique across
+ * the installation, one organisation holds a code at a time. `id` is the store's own, for what refers to a position.
+ */
+export const positions = pgTable(
+  'auth_position',
+  {
+    id: text('id').primaryKey(),
+    organisationId: text('organisation_id').notNull(),
+    code: text('code').notNull(),
+    label: text('label').notNull(),
+  },
+  t => [uniqueIndex('auth_position_code').on(t.organisationId, t.code)],
+);
+/**
+ * D108 item 5: who holds which position, derived from the person's `position:` memberships in the same transaction as
+ * the change that moves them. Tied to the person, not to a placement on a unit; goes with the person or the position.
+ */
+export const personPositions = pgTable(
+  'auth_person_position',
+  {
+    personId: text('person_id')
+      .notNull()
+      .references(() => people.id, { onDelete: 'cascade' }),
+    positionId: text('position_id')
+      .notNull()
+      .references(() => positions.id, { onDelete: 'cascade' }),
+  },
+  t => [primaryKey({ columns: [t.personId, t.positionId] }), index('auth_person_position_position').on(t.positionId)],
+);
 /** A client that pushes people and groups (D68): the digest of its bearer token, never the token, and the organisation it fills. */
 export const provisioners = pgTable(
   'auth_provisioner',

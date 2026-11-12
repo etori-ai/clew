@@ -63,7 +63,7 @@ The directory team owns the provisioner: the part that reads the source, the map
 A provisioner is told what it owns, so that it never withdraws what somebody else sent. The [example provisioner](../../scripts/provisioner) takes this as its `SourceScope`:
 
 - **A prefix that every person's source id begins with** (`userPrefix`). The example on this page uses `e-`, as in `e-1001`. Choose it once: it becomes part of each person's permanent id in Clew (`externalId`), and a source with bare employee numbers has to put one in front. The example refuses a person outside its prefix.
-- **The group keys it writes**, as prefixes (`unit:`, `unit-manager:`, `ad:`) or exact keys (`capability:admin.users`).
+- **The group keys it writes**, as prefixes (`unit:`, `unit-manager:`, `position:`, `ad:`) or exact keys (`capability:admin.users`).
 
 When two provisioners send to one organisation, give them prefixes and keys that do not overlap, capability groups included. A provisioner owns the whole membership of the groups it writes.
 
@@ -78,6 +78,7 @@ It does two things ([D109](../decisions/D109-a-provisioner-sends-a-change-when-i
 | The organisational unit each person is assigned to | Membership of the group `unit:<id>` of that unit | Lena is a member of `unit:111` | Yes: a person with no unit exists and can do nothing |
 | Who leads each unit | Membership of the group `unit-manager:<id>` of that unit. Once, on the unit they lead; not on every unit below it. | Anna is a member of `unit:110` and of `unit-manager:110` | Yes, for anybody who is to see their reports |
 | Who administers Clew | A group with the key `capability:<name>`, such as `capability:admin.users`. Or any directory group, which an administrator then maps to a capability in Clew. | Anna is a member of `capability:admin.users` | At least one person in that capability group. The first administrator can come from nowhere else: mapping a directory group takes an administrator. |
+| Each position the source lists, with its code and name, and who holds it | A group with the key `position:<code>` and the position's name, and membership of it for each person who holds it ([D108](../decisions/D108-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md) item 5). A person may hold several. The code is the source's own; Clew builds in no classification. A position nobody holds is sent as well. | Not in the example; the development directory sends `position:underskoterska` Undersköterska | No. A position gives no access: who may do what still comes from the unit and manager groups. |
 | Other directory groups | Plain groups. They mean nothing until an administrator maps one or uses it as the audience of a connected system. | `ad:larare` | No |
 | Each person's current employments, each with its unit and optional title, employment type, start date and percentage of full-time hours | One entry per employment in the user's [employment extension](writing-a-provisioner.md#current-employments) | `{"unitId":"111","title":"Rektor"}` for Omar | Optional. Each employment's supplied details appear on the profile. The user list shows the titles. Send the unit first and manage access through group membership. |
 | One title per person, where the source has no employments | The user's `title`, in the source's own words | `Rektor` | No. It is shown where no employment carries a title, and decides nothing: who is a manager comes from the manager group. |
@@ -177,7 +178,7 @@ bun scripts/provisioner-check.ts "$CLEW" --roots 1 | sed '1d'
   ok   Without a token the endpoint answers 401 with the SCIM error resource.
   ok   The token is accepted. PATCH yes, filter yes (at most 200 rows a page), bulk no, sort no, ETags no.
   ok   3 users: 3 active, 0 deactivated.
-  ok   7 groups: 4 unit, 2 unit-manager, 1 capability, 0 plain (0 without an externalId).
+  ok   7 groups: 4 unit, 2 unit-manager, 1 capability, 0 position, 0 plain (0 without an externalId).
   ok   Every active user is in a unit.
   ok   3 of 3 active users have a title.
   ok   Phone numbers on 3 of 3 active users, employments on 3.
@@ -202,6 +203,8 @@ Send a change when it happens. Updating a person’s name takes one request. Cre
 | A person leaves | `PATCH /Users/<id>` that sets `active` to `false` |
 | A person moves to another unit | `PATCH` `add` on the unit they join, then `PATCH` `remove` on the unit they leave. Their employment, when it is sent, with a `PATCH` on the user. |
 | A person becomes a manager, or stops being one | `PATCH` `add` or `remove` on `unit-manager:<id>` |
+| A person takes a position, or leaves one | `PATCH` `add` or `remove` on `position:<code>` |
+| A position is added, renamed or removed | `POST /Groups`, `PATCH` its `displayName`, or `DELETE` it; a removed position is taken from everyone who held it |
 | A unit is added, renamed or moved | `POST /Groups`, or `PATCH` its `displayName` or its `parent`. A move keeps the unit's id. |
 | A unit is removed | `DELETE` both of its groups, `unit:<id>` and `unit-manager:<id>`, once its people are placed elsewhere, their employments have been sent and no unit stands below it |
 | A change that takes effect on a day, such as an acting manager from the first of the month | Send the membership change on its effective date. Clew applies it when the request arrives. |
@@ -247,8 +250,8 @@ A deactivation is never refused for what stands beside it ([D113](../decisions/D
 The order matters; the reasons are in [Writing a provisioner](writing-a-provisioner.md#what-a-provisioner-does-on-every-reconciliation).
 
 1. Validate the source's final pages or export manifest for people, units, directory groups and memberships. Set `complete` only when every part succeeds. An incomplete snapshot stops even with `force`.
-2. Check the writer's user prefix, group prefixes and exact group keys. Before writing, the example stops if all of its active people would be disabled, or more than one of them and more than one fifth. It applies the same rule to its units, its plain directory groups and its manager and capability groups together, each counted separately. A single person or group is let through when it is not the only one of its kind, so the school of three can lose Omar. A human who has verified a large change approves it by passing `force: true` to the example's `push()`; wire that to a flag of your own.
-3. Check that every id names one row: a person id, a unit id, a group id, and an account name among the active people. A person with two employments belongs on one row with both placements. Give plain directory groups a distinct key such as `ad:newsletter`. Clew reserves the `unit:`, `unit-manager:` and `capability:` prefixes and the key `protected`.
+2. Check the writer's user prefix, group prefixes and exact group keys. Before writing, the example stops if all of its active people would be disabled, or more than one of them and more than one fifth. It applies the same rule to its units, its positions, its plain directory groups and its manager and capability groups together, each counted separately. A single person or group is let through when it is not the only one of its kind, so the school of three can lose Omar. A human who has verified a large change approves it by passing `force: true` to the example's `push()`; wire that to a flag of your own.
+3. Check that every id names one row: a person id, a unit id, a group id, and an account name among the active people. A person with two employments belongs on one row with both placements. Give plain directory groups a distinct key such as `ad:newsletter`. Clew reserves the `unit:`, `unit-manager:`, `capability:` and `position:` prefixes and the key `protected`.
 4. Disable who has left, before anything else is written: the people absent from the source in the provisioner's own prefix, and those the source now marks inactive.
 5. Send units from roots to leaves. Move an account name that is being given to somebody new off its old row. Keep the existing SCIM id of each returning person for step 6. Send the other people with an explicit active state, including inactive people retained by HR whom Clew already holds. An inactive person Clew has never held is not created. A person Clew refuses is recorded and everybody else is sent; the run fails at the end with the list.
 6. Add memberships across all groups before removing old ones. Delete obsolete owned groups from leaves to roots. Last, send one full active profile for each returning person. A refusal leaves the person inactive and is included in the run report.
@@ -264,6 +267,7 @@ Every refusal is the standard's error resource, with the reason in `detail`. Not
 |---|---|---|
 | No token, or a token that is mistyped, taken back or replaced and past its time | 401 | `A bearer token issued to a provisioner is required.` |
 | A group key in the wrong case, `Unit:120`, or with space in or before it | 400 `invalidValue` | `The key 'Unit:120' must begin with 'unit:' in lower case (D96). The group was not stored.` |
+| A position key with nothing after the colon, or with space after it, `position: usk` | 400 `invalidValue` | `The key 'position: usk' needs a position code directly after 'position:' (D96). The group was not stored.` |
 | A unit whose parent has not been sent yet | 400 `invalidValue` | `The parent 'unit:120' is not a unit of this organisation; a tree is pushed from the root down (D99). The group was not stored.` |
 | A capability Clew does not have | 400 `invalidValue` | `The key 'capability:admin.everything' names no capability of this installation; the capabilities are …`, followed by the list |
 | The key `protected` | 400 `invalidValue` | `The key 'protected' is not accepted: Clew has not decided whether it may hold that fact (D93). The group was not stored.` |

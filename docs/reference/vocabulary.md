@@ -102,10 +102,11 @@ A source system owns records. A connector exposes capabilities that read those r
 |---|---|
 | Person | A human in the organisation as Clew holds them: pushed in by the provisioner, able to sign in once a binding exists, deactivated and never erased when they leave. The word in code, tables and audit (`auth_person`, `personId`, `person:<id>`). |
 | Provisioner | The installation's own process that reads the organisation's source and pushes people and groups to Clew over SCIM (D68). Not a connector. |
-| Group | A group as the source pushed it. A key in its external id (`unit:`, `unit-manager:`, `capability:`, `protected`) gives it meaning; any other group is plain until an administrator maps it to a capability (D85) or names it as an audience. |
+| Group | A group as the source pushed it. A key in its external id (`unit:`, `unit-manager:`, `capability:`, `position:`, `protected`) gives it meaning; any other group is plain until an administrator maps it to a capability (D85) or names it as an audience. |
 | Unit (*enhet*) | A named node in the organisation tree. An administration or department can be a unit at any level. |
 | Employment (*anställning*) | A current job on a unit. Its title, employment type, start date and percentage of full-time hours are optional and describe that job. The profile lists each employment the directory supplies, including several on one unit. |
 | Assignment (*placering*) | One person in one unit with one role, `manager` or `employee`; a person may hold several. |
+| Position (*befattning*) | What a person is employed as, such as undersköterska or maskinförare: a code and a label from the source, pushed as membership of a `position:<code>` group (D108 item 5). Tied to the person, not to an assignment; a person may hold several. It grants nothing, and Clew builds in no classification of positions. |
 | Grant | The one assignment a person acts as, with their capabilities: the derived projection every request and connector reads. |
 | Binding | The link from an identity provider's subject to a person, written at the first login. (Distinct from a follower binding in the integration vocabulary.) |
 

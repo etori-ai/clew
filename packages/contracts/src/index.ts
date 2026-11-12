@@ -2409,6 +2409,15 @@ export const CAPABILITIES = ['admin.connectors', 'admin.users', 'admin.appearanc
 export type Capability = (typeof CAPABILITIES)[number];
 export const CapabilitySchema = literals(CAPABILITIES);
 export const isCapability = (value: string): value is Capability => (CAPABILITIES as readonly string[]).includes(value);
+/**
+ * D108 item 5: a position as a source sends it, a code and a label and nothing else. It arrives as membership of a SCIM
+ * group whose `externalId` is `position:<code>`, the group's name being the label, and it is tied to the person, not to
+ * a placement on a unit. The code is whatever the installation's source has: Clew builds in no classification.
+ */
+export interface Position {
+  code: string;
+  label: string;
+}
 /** Administration › Användare (D62, D68, D85): a provisioned person as the page lists them. No token, no subject. */
 export interface UserAdminRow {
   id: string;
@@ -2418,6 +2427,8 @@ export interface UserAdminRow {
   email: string | null;
   /** D110, D114: what the person is called at work: the titles of their employments, or the core title; null without one. */
   title: string | null;
+  /** D108 item 5: the positions the person's `position:` memberships give, by code; empty when the source sends none. */
+  positions: Position[];
   enabled: boolean;
   /** An identity binding exists, so the person has signed in (or was bound by the development seed). */
   bound: boolean;

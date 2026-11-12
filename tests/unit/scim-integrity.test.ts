@@ -118,14 +118,47 @@ describe('between organisations (D101)', () => {
       ' protected',
       'protected ',
       'Unit:x',
+      // D108 item 5: the fourth prefix, in every way the others are written wrong.
+      ' position:x',
+      'position :x',
+      '\tposition:x',
+      'position:x ',
+      'POSITION:x',
+      'Position :x',
     ])
       await expect(scim.createGroup(a, { externalId, displayName: 'G' }, BASE)).rejects.toMatchObject({
         status: 400,
         scimType: 'invalidValue',
       });
     // A plain group whose id merely begins with the same letters is a plain group.
-    for (const externalId of ['unitary:x', 'units and more', 'protected-area'])
+    for (const externalId of ['unitary:x', 'units and more', 'protected-area', 'positional:x', 'positions'])
       expect((await scim.createGroup(a, { externalId, displayName: 'G' }, BASE)).externalId).toBe(externalId);
+  });
+  test("a position is the organisation's that pushed its group: another cannot take the key while it stands, and takes it as its own once it is gone (D108 item 5)", async () => {
+    const { store, scim, a, b, person } = stack();
+    const first = await person(a),
+      other = await person(b);
+    const group = await scim.createGroup(
+      a,
+      { externalId: 'position:usk', displayName: 'Undersköterska', members: [{ value: first }] },
+      BASE,
+    );
+    await expect(
+      scim.createGroup(b, { externalId: 'position:usk', displayName: 'Annans', members: [{ value: other }] }, BASE),
+    ).rejects.toMatchObject({ status: 409, scimType: 'uniqueness' });
+    await scim.deleteGroup(a, group.id);
+    await scim.createGroup(
+      b,
+      { externalId: 'position:usk', displayName: 'Undersköterska i B', members: [{ value: other }] },
+      BASE,
+    );
+    expect([...store.state.positions.values()]).toEqual([
+      { organisationId: 'org-b', code: 'usk', label: 'Undersköterska i B' },
+    ]);
+    expect(await store.transaction(tx => tx.positionsOf(first))).toEqual([]);
+    expect(await store.transaction(tx => tx.positionsOf(other))).toEqual([
+      { code: 'usk', label: 'Undersköterska i B' },
+    ]);
   });
 });
 describe('what a group write costs and what it leaves in the audit', () => {

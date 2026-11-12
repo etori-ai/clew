@@ -5,9 +5,10 @@
  * it with the group's `displayName`; `unit-manager:<unitId>` makes the member its manager, which wins over `unit:` for
  * the same unit; `capability:<name>` gives a capability of the closed list; `protected` was to keep the person out of
  * lists others see, and D93 refuses that key at the boundary until Clew decides whether it may hold the fact, so the
- * flag below is false in any installation provisioned since. Any other group gives nothing here; a rules row (group
- * to capability) may give a capability. A person with no unit membership has no active grant, so a mapping mistake
- * fails closed.
+ * flag below is false in any installation provisioned since; `position:<code>` gives the person that position, named
+ * with the group's `displayName` (D108 item 5), which says what the person is and grants nothing. Any other group
+ * gives nothing here; a rules row (group to capability) may give a capability. A person with no unit membership has no
+ * active grant, so a mapping mistake fails closed.
  */
 import {
   CAPABILITIES,
@@ -19,6 +20,7 @@ import {
   type Employment,
   type OrganisationOverview,
   type OrganisationUnit,
+  type Position,
   type Role,
   type UserStatus,
 } from '@clew/contracts';
@@ -26,6 +28,7 @@ import {
   UNIT_KEY,
   MANAGER_KEY,
   CAPABILITY_KEY,
+  POSITION_KEY,
   PROTECTED_KEY,
   reservedScimGroupKey,
 } from '@clew/contracts/scim-group-key';
@@ -37,6 +40,33 @@ export const unitOfKey = (externalId: string | null | undefined): string | undef
     : externalId?.startsWith(UNIT_KEY)
       ? externalId.slice(UNIT_KEY.length)
       : undefined;
+/**
+ * The position a `position:` group's key names (D108 item 5); undefined for any other key, and for a key D96 refuses
+ * (nothing after the prefix, or space around the code), which a group stored before the key was read may still carry.
+ */
+export const positionOfKey = (externalId: string | null | undefined): string | undefined => {
+  const code = externalId?.startsWith(POSITION_KEY) ? externalId.slice(POSITION_KEY.length) : undefined;
+  return code && code === code.trim() ? code : undefined;
+};
+/** Positions in the order of their codes, compared as text without a locale, as the store orders them. */
+export const byCode = (a: Position, b: Position) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0);
+/**
+ * D108 item 5: the positions a person's memberships give, one per `position:` group, labelled with the group's name, by
+ * code. Tied to the person and not to a unit: a person with two positions holds both wherever they are placed.
+ */
+export function derivePositions(memberships: readonly Membership[]): Position[] {
+  const labels = new Map<string, string>();
+  for (const m of memberships) {
+    const code = positionOfKey(m.externalId);
+    if (code !== undefined) labels.set(code, m.label);
+  }
+  return [...labels].map(([code, label]) => ({ code, label })).sort(byCode);
+}
+/** Whether a person holds the same positions as before, by code: a renamed position is the same position. */
+export const samePositions = (held: readonly Position[], derived: readonly Position[]) => {
+  const codes = new Set(held.map(p => p.code));
+  return codes.size === derived.length && derived.every(p => codes.has(p.code));
+};
 export interface Membership {
   externalId: string;
   label: string;
@@ -76,6 +106,8 @@ export interface Derived {
   capabilities: Capability[];
   protected: boolean;
   grant: Grant | undefined;
+  /** D108 item 5: what the person is, by code. Never part of the grant: a position gives no access. */
+  positions: Position[];
 }
 /**
  * The order of unit ids, which decides the active assignment. The locale is named, so the order is the same whatever
@@ -135,6 +167,7 @@ export function deriveAuthority(
       role: active.role,
       capabilities: sorted,
     },
+    positions: derivePositions(memberships),
   };
 }
 /** Whether two grant projections carry the same authority and label, so an unchanged derivation writes no audit row. */
@@ -710,8 +743,10 @@ export function groupFields(body: unknown): GroupFields {
  * about it is stored, derived into a context or shown; a client that sends it learns why.
  *
  * D96: a key that is written wrong is refused instead of being stored as a plain group that gives nobody anything:
- * a reserved word in another case (`Unit:skola`, `Protected`) or with space in or before it (` unit:skola`,
- * `unit :skola`), `unit:` or `unit-manager:` without a unit id or with space around it, and `capability:` with a name outside the closed list. Any other `externalId` is a plain group.
+ * a reserved word in another case (`Unit:skola`, `Position:usk`, `Protected`) or with space in or before it
+ * (` unit:skola`, `unit :skola`), `unit:` or `unit-manager:` without a unit id or with space around it, `position:`
+ * without a code or with space around it (D108 item 5), and `capability:` with a name outside the closed list. Any
+ * other `externalId` is a plain group.
  */
 const refusedKey = (detail: string) => new ScimError(400, `${detail} The group was not stored.`, 'invalidValue');
 export function assertAcceptedKey(fields: GroupFields): void {
@@ -727,7 +762,7 @@ export function assertAcceptedKey(fields: GroupFields): void {
   const rest = key.slice(prefix.length);
   if (!rest || rest !== rest.trim())
     throw refusedKey(
-      `The key '${key}' needs ${prefix === CAPABILITY_KEY ? 'a capability name' : 'a unit id'} directly after '${prefix}' (D96).`,
+      `The key '${key}' needs ${prefix === CAPABILITY_KEY ? 'a capability name' : prefix === POSITION_KEY ? 'a position code' : 'a unit id'} directly after '${prefix}' (D96).`,
     );
   if (prefix === CAPABILITY_KEY && !isCapability(rest))
     throw refusedKey(
@@ -1421,7 +1456,7 @@ export const schemaDocuments = (base: string) => [
     id: SCIM.group,
     name: 'Group',
     description:
-      'A group; unit:, unit-manager: and capability: keys in externalId carry meaning in Clew. The key protected is refused (D93), and so is a key written wrong (D96). Members are users; a group as a member is refused. A unit: group may name the unit above it in the unit extension (D99).',
+      'A group; unit:, unit-manager:, capability: and position: keys in externalId carry meaning in Clew. The key protected is refused (D93), and so is a key written wrong (D96). Members are users; a group as a member is refused. A unit: group may name the unit above it in the unit extension (D99).',
     attributes: [
       attribute('displayName', 'string', { required: true }),
       attribute('externalId', 'string', { caseExact: true, uniqueness: 'server' }),

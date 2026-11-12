@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
+import { memberKey, memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { SCIM, ScimError } from '../../apps/server/src/modules/people/contracts';
 import {
   applyGroupPatch,
@@ -741,6 +741,16 @@ describe('SCIM groups and derivation', () => {
       ['UNIT-MANAGER:skola', "must begin with 'unit-manager:' in lower case"],
       ['Capability:admin.users', "must begin with 'capability:' in lower case"],
       ['Protected', "The key 'protected' is not accepted"],
+      // D108 item 5: the fourth prefix, refused as the others are.
+      ['Position:x', "The key 'Position:x' must begin with 'position:' in lower case (D96). The group was not stored."],
+      [
+        'position: x',
+        "The key 'position: x' needs a position code directly after 'position:' (D96). The group was not stored.",
+      ],
+      [
+        'position:',
+        "The key 'position:' needs a position code directly after 'position:' (D96). The group was not stored.",
+      ],
     ] as const)
       await expect(scim.createGroup(p, group(key, 'X', [a]), BASE)).rejects.toMatchObject({
         status: 400,
@@ -765,6 +775,133 @@ describe('SCIM groups and derivation', () => {
       'scim.group.created',
     ]);
     expect(store.state.grants.get(a)).toBeUndefined();
+  });
+  test('a position group gives its members the position and no access; a rename relabels it, and leaving the group or its removal takes it away, audited by code (D108 item 5)', async () => {
+    const { scim, p, store } = harness();
+    const a = (await scim.createUser(p, anna, BASE)).id,
+      b = (await scim.createUser(p, { ...anna, externalId: 'mk-2', userName: 'bo' }, BASE)).id;
+    await scim.createGroup(p, group('unit:hemtjanst', 'Hemtjänst', [a, b]), BASE);
+    const grants = structuredClone([store.state.grants.get(a), store.state.grants.get(b)]);
+    const positionsOf = (id: string) => store.transaction(tx => tx.positionsOf(id)),
+      organisation = () =>
+        [...store.state.positions.values()].map(row => [row.organisationId, row.code, row.label]).sort(),
+      derived = (id: string) =>
+        store.state.audit
+          .filter(row => row.subject === 'person:' + id && row.action === 'positions.derived')
+          .map(row => [row.actor, row.details]);
+    const usk = await scim.createGroup(p, group('position:usk', 'Undersköterska', [a, b]), BASE);
+    // A position nobody holds is one of the organisation's positions too.
+    const ssk = await scim.createGroup(p, group('position:ssk', 'Sjuksköterska', []), BASE);
+    expect(organisation()).toEqual([
+      ['sundsvall', 'ssk', 'Sjuksköterska'],
+      ['sundsvall', 'usk', 'Undersköterska'],
+    ]);
+    expect(await positionsOf(a)).toEqual([{ code: 'usk', label: 'Undersköterska' }]);
+    // A second position, by code whatever order the groups came in; it is the person's, not a unit's.
+    await scim.patchGroup(
+      p,
+      ssk.id,
+      { schemas: [], Operations: [{ op: 'add', path: 'members', value: [{ value: a }] }] },
+      BASE,
+    );
+    expect(await positionsOf(a)).toEqual([
+      { code: 'ssk', label: 'Sjuksköterska' },
+      { code: 'usk', label: 'Undersköterska' },
+    ]);
+    // A position decides nothing: the grant is the one the unit gave.
+    expect([store.state.grants.get(a), store.state.grants.get(b)]).toEqual(grants);
+    // A renamed group relabels the position for everyone who holds it, and changes no one's set.
+    const renamed = store.state.audit.length;
+    await scim.replaceGroup(p, usk.id, group('position:usk', 'Undersköterska, hemtjänst', [a, b]), BASE);
+    expect(await positionsOf(b)).toEqual([{ code: 'usk', label: 'Undersköterska, hemtjänst' }]);
+    expect(organisation()).toContainEqual(['sundsvall', 'usk', 'Undersköterska, hemtjänst']);
+    expect(store.state.audit.slice(renamed).map(row => row.action)).toEqual(['scim.group.replaced']);
+    // An unchanged write of the group or of a holder derives the same set, and writes nothing.
+    await scim.replaceGroup(p, usk.id, group('position:usk', 'Undersköterska, hemtjänst', [a, b]), BASE);
+    await scim.replaceUser(p, a, anna, BASE);
+    expect(store.state.audit.length).toBe(renamed + 1);
+    // Out of the group: the person no longer holds it, and the position stays the organisation's.
+    await scim.patchGroup(
+      p,
+      usk.id,
+      { schemas: [], Operations: [{ op: 'remove', path: `members[value eq "${b}"]` }] },
+      BASE,
+    );
+    expect(await positionsOf(b)).toEqual([]);
+    expect(organisation()).toHaveLength(2);
+    // The group removed: its holders are derived without it, and the position goes with the group.
+    await scim.deleteGroup(p, usk.id);
+    expect(await positionsOf(a)).toEqual([{ code: 'ssk', label: 'Sjuksköterska' }]);
+    expect(organisation()).toEqual([['sundsvall', 'ssk', 'Sjuksköterska']]);
+    expect([store.state.grants.get(a), store.state.grants.get(b)]).toEqual(grants);
+    const by = 'provisioner:metakatalogen';
+    expect(derived(a)).toEqual([
+      [by, { positions: ['usk'] }],
+      [by, { positions: ['ssk', 'usk'] }],
+      [by, { positions: ['ssk'] }],
+    ]);
+    expect(derived(b)).toEqual([
+      [by, { positions: ['usk'] }],
+      [by, { positions: [] }],
+    ]);
+    // Every row of the two people: the grant once, from the unit; the positions beside it.
+    expect(store.state.audit.filter(row => row.subject === 'person:' + a).map(row => row.action)).toEqual([
+      'scim.user.created',
+      'grant.derived',
+      'positions.derived',
+      'positions.derived',
+      'positions.derived',
+    ]);
+  });
+  test('a position group that takes another key takes its position away from its members, and one stored before the key was read gets its row on the next write (D108 item 5)', async () => {
+    const { scim, p, store } = harness();
+    const a = (await scim.createUser(p, anna, BASE)).id;
+    const positionsOf = (id: string) => store.transaction(tx => tx.positionsOf(id));
+    const mf = await scim.createGroup(p, group('position:mf', 'Maskinförare', [a]), BASE);
+    // The source gives the position a new code: the people move to it, and the old code is gone.
+    await scim.patchGroup(
+      p,
+      mf.id,
+      { schemas: [], Operations: [{ op: 'replace', path: 'externalId', value: 'position:mf-2' }] },
+      BASE,
+    );
+    expect(await positionsOf(a)).toEqual([{ code: 'mf-2', label: 'Maskinförare' }]);
+    expect([...store.state.positions.values()].map(row => row.code)).toEqual(['mf-2']);
+    // A key that is no position any more: a plain group, which gives nothing.
+    await scim.patchGroup(
+      p,
+      mf.id,
+      { schemas: [], Operations: [{ op: 'replace', path: 'externalId', value: 'ad:maskinforare' }] },
+      BASE,
+    );
+    expect(await positionsOf(a)).toEqual([]);
+    expect(store.state.positions.size).toBe(0);
+    expect(
+      store.state.audit
+        .filter(row => row.subject === 'person:' + a && row.action === 'positions.derived')
+        .map(row => row.details),
+    ).toEqual([{ positions: ['mf'] }, { positions: ['mf-2'] }, { positions: [] }]);
+    // Groups stored before Clew read the key, with and without a member: the next write of the member, or of the
+    // group, gives each its position.
+    const T = '2026-11-01T00:00:00.000Z';
+    for (const [id, externalId, label] of [
+      ['old-1', 'position:hl', 'Handläggare'],
+      ['old-2', 'position:ssk', 'Sjuksköterska'],
+    ] as const)
+      store.state.groups.set(id, {
+        id,
+        organisationId: 'sundsvall',
+        externalId,
+        label,
+        parentUnitId: null,
+        createdAt: T,
+        updatedAt: T,
+      });
+    store.state.members.add(memberKey('old-1', a));
+    await scim.replaceUser(p, a, anna, BASE);
+    expect(await positionsOf(a)).toEqual([{ code: 'hl', label: 'Handläggare' }]);
+    await scim.replaceGroup(p, 'old-2', group('position:ssk', 'Sjuksköterska', []), BASE);
+    expect([...store.state.positions.values()].map(row => row.code).sort()).toEqual(['hl', 'ssk']);
   });
   test('a group as a member is refused with the reason: nested groups are not supported', async () => {
     const { scim, p } = harness();
