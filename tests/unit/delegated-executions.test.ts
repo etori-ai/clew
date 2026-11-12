@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
-import { actorOf, type ExecuteResult } from '../../packages/connectors/src/index';
+import { audiencedActorOf, type ExecuteResult } from '../../packages/connectors/src/index';
 import { executionUsecases } from '../../apps/server/src/modules/executions/usecases';
 import { memoryExecutionStore } from '../../apps/server/src/modules/executions/adapters/memory';
 import type { ExecutionSessions, ExecutionSource, WriteSafety } from '../../apps/server/src/modules/executions/model';
@@ -21,7 +21,7 @@ function ledger() {
     id = 0;
   const source: ExecutionSource = {
     async authorize(persona, operation, input) {
-      const found = await registry.validate(actorOf(persona), operation, input);
+      const found = await registry.validate(audiencedActorOf(persona), operation, input);
       return {
         connector: found.connector.id,
         safety: found.capability.execution ?? { strategy: 'manual' },
@@ -30,7 +30,7 @@ function ledger() {
     },
     current: async personId => fromGrant(personId),
     execute: (persona, e) =>
-      registry.run<ExecuteResult>(actorOf(persona), e.operation, e.payload, {
+      registry.run<ExecuteResult>(audiencedActorOf(persona), e.operation, e.payload, {
         operationId: e.id,
         ...(persona.delegate ? { delegate: persona.delegate } : {}),
       }),

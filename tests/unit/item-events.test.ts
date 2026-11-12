@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { Registry } from '../registry';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
-import { actorOf } from '../../packages/connectors/src/index';
+import { audiencedActorOf } from '../../packages/connectors/src/index';
 import { fixtureConnectors } from '../fixture-connectors';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
 import { threadUsecases } from '../../apps/server/src/threads/usecases/cards';
@@ -49,7 +49,7 @@ function world() {
   const threads = threadUsecases({
     store,
     registry,
-    run: (p, name, input) => registry.run(actorOf(p), name, input),
+    run: (p, name, input) => registry.run(audiencedActorOf(p), name, input),
     calendar: {
       ensureProposalThread: async () => undefined,
       replan: async (_p, id) => (await store.readThreadById(id))!,

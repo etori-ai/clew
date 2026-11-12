@@ -1,6 +1,6 @@
 import { Value } from 'typebox/value';
 import { MAX_DOCUMENT_BYTES, contractProblems, type DocumentContent } from '@clew/contracts';
-import { CapabilityError, type Actor, type Capability, type Clew, type Connector } from './index';
+import { CapabilityError, actorOf, type Actor, type Capability, type Clew, type Connector } from './index';
 import { connectorProblems } from './validation';
 import {
   CallResponseSchema,
@@ -144,7 +144,11 @@ function failWith(json: unknown, source: string): never {
   throw new CapabilityError(error.message);
 }
 
-/** Build the `Connector` the registry runs: every operation is a call to the service as the acting person. */
+/**
+ * Build the `Connector` the registry runs: every operation is a call to the service as the acting person. The registry
+ * hands it the actor inside the process, which may carry the person's groups or a whole authenticated context; every
+ * body posted here carries the published actor (`actorOf`) and nothing more, as the protocol's request schemas require.
+ */
 export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTransport): Connector {
   const source = manifest.source;
   const capabilities: Capability<any, any>[] = manifest.capabilities.map(c => ({
@@ -172,7 +176,7 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
         source,
         '/clew/capabilities/' + encodeURIComponent(c.name),
         actor,
-        { actor, input },
+        { actor: actorOf(actor), input },
         await delegated(manifest, clew, source),
         clew.chain,
         clew.operationId,
@@ -206,7 +210,7 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
                   ? { [DELEGATED_TOKEN_HEADER]: (await delegated(manifest, clew, source)) ?? '' }
                   : {}),
               },
-              body: JSON.stringify({ actor, request }),
+              body: JSON.stringify({ actor: actorOf(actor), request }),
               signal: AbortSignal.any([
                 AbortSignal.timeout(transport.timeoutMs ?? 10_000),
                 ...(clew.signal ? [clew.signal] : []),
@@ -274,7 +278,7 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
                 source,
                 '/clew/figure',
                 actor,
-                { actor, area: a.id },
+                { actor: actorOf(actor), area: a.id },
                 undefined,
                 clew.chain,
                 undefined,
@@ -296,7 +300,7 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
               source,
               '/clew/scan',
               actor,
-              { actor },
+              { actor: actorOf(actor) },
               await delegated(manifest, clew, source),
               clew.chain,
               undefined,

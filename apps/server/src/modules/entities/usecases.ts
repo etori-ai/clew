@@ -1,4 +1,4 @@
-import { actorOf, type AboutRead } from '@clew/connectors';
+import { audiencedActorOf, type AboutRead } from '@clew/connectors';
 import type {
   AuthenticatedContext,
   EntityDetail,
@@ -113,7 +113,7 @@ export function entityUsecases(deps: EntityDeps) {
     accept: (reads: AboutRead[]) => AboutRead | undefined,
   ): Promise<boolean> {
     await persona.authorize();
-    return !!accept(await deps.sources.reads(actorOf(persona), kind));
+    return !!accept(await deps.sources.reads(audiencedActorOf(persona), kind));
   }
 
   /**
@@ -156,7 +156,7 @@ export function entityUsecases(deps: EntityDeps) {
    * reader's cards about each entity of the list, from one read of the index for the whole list (D97 item 5).
    */
   async function list(persona: AuthenticatedContext, kind: EntityKind): Promise<EntityList> {
-    const actor = actorOf(persona);
+    const actor = audiencedActorOf(persona);
     const [reach, reads, actions] = await Promise.all([
       deps.directory.reach(persona),
       deps.sources.reads(actor, kind),
@@ -186,7 +186,7 @@ export function entityUsecases(deps: EntityDeps) {
     kind: EntityKind,
     capability: string,
   ): Promise<EntityRows | undefined> {
-    const read = placed(await deps.sources.reads(actorOf(persona), kind), capability);
+    const read = placed(await deps.sources.reads(audiencedActorOf(persona), kind), capability);
     if (!read) return undefined;
     const answer = await ask(persona, kind, read, listedKeys(kind, await deps.directory.reach(persona)));
     if (!(await stillAllowed(persona, kind, reads => placed(reads, capability)))) return undefined;
@@ -209,7 +209,7 @@ export function entityUsecases(deps: EntityDeps) {
   ): Promise<EntityDetail | undefined> {
     const found = await resolve(persona, kind, key, true);
     if (!found) return undefined;
-    const actor = actorOf(persona);
+    const actor = audiencedActorOf(persona);
     const [reads, actions, cards] = await Promise.all([
       deps.sources.reads(actor, kind),
       deps.sources.actions(actor, kind),
@@ -226,7 +226,7 @@ export function entityUsecases(deps: EntityDeps) {
     capability: string,
   ): Promise<EntitySection | undefined> {
     const byName = (reads: AboutRead[]) => reads.find(r => r.name === capability);
-    const read = byName(await deps.sources.reads(actorOf(persona), kind));
+    const read = byName(await deps.sources.reads(audiencedActorOf(persona), kind));
     if (!read) return undefined;
     const found = await resolve(persona, kind, key);
     if (!found) return undefined;

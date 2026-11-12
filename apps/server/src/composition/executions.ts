@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { actorOf, type ExecuteResult } from '@clew/connectors';
+import { audiencedActorOf, type ExecuteResult } from '@clew/connectors';
 import { Value } from 'typebox/value';
 import { ExecuteResultSchema } from '@clew/connectors/protocol';
 import { registry } from '../connectors/registry';
@@ -51,11 +51,11 @@ const source: ExecutionSource = {
       if (!registry.visible(persona, 'calendar')) throw new ExecutionError('Kalendern är inte tillgänglig.');
       return calendarSource.authorize(persona, operation, input);
     }
-    const found = await registry.validate(actorOf(persona), operation, input);
+    const found = await registry.validate(audiencedActorOf(persona), operation, input);
     if (found.capability.kind !== 'execute') throw new ExecutionError('Förmågan är ingen åtgärd.');
     const safety = found.capability.execution ?? { strategy: 'manual' as const };
     if (safety.strategy !== 'manual') {
-      const lookup = registry.allowed(actorOf(persona), safety.lookup);
+      const lookup = registry.allowed(audiencedActorOf(persona), safety.lookup);
       if (!lookup || lookup.connector.id !== found.connector.id || lookup.capability.kind !== 'read')
         throw new ExecutionError('Källans återläsning är inte tillgänglig.');
     }
@@ -66,7 +66,7 @@ const source: ExecutionSource = {
   async execute(persona, e) {
     if (e.connector === 'calendar' && calendarOperations.includes(e.operation as (typeof calendarOperations)[number]))
       return calendarSource.execute(persona, e);
-    const result = await registry.run<ExecuteResult>(actorOf(persona), e.operation, e.payload, {
+    const result = await registry.run<ExecuteResult>(audiencedActorOf(persona), e.operation, e.payload, {
       operationId: e.id,
       ...(persona.delegate ? { delegate: persona.delegate } : {}),
     });
@@ -77,11 +77,11 @@ const source: ExecutionSource = {
     if (e.connector === 'calendar' && calendarOperations.includes(e.operation as (typeof calendarOperations)[number]))
       return calendarSource.lookup(persona, e);
     if (e.safety.strategy === 'manual') throw new Error('No safe lookup');
-    const found = registry.allowed(actorOf(persona), e.safety.lookup);
+    const found = registry.allowed(audiencedActorOf(persona), e.safety.lookup);
     if (!found || found.connector.id !== e.connector || found.capability.kind !== 'read')
       throw new Error('Lookup revoked');
     const response = await registry.run<{ found: boolean; result?: ExecuteResult }>(
-      actorOf(persona),
+      audiencedActorOf(persona),
       e.safety.lookup,
       { operationId: e.id },
       persona.delegate ? { delegate: persona.delegate } : {},
@@ -107,11 +107,11 @@ const sessions: ExecutionSessions = {
 /** A watch step's read (D55): a `read` the person may call, run as the person; never an execute. */
 const watch: WatchSource = {
   async authorize(persona, operation, input) {
-    const found = await registry.validate(actorOf(persona), operation, input);
+    const found = await registry.validate(audiencedActorOf(persona), operation, input);
     if (found.capability.kind !== 'read') throw new ExecutionError('En bevakning måste vara en läsning.');
     return { connector: found.connector.id };
   },
-  read: (persona, operation, input) => registry.run(actorOf(persona), operation, input),
+  read: (persona, operation, input) => registry.run(audiencedActorOf(persona), operation, input),
 };
 export const executions = executionUsecases({
   review: reviewDocuments.validate,

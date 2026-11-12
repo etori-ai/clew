@@ -1,5 +1,5 @@
 import type { AuthenticatedContext, SiteHeaderView } from '@clew/contracts';
-import { actorOf } from '@clew/connectors';
+import { audiencedActorOf } from '@clew/connectors';
 import { registry } from './registry';
 import { clock } from '../composition/ambient';
 
@@ -24,7 +24,7 @@ export const HEADER_FRESH_MS = 60_000;
 const cache = new Map<string, { view: SiteHeaderView; at: number; refreshing: boolean }>();
 
 async function fetchSiteHeader(persona: AuthenticatedContext): Promise<SiteHeaderView> {
-  const found = await registry.header(actorOf(persona), {
+  const found = await registry.header(audiencedActorOf(persona), {
     signal: AbortSignal.timeout(HEADER_TIMEOUT_MS),
     ...(persona.delegate ? { delegate: persona.delegate } : {}),
   });

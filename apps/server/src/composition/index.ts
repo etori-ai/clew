@@ -28,7 +28,7 @@ import { createScheduler } from '../scheduler/usecases';
 import { postgresThreadStore } from '../threads/adapters/postgres';
 import { cancelDurable } from '../dbos/start';
 import { ledger } from './durable';
-import { actorOf, COMPETENCE_CONNECTOR } from '@clew/connectors';
+import { audiencedActorOf, COMPETENCE_CONNECTOR } from '@clew/connectors';
 import { reminderUsecases } from '../threads/usecases/reminders';
 import { threadUsecases } from '../threads/usecases/cards';
 import { clock, ids } from './ambient';
@@ -112,7 +112,7 @@ export const asks = askUsecases({
   registry,
   calendar: {
     free: async (persona, input) => {
-      if (!registry.allowed(actorOf(persona), 'calendar.freeTimes')) return [];
+      if (!registry.allowed(audiencedActorOf(persona), 'calendar.freeTimes')) return [];
       try {
         return (
           await runCapability<{ gaps: Array<{ start: string; end: string }> }>(persona, 'calendar.freeTimes', input)
@@ -123,7 +123,7 @@ export const asks = askUsecases({
       }
     },
     day: async (persona, date) => {
-      if (!registry.allowed(actorOf(persona), 'calendar.day')) return undefined;
+      if (!registry.allowed(audiencedActorOf(persona), 'calendar.day')) return undefined;
       try {
         return await runCapability<DayView>(persona, 'calendar.day', { date });
       } catch (error) {
@@ -187,7 +187,7 @@ const roundFailed = logPort('talks', 'error');
  * (`samtalBookings`), which takes the period as input and never reads the round, so the two do not call each other.
  */
 planningRound.read = async persona => {
-  if (!registry.allowed(actorOf(persona), TALKS_CAPABILITY)) return null;
+  if (!registry.allowed(audiencedActorOf(persona), TALKS_CAPABILITY)) return null;
   try {
     const result = await runCapability<TalksResult>(persona, TALKS_CAPABILITY, {});
     if (!result.round) return null;
@@ -205,7 +205,7 @@ planningRound.read = async persona => {
  */
 export async function talksWritable(persona: AuthenticatedContext) {
   await refreshConnectors();
-  return registry.talkSource(actorOf(persona))?.builtIn === true;
+  return registry.talkSource(audiencedActorOf(persona))?.builtIn === true;
 }
 /**
  * Clew writes competence records only while the built-in module is switched on and visible to this person (D108 item
@@ -213,7 +213,7 @@ export async function talksWritable(persona: AuthenticatedContext) {
  */
 export async function competenceWritable(persona: AuthenticatedContext) {
   await refreshConnectors();
-  return registry.visible(actorOf(persona), COMPETENCE_CONNECTOR);
+  return registry.visible(audiencedActorOf(persona), COMPETENCE_CONNECTOR);
 }
 // A cited answer becomes a card (D26) through the search connector's propose; the stream owns the card, so the slot is filled here.
 answerCards.create = async (actorId, input) => {

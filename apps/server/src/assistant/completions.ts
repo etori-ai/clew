@@ -1,4 +1,4 @@
-import { actorOf } from '@clew/connectors';
+import { audiencedActorOf } from '@clew/connectors';
 import type { AuthenticatedContext, Completions } from '@clew/contracts';
 import type { AssistantDeps } from './ports';
 import { threadAccess } from '../threads/access';
@@ -14,7 +14,7 @@ export const fixedQuestions = [
 ];
 /** The focus list: questions with their source, things to do, and earlier conversations. Everything here works without the model (D8). */
 export async function completionsFor(deps: AssistantDeps, persona: AuthenticatedContext): Promise<Completions> {
-  const actor = actorOf(persona);
+  const actor = audiencedActorOf(persona);
   const ask = deps.registry
     .tools(actor)
     .filter(t => t.kind === 'read')

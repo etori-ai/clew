@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
-import { Registry, actorOf, openGovernance, type ExecuteResult } from '../../packages/connectors/src/index';
+import { Registry, audiencedActorOf, openGovernance, type ExecuteResult } from '../../packages/connectors/src/index';
 import { manifestProblems } from '../../packages/connectors/src/remote';
 import { fixtureConnectors } from '../fixture-connectors';
 import { manifest as hrManifest } from '../../connectors/hr/connector.mjs';
@@ -56,7 +56,7 @@ function world() {
   // The same pairing as `composition/executions.ts`, over the memory store: an execute is a registry run with the approved operation id, a lookup is the capability's own read-back, a watch is a read as the person.
   const source: ExecutionSource = {
     async authorize(persona, operation, input) {
-      const found = await registry.validate(actorOf(persona), operation, input);
+      const found = await registry.validate(audiencedActorOf(persona), operation, input);
       if (found.capability.kind !== 'execute') throw new ExecutionError('Förmågan är ingen åtgärd.');
       return {
         connector: found.connector.id,
@@ -66,22 +66,26 @@ function world() {
     },
     current: async () => manager,
     execute: (persona, e) =>
-      registry.run<ExecuteResult>(actorOf(persona), e.operation, e.payload, { operationId: e.id }),
+      registry.run<ExecuteResult>(audiencedActorOf(persona), e.operation, e.payload, { operationId: e.id }),
     async lookup(persona, e) {
       if (e.safety.strategy === 'manual') throw new Error('No safe lookup');
-      const r = await registry.run<{ found: boolean; result?: ExecuteResult }>(actorOf(persona), e.safety.lookup, {
-        operationId: e.id,
-      });
+      const r = await registry.run<{ found: boolean; result?: ExecuteResult }>(
+        audiencedActorOf(persona),
+        e.safety.lookup,
+        {
+          operationId: e.id,
+        },
+      );
       return r.found ? r.result : undefined;
     },
   };
   const watch: WatchSource = {
     async authorize(persona, operation, input) {
-      const found = await registry.validate(actorOf(persona), operation, input);
+      const found = await registry.validate(audiencedActorOf(persona), operation, input);
       if (found.capability.kind !== 'read') throw new ExecutionError('En bevakning måste vara en läsning.');
       return { connector: found.connector.id };
     },
-    read: (persona, operation, input) => registry.run(actorOf(persona), operation, input),
+    read: (persona, operation, input) => registry.run(audiencedActorOf(persona), operation, input),
   };
   const ledger = executionUsecases({
     store,
@@ -101,7 +105,7 @@ function world() {
     clock,
     ids: () => 'b' + ++n,
   });
-  const call = <O>(name: string, input?: unknown) => registry.run<O>(actorOf(manager), name, input ?? {});
+  const call = <O>(name: string, input?: unknown) => registry.run<O>(audiencedActorOf(manager), name, input ?? {});
   const bindAll = async (within = 'PT3M') => {
     await jobs.bind(admin, { kind: 'hr:absence', capability: 'hr.proposeAbsence', audience: { mode: 'all' } });
     await jobs.bind(admin, { kind: 'hr:absence', capability: 'timesheet.followAbsence', audience: { mode: 'all' } });
@@ -152,7 +156,9 @@ describe('the fixture connectors declare a fact, its followers and a watch (D55)
     });
     expect(w.registry.connector('payroll')!.capabilities.map(c => c.kind)).not.toContain('execute');
     expect(w.registry.offered('hr:absence')).toBe(true);
-    expect(w.registry.followers(actorOf(manager), 'hr:absence').map(f => [f.name, f.source, f.available])).toEqual([
+    expect(
+      w.registry.followers(audiencedActorOf(manager), 'hr:absence').map(f => [f.name, f.source, f.available]),
+    ).toEqual([
       ['hr.proposeAbsence', 'Personalsystemet', true],
       ['timesheet.followAbsence', 'Tidrapporteringen', true],
       ['payroll.followAbsence', 'Lönesystemet', true],
@@ -161,7 +167,7 @@ describe('the fixture connectors declare a fact, its followers and a watch (D55)
   test('a sick report assembles into one proposal with a step per system, from the connectors alone, and nothing is written', async () => {
     const w = world();
     await w.bindAll();
-    const p = await w.jobs.assemble(actorOf(manager), fact, w.call);
+    const p = await w.jobs.assemble(audiencedActorOf(manager), fact, w.call);
     expect(p.partial).toBe(false);
     expect(p.sources.map(s => [s.source, s.status])).toEqual([
       ['Personalsystemet', 'ok'],
@@ -180,13 +186,17 @@ describe('the fixture connectors declare a fact, its followers and a watch (D55)
     });
     expect(w.reportedAbsences()).toEqual({});
     // The employee reported it themselves: the HR system has nothing to write, the other two still follow.
-    const existing = await w.jobs.assemble(actorOf(manager), { ...fact, ref: 'hr:absence:1004:' + today }, w.call);
+    const existing = await w.jobs.assemble(
+      audiencedActorOf(manager),
+      { ...fact, ref: 'hr:absence:1004:' + today },
+      w.call,
+    );
     expect(existing.steps.map(s => s.connector)).toEqual(['timesheet', 'payroll']);
   });
   test('one approval registers the report and marks the day, each written once and read back by its operation id; payroll is only read', async () => {
     const w = world();
     await w.bindAll();
-    const p = await w.jobs.assemble(actorOf(manager), fact, w.call);
+    const p = await w.jobs.assemble(audiencedActorOf(manager), fact, w.call);
     const approved = (await w.jobs.approve(manager, {
       decisionId: 'job:absence:1004:' + today,
       proposal: p,
@@ -229,7 +239,7 @@ describe('the fixture connectors declare a fact, its followers and a watch (D55)
     const w = world();
     await w.bindAll('PT3M');
     const p = await w.jobs.assemble(
-      actorOf(manager),
+      audiencedActorOf(manager),
       { ...fact, attributes: { ...fact.attributes, person: 'hr:emp:1008' } },
       w.call,
     );
@@ -254,7 +264,7 @@ describe('the fixture connectors declare a fact, its followers and a watch (D55)
   test("undo all withdraws the report and the mark through the connectors' own undo capabilities; payroll has nothing to undo", async () => {
     const w = world();
     await w.bindAll();
-    const p = await w.jobs.assemble(actorOf(manager), fact, w.call);
+    const p = await w.jobs.assemble(audiencedActorOf(manager), fact, w.call);
     const approved = (await w.jobs.approve(manager, {
       decisionId: 'job:absence:1004:' + today,
       proposal: p,
@@ -269,4 +279,26 @@ describe('the fixture connectors declare a fact, its followers and a watch (D55)
       true,
     );
   });
+});
+
+test('a binding for one provisioned group only is assembled and approved for its members, and offers nothing to others (D68)', async () => {
+  const w = world();
+  await w.jobs.bind(admin, {
+    kind: 'hr:absence',
+    capability: 'hr.proposeAbsence',
+    audience: { mode: 'selected', groups: ['S-1-5-21-chefer'] },
+  });
+  const member = { ...manager, groups: ['S-1-5-21-chefer'] };
+  const p = await w.jobs.assemble(audiencedActorOf(member), fact, w.call);
+  expect(p.sources.map(s => [s.capability, s.status])).toEqual([['hr.proposeAbsence', 'ok']]);
+  expect(p.steps.map(s => s.draft.operation)).toEqual(['hr.reportAbsence']);
+  // The approval checks the binding's audience again, as the person with their groups.
+  const approved = (await w.jobs.approve(member, {
+    decisionId: 'job:absence:group:' + today,
+    proposal: p,
+  })) as Awaited<ReturnType<typeof w.ledger.approveJob>>;
+  expect((await settle(w, approved.id)).steps.map(s => s.state)).toEqual(['succeeded']);
+  const outside = await w.jobs.assemble(audiencedActorOf({ ...manager, groups: ['S-1-5-21-annan'] }), fact, w.call);
+  expect(outside.sources.map(s => [s.capability, s.status])).toEqual([['hr.proposeAbsence', 'disabled']]);
+  expect(outside.steps).toEqual([]);
 });

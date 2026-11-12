@@ -1,5 +1,5 @@
 import type { Ask, AskValues, AuthenticatedContext, Thread } from '@clew/contracts';
-import { actorOf, answersOf, asksFor, givenBy } from '@clew/connectors';
+import { audiencedActorOf, answersOf, asksFor, givenBy } from '@clew/connectors';
 import type { AssistantDeps } from './ports';
 import type { ClewTool } from './model';
 
@@ -43,7 +43,7 @@ export function draftableActions(
 ): DraftableAction[] {
   if (thread.kind !== 'pushed' || thread.state !== 'open' || thread.receipt) return [];
   if (thread.execution && ['pending', 'running', 'unknown', 'partial'].includes(thread.execution.state)) return [];
-  const actor = actorOf(persona);
+  const actor = audiencedActorOf(persona);
   return thread.actions.flatMap(action => {
     if (action.kind === 'read') return [];
     const found = registry.allowed(actor, action.capability);

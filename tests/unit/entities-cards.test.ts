@@ -1,7 +1,12 @@
 import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext, Subject, ThreadAction, ThreadItem } from '../../packages/contracts/src/index';
-import { actorOf, type Capability, type Connector, type ThreadDraft } from '../../packages/connectors/src/index';
+import {
+  audiencedActorOf,
+  type Capability,
+  type Connector,
+  type ThreadDraft,
+} from '../../packages/connectors/src/index';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { entityUsecases } from '../../apps/server/src/modules/entities/usecases';
@@ -172,7 +177,7 @@ function world() {
   const threads = threadUsecases({
     store,
     registry,
-    run: (p, name, input) => registry.run(actorOf(p), name, input),
+    run: (p, name, input) => registry.run(audiencedActorOf(p), name, input),
     calendar: {
       ensureProposalThread: async () => undefined,
       replan: async (_p, id) => (await store.readThreadById(id))!,

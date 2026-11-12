@@ -1,6 +1,6 @@
 import { Value } from 'typebox/value';
 import type { AuthenticatedContext, ThreadAction, ThreadItem } from '@clew/contracts';
-import { actorOf, CapabilityError, pendingAsks, type Registry, type ThreadDraft } from '@clew/connectors';
+import { audiencedActorOf, CapabilityError, pendingAsks, type Registry, type ThreadDraft } from '@clew/connectors';
 import { ThreadDraftSchema } from '@clew/connectors/protocol';
 import { InputError } from '../../context';
 import type { ThreadStore } from '../model';
@@ -50,7 +50,7 @@ export function startedCards({ store, registry, run, digest, clock, ids }: Start
     const declared = registry.find(capability)?.capability;
     const pending = declared?.kind === 'execute' ? pendingAsks(declared, Object.keys(input)) : [];
     try {
-      found = await registry.validate(actorOf(persona), capability, input, pending);
+      found = await registry.validate(audiencedActorOf(persona), capability, input, pending);
     } catch (error) {
       throw error instanceof CapabilityError ? new InputError(error.message) : error;
     }

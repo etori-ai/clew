@@ -1,6 +1,6 @@
 import { Value } from 'typebox/value';
 import type { AuthenticatedContext } from '@clew/contracts';
-import { actorOf, type Actor } from '@clew/connectors';
+import { audiencedActorOf, type AudiencedActor } from '@clew/connectors';
 import { FollowResponseSchema } from '@clew/connectors/protocol';
 import {
   JobError,
@@ -71,8 +71,8 @@ export function jobUsecases(deps: JobDeps) {
       return { source: { ...base, status: 'unavailable' }, steps: [] };
     }
   }
-  /** The job proposal for one fact, as the actor: nothing is written, every bound system is reported. */
-  async function assemble(actor: Actor, fact: Fact, call: JobCall): Promise<JobProposal> {
+  /** The job proposal for one fact, as the actor with their provisioned groups: nothing is written, every bound system is reported. */
+  async function assemble(actor: AudiencedActor, fact: Fact, call: JobCall): Promise<JobProposal> {
     await deps.refresh();
     const bindings = await deps.bindings.list(fact.kind);
     const followers = deps.followers(actor, fact.kind),
@@ -132,7 +132,7 @@ export function jobUsecases(deps: JobDeps) {
       await persona.authorize();
       await deps.refresh();
       const bindings = await deps.bindings.list(proposal.fact.kind);
-      const actor = actorOf(persona),
+      const actor = audiencedActorOf(persona),
         followers = deps.followers(actor, proposal.fact.kind);
       const offered = deps.offered(proposal.fact.kind);
       const stale = (): never => {

@@ -1,9 +1,9 @@
 import type { AuthenticatedContext } from '@clew/contracts';
-import type { Actor, FollowerRef } from '@clew/connectors';
+import type { AudiencedActor, FollowerRef } from '@clew/connectors';
 import type { FollowBinding } from './contracts';
 
 /** The ports of the jobs module (D25). The registry's followers and offers come in as functions, the ledger as a port, so no module imports another (D20). */
-export type Followers = (actor: Actor, kind: string) => FollowerRef[];
+export type Followers = (actor: AudiencedActor, kind: string) => FollowerRef[];
 export type Offered = (kind: string) => boolean;
 export type JobCall = <O = unknown>(name: string, input?: unknown) => Promise<O>;
 export interface BindingAudit {
