@@ -57,6 +57,39 @@ describe('deriveAuthority', () => {
     ).toEqual({ unitId: 'm', role: 'manager' });
     expect(activeOf([])).toBeUndefined();
   });
+  test('the lowest unit id is the lowest by code unit, which no locale and no upgrade of ICU moves (A5, Q4)', () => {
+    // Each pair sorts the other way under the English collation that once chose: an id is a key, not a word.
+    for (const [first, second] of [
+      ['Bx', 'ax'],
+      ['Skola', 'förskola'],
+      ['Z-skola', 'a-skola'],
+      ['skola-2', 'skola_2'],
+    ] as const) {
+      expect(first.localeCompare(second, 'en')).toBe(1);
+      const both = [
+        { unitId: second, role: 'employee' as const },
+        { unitId: first, role: 'employee' as const },
+      ];
+      expect(activeOf(both)).toEqual({ unitId: first, role: 'employee' });
+      expect(activeOf([...both].reverse())).toEqual({ unitId: first, role: 'employee' });
+      const derived = deriveAuthority(
+        [
+          { externalId: 'unit:' + second, label: 'Second' },
+          { externalId: 'unit:' + first, label: 'First' },
+        ],
+        [],
+      );
+      expect(derived.assignments.map(a => a.unitId)).toEqual([first, second]);
+      expect(derived.grant).toMatchObject({ unitId: first, unitLabel: 'First' });
+    }
+    // A managed unit still comes before an employed one, whatever its id.
+    expect(
+      activeOf([
+        { unitId: 'Bx', role: 'employee' },
+        { unitId: 'ax', role: 'manager' },
+      ]),
+    ).toEqual({ unitId: 'ax', role: 'manager' });
+  });
   test('sameGrant compares authority and label, not identity', () => {
     const g = { unitId: 'u', unitLabel: 'U', role: 'manager' as const, capabilities: ['admin.users' as const] };
     expect(sameGrant(g, { ...g })).toBe(true);

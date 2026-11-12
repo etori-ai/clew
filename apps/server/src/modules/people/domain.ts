@@ -78,10 +78,12 @@ export interface Derived {
   grant: Grant | undefined;
 }
 /**
- * The order of unit ids, which decides the active assignment. The locale is named, so the order is the same whatever
- * locale the process was started with: the one the server has always run under.
+ * The order of unit ids, which decides the active assignment (D101 item 8): character by character, by UTF-16 code
+ * unit, as `<` and JavaScript's default sort compare. A unit id is an opaque key, so no locale orders it: `Skola` comes
+ * before `förskola`, `z` before `ä`, `10` before `9`, and no upgrade of ICU or Node moves anyone's active unit. Both
+ * adapters reach the active unit through this one derivation.
  */
-const byUnitId = (a: string, b: string) => a.localeCompare(b, 'en');
+const byUnitId = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 export function activeOf(assignments: readonly Assignment[]): Assignment | undefined {
   return [...assignments].sort(
     (a, b) => Number(b.role === 'manager') - Number(a.role === 'manager') || byUnitId(a.unitId, b.unitId),
