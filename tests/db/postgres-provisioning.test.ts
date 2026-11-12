@@ -75,7 +75,10 @@ provisioningContract('postgres', async (): Promise<ProvisioningHarness> => {
             .returning({ id: schema.groups.id });
           if (created[0]) createdGroups.push(created[0].id);
         }
-        if (seed.groupCapabilities?.length) await tx.insert(schema.groupCapabilities).values(seed.groupCapabilities);
+        if (seed.groupCapabilities?.length)
+          await tx
+            .insert(schema.groupCapabilities)
+            .values(seed.groupCapabilities.map(row => ({ organisationId: 'org', ...row })));
         if (seed.units?.length) await tx.insert(schema.units).values(seed.units);
       });
       const members: Array<{ groupId: string; personId: string }> = [];
@@ -95,7 +98,8 @@ provisioningContract('postgres', async (): Promise<ProvisioningHarness> => {
         await tx
           .delete(schema.groupCapabilities)
           .where(like(schema.groupCapabilities.groupExternalId, '%' + prefix + '%'));
-        if (rows.length) await tx.insert(schema.groupCapabilities).values(rows);
+        if (rows.length)
+          await tx.insert(schema.groupCapabilities).values(rows.map(row => ({ organisationId: 'org', ...row })));
       });
     },
     async legacyGrant(id, grant) {

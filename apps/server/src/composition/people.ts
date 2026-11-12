@@ -7,10 +7,10 @@ import { clock, ids } from './ambient';
 export const userReads = postgresUserReads();
 /**
  * The SCIM server's use cases and the derivation of a person's grant from memberships and the mapping (D68, D85):
- * `scim` serves `/scim/v2`; its `derivePerson` and `deriveGroup` are what the users page will call when a mapping changes.
+ * `scim` serves `/scim/v2`. A grant is derived inside the transaction of the change that moves it, by the SCIM use
+ * cases and by the mapping on the users page alike.
  */
 export const scim = scimUsecases({ store: postgresProvisionStore(), clock, ids, digest: tokenDigest });
-export const provisioning = scim;
 /** Administration › Användare (D85, D107): the overview, the group-to-capability mapping and the provisioners' keys. */
 export const usersAdmin = usersAdminUsecases({
   store: postgresProvisionStore(),

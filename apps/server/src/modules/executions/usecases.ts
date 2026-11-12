@@ -41,6 +41,11 @@ type ApproveInput = {
   payload: unknown;
   compensates?: string;
   presentation?: Execution['presentation'];
+  /**
+   * The person's answers to the capability's asks (D112), already merged into `payload`: the approved intent holds them
+   * there, and the approval's audit row names them, in the same transaction.
+   */
+  asked?: Record<string, string>;
 };
 /** Which of the person's kept sessions stood behind a call to a connector that acts as them (D26); what the audit records instead of a binding. */
 type Backing = 'approving' | 'checking';
@@ -100,8 +105,17 @@ export function executionUsecases({ store, source, sessions, watch, clock, ids, 
       checkingSession: null,
     };
   }
-  /** One approved intent into the ledger: the row, its audit and its workflow start (D86), or the existing row for the same decision. Composable, so a job commits its steps in one transaction. */
-  async function commit(tx: ExecutionTx, persona: AuthenticatedContext, execution: Execution): Promise<Execution> {
+  /**
+   * One approved intent into the ledger: the row, its audit and its workflow start (D86), or the existing row for the same
+   * decision. Composable, so a job commits its steps in one transaction. `asked` is what the person answered (D112): it is
+   * in the payload, and the audit row names it.
+   */
+  async function commit(
+    tx: ExecutionTx,
+    persona: AuthenticatedContext,
+    execution: Execution,
+    asked?: Record<string, string>,
+  ): Promise<Execution> {
     const saved = await tx.insert(execution);
     if (!retainsAuthority(persona, saved.execution)) throw new ExecutionError('Åtgärden finns inte.');
     if (saved.execution.digest !== execution.digest)
@@ -118,6 +132,7 @@ export function executionUsecases({ store, source, sessions, watch, clock, ids, 
           digest: execution.digest,
           compensates: execution.compensates,
           ...(execution.approvingSession ? { session: 'approving' } : {}),
+          ...(asked && Object.keys(asked).length ? { asked } : {}),
         },
       });
       await tx.enqueue(executionStart('execution:' + execution.id, execution.id));
@@ -126,8 +141,12 @@ export function executionUsecases({ store, source, sessions, watch, clock, ids, 
   }
   async function approve(persona: AuthenticatedContext, input: ApproveInput) {
     await persona.authorize();
+    // The answers are part of the approved input, never beside it (D112).
+    const payload = (input.payload ?? {}) as Record<string, unknown>;
+    if (input.asked && Object.entries(input.asked).some(([key, value]) => payload[key] !== value))
+      throw new ExecutionError('Svaren och beslutet gäller olika innehåll.');
     const execution = await prepare(persona, input, clock().toISOString());
-    const saved = await store.transaction(tx => commit(tx, persona, execution));
+    const saved = await store.transaction(tx => commit(tx, persona, execution, input.asked));
     const result = await read(persona, saved.id);
     if (!result) throw new ExecutionError('Åtgärden finns inte.');
     return result;

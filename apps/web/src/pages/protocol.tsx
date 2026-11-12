@@ -260,7 +260,8 @@ function Article({ reference }: { reference: ManifestReference }) {
               <Text as="p">
                 On the wire a schema is JSON Schema. Write it in your language's schema library and emit it: TypeBox or
                 zod in TypeScript, Pydantic in Python. Where a recipe holds a schema, its TypeBox tab shows the same
-                manifest written that way.
+                manifest written that way, with the package <Text type="code">typebox</Text>. A connector written with
+                its earlier line, <Text type="code">@sinclair/typebox</Text> 0.34, needs no change.
               </Text>
               {reference.recipes.map(r => (
                 <VStack key={r.id} gap={2}>

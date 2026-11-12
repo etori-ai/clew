@@ -1,5 +1,5 @@
 import type { AboutAction, AboutRead, Actor } from '@clew/connectors';
-import type { AuthenticatedContext, EntityCard, EntityKind, Subject } from '@clew/contracts';
+import type { AuthenticatedContext, EntityCard, EntityKind, PersonProfile, Subject } from '@clew/contracts';
 
 /**
  * The ports of the entities module (D25, D97). Nothing here stores anything about a person: the directory, the sources
@@ -25,16 +25,17 @@ export interface Reach {
   managed: Array<DirectoryUnit & { people: DirectoryPerson[] }>;
 }
 /**
- * The directory (composition: the people module's `staffUsecases`). `colleague` finds another person of the reader's
+ * The directory (composition: the people module's `staffUsecases`). `person` finds an active person of the reader's
  * organisation by user name without regard to case, with the unit they act in; undefined when there is no such active
  * person.
  */
 export interface Directory {
   reach(persona: AuthenticatedContext): Promise<Reach>;
-  colleague(
+  person(
     persona: AuthenticatedContext,
     userName: string,
-  ): Promise<(DirectoryPerson & { unit: DirectoryUnit | null }) | undefined>;
+    includeProfile: boolean,
+  ): Promise<(DirectoryPerson & { unit: DirectoryUnit | null; profile?: PersonProfile }) | undefined>;
 }
 /** The reads and actions about an entity kind this person may call now (composition: `registry.aboutReads`/`aboutActions`). */
 export interface Sources {

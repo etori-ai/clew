@@ -1,6 +1,6 @@
 import { createPrivateKey, createPublicKey, randomUUID } from 'node:crypto';
 import { importPKCS8, SignJWT, jwtVerify, createLocalJWKSet, type JSONWebKeySet } from 'jose';
-import { Value } from '@sinclair/typebox/value';
+import { Value } from 'typebox/value';
 import { ActorSchema } from '@clew/connectors/protocol';
 import type { Actor } from '@clew/connectors';
 

@@ -2,8 +2,8 @@
  * The development chain (D61): registers the fixture connectors that `.devcontainer/compose.yaml` runs beside Clew,
  * enabling each except the ones `FIXTURES` marks `enable: false` (added as drafts), binds their followers of `hr:absence` (D55), and opens the
  * development organisation's round of talks when it has none (D96, `talk-round.ts`) and seeds its competence catalogue and holdings where they are missing (D108, `competence-seed.ts`), idempotently. Runs inside the app container, where the
- * services are reachable by name; `postCreateCommand` runs it after the migrations, and `bun run dev:connectors` runs it
- * again to fill missing registrations. Existing configuration is preserved; refresh manifests explicitly in administration. The transport secret is the one compose gives the services, CLEW_DEV_CONNECTOR_SECRET.
+ * services are reachable by name, after `bun run auth:setup`: that creates the key the secrets are sealed with and the
+ * people the holdings are for. `bun run dev:connectors` again fills missing registrations. Existing configuration is preserved; refresh manifests explicitly in administration. The transport secret is the one compose gives the services, CLEW_DEV_CONNECTOR_SECRET.
  * Last it makes the administrator's choice for Personal (D97) that the canvas draws, while nobody has chosen any:
  * `ENTITY_CHOICE`, through the same use case as Administration › Anslutna system.
  *

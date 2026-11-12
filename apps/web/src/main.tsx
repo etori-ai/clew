@@ -1,6 +1,6 @@
 import { StrictMode, Suspense, forwardRef, lazy, useEffect, useRef, useState, type AnchorHTMLAttributes } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Link, Routes, Route, useLocation } from 'react-router';
+import { BrowserRouter, Link, Navigate, Routes, Route, useLocation, useParams, useSearchParams } from 'react-router';
 import { QueryClientProvider } from '@tanstack/react-query';
 import '@clew/ui/styles.css';
 import { createQueryClient } from './query-client';
@@ -8,9 +8,16 @@ import { changeNotices } from './thread-cache';
 import { Center, LinkProvider, Providers, SessionBoundary, Spinner, type BrowserSession } from '@clew/ui';
 import type { SessionUser } from '@clew/contracts';
 import { StartPage } from './pages/start';
-import { ConversationProvider } from './components/conversation-context';
+import { TodoPage } from './pages/todo';
+import { ItemPage } from './pages/item';
+import { todoFromHem } from './work-items';
+import { ConversationProvider, ThingConversationProvider } from './components/conversation-context';
+import { PanelClaims } from './components/page-panel';
+import { ReviewOverlay } from './components/review-overlay';
+import { legacyReview } from './review-address';
 import { CalendarPage } from './pages/calendar';
 import { ToolPage } from './pages/tool';
+import { NewsPage } from './pages/news';
 import { LoginPage } from './pages/login';
 import { ManifestReferencePage } from './pages/protocol';
 import { ManifestPreviewPage } from './pages/protocol-preview';
@@ -137,11 +144,18 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
   return (
     <SessionBoundary session={shell.session} onEnded={() => client.clear()}>
       <QueryClientProvider client={client}>
-        {/* One conversation for the whole session's pages (D50): asked on a tool's page, it is still there when the transcript takes the column. */}
-        <ConversationProvider>{children(shell)}</ConversationProvider>
+        {/* One conversation for the whole session's pages (D50): asked on Hem, it is still there when the transcript takes the column; and one about the thing in the panel (D112 item 7), which follows that thing from page to page. Every page has the panel: the pages that draw it beside their column claim it, and the shell draws it over the others. A card's review lies over whichever page it was opened on (D111 rule 5): one overlay for every page, after the page in the tree, so it stacks over the card the same update opens. */}
+        <ConversationProvider>
+          <ThingConversationProvider>
+            <PanelClaims>
+              {children(shell)}
+              <ReviewOverlay />
+            </PanelClaims>
+          </ThingConversationProvider>
+        </ConversationProvider>
         {Devtools && (
           <Suspense fallback={null}>
-            <Devtools initialIsOpen={false} buttonPosition="bottom-left" />
+            <Devtools initialIsOpen={false} buttonPosition="bottom-right" />
           </Suspense>
         )}
       </QueryClientProvider>
@@ -159,13 +173,16 @@ const RouterLink = forwardRef<
   return <Link ref={ref} to={target} {...rest} />;
 });
 /**
- * Routes (D34, D50, D53): `/` is Hem, the box with everything the assistant has pushed, a card's state as `tab` and
- * the areas as `area`; `/conversations/:id` a conversation in the same column (`/conversations/new` while a question
- * asked on another page is being answered). What the panel holds is in the query of whichever page it is beside
- * (`panel-address.ts`). `/calendar` and `/tools/:capability` are the tools, each a page of its own in the same shell (D42).
- * `/cards/:threadId/review` is a card's review one row at a time: Hem with the card beside the column and the review as a
- * drawer over it, its step in `step` (D73, amended 2026-11-07). It is a start route, so opening and closing the review
- * never remounts Hem or the card under it.
+ * Routes (D34, D50, D112): `/` is Hem, the box under one heading with what needs the person and the day under it;
+ * `/conversations/:id` a conversation in the same column (`/conversations/new` while a question asked on another page
+ * is being answered). `/todo` is Att göra, the queue, with the pile as `tab`, the system as `area`, the filter's words
+ * as `filter` and the chosen work item as `item` (`work-items.ts`); Hem's addresses from before it (`/?card=`, `/?tab=`,
+ * `/?area=`) lead there. What the panel holds is in the query of whichever page it is beside (`panel-address.ts`), and
+ * so is a card's review one row at a time, which lies over the page it was opened on (`?review=<threadId>&step=n`,
+ * `review-address.ts`; D73 amended under D111 rule 5). `/items/:threadId` is a work item as a page (D112 item 4), with
+ * `from` as the way back. `/calendar` and `/tools/:capability` are the tools, each a page of its own in the same shell
+ * (D42). `/cards/:threadId/review`, the review's address before that, is a cold link only: it leads to the work item in
+ * Att göra with the review over it, at the step it named; `/cards/:threadId` leads to the item's page.
  */
 function App() {
   // One element for every start route: a route change between Hem and a conversation re-renders the page
@@ -186,6 +203,11 @@ function App() {
         path="/calendar"
         element={<Protected>{shell => <CalendarPage user={shell.user} admin={shell.admin} />}</Protected>}
       />
+      {/* "Alla nyheter" (D112, amended 2026-11-11): the combined news list at a tool's address, placed in the rail or not. */}
+      <Route
+        path="/tools/clew.news"
+        element={<Protected>{shell => <NewsPage user={shell.user} admin={shell.admin} />}</Protected>}
+      />
       <Route
         path="/tools/:capability"
         element={<Protected>{shell => <ToolPage user={shell.user} admin={shell.admin} />}</Protected>}
@@ -195,7 +217,7 @@ function App() {
         path="/staff"
         element={<Protected>{shell => <StaffPage user={shell.user} admin={shell.admin} />}</Protected>}
       />
-      {/* A person as a page (D97 item 5): "Öppna som sida" from the person beside a list; `section` is the chosen source. */}
+      {/* A person as a page (D97 item 5, D111 rule 3): a name on Personal or on any row that names them; `section` is the chosen source. */}
       <Route
         path="/people/:key"
         element={<Protected>{shell => <PersonPage user={shell.user} admin={shell.admin} />}</Protected>}
@@ -265,17 +287,42 @@ function App() {
           <AdminModelPage user={shell.user} />
         ))}
       />
+      <Route
+        path="/todo"
+        element={<Protected>{shell => <TodoPage user={shell.user} admin={shell.admin} />}</Protected>}
+      />
+      {/* A work item as a page (D112 item 4): "Öppna som sida" from the reading pane and the panel; `from` is the way back. */}
+      <Route
+        path="/items/:threadId"
+        element={<Protected>{shell => <ItemPage user={shell.user} admin={shell.admin} />}</Protected>}
+      />
+      {/* What was a card is a work item (D112 item 4): its address leads to the item's page. */}
+      <Route path="/cards/:threadId" element={<Protected>{() => <LegacyItem />}</Protected>} />
       <Route path="/" element={start} />
-      <Route path="/activities" element={start} />
-      <Route path="/conversations" element={start} />
       <Route path="/conversations/:conversationId" element={start} />
-      <Route path="/cards/:threadId/review" element={start} />
+      {/* Signed in first, so a link followed before signing in still lands in the review afterwards. */}
+      <Route path="/cards/:threadId/review" element={<Protected>{() => <LegacyReview />}</Protected>} />
       <Route path="*" element={start} />
     </Routes>
   );
 }
 function StartRoute({ user, admin }: { user: SessionUser; admin: boolean }) {
+  // A card, a tab or an area in Hem's address is from before Att göra (D112): the same thing is in the queue now.
+  const { pathname, search } = useLocation();
+  const moved = pathname === '/' ? todoFromHem(search) : null;
+  if (moved) return <Navigate to={moved} replace />;
   return <StartPage user={user} admin={admin} />;
+}
+/** `/cards/:threadId`: the work item's page (D112 item 4), as a card's address is now an item's. */
+function LegacyItem() {
+  const { threadId = '' } = useParams<{ threadId: string }>();
+  return <Navigate to={`/items/${encodeURIComponent(threadId)}`} replace />;
+}
+/** `/cards/:threadId/review?step=n` from before the review lay over its page: the same review over the work item in Att göra. */
+function LegacyReview() {
+  const { threadId = '' } = useParams<{ threadId: string }>();
+  const [search] = useSearchParams();
+  return <Navigate to={legacyReview(threadId, search)} replace />;
 }
 /** The installation's theme (D98) around everything: a save on Utseende redraws the whole app without a reload. */
 function Root() {

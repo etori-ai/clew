@@ -5,6 +5,8 @@
 export const keys = {
   threads: ['threads'] as const,
   thread: (id: string) => ['thread', id] as const,
+  /** A work item's Händelser (D112 item 4), read again whenever the item changes (`version` is its `updatedAt`). */
+  itemEvents: (id: string, version: string) => ['item-events', id, version] as const,
   areas: ['areas'] as const,
   today: ['today'] as const,
   attention: ['attention'] as const,
@@ -23,12 +25,22 @@ export const keys = {
   previewAll: ['preview'] as const,
   view: (capability: string, input: string | null) => ['view', capability, input] as const,
   cardView: (threadId: string, actionId: string) => ['card-view', threadId, actionId] as const,
+  /**
+   * The action dialog's reads (D112 item 10): what an action would write for exactly these rows and answers, and the
+   * free times and the day for a meeting ask. Reads, never cached across an item's change (`version` is its `updatedAt`).
+   */
+  actionEffect: (threadId: string, actionId: string, version: string, refs: readonly string[], values: object) =>
+    ['action-effect', threadId, actionId, version, refs, values] as const,
+  meetingTimes: (capability: string, property: string, before: string | null, date: string | null) =>
+    ['meeting-times', capability, property, before, date] as const,
   /** One item's document in the review flow (D70), kept for the visit: the source's document does not change under the person. */
   preview: (threadId: string, ref: string, revision?: string) => ['preview', threadId, ref, revision ?? null] as const,
   /** The manifest reference (D60): public, the same for everyone, kept for the visit. */
   manifestReference: ['protocol', 'manifest-reference'] as const,
   /** The shared header (D88): the person's, kept for the visit. */
   header: ['header'] as const,
+  /** The news from every news source the person may read (D112, amended 2026-11-11), Hem's "Nyheter". */
+  news: ['news'] as const,
   /** Personal (D94): the manager's units and their people. */
   staff: ['staff'] as const,
   /** Entities (D97): the list per kind, one source's rows over it, one opened entity and one source's section on it. */

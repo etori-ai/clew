@@ -1,7 +1,8 @@
 import { and, eq, gt, inArray, isNotNull, isNull, like, not, or, sql, type SQL } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
 import { writeAudit } from '@clew/db/threads';
-import { UNIT_KEY, unitGroupOf, type GroupRecord, type UserRecord, type UserSearch } from '../domain';
+import { UNIT_KEY } from '@clew/contracts/scim-group-key';
+import { unitGroupOf, type GroupRecord, type UserRecord, type UserSearch } from '../domain';
 import type { ProvisionStore, ProvisionTx, UserReads } from '../ports';
 
 /** Read the local user/grant tables; directory access is restricted to the actor's unit. */
@@ -14,11 +15,14 @@ export const postgresUserReads = (): UserReads => ({
     return row?.capabilities ?? [];
   },
   async directory(unitId) {
-    return database()
-      .select({ id: schema.people.id, name: schema.people.name, role: schema.accessGrants.role })
-      .from(schema.people)
-      .innerJoin(schema.accessGrants, eq(schema.accessGrants.personId, schema.people.id))
-      .where(eq(schema.accessGrants.unitId, unitId));
+    return (
+      database()
+        .select({ id: schema.people.id, name: schema.people.name, role: schema.accessGrants.role })
+        .from(schema.people)
+        .innerJoin(schema.accessGrants, eq(schema.accessGrants.personId, schema.people.id))
+        // A deactivated person keeps their grant row and is nobody's colleague to ask about.
+        .where(and(eq(schema.accessGrants.unitId, unitId), eq(schema.people.enabled, true)))
+    );
   },
   async userName(personId) {
     const [row] = await database()
@@ -35,6 +39,9 @@ const userColumns = {
   userName: schema.people.userName,
   name: schema.people.name,
   email: schema.people.email,
+  phoneNumbers: schema.people.phoneNumbers,
+  employments: schema.people.employments,
+  title: schema.people.title,
   enabled: schema.people.enabled,
   createdAt: schema.people.createdAt,
   updatedAt: schema.people.updatedAt,
@@ -94,6 +101,9 @@ function userSearchConditions(search: UserSearch): Array<SQL | undefined> {
         folded(sql`${schema.people.name}`, pattern),
         folded(sql`${schema.people.userName}`, pattern),
         folded(sql`${schema.people.email}`, pattern),
+        folded(sql`${schema.people.title}`, pattern),
+        // D114: the titles of the person's employments, which the list shows before the core title.
+        sql`exists (select 1 from jsonb_array_elements(${schema.people.employments}) as job where ${folded(sql`job->>'title'`, pattern)})`,
       );
     }),
     search.unitIds || search.role
@@ -176,20 +186,21 @@ export function postgresProvisionStore(): ProvisionStore {
         .orderBy(schema.groupMembers.personId);
       return rows.map(r => r.personId);
     },
-    async groupCapabilities() {
+    async groupCapabilities(organisationId) {
       return tx
         .select({
           groupExternalId: schema.groupCapabilities.groupExternalId,
           capability: schema.groupCapabilities.capability,
         })
-        .from(schema.groupCapabilities);
+        .from(schema.groupCapabilities)
+        .where(eq(schema.groupCapabilities.organisationId, organisationId));
     },
-    async unitLabels(ids) {
+    async unitLabels(ids, organisationId) {
       if (!ids.length) return {};
       const rows = await tx
         .select({ id: schema.units.id, label: schema.units.label })
         .from(schema.units)
-        .where(inArray(schema.units.id, [...ids]));
+        .where(and(inArray(schema.units.id, [...ids]), eq(schema.units.organisationId, organisationId)));
       return Object.fromEntries(rows.map(r => [r.id, r.label]));
     },
     async writeUnits(organisationId, units) {
@@ -197,7 +208,8 @@ export function postgresProvisionStore(): ProvisionStore {
         await tx
           .insert(schema.units)
           .values({ id: u.id, organisationId, label: u.label })
-          .onConflictDoUpdate({ target: schema.units.id, set: { label: u.label } });
+          // The organisation too: a row left by another organisation's unit that is gone is taken over whole (D101).
+          .onConflictDoUpdate({ target: schema.units.id, set: { label: u.label, organisationId } });
     },
     async replaceAssignments(personId, assignments) {
       await tx.delete(schema.assignments).where(eq(schema.assignments.personId, personId));
@@ -349,11 +361,26 @@ export function postgresProvisionStore(): ProvisionStore {
         .set({ revokedAt: new Date(at), previousTokenDigest: null, previousValidUntil: null })
         .where(eq(schema.provisioners.id, id));
     },
-    async readUser(organisationId, id) {
-      const [row] = await tx
+    async usersAmong(organisationId, ids) {
+      const found: string[] = [];
+      // In pieces a statement takes: a group of ten thousand members is ten reads, not ten thousand.
+      for (let at = 0; at < ids.length; at += 1000) {
+        const rows = await tx
+          .select({ id: schema.people.id })
+          .from(schema.people)
+          .where(
+            and(eq(schema.people.organisationId, organisationId), inArray(schema.people.id, ids.slice(at, at + 1000))),
+          );
+        found.push(...rows.map(row => row.id));
+      }
+      return found;
+    },
+    async readUser(organisationId, id, lock) {
+      const query = tx
         .select(userColumns)
         .from(schema.people)
         .where(and(eq(schema.people.id, id), eq(schema.people.organisationId, organisationId)));
+      const [row] = await (lock ? query.for(ROW_LOCK) : query);
       return row && userRecord(row);
     },
     async findUser(by, value) {
@@ -413,8 +440,14 @@ export function postgresProvisionStore(): ProvisionStore {
       return row && groupRecord(row);
     },
     async listGroups(organisationId, page, filter) {
+      // `displayName` without regard to case, as the served schema says (`caseExact: false`); `externalId` exactly.
       const where = filter
-        ? and(eq(schema.groups.organisationId, organisationId), eq(groupColumn[filter.attribute], filter.value))
+        ? and(
+            eq(schema.groups.organisationId, organisationId),
+            filter.attribute === 'label'
+              ? sql`lower(${schema.groups.label}) = lower(${filter.value})`
+              : eq(groupColumn[filter.attribute], filter.value),
+          )
         : eq(schema.groups.organisationId, organisationId);
       const [counted] = await tx
         .select({ total: sql<number>`count(*)::int` })
@@ -542,7 +575,7 @@ export function postgresProvisionStore(): ProvisionStore {
         .orderBy(schema.groups.externalId);
       return rows.map(r => ({ id: unitGroupOf(r.externalId)!, label: r.label }));
     },
-    async unitTree(organisationId) {
+    async unitTree(organisationId, ids) {
       const rows = await tx
         .select({
           externalId: schema.groups.externalId,
@@ -550,7 +583,17 @@ export function postgresProvisionStore(): ProvisionStore {
           parentUnitId: schema.groups.parentUnitId,
         })
         .from(schema.groups)
-        .where(and(eq(schema.groups.organisationId, organisationId), isUnitGroup))
+        .where(
+          and(
+            eq(schema.groups.organisationId, organisationId),
+            ids
+              ? inArray(
+                  schema.groups.externalId,
+                  ids.map(id => UNIT_KEY + id),
+                )
+              : isUnitGroup,
+          ),
+        )
         .orderBy(schema.groups.externalId);
       return rows.map(r => ({ id: unitGroupOf(r.externalId)!, label: r.label, parentId: r.parentUnitId }));
     },
@@ -576,11 +619,11 @@ export function postgresProvisionStore(): ProvisionStore {
         .limit(1);
       return !!row;
     },
-    async setGroupCapability(groupExternalId, capability, present) {
+    async setGroupCapability(organisationId, groupExternalId, capability, present) {
       if (present) {
         const inserted = await tx
           .insert(schema.groupCapabilities)
-          .values({ groupExternalId, capability })
+          .values({ organisationId, groupExternalId, capability })
           .onConflictDoNothing()
           .returning({ capability: schema.groupCapabilities.capability });
         return inserted.length > 0;
@@ -589,6 +632,7 @@ export function postgresProvisionStore(): ProvisionStore {
         .delete(schema.groupCapabilities)
         .where(
           and(
+            eq(schema.groupCapabilities.organisationId, organisationId),
             eq(schema.groupCapabilities.groupExternalId, groupExternalId),
             eq(schema.groupCapabilities.capability, capability),
           ),

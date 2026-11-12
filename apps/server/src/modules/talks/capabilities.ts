@@ -1,4 +1,4 @@
-import { Type, type Static } from '@sinclair/typebox';
+import { Type, type Static } from 'typebox';
 import { TALKS_CONNECTOR, type Actor, type Capability, type Connector } from '@clew/connectors';
 import {
   CommitmentsInputSchema,
@@ -11,6 +11,7 @@ import {
   type CommitmentsInput,
   type TalksInput,
   type View,
+  literals,
 } from '@clew/contracts';
 import { systemContext } from '../../system-context';
 import {
@@ -82,7 +83,7 @@ const headingSchema = {
 export const PersonTalkRowSchema = Type.Object(
   {
     key: Type.String({ minLength: 1, maxLength: 256 }),
-    state: Type.Union(TALK_STATES.map(s => Type.Literal(TALK_STATE_WORDS[s]))),
+    state: literals(TALK_STATES.map(s => TALK_STATE_WORDS[s])),
     at: Type.Optional(Type.String({ maxLength: 40 })),
     next: Type.String({ maxLength: 40 }),
     open: Type.String({ maxLength: 40 }),
@@ -203,8 +204,9 @@ export function talksConnector(
     output: PersonTalksOutputSchema,
     view: personTalksView,
     scope: { roles: ['manager'] },
-    // The person's talk is written on Personal, in the talk drawer (D96 item 7): the section's second way in.
-    about: { entity: 'person', page: { title: 'Öppna samtalet', href: '/staff?talk={id}' } },
+    // The person's talk is written in the talk drawer (D96 item 7), the section's second way in. A query alone: the drawer
+    // lies over whichever page the way in is drawn on, Personal or the person's own (D111 rule 5).
+    about: { entity: 'person', page: { title: 'Öppna samtalet', href: '?talk={id}' } },
     run: async (actor, input) => {
       const { round, rows } = await talks.aboutPeople(await persona(actor), input.keys);
       return {

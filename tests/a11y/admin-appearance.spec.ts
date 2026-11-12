@@ -79,13 +79,7 @@ test.describe('appearance administration', () => {
       api.admin = true;
       await open(page, '/admin/appearance');
       await expect(page).toHaveTitle('Utseende · Startsidan');
-      // The administration's sections are tabs under the trail, each a link to its own address (D115 item 3): one
-      // navigation of the page, in which the open section's tab is the current one.
-      const tabs = page
-        .getByRole('main')
-        .getByRole('navigation')
-        .filter({ has: page.getByRole('link', { name: 'Utseende', exact: true }) });
-      await expect(tabs.locator('[aria-current]')).toHaveAccessibleName('Utseende');
+      await expect(page.getByRole('link', { name: 'Utseende', exact: true })).toHaveAttribute('aria-current', 'page');
       await expect(page.getByText('Nuvarande tema: Neutral, Clews standardtema.')).toBeVisible();
       const use = page.getByRole('button', { name: 'Använd temat' });
       // Nothing to save yet: the button says so and stays a focus stop (aria-disabled, not removed).
@@ -106,7 +100,10 @@ test.describe('appearance administration', () => {
       await expect(page.getByText(/Senast ändrat av Mikael Lund/)).toBeVisible();
       await expect(page.getByRole('heading', { level: 3, name: 'Ljust läge' })).toHaveCount(0);
       // The saved theme is every page's, and the next visit starts in it.
-      await page.getByRole('link', { name: 'Kalender', exact: true }).click();
+      await page
+        .getByRole('navigation', { name: 'Sidonavigering' })
+        .getByRole('link', { name: 'Kalender', exact: true })
+        .click();
       await expect(page).toHaveURL('/calendar');
       // The calendar page is a chunk of its own: its `main` is there when the chunk has loaded.
       await expect.poll(() => accent(page)).toContain('#005595');
@@ -183,14 +180,17 @@ test.describe('appearance administration', () => {
       await expect(page.getByRole('link', { name: 'Hämta nuvarande temafil' })).toBeVisible();
     });
 
-    test('a logo is saved with the name a screen reader reads, shown in the header, and removed again', async ({
+    test('a logo is saved with the name a screen reader reads, shown in the rail’s heading, and removed again', async ({
       page,
       api,
     }) => {
       api.admin = true;
       await open(page, '/admin/appearance');
-      // The logo stands in the band's heading; the person's avatar further along the bar is an image of its own.
-      const header = page.getByRole('banner').locator('.astryx-top-nav-heading').first();
+      // Without a header connector the logo stands in the rail's heading (D98, D112 item 1).
+      const header = page
+        .getByRole('navigation', { name: 'Sidonavigering' })
+        .locator('.astryx-side-nav-heading')
+        .first();
       await expect(page.getByText('Ingen logotyp är vald.')).toBeVisible();
       await expect(header.getByRole('img')).toHaveCount(0);
       const save = page.getByRole('button', { name: 'Spara logotypen' });

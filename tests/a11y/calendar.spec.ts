@@ -12,12 +12,16 @@ import {
   test,
 } from './support';
 import type { Page } from '@playwright/test';
-import { NEXT_WEEK } from './data';
+import { NEXT_WEEK, events } from './data';
+
+/** Wide enough for the panel to stand beside the grid (1336 px, D111 amended): an entry opens in the end slot. */
+const WIDE = { width: 1440, height: 900 };
 
 /**
- * The calendar page (D27, D32): three views on two widths, the view switch, a booking of one's own, an entry opened
- * from the grid, and a proposal moved without a mouse. The grid itself is a picture (FullCalendar's time grid is not a
- * WAI-ARIA grid); every action here goes through a dialog, which is the path these tests take.
+ * The calendar page (D27, D32, D112 item 9): three views on two widths, the view switch, a booking of one's own, an
+ * entry opened from the grid into the panel, the proposals reached from the header, and a proposal moved without a
+ * mouse. The grid itself is a picture (FullCalendar's time grid is not a WAI-ARIA grid); every change goes through a
+ * dialog, which is the path these tests take.
  */
 const views = [
   ['the day', '/calendar?view=day'],
@@ -92,20 +96,48 @@ test.describe('the levels and the mark (D71, artboard 6)', () => {
     await expect(block).toContainText('✦ Utvecklingssamtal');
     await expect(block).toHaveAccessibleName(/^Utvecklingssamtal\s*\d\d:\d\d–\d\d:\d\d · Anna Lindqvist\s*, förslag$/);
   });
-  test('the panel is the card: the house chip, the source and the week, the one badge, the title at level 2', async ({
+  test('Förslag N in the header lists the proposals that wait; choosing one opens it in the panel with its decisions', async ({
     page,
     api: _,
   }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await open(page, `/calendar?date=${NEXT_WEEK}`);
-    const panel = page.getByRole('complementary', { name: 'Förslag' });
-    await expect(panel.getByText('Kalender', { exact: true })).toBeVisible();
-    await expect(panel.getByText('Kalendern · vecka 46', { exact: true })).toBeVisible();
-    await expect(panel.getByText('Förslag att bekräfta')).toBeVisible();
-    await expect(panel.getByRole('heading', { level: 2, name: 'Planera utvecklingssamtal' })).toBeVisible();
-    // A proposal row is the row level: the day in its cell, the person, the time under; the ✦ is not read.
-    await expect(panel.getByRole('checkbox', { name: 'tis 10 Anna Lindqvist 10:00–10:45' })).toBeChecked();
+    await page.setViewportSize(WIDE);
+    await open(page, '/calendar');
+    // The proposals' list is reached from the header (D112 item 9): the count is part of the button's name.
+    const menu = page.getByRole('button', { name: /^Förslag\s*\d+$/ });
+    await menu.click();
+    await page
+      .getByRole('menuitem', { name: /Anna Lindqvist/ })
+      .first()
+      .click();
+    // It leads to the proposal's own day in the view on screen: here the next week, with the proposal in the panel.
+    await expect(page).toHaveURL(/[?&]entry=/);
+    await expect(heading(page, 1, 'Vecka 46')).toBeVisible();
+    const panel = page.getByRole('complementary', { name: 'Utvecklingssamtal' });
+    await expect(panel.getByText('Förslag · Kalendern', { exact: true })).toBeVisible();
+    await expect(panel.getByText('Förslag, inte bokat', { exact: true })).toBeVisible();
+    await expect(panel.getByText('Anna Lindqvist', { exact: true })).toBeVisible();
+    // Its buttons are its existing decisions, and moving it has a dialog, never drag alone.
+    await expect(panel.getByRole('button', { name: 'Skicka inbjudan' })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Flytta …' })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Föreslå andra tider' })).toBeVisible();
+    await expect(panel.getByRole('link', { name: 'Öppna som sida' })).toHaveAttribute('href', /^\/items\/samtal/);
+    // The old Förslag panel is gone from the end slot.
+    await expect(page.getByRole('complementary', { name: 'Förslag' })).toHaveCount(0);
     await expectNoAxeViolations(page);
+  });
+  test('Skicka inbjudan sends that one time through the proposals’ own decision', async ({ page, api: _ }) => {
+    await page.setViewportSize(WIDE);
+    const sent: unknown[] = [];
+    page.on('request', request => {
+      if (request.method() === 'POST' && request.url().endsWith('/api/threads/samtal/confirm'))
+        sent.push(request.postDataJSON());
+    });
+    await open(page, `/calendar?date=${NEXT_WEEK}`);
+    await page.locator('.clew-cal-event-proposal').first().click();
+    const panel = page.getByRole('complementary', { name: 'Utvecklingssamtal' });
+    await panel.getByRole('button', { name: 'Skicka inbjudan' }).click();
+    await expect.poll(() => sent.length).toBe(1);
+    expect((sent[0] as { proposalIds: string[] }).proposalIds).toHaveLength(1);
   });
 });
 
@@ -249,32 +281,89 @@ test.describe('a booking started on the grid (D58)', () => {
   });
 });
 
-test.describe('an entry opened from the grid', () => {
-  test('Enter on a meeting opens its details with the day around it; Escape returns focus to the meeting', async ({
+test.describe('an entry opened from the grid (D112 item 9)', () => {
+  test('Enter on a meeting opens it in the panel beside the grid with its facts and own buttons; Escape returns focus to the meeting', async ({
     page,
     api: _,
   }) => {
-    await page.setViewportSize(desktop);
+    await page.setViewportSize(WIDE);
     await open(page, '/calendar');
     const block = page.locator('.clew-cal-event').first();
     await block.focus();
     await page.keyboard.press('Enter');
-    const dialog = page.getByRole('dialog', { name: 'Morgonmöte ledningsgrupp' });
-    await expect(dialog).toBeVisible();
-    await expect(dialog.getByRole('group', { name: /^måndag 2 november/ })).toBeVisible();
-    await expect(dialog.getByText('Mona Berg, Per Lindahl')).toBeVisible();
-    await expect(dialog.getByRole('button', { name: 'Flytta', exact: true })).toBeVisible();
-    await expect(dialog.getByRole('button', { name: 'Ställ in' })).toBeVisible();
+    await expect(page).toHaveURL(/entry=/);
+    const panel = page.getByRole('complementary', { name: 'Morgonmöte ledningsgrupp' });
+    await expect(panel.getByText('Möte · Kalendern', { exact: true })).toBeVisible();
+    await expect(panel.getByText('Mona Berg, Per Lindahl')).toBeVisible();
+    await expect(panel.getByText('Du är inbjuden')).toHaveCount(0);
+    await expect(panel.getByRole('button', { name: 'Flytta …' })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Ställ in …' })).toBeVisible();
+    // The grid stays in use beside it: nothing is modal.
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expectNoAxeViolations(page);
     await page.keyboard.press('Escape');
-    await expect(dialog).toBeHidden();
+    await expect(panel).toHaveCount(0);
+    await expect(page).not.toHaveURL(/entry=/);
     await expect(block).toBeFocused();
   });
-  test('cancelling asks once, inline, and is spoken when done', async ({ page, api: _ }) => {
-    await page.setViewportSize(desktop);
+  test('a meeting someone else organises says so and has no organiser’s buttons; the box still asks about it', async ({
+    page,
+    api,
+  }) => {
+    await page.setViewportSize(WIDE);
+    // One meeting of the week is the school head's, the person invited: the calendar answers it as not theirs.
+    await page.route(
+      url => url.pathname === '/api/calendar',
+      async route => {
+        const from = new URL(route.request().url()).searchParams.get('from') ?? '2026-11-02';
+        const own = events(from);
+        await route.fulfill({
+          json: {
+            from,
+            events: [
+              ...own,
+              {
+                ...own[2]!,
+                id: 'rektorsmote',
+                title: 'Rektorsmöte',
+                start: '2026-11-04T07:30:00.000Z',
+                end: '2026-11-04T09:00:00.000Z',
+                mine: false,
+                canCancel: false,
+                room: 'Kommunhuset, rum Selånger',
+                organizer: 'Skolchefen',
+                ref: 'memory:rektorsmote',
+              },
+            ],
+            proposals: [],
+          },
+        });
+      },
+    );
+    await open(page, '/calendar');
+    await page.locator('.clew-cal-event').filter({ hasText: 'Rektorsmöte' }).click();
+    const panel = page.getByRole('complementary', { name: 'Rektorsmöte' });
+    await expect(panel.getByText('Du är inbjuden', { exact: true })).toBeVisible();
+    await expect(panel.getByText('Skolchefen', { exact: true })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Flytta …' })).toHaveCount(0);
+    await expect(panel.getByRole('button', { name: 'Ställ in …' })).toHaveCount(0);
+    const box = panel.getByRole('textbox', { name: 'Fråga Clew' });
+    await box.fill('Vad står på agendan?');
+    await box.press('Enter');
+    await expect(panel.getByText('Tio personer är på plats i dag.')).toBeVisible();
+    expect(api.asked.at(-1)!.chips).toEqual([{ ref: 'event:rektorsmote', kind: 'event', label: 'Rektorsmöte' }]);
+    await expectNoAxeViolations(page);
+  });
+  test('cancelling opens the entry’s dialog at the question, asks once, inline, and is spoken when done', async ({
+    page,
+    api: _,
+  }) => {
+    await page.setViewportSize(WIDE);
     await open(page, '/calendar');
     await page.locator('.clew-cal-event').first().click();
+    const panel = page.getByRole('complementary', { name: 'Morgonmöte ledningsgrupp' });
+    await panel.getByRole('button', { name: 'Ställ in …' }).click();
     const dialog = page.getByRole('dialog', { name: 'Morgonmöte ledningsgrupp' });
-    await dialog.getByRole('button', { name: 'Ställ in' }).click();
     await expect(dialog.getByText('Ställ in mötet?')).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(1);
     await dialog.getByRole('button', { name: 'Ja, ställ in' }).click();
@@ -284,14 +373,14 @@ test.describe('an entry opened from the grid', () => {
       .toContainEqual(expect.stringContaining('Beslutet att ställa in mötet är sparat.'));
   });
   test('a proposal is moved from the keyboard, never only by drag', async ({ page, api: _ }) => {
-    await page.setViewportSize(desktop);
+    await page.setViewportSize(WIDE);
     await open(page, `/calendar?date=${NEXT_WEEK}`);
     const block = page.locator('.clew-cal-event-proposal').first();
     await block.focus();
     await page.keyboard.press('Enter');
+    const panel = page.getByRole('complementary', { name: 'Utvecklingssamtal' });
+    await panel.getByRole('button', { name: 'Flytta …' }).click();
     const dialog = page.getByRole('dialog', { name: 'Utvecklingssamtal' });
-    await expect(dialog).toBeVisible();
-    await dialog.getByRole('button', { name: 'Flytta förslaget' }).click();
     await expect(dialog.getByRole('region', { name: 'Ny tid' })).toBeVisible();
     await expect(dialog.getByText('behåller sin längd')).toBeVisible();
     await dialog.getByRole('button', { name: 'Spara' }).click();
@@ -299,21 +388,42 @@ test.describe('an entry opened from the grid', () => {
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Förslaget ligger nu'));
   });
   // The day strip is taller than a low window: the details scroll and the actions stay where they can be reached.
-  test('in a low window the actions stay on screen and the details scroll from the keyboard', async ({
+  test('in a low window the move dialog keeps its actions on screen and the details scroll from the keyboard', async ({
     page,
     api: _,
   }) => {
-    await page.setViewportSize({ width: desktop.width, height: 600 });
+    await page.setViewportSize({ width: WIDE.width, height: 600 });
     await open(page, `/calendar?date=${NEXT_WEEK}`);
     await page.locator('.clew-cal-event-proposal').first().click();
+    await page
+      .getByRole('complementary', { name: 'Utvecklingssamtal' })
+      .getByRole('button', { name: 'Flytta …' })
+      .click();
     const dialog = page.getByRole('dialog', { name: 'Utvecklingssamtal' });
-    await expect(dialog.getByRole('button', { name: 'Flytta förslaget' })).toBeInViewport({ ratio: 1 });
-    await expect(dialog.getByRole('button', { name: 'Visa dagen' })).toBeInViewport({ ratio: 1 });
+    await expect(dialog.getByRole('button', { name: 'Spara' })).toBeInViewport({ ratio: 1 });
+    await expect(dialog.getByRole('button', { name: 'Avbryt' })).toBeInViewport({ ratio: 1 });
     const details = dialog.getByRole('group', { name: 'Dagen och uppgifterna' });
     await details.focus();
     await expect(details).toBeFocused();
     await page.keyboard.press('End');
-    await expect(dialog.getByText('Medarbetare')).toBeInViewport({ ratio: 1 });
+    await expect(dialog.getByText('behåller sin längd')).toBeInViewport({ ratio: 1 });
+  });
+  test('below the beside width the entry is the drawer over the grid, and closing it gives the focus back', async ({
+    page,
+    api: _,
+  }) => {
+    await page.setViewportSize(desktop);
+    await open(page, '/calendar');
+    const block = page.locator('.clew-cal-event').first();
+    await block.focus();
+    await page.keyboard.press('Enter');
+    const drawer = page.getByRole('dialog', { name: 'Morgonmöte ledningsgrupp' });
+    await expect(drawer.getByRole('button', { name: 'Flytta …' })).toBeVisible();
+    await expect(drawer.getByRole('textbox', { name: 'Fråga Clew' })).toBeVisible();
+    await expectNoAxeViolations(page);
+    await page.keyboard.press('Escape');
+    await expect(drawer).toHaveCount(0);
+    await expect(block).toBeFocused();
   });
   test('Ny bokning keeps its actions on screen in a low window', async ({ page, api: _ }) => {
     await page.setViewportSize({ width: desktop.width, height: 500 });

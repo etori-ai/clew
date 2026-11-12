@@ -74,6 +74,7 @@
         "hr.absenceOverview",
         "hr.absencePattern",
         "hr.bookTalk",
+        "hr.bookTalkEffect",
         "hr.unbookTalk",
         "hr.leaveRequests",
         "hr.decideLeave",
@@ -128,6 +129,8 @@
       "capabilities": [
         "communication.notices",
         "communication.acknowledge",
+        "communication.news",
+        "communication.newsItem",
         "communication.lookup"
       ]
     },
@@ -580,7 +583,7 @@
       "number": 42,
       "path": "docs/decisions/D42-a-tool-opens-as-a-page.md",
       "title": "D42 · A tool opens as a page",
-      "status": "accepted, built 2026-11-05; sorting and column filters on the page are not built; the link from a view in the panel to the tool's page, the box on the page and the row's view beside the table are [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md); the width rule that counts the rail and the box on the page to be replaced by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built)",
+      "status": "accepted, built 2026-11-05; sorting and column filters on the page are not built; the link from a view in the panel to the tool's page, the box on the page and the row's view beside the table are [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md)",
       "date": "2026-11-05",
       "area": "ui"
     },
@@ -634,7 +637,7 @@
       "number": 46,
       "path": "docs/decisions/D46-astryx-neutral-is-the-default-theme.md",
       "title": "D46 · Astryx Neutral is the default theme; Sundsvall is a profile to opt into",
-      "status": "accepted; Neutral is still the default, and \"Switching back\" is now an upload of `themes/sundsvall/theme.tokens.json` on Administration › Utseende ([D98](D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md), 2026-11-10); the rail's surface to be replaced by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built)",
+      "status": "accepted; Neutral is still the default, and \"Switching back\" is now an upload of `themes/sundsvall/theme.tokens.json` on Administration › Utseende ([D98](D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md), 2026-11-10)",
       "date": "2026-11-05",
       "area": "ui"
     },
@@ -661,7 +664,7 @@
       "number": 48,
       "path": "docs/decisions/D48-one-next-step-the-rest-one-step-away.md",
       "title": "D48 · One next step on a surface, the rest one step away",
-      "status": "accepted, implemented; items 1, 3, 5, 6 and 7 changed by [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) on 2026-11-06 (base 14, no ⋯ on a row, the artboards' captions, Ny fråga as the primary button, no shortcut in the box); the type scale to be changed by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built); one filled button on a surface stands",
+      "status": "accepted, implemented; items 1, 3, 5, 6 and 7 changed by [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) on 2026-11-06 (base 14, no ⋯ on a row, the artboards' captions, Ny fråga as the primary button, no shortcut in the box)",
       "date": "2026-11-05",
       "area": "ui"
     },
@@ -679,7 +682,7 @@
       "number": 50,
       "path": "docs/decisions/D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md",
       "title": "D50 · The conversation is the column, and the panel holds what it is about",
-      "status": "accepted, built 2026-11-05, amended the same day (a brief row opens its card beside the landing); the panel's tabs for what a conversation has opened, the box on the calendar page, a conversation's origin shown on a card and on a tool's page, a resizable panel, and a manual screen-reader pass are not built; item 2's page is `/` and the day stands beside it since [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md); the rail, the conversation as the column, the conversation never in a panel and the box on every page to be replaced by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built)",
+      "status": "accepted, built 2026-11-05, amended the same day (a brief row opens its card beside the landing); the panel's tabs for what a conversation has opened, the box on the calendar page, a conversation's origin shown on a card and on a tool's page, a resizable panel, and a manual screen-reader pass are not built; item 2's page is `/` and the day stands beside it since [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md)",
       "date": "2026-11-05",
       "area": "ui"
     },
@@ -706,7 +709,7 @@
       "number": 53,
       "path": "docs/decisions/D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md",
       "title": "D53 · Hem is the start page: the day's work under the box, and the day beside it",
-      "status": "accepted, built 2026-11-06 on branch `hem`; not built: the phone's shift strip (artboard D needs a schedule capability no connector declares), the panel's tabs for everything a conversation has opened (artboards F, H, J) (built 2026-11-06, [D66](D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md)), a conversation carrying a job across connectors with a step list (artboard J), and the mark on an earlier conversation that something happened since (artboard H); items 2 and 6 and the pixels changed by [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) on 2026-11-06 (the greeting drawn small with the day on its line, the day and Sedan i går as cards in the page's own side column); the layout to be replaced by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built): the tabs move to Mina aktiviteter and suggestions stand under the box at rest",
+      "status": "accepted, built 2026-11-06 on branch `hem`; not built: the phone's shift strip (artboard D needs a schedule capability no connector declares), the panel's tabs for everything a conversation has opened (artboards F, H, J) (built 2026-11-06, [D66](D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md)), a conversation carrying a job across connectors with a step list (artboard J), and the mark on an earlier conversation that something happened since (artboard H); items 2 and 6 and the pixels changed by [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) on 2026-11-06 (the greeting drawn small with the day on its line, the day and Sedan i går as cards in the page's own side column); Hem as the day's work under the box replaced by [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) items 2 and 3 (2026-11-11: the box with Behöver dig, I dag and Nyheter under it; the work list is Att göra)",
       "date": "2026-11-06",
       "area": "ui"
     },
@@ -715,7 +718,7 @@
       "number": 54,
       "path": "docs/decisions/D54-figures-come-from-connectors-and-laget-draws-them.md",
       "title": "D54 · Figures come from connectors, and Läget draws them",
-      "status": "accepted 2026-11-06 with the canvas D71 builds, built 2026-11-06 on `main`; amended below where the build differs; the tile's drawing and its place on the page to be changed by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built); where figures come from stands",
+      "status": "accepted 2026-11-06 with the canvas D71 builds, built 2026-11-06 on `main`; amended below where the build differs",
       "date": "2026-11-06",
       "area": "integrations, ui"
     },
@@ -796,7 +799,7 @@
       "number": 63,
       "path": "docs/decisions/D63-hem-is-drawn-as-the-canvas-draws-it.md",
       "title": "D63 · Hem is drawn as the canvas draws it, pixel for pixel, with Astryx's own tokens",
-      "status": "accepted, built 2026-11-06 on `main`; the elements the artboards draw without anything behind them are listed under \"Asked, not built\" and wait for the product owner; to be replaced by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built): the startsidan prototype, not the canvas, is the reference",
+      "status": "accepted, built 2026-11-06 on `main`; the elements the artboards draw without anything behind them are listed under \"Asked, not built\" and wait for the product owner; Hem's layout replaced by [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) items 2 and 3 (2026-11-11), with the board Hem10 as the reference",
       "date": "2026-11-06",
       "area": "ui"
     },
@@ -823,7 +826,7 @@
       "number": 66,
       "path": "docs/decisions/D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md",
       "title": "D66 · The panel keeps everything opened beside the page as tabs",
-      "status": "accepted, built 2026-11-06 on `main`, revised the same day (items 2, 4 and 5: a menu, not a row; item 3 the same evening: the fold keeps the tabs, Stäng alla closes all)",
+      "status": "superseded by D111 as amended 2026-11-11 (the panel holds one thing; the tabs are removed), built 2026-11-06 on `main`, revised the same day (items 2, 4 and 5: a menu, not a row; item 3 the same evening: the fold keeps the tabs, Stäng alla closes all); stays superseded under [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) (2026-11-11)",
       "date": "2026-11-06",
       "area": "ui"
     },
@@ -841,7 +844,7 @@
       "number": 68,
       "path": "docs/decisions/D68-people-are-pushed-into-clew-through-standard-scim.md",
       "title": "D68 · People are pushed into Clew through standard SCIM, and mapping happens outside Clew",
-      "status": "accepted, built 2026-11-09 (the SCIM server, the derivation, the synthetic provisioner, binding at first login, Administration › Användare); the group keys are proposed until a real provisioner has used them; item 2 amended by D85 (2026-11-09): capabilities are mapped from groups in Clew, units and manager roles keep these keys; amended by D99 (2026-11-10): units form a tree, a `unit:` group names the unit above it and the provisioner no longer flattens a hierarchy; item 4 amended by D109 (2026-11-11): a provisioner sends a change when it happens, and the daily run is the reconciliation under it",
+      "status": "accepted, built 2026-11-09 (the SCIM server, the derivation, the synthetic provisioner, binding at first login, Administration › Användare); the group keys are proposed until a real provisioner has used them; item 2 amended by D85 (2026-11-09): capabilities are mapped from groups in Clew, units and manager roles keep these keys; amended by D99 (2026-11-10): units form a tree, a `unit:` group names the unit above it and the provisioner no longer flattens a hierarchy; item 4 amended by D109 (2026-11-11): a provisioner sends a change when it happens, and the daily run is the reconciliation under it; amended by [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md) (2026-11-11, provisional): a user has a sixth attribute, the optional `title`, which is shown and searched and decides nothing",
       "date": "2026-11-06",
       "area": "identity"
     },
@@ -877,7 +880,7 @@
       "number": 72,
       "path": "docs/decisions/D72-the-day-is-the-pages-and-the-panel-holds-only-what-was-opened.md",
       "title": "D72 · The day is the page's, and the panel holds only what was opened",
-      "status": "accepted, built 2026-11-07 on `main`; the breakpoints that count the rail to be replaced by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built)",
+      "status": "accepted, built 2026-11-07 on `main`",
       "date": "2026-11-07",
       "area": "ui"
     },
@@ -976,7 +979,7 @@
       "number": 83,
       "path": "docs/decisions/D83-interface-spaces-have-stable-navigation-roles.md",
       "title": "D83 · Interface spaces have stable navigation roles",
-      "status": "accepted; the placement rules for pages, panels, overlays and confirmations stand. The MCP catalogue and App flow it also placed left the code with D81's prototype on 2026-11-11 ([closing note](../reviews/2026-11-11-external-mcp-chat-services-exploration.md))",
+      "status": "accepted; the placement rules for pages, panels, overlays and confirmations stand. The MCP catalogue and App flow it also placed left the code with D81's prototype on 2026-11-11 ([closing note](../reviews/2026-11-11-external-mcp-chat-services-exploration.md)); the spaces stand under [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) (2026-11-11), and the reference `docs/reference/interface-spaces.md` is rewritten to it",
       "date": "2026-11-09",
       "area": "ui, product"
     },
@@ -994,7 +997,7 @@
       "number": 85,
       "path": "docs/decisions/D85-capabilities-are-mapped-from-provisioned-groups-in-clew.md",
       "title": "D85 · Capabilities are mapped from provisioned groups in Clew; units and manager roles keep D68's keys",
-      "status": "accepted, built 2026-11-09 (the mapping table, the closed list `CAPABILITIES` with `admin.connectors` and `admin.users`, the derivation, the editor on Administration › Användare)",
+      "status": "accepted, built 2026-11-09 (the mapping table, the closed list `CAPABILITIES` with `admin.connectors` and `admin.users`, the derivation, the editor on Administration › Användare); amended 2026-11-11 after [the full SCIM review](../reviews/2026-11-11-scim-full-review.md): a row belongs to the organisation whose administrator wrote it (`organisation_id`, migration 0051) and applies to that organisation's groups alone, so a row left by a group that is gone is not picked up by another organisation's group of the same id",
       "date": "2026-11-09",
       "area": "identity"
     },
@@ -1030,7 +1033,7 @@
       "number": 88,
       "path": "docs/decisions/D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md",
       "title": "D88 · The web app draws the shared header above its rail, a connector gives Clew its content, and Clew has one front end",
-      "status": "accepted, built 2026-11-09 on `main`; items 2 and 3 to be amended by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built): no rail, and the third row under Start is Clew's own tools",
+      "status": "accepted, built 2026-11-09 on `main`",
       "date": "2026-11-09",
       "area": "ui, product, integrations"
     },
@@ -1120,7 +1123,7 @@
       "number": 97,
       "path": "docs/decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md",
       "title": "D97 · A source says what its rows are about, and Clew places them",
-      "status": "accepted as the direction (product owner, 2026-11-10), built 2026-11-10 (see \"As built\"); the items under \"Open\" were taken provisionally for the build and are not decided",
+      "status": "accepted as the direction (product owner, 2026-11-10), built 2026-11-10 (see \"As built\"); the items under \"Open\" were taken provisionally for the build and are not decided; the placement of a person's action in its source's section (amended 2026-11-11) replaced by [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) item 5 (2026-11-11: every action in the page's header); item 9 amended by [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md) (2026-11-11, provisional: a person's title is one line Clew holds, pushed as SCIM's `title`; phone and employment facts are still read from their source)",
       "date": "2026-11-10",
       "area": "integrations, ui"
     },
@@ -1183,7 +1186,7 @@
       "number": 101,
       "path": "docs/decisions/D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md",
       "title": "D101 · The first real integration is Nextcloud's Approval app, and new surface waits until its loop works",
-      "status": "provisional (product owner, 2026-11-10; the connector is built and the loop has run signed in as one person on the development stack, the remaining conditions are in the implementation status; amended 2026-11-11: the second build as an MCP server and the comparison of the two builds are dropped from the freeze; an exception for the redrawing after the startsidan prototype in [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (Oliver Borgström, 2026-11-11))",
+      "status": "provisional (product owner, 2026-11-10; the connector is built and the loop has run signed in as one person on the development stack, the remaining conditions are in the implementation status; amended 2026-11-11: the second build as an MCP server and the comparison of the two builds are dropped from the freeze)",
       "date": "2026-11-10",
       "area": "product, integrations"
     },
@@ -1260,13 +1263,58 @@
       "area": "identity"
     },
     {
-      "key": "D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout",
-      "number": 115,
-      "path": "docs/decisions/D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md",
-      "title": "D115 · The startsidan prototype's Version 1.0 is the reference for Clew's look and layout, built with Astryx",
-      "status": "provisional (Oliver Borgström, 2026-11-11: \"the prototype is the truth right now\"; every item is built on the branch `prototype-look`, with the differences listed under \"Built\", and the accessibility specs are not yet rewritten for items 4 to 6; accepted once a manager outside the team has used the rebuilt start page)",
+      "key": "D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role",
+      "number": 110,
+      "path": "docs/decisions/D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md",
+      "title": "D110 · A person's title is pushed as SCIM's `title` and kept apart from the role",
+      "status": "provisional (product owner, 2026-11-11: the user list should say what a person is called at work, and that is another fact than manager or employee; built against the freeze on new surface on his word), built 2026-11-11; amended by D114 on 2026-11-12 for multiple employments and titles on the profile; accepted once a real directory has pushed titles; no manual screen-reader pass yet",
       "date": "2026-11-11",
-      "area": "ui, product"
+      "area": "identity, ui"
+    },
+    {
+      "key": "D111-where-something-opens-is-decided-by-what-it-is",
+      "number": 111,
+      "path": "docs/decisions/D111-where-something-opens-is-decided-by-what-it-is.md",
+      "title": "D111 · Where something opens is decided by what it is, never by the page it was clicked on",
+      "status": "provisional (accepted when the rules have been used by people outside the repository: a manager on Personal and one connector author placing a view and a card from the author's page alone); rule 7 (\"no control chooses a surface\") and the panel's header replaced by [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) (2026-11-11: \"Öppna som sida\" is back and the panel holds the thing with the conversation about it); rules 1, 4, 6 and 8 stand, and rule 2 stands with D112's panel",
+      "date": "2026-11-11",
+      "area": "ui"
+    },
+    {
+      "key": "D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel",
+      "number": 112,
+      "path": "docs/decisions/D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md",
+      "title": "D112 · The interface is rebuilt on Astryx's templates: a queue, one detail shape, and one panel with the assistant in it",
+      "status": "provisional (accepted when a manager has done a day's work in it and one connector author has declared an action that asks for input from the author's page alone)",
+      "date": "2026-11-11",
+      "area": "ui"
+    },
+    {
+      "key": "D113-a-deactivation-is-never-refused-for-what-stands-beside-it",
+      "number": 113,
+      "path": "docs/decisions/D113-a-deactivation-is-never-refused-for-what-stands-beside-it.md",
+      "title": "D113 · A deactivation is never refused for what stands beside it, and the SCIM server says no to what it did not do",
+      "status": "provisional (chosen in the build that followed [the full review of the SCIM server](../reviews/2026-11-11-scim-full-review.md), which the product owner asked for on 2026-11-11; he has not read the three rules), built 2026-11-11; accepted once a real directory has sent a leaver through it",
+      "date": "2026-11-11",
+      "area": "identity"
+    },
+    {
+      "key": "D114-person-profiles-show-employments-and-categorised-phone-numbers",
+      "number": 114,
+      "path": "docs/decisions/D114-person-profiles-show-employments-and-categorised-phone-numbers.md",
+      "title": "D114 · Person profiles show current employments and categorised phone numbers",
+      "status": "provisional (product owner, 2026-11-12, who directed the build against the freeze on new surface of D101 and settled items 3, 5 and 6 after the [review of the same day](../reviews/2026-11-12-scim-and-the-guides-before-the-handover.md)); implemented with the synthetic provisioner; accepted once a real directory has sent employments and numbers; no manual screen-reader pass yet",
+      "date": "2026-11-12",
+      "area": "identity, ui"
+    },
+    {
+      "key": "D115-clews-look-is-the-startsidan-prototypes-drawn-through-the-astryx-theme",
+      "number": 115,
+      "path": "docs/decisions/D115-clews-look-is-the-startsidan-prototypes-drawn-through-the-astryx-theme.md",
+      "title": "D115 · Clew's look is the startsidan prototype's, drawn through the Astryx theme on D112's layout",
+      "status": "provisional (Oliver Borgström, 2026-11-11 and 2026-11-12; built through the theme; accepted once a manager outside the team has used it)",
+      "date": "2026-11-11",
+      "area": "ui"
     }
   ],
   "documents": [
@@ -1815,8 +1863,40 @@
       "headings": []
     },
     {
-      "path": "docs/decisions/D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md",
-      "title": "D115 · The startsidan prototype's Version 1.0 is the reference for Clew's look and layout, built with Astryx",
+      "path": "docs/decisions/D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md",
+      "title": "D110 · A person's title is pushed as SCIM's `title` and kept apart from the role",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D111-where-something-opens-is-decided-by-what-it-is.md",
+      "title": "D111 · Where something opens is decided by what it is, never by the page it was clicked on",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md",
+      "title": "D112 · The interface is rebuilt on Astryx's templates: a queue, one detail shape, and one panel with the assistant in it",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D113-a-deactivation-is-never-refused-for-what-stands-beside-it.md",
+      "title": "D113 · A deactivation is never refused for what stands beside it, and the SCIM server says no to what it did not do",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D114-person-profiles-show-employments-and-categorised-phone-numbers.md",
+      "title": "D114 · Person profiles show current employments and categorised phone numbers",
+      "category": "decision-history",
+      "headings": [
+        "Employment and work placement in a municipality"
+      ]
+    },
+    {
+      "path": "docs/decisions/D115-clews-look-is-the-startsidan-prototypes-drawn-through-the-astryx-theme.md",
+      "title": "D115 · Clew's look is the startsidan prototype's, drawn through the Astryx theme on D112's layout",
       "category": "decision-history",
       "headings": []
     },
@@ -2525,7 +2605,8 @@
         "5. Adapt the example to your system",
         "6. Test and register your connector",
         "7. Add optional features deliberately",
-        "8. Say what your rows are about"
+        "8. Say what your rows are about",
+        "9. Ask the person, and say what a write will do"
       ]
     },
     {
@@ -2555,6 +2636,21 @@
       ]
     },
     {
+      "path": "docs/guides/provisioning-for-operations.md",
+      "title": "Provisioning: what operations deliver",
+      "category": "integrator-guide",
+      "headings": [
+        "Who delivers what",
+        "The example on this page",
+        "Answer these before anything is built",
+        "The directory team: a provisioner",
+        "The identity provider team: sign-in",
+        "The hosting team: address, token and environments",
+        "What Clew gives back",
+        "Not decided yet"
+      ]
+    },
+    {
       "path": "docs/guides/testing-and-deployment.md",
       "title": "Test, register and operate a connector",
       "category": "integrator-guide",
@@ -2566,6 +2662,19 @@
         "Deploy the service",
         "Troubleshoot the boundary that failed",
         "Additional write verification"
+      ]
+    },
+    {
+      "path": "docs/guides/where-things-open.md",
+      "title": "Where things open",
+      "category": "integrator-guide",
+      "headings": [
+        "The page and the panel",
+        "What you declare, and where Clew shows it",
+        "`target` and `confirm`",
+        "`asks` and `effect`",
+        "Links out of Clew",
+        "What you can and cannot influence"
       ]
     },
     {
@@ -2664,6 +2773,7 @@
       "category": "maintainer-guide",
       "headings": [
         "Run it",
+        "A stack made before PostgreSQL 18 and Nextcloud 35",
         "Utvecklingssamtal: the round, and switching the answering system",
         "Reset fixture data deliberately",
         "Source of runtime versions"
@@ -2736,6 +2846,7 @@
         "HTTP routes",
         "Manifest semantics",
         "Reads and actions about an entity",
+        "What a write asks, and what it says it will do",
         "Document and semantic views",
         "Scan observations",
         "Errors",
@@ -2755,8 +2866,11 @@
       "title": "Interface spaces and navigation",
       "category": "integrator-guide",
       "headings": [
-        "Where content belongs",
+        "The spaces",
+        "Widths",
         "Placement and return rules",
+        "Addresses",
+        "From origin to close",
         "A person and a unit",
         "Implementation and verification"
       ]
@@ -2768,6 +2882,24 @@
       "headings": [
         "How to add an entry",
         "Record"
+      ]
+    },
+    {
+      "path": "docs/reference/prototype-parity.md",
+      "title": "Parity with the startsidan prototype",
+      "category": "integrator-guide",
+      "headings": [
+        "How to read and keep this page",
+        "Summary",
+        "Version 1.0, for managers",
+        "The feature list",
+        "Building blocks",
+        "Tools with their own interface",
+        "Not made for",
+        "Chosen away, and possible",
+        "The requirement specifications",
+        "What HR asked for on 10 November 2026",
+        "The prototype's shared requirements"
       ]
     },
     {
@@ -2794,6 +2926,7 @@
       "category": "integrator-guide",
       "headings": [
         "Calendar",
+        "The calendar page",
         "Calendar follow-up"
       ]
     },
@@ -2806,6 +2939,7 @@
         "Phone book",
         "Sick-leave statistics",
         "Errands",
+        "News",
         "Nextcloud Approval"
       ]
     },
@@ -2829,8 +2963,11 @@
         "Shared header",
         "Type levels and the area mark",
         "Initial page loading",
+        "The rail",
+        "The panel and the assistant beside a thing",
         "Adding to the box",
-        "Sedan i går beside Hem"
+        "Hem under the box",
+        "Sedan i går on Hem"
       ]
     },
     {
@@ -2863,6 +3000,7 @@
       "category": "integrator-guide",
       "headings": [
         "Manifest preview",
+        "What a write asks and what it says it will do",
         "Remote connectors",
         "Served protocol",
         "Cross-connector dependencies",
@@ -2893,6 +3031,8 @@
         "Timers",
         "Review recovery and completion",
         "Becoming done",
+        "Att göra",
+        "The work item",
         "Card actions in the browser",
         "Browser updates"
       ]
@@ -3644,7 +3784,24 @@
         "Where Clew's protocol did not fit",
         "What it found in Clew itself",
         "The signed-in pass, 2026-11-11",
+        "The second signed-in pass, 2026-11-11",
         "What is left before the freeze lifts"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-11-dependency-refresh.md",
+      "title": "Dependency refresh: every package and image to its newest release · 2026-11-11",
+      "category": "review-history",
+      "headings": [
+        "Outcome",
+        "Findings",
+        "postgres.js 4 under Drizzle",
+        "PostgreSQL 18",
+        "Nextcloud 35",
+        "The seed, from nothing",
+        "Not taken",
+        "Validation",
+        "Not verified"
       ]
     },
     {
@@ -3676,6 +3833,35 @@
       ]
     },
     {
+      "path": "docs/reviews/2026-11-11-navigation-where-things-open.md",
+      "title": "Review: where things open, and a proposal for one place per thing · 2026-11-11",
+      "category": "review-history",
+      "headings": [
+        "Why",
+        "What was changed before the review",
+        "What the inventory shows",
+        "Proposal: one place per thing",
+        "What the proposal would change in the code",
+        "Choices that are the product owner's",
+        "The inventory",
+        "Part 1: inventory",
+        "Part 2: what a connector author declares, and where it opens",
+        "Part 3: the navigation patterns that exist today"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-11-provisioning-operations-guide-and-source-lifecycle.md",
+      "title": "Operations handover for SCIM, people and the organisation",
+      "category": "review-history",
+      "headings": [
+        "What the installation actually sends",
+        "Findings that affect the first installation",
+        "Changes that would make the guide easier to operate",
+        "Pilot acceptance",
+        "Outcome"
+      ]
+    },
+    {
       "path": "docs/reviews/2026-11-11-scim-flow-people-and-organisation.md",
       "title": "Review: the SCIM flow end to end, people and the organisation tree · 2026-11-11",
       "category": "review-history",
@@ -3689,6 +3875,19 @@
         "Verification",
         "Outcome",
         "Second pass: the orders nobody thought of"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-11-scim-full-review.md",
+      "title": "Review: the SCIM server in full, and the guides a provisioner is written from · 2026-11-11",
+      "category": "review-history",
+      "headings": [
+        "Question",
+        "Method",
+        "Assessment",
+        "Findings and what was done",
+        "Left as it is",
+        "Outcome"
       ]
     },
     {
@@ -3721,6 +3920,73 @@
         "Recommendation",
         "Against the canvas",
         "Not verified"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-11-typebox-1-instead-of-sinclair-typebox.md",
+      "title": "Review: `typebox` 1.x instead of `@sinclair/typebox` 0.34 · 2026-11-11",
+      "category": "review-history",
+      "headings": [
+        "The facts upstream",
+        "What was measured, and how",
+        "Result: the published protocol schema",
+        "Result: validation",
+        "Result: error texts",
+        "Result: connector authors",
+        "What changed in the code",
+        "Recommendation",
+        "The choice, and its answer",
+        "Validation"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-12-municipal-employment-and-work-placements.md",
+      "title": "Municipal employment, work placements and managerial responsibility",
+      "category": "review-history",
+      "headings": [
+        "Why a home unit alone is insufficient",
+        "What changes when someone moves",
+        "What Clew can establish today"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-12-outside-review-of-the-merged-scim-server.md",
+      "title": "Review: an outside reading of the merged SCIM server and its example provisioner · 2026-11-12",
+      "category": "review-history",
+      "headings": [
+        "Question",
+        "Assessment",
+        "Findings and what was done",
+        "What the review does not say",
+        "Left as it is",
+        "Follow-up on PR 36",
+        "Outcome"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-12-scim-and-the-guides-before-the-handover.md",
+      "title": "Review: SCIM and the two guides before they are handed to the directory team · 2026-11-12",
+      "category": "review-history",
+      "headings": [
+        "Question",
+        "Method",
+        "Assessment",
+        "Findings",
+        "Recommended",
+        "Left as it is",
+        "Outcome"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-12-scim-profile-fields-and-directory-handover.md",
+      "title": "SCIM profile updates before the directory handover",
+      "category": "review-history",
+      "headings": [
+        "Changes before handover",
+        "Verified profile example",
+        "Review and verification",
+        "Outcome",
+        "Pre-merge review of the fixes"
       ]
     },
     {

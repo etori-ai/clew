@@ -32,15 +32,14 @@ for (const viewport of [{ width: 1440, height: 1000 }, narrow]) {
       const before = await composer(page).boundingBox();
       await page.screenshot({ path: `test-results/screens/loading-${viewport.width}.png` });
       threads();
-      // Fast cards must not reveal a partially assembled section while its figures are still loading: the work and its
-      // figures arrive together (`start.tsx`). Soft, so the rest of the load is still checked.
-      await expect(page.getByRole('region', { name: 'Läget', exact: true })).toHaveAttribute('aria-busy', 'true');
-      await expect
-        .soft(page.getByText('Hämtar det som behöver dig …'), 'Att agera på waits for the areas')
-        .toBeAttached();
-      areas();
+      // Each block arrives with its own read (D112 item 2): the work items and Sedan i går with the cards, while the
+      // figures keep their shape until the areas have answered and the day until it has.
       await expect(page.getByText('Hämtar det som behöver dig …')).toHaveCount(0);
-      await expect(page.getByText('Hämtar sedan i går …')).toBeAttached();
+      await expect(page.getByText('Hämtar sedan i går …')).toHaveCount(0);
+      await expect(page.getByRole('region', { name: 'Läget', exact: true })).toHaveAttribute('aria-busy', 'true');
+      await expect(page.getByText('Hämtar i dag …')).toBeAttached();
+      areas();
+      await expect(page.getByRole('region', { name: 'Läget', exact: true })).not.toHaveAttribute('aria-busy', 'true');
       day();
       await expect(page.getByText('Hämtar i dag …')).toHaveCount(0);
       await expect(page.getByText('Hämtar sedan i går …')).toHaveCount(0);
@@ -105,11 +104,10 @@ test('coming back to the window asks about the session without hiding a page con
   await expect.poll(opacity).toBe('');
 });
 
-for (const tab of ['waiting', 'snoozed', 'done']) {
-  test(`the ${tab} tab does not claim to be empty before its first response`, async ({ page, api: _ }) => {
+for (const tab of ['waiting', 'done']) {
+  test(`the ${tab} pile does not claim to be empty before its first response`, async ({ page, api: _ }) => {
     const release = await hold(page, '**/api/threads');
-    // The tabs are Mina aktiviteter's (D115 item 4).
-    await page.goto('/activities?tab=' + tab);
+    await page.goto('/todo?tab=' + tab);
     await expect(page.getByText('Hämtar det som behöver dig …')).toBeAttached();
     await expect(page.getByText('Tomt här', { exact: true })).toHaveCount(0);
     release();
@@ -155,14 +153,12 @@ test('loading finishes on failure, including the optional day', async ({ page, a
 test('reduced motion disables the content entrance', async ({ page, api: _ }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const release = await hold(page, '**/api/threads');
-  // The tab's rows enter as one region on Mina aktiviteter (D115 item 4).
-  await page.goto('/activities');
+  await page.goto('/');
   await expect(page.getByText('Hämtar det som behöver dig …')).toBeAttached();
   release();
   await expect(page.getByText('Hämtar det som behöver dig …')).toHaveCount(0);
-  expect(await page.locator('#att-gora-lista > div > div').evaluate(el => getComputedStyle(el).animationName)).toBe(
-    'none',
-  );
+  const content = page.getByRole('region', { name: 'Behöver dig' }).locator('[aria-busy="false"] > div').first();
+  expect(await content.evaluate(el => getComputedStyle(el).animationName)).toBe('none');
 });
 
 test('a background refresh preserves content, focus and the composer draft', async ({ page, api: _ }) => {
@@ -189,14 +185,9 @@ test('a background refresh preserves content, focus and the composer draft', asy
     window.EventSource = Changes as unknown as typeof EventSource;
   });
   await open(page, '/');
-  // On Hem (D115 item 4) the loaded regions that enter are the day's and Sedan i går's; a row is kept as it was too.
-  const content = page
-    .locator('[aria-busy="false"] > div')
-    .filter({ has: page.getByRole('region', { name: 'Sedan i går' }) });
+  const content = page.getByRole('region', { name: 'Behöver dig' }).locator('[aria-busy="false"] > div').first();
   expect(await content.evaluate(el => getComputedStyle(el).animationName)).not.toBe('none');
   await content.evaluate(el => el.setAttribute('data-kept', 'yes'));
-  const row = page.locator('#thread-fakturor');
-  await row.evaluate(el => el.setAttribute('data-kept', 'yes'));
   await composer(page).fill('Behåll min fråga');
   const release = await hold(page, '**/api/threads');
   const request = page.waitForRequest('**/api/threads');
@@ -208,6 +199,5 @@ test('a background refresh preserves content, focus and the composer draft', asy
   release();
   await page.waitForLoadState('networkidle');
   await expect(content).toHaveAttribute('data-kept', 'yes');
-  await expect(row).toHaveAttribute('data-kept', 'yes');
   await expect(composer(page)).toHaveText('Behåll min fråga');
 });

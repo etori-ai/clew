@@ -32,15 +32,9 @@ test.describe('a declared view in the side panel', () => {
   }) => {
     await open(page, directory);
     const panel = page.getByRole('dialog', { name: 'Sök i telefonboken' });
-    await expect(panel.getByRole('columnheader')).toHaveText([
-      'Namn',
-      'Titel',
-      'Enhet',
-      'Telefon',
-      'Mobil',
-      'E-post',
-      'Samtal',
-    ]);
+    // No "Samtal" column of chips: a row goes into a conversation only beside a conversation's own box (D112 item 7),
+    // and on Hem the view has its own box in the panel.
+    await expect(panel.getByRole('columnheader')).toHaveText(['Namn', 'Titel', 'Enhet', 'Telefon', 'Mobil', 'E-post']);
     await expect(panel.getByRole('row')).toHaveCount(15);
     await expect(panel.getByRole('link', { name: '0980-319 203' })).toHaveAttribute('href', 'tel:0980319203');
     await expect(panel.getByRole('link', { name: 'anna.lindqvist@kommun.example' })).toHaveAttribute(
@@ -91,8 +85,12 @@ test.describe('a declared view in the side panel', () => {
     await panel.getByRole('link', { name: 'Anna Lindqvist' }).click();
     const contact = page.getByRole('dialog', { name: 'Kontaktkort' });
     await expect(contact.getByText('Anna Lindqvist')).toBeVisible();
-    // The panel stayed open and the view in it changed: the new view is named aloud and focus is in it, on the way back.
-    await expect(contact.getByRole('button', { name: 'Tillbaka' })).toBeFocused();
+    // The panel stayed open and the view in it changed: the new view is named aloud and focus is on its name at the
+    // panel's start, as beside the page (the panel's one header, which holds one thing: no menu of open things, D66's
+    // tabs withdrawn). The way back is under it.
+    await expect(contact.getByRole('heading', { level: 2, name: 'Kontaktkort', exact: true })).toBeFocused();
+    await expect(contact.getByRole('navigation')).toHaveCount(0);
+    await expect(contact.getByRole('button', { name: 'Tillbaka' })).toBeVisible();
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Kontaktkort'));
     await expect(contact.getByText('Rum')).toBeVisible();
     await expect(contact.getByRole('link', { name: '0980-319 203' })).toHaveAttribute('href', 'tel:0980319203');
@@ -124,9 +122,9 @@ test.describe('a declared view in the side panel', () => {
         }),
       );
     }
-    expect(stops.join(' | ')).toContain(
-      'Anna Lindqvist | 0980-319 203 | anna.lindqvist@kommun.example | Lägg till i samtalet',
-    );
+    // A row goes into a conversation only beside a conversation's own box (D112 item 7); here the view has its own box.
+    expect(stops.join(' | ')).toContain('Anna Lindqvist | 0980-319 203 | anna.lindqvist@kommun.example');
+    expect(stops).not.toContain('Lägg till i samtalet');
   });
 
   test("the calendar's rooms are a table like any connector's: named columns, seats as numbers, and no axe violations", async ({
@@ -176,8 +174,12 @@ test.describe('a declared view in the side panel', () => {
     await expectNoAxeViolations(page);
   });
 
-  test('a list is a list, and a row goes into the box as any found thing does', async ({ page, api: _ }) => {
-    await open(page, team);
+  test('a list is a list, and beside a conversation a row goes into its box as any found thing does', async ({
+    page,
+    api: _,
+  }) => {
+    // Beside a conversation's own box (D112 item 7): on Hem the view has its own box in the panel instead.
+    await open(page, team.replace(/^\/\?/, '/conversations/fraga?'));
     const panel = page.getByRole('dialog', { name: 'Mitt teams kontaktlista' });
     await expect(panel.getByRole('listitem')).toHaveCount(5);
     await expect(panel.getByRole('searchbox')).toHaveCount(0);
@@ -342,7 +344,7 @@ test.describe("the view's header and its values (D71, artboards 4 and 7)", () =>
     await expect(page.getByText('Ekonomisystemet svarar inte sedan 06:00', { exact: true })).toBeVisible();
     await expect(
       page.getByText(
-        'Korten under Budget kan vara gamla. Det du skickar köas och läses tillbaka när systemet svarar.',
+        'Ärendena under Budget kan vara gamla. Det du skickar köas och läses tillbaka när systemet svarar.',
         {
           exact: true,
         },
@@ -353,6 +355,29 @@ test.describe("the view's header and its values (D71, artboards 4 and 7)", () =>
       .toContainEqual(expect.stringContaining('Ekonomisystemet svarar inte sedan 06:00'));
     await expect(page.getByRole('button', { name: 'Försök igen' })).toBeVisible();
     await expectNoAxeViolations(page);
+  });
+
+  test("the banner waits for the system's name when the areas answer after the statuses", async ({ page, api }) => {
+    api.sources = [
+      { connector: 'finance', state: 'idle', lastSuccess: '2026-11-04T05:00:00.000Z', error: 'unavailable' },
+    ];
+    api.areasDelay = 600;
+    // Every moment the page shows the connector's id in the name's place, however short.
+    await page.addInitScript(() => {
+      const shown: string[] = [];
+      Object.assign(window, { idShown: shown });
+      new MutationObserver(() => {
+        if (document.body?.textContent?.includes('finance svarar inte')) shown.push('finance svarar inte');
+      }).observe(document, { subtree: true, childList: true, characterData: true });
+    });
+    await open(page, '/');
+    await expect(page.getByText('Ekonomisystemet svarar inte sedan 06:00', { exact: true })).toBeVisible();
+    await expect
+      .poll(() => announcements(page))
+      .toContainEqual(expect.stringContaining('Ekonomisystemet svarar inte sedan 06:00'));
+    // Drawn and spoken once, so never with the connector's id.
+    expect(await page.evaluate(() => (window as unknown as { idShown: string[] }).idShown)).toEqual([]);
+    expect((await announcements(page)).filter(text => text.includes('finance svarar inte'))).toEqual([]);
   });
 });
 

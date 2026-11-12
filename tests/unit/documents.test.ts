@@ -249,7 +249,7 @@ describe('review evidence and the shared decision ledger', () => {
       },
       clock: () => new Date('2026-11-08T10:00:00.000Z'),
     });
-    await expect(uc.preview(persona, thread.id, ref)).rejects.toThrow(/sedan kortet/);
+    await expect(uc.preview(persona, thread.id, ref)).rejects.toThrow(/sedan ärendet/);
     await expect(uc.act(persona, thread.id, 'approve', [ref], [preview.evidence])).rejects.toThrow(/olika versioner/);
     expect(writes).toBe(0);
     thread.items[0]!.revision = preview.bundle.revision;

@@ -5,7 +5,6 @@ export {
   useDarkSiteHeader,
   type SiteHeaderProps,
   type SiteHeaderLogo,
-  type SiteHeaderPage,
 } from './site-header';
 export {
   flattenSiteMenu,

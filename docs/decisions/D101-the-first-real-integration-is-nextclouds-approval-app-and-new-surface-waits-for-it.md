@@ -1,6 +1,6 @@
 # D101 · The first real integration is Nextcloud's Approval app, and new surface waits until its loop works
 
-**Status:** provisional (product owner, 2026-11-10; the connector is built and the loop has run signed in as one person on the development stack, the remaining conditions are in the implementation status; amended 2026-11-11: the second build as an MCP server and the comparison of the two builds are dropped from the freeze; an exception for the redrawing after the startsidan prototype in [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (Oliver Borgström, 2026-11-11)) · **Date:** 2026-11-10 · **Area:** product, integrations
+**Status:** provisional (product owner, 2026-11-10; the connector is built and the loop has run signed in as one person on the development stack, the remaining conditions are in the implementation status; amended 2026-11-11: the second build as an MCP server and the comparison of the two builds are dropped from the freeze) · **Date:** 2026-11-10 · **Area:** product, integrations
 
 **Decision.**
 

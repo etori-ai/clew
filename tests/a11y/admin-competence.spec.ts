@@ -52,24 +52,18 @@ test.describe('Administration › Kompetens', () => {
     });
   test.describe('desktop', () => {
     test.use({ viewport: desktop });
-    test("an administrator reaches it from the administration's tabs and reads each type with its area, kind and validity", async ({
+    test('an administrator reaches it from the rail and reads each type with its area, kind and validity', async ({
       page,
       api,
     }) => {
       api.admin = true;
       api.competenceTypes = competenceCatalogue();
       await open(page, '/admin/connectors');
-      // The administration's sections are tabs under the trail, each a link to its own address (D115 item 3); there is
-      // no rail with a row per section. They are one navigation of the page, and the open section's tab is its current one.
-      const tabs = page
-        .getByRole('main')
-        .getByRole('navigation')
-        .filter({ has: page.getByRole('link', { name: 'Kompetens', exact: true }) });
-      await expect(tabs.locator('[aria-current]')).toHaveAccessibleName('Anslutna system');
-      await tabs.getByRole('link', { name: 'Kompetens', exact: true }).click();
+      const row = page.getByRole('link', { name: 'Kompetens', exact: true });
+      await row.click();
       await expect(page).toHaveURL(/\/admin\/competence$/);
       await expect(page).toHaveTitle('Kompetens · Startsidan');
-      await expect(tabs.locator('[aria-current]')).toHaveAccessibleName('Kompetens');
+      await expect(page.getByRole('link', { name: 'Kompetens', exact: true })).toHaveAttribute('aria-current', 'page');
       await expect(page.getByRole('status').filter({ hasText: 'att registrera' })).toHaveText(
         '3 kompetenser att registrera, 1 arkiverade',
       );
@@ -245,7 +239,8 @@ test.describe('Administration › Kompetens', () => {
       await expectNoAxeViolations(page);
       api.competenceTypes = [];
       await page.reload();
-      await expect(page.getByText('Katalogen är tom')).toBeVisible();
+      // By role: the empty state's words are also spoken (4.1.3), and while they sit in the live region the text matches twice.
+      await expect(page.getByRole('heading', { name: 'Katalogen är tom' })).toBeVisible();
       await expect(page.getByRole('link', { name: 'Lägg till kompetens' })).toBeVisible();
       await settled(page);
       await expectNoAxeViolations(page);

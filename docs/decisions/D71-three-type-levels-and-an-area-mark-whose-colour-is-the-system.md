@@ -2,7 +2,7 @@
 
 **Status:** accepted, built 2026-11-06 on `main` (the foundation, the row and the card, a card across systems,
 Anslutna system and the phone); the figure forms, the views and answers, the calendar family and the mark on small
-places are built by the sessions that own those files (see "Not built here"); the type sizes to be changed by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built); the three levels and the area mark stand · **Date:** 2026-11-06 · **Area:** ui
+places are built by the sessions that own those files (see "Not built here") · **Date:** 2026-11-06 · **Area:** ui
 
 **Decision.** The design pattern drawn on the canvas **Clew · hierarki, områden och figurer** (Claude Design,
 https://claude.ai/artifact/YVw6FJL6YjKZprBAiAEA2f, twelve artboards) and written up in

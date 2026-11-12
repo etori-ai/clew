@@ -1,6 +1,6 @@
 # D63 · Hem is drawn as the canvas draws it, pixel for pixel, with Astryx's own tokens
 
-**Status:** accepted, built 2026-11-06 on `main`; the elements the artboards draw without anything behind them are listed under "Asked, not built" and wait for the product owner; to be replaced by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built): the startsidan prototype, not the canvas, is the reference · **Date:** 2026-11-06 · **Area:** ui
+**Status:** accepted, built 2026-11-06 on `main`; the elements the artboards draw without anything behind them are listed under "Asked, not built" and wait for the product owner; Hem's layout replaced by [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) items 2 and 3 (2026-11-11), with the board Hem10 as the reference · **Date:** 2026-11-06 · **Area:** ui
 
 **Decision.** Hem, the card beside it, the quiet page, the conversation and the phone are built to match the artboards
 of the canvas **Clew startsida · dagen i ett svep** (https://claude.ai/artifact/9xn43bAwXy2VioBqiG3xc6, artboards A, B,

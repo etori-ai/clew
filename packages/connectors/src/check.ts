@@ -120,7 +120,7 @@ export async function checkConnector(
     'ok',
     'connection',
     'Systemets beskrivning är giltig',
-    `${count(manifest.capabilities.length, 'funktion', 'funktioner')}, ${count(manifest.areas.length, 'område', 'områden')}. ${manifest.scan ? 'Skickar kort.' : 'Skickar inga kort.'}`,
+    `${count(manifest.capabilities.length, 'funktion', 'funktioner')}, ${count(manifest.areas.length, 'område', 'områden')}. ${manifest.scan ? 'Skickar ärenden.' : 'Skickar inga ärenden.'}`,
   );
   if (manifest.delegation) {
     warn(
@@ -141,7 +141,7 @@ export async function checkConnector(
         return;
       }
       fail(`draft ${topic} refused: ${problem}`);
-      item('fail', 'surfaces', 'Kort', `Kortet ${topic} avvisades: ${problem}`);
+      item('fail', 'surfaces', 'Ärenden', `Ärendet ${topic} avvisades: ${problem}`);
     },
   }).register(remoteConnector(manifest, { url, key: options.key, assert: options.assert, fetch: fetchImpl }));
   registry.govern(manifest.id, openGovernance());
@@ -519,8 +519,8 @@ export async function checkConnector(
             item(
               'fail',
               'surfaces',
-              'Kort',
-              `Kortet ${d.topic} pekar på området ${d.area}, som inte finns i manifestet.`,
+              'Ärenden',
+              `Ärendet ${d.topic} pekar på området ${d.area}, som inte finns i manifestet.`,
             );
           }
       } catch (error) {
@@ -528,7 +528,7 @@ export async function checkConnector(
         item(
           'fail',
           'surfaces',
-          'Kort',
+          'Ärenden',
           `Genomgången misslyckades för ${ROLE[actor.role]}: ${(error as Error).message}`,
         );
       }
@@ -537,8 +537,8 @@ export async function checkConnector(
       item(
         same ? 'ok' : 'fail',
         'surfaces',
-        'Kort',
-        `Genomgången föreslår ${counts.join(' och ')}. ${same ? 'Två genomgångar gav samma kort.' : 'Två genomgångar gav olika kort.'}`,
+        'Ärenden',
+        `Genomgången föreslår ${counts.join(' och ')}. ${same ? 'Två genomgångar gav samma ärenden.' : 'Två genomgångar gav olika ärenden.'}`,
       );
   }
   // The shared header (D88): asked as both roles; the answer must be in the protocol's shape. Its words stay out of the

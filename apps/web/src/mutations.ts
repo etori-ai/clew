@@ -121,6 +121,48 @@ export function useThreadAction({
 }
 
 /**
+ * A decision sent from the action dialog (D112 item 10): the same path as `useThreadAction`'s `run` with `settle` (the
+ * answer goes into the cache for every screen, `onChange` first, and an answer not at rest keeps the item on its way),
+ * but the failure is the dialog's to place on the field it concerns, so `send` resolves the server's Swedish sentence
+ * instead of keeping it in an `error` the item would also show. Null once it went through, or for a second send while
+ * one is in flight.
+ */
+export function useDecisionSend({
+  onChange,
+  fallback = 'Något gick fel.',
+}: { onChange?: (thread: Thread) => void; fallback?: string } = {}) {
+  const client = useQueryClient();
+  const latest = useRef(onChange);
+  latest.current = onChange;
+  const mutation = useMutation<Thread, unknown, Action<Thread>>({
+    mutationFn: fn => fn(),
+    onSuccess: thread => {
+      latest.current?.(thread);
+      void applyThread(client, thread);
+      if (!atRest(thread)) holdSettling(thread.id, Date.now() + SETTLE_MS);
+    },
+  });
+  const inFlight = useRef(false);
+  const { mutateAsync } = mutation;
+  const send = useCallback(
+    async (fn: Action<Thread>): Promise<{ sent: true } | { error: string } | null> => {
+      if (inFlight.current) return null;
+      inFlight.current = true;
+      try {
+        await mutateAsync(fn);
+        return { sent: true };
+      } catch (error) {
+        return { error: errorMessage(error, fallback) };
+      } finally {
+        inFlight.current = false;
+      }
+    },
+    [mutateAsync, fallback],
+  );
+  return { send, busy: mutation.isPending };
+}
+
+/**
  * Run an administration action (D23). On success the given keys are invalidated and awaited, so `busy` holds until the
  * page shows the new state (as the old `load()` did), then the message the action returned is the toast.
  */
@@ -169,8 +211,12 @@ export function useAdminAction({
 
 /** What a talk write changes and is waited for before `busy` lets go: the round, every list of action points, Personal. */
 const TALK_KEYS: readonly QueryKey[] = [keys.talks.all, keys.staff];
-/** What it changes beside them and is re-read without waiting (D96 item 5): the action point's card in the stream and the counts and figure beside it. */
-const TALK_SIDE_KEYS: readonly QueryKey[] = [keys.threads, keys.attention, keys.areas];
+/**
+ * What it changes beside them and is re-read without waiting (D96 item 5): the action point's card in the stream and the
+ * counts and figure beside it, and what Clew's talks say about people and units (D97) on whichever page the talk lay
+ * over (D111 rule 5): Personal's lens, column and "Just nu", the talks section on a person's page, a unit's section.
+ */
+const TALK_SIDE_KEYS: readonly QueryKey[] = [keys.threads, keys.attention, keys.areas, keys.entities.all];
 /** What a caller may add to a talk write's completion toast. */
 export type TalkToast = {
   /** An action at the toast's end, such as Ångra. The toast then stays until it is used or closed (2.2.1). */

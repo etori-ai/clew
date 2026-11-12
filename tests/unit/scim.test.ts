@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
-import { ScimError } from '../../apps/server/src/modules/people/contracts';
+import { SCIM, ScimError } from '../../apps/server/src/modules/people/contracts';
 import {
   applyGroupPatch,
   applyUserPatch,
@@ -9,6 +9,7 @@ import {
   pageOf,
   parseFilter,
   project,
+  schemaDocuments,
 } from '../../apps/server/src/modules/people/domain';
 import type { ProvisionStore } from '../../apps/server/src/modules/people/ports';
 import { scimUsecases } from '../../apps/server/src/modules/people/usecases';
@@ -120,6 +121,193 @@ describe('SCIM users', () => {
     expect(audit('person:id-1')).toEqual(['scim.user.created']);
     expect(store.state.grants.get('id-1')).toBeUndefined();
   });
+  test('a title is optional and held as sent: set, changed, cleared and left out, audited by the name of the field, and it moves no grant (D110)', async () => {
+    const { scim, p, store } = harness();
+    const patch = (Operations: unknown[]) => scim.patchUser(p, 'id-1', { schemas: [SCIM.patch], Operations }, BASE),
+      last = () => store.state.audit.at(-1);
+    const created = await scim.createUser(p, { ...anna, title: '  Byggchef ' }, BASE);
+    expect(created.title).toBe('Byggchef');
+    expect(store.state.users.get('id-1')?.title).toBe('Byggchef');
+    await scim.createGroup(
+      p,
+      { externalId: 'unit-manager:bygglov', displayName: 'Chefer · Bygglovsenheten', members: [{ value: 'id-1' }] },
+      BASE,
+    );
+    const grant = structuredClone(store.state.grants.get('id-1'));
+    expect(grant).toMatchObject({ unitId: 'bygglov', role: 'manager' });
+    // A new title is a change like any other, audited by the name of the field and not by its words.
+    expect((await patch([{ op: 'replace', path: 'title', value: 'Stadsbyggnadschef' }])).title).toBe(
+      'Stadsbyggnadschef',
+    );
+    expect(last()).toEqual({
+      actor: 'provisioner:metakatalogen',
+      action: 'scim.user.patched',
+      subject: 'person:id-1',
+      details: { changed: ['title'], userName: 'annber', externalId: 'mk-1' },
+    });
+    // The same title again changes nothing and writes nothing.
+    const written = store.state.audit.length;
+    await patch([{ op: 'replace', value: { title: 'Stadsbyggnadschef' } }]);
+    expect(store.state.audit).toHaveLength(written);
+    // Cleared three ways: removed, sent empty and sent as null. The resource then carries no title.
+    expect(await patch([{ op: 'remove', path: 'title' }])).not.toHaveProperty('title');
+    await patch([{ op: 'add', path: 'title', value: 'Byggchef' }]);
+    expect(await patch([{ op: 'replace', path: 'title', value: '' }])).not.toHaveProperty('title');
+    await patch([{ op: 'add', path: 'title', value: 'Byggchef' }]);
+    expect(await patch([{ op: 'replace', value: { title: null } }])).not.toHaveProperty('title');
+    // A full replacement says everything there is to say: one without a title means the person has none.
+    expect((await scim.replaceUser(p, 'id-1', { ...anna, title: 'Byggchef' }, BASE)).title).toBe('Byggchef');
+    expect(await scim.replaceUser(p, 'id-1', anna, BASE)).not.toHaveProperty('title');
+    expect(store.state.users.get('id-1')?.title).toBeNull();
+    // The path may carry the schema, and its case is the client's own.
+    const qualified = 'urn:ietf:params:scim:schemas:core:2.0:User:Title';
+    expect((await patch([{ op: 'replace', path: qualified, value: 'Byggchef' }])).title).toBe('Byggchef');
+    // Only space is no title, as an empty one is.
+    expect(await patch([{ op: 'replace', path: 'title', value: '   ' }])).not.toHaveProperty('title');
+    // What a person is called decided nothing along the way: the grant is the one the manager group gave.
+    expect(store.state.grants.get('id-1')).toEqual(grant);
+    expect(
+      schemaDocuments(BASE)
+        .find(s => s.id === SCIM.user)
+        ?.attributes.map(a => a.name),
+    ).toContain('title');
+  });
+  test('a title never refuses a request: one that is not text is read as none, a long one is cut, and the changes beside it go through (D110)', async () => {
+    const { scim, p, store } = harness();
+    const patch = (id: string, Operations: unknown[]) =>
+      scim.patchUser(p, id, { schemas: [SCIM.patch], Operations }, BASE);
+    // A person is created whatever the directory holds in the field: a number, a list or an object is no title.
+    const created = await scim.createUser(p, { ...anna, title: 7 }, BASE);
+    expect(created).not.toHaveProperty('title');
+    expect(store.state.users.get(created.id)).toMatchObject({ enabled: true, title: null });
+    expect(await scim.replaceUser(p, created.id, { ...anna, title: ['Byggchef'] }, BASE)).not.toHaveProperty('title');
+    await patch(created.id, [{ op: 'replace', path: 'title', value: 'Byggchef' }]);
+    expect(await patch(created.id, [{ op: 'replace', path: 'title', value: { value: 'x' } }])).not.toHaveProperty(
+      'title',
+    );
+    // Text past 512 characters is cut there, counted as characters so that none is cut in half, on every way in.
+    const long = 'Å'.repeat(511) + '🙂' + 'x'.repeat(100),
+      kept = 'Å'.repeat(511) + '🙂';
+    expect((await patch(created.id, [{ op: 'replace', path: 'title', value: long }])).title).toBe(kept);
+    expect((await scim.replaceUser(p, created.id, { ...anna, title: long }, BASE)).title).toBe(kept);
+    expect(
+      (await scim.createUser(p, { ...anna, externalId: 'mk-2', userName: 'bygber', title: long }, BASE)).title,
+    ).toBe(kept);
+    // A leaver is deactivated although the same request carries a title Clew cannot read (Entra sends both at once).
+    const left = await patch(created.id, [
+      { op: 'replace', path: 'title', value: 7 },
+      { op: 'replace', path: 'active', value: false },
+    ]);
+    expect(left).toMatchObject({ active: false });
+    expect(left).not.toHaveProperty('title');
+    expect(store.state.audit.at(-1)).toMatchObject({
+      action: 'scim.user.deactivated',
+      details: { changed: ['title', 'enabled'], via: 'scim.user.patched' },
+    });
+  });
+  test('attribute names are read without regard to case in a full representation, as in a patch (RFC 7643 §2.1)', async () => {
+    const { scim, p, store } = harness();
+    const shouted = {
+      Schemas: anna.schemas,
+      ExternalId: 'mk-1',
+      UserName: 'annber',
+      DisplayName: 'Anna Berg',
+      Emails: [{ Value: 'anna.berg@sundsvall.se', Type: 'work', Primary: true }],
+      Title: 'Rektor',
+      Active: true,
+    };
+    const created = await scim.createUser(p, shouted, BASE);
+    expect(created).toMatchObject({
+      userName: 'annber',
+      displayName: 'Anna Berg',
+      title: 'Rektor',
+      active: true,
+      emails: [{ value: 'anna.berg@sundsvall.se', type: 'work', primary: true }],
+    });
+    // A `PUT` that writes `Title` keeps the title, and one that writes `Active: false` deactivates: read as unknown
+    // attributes, the first cleared the title and the second enabled the person.
+    const { Title, ...untitled } = shouted;
+    expect((await scim.replaceUser(p, created.id, { ...untitled, TITLE: 'Skolchef' }, BASE)).title).toBe('Skolchef');
+    expect((await scim.replaceUser(p, created.id, { ...shouted, Active: false }, BASE)).active).toBe(false);
+    expect(store.state.users.get(created.id)).toMatchObject({ enabled: false, title: Title });
+    // The name as the schema writes it wins over the same name in another case.
+    expect(
+      (await scim.replaceUser(p, created.id, { ...anna, title: 'Rektor', Title: 'Vaktmästare', ACTIVE: false }, BASE))
+        .title,
+    ).toBe('Rektor');
+    // A name given through `Name.GivenName`, and the nested names of a path-less patch, are read the same way.
+    const built = await scim.createUser(
+      p,
+      {
+        ExternalId: 'mk-2',
+        UserName: 'omaali',
+        Name: { GivenName: 'Omar', FamilyName: 'Ali' },
+        Emails: [{ VALUE: 'o@x.se' }],
+      },
+      BASE,
+    );
+    expect(built).toMatchObject({ displayName: 'Omar Ali', emails: [{ value: 'o@x.se' }] });
+    const patched = await scim.patchUser(
+      p,
+      built.id,
+      {
+        schemas: [SCIM.patch],
+        Operations: [
+          { op: 'replace', value: { Name: { Formatted: 'Omar Ny' }, Emails: [{ Value: 'ny@x.se', Type: 'work' }] } },
+        ],
+      },
+      BASE,
+    );
+    expect(patched).toMatchObject({ displayName: 'Omar Ny', emails: [{ value: 'ny@x.se' }] });
+    // A group's names too; its extension and anything Clew does not read are left as they are.
+    const group = await scim.createGroup(
+      p,
+      { ExternalId: 'unit:skola', DisplayName: 'Skolan', Members: [{ Value: built.id }], other: { Kept: true } },
+      BASE,
+    );
+    expect(group).toMatchObject({ externalId: 'unit:skola', displayName: 'Skolan', members: [{ value: built.id }] });
+  });
+  test('a control character in a title becomes a space, and a NUL in a required attribute is refused by name (D110)', async () => {
+    const { scim, p } = harness();
+    const created = await scim.createUser(p, { ...anna, title: '\u0000Rektor\r\n(vik.)\u0000' }, BASE);
+    expect(created.title).toBe('Rektor (vik.)');
+    const patch = (Operations: unknown[]) => scim.patchUser(p, created.id, { schemas: [SCIM.patch], Operations }, BASE);
+    expect(await patch([{ op: 'replace', path: 'title', value: '\u0000\t' }])).not.toHaveProperty('title');
+    const refused = (attribute: string) => ({
+      status: 400,
+      scimType: 'invalidValue',
+      detail: `Attribute '${attribute}' holds a NUL character, which cannot be stored.`,
+    });
+    await expect(patch([{ op: 'replace', path: 'displayName', value: 'Anna\u0000' }])).rejects.toMatchObject(
+      refused('displayName'),
+    );
+    await expect(scim.createUser(p, { ...anna, externalId: 'mk-2', userName: 'x\u0000y' }, BASE)).rejects.toMatchObject(
+      refused('userName'),
+    );
+    await expect(
+      scim.createUser(
+        p,
+        {
+          ...anna,
+          externalId: 'mk-3',
+          userName: 'z',
+          displayName: undefined,
+          name: { givenName: 'A\u0000', familyName: 'B' },
+        },
+        BASE,
+      ),
+    ).rejects.toMatchObject(refused('displayName'));
+    await expect(scim.createGroup(p, { displayName: 'Enhet\u0000' }, BASE)).rejects.toMatchObject(
+      refused('displayName'),
+    );
+    // Nothing stored holds one, so a filter that asks for one is refused and an address with one names nothing.
+    await expect(scim.listUsers(p, { filter: 'userName eq "a\u0000"' }, BASE)).rejects.toMatchObject({
+      status: 400,
+      scimType: 'invalidFilter',
+    });
+    await expect(scim.getUser(p, created.id + '\u0000', BASE)).rejects.toMatchObject({ status: 404 });
+    await expect(scim.getGroup(p, 'g\u0000', BASE)).rejects.toMatchObject({ status: 404 });
+  });
   test('refuses a user without externalId, display name or work address, naming the attribute', async () => {
     const { scim, p } = harness();
     const { externalId, ...noExternal } = anna;
@@ -135,13 +323,63 @@ describe('SCIM users', () => {
     await expect(scim.createUser(p, { ...anna, emails: [] }, BASE)).rejects.toMatchObject({
       detail: "Attribute 'emails' is required.",
     });
-    await expect(scim.createUser(p, { userName: 7 }, BASE)).rejects.toMatchObject({
+    // A value of the wrong kind is said about its attribute, as a missing one is (RFC 7644 §3.12: `invalidValue`).
+    await expect(scim.createUser(p, { ...anna, userName: 7 }, BASE)).rejects.toMatchObject({
+      status: 400,
+      scimType: 'invalidValue',
+      detail: "Attribute 'userName' needs a non-empty string of at most 512 characters.",
+    });
+    const { userName, ...unnamed } = anna;
+    void userName;
+    await expect(scim.createUser(p, unnamed, BASE)).rejects.toMatchObject({
+      detail: "Attribute 'userName' is required.",
+    });
+    // What is not a resource at all is the one mistake about the message itself.
+    await expect(scim.createUser(p, ['not', 'a', 'user'], BASE)).rejects.toMatchObject({
       status: 400,
       scimType: 'invalidSyntax',
     });
     await expect(
       scim.createUser(p, { ...anna, name: { givenName: 'Anna', familyName: 'Berg' }, displayName: undefined }, BASE),
     ).resolves.toMatchObject({ displayName: 'Anna Berg' });
+  });
+  test('one address is held: the work one, then one without a type, then what was sent, whatever it is called (D114)', async () => {
+    const { scim, p } = harness();
+    const home = { value: 'home@example.org', type: 'home', primary: true };
+    const one = (n: number, emails: unknown) => ({ ...anna, externalId: 'mk-e' + n, userName: 'e' + n, emails });
+    // What an address is called is the source's to answer for: a person is not refused for it.
+    expect((await scim.createUser(p, one(1, [home]), BASE)).emails).toEqual([
+      { value: 'home@example.org', type: 'work', primary: true },
+    ]);
+    // Of addresses that are neither work nor without a type, the primary before the first.
+    expect(
+      (await scim.createUser(p, one(2, [{ value: 'other@example.org', type: 'other' }, home]), BASE)).emails[0]?.value,
+    ).toBe('home@example.org');
+    const created = await scim.createUser(p, one(3, [home, { value: 'selected@example.org' }]), BASE);
+    expect(created.emails[0]?.value).toBe('selected@example.org');
+    expect(
+      (
+        await scim.createUser(
+          p,
+          one(4, [home, { value: 'selected@example.org' }, { value: 'work@example.org', type: 'Work' }]),
+          BASE,
+        )
+      ).emails[0]?.value,
+    ).toBe('work@example.org');
+    // A `replace` gives the whole list, as a body does.
+    const replaced = await scim.patchUser(
+      p,
+      created.id,
+      { schemas: [SCIM.patch], Operations: [{ op: 'replace', path: 'emails', value: [home] }] },
+      BASE,
+    );
+    expect(replaced.emails[0]?.value).toBe('home@example.org');
+    // No address at all is still a missing attribute.
+    await expect(scim.createUser(p, one(5, []), BASE)).rejects.toMatchObject({
+      status: 400,
+      scimType: 'invalidValue',
+      detail: "Attribute 'emails' is required.",
+    });
   });
   test('userName and externalId are unique across the installation, userName without regard to case', async () => {
     const { scim, p } = harness();
@@ -448,7 +686,11 @@ describe('SCIM groups and derivation', () => {
     const ad = await scim.createGroup(p, { displayName: 'Any AD group', members: [{ value: a }] }, BASE);
     expect(ad.externalId).toBeUndefined();
     expect(store.state.grants.get(a)?.capabilities).toEqual(['admin.connectors']);
-    store.state.groupCapabilities.push({ groupExternalId: 'S-1-5-21-ad', capability: 'admin.users' });
+    store.state.groupCapabilities.push({
+      organisationId: 'sundsvall',
+      groupExternalId: 'S-1-5-21-ad',
+      capability: 'admin.users',
+    });
     await scim.patchGroup(
       p,
       ad.id,
@@ -633,7 +875,16 @@ describe('SCIM groups and derivation', () => {
   });
 });
 describe('SCIM patch and filter rules', () => {
-  const fields = { externalId: 'e', userName: 'u', name: 'N', email: 'n@x.test', enabled: true };
+  const fields = {
+    externalId: 'e',
+    userName: 'u',
+    name: 'N',
+    email: 'n@x.test',
+    phoneNumbers: [],
+    employments: [],
+    title: null,
+    enabled: true,
+  };
   test('user patches take paths, schema-qualified paths and the path-less object form; unknown attributes are ignored', () => {
     expect(
       applyUserPatch(fields, [

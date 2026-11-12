@@ -239,7 +239,7 @@ describe('another week', () => {
     });
     await expect(w.replan(hillevi, t.id, '2026-10-26')).rejects.toThrow('Välj en kommande vecka.');
     await expect(w.replan(hillevi, t.id, '2026-11-17')).rejects.toThrow('Välj en kommande vecka.');
-    await expect(w.replan(hassan, t.id, '2026-11-16')).rejects.toThrow('Kortet är redan hanterat.');
+    await expect(w.replan(hassan, t.id, '2026-11-16')).rejects.toThrow('Ärendet är redan hanterat.');
   });
 });
 
@@ -259,7 +259,7 @@ describe('avfärda and the week', () => {
       subject: 'thread:' + t.id,
       at: T0,
     });
-    await expect(w.dismiss(hillevi, t.id)).rejects.toThrow('Kortet är redan hanterat.');
+    await expect(w.dismiss(hillevi, t.id)).rejects.toThrow('Ärendet är redan hanterat.');
   });
   test('the week overview carries the events as names and the live proposals; today lists the day with its gaps', async () => {
     const w = world();

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { CalendarEvent, Proposal } from '../../packages/contracts/src/index';
-import { LONGEST_GAP, PROPOSAL_MARK, agendaItems, duration } from '../../packages/ui/src/agenda-items';
+import { CHOSEN_ID, LONGEST_GAP, PROPOSAL_MARK, agendaItems, duration } from '../../packages/ui/src/agenda-items';
 
 /**
  * The calendar family's one mapping (D32) as artboard 6 of D71 draws it: a meeting is neutral with its length and
@@ -69,6 +69,16 @@ describe('agendaItems', () => {
     expect(items[0]).toMatchObject({ title: 'Ledigt till 09:30' });
     expect(items[0]!.meta).toBeUndefined();
     expect(items[1]).toMatchObject({ title: 'Ledigt till 17:00', meta: LONGEST_GAP });
+  });
+  test('the time a person is choosing in the action dialog is their proposal, without the assistant mark (D112)', () => {
+    const items = agendaItems([event('e1', 'APT', '2026-11-05T14:00:00Z', '2026-11-05T15:30:00Z')], [], [], {
+      start: '2026-11-05T12:15:00Z',
+      end: '2026-11-05T13:00:00Z',
+      title: 'Vald tid',
+    });
+    expect(items.map(i => i.kind)).toEqual(['event', 'proposal']);
+    expect(items[1]).toMatchObject({ id: CHOSEN_ID, title: 'Vald tid', meta: '45 min', allDay: false });
+    expect(items[1]!.marker).toBeUndefined();
   });
   test('no gaps unless they are given: the grid and the week agenda draw none', () => {
     expect(agendaItems([event('e1', 'Möte', '2026-11-04T08:00:00Z', '2026-11-04T09:00:00Z')], [])).toHaveLength(1);

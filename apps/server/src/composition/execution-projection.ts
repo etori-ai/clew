@@ -41,18 +41,18 @@ async function project(tx: Transaction, e: Execution, stage: Stage, durable: Dur
     .from(schema.threads)
     .where(and(eq(schema.threads.id, e.presentation.threadId), eq(schema.threads.personId, e.personId)))
     .for('update');
-  if (!thread) throw new ExecutionError('Kortet finns inte.');
+  if (!thread) throw new ExecutionError('Ärendet finns inte.');
   const previous = thread.execution;
   if (stage === 'approval') {
     if (
       (!e.presentation.newTitle && thread.updatedAt.toISOString() !== e.presentation.version) ||
       thread.connector !== e.connector
     )
-      throw new ExecutionError('Kortet har ändrats. Läs tillbaka det innan du bekräftar.');
+      throw new ExecutionError('Ärendet har ändrats. Läs tillbaka det innan du bekräftar.');
     if (previous && ['pending', 'running', 'unknown'].includes(previous.state))
       throw new ExecutionError('Ett tidigare beslut väntar redan på besked.');
     if (e.compensates ? previous?.id !== e.compensates : thread.state !== 'open')
-      throw new ExecutionError('Kortet är redan hanterat.');
+      throw new ExecutionError('Ärendet är redan hanterat.');
   } else if (previous?.id !== e.id) return;
   const execution = {
     id: e.id,

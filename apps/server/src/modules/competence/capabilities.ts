@@ -1,4 +1,4 @@
-import { Type, type Static } from '@sinclair/typebox';
+import { Type, type Static } from 'typebox';
 import { COMPETENCE_CONNECTOR, type Actor, type Capability, type Connector, type ThreadDraft } from '@clew/connectors';
 import {
   CompetenceAttentionInputSchema,
@@ -10,6 +10,7 @@ import {
   type CompetenceAttentionInput,
   type CompetenceHoldingsInput,
   type View,
+  literals,
 } from '@clew/contracts';
 import { systemContext } from '../../system-context';
 import { swedishDayAndMonth } from './domain';
@@ -71,7 +72,7 @@ export const STANDING_WORDS = {
 export const PersonCompetenceRowSchema = Type.Object(
   {
     key: Type.String({ minLength: 1, maxLength: 256 }),
-    status: Type.Union(Object.values(STANDING_WORDS).map(word => Type.Literal(word))),
+    status: literals(Object.values(STANDING_WORDS)),
     due: Type.Optional(Type.String({ maxLength: 60 })),
     held: Type.String({ maxLength: 40 }),
   },

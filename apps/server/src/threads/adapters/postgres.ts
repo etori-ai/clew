@@ -1,4 +1,4 @@
-import { and, eq, inArray, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, or } from 'drizzle-orm';
 import { foldEntityKey, type EntityKind, type Subject, type ThreadItem } from '@clew/contracts';
 import { database, schema, type Transaction } from '@clew/db';
 import { listThreads, toThread, unresolvedThreads } from '@clew/db/threads';
@@ -251,6 +251,23 @@ export function postgresThreadStore(options: ThreadStoreOptions): ThreadStore {
       for (const r of rows) named.set(r.threadId, [...(named.get(r.threadId) ?? []), { entity: r.entity, key: r.key }]);
       const found = await unresolvedThreads(personId, [...named.keys()]);
       return found.map(thread => ({ thread, subjects: namedAmong(named.get(thread.id)!, subjects) }));
+    },
+    async history(subjects, limit) {
+      if (!subjects.length || limit < 1) return [];
+      // The newest `limit` by the subject index (`audit_subject`), handed back oldest first.
+      const rows = await database()
+        .select()
+        .from(audit)
+        .where(inArray(audit.subject, [...subjects]))
+        .orderBy(desc(audit.createdAt), desc(audit.id))
+        .limit(limit);
+      return rows.reverse().map(r => ({
+        actor: r.actor,
+        action: r.action,
+        subject: r.subject,
+        at: r.createdAt.toISOString(),
+        details: r.details,
+      }));
     },
     transaction: fn => withThreadTx(options, (_, tx) => fn(tx)),
   };

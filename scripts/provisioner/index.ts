@@ -7,7 +7,7 @@
  * `bun run auth:setup` issues the token and pushes the same directory in-process, so this is for exercising the endpoint.
  */
 import { scimClient } from './client';
-import { developmentDirectory } from './directory';
+import { developmentScope, developmentDirectory } from './directory';
 import { push } from './push';
 
 const args = process.argv.slice(2);
@@ -24,9 +24,16 @@ async function tokenFromFile() {
 const token = option('token') ?? process.env.DEV_PROVISIONER_TOKEN ?? (await tokenFromFile());
 if (!token) throw new Error('No provisioner token: run `bun run auth:setup`, or pass --token.');
 const url = (option('url') ?? process.env.CLEW_URL ?? 'http://127.0.0.1:3000').replace(/\/+$/, '') + '/scim/v2';
-const summary = await push(scimClient(url, token), developmentDirectory, 'dev:', line => console.log(line), {
+const summary = await push(scimClient(url, token), developmentDirectory, developmentScope, {
+  log: line => console.log(line),
   force: args.includes('--force'),
 });
 console.log(
   `Pushed the development directory to ${url}: ${summary.created} users created, ${summary.replaced} replaced, ${summary.deactivated} deactivated; ${summary.groupsCreated} groups created, ${summary.groupsReplaced} replaced, ${summary.groupsRemoved} removed.`,
 );
+if (summary.refused.length) {
+  console.error(`Clew refused ${summary.refused.length} of the people. Everybody else was sent.`);
+  for (const refused of summary.refused)
+    console.error(`  ${refused.userName} (${refused.externalId}): ${refused.detail}`);
+  process.exitCode = 1;
+}

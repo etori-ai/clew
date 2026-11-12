@@ -74,6 +74,8 @@ export class People {
   delay: Record<string, number> = {};
   /** Sources that do not answer, by capability. */
   silent: Record<string, 'unavailable' | 'timeout'> = { [SILENT_SECTION]: 'unavailable' };
+  /** Sources that answer without a row for the person, by capability: their sections are left out. */
+  empty: string[] = [];
   /** Every section read, by capability, in order. */
   reads: string[] = [];
   detail(key: string): EntityDetail | undefined {
@@ -122,6 +124,7 @@ export class People {
   private section(key: string, capability: string): EntitySection {
     const silent = this.silent[capability];
     if (silent) return { capability, status: silent };
+    if (this.empty.includes(capability)) return { capability, status: 'ok' };
     const rows = entityRows();
     const row =
       capability === CONTACT

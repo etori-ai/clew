@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { DocumentReview } from '@clew/contracts';
-import { Button, Card, CompletionFeedback, Heading, HStack, Text, TextInput, VStack, useToast } from '@clew/ui';
+import { Button, Card, CompletionFeedback, Heading, HStack, Link, Text, TextInput, VStack, useToast } from '@clew/ui';
 import { api } from '../api';
 import { errorMessage } from '../query-policy';
 
@@ -148,9 +148,14 @@ export function ReviewRecovery({
         {(error || result.isError) && (
           <Text role="alert">{error ?? errorMessage(result.error, 'Status kunde inte läsas.')}</Text>
         )}
+        {/* The source's own page is out of Clew: a new tab, marked as leaving with Astryx's external link (D111 rule 8). */}
         {source &&
           (link.data ? (
-            <Button variant="ghost" label={source.label} href={link.data} target="_blank" rel="noopener noreferrer" />
+            <HStack>
+              <Link href={link.data} isExternalLink isStandalone>
+                {source.label}
+              </Link>
+            </HStack>
           ) : link.isError ? (
             <Text role="alert">Källans länk kunde inte hämtas.</Text>
           ) : (

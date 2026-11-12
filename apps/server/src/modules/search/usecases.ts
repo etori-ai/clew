@@ -1,4 +1,4 @@
-import { Value } from '@sinclair/typebox/value';
+import { Value } from 'typebox/value';
 import { openRef, type Actor } from '@clew/connectors';
 import { SearchHitSchema, SearchOutputSchema, type SearchHit, type SearchResult } from '@clew/contracts';
 import { merge, sourceReport, type SourceOutcome } from './domain';

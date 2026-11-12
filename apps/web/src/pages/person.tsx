@@ -1,325 +1,391 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useCallback, type ReactNode } from 'react';
 import { useParams, useSearchParams } from 'react-router';
-import { useQuery } from '@tanstack/react-query';
-import type { EntityAction, EntityDetail, SessionUser } from '@clew/contracts';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { EntityDetail, SessionUser } from '@clew/contracts';
 import {
   Avatar,
-  BreadcrumbItem,
-  Breadcrumbs,
   Button,
-  Card,
+  ClickableCard,
   EmptyState,
   HStack,
-  Heading,
-  Icon,
   Layout,
   LayoutContent,
-  Link,
-  Skeleton,
-  StackItem,
+  MetadataList,
+  MetadataListItem,
   Text,
-  Timestamp,
-  Toolbar,
   VStack,
   useMediaQuery,
 } from '@clew/ui';
 import { ApiError } from '../api';
 import { areasQuery, entityDetailQuery } from '../queries';
+import { keys } from '../query-keys';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
-import { useEntityAction } from '../entity-actions';
-import { insideClew, originOf, personPageHref, toolOf } from '../person-address';
-import { useNav, type NavCurrent } from '../components/nav';
-import { Shell, mobileQuery } from '../components/shell';
-import { PageHeader } from '../components/page-header';
-import { PageFooter } from '../components/footer';
+import { NEEDS_YOU, insideClew, originOf, personPageHref, toolOf, unitPageHref } from '../person-address';
+import { useRail, type RailCurrent } from '../components/nav';
+import { Shell, mobileQuery, shortQuery } from '../components/shell';
+import { FieldValue } from '../components/view';
+import { fieldValue } from '../components/panel-labels';
 import { ContentSkeleton } from '../components/loading';
-import { PersonActions } from '../components/person-panel';
+import { RAIL, panelBesideQuery } from '../components/panel';
+import { usePagePanel, type OwnThing } from '../components/page-panel';
+import { AskClew } from '../components/thing-panel';
+import { TalkOverlay } from '../components/talk-overlay';
 import {
-  CardList,
-  NEEDS_YOU,
-  OpenRead,
-  PersonLine,
-  SectionNav,
-  SectionRow,
-  Unanswered,
+  EntityPage,
+  PageSection,
+  RailSection,
+  useAddressedSection,
+  type PageSectionEntry,
+} from '../components/entity-page';
+import {
+  EntityActions,
+  NeedsYouRows,
+  PersonSourceBody,
+  SourceBadge,
+  SourceWay,
   drawnSections,
-  openOf,
-  pageHref,
-  rowOf,
-  sectionNavRows,
-  sourceCaption,
-  unanswered,
+  personTitle,
   useSectionAnswers,
-  type SectionAnswer,
 } from '../components/entity-sections';
 
-/** The `settings-sidebar` template's breakpoint: below it the list of sections and the chosen one are two steps. */
-const narrowQuery = '(max-width: 768px)';
-/** The fuller view's table needs the page beside the list of sections. */
-const tableQuery = '(min-width: 1280px)';
+/** The details rail's width beside the column (`EntityPage`). */
+const DETAILS = 340;
+const employmentPercent = new Intl.NumberFormat('sv-SE', {
+  style: 'unit',
+  unit: 'percent',
+  maximumSignificantDigits: 21,
+});
+const phoneLabel = new Map([
+  ['work', 'Arbete'],
+  ['mobile', 'Mobil'],
+  ['home', 'Hem'],
+  ['fax', 'Fax'],
+  ['pager', 'Personsökare'],
+  ['other', 'Övrigt'],
+]);
+/**
+ * The line under the name. The employments carry their own titles in their section (D114), so it is the core title
+ * only where no employment has one.
+ */
+const shownTitle = (detail: EntityDetail): string | null =>
+  detail.profile?.employments.some(employment => employment.title)
+    ? null
+    : (detail.profile?.title ?? personTitle(detail.entity) ?? null);
+/**
+ * A section's fuller read is drawn as a table where the column has the 1024 px a tool's page gives it beside the rail:
+ * a window of 1280 px plus the details rail.
+ */
+const TABLE_QUERY = panelBesideQuery(1280 - RAIL, DETAILS);
+/** With the panel beside the page the rail is behind "Visa detaljer", and the table needs the panel's width instead. */
+const TABLE_BESIDE_QUERY = panelBesideQuery(1280 - RAIL);
 
-/** The chosen source's fuller view (artboard C2): its name, where it was read and when, its actions, then its read in full. */
-function ChosenSection({
-  detail,
-  answer,
-  level,
-}: {
-  detail: EntityDetail;
-  answer: SectionAnswer;
-  level: 'page' | 'drill';
-}) {
-  const { start, error } = useEntityAction();
-  const { kind, key, name, id } = detail.entity;
-  const row = rowOf(answer);
-  const page = pageHref(answer.source, key, id);
-  const own = detail.actions.filter(a => a.connector === answer.source.connector);
-  const run = (a: EntityAction) => start(a, { kind, key, name });
-  const read = answer.query.dataUpdatedAt;
+/**
+ * The details rail of a person's page (board Person): "Detaljer", what the directory (Katalogen) says of them that the
+ * page has (their title, their user name, and that the reader is their manager), and "Tillhör", their unit, a link to
+ * the unit's page for a unit the reader may open (one they manage, or their own) and its name otherwise. Nothing the
+ * directory has not given is drawn.
+ */
+function PersonDetails({ detail, from }: { detail: EntityDetail; from: string | null }) {
+  const { entity, relation } = detail;
+  const title = shownTitle(detail);
+  const unit = entity.unit;
+  const opens = !!unit && (relation === 'managed' || relation === 'self');
+  const body = unit && (
+    <VStack gap={0}>
+      <Text type="supporting" color="secondary">
+        Enhet
+      </Text>
+      <Text weight="semibold">{unit.label}</Text>
+    </VStack>
+  );
   return (
-    <VStack gap={5}>
-      <HStack gap={3} justify="between" vAlign="center" wrap="wrap">
-        <VStack gap={0}>
-          {level === 'page' && <Heading level={2}>{answer.source.title}</Heading>}
-          <Text type="supporting">
-            {sourceCaption(answer.source)}
-            {row && read ? (
-              <>
-                {' · hämtat '}
-                <Timestamp value={new Date(read).toISOString()} format="relative" isLive />
-              </>
-            ) : null}
-          </Text>
-        </VStack>
-        {(own.length > 0 || page) && (
-          <HStack gap={2} wrap="wrap" vAlign="center">
-            {own.map(a => (
-              <Button key={a.capability} variant="secondary" label={a.title} onClick={() => run(a)} />
-            ))}
-            {page && answer.source.page && (
-              <Link href={page} weight="semibold" isStandalone>
-                {answer.source.page.title}
-              </Link>
-            )}
-          </HStack>
-        )}
-      </HStack>
-      {/* A source's refusal of an action started here, said aloud as it came (entity-actions.ts). */}
-      {error && <Text as="p">{error}</Text>}
-      {answer.query.isPending ? (
-        <Card>
-          <VStack gap={2}>
-            <Skeleton height={20} width="60%" />
-            <Skeleton height={20} width="40%" />
-          </VStack>
-        </Card>
-      ) : unanswered(answer) || !row ? (
-        <Card>
-          <Unanswered answer={answer} />
-        </Card>
-      ) : (
-        <>
-          <Card>
-            <SectionRow source={answer.source} row={row} />
-          </Card>
-          {openOf(answer.source, row) && <OpenRead source={answer.source} row={row} tableQuery={tableQuery} />}
-        </>
+    <VStack gap={10}>
+      <RailSection title="Detaljer" caption="Katalogen">
+        <MetadataList>
+          {title && (
+            <MetadataListItem label="Titel">
+              <Text>{title}</Text>
+            </MetadataListItem>
+          )}
+          <MetadataListItem label="Användarnamn">
+            <Text>{entity.key}</Text>
+          </MetadataListItem>
+          {relation === 'managed' && (
+            <MetadataListItem label="Chef">
+              <Text>Du</Text>
+            </MetadataListItem>
+          )}
+        </MetadataList>
+      </RailSection>
+      {unit && (
+        <RailSection title="Tillhör">
+          {opens ? (
+            <ClickableCard
+              label={`Enhet: ${unit.label}`}
+              href={unitPageHref(unit.id, { from: personPageHref(entity.key, { from }) })}
+              padding={3}
+            >
+              {body}
+            </ClickableCard>
+          ) : (
+            body
+          )}
+        </RailSection>
       )}
     </VStack>
   );
 }
 
-/** Behöver dig as the chosen section: the reader's cards about the person, each leading to the card on Hem. */
-function ChosenCards({ detail, level }: { detail: EntityDetail; level: 'page' | 'drill' }) {
-  return (
-    <VStack gap={5}>
-      <VStack gap={0}>
-        {level === 'page' && <Heading level={2}>Behöver dig</Heading>}
-        <Text type="supporting">Clew</Text>
-      </VStack>
-      <Card>
-        <CardList cards={detail.cards} />
-      </Card>
-    </VStack>
-  );
-}
-
 /**
- * The person as a page (D97 item 5, artboard C2), at `/people/:key`, reached with "Öppna som sida": the trail back to
- * the list, the person's name with their actions, the list of sections ("Om <namn>", each with its source and one line)
- * and beside it the chosen source's fuller view, `?section=` in the address. On a narrow window the two are the
- * `settings-sidebar` template's drill-in: the list, then the chosen section with the way back to the list. A person the
- * reader may not ask about is the page's own "finns inte" (the server answers 404 for both).
+ * The person as a page (D112 item 5, board Person; D97 item 5), at `/people/:key`, the one way a person is shown (D111
+ * rule 3), reached from a name on Personal or on any row that names them. The work item's page shape (`EntityPage`):
+ * the way back with their unit, their avatar, name and title, and every action about them with "Fråga Clew" in the
+ * header; in the main column "Behöver dig" (the reader's work items about them) and then one section per source that
+ * has something about them, one under the other, each with its source's badge; the directory's facts and their unit in
+ * the rail. `?section=` names a section: the page scrolls to it and its heading takes the focus, so old links, "N att
+ * agera på" on Personal and a talk's way back land where they did. A person the reader may not ask about is the page's
+ * own "finns inte" (the server answers 404 for both).
+ *
+ * The page holds the panel beside its column (D111 rules 2 to 4, `usePagePanel`): a work item under Behöver dig and the
+ * one an action makes open there, with the address kept, and closing leaves the page as it was. While the panel holds
+ * something beside the page the details are behind "Visa detaljer"; in a narrower window the panel is the drawer over
+ * the page.
  */
 export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean }) {
   const { key = '' } = useParams<{ key: string }>();
   const [search] = useSearchParams();
   const mobile = useMediaQuery(mobileQuery);
-  const narrow = useMediaQuery(narrowQuery);
+  // 1.4.10: on a short screen nothing is pinned beside the page, and the page scrolls as one.
+  const short = useMediaQuery(shortQuery);
   const from = insideClew(search.get('from'));
   const section = search.get('section') || undefined;
   const read = useQuery(entityDetailQuery('person', key));
   const detail = read.data;
+  // A decision made on a work item beside the page changes what Behöver dig holds: the person is read again, their
+  // sources not.
+  const client = useQueryClient();
+  const cardChanged = useCallback(() => {
+    void client.invalidateQueries({ queryKey: keys.entities.detail('person', key), exact: true });
+  }, [client, key]);
+  // "Fråga Clew" (D112 item 7): the person on the page is the thing the panel is about. What a source says about a
+  // person never reaches the model (D97 item 7), so the question goes without a chip: the conversation is drawn beside
+  // the person, and the person is named only where the one asking names them.
+  const pageThing: OwnThing | null = detail
+    ? {
+        id: `page:person:${key}`,
+        title: detail.entity.name,
+        subtitle: 'Personen på sidan',
+        subject: { key: `person:${key}`, label: 'personen', chips: [], search: '' },
+      }
+    : null;
+  const panel = usePagePanel({ overlayOnly: short, onChange: cardChanged, pageThing });
   const missing = read.isError && read.error instanceof ApiError && read.error.status === 404;
   const answers = useSectionAnswers(detail?.entity.key, detail?.sections ?? []);
   const origin = originOf(from, useQuery(areasQuery).data?.menu);
   const tool = toolOf(from);
-  // The header marks the place the person was opened from; without one, Personal for the reader's own people.
-  const current: NavCurrent = from?.startsWith('/staff')
-    ? { surface: 'staff' }
-    : tool
-      ? { surface: 'verktyg', view: tool }
-      : from === '/' || from?.startsWith('/?')
-        ? { surface: 'start' }
-        : !from && detail?.relation === 'managed'
+  // The rail marks the place the person was opened from; without one, Personal for the reader's own people.
+  const current: RailCurrent =
+    from?.split('?')[0] === '/admin/users'
+      ? { surface: 'admin', section: 'anvandare' }
+      : from?.split('?')[0] === '/admin/organisation'
+        ? { surface: 'admin', section: 'organisation' }
+        : from?.startsWith('/staff')
           ? { surface: 'staff' }
-          : { surface: 'verktyg', view: null };
-  const nav = useNav({ current, admin, manager: user.role === 'manager' });
+          : tool
+            ? { surface: 'verktyg', view: tool }
+            : from === '/' || from?.startsWith('/?')
+              ? { surface: 'start' }
+              : !from && detail?.relation === 'managed'
+                ? { surface: 'staff' }
+                : { surface: 'verktyg', view: null };
+  const nav = useRail({ current, admin, manager: user.role === 'manager' });
   usePageTitle(detail ? detail.entity.name : missing ? 'Personen finns inte' : null);
-  // The trail (artboard C2): the place the person was opened from, by its name ("Personal", "Hem", a tool's row), and
-  // none for an address without one (D83 rule 4: no prior page is guessed).
-  const back = detail ? origin : null;
-  const drawn = drawnSections(answers);
-  const fallback = detail ? (detail.cards.length > 0 ? NEEDS_YOU : drawn[0]?.source.capability) : undefined;
-  const chosenId = section ?? (narrow ? undefined : fallback);
-  const chosen = chosenId ? answers.find(a => a.source.capability === chosenId) : undefined;
-  const showsCards = chosenId === NEEDS_YOU && !!detail && detail.cards.length > 0;
-  const hrefFor = (id: string | null) => personPageHref(key, { ...(id ? { section: id } : {}), from });
-  // Into a section on a narrow window the focus goes to the way back; out of it, to the row it came from.
-  const backLink = useRef<HTMLButtonElement>(null);
-  const navRef = useRef<HTMLDivElement>(null);
-  const lastSection = useRef(section);
-  useEffect(() => {
-    const was = lastSection.current;
-    lastSection.current = section;
-    if (!narrow || was === section) return;
-    if (section) backLink.current?.focus();
-    else if (was) navRef.current?.querySelector<HTMLElement>(`a[href="${CSS.escape(hrefFor(was))}"]`)?.focus();
-  }, [section, narrow]);
+  // The section the address names takes the focus, unless something opened over or beside the page holds it.
+  const hold = panel.ref !== null || search.has('talk') || search.has('review');
+  const headingRef = useAddressedSection(section, key, hold);
 
   let body: ReactNode;
-  if (missing)
+  if (missing || read.isError || !detail)
     body = (
-      <EmptyState
-        headingLevel={1}
-        title="Personen finns inte"
-        description="Det finns ingen sådan person, eller så har du inte tillgång till uppgifterna om hen. Adressen kan också ha ändrats."
-        actions={<Button label="Till startsidan" href="/" />}
-      />
-    );
-  else if (read.isError)
-    body = (
-      <VStack gap={3}>
-        <Text as="p" role="alert">
-          {errorMessage(read.error, 'Uppgifterna kunde inte hämtas just nu.')}
-        </Text>
-        <HStack>
-          <Button
-            size="sm"
-            variant="secondary"
-            label="Försök igen"
-            isLoading={read.isFetching}
-            onClick={() => void read.refetch()}
-          />
-        </HStack>
-      </VStack>
-    );
-  else if (!detail) body = <ContentSkeleton />;
-  else {
-    const { name } = detail.entity;
-    const list = (
-      <VStack ref={navRef} as="nav" aria-label={`Om ${name}`}>
-        <Card padding={0} {...(narrow ? {} : { width: 340 })}>
-          <SectionNav rows={sectionNavRows(detail.cards, answers, hrefFor, narrow ? undefined : chosenId)} />
-        </Card>
-      </VStack>
-    );
-    const view = showsCards ? (
-      <ChosenCards detail={detail} level={narrow ? 'drill' : 'page'} />
-    ) : chosen ? (
-      <ChosenSection detail={detail} answer={chosen} level={narrow ? 'drill' : 'page'} />
-    ) : null;
-    const chosenTitle = showsCards ? 'Behöver dig' : chosen?.source.title;
-    body = (
-      <>
-        <PageHeader
-          title={name}
-          icon={<Avatar name={name} size={60} tooltip={false} aria-hidden />}
-          end={<PersonActions detail={detail} mobile={mobile} />}
-          {...(detail.entity.detail || detail.entity.unit
-            ? {
-                meta: (
-                  <Text color="secondary">
-                    <PersonLine
-                      entity={detail.entity}
-                      relation={detail.relation}
-                      from={personPageHref(key, { from })}
-                    />
-                  </Text>
-                ),
-              }
-            : {})}
-        />
-        {detail.cards.length === 0 && drawn.length === 0 && answers.every(a => !a.query.isPending) ? (
-          <EmptyState isCompact headingLevel={2} title={`Inget mer att visa om ${name}`} />
-        ) : narrow ? (
-          view && chosenTitle ? (
-            <VStack gap={4}>
-              <Toolbar
-                label={`Tillbaka till Om ${name}`}
-                gap={2}
-                startContent={
-                  <>
-                    <Button
-                      ref={backLink}
-                      label={`Tillbaka till Om ${name}`}
-                      variant="ghost"
-                      size="sm"
-                      isIconOnly
-                      icon={<Icon icon="chevronLeft" size="sm" />}
-                      href={hrefFor(null)}
-                    />
-                    <Heading level={2}>{chosenTitle}</Heading>
-                  </>
-                }
-              />
-              {view}
-            </VStack>
-          ) : (
-            list
-          )
-        ) : (
-          // The list of sections and the chosen one side by side (the template's sidebar and content, artboard C2):
-          // the list keeps its width, the view takes the rest.
-          <HStack gap={8} vAlign="start">
-            <StackItem>{list}</StackItem>
-            <StackItem size="fill">{view}</StackItem>
-          </HStack>
-        )}
-      </>
-    );
-  }
-  return (
-    <Shell user={user} nav={nav}>
       <Layout
-        height="auto"
-        contentWidth={1280}
+        height={short ? 'auto' : 'fill'}
         padding={mobile ? 3 : 8}
         content={
-          <LayoutContent isScrollable={false}>
-            <VStack gap={5}>
-              {back && (
-                <Breadcrumbs label="Du är här" variant="supporting" separator="›">
-                  <BreadcrumbItem href={back.href}>{back.label}</BreadcrumbItem>
-                  <BreadcrumbItem isCurrent>{detail!.entity.name}</BreadcrumbItem>
-                </Breadcrumbs>
-              )}
-              {body}
-              <PageFooter user={user} />
-            </VStack>
+          <LayoutContent isScrollable={!short}>
+            {missing ? (
+              <EmptyState
+                headingLevel={1}
+                title="Personen finns inte"
+                description="Det finns ingen sådan person, eller så har du inte tillgång till uppgifterna om hen. Adressen kan också ha ändrats."
+                actions={<Button label="Till startsidan" href="/" />}
+              />
+            ) : read.isError ? (
+              <VStack gap={3}>
+                <Text as="p" role="alert">
+                  {errorMessage(read.error, 'Uppgifterna kunde inte hämtas just nu.')}
+                </Text>
+                <HStack>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    label="Försök igen"
+                    isLoading={read.isFetching}
+                    onClick={() => void read.refetch()}
+                  />
+                </HStack>
+              </VStack>
+            ) : (
+              <ContentSkeleton />
+            )}
           </LayoutContent>
         }
       />
+    );
+  else {
+    const { name } = detail.entity;
+    // The way back (board Person): the page in `from` when Clew can name it, else Personal for the reader's own people.
+    const back = origin ?? (!from && detail.relation === 'managed' ? { label: 'Personal', href: '/staff' } : null);
+    const tableQuery = panel.occupied ? TABLE_BESIDE_QUERY : TABLE_QUERY;
+    const sections: PageSectionEntry[] = [
+      ...(detail.cards.length > 0
+        ? [
+            {
+              key: NEEDS_YOU,
+              node: (
+                <PageSection title="Behöver dig" headingRef={headingRef(NEEDS_YOU)}>
+                  <NeedsYouRows cards={detail.cards} />
+                </PageSection>
+              ),
+            },
+          ]
+        : []),
+      ...(detail.profile?.employments.length
+        ? [
+            {
+              key: 'employments',
+              node: (
+                <PageSection title="Anställningar" headingRef={headingRef('employments')}>
+                  <VStack as="ul" gap={2}>
+                    {detail.profile.employments.map((employment, index) => (
+                      <VStack as="li" key={index} gap={0}>
+                        {(employment.title || employment.unitLabel) && (
+                          <Text weight="semibold">{employment.title ?? employment.unitLabel}</Text>
+                        )}
+                        {employment.title && employment.unitLabel && (
+                          <Text color="secondary">{employment.unitLabel}</Text>
+                        )}
+                        {(employment.employmentType ||
+                          employment.startDate ||
+                          employment.employmentPercentage !== undefined) && (
+                          <MetadataList>
+                            {employment.employmentType && (
+                              <MetadataListItem label="Anställningsform">{employment.employmentType}</MetadataListItem>
+                            )}
+                            {employment.startDate && (
+                              <MetadataListItem label="Startdatum">
+                                <time dateTime={employment.startDate}>{fieldValue(employment.startDate)}</time>
+                              </MetadataListItem>
+                            )}
+                            {employment.employmentPercentage !== undefined && (
+                              <MetadataListItem label="Sysselsättningsgrad">
+                                {employmentPercent.format(employment.employmentPercentage)}
+                              </MetadataListItem>
+                            )}
+                          </MetadataList>
+                        )}
+                      </VStack>
+                    ))}
+                  </VStack>
+                </PageSection>
+              ),
+            },
+          ]
+        : []),
+      ...(detail.profile && (detail.profile.email || detail.profile.phoneNumbers.length > 0)
+        ? [
+            {
+              key: 'contact',
+              node: (
+                <PageSection title="Kontaktuppgifter" headingRef={headingRef('contact')}>
+                  <MetadataList>
+                    {detail.profile.email && (
+                      <MetadataListItem label="E-post">
+                        <FieldValue
+                          field={{ key: 'email', label: 'E-post', format: 'email' }}
+                          value={detail.profile.email}
+                        />
+                      </MetadataListItem>
+                    )}
+                    {detail.profile.phoneNumbers.map(phone => (
+                      <MetadataListItem
+                        key={JSON.stringify([phone.type, phone.value])}
+                        label={phoneLabel.get(phone.type) ?? phone.type}
+                      >
+                        <FieldValue
+                          field={{ key: 'phone', label: 'Telefon', format: 'phone' }}
+                          value={phone.value.replace(/^tel:/i, '')}
+                        />
+                      </MetadataListItem>
+                    ))}
+                  </MetadataList>
+                </PageSection>
+              ),
+            },
+          ]
+        : []),
+      ...drawnSections(answers).map(a => ({
+        key: a.source.capability,
+        node: (
+          <PageSection
+            title={a.source.title}
+            badge={<SourceBadge source={a.source} />}
+            end={<SourceWay source={a.source} entity={detail.entity} />}
+            headingRef={headingRef(a.source.capability)}
+          >
+            <PersonSourceBody answer={a} tableQuery={tableQuery} />
+          </PageSection>
+        ),
+      })),
+    ];
+    body = (
+      <EntityPage
+        back={back}
+        place={detail.entity.unit?.label}
+        icon={<Avatar name={name} size="lg" tooltip={false} aria-hidden />}
+        title={name}
+        subtitle={shownTitle(detail) ?? undefined}
+        actions={
+          // On a phone "Åtgärder" is the width of the column, "Fråga Clew" under it.
+          mobile ? (
+            <VStack gap={2}>
+              <EntityActions detail={detail} mobile />
+              <HStack>
+                <AskClew />
+              </HStack>
+            </VStack>
+          ) : (
+            <HStack gap={2} vAlign="start" wrap="wrap">
+              <EntityActions detail={detail} mobile={false} />
+              <AskClew />
+            </HStack>
+          )
+        }
+        sections={sections}
+        // A section on its way is drawn, so none at all means every source answered without a row and there is no work item.
+        empty={<EmptyState isCompact headingLevel={2} title={`Inget mer att visa om ${name}`} />}
+        details={<PersonDetails detail={detail} from={from} />}
+        label={name}
+        panel={panel}
+      />
+    );
+  }
+  return (
+    <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
+      {body}
+      {panel.overlay}
+      {/* The talk from the talks section's "Öppna samtalet" lies over the page and its panel (D111 rule 5). */}
+      {user.role === 'manager' && <TalkOverlay back={detail ? `Tillbaka till ${detail.entity.name}` : 'Tillbaka'} />}
     </Shell>
   );
 }

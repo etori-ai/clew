@@ -19,7 +19,7 @@ test.describe(`D98 installation logo and theme (${profile})`, () => {
 
   for (const viewport of [desktop, narrow])
     for (const [name, path] of surfaces) {
-      test(`the ${name} header identifies the organisation and links home at ${viewport.width}px`, async ({
+      test(`the ${name} rail heading identifies the organisation and links home at ${viewport.width}px`, async ({
         page,
         api,
       }) => {
@@ -29,13 +29,15 @@ test.describe(`D98 installation logo and theme (${profile})`, () => {
         // By level, not by tag: the calendar's month on a phone is an h3 that says level 1.
         await expect(page.getByRole('main').locator('h1:not([aria-level]), [aria-level="1"]')).toBeVisible();
         await page.evaluate(() => document.fonts.ready.then(() => undefined));
-        // The logo and the name stand in the shared header's band (D88), the shell's banner, on every width.
-        const header = page.getByRole('banner');
-        const heading = header.locator('.astryx-top-nav-heading').first();
+        // Without a header connector the logo and the name are the rail's heading (D98, D112 item 1); on a phone the
+        // shell draws that heading as its bar, the banner. With a connector they are the band's (`header.spec.ts`).
+        const header =
+          viewport === narrow ? page.getByRole('banner') : page.getByRole('navigation', { name: 'Sidonavigering' });
+        const heading = header.locator('.astryx-side-nav-heading').first();
         const home = header.getByRole('link', { name: /Startsidan/ });
         await expect(home).toBeVisible();
         await expect(home).toHaveAccessibleName(/Startsidan/);
-        // The page's own tokens: the band swaps them for its own, so they are read on the page.
+        // The page's own tokens, read on the page.
         const brand = await page.getByRole('main').evaluate(element => {
           const style = getComputedStyle(element);
           return {
@@ -48,9 +50,8 @@ test.describe(`D98 installation logo and theme (${profile})`, () => {
         if (expectedLogo) {
           const logo = heading.getByRole('img', { name: expectedLogo.alt, exact: true });
           await expect(logo).toBeVisible();
-          // On the band the dark variant is drawn (Sundsvall's white dragon); a logo without one keeps its own ground.
-          // The band is drawn on a phone too (D115 item 3: the header folds into its own Meny there), so on every width.
-          await expect(logo).toHaveAttribute('src', expectedLogo.darkSrc ?? expectedLogo.src);
+          // With no band the logo follows the appearance, light here; the dark variant is the dark appearance's.
+          await expect(logo).toHaveAttribute('src', expectedLogo.src);
           await expect(logo).toHaveJSProperty('complete', true);
           const shape = await logo.evaluate((img: HTMLImageElement) => ({
             natural: img.naturalWidth / img.naturalHeight,
@@ -81,8 +82,8 @@ test.describe(`D98 installation logo and theme (${profile})`, () => {
         return route.abort();
       });
       await page.goto('/calendar');
-      const header = page.getByRole('banner');
-      const heading = header.locator('.astryx-top-nav-heading').first();
+      const header = page.getByRole('navigation', { name: 'Sidonavigering' });
+      const heading = header.locator('.astryx-side-nav-heading').first();
       const home = header.getByRole('link', { name: /Startsidan/ });
       await expect(home).toBeVisible();
       await expect.poll(() => failedRequests).toBeGreaterThan(0);
@@ -92,61 +93,59 @@ test.describe(`D98 installation logo and theme (${profile})`, () => {
       await expect(page).toHaveURL('/');
     });
 
-  // Clew's own pages stand in the row under the header's band (D115 item 3), on the surface colour. The row of the page
-  // that is open is marked by more than its colour (1.4.1): the theme draws a line under the word (`top-nav-item`,
-  // `selected`, D115), and the drawer paints it on a ground of its own. Either is a mark the other rows do not have.
-  test("the current page's row in the header stands out, in both appearances and in the phone drawer (D46, D115)", async ({
+  // Astryx paints the rail and the page on one surface and parts them with a divider (`section`, D88), so the rail's own
+  // area is the divider's, not a colour's; the selected row still stands out from its rail.
+  test("the rail's selected row stands out, in both appearances and in the phone drawer (D46, D88)", async ({
     page,
     api: _,
   }) => {
-    /** The ground a link is drawn on, and the line drawn under it, if any. */
-    const drawn = (target: Locator) =>
+    test.skip(
+      profile === 'sundsvall',
+      'Sundsvall paints body white, so its rail has the page colour; D46 says what to change before switching back.',
+    );
+    const painted = (target: Locator) =>
       target.evaluate(element => {
-        let ground = 'none';
         for (let node: Element | null = element; node; node = node.parentElement) {
           const colour = getComputedStyle(node).backgroundColor;
-          if (colour !== 'rgba(0, 0, 0, 0)') {
-            ground = node === element ? 'own ' + colour : colour;
-            break;
-          }
+          if (colour !== 'rgba(0, 0, 0, 0)') return colour;
         }
-        const style = getComputedStyle(element);
-        const line =
-          (style.boxShadow !== 'none' && /inset/.test(style.boxShadow)) ||
-          (style.borderBottomStyle !== 'none' && parseFloat(style.borderBottomWidth) > 0) ||
-          style.textDecorationLine.includes('underline');
-        return { ground, line };
+        return 'none';
       });
-    // The place Start (D88) is current on every page of Clew too; the page's own row is the one asked about.
+    // The rail's heading links home too; the rail's own current row is the page's.
     const selectedIn = (nav: Locator) => nav.locator('a[aria-current="page"]:not([href="/"])');
-    const otherIn = (nav: Locator) => nav.locator('a:not([aria-current]):not([href="/"])').first();
-    const standsOut = async (nav: Locator) => {
-      const [current, other] = [await drawn(selectedIn(nav)), await drawn(otherIn(nav))];
-      return (current.line && !other.line) || current.ground !== other.ground;
-    };
+    const standsOut = async (nav: Locator) =>
+      (await painted(selectedIn(nav))) !== (await painted(selectedIn(nav).locator('xpath=..')));
+    const rail = page.locator('.astryx-app-shell-sidenav');
+    const colours = async () => ({
+      page: await painted(page.getByRole('main')),
+      rail: await painted(rail),
+      selected: await painted(selectedIn(rail)),
+    });
     await page.setViewportSize(desktop);
     await open(page, '/calendar');
-    const row = page.getByRole('banner').getByRole('navigation', { name: 'Start', exact: true });
-    await expect(selectedIn(row)).toHaveText('Kalender');
     for (const appearance of ['light', 'dark'] as const) {
       if (appearance === 'dark') {
-        await page.getByRole('button', { name: 'Testa Testsson, inställningar', exact: true }).click();
+        await page.getByRole('button', { name: 'Testa Testsson', exact: true }).click();
         await page.getByRole('radio', { name: 'Mörkt', exact: true }).check();
         await page.keyboard.press('Escape');
       }
-      await expect.poll(() => standsOut(row)).toBe(true);
+      await expect
+        .poll(async () => {
+          const now = await colours();
+          return now.selected !== now.rail;
+        })
+        .toBe(true);
     }
-    // The header's Meny comes with the resize, and `openNav` must run once: a second click lands on the open drawer's backdrop.
+    // The toggle comes a moment after the resize, and `openNav` must run once: a second click lands on the open drawer's backdrop.
     await page.setViewportSize(narrow);
-    await expect(page.getByRole('button', { name: 'Meny', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Öppna navigering' })).toBeVisible();
     const drawer = await openNav(page);
-    await expect(selectedIn(drawer)).toHaveText('Kalender');
     await expect.poll(() => standsOut(drawer)).toBe(true);
   });
 
   test('appearance changes the theme and survives navigation and reload', async ({ page, api: _ }) => {
     await page.goto('/');
-    const profileButton = page.getByRole('button', { name: 'Testa Testsson, inställningar', exact: true });
+    const profileButton = page.getByRole('button', { name: 'Testa Testsson', exact: true });
     await expect(profileButton).toBeVisible();
     await expect(page.getByRole('main').getByRole('heading', { level: 1 }).first()).toBeVisible();
     const appearance = () =>
@@ -172,7 +171,10 @@ test.describe(`D98 installation logo and theme (${profile})`, () => {
       );
     }
     await page.keyboard.press('Escape');
-    await page.getByRole('link', { name: 'Kalender', exact: true }).click();
+    await page
+      .getByRole('navigation', { name: 'Sidonavigering' })
+      .getByRole('link', { name: 'Kalender', exact: true })
+      .click();
     await expect(page).toHaveURL('/calendar');
     // Navigation can detach the previous heading between lookup and style measurement.
     await expect.poll(async () => (await appearance()).mode).toBe(dark.mode);

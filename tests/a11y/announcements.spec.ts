@@ -21,27 +21,19 @@ test.describe('4.1.3 status messages', () => {
       .toContainEqual(expect.stringContaining('Tio personer är på plats i dag.'));
   });
 
-  test('moving between pages is spoken, and so is the area Mina aktiviteter is narrowed to', async ({
-    page,
-    api: _,
-  }) => {
-    await open(page, '/');
-    const pages = page.getByRole('navigation', { name: 'Start', exact: true });
-    // Clew's own pages in the header move inside the app without a page load (D115 item 3), so the change is said:
-    // the calendar says the week it shows.
-    await pages.getByRole('link', { name: 'Kalender' }).click();
-    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Vecka 45'));
-    // The header's way to Hem loads the page, which a screen reader reads by itself; the step back does not load one.
-    await page.goBack();
+  test('moving between pages is spoken, and so is the system Att göra is narrowed to', async ({ page, api: _ }) => {
+    await open(page, '/calendar');
+    await page.getByRole('navigation', { name: 'Sidonavigering' }).getByRole('link', { name: /^Hem/ }).click();
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Hem'));
-    // The area filter stands with the tabs on Mina aktiviteter (D115 item 4), a page of its own that is said too.
-    await pages.getByRole('link', { name: 'Mina aktiviteter' }).click();
-    await expect(page).toHaveURL(/\/activities$/);
-    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Mina aktiviteter'));
-    await page.getByRole('button', { name: 'Alla områden' }).click();
+    await page
+      .getByRole('navigation', { name: 'Sidonavigering' })
+      .getByRole('link', { name: /^Att göra/ })
+      .click();
+    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Att göra'));
+    await page.getByRole('button', { name: 'Alla system' }).click();
     await page.getByRole('menuitemradio', { name: 'Personal' }).click();
-    await expect(page).toHaveURL(/\/activities\?area=personal$/);
-    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Visar området Personal'));
+    await expect(page).toHaveURL(/\/todo\?area=personal$/);
+    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Visar Personal'));
   });
 
   test('a card leaving the stream is spoken with its way back', async ({ page, api: _ }) => {

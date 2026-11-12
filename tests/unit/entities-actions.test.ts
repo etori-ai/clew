@@ -40,6 +40,9 @@ function directory() {
       userName,
       name,
       email: null,
+      phoneNumbers: [],
+      employments: [],
+      title: null,
       enabled: id !== 'bo',
       createdAt: T,
       updatedAt: T,
@@ -238,7 +241,7 @@ function world(options: { fixture?: boolean } = {}) {
     ids: () => `card-${++n}`,
   });
   const entities = entityUsecases({
-    directory: { reach: p => people.staff.reach(p), colleague: (p, key) => people.staff.colleague(p, key) },
+    directory: people.staff,
     sources: {
       reads: async (actor, kind) => registry.aboutReads(actor, kind),
       actions: async (actor, kind) => registry.aboutActions(actor, kind),
@@ -247,7 +250,6 @@ function world(options: { fixture?: boolean } = {}) {
       registry.clewFor(actorOf(persona), { signal }).call(capability, input),
     cards: async () => [],
   });
-  const actions = entityActionUsecases({ open: entities.detail, start: started.startCard });
   const access = threadAccess(store, registry);
   const approvals: unknown[] = [];
   const decisions = cardDecisions({
@@ -257,6 +259,12 @@ function world(options: { fixture?: boolean } = {}) {
     approve: async (_p, input) => {
       approvals.push(input);
     },
+    clock: () => new Date(T),
+  });
+  const actions = entityActionUsecases({
+    open: entities.detail,
+    start: started.startCard,
+    effect: decisions.effectFor,
     clock: () => new Date(T),
   });
   const nothingWritten = () => {
@@ -436,6 +444,12 @@ describe('an action about a person, started from the menu', () => {
         title: 'Registrera frånvaro',
         kind: 'propose',
         param: 'person',
+        path: {
+          asks: [],
+          effect: false,
+          description:
+            'Förbereder en sjukanmälan för en medarbetare i chefens enhet, från i dag och en dag, som chefen läser och beslutar om på ett kort.',
+        },
       },
     ]);
     const { threadId } = (await w.actions.start(hillevi, 'person', 'maria', 'hr.prepareAbsence'))!;

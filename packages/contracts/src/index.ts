@@ -1,5 +1,7 @@
-import { FormatRegistry, Type, type Static, type TSchema } from '@sinclair/typebox';
-import { Value } from '@sinclair/typebox/value';
+import { Type, type Static, type TLiteral, type TSchema, type TSchemaOptions, type TUnion } from 'typebox';
+import { Format } from 'typebox/format';
+import { Settings } from 'typebox/system';
+import { Value } from 'typebox/value';
 import { DocumentReviewSchema, ReviewEvidenceSchema } from './presentation';
 // Explicit exports keep these names visible to the Node ESM server through this package's CommonJS boundary.
 export {
@@ -62,25 +64,164 @@ export const sessionUser = (c: SessionUser): SessionUser => ({
   role: c.role,
 });
 
-const object = <T extends Record<string, import('@sinclair/typebox').TSchema>>(properties: T, description?: string) =>
+const object = <T extends Record<string, TSchema>>(properties: T, description?: string) =>
   Type.Object(properties, { additionalProperties: false, ...(description ? { description } : {}) });
+/** `Type.Partial` and `Type.Omit` return a new object without the options of the one they were given, so a derived body says again that it is closed. */
+const closed = { additionalProperties: false } as const;
+/**
+ * A union of literals drawn from a closed list, one `anyOf` branch per value. TypeBox reads a union's static type from a
+ * tuple and `map` returns an array, so the list's member type is stated here.
+ */
+export const literals = <const V extends string | number>(values: readonly V[], options?: TSchemaOptions) =>
+  Type.Union(
+    values.map(value => Type.Literal(value)),
+    options,
+  ) as unknown as TUnion<[TLiteral<V>]>;
 const instant = Type.String({ format: 'date-time', maxLength: 40 });
-// TypeBox's own `Value.Check` knows no formats until one is registered; Ajv (the routes) has its own. One definition, here, so every schema with an instant checks the same way.
-if (!FormatRegistry.Has('date-time'))
-  FormatRegistry.Set(
-    'date-time',
-    value =>
-      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.test(value) &&
-      !Number.isNaN(Date.parse(value)),
-  );
-/** Validate with this package's format registry: Node's ESM and CommonJS TypeBox copies have separate registries. */
+// TypeBox ships a `date-time` of its own (RFC 3339, lower-case `t` and an RFC 9557 suffix allowed). Clew's replaces it, so every schema with an instant is checked as it always was; Ajv (the routes) has its own.
+Format.Set(
+  'date-time',
+  value =>
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.test(value) &&
+    !Number.isNaN(Date.parse(value)),
+);
+/** Whether a value fits a contract, checked with the `date-time` registered above. */
 export const checkContract = <T extends TSchema>(schema: T, value: unknown): value is Static<T> =>
   Value.Check(schema, value);
+/** One way a value fails a contract: where, as a JSON Pointer into the value (empty for the value itself), and why. */
+export interface ContractProblem {
+  path: string;
+  message: string;
+}
+const pointerKey = (key: string) => key.replace(/~/g, '~0').replace(/\//g, '~1');
+/** How many steps into the value a schema path takes: a property, an item or a record value is one, a union branch none. */
+const valueDepth = (schemaPath: string) => {
+  const steps = schemaPath.split('/').slice(1);
+  let depth = 0;
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    if (step === 'properties' || step === 'patternProperties') (depth++, i++);
+    else if (step === 'items' || step === 'additionalProperties') depth++;
+    else if (step === 'anyOf') i++;
+  }
+  return depth;
+};
+const schemaAt = (schema: unknown, schemaPath: string) =>
+  schemaPath
+    .split('/')
+    .slice(1)
+    .reduce<unknown>(
+      (at, step) => (at as Record<string, unknown> | undefined)?.[step.replace(/~1/g, '/').replace(/~0/g, '~')],
+      schema,
+    ) as { type?: string } | undefined;
+/**
+ * Every way a value fails a contract, in Clew's own words, so that what an administrator or a connector author reads
+ * does not change with the validation library. A missing or an unexpected property is named at its own path, a value
+ * that fits no branch of a union is one problem at the union, and a path is given one reason once. Empty when the value
+ * passes. Every problem is listed (D60); a caller that names only the first passes `limit`, and the library then stops
+ * looking early instead of walking a large body to its end.
+ */
+export function contractProblems(schema: TSchema, value: unknown, limit = Number.MAX_SAFE_INTEGER): ContractProblem[] {
+  // TypeBox stops at `maxErrors`, eight unless told otherwise, and several of its errors can be one problem or none.
+  // So the budget starts above the limit and grows until the limit is met or the library found nothing more.
+  const { maxErrors } = Settings.Get();
+  try {
+    for (let budget = Math.min(Number.MAX_SAFE_INTEGER, Math.max(8, limit * 8)); ; budget *= 8) {
+      Settings.Set({ maxErrors: budget });
+      const errors = Value.Errors(schema, value);
+      const cut = errors.length >= budget;
+      // A type error may be followed by the literal's own, which replaces it: cut off there, it is not worded alone.
+      const problems = worded(schema, cut && errors.at(-1)?.keyword === 'type' ? errors.slice(0, -1) : errors);
+      if (!cut || problems.length >= limit) return problems.slice(0, limit);
+    }
+  } finally {
+    Settings.Set({ maxErrors });
+  }
+}
+function worded(schema: TSchema, errors: ReturnType<typeof Value.Errors>): ContractProblem[] {
+  const literal = new Set(errors.filter(e => e.keyword === 'const').map(e => e.instancePath + ' ' + e.schemaPath));
+  const problems: ContractProblem[] = [];
+  const said = new Set<string>();
+  const add = (path: string, message: string) => {
+    if (said.has(path + ' ' + message)) return;
+    said.add(path + ' ' + message);
+    problems.push({ path, message });
+  };
+  for (const error of errors) {
+    const { instancePath: path, schemaPath } = error;
+    const branch = schemaPath.search(/\/anyOf\/\d+/);
+    if (branch >= 0 || error.keyword === 'anyOf') {
+      const union = branch >= 0 ? schemaPath.slice(0, branch) : schemaPath;
+      const steps = path.split('/').slice(0, valueDepth(union) + 1);
+      add(steps.join('/'), 'Expected union value');
+      continue;
+    }
+    switch (error.keyword) {
+      case 'required':
+        for (const key of error.params.requiredProperties)
+          add(`${path}/${pointerKey(key)}`, 'Expected required property');
+        break;
+      case 'additionalProperties':
+        for (const key of error.params.additionalProperties) add(`${path}/${pointerKey(key)}`, 'Unexpected property');
+        break;
+      case 'boolean':
+        // The schema `false` that closes an object: `additionalProperties` names the same property.
+        if (!schemaPath.endsWith('/additionalProperties')) add(path, 'Unexpected value');
+        break;
+      case 'type':
+        if (!literal.has(path + ' ' + schemaPath)) add(path, `Expected ${[error.params.type].flat().join(' or ')}`);
+        break;
+      case 'const': {
+        const allowed = error.params.allowedValue;
+        add(path, `Expected ${typeof allowed === 'string' ? `'${allowed}'` : String(allowed)}`);
+        break;
+      }
+      case 'minLength':
+        add(path, `Expected string length greater or equal to ${error.params.limit}`);
+        break;
+      case 'maxLength':
+        add(path, `Expected string length less or equal to ${error.params.limit}`);
+        break;
+      case 'pattern':
+        add(path, `Expected string to match '${error.params.pattern}'`);
+        break;
+      case 'format':
+        add(path, `Expected string to match '${error.params.format}' format`);
+        break;
+      case 'minItems':
+        add(path, `Expected array length to be greater or equal to ${error.params.limit}`);
+        break;
+      case 'maxItems':
+        add(path, `Expected array length to be less or equal to ${error.params.limit}`);
+        break;
+      case 'uniqueItems':
+        add(path, 'Expected array elements to be unique');
+        break;
+      case 'minimum':
+      case 'maximum':
+      case 'exclusiveMinimum': {
+        const noun = schemaAt(schema, schemaPath)?.type === 'integer' ? 'integer' : 'number';
+        const than = { minimum: 'greater or equal to', maximum: 'less or equal to', exclusiveMinimum: 'greater than' }[
+          error.keyword
+        ];
+        add(path, `Expected ${noun} to be ${than} ${error.params.limit}`);
+        break;
+      }
+      default:
+        add(path, error.message);
+    }
+  }
+  return problems;
+}
 const id = Type.String({ minLength: 1, maxLength: 80 });
 
 /** A calendar occurrence as the browser sees it. Participant names stay inside the calendar surface. */
 export const CalendarEventSchema = object({
-  id: id,
+  /**
+   * The source's own handle for the occurrence, as its adapter names it: Nextcloud's is the base64 of the CalDAV path
+   * and the recurrence, well over a hundred characters, so the short `id` of Clew's own rows does not fit it.
+   */
+  id: Type.String({ minLength: 1, maxLength: 1000 }),
   title: Type.String(),
   start: Type.String(),
   end: Type.String(),
@@ -151,7 +292,7 @@ export const WeekViewSchema = object({
   proposals: Type.Array(ProposalSchema),
 });
 export type WeekView = Static<typeof WeekViewSchema>;
-export const WeekEventsSchema = Type.Omit(WeekViewSchema, ['proposals']);
+export const WeekEventsSchema = Type.Omit(WeekViewSchema, ['proposals'], closed);
 /** One day with the person's live proposals: the side panel's day view and the dialog's day strip (D28). */
 export const DayViewSchema = WeekViewSchema;
 export type DayView = WeekView;
@@ -243,18 +384,20 @@ export type ViewRef = Static<typeof ViewRefSchema>;
  * without regard to case (a person without one cannot be asked about); a unit's key is its unit id.
  */
 export const ENTITY_KINDS = ['person', 'unit'] as const;
-export const EntityKind = Type.Union(
-  ENTITY_KINDS.map(kind => Type.Literal(kind)),
-  {
-    description:
-      '`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.',
-  },
-);
+export const EntityKind = literals(ENTITY_KINDS, {
+  description:
+    '`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id.',
+});
 export type EntityKind = (typeof ENTITY_KINDS)[number];
 export const isEntityKind = (value: string): value is EntityKind => (ENTITY_KINDS as readonly string[]).includes(value);
+/**
+ * The longest key an entity may be named by: a longer one names nobody. Counted as the schema counts it, in Unicode code
+ * points (`[...key].length`), so the code beside the schema keeps every key the schema accepts.
+ */
+export const ENTITY_KEY_MAX = 256;
 const entityKey = Type.String({
   minLength: 1,
-  maxLength: 256,
+  maxLength: ENTITY_KEY_MAX,
   description: "The entity's key: a person's `userName`, a unit's id.",
 });
 /** A row that names an entity (D97 item 6): a card row, a search hit or a view field may carry one, so it links to the entity. */
@@ -600,7 +743,7 @@ export type PanelViewSpec = View & {
  * A view as a tool in the menu (D40): one click away on every page, under Verktyg. Any read that declares a view and
  * opens without input can be one; an administrator chooses which, view by view. A connector may say what a view's row
  * is called and which of Clew's icons it carries; without that the row takes the capability's title and a plain icon. The same list of
- * icons serves an area (D41): the name a connector gives its area is drawn on the area's button under the box.
+ * icons serves an area (D41, D71): the area's icon marks its cards and views beside the area's name.
  */
 export const MENU_ICONS = [
   'phone',
@@ -614,10 +757,9 @@ export const MENU_ICONS = [
   'calendar',
   'bell',
 ] as const;
-export const MenuIconSchema = Type.Union(
-  MENU_ICONS.map(name => Type.Literal(name)),
-  { description: "One of Clew's icons. The connector sends a name, never a drawing." },
-);
+export const MenuIconSchema = literals(MENU_ICONS, {
+  description: "One of Clew's icons. The connector sends a name, never a drawing.",
+});
 export type MenuIcon = (typeof MENU_ICONS)[number];
 export const MenuHintSchema = Type.Object(
   {
@@ -737,13 +879,10 @@ export type SearchResult = Static<typeof SearchResultSchema>;
  * several systems are ordered together. The order here is the order a list is drawn in.
  */
 export const ERRAND_STATES = ['waiting-on-me', 'new', 'active', 'waiting-on-others', 'closed'] as const;
-export const ErrandState = Type.Union(
-  ERRAND_STATES.map(state => Type.Literal(state)),
-  {
-    description:
-      '`waiting-on-me`: the person has to act. `new`: nobody has started. `active`: being handled. `waiting-on-others`: someone else has to act. `closed`: finished.',
-  },
-);
+export const ErrandState = literals(ERRAND_STATES, {
+  description:
+    '`waiting-on-me`: the person has to act. `new`: nobody has started. `active`: being handled. `waiting-on-others`: someone else has to act. `closed`: finished.',
+});
 export type ErrandState = (typeof ERRAND_STATES)[number];
 /**
  * One errand as a case system's connector lists it (D35, D89): what Clew needs to list, order and make a card of, and
@@ -822,13 +961,10 @@ const sourceLink = Type.String({ maxLength: 1000, pattern: '^https?://[^\\s]+$' 
  * The order here is the order a list is drawn in.
  */
 export const TALK_STATES = ['missing', 'booked', 'held'] as const;
-export const TalkState = Type.Union(
-  TALK_STATES.map(state => Type.Literal(state)),
-  {
-    description:
-      '`missing`: no talk is booked or held. `booked`: a talk is in the calendar. `held`: the manager has marked it held.',
-  },
-);
+export const TalkState = literals(TALK_STATES, {
+  description:
+    '`missing`: no talk is booked or held. `booked`: a talk is in the calendar. `held`: the manager has marked it held.',
+});
 export type TalkState = (typeof TALK_STATES)[number];
 /** The period in which every person on a unit is due a talk with the unit's manager (D96 item 1). */
 export const TalkRoundSchema = object(
@@ -889,7 +1025,7 @@ export const TalksOutputSchema = object(
 export type TalksOutput = Static<typeof TalksOutputSchema>;
 /** Who an action point is for (D96 item 4): the employee the talk is with, or their manager. */
 export const COMMITMENT_OWNERS = ['employee', 'manager'] as const;
-export const CommitmentOwner = Type.Union(COMMITMENT_OWNERS.map(owner => Type.Literal(owner)));
+export const CommitmentOwner = literals(COMMITMENT_OWNERS);
 export type CommitmentOwner = (typeof COMMITMENT_OWNERS)[number];
 /** The text of an action point: one short line, never in a card, an audit row or a model's context (D96 item 6). */
 const commitmentText = Type.String({ minLength: 1, maxLength: 280 });
@@ -967,6 +1103,61 @@ export const CommitmentAddBodySchema = object({
 });
 export type CommitmentAddBody = Static<typeof CommitmentAddBodySchema>;
 
+/**
+ * One piece of news as a news source's connector lists it (D112, amended 2026-11-11): what Hem's "Nyheter" and the
+ * list "Alla nyheter" draw, and nothing else. A row either leaves Clew by its `link` or opens in Clew by the read its
+ * view's `open` names (by convention `<id>.newsItem`). No body, no image, no author: Clew is not a news site (vision).
+ */
+export const NewsRowSchema = object(
+  {
+    ref: Type.String({
+      minLength: 1,
+      maxLength: 200,
+      pattern: '^[A-Za-z0-9:_.@-]+$',
+      description: "The source's own id for the item, stable. What the read the view's `open` names takes back.",
+    }),
+    title: Type.String({ minLength: 1, maxLength: 200, description: 'Swedish. The headline as the source has it.' }),
+    sender: Type.String({
+      minLength: 1,
+      maxLength: 80,
+      description: 'Swedish. Who published it, as a reader knows the sender: a department, a unit or the newsroom.',
+    }),
+    publishedAt: { ...instant, description: 'When it was published.' },
+    link: Type.Optional({
+      ...sourceLink,
+      description:
+        "The item in its own system, opened in a new tab. Without it the row opens in Clew through the view's `open`.",
+    }),
+  },
+  "One piece of news in a news source's list (D112).",
+);
+export type NewsRow = Static<typeof NewsRowSchema>;
+/** What `<id>.news` and the composite `clew.news` take: nothing. The source lists what the person may read. */
+export const NewsInputSchema = object({});
+export type NewsInput = Static<typeof NewsInputSchema>;
+/** What `<id>.news` returns. */
+export const NewsOutputSchema = object(
+  { rows: Type.Array(NewsRowSchema, { maxItems: 100 }) },
+  'What `<id>.news` returns: the news the person may read in this source, newest first or in any order; Clew orders them.',
+);
+export type NewsOutput = Static<typeof NewsOutputSchema>;
+/**
+ * What the composite `clew.news` returns (D112, amended 2026-11-11): every source's rows in one list, newest first,
+ * each marked with the connector it came from, the source as a person reads it (`system`) and the view that opens it
+ * there when the source declares one. A source that did not answer contributes nothing and is not named.
+ */
+export const NewsResultSchema = object({
+  rows: Type.Array(
+    object({
+      ...NewsRowSchema.properties,
+      connector: Type.String(),
+      system: Type.String(),
+      view: Type.Optional(ViewRefSchema),
+    }),
+  ),
+});
+export type NewsResult = Static<typeof NewsResultSchema>;
+
 /** The most keys Clew sends in one call to a read about an entity (D97 item 7); a longer list is split. */
 export const ENTITY_KEYS_MAX = 200;
 /** The most columns "Alla" shows for one entity kind across the installation (D97 item 4), chosen by an administrator. */
@@ -989,11 +1180,13 @@ export const AboutSchema = object(
 export type About = Static<typeof AboutSchema>;
 /**
  * A page of an owned domain where the person writes about one entity (D95, D96): a core connector's in-process `about`
- * may name one, never a remote manifest. `href` may hold `{key}` and `{id}`, which the web fills in.
+ * may name one, never a remote manifest. `href` may hold `{key}` and `{id}`, which the web fills in. A path (`/staff?…`)
+ * is a page of its own, a destination; a query alone (`?talk={id}`) is something that lies over the page the way in is
+ * drawn on, its parameters added to that page's address with everything else in it kept (D111 rule 5).
  */
 export const EntityPageSchema = object({
   title: Type.String({ minLength: 1, maxLength: 60 }),
-  href: Type.String({ minLength: 1, maxLength: 200, pattern: '^/' }),
+  href: Type.String({ minLength: 1, maxLength: 200, pattern: '^[/?]' }),
 });
 export type EntityPage = Static<typeof EntityPageSchema>;
 /** How one source answered for a list or a section: it answered, it did not, or not in time. */
@@ -1032,6 +1225,150 @@ export const EntityColumnSchema = object({
   own,
 });
 export type EntityColumn = Static<typeof EntityColumnSchema>;
+/**
+ * What a write asks the person for (D112 item 10): a closed list of kinds, each naming one property of the capability's
+ * own input. Clew draws them as the first step of the action's dialog and merges the answers into the input the source
+ * receives; the source never draws a form.
+ */
+export const ASK_KINDS = ['meeting', 'text', 'long-text', 'date', 'choice'] as const;
+export type AskKind = (typeof ASK_KINDS)[number];
+/** The most asks one capability declares. */
+export const ASKS_MAX = 6;
+const ASK_PROPERTY = '^[A-Za-z][A-Za-z0-9_]*$';
+const askFields = {
+  property: Type.String({
+    pattern: ASK_PROPERTY,
+    maxLength: 80,
+    description:
+      "The input property the person's answer fills: one of the input schema's `properties`, of a type the kind takes.",
+  }),
+  label: Type.String({ minLength: 1, maxLength: 80, description: 'Swedish. The field\'s label: "När", "Plats".' }),
+  required: Type.Boolean({
+    description:
+      'Whether the person must answer before the last step. `true` whenever the input schema requires the property; an optional answer left empty is not sent.',
+  }),
+};
+const askKind = <const K extends AskKind>(kind: K, description: string) => Type.Literal(kind, { description });
+export const AskSchema = Type.Union(
+  [
+    object({
+      kind: askKind(
+        'meeting',
+        'a meeting time, in a `string` property (format `date-time` when it declares one) that takes the start as an ISO 8601 instant. Clew suggests three free times from the person\'s own calendar, offers "Annan tid" and draws the chosen day.',
+      ),
+      ...askFields,
+      durationMinutes: Type.Integer({
+        minimum: 5,
+        maximum: 480,
+        description: 'For `meeting`: how long the meeting is, in minutes. Clew looks for free times this long.',
+      }),
+    }),
+    object({
+      kind: askKind('text', 'one line of text, in a `string` property without `enum` or `format`.'),
+      ...askFields,
+    }),
+    object({
+      kind: askKind('long-text', 'a paragraph such as a message, in a `string` property without `enum` or `format`.'),
+      ...askFields,
+    }),
+    object({
+      kind: askKind(
+        'date',
+        'a calendar day as `YYYY-MM-DD`, in a `string` property (format `date` when it declares one).',
+      ),
+      ...askFields,
+    }),
+    object({
+      kind: askKind('choice', "one of the property's `enum` values, each named in `options`."),
+      ...askFields,
+      options: Type.Array(
+        object({
+          value: Type.String({ minLength: 1, maxLength: 80, description: "One of the property's `enum` values." }),
+          label: Type.String({ minLength: 1, maxLength: 80, description: 'Swedish. What the person reads.' }),
+        }),
+        {
+          minItems: 2,
+          maxItems: 8,
+          description: "For `choice`: every value of the property's `enum` once, with its Swedish label, in order.",
+        },
+      ),
+    }),
+  ],
+  { description: 'One thing a propose or an execute asks the person for, naming one property of its input.' },
+);
+export type Ask = Static<typeof AskSchema>;
+/**
+ * The values a person gave for an action's asks (D112 item 10), by input property: an instant for a meeting, a day for a
+ * date, an `enum` value for a choice, the text for the rest. Only the asked properties; Clew refuses anything else.
+ */
+export const AskValuesSchema = Type.Record(
+  Type.String({ pattern: ASK_PROPERTY, maxLength: 80 }),
+  Type.String({ maxLength: 4000 }),
+  { maxProperties: ASKS_MAX, additionalProperties: false },
+);
+export type AskValues = Static<typeof AskValuesSchema>;
+/** One thing a write will do (D112 item 10), as an `effect` read says it before anything is written. */
+export const EffectRowSchema = object(
+  {
+    label: Type.String({
+      minLength: 1,
+      maxLength: 200,
+      description: 'Swedish. What will be written: "Omtankesamtalet registreras".',
+    }),
+    detail: Type.Optional(
+      Type.String({ maxLength: 400, description: 'Swedish. One line more: on what, with what values.' }),
+    ),
+    source: Type.Optional(
+      Type.String({
+        minLength: 1,
+        maxLength: 80,
+        description:
+          'Swedish. The system it is written in, as cards name a system ("Kalendern"), when it is not the connector\'s own `source`.',
+      }),
+    ),
+  },
+  'One thing the write will do, in one system.',
+);
+export type EffectRow = Static<typeof EffectRowSchema>;
+export const EffectOutputSchema = object(
+  {
+    rows: Type.Array(EffectRowSchema, { minItems: 1, maxItems: 10 }),
+    undoMinutes: Type.Optional(
+      Type.Integer({
+        minimum: 1,
+        maximum: 1440,
+        description:
+          'How long the person can undo the write when the source lets them: "Du kan ångra bokningen i 10 minuter." Absent, Clew promises no undo.',
+      }),
+    ),
+  },
+  'What an `effect` read answers (D112 item 10): for exactly the input the execute would get, what it will write where, without writing anything. Drawn as "Det här händer", the dialog\'s last step.',
+);
+export type EffectOutput = Static<typeof EffectOutputSchema>;
+/** `POST /api/threads/:id/effect` and `POST /api/entities/:kind/:key/effect`: the effect read's answer and whose it is. */
+export const EffectPreviewSchema = object({
+  ...EffectOutputSchema.properties,
+  source: Type.String({ description: "The connector's `source`: the system of every row that names none." }),
+});
+export type EffectPreview = Static<typeof EffectPreviewSchema>;
+/**
+ * What a propose or an execute draws on its way (D112 item 10), resolved from the registered declaration on every read,
+ * never from a draft: what it asks the person, whether "Det här händer" comes from an `effect` read, and the capability's
+ * own description for when it does not. The web draws the dialog from it; a write without asks whose result can be
+ * undone stays one press.
+ */
+export const ActionPathSchema = object({
+  asks: Type.Array(AskSchema, {
+    maxItems: ASKS_MAX,
+    description:
+      "What the person fills in, in the declared order. A property the action's own input, its rows or the entity already gives is left out.",
+  }),
+  effect: Type.Boolean({
+    description: 'The capability declares an `effect` read: "Det här händer" is its answer for the filled-in input.',
+  }),
+  description: Type.String({ description: 'The capability\'s own description: "Det här händer" without an effect.' }),
+});
+export type ActionPath = Static<typeof ActionPathSchema>;
 /** An action about an entity (D97): it shows in the entity's menu and runs through the human decision as every propose and execute does. */
 export const EntityActionSchema = object({
   capability: Type.String(),
@@ -1041,6 +1378,8 @@ export const EntityActionSchema = object({
   kind: Type.Union([Type.Literal('propose'), Type.Literal('execute')]),
   param: Type.String(),
   own,
+  /** The way to the decision (D112 item 10); the entity's key is its `param` and never asked. */
+  path: Type.Optional(ActionPathSchema),
 });
 export type EntityAction = Static<typeof EntityActionSchema>;
 /** `GET /api/entities/:kind`: the entities the reader may ask about, in groups (for a person, one per unit the reader manages), with the administrator's columns and lenses and the actions. */
@@ -1082,8 +1421,29 @@ export const EntityCardSchema = object({
   kind: Type.Union([Type.Literal('act'), Type.Literal('proposal'), Type.Literal('fyi')]),
 });
 export type EntityCard = Static<typeof EntityCardSchema>;
+/** Employment data is descriptive. Unit memberships remain the authority for access. */
+export const SCIM_EMPLOYMENT_SCHEMA = 'urn:clew:params:scim:schemas:extension:employment:2.0:User';
+const DirectoryPhoneSchema = object({ type: Type.String(), value: Type.String() });
+export type DirectoryPhone = Static<typeof DirectoryPhoneSchema>;
+export const EmploymentSchema = object({
+  unitId: Type.String(),
+  title: Type.Optional(Type.String()),
+  employmentType: Type.Optional(Type.String()),
+  startDate: Type.Optional(Type.String({ format: 'date', maxLength: 10 })),
+  employmentPercentage: Type.Optional(Type.Number({ minimum: 0, maximum: 100 })),
+});
+export type Employment = Static<typeof EmploymentSchema>;
+const PersonProfileSchema = object({
+  email: Type.Union([Type.String(), Type.Null()]),
+  phoneNumbers: Type.Array(DirectoryPhoneSchema),
+  /** `unitLabel` is absent when the unit has been removed since the directory sent the employment. */
+  employments: Type.Array(object({ ...EmploymentSchema.properties, unitLabel: Type.Optional(Type.String()) })),
+  title: Type.Union([Type.String(), Type.Null()]),
+});
+export type PersonProfile = Static<typeof PersonProfileSchema>;
 /** `GET /api/entities/:kind/:key`: the opened entity, how the reader stands to it, its actions, one section per source and the cards about it. */
 export const EntityDetailSchema = object({
+  profile: Type.Optional(PersonProfileSchema),
   entity: object({
     ...EntityRefSchema.properties,
     unit: Type.Optional(object({ id: Type.String(), label: Type.String() })),
@@ -1106,11 +1466,22 @@ export const EntitySectionSchema = object({
   row: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
 });
 export type EntitySection = Static<typeof EntitySectionSchema>;
-/** `POST /api/entities/:kind/:key/actions`: start one of the entity's actions (D97, D8), named as `EntityAction.capability`. */
+/**
+ * `POST /api/entities/:kind/:key/actions`: start one of the entity's actions (D97, D8), named as `EntityAction.capability`.
+ * `values` answers a propose's asks (D112): the propose drafts with them. An execute's asks are answered when the person
+ * decides on its work item (`ActInput.values`), never here.
+ */
 export const EntityActionInputSchema = object({
   capability: Type.String({ minLength: 3, maxLength: 120 }),
+  values: Type.Optional(AskValuesSchema),
 });
 export type EntityActionInput = Static<typeof EntityActionInputSchema>;
+/** `POST /api/entities/:kind/:key/effect`: what the action would write for the entity with these answers (D112). */
+export const EntityEffectInputSchema = object({
+  capability: Type.String({ minLength: 3, maxLength: 120 }),
+  values: Type.Optional(AskValuesSchema),
+});
+export type EntityEffectInput = Static<typeof EntityEffectInputSchema>;
 /**
  * What starting an action about an entity gave: the card the person decides on, opened as Hem opens a card. The same
  * request while that card is open gives the same card; nothing has reached a source's write.
@@ -1122,26 +1493,20 @@ export type EntityActionStarted = Static<typeof EntityActionStartedSchema>;
  * the kind says which the type is.
  */
 export const COMPETENCE_KINDS = ['certificate', 'degree', 'course', 'authorisation'] as const;
-export const CompetenceKind = Type.Union(
-  COMPETENCE_KINDS.map(kind => Type.Literal(kind)),
-  {
-    description:
-      '`certificate`: a certificate with an issuer. `degree`: an examination. `course`: a completed course. `authorisation`: a right to perform a task, such as a delegation.',
-  },
-);
+export const CompetenceKind = literals(COMPETENCE_KINDS, {
+  description:
+    '`certificate`: a certificate with an issuer. `degree`: an examination. `course`: a completed course. `authorisation`: a right to perform a task, such as a delegation.',
+});
 export type CompetenceKind = (typeof COMPETENCE_KINDS)[number];
 /**
  * Where a holding stands on a day (D108 item 4), computed when read and never stored. The order here is the order a
  * list is drawn in: what needs a person first.
  */
 export const COMPETENCE_STATUSES = ['expired', 'expiring', 'valid'] as const;
-export const CompetenceStatus = Type.Union(
-  COMPETENCE_STATUSES.map(status => Type.Literal(status)),
-  {
-    description:
-      '`expired`: the end date has passed. `expiring`: it ends within 90 days. `valid`: it ends later, or never.',
-  },
-);
+export const CompetenceStatus = literals(COMPETENCE_STATUSES, {
+  description:
+    '`expired`: the end date has passed. `expiring`: it ends within 90 days. `valid`: it ends later, or never.',
+});
 export type CompetenceStatus = (typeof COMPETENCE_STATUSES)[number];
 /** How a holding is attested (D108 items 7 and 9): read from a system, registered by a manager, or the person's own word. */
 export const COMPETENCE_EVIDENCE = ['system', 'manager', 'self'] as const;
@@ -1187,7 +1552,7 @@ export const CompetenceHoldingRowSchema = object(
       description: "The last day it is valid: the issuer's date, else the employer's rule. Absent: it does not end.",
     }),
     status: CompetenceStatus,
-    evidence: Type.Union(COMPETENCE_EVIDENCE.map(e => Type.Literal(e))),
+    evidence: literals(COMPETENCE_EVIDENCE),
   },
   'One holding of one person (D108).',
 );
@@ -1246,12 +1611,19 @@ export const ClewActionSchema = object({
   label: Type.String(),
 });
 export type ClewAction = Static<typeof ClewActionSchema>;
-/** A change the conversation made to a card as a draft. The card's own button executes; the conversation never touches a source. */
+/**
+ * A change the conversation made to a card as a draft. The card's own button executes; the conversation never touches a
+ * source. `action` (D112 item 8) is one of the work item's actions filled in by the assistant: which action and the
+ * values for what it asks, checked against the asks when drafted and again when the person sends. It is kept in the
+ * conversation only, and the person opens it in the action's own dialog; nothing is executed from it.
+ */
 export const DraftSchema = object({
-  kind: Type.Union([Type.Literal('select'), Type.Literal('replan')]),
+  kind: Type.Union([Type.Literal('select'), Type.Literal('replan'), Type.Literal('action')]),
   threadId: id,
   refs: Type.Optional(Type.Array(Type.String())),
   week: Type.Optional(Type.String()),
+  actionId: Type.Optional(Type.String({ minLength: 1, maxLength: 120 })),
+  values: Type.Optional(AskValuesSchema),
 });
 export type Draft = Static<typeof DraftSchema>;
 /** A verb about one chipped object, derived from its actions and Clew's standard actions, never from the model. */
@@ -1352,13 +1724,23 @@ export const ThreadActionSchema = object({
   capability: Type.String(),
   kind: Type.Union([Type.Literal('read'), Type.Literal('propose'), Type.Literal('execute')]),
   role: ActionRole,
-  /** Where a read capability renders: a side-panel view, or a link out to the source system. */
-  target: Type.Optional(Type.Union([Type.Literal('panel'), Type.Literal('link')])),
+  /** Where a read's answer goes (D111): unfolded inside the card, or a link out to the source system in a new tab. */
+  target: Type.Optional(
+    Type.Union([Type.Literal('panel'), Type.Literal('link')], {
+      description:
+        "For a `read`: absent or `panel` unfolds the read's answer inside the card, under its buttons (a `table` view opens in the card's place in the panel); `link` marks the button as leaving Clew and opens the `url` the read answers in a new tab (D111 rule 8). Ignored on a propose or execute.",
+    }),
+  ),
   /** Fixed input merged with the selected item refs at execution time. */
   input: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
   /** Whether the action takes the selected items as `refs`. */
   usesItems: Type.Optional(Type.Boolean()),
-  confirm: Type.Optional(Type.String()),
+  confirm: Type.Optional(
+    Type.String({
+      description:
+        'Swedish. Asked in a dialog over the card before the action runs, with "Avbryt" and the action\'s own label as the buttons: up to the first "?" is the question, the rest says what follows from yes ("Avvisa filen? Ditt beslut gäller för alla som kan godkänna den.").',
+    }),
+  ),
   /**
    * The person reviews the items one at a time before this execute runs (D70): Clew opens the review flow from the
    * card's next step, and the write happens once, with the refs the person approved. Only on an execute with `usesItems`.
@@ -1366,8 +1748,28 @@ export const ThreadActionSchema = object({
   review: Type.Optional(Type.Literal('each')),
   /** A read capability of the same connector that takes `{ ref }` for one item and answers a `PreviewOutput` (D70). */
   preview: Type.Optional(Type.String()),
+  /**
+   * The action is the person's read receipt (D112, amended 2026-11-11): the work item asks the person to acknowledge
+   * that they have read something published. Only on an execute, at most one per item. While such an item is open, Hem
+   * lifts the most urgent one above its blocks with this action as its button.
+   */
+  acknowledgement: Type.Optional(
+    object(
+      { publishedAt: { ...instant, description: 'When what the person acknowledges was published.' } },
+      'The action is the read receipt for something published, which Hem lifts until it is given (D112).',
+    ),
+  ),
 });
 export type ThreadAction = Static<typeof ThreadActionSchema>;
+/**
+ * A card action as the API answers it: the draft's action and, for a propose or an execute of the card's own connector,
+ * its `path` (D112 item 10), resolved from the registered manifest on every read. A draft cannot carry a path.
+ */
+export const CardActionSchema = object({
+  ...ThreadActionSchema.properties,
+  path: Type.Optional(ActionPathSchema),
+});
+export type CardAction = Static<typeof CardActionSchema>;
 /** One item's document, as a review flow shows it beside the decision (D70): an image is drawn, a PDF is offered as a file. */
 export const PreviewMediaType = Type.Union([
   Type.Literal('image/svg+xml'),
@@ -1456,7 +1858,7 @@ export const ThreadSchema = object({
    * places the card under "Behöver dig" on that entity for its owner.
    */
   subjects: Type.Optional(Type.Array(SubjectSchema, { maxItems: 20 })),
-  actions: Type.Array(ThreadActionSchema),
+  actions: Type.Array(CardActionSchema),
   /** Set when the thread waits on someone else: it is listed under "Pågår utan dig" and never notifies. */
   waitingOn: Type.Union([Type.String(), Type.Null()]),
   deadline: Type.Union([Type.String(), Type.Null()]),
@@ -1479,6 +1881,62 @@ export const ThreadSchema = object({
 export type Thread = Static<typeof ThreadSchema>;
 export const unresolvedExecution = (t: Pick<Thread, 'execution'>) =>
   !!t.execution && ['pending', 'running', 'unknown', 'partial', 'failed'].includes(t.execution.state);
+
+/**
+ * What happened to a work item, as its "Händelser" lists it (D112 item 4): read from the audit rows the item's own
+ * mutations wrote, nothing else. Who did it is the person (`you`) or Clew on its own (`clew`); a row anyone else wrote is
+ * left out, so no other person is ever named. No text of a model turn, no source content: what the person reads beside
+ * it (the receipt, the action's label) comes from the item they may already see.
+ */
+export const ItemEventKindSchema = Type.Union([
+  /** The item came: from a source, from an answer, as a new try after rejected rows, or started by the person. */
+  Type.Literal('created'),
+  /** The source changed the item's rows, title or day. */
+  Type.Literal('updated'),
+  Type.Literal('snoozed'),
+  Type.Literal('woken'),
+  Type.Literal('reminder-set'),
+  Type.Literal('reminder-cancelled'),
+  Type.Literal('reminded'),
+  /** A reminder the person set could not be kept, because their access changed. */
+  Type.Literal('reminder-stopped'),
+  Type.Literal('dismissed'),
+  Type.Literal('reopened'),
+  /** The person decided one of the item's writes; the durable ledger carries it to the source (D45). */
+  Type.Literal('decided'),
+  /** The person asked to undo the decision. */
+  Type.Literal('undo-decided'),
+  /** The source answered a decision or its undo: `outcome` says how. */
+  Type.Literal('answered'),
+  /** The time to undo ran out; the receipt stands. */
+  Type.Literal('undo-closed'),
+  /** The source no longer lists the item as open. */
+  Type.Literal('resolved'),
+]);
+export type ItemEventKind = Static<typeof ItemEventKindSchema>;
+export const ItemEventSchema = object(
+  {
+    at: instant,
+    by: Type.Union([Type.Literal('you'), Type.Literal('clew')]),
+    kind: ItemEventKindSchema,
+    /** `snoozed` and `reminder-set`: when the item comes back. */
+    until: Type.Optional(instant),
+    /** `woken`: the time came, or the source changed the item. */
+    reason: Type.Optional(Type.Union([Type.Literal('time'), Type.Literal('changed')])),
+    /** `decided`: the label of the action decided on, as the item names it now; absent when the item no longer has it. */
+    action: Type.Optional(Type.String({ maxLength: 200 })),
+    /** `answered`: what the source answered. */
+    outcome: Type.Optional(
+      Type.Union([Type.Literal('succeeded'), Type.Literal('partial'), Type.Literal('failed'), Type.Literal('unknown')]),
+    ),
+    /** `decided`, `undo-decided` and `answered`: the decision in the ledger, so an answer is matched to its receipt. */
+    execution: Type.Optional(id),
+  },
+  "One thing that happened to a work item (D112 item 4): who, what and when, from the item's audit rows.",
+);
+export type ItemEvent = Static<typeof ItemEventSchema>;
+export const ItemEventsSchema = object({ events: Type.Array(ItemEventSchema) });
+export type ItemEvents = Static<typeof ItemEventsSchema>;
 
 /**
  * Attention level of an open card (design canvas "Clew uppmärksamhet", 2026-11-04). Colour on the page follows this
@@ -1636,6 +2094,7 @@ export const SnoozeInput = Type.Partial(
     text: Type.String({ minLength: 1, maxLength: 80 }),
     until: instant,
   }),
+  closed,
 );
 export type SnoozeInput = Static<typeof SnoozeInput>;
 export const MAX_SNOOZE_DAYS = 30;
@@ -1759,7 +2218,7 @@ export type Role = Static<typeof RoleSchema>;
  */
 export const CAPABILITIES = ['admin.connectors', 'admin.users', 'admin.appearance', 'admin.competence'] as const;
 export type Capability = (typeof CAPABILITIES)[number];
-export const CapabilitySchema = Type.Union(CAPABILITIES.map(c => Type.Literal(c)));
+export const CapabilitySchema = literals(CAPABILITIES);
 export const isCapability = (value: string): value is Capability => (CAPABILITIES as readonly string[]).includes(value);
 /** Administration › Användare (D62, D68, D85): a provisioned person as the page lists them. No token, no subject. */
 export interface UserAdminRow {
@@ -1768,6 +2227,8 @@ export interface UserAdminRow {
   userName: string | null;
   externalId: string | null;
   email: string | null;
+  /** D110, D114: what the person is called at work: the titles of their employments, or the core title; null without one. */
+  title: string | null;
   enabled: boolean;
   /** An identity binding exists, so the person has signed in (or was bound by the development seed). */
   bound: boolean;
@@ -1894,7 +2355,7 @@ export const ProvisionerIssueInput = Type.Object(
 );
 export type ProvisionerIssueInputType = Static<typeof ProvisionerIssueInput>;
 export const ProvisionerRotateInput = Type.Object(
-  { graceHours: Type.Union(PROVISIONER_GRACE_HOURS.map(h => Type.Literal(h))) },
+  { graceHours: literals(PROVISIONER_GRACE_HOURS) },
   { additionalProperties: false },
 );
 export type ProvisionerRotateInputType = Static<typeof ProvisionerRotateInput>;
@@ -1935,10 +2396,10 @@ export const UsersAdminQuery = Type.Object(
     text: Type.Optional(Type.String({ maxLength: USERS_QUERY_LIMITS.text })),
     unitId: Type.Optional(Type.String({ minLength: 1, maxLength: USERS_QUERY_LIMITS.unitId })),
     role: Type.Optional(RoleSchema),
-    status: Type.Optional(Type.Union(USER_STATUSES.map(s => Type.Literal(s)))),
+    status: Type.Optional(literals(USER_STATUSES)),
     capability: Type.Optional(CapabilitySchema),
     page: Type.Optional(Type.Integer({ minimum: 1, maximum: USERS_QUERY_LIMITS.page })),
-    pageSize: Type.Optional(Type.Union(USERS_PAGE_SIZES.map(n => Type.Literal(n)))),
+    pageSize: Type.Optional(literals(USERS_PAGE_SIZES)),
   },
   { additionalProperties: false },
 );
@@ -2038,6 +2499,7 @@ export const ConnectorPatchInput = Type.Partial(
     /** Figures on Hem (D54), by area id: false switches the area's figure off for the connector's audience, true back on. */
     figures: Type.Record(Type.String({ maxLength: 80 }), Type.Boolean()),
   }),
+  closed,
 );
 export type ConnectorPatchInput = Static<typeof ConnectorPatchInput>;
 export const RotateSecretInput = object({ secret: connectorSecret });
@@ -2198,7 +2660,7 @@ export const AddProviderInput = object({
   apiKey: Type.Optional(providerKey),
 });
 export type AddProviderInput = Static<typeof AddProviderInput>;
-export const ProviderPatchInput = Type.Partial(object({ title: adminTitle, baseUrl: endpointUrl }));
+export const ProviderPatchInput = Type.Partial(object({ title: adminTitle, baseUrl: endpointUrl }), closed);
 export type ProviderPatchInput = Static<typeof ProviderPatchInput>;
 export const ProviderKeyInput = object({ apiKey: providerKey });
 export type ProviderKeyInput = Static<typeof ProviderKeyInput>;
@@ -2220,6 +2682,7 @@ export const ModelPatchInput = Type.Partial(
     isDefault: Type.Boolean(),
     tools: Type.Boolean(),
   }),
+  closed,
 );
 export type ModelPatchInput = Static<typeof ModelPatchInput>;
 /** The person's own pick in the composer; null goes back to the default. */
@@ -2297,13 +2760,13 @@ export const AreaFigureSchema = object({
   observedAt: Type.Optional(instant),
 });
 export type AreaFigure = Static<typeof AreaFigureSchema>;
-/** An area in the sidebar: a lens on one connector for one role (D3). Configuration, not code. */
+/** An area: a lens on one connector for one role (D3), a choice in Hem's area filter. Configuration, not code. */
 export const AreaSchema = object({
   id: Type.String(),
   title: Type.String(),
   connector: Type.String(),
   source: Type.String(),
-  /** The icon the connector named for the area (D41), from Clew's list; drawn on the area's button under the box. */
+  /** The icon the connector named for the area (D41), from Clew's list; drawn in the area's mark on its cards and views (D71). */
   icon: Type.Optional(MenuIconSchema),
   /** The area's figure (D54): what its connector answered, null when it answered none or the administrator switched it off. */
   figure: Type.Union([AreaFigureSchema, Type.Null()]),
@@ -2311,7 +2774,7 @@ export const AreaSchema = object({
   waiting: Type.Integer(),
   /** The highest attention level among the open cards that need the person; the sidebar count takes its colour from it. */
   urgency: Type.Union([AttentionLevelSchema, Type.Null()]),
-  /** "Gör själv": capabilities the person may start without a thread. */
+  /** The area's standing capabilities: a propose or execute is suggested under "Menar du" as the person types in Hem's box. */
   standing: Type.Array(
     object({
       capability: Type.String(),
@@ -2326,8 +2789,30 @@ export const ActInput = object({
   actionId: id,
   refs: Type.Optional(Type.Array(Type.String({ maxLength: 200 }), { maxItems: 50 })),
   reviews: Type.Optional(Type.Array(ReviewEvidenceSchema, { maxItems: 50 })),
+  /** The person's answers to the action's asks (D112 item 10): the asked properties only, merged into the input. */
+  values: Type.Optional(AskValuesSchema),
 });
 export type ActInput = Static<typeof ActInput>;
+/** `POST /api/threads/:id/effect`: what the action would write with these rows and answers; nothing is written (D112). */
+export const EffectInput = object({
+  actionId: id,
+  refs: Type.Optional(Type.Array(Type.String({ maxLength: 200 }), { maxItems: 50 })),
+  values: Type.Optional(AskValuesSchema),
+});
+export type EffectInput = Static<typeof EffectInput>;
+/**
+ * `GET /api/asks/times`: for an ask of kind `meeting`, three free times of the ask's length in the person's own calendar
+ * (D112 item 10), and the person's day when `date` is asked for, so the dialog can draw it. Nobody else's calendar is
+ * read and nothing is written to a calendar.
+ */
+export const MeetingTimesSchema = object({
+  durationMinutes: Type.Integer({ minimum: 5, maximum: 480 }),
+  /** Free times in the window, earliest first, at most one a day where possible; empty when the calendar cannot be read or nothing is free. */
+  slots: Type.Array(object({ start: instant, end: instant }), { maxItems: 3 }),
+  /** The person's own day for `date`: the calendar family's day view (events and live proposals). */
+  day: Type.Optional(DayViewSchema),
+});
+export type MeetingTimes = Static<typeof MeetingTimesSchema>;
 
 /** The day's rhythm (D28): the review, the bundles and the quiet hours as Stockholm wall-clock times that the scheduler and the page both read. */
 export const dayRhythm = { review: '06:00', bundles: ['12:00', '16:00'], quiet: '17:00', graceMinutes: 15 } as const;
@@ -2375,10 +2860,12 @@ export const ConversationResponseSchema = object({
   forslag: Type.Optional(object({ threadId: id })),
   draft: Type.Optional(
     object({
-      kind: Type.Union([Type.Literal('select'), Type.Literal('replan')]),
+      kind: Type.Union([Type.Literal('select'), Type.Literal('replan'), Type.Literal('action')]),
       threadId: id,
       refs: Type.Optional(Type.Array(Type.String())),
       week: Type.Optional(Type.String()),
+      actionId: Type.Optional(Type.String({ minLength: 1, maxLength: 120 })),
+      values: Type.Optional(AskValuesSchema),
       thread: ThreadSchema,
     }),
   ),
@@ -2574,13 +3061,26 @@ export interface ManifestReference {
 const siteLabel = Type.String({ minLength: 1, maxLength: 60, pattern: '^[^\\r\\n]+$' });
 const siteHref = Type.String({ minLength: 1, maxLength: 500, pattern: '^(/(?!/)[^\\s\\\\]*|https?://[^\\s\\\\]+)$' });
 const siteId = Type.String({ minLength: 1, maxLength: 60, pattern: '^[a-z0-9][a-z0-9-]*$' });
-export const SiteMenuLinkSchema = object({ id: siteId, label: siteLabel, href: siteHref });
+/**
+ * What a place or a page is to Clew beyond the band (D112, amended 2026-11-11): `toolbox` is the intranet's page of
+ * tools, which Hem links to under Verktygslådan as "Fler verktyg på intranätet". The installation marks it in its
+ * content system; without a marked page Hem draws no such link.
+ */
+export const SITE_PURPOSES = ['toolbox'] as const;
+const sitePurpose = Type.Optional(
+  literals(SITE_PURPOSES, {
+    description:
+      '`toolbox`: the page that lists the intranet\'s tools. Hem links to it under Verktygslådan as "Fler verktyg på intranätet", in a new tab. At most one is used: the first in the band\'s order.',
+  }),
+);
+export const SiteMenuLinkSchema = object({ id: siteId, label: siteLabel, href: siteHref, purpose: sitePurpose });
 export type SiteMenuLink = Static<typeof SiteMenuLinkSchema>;
 export const SiteMenuPlaceSchema = object({
   id: siteId,
   label: siteLabel,
   href: siteHref,
   children: Type.Optional(Type.Array(SiteMenuLinkSchema, { maxItems: 20 })),
+  purpose: sitePurpose,
 });
 export type SiteMenuPlace = Static<typeof SiteMenuPlaceSchema>;
 export const SiteHeaderOutputSchema = object(

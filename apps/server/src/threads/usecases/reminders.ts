@@ -29,8 +29,8 @@ export function reminderUsecases(deps: ReminderDeps) {
     const fireAt = new Date(now.getTime() + seconds * 1000);
     const timer = await store.transaction(async tx => {
       const thread = await tx.lockThread(persona.id, threadId);
-      if (!thread) throw new InputError('Kortet finns inte.');
-      if (thread.state !== 'open') throw new InputError('Kortet är redan hanterat.');
+      if (!thread) throw new InputError('Ärendet finns inte.');
+      if (thread.state !== 'open') throw new InputError('Ärendet är redan hanterat.');
       const timer = await tx.scheduleTimer({
         id: `reminder:${threadId}`,
         personId: persona.id,
@@ -80,7 +80,7 @@ export function reminderUsecases(deps: ReminderDeps) {
     const at = deps.clock().toISOString();
     await store.transaction(async tx => {
       const thread = await tx.lockThread(persona.id, threadId);
-      if (!thread) throw new InputError('Kortet finns inte.');
+      if (!thread) throw new InputError('Ärendet finns inte.');
       const id = `reminder:${threadId}`;
       const existing = await tx.readTimer(id);
       if (generation === undefined && existing) return;
@@ -164,7 +164,7 @@ export function reminderUsecases(deps: ReminderDeps) {
       });
       await tx.addMessage(row.id, {
         role: 'assistant',
-        body: `Påminnelse: du bad ${asked} om att få det här kortet igen.`,
+        body: `Påminnelse: du bad ${asked} om att få det här ärendet igen.`,
         at,
       });
       await tx.admitDelivery({

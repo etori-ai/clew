@@ -15,8 +15,8 @@
     "./styles.css": "./src/styles.css"
   },
   "dependencies": {
-    "@astryxdesign/core": "0.7.12",
-    "@astryxdesign/theme-neutral": "0.7.12",
+    "@astryxdesign/core": "0.7.13",
+    "@astryxdesign/theme-neutral": "0.7.13",
     "@clew/calendar": "workspace:*",
     "@clew/contracts": "workspace:*",
     "@fontsource-variable/raleway": "5.3.0",
@@ -27,7 +27,7 @@
     "pdfjs-dist": "6.5.438",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "read-excel-file": "9.3.10",
-    "temporal-polyfill": "1.0.7"
+    "read-excel-file": "9.3.14",
+    "temporal-polyfill": "1.0.8"
   }
 }

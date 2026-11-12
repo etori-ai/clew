@@ -1,8 +1,9 @@
 # Review: the startsidan prototype's Version 1.0 against Clew · 2026-11-11
 
 Status: a comparison with an outcome. The choice it led to is
-[D115](../decisions/D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md)
-(provisional); nothing is built.
+[D115](../decisions/D115-clews-look-is-the-startsidan-prototypes-drawn-through-the-astryx-theme.md)
+(provisional). The look is built through the theme; the layout half was built on a branch and withdrawn when it met
+D112 (see Outcome).
 
 ## What was asked
 
@@ -103,8 +104,12 @@ no image, lead, sender or link. The focus news and the news card wait for a deci
 
 ## Outcome
 
-[D115](../decisions/D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md): the
-prototype's Version 1.0 is the reference, built with Astryx, in five steps (the theme, the shell without a rail, the
-start page, the conversation, the other pages), each tried on the development stack before it is committed. A first
-sketch of a calmer Hem that kept Clew's own layout was made the same day and is set aside by that decision; it is
-not listed among the design canvases.
+[D115](../decisions/D115-clews-look-is-the-startsidan-prototypes-drawn-through-the-astryx-theme.md). The prototype's
+Version 1.0 was first taken as the reference for both look and layout and built in five steps on the branch
+`prototype-look` (PR #40): the theme, a shell without a rail, the start page as a board, the conversation in place
+and in Min AI, and one page pattern. Meanwhile `main` took
+[D112](../decisions/D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md), which
+rebuilds the same surfaces on Astryx's templates. On 2026-11-12, merging the two, D112's layout was kept and the
+prototype's look carried over onto it through the theme: the type, the form, the example colours, the theme's
+extensions to Astryx's components and the key figure's drawing. A first sketch of a calmer Hem, made the same day,
+was set aside and is not listed among the design canvases.

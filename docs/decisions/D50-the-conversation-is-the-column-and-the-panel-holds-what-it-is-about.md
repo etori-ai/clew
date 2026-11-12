@@ -1,6 +1,6 @@
 # D50 · The conversation is the column, and the panel holds what it is about
 
-**Status:** accepted, built 2026-11-05, amended the same day (a brief row opens its card beside the landing); the panel's tabs for what a conversation has opened, the box on the calendar page, a conversation's origin shown on a card and on a tool's page, a resizable panel, and a manual screen-reader pass are not built; item 2's page is `/` and the day stands beside it since [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md); the rail, the conversation as the column, the conversation never in a panel and the box on every page to be replaced by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built) · **Date:** 2026-11-05 · **Area:** ui
+**Status:** accepted, built 2026-11-05, amended the same day (a brief row opens its card beside the landing); the panel's tabs for what a conversation has opened, the box on the calendar page, a conversation's origin shown on a card and on a tool's page, a resizable panel, and a manual screen-reader pass are not built; item 2's page is `/` and the day stands beside it since [D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md) · **Date:** 2026-11-05 · **Area:** ui
 
 **Decision.** Every surface has one job. The rail holds places and earlier conversations. The column shows where the
 person is: a page, or a conversation. The panel holds the one thing they keep beside the column: a view, a source or a
@@ -87,3 +87,26 @@ The words, the one filled button, the row's single next step and the type scale 
 a review of the screens as they were before this structure, and a card's one time action is
 [D49 · A card has one time action](D49-a-card-has-one-time-action-and-always-says-when-it-is-back.md); all three stand, and where that record names the overview, the
 piles' rows in the menu or the box at the overview's foot, this one says where those are now.
+
+**Amended 2026-11-11 (D111): item 7 is withdrawn.** A view in the panel no longer offers "Öppna som sida" for a view
+that is also a tool ([D111](D111-where-something-opens-is-decided-by-what-it-is.md) rule 7, the product owner's answer 5:
+no control chooses a surface). The tool stays in the rail where an administrator put it, and "Stäng samtalet" still
+leads back to a tool's page when the question was asked there. The other part of this record that D111 replaces, the
+box asking about the open card by opening it, is changed separately.
+
+**Amended 2026-11-11 (D111 rule 6): opening is not asking.** A card opened beside Hem is no longer put in the question
+box ([D111](D111-where-something-opens-is-decided-by-what-it-is.md) rule 6, the product owner's answer 3). Hem's box
+says nothing of the open card: no "Om kortet" scope line, no "Fråga om kortet …" placeholder, no token for it and no
+"Ny fråga i stället" for it; the same on every width. A card goes into the box only with "Lägg till i samtalet", as a
+chip like any other, and its verbs are offered under the box when it is the one chip and nothing is typed. That control
+is drawn only where the page has a box, Hem, a conversation and a tool's page (answer 4): not on Personal, a person's or
+a unit's page, Kalender or Administration, nor on a card or view in the drawer over them, and it no longer leads to
+Hem. Asking still carries what the person was looking at: a question sent on Hem with a card or a view open beside the
+column opens the conversation with it beside the transcript, and "Stäng samtalet" returns to Hem as it stood, the card
+or view still open; the card is the question's subject only when the person added it. On a tool's page item 5 is
+unchanged: the placeholder names the tool ("Fråga om Telefonbok …") and its view goes with the question as a chip.
+
+**Amended 2026-11-11 (D111 amended): a card's read unfolds in the card.** Item 4's `open-card` and `open-action` no
+longer put a card's read in the panel over the card: they name the read unfolded inside the card, wherever it is drawn.
+A read that answers with a table still opens in the card's place. Item 3's widths give way to one: the panel stands
+beside every page from 1336 px.

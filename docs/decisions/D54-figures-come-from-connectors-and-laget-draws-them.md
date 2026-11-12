@@ -1,6 +1,6 @@
 # D54 · Figures come from connectors, and Läget draws them
 
-**Status:** accepted 2026-11-06 with the canvas D71 builds, built 2026-11-06 on `main`; amended below where the build differs; the tile's drawing and its place on the page to be changed by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built); where figures come from stands · **Date:** 2026-11-06 · **Area:** integrations, ui
+**Status:** accepted 2026-11-06 with the canvas D71 builds, built 2026-11-06 on `main`; amended below where the build differs · **Date:** 2026-11-06 · **Area:** integrations, ui
 
 **Decision.** Läget on Hem shows the figures the person's connectors answer, not a list fixed in Clew's code. The
 figure is the connector's, by area and by role; Clew decides where and how it is drawn, and an administrator decides

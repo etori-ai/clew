@@ -20,7 +20,8 @@ const joined = (words: string[]) =>
 export function useSourceBanner() {
   const client = useQueryClient();
   const sources = useQuery(threadsQuery).data?.sources;
-  const areas = useQuery(areasQuery).data?.areas;
+  const areasAnswer = useQuery(areasQuery);
+  const areas = areasAnswer.data?.areas;
   const marks = useMarks();
   const announce = useAnnounce();
   const down = (sources ?? [])
@@ -31,19 +32,23 @@ export function useSourceBanner() {
       return {
         connector: s.connector,
         title: `${source} svarar inte${s.lastSuccess ? ` sedan ${clock.format(new Date(s.lastSuccess))}` : ''}`,
-        line: `${under.length ? `Korten under ${joined(under)}` : `Korten från ${source}`} kan vara gamla. Det du skickar köas och läses tillbaka när systemet svarar.`,
+        line: `${under.length ? `Ärendena under ${joined(under)}` : `Ärendena från ${source}`} kan vara gamla. Det du skickar köas och läses tillbaka när systemet svarar.`,
       };
     });
   const said = useRef(new Set<string>());
   const silent = down.map(d => d.connector).join(' ');
+  // The words name the system and its areas, which `/api/areas` gives. The banner waits for that answer (or its
+  // failure) before it is drawn or spoken: before it, the page would show the connector's id ("finance") in the name's
+  // place, and the words are spoken once, so a person would hear the id and never the name.
+  const named = !areasAnswer.isPending;
   useEffect(() => {
-    if (sources === undefined) return;
+    if (sources === undefined || !named) return;
     const fresh = down.filter(d => !said.current.has(d.connector));
     for (const d of fresh) said.current.add(d.connector);
     for (const c of [...said.current]) if (!down.some(d => d.connector === c)) said.current.delete(c);
     if (fresh.length) announce(fresh.map(d => `${d.title}. ${d.line}`).join(' '));
-  }, [silent]);
-  if (!down.length) return null;
+  }, [silent, named]);
+  if (!down.length || !named) return null;
   return (
     <VStack gap={0}>
       {down.map(d => (

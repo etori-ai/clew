@@ -14,8 +14,9 @@ export const LINGER_MS = 2_500;
 /**
  * The decisions sent from a surface Hem may not have been drawn under (D73: Skicka in the review). Hem's first reading
  * is a baseline, so a receipt that came while Hem was not on screen would otherwise be taken for an old one and draw
- * neither the row's moment nor the toast. Since D73's amendment the review is a drawer over Hem, whose own reading sees
- * the receipt arrive, so this is belt and braces there. The set lives in memory only, so a reload forgets it.
+ * neither the row's moment nor the toast. The review lies over the page it was opened on (D111 rule 5): over Hem, Hem's
+ * own reading sees the receipt arrive and this is belt and braces; over any other page it is what lets Hem show the
+ * receipt's moment when the person comes back. The set lives in memory only, so a reload forgets it.
  */
 const expected = new Set<string>();
 /** The decision on this card was sent from another page: Hem's next reading counts its receipt as arriving. */

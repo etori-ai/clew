@@ -172,6 +172,12 @@ cards, complete), each approved one card and rejected another through the card d
 write with the approving session's token, every receipt was the read-back ("Godkänd i Nextcloud av Hillevi Berg …"),
 Nextcloud showed the four decisions, and the next visits resolved the decided work. The seed was reset afterwards.
 
+On 2026-11-11 the recorded exchanges 01 to 26 in [samples](samples/README.md) were sent again to Nextcloud 35.0.2
+(Approval 3.3.2, user_oidc 8.13.0, PostgreSQL 18.6), with the owner's change to the second file made between samples 16
+and 20 as in the recording: every status and body answered as recorded, apart from ids, etags, timestamps and the
+order of files requested within the same second. The seed's accounts signed the requests (basic authentication), so
+this run says nothing about an exchanged token; samples 27 to 31 and the loop through Keycloak were not run again.
+
 ## What the protocol could not say
 
 - **The version a person saw.** `ThreadItem.revision` holds it, but Clew passes an item's revision to an execute only
@@ -194,12 +200,13 @@ on Nextcloud's error text.
 
 ## Unverified
 
-- The loop through the running BFF and the web page: the scenario test and the run above use the use cases directly,
-  with the card projection of `composition/execution-projection.ts` copied onto the memory thread store (the memory
-  ledger has none), and the shared database has not been migrated for D103's session bindings.
+- The loop has run through the running BFF and the web page on the development stack for two people (2026-11-11,
+  [status](../../docs/reference/status/connectors.md#nextcloud-approval)), but no automated test does: the scenario test
+  and the run above use the use cases directly, with the card projection of `composition/execution-projection.ts`
+  copied onto the memory thread store (the memory ledger has none).
 - After a failed decision the card stays open with its receipt and cannot be decided again; a scan neither updates it
   with a changed file's new version nor closes it when the file no longer waits (`approval-loop.test.ts` pins this).
-  Avfärda is the way forward today: a changed file then comes back as a new card.
+  On the page such a card cannot be dismissed either (seen 2026-11-11): the person decides in Nextcloud.
 - The view and the card have not been through a screen reader; the connector adds no route or component (Clew draws the
   declared views), so it has no test in `tests/a11y`.
 - Approval with a group or circle as approver, files in group folders or external storage (the WebDAV search covers the

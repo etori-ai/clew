@@ -1,4 +1,3 @@
-import type { Page } from '@playwright/test';
 import {
   announcements,
   desktop,
@@ -8,7 +7,6 @@ import {
   hiddenFocusStops,
   narrow,
   open,
-  openNav,
   phone,
   reflowProblems,
   test,
@@ -16,36 +14,11 @@ import {
 import { connectorDetail } from './data';
 
 /**
- * Administration (D23): the way in from the header, the sections under the trail, the connectors list, the add dialog,
- * one connector's tabs and the remove confirmation, as an administrator sees them. Keyboard, structure, announcements,
- * axe and reflow, at desktop, phone and 320 px.
+ * Administration (D23): the connectors list, the add dialog, one connector's tabs and the remove confirmation, as an
+ * administrator sees them. Keyboard, structure, announcements, axe and reflow, at desktop, phone and 320 px.
  */
-/** Clew's own pages in the row under the header's band (D115 item 3), where Administration is a link for an administrator. */
-const pages = (page: Page) => page.getByRole('banner').getByRole('navigation', { name: 'Start', exact: true });
-/**
- * The administration's sections under the trail: Astryx's TabList in its navigation pattern, a navigation landmark whose
- * tabs are links. Found by what it holds, not by the name Astryx gives it.
- */
-const sections = (page: Page) =>
-  page
-    .getByRole('main')
-    .getByRole('navigation')
-    .filter({ has: page.getByRole('link', { name: 'Kompetens', exact: true }) });
-const SECTIONS = ['Anslutna system', 'Modeller', 'Användare', 'Organisation', 'Utseende', 'Kompetens'];
-/**
- * The six sections by their accessible names, in order, with `current` as the only one marked. Asked by name and not by
- * text: Astryx's Tab holds its label a second time, hidden from assistive technology, to keep its width when selected.
- */
-async function expectSections(page: Page, current: string) {
-  const links = sections(page).getByRole('link');
-  await expect(links).toHaveCount(SECTIONS.length);
-  for (const [i, name] of SECTIONS.entries()) await expect(links.nth(i)).toHaveAccessibleName(name);
-  // One element carries the mark, and it is the current section's link.
-  await expect(sections(page).locator('[aria-current]')).toHaveAccessibleName(current);
-  await expect(sections(page).getByRole('link', { name: current, exact: true })).toHaveAttribute('aria-current');
-}
 /** A section of a connector: a tab on desktop, an item in the "Visa" menu on a phone, the same panel either way. */
-async function pickSection(page: Page, name: string) {
+async function pickSection(page: import('@playwright/test').Page, name: string) {
   const tab = page.getByRole('tab', { name });
   if (await tab.count()) {
     await tab.click();
@@ -128,99 +101,46 @@ test.describe('administration', () => {
       await expect(page.getByRole('link', { name: 'Till startsidan' })).toBeVisible();
       await expectNoAxeViolations(page);
     });
-    test('the entry point is a link among the pages in the header, and shows only to an administrator', async ({
-      page,
-      api,
-    }) => {
+    test('the entry point shows only to an administrator', async ({ page, api }) => {
       await open(page, '/');
-      await expect(pages(page).getByRole('link', { name: 'Kalender', exact: true })).toBeVisible();
-      await expect(page.getByRole('link', { name: 'Administration' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Administration' })).toHaveCount(0);
       api.admin = true;
       await open(page, '/');
-      // The last of Clew's own pages, after the tools.
-      await expect(pages(page).getByRole('link').last()).toHaveText('Administration');
-      await expect(pages(page).getByRole('link', { name: 'Administration', exact: true })).toHaveAttribute(
-        'href',
-        '/admin/connectors',
-      );
+      await expect(page.getByRole('button', { name: 'Administration' })).toBeVisible();
     });
-    test('Administration opens from the header by keyboard without a page load, and its sections are links under the trail that the arrows move between', async ({
+    test('Administration opens and closes like Områden, and its rows change the page and keep the rail', async ({
       page,
       api,
     }) => {
       api.admin = true;
       await open(page, '/');
-      // A mark a page load would lose: the header's own pages and the sections go through the router.
-      await page.evaluate(() => void ((window as unknown as { sameDocument: true }).sameDocument = true));
-      const administration = pages(page).getByRole('link', { name: 'Administration', exact: true });
-      await administration.focus();
-      await page.keyboard.press('Enter');
+      const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
+      const administration = rail.getByRole('button', { name: 'Administration', exact: true });
+      await expect(administration).toHaveAttribute('aria-expanded', 'false');
+      await expect(rail.getByRole('link', { name: 'Modeller', exact: true })).toHaveCount(0);
+      await administration.click();
+      await expect(administration).toHaveAttribute('aria-expanded', 'true');
+      await rail.getByRole('link', { name: 'Anslutna system', exact: true }).click();
       await expect(page).toHaveURL('/admin/connectors');
       await expect(page.getByRole('heading', { level: 1, name: 'Anslutna system' })).toBeVisible();
-      // The header keeps its pages on an administration page, with Administration as the current one.
-      await expect(pages(page).getByRole('link', { name: 'Kalender', exact: true })).toBeVisible();
-      await expect(pages(page).locator('[aria-current]')).toHaveText(['Administration']);
-      await expect(pages(page).getByRole('link', { name: 'Administration', exact: true })).toHaveAttribute(
+      await expect(rail.getByRole('link', { name: 'Ny fråga', exact: true })).toBeVisible();
+      await expect(rail.getByRole('link', { name: 'Kalender', exact: true })).toBeVisible();
+      await expect(rail.getByRole('link', { name: 'Anslutna system', exact: true })).toHaveAttribute(
         'aria-current',
         'page',
       );
-      // The sections: one navigation landmark of six links, the current one marked, nothing that opens or closes.
-      const tabs = sections(page);
-      await expect(tabs).toHaveCount(1);
-      await expect(tabs).toHaveAccessibleName(/\S/);
-      await expectSections(page, 'Anslutna system');
-      await expect(tabs.getByRole('link', { name: 'Modeller', exact: true })).toHaveAttribute('href', '/admin/models');
-      await expect(page.getByRole('button', { name: 'Administration' })).toHaveCount(0);
-      // The trail stands above them and says the same place.
-      const trail = page.getByRole('navigation', { name: 'Du är här' });
-      await expect(trail.getByRole('link', { name: 'Administration' })).toHaveAttribute('href', '/admin/connectors');
-      expect(
-        await trail.evaluate(
-          (el, tabs) => !!tabs && !!(el.compareDocumentPosition(tabs) & Node.DOCUMENT_POSITION_FOLLOWING),
-          await tabs.elementHandle(),
-        ),
-      ).toBe(true);
-      await expectNoAxeViolations(page);
-      // One tab stop, on the current section; the arrows move along the row, and Enter follows the link.
-      const current = tabs.getByRole('link', { name: 'Anslutna system', exact: true });
-      await current.focus();
-      await page.keyboard.press('ArrowRight');
-      await expect(tabs.getByRole('link', { name: 'Modeller', exact: true })).toBeFocused();
-      await page.keyboard.press('ArrowRight');
-      await expect(tabs.getByRole('link', { name: 'Användare', exact: true })).toBeFocused();
-      await page.keyboard.press('ArrowLeft');
-      await expect(tabs.getByRole('link', { name: 'Modeller', exact: true })).toBeFocused();
-      await page.keyboard.press('Enter');
+      await rail.getByRole('link', { name: 'Modeller', exact: true }).click();
       await expect(page).toHaveURL('/admin/models');
       await expect(page.getByRole('heading', { level: 1, name: 'Modeller' })).toBeVisible();
-      await expect(page).toHaveTitle('Modeller · Startsidan');
-      await expectSections(page, 'Modeller');
-      await expect(pages(page).locator('[aria-current]')).toHaveText(['Administration']);
-      expect(await page.evaluate(() => (window as unknown as { sameDocument?: true }).sameDocument === true)).toBe(
-        true,
-      );
-      // Tab leaves the row in one step: the sections are one stop, and the next is in the page under them.
-      await sections(page).getByRole('link', { name: 'Modeller', exact: true }).focus();
-      await page.keyboard.press('Tab');
-      expect(
-        await sections(page).evaluate(el => el.contains(document.activeElement)),
-        'Tab moved out of the sections',
-      ).toBe(false);
+      await expect(rail.getByRole('link', { name: 'Ny fråga', exact: true })).toBeVisible();
+      await expect(rail.getByRole('link', { name: 'Modeller', exact: true })).toHaveAttribute('aria-current', 'page');
       await expectNoAxeViolations(page);
-    });
-    test('every section is reached from the sections under the trail and marks itself as the current one', async ({
-      page,
-      api,
-    }) => {
-      api.admin = true;
-      await open(page, '/admin/connectors');
-      for (const name of [...SECTIONS.slice(1), SECTIONS[0]!]) {
-        await sections(page).getByRole('link', { name, exact: true }).click();
-        await expectSections(page, name);
-        await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-        await expect(page.getByRole('navigation', { name: 'Du är här' })).toContainText(name);
-      }
+      await administration.focus();
+      await page.keyboard.press('Enter');
+      await expect(administration).toHaveAttribute('aria-expanded', 'false');
+      await expect(rail.getByRole('link', { name: 'Modeller', exact: true })).toHaveCount(0);
+      await page.keyboard.press('Enter');
+      await expect(administration).toHaveAttribute('aria-expanded', 'true');
     });
     test('the list is in registration order with each system’s colour named; the area chip names the area (D71)', async ({
       page,
@@ -524,7 +444,7 @@ test.describe('administration', () => {
       await open(page, '/admin/connectors/hello');
       await page.getByRole('button', { name: 'Ta bort' }).click();
       const alert = page.getByRole('alertdialog');
-      await expect(alert.getByText(/öppna kort stängs/)).toBeVisible();
+      await expect(alert.getByText(/öppna ärenden stängs/)).toBeVisible();
       await alert.getByRole('button', { name: 'Avbryt' }).click();
       await expect(alert).toHaveCount(0);
       await page.getByRole('button', { name: 'Ta bort' }).click();
@@ -560,43 +480,6 @@ test.describe('administration', () => {
       await page.getByRole('button', { name: 'Spara' }).click();
       await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Sparat'));
       await expectNoAxeViolations(page);
-    });
-  });
-
-  test.describe('phone', () => {
-    test.use({ viewport: phone });
-    test("Administration is under Start in the header's Meny, and the sections are a menu under the trail that names the current one", async ({
-      page,
-      api,
-    }) => {
-      api.admin = true;
-      await open(page, '/');
-      const drawer = await openNav(page);
-      const administration = drawer
-        .getByRole('group', { name: 'Start', exact: true })
-        .getByRole('link', { name: 'Administration', exact: true });
-      await administration.focus();
-      await page.keyboard.press('Enter');
-      await expect(page).toHaveURL('/admin/connectors');
-      await expect(page.getByRole('heading', { level: 1, name: 'Anslutna system' })).toBeVisible();
-      await expect(drawer).toBeHidden();
-      // Six tabs do not fit a phone without scrolling sideways (1.4.10): the sections are a menu whose button says
-      // where the person is, as a connector's own page does with its tabs.
-      await expect(sections(page)).toHaveCount(0);
-      const menu = page.getByRole('main').getByRole('button', { name: 'Sektion: Anslutna system', exact: true });
-      await menu.focus();
-      await page.keyboard.press('Enter');
-      const items = page.getByRole('menuitem');
-      await expect(items).toHaveCount(SECTIONS.length);
-      for (const [i, name] of SECTIONS.entries()) await expect(items.nth(i)).toHaveAccessibleName(name);
-      await expectNoAxeViolations(page);
-      await page.getByRole('menuitem', { name: 'Kompetens', exact: true }).click();
-      await expect(page).toHaveURL('/admin/competence');
-      await expect(page.getByRole('heading', { level: 1, name: 'Kompetens' })).toBeVisible();
-      await expect(
-        page.getByRole('main').getByRole('button', { name: 'Sektion: Kompetens', exact: true }),
-      ).toBeVisible();
-      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(phone.width);
     });
   });
 

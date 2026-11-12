@@ -37,6 +37,7 @@ import {
   useMediaQuery,
   useToast,
 } from '@clew/ui';
+import { PersonNameLink } from '../../components/person-name-link';
 import { api } from '../../api';
 import { adminQueries } from '../../queries';
 import { keys } from '../../query-keys';
@@ -66,6 +67,9 @@ import {
  * are different questions. The unit, role, status, capability, page and page size are in the address
  * (`/admin/users?unit=…&role=manager&page=2`), so a narrowed list can be linked and Back undoes a step; the typed
  * search is not, because it is a person's name.
+ *
+ * A person's title (D110) stands under their name when the catalogue sent one, in the source's own words, and the
+ * search box finds it. It is what the person is called at work; the role beside the unit is what Clew acts on.
  */
 interface Row extends Record<string, unknown> {
   id: string;
@@ -291,7 +295,8 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
       width: proportional(2, { minWidth: 220 }),
       renderCell: (r: Row) => (
         <VStack gap={0} hAlign="start">
-          <Text weight="semibold">{r.u.name}</Text>
+          <PersonNameLink person={r.u} />
+          {r.u.title && <Text type="supporting">{r.u.title}</Text>}
           <Text type="code" color="secondary">
             {r.u.userName ?? r.u.id}
           </Text>
@@ -491,7 +496,7 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
                 type="search"
                 size="sm"
                 width={mobile ? '100%' : 280}
-                placeholder="Sök namn, användarnamn eller e-post"
+                placeholder="Namn, titel, användarnamn, e-post"
                 startIcon="search"
                 hasClear
                 value={typed}
@@ -582,9 +587,10 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
               {users.map(u => (
                 <ListItem
                   key={u.id}
-                  label={<Text weight="semibold">{u.name}</Text>}
+                  label={<PersonNameLink person={u} />}
                   description={
                     <VStack gap={0} hAlign="start">
+                      {u.title && <Text type="supporting">{u.title}</Text>}
                       <Text type="code" color="secondary">
                         {u.userName ?? u.id}
                       </Text>

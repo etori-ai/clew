@@ -2,7 +2,6 @@ import {
   answer,
   composer,
   desktop,
-  dockOf,
   expect,
   expectNoAxeViolations,
   heading,
@@ -19,10 +18,8 @@ test.use({ viewport: desktop });
 test.describe('2.4.2 page titled', () => {
   const titles = [
     ['/', 'Hem · Startsidan'],
-    // The tabs and the area filter have a page of their own with its own title (D115 item 4).
-    ['/activities', 'Mina aktiviteter · Startsidan'],
-    ['/activities?area=personal', 'Mina aktiviteter · Startsidan'],
-    ['/activities?tab=done', 'Mina aktiviteter · Startsidan'],
+    ['/todo', 'Att göra · Startsidan'],
+    ['/todo?tab=done', 'Att göra · Startsidan'],
     ['/calendar', 'Vecka 45 · Kalender · Startsidan'],
     ['/?open=hr.whoIsOn&open-title=Bemanning', 'Bemanning · Startsidan'],
   ] as const;
@@ -39,153 +36,97 @@ test.describe('2.4.2 page titled', () => {
 });
 
 test.describe('1.3.1 and 2.4.6 structure', () => {
-  // The shared header (D88) is the page's navigation: three named landmarks in the banner. The heading row with the home
-  // link and the person, Huvudmeny with the places, and under the band a third named after the selected place, Start,
-  // with Clew's own pages (D115 item 3). There is no rail, so the page has no navigation landmark of its own, except
-  // the trail "Du är här" on a page that has one: Mina aktiviteter (D115 items 4 and 6).
-  for (const path of ['/', '/activities', '/activities?area=personal', '/activities?tab=done', '/calendar'])
-    test(`${path} has one h1, one main and the header's three navigation landmarks`, async ({ page, api: _ }) => {
+  // Without a header connector there is no shared header (D112 item 1): the rail is the page's one navigation of places,
+  // with the installation's name as its heading; Att göra adds its piles as a navigation of their own. The header's
+  // landmarks with a connector are header.spec.ts's.
+  for (const [path, navigations] of [
+    ['/', 1],
+    ['/todo', 2],
+    ['/todo?tab=done', 2],
+    ['/calendar', 1],
+  ] as const)
+    test(`${path} has one h1, one main, no header without a header connector, and one rail`, async ({
+      page,
+      api: _,
+    }) => {
       await open(page, path);
       await expect(page.locator('h1:not([aria-level]), [aria-level="1"]')).toHaveCount(1);
       await expect(page.getByRole('main')).toHaveCount(1);
-      const trail = page.getByRole('main').getByRole('navigation', { name: 'Du är här' });
-      await expect(trail).toHaveCount(path.startsWith('/activities') ? 1 : 0);
-      await expect(page.getByRole('navigation')).toHaveCount(path.startsWith('/activities') ? 4 : 3);
-      const banner = page.getByRole('banner');
-      await expect(banner).toHaveCount(1);
-      await expect(
-        banner.getByRole('navigation', { name: 'Startsidan' }).getByRole('link', { name: /Startsidan/ }),
-      ).toBeVisible();
-      await expect(banner.getByRole('navigation', { name: 'Huvudmeny' })).toBeVisible();
-      await expect(banner.getByRole('navigation', { name: 'Start', exact: true })).toBeVisible();
+      await expect(page.getByRole('banner')).toHaveCount(0);
+      await expect(page.getByRole('navigation')).toHaveCount(navigations);
+      const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
+      await expect(rail).toHaveCount(1);
+      await expect(rail.getByRole('link', { name: 'Startsidan' })).toHaveAttribute('href', '/');
     });
 
-  test("Clew's pages are one navigation landmark named after the place (D115 item 3), in the header's drawer on a phone", async ({
+  test('the rail is one navigation landmark of places and conversations (D50), in the drawer on a phone', async ({
     page,
     api: _,
   }) => {
     await open(page, '/');
-    const banner = page.getByRole('banner');
-    const pages = banner.getByRole('navigation', { name: 'Start', exact: true });
-    await expect(pages).toHaveCount(1);
-    // The suite's person is a manager, so Personal (D94) is among the pages; with no tool chosen these are all of them.
-    await expect(pages.getByRole('link')).toHaveText(['Mina aktiviteter', 'Min AI', 'Kalender', 'Personal']);
-    await expect(pages.getByRole('link', { name: 'Mina aktiviteter' })).toHaveAttribute('href', '/activities');
-    // Min AI is the conversations' own place (D115 item 5).
-    await expect(pages.getByRole('link', { name: 'Min AI' })).toHaveAttribute('href', '/conversations');
-    await expect(pages.getByRole('link', { name: 'Kalender' })).toHaveAttribute('href', '/calendar');
-    // Hem is no row among them: the way there is the place Start and the site's heading, and none of the pages is
-    // current on Hem.
-    const start = banner
-      .getByRole('navigation', { name: 'Huvudmeny' })
-      .getByRole('link', { name: 'Start', exact: true });
-    await expect(start).toHaveAttribute('href', '/');
-    await expect(start).toHaveAttribute('aria-current', 'page');
-    await expect(pages.locator('[aria-current]')).toHaveCount(0);
-    // A card's state and the areas are the tabs and the filter of Mina aktiviteter, and the conversations are Min AI's:
-    // none of them, and nothing of the rail that held them, is a row in the header.
-    for (const gone of [
-      'Hem',
-      'Samtal',
-      'Ny fråga',
-      'Alla samtal',
-      'Behöver dig',
-      'Jag föreslår',
-      'Till kännedom',
-      'Inte nu',
-    ])
-      await expect(banner.getByRole('link', { name: gone, exact: true })).toHaveCount(0);
-    await expect(banner.getByRole('link', { name: 'Vem är på plats i dag?' })).toHaveCount(0);
-    await expect(banner.getByRole('button', { name: 'Områden' })).toHaveCount(0);
-    // A page is reached from the keyboard without a page load and is then the one marked as current.
-    await pages.getByRole('link', { name: 'Kalender' }).focus();
-    await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(/\/calendar$/);
-    await expect(pages.locator('a[aria-current="page"]')).toHaveText('Kalender');
-    // On a phone the row is gone and the header's own Meny holds the places with Clew's pages under Start.
+    const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
+    await expect(rail).toHaveCount(1);
+    await expect(rail.getByRole('link', { name: 'Ny fråga' })).toBeVisible();
+    // The places (D112 item 1): Hem says the worst tone among the person's figures in one word (D54), Att göra how much
+    // needs the person, then Kalender; the piles and the areas are Att göra's tabs and filter, not rows here.
+    await expect(rail.getByRole('link', { name: /^Hem/ })).toHaveAttribute('href', '/');
+    await expect(rail.getByRole('link', { name: /^Hem/ })).toContainText('behöver dig');
+    await expect(rail.getByRole('link', { name: /^Att göra/ })).toHaveAttribute('href', '/todo');
+    await expect(rail.getByRole('link', { name: /^Att göra/ })).toContainText('6');
+    await expect(rail.getByRole('link', { name: 'Kalender' })).toHaveAttribute('href', '/calendar');
+    // Without a tool an administrator placed there is no Verktyg (D40).
+    await expect(rail.getByRole('group', { name: 'Verktyg' })).toHaveCount(0);
+    // Samtal is one disclosure, open, with the conversations; a conversation the data says nothing about has no dot.
+    const talks = rail.getByRole('button', { name: 'Samtal' });
+    await expect(talks).toHaveAttribute('aria-expanded', 'true');
+    const talk = rail.getByRole('link', { name: 'Vem är på plats i dag?' });
+    await expect(talk).toHaveAttribute('href', '/conversations/fraga');
+    await expect(rail.getByRole('listitem').filter({ has: talk }).getByRole('img')).toHaveCount(0);
+    for (const gone of ['Behöver dig', 'Jag föreslår', 'Till kännedom', 'Inte nu', 'Alla samtal'])
+      await expect(rail.getByRole('link', { name: gone, exact: true })).toHaveCount(0);
+    await expect(rail.getByRole('button', { name: 'Områden' })).toHaveCount(0);
+    await rail.getByRole('link', { name: /^Hem/ }).click();
+    await expect(rail.locator('a[aria-current="page"]')).toHaveText(/^Hem/);
     await page.setViewportSize(phone);
-    await expect(page.getByRole('navigation', { name: 'Start', exact: true })).toHaveCount(0);
-    const menu = banner.getByRole('button', { name: 'Meny', exact: true });
-    await expect(menu).toHaveAttribute('aria-expanded', 'false');
-    const drawer = await openNav(page);
-    await expect(drawer).toHaveCount(1);
-    await expect(drawer).toHaveAccessibleName('Startsidan');
-    await expect(
-      drawer.getByRole('group', { name: 'Huvudmeny' }).getByRole('link', { name: 'Start', exact: true }),
-    ).toHaveAttribute('href', '/');
-    const under = drawer.getByRole('group', { name: 'Start', exact: true });
-    await expect(under.getByRole('link')).toHaveText(['Mina aktiviteter', 'Min AI', 'Kalender', 'Personal']);
-    await expect(under.locator('a[aria-current="page"]')).toHaveText('Kalender');
-    await expectNoAxeViolations(page);
-    // Escape closes the drawer and gives the focus back to the button that opened it (2.4.3).
-    await page.keyboard.press('Escape');
-    await expect(drawer).toHaveCount(0);
-    await expect(menu).toBeFocused();
+    await expect(page.getByRole('navigation', { name: 'Sidonavigering' })).toHaveCount(0);
+    const nav = await openNav(page);
+    await expect(nav).toHaveCount(1);
+    await expect(nav.getByRole('link', { name: /^Hem/ })).toBeVisible();
   });
 
-  test('Mina aktiviteter in the header is the current page there, and Min AI leads to the conversations, where a conversation is a link to its own address', async ({
+  test('Hem is one heading over the box and its blocks; a row is one link to its work item; Klart in Att göra is its rows', async ({
     page,
     api: _,
   }) => {
     await open(page, '/');
-    const pages = page.getByRole('banner').getByRole('navigation', { name: 'Start', exact: true });
-    // The row begins with Mina aktiviteter (D115 item 4): reached from the keyboard without a page load, and then the
-    // one page marked as current.
-    await pages.getByRole('link', { name: 'Mina aktiviteter' }).focus();
-    await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(/\/activities$/);
-    await expect(heading(page, 1, 'Mina aktiviteter')).toBeVisible();
-    await expect(pages.locator('a[aria-current="page"]')).toHaveText('Mina aktiviteter');
-    // Klart still lists a conversation the person had, as a link to its own address.
-    await page.getByRole('tab', { name: /^Klart/ }).click();
-    await expect(page).toHaveURL(/\/activities\?tab=done$/);
-    await expect(
-      page.getByRole('region', { name: 'Redan hanterat' }).getByRole('link', { name: /Vem är på plats i dag\?/ }),
-    ).toHaveAttribute('href', '/conversations/fraga');
-    // Min AI is the conversations' own place (D115 item 5): its own title, and its list of conversations a navigation
-    // landmark in the page, each conversation a link to its address.
-    await pages.getByRole('link', { name: 'Min AI' }).focus();
-    await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(/\/conversations$/);
-    await expect(page).toHaveTitle('Min AI · Startsidan');
-    await expect(
-      page
-        .getByRole('main')
-        .getByRole('navigation', { name: 'Dina samtal' })
-        .getByRole('list', { name: 'Samtal' })
-        .getByRole('link', { name: /^Vem är på plats i dag\?/ }),
-    ).toHaveAttribute('href', '/conversations/fraga');
-  });
-
-  test('Hem is one greeting over what needs the person, a row is a link that says whether its card is open, and on Mina aktiviteter the log groups its days', async ({
-    page,
-    api: _,
-  }) => {
-    await open(page, '/');
-    await expect(heading(page, 1, 'God morgon, Testa!')).toBeVisible();
-    // The groups' headings went to Mina aktiviteter with the tabs (D115 item 4): Hem has one h2 over the rows.
-    await expect(heading(page, 2, 'Att agera på · 6')).toBeVisible();
-    await expect(heading(page, 2, 'Nu · 1')).toHaveCount(0);
-    // A row's title is the link to its card beside the column (artboard A); the open row is the current one.
-    const row = page
-      .getByRole('listitem')
-      .filter({ has: page.getByRole('link', { name: 'Omtankesamtal med Anna Lindqvist', exact: true }) });
-    await expect(row.getByRole('link', { name: 'Omtankesamtal med Anna Lindqvist', exact: true })).toHaveAttribute(
+    await expect(heading(page, 1, 'Vad vill du få gjort?')).toBeVisible();
+    await expect(heading(page, 2, 'Behöver dig')).toBeVisible();
+    // A row is one link to its work item in Att göra (D112 item 2); none is the current one on Hem.
+    const row = page.locator('#work-omtanke');
+    await expect(row.getByRole('link', { name: /^Omtankesamtal med Anna Lindqvist/ })).toHaveAttribute(
       'href',
-      '/?card=omtanke',
+      '/todo?item=omtanke',
     );
     await expect(row).not.toHaveAttribute('aria-current', 'true');
-    await open(page, '/activities');
-    await expect(heading(page, 1, 'Mina aktiviteter')).toBeVisible();
-    await expect(heading(page, 2, 'Nu · 1')).toBeVisible();
-    await open(page, '/activities?tab=done');
-    await expect(heading(page, 1, 'Mina aktiviteter')).toBeVisible();
-    await expect(heading(page, 2, 'Redan hanterat')).toBeVisible();
-    await page.getByRole('radio', { name: 'Veckan' }).click();
-    await expect(page.getByRole('list', { name: /november/ }).first()).toBeVisible();
+    // The whole row is the target of that one link, named by the title alone; the badge and the source stay in the row.
+    const rows = page.getByRole('list', { name: 'Behöver dig' }).getByRole('listitem');
+    for (let i = 0; i < (await rows.count()); i++) await expect(rows.nth(i).getByRole('link')).toHaveCount(1);
+    await expect(row.getByRole('link')).toHaveAccessibleName('Omtankesamtal med Anna Lindqvist');
+    await expect(row).toContainText('Personalsystemet');
+    const box = (await row.boundingBox())!;
+    expect(box.height).toBeGreaterThanOrEqual(44);
+    await row.getByText('Tre sjukperioder på sex månader').click();
+    await expect(page).toHaveURL(/\/todo\?item=omtanke$/);
+    await open(page, '/');
+    const edge = (await page.locator('#work-fakturor').boundingBox())!;
+    await page.mouse.click(edge.x + edge.width - 4, edge.y + edge.height / 2);
+    await expect(page).toHaveURL(/\/todo\?item=fakturor$/);
+    await open(page, '/todo?tab=done');
+    await expect(heading(page, 1, 'Att göra')).toBeVisible();
+    await expect(page.getByRole('list', { name: 'Klart' }).getByRole('listitem')).toHaveCount(2);
   });
 
-  for (const path of ['/', '/?card=fakturor', '/activities', '/activities?card=fakturor'])
+  for (const path of ['/', '/todo?item=fakturor'])
     test(`sections on ${path} have distinct names`, async ({ page, api: _ }) => {
       await open(page, path);
       const names = await page
@@ -194,39 +135,35 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
       expect(new Set(names).size).toBe(names.length);
     });
 
-  test('Hem is the greeting with the day over the box, what can be started under it, then the key figures, what needs the person, and beside it the day and what happened since yesterday', async ({
+  test('Hem is one heading over the box, and under the box Behöver dig and I dag side by side, then Läget and Sedan i går', async ({
     page,
     api: _,
   }) => {
     await open(page, '/');
-    // The greeting by the time of day and the first name is the page's one h1 (D115 item 4), with the day, the week and
-    // the unit under it; nothing sums the day up in a sentence.
+    // One heading (D112 item 2, board Main) with the box under it; nothing sums the day up in a sentence.
     const lead = page.getByRole('region', { name: 'Vad vill du göra' });
-    await expect(lead.getByRole('heading', { level: 1, name: 'God morgon, Testa!' })).toBeVisible();
-    await expect(lead.getByText('Onsdag 4 november · vecka 45 · Skönsmons skola', { exact: true })).toBeVisible();
+    await expect(lead.getByRole('heading', { level: 1, name: 'Vad vill du få gjort?' })).toBeVisible();
     await expect(page.getByText(/behöver dig i dag/)).toHaveCount(0);
-    const greeting = (await heading(page, 1, 'God morgon, Testa!').boundingBox())!,
+    const title = (await heading(page, 1, 'Vad vill du få gjort?').boundingBox())!,
       box = (await composer(page).boundingBox())!;
-    expect(box.y).toBeGreaterThan(greeting.y);
-    // While the box is empty, what can be started stands under it as a named group of buttons (D115 item 4).
-    const offers = lead.getByRole('group', { name: 'Förslag' });
-    await expect(offers.getByRole('button')).toHaveText(['Attestera fakturor', 'Rapportera avvikelse']);
-    expect((await offers.boundingBox())!.y).toBeGreaterThan(box.y + box.height);
-    // The tabs are Mina aktiviteter's: under the box come the key figures, then what needs the person.
-    await expect(page.getByRole('tablist')).toHaveCount(0);
-    const lage = heading(page, 2, 'Läget på Skönsmons skola'),
-      work = heading(page, 2, 'Att agera på · 6');
+    expect(box.y).toBeGreaterThan(title.y);
+    // Under the box the two blocks side by side: the three most urgent work items and the day.
+    const needs = page.getByRole('region', { name: 'Behöver dig' });
+    await expect(needs.getByRole('listitem')).toHaveCount(3);
+    await expect(needs.getByRole('link', { name: 'Alla 6 i Att göra' })).toHaveAttribute('href', '/todo');
+    const today = page.getByRole('region', { name: 'I dag' }),
+      since = page.getByRole('region', { name: 'Sedan i går' });
+    const n = (await needs.boundingBox())!,
+      d = (await today.boundingBox())!;
+    expect(n.y).toBeGreaterThan(box.y + box.height);
+    expect(d.x).toBeGreaterThanOrEqual(n.x + n.width);
+    expect(Math.abs(d.y - n.y)).toBeLessThan(2);
+    // Läget follows the blocks (D112: kept under them until decided), and Sedan i går ends the page.
+    const lage = heading(page, 2, 'Läget på Skönsmons skola');
     await expect(lage).toBeVisible();
-    await expect(work).toBeVisible();
-    expect((await lage.boundingBox())!.y).toBeGreaterThan(box.y + box.height);
-    expect((await work.boundingBox())!.y).toBeGreaterThan((await lage.boundingBox())!.y);
-    await expect(page.getByRole('list', { name: 'Det som behöver dig' })).toHaveCount(0);
-    // From 1024 px the day and what happened since yesterday stand beside the work, in one aside.
-    const aside = page.getByRole('complementary', { name: 'Bredvid' });
-    const column = (await page.getByRole('region', { name: 'Att agera på' }).boundingBox())!;
-    expect((await aside.boundingBox())!.x).toBeGreaterThanOrEqual(column.x + column.width);
-    const today = aside.getByRole('region', { name: 'I dag' }),
-      since = aside.getByRole('region', { name: 'Sedan i går' });
+    expect((await lage.boundingBox())!.y).toBeGreaterThan(n.y + n.height);
+    expect((await since.boundingBox())!.y).toBeGreaterThan((await lage.boundingBox())!.y);
+    await expect(page.getByRole('tablist')).toHaveCount(0);
     await expect(today.locator('[aria-level="2"]').filter({ hasText: 'I dag' })).toBeVisible();
     await expect(today.getByText('Rektorsmöte', { exact: true })).toBeVisible();
     // The row level (D71, artboard 6): the time in its cell, the title 14 semibold, the length and the place under it.
@@ -238,7 +175,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     );
     await expect(today.getByText('Ledigt till 12:00')).toBeVisible();
     await expect(today.getByText('Längsta luckan · jag bokar inget här utan att fråga')).toBeVisible();
-    await expect(today.getByRole('link', { name: 'Hela veckan' })).toHaveAttribute('href', '/calendar');
+    await expect(today.getByRole('link', { name: 'Kalender' })).toHaveAttribute('href', '/calendar');
     // Sedan i går is three sentences (artboard A): what closed with its receipt, what waits with who has answered, the next review.
     await expect(
       since.getByText(/^2 klara: attesterade fakturor, kvitto läst från Ekonomisystemet 09:00 och påminnelse om/),
@@ -247,32 +184,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
       since.getByText(/^2 väntar på andra: planera utvecklingssamtal vecka 45 \(1 av 2 har svarat\) och tillbud/),
     ).toBeVisible();
     await expect(since.getByText(/^Nästa genomgång /)).toBeVisible();
-    // The figures are the key figures' alone: Sedan i går does not repeat them (D115 item 4).
-    await expect(since.getByText('Sjukfrånvaro', { exact: true })).toHaveCount(0);
-    await expect(since.getByRole('link', { name: 'Allt som är klart' })).toHaveAttribute(
-      'href',
-      '/activities?tab=done',
-    );
-    // The page closes with the site's name and whose view it is (D115 items 4 and 6).
-    const close = page.getByRole('main').getByText('Personlig vy: Skönsmons skola', { exact: true });
-    await expect(close).toBeVisible();
-    expect((await close.boundingBox())!.y).toBeGreaterThan((await since.boundingBox())!.y);
-    await expectNoAxeViolations(page);
-  });
-
-  test('on a phone Hem opens at its top: the greeting in view, and the box docked at the foot', async ({
-    page,
-    api: _,
-  }) => {
-    await page.setViewportSize(phone);
-    await open(page, '/');
-    // The page is read from the top (D115 item 4): the greeting is the first thing in view, not the page's end.
-    await expect(heading(page, 1, 'God morgon, Testa!')).toBeInViewport();
-    // The box stands in the dock at the foot (D31), in view without scrolling. The suggestions at rest are not in the
-    // dock: its frosted ground is behind the box alone, and they raised the box into a toast's place (2.4.11).
-    expect(await dockOf(page), 'the box is docked').not.toBeNull();
-    await expect(composer(page)).toBeInViewport();
-    await expect(page.getByRole('group', { name: 'Förslag' })).toHaveCount(0);
+    await expect(since.getByRole('link', { name: 'Allt som är klart' })).toHaveAttribute('href', '/todo?tab=done');
     await expectNoAxeViolations(page);
   });
 
@@ -308,14 +220,8 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
         { exact: true },
       ),
     ).toBeVisible();
-    await expect(since.getByRole('link', { name: 'Allt som är klart' })).toHaveAttribute(
-      'href',
-      '/activities?tab=done',
-    );
+    await expect(since.getByRole('link', { name: 'Allt som är klart' })).toHaveAttribute('href', '/todo?tab=done');
     await expectNoAxeViolations(page);
-    // The log's tab on Mina aktiviteter counts the same seven (D115 item 4).
-    await open(page, '/activities');
-    await expect(page.getByRole('tab', { name: /^Klart/ })).toContainText('7');
   });
 
   test('typing in the box offers what the router finds without the model, the open card first, and each row is a button', async ({
@@ -323,15 +229,12 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     api: _,
   }) => {
     await open(page, '/');
-    await expect(page.getByRole('group', { name: 'Förslag' })).toBeVisible();
     await composer(page).fill('attestera');
     const offers = page.getByRole('list', { name: 'Menar du' });
-    // What could be started gives way to what the router found (D115 item 4).
-    await expect(page.getByRole('group', { name: 'Förslag' })).toHaveCount(0);
     await expect(offers.getByRole('listitem').first()).toContainText('Attestera 3 fakturor, 48 200 kr');
     await expect(offers.getByRole('button', { name: /Attestera fakturor/ })).toBeVisible();
     await offers.getByRole('button', { name: /Attestera 3 fakturor/ }).click();
-    await expect(page).toHaveURL(/^[^?]*\/\?card=fakturor$/);
+    await expect(page).toHaveURL(/^[^?]*\/todo\?item=fakturor$/);
   });
 
   test('a row reaches the box by @, which with nothing typed offers only what the page shows', async ({
@@ -343,7 +246,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     const menu = page.getByRole('listbox', { name: 'Objekt' });
     await expect(menu.getByRole('option').first()).toBeVisible();
     const offered = await menu.getByRole('option').allTextContents();
-    // The cards in the tab on screen are offered; a card set aside (Inte nu) is not.
+    // The work items Hem shows are offered; a card set aside (Inte nu) is not.
     expect(offered.some(o => o.includes('Attestera 3 fakturor, 48 200 kr'))).toBe(true);
     expect(offered.some(o => o.includes('Brandskyddsrond i oktober saknar protokoll'))).toBe(false);
   });
@@ -355,14 +258,50 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await open(page, '/');
     await composer(page).fill('attestera en faktura');
     await composer(page).press('Enter');
-    const card = page.getByRole('article', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' });
+    const card = page.getByRole('article', { name: 'Ärende: Attestera 3 fakturor, 48 200 kr' });
     await expect(card).toBeVisible();
-    // The answer stands under the box on Hem (D115 item 5), under its own h2 "Svar", so the card's title is a level-3
-    // heading (Playwright's role level reads the tag, so the suite reads aria-level).
-    await expect(heading(page, 3, 'Attestera 3 fakturor, 48 200 kr')).toBeVisible();
+    // Under the conversation's h1 the card's title is a level-2 heading (Playwright's role level reads the tag, so the suite reads aria-level).
+    await expect(heading(page, 2, 'Attestera 3 fakturor, 48 200 kr')).toBeVisible();
     await expect(card.getByRole('checkbox')).toHaveCount(3);
     await expect(card.getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
     await expect(page.getByRole('article', { name: /^Assistenten/ })).toContainText('saknar beställning');
+  });
+
+  test('the rail searches conversations and cards and opens what is picked: from Hem the work item in Att göra', async ({
+    page,
+    api: _,
+  }) => {
+    await open(page, '/');
+    await page
+      .getByRole('navigation', { name: 'Sidonavigering' })
+      .getByRole('button', { name: 'Sök', exact: true })
+      .click();
+    const search = page.getByRole('combobox', { name: 'Sök i samtal och ärenden' });
+    await search.fill('fakturor');
+    await page.getByRole('option', { name: /Attestera 3 fakturor/ }).click();
+    await expect(page).toHaveURL(/\/todo\?item=fakturor$/);
+  });
+
+  test('a card picked in the rail’s search opens over the page the person is on, which stays (D111 rule 2)', async ({
+    page,
+    api: _,
+  }) => {
+    await open(page, '/calendar');
+    await page
+      .getByRole('navigation', { name: 'Sidonavigering' })
+      .getByRole('button', { name: 'Sök', exact: true })
+      .click();
+    const search = page.getByRole('combobox', { name: 'Sök i samtal och ärenden' });
+    await search.fill('fakturor');
+    await page.getByRole('option', { name: /Attestera 3 fakturor/ }).click();
+    await expect(page).toHaveURL('/calendar?card=fakturor');
+    const drawer = page.getByRole('dialog', { name: 'Ärende' });
+    await expect(drawer.getByRole('article', { name: 'Ärende: Attestera 3 fakturor, 48 200 kr' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Vecka' })).toBeAttached();
+    await expect.poll(() => drawer.evaluate(el => el.contains(document.activeElement))).toBe(true);
+    await page.keyboard.press('Escape');
+    await expect(drawer).toHaveCount(0);
+    await expect(page).toHaveURL(/\/calendar$/);
   });
 
   test('the calendar names its days as headings', async ({ page, api: _ }) => {
@@ -423,7 +362,7 @@ test.describe('D26 questions answered from documents', () => {
     // "Lägg under Behöver dig" proposes; the answer executes nothing. What happened is said in the transcript.
     await bubble.getByRole('button', { name: 'Lägg under Behöver dig' }).click();
     await expect(
-      page.getByText(/^Klart\. Kortet "Ny rutin för läkemedelshantering" ligger under Behöver dig/),
+      page.getByText(/^Klart\. Ärendet "Ny rutin för läkemedelshantering" ligger under Behöver dig/),
     ).toBeVisible();
   });
   test('the sources view numbers its rows, names owner and review date, warns about a stale one and says which source did not answer', async ({
@@ -437,8 +376,14 @@ test.describe('D26 questions answered from documents', () => {
     await expect(rows).toHaveCount(3);
     await expect(rows.nth(0)).toContainText('Rutin vid fall i ordinärt boende · Vid fall');
     await expect(rows.nth(0)).toContainText('Intranätet · MAS · granskad 12 mars 2026');
-    await expect(rows.nth(0).getByRole('link', { name: 'Öppna' })).toHaveAttribute('target', '_blank');
-    await expect(rows.nth(0).getByRole('button', { name: 'Lägg till i samtalet' })).toBeVisible();
+    // A link out of Clew opens a new tab and says so (D111 rule 8).
+    await expect(rows.nth(0).getByRole('link', { name: /^Öppna\s*\(öppnas i ny flik\)$/ })).toHaveAttribute(
+      'target',
+      '_blank',
+    );
+    // On Hem the sources view has its own box in the panel: a passage goes into a conversation only beside one (D112 item 7).
+    await expect(rows.nth(0).getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
+    await expect(panel.getByRole('textbox', { name: 'Fråga Clew' })).toBeVisible();
     await expect(rows.nth(2)).toContainText('2 år sedan');
     await expect(rows.nth(2).getByRole('link', { name: 'Öppna' })).toHaveCount(0);
     await expect(panel.getByText(/^SharePoint svarade inte\./)).toBeVisible();
@@ -463,7 +408,7 @@ test.describe('D30 the obligation', () => {
     page,
     api: _,
   }) => {
-    await open(page, '/activities?tab=waiting&card=samtal-svar');
+    await open(page, '/?tab=waiting&card=samtal-svar');
     const card = page.locator('#card-samtal-svar');
     await expect(card).toContainText('1 av 2 svarat');
     await expect(card.getByRole('progressbar')).toHaveCount(0);
@@ -501,49 +446,28 @@ test.describe('D54 Läget: the areas’ figures from their connectors', () => {
       'href',
       /^\/\?open=hr\.absenceOverview&open-title=Fr%C3%A5nvaro\+per\+person$/,
     );
-    // The tile as the reference draws a key figure (D115 item 4): the label first, with a chevron when the tile leads
-    // somewhere; the value in its tone's colour; the tone's word with the comparison; last the area and the view.
+    // The tile as drawn (artboard 3): the chip, the tone with its word, the label over the value, the comparison, the view with a chevron.
     const card = region.locator('.astryx-clickable-card').filter({ hasText: 'Sjukfrånvaro' });
-    const label = card.getByText('Sjukfrånvaro', { exact: true });
-    await expect(label).toBeVisible();
-    expect((await label.boundingBox())!.y).toBeLessThan(
-      (await card.getByText('4,2 %', { exact: true }).boundingBox())!.y,
-    );
+    await expect(card.getByText('Personal', { exact: true })).toBeVisible();
+    await expect(card.getByText('Bevaka', { exact: true })).toBeVisible();
     await expect(card.getByText('4,2 %', { exact: true })).toBeVisible();
-    await expect(card.getByText('Bevaka · mål ≤ 4,0 % · +0,3 sedan oktober', { exact: true })).toBeVisible();
-    await expect(card.getByText('Personal · Frånvaro per person', { exact: true })).toBeVisible();
-    // The tone is said in its word beside the colour (1.4.1); the area's chip and the tone's dot are gone.
-    const value = await card.getByText('4,2 %', { exact: true }).evaluate(el => getComputedStyle(el).color);
-    const word = await card
-      .getByText('Bevaka · mål ≤ 4,0 % · +0,3 sedan oktober', { exact: true })
-      .evaluate(el => getComputedStyle(el).color);
-    expect(value).not.toBe(word);
-    await expect(region.getByRole('img')).toHaveCount(0);
-    // A figure that needs the person says so in its word, not with an outline; a target is a bar, and with a bar the
-    // tone's word stands alone; a figure with no tone has no word; a sentence leads nowhere.
+    await expect(card.getByText('mål ≤ 4,0 % · +0,3 sedan oktober')).toBeVisible();
+    await expect(card.getByText('Frånvaro per person', { exact: true })).toBeVisible();
+    // Alert is a badge and no dot; a target is a bar; a figure with no tone has no word; a sentence leads nowhere.
     await expect(
-      region
-        .locator('.astryx-clickable-card')
-        .filter({ hasText: 'Öppna tillbud' })
-        .getByText('Behöver dig · 1 äldre än 14 dagar', { exact: true }),
+      region.locator('.astryx-clickable-card').filter({ hasText: 'Öppna tillbud' }).getByText('Behöver dig'),
     ).toBeVisible();
     await expect(region.getByRole('progressbar', { name: /^Förbrukat av ramen: 98 %/ })).toBeVisible();
-    await expect(
-      region
-        .locator('.astryx-clickable-card')
-        .filter({ hasText: 'Förbrukat av ramen' })
-        .getByText('Lugnt', { exact: true }),
-    ).toBeVisible();
     const samtal = region.locator('.astryx-clickable-card').filter({ hasText: 'Utvecklingssamtal hållna' });
     await expect(samtal.getByRole('progressbar')).toBeVisible();
-    await expect(samtal.getByText(/^(Lugnt|Bevaka|Behöver dig)( · |$)/)).toHaveCount(0);
+    await expect(samtal.getByText(/^(Lugnt|Bevaka|Behöver dig)$/)).toHaveCount(0);
     await expect(region.getByRole('group', { name: /^Viktigt nu/ }).getByRole('link')).toHaveCount(0);
     await expectNoAxeViolations(page);
     // The whole tile opens its view in the panel, without the model: a click on its text follows the link.
     await card.getByText('4,2 %', { exact: true }).click();
     await expect(page).toHaveURL(/open=hr\.absenceOverview/);
   });
-  test('a source that does not answer is the warning tile, never an empty one, and Sedan i går does not repeat the figures', async ({
+  test('a source that does not answer is the warning tile, never an empty one; Sedan i går lists the figures to watch', async ({
     page,
     api,
   }) => {
@@ -558,14 +482,18 @@ test.describe('D54 Läget: the areas’ figures from their connectors', () => {
     await expect(silent.getByText('Ekonomisystemet svarar inte.')).toBeVisible();
     await expect(silent.getByText(/försöker igen 12:00$/i)).toBeVisible();
     await expect(silent.getByRole('link')).toHaveCount(0);
-    // The figures to watch are the key figures alone (D115 item 4): Sedan i går names none of them.
+    // The line (artboard 3): glyph, label, the value at body size, the dot with its word, the comparison and the source with its time.
     const since = page.getByRole('region', { name: 'Sedan i går' });
-    await expect(since).toBeVisible();
-    for (const figure of ['Sjukfrånvaro', 'Öppna tillbud', 'Ekonomisystemet svarar inte.'])
-      await expect(since.getByText(figure, { exact: true })).toHaveCount(0);
+    await expect(since.getByText('Sjukfrånvaro', { exact: true })).toBeVisible();
+    // The rest of the line never starts with a separator, so a wrapped line does not either.
+    await expect(
+      since.getByText('mål ≤ 4,0 % · +0,3 sedan oktober · Personalsystemet 09:00', { exact: true }),
+    ).toBeVisible();
+    await expect(since.getByText('1 äldre än 14 dagar · Avvikelsesystemet 09:00', { exact: true })).toBeVisible();
+    await expect(since.getByText('Öppna tillbud', { exact: true })).toBeVisible();
     await expectNoAxeViolations(page);
   });
-  test('an area is one tile however often the page reads again, though it has cards, standing reads and a menu row', async ({
+  test('an area is one tile and one line however often the page reads again, though it has cards, standing reads and a menu row', async ({
     page,
     api,
   }) => {
@@ -596,10 +524,10 @@ test.describe('D54 Läget: the areas’ figures from their connectors', () => {
     await expect.poll(() => notices, { timeout: 10_000 }).toBeGreaterThan(5);
     const since = page.getByRole('region', { name: 'Sedan i går' });
     await expect(lage(page).getByText('Prognosen ligger under budget.')).toHaveCount(1);
+    await expect(since.getByText('Prognosen ligger under budget.')).toHaveCount(1);
+    await expect(since.getByText('Sjukfrånvaro', { exact: true })).toHaveCount(1);
+    await expect(since.getByText('Öppna tillbud', { exact: true })).toHaveCount(1);
     await expect(lage(page).locator(TILES)).toHaveCount(5);
-    // Sedan i går no longer repeats the figures (D115 item 4), however often it is drawn again.
-    await expect(since).toBeVisible();
-    await expect(since.getByText('Prognosen ligger under budget.')).toHaveCount(0);
   });
   test('while the areas are read the tiles keep their shape', async ({ page, api }) => {
     api.areasDelay = 1500;
@@ -607,7 +535,7 @@ test.describe('D54 Läget: the areas’ figures from their connectors', () => {
     await expect(lage(page)).toHaveAttribute('aria-busy', 'true');
     await expect(lage(page)).toHaveAttribute('aria-busy', 'false', { timeout: 5000 });
   });
-  test('on a phone the tiles stand two across, and the label and the tone wrap rather than overflow', async ({
+  test('on a phone the tiles stand two across, and the mark and the tone wrap rather than overflow', async ({
     page,
     api: _,
   }) => {
@@ -616,12 +544,12 @@ test.describe('D54 Läget: the areas’ figures from their connectors', () => {
     const tops = await lage(page)
       .locator(TILES)
       .evaluateAll(list => list.map(el => Math.round(el.getBoundingClientRect().top)));
-    // Five tiles: two rows of two and one below, as `lage.tsx` draws them from 356 px. The first row is a sentence (a
-    // group) beside a link, whose box may sit a pixel lower inside its card. Soft, so the 320 px check still runs.
-    expect.soft(Math.abs(tops[0]! - tops[1]!), 'two tiles across at 375 px').toBeLessThanOrEqual(1);
-    expect.soft(tops[2]).toBe(tops[3]);
-    expect.soft(tops[2]).toBeGreaterThan(tops[0]!);
-    expect.soft(tops[4]).toBeGreaterThan(tops[2]!);
+    // Five tiles: two rows of two and one below. The first row is a sentence (a group) beside a link, whose box may sit a
+    // pixel lower inside its card.
+    expect(Math.abs(tops[0]! - tops[1]!)).toBeLessThanOrEqual(1);
+    expect(tops[2]).toBe(tops[3]);
+    expect(tops[2]).toBeGreaterThan(tops[0]!);
+    expect(tops[4]).toBeGreaterThan(tops[2]!);
     const overflow = await lage(page).evaluate(el => el.scrollWidth > el.clientWidth);
     expect(overflow).toBe(false);
     // At 320 px two tiles would break the area's word inside its letters: one under the other there (1.4.10).

@@ -92,8 +92,12 @@ test.describe('the shared document and semantic catalogue', () => {
         undoCapability: 'finance.unapprove',
         rows: card.items.map(i => ({ ref: i.ref, label: i.label, outcome: 'done', detail: 'Attesterad.' })),
       };
-      await open(page, '/?tab=done');
-      await page.getByRole('link', { name: card.title, exact: false }).click();
+      await open(page, '/todo?tab=done');
+      // The row opens its work item beside Klart (D112), and the item's way to the review lays it over both, in Klart's
+      // own address (D111 rule 5).
+      await page.locator('#work-fakturor').getByRole('link').click();
+      await page.getByRole('link', { name: 'Visa granskning', exact: true }).click();
+      await expect(page).toHaveURL('/todo?tab=done&item=fakturor&review=fakturor');
       const review = page.getByRole('dialog', { name: 'Visa 3 rader' });
       await expect(review.getByRole('status', { name: 'Sida 1 av 2' })).toBeVisible();
       await expect(review.getByRole('button', { name: /^Attestera|^Lämna kvar|^Spara rättelse/ })).toHaveCount(0);
@@ -101,7 +105,9 @@ test.describe('the shared document and semantic catalogue', () => {
       await expect(review.getByRole('heading', { name: 'Skolgrossisten · 7 200 kr' })).toBeVisible();
       expect(await reflowProblems(page, review)).toEqual([]);
       await expectNoAxeViolations(page);
-      await review.getByRole('button', { name: 'Tillbaka till kortet' }).click();
+      await review.getByRole('button', { name: 'Tillbaka till ärendet' }).click();
+      // Closing leaves Klart as it was, with the item beside it: the tab is kept.
+      await expect(page).toHaveURL('/todo?tab=done&item=fakturor');
       await expect(page.getByRole('link', { name: 'Visa granskning', exact: true })).toBeFocused();
     });
   for (const viewport of [desktop, narrow])
@@ -158,7 +164,7 @@ test.describe('the shared document and semantic catalogue', () => {
         api.threads.push(retry);
         await route.fulfill({ json: retry });
       });
-      await open(page, '/?card=fakturor');
+      await open(page, '/todo?item=fakturor');
       await page.getByRole('link', { name: 'Visa granskning', exact: true }).click();
       const review = page.getByRole('dialog', { name: 'Visa 3 rader' });
       await expect(review.getByRole('button', { name: 'Attestera', exact: true })).toHaveCount(0);
@@ -190,7 +196,7 @@ test.describe('the shared document and semantic catalogue', () => {
     });
   test('named steps distinguish repeated suppliers and preserve decisions made out of order', async ({ page, api }) => {
     await originals(page, api);
-    await open(page, '/cards/fakturor/review');
+    await open(page, '/todo?item=fakturor&review=fakturor');
     const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
     const steps = review.getByRole('list', { name: 'Rader', exact: true });
     const firstInvoice = steps.getByRole('button', { name: /Skolgrossisten · 11 200 kr/ });
@@ -198,16 +204,16 @@ test.describe('the shared document and semantic catalogue', () => {
     await expect(firstInvoice).toBeVisible();
     await expect(secondInvoice).toBeVisible();
     await secondInvoice.click();
-    await expect(page).toHaveURL('/cards/fakturor/review?step=2');
+    await expect(page).toHaveURL('/todo?item=fakturor&review=fakturor&step=2');
     await expect(review).toContainText('0 av 3 bedömda');
     await expect(steps.getByRole('img', { name: 'Vald för godkännande' })).toHaveCount(0);
     await review.getByRole('button', { name: 'Attestera', exact: true }).click();
-    await expect(page).toHaveURL('/cards/fakturor/review?step=3');
+    await expect(page).toHaveURL('/todo?item=fakturor&review=fakturor&step=3');
     await expect(review.getByRole('heading', { name: /Underlag från/ })).toBeFocused();
     await firstInvoice.focus();
     await expect(firstInvoice).toBeFocused();
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL('/cards/fakturor/review');
+    await expect(page).toHaveURL('/todo?item=fakturor&review=fakturor');
     await expect(review).toContainText('1 av 3 bedömda');
     await review.getByRole('button', { name: 'Lämna kvar', exact: true }).click();
     await steps.getByRole('button', { name: /Skicka/ }).click();
@@ -234,7 +240,7 @@ test.describe('the shared document and semantic catalogue', () => {
       window.EventSource = Changes as unknown as typeof EventSource;
     });
     const fixture = await originals(page, api);
-    await open(page, '/cards/fakturor/review');
+    await open(page, '/todo?item=fakturor&review=fakturor');
     const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
     const approve = review.getByRole('button', { name: 'Attestera', exact: true });
     await expect(approve).toBeEnabled();
@@ -273,10 +279,10 @@ test.describe('the shared document and semantic catalogue', () => {
     await expectNoAxeViolations(page);
     api.threads.find(t => t.id === 'fakturor')!.items[0]!.revision = 'new-source-revision';
     await page.route('**/api/threads/fakturor/preview?*', route =>
-      route.fulfill({ status: 409, json: { error: 'Underlaget har ändrats. Läs in kortet igen.' } }),
+      route.fulfill({ status: 409, json: { error: 'Underlaget har ändrats. Läs in ärendet igen.' } }),
     );
     await emit(4);
-    await expect(review.getByText('Underlaget har ändrats. Läs in kortet igen.')).toBeVisible();
+    await expect(review.getByText('Underlaget har ändrats. Läs in ärendet igen.')).toBeVisible();
     await expect(approve).toBeDisabled();
     await expect(review.locator('canvas')).toHaveCount(0);
   });
@@ -316,7 +322,9 @@ test.describe('the shared document and semantic catalogue', () => {
     await page.getByRole('option', { name: 'Referenser', exact: true }).click();
     await expect(panel.getByRole('cell', { name: 'finance:inv:55120', exact: true })).toBeVisible();
     await expectNoAxeViolations(page);
-    expect(await reflowProblems(page, panel)).toEqual([]);
+    // The sheet is a data table, which 1.4.10 lets scroll in two dimensions: its columns run on in the Table's own
+    // scroll region (a tab stop while it overflows, which axe checks above); the panel around it reflows.
+    expect(await reflowProblems(page, panel, { table: panel.getByRole('table', { name: 'Referenser' }) })).toEqual([]);
     await page.screenshot({ path: 'test-results/document-record-desktop.png' });
     await attachments.click();
     await page.getByRole('option', { name: 'Faktura · krävs för beslut', exact: true }).click();
@@ -348,7 +356,7 @@ test.describe('the shared document and semantic catalogue', () => {
   }) => {
     const fixture = await originals(page, api);
     fixture.outage(true);
-    await open(page, '/cards/fakturor/review');
+    await open(page, '/todo?item=fakturor&review=fakturor');
     const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
     await expect(review.getByText('Underlaget kan inte längre läsas.')).toBeVisible();
     await expect(review.getByRole('button', { name: 'Attestera', exact: true })).toBeDisabled();
@@ -368,13 +376,15 @@ test.describe('the shared document and semantic catalogue', () => {
 });
 test.describe('document review on a narrow phone', () => {
   test.use({ viewport: narrow });
-  test('documents and decisions reflow, keyboard controls work and focus returns to the card', async ({
+  test('documents and decisions reflow, keyboard controls work and focus returns to the item', async ({
     page,
     api,
   }) => {
     await originals(page, api);
-    await open(page, '/?card=fakturor');
-    const card = page.getByRole('dialog', { name: 'Kort: Attestera 3 fakturor, 48 200 kr', exact: true });
+    // On a phone the item is its page, alone on the surface, its next step pinned to the foot (D112 item 12).
+    await open(page, '/todo?item=fakturor');
+    await expect(page.getByRole('heading', { level: 1, name: 'Attestera 3 fakturor, 48 200 kr' })).toBeVisible();
+    const card = page.getByRole('main');
     await card.getByRole('link', { name: 'Granska 3' }).click();
     const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
     await expect(review.getByRole('button', { name: 'Attestera', exact: true })).toBeEnabled();

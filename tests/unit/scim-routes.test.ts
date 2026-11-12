@@ -69,7 +69,7 @@ describe('/scim/v2', () => {
     expect((await call('GET', '/ResourceTypes/Group')).status).toBe(200);
     expect((await call('GET', '/ResourceTypes/Device')).status).toBe(404);
     const schemas = await (await call('GET', '/Schemas')).json();
-    expect(schemas.totalResults).toBe(3);
+    expect(schemas.totalResults).toBe(4);
     expect((await call('GET', '/Schemas/urn:ietf:params:scim:schemas:core:2.0:User')).status).toBe(200);
     // D99: the unit extension is named on Group and can be read by its URN.
     const group = await (await call('GET', '/ResourceTypes/Group')).json();
@@ -279,9 +279,15 @@ describe('/scim/v2', () => {
       scimType: 'invalidSyntax',
       detail: 'The request body is not JSON.',
     });
-    expect(await (await call('POST', '/Users', { userName: 1 })).json()).toMatchObject({
+    expect(await (await call('POST', '/Users', [1])).json()).toMatchObject({
       status: '400',
       scimType: 'invalidSyntax',
+      detail: 'The request body is not a User resource.',
+    });
+    expect(await (await call('POST', '/Users', { ...anna, userName: 1 })).json()).toMatchObject({
+      status: '400',
+      scimType: 'invalidValue',
+      detail: "Attribute 'userName' needs a non-empty string of at most 512 characters.",
     });
     expect(await (await call('POST', '/Users', { ...anna, externalId: undefined })).json()).toMatchObject({
       status: '400',

@@ -351,6 +351,34 @@
       "when": 1794389155297,
       "tag": "0049_competence",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1794421242543,
+      "tag": "0050_person_title",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1794430287435,
+      "tag": "0051_group_capability_organisation",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1794467740248,
+      "tag": "0052_person_phone_numbers",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1794478229566,
+      "tag": "0053_person_directory_profile",
+      "breakpoints": true
     }
   ]
 }

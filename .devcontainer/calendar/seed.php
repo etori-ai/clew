@@ -8,7 +8,8 @@ set_exception_handler(function (Throwable $error): never {
     fwrite(STDERR, 'Calendar provisioning failed: ' . $error->getMessage() . "\n");
     exit(1);
 });
-$appManager = OC::$server->getAppManager();
+// Through the container by interface: Nextcloud 35 removed the server's own getters (getAppManager and the rest).
+$appManager = OC::$server->get(OCP\App\IAppManager::class);
 $required = array_merge($appManager->getAlwaysEnabledApps(), [
     'calendar', 'roomvox', 'dav', 'files', 'settings', 'provisioning_api',
     'theming', 'bruteforcesettings', 'password_policy',
@@ -19,9 +20,9 @@ foreach ($appManager->getEnabledApps() as $app) {
     if (!in_array($app, $required, true)) $appManager->disableApp($app);
 }
 OC_App::loadApps();
-$users = OC::$server->getUserManager();
-$groups = OC::$server->getGroupManager();
-$config = OC::$server->getConfig();
+$users = OC::$server->get(OCP\IUserManager::class);
+$groups = OC::$server->get(OCP\IGroupManager::class);
+$config = OC::$server->get(OCP\IConfig::class);
 $dav = OC::$server->get(OCA\DAV\CalDAV\CalDavBackend::class);
 if (!$groups->groupExists('calendar-staff')) $groups->createGroup('calendar-staff');
 // Synthetic people. Hillevi (rektor), Hassan (undersköterska) and Mikael (systemförvaltare) are the three personas

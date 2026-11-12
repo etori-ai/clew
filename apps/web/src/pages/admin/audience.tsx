@@ -22,7 +22,7 @@ const wording = {
   connector: {
     label: 'Vem ser anslutningen',
     all: 'Anslutningens eget regelverk avgör sedan vad var och en får göra.',
-    selected: 'En person som inte är med ser inte att anslutningen finns: inget område, inga frågor, inga kort.',
+    selected: 'En person som inte är med ser inte att anslutningen finns: inget område, inga frågor, inga ärenden.',
   },
   model: {
     label: 'Vem kan välja modellen',

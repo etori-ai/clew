@@ -39,6 +39,7 @@ import { sessionDesk } from '../session-desk';
 const ID = 'nextcloud-approval';
 const secret = 'test-secret-test-secret';
 const T0 = Date.parse('2026-11-10T13:00:00.000Z');
+const TOKEN_UNTIL = '2099-01-01T00:00:00.000Z';
 const names: Record<string, string> = { hillevi: 'Hillevi Berg', hassan: 'Hassan Ali' };
 const sha = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
@@ -55,14 +56,16 @@ const persona = (user: string, binding: string): AuthenticatedContext => ({
   capabilities: [],
   authorizationVersion: 'v1',
   sessionBinding: binding,
-  expiresAt: '2099-01-01T00:00:00.000Z',
+  expiresAt: TOKEN_UNTIL,
   authorize: async () => ({ version: 'v1' }),
 });
 /** The token the identity provider exchanges for Nextcloud in one session. The stand-in reads it unverified. */
 const tokenFor = (user: string, session: string) =>
   'h.' +
   Buffer.from(
-    JSON.stringify({ preferred_username: user, aud: 'nextcloud', exp: T0 / 1000 + 86400, sid: session }),
+    // Valid for as long as the session it stands in for (`expiresAt` above): one scenario runs on the wall clock, and a
+    // lifetime counted from T0 ran out a day after the test was written.
+    JSON.stringify({ preferred_username: user, aud: 'nextcloud', exp: Date.parse(TOKEN_UNTIL) / 1000, sid: session }),
   ).toString('base64url') +
   '.s';
 

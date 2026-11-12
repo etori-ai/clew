@@ -1,5 +1,12 @@
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
-import { isEntityKind, type EntityActionInput, type EntityKind } from '@clew/contracts';
+import { Value } from 'typebox/value';
+import {
+  AskValuesSchema,
+  isEntityKind,
+  type AskValues,
+  type EntityActionInput,
+  type EntityKind,
+} from '@clew/contracts';
 import { failure, InputError, privateHeaders, protectedRoute, type Env } from '../context';
 import type { EntityUsecases } from '../modules/entities/usecases';
 import type { EntityActions } from '../modules/entities/actions';
@@ -10,12 +17,12 @@ import type { EntityActions } from '../modules/entities/actions';
  * source the reader may not use (or that nobody placed, for the list) all answer the same 404 as an unknown address, so
  * the answer never tells which. A person who manages nobody gets a list without groups, not a refusal: the web decides
  * what to draw. One write: an action from the entity's menu becomes a card (D8), and the same 404 answers an action the
- * entity does not offer the reader.
+ * entity does not offer the reader. Its effect (D112) is a read of what the action would write, with the same 404.
  */
 export interface EntityRouteDeps {
   entities: Pick<EntityUsecases, 'list' | 'rows' | 'detail' | 'section'>;
-  /** Starting an action about an entity; without it the routes only read. */
-  actions?: Pick<EntityActions, 'start'>;
+  /** Starting an action about an entity, and what it would write; without it the routes only read. */
+  actions?: Pick<EntityActions, 'start' | 'effect'>;
   /** The session guard; a test passes its own. */
   guard?: MiddlewareHandler<Env>;
 }
@@ -26,19 +33,28 @@ function capabilityOf(value: string | undefined) {
   if (!value || !CAPABILITY.test(value)) throw new InputError('Ogiltig förfrågan.');
   return value;
 }
-/** The body of a start: `{ capability }` and nothing else. */
+/** The body of a start or an effect: `{ capability }`, with the person's answers to its asks in `values` (D112), and nothing else. */
 async function actionInput(request: Request): Promise<EntityActionInput> {
   const text = await request.text();
   let value: unknown;
   try {
-    value = text.length <= 400 ? JSON.parse(text) : undefined;
+    value = text.length <= 32_000 ? JSON.parse(text) : undefined;
   } catch {
     value = undefined;
   }
-  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).join() !== 'capability')
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    Object.keys(value).some(k => k !== 'capability' && k !== 'values')
+  )
     throw new InputError('Ogiltig förfrågan.');
-  const capability = (value as { capability: unknown }).capability;
-  return { capability: capabilityOf(typeof capability === 'string' ? capability : undefined) };
+  const { capability, values } = value as { capability: unknown; values?: unknown };
+  if (values !== undefined && !Value.Check(AskValuesSchema, values)) throw new InputError('Ogiltig förfrågan.');
+  return {
+    capability: capabilityOf(typeof capability === 'string' ? capability : undefined),
+    ...(values !== undefined ? { values: values as AskValues } : {}),
+  };
 }
 
 export function entityRoutes(deps: EntityRouteDeps) {
@@ -75,13 +91,21 @@ export function entityRoutes(deps: EntityRouteDeps) {
     return answer(c, await entities.section(c.get('session').context, kind, c.req.param('key'), capability));
   });
   const { actions } = deps;
-  if (actions)
+  if (actions) {
     routes.post('/:kind/:key/actions', async c => {
       const kind = kindOf(c);
       if (!kind) return notFound(c);
-      const { capability } = await actionInput(c.req.raw);
-      return answer(c, await actions.start(c.get('session').context, kind, c.req.param('key'), capability));
+      const { capability, values } = await actionInput(c.req.raw);
+      return answer(c, await actions.start(c.get('session').context, kind, c.req.param('key'), capability, values));
     });
+    /** "Det här händer" before the card exists (D112): what the action would write; a read, nothing is written. */
+    routes.post('/:kind/:key/effect', async c => {
+      const kind = kindOf(c);
+      if (!kind) return notFound(c);
+      const { capability, values } = await actionInput(c.req.raw);
+      return answer(c, await actions.effect(c.get('session').context, kind, c.req.param('key'), capability, values));
+    });
+  }
   routes.onError((error, c) => failure(c, error));
   return routes;
 }

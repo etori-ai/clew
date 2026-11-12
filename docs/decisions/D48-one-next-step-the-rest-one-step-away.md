@@ -1,6 +1,6 @@
 # D48 · One next step on a surface, the rest one step away
 
-**Status:** accepted, implemented; items 1, 3, 5, 6 and 7 changed by [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) on 2026-11-06 (base 14, no ⋯ on a row, the artboards' captions, Ny fråga as the primary button, no shortcut in the box); the type scale to be changed by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built); one filled button on a surface stands · **Date:** 2026-11-05 · **Area:** ui
+**Status:** accepted, implemented; items 1, 3, 5, 6 and 7 changed by [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) on 2026-11-06 (base 14, no ⋯ on a row, the artboards' captions, Ny fråga as the primary button, no shortcut in the box) · **Date:** 2026-11-05 · **Area:** ui
 
 **Decision.** A surface says what is next and why, and everything else waits one deliberate step away. The product owner
 approved this on 2026-11-05 after the review in `docs/reviews/2026-11-05-ux-review.md`, which measured the same surfaces

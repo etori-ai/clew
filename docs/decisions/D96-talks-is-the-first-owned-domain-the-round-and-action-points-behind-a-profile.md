@@ -128,3 +128,19 @@ and the calendar area's figure. The line in UC-KIM-8 (`docs/personas.md`) that s
 notes are stored, rewritten with this decision. Refines
 [D94](D94-a-manager-has-a-personal-section-listing-the-people-on-their-units.md) item 3: a click into a person now
 opens their talk.
+
+**Amended 2026-11-11 (D111 rule 5): the talk lies over the page it was opened on.** Item 7's drawer over Personal at
+`/staff?talk=<personId>` was reached from the person's page too, and from there "Öppna samtalet" left the person's
+page for Personal, and from a section drawn beside Personal it dropped the lens. Under
+[D111](D111-where-something-opens-is-decided-by-what-it-is.md) rule 5 the talk is a focused overlay over whichever
+page its way in is drawn on: the row's menu on Personal, the talks section on the person's page. Its address is that
+page's own with `talk=<personId>` added and everything else kept (`/staff?show=<lens>&talk=<personId>`,
+`/people/<key>?section=<capability>&from=%2Fstaff&talk=<personId>`); closing it (✕, Esc, the way back) is the same
+address without `talk`, and a cold `/staff?talk=<personId>` is still Personal with the talk over it. The way in says so
+itself: `talks.person`'s `about.page.href` is the query `?talk={id}`, which the contract now allows beside a path (a
+query alone lies over the page it is drawn on, a path is a page of its own), and the web fills every source's way in
+with one function (`sourcePageHref` in `apps/web/src/talk-address.ts`). The drawer is mounted by Personal, the person's
+page and the unit's page, managers only, and reads nothing until an address names a talk. A talk write also re-reads
+what Clew says about people and units, so the lens, the column and "Just nu" on Personal and the talks section on the
+person's page follow it. Evidence: `tests/unit/talks.test.ts`, `apps/web/tests/talk-address.test.ts`,
+`tests/a11y/talk.spec.ts` (over Personal with its lens, over a person's page with its section and way back).

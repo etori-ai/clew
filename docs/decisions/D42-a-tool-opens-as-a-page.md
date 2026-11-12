@@ -1,6 +1,6 @@
 # D42 · A tool opens as a page
 
-**Status:** accepted, built 2026-11-05; sorting and column filters on the page are not built; the link from a view in the panel to the tool's page, the box on the page and the row's view beside the table are [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md); the width rule that counts the rail and the box on the page to be replaced by [D115](D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md) (provisional, 2026-11-11; not built, so this record still binds what is built) · **Date:** 2026-11-05 · **Area:** ui
+**Status:** accepted, built 2026-11-05; sorting and column filters on the page are not built; the link from a view in the panel to the tool's page, the box on the page and the row's view beside the table are [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md) · **Date:** 2026-11-05 · **Area:** ui
 
 **Amended 2026-11-05 by D48.** The table starts at 1280 px, not 1360 (§8): the phone book's seven columns need 970 px at the new floors, and the rail takes 260, so a 1280 px laptop has the table and nothing scrolls sideways. The reason to keep a list below that still holds.
 
@@ -77,3 +77,9 @@ needs a row drawn. A manual screen-reader pass.
 **Replaces.** Item 5 of D40 where it says a row opens in the side panel, and its paragraph "Why the panel and not a
 page". Closes "a view lifted to a full page" in D38's and D40's lists of what is not built, for the views that are
 tools.
+
+**Amended 2026-11-11 (D111): no link from the panel to the tool's page.** The link from a view in the panel to its
+tool's own page, listed above as not built and built by [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md)
+item 7 as "Öppna som sida", is removed ([D111](D111-where-something-opens-is-decided-by-what-it-is.md) rule 7, the
+product owner's answer 5). A tool's page is reached from the rail, where an administrator placed the tool; the page
+itself is as decided here.

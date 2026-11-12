@@ -16,8 +16,9 @@ import type { Locator, Page } from '@playwright/test';
 /**
  * Användare (D62, D68, D85, D100): the provisioned people a page at a time with unit, role, capabilities and whether
  * they have signed in, narrowed by a search and four filters, and the mapping from a group to a capability that an
- * administrator adds and removes, and the catalogues' keys: one is issued, replaced and taken back (D107). Keyboard,
- * structure, announcements, axe and reflow, at desktop, phone and 320 px.
+ * administrator adds and removes, and the catalogues' keys: one is issued, replaced and taken back (D107). A person's
+ * title stands under the name when the catalogue sent one (D110). Keyboard, structure, announcements, axe and reflow,
+ * at desktop, phone and 320 px.
  */
 /** The line over the list that counts the people: Astryx's own live regions repeat other words about them. */
 const readout = (page: Page) => page.getByRole('status').filter({ hasText: /^\d+ (av \d+ )?person(er)?$/ });
@@ -36,6 +37,66 @@ test.describe('users administration', () => {
   ] as const)
     test.describe(layout, () => {
       test.use({ viewport });
+      test('a name opens the profile with every employment and contact number, and returns to the filtered list', async ({
+        page,
+        api,
+      }) => {
+        api.admin = true;
+        api.entityDetailOf = key =>
+          key === 'hillevi'
+            ? {
+                entity: { kind: 'person', key, name: 'Hillevi Berg' },
+                profile: {
+                  email: 'hillevi@clew.test',
+                  title: null,
+                  phoneNumbers: [
+                    { type: 'work', value: '010-000 00 01' },
+                    { type: 'work', value: '010-000 00 02' },
+                    { type: 'Jour', value: '070-000 00 03' },
+                  ],
+                  employments: [
+                    {
+                      unitId: 'skola',
+                      unitLabel: 'Skolan',
+                      title: 'Rektor',
+                      employmentType: 'Tillsvidare',
+                      startDate: '2019-02-01',
+                      employmentPercentage: 60,
+                    },
+                    { unitId: 'skola', unitLabel: 'Skolan', title: 'Samordnare', employmentPercentage: 40 },
+                  ],
+                },
+                relation: 'self',
+                actions: [],
+                cards: [],
+                sections: [],
+              }
+            : undefined;
+        await open(page, '/admin/users?role=manager');
+        await page.getByRole('link', { name: 'Hillevi Berg', exact: true }).click();
+        const main = page.getByRole('main');
+        await expect(main.getByRole('heading', { name: 'Hillevi Berg' })).toBeVisible();
+        const jobs = main.getByRole('region', { name: 'Anställningar' });
+        await expect(jobs.getByRole('listitem')).toHaveCount(2);
+        await expect(jobs.getByRole('listitem').nth(0)).toContainText('Rektor');
+        await expect(jobs.getByRole('listitem').nth(0)).toContainText('Tillsvidare');
+        await expect(jobs.getByRole('listitem').nth(0).locator('time')).toHaveText('1 februari 2019');
+        await expect(jobs.getByRole('listitem').nth(1).getByText('Startdatum')).toHaveCount(0);
+        await expect(jobs.getByRole('listitem').nth(1)).toContainText('Samordnare');
+        await expect(jobs.getByRole('listitem').nth(0)).toContainText('60 %');
+        await expect(jobs.getByRole('listitem').nth(1)).toContainText('40 %');
+        await expect(jobs.getByText('Skolan', { exact: true })).toHaveCount(2);
+        const contacts = main.getByRole('region', { name: 'Kontaktuppgifter' });
+        await expect(contacts.locator('a[href^="tel:"]')).toHaveCount(3);
+        await expect(contacts.getByRole('link', { name: '010-000 00 02' })).toHaveAttribute('href', 'tel:0100000002');
+        await expect(contacts.getByText('Jour', { exact: true })).toBeVisible();
+        await expect(contacts.getByRole('link', { name: 'hillevi@clew.test' })).toHaveAttribute(
+          'href',
+          'mailto:hillevi@clew.test',
+        );
+        await main.getByRole('link', { name: 'Användare', exact: true }).click();
+        await expect(page).toHaveURL(/\/admin\/users\?role=manager$/);
+      });
       test('the page has no axe violations and every focus stop is marked', async ({ page, api }) => {
         api.admin = true;
         await open(page, '/admin/users');
@@ -54,13 +115,7 @@ test.describe('users administration', () => {
       api.admin = true;
       await open(page, '/admin/users');
       await expect(page).toHaveTitle('Användare · Startsidan');
-      // The administration's sections are tabs under the trail, each a link to its own address (D115 item 3): one
-      // navigation of the page, in which the open section's tab is the current one.
-      const tabs = page
-        .getByRole('main')
-        .getByRole('navigation')
-        .filter({ has: page.getByRole('link', { name: 'Användare', exact: true }) });
-      await expect(tabs.locator('[aria-current]')).toHaveAccessibleName('Användare');
+      await expect(page.getByRole('link', { name: 'Användare', exact: true })).toHaveAttribute('aria-current', 'page');
       const people = page.getByRole('table').first();
       // The unit and the role are columns of their own: where a person is and what they are there are two questions.
       await expect(people.getByRole('columnheader')).toHaveText(['Person', 'Enhet', 'Roll', 'Behörigheter', 'Status']);
@@ -180,6 +235,27 @@ test.describe('users administration', () => {
       await search.fill('x'.repeat(300));
       await expect(search).toHaveValue('x'.repeat(200));
       await expect(readout(page)).toHaveText('0 av 4 personer');
+    });
+    test('a title from the catalogue stands under the name, a person without one has none, and the search finds it (D110)', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/users');
+      const people = page.getByRole('table').first(),
+        cells = (name: RegExp) => people.getByRole('row', { name }).getByRole('cell');
+      await expect(
+        cells(/Hillevi Berg/)
+          .first()
+          .getByText('Rektor', { exact: true }),
+      ).toBeVisible();
+      // The title is the catalogue's word and the role is Clew's: both are on the row, and neither stands in for the other.
+      await expect(cells(/Hillevi Berg/).nth(2)).toHaveText('Chef');
+      // A catalogue that sends no title leaves the name and the user name, and no words about what is missing.
+      await expect(cells(/Omar Ny/).first()).toHaveText('Omar Nyomar');
+      await filters(page).getByRole('searchbox', { name: 'Sök person' }).pressSequentially('rektor');
+      await expect(readout(page)).toHaveText('1 av 4 personer');
+      await expect(people.locator('tbody tr')).toHaveText([/Hillevi Berg/]);
     });
     test('a name typed on a later page is one question, from the first page', async ({ page, api }) => {
       api.admin = true;
@@ -458,7 +534,8 @@ test.describe('users administration', () => {
       api.people = [...usersPeople(), ...manyPeople()];
       await open(page, '/admin/users?role=manager');
       const people = page.getByRole('list', { name: 'Personer' }).getByRole('listitem');
-      await expect(people).toHaveText([/Hillevi Berg.*Bergsåkers skola · chef/]);
+      // The title first, as the catalogue words it (D110), then where the person is placed and what they are there.
+      await expect(people).toHaveText([/Hillevi Berg.*Rektor.*Bergsåkers skola · chef/]);
       await page.getByRole('button', { name: 'Rensa filter' }).click();
       await expect(readout(page)).toHaveText('64 personer');
       await expect(people).toHaveCount(25);
@@ -481,6 +558,8 @@ test.describe('users administration', () => {
       await expect(filters(page).getByRole('combobox', { name: 'Status' })).toContainText('Status: Inte inloggad ännu');
       await expect(pager(page)).toContainText('Sida 1 av 3');
       await expect(page.getByRole('list', { name: 'Inläsning från katalogen' })).toContainText('Tyst i över två dygn');
+      // A title longer than the column wraps inside its row (D110).
+      await expect(page.getByRole('list', { name: 'Personer' })).toContainText('digitalisering och välfärdsteknik');
       expect(await reflowProblems(page)).toEqual([]);
     });
     test('the dialog that shows a key reflows at 320 px, the key wrapped inside it (D107)', async ({ page, api }) => {

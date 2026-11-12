@@ -355,7 +355,19 @@
             }
           },
           "when": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time",
+            "description": "När samtalet börjar."
+          },
+          "place": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Var samtalet hålls."
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 400,
+            "description": "Ett meddelande till medarbetaren, sparat med samtalet."
           }
         },
         "required": [
@@ -411,6 +423,113 @@
         },
         "required": [
           "headline",
+          "rows"
+        ],
+        "additionalProperties": false
+      },
+      "asks": [
+        {
+          "kind": "meeting",
+          "property": "when",
+          "label": "När",
+          "required": true,
+          "durationMinutes": 45
+        },
+        {
+          "kind": "text",
+          "property": "place",
+          "label": "Plats",
+          "required": false
+        },
+        {
+          "kind": "long-text",
+          "property": "message",
+          "label": "Meddelande till medarbetaren",
+          "required": false
+        }
+      ],
+      "effect": "hr.bookTalkEffect"
+    },
+    {
+      "name": "hr.bookTalkEffect",
+      "kind": "read",
+      "title": "Det här händer när samtalet bokas",
+      "description": "Vad bokningen av ett omtankesamtal gör i personalsystemet, utan att något skrivs.",
+      "model": false,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^hr:emp:"
+            }
+          },
+          "when": {
+            "type": "string",
+            "format": "date-time",
+            "description": "När samtalet börjar."
+          },
+          "place": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Var samtalet hålls."
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 400,
+            "description": "Ett meddelande till medarbetaren, sparat med samtalet."
+          }
+        },
+        "required": [
+          "refs"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "detail": {
+                  "type": "string",
+                  "maxLength": 400
+                },
+                "source": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                }
+              },
+              "required": [
+                "label"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "undoMinutes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1440
+          }
+        },
+        "required": [
           "rows"
         ],
         "additionalProperties": false
@@ -705,7 +824,15 @@
           "rows"
         ],
         "additionalProperties": false
-      }
+      },
+      "asks": [
+        {
+          "kind": "long-text",
+          "property": "comment",
+          "label": "Kommentar till medarbetaren",
+          "required": false
+        }
+      ]
     },
     {
       "name": "hr.undecideLeave",

@@ -8,7 +8,7 @@ theme file's shape is published as [`docs/protocol/theme-file.schema.json`](../d
 | Folder | What it is |
 |---|---|
 | [`sundsvall/`](sundsvall/) | Sundsvalls kommun's published palette (checked 2026-11-05) on the mapping of D38: Vattjom dark blue as the accent, white text on strong fills and black on pale ones, the four colour pairs on the blue, green, purple and pink roles. The palette is a group of its own and the roles refer to it. The logo is the free-standing dragon, black for light ground and white for dark. |
-| [`startsidan-prototype/`](startsidan-prototype/) | The colours of the startsidan prototype's Version 1.0, the reference for Clew's look ([D115](../docs/decisions/D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md)): a tinted page under white cards, the identity blue as the accent, a lighter blue for the assistant on the info and blue roles, and the darker blue of its header on the inverted background, which the header's band reads. The dark appearance is derived; the prototype draws none. The logo is `sundsvall/`'s. |
+| [`startsidan-prototype/`](startsidan-prototype/) | The colours of the startsidan prototype's Version 1.0, the reference for Clew's look ([D115](../docs/decisions/D115-clews-look-is-the-startsidan-prototypes-drawn-through-the-astryx-theme.md)): a tinted page under white cards, the identity blue as the accent, a lighter blue for the assistant on the info and blue roles, and the darker blue of its header on the inverted background, which the header's band reads. The dark appearance is derived; the prototype draws none. The logo is `sundsvall/`'s. |
 
 ## Trying one
 

@@ -10,7 +10,7 @@ import { randomToken, sealSecret, tokenDigest } from '../apps/server/src/auth-cr
 import { scimRoutes } from '../apps/server/src/routes/scim';
 import { scim } from '../apps/server/src/composition/people';
 import { scimClient } from './provisioner/client';
-import { developmentDirectory, fullName } from './provisioner/directory';
+import { developmentScope, developmentDirectory, fullName } from './provisioner/directory';
 import { push } from './provisioner/push';
 const realm = 'clew',
   issuer = 'http://keycloak.orb.local:8090/realms/' + realm;
@@ -285,7 +285,13 @@ try {
   const pushed = await push(
     scimClient('http://clew.local', provisionerToken!, (input, init) => inProcess.request(input, init)),
     developmentDirectory,
+    developmentScope,
   );
+  if (pushed.refused.length)
+    throw new Error(
+      'Clew refused people of the development directory: ' +
+        pushed.refused.map(r => `${r.userName} (${r.detail})`).join('; '),
+    );
   console.log(
     `Development directory pushed through SCIM: ${pushed.created} users created, ${pushed.replaced} replaced, ${pushed.deactivated} deactivated; ${pushed.groupsCreated} groups created, ${pushed.groupsReplaced} replaced, ${pushed.groupsRemoved} removed.`,
   );

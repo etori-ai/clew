@@ -24,6 +24,7 @@ import type {
   EntitySource,
   View,
 } from '@clew/contracts';
+import type { ActionPath, DayView, MeetingTimes } from '@clew/contracts';
 import type {
   Area,
   Attention,
@@ -43,6 +44,9 @@ import type {
   Thread,
   TodayView,
 } from '@clew/contracts';
+import type { MenuEntry, NewsResult, PanelViewSpec } from '@clew/contracts';
+import { newsCapabilities } from '../../apps/server/src/modules/news/capabilities';
+import { manifest as communicationNewsManifest } from '../../connectors/communication/connector.mjs';
 
 /** Synthetic data, typed against the contracts so the suite follows the API. The clock is frozen to this Wednesday. */
 export const NOW = '2026-11-04T08:00:00.000Z';
@@ -79,6 +83,55 @@ const thread = (values: Partial<Thread> & Pick<Thread, 'id' | 'title'>): Thread 
   remindedAt: null,
   snoozedUntil: null,
   ...values,
+});
+/**
+ * What the HR fixture's writes declare (D112 item 10), as the server resolves a work item's action's `path` from the
+ * registered manifest: "Boka samtalet" asks for the time, the place and a message and says beforehand what it writes;
+ * "Godkänn" on a leave request asks for an optional comment and has no effect read.
+ */
+export const BOOK_TALK_PATH: ActionPath = {
+  asks: [
+    { kind: 'meeting', property: 'when', label: 'När', required: true, durationMinutes: 45 },
+    { kind: 'text', property: 'place', label: 'Plats', required: false },
+    { kind: 'long-text', property: 'message', label: 'Meddelande till medarbetaren', required: false },
+  ],
+  effect: true,
+  description: 'Registrerar ett omtankesamtal i personalsystemet.',
+};
+export const DECIDE_LEAVE_PATH: ActionPath = {
+  asks: [{ kind: 'long-text', property: 'comment', label: 'Kommentar till medarbetaren', required: false }],
+  effect: false,
+  description: 'Beslutar en ledighetsansökan i personalsystemet.',
+};
+/** Three free times of 45 minutes in the person's own calendar, after the frozen Wednesday morning (`GET /api/asks/times`). */
+export const meetingSlots = (): MeetingTimes['slots'] => [
+  { start: '2026-11-05T12:15:00.000Z', end: '2026-11-05T13:00:00.000Z' },
+  { start: '2026-11-06T08:00:00.000Z', end: '2026-11-06T08:45:00.000Z' },
+  { start: '2026-11-09T13:00:00.000Z', end: '2026-11-09T13:45:00.000Z' },
+];
+const ownEvent = (id: string, title: string, start: string, end: string): CalendarEvent => ({
+  id,
+  title,
+  start,
+  end,
+  allDay: false,
+  mine: true,
+  room: '',
+  participants: [],
+  ref: `memory:${id}`,
+  revision: 'r1',
+  canCancel: true,
+  recurring: false,
+  organizer: 'Testa Testsson',
+});
+/** The person's own day for the dialog's strip: planning in the morning and APT in the afternoon, Swedish time 09–11 and 15–16.30. */
+export const ownDay = (date: string): DayView => ({
+  from: date,
+  events: [
+    ownEvent(`plan-${date}`, 'Planeringstid', `${date}T08:00:00.000Z`, `${date}T10:00:00.000Z`),
+    ownEvent(`apt-${date}`, 'APT', `${date}T14:00:00.000Z`, `${date}T15:30:00.000Z`),
+  ],
+  proposals: [],
 });
 const proposal = (id: string, day: string, name: string): Proposal => ({
   id,
@@ -149,7 +202,14 @@ export const threads = (): Thread[] => [
     trigger: { reason: 'Tre sjukperioder på sex månader', source: 'Personalsystemet', at: NOW },
     summary: 'Tre korta sjukperioder sedan juni. Samtalet bör bokas före den 13 november.',
     actions: [
-      { id: 'book', label: 'Boka samtalet', capability: 'hr.bookTalk', kind: 'execute', role: 'primary' },
+      {
+        id: 'book',
+        label: 'Boka samtalet',
+        capability: 'hr.bookTalk',
+        kind: 'execute',
+        role: 'primary',
+        path: BOOK_TALK_PATH,
+      },
       {
         id: 'pattern',
         label: 'Se mönstret',
@@ -169,7 +229,17 @@ export const threads = (): Thread[] => [
     deadline: '2026-11-20',
     trigger: { reason: 'Ansökan väntar på beslut', source: 'Personalsystemet', at: NOW },
     summary: 'Två dagar före jul. Ingen krock i schemat.',
-    actions: [{ id: 'decide', label: 'Godkänn', capability: 'hr.decideLeave', kind: 'execute', role: 'primary' }],
+    actions: [
+      {
+        id: 'decide',
+        label: 'Godkänn',
+        capability: 'hr.decideLeave',
+        kind: 'execute',
+        role: 'primary',
+        input: { decision: 'approve' },
+        path: DECIDE_LEAVE_PATH,
+      },
+    ],
   }),
   thread({
     id: 'samtal',
@@ -711,6 +781,45 @@ export const conversation = (source: Thread[], text: string, conversationId = 'k
       clewActions: [],
       followUps: [],
       model,
+    };
+  }
+  // The assistant fills in an action of the work item the conversation is about (D112 item 8): a draft kept in the
+  // conversation, never sent. The time is the first free time on Friday the person's calendar answers (`meetingSlots`).
+  if (/^boka det/i.test(text)) {
+    const body = 'Ni är båda lediga fredag 09:00. Jag har fyllt i bokningen; inget är skickat.';
+    const draft = {
+      kind: 'action' as const,
+      threadId: 'omtanke',
+      actionId: 'book',
+      values: { when: '2026-11-06T08:00:00.000Z', place: 'Rum 12', message: 'Hej! Ses vi på fredag?' },
+    };
+    const reply = thread({
+      id: conversationId,
+      title: text.slice(0, 80),
+      kind: 'question',
+      connector: 'clew',
+      area: 'fragor',
+      messages: [
+        ...previous,
+        { id: `u${previous.length}`, role: 'user', body: text, createdAt: NOW },
+        {
+          id: `a${previous.length}`,
+          role: 'assistant',
+          body,
+          createdAt: NOW,
+          meta: { source: 'Personalsystemet', shape: 'forslag', assistant: 'model', draft },
+        },
+      ],
+    });
+    return {
+      conversationId,
+      thread: reply,
+      shape: 'forslag',
+      assistant: 'model',
+      answer: { body, source: 'Personalsystemet', at: NOW },
+      draft: { ...draft, thread: source.find(t => t.id === 'omtanke')! },
+      clewActions: [],
+      followUps: [],
     };
   }
   // A question that names an open card is answered with that card (D34, H1): the sentence is the card's, the card is drawn in the turn.
@@ -1313,6 +1422,7 @@ export const usersPeople = (): UserAdminRow[] => [
     userName: 'hassan',
     externalId: 'dev:hassan',
     email: 'hassan@clew.test',
+    title: 'Undersköterska',
     enabled: true,
     bound: true,
     assignments: [{ unitId: 'unit-omsorg', unitLabel: 'Hemtjänst Centrum', role: 'employee' }],
@@ -1325,6 +1435,7 @@ export const usersPeople = (): UserAdminRow[] => [
     userName: 'hillevi',
     externalId: 'dev:hillevi',
     email: 'hillevi@clew.test',
+    title: 'Rektor',
     enabled: true,
     bound: true,
     assignments: [{ unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' }],
@@ -1337,6 +1448,7 @@ export const usersPeople = (): UserAdminRow[] => [
     userName: 'mikael',
     externalId: 'dev:mikael',
     email: 'mikael@clew.test',
+    title: 'Systemförvaltare',
     enabled: true,
     bound: false,
     assignments: [{ unitId: 'unit-it', unitLabel: 'IT och digitalisering', role: 'employee' }],
@@ -1349,6 +1461,7 @@ export const usersPeople = (): UserAdminRow[] => [
     userName: 'omar',
     externalId: 'dev:omar',
     email: 'omar@clew.test',
+    title: null,
     enabled: true,
     bound: false,
     assignments: [],
@@ -1356,7 +1469,10 @@ export const usersPeople = (): UserAdminRow[] => [
     capabilities: [],
   },
 ];
-/** Enough people for three pages: sixty on one unit, by name, after which nobody in `usersPeople` sorts. */
+/**
+ * Enough people for three pages: sixty on one unit, by name, after which nobody in `usersPeople` sorts. The first has
+ * a title longer than a narrow column (D110); the rest have none, as people do in a catalogue that sends no titles.
+ */
 export const manyPeople = (): UserAdminRow[] =>
   Array.from({ length: 60 }, (_, i) => {
     const n = String(i + 1).padStart(2, '0'),
@@ -1367,6 +1483,7 @@ export const manyPeople = (): UserAdminRow[] =>
       userName: 'person' + n,
       externalId: 'dev:p' + n,
       email: `person${n}@clew.test`,
+      title: i === 0 ? 'Verksamhetsutvecklare med ansvar för digitalisering och välfärdsteknik' : null,
       enabled: true,
       bound: false,
       assignments: [placed],
@@ -1463,7 +1580,7 @@ export const talkSource: EntitySource = {
   source: TALKS_SOURCE,
   title: 'Utvecklingssamtal',
   view: talkView,
-  page: { title: 'Öppna samtalet', href: '/staff?talk={id}' },
+  page: { title: 'Öppna samtalet', href: '?talk={id}' },
   // Clew's own domain (a core connector): its section and its lens are captioned "Clew".
   own: true,
 };
@@ -1714,3 +1831,113 @@ export const organisationReports: Record<string, OrganisationUnitPeople['reports
     },
   ],
 };
+
+/**
+ * Nyheter (D112, amended 2026-11-11): the combined news list as the server answers `clew.news`, four pieces of news
+ * from two sources, newest first. Two leave Clew by their link; two open in Clew beside the page, by the read the
+ * communication fixture declares for one item. The views are the ones the core connector and the fixture really
+ * declare, so the suite draws the declarations.
+ */
+const declaredNews = newsCapabilities({ list: async () => newsOutput() }, () => true).capabilities[0]!;
+/** What the registry adds for the browser: whose view it is, and that its rows may open in another connector. */
+export const newsSpec = {
+  ...declaredNews.view!,
+  capability: 'clew.news',
+  connector: 'clew',
+  source: 'Startsidan',
+  chip: false,
+  rowViews: true,
+} as PanelViewSpec;
+const newsItemView = (
+  communicationNewsManifest as { capabilities: Array<{ name: string; view?: object }> }
+).capabilities.find(c => c.name === 'communication.newsItem')!.view!;
+export const newsItemSpec = {
+  ...newsItemView,
+  capability: 'communication.newsItem',
+  connector: 'communication',
+  source: 'Kommunikation',
+  chip: false,
+} as PanelViewSpec;
+const opensInClew = (ref: string) => ({
+  capability: 'communication.newsItem',
+  input: { ref },
+  title: 'Nyhet',
+  source: 'Kommunikation',
+});
+export const NEWS_LINK = 'https://intranat.example/nyheter/nytt-lonesystem';
+export const newsOutput = (): NewsResult => ({
+  rows: [
+    {
+      ref: 'intranet:news:1',
+      title: 'Nytt lönesystem från årsskiftet',
+      sender: 'HR',
+      publishedAt: '2026-11-04T07:00:00.000Z',
+      link: NEWS_LINK,
+      connector: 'intranet',
+      system: 'Intranätet',
+    },
+    {
+      ref: 'communication:notice:skolskjuts',
+      title: 'Så fungerar vinterns skolskjuts',
+      sender: 'Barn och utbildning',
+      publishedAt: '2026-11-03T09:00:00.000Z',
+      connector: 'communication',
+      system: 'Kommunikation',
+      view: opensInClew('communication:notice:skolskjuts'),
+    },
+    {
+      ref: 'intranet:news:2',
+      title: 'Ledarforum 3 december: anmälan öppen',
+      sender: 'Kommunledningen',
+      publishedAt: '2026-11-02T09:00:00.000Z',
+      link: 'https://intranat.example/nyheter/ledarforum',
+      connector: 'intranet',
+      system: 'Intranätet',
+    },
+    {
+      ref: 'communication:notice:matsalen',
+      title: 'Enkät om matsalen',
+      sender: 'Kostenheten',
+      publishedAt: '2026-11-01T09:00:00.000Z',
+      connector: 'communication',
+      system: 'Kommunikation',
+      view: opensInClew('communication:notice:matsalen'),
+    },
+  ],
+});
+/** One piece of news opened in Clew: what `communication.newsItem` answers. */
+export const newsItemOutput = {
+  ref: 'communication:notice:skolskjuts',
+  title: 'Så fungerar vinterns skolskjuts',
+  sender: 'Barn och utbildning',
+  publishedAt: '2026-11-03T09:00:00.000Z',
+  body: 'Från 1 december går skolbussarna efter vintertidtabellen.',
+};
+/** "Alla nyheter" placed in the rail under Verktyg by an administrator (D40), as the registry lists it. */
+export const newsMenuRow: MenuEntry = {
+  connector: 'clew',
+  source: 'Startsidan',
+  capability: 'clew.news',
+  title: 'Nyheter',
+  label: 'Nyheter',
+  icon: 'book',
+};
+/** The shared header (D88) with the intranet's page of tools marked (D112, amended 2026-11-11). */
+export const TOOLBOX_HREF = 'https://intranat.example/verktyg';
+export const siteHeaderWithToolbox = (): SiteHeaderView => ({
+  menu: {
+    version: 1,
+    site: { name: 'Startsidan', href: '/' },
+    items: [
+      { id: 'start', label: 'Start', href: '/' },
+      {
+        id: 'anstallning-arbetsmiljo',
+        label: 'Anställning och arbetsmiljö',
+        href: '/intranat/anstallning-arbetsmiljo',
+        children: [{ id: 'verktyg', label: 'Verktyg', href: TOOLBOX_HREF, purpose: 'toolbox' }],
+      },
+    ],
+  },
+  logo: null,
+  source: { id: 'intranet', label: 'Intranätet' },
+});

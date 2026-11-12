@@ -19,7 +19,7 @@ import { clock } from './ambient';
  */
 const cardsAbout = subjectCards({ store: subjectStore, registry, clock });
 export const entities = entityUsecases({
-  directory: { reach: persona => staff.reach(persona), colleague: (persona, key) => staff.colleague(persona, key) },
+  directory: staff,
   sources: {
     reads: async (actor, kind) => {
       await registry.refreshGovernance();
@@ -42,9 +42,12 @@ export const entities = entityUsecases({
 });
 /**
  * An action from an entity's menu (D97, D8): the opened entity says whether the reader may start it on that key, and the
- * stream's started card is what it becomes, a propose's draft or an execute behind its human decision.
+ * stream's started card is what it becomes, a propose's draft or an execute behind its human decision. What it would
+ * write (D112) is the stream's effect read, before any card exists.
  */
 export const entityActions = entityActionUsecases({
   open: (persona, kind, key) => entities.detail(persona, kind, key),
   start: (persona, capability, input, context) => threads.startCard(persona, capability, input, context),
+  effect: (persona, capability, input, connector) => threads.effectFor(persona, capability, input, connector),
+  clock,
 });

@@ -44,7 +44,7 @@ services:
   # The WCAG 2.2 AA suite (tests/a11y, scripts/a11y.sh). Playwright is Apache-2.0, axe-core MPL-2.0.
   # The API is mocked in the browser, so this service needs nothing else from the stack.
   a11y:
-    image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
+    image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d
     profiles: [a11y]
     init: true
     working_dir: /workspace
@@ -53,14 +53,17 @@ services:
     volumes:
       - ${CLEW_HOST_WORKSPACE:-..}:/workspace
       - node_modules:/workspace/node_modules
+  # From PostgreSQL 18 the image keeps its data under /var/lib/postgresql/<major>, so the volume is mounted one level up.
+  # It has a new name because the old one (postgres_data) holds a PostgreSQL 17 directory at its root. Development data
+  # is synthetic and seeded, so nothing is carried across: docs/maintainers/local-development.md says how to start again.
   postgres:
-    image: postgres:17.11-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
+    image: postgres:18.6-bookworm@sha256:f1ea2a1a4fb7b68d4836be1fdcb8a6466a89b072158bf9d97663600538c294c5
     environment:
       POSTGRES_USER: clew
       POSTGRES_PASSWORD: clew-local
       POSTGRES_DB: clew
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_clusters:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U clew -d clew"]
       interval: 3s
@@ -128,6 +131,11 @@ services:
     volumes:
       - ${CLEW_HOST_WORKSPACE:-..}:/workspace:ro
       - node_modules:/workspace/node_modules
+    # After app: the workspace is read-only here, so on a fresh checkout the node_modules mount point exists only once
+    # app, which mounts the workspace writable, has started. It runs from the packages app installs (bun install).
+    depends_on:
+      app:
+        condition: service_started
     ports:
       - "127.0.0.1:4047:4010"
     healthcheck:
@@ -136,7 +144,7 @@ services:
       timeout: 3s
       retries: 40
   calendar-mail:
-    image: axllent/mailpit:v1.33.0@sha256:9b3a463be15354c0f0eba91697d80e3e0d8a5623ef0e627cacc836bc17fd5231
+    image: axllent/mailpit:v1.33.1@sha256:aef2aacc11f075ec0fb6874275ee4a421e688e11a96ebb296134d1735c7761ce
     profiles: ["calendar"]
     mem_limit: 64m
     memswap_limit: 64m
@@ -251,7 +259,7 @@ services:
 volumes:
   node_modules:
   bun_cache:
-  postgres_data:
+  postgres_clusters:
   calendar_data:
   hr_state:
   finance_state:

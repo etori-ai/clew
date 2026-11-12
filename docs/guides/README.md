@@ -16,10 +16,12 @@ The first useful result is one authorized read shown in Clew. No scan, write, mo
 | Need | Guide |
 |---|---|
 | Map a directory API, add a searchable table and contact details | [Search and views](example-custom-directory.md) |
+| Know where Clew shows what your manifest declares, and what opens a new tab | [Where things open](where-things-open.md) |
 | Discover outstanding work and perform approved changes | [Actions and receipts](actions-and-receipts.md) |
 | Call another connector or participate in a cross-system job | [Working across connectors](../architecture/working-across-connectors.md) |
 | Show what your system knows about a person or a unit, or offer an action on one | [Say what your rows are about](creating-a-connector.md#8-say-what-your-rows-are-about) |
 | Look up exact fields, routes or compatibility rules | [Protocol reference](../reference/connector-protocol.md), [manifest reference](../generated/manifest-reference.md) |
 | Push the organisation's people, units and groups into Clew (not a connector) | [Writing a provisioner](writing-a-provisioner.md) |
+| Tell the teams that run the directory, the identity provider and the hosting what Clew expects of them | [Provisioning: what operations deliver](provisioning-for-operations.md) |
 
 Use the [support matrix](../reference/status.md) to distinguish available behavior from designs. Full application setup is in [local development](../maintainers/local-development.md).

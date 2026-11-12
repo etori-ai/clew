@@ -26,9 +26,9 @@ adapt `toPerson` in `directory.mjs` instead.
 | `phonebook.person` "Kontaktkort" | One colleague: title, unit, phone, mobile, e-mail, room, manager, link out | Opened from a row or a search hit |
 | `phonebook.search`, `phonebook.fetch` | The composite search's hits | A hit says who and where, not the number |
 
-The area `Kontakter` lists the team list and the search as standing actions and names the icon `phone`, so the area
-is a button under the box on the start page and both actions are cards under it (D41), for everyone in the
-connector's audience. Both views open without input, so an administrator can put either or both in Clew's menu under Verktyg (D40; the
+The area `Kontakter` lists the team list and the search as standing and names the icon `phone`, so both views carry
+the area's word and icon (D71) and the area is a choice in Hem's area filter, for everyone in the connector's
+audience. Both views open without input, so an administrator can put either or both in Clew's menu under Verktyg (D40; the
 connector's page, Områden, "Verktyg i menyn"). The manifest names their rows: "Telefonbok" for the search and "Mitt
 team" for the team list. Everything works without a model. With a model, the views say
 `modelReads: "summary"` on the directory/team/contact views: the model receives a summary/count for those views. Search hits and fetch results can still include names and context; this is not a global redaction rule.

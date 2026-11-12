@@ -20,7 +20,10 @@ describe('side panel labels (3.1.2)', () => {
   });
   test("every field the calendar's reads return has a Swedish name too (D69, amended)", () => {
     const never = () => Promise.reject(new Error('not called'));
-    const calendar = calendarConnector({ readToday: never, weekView: never }, { dayView: never, listRooms: never });
+    const calendar = calendarConnector(
+      { readToday: never, weekView: never },
+      { dayView: never, listRooms: never, freeTimes: never },
+    );
     const fields = new Set(calendar.capabilities.flatMap(c => keys(c.output as Schema)));
     expect(fields).toContain('gaps');
     expect(fields).toContain('equipment');

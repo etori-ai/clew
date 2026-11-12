@@ -102,6 +102,107 @@ const settled = (promise: Promise<unknown>) => {
   );
   return () => done;
 };
+test('a title PostgreSQL cannot hold does not stop the deactivation beside it, and a name it cannot hold is refused by name (D110)', async () => {
+  const { p, user, scim } = stack();
+  const { id } = await scim.createUser(p, { ...user(1), title: 'Fritids\u0000ledare' }, BASE);
+  const row = async () =>
+    (
+      await database()
+        .select({ title: schema.people.title, enabled: schema.people.enabled, name: schema.people.name })
+        .from(schema.people)
+        .where(eq(schema.people.id, id))
+    )[0];
+  expect(await row()).toEqual({ title: 'Fritids ledare', enabled: true, name: 'Person 1' });
+  // The directory sends the leaver's last title with the deactivation, as Entra does: the row is written.
+  await scim.patchUser(
+    p,
+    id,
+    {
+      schemas: [PATCH],
+      Operations: [
+        { op: 'replace', path: 'title', value: '\u0000Rektor\u0000\n(vik.)\u0000' },
+        { op: 'replace', path: 'active', value: false },
+      ],
+    },
+    BASE,
+  );
+  expect(await row()).toEqual({ title: 'Rektor (vik.)', enabled: false, name: 'Person 1' });
+  // A name is required, so one the store cannot hold is the client's to correct: a 400 that names it, not a 500.
+  await expect(
+    scim.patchUser(
+      p,
+      id,
+      { schemas: [PATCH], Operations: [{ op: 'replace', path: 'displayName', value: 'Bo\u0000 Ek' }] },
+      BASE,
+    ),
+  ).rejects.toMatchObject({
+    status: 400,
+    scimType: 'invalidValue',
+    detail: "Attribute 'displayName' holds a NUL character, which cannot be stored.",
+  });
+  expect((await row())?.name).toBe('Person 1');
+});
+test("a member who comes or goes moves the group's time of change in the store, so the next read answers it too", async () => {
+  const { p, user, scim } = stack();
+  const { id: person } = await scim.createUser(p, user(1), BASE);
+  const group = await scim.createGroup(p, { externalId: `${p.id}:plain`, displayName: 'Plain' }, BASE);
+  await new Promise(resolve => setTimeout(resolve, 5));
+  const changed = await scim.patchGroup(
+    p,
+    group.id,
+    { schemas: [PATCH], Operations: [{ op: 'add', path: 'members', value: [{ value: person }] }] },
+    BASE,
+  );
+  expect(changed.meta.lastModified > group.meta.lastModified).toBe(true);
+  const read = await scim.getGroup(p, group.id, BASE);
+  expect([read.meta.lastModified, read.members.length]).toEqual([changed.meta.lastModified, 1]);
+});
+test('concurrent user patches preserve the name and the deactivation', async () => {
+  const { deps, p, store, user, scim } = stack();
+  const { id } = await scim.createUser(p, user(1), BASE);
+  const slow = paused(store);
+  const patch = (path: string, value: string | boolean) => ({
+    schemas: [PATCH],
+    Operations: [{ op: 'replace', path, value }],
+  });
+  const first = scimUsecases({ store: slow.store, ...deps }).patchUser(p, id, patch('active', false), BASE);
+  await slow.atRead;
+  // The first write is uncommitted. A second writer must read the committed inactive state.
+  let reading!: () => void;
+  const started = new Promise<void>(resolve => {
+    reading = resolve;
+  });
+  const observed: ProvisionStore = {
+    transaction: fn =>
+      store.transaction(tx =>
+        fn({
+          ...tx,
+          readUser: (...args) => {
+            reading();
+            return tx.readUser(...args);
+          },
+        }),
+      ),
+  };
+  const second = scimUsecases({ store: observed, ...deps }).patchUser(p, id, patch('displayName', 'New name'), BASE);
+  try {
+    await started;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  } finally {
+    slow.release();
+  }
+  await Promise.all([first, second]);
+  expect(await scim.getUser(p, id, BASE)).toMatchObject({ active: false, displayName: 'New name' });
+  const rows = await database()
+    .select({ action: schema.audit.action })
+    .from(schema.audit)
+    .where(eq(schema.audit.subject, 'person:' + id));
+  expect(rows.map(row => row.action).sort()).toEqual([
+    'scim.user.created',
+    'scim.user.deactivated',
+    'scim.user.patched',
+  ]);
+});
 test('two membership changes for one person at once: the second derivation waits and reads what the first committed', async () => {
   const { prefix, deps, p, store, user, grant, scim } = stack();
   const person = (await scim.createUser(p, user(1), BASE)).id;
@@ -118,7 +219,7 @@ test('two membership changes for one person at once: the second derivation waits
   const plain = await scim.createGroup(p, { externalId: `${prefix}:admins`, displayName: 'Admins' }, BASE);
   await database()
     .insert(schema.groupCapabilities)
-    .values({ groupExternalId: `${prefix}:admins`, capability: 'admin.users' });
+    .values({ organisationId: prefix + '-org', groupExternalId: `${prefix}:admins`, capability: 'admin.users' });
   expect(await grant(person)).toEqual({ role: 'manager', capabilities: [] });
   // The first request takes the manager role away and stops between reading the memberships and writing the grant.
   const slow = paused(store);

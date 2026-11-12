@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { CommitmentOwner, StaffPerson, TalksResult } from '@clew/contracts';
 import {
@@ -34,8 +34,8 @@ import { api } from '../api';
 import { commitmentsQuery, staffQuery, talksQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { useTalkAction } from '../mutations';
-import { usePageTitle } from '../page-title';
-import { talkOf, withoutTalk } from '../talk-address';
+import { useOverlayTitle } from '../page-title';
+import { talkOf, withTalk, withoutTalk } from '../talk-address';
 import {
   dueText,
   groupCommitments,
@@ -59,28 +59,40 @@ const responsible = (row: Pick<CommitmentEntry, 'owner' | 'mine'>) =>
   row.mine ? 'Du' : row.owner === 'employee' ? 'Medarbetaren' : 'Chefen';
 
 /**
- * One person's utvecklingssamtal (D96 item 7) as a focused overlay over Personal (D83): an end `Drawer` on a desktop and
- * a tall `BottomSheet` on a phone, composed as the service catalogue's overlay is (`DrawerHeader` in a `Layout`, the
- * sheet's own heading row with Stäng). The address is `/staff?talk=<personId>` (`talk-address.ts`); the list stays
- * mounted under it. Closing (✕, Esc) replaces the address with the list's own, and Astryx gives the focus back to the
- * control that opened the drawer; when nothing opened it (a reload, Back after the list was redrawn) `opener` names the
- * person's own control on the list.
+ * One person's utvecklingssamtal (D96 item 7) as a focused overlay over the page it was opened on (D83, D111 rule 5):
+ * an end `Drawer` on a desktop and a tall `BottomSheet` on a phone, composed as the service catalogue's overlay is
+ * (`DrawerHeader` in a `Layout`, the sheet's own heading row with Stäng). Mounted by the pages where its way in is
+ * drawn, after their panel so it stacks over a card opened beside them: Personal (a row's menu), a person's page (the
+ * talks section) and a unit's page. The address is the page's own with `talk=<personId>` (`talk-address.ts`); the page
+ * stays mounted under it. Closing (✕, Esc, the way back) replaces the address with the same one without `talk`, and
+ * Astryx gives the focus back to the control that opened the drawer; when nothing opened it (a reload, Back after the
+ * list was redrawn) `opener` names the person's own control on the page, else the page's way into this talk.
  *
- * Opened only for Clew's own module (`writable`): when another system answers, the list opens that system instead and
+ * Opened only for Clew's own module (`writable`): when another system answers, the page opens that system instead and
  * the address draws nothing. The talk's state with Markera som hållet and Ångra, the person's action points carried
- * over first, then this round's, then the done ones, and a form to add one while a round is open.
+ * over first, then this round's, then the done ones, and a form to add one while a round is open. Nothing is read
+ * until an address names a talk, so a page that can open one asks nothing of the talks system until it does.
  */
-export function TalkOverlay({ opener }: { opener: (personId: string) => HTMLElement | null }) {
+export function TalkOverlay({
+  opener,
+  back,
+}: {
+  opener?: (personId: string) => HTMLElement | null;
+  /** The words of the way back from a person who is not there, which names the page under the drawer. */
+  back: string;
+}) {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const [search] = useSearchParams();
   const mobile = useMediaQuery(mobileQuery);
   const short = useMediaQuery(shortQuery);
   const talkId = talkOf(search);
-  const staffQ = useQuery(staffQuery);
-  const talksQ = useQuery(talksQuery);
   // The person shown, kept while the overlay slides away so its content does not blank mid-exit (Astryx Drawer).
   const [shownId, setShownId] = useState<string | null>(talkId);
   if (talkId && talkId !== shownId) setShownId(talkId);
+  const wanted = !!(talkId ?? shownId);
+  const staffQ = useQuery({ ...staffQuery, enabled: wanted });
+  const talksQ = useQuery({ ...talksQuery, enabled: wanted });
   const talks = talksQ.data;
   const readOnly = talks?.writable === false;
   const settled = staffQ.data !== undefined && (talksQ.data !== undefined || talksQ.isError);
@@ -89,15 +101,18 @@ export function TalkOverlay({ opener }: { opener: (personId: string) => HTMLElem
   const found = !!person && !!talks;
   const title = talksQ.isError ? 'Samtal' : found ? person.name : 'Samtalet finns inte';
   const label = found ? `Samtal med ${person.name}` : title;
-  // The open talk names the tab (2.4.2); the list under it yields while the address names a talk (D97: Personal knows
-  // no talk), and with no drawer to show the tab is the list's. Focus moving into the drawer says the name.
-  usePageTitle(talkId && settled ? (isOpen && found ? label : 'Personal') : null, false);
+  // The open talk names the tab (2.4.2), and the page's own name comes back when it closes; with no drawer to show the
+  // tab is the page's. Focus moving into the drawer says the name.
+  useOverlayTitle(isOpen && found ? label : null);
 
   const onOpenChange = (open: boolean) => {
-    if (!open) navigate(withoutTalk(search), { replace: true });
+    if (!open) navigate(withoutTalk(pathname, search), { replace: true });
   };
   // Astryx returns the focus to the element that opened the overlay. After a reload nothing did, so the focus would
-  // stay on the page's body: the person's own control on the list takes it, and nothing else is guessed.
+  // stay on the page's body: the person's own control on the page takes it (`opener`), else the page's own way into this
+  // talk (a section's "Öppna samtalet"), and nothing else is guessed.
+  const page = useRef({ pathname, search: search.toString() });
+  page.current = { pathname, search: search.toString() };
   const [dialog, setDialog] = useState<HTMLDialogElement | null>(null);
   const sheetPanel = useCallback((panel: HTMLDivElement | null) => setDialog(panel?.closest('dialog') ?? null), []);
   const openRef = useRef(talkId);
@@ -113,7 +128,10 @@ export function TalkOverlay({ opener }: { opener: (personId: string) => HTMLElem
       if (!openRef.current) setShownId(null);
       requestAnimationFrame(() => {
         const active = document.activeElement;
-        if (id && (!active || active === document.body)) openerRef.current(id)?.focus();
+        if (!id || (active && active !== document.body)) return;
+        const { pathname, search } = page.current;
+        const way = `a[href="${CSS.escape(withTalk(pathname, search, id))}"]`;
+        (openerRef.current?.(id) ?? document.querySelector<HTMLElement>(way))?.focus();
       });
     };
     dialog.addEventListener('close', closed);
@@ -166,7 +184,7 @@ export function TalkOverlay({ opener }: { opener: (personId: string) => HTMLElem
           ? 'Inget system för utvecklingssamtal svarar för dig.'
           : 'Adressen pekar på någon som inte finns bland medarbetarna du är chef för.'
       }
-      actions={<Button label="Tillbaka till Personal" onClick={() => onOpenChange(false)} />}
+      actions={<Button label={back} onClick={() => onOpenChange(false)} />}
     />
   );
   const body = shownId ? (

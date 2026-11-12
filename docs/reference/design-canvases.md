@@ -5,14 +5,6 @@ They are Claude Design artifacts outside the repository and are private until th
 names the decision that chose from a canvas and the review that describes it, so the reasoning can be read without the
 link.
 
-**Being replaced as the reference.**
-[D115](../decisions/D115-the-startsidan-prototypes-version-1-0-is-the-reference-for-clews-look-and-layout.md)
-(provisional, 2026-11-11) makes the startsidan prototype's Version 1.0 the reference for look and layout: the portal
-in the repository `startsidan-prototype` (`apps/portal`), run with the cookie `startsidan-version=1.0`, described in
-[the prototype against Clew](../reviews/2026-11-11-startsidan-prototype-version-1-0-against-clew.md). Until a step
-of that decision is built, the screen it will change is still compared with its artboard below; once it is built,
-that screen is compared with the prototype.
-
 Add a row here in the change that first refers to a new canvas.
 
 | Canvas | Link | What it draws | Decision | Review |
@@ -28,6 +20,8 @@ Add a row here in the change that first refers to a new canvas.
 | Clew · det jag gjorde, och ångra | https://claude.ai/artifact/CDDCSdSrDTqUvXWxNb9N6Y | A decision as one row with six states, and undo | [D70](../decisions/D70-one-press-confirms-on-the-row-and-rows-with-a-document-are-reviewed-one-at-a-time.md), amended | [Completion](../reviews/2026-11-06-completion-one-press-one-by-one-and-the-receipt.md) |
 | Clew · dagen bredvid eller i spalten | https://claude.ai/artifact/7XQKJ8PfcHAtp8QNQx7DXS | Where the day sits: beside the column or in it | [D72](../decisions/D72-the-day-is-the-pages-and-the-panel-holds-only-what-was-opened.md) | [The day beside or in the column](../reviews/2026-11-07-the-day-beside-or-in-the-column.md) |
 | Clew · en entitet, många källor | https://claude.ai/artifact/Muchzp6aRAx9uxokwFLAfj | How a source attaches to a person or a unit: Personal, the lens under Visa, the opened person as sections; 19 artboards. A summary outside the repository: https://claude.ai/artifact/MC5SquxUxgPnJbEFhpsqxi | [D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md) | [One entity, many sources](../reviews/2026-11-10-one-entity-many-sources.md) |
+| Clew navigation map | https://claude.ai/artifact/PZvnygJwij6VxCRWyjaEjd | Where things open today by the page they were opened on, the proposed rules (one place per thing), and what a connector declares and where it opens; three boards | [D111](../decisions/D111-where-something-opens-is-decided-by-what-it-is.md) | [Where things open](../reviews/2026-11-11-navigation-where-things-open.md) |
+| Clew · a fresh start on Astryx templates | https://claude.ai/artifact/22VoDaxdttcxZMq2C4ijpa | The whole interface on Astryx's templates: the rail, Hem, a conversation, Att göra as a queue, a work item, a person, a tool with the shared header, the calendar with the panel, two phone frames, the booking dialog's two steps and its receipt, and the connector author's page; 16 boards. The reference where it differs from an earlier canvas | [D112](../decisions/D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) | None; the reasoning is in the decision |
 
 The descriptions are taken from the decisions, reviews and session notes that cite each canvas, not from the canvases
 themselves. Where they disagree with the artboard, the artboard is right.

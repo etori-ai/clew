@@ -12,6 +12,7 @@ import {
   ConfirmInput,
   ConversationInput,
   CreateEventInput,
+  EffectInput,
   ModelChoiceInput,
   MoveProposalInput,
   ReplanInput,
@@ -30,11 +31,12 @@ import type {
 import type { ConversationEvent, ConversationInput as ConversationInputType } from '@clew/contracts';
 import { CalendarError } from '@clew/calendar/model';
 import { TurnStopped } from '../assistant';
-import type { ActInput as ActInputType } from '@clew/contracts';
+import type { ActInput as ActInputType, EffectInput as EffectInputType } from '@clew/contracts';
 import { InputError, protectedRoute, type Env } from '../context';
 import { verbsFor } from '../assistant/verbs';
 import { registry, runCapability } from '../connectors/registry';
 import {
+  asks,
   assistant,
   calendar,
   events,
@@ -45,10 +47,10 @@ import {
   refresh,
   attention,
 } from '../composition';
-import { Type } from '@sinclair/typebox';
+import { Type, type Static } from 'typebox';
 import { executions } from '../composition/executions';
 import { jobs } from '../composition/jobs-across-systems';
-import { FactEnvelopeSchema, StepDraftSchema } from '@clew/connectors/protocol';
+import { FactEnvelopeSchema, StepDraftSchema, type FactEnvelope } from '@clew/connectors/protocol';
 import { changesFor } from '../composition/changes';
 import { authenticate, AuthError, SESSION_COOKIE } from '../auth';
 import { getCookie } from 'hono/cookie';
@@ -59,6 +61,7 @@ const {
   act,
   attentionFor,
   dismissAny,
+  effect,
   ensureThreads,
   listAreas,
   listThreadsFor,
@@ -152,6 +155,7 @@ const validators = {
   confirm: ajv.compile(ConfirmInput),
   replan: ajv.compile(ReplanInput),
   act: ajv.compile(ActInput),
+  effect: ajv.compile(EffectInput),
   conversation: ajv.compile(ConversationInput),
   modelChoice: ajv.compile(ModelChoiceInput),
   createEvent: ajv.compile(CreateEventInput),
@@ -225,17 +229,14 @@ api.post('/executions/:id/reconcile', async c =>
 );
 /** A job across systems (D55): assemble the proposal for one fact as the person (nothing is written), approve it once (the human decision endpoint, never a tool), read it back. */
 api.post('/jobs/assemble', async c => {
-  const { fact } = await body(
-      c.req.raw,
-      validators.fact as unknown as (value: unknown) => value is typeof FactEnvelopeSchema.static,
-    ),
+  const { fact } = await body(c.req.raw, validators.fact as unknown as (value: unknown) => value is FactEnvelope),
     persona = c.get('session').context;
   return c.json(await jobs.assemble(actorOf(persona), fact, (name, input) => runCapability(persona, name, input)));
 });
 api.post('/jobs', async c => {
   const input = await body(
     c.req.raw,
-    validators.jobApproval as unknown as (value: unknown) => value is typeof JobApprovalInput.static,
+    validators.jobApproval as unknown as (value: unknown) => value is Static<typeof JobApprovalInput>,
   );
   return c.json(await jobs.approve(c.get('session').context, input), 202);
 });
@@ -252,7 +253,7 @@ api.use('*', async (c, next) => {
 });
 api.use('/threads/:id/*', async (c, next) => {
   if (!(await threadFor(c.get('session').context, c.req.param('id')!)))
-    return c.json({ error: 'Kortet finns inte.' }, 404);
+    return c.json({ error: 'Ärendet finns inte.' }, 404);
   await next();
 });
 api.get('/threads', async c => {
@@ -332,7 +333,33 @@ api.post('/cap/:name', async c => {
 });
 api.post('/threads/:id/act', async c => {
   const input = await body(c.req.raw, validators.act as unknown as (value: unknown) => value is ActInputType, 64_000);
-  return c.json(await act(c.get('session').context, c.req.param('id'), input.actionId, input.refs, input.reviews));
+  return c.json(
+    await act(c.get('session').context, c.req.param('id'), input.actionId, input.refs, input.reviews, input.values),
+  );
+});
+/** "Det här händer" (D112): what the card's action would write with these rows and answers, from its effect read. Nothing is written. */
+api.post('/threads/:id/effect', async c => {
+  const input = await body(
+    c.req.raw,
+    validators.effect as unknown as (value: unknown) => value is EffectInputType,
+    32_000,
+  );
+  return c.json(await effect(c.get('session').context, c.req.param('id'), input.actionId, input.refs, input.values));
+});
+/** Free times for an action's meeting ask (D112), from the person's own calendar, and their day when `date` is given. */
+api.get('/asks/times', async c => {
+  const capability = c.req.query('capability') ?? '',
+    property = c.req.query('property') ?? '',
+    date = c.req.query('date'),
+    before = c.req.query('before');
+  if (!capability || capability.length > 120 || !property || property.length > 80)
+    throw new InputError('Ogiltig förfrågan.');
+  return c.json(
+    await asks.meetingTimes(c.get('session').context, capability, property, {
+      ...(date ? { date } : {}),
+      ...(before ? { before } : {}),
+    }),
+  );
 });
 /** Binary content never traverses model tools or conversation storage. Every request reauthorizes metadata and bytes. */
 api.get('/documents/content', async c => {
@@ -366,7 +393,7 @@ api.post('/threads/:id/execution/check', async c => {
   const persona = c.get('session').context,
     id = c.req.param('id');
   const thread = await threadFor(persona, id);
-  if (!thread) return c.json({ error: 'Kortet finns inte.' }, 404);
+  if (!thread) return c.json({ error: 'Ärendet finns inte.' }, 404);
   if (thread.execution && (thread.execution.state === 'unknown' || thread.execution.reason))
     await executions.reconcile(persona, thread.execution.id);
   return c.json(await threadFor(persona, id));
@@ -418,9 +445,13 @@ api.post('/threads/:id/remind/cancel', async c =>
     ),
   ),
 );
+/** A work item's "Händelser" (D112 item 4): what the person and Clew did to it, read from its audit rows. A read. */
+api.get('/threads/:id/events', async c =>
+  c.json(await threads.itemHistory(c.get('session').context, c.req.param('id'))),
+);
 api.get('/threads/:id', async c => {
   const thread = await threadFor(c.get('session').context, c.req.param('id'));
-  return thread ? c.json(thread) : c.json({ error: 'Kortet finns inte.' }, 404);
+  return thread ? c.json(thread) : c.json({ error: 'Ärendet finns inte.' }, 404);
 });
 api.post('/threads/:id/reply', async c =>
   c.json(await reply(c.get('session').context, c.req.param('id'), (await body(c.req.raw, validators.reply)).body)),
@@ -491,7 +522,7 @@ api.get('/objects', async c => {
 });
 api.get('/threads/:id/verbs', async c => {
   const thread = await threadFor(c.get('session').context, c.req.param('id'));
-  return thread ? c.json({ verbs: verbsFor(thread) }) : c.json({ error: 'Kortet finns inte.' }, 404);
+  return thread ? c.json({ verbs: verbsFor(thread) }) : c.json({ error: 'Ärendet finns inte.' }, 404);
 });
 /** The person's models (D24): the ones they may pick, the one in use and whether it answers; choosing one is their own preference. */
 api.get('/assistant/status', async c => c.json(await models.statusFor(c.get('session').context)));

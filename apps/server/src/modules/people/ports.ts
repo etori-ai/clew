@@ -7,6 +7,7 @@ import type {
   Membership,
   Placement,
   TreeUnit,
+  UserFields,
   UserRecord,
   UserSearch,
 } from './domain';
@@ -68,8 +69,10 @@ export interface ProvisionTx {
   /** The groups with an external id the person is in; a group without one carries no meaning. */
   memberships(personId: string): Promise<Membership[]>;
   members(groupExternalId: string): Promise<string[]>;
-  groupCapabilities(): Promise<GroupCapabilityRule[]>;
-  unitLabels(ids: readonly string[]): Promise<Record<string, string>>;
+  /** D85's rows of one organisation: a row applies to the groups of the organisation that wrote it, and to no other (D101). */
+  groupCapabilities(organisationId: string): Promise<GroupCapabilityRule[]>;
+  /** The labels of an organisation's own unit rows. A row another organisation left behind is not known here (D101). */
+  unitLabels(ids: readonly string[], organisationId: string): Promise<Record<string, string>>;
   /** Upsert by id, one per assignment, before the assignments that reference them; the label is the derived one. */
   writeUnits(organisationId: string, units: readonly DerivedUnit[]): Promise<void>;
   replaceAssignments(personId: string, assignments: readonly Assignment[]): Promise<void>;
@@ -121,8 +124,10 @@ export interface ProvisionTx {
   rotateProvisioner(id: string, tokenDigest: string, previousValidUntil: string | null): Promise<void>;
   /** Ends every token of the provisioner at `at`. */
   revokeProvisioner(id: string, at: string): Promise<void>;
-  // SCIM: users, always within the provisioner's organisation.
-  readUser(organisationId: string, id: string): Promise<UserRecord | undefined>;
+  /** The organisation scopes both reads. A mutation locks the row before reading the fields it will change. */
+  readUser(organisationId: string, id: string, lock?: boolean): Promise<UserRecord | undefined>;
+  /** Which of `ids` are users of the organisation: one read for a group of any size. */
+  usersAmong(organisationId: string, ids: readonly string[]): Promise<string[]>;
   /**
    * Across the installation, because a login carries no organisation: a `userName` matches without regard to case
    * (RFC 7643's default for it), an `externalId` exactly. The unique indexes of `auth_person` say the same.
@@ -137,7 +142,9 @@ export interface ProvisionTx {
   insertUser(record: UserRecord): Promise<void>;
   updateUser(
     id: string,
-    fields: Partial<Pick<UserRecord, 'externalId' | 'userName' | 'name' | 'email' | 'enabled'>> & { updatedAt: string },
+    fields: Partial<Pick<UserRecord, keyof UserFields>> & {
+      updatedAt: string;
+    },
   ): Promise<void>;
   userGroups(personId: string): Promise<Array<{ id: string; externalId: string | null; label: string }>>;
   // SCIM: groups. A group belongs to the organisation of the provisioner that pushed it, as its members do, so a client
@@ -191,8 +198,8 @@ export interface ProvisionTx {
   // The organisation tree (D99). A node is a `unit:` group; its parent is on the group.
   /** The units directly below a unit: the `unit:` groups that name it as their parent, by unit id. */
   childUnits(unitId: string): Promise<Array<{ id: string; label: string }>>;
-  /** Every node of the organisation's tree, by unit id. */
-  unitTree(organisationId: string): Promise<TreeUnit[]>;
+  /** Nodes of the organisation's tree, optionally narrowed to the named ids, in unit id order. */
+  unitTree(organisationId: string, ids?: readonly string[]): Promise<TreeUnit[]>;
   /**
    * Every person of the organisation with each unit they are assigned to, by person id and then unit id; a person
    * assigned to none is one row with `unitId` and `role` null.
@@ -200,8 +207,13 @@ export interface ProvisionTx {
   placements(organisationId: string): Promise<Placement[]>;
   /** Whether an identity binding exists for the person, with any issuer. */
   bound(personId: string): Promise<boolean>;
-  /** Add or remove one group-capability row; true when the row changed. */
-  setGroupCapability(groupExternalId: string, capability: string, present: boolean): Promise<boolean>;
+  /** Add or remove one group-capability row of an organisation; true when the row changed. */
+  setGroupCapability(
+    organisationId: string,
+    groupExternalId: string,
+    capability: string,
+    present: boolean,
+  ): Promise<boolean>;
 }
 export interface ProvisionStore {
   transaction<T>(fn: (tx: ProvisionTx) => Promise<T>): Promise<T>;
