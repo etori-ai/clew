@@ -142,6 +142,45 @@ test('a title PostgreSQL cannot hold does not stop the deactivation beside it, a
   });
   expect((await row())?.name).toBe('Person 1');
 });
+test('a parent PostgreSQL cannot hold is refused by name before the store is asked: a 400, where it once answered 500 (S10)', async () => {
+  const { prefix, p, scim } = stack();
+  const UNIT = 'urn:clew:params:scim:schemas:extension:unit:2.0:Group';
+  await scim.createGroup(p, { externalId: `unit:${prefix}-root`, displayName: 'Rot' }, BASE);
+  const leaf = await scim.createGroup(
+    p,
+    { externalId: `unit:${prefix}-leaf`, displayName: 'Löv', [UNIT]: { parent: `unit:${prefix}-root` } },
+    BASE,
+  );
+  const parent = `unit:${prefix}-root\u0000`,
+    patched = (operation: object) => scim.patchGroup(p, leaf.id, { schemas: [PATCH], Operations: [operation] }, BASE);
+  for (const attempt of [
+    () => scim.createGroup(p, { externalId: `unit:${prefix}-ny`, displayName: 'Ny', [UNIT]: { parent } }, BASE),
+    () =>
+      scim.replaceGroup(
+        p,
+        leaf.id,
+        { externalId: `unit:${prefix}-leaf`, displayName: 'Löv', [UNIT]: { parent } },
+        BASE,
+      ),
+    () => patched({ op: 'replace', path: UNIT + ':parent', value: parent }),
+    () => patched({ op: 'replace', path: UNIT, value: { parent } }),
+    () => patched({ op: 'replace', value: { [UNIT]: { parent } } }),
+  ])
+    await expect(attempt()).rejects.toMatchObject({
+      status: 400,
+      scimType: 'invalidValue',
+      detail: `Attribute '${UNIT}:parent' holds a NUL character, which cannot be stored.`,
+    });
+  // The tree is as it was: the leaf under the root, and no unit was added.
+  const rows = await database()
+    .select({ externalId: schema.groups.externalId, parent: schema.groups.parentUnitId })
+    .from(schema.groups)
+    .where(like(schema.groups.id, prefix + '%'));
+  expect(Object.fromEntries(rows.map(r => [r.externalId, r.parent]))).toEqual({
+    [`unit:${prefix}-root`]: null,
+    [`unit:${prefix}-leaf`]: `${prefix}-root`,
+  });
+});
 test("a member who comes or goes moves the group's time of change in the store, so the next read answers it too", async () => {
   const { p, user, scim } = stack();
   const { id: person } = await scim.createUser(p, user(1), BASE);

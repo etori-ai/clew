@@ -225,12 +225,29 @@ describe('the organisation tree over SCIM (D99)', () => {
     expect(unknown).toMatchObject({ status: 400, scimType: 'invalidValue' });
     expect(unknown.detail).toContain("'unit:ksk' is not a unit of this organisation");
     expect(unknown.detail).toContain('from the root down (D99)');
-    for (const parent of ['ksk', 'Unit:ksk', 'unit:', 'unit: ksk', 'unit-manager:ksk', 7, {}]) {
+    for (const parent of ['ksk', 'Unit:ksk', 'unit:', 'unit: ksk', 'unit-manager:ksk']) {
       const wrong = await refusal(
         scim.createGroup(p, { externalId: 'unit:ksk-it', displayName: 'IT', [SCIM.unit]: { parent } }, BASE),
       );
       expect(wrong).toMatchObject({ status: 400, scimType: 'invalidValue' });
       expect(wrong.detail).toContain("'unit:<unitId>' (D99)");
+    }
+    // What is no text Clew can hold is refused as any stored attribute is, naming the parent (S10).
+    for (const [parent, says] of [
+      [7, 'needs a non-empty string of at most 512 characters.'],
+      [{}, 'needs a non-empty string of at most 512 characters.'],
+      ['', 'needs a non-empty string of at most 512 characters.'],
+      ['unit:ksk\u0000', 'holds a NUL character, which cannot be stored.'],
+      ['unit:\uD800', 'contains an invalid Unicode character.'],
+    ] as const) {
+      const wrong = await refusal(
+        scim.createGroup(p, { externalId: 'unit:ksk-it', displayName: 'IT', [SCIM.unit]: { parent } }, BASE),
+      );
+      expect(wrong).toMatchObject({
+        status: 400,
+        scimType: 'invalidValue',
+        detail: `Attribute '${SCIM.unit}:parent' ${says}`,
+      });
     }
     await unit('ksk', 'Kommunstyrelsekontoret', null);
     for (const externalId of ['unit-manager:ksk-it', 'capability:admin.users', 'ad:plain', undefined]) {

@@ -51,6 +51,7 @@ import {
   saysInactive,
   titlesOf,
   userFields,
+  userFilter,
   userResource,
   type Derived,
   type GroupFields,
@@ -510,8 +511,7 @@ export function scimUsecases(deps: {
       deps.store.transaction(async tx => userView(tx, await userOr404(tx, p, id), base, projection)),
     listUsers: (p: Provisioner, query: ScimQuery, base: string): Promise<ScimList<ScimUser>> =>
       deps.store.transaction(async tx => {
-        const filter = parseFilter(query.filter, ['userName', 'externalId']) as
-            { attribute: 'userName' | 'externalId'; value: string } | undefined,
+        const filter = userFilter(query.filter),
           page = pageOf(query);
         const listed = await tx.listUsers(p.organisationId, page, filter);
         const Resources: ScimUser[] = [];

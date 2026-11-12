@@ -898,7 +898,7 @@ describe('an add or replace without a value on a group (Q1)', () => {
 });
 describe('a path this server cannot evaluate is refused, not accepted and ignored', () => {
   test('under members: only the list and the one filter are read, and add or replace says who', async () => {
-    const { create, patch, group, store } = app();
+    const { create, patch, group, store, logged } = app();
     const [a, b] = [await create(1), await create(2)];
     const g = await group({
       externalId: 'unit-manager:u',
@@ -913,11 +913,19 @@ describe('a path this server cannot evaluate is refused, not accepted and ignore
       `members[value eq '${a}']`,
       `members[value co "${a}"]`,
       'members.value',
+      // An escape another language writes and JSON does not read once answered 500, logged as unexpected (S11).
+      `members[value eq "${a}\\x"]`,
+      'members[value eq "\\u12"]',
+      `members[value eq "${a}\\'"]`,
     ])
       expect(await patch('/Groups/' + g, { op: 'remove', path, value: [{ value: a }] })).toMatchObject({
         status: 400,
-        body: { scimType: 'invalidPath' },
+        body: {
+          scimType: 'invalidPath',
+          detail: expect.stringMatching(/is not supported: use 'members' with a list of values, or members\[value eq/),
+        },
       });
+    expect(logged).toEqual([]);
     for (const operation of [
       { op: 'replace', path: 'members' },
       { op: 'replace', path: 'members', value: null },
@@ -1254,5 +1262,189 @@ describe('the edges of the HTTP layer', () => {
     expect((await patch('/Users/' + id)).status).toBe(400);
     // Only space is no value for a required attribute.
     expect((await json('POST', '/Users', person(2, { userName: '   ' }))).body.scimType).toBe('invalidValue');
+  });
+});
+describe('what the review of users, the organisation and the guides found (2026-11-12)', () => {
+  test('a blank e-mail entry is left out before the address is chosen, and a home address is published when the work entry is blank (S5, Q2)', async () => {
+    const { json, patch, person } = app();
+    const address = (answer: { body: { emails?: Array<{ value: string }> } }) => answer.body.emails?.[0]?.value;
+    // A directory's empty fields beside the work address: empty, null, only space, no value at all, a null entry.
+    const blanks = [
+      { type: 'home', value: '' },
+      { type: 'other', value: null },
+      { value: '   ' },
+      { type: 'home' },
+      ' ',
+      null,
+    ];
+    const created = await json('POST', '/Users', person(1, { emails: [...blanks, { type: 'work', value: 'a@x.se' }] }));
+    expect([created.status, address(created)]).toEqual([201, 'a@x.se']);
+    const path = '/Users/' + created.body.id;
+    // The work entry emptied in the source, the home one readable: the home address is what the directory sends.
+    const emptiedWork = [
+      { type: 'work', value: '', primary: true },
+      { type: 'home', value: 'h@home.se' },
+    ];
+    expect(address(await json('PUT', path, person(1, { emails: emptiedWork })))).toBe('h@home.se');
+    expect(address(await json('POST', '/Users', person(2, { emails: emptiedWork })))).toBe('h@home.se');
+    expect(address(await patch(path, { op: 'replace', path: 'emails', value: [...blanks, { value: 'b@x.se' }] }))).toBe(
+      'b@x.se',
+    );
+    expect(
+      address(await patch(path, { op: 'replace', value: { emails: [{ type: 'work', value: ' ' }, 'c@x.se'] } })),
+    ).toBe('c@x.se');
+    expect(
+      address(await patch(path, { op: 'replace', path: 'emails[type eq "work"]', value: [...blanks, 'd@x.se'] })),
+    ).toBe('d@x.se');
+    // A value that is there and is no address is still refused by name, and so is a request left with no address.
+    expect(
+      await json('PUT', path, person(1, { emails: [{ value: 5 }, { type: 'work', value: 'e@x.se' }] })),
+    ).toMatchObject({
+      status: 400,
+      body: {
+        scimType: 'invalidValue',
+        detail: "Attribute 'emails.value' needs a non-empty string of at most 512 characters.",
+      },
+    });
+    for (const answer of [
+      await json('POST', '/Users', person(3, { emails: blanks })),
+      await json('PUT', path, person(1, { emails: blanks })),
+      await patch(path, { op: 'replace', path: 'emails', value: blanks }),
+    ])
+      expect(answer).toMatchObject({
+        status: 400,
+        body: { scimType: 'invalidValue', detail: "Attribute 'emails' is required." },
+      });
+    expect(address(await json('GET', path))).toBe('d@x.se');
+    // Beside a deactivation the address stays, as every wrong value does (D113).
+    expect(await json('PUT', path, person(1, { active: false, emails: blanks }))).toMatchObject({
+      status: 200,
+      body: { active: false, emails: [{ value: 'd@x.se' }] },
+    });
+  });
+  test('among work addresses the one marked primary is taken before the first, on every way in (S8)', async () => {
+    const { json, patch, person } = app();
+    const work = [
+      { type: 'work', value: 'alias@x.se' },
+      { type: 'Work', value: 'preferred@x.se', primary: 'True' },
+      { value: 'untyped@x.se', primary: true },
+    ];
+    const address = (answer: { body: { emails: Array<{ value: string }> } }) => answer.body.emails[0]!.value;
+    const created = await json('POST', '/Users', person(1, { emails: work }));
+    expect(address(created)).toBe('preferred@x.se');
+    const path = '/Users/' + created.body.id;
+    await patch(path, { op: 'replace', path: 'emails[type eq "work"].value', value: 'other@x.se' });
+    expect(address(await json('PUT', path, person(1, { emails: work })))).toBe('preferred@x.se');
+    for (const operation of [
+      { op: 'replace', path: 'emails', value: work },
+      { op: 'replace', value: { emails: work } },
+      { op: 'replace', path: 'emails[type eq "work"]', value: work },
+      { op: 'add', path: 'emails', value: work },
+    ]) {
+      await patch(path, { op: 'replace', path: 'emails[type eq "work"].value', value: 'other@x.se' });
+      expect(address(await patch(path, operation))).toBe('preferred@x.se');
+    }
+    // Without a primary among them, the first work address.
+    expect(
+      address(await patch(path, { op: 'replace', path: 'emails', value: [work[0], { ...work[1], primary: false }] })),
+    ).toBe('alias@x.se');
+  });
+  test('a filter on an address type Clew does not hold answers 200 and changes nothing, also for an address that arrived as that type (S9)', async () => {
+    const { json, patch, person, store } = app();
+    const created = await json('POST', '/Users', person(1, { emails: [{ type: 'home', value: 'h@home.se' }] }));
+    expect(created.body.emails).toEqual([{ value: 'h@home.se', type: 'work', primary: true }]);
+    const path = '/Users/' + created.body.id,
+      audited = store.state.audit.length;
+    for (const operation of [
+      { op: 'replace', path: 'emails[type eq "home"].value', value: 'ny@home.se' },
+      { op: 'add', path: 'emails[type eq "home"]', value: { value: 'ny@home.se' } },
+      { op: 'remove', path: 'emails[type eq "home"].value' },
+    ]) {
+      const answer = await patch(path, operation);
+      expect([answer.status, answer.body.emails, answer.body.meta.lastModified]).toEqual([
+        200,
+        created.body.emails,
+        created.body.meta.lastModified,
+      ]);
+    }
+    expect(store.state.audit).toHaveLength(audited);
+    // The one address is changed as the work address it is answered as: by the work filter or by `primary eq true`.
+    expect(
+      (await patch(path, { op: 'replace', path: 'emails[type eq "work"].value', value: 'w@x.se' })).body.emails,
+    ).toEqual([{ value: 'w@x.se', type: 'work', primary: true }]);
+    expect(
+      (await patch(path, { op: 'replace', path: 'emails[primary eq true].value', value: 'p@x.se' })).body.emails[0]
+        .value,
+    ).toBe('p@x.se');
+  });
+  test('a user name with space at either end or a control character is refused by name, beside a deactivation it waits, and a name is kept and found in NFC (L12)', async () => {
+    const { create, json, patch, person } = app();
+    const refused = {
+      status: 400,
+      body: {
+        scimType: 'invalidValue',
+        detail: "Attribute 'userName' cannot begin or end with space or hold a control character.",
+      },
+    };
+    const wrong = [' anna', 'anna ', '\u00a0anna', 'an\tna', 'anna\u0085', 'anna\n'];
+    for (const userName of wrong) expect(await json('POST', '/Users', person(1, { userName }))).toMatchObject(refused);
+    const id = await create(1),
+      path = '/Users/' + id;
+    for (const userName of wrong) {
+      expect(await json('PUT', path, person(1, { userName }))).toMatchObject(refused);
+      expect(await patch(path, { op: 'replace', path: 'userName', value: userName })).toMatchObject(refused);
+      expect(await patch(path, { op: 'replace', value: { userName } })).toMatchObject(refused);
+      // Beside a deactivation the name is left as it was and the person is deactivated (D113).
+      expect(
+        await patch(
+          path,
+          { op: 'replace', path: 'userName', value: userName },
+          { op: 'replace', path: 'active', value: false },
+        ),
+      ).toMatchObject({ status: 200, body: { active: false, userName: 'user1' } });
+      expect(await json('PUT', path, person(1, { userName, active: false }))).toMatchObject({
+        status: 200,
+        body: { userName: 'user1' },
+      });
+      await patch(path, { op: 'replace', path: 'active', value: true });
+    }
+    // A name sent decomposed is the same name: stored composed, found by either form, and unique in either.
+    const decomposed = 'a\u0308sa',
+      composed = '\u00e4sa';
+    const sent = await json('POST', '/Users', person(2, { userName: decomposed }));
+    expect([sent.status, sent.body.userName]).toEqual([201, composed]);
+    for (const value of [decomposed, composed, composed.toUpperCase()])
+      expect(
+        (await json('GET', '/Users?filter=' + encodeURIComponent(`userName eq "${value}"`))).body.Resources.map(
+          (u: { id: string }) => u.id,
+        ),
+      ).toEqual([sent.body.id]);
+    expect(await json('POST', '/Users', person(3, { userName: composed }))).toMatchObject({
+      status: 409,
+      body: { scimType: 'uniqueness' },
+    });
+    expect((await patch(path, { op: 'replace', path: 'userName', value: 'o\u0308la' })).body.userName).toBe('\u00f6la');
+  });
+  test('a parent that holds a NUL or is no text is refused by name on every way in, before the store is asked (S10)', async () => {
+    const { json, patch, group, logged } = app();
+    await group({ externalId: 'unit:root', displayName: 'Rot' });
+    const unit = await group({ externalId: 'unit:leaf', displayName: 'Löv', [UNIT]: { parent: 'unit:root' } }),
+      path = '/Groups/' + unit;
+    const nul = `Attribute '${UNIT}:parent' holds a NUL character, which cannot be stored.`,
+      text = `Attribute '${UNIT}:parent' needs a non-empty string of at most 512 characters.`;
+    for (const [parent, detail] of [
+      ['unit:root\u0000', nul],
+      [7, text],
+    ] as const)
+      for (const answer of [
+        await json('POST', '/Groups', { externalId: 'unit:ny', displayName: 'Ny', [UNIT]: { parent } }),
+        await json('PUT', path, { externalId: 'unit:leaf', displayName: 'Löv', [UNIT]: { parent } }),
+        await patch(path, { op: 'replace', path: UNIT + ':parent', value: parent }),
+        await patch(path, { op: 'replace', path: UNIT, value: { parent } }),
+        await patch(path, { op: 'replace', value: { [UNIT]: { parent } } }),
+      ])
+        expect(answer).toMatchObject({ status: 400, body: { scimType: 'invalidValue', detail } });
+    expect((await json('GET', path)).body[UNIT]).toEqual({ parent: 'unit:root' });
+    expect(logged).toEqual([]);
   });
 });

@@ -391,6 +391,24 @@ const asString = (value: unknown, path: string): string => {
 /** The same where the attribute may be left out: absent, and an empty string, are both no value. */
 const optional = (value: unknown, path: string): string | undefined =>
   value === undefined || value === '' ? undefined : asString(value, path);
+/** A user name in the one form it is stored and matched in, so a name sent decomposed is the same name. */
+const userNameForm = (value: string) => value.normalize('NFC');
+/**
+ * What a login is matched on is stored as exactly as a key is (D96). A user name with space at either end or a
+ * control character in it matches no claim an identity provider sends, and beside it a second row with the clean
+ * spelling would take that person's sign-ins, so it is refused by name; a deactivation beside it still goes through
+ * (D113). It is kept NFC, as a filter on it is read.
+ */
+const asUserName = (value: unknown, path: string): string => {
+  const name = asString(typeof value === 'string' ? userNameForm(value) : value, path);
+  if (name !== name.trim() || /\p{Cc}/u.test(name))
+    throw new ScimError(
+      400,
+      `Attribute '${path}' cannot begin or end with space or hold a control character.`,
+      'invalidValue',
+    );
+  return name;
+};
 /** A boolean, or the word for one in any case: Entra sends `"True"` and `"False"`. */
 const asBoolean = (value: unknown, path: string): boolean => {
   if (typeof value === 'boolean') return value;
@@ -433,26 +451,38 @@ const contactEntries = (value: unknown, path: string): Record<string, unknown>[]
   (Array.isArray(value) ? value : [value])
     .filter(item => item !== null && item !== undefined)
     .map(item => (typeof item === 'string' ? { value: item } : asObject(plain(item, CONTACT_NAMES, 'dropped'), path)));
-const emailList = (value: unknown, path: string): Email[] =>
-  contactEntries(value, path).map(email => ({
-    value: asString(email.value, path + '.value'),
-    ...(typeof email.type === 'string' ? { type: email.type } : {}),
-    ...(email.primary === true || String(email.primary).toLowerCase() === 'true' ? { primary: true } : {}),
-  }));
 /**
- * The one address Clew holds, of the addresses a client sent: `type: "work"` first; otherwise one without a type, the
- * primary before the first. `whole` says the list is all the person has (a body, a `replace`): then an address of any
- * other type is taken before none at all, the primary before the first. What an address is called is the source's to
- * answer for (D114); Clew does not refuse a person for it. Without `whole` the list is added to what is held, and an
- * address of another type is beside the one Clew holds.
+ * The addresses of a body or a patch value. An entry whose value is absent, `null`, empty or only space is no address
+ * and is left out before one is chosen, as an unreadable phone number is (D114): a directory's empty secondary field
+ * once refused the whole person. A value that is there and is not an address (a number, an object) is still refused by
+ * name.
+ */
+const emailList = (value: unknown, path: string): Email[] =>
+  contactEntries(value, path).flatMap(email =>
+    email.value === undefined || (typeof email.value === 'string' && !email.value.trim())
+      ? []
+      : [
+          {
+            value: asString(email.value, path + '.value'),
+            ...(typeof email.type === 'string' ? { type: email.type } : {}),
+            ...(email.primary === true || String(email.primary).toLowerCase() === 'true' ? { primary: true } : {}),
+          },
+        ],
+  );
+/**
+ * The one address Clew holds, of the addresses a client sent: one with `type: "work"` first, the primary before the
+ * first (RFC 7643 §2.4: `primary` marks the preferred value); otherwise one without a type, likewise. `whole` says the
+ * list is all the person has (a body, a `replace`): then an address of any other type is taken before none at all,
+ * the primary before the first, so a home address is published when the work entry was blank. What an address is
+ * called is the source's to answer for (D114); Clew does not refuse a person for it. Without `whole` the list is added
+ * to what is held, and an address of another type is beside the one Clew holds.
  */
 export function workEmail(emails: readonly Email[], whole: boolean): string | undefined {
-  const untyped = emails.filter(email => !email.type);
+  const preferred = (list: readonly Email[]) => list.find(email => email.primary) ?? list[0];
   return (
-    emails.find(email => email.type?.toLowerCase() === 'work') ??
-    untyped.find(email => email.primary) ??
-    untyped[0] ??
-    (whole ? (emails.find(email => email.primary) ?? emails[0]) : undefined)
+    preferred(emails.filter(email => email.type?.toLowerCase() === 'work')) ??
+    preferred(emails.filter(email => !email.type)) ??
+    (whole ? preferred(emails) : undefined)
   )?.value;
 }
 /**
@@ -626,7 +656,7 @@ export function userFields(body: unknown, current?: UserFields): UserFields {
       kept?.externalId || undefined,
       () => optional(input.externalId, 'externalId') ?? (current?.externalId || need('externalId')),
     ),
-    userName: read(kept?.userName || undefined, () => asString(input.userName ?? need('userName'), 'userName')),
+    userName: read(kept?.userName || undefined, () => asUserName(input.userName ?? need('userName'), 'userName')),
     name: read(kept?.name || undefined, () => {
       const name = input.name === undefined ? {} : asObject(input.name, 'name'),
         part = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
@@ -678,17 +708,20 @@ const unitExtensionTarget = (name: string): 'extension' | 'parent' | undefined =
  */
 const isBareParent = (name: string) => name.trim().toLowerCase() === 'parent';
 const bareParent = () => new ScimError(400, `Use '${SCIM.unit}:parent' for the parent of a unit.`, 'invalidPath');
+const PARENT = SCIM.unit + ':parent';
 /**
  * The parent a client sent, as a unit id. It is the `externalId` of the parent's `unit:` group, written as exactly as
- * a key is (D96); null, or nothing, makes the unit a root.
+ * a key is (D96), and text Clew can hold as every stored attribute is (`asString`, naming the parent): a NUL in it once
+ * reached PostgreSQL in the parent's lookup and answered 500. null, or nothing, makes the unit a root.
  */
 export function parentUnitOf(value: unknown): string | null {
   if (value === undefined || value === null) return null;
-  const id = typeof value === 'string' ? unitGroupOf(value) : undefined;
+  const sent = asString(value, PARENT),
+    id = unitGroupOf(sent);
   if (!id || id !== id.trim())
     throw new ScimError(
       400,
-      `The parent ${typeof value === 'string' ? `'${value}'` : 'given'} must be the externalId of the unit group above, '${UNIT_KEY}<unitId>' (D99). The group was not stored.`,
+      `The parent '${sent}' must be the externalId of the unit group above, '${UNIT_KEY}<unitId>' (D99). The group was not stored.`,
       'invalidValue',
     );
   return id;
@@ -816,6 +849,12 @@ export function parseFilter(
   if (value.includes('\u0000'))
     throw new ScimError(400, 'A filter value cannot hold a NUL character.', 'invalidFilter');
   return { attribute, value };
+}
+/** A filter on users. A `userName` is matched in the NFC form it is stored in, so a name sent decomposed is found. */
+export function userFilter(filter: string | undefined) {
+  const parsed = parseFilter(filter, ['userName', 'externalId']) as
+    { attribute: 'userName' | 'externalId'; value: string } | undefined;
+  return parsed?.attribute === 'userName' ? { ...parsed, value: userNameForm(parsed.value) } : parsed;
 }
 /** A page cannot start past what PostgreSQL takes as an offset; nothing is that far in. */
 const LAST_START = 2_147_483_647;
@@ -1181,7 +1220,7 @@ export function applyUserPatch(
       return patchEmployment(next, key, path, op, value);
     if (isBareEmployments(key)) throw bareEmployments();
     const email = emailTarget(key, path);
-    if (key === 'username') next.userName = asString(value, path);
+    if (key === 'username') next.userName = asUserName(value, path);
     else if (key === 'externalid') next.externalId = asString(value, path);
     else if (key === 'displayname' || key === 'name.formatted') next.name = asString(value, path);
     else if (key === 'active') {
@@ -1306,16 +1345,24 @@ export function applyGroupPatch(
     if (path && key?.startsWith('members') && key !== 'members') {
       // Matched on the path as it was sent: the attribute's case does not matter, the id's does. Any other path under
       // `members` is one this server cannot evaluate, and saying so is the only honest answer: accepted and ignored,
-      // it told a provisioner that a manager had been taken out of a group they were still in.
+      // it told a provisioner that a manager had been taken out of a group they were still in. A quoted id that is
+      // not a JSON string (an escape such as `\x`) matches nothing, as in the phone filter, and is refused the same
+      // way: parsed unguarded, it once threw past every SCIM answer and came back as a 500.
       const filtered = /^members\[\s*value\s+eq\s+("(?:[^"\\]|\\.)*")\s*\]$/i.exec(path);
-      if (!filtered)
+      let member: unknown;
+      try {
+        member = filtered && JSON.parse(filtered[1]!);
+      } catch {
+        member = undefined;
+      }
+      if (typeof member !== 'string')
         throw new ScimError(
           400,
           `Path '${path}' is not supported: use 'members' with a list of values, or members[value eq "<id>"] to remove one.`,
           'invalidPath',
         );
       if (op !== 'remove') throw new ScimError(400, `Path '${path}' supports remove only.`, 'invalidPath');
-      members.delete(asString(JSON.parse(filtered[1]!), 'members.value'));
+      members.delete(asString(member, 'members.value'));
       continue;
     }
     if (op === 'remove') {
@@ -1461,7 +1508,7 @@ export const schemaDocuments = (base: string) => [
         multiValued: true,
         required: true,
         description:
-          'Clew publishes the first work address. Otherwise it prefers untyped addresses, then any remaining addresses. Within each fallback it takes the primary address or the first. The selected address is returned with type "work" and primary true.',
+          'Clew publishes one address: a work address, otherwise one without a type, otherwise any other that was sent. Within each it takes the primary address before the first. An entry whose value is empty or missing is left out. The selected address is returned with type "work" and primary true.',
         subAttributes: [attribute('value', 'string'), attribute('type', 'string'), attribute('primary', 'boolean')],
       }),
       attribute('phoneNumbers', 'complex', {
