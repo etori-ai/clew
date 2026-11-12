@@ -37,8 +37,18 @@ export function matrixQuery(input: CompetenceMatrixInput): string {
   const s = q.toString();
   return s ? `?${s}` : '';
 }
-/** The matrix with this set of columns; a dialog that was open over it is not carried along. */
-export const matrixHref = (input: CompetenceMatrixInput) => MATRIX_PATH + matrixQuery(input);
+/**
+ * The matrix with this set of columns, everything else in the address kept: a move within the page keeps what is open
+ * beside it (`card`, `open` and the rest of the panel's address).
+ */
+export function matrixHref(input: CompetenceMatrixInput, search: URLSearchParams | string = ''): string {
+  const q = new URLSearchParams(search);
+  q.delete(BY);
+  q.delete(PART);
+  if (input.by) q.set(BY, input.by);
+  if (input.by && input.part && input.part > 1) q.set(PART, String(input.part));
+  return address(MATRIX_PATH, q);
+}
 /** The matrix as shown, as a file to download. */
 export const matrixFileHref = (input: CompetenceMatrixInput) => '/api/competence/matrix.csv' + matrixQuery(input);
 /** The matrix with the dialog that adds a requirement for one person over it, the set of columns kept. */

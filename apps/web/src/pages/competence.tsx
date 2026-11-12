@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { viewRows, type SessionUser } from '@clew/contracts';
 import { Button, Card, EmptyState, HStack, Layout, LayoutContent, Text, VStack, useMediaQuery } from '@clew/ui';
-import { viewQuery } from '../queries';
+import { competenceMatrixQuery, viewQuery } from '../queries';
 import { errorMessage, refused } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { useRail } from '../components/nav';
@@ -21,7 +21,8 @@ const TITLE_ID = 'kompetens-rubrik';
  * Mina kompetenser at `/competence` (D120 item 8), the first page of the place Kompetens in the rail: what the reader
  * holds and what their positions, units and manager require of them, a required type they lack as "Saknas", drawn by
  * the one renderer from the module's own declared view (D38), as the person's list is on every other surface. The
- * header holds the place's pages as tabs for a manager, so the matrix is one link away, and leaves the end of its line
+ * header holds the place's pages as tabs for someone the server lets read the matrix (anyone with a report, D99), so
+ * the matrix is one link away, and leaves the end of its line
  * for the page's primary action (a person's own registration comes in a later stage). With nothing held and nothing
  * required the page says so; with the module off for the reader the read is refused and the page says that instead. It
  * holds the panel beside it as every page with a column does, so a work item opened from the bell lies beside it.
@@ -30,11 +31,14 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
   usePageTitle('Mina kompetenser');
   const mobile = useMediaQuery(mobileQuery);
   const short = useMediaQuery(shortQuery);
-  const manager = user.role === 'manager';
-  const nav = useRail({ current: { surface: 'competence' }, admin, manager });
+  const nav = useRail({ current: { surface: 'competence' }, admin, manager: user.role === 'manager' });
   const panel = usePagePanel({ overlayOnly: short });
   const read = useQuery({ ...viewQuery(HOLDINGS, null), retry: false });
   const off = read.isError && refused(read.error);
+  // Whether the reader has anyone reporting to them is the server's answer, not the session's role (D99): the matrix's
+  // read, which the matrix's page reads the same way, so the tab leads to a page already read. Refused, there is no tab.
+  const matrix = useQuery(competenceMatrixQuery({}));
+  const manages = matrix.isSuccess || (matrix.isError && !refused(matrix.error));
   const view = read.data?.view;
   const rows = view ? (viewRows(view, read.data?.output) ?? []) : [];
   return (
@@ -47,7 +51,7 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
           <LayoutContent isScrollable={!short}>
             <VStack hAlign="center">
               <VStack gap={5} width="100%" maxWidth={COLUMN}>
-                <CompetenceHeader title="Mina kompetenser" titleId={TITLE_ID} page="own" manager={manager && !off} />
+                <CompetenceHeader title="Mina kompetenser" titleId={TITLE_ID} page="own" hasTabs={manages && !off} />
                 {off ? (
                   <Card>
                     <EmptyState

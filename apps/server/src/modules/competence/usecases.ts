@@ -199,7 +199,10 @@ export function competenceUsecases(deps: CompetenceDeps) {
     if (!persona.capabilities.includes(COMPETENCE_ADMIN)) throw new ForbiddenError();
     await persona.authorize();
   };
-  /** The people who report to the persona now, each once, themselves and deactivated people left out. */
+  /**
+   * The people who report to the persona now (`deps.staff`: D99's direct reports, D117's `managed`, never a co-manager
+   * or the reader's own manager whom Personal also lists), each once, themselves and deactivated people left out.
+   */
   async function reports(persona: AuthenticatedContext) {
     const staff = await deps.staff(persona);
     const people = new Map<string, StaffPerson>();

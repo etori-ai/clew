@@ -662,16 +662,17 @@ function csvField(value: string): string {
   return /[";\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
 }
 /**
- * The matrix as shown, as a file (D108 item 11): a heading row of "Namn" and the columns' names, then one row per
- * person with their name and each cell in words. Separated by semicolons with a byte order mark and CRLF line ends,
- * which a spreadsheet set up for Swedish opens as columns with å, ä and ö intact.
+ * The matrix as shown, as a file (D108 item 11): a heading row of "Namn", "Användarnamn" and the columns' names, then
+ * one row per person with their name, their user name (Clew's id for someone provisioned without one), so two reports
+ * who share a name can be told apart, and each cell in words. Separated by semicolons with a byte order mark and CRLF
+ * line ends, which a spreadsheet set up for Swedish opens as columns with å, ä and ö intact.
  */
 export function matrixCsv(matrix: Pick<CompetenceMatrixOutput, 'columns' | 'rows'>): string {
   const lines = [
-    ['Namn', ...matrix.columns.map(c => c.name)],
-    ...matrix.rows.map(r => [r.name, ...r.cells.map(matrixCellText)]),
+    ['Namn', 'Användarnamn', ...matrix.columns.map(c => c.name)],
+    ...matrix.rows.map(r => [r.name, r.key, ...r.cells.map(matrixCellText)]),
   ];
-  return '﻿' + lines.map(line => line.map(csvField).join(';')).join('\r\n') + '\r\n';
+  return '\ufeff' + lines.map(line => line.map(csvField).join(';')).join('\r\n') + '\r\n';
 }
 
 // The copy of what sources hold (D108 item 9).

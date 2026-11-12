@@ -354,7 +354,7 @@ describe('the competence wiring (D108 item 13)', () => {
     expect(file.headers.get('cache-control')).toContain('no-store');
     // The byte order mark is kept, so a spreadsheet reads the file as UTF-8.
     expect(new TextDecoder('utf-8', { ignoreBOM: true }).decode(await file.arrayBuffer())).toBe(
-      '﻿Namn;HLR\r\nAnna Lindqvist;Saknas\r\n',
+      '\ufeffNamn;Användarnamn;HLR\r\nAnna Lindqvist;anna.lindqvist;Saknas\r\n',
     );
     expect(w.store.audit().slice(before)).toEqual([
       {

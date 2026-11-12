@@ -29,27 +29,28 @@ import { mobileQuery } from '../components/shell';
 /** Which page of the place is shown. */
 export type CompetencePageId = 'own' | 'matrix';
 /**
- * The page's header (D74): its title and its own actions on the first line; under it, for a manager, the place's pages
- * as Astryx's navigation tabs, each a link with its own address (D116), the current one marked. Someone who manages
- * nobody has one page, so no tabs.
+ * The page's header (D74): its title and its own actions on the first line; under it, where the reader has the matrix
+ * too (`hasTabs`: the server answered its read, so someone reports to them), the place's pages as Astryx's navigation
+ * tabs, each a link with its own address (D116), the current one marked. Someone with nobody reporting to them has one
+ * page, so no tabs.
  */
 export function CompetenceHeader({
   title,
   titleId,
   page,
-  manager,
+  hasTabs,
   end,
 }: {
   title: string;
   titleId: string;
   page: CompetencePageId;
-  manager: boolean;
+  hasTabs: boolean;
   end?: ReactNode;
 }) {
   return (
     <VStack gap={4}>
       <PageHeader title={title} titleId={titleId} {...(end ? { end } : {})} />
-      {manager && (
+      {hasTabs && (
         <TabList hasDivider value={page} onChange={() => {}} aria-label="Kompetens">
           <Tab value="own" label="Mina kompetenser" href={COMPETENCE_PATH} />
           <Tab value="matrix" label="Medarbetare" href={MATRIX_PATH} />

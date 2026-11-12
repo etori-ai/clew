@@ -50,6 +50,9 @@ import {
   competenceUsecases,
   type CompetenceUsecases,
 } from '../../apps/server/src/modules/competence/usecases';
+import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
+import { staffUsecases } from '../../apps/server/src/modules/people/usecases';
+import { reportsByUnit } from '../../apps/server/src/modules/entities/domain';
 import { Registry } from '../registry';
 
 /**
@@ -1810,11 +1813,12 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
       const file = await competence.exportMatrix(boss);
       expect(file.filename).toBe('kompetens-2026-11-10.csv');
       expect(file.text).toBe(
-        '﻿' +
+        '\ufeff' +
           [
-            'Namn;HLR;Heta arbeten',
-            'Anna Andersson;Giltigt till 2028-01-31;Saknas',
-            'Bo Berg;Saknas;Går ut snart 2026-12-31 (krävs inte)',
+            'Namn;Användarnamn;HLR;Heta arbeten',
+            'Anna Andersson;anna.a;Giltigt till 2028-01-31;Saknas',
+            // Bo was provisioned without a user name: he is named by Clew's id, as everywhere in the domain.
+            'Bo Berg;bo;Saknas;Går ut snart 2026-12-31 (krävs inte)',
           ].join('\r\n') +
           '\r\n',
       );
@@ -1840,22 +1844,159 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
         through: [],
         revocable: false,
       };
+      const person = (n: number, name: string, key = 'p' + n) => ({ personId: 'p' + n, key, name, cells: [cell] });
       expect(
         matrixCsv({
           columns: [{ typeId: 't', name: 'Truck; A', area: 'Fordon', kind: 'authorisation' }],
           rows: [
-            { personId: 'p1', key: 'p1', name: '=HYPERLINK("x")', cells: [cell] },
-            {
-              personId: 'p2',
-              key: 'p2',
-              name: '-Eva',
-              cells: [{ ...cell, status: 'expired', expiresOn: '2026-01-01' }],
-            },
+            person(1, '=HYPERLINK("x")'),
+            { ...person(2, '-Eva'), cells: [{ ...cell, status: 'expired', expiresOn: '2026-01-01' }] },
+            person(3, '+46 70'),
+            person(4, '@SUM(A1)'),
+            person(5, '\tTab'),
+            person(6, '\rRetur'),
+            // A quote, a separator and a line break in a name, and a separator in a user name: each field quoted.
+            person(7, 'Eva "E"; Ek\nNy rad', 'eva;e'),
           ],
         }),
-      ).toBe('﻿Namn;"Truck; A"\r\n"\'=HYPERLINK(""x"")";Krävs inte\r\n\'-Eva;Utgånget 2026-01-01 (krävs inte)\r\n');
+      ).toBe(
+        '﻿' +
+          [
+            'Namn;Användarnamn;"Truck; A"',
+            `"'=HYPERLINK(""x"")";p1;Krävs inte`,
+            `'-Eva;p2;Utgånget 2026-01-01 (krävs inte)`,
+            `'+46 70;p3;Krävs inte`,
+            `'@SUM(A1);p4;Krävs inte`,
+            `'\tTab;p5;Krävs inte`,
+            `"'\rRetur";p6;Krävs inte`,
+            `"Eva ""E""; Ek\nNy rad";"eva;e";Krävs inte`,
+          ].join('\r\n') +
+          '\r\n',
+      );
       expect(matrixCellText({ status: 'valid', required: true })).toBe('Giltigt');
       expect(matrixCellText({ status: 'missing', required: true })).toBe('Saknas');
     });
+  });
+});
+
+describe("a manager's reports are D99's, not everyone Personal lists (D117 `managed`)", () => {
+  type Placement = { unitId: string; role: 'manager' | 'employee' };
+  /**
+   * The directory as the provisioner pushes it and the production binding reads it (`composition/competence.ts`): the
+   * people module's staff use cases on their memory store, and the units each with the people `reportsByUnit` keeps.
+   * Bergsåkers skola, under Förvaltningen, is led by Hillevi and by Cohead; the Director leads Förvaltningen and is
+   * placed on the school as an employee; Anna and Erik work there.
+   */
+  function world() {
+    const T = '2026-11-10T08:00:00.000Z';
+    const people = memoryProvisionStore(),
+      s = people.state;
+    const directoryStore = memoryCompetenceStore();
+    const unit = (id: string, label: string, parent: string | null) => {
+      s.units.set(id, { organisationId: ORG, label });
+      s.groups.set('g-' + id, {
+        id: 'g-' + id,
+        organisationId: ORG,
+        externalId: 'unit:' + id,
+        label,
+        parentUnitId: parent,
+        createdAt: T,
+        updatedAt: T,
+      });
+      directoryStore.addUnit({ id, organisationId: ORG, label, parentId: parent });
+    };
+    const person = (id: string, name: string, placements: Placement[]) => {
+      s.users.set(id, {
+        id,
+        organisationId: ORG,
+        externalId: 'dev:' + id,
+        userName: id,
+        name,
+        email: null,
+        phoneNumbers: [],
+        employments: [],
+        title: null,
+        enabled: true,
+        createdAt: T,
+        updatedAt: T,
+      });
+      s.assignments.set(id, placements);
+      const first = placements[0]!;
+      s.grants.set(id, {
+        unitId: first.unitId,
+        unitLabel: s.units.get(first.unitId)!.label,
+        role: first.role,
+        capabilities: [],
+      });
+      directoryStore.addPerson({ id, organisationId: ORG, name, userName: id });
+      for (const p of placements) directoryStore.assign(id, p.unitId);
+    };
+    unit('top', 'Förvaltningen', null);
+    unit('skola', 'Bergsåkers skola', 'top');
+    person('director', 'Dir Direktör', [
+      { unitId: 'top', role: 'manager' },
+      { unitId: 'skola', role: 'employee' },
+    ]);
+    person('hillevi', 'Hillevi Holm', [{ unitId: 'skola', role: 'manager' }]);
+    person('cohead', 'Cohead Chef', [{ unitId: 'skola', role: 'manager' }]);
+    person('anna', 'Anna Ek', [{ unitId: 'skola', role: 'employee' }]);
+    person('erik', 'Erik Ström', [{ unitId: 'skola', role: 'employee' }]);
+    const staff = staffUsecases({ store: people });
+    const competence = competenceUsecases({
+      store: directoryStore,
+      staff: async persona => ({ units: reportsByUnit(await staff.reach(persona)) }),
+      clock: () => now,
+      ids: () => 'r-' + ++n,
+    });
+    return { staff, store: directoryStore, competence, hillevi: personaOf('hillevi', 'manager', 'Hillevi Holm') };
+  }
+
+  test('a co-manager and the reader’s own manager, though placed on the unit, are in no read and take no write', async () => {
+    const w = world();
+    // Personal lists them: the fixture is shaped like the real directory.
+    const listed = (await w.staff.overview(w.hillevi)).units.flatMap(u => u.people.map(p => p.id));
+    expect(listed).toEqual(expect.arrayContaining(['cohead', 'director', 'anna', 'erik']));
+
+    const hlr = await w.competence.addType(admin, { name: 'HLR', area: 'Akut', kind: 'course' });
+    // Required of everyone placed on the school, the two managers included.
+    await w.competence.addRequirement(admin, { typeId: hlr, unitId: 'skola' });
+    const theirs = await w.competence.seedHolding('operator:cli', ORG, 'cohead', {
+      typeId: hlr,
+      issuedOn: '2026-01-10',
+    });
+
+    const matrix = await w.competence.matrix(w.hillevi);
+    expect(matrix.rows.map(r => r.name)).toEqual(['Anna Ek', 'Erik Ström']);
+    const file = await w.competence.exportMatrix(w.hillevi);
+    for (const name of ['Cohead Chef', 'Dir Direktör']) expect(file.text).not.toContain(name);
+    expect(file.text).toContain('Anna Ek;anna;Saknas');
+    expect((await w.competence.attention(w.hillevi)).rows.map(r => r.name)).toEqual(['Anna Ek', 'Erik Ström']);
+    // The figure on Hem and the manager's card count the two reports only.
+    expect(await w.competence.summary(w.hillevi)).toEqual({
+      expired: 0,
+      missing: 2,
+      expiring: 0,
+      people: 2,
+      reports: 2,
+    });
+    expect((await w.competence.aboutPeople(w.hillevi, ['anna', 'cohead', 'director'])).rows.map(r => r.key)).toEqual([
+      'anna',
+    ]);
+
+    const written = w.store.audit().length;
+    for (const id of ['cohead', 'director']) {
+      await expect(
+        w.competence.registerHolding(w.hillevi, id, { typeId: hlr, issuedOn: '2026-10-01' }),
+      ).rejects.toThrow('Personen finns inte bland dem du är chef för.');
+      await expect(w.competence.holdings(w.hillevi, { person: id })).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(w.competence.addRequirement(w.hillevi, { typeId: hlr, personId: id })).rejects.toBeInstanceOf(
+        ForbiddenError,
+      );
+    }
+    await expect(w.competence.revokeHolding(w.hillevi, theirs)).rejects.toBeInstanceOf(ForbiddenError);
+    expect(w.store.audit().length).toBe(written);
+    // A real report is still hers to register for.
+    await w.competence.registerHolding(w.hillevi, 'anna', { typeId: hlr, issuedOn: '2026-10-01' });
+    expect(w.store.audit().length).toBe(written + 1);
   });
 });

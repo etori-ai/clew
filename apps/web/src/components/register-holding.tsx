@@ -44,9 +44,15 @@ const months = (n: number) => (n % 12 === 0 ? `${n / 12} år` : `${n} månader`)
 
 export function RegisterHolding({
   opener,
+  people: given,
 }: {
   /** The control on the page that opened the form for this person and type, which takes the focus when it closes. */
   opener?: (personId: string, typeId: string | null) => HTMLElement | null;
+  /**
+   * Whom the form may be opened for, where the page has read them already: the matrix's rows, the server's own answer of
+   * who reports to the reader (D99). Absent, Personal's people are read, as Personal opens it.
+   */
+  people?: Array<{ id: string; name: string }> | undefined;
 } = {}) {
   const mobile = useMediaQuery(mobileQuery);
   const [search] = useSearchParams();
@@ -56,9 +62,9 @@ export function RegisterHolding({
   const preset = registerTypeOf(search);
   // Read only when the address names someone: the people the reader manages, as the talk drawer reads them, and the
   // catalogue, which is refused (null) while the module is off for the reader.
-  const staffQ = useQuery({ ...staffQuery, enabled: !!personId });
+  const staffQ = useQuery({ ...staffQuery, enabled: !!personId && !given });
   const typesQ = useQuery({ ...competenceTypesQuery, enabled: !!personId });
-  const people = (staffQ.data?.units ?? []).flatMap(u => u.people).filter(p => p.enabled);
+  const people = given ?? (staffQ.data?.units ?? []).flatMap(u => u.people).filter(p => p.enabled);
   const types = (typesQ.data?.rows ?? []).filter(t => !t.archived);
   // Nobody is named unless there is something to register: with the module off, or an empty catalogue, the address
   // opens nothing.

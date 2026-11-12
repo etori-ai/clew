@@ -1,8 +1,7 @@
-import type { StaffOverview } from '@clew/contracts';
 import { postgresCompetenceStore } from '../modules/competence/adapters/postgres';
 import { competenceUsecases } from '../modules/competence/usecases';
+import { reportsByUnit } from '../modules/entities/domain';
 import type { HoldingsPort, Staff } from '../modules/competence/model';
-import { ForbiddenError } from '../context';
 import { logPort, logger } from '../logging';
 import { staff as staffUsecases } from './people';
 import { clock, ids } from './ambient';
@@ -14,16 +13,13 @@ import { ledger } from './durable';
  * neither. The store starts the copy's workflow inside its own transaction (D86).
  */
 export const competenceStore = postgresCompetenceStore(ledger);
-const NOBODY: StaffOverview = { units: [] };
-/** Personal's overview (D94, D99): the people module's refusal of someone who manages no unit is "nobody" to this module. */
-const staff: Staff = async persona => {
-  try {
-    return await staffUsecases.overview(persona);
-  } catch (error) {
-    if (error instanceof ForbiddenError) return NOBODY;
-    throw error;
-  }
-};
+/**
+ * The reader's reports (D99 item 4) as the module's `Staff` port has them: the units they manage, each with exactly the
+ * people the `managed` relation names (D117, `reportsByUnit`), read from the people module's directory on every call.
+ * Personal's list is wider: it holds a co-manager of the unit and the reader's own manager when they are placed on it,
+ * and neither is anyone whose competence the reader may read or write. Someone who manages no unit has no units.
+ */
+const staff: Staff = async persona => ({ units: reportsByUnit(await staffUsecases.reach(persona)) });
 /**
  * What the copy of D108 item 9 reads: the module's switch and the installation's read of the holdings profile (D119,
  * `holdingsReader`). The registry is built over the module this file builds, so the slot is filled in

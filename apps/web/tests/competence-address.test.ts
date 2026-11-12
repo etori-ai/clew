@@ -23,6 +23,13 @@ describe('the matrix names its columns and what lies over it in the address (D10
     expect(matrixQuery({})).toBe('');
     expect(matrixQuery({ by: 'area:Säkerhet', part: 1 })).toBe('?by=area%3AS%C3%A4kerhet');
     expect(matrixHref({ by: 'area:Säkerhet', part: 2 })).toBe(`${MATRIX_PATH}?by=area%3AS%C3%A4kerhet&part=2`);
+    // A move within the page keeps what is open beside it: the panel's card stays, the earlier set is replaced.
+    expect(matrixHref({ by: 'position:pos-usk' }, '?card=omtanke&by=area%3AAkut&part=2')).toBe(
+      `${MATRIX_PATH}?card=omtanke&by=position%3Apos-usk`,
+    );
+    expect(matrixHref({ by: 'area:Akut', part: 1 }, '?open=x.read&open-input=%7B%7D')).toBe(
+      `${MATRIX_PATH}?open=x.read&open-input=%7B%7D&by=area%3AAkut`,
+    );
     expect(matrixFileHref({ by: 'position:pos-usk' })).toBe('/api/competence/matrix.csv?by=position%3Apos-usk');
     expect(matrixFileHref({})).toBe('/api/competence/matrix.csv');
   });

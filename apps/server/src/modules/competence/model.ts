@@ -383,9 +383,11 @@ export interface CompetenceStore {
 }
 
 /**
- * The manager's reports (D99 item 4), from the assignments and the tree when asked, never stored. Someone who manages
- * no unit gets `{ units: [] }`: composition maps the people module's refusal to that, so this module decides what a
- * non-manager is refused with and never imports another module's error.
+ * The manager's reports (D99 item 4), from the assignments and the tree when asked, never stored: the units the reader
+ * manages, each with exactly the people who report to the reader through it, the `managed` relation of D117. Not
+ * Personal's list, which also holds a co-manager of the unit and the reader's own manager where they are placed on it.
+ * Someone who manages no unit gets `{ units: [] }`, so this module decides what a non-manager is refused with and never
+ * imports another module's error.
  */
 export type Staff = (persona: AuthenticatedContext) => Promise<StaffOverview>;
 

@@ -124,10 +124,11 @@ test.describe('Administration › Kompetens › Källor', () => {
 
       await dialog.getByRole('button', { name: 'Spara', exact: true }).focus();
       await page.keyboard.press('Enter');
-      // The field says what is missing; Astryx's live region of the dialog may repeat the words to announce them, so the
-      // field's own is the first of the two (as on Krav).
-      await expect(dialog.getByText('Välj en kompetens.', { exact: true }).first()).toBeVisible();
+      // The field says what is missing, on itself: invalid, and described by the words (Astryx's live region of the
+      // dialog repeats them to announce them, so the words alone could be that copy).
       const choice = dialog.getByRole('combobox', { name: /Kompetens i katalogen/ });
+      await expect(choice).toHaveAttribute('aria-invalid', 'true');
+      await expect(choice).toHaveAccessibleDescription(/Välj en kompetens\./);
       await expect(choice).toBeFocused();
       expect(api.sourceWrites).toEqual([]);
 

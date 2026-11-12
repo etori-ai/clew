@@ -86,9 +86,21 @@ export function listedKeys(kind: EntityKind, reach: Reach): string[] {
  * never someone whose role there the directory did not say. Personal lists more than this; who may be asked about as a
  * report is exactly this.
  */
-export const reportsTo = (reach: Reach, person: ReachPerson) =>
+export const reportsTo = (reach: Pick<Reach, 'above' | 'lineReports'>, person: ReachPerson) =>
   !reach.above.includes(person.id) &&
   (person.below !== undefined || person.role === 'employee' || reach.lineReports.includes(person.id));
+/**
+ * The units the reader manages, each with only the people on it who report to the reader (`reportsTo`): exactly the
+ * `managed` relation (D99 item 4, D117), never a co-manager whose line runs elsewhere nor anyone who manages the reader,
+ * though Personal lists them. For a domain of Clew's own that works with a manager's reports through a port of its own
+ * (the competence module's `Staff`), bound in composition, since a module never imports another. A unit keeps its place
+ * when nobody on it reports to the reader: the reader still manages it.
+ */
+export function reportsByUnit<P extends ReachPerson, U extends DirectoryUnit & { people: readonly P[] }>(
+  reach: Pick<Reach, 'above' | 'lineReports'> & { managed: readonly U[] },
+): Array<Omit<U, 'people'> & { people: P[] }> {
+  return reach.managed.map(unit => ({ ...unit, people: unit.people.filter(p => reportsTo(reach, p)) }));
+}
 /** A report of the reader's (`reportsTo`) by user name without regard to case, with the first unit they report on. */
 export function reportOf(
   reach: Reach,

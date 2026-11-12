@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ComponentProps } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import type {
@@ -32,6 +32,7 @@ import {
   resolveColumnWidths,
   useMediaQuery,
   useTableStickyColumns,
+  type TablePlugin,
 } from '@clew/ui';
 import { api } from '../api';
 import {
@@ -176,6 +177,16 @@ interface TableRow extends Record<string, unknown> {
 function MatrixTable({ data, ctx }: { data: CompetenceMatrixOutput; ctx: CellContext }) {
   const location = useLocation();
   const sticky = useTableStickyColumns<TableRow>({ startKeys: ['person'] });
+  // The name is each row's header (1.3.1), so moving down a column a screen reader names the person with each status.
+  // Astryx's Table draws every body cell as a `td` and has no row-header column; its documented plugin hook
+  // (`transformBodyCell`) gives the name's cell the role.
+  const rowHeaders = useMemo<TablePlugin<TableRow>>(
+    () => ({
+      transformBodyCell: (props, column) =>
+        column.key === 'person' ? { ...props, htmlProps: { ...props.htmlProps, role: 'rowheader' } } : props,
+    }),
+    [],
+  );
   return (
     <Card padding={0}>
       <Table<TableRow>
@@ -207,7 +218,7 @@ function MatrixTable({ data, ctx }: { data: CompetenceMatrixOutput; ctx: CellCon
         density="balanced"
         dividers="grid"
         hasHover
-        plugins={{ sticky }}
+        plugins={{ sticky, rowHeaders }}
       />
     </Card>
   );
@@ -318,8 +329,8 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
   usePageTitle('Medarbetarnas kompetens');
   const mobile = useMediaQuery(mobileQuery);
   const short = useMediaQuery(shortQuery);
-  const manager = user.role === 'manager';
-  const nav = useRail({ current: { surface: 'competence' }, admin, manager });
+  // The rail's Personal follows the session's role; who reports to the reader is the matrix read's answer (D99).
+  const nav = useRail({ current: { surface: 'competence' }, admin, manager: user.role === 'manager' });
   const [search] = useSearchParams();
   const navigate = useNavigate();
   const input = matrixInputOf(search);
@@ -340,19 +351,27 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
     },
     [],
   );
+  // Where the focus goes when a registration closes: the cell's control, or, where no cell is (an address from before
+  // that names a competence not shown, or none), the page's heading (D83 rule 7).
   const opener = useCallback(
     (personId: string, typeId: string | null) =>
-      typeId ? (controls.current.get(cellKey(personId, typeId)) ?? null) : null,
+      (typeId ? controls.current.get(cellKey(personId, typeId)) : undefined) ?? document.getElementById(TITLE_ID),
     [],
   );
-  // The focus after a confirmation, once the page has drawn what it changed: the cell's control, or the heading when
-  // the cell has gone with the column.
+  // The focus after a confirmation or the requirement's dialog, once the page has drawn what it changed: the cell's
+  // control, or the header's button for the dialog, or the heading when the control has gone (with the column, or since
+  // the dialog was opened by an address from before and nothing on the page opened it).
+  // It waits for the dialog to have closed: the address changes after the press that closed it, and nothing under a
+  // modal dialog can take the focus.
+  const addRequirement = useRef<HTMLButtonElement>(null);
   const [focusAfter, setFocusAfter] = useState<string | null>(null);
+  const requiring = search.get(REQUIREMENT_PARAM) === NEW;
   useEffect(() => {
-    if (focusAfter === null) return;
+    if (focusAfter === null || requiring) return;
     setFocusAfter(null);
-    (controls.current.get(focusAfter) ?? document.getElementById(TITLE_ID))?.focus();
-  }, [focusAfter, data]);
+    const target = focusAfter === REQUIREMENT_PARAM ? addRequirement.current : controls.current.get(focusAfter);
+    (target?.isConnected ? target : document.getElementById(TITLE_ID))?.focus();
+  }, [focusAfter, data, requiring]);
 
   const [confirming, setConfirming] = useState<Confirming | null>(null);
   const change = useAdminAction({
@@ -387,7 +406,7 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
     },
   };
   const choose = (g: CompetenceMatrixGroup) =>
-    navigate(matrixHref({ by: g.by, part: g.part }), { replace: true, preventScrollReset: true });
+    navigate(matrixHref({ by: g.by, part: g.part }, search), { replace: true, preventScrollReset: true });
 
   const shown = data && data.rows.length > 0 && data.columns.length > 0;
   const actions =
@@ -402,7 +421,12 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
           />
         )}
         {data.rows.length > 0 && (
-          <Button variant="primary" label="Lägg till krav för en person" href={requirementHref(search)} />
+          <Button
+            ref={addRequirement}
+            variant="primary"
+            label="Lägg till krav för en person"
+            href={requirementHref(search)}
+          />
         )}
       </HStack>
     ) : undefined;
@@ -421,7 +445,7 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
                   title="Medarbetarnas kompetens"
                   titleId={TITLE_ID}
                   page="matrix"
-                  manager={manager && !off}
+                  hasTabs={!off && !matrixQ.isPending}
                   end={actions}
                 />
                 {change.error && (
@@ -491,12 +515,15 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
       />
       {panel.overlay}
       {/* Registrera intyg (D108 item 7), from a cell with its competence chosen; closing gives the cell its focus back. */}
-      {manager && <RegisterHolding opener={opener} />}
+      <RegisterHolding opener={opener} people={data?.rows.map(r => ({ id: r.personId, name: r.name }))} />
       <PersonRequirementDialog
-        isOpen={!!data && !off && search.get(REQUIREMENT_PARAM) === NEW}
+        isOpen={!!data && !off && requiring}
         people={data?.rows ?? []}
         catalogue={typesQ.data?.rows ?? []}
-        onClose={() => navigate(withoutRequirement(search))}
+        onClose={() => {
+          navigate(withoutRequirement(search));
+          setFocusAfter(REQUIREMENT_PARAM);
+        }}
       />
       <AlertDialog
         isOpen={!!confirming}

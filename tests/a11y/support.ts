@@ -980,7 +980,7 @@ export class MockApi {
           'content-type': 'text/csv; charset=utf-8',
           'content-disposition': 'attachment; filename="kompetens-2026-11-04.csv"',
         },
-        body: '\ufeff' + ['Namn', ...answer.columns.map(c => c.name)].join(';') + '\r\n',
+        body: '\ufeff' + ['Namn', 'Användarnamn', ...answer.columns.map(c => c.name)].join(';') + '\r\n',
       });
     }
     const revoking = /^\/competence\/holdings\/([^/]+)$/.exec(path);

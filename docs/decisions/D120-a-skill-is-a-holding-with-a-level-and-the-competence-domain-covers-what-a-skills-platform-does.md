@@ -80,6 +80,15 @@ cannot be sent, as D108 leaves it. How long a holding is kept after a person is 
 when an operator has set the period. Whether the level should have a description per type. Whether an interest mark
 should be searchable. D108's checklist question 4 ("it is small") was not a plain yes and is further from one now.
 
+**A gap in Astryx, left open.** On the matrix (item 8), when the table scrolls sideways and a person tabs backwards,
+the focused cell's menu button can come to rest under the pinned name column (WCAG 2.4.11, focus not obscured):
+measured at 1280 px with the button, 28 px wide, lying 110 to 188 px inside the pinned column. Tabbing forwards is
+clear. Astryx's `Table` with `useTableStickyColumns` sets no scroll padding and documents no remedy, and Clew writes
+no CSS of its own, so nothing is worked around: the case stands as a `test.fixme` in
+`tests/a11y/competence-matrix.spec.ts`. With ten columns or fewer on a wide window the table does not scroll and the
+case does not arise; where it does not fit beside the panel or on a phone the matrix is a list. It has to be closed,
+in Astryx or by a decision that allows an exception, before the suite's gate returns (D59).
+
 **Not established.** No HR practitioner has read it. Nothing is measured. No screen reader has passed over any of
 the pages. ESCO's CSV has not been read from a real download in this session; the importer is written against its
 published column names and must be run on one before the page is called done.
