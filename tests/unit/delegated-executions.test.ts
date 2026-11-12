@@ -6,17 +6,32 @@ import { memoryExecutionStore } from '../../apps/server/src/modules/executions/a
 import type { ExecutionSessions, ExecutionSource, WriteSafety } from '../../apps/server/src/modules/executions/model';
 import { delegatingHello, fromGrant, sessionDesk, signedIn } from '../session-desk';
 
+/** The provisioned group a connector's audience names when it is for one group only. */
+const APPROVERS = 'S-1-5-21-godkannare';
+
 /*
  * A write on a connector that acts as the person (D26) is carried out with the person's own token, from the signed-in
  * session that approved it, while that session is active; a later session of theirs may stand behind its read-back only.
  * `sessionDesk` stands in for `standingSession` in `auth.ts`.
  */
 
-/** The ledger over the real registry, wired the way `composition/executions.ts` wires it. */
-function ledger() {
+/**
+ * The ledger over the real registry, wired the way `composition/executions.ts` wires it. With `groupsOf`, the connector
+ * is for one provisioned group only (D68) and the person's current grant carries the groups it names, as `systemContext`
+ * reads them.
+ */
+function ledger(groupsOf?: (personId: string) => string[]) {
   const desk = sessionDesk(),
     { registry, calls } = delegatingHello(),
     store = memoryExecutionStore();
+  if (groupsOf)
+    registry.govern('hello', {
+      state: 'enabled',
+      audience: { mode: 'selected', groups: [APPROVERS] },
+      scanEnabled: true,
+      toolsEnabled: true,
+      capabilities: {},
+    });
   let now = Date.parse('2026-11-10T09:00:00.000Z'),
     id = 0;
   const source: ExecutionSource = {
@@ -28,7 +43,7 @@ function ledger() {
         needsSession: !!found.connector.delegation,
       };
     },
-    current: async personId => fromGrant(personId),
+    current: async personId => ({ ...fromGrant(personId), ...(groupsOf ? { groups: groupsOf(personId) } : {}) }),
     execute: (persona, e) =>
       registry.run<ExecuteResult>(audiencedActorOf(persona), e.operation, e.payload, {
         operationId: e.id,
@@ -58,6 +73,32 @@ function ledger() {
     uc.approve(persona, { decisionId, operation: 'hello.markDone', payload: { refs: ['hello:item:1'] } });
   return { desk, store, uc, sessions, writes, approve, advance: (ms: number) => (now += ms) };
 }
+
+describe('an approval on a connector for one provisioned group (D68; review 2026-11-12, A2)', () => {
+  test("is taken from a member and sent under the member's current groups; anyone else is refused before anything is recorded", async () => {
+    const w = ledger(() => [APPROVERS]);
+    w.desk.signIn('session-1', 'hillevi');
+    const holding = (groups: string[]) => ({ ...signedIn(w.desk, 'session-1'), groups });
+    await expect(w.approve(holding(['S-1-5-21-annan']))).rejects.toThrow('Okänd förmåga.');
+    expect(w.store.dump()).toEqual([]);
+    const approved = await w.approve(holding(['S-1-5-21-annan', APPROVERS]));
+    expect(approved).toMatchObject({ state: 'pending', reason: null });
+    expect(await w.uc.progress(approved.id)).toBe('done');
+    expect(w.writes()).toHaveLength(1);
+    expect(await w.uc.read(holding([APPROVERS]), approved.id)).toMatchObject({ state: 'succeeded', reason: null });
+  });
+
+  test('is not sent when the person has left the group by the time it runs', async () => {
+    let groups = [APPROVERS];
+    const w = ledger(() => groups);
+    w.desk.signIn('session-1', 'hillevi');
+    const approved = await w.approve({ ...signedIn(w.desk, 'session-1'), groups });
+    groups = [];
+    expect(await w.uc.progress(approved.id)).toBe('done');
+    expect(w.writes()).toEqual([]);
+    expect(await w.store.read(approved.id)).toMatchObject({ state: 'pending', reason: 'authority-revoked' });
+  });
+});
 
 describe('a write on a connector that acts as the person (D26)', () => {
   test("is dispatched with the approving session's own token while that session is active, and the audit says which session stood behind it", async () => {
