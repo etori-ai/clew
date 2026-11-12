@@ -14,7 +14,7 @@ import {
   loginTransactions,
   readSession,
   resolveSubject,
-  bindFirstLogin,
+  signIn,
   readGroups,
   revokeSession,
   sessions,
@@ -168,15 +168,19 @@ async function openSession(tokens: oidc.TokenEndpointResponse & oidc.TokenEndpoi
   const claims = tokens.claims();
   if (!claims || !tokens.refresh_token || !tokens.id_token || typeof claims.sub !== 'string')
     throw new AuthError(401, 'invalid');
-  // A subject seen before is its person. A first login binds to the provisioned person whose userName equals the
-  // configured claim (D68 item 6); no match, two matches or a changed subject is a denied login, never a new user.
+  // A subject seen before is its person, unless the configured claim names another person; a first login binds to the
+  // provisioned person whose userName equals the claim (D68 item 6). No match, two matches, a changed subject or a claim
+  // that names someone else is a denied login, never a new user, and `login-denied` names the person when one is known.
   const claim = settings.bindingClaim,
     value = claims[claim];
-  const access =
-    (await resolveSubject(settings.issuer, claims.sub)) ??
-    (typeof value === 'string' && value ? await bindFirstLogin(settings.issuer, claims.sub, claim, value) : undefined);
+  const { access, personId } = await signIn(
+    settings.issuer,
+    claims.sub,
+    claim,
+    typeof value === 'string' && value ? value : undefined,
+  );
   if (!access) {
-    await auditAuth('login-denied');
+    await auditAuth('login-denied', personId ? 'person:' + personId : undefined);
     throw new AuthError(403, 'denied');
   }
   const raw = randomToken(),

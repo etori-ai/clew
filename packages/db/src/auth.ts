@@ -1,5 +1,5 @@
 import { and, eq, gt, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
-import { database } from './index';
+import { database, type Transaction } from './index';
 import {
   people,
   accessGrants,
@@ -44,14 +44,17 @@ export async function readSession(digest: string) {
   const [row] = await database().select().from(sessions).where(activeSession(digest));
   return row;
 }
-export async function readAccess(personId: string) {
-  const [row] = await database()
+/** What reads a person's access: the pool, or the transaction a sign-in already holds (L1). */
+type Reader = Pick<Transaction, 'select'>;
+export async function readAccess(personId: string, db: Reader = database()) {
+  const [row] = await db
     .select({ person: people, grant: accessGrants })
     .from(people)
     .innerJoin(accessGrants, eq(accessGrants.personId, people.id))
     .where(and(eq(people.id, personId), eq(people.enabled, true)));
   return row;
 }
+export type Access = NonNullable<Awaited<ReturnType<typeof readAccess>>>;
 /** The external ids of the provisioned groups a person is in, for connector audiences (D23, D68). */
 export async function readGroups(personId: string): Promise<string[]> {
   const rows = await database()
@@ -70,46 +73,119 @@ export async function resolveSubject(issuer: string, subject: string) {
   return row ? readAccess(row.personId) : undefined;
 }
 /**
- * First login (D68 item 6): the verified subject binds to the one enabled, provisioned person whose `userName` equals the
- * configured claim's value without regard to case (RFC 7643's default for `userName`; Keycloak lowercases account names,
- * Entra does not). Exactly one match, never an e-mail address, one binding per person and issuer; a subject that
- * differs from an existing binding is refused and audited, because a change of subject needs a person's review. Returns
- * the person's access when bound, undefined when not; the caller treats undefined as a denied login.
+ * A person's `userName` equals `name` without regard to case (RFC 7643's default for it; Keycloak lowercases account
+ * names, Entra does not), folded under ICU's root collation on both sides, so that Å and å are one letter on a database
+ * created with the C locale too (L13). `name` is NFC-normalised first, as stored user names are (L12).
  */
-export async function bindFirstLogin(issuer: string, subject: string, claim: string, value: string) {
+export const sameUserName = (name: string) =>
+  sql`lower(${people.userName} collate "und-x-icu") = lower(${name.normalize('NFC')}::text collate "und-x-icu")`;
+/** A sign-in's outcome: the access when it may go on, and the person it concerned when one is known (L10). */
+export interface SignIn {
+  access?: Access;
+  personId?: string;
+}
+/**
+ * The person a verified sign-in is (D68 item 6). A subject seen before is its person, unless the binding claim names
+ * another person: then the account's name has moved to someone else in the identity provider while the subject stayed
+ * bound here, and the sign-in is refused with `identity-conflict` naming both, the claim's value and the subject, and
+ * nothing is rebound (L2); an operator settles it with `scripts/identity-rebind.ts`. A claim that names nobody, or no
+ * claim, does not refuse: the subject is the identity, and the provider may rename before Clew does. A subject seen for
+ * the first time binds by the claim (`bindFirstLogin`). Compared at each sign-in, never on each request.
+ */
+export async function signIn(
+  issuer: string,
+  subject: string,
+  claim: string,
+  value: string | undefined,
+): Promise<SignIn> {
+  const name = value?.normalize('NFC');
+  const [bound] = await database()
+    .select({ personId: identityBindings.personId })
+    .from(identityBindings)
+    .where(and(eq(identityBindings.issuer, issuer), eq(identityBindings.subject, subject)));
+  if (!bound) return name ? bindFirstLogin(issuer, subject, claim, name) : {};
+  if (name) {
+    const named = await database().select({ id: people.id }).from(people).where(sameUserName(name));
+    const [claimed] = named;
+    if (claimed && !named.some(p => p.id === bound.personId)) {
+      await database().transaction(tx =>
+        refuseConflict(tx, { issuer, claim, value: name, subject, claimed: claimed.id, holder: bound.personId }),
+      );
+      return { personId: bound.personId };
+    }
+  }
+  return accessOf(database(), bound.personId);
+}
+async function accessOf(db: Reader, personId: string): Promise<SignIn> {
+  const access = await readAccess(personId, db);
+  return access ? { access, personId } : { personId };
+}
+/**
+ * A sign-in refused because its subject and its claim name different people, audited in the transaction that found it:
+ * `identity-conflict` in the authentication log on the claimed person, and `identity.conflict` on that person with the
+ * claim's value, the refused subject and the person who holds that subject, if anyone does (L10).
+ */
+async function refuseConflict(
+  tx: Transaction,
+  c: { issuer: string; claim: string; value: string; subject: string; claimed: string; holder?: string },
+) {
+  await tx.insert(authenticationAudit).values({ action: 'identity-conflict', actor: 'person:' + c.claimed });
+  await tx.insert(audit).values({
+    actor: 'person:' + c.claimed,
+    action: 'identity.conflict',
+    subject: 'person:' + c.claimed,
+    details: {
+      issuer: c.issuer,
+      claim: c.claim,
+      value: c.value,
+      subject: c.subject,
+      ...(c.holder ? { holder: 'person:' + c.holder } : {}),
+    },
+  });
+}
+/**
+ * First login (D68 item 6): the verified subject binds to the one enabled, provisioned person whose `userName` equals the
+ * configured claim's value (`sameUserName`). Exactly one match, never an e-mail address, one binding per person and
+ * issuer; a subject that differs from the person's binding, or that another person holds, is refused and audited,
+ * because a change of subject needs an operator (`scripts/identity-rebind.ts`). Everything it reads, the access
+ * included, goes through its own transaction: a second connection asked for inside it waits for the pool, and enough
+ * first sign-ins at once held every connection while waiting for one (L1).
+ */
+export async function bindFirstLogin(issuer: string, subject: string, claim: string, value: string): Promise<SignIn> {
+  const name = value.normalize('NFC');
   return database().transaction(async tx => {
-    const matches = await tx
-      .select({ id: people.id, enabled: people.enabled })
-      .from(people)
-      .where(sql`lower(${people.userName}) = lower(${value})`);
+    const matches = await tx.select({ id: people.id, enabled: people.enabled }).from(people).where(sameUserName(name));
     const [person] = matches;
     if (matches.length !== 1 || !person || !person.enabled) {
       // The claim is the account name the IdP vouched for, not a person Clew knows; it is what an operator needs to see.
-      await tx.insert(authenticationAudit).values({ action: 'identity-unmatched', actor: 'claim:' + value });
-      return undefined;
+      await tx.insert(authenticationAudit).values({ action: 'identity-unmatched', actor: 'claim:' + name });
+      return matches.length === 1 && person ? { personId: person.id } : {};
     }
     const [bound] = await tx
       .select({ subject: identityBindings.subject })
       .from(identityBindings)
       .where(and(eq(identityBindings.issuer, issuer), eq(identityBindings.personId, person.id)));
     if (bound) {
-      if (bound.subject === subject) return readAccess(person.id);
-      await tx.insert(authenticationAudit).values({ action: 'identity-conflict', actor: 'person:' + person.id });
-      await tx.insert(audit).values({
-        actor: 'person:' + person.id,
-        action: 'identity.conflict',
-        subject: 'person:' + person.id,
-        details: { issuer, claim },
-      });
-      return undefined;
+      if (bound.subject === subject) return accessOf(tx, person.id);
+      await refuseConflict(tx, { issuer, claim, value: name, subject, claimed: person.id });
+      return { personId: person.id };
     }
-    // Another binding may have claimed this subject between the lookup and here; the primary key says so.
     const inserted = await tx
       .insert(identityBindings)
       .values({ issuer, subject, personId: person.id })
       .onConflictDoNothing()
       .returning({ personId: identityBindings.personId });
-    if (!inserted.length) return undefined;
+    if (!inserted.length) {
+      // Another sign-in bound this subject or this person since the reads above. The person's own sign-in at the same
+      // moment bound it to them; anything else is a conflict, named with whoever holds the subject (L10).
+      const [holder] = await tx
+        .select({ personId: identityBindings.personId })
+        .from(identityBindings)
+        .where(and(eq(identityBindings.issuer, issuer), eq(identityBindings.subject, subject)));
+      if (holder?.personId === person.id) return accessOf(tx, person.id);
+      await refuseConflict(tx, { issuer, claim, value: name, subject, claimed: person.id, holder: holder?.personId });
+      return { personId: holder?.personId ?? person.id };
+    }
     await tx.insert(authenticationAudit).values({ action: 'identity-bound', actor: 'person:' + person.id });
     await tx.insert(audit).values({
       actor: 'person:' + person.id,
@@ -117,7 +193,7 @@ export async function bindFirstLogin(issuer: string, subject: string, claim: str
       subject: 'person:' + person.id,
       details: { issuer, claim },
     });
-    return readAccess(person.id);
+    return accessOf(tx, person.id);
   });
 }
 export async function auditAuth(action: string, actor?: string) {

@@ -24,6 +24,7 @@ import { bindLiveActivities } from './dbos/activities';
 import { failure } from './context';
 import { signingAuthority } from './connectors/signing';
 import { startupReadiness } from './startup';
+import { databaseAnswers } from '@clew/db';
 import { startRefresh } from './composition/refresh';
 import { startJobs } from './composition/jobs';
 import { scimRoutes } from './routes/scim';
@@ -77,7 +78,12 @@ const startup = startupReadiness({
   },
 });
 app.get('/api/health', c => c.json({ ok: true }));
-app.get('/api/ready', c => c.json({ ready: startup.ready() }, startup.ready() ? 200 : 503));
+// Ready once startup has finished and while the database answers within a second: a pool whose every connection is
+// held stops every request, and the probe says so instead of staying green.
+app.get('/api/ready', async c => {
+  const ready = startup.ready() && (await databaseAnswers(1000));
+  return c.json({ ready }, ready ? 200 : 503);
+});
 // Signing in does not expose connector data and must not depend on connector startup.
 app.route('/api/auth', authRoutes);
 // The installation's theme and logo (D98): public and needed by the sign-in page, so it waits for nothing but the database.
