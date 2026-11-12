@@ -168,6 +168,15 @@ export function postgresProvisionStore(): ProvisionStore {
     async lockTree(organisationId) {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${'clew.unit-tree:' + organisationId}, 0))`);
     },
+    async lockGroupCapabilities(organisationId, mode) {
+      // An advisory lock, as the tree's: shared by the writes that read the rows, exclusive for one that changes them.
+      const key = sql`hashtextextended(${'clew.group-capabilities:' + organisationId}, 0)`;
+      await tx.execute(
+        mode === 'change'
+          ? sql`select pg_advisory_xact_lock(${key})`
+          : sql`select pg_advisory_xact_lock_shared(${key})`,
+      );
+    },
     async memberships(personId) {
       const rows = await tx
         .select({ externalId: schema.groups.externalId, label: schema.groups.label })

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { eq, inArray, like } from 'drizzle-orm';
 import { database, schema } from '../../packages/db/src/index';
 import { postgresProvisionStore } from '../../apps/server/src/modules/people/adapters/postgres';
-import type { ProvisionStore } from '../../apps/server/src/modules/people/ports';
+import type { ProvisionStore, ProvisionTx } from '../../apps/server/src/modules/people/ports';
 import { scimUsecases, usersAdminUsecases } from '../../apps/server/src/modules/people/usecases';
 import type { AuthenticatedContext } from '@clew/contracts';
 
@@ -44,6 +44,8 @@ afterAll(async () => {
     await db.delete(schema.units).where(like(schema.units.id, p + '%'));
     await db.delete(schema.provisioners).where(like(schema.provisioners.id, p + '%'));
     await db.delete(schema.audit).where(like(schema.audit.subject, 'provisioner:' + p + '%'));
+    // A mapping change's audit row names the group by its key.
+    await db.delete(schema.audit).where(like(schema.audit.subject, 'group:' + p + '%'));
     if (people.length) await db.delete(schema.people).where(inArray(schema.people.id, people));
   }
 });
@@ -93,6 +95,61 @@ function paused(inner: ProvisionStore) {
   };
   return { store, atRead, release };
 }
+/**
+ * A store whose transactions stop before the first call of any of the named methods until `release` is called. Before
+ * `lockPerson` or `touchUsers`, a group write has read the capability rows and holds nobody yet, and a mapping change
+ * has written its row; before `unitTree`, a mapping change has derived its group's members and not yet committed.
+ */
+function pausedBefore(inner: ProvisionStore, ...names: Array<keyof ProvisionTx>) {
+  let reached!: () => void, release!: () => void;
+  const atCall = new Promise<void>(resolve => (reached = resolve)),
+    gate = new Promise<void>(resolve => (release = resolve));
+  let paused = false;
+  const store: ProvisionStore = {
+    transaction: fn =>
+      inner.transaction(tx =>
+        fn(
+          new Proxy(tx, {
+            get(target, name) {
+              const value: unknown = Reflect.get(target, name);
+              if (typeof value !== 'function') return value;
+              const call = (...args: unknown[]) => (value as (...a: unknown[]) => unknown).apply(target, args);
+              if (!names.includes(name as keyof ProvisionTx)) return call;
+              return async (...args: unknown[]) => {
+                if (!paused) {
+                  paused = true;
+                  reached();
+                  await gate;
+                }
+                return call(...args);
+              };
+            },
+          }),
+        ),
+      ),
+  };
+  return { store, atCall, release };
+}
+/** An administrator of the stack's organisation on Administration › Användare (D85), and the use cases they call. */
+function administration(prefix: string, store: ProvisionStore) {
+  const persona: AuthenticatedContext = {
+    id: prefix + '-admin',
+    name: 'Admin',
+    unitId: 'u',
+    unitLabel: 'U',
+    role: 'employee',
+    organisationId: prefix + '-org',
+    principal: { id: 'person:' + prefix + '-admin', kind: 'person' },
+    capabilities: ['admin.users'],
+    authorizationVersion: 'v',
+    sessionBinding: 'test',
+    expiresAt: '2099-01-01T00:00:00.000Z',
+    authorize: async () => ({ version: 'v' }),
+  };
+  const admin = (use: ProvisionStore = store) =>
+    usersAdminUsecases({ store: use, clock: () => new Date(), token: () => prefix + '-token', digest: t => t });
+  return { persona, admin };
+}
 const PATCH = 'urn:ietf:params:scim:api:messages:2.0:PatchOp';
 const settled = (promise: Promise<unknown>) => {
   let done = false;
@@ -101,6 +158,16 @@ const settled = (promise: Promise<unknown>) => {
     () => (done = true),
   );
   return () => done;
+};
+/**
+ * Whether a request was still waiting 400 ms after it began. The one it waits for is released after the look either
+ * way, so a request that did not wait still lets the test say what it left in the grant before it says it did not wait.
+ */
+const stillWaiting = async (done: () => boolean, release: () => void) => {
+  await new Promise(resolve => setTimeout(resolve, 400));
+  const waiting = !done();
+  release();
+  return waiting;
 };
 test('a title PostgreSQL cannot hold does not stop the deactivation beside it, and a name it cannot hold is refused by name (D110)', async () => {
   const { p, user, scim } = stack();
@@ -359,6 +426,159 @@ test('two membership changes for one person at once: the second derivation waits
   await Promise.all([first, second]);
   // Both changes are in the grant. Without the lock the last writer's view missed the other's change.
   expect(await grant(person)).toEqual({ role: 'employee', capabilities: ['admin.users'] });
+});
+test("an organisation's capability rows held for a read let other reads through and keep a change out until they commit, and held for a change keep reads out (B1)", async () => {
+  const { prefix, store } = stack();
+  const org = prefix + '-org';
+  const hold = (mode: 'read' | 'change') => {
+    let held!: () => void, release!: () => void;
+    const taken = new Promise<void>(resolve => (held = resolve)),
+      gate = new Promise<void>(resolve => (release = resolve));
+    const done = store.transaction(async tx => {
+      await tx.lockGroupCapabilities(org, mode);
+      held();
+      await gate;
+    });
+    return { taken, release, done };
+  };
+  const take = (mode: 'read' | 'change', organisationId = org) =>
+    store.transaction(tx => tx.lockGroupCapabilities(organisationId, mode));
+  // Held for a read: another read is taken beside it, and so is a change of another organisation's rows; a change of
+  // these waits until the read commits.
+  const reading = hold('read');
+  await reading.taken;
+  await take('read');
+  await take('change', prefix + '-elsewhere');
+  const change = take('change'),
+    changeWaited = await stillWaiting(settled(change), reading.release);
+  await Promise.all([reading.done, change]);
+  expect(changeWaited).toBe(true);
+  // Held for a change: a read waits until it commits.
+  const changing = hold('change');
+  await changing.taken;
+  const read = take('read'),
+    readWaited = await stillWaiting(settled(read), changing.release);
+  await Promise.all([changing.done, read]);
+  expect(readWaited).toBe(true);
+});
+test('a mapping taken away while a group write derives a member of its group, in either order: the capability does not come back (B1)', async () => {
+  const { prefix, deps, p, store, user, grant, scim } = stack();
+  const { persona, admin } = administration(prefix, store),
+    mapping = { groupExternalId: `${prefix}:admins`, capability: 'admin.users' as const };
+  const person = (await scim.createUser(p, user(1), BASE)).id,
+    member = [{ value: person }];
+  await scim.createGroup(p, { externalId: `unit:${prefix}-u`, displayName: 'U', members: member }, BASE);
+  await scim.createGroup(p, { externalId: mapping.groupExternalId, displayName: 'Admins', members: member }, BASE);
+  const second = await scim.createGroup(p, { externalId: `unit:${prefix}-v`, displayName: 'V' }, BASE);
+  const placed = (use: typeof scim, op: 'add' | 'remove') =>
+    use.patchGroup(
+      p,
+      second.id,
+      {
+        schemas: [PATCH],
+        Operations: [
+          op === 'add' ? { op, path: 'members', value: member } : { op, path: `members[value eq "${person}"]` },
+        ],
+      },
+      BASE,
+    );
+  // The write first: it has read the rows and holds nobody yet. The removal waits for it, then derives the person
+  // from the rows it leaves. Without the wait the write derived from the rows it had read, the row back in them.
+  await admin().addGroupCapability(persona, mapping);
+  expect(await grant(person)).toEqual({ role: 'employee', capabilities: ['admin.users'] });
+  const writing = pausedBefore(store, 'lockPerson', 'touchUsers'),
+    write = placed(scimUsecases({ store: writing.store, ...deps }), 'add');
+  await writing.atCall;
+  const removal = admin().removeGroupCapability(persona, mapping),
+    removalWaited = await stillWaiting(settled(removal), writing.release);
+  await Promise.all([write, removal]);
+  expect(await grant(person)).toEqual({ role: 'employee', capabilities: [] });
+  expect(removalWaited).toBe(true);
+  // The removal first: it has derived the person and not committed. The write waits for it and reads what it left.
+  await admin().addGroupCapability(persona, mapping);
+  expect(await grant(person)).toEqual({ role: 'employee', capabilities: ['admin.users'] });
+  const removing = pausedBefore(store, 'unitTree'),
+    removed = admin(removing.store).removeGroupCapability(persona, mapping);
+  await removing.atCall;
+  const late = placed(scim, 'remove'),
+    lateWaited = await stillWaiting(settled(late), removing.release);
+  await Promise.all([removed, late]);
+  expect(await grant(person)).toEqual({ role: 'employee', capabilities: [] });
+  expect(lateWaited).toBe(true);
+  expect(
+    await database()
+      .select()
+      .from(schema.groupCapabilities)
+      .where(eq(schema.groupCapabilities.organisationId, p.organisationId)),
+  ).toEqual([]);
+});
+test('two mapping changes on groups that share a person, at once: the person holds what the rows give when both are done (B1)', async () => {
+  const { prefix, p, store, user, grant, scim } = stack();
+  const { persona, admin } = administration(prefix, store);
+  const person = (await scim.createUser(p, user(1), BASE)).id,
+    member = [{ value: person }];
+  await scim.createGroup(p, { externalId: `unit:${prefix}-u`, displayName: 'U', members: member }, BASE);
+  for (const key of ['a', 'b'])
+    await scim.createGroup(p, { externalId: `${prefix}:${key}`, displayName: key, members: member }, BASE);
+  await admin().addGroupCapability(persona, { groupExternalId: `${prefix}:b`, capability: 'admin.users' });
+  expect(await grant(person)).toEqual({ role: 'employee', capabilities: ['admin.users'] });
+  // The first change has written its row and read the rows, and holds nobody yet; the second waits for it, and then
+  // derives from the first one's row and without its own.
+  const first = pausedBefore(store, 'lockPerson'),
+    adding = admin(first.store).addGroupCapability(persona, {
+      groupExternalId: `${prefix}:a`,
+      capability: 'admin.connectors',
+    });
+  await first.atCall;
+  const removing = admin().removeGroupCapability(persona, {
+      groupExternalId: `${prefix}:b`,
+      capability: 'admin.users',
+    }),
+    removingWaited = await stillWaiting(settled(removing), first.release);
+  await Promise.all([adding, removing]);
+  expect(await grant(person)).toEqual({ role: 'employee', capabilities: ['admin.connectors'] });
+  expect(removingWaited).toBe(true);
+});
+test('a row whose group is gone is taken away while the group is pushed again, in either order: nobody keeps what no row gives (B1)', async () => {
+  const { prefix, deps, p, store, user, grant, scim } = stack();
+  const { persona, admin } = administration(prefix, store),
+    mapping = { groupExternalId: `${prefix}:k`, capability: 'admin.users' as const };
+  const person = (await scim.createUser(p, user(1), BASE)).id,
+    member = [{ value: person }];
+  await scim.createGroup(p, { externalId: `unit:${prefix}-u`, displayName: 'U', members: member }, BASE);
+  const push = (use: typeof scim) =>
+    use.createGroup(p, { externalId: mapping.groupExternalId, displayName: 'K', members: member }, BASE);
+  // Mapped and then removed: the row stays (D85) and gives nobody anything until the group returns. No group lock
+  // covers such a row, so only the hold on the rows keeps the push and the removal apart.
+  const orphan = async () => {
+    const group = await push(scim);
+    await admin().addGroupCapability(persona, mapping);
+    expect(await grant(person)).toEqual({ role: 'employee', capabilities: ['admin.users'] });
+    await scim.deleteGroup(p, group.id);
+    expect(await grant(person)).toEqual({ role: 'employee', capabilities: [] });
+  };
+  // The push first: it has read the row and holds nobody yet. The removal waits, then finds the group's member.
+  await orphan();
+  const pushing = pausedBefore(store, 'lockPerson', 'touchUsers'),
+    pushed = push(scimUsecases({ store: pushing.store, ...deps }));
+  await pushing.atCall;
+  const removal = admin().removeGroupCapability(persona, mapping),
+    removalWaited = await stillWaiting(settled(removal), pushing.release);
+  const [group] = await Promise.all([pushed, removal]);
+  expect(await grant(person)).toEqual({ role: 'employee', capabilities: [] });
+  expect(removalWaited).toBe(true);
+  // The removal first: it found no group and nobody to derive, and has not committed. The push waits for it and reads
+  // the rows it left; it once read the row still there and gave the capability that nothing gives any more.
+  await scim.deleteGroup(p, group.id);
+  await orphan();
+  const removing = pausedBefore(store, 'unitTree'),
+    removed = admin(removing.store).removeGroupCapability(persona, mapping);
+  await removing.atCall;
+  const late = push(scim),
+    lateWaited = await stillWaiting(settled(late), removing.release);
+  await Promise.all([removed, late]);
+  expect(await grant(person)).toEqual({ role: 'employee', capabilities: [] });
+  expect(lateWaited).toBe(true);
 });
 test('two patches of one group at once: both members are in the group afterwards, and neither request fails', async () => {
   const { prefix, p, user, grant, scim } = stack();

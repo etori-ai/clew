@@ -199,13 +199,15 @@ describe('what a group write costs and what it leaves in the audit', () => {
     for (let i = 0; i < 30; i++) staff.push(await person(a));
     const [head, newcomer] = [await person(a), await person(a)];
     const everyone = (ids: string[]) => ids.map(value => ({ value }));
-    // Each derivation begins by locking its person, so the locks count the people derived.
+    // Each derivation begins by locking its person, so the locks count the people derived. A group write reads the rules
+    // only while it holds them, so an administrator's change cannot slip in between the read and the people (`held`).
     const cost = async (write: () => Promise<unknown>) => {
       for (const key of Object.keys(calls)) delete calls[key];
       await write();
       return {
         derived: calls.lockPerson ?? 0,
         rules: calls.groupCapabilities ?? 0,
+        held: calls.lockGroupCapabilities ?? 0,
         calls: Object.values(calls).reduce((sum, n) => sum + n, 0),
       };
     };
@@ -217,7 +219,7 @@ describe('what a group write costs and what it leaves in the audit', () => {
     const created = await cost(async () => {
       plain = await scim.createGroup(a, { externalId: 'ad:all', displayName: 'Alla', members: everyone(staff) }, BASE);
     });
-    expect(created).toMatchObject({ derived: 0, rules: 1 });
+    expect(created).toMatchObject({ derived: 0, rules: 1, held: 1 });
     // A few store calls whatever the size of the group, where it was some two hundred for these thirty.
     expect(created.calls).toBeLessThan(12);
     expect(
@@ -235,7 +237,7 @@ describe('what a group write costs and what it leaves in the audit', () => {
       await cost(() =>
         scim.patchGroup(a, plain.id, patch([{ op: 'replace', path: 'displayName', value: 'Samtliga' }]), BASE),
       ),
-    ).toEqual(expect.objectContaining({ derived: 0, rules: 0 }));
+    ).toEqual(expect.objectContaining({ derived: 0, rules: 0, held: 0 }));
     expect(
       await cost(() =>
         scim.patchGroup(a, plain.id, patch([{ op: 'replace', path: 'externalId', value: 'ad:everyone' }]), BASE),
@@ -355,7 +357,7 @@ describe('what a group write costs and what it leaves in the audit', () => {
       await cost(() =>
         admin.addGroupCapability(administrator('org-a'), { groupExternalId: 'ad:staff', capability: 'admin.users' }),
       ),
-    ).toMatchObject({ derived: staff.length, rules: 2 });
+    ).toMatchObject({ derived: staff.length, rules: 2, held: 1 });
   });
   test("a list that leaves out a person's groups does not read them: the daily comparison asks for three attributes", async () => {
     const calls: Record<string, number> = {};

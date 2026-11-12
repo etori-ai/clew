@@ -554,6 +554,31 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         await tx.lockUnits([p + '-unit-without-a-row', p + '-u', p + '-u']);
       });
     });
+    test("an organisation's capability rows are held for a read or for a change until the transaction ends, and holding them changes nothing (B1)", async () => {
+      const { store, prefix: p } = await make();
+      const [org, elsewhere] = [p + '-org', p + '-elsewhere'],
+        row = { groupExternalId: p + ':g', capability: 'admin.users' };
+      await store.transaction(tx => tx.setGroupCapability(org, row.groupExternalId, row.capability, true));
+      // Reads share the hold, a second one in the same transaction included, and another organisation's rows are held
+      // apart: a change of those is taken beside them.
+      await store.transaction(async tx => {
+        await tx.lockGroupCapabilities(org, 'read');
+        await tx.lockGroupCapabilities(org, 'read');
+        await tx.lockGroupCapabilities(elsewhere, 'change');
+        expect(await tx.groupCapabilities(org)).toEqual([row]);
+      });
+      await store.transaction(async tx => {
+        await tx.lockGroupCapabilities(org, 'change');
+        expect(await tx.setGroupCapability(org, row.groupExternalId, row.capability, false)).toBe(true);
+      });
+      // The hold ended with each transaction, so the next one takes it again at once.
+      expect(
+        await store.transaction(async tx => {
+          await tx.lockGroupCapabilities(org, 'change');
+          return tx.groupCapabilities(org);
+        }),
+      ).toEqual([]);
+    });
     test("many people's time of change moves at once, in the transaction, and nothing else of them does (S13)", async () => {
       const { store, prefix: p } = await make();
       const [a, b, c, z] = [p + '-a', p + '-b', p + '-c', p + '-z'],

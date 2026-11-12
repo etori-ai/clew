@@ -68,7 +68,8 @@ import type { Provisioner, ProvisionStore, ProvisionTx } from './ports';
 
 /**
  * D85's rows of one organisation as a write that derives many of its people read them, once, after any change it made
- * to them: a group of thousands is not thousands of reads of the same rows.
+ * to them: a group of thousands is not thousands of reads of the same rows. Read only while the rows are held
+ * (`lockGroupCapabilities`), so that no change to them commits before the write that derives from them does.
  */
 export interface OrganisationRules {
   organisationId: string;
@@ -77,9 +78,11 @@ export interface OrganisationRules {
 /**
  * Deriving authority (D68, D85): the only path from memberships and the group-capability rows to the grant a person acts
  * with. Called by whatever changed a membership or such a row, inside that change's transaction, so the grant never lags the
- * fact that produced it. An unchanged grant writes no audit row; a changed one writes `grant.derived` on the person
- * with the new unit, role and capabilities, or `removed: true` when the person has no unit left (fail closed). A
- * `protected` key never reaches these tables (D93), so the derived flag stays false and is never written to the audit row.
+ * fact that produced it: the person is locked before their memberships are read, and the rows are read after that lock
+ * or under the organisation's hold on them. An unchanged grant writes no audit row; a changed one writes `grant.derived`
+ * on the person with the new unit, role and capabilities, or `removed: true` when the person has no unit left (fail
+ * closed). A `protected` key never reaches these tables (D93), so the derived flag stays false and is never written to
+ * the audit row.
  */
 export function provisioningUsecases(deps: { store: ProvisionStore }) {
   async function deriveWithin(
@@ -88,7 +91,9 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
     personId: string,
     known?: OrganisationRules,
   ): Promise<Derived | undefined> {
-    // Locked first: a second derivation of the same person waits here and then reads what this one committed.
+    // Locked first: a second derivation of the same person waits here and then reads what this one committed. The
+    // organisation's rows are the caller's when it read them under `lockGroupCapabilities`, which keeps every change to
+    // them out until this transaction commits; otherwise they are read here, after the lock, as committed.
     const person = await tx.lockPerson(personId);
     if (!person) return undefined;
     const memberships = await tx.memberships(personId),
@@ -152,7 +157,7 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
   /**
    * Several people in one transaction, each once and in id order: every caller locks in the same order, so two
    * requests that touch the same people queue behind each other instead of waiting on each other. `known` is the
-   * organisation's rows, read once by the caller for all of them.
+   * organisation's rows, read once by the caller for all of them while it holds them (`OrganisationRules`).
    */
   async function deriveAll(tx: ProvisionTx, actor: string, personIds: Iterable<string>, known?: OrganisationRules) {
     for (const id of [...new Set(personIds)].sort()) await deriveWithin(tx, actor, id, known);
@@ -256,9 +261,12 @@ export function scimUsecases(deps: {
   };
   /**
    * Whether a group write can move anyone's grant, asked of the keys the group had and gets (`givesAuthority`) with the
-   * organisation's D85 rows. The rows are read here once, and handed on to every derivation the write makes.
+   * organisation's D85 rows. The rows are read here once, and handed on to every derivation the write makes. They are
+   * held first: read before the people are locked, they would otherwise be what they were before an administrator's
+   * change that commits while this write waits for a person, and a capability the change took away would come back.
    */
   const authorityOf = async (tx: ProvisionTx, p: Provisioner, ...keys: Array<string | null>) => {
+    await tx.lockGroupCapabilities(p.organisationId, 'read');
     const known: OrganisationRules = {
       organisationId: p.organisationId,
       rules: await tx.groupCapabilities(p.organisationId),
@@ -855,6 +863,11 @@ export function usersAdminUsecases(deps: {
       // Locked as a SCIM write of the group locks it, and before its members are read: a member added while the row
       // is being taken away is derived after this change, and does not keep a capability no row gives.
       if (group) await tx.readGroup(persona.organisationId, group.id, true);
+      // Then the organisation's rows, before one is written. A group write derives from the rows it read until it
+      // commits, so this waits for it and derives the members as it left them; a group write that comes later waits for
+      // this change and reads the rows it leaves. That holds for a row whose group is gone and is pushed again meanwhile,
+      // which no group lock covers: its members are read after the push commits, or the push reads the rows after this.
+      await tx.lockGroupCapabilities(persona.organisationId, 'change');
       const changed = await tx.setGroupCapability(
         persona.organisationId,
         input.groupExternalId,
@@ -868,7 +881,8 @@ export function usersAdminUsecases(deps: {
           subject: 'group:' + input.groupExternalId,
           details: { capability: input.capability, groupLabel: group?.label ?? null },
         });
-        // The organisation's rows as this change leaves them, read once for every member of the group.
+        // The organisation's rows as this change leaves them, read once for every member of the group: they are held, so
+        // no other change to them and no group write that reads them runs until this one commits.
         const known = {
           organisationId: persona.organisationId,
           rules: await tx.groupCapabilities(persona.organisationId),

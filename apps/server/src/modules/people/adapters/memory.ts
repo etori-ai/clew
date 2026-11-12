@@ -92,6 +92,7 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
     },
     async lockUnits() {},
     async lockTree() {},
+    async lockGroupCapabilities() {},
     async memberships(personId) {
       return groupsOf(personId)
         .filter(g => g.externalId !== null)

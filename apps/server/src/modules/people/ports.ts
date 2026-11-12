@@ -66,6 +66,14 @@ export interface ProvisionTx {
    * before `lockUnits`, by every caller.
    */
   lockTree(organisationId: string): Promise<void>;
+  /**
+   * Holds the organisation's D85 rows for the rest of the transaction: `read` by a group write before it reads them,
+   * `change` by a change to them before it writes. A group write reads the rows once and derives everyone it moves from
+   * that read, so the rows may not change until it commits: a change waits for the writes that read them, and a write
+   * that comes after the change waits for it and reads what it committed. Reads do not wait for each other. Taken after
+   * the group's own row (`readGroup` with `lock`), the tree and the units, and before any person.
+   */
+  lockGroupCapabilities(organisationId: string, mode: 'read' | 'change'): Promise<void>;
   /** The groups with an external id the person is in; a group without one carries no meaning. */
   memberships(personId: string): Promise<Membership[]>;
   members(groupExternalId: string): Promise<string[]>;
