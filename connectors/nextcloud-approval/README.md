@@ -87,14 +87,51 @@ show an unknown one. There is no undo: Approval has none.
 ## Identity
 
 Every request is verified as every connector's is (the transport key and the installation-signed assertion,
-`verification.mjs`). Then the connector asks Nextcloud who the token belongs to (`GET /ocs/v2.php/cloud/user`, 01) and
-requires that account to be the person Clew signed for, by the assertion's `userName` without regard to case. A token
-for one person is never used under another person's assertion, whatever account `preferred_username` or an e-mail
-address resolves to in Nextcloud. Without a delegated token, without a `userName`, or with a token Nextcloud refuses
-(25 to 30), reads answer `denied` in Swedish and nothing is read.
+`verification.mjs`). Then the connector asks Nextcloud which account the token belongs to (`GET /ocs/v2.php/cloud/user`,
+01) and requires that account's id to equal the assertion's `userName`, without regard to case. A token is never used
+under an assertion that names another user name, whatever account `preferred_username` or an e-mail address resolves
+to in Nextcloud: such a call is refused with "Kontot i Nextcloud har ett annat användarnamn än ditt konto i Clew." That
+is all the check guarantees. It compares names, not people, so it cannot tell whether the account under a name belongs
+to the person the directory gives that name today; keeping the two the same person is the operator's part, below.
+Without a delegated token, without a `userName`, or with a token Nextcloud refuses (25 to 30; "Nextcloud godtar inte
+din inloggning."), reads answer `denied` in Swedish and nothing is read.
 
 Nextcloud names each accepted call's short session after the user agent, which the person sees under their devices and
 sessions; the connector sends `Clew`.
+
+### Accounts and user names
+
+- **Every Nextcloud account id is the person's user name in the directory** that provisions Clew, case aside. user_oidc
+  finds the account by the token's `preferred_username` and creates none ([the
+  setup](samples/README.md#the-setup-that-makes-it-work)), so a person who decides in Nextcloud has an account created
+  beforehand under exactly that name.
+- **A Nextcloud account cannot be renamed.** `occ` has no command for it (checked on the development Nextcloud,
+  33.0.10), and Nextcloud offers nothing that moves approvals from one account to another: Approval has no way to
+  reassign a waiting request or to hand an approver's place to another account, in its documentation or its API (the
+  routes in [samples](samples/README.md#the-api)). What waits for a person is computed on every call from the rules
+  that name their account, or a group or circle it is in, and the files the account can reach.
+- **On a rename** in the directory and the identity provider, Nextcloud refuses the person's new token ("Nextcloud
+  godtar inte din inloggning.") until an operator has created an account under the new name. The operator then:
+  1. moves the old account's files and shares to the new one with
+     `occ files:transfer-ownership <old account> <new account>`, which moves every file and folder, the outgoing shares
+     and the incoming user shares, so the files shared with the person for approval reach the new account;
+  2. puts the new account wherever a rule names the old one, as approver or requester. A rule that names a group or a
+     circle needs only the new account added to it, which is why naming groups in rules spares this step;
+  3. deletes the old account once nothing is left on it.
+
+  A decision already made stays recorded under the old account id (`state` names who decided by account id). Clew
+  keys its own records about the person by their Clew id, which a rename leaves as it is, so nothing in Clew is moved.
+  When the directory has renamed the person and the identity provider still sends the old `preferred_username`, every
+  call is refused with "Kontot i Nextcloud har ett annat användarnamn än ditt konto i Clew." until the two agree.
+- **A leaver's Nextcloud account is deleted before the directory gives the name to someone else.** Disabling it is not
+  enough: a disabled account refuses every token (30), the newcomer's included, and an account left enabled hands the
+  newcomer the leaver's files, shares and waiting approvals with a check that passes, since the names agree. Move what
+  must be kept to another account first, and take the leaver out of every rule that names the account, so that a new
+  account under the same id does not take the leaver's place in it.
+
+Whether `Actor` should carry a key that never changes, so that a connector can tell people apart rather than names, is
+an open question ([open questions](../../docs/maintainers/open-questions.md#waiting-for-the-product-owner), the row on
+`Actor` in protocol 2).
 
 ## Configuration
 
