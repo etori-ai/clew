@@ -1096,6 +1096,14 @@ describe('filters, pages and what a write answers', () => {
       attribute(GROUP, 'members').subAttributes.find((a: { name: string }) => a.name === '$ref').referenceTypes,
     ).toEqual(['User']);
     expect(attribute(GROUP, 'displayName').caseExact).toBe(false);
+    // A group's key is required as a user's is (S2): a POST without one is refused, a PUT without one keeps it.
+    for (const schema of [USER, GROUP])
+      expect(attribute(schema, 'externalId')).toMatchObject({ required: true, caseExact: true, uniqueness: 'server' });
+    expect(schemas.find(s => s.id === GROUP)).toMatchObject({
+      description: expect.stringContaining(
+        'Requires an externalId and a displayName. A PUT that leaves the externalId out, or sends it null or empty, keeps the one Clew holds; only a PATCH that removes it or sets it to null takes it away.',
+      ),
+    });
   });
 });
 describe('what an outside review of the merged server found (2026-11-12)', () => {

@@ -1559,10 +1559,10 @@ export const schemaDocuments = (base: string) => [
     id: SCIM.group,
     name: 'Group',
     description:
-      'A group; unit:, unit-manager: and capability: keys in externalId carry meaning in Clew. The key protected is refused (D93), and so is a key written wrong (D96). Members are users; a group as a member is refused. A unit: group may name the unit above it in the unit extension (D99).',
+      'A group. Requires an externalId and a displayName. A PUT that leaves the externalId out, or sends it null or empty, keeps the one Clew holds; only a PATCH that removes it or sets it to null takes it away. unit:, unit-manager: and capability: keys in externalId carry meaning in Clew. The key protected is refused (D93), and so is a key written wrong (D96). Members are users; a group as a member is refused. A unit: group may name the unit above it in the unit extension (D99).',
     attributes: [
       attribute('displayName', 'string', { required: true }),
-      attribute('externalId', 'string', { caseExact: true, uniqueness: 'server' }),
+      attribute('externalId', 'string', { required: true, caseExact: true, uniqueness: 'server' }),
       attribute('members', 'complex', {
         multiValued: true,
         subAttributes: [
