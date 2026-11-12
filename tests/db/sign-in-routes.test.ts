@@ -210,7 +210,7 @@ const logged = async (action: string) =>
   ).filter(row => row.action === action).length;
 
 describe('a sign-out at the identity provider ends the sessions of its sid', () => {
-  test('front-channel: from a cross-site frame without a cookie, every open session of the sid ends, each with its row', async () => {
+  test('front-channel: from a cross-site frame without a cookie, every open session of the sid ends, each with its row, with or without the issuer', async () => {
     said.length = 0;
     const laptop = await session('laptop'),
       tablet = await session('tablet'),
@@ -239,6 +239,11 @@ describe('a sign-out at the identity provider ends the sessions of its sid', () 
     const refused = await authRoutes.request('/frontchannel-logout?iss=https://other.example.test&sid=sid-phone');
     expect(refused.status).toBe(400);
     expect(await state(phone)).toEqual({ open: true, tokens: 'sealed-phone' });
+    // Only the sid, as Microsoft Entra ID has been reported to send it: the configured issuer's sessions of that sid end.
+    const sidOnly = await authRoutes.request('/frontchannel-logout?sid=sid-phone');
+    expect(sidOnly.status).toBe(200);
+    expect(await state(phone)).toEqual({ open: false, tokens: '' });
+    expect(await logged('frontchannel-logout')).toBe(3);
     expect(said.map(line => line.message)).toEqual(['front-channel logout refused']);
   });
   test('back-channel: a logout token ends the sessions of its sid as before, and a replayed token ends nothing', async () => {

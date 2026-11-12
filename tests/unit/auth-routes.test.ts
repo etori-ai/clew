@@ -147,7 +147,11 @@ describe('a refused sign-in or logout is said in one line', () => {
 });
 describe('front-channel logout (D115) where it ends nothing', () => {
   test('another issuer is refused with 400 and said, whatever the sid', async () => {
-    for (const query of ['?iss=https://other.example.test/realms/routes&sid=sid-anna', '?iss=&sid=sid-anna']) {
+    for (const query of [
+      '?iss=https://other.example.test/realms/routes&sid=sid-anna',
+      '?iss=&sid=sid-anna',
+      '?iss=https://other.example.test/realms/routes',
+    ]) {
       said.length = 0;
       const response = await frontchannel(query);
       expect(response.status).toBe(400);
@@ -161,11 +165,6 @@ describe('front-channel logout (D115) where it ends nothing', () => {
         },
       ]);
     }
-  });
-  test('a sid without the issuer that would vouch for it is refused', async () => {
-    const response = await frontchannel('?sid=sid-anna');
-    expect(response.status).toBe(400);
-    expect(said).toHaveLength(1);
   });
   test('without a sid it answers 200, empty and never cached, and nothing is said', async () => {
     for (const query of ['?iss=' + encodeURIComponent(issuer), '?iss=' + encodeURIComponent(issuer) + '&sid=', '']) {

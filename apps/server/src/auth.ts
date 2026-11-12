@@ -477,15 +477,16 @@ export async function receiveLogout(token: string) {
 }
 /**
  * OpenID Connect Front-Channel Logout 1.0 (D115): when the person signs out at the identity provider, the provider
- * loads Clew's front-channel logout address in a frame with its `iss` and the `sid` of its session; Microsoft Entra ID
- * has no back-channel logout, so this is how a sign-out there reaches Clew. With the configured issuer and a `sid`,
- * every session of that `sid` ends as a back-channel logout ends it. Without a `sid` nothing ends: no cookie reaches a
- * cross-site frame, so nothing else names the session. Another issuer, or a `sid` without an issuer, is refused and
- * ends nothing.
+ * loads Clew's front-channel logout address in a frame with the `sid` of its session and, by the specification, its
+ * `iss`; Microsoft Entra ID has no back-channel logout, so this is how a sign-out there reaches Clew. Every session of
+ * that `sid` under the configured issuer ends as a back-channel logout ends it. An `iss` that is given must be the
+ * configured issuer, or nothing ends and the request is refused. A `sid` without an `iss` is the configured issuer's:
+ * Entra has been reported to send only the `sid`, and Clew has one issuer. Without a `sid` nothing ends: no cookie
+ * reaches a cross-site frame, so nothing else names the session.
  */
 export async function receiveFrontChannelLogout(iss: string | undefined, sid: string | undefined) {
   const settings = authSettings();
-  if ((iss !== undefined || sid) && iss !== settings.issuer) throw new AuthError(401, 'invalid');
+  if (iss !== undefined && iss !== settings.issuer) throw new AuthError(401, 'invalid');
   if (!sid) return;
   await frontchannelRevoke({ issuer: settings.issuer, clientId: settings.clientId, sid });
 }
