@@ -3,11 +3,13 @@ import type { AuthenticatedContext, ProvisionerKeyIssued, UsersAdminOverview } f
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { usersAdminUsecases } from '../../apps/server/src/modules/people/usecases';
 import { provisionerKeyRoutes } from '../../apps/server/src/routes/provisioner-keys';
+import { refusingNul } from '../refusing-nul';
 
 /**
  * The routes of the provisioners' keys (D107) over the use cases on the memory store: what a body has to be, which
  * answers carry a key and that they are never to be stored, where the key is said to be sent, and the refusals in
  * Swedish. The session guard is the administration's and is stood in for here by a header that says who is signed in.
+ * The store fails on a NUL as PostgreSQL does (`refusingNul`), so a NUL that reached it would answer 503 here too.
  */
 const PUBLIC_URL = process.env.PUBLIC_URL;
 beforeAll(() => {
@@ -21,7 +23,7 @@ function stack() {
   const store = memoryProvisionStore();
   let tokens = 0;
   const usecases = usersAdminUsecases({
-    store,
+    store: refusingNul(store),
     clock: () => new Date('2026-11-11T06:00:00.000Z'),
     token: () => 'route-token-' + ++tokens,
     digest: token => 'digest:' + token,
@@ -88,13 +90,21 @@ describe('the routes of the provisioners’ keys (D107)', () => {
       { id: 'metakatalogen', label: '' },
       { id: 'metakatalogen', label: 'x'.repeat(121) },
       { id: 'metakatalogen', label: 'Ok', organisationId: 'timra' },
+      // One line without a control character (K3): a NUL, which PostgreSQL cannot hold, among them.
+      { id: 'metakatalogen', label: 'Meta\u0000katalogen' },
+      { id: 'metakatalogen', label: 'Meta\tkatalogen' },
+      { id: 'metakatalogen', label: 'Meta\nkatalogen' },
+      { id: 'metakatalogen', label: 'Meta\u007fkatalogen' },
+      { id: 'metakatalogen', label: 'Meta\u0085katalogen' },
     ])
       await refused(await post('/', body), 400, 'Ogiltig förfrågan.');
+    // Any other text is a label, a no-break space just past the control characters included.
+    expect((await post('/', { id: 'ostra', label: 'Östra\u00a0katalogen – HR, 2026' })).status).toBe(200);
     await post('/', { id: 'metakatalogen', label: 'Metakatalogen' });
     for (const body of [{}, { graceHours: 5 }, { graceHours: '24' }, { graceHours: 24, extra: true }])
       await refused(await post('/metakatalogen/rotate', body), 400, 'Ogiltig förfrågan.');
-    expect([...store.state.provisioners.keys()]).toEqual(['digest:route-token-1']);
-    expect(store.state.audit.map(a => a.action)).toEqual(['provisioner.added']);
+    expect([...store.state.provisioners.keys()]).toEqual(['digest:route-token-1', 'digest:route-token-2']);
+    expect(store.state.audit.map(a => a.action)).toEqual(['provisioner.added', 'provisioner.added']);
   });
   test('replacing answers a new key the same way; taking it back answers the page and no key', async () => {
     const { store, post } = stack();

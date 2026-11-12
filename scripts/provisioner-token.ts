@@ -11,7 +11,7 @@
  * `rotate` and `revoke` run through the use cases the users page runs (D107 item 6), in one transaction with the same
  * audit rows, `endedEarlier` included, and with `bootstrap:cli` as the actor.
  */
-import { PROVISIONER_ID_PATTERN } from '@clew/contracts';
+import { PROVISIONER_ID_PATTERN, PROVISIONER_LABEL_PATTERN } from '@clew/contracts';
 import { database, closeDatabase } from '@clew/db';
 import { provisioners } from '@clew/db/auth';
 import { randomToken, tokenDigest } from '../apps/server/src/auth-crypto';
@@ -53,6 +53,9 @@ try {
     const organisationId = option('organisation'),
       label = option('label') ?? id!;
     if (!organisationId) throw new Error('--organisation is required: the organisation this provisioner fills.');
+    // The rule the users page issues under: one line, without a control character.
+    if (!new RegExp(PROVISIONER_LABEL_PATTERN).test(label))
+      throw new Error('The label is one line of text without control characters.');
     const token = randomToken();
     // Issued by the store's own operation, the one the users page issues with (D107): the id is taken or not in the
     // write itself, so of two issues at once one is refused. This script used to look first and write afterwards.

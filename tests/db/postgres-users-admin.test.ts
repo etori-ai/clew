@@ -14,9 +14,9 @@ import { groupRow, userRow } from '../scim-store-contract';
 
 /**
  * Administration › Användare and Organisation on PostgreSQL, where the memory store cannot show it: a NUL, which
- * PostgreSQL refuses to compare, answers as naming nothing and never as 503 (K3 of the 2026-11-12 review), and the
- * operator's script writes the audit rows the page writes, the cut-off of a second rotation included (K5). Run with
- * `bun run test:db` inside the devcontainer.
+ * PostgreSQL refuses to compare or store, answers as naming nothing or as a malformed request and never as 503 (K3 of
+ * the 2026-11-12 review), and the operator's script writes the audit rows the page writes, the cut-off of a second
+ * rotation included (K5). Run with `bun run test:db` inside the devcontainer.
  */
 if (!process.env.DATABASE_URL)
   throw new Error('DATABASE_URL is not set. Run `bun run test:db` inside the devcontainer.');
@@ -66,7 +66,7 @@ const usersAdmin = usersAdminUsecases(keys),
   organisation = organisationUsecases({ store }),
   operator = provisionerKeyUsecases(keys);
 describe('Administration › Användare and Organisation on PostgreSQL', () => {
-  test('a NUL in a unit id, a search, a group or a provisioner id answers as naming nothing, and never 503 (K3)', async () => {
+  test("a NUL in a unit id, a search, a group, a provisioner's id or its label is refused or names nothing, and never answers 503 (K3)", async () => {
     await store.transaction(async tx => {
       await tx.insertUser(userRow(prefix + '-admin', org, { name: 'Admin' }));
       await tx.insertGroup(groupRow(prefix + '-g1', org, { externalId: 'unit:' + prefix + '-u1', label: 'Enhet 1' }));
@@ -119,6 +119,26 @@ describe('Administration › Användare and Organisation on PostgreSQL', () => {
       expect(await answered(await call(`/${prefix}-key%00/${action}`, { graceHours: 0 }), 400)).toEqual({
         error: 'Katalogen finns inte.',
       });
+    // A provisioner's label is one line without a control character: PostgreSQL cannot hold a NUL in one, and the
+    // route refuses it before the store is asked.
+    const nulLabel = {
+      id: prefix + '-nul',
+      organisationId: org,
+      label: 'Meta\u0000katalogen',
+      tokenDigest: 'digest:' + prefix + '-nul',
+      createdBy: 'person:' + prefix + '-admin',
+      createdAt: '2026-11-12T06:00:00.000Z',
+    };
+    await expect(store.transaction(tx => tx.issueProvisioner(nulLabel))).rejects.toThrow();
+    expect(await answered(await call('/', { id: prefix + '-nul', label: 'Meta\u0000katalogen' }), 400)).toEqual({
+      error: 'Ogiltig förfrågan.',
+    });
+    expect(
+      await database()
+        .select({ id: schema.provisioners.id })
+        .from(schema.provisioners)
+        .where(eq(schema.provisioners.id, prefix + '-nul')),
+    ).toEqual([]);
   });
   test("the operator's rotate and revoke run through the use cases, with the page's audit rows and the cut-off a second rotation used (K5)", async () => {
     const id = prefix + '-key';

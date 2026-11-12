@@ -1,5 +1,5 @@
 import { QueryClient } from '@tanstack/react-query';
-import { retryPolicy } from './query-policy';
+import { RETRY_DELAY_MS, retryPolicy } from './query-policy';
 
 /**
  * One client per confirmed session (D33), created by `Protected` under the `SessionBoundary` and cleared when the boundary
@@ -13,7 +13,7 @@ export const createQueryClient = () =>
       queries: {
         staleTime: 15_000,
         retry: retryPolicy,
-        retryDelay: 1_000,
+        retryDelay: RETRY_DELAY_MS,
         refetchOnWindowFocus: true,
         refetchOnReconnect: true,
       },

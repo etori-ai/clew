@@ -208,7 +208,9 @@ export function IssueProvisionerDialog({ isOpen, onClose }: { isOpen: boolean; o
         <TextInput
           label="Namn"
           value={label}
-          onChange={value => setLabel(value.slice(0, PROVISIONER_LABEL_MAX))}
+          // A control character pasted with the name, such as a tab from a spreadsheet, becomes a space: the server
+          // takes a label without one (PROVISIONER_LABEL_PATTERN).
+          onChange={value => setLabel(value.replace(/\p{Cc}/gu, ' ').slice(0, PROVISIONER_LABEL_MAX))}
           description="Så heter katalogen på den här sidan, till exempel Metakatalogen."
           isRequired
           autoComplete="off"

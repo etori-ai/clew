@@ -198,6 +198,8 @@ export class MockApi {
    */
   groupsBeyond: Array<{ id: string; label: string }> = [];
   groupSearches: string[] = [];
+  /** Användare: the group picker's server search cannot be answered (503, every time it is asked). */
+  groupSearchFails = false;
   /** Organisation (D99): the tree the organisation page shows; it shares `usersForbidden`, as the two share a capability. */
   organisation = organisationOverview();
   /** Organisation: the tree and every unit's people fail to be read (503, after the page's one retry). */
@@ -441,6 +443,8 @@ export class MockApi {
         const { text } = request.postDataJSON() as { text: string },
           words = text.toLocaleLowerCase('sv').split(/\s+/).filter(Boolean);
         this.groupSearches.push(text);
+        if (this.groupSearchFails)
+          return route.fulfill({ status: 503, json: { error: 'Något gick fel. Försök igen.' } });
         return json({
           groups: [...this.users.groups, ...this.groupsBeyond]
             .filter(g => words.every(w => [g.label, g.id].some(v => v.toLocaleLowerCase('sv').includes(w))))
@@ -504,6 +508,8 @@ export class MockApi {
       // The catalogues' keys (D107): the answer that issues or rotates one carries the key, once.
       if (path === '/admin/users/provisioners' && method === 'POST') {
         const input = request.postDataJSON() as { id: string; label: string };
+        // The contract's label is one line without a control character (PROVISIONER_LABEL_PATTERN).
+        if (/\p{Cc}/u.test(input.label)) return route.fulfill({ status: 400, json: { error: 'Ogiltig förfrågan.' } });
         if (this.users.provisioners.some(p => p.id === input.id))
           return route.fulfill({
             status: 400,

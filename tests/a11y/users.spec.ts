@@ -379,7 +379,9 @@ test.describe('users administration', () => {
       // What is missing is said in words at the field, and nothing is sent.
       await dialog.getByRole('button', { name: 'Skapa nyckel' }).click();
       await expect(dialog.getByText('Ge katalogen ett namn.', { exact: true })).toBeVisible();
-      await dialog.getByRole('textbox', { name: /^Namn/ }).fill('Nya Katalogen');
+      // A tab pasted with the name becomes a space, since the server takes a label without a control character.
+      await dialog.getByRole('textbox', { name: /^Namn/ }).fill('Nya\tKatalogen');
+      await expect(dialog.getByRole('textbox', { name: /^Namn/ })).toHaveValue('Nya Katalogen');
       await expect(dialog.getByRole('textbox', { name: /^Id/ })).toHaveValue('nya-katalogen');
       await expectNoAxeViolations(page);
       await dialog.getByRole('button', { name: 'Skapa nyckel' }).click();
@@ -675,6 +677,47 @@ test.describe('users administration', () => {
         .toContainEqual(expect.stringContaining('Sparat: Östra skolområdets chefer ger administrera anslutna system'));
       await expect(mapping.getByRole('row', { name: /Östra skolområdets chefer/ })).toHaveCount(2);
     });
+    test('a group search the server cannot answer says so and never that no group matches, and new words ask again (K2)', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      api.groupsBeyond = [{ id: 'S-1-5-21-ostra-chefer', label: 'Östra skolområdets chefer' }];
+      api.groupSearchFails = true;
+      await open(page, '/admin/users');
+      const form = page.getByRole('form', { name: 'Lägg till behörighet från grupp' });
+      const group = form.getByRole('combobox', { name: 'Grupp' });
+      const failed = 'Det gick inte att söka bland alla grupper. Försök igen.';
+      // No group the page holds matches, and the server does not answer, asked once more as the page's other reads
+      // are: the field says the search failed, aloud, and nothing says that no group matches.
+      await group.focus();
+      await page.keyboard.type('östra');
+      await expect(group).toHaveAccessibleDescription(failed);
+      await expect(form.getByText(failed, { exact: true }).filter({ visible: true })).toBeVisible();
+      await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining(failed));
+      await expect(page.getByText('Ingen grupp matchar.')).toHaveCount(0);
+      expect(api.groupSearches).toEqual(['östra', 'östra']);
+      // New words take the error away until they too have been asked. The page's own match is listed at once, and
+      // stays listed when the server fails, while the field says that the search did not reach every group.
+      await group.fill('');
+      await expect(group).not.toHaveAccessibleDescription(failed);
+      await page.keyboard.type('rekt');
+      await expect(page.getByRole('option', { name: /^Rektorer/ })).toBeVisible();
+      await expect(group).toHaveAccessibleDescription(failed);
+      await expect(page.getByRole('option', { name: /^Rektorer/ })).toBeVisible();
+      // An open list that comes back empty says the same in place of its rows.
+      await page.keyboard.type('z');
+      await expect(page.getByRole('option', { name: failed })).toBeVisible();
+      await expect(page.getByText('Ingen grupp matchar.')).toHaveCount(0);
+      await expectNoAxeViolations(page);
+      // Once the server answers, new words find what it holds, and the field no longer says that a search failed.
+      api.groupSearchFails = false;
+      await group.fill('');
+      await page.keyboard.type('östra');
+      await expect(page.getByRole('option')).toHaveAccessibleName('Östra skolområdets chefer S-1-5-21-ostra-chefer');
+      await expect(group).not.toHaveAccessibleDescription(failed);
+      await expect(group).not.toHaveAttribute('aria-invalid', 'true');
+    });
     test('without admin.users the server says no and the page says so, and nothing about groups or catalogues', async ({
       page,
       api,
@@ -747,6 +790,29 @@ test.describe('users administration', () => {
       // A title longer than the column wraps inside its row (D110).
       await expect(page.getByRole('list', { name: 'Personer' })).toContainText('digitalisering och välfärdsteknik');
       expect(await reflowProblems(page)).toEqual([]);
+    });
+    test('the group picker reflows at 320 px, a long name and a long id wrapped inside their rows (K2)', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      api.users.groups.push(
+        {
+          id: 'S-1-5-21-socialforvaltningen-individ-och-familjeomsorg-handlaggare',
+          label: 'Socialförvaltningen Individ- och familjeomsorg handläggare',
+        },
+        // An id with nothing to break at, as some catalogues key their groups.
+        { id: 'b2c1f7e4a9d84f0c9e1a2b3c4d5e6f708b2c1f7e4a9d84f0c', label: 'Socialtjänstens beredskapsgrupp' },
+      );
+      await page.setViewportSize(narrow);
+      await open(page, '/admin/users');
+      await page.getByRole('combobox', { name: 'Grupp' }).focus();
+      await page.keyboard.type('social');
+      const options = page.getByRole('listbox', { name: 'Sökresultat' }).getByRole('option');
+      await expect(options).toHaveCount(2);
+      await expect(options.first()).toContainText('Socialförvaltningen Individ- och familjeomsorg handläggare');
+      expect(await reflowProblems(page)).toEqual([]);
+      await expectNoAxeViolations(page);
     });
     test('the dialog that shows a key reflows at 320 px, the key wrapped inside it (D107)', async ({ page, api }) => {
       api.admin = true;

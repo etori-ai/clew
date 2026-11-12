@@ -2349,12 +2349,18 @@ export interface ProvisionerAdminRow {
 /** D107: the name a provisioner is issued under, as `scripts/provisioner-token.ts` takes it. */
 export const PROVISIONER_ID_PATTERN = '^[a-z0-9][a-z0-9-]{1,63}$';
 export const PROVISIONER_LABEL_MAX = 120;
+/**
+ * D107: what a provisioner's label may hold: one line of text, without a control character (Unicode's Cc: U+0000 to
+ * U+001F and U+007F to U+009F). A NUL in particular cannot be stored, so a label with one is refused before it reaches
+ * the store.
+ */
+export const PROVISIONER_LABEL_PATTERN = '^[^\\u0000-\\u001f\\u007f-\\u009f]*$';
 /** D107: how long the key that is replaced may still answer, in hours; 0 ends it at once. */
 export const PROVISIONER_GRACE_HOURS = [24, 168, 0] as const;
 export const ProvisionerIssueInput = Type.Object(
   {
     id: Type.String({ pattern: PROVISIONER_ID_PATTERN }),
-    label: Type.String({ minLength: 1, maxLength: PROVISIONER_LABEL_MAX }),
+    label: Type.String({ minLength: 1, maxLength: PROVISIONER_LABEL_MAX, pattern: PROVISIONER_LABEL_PATTERN }),
   },
   { additionalProperties: false },
 );

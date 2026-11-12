@@ -34,7 +34,6 @@ import {
   TextInput,
   Toolbar,
   Typeahead,
-  TypeaheadItem,
   VStack,
   pixel,
   proportional,
@@ -47,7 +46,7 @@ import { PersonNameLink } from '../../components/person-name-link';
 import { api } from '../../api';
 import { adminQueries } from '../../queries';
 import { keys } from '../../query-keys';
-import { errorMessage } from '../../query-policy';
+import { RETRY_DELAY_MS, errorMessage, retryPolicy } from '../../query-policy';
 import { usePageTitle } from '../../page-title';
 import { capabilityLabel, instantText, roleOfOne } from './labels';
 import { AdminShell } from './shell';
@@ -79,7 +78,8 @@ import {
  *
  * A group is chosen for a mapping by searching (D85): the overview holds the organisation's first 10 000 groups by
  * name, and the server is asked for every group that holds the words, so a catalogue that pushes all its groups can
- * still be mapped. Each mapping row is named by its own group, whatever the overview holds.
+ * still be mapped. A search the server could not answer says so, and never that no group matches. Each mapping row is
+ * named by its own group, whatever the overview holds.
  */
 interface Row extends Record<string, unknown> {
   id: string;
@@ -125,6 +125,31 @@ const holdsWords = (g: OfferedGroup, text: string) =>
     .split(/\s+/)
     .filter(Boolean)
     .every(word => [g.label, g.id].some(value => value.toLocaleLowerCase('sv').includes(word)));
+/**
+ * What the group picker says when the server could not be asked for the groups: the matches among the groups the page
+ * holds may be shown, but whether any other group matches is not known, so the picker never says that none does.
+ */
+const GROUPS_UNSEARCHED = 'Det gick inte att söka bland alla grupper. Försök igen.';
+/** Waits `ms`, or rejects as soon as `signal` aborts: a search that a newer one replaced, or that closing stopped. */
+const pause = (ms: number, signal: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener('abort', () => (clearTimeout(timer), reject(signal.reason)), { once: true });
+  });
+/** The server's answer for the words, a 5xx asked once more after a pause, as the page's other reads are (D33). */
+async function searchedGroups(text: string, signal: AbortSignal) {
+  for (let failures = 0; ; failures++)
+    try {
+      return await api.admin.searchGroups(text, signal);
+    } catch (e) {
+      if (signal.aborted || !retryPolicy(failures, e)) throw e;
+      await pause(RETRY_DELAY_MS, signal);
+    }
+}
 /** A row of the mapping, as its table and its list key it. */
 const mappingKey = (m: GroupCapability) => m.groupExternalId + ':' + m.capability;
 /**
@@ -233,12 +258,16 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
   };
   const [group, setGroup] = useState<SearchableItem | null>(null);
   const [capability, setCapability] = useState<string | undefined>();
+  // Whether the server could not be asked for the groups that hold the words typed: the picker says so until the words
+  // change or a group is chosen.
+  const [unsearched, setUnsearched] = useState(false);
   /**
    * The group picker's source (D85): the matches among the overview's groups at once, then, after a pause, the
    * server's answer for every group of the organisation, the first ten by name, after them. It lives as long as the
    * page and reads the overview's groups as they are when a search starts. A search that a newer one replaced, or
    * that closing the list stopped, rejects, and so does one the server did not answer: Typeahead then keeps the
-   * matches it already shows and never opens the list again by itself.
+   * matches it already shows and never opens the list again by itself. Only the last is a failure, and the picker
+   * says so (`unsearched`), since its list holds no more than the groups the page has.
    */
   const offered = useRef<OfferedGroup[]>([]);
   offered.current = query.data?.groups ?? [];
@@ -256,14 +285,12 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
           .map(groupItem);
         context?.update(local);
         const mine = (asking = new AbortController());
-        await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(resolve, TYPING_PAUSE_MS);
-          mine.signal.addEventListener('abort', () => (clearTimeout(timer), reject(mine.signal.reason)), {
-            once: true,
-          });
+        await pause(TYPING_PAUSE_MS, mine.signal);
+        const found = await searchedGroups(text.slice(0, USERS_QUERY_LIMITS.text), mine.signal).catch((e: unknown) => {
+          if (!mine.signal.aborted) setUnsearched(true);
+          throw e;
         });
-        const found = await api.admin.searchGroups(text.slice(0, USERS_QUERY_LIMITS.text), mine.signal),
-          shown = new Set(local.map(item => item.id));
+        const shown = new Set(local.map(item => item.id));
         return [...local, ...found.groups.filter(g => !shown.has(g.id)).map(groupItem)];
       },
     };
@@ -773,9 +800,23 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
                   searchSource={groupSource}
                   debounceMs={0}
                   value={group}
-                  onChange={setGroup}
-                  emptySearchText="Ingen grupp matchar."
-                  renderItem={item => <TypeaheadItem item={item} description={item.id} />}
+                  onChange={chosen => {
+                    setUnsearched(false);
+                    setGroup(chosen);
+                  }}
+                  onChangeQuery={() => setUnsearched(false)}
+                  // A search the server did not answer is not one that found nothing: the list, empty or holding the
+                  // page's own matches, and the field both say so.
+                  emptySearchText={unsearched ? GROUPS_UNSEARCHED : 'Ingen grupp matchar.'}
+                  status={unsearched ? { type: 'error', message: GROUPS_UNSEARCHED } : undefined}
+                  // The name and the external id wrap inside the row, so a long one is read whole at 320 px (1.4.10);
+                  // TypeaheadItem holds each to one line, and the row cut a long one off.
+                  renderItem={item => (
+                    <VStack gap={0} width="100%">
+                      <Text>{item.label}</Text>
+                      <Text type="supporting">{item.id}</Text>
+                    </VStack>
+                  )}
                   width={mobile ? '100%' : 320}
                   isDisabled={!groups.length}
                   disabledMessage="Grupper visas när katalogen har provisionerat dem genom SCIM."
