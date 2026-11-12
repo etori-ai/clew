@@ -297,7 +297,8 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
       for (const p of personIds) state.members.add(memberKey(groupId, p));
     },
     async searchUsers(organisationId, search, p) {
-      const folded = (value: string | null | undefined) => (value ?? '').toLocaleLowerCase('sv');
+      // Unicode's own lower case, as PostgreSQL folds the search under ICU's root locale (`caseless`).
+      const folded = (value: string | null | undefined) => (value ?? '').toLowerCase();
       const matching = [...state.users.values()]
         .filter(u => {
           if (u.organisationId !== organisationId) return false;

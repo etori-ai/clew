@@ -61,8 +61,9 @@ export const people = pgTable(
       .where(sql`${t.externalId} is not null`),
     // `userName` without regard to case, RFC 7643's default for it (Keycloak lowercases account names, Entra does
     // not), folded by ICU's root locale whatever the database's own collation: under the locale C a plain `lower`
-    // folds only A to Z, and `Åsa` and `åsa` were two people (L13). Every comparison of a user name uses this one
-    // expression on both sides.
+    // folds only A to Z, and `Åsa` and `åsa` were two people (L13). Compare a user name with this one expression on
+    // both sides, as the people store does (`caseless` in its adapter), so that it folds as the index does and the
+    // index serves the lookup.
     uniqueIndex('auth_person_user_name').on(sql`lower(${t.userName} collate "und-x-icu")`),
   ],
 );

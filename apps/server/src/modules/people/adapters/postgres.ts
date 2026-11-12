@@ -65,8 +65,9 @@ const groupRecord = (r: GroupRow): GroupRecord => ({
 /**
  * A user name or a group's name as it is compared without regard to case (RFC 7643: `caseExact: false`): folded by
  * ICU's root locale, whatever collation the database was created with, which is the expression of the unique index on
- * user names. A plain `lower` folds only A to Z under the locale C, where `Åsa` and `åsa` were two people (L13). The
- * same expression on both sides of a comparison, so the two fold alike and the index serves it.
+ * user names. A plain `lower` folds only A to Z under the locale C, where `Åsa` and `åsa` were two people (L13). Every
+ * comparison in this store that folds case uses it on both sides, the people list's search included, so the two sides
+ * fold alike and the index serves a lookup by user name.
  */
 const caseless = (value: SQLWrapper | string) => sql`lower(${value} collate "und-x-icu")`;
 /** `userName` is compared without regard to case, `externalId` exactly; as the unique indexes do. */
@@ -86,11 +87,11 @@ const groupColumn = { externalId: schema.groups.externalId, label: schema.groups
 const MEMBER_BATCH = 5000;
 /**
  * D100: the people list's search as conditions on `auth_person`. A word is matched as written, so `%` and `_` in it
- * are escaped. `ilike` folds case by the collation of what it reads, and a database created with the locale C folds
- * only a to z there, so each column is read under the ICU collation the order already asks for: å, ä and ö fold the
- * same in every installation, however its database was created.
+ * are escaped, and without regard to case as a user name is compared (`caseless`, on both sides): a database created
+ * with the locale C folds only a to z by itself, so å, ä and ö fold the same in every installation, however its
+ * database was created.
  */
-const folded = (column: SQL, pattern: string) => sql`${column} collate "sv-x-icu" ilike ${pattern}`;
+const folded = (column: SQL, pattern: string) => sql`${caseless(column)} like ${caseless(pattern)}`;
 const personHas = (table: SQL, ...conditions: Array<SQL | undefined>) =>
   sql`exists (select 1 from ${table} where ${and(...conditions)})`;
 function userSearchConditions(search: UserSearch): Array<SQL | undefined> {
