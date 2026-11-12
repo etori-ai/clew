@@ -16,15 +16,18 @@ test.describe('D33 the browser cache', () => {
     await open(page, '/');
     expect(count('/api/threads')).toBe(1);
     expect(count('/api/areas')).toBe(1);
-    // Every card's picker shows the same times from one read (D29).
-    expect(count('/api/snooze/presets')).toBe(1);
-    await page.getByRole('link', { name: 'Kalender', exact: true }).click();
+    // Hem draws no card since D111, so no picker reads its times there (D29).
+    expect(count('/api/snooze/presets')).toBe(0);
+    await page
+      .getByRole('navigation', { name: 'Sidonavigering' })
+      .getByRole('link', { name: 'Kalender', exact: true })
+      .click();
     await expect(heading(page, 1, 'Vecka')).toBeVisible();
     await page.waitForLoadState('networkidle');
     expect(count('/api/threads')).toBe(1);
     expect(count('/api/areas')).toBe(1);
     await page.goBack();
-    await expect(heading(page, 2, 'Nu')).toBeVisible();
+    await expect(heading(page, 2, 'Behöver dig')).toBeVisible();
     await page.waitForLoadState('networkidle');
     expect(count('/api/threads')).toBe(1);
   });
@@ -36,8 +39,8 @@ test.describe('D33 the browser cache', () => {
     page.on('request', r => {
       if (r.method() === 'POST' && r.url().includes('/act')) posts.push(r.url());
     });
-    await open(page, '/?card=omtanke&open-card=omtanke&open-action=pattern');
-    const card = page.getByRole('dialog', { name: 'Kort' });
+    await open(page, '/todo?item=omtanke&open-card=omtanke&open-action=pattern');
+    const card = page.getByRole('complementary', { name: 'Valt ärende' });
     await expect(card.locator('#read-card-omtanke').getByText('Anna Lindqvist 07:00–16:00')).toBeVisible();
     await page.waitForLoadState('networkidle');
     expect(posts).toHaveLength(1);
@@ -50,9 +53,9 @@ test.describe('D33 the browser cache', () => {
     page.on('request', r => {
       if (r.method() === 'POST' && r.url().includes('/act')) posts.push(r.url());
     });
-    // "Boka samtalet" is an execute. Opened by address it must not run, on Hem or beside Personal.
+    // "Boka samtalet" is an execute. Opened by address it must not run, in Att göra or beside Personal.
     for (const path of [
-      '/?card=omtanke&open-card=omtanke&open-action=book',
+      '/todo?item=omtanke&open-card=omtanke&open-action=book',
       '/staff?card=omtanke&open-card=omtanke&open-action=book',
     ]) {
       await open(page, path);

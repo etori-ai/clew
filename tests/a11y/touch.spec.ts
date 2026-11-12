@@ -47,7 +47,15 @@ test.describe('a finger reaches every control at 44 px (docs/history/handover.md
     expect(list!.y - (bar!.y + bar!.height)).toBeLessThan(140);
   });
 
-  for (const path of ['/', '/?area=personal', '/?tab=waiting', '/?tab=snoozed', '/?tab=done', '/calendar'])
+  for (const path of [
+    '/',
+    '/todo',
+    '/todo?area=personal',
+    '/todo?tab=waiting',
+    '/todo?tab=done',
+    '/todo?item=fakturor',
+    '/calendar',
+  ])
     test(`on ${path}`, async ({ page, api: _ }) => {
       await open(page, path);
       expect(await shortTargets(page)).toEqual([]);
@@ -72,7 +80,7 @@ test.describe('a mouse', () => {
   test.use({ viewport: desktop });
 
   test('keeps the compact controls the screens were drawn with', async ({ page, api: _ }) => {
-    await open(page, '/');
-    await expect(page.getByRole('button', { name: 'Lägg till i samtalet' }).first()).toHaveCSS('height', '32px');
+    await open(page, '/todo');
+    await expect(page.getByRole('button', { name: 'Alla system' })).toHaveCSS('height', '32px');
   });
 });

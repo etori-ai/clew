@@ -290,6 +290,308 @@ With `scan: true` Clew asks the connector, per person, what needs attention; eac
 }
 ```
 
+### A write that asks the person and says what it will do (D111)
+
+An `execute` that needs more than the work item gives declares `asks`: each names a property of its input and says what kind of answer it takes. Clew draws them as the first step of one dialog wherever the action starts (a work item's button, a person's page), suggests three free times from the person's own calendar for a `meeting`, and checks every answer before anything is sent. `effect` names a read of the same connector with the same input that answers an `EffectOutput`: what the write will do where, and how long it can be undone. Clew draws it as "Det här händer", the dialog's last step, and calls the execute only after the last button, with the answers merged into its input and recorded in the audit row. Declare the effect read `model: false`; it must write nothing.
+
+```json
+{
+  "write": {
+    "name": "hr.bookTalk",
+    "kind": "execute",
+    "title": "Boka samtalet",
+    "description": "Registrerar ett omtankesamtal i personalsystemet.",
+    "model": false,
+    "scope": {
+      "roles": [
+        "manager"
+      ]
+    },
+    "execution": {
+      "strategy": "deduplicated",
+      "retentionSeconds": 86400,
+      "lookup": "hr.lookup"
+    },
+    "input": {
+      "type": "object",
+      "properties": {
+        "refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^hr:emp:"
+          }
+        },
+        "when": {
+          "type": "string",
+          "format": "date-time",
+          "description": "När samtalet börjar."
+        },
+        "place": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "Var samtalet hålls."
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 400,
+          "description": "Ett meddelande till medarbetaren, sparat med samtalet."
+        }
+      },
+      "required": [
+        "refs"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "headline": {
+          "type": "string"
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ref": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "outcome": {
+                "enum": [
+                  "done",
+                  "failed",
+                  "unknown",
+                  "skipped"
+                ]
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "ref",
+              "label",
+              "outcome",
+              "detail"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "undoCapability": {
+          "type": "string"
+        },
+        "undoMinutes": {
+          "type": "integer"
+        },
+        "undoInput": {}
+      },
+      "required": [
+        "headline",
+        "rows"
+      ],
+      "additionalProperties": false
+    },
+    "asks": [
+      {
+        "kind": "meeting",
+        "property": "when",
+        "label": "När",
+        "required": true,
+        "durationMinutes": 45
+      },
+      {
+        "kind": "text",
+        "property": "place",
+        "label": "Plats",
+        "required": false
+      },
+      {
+        "kind": "long-text",
+        "property": "message",
+        "label": "Meddelande till medarbetaren",
+        "required": false
+      }
+    ],
+    "effect": "hr.bookTalkEffect"
+  },
+  "effect": {
+    "name": "hr.bookTalkEffect",
+    "kind": "read",
+    "title": "Det här händer när samtalet bokas",
+    "description": "Vad bokningen av ett omtankesamtal gör i personalsystemet, utan att något skrivs.",
+    "model": false,
+    "scope": {
+      "roles": [
+        "manager"
+      ]
+    },
+    "input": {
+      "type": "object",
+      "properties": {
+        "refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^hr:emp:"
+          }
+        },
+        "when": {
+          "type": "string",
+          "format": "date-time",
+          "description": "När samtalet börjar."
+        },
+        "place": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "Var samtalet hålls."
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 400,
+          "description": "Ett meddelande till medarbetaren, sparat med samtalet."
+        }
+      },
+      "required": [
+        "refs"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "rows": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "detail": {
+                "type": "string",
+                "maxLength": 400
+              },
+              "source": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              }
+            },
+            "required": [
+              "label"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "undoMinutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1440
+        }
+      },
+      "required": [
+        "rows"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
+```
+
+The same, authored with TypeBox:
+
+```ts
+import { Type } from 'typebox';
+
+export const write = {
+  name: 'hr.bookTalk',
+  kind: 'execute',
+  title: 'Boka samtalet',
+  description: 'Registrerar ett omtankesamtal i personalsystemet.',
+  model: false,
+  scope: {
+    roles: ['manager'],
+  },
+  execution: {
+    strategy: 'deduplicated',
+    retentionSeconds: 86400,
+    lookup: 'hr.lookup',
+  },
+  input: Type.Object({
+    refs: Type.Array(Type.String({ pattern: '^hr:emp:' })),
+    when: Type.Optional(Type.String({ format: 'date-time', description: 'När samtalet börjar.' })),
+    place: Type.Optional(Type.String({ maxLength: 120, description: 'Var samtalet hålls.' })),
+    message: Type.Optional(Type.String({ maxLength: 400, description: 'Ett meddelande till medarbetaren, sparat med samtalet.' })),
+  }, { additionalProperties: false }),
+  output: Type.Object({
+    headline: Type.String(),
+    rows: Type.Array(Type.Object({
+      ref: Type.String(),
+      label: Type.String(),
+      outcome: Type.Union([Type.Literal('done'), Type.Literal('failed'), Type.Literal('unknown'), Type.Literal('skipped')]),
+      detail: Type.String(),
+    }, { additionalProperties: false })),
+    undoCapability: Type.Optional(Type.String()),
+    undoMinutes: Type.Optional(Type.Integer()),
+    undoInput: Type.Optional(Type.Unknown()),
+  }, { additionalProperties: false }),
+  asks: [
+    {
+      kind: 'meeting',
+      property: 'when',
+      label: 'När',
+      required: true,
+      durationMinutes: 45,
+    },
+    {
+      kind: 'text',
+      property: 'place',
+      label: 'Plats',
+      required: false,
+    },
+    {
+      kind: 'long-text',
+      property: 'message',
+      label: 'Meddelande till medarbetaren',
+      required: false,
+    },
+  ],
+  effect: 'hr.bookTalkEffect',
+};
+export const effect = {
+  name: 'hr.bookTalkEffect',
+  kind: 'read',
+  title: 'Det här händer när samtalet bokas',
+  description: 'Vad bokningen av ett omtankesamtal gör i personalsystemet, utan att något skrivs.',
+  model: false,
+  scope: {
+    roles: ['manager'],
+  },
+  input: Type.Object({
+    refs: Type.Array(Type.String({ pattern: '^hr:emp:' })),
+    when: Type.Optional(Type.String({ format: 'date-time', description: 'När samtalet börjar.' })),
+    place: Type.Optional(Type.String({ maxLength: 120, description: 'Var samtalet hålls.' })),
+    message: Type.Optional(Type.String({ maxLength: 400, description: 'Ett meddelande till medarbetaren, sparat med samtalet.' })),
+  }, { additionalProperties: false }),
+  output: Type.Object({
+    rows: Type.Array(Type.Object({
+      label: Type.String({ minLength: 1, maxLength: 200 }),
+      detail: Type.Optional(Type.String({ maxLength: 400 })),
+      source: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })),
+    }, { additionalProperties: false }), { minItems: 1, maxItems: 10 }),
+    undoMinutes: Type.Optional(Type.Integer({ minimum: 1, maximum: 1440 })),
+  }, { additionalProperties: false }),
+};
+```
+
 ### Work across connectors: a fact, its followers, one approval (D55, proposed)
 
 One event means work in several systems, and no connector writes in another. The connector that owns the event declares the fact kind under `facts` and marks the capability that brings it about with `creates`. Every other connector that has something to do declares a `propose` with `follows`. An administrator binds followers to the kind; an unbound offer is inert. When the fact arrives (the creating propose is chosen in the box, or a scan brings an existing `ref`), Clew posts the `FactEnvelope` below to every bound follower at once, as the person, and each answers with steps of its own connector only: an `execute` with its approved payload, or a `watch`, one of its reads repeated within a window until `expect` holds, for a system Clew cannot write in. Zero steps is an answer. Clew merges the steps into one job proposal, names the systems, says which did not answer, and the person approves once; each execute then runs as its own execution with its own write safety and read-back, each watch as timed reads, and undo is per step. No step reads another step's result: a result that must reach a third system becomes a fact on the receipt and the next job. To read another connector while answering, declare its capability under `uses` and call back; an execute can never be called back.
@@ -766,7 +1068,7 @@ Whether Clew should POST /clew/scan for each person nightly and on first visit.
 - Type: boolean
 - required
 - Pairs with:
-  - **scan: true means you serve the scan route.** With `scan: true` Clew posts `/clew/scan` per person, nightly and on first visit. Each draft names an `area` of this manifest, its `topic` is the same for the same occurrence, and its actions name capabilities of this connector only. The conformance check runs the scan twice and compares. ([D35](../decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md))
+  - **scan: true means you serve the scan route.** With `scan: true` Clew posts `/clew/scan` per person, nightly and on first visit. Each draft names an `area` of this manifest, its `topic` is the same for the same occurrence, and its actions name capabilities of this connector only. An execute action that is the person's read receipt for something published carries `acknowledgement: { publishedAt }` (D111), at most one per draft: Hem then lifts the open item above its blocks, with that action as its button, until it is pressed. The conformance check runs the scan twice and compares. ([D35](../decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md))
 
 Example:
 
@@ -830,7 +1132,7 @@ Stable and lowercase. Hem's area filter names it in its address (`/?area=<id>`),
 - required
 - Constraints: matches `^[a-z][a-z0-9-]*$`; at most 40 characters
 - Pairs with:
-  - **scan: true means you serve the scan route.** With `scan: true` Clew posts `/clew/scan` per person, nightly and on first visit. Each draft names an `area` of this manifest, its `topic` is the same for the same occurrence, and its actions name capabilities of this connector only. The conformance check runs the scan twice and compares. ([D35](../decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md))
+  - **scan: true means you serve the scan route.** With `scan: true` Clew posts `/clew/scan` per person, nightly and on first visit. Each draft names an `area` of this manifest, its `topic` is the same for the same occurrence, and its actions name capabilities of this connector only. An execute action that is the person's read receipt for something published carries `acknowledgement: { publishedAt }` (D111), at most one per draft: Hem then lifts the open item above its blocks, with that action as its button, until it is pressed. The conformance check runs the scan twice and compares. ([D35](../decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md))
 
 Example:
 
@@ -1027,7 +1329,7 @@ Example:
 
 #### `capabilities[].name`
 
-`<connector id>.<verb>`, stable. Two names are profiles Clew combines across connectors: `<id>.search` (D26, see `kinds`), and `<id>.errands` (D35, D89), a read that takes `{ view?: "assigned" | "reported" }` and answers an ErrandsOutput with the errands the case system lets the person see. Its view's `open` names the read that shows one errand, by convention `<id>.errand`. Clew lists every `<id>.errands` in the person's scope as `clew.errands`. Two more are the talks profile (D96), answered by one system per installation rather than combined: `<id>.talks`, a read that takes `{}` and answers a TalksOutput (the open round of development talks and one row per person the reader manages, keyed on the SCIM `userName`), and `<id>.commitments`, a read that takes `{ person?: <userName> }` and answers a CommitmentsOutput (that employee's action points for a manager of their unit, or without `person` the ones the reader owns and the ones about the reader). `<id>.talks` may be limited to managers; `<id>.commitments` should be callable by everyone who owns action points or is their subject. Clew's built-in `talks` connector answers while either of its reads is enabled for the person; otherwise the one connector whose `<id>.talks` or `<id>.commitments` the person may call does, and with several none does. Neither is ever offered to the model.
+`<connector id>.<verb>`, stable. Two names are profiles Clew combines across connectors: `<id>.search` (D26, see `kinds`), and `<id>.errands` (D35, D89), a read that takes `{ view?: "assigned" | "reported" }` and answers an ErrandsOutput with the errands the case system lets the person see. Its view's `open` names the read that shows one errand, by convention `<id>.errand`. Clew lists every `<id>.errands` in the person's scope as `clew.errands`. A third is combined the same way: `<id>.news` (D111), a read that takes `{}` and answers a NewsOutput with the news the person may read; its view's `open`, when a row should open in Clew rather than by its `link`, names the read that shows one item, by convention `<id>.newsItem`. Clew lists every `<id>.news` in the person's scope as `clew.news`, newest first, on Hem and as "Alla nyheter"; a source that fails contributes nothing. Two more are the talks profile (D96), answered by one system per installation rather than combined: `<id>.talks`, a read that takes `{}` and answers a TalksOutput (the open round of development talks and one row per person the reader manages, keyed on the SCIM `userName`), and `<id>.commitments`, a read that takes `{ person?: <userName> }` and answers a CommitmentsOutput (that employee's action points for a manager of their unit, or without `person` the ones the reader owns and the ones about the reader). `<id>.talks` may be limited to managers; `<id>.commitments` should be callable by everyone who owns action points or is their subject. Clew's built-in `talks` connector answers while either of its reads is enabled for the person; otherwise the one connector whose `<id>.talks` or `<id>.commitments` the person may call does, and with several none does. Neither is ever offered to the model.
 
 - Type: string
 - required
@@ -1035,8 +1337,9 @@ Example:
 - Pairs with:
   - **Every capability name starts with the id.** A capability is named `<id>.<verb>`. The name is the contract: keep it for a compatible change, choose a new name for a break. ([D37](../decisions/README.md))
   - **Standing actions are capabilities of this manifest.** Every name under an area's `standing` must be a capability declared in the same manifest.
-  - **A profile read and the header are about no entity.** `<id>.search`, `<id>.fetch`, `<id>.errands`, `<id>.talks`, `<id>.commitments`, a capability with `kinds` and the read the header names have shapes of their own and cannot declare `about`. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
+  - **A profile read and the header are about no entity.** `<id>.search`, `<id>.fetch`, `<id>.errands`, `<id>.talks`, `<id>.commitments`, `<id>.news`, a capability with `kinds` and the read the header names have shapes of their own and cannot declare `about`. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
   - **search and fetch make a search source.** A `read` named `<id>.search` with `kinds` is a source of Clew's composite search: its output is a `SearchOutput`, and `<id>.fetch` takes one of its refs back and returns one `SearchHit`. ([D26](../decisions/D26-questions-over-documents-are-search-not-knowledge.md))
+  - **news makes a news source.** A `read` named `<id>.news` that takes `{}` is a source of Clew's news: its output is a `NewsOutput`, rows of `ref`, `title`, `sender`, `publishedAt` and an optional `link`, and nothing else. Clew asks every news source in the person's scope as the person, at once and under a short budget, and lists the rows as `clew.news`, newest first: the three newest under "Nyheter" on Hem, all of them on "Alla nyheter". An answer that is not a `NewsOutput`, a source that fails and a source that is late contribute nothing, and no error is shown. A row with `link` leaves Clew in a new tab; without one it opens the read the view's `open` names (by convention `<id>.newsItem`) beside the page. While `clew.news` is registered the model is offered it and never the per-source read. ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md))
 
 Example:
 
@@ -1055,7 +1358,9 @@ Example:
   - **A view belongs to a read.** Only a `read` may declare a view. A propose or execute with one is refused. ([D38](../decisions/README.md))
   - **Only a propose follows a fact.** `follows` may be declared only on a `propose`. Its input is a `FactEnvelope` and its output a `FollowResponse` whose steps name this connector only. ([D55](../decisions/D55-a-job-is-assembled-from-what-connectors-follow-approved-once-and-run-per-system.md))
   - **An action about an entity names the input that takes the key.** A `propose` or `execute` that declares `about` names in `param` a string property of its input schema. Clew fills it with the key of the entity the person chose the action on; it shows in that entity's menu and runs, as every action does, after a human decision. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
-  - **An action about an entity becomes a card.** When the person chooses the action in an entity's menu, Clew starts it without the model, as the person, with `{ <param>: key }`. A `propose` answers a `ThreadDraft`, the shape a scan pushes: its actions name capabilities of this connector, it prepares and writes nothing, and it becomes the person's card. Clew writes the card's reason itself (the person chose it), so your `reason` is not shown. Refuse a key outside the person's scope in Swedish, as any call is refused. An `execute` is not called: Clew makes a card whose button is the human decision, and the execute runs only after it, with its write safety. The same request while the card is open gives the same card. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
+  - **Only a propose or an execute asks.** `asks` may be declared only on a `propose` or an `execute`, and not on a follower: a follower is asked with a fact, never by a person. ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md))
+  - **The effect is a read of this connector that takes the same input.** `effect` may be declared only on an `execute`. It names a `read` of this manifest whose input schema is the execute's own and which declares `model: false`. A read writes nothing: Clew calls it before the person decides. ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md))
+  - **An action about an entity becomes a card.** When the person chooses the action in an entity's menu, Clew starts it without the model, as the person, with `{ <param>: key }` and, for a propose that asks, the person's answers. A `propose` answers a `ThreadDraft`, the shape a scan pushes: its actions name capabilities of this connector, it prepares and writes nothing, and it becomes the person's card. Clew writes the card's reason itself (the person chose it), so your `reason` is not shown. Refuse a key outside the person's scope in Swedish, as any call is refused. An `execute` is not called: Clew makes a card whose button is the human decision, and the execute runs only after it, with its write safety and the answers to its asks. The same request while the card is open gives the same card. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
 
 Example:
 
@@ -1102,7 +1407,10 @@ JSON Schema of the input. Clew validates a call against it before the connector 
   - **A menu row is a view that opens without a question.** `menu` may be declared only on a `read` that has a `view` and whose input accepts `{}` (nothing `required`). The administrator still chooses which eligible views go in the menu; `menu` says what the row is called and marked with. ([D40](../decisions/D40-views-can-be-tools-in-the-menu-and-an-administrator-chooses-which.md))
   - **A read about an entity is asked with a batch of keys.** A `read` that declares `about` takes `{ keys }`: its input is an object whose required `keys` is an array of strings with `maxItems` at most 200. It declares no `param`. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
   - **An action about an entity names the input that takes the key.** A `propose` or `execute` that declares `about` names in `param` a string property of its input schema. Clew fills it with the key of the entity the person chose the action on; it shows in that entity's menu and runs, as every action does, after a human decision. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
-  - **An action about an entity starts with the key alone.** On a `propose` or `execute` that declares `about`, `param` is the one property the input requires. Anything else is optional, with a default the source chooses, so the entity's menu can start the action without asking a question (D8). ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
+  - **An action about an entity starts with the key and what it asks.** On a `propose` or `execute` that declares `about`, the input requires `param`, and every other property it requires is one the capability asks for (`asks`, D111). Anything else is optional, with a default the source chooses, so the entity's menu can start the action with the key and the person's answers, without the model (D8). ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
+  - **An ask names a property of the input.** Each ask names, once, a property the input schema declares under `properties`, and never the one `about.param` fills with the entity's key. ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md))
+  - **An ask's kind fits its property.** A `meeting` takes a string property without `enum` (format `date-time` when it declares one), a `date` the same with format `date`, `text` and `long-text` a string property without `enum` or `format`, and a `choice` a property with an `enum` whose every value `options` names once. A property the input requires is a required ask. ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md))
+  - **Every required input has someone to fill it.** A propose or execute on a work item (an action of a `ThreadDraft`) leaves no property its capability's input requires to nobody: it comes from the action's own `input`, the selected rows (`refs`, with `usesItems`), the review's evidence (`reviews`, with `review`) or an ask. A draft that leaves one is refused and reported, as a draft that names another connector's capability is. ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md))
 
 Example:
 
@@ -1150,6 +1458,7 @@ Offer it to the model as a tool, once an administrator has enabled tools for the
 - Pairs with:
   - **An execute is never a tool.** A capability of kind `execute` must declare `model: false`. It runs only through a human decision, and a callback cannot reach it either. ([D8](../decisions/D08-every-action-works-without-the-model.md))
   - **A read about an entity is never a tool.** A `read` that declares `about` must declare `model: false`. Clew never offers it to the model, whatever an administrator enables. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
+  - **The effect is a read of this connector that takes the same input.** `effect` may be declared only on an `execute`. It names a `read` of this manifest whose input schema is the execute's own and which declares `model: false`. A read writes nothing: Clew calls it before the person decides. ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md))
 
 Example:
 
@@ -1198,7 +1507,7 @@ For `<id>.search` (D26): what it can find. Its output is a SearchOutput; `<id>.f
 - optional
 - Constraints: no duplicates
 - Pairs with:
-  - **A profile read and the header are about no entity.** `<id>.search`, `<id>.fetch`, `<id>.errands`, `<id>.talks`, `<id>.commitments`, a capability with `kinds` and the read the header names have shapes of their own and cannot declare `about`. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
+  - **A profile read and the header are about no entity.** `<id>.search`, `<id>.fetch`, `<id>.errands`, `<id>.talks`, `<id>.commitments`, `<id>.news`, a capability with `kinds` and the read the header names have shapes of their own and cannot declare `about`. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
   - **search and fetch make a search source.** A `read` named `<id>.search` with `kinds` is a source of Clew's composite search: its output is a `SearchOutput`, and `<id>.fetch` takes one of its refs back and returns one `SearchHit`. ([D26](../decisions/D26-questions-over-documents-are-search-not-knowledge.md))
 
 Example:
@@ -1279,7 +1588,7 @@ What the rows concern (D97). A `read` takes `{ keys }` (an array of at most 200 
   - **Each row carries the key it was asked with.** A read about an entity declares a `table` or `list` view, and its rows (`rows`, or the view's `rows`) are an array in the output schema whose items require a string `key`: the key the row was asked with. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
   - **A read about an entity is never a tool.** A `read` that declares `about` must declare `model: false`. Clew never offers it to the model, whatever an administrator enables. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
   - **A follower is about no entity.** `follows` and `about` exclude each other: a follower is asked with a `FactEnvelope`, not with keys. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
-  - **A profile read and the header are about no entity.** `<id>.search`, `<id>.fetch`, `<id>.errands`, `<id>.talks`, `<id>.commitments`, a capability with `kinds` and the read the header names have shapes of their own and cannot declare `about`. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
+  - **A profile read and the header are about no entity.** `<id>.search`, `<id>.fetch`, `<id>.errands`, `<id>.talks`, `<id>.commitments`, `<id>.news`, a capability with `kinds` and the read the header names have shapes of their own and cannot declare `about`. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
   - **A read about an entity answers for the keys it may.** Clew calls the read as the person with `{ keys }`: a person's provisioned `userName` (compare without regard to case; the caller's own is `actor.userName`) or a unit's id, only for entities the person may already see, at most 200 in one call. Answer one row per key you know, carrying `key` as it was asked; a key outside the person's scope is answered as no row, never as a refusal. Beside the rows you may answer `heading` and `note`, two short strings. Clew keeps nothing and decides where the rows show: a section on the opened entity, and a lens, a column or a mark on the row where an administrator chose the source. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
 
 Example:
@@ -1316,8 +1625,8 @@ On a `propose` or `execute` only: the string property of the input that takes th
 - Pairs with:
   - **A read about an entity is asked with a batch of keys.** A `read` that declares `about` takes `{ keys }`: its input is an object whose required `keys` is an array of strings with `maxItems` at most 200. It declares no `param`. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
   - **An action about an entity names the input that takes the key.** A `propose` or `execute` that declares `about` names in `param` a string property of its input schema. Clew fills it with the key of the entity the person chose the action on; it shows in that entity's menu and runs, as every action does, after a human decision. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
-  - **An action about an entity starts with the key alone.** On a `propose` or `execute` that declares `about`, `param` is the one property the input requires. Anything else is optional, with a default the source chooses, so the entity's menu can start the action without asking a question (D8). ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
-  - **An action about an entity becomes a card.** When the person chooses the action in an entity's menu, Clew starts it without the model, as the person, with `{ <param>: key }`. A `propose` answers a `ThreadDraft`, the shape a scan pushes: its actions name capabilities of this connector, it prepares and writes nothing, and it becomes the person's card. Clew writes the card's reason itself (the person chose it), so your `reason` is not shown. Refuse a key outside the person's scope in Swedish, as any call is refused. An `execute` is not called: Clew makes a card whose button is the human decision, and the execute runs only after it, with its write safety. The same request while the card is open gives the same card. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
+  - **An action about an entity starts with the key and what it asks.** On a `propose` or `execute` that declares `about`, the input requires `param`, and every other property it requires is one the capability asks for (`asks`, D111). Anything else is optional, with a default the source chooses, so the entity's menu can start the action with the key and the person's answers, without the model (D8). ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
+  - **An action about an entity becomes a card.** When the person chooses the action in an entity's menu, Clew starts it without the model, as the person, with `{ <param>: key }` and, for a propose that asks, the person's answers. A `propose` answers a `ThreadDraft`, the shape a scan pushes: its actions name capabilities of this connector, it prepares and writes nothing, and it becomes the person's card. Clew writes the card's reason itself (the person chose it), so your `reason` is not shown. Refuse a key outside the person's scope in Swedish, as any call is refused. An `execute` is not called: Clew makes a card whose button is the human decision, and the execute runs only after it, with its write safety and the answers to its asks. The same request while the card is open gives the same card. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
 
 Example:
 
@@ -1334,6 +1643,7 @@ For a `propose` (D55): the fact kinds it answers for. Input is a FactEnvelope, o
 - Constraints: at most 20 items; no duplicates; each matches `^[a-z][a-z0-9-]*:[a-z][a-zA-Z0-9-]*$`; each at most 80 characters
 - Pairs with:
   - **Only a propose follows a fact.** `follows` may be declared only on a `propose`. Its input is a `FactEnvelope` and its output a `FollowResponse` whose steps name this connector only. ([D55](../decisions/D55-a-job-is-assembled-from-what-connectors-follow-approved-once-and-run-per-system.md))
+  - **Only a propose or an execute asks.** `asks` may be declared only on a `propose` or an `execute`, and not on a follower: a follower is asked with a fact, never by a person. ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md))
   - **A follower is about no entity.** `follows` and `about` exclude each other: a follower is asked with a `FactEnvelope`, not with keys. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
 
 Example:
@@ -1358,6 +1668,162 @@ Example:
 
 ```json
 "hr:absence"
+```
+
+#### `capabilities[].asks`
+
+On a `propose` or `execute` (D111): what the person fills in before it runs, each naming one property of the input. Clew draws the asks as the first step of the action's dialog, "Fyll i", from every place the action can be started, and merges the answers into the input; the rest comes from the selected rows (`refs`), the action's own `input` on a work item, or the entity (`about.param`). An answer for anything not asked is refused.
+
+- Type: array of object, one of `kind`: "meeting" / "text" / "long-text" / "date" / "choice"
+- optional
+- Constraints: 1 to 6 items
+- Pairs with:
+  - **Only a propose or an execute asks.** `asks` may be declared only on a `propose` or an `execute`, and not on a follower: a follower is asked with a fact, never by a person. ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md))
+  - **Every required input has someone to fill it.** A propose or execute on a work item (an action of a `ThreadDraft`) leaves no property its capability's input requires to nobody: it comes from the action's own `input`, the selected rows (`refs`, with `usesItems`), the review's evidence (`reviews`, with `review`) or an ask. A draft that leaves one is refused and reported, as a draft that names another connector's capability is. ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md))
+  - **Clew asks, shows what will happen, and sends the answers in the input.** The person meets the asks the action does not already fill, as the first step of one dialog, from every place the action starts; a write without asks whose result can be undone stays one press. Clew checks each answer against its kind (a meeting time not yet passed, a day that exists, one of the choices) and leaves an optional ask that was not answered out. For a meeting it suggests three free times from the person's own calendar. With `effect` Clew calls the read as the person with exactly the input the execute would get and draws its `EffectOutput` as "Det här händer"; nothing is written and no audit row is kept for it. On the last button the answers are merged into the input, validated against the input schema and approved as every decision is: they are in the audit row and the approved intent, and the execute runs with them. An answer to anything the action does not ask is refused. ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md))
+
+#### `capabilities[].asks[].kind`
+
+`meeting`: a meeting time, in a `string` property (format `date-time` when it declares one) that takes the start as an ISO 8601 instant. Clew suggests three free times from the person's own calendar, offers "Annan tid" and draws the chosen day. `text`: one line of text, in a `string` property without `enum` or `format`. `long-text`: a paragraph such as a message, in a `string` property without `enum` or `format`. `date`: a calendar day as `YYYY-MM-DD`, in a `string` property (format `date` when it declares one). `choice`: one of the property's `enum` values, each named in `options`.
+
+- Type: "meeting" / "text" / "long-text" / "date" / "choice"
+- required
+- Pairs with:
+  - **An ask's kind fits its property.** A `meeting` takes a string property without `enum` (format `date-time` when it declares one), a `date` the same with format `date`, `text` and `long-text` a string property without `enum` or `format`, and a `choice` a property with an `enum` whose every value `options` names once. A property the input requires is a required ask. ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md))
+
+Example:
+
+```json
+"meeting"
+```
+
+#### `capabilities[].asks[].property`
+
+The input property the person's answer fills: one of the input schema's `properties`, of a type the kind takes.
+
+- Type: string
+- required
+- Constraints: matches `^[A-Za-z][A-Za-z0-9_]*$`; at most 80 characters
+- Pairs with:
+  - **An ask names a property of the input.** Each ask names, once, a property the input schema declares under `properties`, and never the one `about.param` fills with the entity's key. ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md))
+
+Example:
+
+```json
+"when"
+```
+
+#### `capabilities[].asks[].label`
+
+Swedish. The field's label: "När", "Plats".
+
+- Type: string
+- required
+- Constraints: 1 to 80 characters
+
+Example:
+
+```json
+"När"
+```
+
+#### `capabilities[].asks[].required`
+
+Whether the person must answer before the last step. `true` whenever the input schema requires the property; an optional answer left empty is not sent.
+
+- Type: boolean
+- required
+- Pairs with:
+  - **An ask's kind fits its property.** A `meeting` takes a string property without `enum` (format `date-time` when it declares one), a `date` the same with format `date`, `text` and `long-text` a string property without `enum` or `format`, and a `choice` a property with an `enum` whose every value `options` names once. A property the input requires is a required ask. ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md))
+
+Example:
+
+```json
+true
+```
+
+#### `capabilities[].asks[].durationMinutes`
+
+For `meeting`: how long the meeting is, in minutes. Clew looks for free times this long.
+
+- Type: integer
+- required (meeting only)
+- Constraints: 5 to 480
+
+Example:
+
+```json
+45
+```
+
+#### `capabilities[].asks[].options`
+
+For `choice`: every value of the property's `enum` once, with its Swedish label, in order.
+
+- Type: array of object
+- required (choice only)
+- Constraints: 2 to 8 items
+- Pairs with:
+  - **An ask's kind fits its property.** A `meeting` takes a string property without `enum` (format `date-time` when it declares one), a `date` the same with format `date`, `text` and `long-text` a string property without `enum` or `format`, and a `choice` a property with an `enum` whose every value `options` names once. A property the input requires is a required ask. ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md))
+
+Example:
+
+```json
+[
+  {
+    "value": "approve",
+    "label": "Godkänn"
+  },
+  {
+    "value": "reject",
+    "label": "Avslå"
+  }
+]
+```
+
+#### `capabilities[].asks[].options[].value`
+
+One of the property's `enum` values.
+
+- Type: string
+- required
+- Constraints: 1 to 80 characters
+
+Example:
+
+```json
+"approve"
+```
+
+#### `capabilities[].asks[].options[].label`
+
+Swedish. What the person reads.
+
+- Type: string
+- required
+- Constraints: 1 to 80 characters
+
+Example:
+
+```json
+"Godkänn"
+```
+
+#### `capabilities[].effect`
+
+On an `execute` (D111): a `read` of this connector that takes the same input and answers an `EffectOutput`, what the write will do where, without writing anything. Clew calls it as the person with the input the execute would get and draws the answer as "Det här händer", the last step before anything is sent. Without it Clew names the source and shows the capability's `description`.
+
+- Type: string
+- optional
+- Constraints: matches `^[a-z][a-z0-9-]*\.[a-zA-Z][a-zA-Z0-9]*$`; at most 80 characters
+- Pairs with:
+  - **The effect is a read of this connector that takes the same input.** `effect` may be declared only on an `execute`. It names a `read` of this manifest whose input schema is the execute's own and which declares `model: false`. A read writes nothing: Clew calls it before the person decides. ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md))
+  - **Clew asks, shows what will happen, and sends the answers in the input.** The person meets the asks the action does not already fill, as the first step of one dialog, from every place the action starts; a write without asks whose result can be undone stays one press. Clew checks each answer against its kind (a meeting time not yet passed, a day that exists, one of the choices) and leaves an optional ask that was not answered out. For a meeting it suggests three free times from the person's own calendar. With `effect` Clew calls the read as the person with exactly the input the execute would get and draws its `EffectOutput` as "Det här händer"; nothing is written and no audit row is kept for it. On the last button the answers are merged into the input, validated against the input schema and approved as every decision is: they are in the audit row and the approved intent, and the execute runs with them. An answer to anything the action does not ask is refused. ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md))
+
+Example:
+
+```json
+"hr.bookTalkEffect"
 ```
 
 ### capabilities[].view
@@ -1926,6 +2392,7 @@ A read of the same connector, by full name.
 - Constraints: at most 80 characters
 - Pairs with:
   - **A row opens a read of the same connector.** `open.capability` is a `read` of this manifest, and every key of `params` is an input property of that read, taken from a property the row has. A card's buttons and a row's link stay within one system. ([D35](../decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md))
+  - **news makes a news source.** A `read` named `<id>.news` that takes `{}` is a source of Clew's news: its output is a `NewsOutput`, rows of `ref`, `title`, `sender`, `publishedAt` and an optional `link`, and nothing else. Clew asks every news source in the person's scope as the person, at once and under a short budget, and lists the rows as `clew.news`, newest first: the three newest under "Nyheter" on Hem, all of them on "Alla nyheter". An answer that is not a `NewsOutput`, a source that fails and a source that is late contribute nothing, and no error is shown. A row with `link` leaves Clew in a new tab; without one it opens the read the view's `open` names (by convention `<id>.newsItem`) beside the page. While `clew.news` is registered the model is offered it and never the per-source read. ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md))
 
 Example:
 
@@ -2323,7 +2790,7 @@ One of this manifest's read capabilities, taking no input and answering a SiteHe
 - required
 - Constraints: matches `^[a-z][a-z0-9-]*\.[a-zA-Z][a-zA-Z0-9]*$`; at most 80 characters
 - Pairs with:
-  - **A profile read and the header are about no entity.** `<id>.search`, `<id>.fetch`, `<id>.errands`, `<id>.talks`, `<id>.commitments`, a capability with `kinds` and the read the header names have shapes of their own and cannot declare `about`. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
+  - **A profile read and the header are about no entity.** `<id>.search`, `<id>.fetch`, `<id>.errands`, `<id>.talks`, `<id>.commitments`, `<id>.news`, a capability with `kinds` and the read the header names have shapes of their own and cannot declare `about`. ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md))
 
 ## Every rule
 
@@ -2348,13 +2815,20 @@ Where Clew applies each: when the manifest is loaded, when the connector is regi
 - **Each row carries the key it was asked with** (loader; `capabilities[].about`, `capabilities[].output`, `capabilities[].view`, `capabilities[].view.rows`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): A read about an entity declares a `table` or `list` view, and its rows (`rows`, or the view's `rows`) are an array in the output schema whose items require a string `key`: the key the row was asked with.
 - **A read about an entity is never a tool** (loader; `capabilities[].about`, `capabilities[].model`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): A `read` that declares `about` must declare `model: false`. Clew never offers it to the model, whatever an administrator enables.
 - **An action about an entity names the input that takes the key** (loader; `capabilities[].kind`, `capabilities[].about.param`, `capabilities[].input`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): A `propose` or `execute` that declares `about` names in `param` a string property of its input schema. Clew fills it with the key of the entity the person chose the action on; it shows in that entity's menu and runs, as every action does, after a human decision.
-- **An action about an entity starts with the key alone** (loader; `capabilities[].about.param`, `capabilities[].input`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): On a `propose` or `execute` that declares `about`, `param` is the one property the input requires. Anything else is optional, with a default the source chooses, so the entity's menu can start the action without asking a question (D8).
+- **An action about an entity starts with the key and what it asks** (loader; `capabilities[].about.param`, `capabilities[].input`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): On a `propose` or `execute` that declares `about`, the input requires `param`, and every other property it requires is one the capability asks for (`asks`, D111). Anything else is optional, with a default the source chooses, so the entity's menu can start the action with the key and the person's answers, without the model (D8).
+- **Only a propose or an execute asks** (loader; `capabilities[].kind`, `capabilities[].asks`, `capabilities[].follows`) ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md)): `asks` may be declared only on a `propose` or an `execute`, and not on a follower: a follower is asked with a fact, never by a person.
+- **An ask names a property of the input** (loader; `capabilities[].asks[].property`, `capabilities[].input`) ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md)): Each ask names, once, a property the input schema declares under `properties`, and never the one `about.param` fills with the entity's key.
+- **An ask's kind fits its property** (loader; `capabilities[].asks[].kind`, `capabilities[].asks[].required`, `capabilities[].asks[].options`, `capabilities[].input`) ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md)): A `meeting` takes a string property without `enum` (format `date-time` when it declares one), a `date` the same with format `date`, `text` and `long-text` a string property without `enum` or `format`, and a `choice` a property with an `enum` whose every value `options` names once. A property the input requires is a required ask.
+- **The effect is a read of this connector that takes the same input** (loader; `capabilities[].effect`, `capabilities[].kind`, `capabilities[].model`) ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md)): `effect` may be declared only on an `execute`. It names a `read` of this manifest whose input schema is the execute's own and which declares `model: false`. A read writes nothing: Clew calls it before the person decides.
 - **A follower is about no entity** (loader; `capabilities[].about`, `capabilities[].follows`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): `follows` and `about` exclude each other: a follower is asked with a `FactEnvelope`, not with keys.
-- **A profile read and the header are about no entity** (loader; `capabilities[].about`, `capabilities[].name`, `capabilities[].kinds`, `header.capability`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): `<id>.search`, `<id>.fetch`, `<id>.errands`, `<id>.talks`, `<id>.commitments`, a capability with `kinds` and the read the header names have shapes of their own and cannot declare `about`.
-- **scan: true means you serve the scan route** (check; `scan`, `areas[].id`) ([D35](../decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md)): With `scan: true` Clew posts `/clew/scan` per person, nightly and on first visit. Each draft names an `area` of this manifest, its `topic` is the same for the same occurrence, and its actions name capabilities of this connector only. The conformance check runs the scan twice and compares.
+- **A profile read and the header are about no entity** (loader; `capabilities[].about`, `capabilities[].name`, `capabilities[].kinds`, `header.capability`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): `<id>.search`, `<id>.fetch`, `<id>.errands`, `<id>.talks`, `<id>.commitments`, `<id>.news`, a capability with `kinds` and the read the header names have shapes of their own and cannot declare `about`.
+- **scan: true means you serve the scan route** (check; `scan`, `areas[].id`) ([D35](../decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md)): With `scan: true` Clew posts `/clew/scan` per person, nightly and on first visit. Each draft names an `area` of this manifest, its `topic` is the same for the same occurrence, and its actions name capabilities of this connector only. An execute action that is the person's read receipt for something published carries `acknowledgement: { publishedAt }` (D111), at most one per draft: Hem then lifts the open item above its blocks, with that action as its button, until it is pressed. The conformance check runs the scan twice and compares.
 - **figure: true means you serve the figure route** (call; `areas[].figure`): For an area with `figure: true` Clew posts `/clew/figure` with the area id and draws the answer as the area's tile on Hem (D54): `label` and `tone`, and optionally `value` (one number and its unit, formatted by you), `comparison`, `progress` and `opens`, a read of yours whose view needs no input, which the tile then links to. Without `value` the label is a sentence. Clew says the tone in its own words. A connector that does not answer shows the warning tile, never an error; an administrator can switch an area's figure off.
 - **Callbacks reach only what uses lists** (call; `uses`) ([D37](../decisions/README.md)): While serving a request, a connector may call back `POST /api/connectors/call` with the `callback` grant from the assertion, for the exact names in `uses` and as the same person. Anything else, and every `execute`, is refused.
 - **search and fetch make a search source** (call; `capabilities[].kinds`, `capabilities[].name`) ([D26](../decisions/D26-questions-over-documents-are-search-not-knowledge.md)): A `read` named `<id>.search` with `kinds` is a source of Clew's composite search: its output is a `SearchOutput`, and `<id>.fetch` takes one of its refs back and returns one `SearchHit`.
+- **news makes a news source** (call; `capabilities[].name`, `capabilities[].view.open.capability`) ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md)): A `read` named `<id>.news` that takes `{}` is a source of Clew's news: its output is a `NewsOutput`, rows of `ref`, `title`, `sender`, `publishedAt` and an optional `link`, and nothing else. Clew asks every news source in the person's scope as the person, at once and under a short budget, and lists the rows as `clew.news`, newest first: the three newest under "Nyheter" on Hem, all of them on "Alla nyheter". An answer that is not a `NewsOutput`, a source that fails and a source that is late contribute nothing, and no error is shown. A row with `link` leaves Clew in a new tab; without one it opens the read the view's `open` names (by convention `<id>.newsItem`) beside the page. While `clew.news` is registered the model is offered it and never the per-source read.
 - **Delegation brings the person's own token** (call; `delegation.audience`) ([D26](../decisions/D26-questions-over-documents-are-search-not-knowledge.md)): With `delegation`, Clew exchanges the person's session for a token bound to `audience` and sends it in `X-Clew-Delegated-Token` beside the assertion: on a request, on an approved write while the session that approved it is active, and on a scan the person's active session asked for (Clew does not call the scan without one). Figures, callbacks and sessions without an IdP token carry none; the connector then answers `denied`.
 - **A read about an entity answers for the keys it may** (call; `capabilities[].about`, `capabilities[].about.entity`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): Clew calls the read as the person with `{ keys }`: a person's provisioned `userName` (compare without regard to case; the caller's own is `actor.userName`) or a unit's id, only for entities the person may already see, at most 200 in one call. Answer one row per key you know, carrying `key` as it was asked; a key outside the person's scope is answered as no row, never as a refusal. Beside the rows you may answer `heading` and `note`, two short strings. Clew keeps nothing and decides where the rows show: a section on the opened entity, and a lens, a column or a mark on the row where an administrator chose the source.
-- **An action about an entity becomes a card** (call; `capabilities[].kind`, `capabilities[].about.param`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): When the person chooses the action in an entity's menu, Clew starts it without the model, as the person, with `{ <param>: key }`. A `propose` answers a `ThreadDraft`, the shape a scan pushes: its actions name capabilities of this connector, it prepares and writes nothing, and it becomes the person's card. Clew writes the card's reason itself (the person chose it), so your `reason` is not shown. Refuse a key outside the person's scope in Swedish, as any call is refused. An `execute` is not called: Clew makes a card whose button is the human decision, and the execute runs only after it, with its write safety. The same request while the card is open gives the same card.
+- **An action about an entity becomes a card** (call; `capabilities[].kind`, `capabilities[].about.param`) ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): When the person chooses the action in an entity's menu, Clew starts it without the model, as the person, with `{ <param>: key }` and, for a propose that asks, the person's answers. A `propose` answers a `ThreadDraft`, the shape a scan pushes: its actions name capabilities of this connector, it prepares and writes nothing, and it becomes the person's card. Clew writes the card's reason itself (the person chose it), so your `reason` is not shown. Refuse a key outside the person's scope in Swedish, as any call is refused. An `execute` is not called: Clew makes a card whose button is the human decision, and the execute runs only after it, with its write safety and the answers to its asks. The same request while the card is open gives the same card.
+- **Every required input has someone to fill it** (call; `capabilities[].input`, `capabilities[].asks`) ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md)): A propose or execute on a work item (an action of a `ThreadDraft`) leaves no property its capability's input requires to nobody: it comes from the action's own `input`, the selected rows (`refs`, with `usesItems`), the review's evidence (`reviews`, with `review`) or an ask. A draft that leaves one is refused and reported, as a draft that names another connector's capability is.
+- **Clew asks, shows what will happen, and sends the answers in the input** (call; `capabilities[].asks`, `capabilities[].effect`) ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md)): The person meets the asks the action does not already fill, as the first step of one dialog, from every place the action starts; a write without asks whose result can be undone stays one press. Clew checks each answer against its kind (a meeting time not yet passed, a day that exists, one of the choices) and leaves an optional ask that was not answered out. For a meeting it suggests three free times from the person's own calendar. With `effect` Clew calls the read as the person with exactly the input the execute would get and draws its `EffectOutput` as "Det här händer"; nothing is written and no audit row is kept for it. On the last button the answers are merged into the input, validated against the input schema and approved as every decision is: they are in the audit row and the approved intent, and the execute runs with them. An answer to anything the action does not ask is refused.

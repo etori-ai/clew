@@ -256,7 +256,10 @@ for (const [layout, viewport] of [
       await new People().route(page);
       const here = `/people/karin?section=${TALK_LENS}&from=%2Fstaff`;
       await open(page, here);
-      const way = page.getByRole('main').getByRole('link', { name: 'Öppna samtalet' });
+      // The address names the talks section: the page lands on it (D111 item 5), and its way in is in it.
+      const section = page.getByRole('region', { name: 'Utvecklingssamtal', exact: true });
+      await expect(page.getByRole('heading', { level: 2, name: 'Utvecklingssamtal' })).toBeFocused();
+      const way = section.getByRole('link', { name: 'Öppna samtalet' });
       await expect(way).toHaveAttribute('href', `${here}&talk=karin`);
       await way.click();
       await expect(page).toHaveURL(`${here}&talk=karin`);

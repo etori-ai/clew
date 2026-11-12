@@ -44,7 +44,7 @@ the first six in process through `tests/fixture-connectors.ts`.
 | [hr](hr/README.md) | `hr` | Personalsystemet | Absences, leave requests, delegations and shifts | 8 reads, 7 writes, 2 proposes, scan | 4040 |
 | [finance](finance/README.md) | `finance` | Ekonomisystemet | Invoices to review and budget figures | 11 reads, 3 writes, scan | 4041 |
 | [incidents](incidents/README.md) | `incidents` | Avvikelsesystemet | Deviations and incidents | 2 reads, 2 writes, scan | 4042 |
-| [communication](communication/README.md) | `communication` | Kommunikation | Notices with read receipts ("Viktigt nu") | 2 reads, 1 write, scan | 4043 |
+| [communication](communication/README.md) | `communication` | Kommunikation | Notices with read receipts ("Viktigt nu"), and the same notices as news (the news profile, D111) | 4 reads, 1 write, scan | 4043 |
 | [timesheet](timesheet/README.md) | `timesheet` | Tidrapporteringen | Time reporting and staffing | 2 reads, 2 writes, 1 propose | 4044 |
 | [payroll](payroll/README.md) | `payroll` | Lönesystemet | Payroll figures; Clew never writes here | 2 reads, 1 propose | 4046 |
 | [intranet](intranet/README.md) | `intranet` | Intranätet | The content system that lists the shared header's places (D88) | 1 read, header | 4049 |

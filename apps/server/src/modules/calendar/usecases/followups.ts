@@ -163,7 +163,7 @@ export function followupUsecases(deps: {
     await store.transaction(async tx => {
       const current = await tx.load(threadId);
       if (!current || current.policy?.personId !== persona.id)
-        throw new InputError('Kortet saknar en godkänd uppföljningsplan.');
+        throw new InputError('Ärendet saknar en godkänd uppföljningsplan.');
       if (current.thread.execution && ['pending', 'running', 'unknown'].includes(current.thread.execution.state))
         throw new InputError('Invänta kalenderns besked först.');
       const waiting = current.proposals.filter(p => current.policy!.proposalIds.includes(p.id) && waitingOnInvitee(p));

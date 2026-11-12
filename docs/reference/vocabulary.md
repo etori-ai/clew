@@ -72,7 +72,7 @@ Within a job, steps are currently independent and prepared from the same fact. T
 | View | A presentation of information. Connector-declared views have the supported forms `table`, `list`, `detail` and `text`. |
 | Side panel | The container beside the current page for opened work item details or other views. On narrow screens it can be a drawer. |
 | Focused overlay | A temporary interaction above the current page, shown as the existing sidebar Drawer or corresponding mobile sheet. Catalogue drill-in and confirmation retain their parent. |
-| Tab | A choice in a tab strip on a page (Hem's lists, the sections of a person's page). The panel beside a page has no tabs: it holds one thing (D110, D66 amended). |
+| Tab | A choice in a tab strip on a page (Att göra's piles). A person's page has none since D111 item 5: its sections stand one under the other. The panel beside a page has no tabs: it holds one thing (D110, D66 amended). |
 | Context chip | A visible reference attached to a conversation, identifying the work item, record, proposal or other supported object being discussed. |
 | Tool | A standing entry point in the product to a capability or view, such as the phone book. Qualify an assistant-callable operation as a **model tool**. |
 | Area | A grouping of related capabilities and work available to eligible people. It is not the source record itself. |
@@ -121,7 +121,7 @@ A source system owns records. A connector exposes capabilities that read those r
 | Mark | A badge under **Just nu** | A value of a lens with a `warn` or `alert` tone, shown on the entity's row on "Alla". "Just nu" also counts the reader's cards about the person ("1 att agera på", "2 förslag"). |
 | Section | **Behöver dig**, then each source's title | One source's part of the opened person or unit, named with its source ("Clew" for Clew's own domain). "Behöver dig" is the section of the reader's own cards that name the entity. |
 | Column on "Alla" | A column heading with the source under it | One field of a read about an entity, chosen by an administrator under "Kolumn på Alla" and shown to everyone who has the list. At most three per entity kind. |
-| Opened entity | The page's heading, the person's or the unit's name; on the person's page the tab strip **Om <namn>** | A person or a unit as a page ([D110](../decisions/D110-where-something-opens-is-decided-by-what-it-is.md) rule 3). |
+| Opened entity | The page's heading, the person's or the unit's name, with every section under it and the details rail beside it (D111 item 5) | A person or a unit as a page ([D110](../decisions/D110-where-something-opens-is-decided-by-what-it-is.md) rule 3). |
 
 ## Naming rules
 

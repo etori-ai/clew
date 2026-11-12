@@ -609,6 +609,72 @@ describe('a capability about an entity (D97)', () => {
         edited(talks, m => (m.capabilities[0].name = 'appraisals.talks')),
         { path: 'capabilities[0].about', anchor: 'rule-about-not-a-profile' },
       ],
+      [
+        'a read that asks',
+        edited(
+          talks,
+          m => (m.capabilities[1].asks = [{ kind: 'text', property: 'person', label: 'Vem', required: true }]),
+        ),
+        { path: 'capabilities[1].asks', anchor: 'rule-asks-on-an-action' },
+      ],
+      [
+        'an ask the input lacks',
+        edited(
+          talks,
+          m =>
+            (m.capabilities[3].asks = [
+              { kind: 'meeting', property: 'when', label: 'När', required: false, durationMinutes: 45 },
+            ]),
+        ),
+        {
+          path: 'capabilities[3].asks[0].property',
+          field: 'capabilities[].asks[].property',
+          anchor: 'rule-ask-names-input',
+        },
+      ],
+      [
+        'an ask whose kind does not fit',
+        edited(talks, m => {
+          m.capabilities[3].input.properties.at = { type: 'integer' };
+          m.capabilities[3].asks = [
+            { kind: 'text', property: 'person', label: 'Vem', required: true },
+            { kind: 'meeting', property: 'at', label: 'När', required: false, durationMinutes: 45 },
+          ];
+        }),
+        { path: 'capabilities[3].asks[1].kind', anchor: 'rule-ask-fits-input' },
+      ],
+      [
+        'an optional ask the input requires',
+        edited(talks, m => {
+          m.capabilities[3].input.required = ['person', 'at'];
+          m.capabilities[3].asks = [{ kind: 'text', property: 'at', label: 'När', required: false }];
+        }),
+        { path: 'capabilities[3].asks[0].required', anchor: 'rule-ask-fits-input' },
+      ],
+      [
+        'a choice that leaves a value out',
+        edited(talks, m => {
+          m.capabilities[3].input.properties.at = { type: 'string', enum: ['morning', 'afternoon', 'evening'] };
+          m.capabilities[3].asks = [
+            {
+              kind: 'choice',
+              property: 'at',
+              label: 'När',
+              required: false,
+              options: [
+                { value: 'morning', label: 'Förmiddag' },
+                { value: 'afternoon', label: 'Eftermiddag' },
+              ],
+            },
+          ];
+        }),
+        { path: 'capabilities[3].asks[0].options', anchor: 'rule-ask-fits-input' },
+      ],
+      [
+        'an effect on a propose',
+        edited(talks, m => (m.capabilities[3].effect = 'appraisals.commitments')),
+        { path: 'capabilities[3].effect', field: 'capabilities[].effect', anchor: 'rule-effect-is-a-read' },
+      ],
     ];
     const placed = new Set<string>();
     for (const [what, document, expected, id] of cases) {

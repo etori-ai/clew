@@ -13,6 +13,8 @@ export const STEP_PARAM = 'step';
 export const REVIEW_KEYS: readonly string[] = [REVIEW_PARAM, STEP_PARAM];
 /** The panel's card (`panel-address.ts`), which the review keeps, names again or lets go of. */
 const CARD = 'card';
+/** Att göra's chosen work item (`work-items.ts`, D111), which the review treats as the panel's card. */
+const ITEM = 'item';
 
 const address = (pathname: string, query: URLSearchParams) => {
   const q = query.toString();
@@ -45,6 +47,7 @@ export function withoutReview(pathname: string, search: URLSearchParams | string
   const q = new URLSearchParams(search);
   REVIEW_KEYS.forEach(k => q.delete(k));
   if (cardGone && q.get(CARD) === cardGone) q.delete(CARD);
+  if (cardGone && q.get(ITEM) === cardGone) q.delete(ITEM);
   return address(pathname, q);
 }
 /**
@@ -61,17 +64,18 @@ export function withRetriedReview(
   q.set(REVIEW_PARAM, to);
   q.delete(STEP_PARAM);
   if (q.get(CARD) === from) q.set(CARD, to);
+  if (q.get(ITEM) === from) q.set(ITEM, to);
   return address(pathname, q);
 }
 /**
- * Where `/cards/:threadId/review?step=n`, a link from before the review lay over its page, leads: Hem with the card
- * beside it and the review over both, at the step it named. Nothing else of its query is kept.
+ * Where `/cards/:threadId/review?step=n`, a link from before the review lay over its page, leads: the work item in Att
+ * göra (D111) with the review over it, at the step it named. Nothing else of its query is kept.
  */
 export function legacyReview(threadId: string, search: URLSearchParams | string): string {
-  const q = new URLSearchParams({ [CARD]: threadId, [REVIEW_PARAM]: threadId });
+  const q = new URLSearchParams({ item: threadId, [REVIEW_PARAM]: threadId });
   const step = new URLSearchParams(search).get(STEP_PARAM);
   if (step !== null) q.set(STEP_PARAM, step);
-  return address('/', q);
+  return address('/todo', q);
 }
 
 /** The step the address names, 0-based, among `steps`; null when it names none of them. */

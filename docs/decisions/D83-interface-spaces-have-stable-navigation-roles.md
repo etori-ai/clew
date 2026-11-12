@@ -1,6 +1,6 @@
 # D83 · Interface spaces have stable navigation roles
 
-**Status:** accepted; the placement rules for pages, panels, overlays and confirmations stand. The MCP catalogue and App flow it also placed left the code with D81's prototype on 2026-11-11 ([closing note](../reviews/2026-11-11-external-mcp-chat-services-exploration.md)) · **Date:** 2026-11-09 · **Area:** ui, product
+**Status:** accepted; the placement rules for pages, panels, overlays and confirmations stand. The MCP catalogue and App flow it also placed left the code with D81's prototype on 2026-11-11 ([closing note](../reviews/2026-11-11-external-mcp-chat-services-exploration.md)); the spaces stand under [D111](D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) (2026-11-11), and the reference `docs/reference/interface-spaces.md` is rewritten to it · **Date:** 2026-11-09 · **Area:** ui, product
 
 **Decision.** Use [Interface spaces and navigation](../reference/interface-spaces.md) as the current placement reference. Navigation destinations own the main page; opened contextual information stays beside it; focused service and review interactions use the existing sidebar overlay; confirmations and feedback belong to the interaction that caused them. Page-owned information such as I dag is not panel content. A content address does not imply a full page.
 

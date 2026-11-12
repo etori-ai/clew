@@ -1,12 +1,17 @@
 import { Type, type Static } from 'typebox';
 import {
   AboutSchema,
+  ASKS_MAX,
+  AskSchema,
+  EffectOutputSchema,
   MenuHintSchema,
   MenuIconSchema,
   PreviewOutputSchema,
   SearchHitSchema,
   ErrandRowSchema,
   ErrandsOutputSchema,
+  NewsRowSchema,
+  NewsOutputSchema,
   TalkRowSchema,
   TalksOutputSchema,
   CommitmentRowSchema,
@@ -196,7 +201,7 @@ export const ManifestCapabilitySchema = object({
     pattern: '^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$',
     maxLength: 80,
     description:
-      '`<connector id>.<verb>`, stable. Two names are profiles Clew combines across connectors: `<id>.search` (D26, see `kinds`), and `<id>.errands` (D35, D89), a read that takes `{ view?: "assigned" | "reported" }` and answers an ErrandsOutput with the errands the case system lets the person see. Its view\'s `open` names the read that shows one errand, by convention `<id>.errand`. Clew lists every `<id>.errands` in the person\'s scope as `clew.errands`. Two more are the talks profile (D96), answered by one system per installation rather than combined: `<id>.talks`, a read that takes `{}` and answers a TalksOutput (the open round of development talks and one row per person the reader manages, keyed on the SCIM `userName`), and `<id>.commitments`, a read that takes `{ person?: <userName> }` and answers a CommitmentsOutput (that employee\'s action points for a manager of their unit, or without `person` the ones the reader owns and the ones about the reader). `<id>.talks` may be limited to managers; `<id>.commitments` should be callable by everyone who owns action points or is their subject. Clew\'s built-in `talks` connector answers while either of its reads is enabled for the person; otherwise the one connector whose `<id>.talks` or `<id>.commitments` the person may call does, and with several none does. Neither is ever offered to the model.',
+      '`<connector id>.<verb>`, stable. Two names are profiles Clew combines across connectors: `<id>.search` (D26, see `kinds`), and `<id>.errands` (D35, D89), a read that takes `{ view?: "assigned" | "reported" }` and answers an ErrandsOutput with the errands the case system lets the person see. Its view\'s `open` names the read that shows one errand, by convention `<id>.errand`. Clew lists every `<id>.errands` in the person\'s scope as `clew.errands`. A third is combined the same way: `<id>.news` (D111), a read that takes `{}` and answers a NewsOutput with the news the person may read; its view\'s `open`, when a row should open in Clew rather than by its `link`, names the read that shows one item, by convention `<id>.newsItem`. Clew lists every `<id>.news` in the person\'s scope as `clew.news`, newest first, on Hem and as "Alla nyheter"; a source that fails contributes nothing. Two more are the talks profile (D96), answered by one system per installation rather than combined: `<id>.talks`, a read that takes `{}` and answers a TalksOutput (the open round of development talks and one row per person the reader manages, keyed on the SCIM `userName`), and `<id>.commitments`, a read that takes `{ person?: <userName> }` and answers a CommitmentsOutput (that employee\'s action points for a manager of their unit, or without `person` the ones the reader owns and the ones about the reader). `<id>.talks` may be limited to managers; `<id>.commitments` should be callable by everyone who owns action points or is their subject. Clew\'s built-in `talks` connector answers while either of its reads is enabled for the person; otherwise the one connector whose `<id>.talks` or `<id>.commitments` the person may call does, and with several none does. Neither is ever offered to the model.',
   }),
   kind: Type.Union([Type.Literal('read'), Type.Literal('propose'), Type.Literal('execute')], {
     description:
@@ -246,6 +251,22 @@ export const ManifestCapabilitySchema = object({
       maxLength: 80,
       description:
         "The fact kind this `propose` or `execute` brings about (D55); must be one of the manifest's `facts`.",
+    }),
+  ),
+  asks: Type.Optional(
+    Type.Array(AskSchema, {
+      minItems: 1,
+      maxItems: ASKS_MAX,
+      description:
+        'On a `propose` or `execute` (D111): what the person fills in before it runs, each naming one property of the input. Clew draws the asks as the first step of the action\'s dialog, "Fyll i", from every place the action can be started, and merges the answers into the input; the rest comes from the selected rows (`refs`), the action\'s own `input` on a work item, or the entity (`about.param`). An answer for anything not asked is refused.',
+    }),
+  ),
+  effect: Type.Optional(
+    Type.String({
+      pattern: '^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$',
+      maxLength: 80,
+      description:
+        'On an `execute` (D111): a `read` of this connector that takes the same input and answers an `EffectOutput`, what the write will do where, without writing anything. Clew calls it as the person with the input the execute would get and draws the answer as "Det här händer", the last step before anything is sent. Without it Clew names the source and shows the capability\'s `description`.',
     }),
   ),
 });
@@ -519,6 +540,8 @@ export function protocolSchema() {
       CallResponse: CallResponseSchema,
       ProtocolError: ProtocolErrorSchema,
       ExecuteResult: ExecuteResultSchema,
+      Ask: AskSchema,
+      EffectOutput: EffectOutputSchema,
       PreviewOutput: PreviewOutputSchema,
       DocumentReadRequest: DocumentReadRequestSchema,
       DocumentBundle: DocumentBundleSchema,
@@ -537,6 +560,8 @@ export function protocolSchema() {
       SearchOutput: SearchOutputSchema,
       ErrandRow: ErrandRowSchema,
       ErrandsOutput: ErrandsOutputSchema,
+      NewsRow: NewsRowSchema,
+      NewsOutput: NewsOutputSchema,
       TalkRow: TalkRowSchema,
       TalksOutput: TalksOutputSchema,
       CommitmentRow: CommitmentRowSchema,
@@ -575,6 +600,66 @@ const previewRoles = Type.Array(RoleSchema, {
 /** The places Clew gives a capability that is about an entity (D97 item 2), in the order the preview lists them. */
 export const ABOUT_PLACES = ['lens', 'mark', 'section', 'menu'] as const;
 export type AboutPlace = (typeof ABOUT_PLACES)[number];
+/** Where a person can start a propose or an execute (D111 item 11), in the order the preview lists them. */
+export const ACTION_STARTS = ['work-item', 'entity', 'question-box', 'conversation', 'fact'] as const;
+export type ActionStart = (typeof ACTION_STARTS)[number];
+/** The steps of the one path a write passes (D111 item 10), in the order the person meets them. */
+export const ACTION_STEPS = ['fill-in', 'effect', 'confirm', 'review', 'receipt'] as const;
+export type ActionStep = (typeof ACTION_STEPS)[number];
+/** Who fills a property of an action's input (D111 item 11). */
+export const INPUT_FILLERS = ['rows', 'entity', 'person', 'fact', 'work-item', 'source'] as const;
+export type InputFiller = (typeof INPUT_FILLERS)[number];
+/**
+ * Both halves of a write as the preview draws them (D111 item 11), from the declaration alone: where a person can start
+ * it, which steps of the path it draws, and who fills each property of its input.
+ */
+export const ActionPathPreviewSchema = object(
+  {
+    starts: Type.Array(
+      object({
+        place: literals(ACTION_STARTS),
+        state: literals(['declared', 'not-declared', 'never'], {
+          description:
+            '`declared`: the manifest puts it there; `not-declared`: it could, with the field in `declares`; `never`: not for this kind (an execute is never drafted by the model).',
+        }),
+        declares: Type.String({ description: 'The manifest field that puts it there.' }),
+      }),
+      {
+        description:
+          '`work-item`: a button on a work item a scan pushes or a propose drafts (`scan: true`, or a propose about an entity); `entity`: an action on a person or a unit (`about.param`); `question-box`: a suggestion under "Menar du" (`areas[].standing`); `conversation`: drafted by the assistant, a propose with `model: true`; `fact`: a step of a job after a fact elsewhere (`follows` on a propose; an execute is such a step when a propose of the manifest follows a fact).',
+      },
+    ),
+    steps: Type.Array(
+      object({
+        step: literals(ACTION_STEPS),
+        state: literals(['declared', 'not-declared', 'on-the-work-item', 'always', 'never'], {
+          description:
+            '`declared` or `not-declared` by this capability; `on-the-work-item`: a draft\'s action declares it (`confirm`, `review: "each"`), so the manifest cannot say; `always`: every execute has it; `never`: not for this kind.',
+        }),
+        declares: Type.String({ description: 'The field that draws it.' }),
+      }),
+      {
+        description:
+          '`fill-in`: the asks (`asks`); `effect`: "Det här händer", the source\'s answer from `effect`, else the source\'s name and the description; `confirm`: one question before a write; `review`: the rows one at a time, each with its document; `receipt`: one outcome per row read back, with Ångra while the source allows it.',
+      },
+    ),
+    input: Type.Array(
+      object({
+        property: Type.String(),
+        type: Type.String({ description: "The property's type in words, as the manifest reference says it." }),
+        required: Type.Boolean({ description: 'The input schema requires it.' }),
+        by: literals(INPUT_FILLERS, {
+          description:
+            "`rows`: the selected rows of the work item (`refs`) or the review's evidence (`reviews`); `entity`: the key of the person or unit (`about.param`); `person`: an ask; `fact`: the fact a follower is asked with; `work-item`: the action's own `input` on a draft must give it; `source`: optional, the source's default unless a draft gives it.",
+        }),
+        ask: Type.Optional(AskSchema),
+      }),
+      { description: "Each property of the input schema's `properties`, as the person will meet it." },
+    ),
+  },
+  'Where a write can start and what the person passes through before it reaches the source (D111 item 11).',
+);
+export type ActionPathPreview = Static<typeof ActionPathPreviewSchema>;
 export const ManifestPreviewCapabilitySchema = object({
   name: Type.String(),
   kind: Type.Union([Type.Literal('read'), Type.Literal('propose'), Type.Literal('execute')]),
@@ -638,6 +723,9 @@ export const ManifestPreviewCapabilitySchema = object({
         'For a read about an entity: rows made from the declaration alone, to draw its places with before any service runs. Each carries a synthetic `key`; a status field takes in turn each value its view gives a tone, an instant a fixed time, any other field a value its output schema allows or a placeholder. Samples, never data: no connector is called.',
     }),
   ),
+  asks: Type.Optional(Type.Array(AskSchema, { description: 'The asks the capability declares (D111).' })),
+  effect: Type.Optional(Type.String({ description: 'The read that says what the execute will do (D111).' })),
+  path: Type.Optional(ActionPathPreviewSchema),
 });
 /** The places a problem points at (D60, D97): the field in the document, its entry in the manifest reference, the rule it breaks. */
 export const ManifestIssueSchema = object(

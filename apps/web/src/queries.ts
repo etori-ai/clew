@@ -1,5 +1,5 @@
 import { queryOptions } from '@tanstack/react-query';
-import type { Role, DocumentRequest, EntityKind, UsersAdminQueryType } from '@clew/contracts';
+import type { AskValues, Role, DocumentRequest, EntityKind, UsersAdminQueryType } from '@clew/contracts';
 import { api } from './api';
 import { keys } from './query-keys';
 import { unlessRefused } from './query-policy';
@@ -11,6 +11,32 @@ import { unlessRefused } from './query-policy';
  */
 export const threadsQuery = queryOptions({ queryKey: keys.threads, queryFn: () => api.threads() });
 export const threadQuery = (id: string) => queryOptions({ queryKey: keys.thread(id), queryFn: () => api.thread(id) });
+/** What happened to a work item (D111 item 4); keyed by the item's version, so a change to the item reads it again. */
+export const itemEventsQuery = (id: string, version: string) =>
+  queryOptions({ queryKey: keys.itemEvents(id, version), queryFn: () => api.itemEvents(id), retry: false });
+/**
+ * "Det här händer" in the action dialog (D111 item 10): the effect read for exactly the rows and answers the dialog holds,
+ * read again whenever they change. Not retried: a refusal is the person's to read, and Försök igen asks again.
+ */
+export const actionEffectQuery = (
+  thread: { id: string; updatedAt: string },
+  actionId: string,
+  refs: readonly string[] | undefined,
+  values: AskValues,
+) =>
+  queryOptions({
+    queryKey: keys.actionEffect(thread.id, actionId, thread.updatedAt, refs ?? [], values),
+    queryFn: () => api.effect(thread.id, actionId, refs ? [...refs] : undefined, values),
+    retry: false,
+    staleTime: 0,
+  });
+/** A meeting ask's free times and, with `date`, the person's own day (D111 item 10). Not retried; without a calendar it answers no times. */
+export const meetingTimesQuery = (capability: string, property: string, before: string | null, date: string | null) =>
+  queryOptions({
+    queryKey: keys.meetingTimes(capability, property, before, date),
+    queryFn: () => api.meetingTimes(capability, property, { ...(before ? { before } : {}), ...(date ? { date } : {}) }),
+    retry: false,
+  });
 export const areasQuery = queryOptions({ queryKey: keys.areas, queryFn: () => api.areas() });
 /** Personal (D94): the people on the units the manager manages; a 403 is the page's own state, not retried. */
 export const staffQuery = queryOptions({ queryKey: keys.staff, queryFn: () => api.staff(), retry: false });
@@ -151,6 +177,15 @@ export const cardViewQuery = (threadId: string, actionId: string) =>
 /** Administration (D23). The detail read keeps its 400 for the page to turn into "Anslutningen finns inte". */
 /** The shared header (D88): what the person's header connector lists for them, read once per visit. */
 export const headerQuery = queryOptions({ queryKey: keys.header, queryFn: () => api.header(), staleTime: Infinity });
+/**
+ * Hem's "Nyheter" (D111, amended 2026-11-11): the combined news list. `null` for a person with no news source, so Hem
+ * draws no block and says nothing; not retried, as the errand and talks reads are not.
+ */
+export const newsQuery = queryOptions({
+  queryKey: keys.news,
+  queryFn: () => unlessRefused(api.news()),
+  retry: false,
+});
 /**
  * Administration › Kompetens (D108): the whole catalogue, archived types included, for an administrator of it. A
  * refusal is the page's own state (the module is off, or the capability is missing), so it is not retried.

@@ -26,7 +26,7 @@ import { AddToConversation } from '../add-to-conversation';
 import { useConversation } from '../conversation-context';
 import { DialogFrame } from '../dialog-frame';
 
-type Mode = 'view' | 'move' | 'cancel';
+export type Mode = 'view' | 'move' | 'cancel';
 type Props = {
   item: AgendaItem | null;
   /** Everything on the item's day, for the strip above the details (the "day around it", D9). */
@@ -36,6 +36,11 @@ type Props = {
   onChanged?: (thread?: Thread) => void;
   onOpenDay?: (date: string) => void;
   onAddChip?: (item: AgendaItem) => void;
+  /**
+   * Where the dialog opens: on the entry's details, or straight at moving or cancelling it, which is how Kalender's
+   * panel opens it from the entry's own "Flytta …" and "Ställ in …" (D111 item 9).
+   */
+  startIn?: Mode;
 };
 const kindLabel = { event: 'Bokat', proposal: 'Förslag', booked: 'Bokat samtal', gap: 'Ledigt' } as const;
 const minutes = (item: { start: string; end: string }) =>
@@ -48,11 +53,11 @@ const hhmm = (instant: string) => localClock(instant).slice(11, 16);
  * Cancelling confirms inline, never in a second dialog. Everything else is read-only. The day and the details scroll
  * between the title and the actions (`DialogFrame`), so a low window never cuts the actions off.
  */
-export function EventDialog({ item, dayItems, onClose, onChanged, onOpenDay, onAddChip }: Props) {
+export function EventDialog({ item, dayItems, onClose, onChanged, onOpenDay, onAddChip, startIn = 'view' }: Props) {
   const mobile = useMediaQuery(mobileQuery);
   const announce = useAnnounce();
   const { hasBox } = useConversation();
-  const [mode, setMode] = useState<Mode>('view');
+  const [mode, setMode] = useState<Mode>(startIn);
   const [decisionId, setDecisionId] = useState(() => crypto.randomUUID());
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
@@ -60,13 +65,13 @@ export function EventDialog({ item, dayItems, onClose, onChanged, onOpenDay, onA
   const { run, error, reset } = useThreadAction();
   useEffect(() => {
     setDecisionId(crypto.randomUUID());
-    setMode('view');
+    setMode(startIn);
     reset();
     if (item) {
       setStart(localClock(item.start));
       setEnd(hhmm(item.end));
     }
-  }, [item?.id]);
+  }, [item?.id, startIn]);
   const startField = useRef<HTMLInputElement>(null);
   const cancelNote = useRef<HTMLDivElement>(null);
   // What a choice opens sits under the day, which a low window scrolls out of sight: the new time takes focus and the
@@ -114,14 +119,14 @@ export function EventDialog({ item, dayItems, onClose, onChanged, onOpenDay, onA
       return act(
         () =>
           api.rescheduleEvent({ decisionId, ref: event.ref, revision: event.revision, start: newStart, end: newEnd }),
-        'Beslutet att flytta mötet är sparat. Kortet visar kalenderns besked.',
+        'Beslutet att flytta mötet är sparat. Ärendet visar kalenderns besked.',
       );
   };
   const cancel = () => {
     if (event)
       void act(
         () => api.cancelEvent({ decisionId, ref: event.ref, revision: event.revision }),
-        'Beslutet att ställa in mötet är sparat. Kortet visar kalenderns besked.',
+        'Beslutet att ställa in mötet är sparat. Ärendet visar kalenderns besked.',
       );
   };
   const when = item.allDay ? `${dayLabel(day)}, hela dagen` : `${dayLabel(day)} ${timeRange(item.start, item.end)}`;
@@ -188,6 +193,8 @@ export function EventDialog({ item, dayItems, onClose, onChanged, onOpenDay, onA
                   variant="ghost"
                   label="Avbryt"
                   onClick={() => {
+                    // Opened at this step from the entry's own button (Kalender's panel): Avbryt lets go of the dialog.
+                    if (startIn !== 'view') return onClose();
                     setMode('view');
                     reset();
                   }}
@@ -208,6 +215,8 @@ export function EventDialog({ item, dayItems, onClose, onChanged, onOpenDay, onA
                   variant="ghost"
                   label="Avbryt"
                   onClick={() => {
+                    // Opened at this step from the entry's own button (Kalender's panel): Avbryt lets go of the dialog.
+                    if (startIn !== 'view') return onClose();
                     setMode('view');
                     reset();
                   }}

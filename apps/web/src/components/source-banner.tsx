@@ -32,7 +32,7 @@ export function useSourceBanner() {
       return {
         connector: s.connector,
         title: `${source} svarar inte${s.lastSuccess ? ` sedan ${clock.format(new Date(s.lastSuccess))}` : ''}`,
-        line: `${under.length ? `Korten under ${joined(under)}` : `Korten från ${source}`} kan vara gamla. Det du skickar köas och läses tillbaka när systemet svarar.`,
+        line: `${under.length ? `Ärendena under ${joined(under)}` : `Ärendena från ${source}`} kan vara gamla. Det du skickar köas och läses tillbaka när systemet svarar.`,
       };
     });
   const said = useRef(new Set<string>());

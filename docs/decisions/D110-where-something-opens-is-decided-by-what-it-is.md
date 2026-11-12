@@ -1,6 +1,6 @@
 # D110 · Where something opens is decided by what it is, never by the page it was clicked on
 
-**Status:** provisional (accepted when the rules have been used by people outside the repository: a manager on Personal and one connector author placing a view and a card from the author's page alone) · **Date:** 2026-11-11 · **Area:** ui
+**Status:** provisional (accepted when the rules have been used by people outside the repository: a manager on Personal and one connector author placing a view and a card from the author's page alone); rule 7 ("no control chooses a surface") and the panel's header replaced by [D111](D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) (2026-11-11: "Öppna som sida" is back and the panel holds the thing with the conversation about it); rules 1, 4, 6 and 8 stand, and rule 2 stands with D111's panel · **Date:** 2026-11-11 · **Area:** ui
 
 **Decision.** Eight rules place everything a person opens in Clew. They refine
 [D83](D83-interface-spaces-have-stable-navigation-roles.md), whose spaces stand; what changes is that the space no

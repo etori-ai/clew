@@ -81,6 +81,7 @@ export {
 } from '@astryxdesign/core/Chat';
 export { Markdown } from '@astryxdesign/core/Markdown';
 export { Typeahead, TypeaheadItem, createStaticSource } from '@astryxdesign/core/Typeahead';
+export { CommandPalette, CommandPaletteInput } from '@astryxdesign/core/CommandPalette';
 export type { SearchSource, SearchableItem } from '@astryxdesign/core/Typeahead';
 export { Overlay } from '@astryxdesign/core/Overlay';
 export { VisuallyHidden } from '@astryxdesign/core/VisuallyHidden';
@@ -138,6 +139,7 @@ export type { AnimatedLayout } from '@astryxdesign/core/hooks';
 export {
   ArrowDownTrayIcon,
   ArrowPathIcon,
+  ArrowsPointingOutIcon,
   AtSymbolIcon,
   BellIcon,
   BookOpenIcon,
@@ -151,6 +153,7 @@ export {
   MegaphoneIcon,
   PauseCircleIcon,
   PhoneIcon,
+  PlusIcon,
   SparklesIcon,
   Squares2X2Icon,
   UserCircleIcon,
@@ -164,7 +167,7 @@ export { WeekAgenda, type AgendaItem } from './week-agenda';
 export { EventCalendar, type CalendarView } from './calendar';
 // The calendar family (D32): the page's grid, the embedded day and list, the date picker, and the one item mapping.
 export { DayStrip, EventList, DatePicker } from './calendar-embeds';
-export { agendaItems, PROPOSAL_MARK } from './agenda-items';
+export { agendaItems, CHOSEN_ID, PROPOSAL_MARK } from './agenda-items';
 export { FigureLine, FigureTile, FigureTileSkeleton } from './figure';
 export {
   figureItems,

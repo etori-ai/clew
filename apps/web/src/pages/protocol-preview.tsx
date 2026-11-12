@@ -38,18 +38,25 @@ import { markText } from './staff-model';
 import {
   MANIFEST_MAX,
   SAMPLE_NAMES,
+  START_WORDS,
+  STEP_WORDS,
   actionsAbout,
   aboutText,
   declarationOf,
+  drawnText,
+  fillerText,
   parseDocument,
   placesLabel,
   placesText,
   postManifest,
   problemsSummary,
+  schemaText,
   sourceOf,
+  stateWords,
   type ManifestPreview,
   type PreviewCapability,
   type PreviewIssue,
+  type PreviewPath,
 } from './protocol-preview-model';
 
 /**
@@ -72,6 +79,7 @@ function Block({
   caption,
   headingRef,
   flush,
+  level = 2,
   children,
 }: {
   title: string;
@@ -79,6 +87,8 @@ function Block({
   headingRef?: Ref<HTMLHeadingElement>;
   /** The body reaches the box's edges: a table. */
   flush?: boolean;
+  /** The heading's level in the outline: a block of its own, or one of several under a heading. */
+  level?: 2 | 3;
   children: ReactNode;
 }) {
   const id = useId();
@@ -89,7 +99,7 @@ function Block({
           <HStack gap={2} vAlign="center" justify="between" wrap="wrap">
             <Heading
               level={4}
-              accessibilityLevel={2}
+              accessibilityLevel={level}
               id={id}
               {...(headingRef ? { ref: headingRef, tabIndex: -1 } : {})}
             >
@@ -359,6 +369,191 @@ function Drawn({ manifest, document }: { manifest: Manifest; document: unknown }
   );
 }
 
+/** One table of a write's path (board Entrypoints): Astryx's Table on a wide screen, a list of the same rows on a phone. */
+function PathTable<Row extends { id: string }>({
+  label,
+  rows,
+  columns,
+  mobile,
+}: {
+  label: string;
+  rows: Row[];
+  /** Each column's header, width and cell; the first column names a row in the phone's list. */
+  columns: Array<{ key: string; header: string; weight: number; minWidth: number; cell: (row: Row) => ReactNode }>;
+  mobile: boolean;
+}) {
+  if (mobile)
+    return (
+      <List aria-label={label} hasDividers edge="flush">
+        {rows.map(r => (
+          <ListItem
+            key={r.id}
+            align="start"
+            label={columns[0]!.cell(r)}
+            description={
+              <VStack gap={1}>
+                {columns.slice(1).map(c => (
+                  <HStack key={c.key} gap={1} wrap="wrap" vAlign="center">
+                    <Text type="supporting" weight="semibold">
+                      {`${c.header}:`}
+                    </Text>
+                    {c.cell(r)}
+                  </HStack>
+                ))}
+              </VStack>
+            }
+          />
+        ))}
+      </List>
+    );
+  return (
+    <Table<Row & Record<string, unknown>>
+      aria-label={label}
+      data={rows as Array<Row & Record<string, unknown>>}
+      idKey="id"
+      density="balanced"
+      columns={columns.map(c => ({
+        key: c.key,
+        header: c.header,
+        width: proportional(c.weight, { minWidth: c.minWidth }),
+        renderCell: (r: Row) => c.cell(r),
+      }))}
+    />
+  );
+}
+const StateBadge = ({ state, kind }: { state: Parameters<typeof stateWords>[0]; kind: PreviewCapability['kind'] }) => {
+  const words = stateWords(state, kind);
+  return <Badge variant={words.variant} label={words.label} />;
+};
+const Declares = ({ children }: { children: string }) => <Text type="code">{children}</Text>;
+/** A sub-heading inside a write's block, one level under its name. */
+const PathHeading = ({ children }: { children: string }) => (
+  <Heading level={5} accessibilityLevel={4}>
+    {children}
+  </Heading>
+);
+
+/**
+ * Both halves of one write (D111 item 11, board Entrypoints), from the dry run's `path`: where a person can start it, the
+ * steps of the one path its declaration draws, and each property of its input as the person will meet it. The board's
+ * row for actions on a view's rows is a proposal, not the protocol, and is not drawn.
+ */
+function WritePath({ c, path, mobile }: { c: PreviewCapability; path: PreviewPath; mobile: boolean }) {
+  return (
+    <Block title={`${c.name} · ${c.kind}`} caption={c.title} level={3}>
+      <VStack gap={6}>
+        <VStack gap={3}>
+          <PathHeading>Where it starts</PathHeading>
+          <PathTable
+            label={`Where ${c.name} starts`}
+            mobile={mobile}
+            rows={path.starts.map(s => ({ id: s.place, ...s }))}
+            columns={[
+              {
+                key: 'where',
+                header: 'The person is…',
+                weight: 3,
+                minWidth: 160,
+                cell: r => <Text>{START_WORDS[r.place].where}</Text>,
+              },
+              {
+                key: 'declares',
+                header: 'You declare',
+                weight: 3,
+                minWidth: 160,
+                cell: r => <Declares>{r.declares}</Declares>,
+              },
+              {
+                key: 'draws',
+                header: 'Clew draws',
+                weight: 4,
+                minWidth: 180,
+                cell: r => <Text>{START_WORDS[r.place].draws}</Text>,
+              },
+              {
+                key: 'state',
+                header: 'This capability',
+                weight: 2,
+                minWidth: 140,
+                cell: r => <StateBadge state={r.state} kind={c.kind} />,
+              },
+            ]}
+          />
+        </VStack>
+        <VStack gap={3}>
+          <PathHeading>What the person passes through</PathHeading>
+          <Text as="p" type="supporting">
+            The same path from every place it starts. A step is drawn only when the declaration calls for it, so a write
+            that asks nothing and can be undone stays one press.
+          </Text>
+          <PathTable
+            label={`What the person passes through for ${c.name}`}
+            mobile={mobile}
+            rows={path.steps.map(s => ({ id: s.step, ...s }))}
+            columns={[
+              {
+                key: 'step',
+                header: 'Step',
+                weight: 2,
+                minWidth: 120,
+                cell: r => <Text weight="semibold">{STEP_WORDS[r.step].name}</Text>,
+              },
+              {
+                key: 'what',
+                header: 'What it is',
+                weight: 4,
+                minWidth: 200,
+                cell: r => <Text>{STEP_WORDS[r.step].what}</Text>,
+              },
+              {
+                key: 'declares',
+                header: 'You declare',
+                weight: 3,
+                minWidth: 160,
+                cell: r => <Declares>{r.declares}</Declares>,
+              },
+              {
+                key: 'drawn',
+                header: 'Drawn as',
+                weight: 3,
+                minWidth: 160,
+                cell: r => <Text>{STEP_WORDS[r.step].drawn}</Text>,
+              },
+              {
+                key: 'state',
+                header: 'This capability',
+                weight: 2,
+                minWidth: 140,
+                cell: r => <StateBadge state={r.state} kind={c.kind} />,
+              },
+            ]}
+          />
+        </VStack>
+        <VStack gap={3}>
+          <PathHeading>This capability's input, as the person will meet it</PathHeading>
+          <PathTable
+            label={`The input of ${c.name}`}
+            mobile={mobile}
+            rows={path.input.map(i => ({ id: i.property, ...i }))}
+            columns={[
+              {
+                key: 'property',
+                header: 'Property',
+                weight: 2,
+                minWidth: 120,
+                cell: r => <Text type="code">{r.property}</Text>,
+              },
+              { key: 'schema', header: 'Schema', weight: 3, minWidth: 150, cell: r => <Text>{schemaText(r)}</Text> },
+              { key: 'by', header: 'Filled by', weight: 3, minWidth: 160, cell: r => <Text>{fillerText(r)}</Text> },
+              { key: 'drawn', header: 'Drawn as', weight: 4, minWidth: 200, cell: r => <Text>{drawnText(r)}</Text> },
+            ]}
+          />
+        </VStack>
+      </VStack>
+    </Block>
+  );
+}
+
 /** What happened, for the status line: said once per run, and the problems' heading takes focus where there are any. */
 function statusOf(outcome: Outcome | null, pending: boolean): string {
   if (pending) return 'Running the dry run …';
@@ -443,6 +638,7 @@ function Page() {
   };
   const preview = outcome?.kind === 'preview' && outcome.preview.ok ? outcome : null;
   const about = preview ? preview.preview.manifest!.capabilities.filter(c => c.about) : [];
+  const writes = preview ? preview.preview.manifest!.capabilities.filter(c => c.kind !== 'read' && c.path) : [];
   return (
     <Layout
       height="auto"
@@ -528,6 +724,22 @@ function Page() {
                   <Drawn manifest={preview.preview.manifest!} document={preview.document} />
                 )}
               </Grid>
+            )}
+            {writes.length > 0 && (
+              <VStack gap={6}>
+                <VStack gap={1}>
+                  <Heading level={4} accessibilityLevel={2}>
+                    Every write, both halves
+                  </Heading>
+                  <Text as="p" type="supporting">
+                    For each propose and execute: where a person can start it, and what they pass through before it
+                    reaches your system. You answer both in the manifest; Clew draws the rest.
+                  </Text>
+                </VStack>
+                {writes.map(c => (
+                  <WritePath key={c.name} c={c} path={c.path!} mobile={mobile} />
+                ))}
+              </VStack>
             )}
           </VStack>
         </LayoutContent>

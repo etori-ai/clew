@@ -16,6 +16,7 @@ import { assistantUsecases, TurnStopped } from '../../apps/server/src/assistant'
 import { memoryModelHealth, memoryModelStore, memoryModelWire } from '../../apps/server/src/assistant/adapters/memory';
 import { modelUsecases } from '../../apps/server/src/assistant/usecases/models';
 import type { ModelGenerate } from '../../apps/server/src/assistant/model';
+import { DRAFT_TOOL, draftableActions, draftTool } from '../../apps/server/src/assistant/drafts';
 import { parseManifest, remoteConnector } from '../../packages/connectors/src/remote';
 import { assertionFor, testJwks, testAuthority } from '../connector-authority';
 import {
@@ -902,4 +903,113 @@ test('a transferred person cannot use old source cards through chips, object sug
   expect(prompt).not.toBe('');
   expect(prompt).not.toContain(card.summary);
   expect(prompt).not.toContain(card.items[0]!.ref);
+});
+
+/**
+ * The assistant drafts, the person decides (D111 item 8). With one work item as the subject the model may fill in one
+ * of its actions that asks: the values are checked as the decision checks them, the draft is kept in the conversation
+ * and its audit row names the action and the asks it answered, never the values or the text. Nothing is executed and
+ * the work item itself is left as it was. An execute is never a tool; the draft tool lists only what the person may do.
+ */
+describe('the assistant drafts, the person decides (D111 item 8)', () => {
+  const LATER = '2026-11-12T13:15:00.000Z';
+  type Callable = { execute: (input: unknown, options: unknown) => Promise<unknown> };
+  async function rehab(w: ReturnType<typeof world>) {
+    await w.threads.ensureThreads(hillevi);
+    return (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'hr:rehab:hr:emp:1001')!;
+  }
+  test('a draft of the item’s action is checked, kept in the conversation with its audit row, and nothing is sent', async () => {
+    const offered: string[][] = [];
+    const answers: unknown[] = [];
+    const generate: ModelGenerate = async ({ tools, system }) => {
+      offered.push(Object.keys(tools));
+      if (!tools['clew__draftAction']) return { text: 'Inget att fylla i.', toolCalls: [] };
+      expect(system).toContain('clew__draftAction');
+      const draft = tools['clew__draftAction'] as Callable;
+      // A time that is not one is refused in the decision's own words, and the model may try again.
+      answers.push(await draft.execute({ action: 'book', values: { when: 'torsdag' } }, {}));
+      answers.push(await draft.execute({ action: 'unbook', values: {} }, {}));
+      const input = { action: 'book', values: { when: LATER, place: ' Rum 12 ', message: 'Hej! Ses vi?' } };
+      const output = await draft.execute(input, {});
+      answers.push(output);
+      return {
+        text: 'Ni är båda lediga torsdag 14.15. Jag har fyllt i bokningen; inget är skickat.',
+        toolCalls: [{ capability: 'clew.draftAction', input, output }],
+      };
+    };
+    const w = world({ generate });
+    const card = await rehab(w);
+    const turn = await w.assistant.converse(hillevi, {
+      text: 'Boka samtalet på torsdag eftermiddag',
+      chips: [{ ref: 'thread:' + card.id, kind: 'thread', label: card.title }],
+    });
+    expect(answers).toEqual([
+      { error: 'När: välj en tid.' },
+      { error: 'Ärendet har ingen sådan åtgärd.' },
+      { drafted: true, note: 'Utkastet visas för personen. Inget är skickat.' },
+    ]);
+    // The execute itself is never a tool: only reads and Clew's draft are offered.
+    expect(offered[0]).toContain('clew__draftAction');
+    expect(offered[0]).not.toContain('hr__bookTalk');
+    const values = { when: LATER, place: 'Rum 12', message: 'Hej! Ses vi?' };
+    expect(turn).toMatchObject({
+      shape: 'forslag',
+      assistant: 'model',
+      draft: { kind: 'action', threadId: card.id, actionId: 'book', values, thread: { id: card.id } },
+    });
+    // The draft is kept in the conversation's answer, without the thread; its reads stay the answer's tool calls.
+    expect(turn.thread.messages.at(-1)!.meta?.draft).toEqual({
+      kind: 'action',
+      threadId: card.id,
+      actionId: 'book',
+      values,
+    });
+    expect(turn.thread.messages.at(-1)!.meta?.toolCalls).toBeUndefined();
+    // One audit row for the turn, naming the action and the asks it answered; never the values or the text.
+    const row = w.store.audit.at(-1)!;
+    expect(row).toMatchObject({
+      action: 'conversation.asked',
+      subject: 'thread:' + turn.conversationId,
+      details: { tools: [], drafted: { thread: card.id, action: 'book', asks: ['when', 'place', 'message'] } },
+    });
+    expect(JSON.stringify(row)).not.toContain('Rum 12');
+    expect(JSON.stringify(row)).not.toContain('Hej! Ses vi?');
+    expect(JSON.stringify(row)).not.toContain('fyllt i bokningen');
+    // Nothing was sent: the item is as it was, with no decision on its way and no row of its own.
+    const after = (await w.threads.threadFor(hillevi, card.id))!;
+    expect(after.state).toBe('open');
+    expect(after.receipt ?? null).toBeNull();
+    expect(after.execution ?? null).toBeNull();
+    expect(audit(w.store, card.id)).toEqual(['thread.pushed']);
+    // Without the item as the subject there is nothing to draft, and no draft tool.
+    await w.assistant.converse(hillevi, { text: 'Vad händer i dag?' });
+    expect(offered.at(-1)).not.toContain('clew__draftAction');
+  });
+  test('only what the person may do is offered, and only on an open item', async () => {
+    const w = world();
+    const card = await rehab(w);
+    expect(draftableActions(w.registry, hillevi, card)).toEqual([
+      {
+        id: 'book',
+        label: 'Boka samtalet',
+        capability: 'hr.bookTalk',
+        asks: card.actions.find(a => a.id === 'book')!.path!.asks,
+        input: expect.anything(),
+      },
+    ]);
+    // Out of the person's scope the action is not offered at all; a handled item offers nothing.
+    expect(draftableActions({ allowed: () => undefined }, hillevi, card)).toEqual([]);
+    expect(draftableActions(w.registry, hillevi, { ...card, state: 'handled' })).toEqual([]);
+    // The tool checks as the decision does: a time that has passed is refused and nothing is heard.
+    const heard: unknown[] = [];
+    const tool = draftTool(draftableActions(w.registry, hillevi, card), T0, d => heard.push(d));
+    expect(tool.name).toBe(DRAFT_TOOL);
+    expect(await tool.execute({ action: 'book', values: { when: '2026-11-01T09:00:00.000Z' } })).toEqual({
+      error: 'När: tiden har redan passerat.',
+    });
+    expect(await tool.execute({ action: 'book', values: { when: 42 } })).toEqual({
+      error: 'Varje värde ska vara text.',
+    });
+    expect(heard).toEqual([]);
+  });
 });

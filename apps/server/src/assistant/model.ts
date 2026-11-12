@@ -24,6 +24,16 @@ const clip = (value: unknown) => {
 
 export type ToolSchemaInfo = ToolInfo & { input: unknown };
 export type ToolCallRecord = { capability: string; input: Record<string, unknown>; output: unknown };
+/**
+ * A tool of Clew's own beside the read capabilities, named like one (`clew.<verb>`): the draft of a work item's action
+ * (D111 item 8, `drafts.ts`). It runs in the process, writes nothing and never reaches a connector's execute.
+ */
+export interface ClewTool {
+  name: string;
+  description: string;
+  input: unknown;
+  execute: (input: Record<string, unknown>) => unknown;
+}
 /** What the wire reports about one turn (D91): tokens, steps and how the model stopped. Never content. */
 export type ModelUsage = { inputTokens?: number; outputTokens?: number; finishReason?: string; steps?: number };
 /**
@@ -31,9 +41,13 @@ export type ModelUsage = { inputTokens?: number; outputTokens?: number; finishRe
  * view says the model reads a summary (D38) is still run, so the person's view has its rows, but the model is handed only
  * that the result is shown and how much of it there is.
  */
-export function buildTools(tools: ToolSchemaInfo[], run: (name: string, input: unknown) => Promise<unknown>): ToolSet {
-  return Object.fromEntries(
-    tools.map(t => [
+export function buildTools(
+  tools: ToolSchemaInfo[],
+  run: (name: string, input: unknown) => Promise<unknown>,
+  own: ClewTool[] = [],
+): ToolSet {
+  return Object.fromEntries([
+    ...tools.map(t => [
       toToolName(t.name),
       tool({
         description: `${t.title}. ${t.description}`,
@@ -48,7 +62,21 @@ export function buildTools(tools: ToolSchemaInfo[], run: (name: string, input: u
         },
       }),
     ]),
-  );
+    ...own.map(t => [
+      toToolName(t.name),
+      tool({
+        description: t.description,
+        inputSchema: jsonSchema<Record<string, unknown>>(t.input as JSONSchema7),
+        execute: async input => {
+          try {
+            return await t.execute(input);
+          } catch (e) {
+            return { error: e instanceof Error ? e.message : 'fel' };
+          }
+        },
+      }),
+    ]),
+  ]);
 }
 export interface PromptContext {
   name: string;
@@ -57,6 +85,8 @@ export interface PromptContext {
   now: Date;
   week: number;
   objects: string[];
+  /** The work item's actions may be filled in as a draft (D111 item 8): the prompt says how and that nothing is sent. */
+  drafts?: boolean;
 }
 /** The Swedish system prompt: who is asking, what day it is, the rules, and the chipped objects as "Du tittar på". */
 export function systemPrompt(ctx: PromptContext): string {
@@ -74,8 +104,8 @@ export function systemPrompt(ctx: PromptContext): string {
     'Regler:',
     '- Svara på svenska med en eller två meningar. Nämn källan och tidpunkten, till exempel "Personalsystemet 14:52".',
     '- Du kan bara läsa. Använd verktygen för att hämta aktuella uppgifter innan du svarar; gissa aldrig siffror.',
-    '- Du utför aldrig något och påstår aldrig att något är gjort, utöver det ett korts kvitto visar. När personen vill göra något: säg vilken knapp på kortet som gör det, eller att det inte går här.',
-    '- Nämn bara knappar som står under "Knappar på kortet nu". Är kortet redan hanterat, säg det först och vad som går nu, till exempel att Ångra allt måste tryckas innan kortets egna knappar kommer tillbaka.',
+    '- Du utför aldrig något och påstår aldrig att något är gjort, utöver det ett ärendes kvitto visar. När personen vill göra något: säg vilken knapp i ärendet som gör det, eller att det inte går här.',
+    '- Nämn bara knappar som står under "Knappar i ärendet nu". Är ärendet redan hanterat, säg det först och vad som går nu, till exempel att Ångra måste tryckas innan ärendets egna knappar kommer tillbaka.',
     '- Nämn inte enskilda medarbetares namn om personen inte själv använde dem.',
     '- När ett verktyg svarar att resultatet visas i en vy: säg kort att uppgifterna finns i vyn och hur många rader den har. Återge eller gissa aldrig innehållet.',
     '- Svara i ren text utan rubriker, listor eller markdown.',
@@ -86,6 +116,12 @@ export function systemPrompt(ctx: PromptContext): string {
     '- Nämn källor som inte svarade, om sökverktyget rapporterar några.',
     '- Avsluta med en sista rad "Följdfrågor: fråga ett | fråga två | fråga tre": högst tre korta frågor personen kan ställa härnäst. Bara när sökverktyget användes.',
   ];
+  if (ctx.drafts)
+    lines.push(
+      'När personen vill att en av ärendets åtgärder görs:',
+      '- Fyll i den med verktyget clew__draftAction, efter att ha läst det du behöver (till exempel lediga tider i kalendern).',
+      '- Säg sedan i en mening vad du fyllt i och att inget är skickat: personen granskar utkastet och skickar själv.',
+    );
   if (ctx.objects.length)
     lines.push('', 'Du tittar på (det personen lagt till i samtalet):', ...ctx.objects.map(o => `- ${o}`));
   return lines.join('\n');
@@ -183,6 +219,8 @@ export async function modelAnswer(args: {
   timeoutMs?: number;
   onText?: (text: string) => void;
   signal?: AbortSignal;
+  /** Clew's own tools for this turn (the draft of an action, D111 item 8); their calls are in `toolCalls` by name. */
+  own?: ClewTool[];
 }): Promise<{ body: string; view?: ViewRef; toolCalls: ToolCallRecord[]; usage?: ModelUsage }> {
   const messages: ModelMessage[] = [
     ...args.history.map(m => ({ role: m.role, content: m.body }) as ModelMessage),
@@ -193,7 +231,7 @@ export async function modelAnswer(args: {
     result = await args.generate({
       system: args.system,
       messages,
-      tools: buildTools(args.tools, args.run),
+      tools: buildTools(args.tools, args.run, args.own),
       timeoutMs: args.timeoutMs ?? 8_000,
       ...(args.onText ? { onText: args.onText } : {}),
       ...(args.signal ? { signal: args.signal } : {}),

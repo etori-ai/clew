@@ -205,8 +205,10 @@ test.describe('Personal', () => {
       await expect(name).toHaveAttribute('href', `/people/johan?from=${encodeURIComponent(LENS)}`);
       await name.click();
       await expect(page.getByRole('heading', { level: 1, name: 'Johan Byström' })).toBeVisible();
-      await expect(page.getByRole('complementary')).toHaveCount(0);
-      await page.getByRole('navigation', { name: 'Du är här' }).getByRole('link', { name: 'Personal' }).click();
+      // A page, not something beside the list: nothing is open in the panel, and the rail is the page's own details.
+      await expect(page.getByRole('complementary', { name: 'Ärende' })).toHaveCount(0);
+      await expect(page.getByRole('complementary', { name: 'Detaljer' })).toBeVisible();
+      await page.getByRole('main').getByRole('link', { name: 'Personal', exact: true }).click();
       await expect(page).toHaveURL(LENS);
       await expect(showMenu(page)).toHaveText('Visa: Utvecklingssamtal');
     });
@@ -225,23 +227,26 @@ test.describe('Personal', () => {
       await page.keyboard.press('Enter');
       await expect(page).toHaveURL('/people/johan?section=needs-you&from=%2Fstaff');
       await expect(page.getByRole('heading', { level: 1, name: 'Johan Byström' })).toBeVisible();
-      await expect(page.getByRole('heading', { level: 2, name: 'Behöver dig' })).toBeVisible();
-      // Nothing is open beside the page: the panel holds one opened thing, never a list of cards.
-      await expect(page.getByRole('complementary')).toHaveCount(0);
+      // The page lands on Behöver dig: its heading takes the focus (D111 item 5).
+      await expect(page.getByRole('heading', { level: 2, name: 'Behöver dig' })).toBeFocused();
+      // Nothing is open beside the page: the panel holds one opened thing, never a list of work items.
+      await expect(page.getByRole('complementary', { name: 'Ärende' })).toHaveCount(0);
       await expect(page.getByRole('dialog')).toHaveCount(0);
-      const title = page.getByRole('main').getByRole('link', { name: 'En åtgärdspunkt skulle vara klar 3 nov' });
+      const title = page
+        .getByRole('main')
+        .getByRole('link', { name: 'Planera utvecklingssamtal vecka 45', exact: true });
       await expect(title).toHaveAttribute('href', '/people/johan?section=needs-you&from=%2Fstaff&card=samtal-svar');
       await expectNoAxeViolations(page);
       // A card under Behöver dig opens beside the person's page; Esc gives the page back with the focus on its title.
       await title.focus();
       await page.keyboard.press('Enter');
-      const card = page.getByRole('complementary', { name: 'Kort' });
-      await expect(card.getByRole('article', { name: 'Kort: Planera utvecklingssamtal vecka 45' })).toBeVisible();
+      const card = page.getByRole('complementary', { name: 'Ärende' });
+      await expect(card.getByRole('article', { name: 'Ärende: Planera utvecklingssamtal vecka 45' })).toBeVisible();
       await page.keyboard.press('Escape');
       await expect(page).toHaveURL('/people/johan?section=needs-you&from=%2Fstaff');
       await expect(title).toBeFocused();
       // The trail leads back to Personal as it was.
-      await page.getByRole('navigation', { name: 'Du är här' }).getByRole('link', { name: 'Personal' }).click();
+      await page.getByRole('main').getByRole('link', { name: 'Personal', exact: true }).click();
       await expect(page).toHaveURL('/staff');
       await expect(page.getByRole('table')).toBeVisible();
     });
@@ -255,9 +260,10 @@ test.describe('Personal', () => {
       await open(page, `${LENS}&cards=johan&cards-kind=proposal`);
       await expect(page).toHaveURL(`/people/johan?section=needs-you&from=${encodeURIComponent(LENS)}`);
       await expect(page.getByRole('heading', { level: 2, name: 'Behöver dig' })).toBeVisible();
-      await expect(
-        page.getByRole('navigation', { name: 'Du är här' }).getByRole('link', { name: 'Personal' }),
-      ).toHaveAttribute('href', LENS);
+      await expect(page.getByRole('main').getByRole('link', { name: 'Personal', exact: true })).toHaveAttribute(
+        'href',
+        LENS,
+      );
       // The old address was replaced, not stepped through: Back is the page before it.
       await page.goBack();
       await expect(page).toHaveURL('/');
@@ -266,17 +272,19 @@ test.describe('Personal', () => {
       await expect(page).toHaveURL('/people/johan?section=needs-you&from=%2Fstaff&card=samtal-svar');
       await expect(
         page
-          .getByRole('complementary', { name: 'Kort' })
-          .getByRole('article', { name: 'Kort: Planera utvecklingssamtal vecka 45' }),
+          .getByRole('complementary', { name: 'Ärende' })
+          .getByRole('article', { name: 'Ärende: Planera utvecklingssamtal vecka 45' }),
       ).toBeVisible();
     });
     test('a decision on a card beside the list reads the list again', async ({ page, api }) => {
       severalCards(api);
       await page.setViewportSize(WIDE);
       await open(page, '/staff?card=ledighet');
-      const card = page.getByRole('complementary', { name: 'Kort' });
+      const card = page.getByRole('complementary', { name: 'Ärende' });
       const before = api.entityReads.length;
       await card.getByRole('button', { name: 'Godkänn', exact: true }).click();
+      // Godkänn asks for an optional comment (D111): the dialog opens at what happens, and its own Godkänn decides.
+      await page.getByRole('dialog', { name: 'Godkänn' }).getByRole('button', { name: 'Godkänn', exact: true }).click();
       await expect.poll(() => api.entityReads.slice(before)).toEqual(expect.arrayContaining(['/entities/person']));
       await expect(page.getByRole('table')).toBeVisible();
     });
@@ -293,11 +301,11 @@ test.describe('Personal', () => {
       await expect(page).toHaveURL('/staff?card=omtanke');
       await expect(page).toHaveTitle('Personal · Startsidan');
       await expect(page.getByRole('heading', { level: 1, name: 'Personal' })).toBeVisible();
-      const panel = page.getByRole('complementary', { name: 'Kort' });
+      const panel = page.getByRole('complementary', { name: 'Ärende' });
       await expect(page.getByRole('dialog')).toHaveCount(0);
-      await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
+      await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Ärende' })).toBeFocused();
       // The card says what it asks and why before anything is decided: its title, its lead, its steps.
-      await expect(panel.getByRole('article', { name: 'Kort: Omtankesamtal med Anna Lindqvist' })).toBeVisible();
+      await expect(panel.getByRole('article', { name: 'Ärende: Omtankesamtal med Anna Lindqvist' })).toBeVisible();
       await expect(panel.locator('[aria-level="3"]')).toHaveText(['Omtankesamtal med Anna Lindqvist']);
       await expect(panel.getByText('Tre korta sjukperioder sedan juni.', { exact: false })).toBeVisible();
       await expect(panel.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
@@ -311,10 +319,10 @@ test.describe('Personal', () => {
       await expectNoAxeViolations(page);
       await panel.getByRole('button', { name: 'Stäng panelen' }).click();
       await expect(page).toHaveURL(/\/staff$/);
-      await expect(page.getByRole('complementary', { name: 'Kort' })).toHaveCount(0);
+      await expect(page.getByRole('complementary', { name: 'Ärende' })).toHaveCount(0);
       await expect(link).toBeFocused();
       await page.keyboard.press('Enter');
-      await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
+      await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Ärende' })).toBeFocused();
       await page.keyboard.press('Escape');
       await expect(page).toHaveURL(/\/staff$/);
       await expect(link).toBeFocused();
@@ -325,7 +333,7 @@ test.describe('Personal', () => {
     }) => {
       await page.setViewportSize(WIDE);
       await open(page, '/staff?card=omtanke');
-      const card = page.getByRole('complementary', { name: 'Kort' });
+      const card = page.getByRole('complementary', { name: 'Ärende' });
       const button = card.locator('[data-read="pattern"]');
       await button.click();
       await expect(page).toHaveURL('/staff?card=omtanke&open-card=omtanke&open-action=pattern');
@@ -333,7 +341,7 @@ test.describe('Personal', () => {
       await expect(section.getByText('Anna Lindqvist 07:00–16:00')).toBeVisible();
       await expect(button).toBeFocused();
       // The card, its decision and the list stay where they were: nothing took the card's place.
-      await expect(card.getByRole('article', { name: 'Kort: Omtankesamtal med Anna Lindqvist' })).toBeVisible();
+      await expect(card.getByRole('article', { name: 'Ärende: Omtankesamtal med Anna Lindqvist' })).toBeVisible();
       await expect(card.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
       await expect(page.getByRole('complementary')).toHaveCount(1);
       await expect(page.getByRole('table')).toBeVisible();
@@ -354,7 +362,7 @@ test.describe('Personal', () => {
       api.cardReads.pattern = team.body;
       await page.setViewportSize(WIDE);
       await open(page, '/staff?card=omtanke&open-card=omtanke&open-action=pattern');
-      const card = page.getByRole('complementary', { name: 'Kort' });
+      const card = page.getByRole('complementary', { name: 'Ärende' });
       const name = card.locator('#read-card-omtanke').getByRole('list').getByRole('link').first();
       // Personal's own address with the row's view in the panel, over the card, which keeps its read under it.
       await expect(name).toHaveAttribute(
@@ -384,7 +392,7 @@ test.describe('Personal', () => {
       api.cardReads.pattern = directory.body;
       await page.setViewportSize(WIDE);
       await open(page, '/staff?card=omtanke');
-      await page.getByRole('complementary', { name: 'Kort' }).locator('[data-read="pattern"]').click();
+      await page.getByRole('complementary', { name: 'Ärende' }).locator('[data-read="pattern"]').click();
       await expect(page).toHaveURL('/staff?card=omtanke&open-card=omtanke&open-action=pattern');
       const read = page.getByRole('complementary', { name: 'Se mönstret' });
       await expect(read.getByRole('heading', { level: 2, name: 'Se mönstret' })).toBeFocused();
@@ -404,8 +412,8 @@ test.describe('Personal', () => {
       await expect(name).toBeFocused();
       await read.getByRole('button', { name: 'Stäng panelen' }).click();
       await expect(page).toHaveURL('/staff?card=omtanke');
-      const card = page.getByRole('complementary', { name: 'Kort' });
-      await expect(card.getByRole('article', { name: 'Kort: Omtankesamtal med Anna Lindqvist' })).toBeVisible();
+      const card = page.getByRole('complementary', { name: 'Ärende' });
+      await expect(card.getByRole('article', { name: 'Ärende: Omtankesamtal med Anna Lindqvist' })).toBeVisible();
       await expect(card.locator('#read-card-omtanke')).toHaveCount(0);
     });
     test('the panel stands beside Personal from 1336 px on the window’s edge, and the list gives way to it', async ({
@@ -425,7 +433,7 @@ test.describe('Personal', () => {
       for (const width of [1780, 1840]) {
         await page.setViewportSize({ width, height: 1000 });
         await open(page, '/staff?card=omtanke');
-        const panel = page.getByRole('complementary', { name: 'Kort' });
+        const panel = page.getByRole('complementary', { name: 'Ärende' });
         await expect(panel).toBeVisible();
         const box = (await panel.boundingBox())!;
         expect(Math.round(box.x + box.width)).toBe(width);
@@ -444,8 +452,8 @@ test.describe('Personal', () => {
       ] as const) {
         await page.setViewportSize({ width, height: 900 });
         await open(page, `${lens}${lens.includes('?') ? '&' : '?'}card=omtanke`);
-        const panel = page.getByRole('complementary', { name: 'Kort' });
-        await expect(panel.getByRole('article', { name: 'Kort: Omtankesamtal med Anna Lindqvist' })).toBeVisible();
+        const panel = page.getByRole('complementary', { name: 'Ärende' });
+        await expect(panel.getByRole('article', { name: 'Ärende: Omtankesamtal med Anna Lindqvist' })).toBeVisible();
         const box = (await panel.boundingBox())!;
         expect(Math.round(box.x + box.width)).toBe(width);
         await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -458,13 +466,13 @@ test.describe('Personal', () => {
       }
       // Closed, the list is the table again.
       await page.keyboard.press('Escape');
-      await expect(page.getByRole('complementary', { name: 'Kort' })).toHaveCount(0);
+      await expect(page.getByRole('complementary', { name: 'Ärende' })).toHaveCount(0);
       await expect(page.getByRole('table')).toBeVisible();
       // A pixel narrower than 1336 px the panel is the drawer over the list, as on every page.
       await page.setViewportSize({ width: 1335, height: 900 });
       await open(page, '/staff?card=omtanke');
-      await expect(page.getByRole('dialog', { name: 'Kort' })).toBeVisible();
-      await expect(page.getByRole('complementary', { name: 'Kort' })).toHaveCount(0);
+      await expect(page.getByRole('dialog', { name: 'Ärende' })).toBeVisible();
+      await expect(page.getByRole('complementary', { name: 'Ärende' })).toHaveCount(0);
       await expect(page.getByRole('table')).toBeVisible();
       await page.setViewportSize({ width: 1720, height: 1000 });
       await open(page, '/staff');
@@ -482,8 +490,8 @@ test.describe('Personal', () => {
       await expect(page.getByRole('table')).toBeVisible();
       await row(page, 'Erik Sandström').getByRole('link', { name: '1 att agera på' }).focus();
       await page.keyboard.press('Enter');
-      const panel = page.getByRole('complementary', { name: 'Kort' });
-      await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
+      const panel = page.getByRole('complementary', { name: 'Ärende' });
+      await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Ärende' })).toBeFocused();
       await expect(page.getByRole('table')).toHaveCount(0);
       const erik = page
         .getByRole('list', { name: 'Bergsåkers skola' })
@@ -501,7 +509,7 @@ test.describe('Personal', () => {
     }) => {
       await page.setViewportSize(WIDE);
       await open(page, `${LENS}&card=omtanke`);
-      await expect(page.getByRole('complementary', { name: 'Kort' })).toBeVisible();
+      await expect(page.getByRole('complementary', { name: 'Ärende' })).toBeVisible();
       await expect(page.getByRole('main').getByRole('link', { name: 'Johan Byström' })).toHaveAttribute(
         'href',
         `/people/johan?from=${encodeURIComponent(LENS)}`,
@@ -513,8 +521,8 @@ test.describe('Personal', () => {
     }) => {
       await page.setViewportSize(WIDE);
       await open(page, '/staff?card=finns-inte');
-      const panel = page.getByRole('complementary', { name: 'Kort' });
-      await expect(panel.getByText('Kortet finns inte längre bland dina kort.')).toBeVisible();
+      const panel = page.getByRole('complementary', { name: 'Ärende' });
+      await expect(panel.getByText('Ärendet finns inte längre bland dina ärenden.')).toBeVisible();
       await panel.getByRole('button', { name: 'Stäng panelen' }).click();
       await expect(page).toHaveURL(/\/staff$/);
       await expect(page.getByRole('table')).toBeVisible();
@@ -611,9 +619,9 @@ test.describe('Personal', () => {
       expect(api.asked).toEqual([]);
       await expect(page.getByRole('heading', { level: 1, name: 'Personal' })).toBeVisible();
       await expect(page.getByRole('dialog')).toHaveCount(0);
-      const card = page.getByRole('complementary', { name: 'Kort' });
+      const card = page.getByRole('complementary', { name: 'Ärende' });
       await expect(card.getByText('Boka samtal: Karin Lindqvist').first()).toBeVisible();
-      await expect(card.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
+      await expect(card.locator('[aria-level="2"]').filter({ hasText: 'Ärende' })).toBeFocused();
       await expectNoAxeViolations(page);
       // Closing leaves the list as it was, under its lens, and gives the focus back to the row's menu button, which
       // stood whole beside the card all along.
@@ -633,7 +641,7 @@ test.describe('Personal', () => {
       await page.getByRole('menuitem', { name: 'Boka samtal' }).click();
       await expect(page).toHaveURL('/staff?card=entity-clew-bookTalk-karin');
       expect(api.entityStarts).toEqual([{ key: 'karin', capability: 'clew.bookTalk' }]);
-      const drawer = page.getByRole('dialog', { name: 'Kort' });
+      const drawer = page.getByRole('dialog', { name: 'Ärende' });
       await expect(drawer.getByText('Boka samtal: Karin Lindqvist').first()).toBeVisible();
       await expect(page.getByRole('complementary')).toHaveCount(0);
       await page.keyboard.press('Escape');
@@ -693,17 +701,18 @@ test.describe('Personal', () => {
       await open(page, `${LENS}&person=johan`);
       await expect(page).toHaveURL(`/people/johan?from=${encodeURIComponent(LENS)}`);
       await expect(page.getByRole('heading', { level: 1, name: 'Johan Byström' })).toBeVisible();
-      await expect(
-        page.getByRole('navigation', { name: 'Du är här' }).getByRole('link', { name: 'Personal' }),
-      ).toHaveAttribute('href', LENS);
+      await expect(page.getByRole('main').getByRole('link', { name: 'Personal', exact: true })).toHaveAttribute(
+        'href',
+        LENS,
+      );
       // The section drilled into on a phone is the page's section, and a card open over the person stays open.
       await open(page, '/staff?person=johan&person-section=needs-you&card=samtal-svar');
       await expect(page).toHaveURL('/people/johan?section=needs-you&from=%2Fstaff&card=samtal-svar');
       await expect(page.getByRole('heading', { level: 2, name: 'Behöver dig' })).toBeVisible();
       await expect(
         page
-          .getByRole('dialog', { name: 'Kort' })
-          .getByRole('article', { name: 'Kort: Planera utvecklingssamtal vecka 45' }),
+          .getByRole('dialog', { name: 'Ärende' })
+          .getByRole('article', { name: 'Ärende: Planera utvecklingssamtal vecka 45' }),
       ).toBeVisible();
     });
     test('a card and its read beside the list log no React error (on the development build, which reports them)', async ({
@@ -721,7 +730,7 @@ test.describe('Personal', () => {
       await page.setViewportSize(MIDDLE);
       const dev = 'http://localhost:4175';
       await page.goto(`${dev}${LENS}&card=omtanke`);
-      const card = page.getByRole('complementary', { name: 'Kort' });
+      const card = page.getByRole('complementary', { name: 'Ärende' });
       await expect(card.locator('[data-read="pattern"]')).toBeVisible({ timeout: 60_000 });
       errors.length = 0;
       await page.goto(`${dev}${LENS}&card=omtanke`);
@@ -731,7 +740,7 @@ test.describe('Personal', () => {
       await card.locator('[data-read="pattern"]').click();
       await expect(card.locator('#read-card-omtanke')).toHaveCount(0);
       await page.keyboard.press('Escape');
-      await expect(page.getByRole('complementary', { name: 'Kort' })).toHaveCount(0);
+      await expect(page.getByRole('complementary', { name: 'Ärende' })).toHaveCount(0);
       await expect(page.getByRole('table')).toBeVisible();
       expect(errors).toEqual([]);
     });
@@ -780,7 +789,7 @@ test.describe('Personal', () => {
       const erik = school.getByRole('listitem').filter({ hasText: 'Erik Sandström' });
       await erik.getByRole('link', { name: '1 att agera på' }).click();
       await expect(page).toHaveURL('/staff?card=omtanke');
-      const drawer = page.getByRole('dialog', { name: 'Kort' });
+      const drawer = page.getByRole('dialog', { name: 'Ärende' });
       await expect(drawer.getByRole('heading', { name: 'Omtankesamtal med Anna Lindqvist' })).toBeVisible();
       await expect(drawer.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
       await expectNoAxeViolations(page);
@@ -802,10 +811,13 @@ test.describe('Personal', () => {
       await johan.getByRole('link', { name: '2 att agera på' }).click();
       await expect(page).toHaveURL('/people/johan?section=needs-you&from=%2Fstaff');
       await expect(page.getByRole('dialog')).toHaveCount(0);
-      const title = page.getByRole('main').getByRole('link', { name: 'En åtgärdspunkt skulle vara klar 3 nov' });
+      await expect(page.getByRole('heading', { level: 2, name: 'Behöver dig' })).toBeFocused();
+      const title = page
+        .getByRole('main')
+        .getByRole('link', { name: 'Planera utvecklingssamtal vecka 45', exact: true });
       await title.click();
-      const card = page.getByRole('dialog', { name: 'Kort' });
-      await expect(card.getByRole('article', { name: 'Kort: Planera utvecklingssamtal vecka 45' })).toBeVisible();
+      const card = page.getByRole('dialog', { name: 'Ärende' });
+      await expect(card.getByRole('article', { name: 'Ärende: Planera utvecklingssamtal vecka 45' })).toBeVisible();
       await page.evaluate(() => Promise.all(document.getAnimations().map(a => a.finished)));
       await expectNoAxeViolations(page);
       await page.keyboard.press('Escape');
@@ -843,7 +855,7 @@ test.describe('Personal', () => {
     test('a card over the list with its read unfolded reflows at 320 px', async ({ page, api: _ }) => {
       await page.setViewportSize(narrow);
       await open(page, '/staff?card=omtanke&open-card=omtanke&open-action=pattern');
-      const drawer = page.getByRole('dialog', { name: 'Kort' });
+      const drawer = page.getByRole('dialog', { name: 'Ärende' });
       await expect(drawer.locator('#read-card-omtanke').getByText('Anna Lindqvist 07:00–16:00')).toBeVisible();
       await expect(drawer.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
       await page.evaluate(() => Promise.all(document.getAnimations().map(a => a.finished)));

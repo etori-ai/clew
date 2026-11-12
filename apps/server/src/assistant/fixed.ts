@@ -38,7 +38,7 @@ export async function routeFixed(
     return {
       title: 'Utvecklingssamtal',
       body: status.members
-        ? `${status.held} hållna, ${status.booked} bokade, ${missing} saknar tid före ${status.deadline}.${open ? ` ${open} förslag väntar i kortet för vecka ${weekNumber(nextWeekStart(displayDate(now)))} under Behöver dig.` : ''}`
+        ? `${status.held} hållna, ${status.booked} bokade, ${missing} saknar tid före ${status.deadline}.${open ? ` ${open} förslag väntar i ärendet för vecka ${weekNumber(nextWeekStart(displayDate(now)))} under Behöver dig.` : ''}`
         : 'Det finns inga utvecklingssamtal att planera just nu.',
       reason: 'Du frågade om utvecklingssamtalen',
       source: 'Kalendern',
@@ -66,7 +66,7 @@ export async function routeFixed(
   if (/varför|vafför|why/.test(q)) {
     return {
       title: 'Varför ser du detta?',
-      body: 'Varje kort på sidan kommer från en utlösare: en nattlig genomgång, en händelse i ett källsystem eller en fråga från dig. Källa och tid står på varje kort, och "Varför ser jag detta?" i kortets meny visar skälet. Du får högst tre avbrott per dag; resten samlas till lunch eller nästa morgon.',
+      body: 'Varje ärende kommer från en utlösare: en nattlig genomgång, en händelse i ett källsystem eller en fråga från dig. Källa och tid står på varje ärende, och "Varför ser jag detta?" i ärendet visar skälet. Du får högst tre avbrott per dag; resten samlas till lunch eller nästa morgon.',
       reason: 'Du frågade om sidan',
       source: 'Startsidan',
     };

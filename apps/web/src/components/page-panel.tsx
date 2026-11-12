@@ -11,14 +11,50 @@ import {
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import type { PanelViewSpec, Thread, ViewRef } from '@clew/contracts';
-import { Button, HStack, Text, VStack, useMediaQuery, type AgendaItem } from '@clew/ui';
+import { Button, HStack, Text, VStack, type AgendaItem } from '@clew/ui';
 import { threadsQuery, viewQuery } from '../queries';
 import { errorMessage } from '../query-policy';
-import { panelOf, readOf, withView, withoutPanel, withoutRead, type PanelRef } from '../panel-address';
-import { mobileQuery } from '../media';
+import { panelOf, readOf, viewSearch, withView, withoutPanel, withoutRead, type PanelRef } from '../panel-address';
 import { cardBody } from './card-panel';
 import { unfoldsInCard, useCardRead } from './card-read';
 import { PanelBody, usePanel, type PanelFrame } from './panel';
+import { Unfold } from './unfold';
+import type { ThingSubject } from './conversation-context';
+
+/** A work item as what the box beside it asks about (D111 item 7): its chip, and its card beside the conversation's page. */
+export const itemSubject = (thread: Pick<Thread, 'id' | 'title'>): ThingSubject => ({
+  key: 'thread:' + thread.id,
+  label: 'ärendet',
+  chips: [{ ref: 'thread:' + thread.id, kind: 'thread', label: thread.title, threadId: thread.id }],
+  search: '?card=' + encodeURIComponent(thread.id),
+});
+/** A view as what the box beside it asks about: its capability as the chip, and the view beside the conversation's page. */
+export const viewSubject = (view: {
+  capability: string;
+  title: string;
+  input: Record<string, unknown>;
+}): ThingSubject => ({
+  // A search typed in the view refines the same view: the conversation about it goes on.
+  key: `view:${view.capability}`,
+  label: view.title.toLocaleLowerCase('sv-SE'),
+  chips: [{ ref: 'capability:' + view.capability, kind: 'capability', label: view.title }],
+  search: viewSearch(view),
+});
+/**
+ * A thing a page holds in the panel itself (D111 items 7 and 9): Kalender's event or proposal (`entry` in the address),
+ * or the page asked about with "Fråga Clew" (`ask=1`). The page draws it; the panel gives it the header, the box and the
+ * conversation like any other thing.
+ */
+export interface OwnThing {
+  /** Names the thing for the focus rule: another thing taking this one's place is said aloud and gets the focus. */
+  id: string;
+  title: string;
+  subtitle?: string;
+  /** What the box asks about; absent, the panel is the thing alone. */
+  subject?: ThingSubject;
+  /** The thing's facts and buttons; `folded` while a conversation about it runs. Absent, the conversation alone. */
+  body?: (inline: boolean, folded: boolean) => ReactNode;
+}
 
 const parse = (json: string | null): Record<string, unknown> => {
   try {
@@ -97,14 +133,14 @@ export interface PagePanelOptions {
   failures?: 'panel' | 'page';
   /** A card's own button changed it: told before the cache is written (`mutations.ts`), so the page can move focus first. */
   onChange?: (thread: Thread) => void;
-  /** The way on from a done card (D70), where the page has a stream to continue in: Hem's next card. */
-  next?: (thread: Thread) => { title: string; href: string } | undefined;
-  /** The page draws the card the address names itself (Hem's sheet on a phone): the panel then holds no card. */
-  cardElsewhere?: boolean;
-  /** The card's steps full width, as in a phone's sheet. By default on a phone. */
-  cardSheet?: boolean;
   /** An entry in a day view (D32) was chosen: the page opens its dialog over the panel. */
   onOpenItem?: (item: AgendaItem, dayItems: AgendaItem[]) => void;
+  /** The page itself as the thing, when "Fråga Clew" is pressed in its header (`ask=1`, D111 item 7). */
+  pageThing?: OwnThing | null;
+  /** The thing the page holds open in the panel by its own address (`entry`: Kalender's event or proposal, D111 item 9). */
+  entry?: OwnThing | null;
+  /** Whether a thing gets the box under it; false on a conversation's own page (`usePanel`'s `asks`). */
+  asks?: boolean;
 }
 export interface PagePanelSlot {
   /** The panel beside the page, for the page's `Layout end`; undefined where it is drawn over the page. */
@@ -142,15 +178,14 @@ function usePanelOnPage({
   onClosed,
   failures = 'panel',
   onChange,
-  next,
-  cardElsewhere = false,
-  cardSheet,
   onOpenItem,
+  pageThing,
+  entry,
+  asks = true,
 }: PagePanelOptions): PagePanelSlot {
   const [search] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const mobile = useMediaQuery(mobileQuery);
   const { pathname } = location;
   const address = pathname + location.search;
   const ref = panelOf(search);
@@ -222,33 +257,38 @@ function usePanelOnPage({
         address: shown.address,
         wide: shown.spec?.kind === 'table',
         onClose: close,
-        body: inline => (
-          <PanelBody
-            output={shown.output}
-            view={shown.spec}
-            source={shown.source}
-            input={shown.input}
-            inline={inline}
-            isLoading={side.isLoading}
-            onOpenItem={onOpenItem}
-            /* A declared view (D38): its controls rewrite the address, so the view stays addressable and the back button undoes a search. */
-            onInput={
-              shown.capability === viewRef.capability
-                ? input =>
-                    navigate(
-                      withView(
-                        pathname,
-                        search,
-                        { capability: shown.capability, title: shown.title, input },
-                        shown.via,
-                      ),
-                      { replace: true },
-                    )
-                : undefined
-            }
-            hrefFor={hrefFor}
-            onBack={shown.via ? () => navigate(-1) : undefined}
-          />
+        // What the box beside it asks about: the view, by its capability (D111 item 7).
+        subject: viewSubject({ capability: shown.capability, title: shown.title, input: shown.input }),
+        // A view has no buttons of its own to keep: while a conversation about it runs, the whole view is behind "Visa allt".
+        body: (inline, folded) => (
+          <Unfold folded={folded}>
+            <PanelBody
+              output={shown.output}
+              view={shown.spec}
+              source={shown.source}
+              input={shown.input}
+              inline={inline}
+              isLoading={side.isLoading}
+              onOpenItem={onOpenItem}
+              /* A declared view (D38): its controls rewrite the address, so the view stays addressable and the back button undoes a search. */
+              onInput={
+                shown.capability === viewRef.capability
+                  ? input =>
+                      navigate(
+                        withView(
+                          pathname,
+                          search,
+                          { capability: shown.capability, title: shown.title, input },
+                          shown.via,
+                        ),
+                        { replace: true },
+                      )
+                  : undefined
+              }
+              hrefFor={hrefFor}
+              onBack={shown.via ? () => navigate(-1) : undefined}
+            />
+          </Unfold>
         ),
       };
     } else if (side.failed && !pageSays)
@@ -260,55 +300,55 @@ function usePanelOnPage({
     // A card's read that answered with a table (`unfoldsInCard`): in the card's place, as every read was before, and ✕
     // folds it back into the card. The address is replaced as the card replaces it when it unfolds a read.
     view = { title: read.action.label };
+    const readOfThread = threads?.find(t => t.id === asked.threadId);
     frame = {
       id: `action:${asked.threadId}:${asked.actionId}`,
       title: read.action.label,
       address,
       wide: true,
       onClose: () => navigate(withoutRead(pathname, search), { replace: true }),
+      // The read is the work item's: the box beside it asks about the item (D111 item 7).
+      ...(readOfThread ? { subject: itemSubject(readOfThread) } : {}),
       /* A card's read has no controls: its input is the card's. Its rows' own views are links, as in any view. */
-      body: inline => (
-        <PanelBody
-          output={table.output}
-          view={table.view}
-          input={{}}
-          inline={inline}
-          isLoading={false}
-          onOpenItem={onOpenItem}
-          hrefFor={hrefFor}
-        />
+      body: (inline, folded) => (
+        <Unfold folded={folded}>
+          <PanelBody
+            output={table.output}
+            view={table.view}
+            input={{}}
+            inline={inline}
+            isLoading={false}
+            onOpenItem={onOpenItem}
+            hrefFor={hrefFor}
+          />
+        </Unfold>
       ),
     };
   }
-  if (!frame && cardId && !cardElsewhere && (!pageSays || ref?.kind === 'card')) {
+  if (!frame && cardId && (!pageSays || ref?.kind === 'card')) {
     if (thread) {
       card = thread;
       frame = {
         id: `card:${thread.id}`,
         kind: 'card',
-        title: 'Kort',
-        // Another card taking this one's place is said by its own title: the heading says only "Kort".
+        title: 'Ärende',
+        // Another item taking this one's place is said by its own title: the heading says only "Ärende".
         spoken: thread.title,
         address,
         onClose: close,
-        // The card's buttons, Inte nu among them, are the card's own: the header holds the small title and ✕.
-        body: () =>
-          cardBody(thread, {
-            beside: true,
-            compact: true,
-            level: 3,
-            sheet: cardSheet ?? mobile,
-            next: next?.(thread),
-            onChange: changedCard,
-          }),
+        subject: itemSubject(thread),
+        // The item's buttons, Inte nu among them, are the item's own (D111 item 4): the header holds the small title and ✕.
+        // While a conversation about it runs, its main column folds under "Visa allt" and the buttons stay (item 7).
+        body: (_inline, folded) =>
+          cardBody(thread, { place: 'panel', compact: true, level: 3, onChange: changedCard, folded }),
       };
     }
     // The stream did not answer, or has answered and has no such card: said in the card's place, as a person is.
     else if (!pageSays && threadsQ.isError)
       frame = failed(
         `card:${cardId}`,
-        'Kort',
-        errorMessage(threadsQ.error, 'Kortet kunde inte hämtas just nu.'),
+        'Ärende',
+        errorMessage(threadsQ.error, 'Ärendet kunde inte hämtas just nu.'),
         threadsQ,
         'card',
       );
@@ -316,11 +356,23 @@ function usePanelOnPage({
       frame = {
         id: `card:${cardId}`,
         kind: 'card',
-        title: 'Kort',
+        title: 'Ärende',
         onClose: close,
-        body: () => <Text as="p">Kortet finns inte längre bland dina kort.</Text>,
+        body: () => <Text as="p">Ärendet finns inte längre bland dina ärenden.</Text>,
       };
   }
+  // A thing the page holds itself (D111 items 7 and 9): its calendar entry, or the page asked about with "Fråga Clew".
+  const own = !frame ? (ref?.kind === 'entry' ? entry : ref?.kind === 'page' ? pageThing : null) : null;
+  if (own)
+    frame = {
+      id: own.id,
+      title: own.title,
+      ...(own.subtitle ? { subtitle: own.subtitle } : {}),
+      address,
+      onClose: close,
+      ...(own.subject ? { subject: own.subject } : {}),
+      body: (inline, folded) => own.body?.(inline, folded) ?? null,
+    };
   // Where the panel says what failed (`failures: 'panel'`), what was on screen stays while a view is on its way, as a
   // view's rows stay while it asks again: a row's view opened from a card's read takes the card's place in one step,
   // and the card under it is not drawn, named and given the focus in between.
@@ -331,7 +383,7 @@ function usePanelOnPage({
   }
   const failure =
     viewRef && side.failed ? { message: errorMessage(side.failed, 'Kunde inte hämta.'), retry: side.retry } : null;
-  const slot = usePanel(frame, { overlayOnly, onClosed });
+  const slot = usePanel(frame, { overlayOnly, onClosed, asks });
   return { ...slot, frame, ref, card, view, failure };
 }
 
@@ -368,7 +420,7 @@ export function usePagePanel(options: PagePanelOptions): PagePanelSlot {
 }
 
 /**
- * The panel over a page that has none of its own (Kalender, Administration): what the address opens, a card or a view,
+ * The panel over a page that has none of its own (Administration): what the address opens, a card or a view,
  * lies in the drawer over the page, and closing it leaves the page as it was. A card that is not among the person's
  * cards says so in the drawer, as it does beside any page. Decided once the page is on screen: layout effects run from
  * the shell up to the page, so by the first re-render every page that holds the panel has claimed it, and the panel is
@@ -381,8 +433,8 @@ export function PanelOverPage() {
   return settled && claimed === false ? <Overlay /> : null;
 }
 function Overlay() {
-  // Over the page only: Kalender's end slot holds its own Förslag panel, and Administration's pages grow with the
-  // shell's scroll and have no narrow layout to give way to (D110, amended 2026-11-11).
+  // Over the page only: Administration's pages grow with the shell's scroll and have no narrow layout to give way to
+  // (D110, amended 2026-11-11).
   const slot = usePanelOnPage({ overlayOnly: true });
   return <>{slot.overlay}</>;
 }

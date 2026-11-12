@@ -166,6 +166,15 @@ describe('the field list', () => {
       if (f.example !== undefined) expect(JSON.stringify(f.example).length).toBeLessThanOrEqual(240);
   });
   test('the handwritten examples load as a manifest', () => {
+    const talkInput = {
+      type: 'object',
+      properties: {
+        refs: { type: 'array', items: { type: 'string' } },
+        when: { type: 'string', format: 'date-time' },
+        decision: { type: 'string', enum: ['approve', 'reject'] },
+      },
+      required: ['refs'],
+    };
     const manifest = {
       protocol: 2,
       id: 'hr',
@@ -197,6 +206,38 @@ describe('the field list', () => {
           scope: {},
           creates: HANDWRITTEN_EXAMPLES['capabilities[].creates'],
           execution: HANDWRITTEN_EXAMPLES['capabilities[].execution'],
+        },
+        // A write that asks (D111): a meeting time and a choice, and the read that says what it will write.
+        {
+          name: 'hr.bookTalk',
+          kind: 'execute',
+          title: 'Boka samtal',
+          description: 'Bokar ett samtal.',
+          input: talkInput,
+          output: {},
+          model: false,
+          scope: {},
+          asks: [
+            ...(HANDWRITTEN_EXAMPLES['capabilities[].asks'] as object[]),
+            {
+              kind: 'choice',
+              property: 'decision',
+              label: 'Beslut',
+              required: false,
+              options: HANDWRITTEN_EXAMPLES['capabilities[].asks[].options'],
+            },
+          ],
+          effect: HANDWRITTEN_EXAMPLES['capabilities[].effect'],
+        },
+        {
+          name: 'hr.bookTalkEffect',
+          kind: 'read',
+          title: 'Det här händer',
+          description: 'Vad bokningen gör.',
+          input: talkInput,
+          output: {},
+          model: false,
+          scope: {},
         },
         {
           name: 'hr.onAbsence',
@@ -455,6 +496,33 @@ describe('the rules', () => {
     'about-not-a-profile': [
       broken(aboutManifest, m => {
         m.capabilities[0].name = 'hr.search';
+      }),
+      'hr',
+    ],
+    'asks-on-an-action': [
+      broken(aboutManifest, m => {
+        m.capabilities[0].asks = [{ kind: 'text', property: 'keys', label: 'Vilka', required: true }];
+      }),
+      'hr',
+    ],
+    'ask-names-input': [
+      broken(aboutManifest, m => {
+        m.capabilities[1].asks = [{ kind: 'text', property: 'nowhere', label: 'Var', required: false }];
+      }),
+      'hr',
+    ],
+    'ask-fits-input': [
+      broken(aboutManifest, m => {
+        m.capabilities[1].input.properties.when = { type: 'integer' };
+        m.capabilities[1].asks = [
+          { kind: 'meeting', property: 'when', label: 'När', required: false, durationMinutes: 30 },
+        ];
+      }),
+      'hr',
+    ],
+    'effect-is-a-read': [
+      broken(aboutManifest, m => {
+        m.capabilities[1].effect = 'hr.employment';
       }),
       'hr',
     ],

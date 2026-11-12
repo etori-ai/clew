@@ -36,6 +36,8 @@ import {
   MetadataListItem,
   Card,
   Selector,
+  StackItem,
+  StatusDot,
   Table,
   Text,
   TextInput,
@@ -60,9 +62,9 @@ import { entityHref } from '../person-address';
  * fields with which Swedish labels) and this file draws it, with Astryx components only. It is the one renderer for
  * every placement: the side panel, a tool's page and the compact embed under an answer, and every kind gets the one
  * header (D71, artboards 4 and 7): the area's chip, the source and the count in supporting, the view's own controls or
- * "Visa allt" at the end of the same line. On a tool's page the title comes first, with the controls at the end of its
- * line and the mark row under it, as on every other page (D74). A connector never sends markup, so a view looks, reads and tabs the same
- * whichever system it comes from.
+ * "Visa allt" at the end of the same line. On a tool's page (D111 item 6, board Tool) the title comes first with the
+ * system's badge at the end of its line, then the filter bar: the view's own controls and the count of its rows. A
+ * connector never sends markup, so a view looks, reads and tabs the same whichever system it comes from.
  */
 type Row = Record<string, unknown>;
 type RowsView = Extract<PanelViewSpec, { kind: 'table' | 'list' }>;
@@ -81,10 +83,17 @@ export interface DeclaredViewProps {
   headingLevel?: 2 | 3;
   /** From which window width a table is drawn as a table: a page beside the rail needs more than the panel does. */
   tableQuery?: string;
-  /** A tool page's title: the page's heading at level 1, the controls at the end of its line and the mark row under it (D74). */
+  /** A tool page's title: the page's heading at level 1 with the system's badge on its line, the filter bar under it. */
   title?: string;
   /** Under an answer (artboard 4): "Visa allt" at the end of the header opens the whole view. */
   onShowAll?: () => void;
+  /** A tool page's own control after the view's (D111 item 7: "Fråga Clew"), at the end of the title's line. */
+  pageAction?: ReactNode;
+  /**
+   * Whether a row's own read is the one open beside the page (D111 item 6, board Tool: the inspector): that row is the
+   * current one, marked on the row and on its name.
+   */
+  isOpen?: ((view: ViewRef) => boolean) | undefined;
 }
 
 const dateOnly = new Intl.DateTimeFormat('sv-SE', { dateStyle: 'long' });
@@ -154,6 +163,11 @@ function MarkRow({ view, count }: { view: PanelViewSpec; count: number | null })
       </Text>
     </HStack>
   );
+}
+/** Whose a tool's view is, on the title's line (board Tool): the system's name in the system's hue. */
+function SourceChip({ view }: { view: PanelViewSpec }) {
+  const mark = useMarks().ofCapability(view.capability, view.connector, view.source);
+  return <AreaChip ordinal={mark.ordinal} label={mark.source || view.source} />;
 }
 /**
  * The header of a view in the panel and under an answer (D71): the mark row with the controls or "Visa allt" at the end
@@ -401,11 +415,13 @@ function Rows({
   rows,
   hrefFor,
   wide,
+  isOpen,
 }: {
   view: RowsView;
   rows: Row[];
   hrefFor?: (view: ViewRef) => string;
   wide: boolean;
+  isOpen?: ((view: ViewRef) => boolean) | undefined;
 }) {
   const talk = useConversation();
   const titleField = view.fields.find(f => f.key === view.title)!;
@@ -418,12 +434,21 @@ function Rows({
   const titleGroup = groups.find(g => g.lead.key === view.title);
   const columnGroups = groups.filter(g => g !== titleGroup);
   const others = groups.flatMap(groupFields).filter(f => f.key !== view.title);
+  /** The row's own read: a row of Clew's own combined list opens in the system it came from (D35 item 4); any other row opens its connector's own read. */
+  const readOf = (row: Row): ViewRef | undefined => {
+    const own = view.rowViews && checkContract(ViewRefSchema, row.view) ? row.view : undefined;
+    return own ?? (view.open ? openRef(view.open, row, view.source) : undefined);
+  };
   const opens = (row: Row) => {
     if (!hrefFor) return undefined;
-    // A row of Clew's own combined list opens in the system it came from (D35 item 4); any other row opens its connector's own read.
-    const own = view.rowViews && checkContract(ViewRefSchema, row.view) ? row.view : undefined;
-    const ref = own ?? (view.open ? openRef(view.open, row, view.source) : undefined);
+    const ref = readOf(row);
     return ref ? hrefFor(ref) : undefined;
+  };
+  /** The row whose read is open beside the page (board Tool's inspector). */
+  const current = (row: Row) => {
+    if (!isOpen || !hrefFor) return false;
+    const ref = readOf(row);
+    return !!ref && isOpen(ref);
   };
   // The person or unit a row names (D97 item 6): the row's key for it leads to the entity, with this page as the way back;
   // on that entity's own page it leads nowhere (`entityHref`).
@@ -453,7 +478,7 @@ function Rows({
     const href = opens(row) ?? entityOf(row);
     const label = empty(row[view.title]) ? '–' : String(row[view.title]);
     return href ? (
-      <Link href={href} weight="semibold" hasUnderline>
+      <Link href={href} weight="semibold" hasUnderline aria-current={current(row) ? 'true' : undefined}>
         {label}
       </Link>
     ) : (
@@ -486,8 +511,19 @@ function Rows({
         key: view.title,
         header: titleField.label,
         width: share(130),
-        renderCell: (r: TableRow) =>
-          titleGroup ? <Cell group={titleGroup} row={r.row} lead={name(r.row)} /> : name(r.row),
+        renderCell: (r: TableRow) => {
+          const cell = titleGroup ? <Cell group={titleGroup} row={r.row} lead={name(r.row)} /> : name(r.row);
+          // Astryx's Table has no state for the row open in an inspector (D111, Astryx gaps): the row says so with
+          // `aria-current` and its name with a dot that says it in words.
+          return current(r.row) ? (
+            <HStack gap={2} vAlign="center" wrap="wrap">
+              <StatusDot variant="accent" label="Visas bredvid" tooltip="Visas bredvid" />
+              {cell}
+            </HStack>
+          ) : (
+            cell
+          );
+        },
       },
       ...columnGroups.map(({ lead: f, beside }) => ({
         key: f.key,
@@ -512,7 +548,9 @@ function Rows({
           ]
         : []),
     ];
-    // The table in a bordered card, as artboard I draws it.
+    const open = rows.map((row, i) => (current(row) ? key(row, i) : null)).find(k => k !== null) ?? null;
+    // The table in a bordered card, as artboard I draws it. The row whose read is open beside the page is the current
+    // one (`aria-current`), through the Table's documented row transform, as the `table-filter` template marks it.
     return (
       <Card padding={0}>
         <Table<TableRow>
@@ -521,6 +559,19 @@ function Rows({
           columns={columns}
           density="compact"
           hasHover
+          plugins={
+            open === null
+              ? {}
+              : {
+                  current: {
+                    rowModel: 'flat',
+                    transformBodyRow: (props, item) =>
+                      item.id === open
+                        ? { ...props, htmlProps: { ...props.htmlProps, 'aria-current': 'true' } }
+                        : props,
+                  },
+                }
+          }
         />
       </Card>
     );
@@ -548,6 +599,7 @@ function Rows({
           <ListItem
             key={key(row, i)}
             align="start"
+            isSelected={current(row)}
             label={name(row)}
             endContent={
               marks.length > 0 || entityLink(row) ? (
@@ -596,6 +648,8 @@ export function DeclaredView({
   tableQuery = '(min-width: 1010px)',
   title,
   onShowAll,
+  pageAction,
+  isOpen,
 }: DeclaredViewProps) {
   const wide = useMediaQuery(tableQuery);
   const { pathname, search } = useLocation();
@@ -620,8 +674,33 @@ export function DeclaredView({
   ) : onShowAll ? (
     <Button size="sm" variant="secondary" label="Visa allt" onClick={onShowAll} />
   ) : undefined;
+  // A tool's page (D111 item 6, board Tool, the `table-filter` template): the title with the system's badge and the
+  // page's own control at the end of its line, then the filter bar: the view's search field and its choice, and how
+  // many rows there are at the bar's end. Any other placement keeps the one view header (D71).
   const header = title ? (
-    <PageHeader title={title} end={end} meta={<MarkRow view={view} count={count} />} />
+    <VStack gap={4}>
+      <PageHeader
+        title={title}
+        end={
+          <HStack gap={2} vAlign="center" wrap="wrap">
+            <SourceChip view={view} />
+            {pageAction}
+          </HStack>
+        }
+      />
+      {count !== null && (
+        <HStack gap={3} vAlign="center" wrap="wrap">
+          {controls && (
+            <StackItem size="fill">
+              <Controls controls={controls} input={input} onInput={onInput!} isLoading={isLoading} />
+            </StackItem>
+          )}
+          <Text type="supporting" hasTabularNumbers>
+            {counted(count, view.kind === 'table' || view.kind === 'list' ? view.noun : undefined)}
+          </Text>
+        </HStack>
+      )}
+    </VStack>
   ) : (
     <ViewHeader view={view} count={count} end={end} />
   );
@@ -751,7 +830,7 @@ export function DeclaredView({
           title={missed.length > 0 ? 'Inget att visa från de system som svarade' : (view.empty ?? 'Inget att visa')}
         />
       ) : (
-        <Rows view={view} rows={rows} hrefFor={hrefFor} wide={wide && !limit} />
+        <Rows view={view} rows={rows} hrefFor={hrefFor} wide={wide && !limit} isOpen={isOpen} />
       )}
       {/* Under an answer a cut list says how much is left out (artboard 4); the rows keep the order the source gave, which is the answer's. */}
       {rows.length > 0 && (

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type {
   CalendarEvent,
+  Draft,
   MessageMeta,
   SourceCitation,
   Thread,
@@ -29,6 +30,7 @@ import {
   MetadataList,
   MetadataListItem,
   Skeleton,
+  StatusDot,
   SparklesIcon,
   Text,
   Timestamp,
@@ -48,6 +50,102 @@ import { useConversation } from './conversation-context';
 import { reviewLabel, staleLabel } from './panel-labels';
 import { useObjectMark } from '../marks';
 import { FigureLines } from './figure-line';
+import { requestAction } from '../action-requests';
+import { valueText, type ActionStep } from '../action-path';
+import { executionStatus } from '../execution-status';
+
+/** An action the assistant filled in (D111 item 8), as the transcript keeps it. */
+export type ActionDraftRef = Draft & { kind: 'action'; actionId: string };
+const isActionDraft = (draft: Draft | undefined): draft is ActionDraftRef =>
+  draft?.kind === 'action' && !!draft.actionId;
+/** "Granska och boka" for "Boka samtalet": the action's own first word, as the verb. */
+const verbOf = (label: string) => (label.split(' ')[0] ?? label).toLocaleLowerCase('sv-SE');
+
+/**
+ * The assistant's draft of an action (D111 item 8, boards Assistant and Calendar): the action's name, an "Utkast"
+ * badge, the filled-in values as a short list, and two buttons. "Granska och <verb>" opens the action's own dialog at its
+ * last step with these values, "Ändra" at its first; both are the dialog the action's button opens (D111 item 10), on
+ * the work item, which sends through the human decision. Nothing is sent from here. The draft reads the work item from
+ * the same cache as every screen (D33), so once the person has sent it the draft says what came back, and a newer draft
+ * of the same action marks this one as replaced.
+ */
+function ActionDraftCard({
+  draft,
+  at,
+  replaced,
+  onOpen,
+}: {
+  draft: ActionDraftRef;
+  at: string;
+  replaced: boolean;
+  onOpen?: ((draft: ActionDraftRef) => void) | undefined;
+}) {
+  const item = useQuery(threadQuery(draft.threadId));
+  const thread = item.data;
+  const action = thread?.actions.find(a => a.id === draft.actionId);
+  if (!thread || !action) return null;
+  const asks = action.path?.asks ?? [];
+  const values = draft.values ?? {};
+  const shown = asks.filter(a => values[a.property]);
+  // What the person did after the draft was written: the receipt read back, a decision on its way, or the item gone.
+  const after = (instant: string | null | undefined) => !!instant && Date.parse(instant) >= Date.parse(at);
+  const receipt = thread.receipt && after(thread.receipt.at) ? thread.receipt : null;
+  const waiting = !receipt && after(thread.updatedAt) ? executionStatus(thread.execution) : null;
+  const state = receipt
+    ? { variant: 'success' as const, label: 'Skickat' }
+    : waiting
+      ? { variant: 'warning' as const, label: 'Skickat, väntar på källan' }
+      : replaced
+        ? { variant: 'neutral' as const, label: 'Ersatt av ett nyare utkast' }
+        : thread.state !== 'open'
+          ? { variant: 'neutral' as const, label: 'Ärendet är redan hanterat' }
+          : null;
+  const open = (startAt: ActionStep) => {
+    requestAction({ threadId: thread.id, actionId: action.id, startAt, values });
+    onOpen?.(draft);
+  };
+  return (
+    <ChatMessageBubble variant="ghost" width="100%">
+      <Card padding={4}>
+        <VStack gap={3} as="section" aria-label={`Utkast: ${action.label}`}>
+          <HStack gap={2} justify="between" vAlign="center" wrap="wrap">
+            <Text weight="semibold">{action.label}</Text>
+            {state ? (
+              <HStack gap={1.5} vAlign="center">
+                <StatusDot variant={state.variant} label={state.label} />
+                <Text type="supporting">{state.label}</Text>
+              </HStack>
+            ) : (
+              <Badge variant="neutral" label="Utkast" />
+            )}
+          </HStack>
+          {shown.length > 0 && (
+            <MetadataList columns="single">
+              {shown.map(a => (
+                <MetadataListItem key={a.property} label={a.label}>
+                  <Text>{valueText(a, values[a.property]!)}</Text>
+                </MetadataListItem>
+              ))}
+            </MetadataList>
+          )}
+          {receipt && <Text type="supporting">{receipt.headline}</Text>}
+          {waiting && <Text type="supporting">{waiting}</Text>}
+          {!state && (
+            <HStack gap={2} wrap="wrap">
+              <Button
+                size="sm"
+                variant="primary"
+                label={`Granska och ${verbOf(action.label)}`}
+                onClick={() => open('effect')}
+              />
+              <Button size="sm" variant="secondary" label="Ändra" onClick={() => open('fill-in')} />
+            </HStack>
+          )}
+        </VStack>
+      </Card>
+    </ChatMessageBubble>
+  );
+}
 
 /** The sources an answer cites (D26): `[n]` in the body becomes a numbered citation that opens the document; the first source's owner and review date are named under the answer, in supporting (artboard 7). */
 function Sources({ sources }: { sources: SourceCitation[] }) {
@@ -120,7 +218,7 @@ function ProposalWeek({ thread }: { thread: Thread }) {
           items={agendaItems(events, thread.proposals)}
           dayHeadingLevel={3}
           label={`Vecka ${weekNumber(thread.week)} med förslagen`}
-          accessiblePath="Förslagen bekräftas i kortet."
+          accessiblePath="Förslagen bekräftas i ärendet."
         />
       </ChatMessageBubble>
     </ChatMessage>
@@ -184,10 +282,22 @@ export function Transcript({
   onOpenView,
   renderCard,
   viewHref,
+  place = 'page',
+  subject,
+  onDraft,
 }: {
   onOpenView: (view: ViewRef) => void;
   renderCard: (thread: Thread) => ReactNode;
   viewHref?: (view: ViewRef) => string;
+  /**
+   * `panel`: under the thing in the panel (D111 item 7). The messages start at the top under the thing, and what belongs
+   * to a conversation's own page is left out: the questions to follow up with and the line about Esc and Samtal.
+   */
+  place?: 'page' | 'panel';
+  /** The ref of the thing the panel is about: not drawn again as a token above each question. */
+  subject?: string[] | undefined;
+  /** A draft's button was pressed: the host makes sure the work item is drawn, so its dialog can open (D111 item 8). */
+  onDraft?: (draft: ActionDraftRef) => void;
 }) {
   const talk = useConversation();
   const mobile = useMediaQuery(mobileQuery);
@@ -209,9 +319,23 @@ export function Transcript({
   const n = messages.length;
   // The latest answer's declared view is drawn under it, with "Visa allt" in its header; an older answer keeps the button.
   const embedded = (i: number, m: ThreadMessage) => i === n - 1 && !pending && !!m.meta?.view?.declared;
+  const panel = place === 'panel';
+  // The thing the panel is about is named in its header: its chip is not repeated above every question.
+  const tokens = (chips: { ref: string; label: string }[] | undefined) =>
+    (chips ?? []).filter(c => !subject?.includes(c.ref));
+  // A draft is replaced by a newer draft of the same action on the same item further down (D111 item 8).
+  const replaced = (i: number, draft: ActionDraftRef) =>
+    messages
+      .slice(i + 1)
+      .some(
+        m =>
+          isActionDraft(m.meta?.draft) &&
+          m.meta!.draft!.threadId === draft.threadId &&
+          m.meta!.draft!.actionId === draft.actionId,
+      );
   return (
     <VStack gap={3}>
-      <ChatMessageList density="balanced" align="bottom" isStreaming={busy}>
+      <ChatMessageList density={panel ? 'compact' : 'balanced'} align={panel ? 'top' : 'bottom'} isStreaming={busy}>
         {[
           ...messages.map((m, i) => (
             <ChatMessage
@@ -236,9 +360,9 @@ export function Transcript({
                 )
               }
             >
-              {m.role === 'user' && (m.meta?.chips?.length ?? 0) > 0 && (
+              {m.role === 'user' && tokens(m.meta?.chips).length > 0 && (
                 <HStack gap={1} wrap="wrap">
-                  {m.meta!.chips!.map(c => (
+                  {tokens(m.meta?.chips).map(c => (
                     <Token key={c.ref} size="sm" label={c.label} icon={glyph(c.ref)} />
                   ))}
                 </HStack>
@@ -303,10 +427,19 @@ export function Transcript({
                   m.body
                 )}
               </ChatMessageBubble>
-              {m.meta?.draft && (
-                <ChatSystemMessage icon={<Icon icon="warning" color="warning" size="sm" />}>
-                  Utkast i kortet. Inget är skickat förrän du trycker på knappen i kortet.
-                </ChatSystemMessage>
+              {isActionDraft(m.meta?.draft) ? (
+                <ActionDraftCard
+                  draft={m.meta!.draft as ActionDraftRef}
+                  at={m.createdAt}
+                  replaced={replaced(i, m.meta!.draft as ActionDraftRef)}
+                  onOpen={onDraft}
+                />
+              ) : (
+                m.meta?.draft && (
+                  <ChatSystemMessage icon={<Icon icon="warning" color="warning" size="sm" />}>
+                    Utkast i ärendet. Inget är skickat förrän du trycker på knappen i ärendet.
+                  </ChatSystemMessage>
+                )
               )}
             </ChatMessage>
           )),
@@ -315,9 +448,9 @@ export function Transcript({
           ...(pending
             ? [
                 <ChatMessage key={`turn-${n}`} sender="user" name={<VisuallyHidden>Du</VisuallyHidden>}>
-                  {pending.chips.length > 0 && (
+                  {tokens(pending.chips).length > 0 && (
                     <HStack gap={1} wrap="wrap">
-                      {pending.chips.map(c => (
+                      {tokens(pending.chips).map(c => (
                         <Token key={c.ref} size="sm" label={c.label} icon={glyph(c.ref)} />
                       ))}
                     </HStack>
@@ -377,8 +510,8 @@ export function Transcript({
                       description={
                         <Text type="supporting">
                           {a.kind === 'dismiss'
-                            ? 'Kortet avfärdas och hamnar under Redan hanterat'
-                            : 'Kortet tas upp i morgon 06:00 i stället'}
+                            ? 'Ärendet avfärdas och hamnar under Klart'
+                            : 'Ärendet tas upp i morgon 06:00 i stället'}
                         </Text>
                       }
                     />
@@ -410,17 +543,19 @@ export function Transcript({
           </ChatSystemMessage>
         )}
       </ChatMessageList>
-      {!pending && latest && latest.followUps.length > 0 && (
+      {!panel && !pending && latest && latest.followUps.length > 0 && (
         <HStack gap={1} wrap="wrap" role="group" aria-label="Följdfrågor">
           {latest.followUps.map(f => (
             <Button key={f} size="sm" variant="secondary" label={f} isDisabled={busy} onClick={() => talk.ask(f)} />
           ))}
         </HStack>
       )}
-      <Text
-        type="supporting"
-        justify="end"
-      >{`${mobile ? '' : 'Esc stänger · '}${latest?.draft || messages.some(m => m.meta?.draft) ? 'kortet behåller utkastet' : 'samtalet sparas under Redan hanterat'}`}</Text>
+      {!panel && (
+        <Text
+          type="supporting"
+          justify="end"
+        >{`${mobile ? '' : 'Esc stänger · '}${latest?.draft || messages.some(m => m.meta?.draft) ? 'ärendet behåller utkastet' : 'samtalet sparas under Samtal'}`}</Text>
+      )}
     </VStack>
   );
 }

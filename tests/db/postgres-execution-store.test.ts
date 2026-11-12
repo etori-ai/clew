@@ -152,7 +152,7 @@ test('approval, card state and outcome are atomic; an uncertain undo preserves t
   };
   await expect(
     uc.approve(persona, { ...input, presentation: { ...input.presentation, version: '2000-01-01T00:00:00Z' } }),
-  ).rejects.toThrow('Kortet har ändrats');
+  ).rejects.toThrow('Ärendet har ändrats');
   expect(
     (await database().select().from(schema.executions).where(eq(schema.executions.personId, w.personId))).length,
   ).toBe(0);

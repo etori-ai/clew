@@ -3,6 +3,8 @@ import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import type {
   About,
+  ActionPath,
+  Ask,
   Area,
   AreaFigure,
   AreaOverride,
@@ -42,6 +44,17 @@ import {
 } from '@clew/contracts';
 import { Value } from 'typebox/value';
 import { connectorProblems } from './validation';
+import { pathOf, unfilledInput } from './asks';
+export {
+  answersOf,
+  asksFor,
+  givenBy,
+  pathOf,
+  pendingAsks,
+  unfilledInput,
+  type AskingCapability,
+  type GivingAction,
+} from './asks';
 export {
   MENU_DEFAULT_ICON,
   fieldTone,
@@ -156,6 +169,10 @@ export interface Capability<I = unknown, O = unknown> {
    * cannot carry it, so a remote connector never claims a page inside Clew.
    */
   about?: About & { page?: EntityPage };
+  /** On a propose or execute (D111): what the person fills in before it runs, each naming one input property. */
+  asks?: Ask[];
+  /** On an execute (D111): a read of the same connector, same input, that says what the write will do where. */
+  effect?: string;
   run: (actor: Actor, input: I, clew: Clew) => Promise<O>;
 }
 /** A capability is a search source when it is named `<id>.search` and is a read (D26); the composite `clew.search` is never one itself. */
@@ -166,6 +183,9 @@ export const SEARCH_CONNECTOR = 'clew';
 /** A capability is an errand source when it is named `<id>.errands` and is a read (D35, D89); the composite `clew.errands` is never one itself. */
 export const isErrandSource = (c: Pick<Capability, 'name' | 'kind'>, connectorId: string) =>
   c.kind === 'read' && c.name === connectorId + '.errands' && connectorId !== SEARCH_CONNECTOR;
+/** A capability is a news source when it is named `<id>.news` and is a read (D111, amended 2026-11-11); the composite `clew.news` is never one itself. */
+export const isNewsSource = (c: Pick<Capability, 'name' | 'kind'>, connectorId: string) =>
+  c.kind === 'read' && c.name === connectorId + '.news' && connectorId !== SEARCH_CONNECTOR;
 /** The built-in connector of the talks domain (D96 item 9): Clew's own module, which answers the talks profile while it is enabled. */
 export const TALKS_CONNECTOR = 'talks';
 /** A capability answers the talks profile when it is named `<id>.talks` and is a read (D96 item 8); the composite `clew.talks` never does. */
@@ -225,6 +245,8 @@ export interface AboutAction {
   kind: 'propose' | 'execute';
   /** The input property that takes the entity's key. */
   param: string;
+  /** What the person passes through before it runs (D111): the asks less the key, the effect and the description. */
+  path: ActionPath;
   /** The connector is one of Clew's own (`kind: 'core'`). */
   core?: true;
 }
@@ -439,16 +461,37 @@ export class Registry {
   async refreshGovernance() {
     await this.refresh();
   }
-  /** Validate an approval without performing its source effect. */
-  async validate(actor: Actor, name: string, input: unknown) {
+  /**
+   * Validate an approval without performing its source effect. `pending` names asked properties (D111) the person
+   * answers later, when they decide: the input may lack them though the schema requires them, and nothing else.
+   */
+  async validate(actor: Actor, name: string, input: unknown, pending: readonly string[] = []) {
     await this.refresh();
     const found = this.allowed(actor, name);
     if (!found) throw new CapabilityError(UNKNOWN);
-    if (!this.validator(found.capability.input)(input))
+    const asked = new Set((found.capability.asks ?? []).map(a => a.property));
+    const waiting = pending.filter(p => asked.has(p));
+    if (!this.validator(found.capability.input, waiting)(input))
       throw new CapabilityError('Ogiltig förfrågan till ' + name + '.');
     return found;
   }
-  private validator(schema: object) {
+  private pendingValidators = new WeakMap<object, Map<string, ReturnType<Ajv['compile']>>>();
+  private validator(schema: object, pending: readonly string[] = []) {
+    if (pending.length) {
+      const key = [...pending].sort().join(',');
+      const forSchema = this.pendingValidators.get(schema) ?? new Map<string, ReturnType<Ajv['compile']>>();
+      this.pendingValidators.set(schema, forSchema);
+      let partial = forSchema.get(key);
+      if (!partial) {
+        const required = (schema as { required?: unknown }).required;
+        partial = this.ajv.compile({
+          ...JSON.parse(JSON.stringify(schema)),
+          ...(Array.isArray(required) ? { required: required.filter(r => !pending.includes(r)) } : {}),
+        });
+        forSchema.set(key, partial);
+      }
+      return partial;
+    }
     let validator = this.validators.get(schema);
     if (!validator) {
       validator = this.ajv.compile(schema);
@@ -747,7 +790,20 @@ export class Registry {
           return `action ${a.id} names ${a.preview} as preview, which is not a read`;
       }
       if (a.review && !a.preview) return `action ${a.id} asks for a review but names no preview`;
+      // A read receipt (D111, amended 2026-11-11) is a write the person makes, with the time of what they acknowledge.
+      if (a.acknowledgement !== undefined) {
+        if (a.kind !== 'execute') return `action ${a.id} is marked as a read receipt, which only an execute can be`;
+        const published = (a.acknowledgement as { publishedAt?: unknown } | null)?.publishedAt;
+        if (typeof published !== 'string' || Number.isNaN(Date.parse(published)))
+          return `action ${a.id} is a read receipt without the instant it was published`;
+      }
+      // Every property the input requires has someone to fill it (D111): the action's input, the rows, the review or an ask.
+      const unfilled = a.kind === 'read' ? undefined : unfilledInput(found.capability, a);
+      if (unfilled)
+        return `action ${a.id} leaves ${unfilled}, which ${a.capability} requires, to nobody: give it in input, use the rows or ask for it`;
     }
+    if (draft.actions.filter(a => a.acknowledgement !== undefined).length > 1)
+      return 'more than one action is marked as the read receipt; a work item has one';
     return undefined;
   }
   /** Drafts from every visible connector whose scan is switched on. A draft that breaks the action rule (D35) is refused and reported. */
@@ -829,6 +885,21 @@ export class Registry {
       }));
   }
   /**
+   * The news sources a person may read (D111, amended 2026-11-11): every `<id>.news` read in scope, with the read a row
+   * of it opens in Clew. As in `errandSources`, the name is tested before the scope: `clew.news` is in scope only for a
+   * person with a source, so its own scope asks this, and must never be asked from here.
+   */
+  newsSources(actor: Actor) {
+    return [...this.capabilities.values()]
+      .filter(c => isNewsSource(c.capability, c.connector.id) && !!this.allowed(actor, c.capability.name))
+      .map(c => ({
+        name: c.capability.name,
+        connectorId: c.connector.id,
+        source: c.connector.source,
+        ...(this.opens(actor, c.capability) ? { open: this.opens(actor, c.capability)! } : {}),
+      }));
+  }
+  /**
    * The reads about an entity kind a person may call (D97), connector by connector and by name within one, with what the
    * entities module places them by: the view as the person gets it (a row's `open` only when they may call that read),
    * how many keys one call takes, and the administrator's lens and column (a column only while its field is in the
@@ -876,6 +947,7 @@ export class Registry {
               title: capability.title,
               kind: capability.kind,
               param: capability.about.param,
+              path: pathOf(capability, [capability.about.param])!,
               ...(connector.kind === 'core' ? { core: true as const } : {}),
             },
           ]
@@ -1040,7 +1112,8 @@ export class Registry {
   /**
    * Tool definitions for the model: `model: true` capabilities the person may call, from connectors whose tools are on (D8).
    * The per-connector search sources are left out while the composite search is registered, so the model sees one search tool (D26).
-   * The per-connector errand lists are left out the same way while `clew.errands` is registered (D35 item 4).
+   * The per-connector errand lists are left out the same way while `clew.errands` is registered (D35 item 4), and the
+   * per-connector news lists while `clew.news` is (D111, amended 2026-11-11).
    * The talks profile and its composites are never tools, registered or not: no read of that domain reaches a model (D96 item 6).
    * A read about an entity is never a tool either (D97 item 7): the loader refuses `model: true` on one, and this holds
    * whatever a registration says.
@@ -1048,13 +1121,20 @@ export class Registry {
   tools(actor: Actor) {
     const composite = this.capabilities.has(SEARCH_CONNECTOR + '.search');
     const errands = this.capabilities.has(SEARCH_CONNECTOR + '.errands');
+    const news = this.capabilities.has(SEARCH_CONNECTOR + '.news');
+    // An execute's effect read (D111) says what a decision will write; the loader holds it to model: false, and this holds whatever a registration says.
+    const effects = new Set(
+      [...this.capabilities.values()].flatMap(c => (c.capability.effect ? [c.capability.effect] : [])),
+    );
     return this.capabilitiesFor(actor)
+      .filter(c => !effects.has(c.capability.name))
       .filter(c => {
         const g = this.governance(c.connector.id);
         return c.capability.model && g.toolsEnabled && g.capabilities[c.capability.name]?.model !== false;
       })
       .filter(c => !(composite && isSearchSource(c.capability, c.connector.id)))
       .filter(c => !(errands && isErrandSource(c.capability, c.connector.id)))
+      .filter(c => !(news && isNewsSource(c.capability, c.connector.id)))
       .filter(c => !isTalkSource(c.capability, c.connector.id) && !isCommitmentSource(c.capability, c.connector.id))
       .filter(c => c.capability.name !== TALK_COMPOSITE && c.capability.name !== COMMITMENT_COMPOSITE)
       .filter(c => !(c.capability.kind === 'read' && c.capability.about))

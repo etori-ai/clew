@@ -1,6 +1,6 @@
 import { Value } from 'typebox/value';
 import type { AuthenticatedContext, ThreadAction, ThreadItem } from '@clew/contracts';
-import { actorOf, CapabilityError, type Registry, type ThreadDraft } from '@clew/connectors';
+import { actorOf, CapabilityError, pendingAsks, type Registry, type ThreadDraft } from '@clew/connectors';
 import { ThreadDraftSchema } from '@clew/connectors/protocol';
 import { InputError } from '../../context';
 import type { ThreadStore } from '../model';
@@ -16,7 +16,7 @@ import type { ThreadStore } from '../model';
  */
 export interface StartedDeps {
   store: ThreadStore;
-  registry: Pick<Registry, 'validate' | 'draftProblem'>;
+  registry: Pick<Registry, 'validate' | 'draftProblem' | 'find'>;
   /** Run a capability as the person, with input validation and scope: `runCapability` in the server. */
   run: (persona: AuthenticatedContext, name: string, input: unknown) => Promise<unknown>;
   /** A short, stable digest of a value: what makes two requests the same card. */
@@ -32,6 +32,8 @@ export interface StartContext {
   items?: ThreadItem[];
   /** What the action is about, for the audit row (D97: `{ entity, key }`). */
   about?: Record<string, unknown>;
+  /** The person's answers to a propose's asks (D111), already in the input: the audit row names them. */
+  asked?: Record<string, string>;
 }
 
 export function startedCards({ store, registry, run, digest, clock, ids }: StartedDeps) {
@@ -44,18 +46,21 @@ export function startedCards({ store, registry, run, digest, clock, ids }: Start
   ): Promise<{ threadId: string }> {
     await persona.authorize();
     let found: Awaited<ReturnType<typeof registry.validate>>;
+    // An execute's asks are answered when the person decides on its card (D111): until then the input may lack them.
+    const declared = registry.find(capability)?.capability;
+    const pending = declared?.kind === 'execute' ? pendingAsks(declared, Object.keys(input)) : [];
     try {
-      found = await registry.validate(actorOf(persona), capability, input);
+      found = await registry.validate(actorOf(persona), capability, input, pending);
     } catch (error) {
       throw error instanceof CapabilityError ? new InputError(error.message) : error;
     }
-    const { connector, capability: declared } = found;
+    const { connector, capability: chosen } = found;
     // A follower answers a fact with steps, and a reviewed execute needs rows the person picks: neither starts from a key.
-    if ((declared.kind !== 'propose' && declared.kind !== 'execute') || declared.follows || declared.review)
+    if ((chosen.kind !== 'propose' && chosen.kind !== 'execute') || chosen.follows || chosen.review)
       throw new InputError('Åtgärden kan inte startas härifrån.');
     let draft: Omit<ThreadDraft, 'topic' | 'reason' | 'occurrences'>;
     let identity: unknown;
-    if (declared.kind === 'propose') {
+    if (chosen.kind === 'propose') {
       const output = await run(persona, capability, input);
       if (!Value.Check(ThreadDraftSchema, output) || registry.draftProblem(connector.id, output))
         throw new InputError(`Förslaget från ${connector.source} kunde inte läsas.`);
@@ -64,7 +69,7 @@ export function startedCards({ store, registry, run, digest, clock, ids }: Start
     } else {
       const decide: ThreadAction = {
         id: 'decide',
-        label: declared.title,
+        label: chosen.title,
         capability,
         kind: 'execute',
         role: 'primary',
@@ -72,8 +77,8 @@ export function startedCards({ store, registry, run, digest, clock, ids }: Start
       };
       draft = {
         area: connector.areas.find(a => a.roles.includes(persona.role))?.id ?? connector.areas[0]?.id ?? connector.id,
-        title: declared.title,
-        summary: declared.description,
+        title: chosen.title,
+        summary: chosen.description,
         items: context.items ?? [],
         actions: [decide],
       };
@@ -116,10 +121,11 @@ export function startedCards({ store, registry, run, digest, clock, ids }: Start
         details: {
           connector: connector.id,
           capability,
-          kind: declared.kind,
+          kind: chosen.kind,
           topic,
           owner: persona.id,
           ...(context.about ? { about: context.about } : {}),
+          ...(context.asked && Object.keys(context.asked).length ? { asked: context.asked } : {}),
         },
       });
       return true;
@@ -128,7 +134,7 @@ export function startedCards({ store, registry, run, digest, clock, ids }: Start
     // Another request made the same card first.
     const raced = await store.openThread(persona.id, topic);
     if (raced) return { threadId: raced.id };
-    throw new InputError('Kortet kunde inte skapas.');
+    throw new InputError('Ärendet kunde inte skapas.');
   }
   return { startCard };
 }

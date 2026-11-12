@@ -151,7 +151,7 @@ export function ReviewOverlay() {
       ? 'Steget finns inte'
       : `${readOnly ? 'Visa' : 'Granska'} ${items.length} ${items.length === 1 ? 'rad' : 'rader'}`
     : missing
-      ? 'Kortet finns inte'
+      ? 'Ärendet finns inte'
       : 'Granskning';
   // The document title names the review while it is open, and the page's own comes back when it closes. The overlay
   // says its name itself when the focus enters it, so the title is not spoken.
@@ -286,7 +286,7 @@ export function ReviewOverlay() {
     )
   ) : missing ? (
     message(
-      <Text as="p">Det finns inget att granska här: kortet har ingen granskning, eller så har adressen ändrats.</Text>,
+      <Text as="p">Det finns inget att granska här: ärendet har ingen granskning, eller så har adressen ändrats.</Text>,
     )
   ) : failed ? (
     message(
@@ -656,9 +656,9 @@ function Review({
             <Text weight="semibold">Vad som händer när du skickar</Text>
             <Text as="p" type="supporting">
               {verb} skrivs till {source} i ett beslut och läses tillbaka rad för rad som kvitto. Grönt bara när{' '}
-              {source} har bekräftat. Kortet går till Klart
+              {source} har bekräftat. Ärendet går till Klart
               {left + undecided > 0
-                ? `; det som lämnas kvar ligger kvar på kortet och kommer som ett eget kort vid nästa genomgång.`
+                ? `; det som lämnas kvar ligger kvar i ärendet och kommer som ett eget ärende vid nästa genomgång.`
                 : '.'}
             </Text>
           </VStack>
@@ -698,7 +698,7 @@ function Review({
           <LayoutContent>
             <VStack gap={3} paddingBlock={10} role="status" aria-label="Bekräftat av källan">
               <CompletionFeedback title="Klart" detail={completed.headline} />
-              <Text type="supporting">Bekräftat av {source}. Kvittot finns på kortet.</Text>
+              <Text type="supporting">Bekräftat av {source}. Kvittot finns i ärendet.</Text>
             </VStack>
           </LayoutContent>
         }
@@ -838,7 +838,7 @@ function Review({
             <VStack gap={2}>
               {error && <Text role="alert">{error}</Text>}
               <HStack gap={2} wrap="wrap">
-                <Button label="Tillbaka till kortet" onClick={onClose} />
+                <Button label="Tillbaka till ärendet" onClick={onClose} />
                 {['failed', 'partial'].includes(thread.execution?.state ?? '') &&
                   thread.receipt?.rows.some(r => r.outcome === 'failed') && (
                     <Button

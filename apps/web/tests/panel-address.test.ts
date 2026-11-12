@@ -8,7 +8,10 @@ import {
   panelSearch,
   readOf,
   reviewOverCard,
+  viewSearch,
+  withAsk,
   withCard,
+  withEntry,
   withRead,
   withView,
   withoutPanel,
@@ -32,13 +35,21 @@ describe('a card opens over the page the person is on (D110 rule 2)', () => {
       '/people/johan?section=x&from=%2Fstaff',
     );
   });
-  test('from the bell, a toast or the search: over the page, letting go of a review or a talk over it (D110 rule 5)', () => {
+  test('from the bell, a toast or the search: over the page, letting go of a review or a talk over it (D110 rule 5, D111)', () => {
     expect(cardOverPage('/admin/connectors', '', 'ledighet')).toBe('/admin/connectors?card=ledighet');
     expect(
       cardOverPage('/staff', '?show=clew.talkPeople&card=samtal&open-card=samtal&open-action=pattern', 'ledighet'),
     ).toBe('/staff?show=clew.talkPeople&card=ledighet');
-    expect(cardOverPage('/', '?tab=done&card=fakturor&review=fakturor&step=2', 'ledighet')).toBe(
-      '/?tab=done&card=ledighet',
+    // Hem holds no card since D111: the item is the work item in Att göra's pane, and on Att göra it takes the pane.
+    expect(cardOverPage('/', '?tab=done&card=fakturor&review=fakturor&step=2', 'ledighet')).toBe('/todo?item=ledighet');
+    expect(cardOverPage('/todo', '?tab=waiting&item=fakturor&review=fakturor&step=2', 'ledighet')).toBe(
+      '/todo?tab=waiting&item=ledighet',
+    );
+    expect(cardOverPage('/items/ledighet', '?from=%2Fstaff&review=ledighet', 'ledighet')).toBe(
+      '/items/ledighet?from=%2Fstaff',
+    );
+    expect(cardOverPage('/items/fakturor', '?from=%2Ftodo', 'ledighet')).toBe(
+      '/items/fakturor?from=%2Ftodo&card=ledighet',
     );
     expect(cardOverPage('/people/karin', '?from=%2Fstaff&talk=karin', 'ledighet')).toBe(
       '/people/karin?from=%2Fstaff&card=ledighet',
@@ -119,5 +130,41 @@ describe('a card’s own read unfolds inside the card (D110, amended 2026-11-11)
       '?card=t1&open-card=t1&open-action=pattern',
     );
     expect(reviewOverCard('/', '?card=t1&open-card=t1&open-action=pattern', 't2')).toBe('/?card=t2&review=t2');
+  });
+});
+
+describe("a page's own thing in the panel (D111 items 7 and 9)", () => {
+  test('Fråga Clew makes the page the thing: it takes the place of what the panel held and lets go of what lay over it', () => {
+    expect(withAsk('/items/omtanke', '?from=%2Ftodo')).toBe('/items/omtanke?from=%2Ftodo&ask=1');
+    expect(withAsk('/staff', '?show=talks&card=c1&open-card=c1&open-action=pattern&review=c1')).toBe(
+      '/staff?show=talks&ask=1',
+    );
+    expect(panelOf(new URLSearchParams('?ask=1'))).toEqual({ kind: 'page' });
+  });
+  test("Kalender's entry is the page's thing too; a card or a view opened over the page takes its place", () => {
+    expect(withEntry('/calendar', '?date=2026-11-09&view=week&ask=1', 'p1')).toBe(
+      '/calendar?date=2026-11-09&view=week&entry=p1',
+    );
+    expect(panelOf(new URLSearchParams('?entry=p1'))).toEqual({ kind: 'entry', id: 'p1' });
+    expect(withCard('/calendar', '?date=2026-11-09&entry=p1', 'ledighet')).toBe(
+      '/calendar?date=2026-11-09&card=ledighet',
+    );
+    expect(withView('/calendar', '?ask=1', { capability: 'calendar.rooms', title: 'Mötesrum' })).toBe(
+      '/calendar?open=calendar.rooms&open-title=M%C3%B6tesrum',
+    );
+    expect(panelOf(new URLSearchParams('?entry=p1&card=c1'))).toEqual({ kind: 'card', threadId: 'c1' });
+  });
+  test('closing lets go of the page’s own thing last, and the conversation’s page does not take it along', () => {
+    expect(withoutPanel('/calendar', '?date=2026-11-09&entry=p1')).toBe('/calendar?date=2026-11-09');
+    expect(withoutPanel('/tools/phonebook.directory', '?input=%7B%7D&ask=1')).toBe(
+      '/tools/phonebook.directory?input=%7B%7D',
+    );
+    expect(pageOnly('/calendar', '?date=2026-11-09&entry=p1&ask=1')).toBe('/calendar?date=2026-11-09');
+    expect(panelSearch('?entry=p1&ask=1&card=c1')).toBe('?card=c1');
+  });
+  test("a view's part of the conversation page's address: the view beside the transcript", () => {
+    expect(viewSearch({ capability: 'calendar.week', title: 'Vecka 45', input: { from: '2026-11-02' } })).toBe(
+      '?open=calendar.week&open-title=Vecka+45&open-input=%7B%22from%22%3A%222026-11-02%22%7D',
+    );
   });
 });

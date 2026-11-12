@@ -186,6 +186,7 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
                   <AsyncContent pending={pending} fallback={<ContentSkeleton />} gap={5}>
                     {/* A source's refusal of an action from a row's menu, said aloud as it came (entity-actions.ts). */}
                     {action.error && <Text as="p">{action.error}</Text>}
+                    {action.dialog}
                     {ctx && groups.length === 0 ? (
                       <Card>
                         <EmptyState

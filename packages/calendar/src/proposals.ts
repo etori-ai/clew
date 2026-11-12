@@ -147,6 +147,54 @@ export function freeGaps(day: string, events: Interval[], minMinutes = 30) {
     gaps.push({ start: new Date(cursor).toISOString(), end: new Date(end).toISOString() });
   return gaps;
 }
+/** The input of `freeSlots`: a window of Stockholm days and what is already in the person's own calendar. */
+export interface FreeSlotInput {
+  /** First day of the window (YYYY-MM-DD). */
+  from: string;
+  /** The day after the window (YYYY-MM-DD), exclusive. */
+  until: string;
+  /** The person's own busy instants. */
+  busy: Interval[];
+  /** Earliest acceptable start: a suggestion is never in the past. */
+  notBefore: string;
+  durationMinutes: number;
+  /** How many times to suggest; three by default. */
+  count?: number;
+}
+/**
+ * Free times for one meeting in one person's own calendar (D111 item 10), deterministic and without a model: weekdays
+ * 09–16 on whole or half hours, lunch kept free, as the planner searches (D30). At most one a day while there are days
+ * left, earliest first, then the next free time of each day in turn, so the person is offered a spread before a cluster.
+ */
+export function freeSlots(input: FreeSlotInput): Interval[] {
+  const count = input.count ?? 3;
+  const duration = input.durationMinutes;
+  const perDay: Interval[][] = [];
+  for (let day = input.from; day < input.until; day = addDays(day, 1)) {
+    if (new Date(day + 'T12:00:00Z').getUTCDay() % 6 === 0) continue; // Saturday and Sunday
+    const free: Interval[] = [];
+    for (let minutes = 9 * 60; minutes + duration <= 16 * 60; minutes += 30) {
+      if (minutes < 13 * 60 && minutes + duration > 12 * 60) continue; // lunch
+      try {
+        const at = Date.parse(
+          localInstant(
+            `${day}T${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`,
+          ),
+        );
+        const start = new Date(at).toISOString();
+        const slot = { start, end: new Date(at + duration * 60000).toISOString() };
+        if (Date.parse(start) >= Date.parse(input.notBefore) && !collides(slot, input.busy)) free.push(slot);
+      } catch {
+        /* skipped local time */
+      }
+    }
+    if (free.length) perDay.push(free);
+  }
+  const slots: Interval[] = [];
+  for (let round = 0; slots.length < count && perDay.some(d => d.length > round); round++)
+    for (const day of perDay) if (slots.length < count && day[round]) slots.push(day[round]!);
+  return slots.sort((a, b) => a.start.localeCompare(b.start));
+}
 export const withinOfficeHours = (slot: Interval) => {
   const s = minutesOfDay(slot.start),
     e = minutesOfDay(slot.end);

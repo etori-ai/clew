@@ -1,8 +1,11 @@
-import { useCallback, useRef, type ComponentProps } from 'react';
+import { createElement, useCallback, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
-import type { EntityAction, EntityKind } from '@clew/contracts';
+import type { AskValues, EntityAction, EntityKind } from '@clew/contracts';
 import { useAnnounce, type MoreMenu } from '@clew/ui';
 import { api } from './api';
+import { opensDialog } from './action-path';
+import { requestAction } from './action-requests';
+import { ActionDialog } from './components/action-dialog';
 import { useEntityStart } from './mutations';
 import { withCard } from './panel-address';
 
@@ -41,6 +44,8 @@ export interface EntityActionStart {
   /** The source's Swedish sentence, shown beside what started it until the next start. */
   error: string | null;
   busy: boolean;
+  /** The action dialog of a propose that asks (D111 item 10); the page renders it wherever it renders the buttons. */
+  dialog: ReactNode;
 }
 /**
  * Starting an action about an entity (D97, D8): the server starts it on the entity's key without the model and answers
@@ -58,19 +63,70 @@ export function useEntityAction(): EntityActionStart {
   const here = useRef(location);
   here.current = location;
   const announce = useAnnounce();
-  const { start, busy, error } = useEntityStart();
+  const { start, busy, error, reset } = useEntityStart();
+  // A propose that asks is filled in before it starts (D111 item 10): its dialog, and what the person typed per action
+  // and entity while the page stays, so a closed and reopened dialog keeps it.
+  const [asking, setAsking] = useState<{ action: EntityAction; subject: ActionSubject; open: boolean } | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, AskValues>>({});
+  const draftKey = (action: EntityAction, subject: ActionSubject) =>
+    `${subject.kind ?? 'person'}:${subject.key}:${action.capability}`;
   const run = useCallback(
     (action: EntityAction, subject: ActionSubject) => {
       const kind = subject.kind ?? 'person';
+      if (action.kind === 'propose' && opensDialog(action)) {
+        setAsking({ action, subject, open: true });
+        return;
+      }
       void start(() => api.entities.start(kind, subject.key, action.capability), { kind, key: subject.key }).then(
         started => {
           if (!started) return;
-          if ('threadId' in started) navigate(withCard(here.current.pathname, here.current.search, started.threadId));
-          else announce(started.error);
+          if ('threadId' in started) {
+            // An execute's answers are given at its decision (D111): its work item opens beside the page with the dialog
+            // over it, on the item's own button.
+            if (action.kind === 'execute' && opensDialog(action))
+              requestAction({ threadId: started.threadId, actionId: 'decide' });
+            navigate(withCard(here.current.pathname, here.current.search, started.threadId));
+          } else announce(started.error);
         },
       );
     },
     [start, navigate, announce],
   );
-  return { start: run, error, busy };
+  /** The propose with its answers: the work item it drafts opens beside the page; a refusal stays in the dialog. */
+  const send = async (values: AskValues): Promise<string | null> => {
+    if (!asking) return null;
+    const { action, subject } = asking;
+    const kind = subject.kind ?? 'person';
+    const started = await start(() => api.entities.start(kind, subject.key, action.capability, values), {
+      kind,
+      key: subject.key,
+    });
+    if (!started) return null;
+    if ('error' in started) {
+      // The dialog places the refusal; the page does not say it a second time.
+      reset();
+      return started.error;
+    }
+    setAsking({ ...asking, open: false });
+    setDrafts(({ [draftKey(action, subject)]: _sent, ...rest }) => rest);
+    navigate(withCard(here.current.pathname, here.current.search, started.threadId));
+    return null;
+  };
+  const dialog = asking
+    ? createElement(ActionDialog, {
+        target: {
+          kind: 'entity',
+          entity: { kind: asking.subject.kind ?? 'person', key: asking.subject.key, name: asking.subject.name },
+          action: asking.action,
+        },
+        isOpen: asking.open,
+        onOpenChange: open => {
+          if (!open) setAsking({ ...asking, open: false });
+        },
+        values: drafts[draftKey(asking.action, asking.subject)] ?? {},
+        onValuesChange: values => setDrafts(d => ({ ...d, [draftKey(asking.action, asking.subject)]: values })),
+        onSend: send,
+      })
+    : null;
+  return { start: run, error, busy, dialog };
 }

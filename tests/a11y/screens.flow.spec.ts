@@ -33,10 +33,10 @@ test.describe('screens', () => {
     await open(page, '/');
     await page.screenshot({ path: out('3-att-gora') });
     await open(page, '/?card=fakturor');
-    await page.getByRole('complementary', { name: 'Kort' }).waitFor();
+    await page.getByRole('complementary', { name: 'Ärende' }).waitFor();
     await page.screenshot({ path: out('3-att-gora-kort') });
     await page.setViewportSize(desktop);
-    await page.getByRole('dialog', { name: 'Kort' }).waitFor();
+    await page.getByRole('dialog', { name: 'Ärende' }).waitFor();
     await page.screenshot({ path: out('3-att-gora-kort-1280') });
   });
   test('3 samtal om kortet', async ({ page, api: _ }) => {

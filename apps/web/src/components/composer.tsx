@@ -163,8 +163,12 @@ const STOP = new Set([
   'över',
   'om',
 ]);
-export type ComposerPlace = 'landing' | 'conversation' | 'page';
-/** What a tool page's box asks about (D50): its name in the placeholder, and what the conversation takes with it. */
+/**
+ * `thing` is the box at the foot of the panel beside an opened thing (D111 item 7): it asks about that thing only, so it
+ * has no drawer, no `@`, no model menu and no verbs, and its placeholder names the thing ("Fråga om ärendet …").
+ */
+export type ComposerPlace = 'landing' | 'conversation' | 'page' | 'thing';
+/** What a box asks about (D50): its name in the placeholder, and what the conversation takes with it. */
 export type ComposerAbout = AskFrom & { label: string };
 /** The landing's field is three lines tall from the start, as the `ai-chat-landing` template sets it on its `ChatComposerInput` (D41). */
 const landingField = { minHeight: 84 };
@@ -187,8 +191,10 @@ export function Composer({
   about?: ComposerAbout | undefined;
 }) {
   const talk = useConversation();
-  // While this box is on the page, "Lägg till i samtalet" is offered (D110 rule 6).
-  useClaimBox();
+  // While a conversation's own box is on the page, "Lägg till i samtalet" is offered (D111 item 7): elsewhere an opened
+  // thing has its own box beside it, which asks about that thing.
+  useClaimBox(place === 'conversation');
+  const thing = place === 'thing';
   // A token and an `@` row carry the glyph of the system the ref belongs to (D71, artboard 8): the glyph beside the word, no hue.
   const markOf = useObjectMark();
   const glyph = (ref: string, threadId?: string) => {
@@ -225,7 +231,7 @@ export function Composer({
       hasMultiWordQuery: true,
       menuLabel: 'Objekt',
       loadingText: 'Söker …',
-      emptySearchText: 'Inget här matchar. Skriv för att söka bland alla kort, rader och system.',
+      emptySearchText: 'Inget här matchar. Skriv för att söka bland alla ärenden, rader och system.',
       searchSource: {
         search: async q => toItems((await api.objects(q, context.current)).objects),
         bootstrap: async () => toItems((await api.objects('', context.current)).objects),
@@ -251,7 +257,8 @@ export function Composer({
           ? 'Nytt samtal: skriv eller säg vad du vill göra …'
           : 'Skriv eller säg vad du vill göra …';
   const plain = talk.value.replace(/@\[[^\]]+\]/g, '').trim();
-  const aboutChips = (about?.chips ?? []).filter(c => !talk.chips.some(t => t.ref === c.ref));
+  // The thing beside the box is named in the panel's header and in the placeholder; its chip is not drawn again here.
+  const aboutChips = thing ? [] : (about?.chips ?? []).filter(c => !talk.chips.some(t => t.ref === c.ref));
   const announced = useAddedAnnouncement(talk.chips);
   const mobile = useMediaQuery(mobileQuery);
   // The scope line (H3.3): in a conversation, the conversation. Hem's box has none, also with a card open beside it.
@@ -302,11 +309,11 @@ export function Composer({
       input={
         <ChatComposerInput
           handleRef={talk.input}
-          label={place === 'conversation' ? 'Svara i samtalet' : 'Vad vill du göra'}
+          label={place === 'conversation' ? 'Svara i samtalet' : thing ? 'Fråga Clew' : 'Vad vill du göra'}
           maxRows={place === 'landing' ? 4 : 3}
           style={place === 'landing' && roomy ? landingField : undefined}
           hasHistory={false}
-          triggers={[trigger]}
+          triggers={thing ? [] : [trigger]}
           placeholder={placeholder}
           onKeyDown={e => {
             if (talk.pending && e.key === 'Enter' && !e.shiftKey) e.preventDefault();
@@ -331,8 +338,8 @@ export function Composer({
         <HStack gap={1} wrap="wrap">
           {/* The verbs about a card the person added with "Lägg till i samtalet", the one chip with nothing typed;
               a card merely open beside Hem brings none (D110 rule 6). */}
-          {talk.chips.length === 1 && !plain && talk.verbs.length > 0 && (
-            <HStack gap={1} wrap="wrap" role="group" aria-label="Om kortet">
+          {!thing && talk.chips.length === 1 && !plain && talk.verbs.length > 0 && (
+            <HStack gap={1} wrap="wrap" role="group" aria-label="Om ärendet">
               {talk.verbs.map(v => (
                 <Verb
                   key={v.id}
@@ -345,7 +352,7 @@ export function Composer({
               ))}
             </HStack>
           )}
-          {place !== 'page' && <ModelMenu isDisabled={talk.busy} />}
+          {place !== 'page' && !thing && <ModelMenu isDisabled={talk.busy} />}
           <VisuallyHidden role="status">{announced}</VisuallyHidden>
         </HStack>
       }
@@ -400,7 +407,7 @@ export function Suggestions({
     ...cards.map(t => ({
       key: 'card:' + t.id,
       label: t.title,
-      detail: `${t.trigger.source} · öppnar kortet`,
+      detail: `${t.trigger.source} · öppnar ärendet`,
       go: () => navigate(cardHref(t.id)),
     })),
     ...completions.do
@@ -408,7 +415,7 @@ export function Suggestions({
       .map(d => ({
         key: 'do:' + d.capability,
         label: d.text,
-        detail: `${d.source} · ${d.kind === 'read' ? 'öppnar vyn' : 'öppnar kortet'}`,
+        detail: `${d.source} · ${d.kind === 'read' ? 'öppnar vyn' : 'öppnar ärendet'}`,
         go: () => (d.kind === 'read' ? navigate(viewHref(d.capability, d.text)) : talk.ask(d.text)),
       })),
     ...completions.ask

@@ -335,6 +335,8 @@ describe('the list of people or units', () => {
         title: 'Boka samtal',
         kind: 'propose',
         param: 'person',
+        // It asks nothing and says nothing beforehand (D111): the dialog draws only its description.
+        path: { asks: [], effect: false, description: 'x' },
       },
     ]);
   });

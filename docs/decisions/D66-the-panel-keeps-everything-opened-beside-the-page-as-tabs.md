@@ -1,6 +1,6 @@
 # D66 · The panel keeps everything opened beside the page as tabs
 
-**Status:** superseded by D110 as amended 2026-11-11 (the panel holds one thing; the tabs are removed), built 2026-11-06 on `main`, revised the same day (items 2, 4 and 5: a menu, not a row; item 3 the same evening: the fold keeps the tabs, Stäng alla closes all) · **Date:** 2026-11-06 · **Area:** ui
+**Status:** superseded by D110 as amended 2026-11-11 (the panel holds one thing; the tabs are removed), built 2026-11-06 on `main`, revised the same day (items 2, 4 and 5: a menu, not a row; item 3 the same evening: the fold keeps the tabs, Stäng alla closes all); stays superseded under [D111](D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) (2026-11-11) · **Date:** 2026-11-06 · **Area:** ui
 
 **Decision.** Beside a page the panel ([D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md)
 item 3) no longer replaces what it holds. Each card or view opened joins a row of tabs in the panel's header, in the

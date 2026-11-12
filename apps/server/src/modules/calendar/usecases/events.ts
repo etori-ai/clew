@@ -13,7 +13,7 @@ import type {
   Thread,
 } from '@clew/contracts';
 import { addDays, dayStart, displayDate, shortDayLabel, timeRange } from '@clew/calendar/dates';
-import { collides, type Interval } from '@clew/calendar/proposals';
+import { collides, freeSlots, type Interval } from '@clew/calendar/proposals';
 import { CalendarError, type EventOccurrence } from '@clew/calendar/model';
 import { InputError } from '../../../context';
 import type { CalendarBinder, ProposalRecord, ProposalStore, Team } from '../model';
@@ -32,6 +32,10 @@ export interface EventDeps {
   ids: () => string;
 }
 const DAY_MS = 86_400_000;
+/** How far ahead free times are looked for (D111): two weeks, ten working days. */
+const FREE_DAYS = 14;
+/** A suggested time starts at least this long from now. */
+const FREE_LEAD_MS = 60 * 60_000;
 const toProposal = (p: ProposalRecord): Thread['proposals'][number] => ({
   id: p.id,
   threadId: p.threadId,
@@ -85,6 +89,32 @@ export function eventUsecases({ store, bind, team, clock, ids }: EventDeps) {
       .map(toProposal);
     return { from: date, events: events.map(e => toEvent(e, binding, persona.name, members)), proposals };
   }
+  /**
+   * Free times for a meeting a write asks the person to set (D111 item 10): `count` of `durationMinutes` in the person's
+   * own calendar, from an hour from now over two weeks, or until the day `before` when it comes sooner, one a day where
+   * possible. Nobody else's calendar is read and nothing is written.
+   */
+  async function freeTimes(
+    persona: AuthenticatedContext,
+    input: { durationMinutes: number; before?: string },
+  ): Promise<{ slots: Interval[] }> {
+    if (input.before !== undefined && !isoDate.test(input.before)) throw new InputError('Ogiltigt datum.');
+    const now = clock();
+    const from = displayDate(now.toISOString());
+    const last = addDays(from, FREE_DAYS);
+    const until = input.before && input.before < last ? addDays(input.before, 1) : last;
+    if (until <= from) return { slots: [] };
+    const events = await bind(persona).provider.list(dayStart(from), dayStart(until));
+    return {
+      slots: freeSlots({
+        from,
+        until,
+        busy: events.filter(e => !e.allDay).map(interval),
+        notBefore: new Date(now.getTime() + FREE_LEAD_MS).toISOString(),
+        durationMinutes: input.durationMinutes,
+      }),
+    };
+  }
   /** Free or busy for the person, the chosen members and the room over one window; "unknown" when a source cannot answer. */
   async function checkAvailability(
     persona: AuthenticatedContext,
@@ -123,7 +153,7 @@ export function eventUsecases({ store, bind, team, clock, ids }: EventDeps) {
     input: MoveProposalInput,
   ): Promise<Thread> {
     const current = await store.readThread(persona.id, threadId);
-    if (!current || current.thread.state !== 'open') throw new InputError('Kortet är redan hanterat.');
+    if (!current || current.thread.state !== 'open') throw new InputError('Ärendet är redan hanterat.');
     const proposal = current.proposals.find(p => p.id === proposalId && p.status === 'proposed');
     if (!proposal) throw new InputError('Förslaget är inte längre aktuellt. Läs om sidan.');
     window(input.start, input.end);
@@ -188,6 +218,6 @@ export function eventUsecases({ store, bind, team, clock, ids }: EventDeps) {
     });
     return (await store.readThread(persona.id, threadId))!.thread;
   }
-  return { listMembers, listRooms, dayView, checkAvailability, moveProposal };
+  return { listMembers, listRooms, dayView, freeTimes, checkAvailability, moveProposal };
 }
 export type EventUsecases = ReturnType<typeof eventUsecases>;

@@ -3,7 +3,7 @@ import { desktop, expect, expectNoAxeViolations, open, test } from './support';
 test.describe('a decision the card is left waiting on keeps its way back where the card lies (D70 amended)', () => {
   test.use({ viewport: desktop });
   test('toast undo keeps a rejected request visible and succeeds when retried', async ({ page, api }) => {
-    await open(page, '/?card=samtal');
+    await open(page, '/todo?item=samtal');
     await page.locator('#card-samtal').getByRole('button', { name: 'Skicka 2 inbjudningar' }).click();
     const toasts = page.getByRole('region', { name: 'Aviseringar' });
     const undo = toasts.getByRole('button', { name: 'Ångra', exact: true });
@@ -26,64 +26,69 @@ test.describe('a decision the card is left waiting on keeps its way back where t
     page,
     api: _,
   }) => {
-    await open(page, '/?card=samtal');
+    await open(page, '/todo?item=samtal');
     await page.locator('#card-samtal').getByRole('button', { name: 'Skicka 2 inbjudningar' }).click();
     const toasts = page.getByRole('region', { name: 'Aviseringar' });
     const show = toasts.getByRole('link', { name: 'Visa' });
-    // On Hem it leads to the tab the card went to, with the card beside it.
-    await expect(show).toHaveAttribute('href', '/?tab=waiting&card=samtal');
-    // The card lies over Hem at this width: closed first, then the person goes to Kalender with the toast still there.
-    await page.keyboard.press('Escape');
-    await expect(page.getByRole('dialog', { name: 'Kort' })).toHaveCount(0);
-    await page.getByRole('navigation').getByRole('link', { name: 'Kalender', exact: true }).click();
+    // In Att göra it leads to the pile the item went to, with the item in the reading pane (D111).
+    await expect(show).toHaveAttribute('href', '/todo?tab=waiting&item=samtal');
+    // The person goes to Kalender with the toast still there.
+    await page
+      .getByRole('navigation', { name: 'Sidonavigering' })
+      .getByRole('link', { name: 'Kalender', exact: true })
+      .click();
     await expect(page.getByRole('heading', { level: 1, name: 'Vecka' })).toBeVisible();
     await expect(show).toHaveAttribute('href', '/calendar?card=samtal');
     await show.click();
     await expect(page).toHaveURL('/calendar?card=samtal');
     await expect(page.getByRole('heading', { level: 1, name: 'Vecka' })).toBeAttached();
-    await expect(page.getByRole('dialog', { name: 'Kort' }).locator('#card-samtal')).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Ärende' }).locator('#card-samtal')).toBeVisible();
   });
 
-  test('sending the invitations keeps the row with the receipt and Ångra, the toast says the card is under Väntar på andra, and the row there undoes it', async ({
+  test('sending the invitations keeps the row with the receipt and the item with Ångra, the toast says the card is under Väntar på andra, and the item there undoes it', async ({
     page,
     api: _,
   }) => {
-    await open(page, '/?card=samtal');
-    // The card open beside the page has its own id (D50); on this viewport the panel is no dialog.
-    const card = page.locator('#card-samtal');
+    await open(page, '/todo?item=samtal');
+    // The work item in Att göra's reading pane (D111 item 3).
+    const pane = page.getByRole('complementary', { name: 'Valt ärende' });
+    const card = pane.locator('#card-samtal');
     await card.getByRole('button', { name: 'Skicka 2 inbjudningar' }).click();
-    // The row keeps its place for a moment with what was done; its one control is still the ✕ of the open card (D66), and
-    // the open card has its own Ångra allt.
-    const row = page.getByRole('main').locator('#thread-samtal');
-    await expect(row).toContainText('2 av 2 kalenderändringar är bekräftade · Kalendern svarade');
-    await expect(row.getByRole('button', { name: 'Stäng kortet' })).toBeVisible();
+    // The row keeps its place for a moment with what was done, still the current one, and the item has Ångra allt.
+    const row = page.getByRole('list', { name: 'Behöver dig' }).locator('#work-samtal');
+    await expect(row).toContainText('2 av 2 kalenderändringar är bekräftade');
+    await expect(row).toHaveAttribute('aria-current', 'true');
     await expect(card.getByRole('button', { name: /^Ångra allt · / })).toBeVisible();
     // The toast says where the card went, with the way there and the way back, and stays until closed.
     const toasts = page.getByRole('region', { name: 'Aviseringar' });
     await expect(
-      toasts.getByText(/^2 av 2 kalenderändringar är bekräftade\. Kortet ligger under Väntar på andra\./),
+      toasts.getByText(/^2 av 2 kalenderändringar är bekräftade\. Ärendet ligger under Väntar på andra\./),
     ).toBeVisible();
     await expect(toasts.getByRole('button', { name: 'Ångra' })).toBeVisible();
     await expect(toasts.getByRole('link', { name: 'Visa' })).toHaveAttribute('href', /tab=waiting/);
-    // Then the row leaves Behöver dig for Väntar på andra; closed, the card is found there with the receipt and the way back.
+    // Then the row leaves Behöver dig for Väntar på andra, where the item is found with the receipt and the way back.
     await expect(row).toHaveCount(0, { timeout: 5_000 });
     await page
-      .getByRole('dialog', { name: 'Kort', exact: true })
-      .getByRole('button', { name: 'Stäng panelen' })
+      .getByRole('navigation', { name: 'Urval' })
+      .getByRole('link', { name: /^Väntar på andra/ })
       .click();
-    await page.getByRole('tab', { name: /^Väntar på andra/ }).click();
-    const waiting = page.getByRole('main').locator('#thread-samtal');
-    await expect(waiting).toContainText('Kalendern svarade');
-    await expect(waiting).toContainText('väntar på svar från medarbetarna');
-    await expect(waiting.getByRole('button', { name: 'Påminn mig' })).toBeVisible();
+    const waiting = page.getByRole('list', { name: 'Väntar på andra' }).locator('#work-samtal');
+    await expect(waiting).toContainText('kalenderändringar är bekräftade');
+    await expect(waiting.getByRole('img', { name: 'Väntar på andra' })).toBeVisible();
     await expectNoAxeViolations(page);
-    await waiting.getByRole('button', { name: /^Ångra · / }).click();
-    // Undone, the card is back under Behöver dig with its proposals, and nothing waits on anyone.
+    await waiting.getByRole('link').click();
+    await pane
+      .locator('#card-samtal')
+      .getByRole('button', { name: /^Ångra allt · / })
+      .click();
+    // Undone, the item is back under Behöver dig with its proposals, and nothing waits on anyone.
     await expect(waiting).toHaveCount(0);
-    await expect(page.getByRole('tab', { name: /^Väntar på andra/ })).not.toHaveText(/· \d/);
-    await page.getByRole('tab', { name: /^Behöver dig/ }).click();
-    const back = page.getByRole('main').locator('#thread-samtal');
+    await page
+      .getByRole('navigation', { name: 'Urval' })
+      .getByRole('link', { name: /^Behöver dig/ })
+      .click();
+    const back = page.getByRole('list', { name: 'Behöver dig' }).locator('#work-samtal');
     await expect(back).toBeVisible();
-    await expect(back).not.toContainText('Kalendern svarade');
+    await expect(back).not.toContainText('kalenderändringar är bekräftade');
   });
 });

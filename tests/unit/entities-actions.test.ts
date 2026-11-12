@@ -247,7 +247,6 @@ function world(options: { fixture?: boolean } = {}) {
       registry.clewFor(actorOf(persona), { signal }).call(capability, input),
     cards: async () => [],
   });
-  const actions = entityActionUsecases({ open: entities.detail, start: started.startCard });
   const access = threadAccess(store, registry);
   const approvals: unknown[] = [];
   const decisions = cardDecisions({
@@ -257,6 +256,12 @@ function world(options: { fixture?: boolean } = {}) {
     approve: async (_p, input) => {
       approvals.push(input);
     },
+    clock: () => new Date(T),
+  });
+  const actions = entityActionUsecases({
+    open: entities.detail,
+    start: started.startCard,
+    effect: decisions.effectFor,
     clock: () => new Date(T),
   });
   const nothingWritten = () => {
@@ -436,6 +441,12 @@ describe('an action about a person, started from the menu', () => {
         title: 'Registrera frånvaro',
         kind: 'propose',
         param: 'person',
+        path: {
+          asks: [],
+          effect: false,
+          description:
+            'Förbereder en sjukanmälan för en medarbetare i chefens enhet, från i dag och en dag, som chefen läser och beslutar om på ett kort.',
+        },
       },
     ]);
     const { threadId } = (await w.actions.start(hillevi, 'person', 'maria', 'hr.prepareAbsence'))!;

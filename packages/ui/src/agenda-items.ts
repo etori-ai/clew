@@ -27,6 +27,8 @@ const SAMTAL = 'Utvecklingssamtal';
 const live = new Set<Proposal['status']>(['proposed', 'confirmed', 'final', 'accepted']);
 /** The assistant's mark (D71, artboard 6): before a proposal's title on every calendar surface, never before a meeting's. */
 export const PROPOSAL_MARK = '✦';
+/** The id of the time a person is choosing among a day's items (`agendaItems`' `chosen`). */
+export const CHOSEN_ID = 'chosen';
 /** What the longest free gap of the day says under its row: the assistant books nothing there without asking. */
 export const LONGEST_GAP = 'Längsta luckan · jag bokar inget här utan att fråga';
 
@@ -47,11 +49,14 @@ const meta = (span: { start: string; end: string; allDay: boolean }, ...rest: (s
  * covered by a proposal is drawn once, as the proposal, so the week never shows the same hour twice. A proposal carries
  * the assistant's mark; every entry carries its meta line. The day's free gaps, when given (I dag on Hem), become `gap`
  * rows, the longest one saying that nothing is booked there without asking; the grid and the week agenda draw no gap.
+ * The time a person is choosing in the action dialog (D111 item 10), when given, is a `proposal` of theirs: drawn as the
+ * time they propose, without the assistant's mark, since nobody drew it for them.
  */
 export function agendaItems(
   events: CalendarEvent[],
   proposals: Proposal[],
   gaps: { start: string; end: string }[] = [],
+  chosen?: { start: string; end: string; title: string },
 ): AgendaItem[] {
   const rows = proposals.filter(p => live.has(p.status));
   const covered = (e: CalendarEvent) => rows.some(p => p.eventRef && e.id.startsWith(p.eventRef));
@@ -113,5 +118,18 @@ export function agendaItems(
       kind: 'gap' as const,
       ...(longest && longest.start === g.start ? { meta: LONGEST_GAP } : {}),
     })),
+    ...(chosen
+      ? [
+          {
+            id: CHOSEN_ID,
+            title: chosen.title,
+            start: chosen.start,
+            end: chosen.end,
+            allDay: false,
+            kind: 'proposal' as const,
+            meta: meta({ ...chosen, allDay: false }),
+          },
+        ]
+      : []),
   ];
 }

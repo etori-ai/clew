@@ -183,6 +183,158 @@
       }
     },
     {
+      "name": "communication.news",
+      "kind": "read",
+      "title": "Nyheter",
+      "description": "Kommunens nyheter som den inloggade får läsa: rubrik, avsändare och när de publicerades.",
+      "model": false,
+      "scope": {},
+      "input": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "sender": {
+                  "type": "string"
+                },
+                "publishedAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "ref",
+                "title",
+                "sender",
+                "publishedAt"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "additionalProperties": false
+      },
+      "view": {
+        "kind": "list",
+        "title": "title",
+        "ref": "ref",
+        "open": {
+          "capability": "communication.newsItem",
+          "title": "Nyhet",
+          "params": {
+            "ref": "ref"
+          }
+        },
+        "noun": {
+          "one": "nyhet",
+          "other": "nyheter"
+        },
+        "empty": "Inga nyheter just nu.",
+        "fields": [
+          {
+            "key": "title",
+            "label": "Rubrik"
+          },
+          {
+            "key": "sender",
+            "label": "Avsändare"
+          },
+          {
+            "key": "publishedAt",
+            "label": "Publicerad",
+            "format": "date"
+          }
+        ]
+      }
+    },
+    {
+      "name": "communication.newsItem",
+      "kind": "read",
+      "title": "Nyhet",
+      "description": "En nyhet med sin text, som den inloggade får läsa.",
+      "model": false,
+      "scope": {},
+      "input": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "sender": {
+            "type": "string"
+          },
+          "publishedAt": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref",
+          "title",
+          "sender",
+          "publishedAt",
+          "body"
+        ],
+        "additionalProperties": false
+      },
+      "view": {
+        "kind": "detail",
+        "title": "title",
+        "fields": [
+          {
+            "key": "sender",
+            "label": "Avsändare"
+          },
+          {
+            "key": "publishedAt",
+            "label": "Publicerad",
+            "format": "instant"
+          },
+          {
+            "key": "body",
+            "label": "Text"
+          }
+        ]
+      }
+    },
+    {
       "name": "communication.lookup",
       "kind": "read",
       "title": "Läs tillbaka en åtgärd",

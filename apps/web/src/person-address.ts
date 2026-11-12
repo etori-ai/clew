@@ -23,7 +23,7 @@ export const insideClew = (path: string | null): string | null =>
  * or a unit), and the trail leads back to it with its own search (a card still open beside it), so the nested one was
  * never read.
  */
-const wayBack = (path: string | null | undefined): string | null => {
+export const wayBack = (path: string | null | undefined): string | null => {
   const inside = insideClew(path ?? null);
   const at = inside ? inside.indexOf('?') : -1;
   if (!inside || at < 0) return inside;
@@ -97,7 +97,8 @@ export function pageSubject(pathname: string): Subject | null {
 }
 /**
  * Where a row that names an entity leads (D97 item 6): a person to their page, a unit to its page, each with the
- * address of the page the row was on as `from`, so the way back returns to it as it was (a card still open beside Hem).
+ * address of the page the row was on as `from`, so the way back returns to it as it was (a work item still open in Att
+ * göra's reading pane).
  * Null on the entity's own page: a row there that names the person or unit the page is about would lead to the page the
  * reader is already on, out of the card it stands in, so its name is plain text (the product owner, 2026-11-11).
  */
@@ -113,6 +114,7 @@ export function originLabel(path: string | null): string | null {
   const pathname = path.split('?')[0]!;
   if (pathname === '/staff') return 'Personal';
   if (pathname === '/') return 'Hem';
+  if (pathname === '/todo') return 'Att göra';
   if (pathname === '/calendar') return 'Kalender';
   return null;
 }

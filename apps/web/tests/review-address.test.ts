@@ -60,10 +60,17 @@ describe('the review lies over the page it was opened on (D73 amended, D110 rule
       '/conversations/c1?review=retry%3A1',
     );
   });
-  test('the address from before is a cold link to Hem with the card beside it and the review over both', () => {
-    expect(legacyReview('fakturor', '')).toBe('/?card=fakturor&review=fakturor');
-    expect(legacyReview('fakturor', '?step=2')).toBe('/?card=fakturor&review=fakturor&step=2');
-    expect(legacyReview('a b', '?step=2&other=x')).toBe('/?card=a+b&review=a+b&step=2');
+  test('the address from before is a cold link to the work item in Att göra with the review over it (D111)', () => {
+    expect(legacyReview('fakturor', '')).toBe('/todo?item=fakturor&review=fakturor');
+    expect(legacyReview('fakturor', '?step=2')).toBe('/todo?item=fakturor&review=fakturor&step=2');
+    expect(legacyReview('a b', '?step=2&other=x')).toBe('/todo?item=a+b&review=a+b&step=2');
+  });
+  test('closing the review over Att göra keeps the item in the pane, and lets go of it when it is gone', () => {
+    expect(withoutReview('/todo', '?item=fakturor&review=fakturor&step=2')).toBe('/todo?item=fakturor');
+    expect(withoutReview('/todo', '?item=fakturor&review=fakturor', 'fakturor')).toBe('/todo');
+    expect(withoutReview('/items/fakturor', '?from=%2Ftodo&review=fakturor&step=3')).toBe(
+      '/items/fakturor?from=%2Ftodo',
+    );
   });
 });
 

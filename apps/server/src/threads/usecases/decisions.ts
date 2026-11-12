@@ -1,12 +1,15 @@
 import {
+  EffectOutputSchema,
   PreviewOutputSchema,
+  type AskValues,
   type AuthenticatedContext,
+  type EffectPreview,
   type ReviewPreview,
   type DocumentReview,
   type ReviewEvidence,
   type Thread,
 } from '@clew/contracts';
-import type { Registry } from '@clew/connectors';
+import { answersOf, asksFor, CapabilityError, givenBy, type Registry } from '@clew/connectors';
 import { Value } from 'typebox/value';
 import { InputError } from '../../context';
 
@@ -23,6 +26,8 @@ export interface CardDecisionsDeps {
       payload: unknown;
       compensates?: string;
       presentation: { threadId: string; version: string; actionId: string };
+      /** The person's answers to the asks (D111), already in `payload`; the audit row names them. */
+      asked?: Record<string, string>;
     },
   ): Promise<unknown>;
   clock: () => Date;
@@ -31,15 +36,21 @@ export interface CardDecisionsDeps {
 export function cardDecisions({ read, registry, run, approve, clock, documentPreview }: CardDecisionsDeps) {
   const required = async (persona: AuthenticatedContext, id: string) => {
     const t = await read(persona, id);
-    if (!t) throw new InputError('Kortet finns inte.');
+    if (!t) throw new InputError('Ärendet finns inte.');
     return t;
   };
-  async function act(
+  /**
+   * The input an action on a card runs with, as the person decides it (D111): the action's own input, the selected
+   * rows, the review's evidence and the answers to the asks the action does not already fill. An answer to anything
+   * else, a required ask left empty or an answer that does not fit its kind is refused here, before anything runs.
+   */
+  async function decided(
     persona: AuthenticatedContext,
     id: string,
     actionId: string,
     refs?: string[],
     reviews?: ReviewEvidence[],
+    values?: AskValues,
   ) {
     const t = await required(persona, id),
       action = t.actions.find(a => a.id === actionId);
@@ -49,11 +60,27 @@ export function cardDecisions({ read, registry, run, approve, clock, documentPre
     const selected = refs ?? t.items.filter(i => i.selected).map(i => i.ref);
     if (action.usesItems && selected.some(ref => !t.items.some(i => i.ref === ref)))
       throw new InputError('Något val är inte längre aktuellt.');
+    // The asks come from the registered declaration, never from the card (D111).
+    const asks = found.capability.kind === 'read' ? [] : asksFor(found.capability, givenBy(found.capability, action));
+    const answered = answersOf(asks, values, clock().toISOString(), found.capability.input);
+    if ('problem' in answered) throw new InputError(answered.problem);
     const payload = {
       ...(action.input ?? {}),
+      ...answered.answers,
       ...(action.usesItems ? { refs: [...new Set(selected)].sort() } : {}),
       ...(found.capability.review ? { reviews: reviews ?? [] } : {}),
     };
+    return { t, action, found, selected, payload, asked: answered.answers };
+  }
+  async function act(
+    persona: AuthenticatedContext,
+    id: string,
+    actionId: string,
+    refs?: string[],
+    reviews?: ReviewEvidence[],
+    values?: AskValues,
+  ) {
+    const { t, action, found, selected, payload, asked } = await decided(persona, id, actionId, refs, reviews, values);
     if (found.capability.kind !== 'execute') {
       const output = await run(persona, action.capability, payload),
         view = registry.viewFor(persona, action.capability);
@@ -68,17 +95,58 @@ export function cardDecisions({ read, registry, run, approve, clock, documentPre
         return revision && reviews?.find(review => review.ref === ref)?.revision !== revision;
       })
     )
-      throw new InputError('Underlaget och kortet gäller olika versioner. Läs in kortet igen.');
-    if (!previous && t.state !== 'open') throw new InputError('Kortet är redan hanterat.');
+      throw new InputError('Underlaget och ärendet gäller olika versioner. Läs in ärendet igen.');
+    if (!previous && t.state !== 'open') throw new InputError('Ärendet är redan hanterat.');
     if (previous && previous.operation !== action.capability)
       throw new InputError('Ett tidigare beslut väntar redan på besked.');
-    await approve(persona, {
-      decisionId: previous?.decisionId ?? `card:${id}:${actionId}:${Date.parse(t.updatedAt)}`,
-      operation: action.capability,
-      payload,
-      presentation: { threadId: id, version: t.updatedAt, actionId },
-    });
+    try {
+      await approve(persona, {
+        decisionId: previous?.decisionId ?? `card:${id}:${actionId}:${Date.parse(t.updatedAt)}`,
+        operation: action.capability,
+        payload,
+        presentation: { threadId: id, version: t.updatedAt, actionId },
+        ...(Object.keys(asked).length ? { asked } : {}),
+      });
+    } catch (error) {
+      // An approved input the capability's schema refuses (the answers merged in, D111) is the person's to correct.
+      throw error instanceof CapabilityError ? new InputError(error.message) : error;
+    }
     return { kind: 'execute' as const, thread: await required(persona, id) };
+  }
+  /**
+   * What an execute declares it will do (D111), for exactly the input the person would approve: its `effect` read of the
+   * same connector, run as the person, its answer checked against the contract. A read: nothing is written and no audit
+   * row is kept. Undefined input problems are the person's, in Swedish.
+   */
+  async function effectFor(
+    persona: AuthenticatedContext,
+    capability: string,
+    input: Record<string, unknown>,
+    connector?: string,
+  ): Promise<EffectPreview> {
+    const found = registry.allowed(persona, capability);
+    if (!found || found.capability.kind !== 'execute' || (connector && found.connector.id !== connector))
+      throw new InputError('Okänd förmåga.');
+    const name = found.capability.effect;
+    if (!name) throw new InputError('Åtgärden säger inte i förväg vad den gör.');
+    const effect = registry.allowed(persona, name);
+    if (!effect || effect.connector.id !== found.connector.id || effect.capability.kind !== 'read')
+      throw new InputError('Okänd förmåga.');
+    const output = await run(persona, name, input);
+    if (!Value.Check(EffectOutputSchema, output))
+      throw new InputError(`${found.connector.source} kunde inte säga vad som händer.`);
+    return { ...output, source: found.connector.source };
+  }
+  /** "Det här händer" for an action on a card (D111): the input `act` would approve with these rows and answers. */
+  async function effect(
+    persona: AuthenticatedContext,
+    id: string,
+    actionId: string,
+    refs?: string[],
+    values?: AskValues,
+  ): Promise<EffectPreview> {
+    const { t, action, payload } = await decided(persona, id, actionId, refs, undefined, values);
+    return effectFor(persona, action.capability, payload, t.connector);
   }
   async function undoReceipt(persona: AuthenticatedContext, id: string) {
     const t = await required(persona, id),
@@ -111,8 +179,8 @@ export function cardDecisions({ read, registry, run, approve, clock, documentPre
   async function preview(persona: AuthenticatedContext, id: string, ref: string): Promise<ReviewPreview> {
     const t = await required(persona, id),
       action = t.actions.find(a => a.review === 'each' && a.preview);
-    if (!action?.preview) throw new InputError('Kortet har inget underlag att visa.');
-    if (!t.items.some(i => i.ref === ref)) throw new InputError('Raden finns inte på kortet.');
+    if (!action?.preview) throw new InputError('Ärendet har inget underlag att visa.');
+    if (!t.items.some(i => i.ref === ref)) throw new InputError('Raden finns inte i ärendet.');
     const found = registry.allowed(persona, action.preview);
     if (!found || found.connector.id !== t.connector || found.capability.kind !== 'read')
       throw new InputError('Okänd förmåga.');
@@ -120,12 +188,12 @@ export function cardDecisions({ read, registry, run, approve, clock, documentPre
       const preview = await documentPreview(persona, action.preview, ref);
       const revision = t.items.find(item => item.ref === ref)?.revision;
       if (!t.receipt && !t.execution && t.state === 'open' && revision && revision !== preview.bundle.revision)
-        throw new InputError('Underlaget har ändrats sedan kortet skapades. Läs in kortet igen.');
+        throw new InputError('Underlaget har ändrats sedan ärendet skapades. Läs in ärendet igen.');
       return preview;
     }
     const output = await run(persona, action.preview, { ref });
     if (!Value.Check(PreviewOutputSchema, output)) throw new InputError('Underlaget kunde inte läsas.');
     return output;
   }
-  return { act, undoReceipt, preview };
+  return { act, effect, effectFor, undoReceipt, preview };
 }

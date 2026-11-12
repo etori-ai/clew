@@ -19,9 +19,25 @@ async function personaFor(actorId: string) {
   if (!persona) throw new Error('Okänd person.');
   return persona;
 }
+/**
+ * What `calendar.freeTimes` answers (D111 item 10): free gaps of the asked length in the reader's own calendar, earliest
+ * first; named as `calendar.today` names its free gaps.
+ */
+export const FreeTimesOutput = Type.Object(
+  {
+    gaps: Type.Array(
+      Type.Object(
+        { start: Type.String({ format: 'date-time' }), end: Type.String({ format: 'date-time' }) },
+        { additionalProperties: false },
+      ),
+      { maxItems: 3 },
+    ),
+  },
+  { additionalProperties: false },
+);
 export function calendarConnector(
   calendar: Pick<CalendarUsecases, 'readToday' | 'weekView'>,
-  events: Pick<EventUsecases, 'dayView' | 'listRooms'>,
+  events: Pick<EventUsecases, 'dayView' | 'listRooms' | 'freeTimes'>,
 ): Connector {
   return {
     id: 'calendar',
@@ -85,6 +101,27 @@ export function calendarConnector(
         output: DayViewSchema,
         scope: () => true,
         run: async (actor, input: { date: string }) => events.dayView(await personaFor(actor.id), input.date),
+      },
+      {
+        // The suggestions of a write that asks for a meeting time (D111): the reader's own calendar only, never a tool.
+        name: 'calendar.freeTimes',
+        kind: 'read',
+        title: 'Lediga tider',
+        model: false,
+        description:
+          'Tre lediga tider av en given längd i den inloggades egen kalender, de närmaste två veckorna eller fram till before.',
+        input: Type.Object(
+          {
+            durationMinutes: Type.Integer({ minimum: 5, maximum: 480 }),
+            before: Type.Optional(Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$' })),
+          },
+          { additionalProperties: false },
+        ),
+        output: FreeTimesOutput,
+        scope: () => true,
+        run: async (actor, input: { durationMinutes: number; before?: string }) => ({
+          gaps: (await events.freeTimes(await personaFor(actor.id), input)).slots,
+        }),
       },
       {
         name: 'calendar.rooms',

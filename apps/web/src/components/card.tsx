@@ -1,14 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  attentionLevel,
-  cardKind,
   dayWord,
-  daysUntil,
   isSnoozed,
   parseSwedishTime,
   snoozeWhen,
   streamGroup,
-  type AttentionLevel,
+  type AskValues,
+  type CardAction,
   type SnoozeInput,
   type SnoozePreset,
   type Thread,
@@ -17,75 +15,49 @@ import {
 } from '@clew/contracts';
 import {
   AlertDialog,
-  AreaChip,
   AreaLine,
-  Badge,
   Button,
-  Card,
-  CheckboxList,
-  CheckboxListItem,
-  Collapsible,
-  CompletionMark,
   Dialog,
   DialogHeader,
   DropdownMenu,
   DropdownMenuDivider,
   DropdownMenuItem,
   DropdownMenuSubMenu,
-  Heading,
   HStack,
   Icon,
   IconButton,
   Link,
-  List,
-  ListItem,
-  MoreMenu,
-  StatusDot,
+  StackItem,
   Text,
   TextInput,
-  useAnimatedLayout,
   useAnnounce,
-  useMediaQuery,
   useToast,
   VStack,
 } from '@clew/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useLocation, useNavigate } from 'react-router';
-import { displayDate, today } from '@clew/calendar/dates';
+import { useLocation } from 'react-router';
+import { today } from '@clew/calendar/dates';
 import { api, ApiError } from '../api';
 import { confirmParts } from '../confirm-parts';
 import { snoozePresetsQuery } from '../queries';
-import { useSettling, useThreadAction, type RunAction } from '../mutations';
+import { useDecisionSend, useSettling, useThreadAction, type RunAction } from '../mutations';
+import { opensDialog, type ActionStep } from '../action-path';
+import { takeActionRequest, useActionRequest } from '../action-requests';
+import { ActionDialog } from './action-dialog';
 import { dismissed, reopened, snoozed } from '../optimistic';
 import { invalidateStream } from '../thread-cache';
 import { useConversation } from './conversation-context';
 import { executionStatus } from '../execution-status';
-import { useMarks, type Mark, type Marks } from '../marks';
-import { AddToConversation } from './add-to-conversation';
+import type { Marks } from '../marks';
 import { returnedReview, selectionAfterReview, withReview } from '../review-address';
-import { cardWithRead, readOf, reviewOverCard, withRead, withoutRead } from '../panel-address';
-import { CardRead, unfoldsInCard, useCardRead } from './card-read';
-import { canUndoReceipt, receiptComplete } from '../receipt-state';
 import { entityHref } from '../person-address';
 
-const outcomeDot = {
-  done: { variant: 'success', label: 'Klart' },
-  unknown: { variant: 'warning', label: 'Okänt' },
-  failed: { variant: 'error', label: 'Misslyckades' },
-  skipped: { variant: 'neutral', label: 'Inte skickad' },
-} as const;
-const shortDate = (d: string) =>
-  new Intl.DateTimeFormat('sv-SE', { day: 'numeric', month: 'short' })
-    .format(new Date(d.slice(0, 10) + 'T12:00:00'))
-    .replace(/\.$/, '');
-const clock = (iso: string) => new Date(iso).toLocaleTimeString('sv-SE', { timeStyle: 'short' });
-/** The check a receipt earns (D70): drawn when the receipt arrives, on Astryx's own entry motion (which honours reduced motion), never before the source has read back. */
-export const ReceiptCheck = CompletionMark;
-/** What a decision's row says (D70): the receipt's headline and when the source answered. */
-export const receiptLine = (thread: Thread) =>
-  thread.receipt
-    ? `${thread.receipt.headline.replace(/\.$/, '')} · ${thread.trigger.source} svarade ${clock(thread.receipt.at)}`
-    : '';
+/**
+ * What a work item can do (D111 item 4), shared by every place one is drawn (`work-item.tsx`) and by the review over it
+ * (D73): its actions, the confirm they ask, the time pickers, Avfärda and Återöppna, and the row of buttons. The item's
+ * shape is `work-item.tsx`'s; this file holds no layout of its own beyond the buttons.
+ */
+export const clock = (iso: string) => new Date(iso).toLocaleTimeString('sv-SE', { timeStyle: 'short' });
 export function useCountdown(until: string | null) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -97,9 +69,21 @@ export function useCountdown(until: string | null) {
   const left = Math.max(0, Date.parse(until) - now);
   return left > 0 ? `${Math.floor(left / 60000)}:${String(Math.floor((left % 60000) / 1000)).padStart(2, '0')}` : null;
 }
+/** The time left to undo, in whole minutes as the receipt says it (board ActReceipt: "9 min kvar"); null once it has run out. */
+export function useMinutesLeft(until: string | null) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!until) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [until]);
+  if (!until) return null;
+  const left = Date.parse(until) - now;
+  return left > 0 ? Math.ceil(left / 60000) : null;
+}
 /**
- * Avfärda and Inte nu: the card leaves the stream and a toast with Ångra takes its place; reopen brings it back. The toast
- * stays until the person closes it: Ångra is the only way back to the card, so it carries no time limit (2.2.1).
+ * Avfärda and Inte nu: the item leaves the queue and a toast with Ångra takes its place; reopen brings it back. The toast
+ * stays until the person closes it: Ångra is the only way back to the item, so it carries no time limit (2.2.1).
  */
 export function useLeaveWithUndo(apply: (thread: Thread) => void) {
   const toast = useToast();
@@ -123,42 +107,35 @@ export function useLeaveWithUndo(apply: (thread: Thread) => void) {
   };
 }
 
-/** Inte nu (D28): when the card comes back, as words on a card in the pile. */
-const snoozedLabel = (until: string, now = today()) => {
+/** Inte nu (D28): when the item comes back, in words. */
+export const snoozedLabel = (until: string, now = today()) => {
   const date = new Date(until).toLocaleDateString('sv-SE', { timeZone: 'Europe/Stockholm' });
   return `Tillbaka ${dayWord(date, now) === 'i dag' ? '' : dayWord(date, now) + ' '}${clock(until)}`;
 };
-/** The receipt's one status (D70, D71): green only when every row was read back, as a dot with its word; a row the source did not confirm, or that failed, is a badge, because it needs a hand. */
-function ReceiptFlag({ thread, quiet = false }: { thread: Thread; quiet?: boolean }) {
-  const receipt = thread.receipt;
-  if (!receipt) return null;
-  const unknown = receipt.rows.filter(r => r.outcome === 'unknown').length,
-    failed = receipt.rows.filter(r => r.outcome === 'failed').length;
-  if (failed)
-    return <Badge variant="error" icon={<Icon icon="error" size="sm" />} label={`${failed} rad misslyckades`} />;
-  if (unknown)
-    return <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label={`${unknown} rad obekräftad`} />;
-  return quiet ? null : <StatusDot variant="success" label="Läst tillbaka" />;
-}
 /**
- * The systems a card's rows come from (D55, artboard 10): a row's system when its ref names one the person can see. A
- * card is a job across systems when a row is another system's than the card's; then every row carries its system.
+ * The systems an item's rows come from (D55, artboard 10): a row's system when its ref names one the person can see. An
+ * item is a job across systems when a row is another system's than the item's; then every row carries its system.
  */
-function rowSystems(thread: Thread, marks: Marks) {
+export function rowSystems(thread: Thread, marks: Marks) {
   const of = new Map<string, ReturnType<Marks['ofRef']>>();
   for (const r of [...thread.items, ...(thread.receipt?.rows ?? [])]) of.set(r.ref, marks.ofRef(r.ref));
   const systems = new Set(thread.items.map(i => of.get(i.ref)?.connector).filter(Boolean));
   return { of, multi: [...of.values()].some(m => m && m.connector !== thread.connector), count: systems.size };
 }
-type RowSystems = ReturnType<typeof rowSystems>;
-/** "3 steg i 3 system": a job's rows in the list and on its card's mark row, never three glyphs (artboard 10). */
-const stepsLine = (thread: Thread, systems: RowSystems) =>
-  systems.multi ? `${thread.items.length} steg i ${systems.count} system` : '';
+export type RowSystems = ReturnType<typeof rowSystems>;
 /**
  * A row of a job across systems (artboard 10): its system's glyph, the system's word, the area's word, then what it
  * says. A receipt row says which system answered and when instead of the area ("Tidrapporteringen svarade 07:02").
  */
-function SystemLine({ mark, words, answered }: { mark: ReturnType<Marks['ofRef']>; words: string; answered?: string }) {
+export function SystemLine({
+  mark,
+  words,
+  answered,
+}: {
+  mark: ReturnType<Marks['ofRef']>;
+  words: string;
+  answered?: string;
+}) {
   if (!mark) return <Text type="supporting">{words}</Text>;
   // Clew's own system is named alone ("Kalendern"): its area is the house's, not a guest's place.
   const lead = answered
@@ -166,94 +143,8 @@ function SystemLine({ mark, words, answered }: { mark: ReturnType<Marks['ofRef']
     : [mark.source, mark.area && mark.ordinal !== null ? mark.title : ''].filter(Boolean).join(' · ');
   return <AreaLine icon={mark.area ? mark.icon : undefined}>{[lead, words].filter(Boolean).join(' · ')}</AreaLine>;
 }
-/** When a card's mark row says it is: the deadline with the days left, the time it was sent, or when the source pushed it. */
-function markWhen(thread: Thread, now: string) {
-  if (thread.receipt) return `skickat ${clock(thread.receipt.at)}`;
-  if (thread.deadline && streamGroup({ deadline: thread.deadline }, now) !== 'nu') {
-    const days = daysUntil(thread.deadline.slice(0, 10), now);
-    return days <= 30
-      ? `${shortDate(thread.deadline)} · ${days} ${days === 1 ? 'dag' : 'dagar'}`
-      : shortDate(thread.deadline);
-  }
-  return `${dayWord(displayDate(thread.trigger.at), now)} ${clock(thread.trigger.at)}`;
-}
-/**
- * The card's mark row (D71, artboards 5 and 10): the area's chip, then the source and when in supporting, then the one
- * status that needs a hand. On a phone (`stacked`) the chip stands on its own line and the source under it (artboard 12).
- */
-function MarkRow({
-  thread,
-  mark,
-  systems,
-  position,
-  inConversation,
-  stacked = false,
-}: {
-  thread: Thread;
-  mark: Mark;
-  systems: RowSystems;
-  position?: string;
-  inConversation?: boolean;
-  stacked?: boolean;
-}) {
-  const now = today();
-  const line = [
-    systems.multi && thread.receipt ? '' : mark.source,
-    markWhen(thread, now),
-    thread.receipt ? (systems.multi ? `${systems.count} system` : '') : stepsLine(thread, systems),
-    position ?? '',
-    inConversation ? 'i samtalet' : '',
-  ]
-    .filter(Boolean)
-    .join(' · ');
-  const chip = <AreaChip ordinal={mark.ordinal} icon={mark.icon} label={mark.title} />;
-  const rest = (
-    <>
-      <Text type="supporting" hasTabularNumbers>
-        {line}
-      </Text>
-      <CardStatus thread={thread} />
-      <Flags thread={thread} />
-    </>
-  );
-  return stacked ? (
-    <VStack gap={1.5}>
-      <HStack>{chip}</HStack>
-      <HStack gap={2} vAlign="center" wrap="wrap">
-        {rest}
-      </HStack>
-    </VStack>
-  ) : (
-    <HStack gap={2} vAlign="center" wrap="wrap">
-      {chip}
-      {rest}
-    </HStack>
-  );
-}
-/** The card's state on its mark row: the receipt's status, the one red badge for what is due, the snooze or who it waits on. Never more than one. */
-function CardStatus({ thread }: { thread: Thread }) {
-  const open = thread.state === 'open';
-  if (thread.receipt) return <ReceiptFlag thread={thread} />;
-  if (open && thread.snoozedUntil && isSnoozed(thread, new Date().toISOString()))
-    return <Text type="supporting">{snoozedLabel(thread.snoozedUntil)}</Text>;
-  if (thread.waitingOn) {
-    const reminder = thread.waitingOn.startsWith('påminnelsen ')
-      ? undefined
-      : thread.timers?.find(t => t.kind === 'reminder' && t.state === 'scheduled');
-    return (
-      <Text type="supporting">
-        Väntar på {thread.waitingOn}
-        {reminder ? ` · påminner dig ${snoozeWhen(reminder.dueAt, new Date().toISOString())}` : ''}
-      </Text>
-    );
-  }
-  const now = today();
-  if (thread.deadline && streamGroup({ deadline: thread.deadline }, now) === 'nu')
-    return <Badge variant="error" label={daysUntil(thread.deadline.slice(0, 10), now) < 0 ? 'försenad' : 'i dag'} />;
-  return null;
-}
-/** A reminder the person set that could not be scheduled, said in a sentence under the mark row. */
-function TimerNote({ thread }: { thread: Thread }) {
+/** A reminder the person set that could not be scheduled, said in a sentence under the item's status. */
+export function TimerNote({ thread }: { thread: Thread }) {
   if (thread.timers?.some(t => t.state === 'blocked'))
     return (
       <Text type="supporting" role="status">
@@ -267,6 +158,21 @@ function TimerNote({ thread }: { thread: Thread }) {
       </Text>
     );
   return null;
+}
+/**
+ * A row's name (D97 item 6): the source's own words, and a link to the person or unit the row names when it names one,
+ * with the page it was opened on as the way back. Never a name the row did not have, and no link on the page of the
+ * person or unit it names (`entityHref`): it would lead out of the item to the page the reader is on.
+ */
+export function ItemLabel({ item, from }: { item: ThreadItem; from: string }) {
+  const href = item.subject ? entityHref(item.subject, from) : null;
+  return href ? (
+    <Link href={href} weight="semibold" hasUnderline>
+      {item.label}
+    </Link>
+  ) : (
+    <Text weight="semibold">{item.label}</Text>
+  );
 }
 
 /** The picker's rows (D29): one query for the whole page, kept a minute (snoozePresetsQuery), so every card shows the same times. */
@@ -376,7 +282,7 @@ export function useSnoozeRows({
           const t = await api.snooze(thread.id, input);
           leave(
             t,
-            `Jag påminner dig ${t.snoozedUntil ? snoozeWhen(t.snoozedUntil, new Date().toISOString()) : 'i morgon 06:00'}. Kortet ligger under Inte nu tills dess.`,
+            `Jag påminner dig ${t.snoozedUntil ? snoozeWhen(t.snoozedUntil, new Date().toISOString()) : 'i morgon 06:00'}. Ärendet ligger under Väntar på andra tills dess.`,
           );
           return t;
         },
@@ -434,7 +340,9 @@ export function useCardAction({
   onChange,
   onRead,
 }: Pick<ActionProps, 'thread'> & Partial<Omit<ActionProps, 'thread'>>) {
-  const { run, apply, busy, error } = useThreadAction({ onChange });
+  const { run, apply, busy: running, error } = useThreadAction({ onChange });
+  const decision = useDecisionSend({ onChange });
+  const busy = running || decision.busy;
   // The person's own action is on its way (D64): the card keeps the look it had, with the pressed button loading, and the
   // status is read out once the card has come to rest or the window has ended, not for every committed step in between.
   const held = useSettling(thread);
@@ -461,6 +369,72 @@ export function useCardAction({
     answered.current = null;
     setAsked(null);
   };
+  // The action dialog (D111 item 10): the action it is open for, the rows chosen when it opened, the step it opens at,
+  // and whether the focus goes back to the action's own button on a close (it was opened from elsewhere: an execute
+  // started on a person, an assistant's draft). It stays mounted once opened, so its close gives the focus back.
+  const [dialog, setDialog] = useState<{
+    action: CardAction;
+    refs?: string[];
+    startAt?: ActionStep;
+    open: boolean;
+    refocus: boolean;
+  } | null>(null);
+  // What the person typed, per action, kept while the work item is open and dropped with it or once sent.
+  const [drafts, setDrafts] = useState<Record<string, AskValues>>({});
+  const openDialog = (
+    action: CardAction,
+    refs: string[] | undefined,
+    options: { startAt?: ActionStep; values?: AskValues; refocus?: boolean } = {},
+  ) => {
+    if (options.values) setDrafts(d => ({ ...d, [action.id]: { ...d[action.id], ...options.values } }));
+    setDialog({
+      action,
+      ...(refs ? { refs } : {}),
+      ...(options.startAt ? { startAt: options.startAt } : {}),
+      open: true,
+      refocus: !!options.refocus,
+    });
+  };
+  const closeDialog = () => {
+    if (!dialog?.open) return;
+    setDialog({ ...dialog, open: false });
+    if (dialog.refocus) {
+      // Opened from elsewhere, the dialog gives the focus to the action's own button on the item, once it has closed.
+      const selector = `[data-action="${CSS.escape(dialog.action.id)}"][data-thread="${CSS.escape(thread.id)}"]`;
+      requestAnimationFrame(() => requestAnimationFrame(() => document.querySelector<HTMLElement>(selector)?.focus()));
+    }
+  };
+  const sendDialog = async (values: AskValues): Promise<string | null> => {
+    if (!dialog) return null;
+    const { action, refs } = dialog;
+    const result = await decision.send(async () => {
+      const answer = await api.act(thread.id, action.id, refs, undefined, values);
+      if (answer.kind !== 'execute') throw new ApiError(500, 'Oväntat svar.');
+      // Sent: the dialog closes first and the focus is back on the pressed button, which loads until the item has come
+      // to rest, before the item shows the source's answer, as for a one-press action (D64).
+      setPressed(action.id);
+      setDialog(d => (d ? { ...d, open: false } : d));
+      setDrafts(({ [action.id]: _sent, ...rest }) => rest);
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      return answer.thread;
+    });
+    return result && 'error' in result ? result.error : null;
+  };
+  // The action as the item has it now: its path is resolved from the registered manifest on every read.
+  const dialogAction = dialog ? (thread.actions.find(a => a.id === dialog.action.id) ?? dialog.action) : null;
+  const actionDialog = dialog ? (
+    <ActionDialog
+      target={{ kind: 'item', thread, action: dialogAction!, ...(dialog.refs ? { refs: dialog.refs } : {}) }}
+      isOpen={dialog.open}
+      onOpenChange={open => {
+        if (!open) closeDialog();
+      }}
+      {...(dialog.startAt ? { startAt: dialog.startAt } : {})}
+      values={drafts[dialog.action.id] ?? {}}
+      onValuesChange={values => setDrafts(d => ({ ...d, [dialog.action.id]: values }))}
+      onSend={sendDialog}
+    />
+  ) : null;
   const parts = question.current ? confirmParts(question.current) : null;
   const confirmation = (
     <AlertDialog
@@ -476,13 +450,18 @@ export function useCardAction({
     />
   );
   const perform = async (
-    action: ThreadAction,
+    action: CardAction,
     refs?: string[],
     reviews?: import('@clew/contracts').ReviewEvidence[],
   ): Promise<boolean> => {
     if (busy) return false;
-    if (action.confirm && !(await ask(action))) return false;
     const chosen = selectable ? refs : undefined;
+    // An action that asks the person something or says beforehand what it writes opens the dialog; nothing is sent yet.
+    if (action.kind !== 'read' && !reviews && opensDialog(action)) {
+      openDialog(action, chosen);
+      return true;
+    }
+    if (action.confirm && !(await ask(action))) return false;
     if (action.kind === 'read') {
       if (action.target === 'link') {
         await run(async () => {
@@ -508,14 +487,26 @@ export function useCardAction({
     );
     return true;
   };
-  return { run, apply, busy, settling, pressed, error, selectable, perform, confirmation };
+  return {
+    run,
+    apply,
+    busy,
+    settling,
+    pressed,
+    error,
+    selectable,
+    perform,
+    confirmation,
+    openDialog,
+    dialog: actionDialog,
+  };
 }
 /** The execute a card reviews one row at a time before it sends (D70): its next step is then "Granska N", which opens the review over the page (D73, D110 rule 5). */
 export const reviewedAction = (thread: Thread) =>
   thread.actions.find(a => a.role === 'primary' && a.kind === 'execute' && a.review === 'each');
 
-/** Everything a card can do, shared by the card and the row: run an action, snooze, dismiss, explain, and keep the selection. */
-function useThreadActions({ thread, onChange, onRead }: ActionProps) {
+/** Everything a work item can do, wherever it is drawn: run an action, snooze, dismiss, and keep the selection. */
+export function useThreadActions({ thread, onChange, onRead }: ActionProps) {
   const {
     run,
     apply,
@@ -526,6 +517,8 @@ function useThreadActions({ thread, onChange, onRead }: ActionProps) {
     selectable,
     perform: performRefs,
     confirmation,
+    openDialog,
+    dialog,
   } = useCardAction({
     thread,
     onChange,
@@ -570,11 +563,25 @@ function useThreadActions({ thread, onChange, onRead }: ActionProps) {
   // A button waits on its action (the pressed button loads until the source has answered). An action that asks first
   // is not waited on: the button stays as it is, enabled, while the question is open, so the focus can come back to
   // it on Avbryt; after a yes it loads as `pressed` while the card settles.
-  const perform = (action: ThreadAction, refs?: string[]): Promise<void> | void => {
+  const perform = (action: CardAction, refs?: string[]): Promise<void> | void => {
     const ran = performRefs(action, refs ?? selected).then(() => undefined);
     if (action.confirm) return;
     return ran;
   };
+  // An action asked for from outside the item (`requestAction`: an execute started on a person, an assistant's draft)
+  // opens in the dialog once the item is drawn with it.
+  const request = useActionRequest(thread.id);
+  useEffect(() => {
+    if (!request) return;
+    takeActionRequest(request);
+    const action = thread.actions.find(a => a.id === request.actionId);
+    if (!action || !opensDialog(action) || thread.state !== 'open') return;
+    openDialog(action, selectable ? selected : undefined, {
+      ...(request.startAt ? { startAt: request.startAt } : {}),
+      ...(request.values ? { values: request.values } : {}),
+      refocus: true,
+    });
+  }, [request]);
   // A card whose next step is a review (D70): "Granska N" opens the review over the page, which sends once with the approved refs (D73).
   const reviewed = reviewedAction(thread);
   // The card leaves at once (D64); the toast with Ångra confirms when the server has it.
@@ -584,7 +591,7 @@ function useThreadActions({ thread, onChange, onRead }: ActionProps) {
         const t = await api.dismiss(thread.id);
         leave(
           t,
-          `Avfärdad som inte aktuellt. ${thread.trigger.source} skapar inte kortet igen. Kortet ligger under Redan hanterat.`,
+          `Avfärdad som inte aktuellt. ${thread.trigger.source} skapar inte ärendet igen. Ärendet ligger under Klart.`,
         );
         return t;
       },
@@ -623,9 +630,11 @@ function useThreadActions({ thread, onChange, onRead }: ActionProps) {
     returned: returnedAt,
     /** The alert dialog an action with `confirm` asks in; the card and the row render it. */
     confirmation,
+    /** The action dialog (D111 item 10) of an action that asks or says what it writes; the item renders it. */
+    dialog,
   };
 }
-type Actions = ReturnType<typeof useThreadActions>;
+export type Actions = ReturnType<typeof useThreadActions>;
 
 /**
  * A read whose answer is an address out of Clew (`target: 'link'`) says on its control that it leaves (D110 rule 8):
@@ -637,42 +646,36 @@ const leavingMark = (action: ThreadAction) =>
   action.kind === 'read' && action.target === 'link'
     ? { endContent: <Icon icon="externalLink" label="(öppnas i ny flik)" /> }
     : {};
+/** "Återöppna" on an item dismissed in the last ten minutes (the server's window); the toast's Ångra does the same. */
+const reopenable = (thread: Thread) =>
+  thread.state === 'dismissed' && !!thread.handledAt && Date.now() - Date.parse(thread.handledAt) <= 10 * 60_000;
+
 /**
- * The action row shared by every card and row (artboards A and E): the one next step from the connector, filled only
- * when the thread is due today (D48), with the secondary actions, "Lägg till i samtalet" and the card's one time action
- * (D49) beside it on a card, also when the card is open beside the page (the product owner, 2026-11-06: the panel's
- * header is the panel's, so the picker left it for the card's own buttons, against artboard E). A row (`quiet`) shows
- * "Lägg till i samtalet" and the next step, nothing more: Inte nu, Avfärda and "Varför nu?" belong to the open card.
- * Beside a panel (`compact`) a row keeps the next step alone. On a phone (artboards 11 and 12) a row's next step fills
- * the line under it with "Lägg till i samtalet" as the `@` beside it (`phone`), and the card in the sheet stands its
- * next step and secondary actions full width above the rest (`stacked`). "Lägg till i samtalet" is drawn only where the
- * page has a question box (D110 rule 6).
+ * A work item's buttons (D111 item 4, boards WorkItem, Inbox and PhoneItem): the one next step from the connector,
+ * filled only when the item is due today (D48), its secondary actions, the item's one time action (D49: Inte nu while
+ * it is the person's, Påminn mig while it waits on someone else), "Lägg till i samtalet" where the page has a box (D110
+ * rule 6), and ⋯ with the rest and Avfärda. A step reviewed one row at a time is "Granska N", a link that lays the review
+ * over the page (D70, D73, D110 rule 5). A decision on its way says so with Kontrollera status; a decided item keeps
+ * "Visa granskning" and its reads; a dismissed one offers Återöppna. The receipt's Ångra is the receipt's own
+ * (`work-item.tsx`). `pinned` is the phone's bar at the foot of the page (board PhoneItem): the next step and the first
+ * secondary side by side the width of the screen, everything else under ⋯.
  */
-function ActionRow({
+export function ActionRow({
   thread,
-  level,
   actions,
-  quiet = false,
-  compact = false,
-  phone = false,
-  stacked = false,
+  pinned = false,
   openRead = null,
   readSection,
 }: {
   thread: Thread;
-  level: AttentionLevel;
   actions: Actions;
-  quiet?: boolean;
-  compact?: boolean;
-  phone?: boolean;
-  stacked?: boolean;
-  /** The read unfolded in the card now (`CardRead`), whose button says so. */
+  pinned?: boolean;
+  /** The read unfolded in the item now (`CardRead`), whose button says so. */
   openRead?: string | null;
   /** The id of the section a read unfolds in. */
   readSection?: string;
 }) {
   const conversation = useConversation();
-  const countdown = useCountdown(thread.receipt?.undoUntil ?? null);
   const chipRef = 'thread:' + thread.id;
   const inConversation = conversation.chipped.includes(chipRef);
   const open = thread.state === 'open';
@@ -691,41 +694,33 @@ function ActionRow({
   );
   const count = selected.length;
   /**
-   * A read that unfolds in the card says so on its button (a disclosure, 4.1.2): whether it is unfolded and, while it
-   * is, the section it controls. The card finds the button again by `data-read` when the section's own toggle folds it.
-   * A row's read opens the card instead, and a link out is a link out.
+   * A read that unfolds in the item says so on its button (a disclosure, 4.1.2): whether it is unfolded and, while it
+   * is, the section it controls. The item finds the button again by `data-read` when the section's own toggle folds it.
    */
   const readState = (a: ThreadAction) =>
-    !quiet && a.kind === 'read' && a.target !== 'link'
+    a.kind === 'read' && a.target !== 'link'
       ? {
           'aria-expanded': openRead === a.id,
           ...(openRead === a.id && readSection ? { 'aria-controls': readSection } : {}),
           'data-read': a.id,
         }
       : {};
-  // "Granska 3" on a row, "Attestera 2 valda" on the card (artboards A and E).
-  const primaryLabel =
-    primary && selectable ? (quiet ? `${primary.label} ${count}` : `${primary.label} ${count} valda`) : primary?.label;
-  const due = level !== 'notice' && streamGroup(thread, today()) === 'nu';
-  // Rows take the artboard's 32 px buttons, a card its 36 px ones.
-  const size = quiet ? 'md' : 'lg';
-  // A row's step fills the phone's line, and the sheet's steps stand full width (artboards 11 and 12).
-  const width = phone || stacked ? '100%' : undefined;
-  // Back from the review with ✕, Esc or the scrim (D73), the focus is on "Granska N" again. On the card, not the row:
-  // the card is what the address opens beside the page, over it or in the sheet, or the card in a conversation's answer.
+  // "Attestera 2 valda" on an item whose rows are chosen (boards WorkItem and Inbox).
+  const primaryLabel = primary && selectable ? `${primary.label} ${count} valda` : primary?.label;
+  const due = streamGroup(thread, today()) === 'nu';
+  const size = 'lg' as const;
+  const width = pinned ? '100%' : undefined;
+  // Back from the review with ✕, Esc or the scrim (D73), the focus is on "Granska N" again, wherever the item is drawn.
   // The review leads back only once it has slid away, so the page is no longer inert; the panel puts the focus on its
-  // heading when it opens with the page (usePanel's effect runs after the card's), so this waits a frame.
+  // heading when it opens with the page (usePanel's effect runs after the item's), so this waits a frame.
   const review = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    if (!returned || quiet) return;
+    if (!returned) return;
     const frame = requestAnimationFrame(() => review.current?.focus());
     return () => cancelAnimationFrame(frame);
   }, [returned]);
-  // The one next step: the execute itself, or "Granska N" when the rows are reviewed one at a time first (D70), a link
-  // that lays the review over the page it is on (D110 rule 5). A card leaves the panel as it is; a row opens its card in
-  // the panel under the review, as its title would, since the review hands its decisions back to the card.
   const { pathname, search } = useLocation();
-  const reviewLink = quiet ? reviewOverCard(pathname, search, thread.id) : withReview(pathname, search, thread.id);
+  const reviewLink = withReview(pathname, search, thread.id);
   const primaryButton = primary ? (
     reviewed ? (
       <Button
@@ -745,6 +740,8 @@ function ActionRow({
         isLoading={settling && pressed === primary.id}
         width={width}
         clickAction={() => perform(primary)}
+        data-action={primary.id}
+        data-thread={thread.id}
         {...readState(primary)}
         {...leavingMark(primary)}
       />
@@ -752,10 +749,8 @@ function ActionRow({
   ) : null;
   const addChip = () =>
     conversation.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id });
-  // Only where the page has a box (D110 rule 6): a card beside Personal, a person or a unit, or over Kalender has none.
-  const addToConversation = !conversation.hasBox ? null : phone ? (
-    <AddToConversation size="md" added={inConversation} onAdd={addChip} />
-  ) : (
+  // Only beside a conversation's own box (D111 item 7): everywhere else the item has its own box in the panel.
+  const addToConversation = conversation.hasBox ? (
     <Button
       size={size}
       variant="ghost"
@@ -763,7 +758,7 @@ function ActionRow({
       isDisabled={inConversation}
       onClick={addChip}
     />
-  );
+  ) : null;
   /** ⋯: MoreMenu's button over DropdownMenu's compound rows, because MoreMenu's data rows cannot hold a sub-menu. */
   const more = ({ tucked = [], time }: { tucked?: ThreadAction[]; time?: TimeRows }) => (
     <>
@@ -771,7 +766,7 @@ function ActionRow({
         renderTrigger={trigger => (
           <IconButton
             {...trigger}
-            size={size === 'lg' ? 'md' : size}
+            size="md"
             variant="ghost"
             label="Fler val"
             tooltip="Fler val"
@@ -793,12 +788,9 @@ function ActionRow({
       {remindRows.dialog}
     </>
   );
-  const receipt = thread.receipt;
-  // The way back is open while the receipt's window is (D70): on a done card, and on one the decision left waiting on others.
-  const undoOpen = !!countdown && canUndoReceipt(thread);
   const pending = executionStatus(thread.execution);
   const viewReview =
-    reviewed && (receipt || pending || !open) && !quiet ? (
+    reviewed && (thread.receipt || pending || !open) ? (
       <Button ref={review} size={size} variant="secondary" label="Visa granskning" href={reviewLink} />
     ) : null;
   // A decision the source has not confirmed is said so, unless it is the person's own and still on its way (D64).
@@ -810,41 +802,12 @@ function ActionRow({
           thread.execution.reason) && (
           <Button size={size} label="Kontrollera status" clickAction={() => run(() => api.checkExecution(thread.id))} />
         )}
-        {undoOpen && (
-          <Button
-            size={size}
-            variant="destructive"
-            label={`Ångra bekräftade · ${countdown} kvar`}
-            clickAction={() => run(() => api.undoReceipt(thread.id))}
-          />
-        )}
         {viewReview}
         <Text type="supporting">{pending}</Text>
-        {/* The menu's one item is "Lägg till i samtalet": where the page has no box there is no menu (D110 rule 6). */}
-        {conversation.hasBox && (
-          <DropdownMenu
-            renderTrigger={trigger => (
-              <IconButton
-                {...trigger}
-                size={size === 'lg' ? 'md' : size}
-                variant="ghost"
-                label="Fler val"
-                tooltip="Fler val"
-                icon={<Icon icon="moreHorizontal" />}
-              />
-            )}
-            alignment="end"
-          >
-            <DropdownMenuItem
-              label={inConversation ? 'I samtalet' : 'Lägg till i samtalet'}
-              isDisabled={inConversation}
-              onClick={addChip}
-            />
-          </DropdownMenu>
-        )}
+        {addToConversation}
       </HStack>
     );
-  // In the Inte nu pile (D28): the way back is the first button; nothing else is due until the card is back.
+  // Set aside (D28): the way back is the first button; nothing else is due until the item is back.
   if (open && isSnoozed(thread, new Date().toISOString()))
     return (
       <HStack gap={2} vAlign="center" wrap="wrap">
@@ -854,25 +817,11 @@ function ActionRow({
           label="Ta upp nu"
           clickAction={() => run(() => api.reopen(thread.id), { optimistic: reopened(thread) })}
         />
-        {quiet ? !compact && addToConversation : more({})}
-      </HStack>
-    );
-  if (open && !thread.waitingOn && quiet && phone)
-    return (
-      <HStack gap={2} vAlign="center">
-        {primaryButton}
-        {addToConversation}
-      </HStack>
-    );
-  if (open && !thread.waitingOn && quiet)
-    return (
-      <HStack gap={2} vAlign="center">
-        {!compact && addToConversation}
-        {primaryButton}
+        {more({})}
       </HStack>
     );
   if (open && !thread.waitingOn) {
-    const secondaryButtons = secondary.map(a => (
+    const secondaryButton = (a: ThreadAction) => (
       <Button
         key={a.id}
         size={size}
@@ -881,563 +830,70 @@ function ActionRow({
         isLoading={settling && pressed === a.id}
         width={width}
         clickAction={() => perform(a)}
+        data-action={a.id}
+        data-thread={thread.id}
         {...readState(a)}
         {...leavingMark(a)}
       />
-    ));
-    const rest = (
-      <>
-        <TimePicker label="Inte nu" rows={snoozeRows.rows} own={snoozeRows.own} size={size === 'lg' ? 'md' : size} />
-        {addToConversation}
-        {more({})}
-      </>
     );
-    return stacked ? (
-      <VStack gap={2}>
-        {primaryButton}
-        {secondaryButtons}
-        <HStack gap={1} vAlign="center" wrap="wrap">
-          {rest}
+    // The phone's bar (board PhoneItem): the next step the width of the screen, everything else under ⋯, so its words
+    // are never cut at 320 px (1.4.10). The board draws a second step beside it, which only fits a short label.
+    if (pinned)
+      return (
+        <HStack gap={2} vAlign="center">
+          {primaryButton ? (
+            <StackItem size="fill">{primaryButton}</StackItem>
+          ) : (
+            secondary[0] && <StackItem size="fill">{secondaryButton(secondary[0])}</StackItem>
+          )}
+          {more({ tucked: primaryButton ? secondary : secondary.slice(1), time: snoozeRows })}
         </HStack>
-      </VStack>
-    ) : (
+      );
+    return (
       <HStack gap={2} vAlign="center" wrap="wrap">
         {primaryButton}
-        {secondaryButtons}
-        {rest}
+        {secondary.map(secondaryButton)}
+        <TimePicker label="Inte nu" rows={snoozeRows.rows} own={snoozeRows.own} size="md" />
+        {addToConversation}
+        {more({})}
       </HStack>
     );
   }
-  // A card that waits on others after the person's own decision (D70 amended): the way back comes first while the window
-  // is open, with the time left, then the card's own timer. The receipt line beside it says what was done.
+  // An item that waits on others, also after the person's own decision (D70 amended): its own timer, and the review
+  // that was sent. The receipt above says what was done, with its Ångra while the window is open.
   if (open && thread.waitingOn)
     return (
       <HStack gap={2} vAlign="center" wrap="wrap">
-        {undoOpen && (
-          <Button
-            size={size}
-            variant="destructive"
-            label={`Ångra · ${countdown} kvar`}
-            clickAction={() => run(() => api.undoReceipt(thread.id))}
-          />
-        )}
         {viewReview}
         <TimePicker label="Påminn mig" rows={remindRows.rows} own={remindRows.own} size="md" />
-        {quiet ? !compact && addToConversation : more({})}
+        {more({})}
       </HStack>
     );
-  // The row a receipt has just arrived on (D70): its one control is the way back, while the window is open.
-  if (undoOpen && quiet)
-    return (
-      <Button
-        size={size}
-        variant="destructive"
-        label={`Ångra · ${countdown} kvar`}
-        clickAction={() => run(() => api.undoReceipt(thread.id))}
-      />
-    );
-  if (undoOpen)
-    return (
-      <HStack gap={2} vAlign="center" wrap="wrap">
-        {viewReview}
+  // Decided or set aside for good: the review that was sent, the item's reads, and Återöppna while the server allows it.
+  const reads = secondary.filter(a => a.kind === 'read');
+  if (!viewReview && !reads.length && !reopenable(thread)) return null;
+  return (
+    <HStack gap={2} vAlign="center" wrap="wrap">
+      {reopenable(thread) && (
         <Button
           size={size}
-          variant="destructive"
-          label={`Ångra allt · ${countdown} kvar`}
-          clickAction={() => run(() => api.undoReceipt(thread.id))}
+          variant="secondary"
+          label="Återöppna"
+          clickAction={() => run(() => api.reopen(thread.id), { optimistic: reopened(thread) })}
         />
-        {secondary
-          .filter(a => a.kind === 'read')
-          .map(a => (
-            <Button
-              key={a.id}
-              size={size}
-              label={a.label}
-              clickAction={() => perform(a)}
-              {...readState(a)}
-              {...leavingMark(a)}
-            />
-          ))}
-        <Text type="supporting">Varje rad visar källsystemets svar. Grönt bara när det lästs tillbaka.</Text>
-      </HStack>
-    );
-  return viewReview;
-}
-/** The badges that need a hand: a draft to confirm, a reminder that has fired. */
-function Flags({ thread }: { thread: Thread }) {
-  const open = thread.state === 'open';
-  const draft = thread.messages.at(-1)?.meta?.draft;
-  return (
-    <>
-      {draft && open && <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label="Att bekräfta" />}
-      {open && thread.remindedAt && attentionLevel(thread, today()) === 'now' && (
-        <Badge variant="error" icon={<Icon icon="clock" size="sm" />} label="Påminnelse" />
       )}
-    </>
-  );
-}
-/**
- * A row's name (D97 item 6): the source's own words, and a link to the person or unit the row names when it names one,
- * with the page it was opened on as the way back. Never a name the row did not have, and no link on the page of the
- * person or unit it names (`entityHref`): it would lead out of the card to the page the reader is on.
- */
-function ItemLabel({ item, from }: { item: ThreadItem; from: string }) {
-  const href = item.subject ? entityHref(item.subject, from) : null;
-  return href ? (
-    <Link href={href} weight="semibold" hasUnderline>
-      {item.label}
-    </Link>
-  ) : (
-    <Text weight="semibold">{item.label}</Text>
-  );
-}
-type Props = Omit<ActionProps, 'onRead'> & {
-  position?: string;
-  headingLevel?: 2 | 3 | 4;
-  autoFocusTitle?: boolean;
-  /** The card in the panel beside its own row (D50): the row keeps the thread's id, so the card takes another; the panel is its border, and its header holds the card's time action (artboard E). */
-  beside?: boolean;
-  /** After a receipt (D70): the first card that needs the person, as the way on from the done card. */
-  next?: { title: string; href: string };
-  /** In the phone's bottom sheet (artboard 12): the chip on its own line, the next step and the secondary actions full width. */
-  sheet?: boolean;
-};
-/**
- * A thread open on the page (thread action contract, artboard E): the state line (what is due, the area and the source),
- * the title, one lead sentence, the rows with refs, the action row with the one next step, what the next step does, and
- * "Varför nu?" folded away. Connectors contribute actions, never layout. Cards hold state and actions and never contain
- * a text input (D12). On the page a card is the exception (Astryx: a Card is a discrete item); the collapsed threads in a
- * group are rows (`ThreadRow`). Beside the column the panel is the card's surface, so no Card is drawn around it.
- */
-export function GenericCard({
-  thread,
-  position,
-  headingLevel = 3,
-  autoFocusTitle = false,
-  beside = false,
-  next,
-  sheet = false,
-  onChange,
-}: Props) {
-  // Opened from its row, the title takes the focus the row's button had (2.4.3).
-  const title = useRef<HTMLHeadingElement>(null);
-  useEffect(() => {
-    if (autoFocusTitle) title.current?.focus();
-  }, []);
-  // What folds open glides the content under it instead of jumping (Astryx's useAnimatedLayout), within the card.
-  const root = useRef<HTMLDivElement>(null);
-  const animatedLayout = useAnimatedLayout({ containerRef: root });
-  const { pathname, search } = useLocation();
-  const navigate = useNavigate();
-  // One of the card's own reads unfolded in it (`open-card` and `open-action`, D110 amended 2026-11-11), wherever the
-  // card is drawn. Pressing its button again, or the section's toggle, folds it. The address is replaced, not pushed:
-  // unfolding is a change within the card, as a view's search is, so Back leaves the card as it would without the read
-  // and never steps through every unfold and fold, while a reload and the entries either side of it keep it.
-  const asked = readOf(new URLSearchParams(search));
-  const unfolded = asked?.threadId === thread.id ? asked.actionId : null;
-  const read = useCardRead(thread, unfolded);
-  const readSection = `read-${beside ? 'card' : 'thread'}-${thread.id}`;
-  const openRead = read.action && !read.url && !(read.shown && !unfoldsInCard(read.shown.view)) ? read.action.id : null;
-  const onRead = (a: ThreadAction) =>
-    navigate(unfolded === a.id ? withoutRead(pathname, search) : withRead(pathname, search, thread.id, a.id), {
-      replace: true,
-    });
-  /** Folded by the section's toggle the toggle is gone with it: the focus goes to the button that unfolded it, else the title. */
-  const fold = (refocus: boolean) => {
-    const opener = read.action
-      ? root.current?.querySelector<HTMLElement>(`[data-read="${CSS.escape(read.action.id)}"]`)
-      : null;
-    navigate(withoutRead(pathname, search), { replace: true });
-    if (refocus) requestAnimationFrame(() => (opener?.isConnected ? opener : title.current)?.focus());
-  };
-  const actions = useThreadActions({ thread, onChange, onRead });
-  const { selected, setSelected, selectable, error } = actions;
-  const conversation = useConversation();
-  const marks = useMarks();
-  const mark = marks.ofThread(thread);
-  const systems = rowSystems(thread, marks);
-  const rowChipped = (ref: string) => conversation.chipped.includes(ref);
-  const inConversation = rowChipped('thread:' + thread.id) || thread.items.some(i => rowChipped(i.ref));
-  const open = thread.state === 'open';
-  const level = attentionLevel(thread, today());
-  const draft = thread.messages.at(-1)?.meta?.draft;
-  const receipt = thread.receipt;
-  const primary = thread.actions.find(a => a.role === 'primary');
-  const elevation =
-    open && !thread.waitingOn && (streamGroup(thread, today()) === 'nu' || inConversation) ? 'low' : 'none';
-  const variant = open && (thread.waitingOn || isSnoozed(thread, new Date().toISOString())) ? 'muted' : 'default';
-  const body = (
-    <VStack
-      ref={root}
-      gap={beside ? 3 : 2}
-      as="article"
-      tabIndex={-1}
-      aria-label={`Kort: ${thread.title}`}
-      id={`${beside ? 'card' : 'thread'}-${thread.id}`}
-      aria-current={inConversation ? 'true' : undefined}
-    >
-      <VStack gap={1.5}>
-        {/* The mark row (D71) in place of the area and source words: the chip, the source and when, the one status. */}
-        <MarkRow
-          thread={thread}
-          mark={mark}
-          systems={systems}
-          position={position}
-          inConversation={inConversation}
-          stacked={sheet}
+      {viewReview}
+      {reads.map(a => (
+        <Button
+          key={a.id}
+          size={size}
+          variant="secondary"
+          label={a.label}
+          clickAction={() => perform(a)}
+          {...readState(a)}
+          {...leavingMark(a)}
         />
-        <TimerNote thread={thread} />
-        {/* The check is drawn once, here, when the receipt has come (D70): the card's heading is then what was done. */}
-        <HStack gap={3} vAlign="center">
-          {receiptComplete(receipt) && <ReceiptCheck size="lg" />}
-          <Heading ref={title} tabIndex={-1} level={2} accessibilityLevel={headingLevel}>
-            {receipt ? receipt.headline : thread.title}
-          </Heading>
-        </HStack>
-        {!receipt && thread.summary && (
-          <Text as="p" color="secondary">
-            {thread.summary}
-          </Text>
-        )}
-      </VStack>
-      {thread.items.length > 0 && !receipt && (
-        <Card padding={beside ? 3 : 2}>
-          {selectable ? (
-            <CheckboxList
-              label="Rader"
-              isLabelHidden
-              value={selected}
-              onChange={setSelected}
-              isReadOnly={!open || !!executionStatus(thread.execution)}
-              density="balanced"
-            >
-              {thread.items.map(i => (
-                <CheckboxListItem
-                  key={i.ref}
-                  value={i.ref}
-                  align="start"
-                  label={<ItemLabel item={i} from={pathname + search} />}
-                  description={
-                    systems.multi ? (
-                      <SystemLine mark={systems.of.get(i.ref)} words={i.detail} />
-                    ) : (
-                      <Text type="supporting">{i.detail}</Text>
-                    )
-                  }
-                />
-              ))}
-            </CheckboxList>
-          ) : (
-            <List density="balanced" hasDividers edge="flush">
-              {thread.items.map(i => (
-                <ListItem
-                  key={i.ref}
-                  isSelected={rowChipped(i.ref)}
-                  label={<ItemLabel item={i} from={pathname + search} />}
-                  description={
-                    systems.multi ? (
-                      <SystemLine mark={systems.of.get(i.ref)} words={i.detail} />
-                    ) : (
-                      <Text type="supporting">{i.detail}</Text>
-                    )
-                  }
-                />
-              ))}
-            </List>
-          )}
-        </Card>
-      )}
-      {receipt && (
-        <List density="compact" hasDividers aria-label="Kvitto, rad för rad">
-          {receipt.rows.map(r => (
-            <ListItem
-              key={r.ref}
-              label={
-                <HStack gap={2} vAlign="center">
-                  <StatusDot variant={outcomeDot[r.outcome].variant} label={outcomeDot[r.outcome].label} />
-                  <Text weight="semibold">{r.label}</Text>
-                </HStack>
-              }
-              description={
-                // A job's receipt reads back per system (artboard 10): which system answered and when.
-                systems.multi ? (
-                  <SystemLine
-                    mark={systems.of.get(r.ref)}
-                    words={r.detail}
-                    answered={r.outcome === 'done' ? clock(receipt.at) : undefined}
-                  />
-                ) : (
-                  <Text type="supporting">{r.detail}</Text>
-                )
-              }
-            />
-          ))}
-        </List>
-      )}
-      {draft && open && (
-        <Text type="supporting" as="p">
-          Utkast från samtalet. Inget är skickat förrän du trycker på knappen här.
-        </Text>
-      )}
-      {error && (
-        <Text as="p" role="alert" color="accent">
-          {error}
-        </Text>
-      )}
-      {actions.confirmation}
-      <ActionRow
-        thread={thread}
-        level={level}
-        actions={actions}
-        stacked={sheet}
-        openRead={openRead}
-        readSection={readSection}
-      />
-      {read.action && (
-        <CardRead action={read.action} read={read} id={readSection} animatedLayout={animatedLayout} onFold={fold} />
-      )}
-      {/* The way on from a done card (D70, artboard D): the first card that needs the person, never opened on its own. */}
-      {receipt && next && (
-        <Card padding={3} variant="muted">
-          <VStack gap={1.5}>
-            <Text type="supporting" weight="semibold">
-              Nästa som behöver dig
-            </Text>
-            <HStack gap={2} vAlign="center" justify="between" wrap="wrap">
-              <Text weight="semibold">{next.title}</Text>
-              <Button size="sm" variant="secondary" label="Öppna" href={next.href} />
-            </HStack>
-          </VStack>
-        </Card>
-      )}
-      {/* What the next step does (artboard E): written to the source and read back, without the model. The source's name
-          stands as the source wrote it ("Nextcloud" is a name, not a noun), and nothing is said about undo here: whether
-          a write can be undone, and for how long, is only known from the receipt, which offers Ångra when the source does. */}
-      {open &&
-        !receipt &&
-        primary?.kind === 'execute' &&
-        (!executionStatus(thread.execution) || (actions.settling && actions.pressed !== null)) && (
-          <Text type="supporting" as="p">
-            {primary.label} skrivs till {thread.trigger.source} och läses tillbaka som kvitto. Fungerar utan modellen.
-          </Text>
-        )}
-      {/* Why the card is here, folded away as the artboard draws it; the words can be read and announced, never a tooltip (D28). */}
-      {!receipt && (
-        <Card padding={3}>
-          <Collapsible
-            defaultIsOpen={false}
-            chevronPosition="start"
-            animatedLayout={animatedLayout}
-            trigger={<Text weight="semibold">Varför nu?</Text>}
-          >
-            <Text as="p" color="secondary">
-              {thread.trigger.reason.replace(/\.$/, '')}. Kortet kom från {thread.trigger.source}{' '}
-              {clock(thread.trigger.at)}.
-            </Text>
-          </Collapsible>
-        </Card>
-      )}
-      {thread.messages.length > 2 && (
-        <Card padding={3}>
-          <Collapsible
-            defaultIsOpen={false}
-            chevronPosition="start"
-            animatedLayout={animatedLayout}
-            trigger={<Text weight="semibold">Historik · {thread.messages.length} händelser</Text>}
-          >
-            <List density="compact">
-              {thread.messages.map(m => (
-                <ListItem
-                  key={m.id}
-                  label={<Text>{m.body}</Text>}
-                  description={m.role === 'user' ? 'Du' : thread.trigger.source}
-                />
-              ))}
-            </List>
-          </Collapsible>
-        </Card>
-      )}
-    </VStack>
-  );
-  return beside ? (
-    body
-  ) : (
-    <Card padding={3} elevation={elevation} variant={variant}>
-      {body}
-    </Card>
-  );
-}
-
-type RowProps = Omit<ActionProps, 'onRead'> & {
-  notice?: boolean;
-  /** Where the title leads: the card beside the column (D50, artboard E). */
-  href: string;
-  /** The row whose card is in the panel (D50): marked as the current one, its line says so, and its one control closes the card. */
-  isOpen?: boolean;
-  onClose?: () => void;
-  /** Beside an open panel the column is narrower: the row keeps its next step alone (artboard E). */
-  compact?: boolean;
-  /** On a phone (artboard 11): the next step fills the line under the row, with the `@` beside it. */
-  phone?: boolean;
-};
-/**
- * A thread as a row in its group's list (artboard A; Astryx: records are rows, a Card is the exception): the day cell at
- * the start ("i dag" as the one red badge, the day word for a later deadline, "✦ klart" or "✦ utkast" on a proposal, the
- * info mark on a notice), the title as the link to its card, the meta line under it (D71: the area's glyph first, then
- * the area and why it is here in supporting, a status badge after it only when the row needs a hand), and at the end
- * "Lägg till i samtalet" and the one next step. The row keeps the card's id so focus and the toasts find it.
- */
-const rowNarrowQuery = '(max-width: 1200px)';
-/** A row's head: the title's line and the meta line's first, from the type scale's own sizes and leadings (D62). */
-const rowHead =
-  'calc(var(--text-body-size) * var(--text-body-leading) + var(--text-supporting-size) * var(--text-supporting-leading))';
-/** The day cell is one word (artboard A: "fre"): tomorrow is its weekday, since "i morgon" is two. */
-const dayCell = (date: string, now: string) => {
-  const word = dayWord(date, now);
-  return word === 'i morgon'
-    ? new Intl.DateTimeFormat('sv-SE', { weekday: 'short' }).format(new Date(date + 'T12:00:00Z')).replace(/\.$/, '')
-    : word;
-};
-
-export function ThreadRow({
-  thread,
-  notice = false,
-  href,
-  isOpen = false,
-  onClose,
-  compact = false,
-  phone = false,
-  onChange,
-}: RowProps) {
-  // A row has no room to unfold a read: its read opens the card beside the page with the read unfolded in it.
-  const { pathname, search } = useLocation();
-  const navigate = useNavigate();
-  const actions = useThreadActions({
-    thread,
-    onChange,
-    onRead: a => navigate(cardWithRead(pathname, search, thread.id, a.id)),
-  });
-  const { error } = actions;
-  const conversation = useConversation();
-  const marks = useMarks();
-  const mark = marks.ofThread(thread);
-  const level = notice ? 'notice' : attentionLevel(thread, today());
-  const inConversation = conversation.chipped.includes('thread:' + thread.id);
-  const todayDate = today();
-  // A button's label does not wrap, so where the column beside the day is narrow the step goes under the line and the title keeps its words.
-  // A decision on its way says so in a sentence, which takes the room the title needs: then too the step goes under the line.
-  const narrowColumn = useMediaQuery(rowNarrowQuery);
-  const narrow = phone || narrowColumn || !!executionStatus(thread.execution);
-  const open = thread.state === 'open';
-  const draft = thread.messages.at(-1)?.meta?.draft;
-  const due = open && !thread.waitingOn && !notice && streamGroup(thread, todayDate) === 'nu';
-  // A receipt that has just arrived (D70): the row keeps its place for a moment, the check in its day cell and what was done
-  // in its line. A row that waits on others after the decision keeps its day and carries the receipt in its line too.
-  const done = thread.state === 'handled' && receiptComplete(thread.receipt);
-  const day = done ? (
-    <ReceiptCheck />
-  ) : notice ? (
-    <Icon icon="info" color="info" />
-  ) : due ? (
-    <Badge
-      variant="error"
-      label={thread.deadline && daysUntil(thread.deadline.slice(0, 10), todayDate) < 0 ? 'försenad' : 'i dag'}
-    />
-  ) : cardKind(thread) === 'forslag' ? (
-    <Badge variant="info" label={draft ? '✦ utkast' : '✦ klart'} />
-  ) : thread.deadline ? (
-    <Text weight="semibold" hasTabularNumbers textWrap="nowrap">
-      {dayCell(thread.deadline.slice(0, 10), todayDate)}
-    </Text>
-  ) : null;
-  const reminder = thread.timers?.find(t => t.kind === 'reminder' && t.state === 'scheduled');
-  // A reminder that is not on its way says so on the row too, not only on the open card (`TimerNote`): queued work has
-  // a visible status and never reads as scheduled (reliability roadmap, phase 5A). One that was stopped needs a hand,
-  // so it is a badge after the words; one that waits to be scheduled is words on the line, and not inside the settle
-  // window, where a queued timer is not drawn (D64 item 2).
-  const timerStopped = !!thread.timers?.some(t => t.state === 'blocked');
-  const timerWaits = !timerStopped && !actions.settling && !!thread.timers?.some(t => t.state === 'queued');
-  // A job across systems says how many steps in how many systems, never three glyphs (artboard 10).
-  const line = [
-    mark.title,
-    stepsLine(thread, rowSystems(thread, marks)),
-    thread.receipt ? receiptLine(thread) : thread.trigger.reason.replace(/\.$/, ''),
-    thread.waitingOn ? `väntar på ${thread.waitingOn}` : '',
-    thread.waitingOn && reminder ? `påminner dig ${snoozeWhen(reminder.dueAt, new Date().toISOString())}` : '',
-    timerWaits ? 'påminnelsen väntar på schemaläggning' : '',
-    inConversation ? 'i samtalet' : '',
-    isOpen ? 'öppet bredvid' : '',
-  ]
-    .filter(Boolean)
-    .join(' · ');
-  // The open row's one control is the ✕, an icon that fits beside any title: it stays at the end of the row even where
-  // the buttons would go under the line, else it would stand alone and centred under the line (seen 2026-11-06).
-  const close =
-    isOpen && onClose ? (
-      <IconButton size="md" variant="ghost" label="Stäng kortet" icon={<Icon icon="close" />} onClick={onClose} />
-    ) : null;
-  const end = close ?? (
-    <ActionRow thread={thread} level={level} actions={actions} quiet compact={compact} phone={phone} />
-  );
-  const under = narrow && !close;
-  return (
-    <ListItem
-      id={`thread-${thread.id}`}
-      tabIndex={-1}
-      // The day cell and the buttons belong to the row's head, the title and the first meta line, not to the middle of a
-      // row that runs to three or four lines (a receipt's badge, "Kontrollera status" under the line; seen 2026-11-07).
-      // So the slots stand at the top, each centred in a box as tall as the head: a two-line row looks as it did when
-      // the slots were centred on it, and a taller row keeps them beside its title.
-      align="start"
-      isSelected={isOpen}
-      // The day cell is one width so the titles line up; on a phone it takes what it needs, as artboard 11 draws it.
-      startContent={
-        phone ? (
-          day
-        ) : (
-          <VStack width={56} minHeight={rowHead} vAlign="center">
-            {day}
-          </VStack>
-        )
-      }
-      label={
-        <Text weight="semibold">
-          <Link href={href} color="primary" weight="semibold">
-            {thread.title}
-          </Link>
-        </Text>
-      }
-      description={
-        <VStack gap={phone ? 2 : 1}>
-          {/* A status badge follows the words on their line when the two fit there, and folds under them when not. Not
-              inline in the words' flow: a Badge with an icon takes its baseline from the icon and stood 4.5 px above
-              the words (tried 2026-11-07). */}
-          <HStack gap={2} vAlign="center" wrap="wrap">
-            <AreaLine icon={mark.icon}>{line}</AreaLine>
-            <ReceiptFlag thread={thread} quiet />
-            <Flags thread={thread} />
-            {timerStopped && (
-              <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label="Påminnelsen stoppad" />
-            )}
-          </HStack>
-          {under && end}
-          {error && (
-            <Text as="p" role="alert" color="accent">
-              {error}
-            </Text>
-          )}
-          {actions.confirmation}
-        </VStack>
-      }
-      endContent={
-        under ? undefined : phone ? (
-          end
-        ) : (
-          <VStack minHeight={rowHead} vAlign="center" hAlign="end">
-            {end}
-          </VStack>
-        )
-      }
-    />
+      ))}
+    </HStack>
   );
 }

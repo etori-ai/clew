@@ -53,12 +53,12 @@ for (const [layout, viewport] of [
       await open(page, '/');
       const mine = section(page);
       await expect(heading(page, 2, 'Mina åtgärdspunkter · 5')).toBeVisible();
-      // After the day's work and before Läget, as Mina ärenden (D90).
-      const work = heading(page, 2, 'Nu · 1'),
+      // After the day's work and after Läget, with Mina ärenden (D90) under the board's parts (D111, amended 2026-11-11).
+      const work = heading(page, 2, 'Behöver dig'),
         own = heading(page, 2, 'Mina åtgärdspunkter'),
         lage = heading(page, 2, 'Läget på Skönsmons skola');
       expect((await own.boundingBox())!.y).toBeGreaterThan((await work.boundingBox())!.y);
-      expect((await lage.boundingBox())!.y).toBeGreaterThan((await own.boundingBox())!.y);
+      expect((await own.boundingBox())!.y).toBeGreaterThan((await lage.boundingBox())!.y);
 
       // The reader's own first, in the server's order; a done point is not listed.
       const items = mine.getByRole('listitem');
@@ -231,14 +231,14 @@ test.describe('Mina åtgärdspunkter is absent', () => {
   test('when nothing is open', async ({ page, api }) => {
     api.commitments = allCommitments().filter(c => c.done);
     await open(page, '/');
-    await expect(heading(page, 2, 'Nu · 1')).toBeVisible();
+    await expect(heading(page, 2, 'Behöver dig')).toBeVisible();
     await expect(section(page)).toHaveCount(0);
   });
 
   test('without a talks system, and no error is shown', async ({ page, api }) => {
     api.talksOffered = false;
     await open(page, '/');
-    await expect(heading(page, 2, 'Nu · 1')).toBeVisible();
+    await expect(heading(page, 2, 'Behöver dig')).toBeVisible();
     await expect(section(page)).toHaveCount(0);
     await expect(page.getByText('Du saknar behörighet för åtgärden.')).toHaveCount(0);
   });

@@ -90,7 +90,7 @@ export function CardRead({
       window.open(url, '_blank', 'noopener');
       announce(`${action.label} öppnades i en ny flik.`);
       onFold(false);
-    } else if (shown && unfoldsInCard(shown.view)) announce(`${action.label} visas i kortet.`);
+    } else if (shown && unfoldsInCard(shown.view)) announce(`${action.label} visas i ärendet.`);
   }, [query.data, query.error, query.isError]);
   if (url || (shown && !unfoldsInCard(shown.view))) return null;
   /** Where a row's own view leads (`view.open`): the same page with that view in the panel, and the way back to the card. */

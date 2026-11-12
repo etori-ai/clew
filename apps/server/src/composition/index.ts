@@ -35,10 +35,11 @@ import { clock, ids } from './ambient';
 import { calendar, events, notifier, calendarAuthority, followups, planningRound } from './calendar';
 import { talks } from './talks';
 import { TALKS_CAPABILITY } from '../modules/talk-seam/capabilities';
-import type { AuthenticatedContext, TalksResult } from '@clew/contracts';
+import type { AuthenticatedContext, DayView, TalksResult } from '@clew/contracts';
 import { systemContext } from '../system-context';
 import { cardDecisions } from '../threads/usecases/decisions';
 import { startedCards } from '../threads/usecases/started';
+import { askUsecases } from '../threads/usecases/asks';
 import { createHash } from 'node:crypto';
 import { executions } from './executions';
 import { reviewDocuments } from './documents';
@@ -101,6 +102,37 @@ export const threads = {
     ids,
   }),
 };
+const meetingFailed = logPort('asks', 'warn');
+/**
+ * What a write's dialog draws for a meeting ask (D111): the calendar module's reads of the person's own calendar, through
+ * the registry as the person (D20), so its audience, switch and scope hold. A person without the calendar, or a calendar
+ * that does not answer, gets no suggestions and no day; the dialog still offers "Annan tid".
+ */
+export const asks = askUsecases({
+  registry,
+  calendar: {
+    free: async (persona, input) => {
+      if (!registry.allowed(actorOf(persona), 'calendar.freeTimes')) return [];
+      try {
+        return (
+          await runCapability<{ gaps: Array<{ start: string; end: string }> }>(persona, 'calendar.freeTimes', input)
+        ).gaps;
+      } catch (error) {
+        meetingFailed('asks: free times could not be read', error);
+        return [];
+      }
+    },
+    day: async (persona, date) => {
+      if (!registry.allowed(actorOf(persona), 'calendar.day')) return undefined;
+      try {
+        return await runCapability<DayView>(persona, 'calendar.day', { date });
+      } catch (error) {
+        meetingFailed('asks: the day could not be read', error);
+        return undefined;
+      }
+    },
+  },
+});
 export const attention = {
   pending: async (p: Parameters<typeof threadCore.threadFor>[0]) => {
     const visible = (await threads.listThreadsFor(p))

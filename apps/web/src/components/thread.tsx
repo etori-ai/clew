@@ -194,7 +194,7 @@ export function ThreadCard({ thread, compact, headingLevel = 3, beside = false, 
       gap={2}
       as="article"
       tabIndex={-1}
-      aria-label={`Kort: ${thread.title}`}
+      aria-label={`Ärende: ${thread.title}`}
       id={`${beside ? 'card' : 'thread'}-${thread.id}`}
       aria-current={inConversation ? 'true' : undefined}
     >

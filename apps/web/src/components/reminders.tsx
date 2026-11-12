@@ -102,7 +102,7 @@ export function ReminderBell() {
                   headingLevel={3}
                   icon={<Icon icon={BellIcon} size="lg" />}
                   title="Inga aktuella påminnelser"
-                  description="När ett kort kommer tillbaka vid tiden du valde visas det här."
+                  description="När ett ärende kommer tillbaka vid tiden du valde visas det här."
                 />
               ) : (
                 <List density="spacious" aria-label="Aktuella påminnelser">
@@ -127,8 +127,8 @@ export function ReminderBell() {
               ))}
             <Divider />
             <HStack padding={3}>
-              <Link href="/" hasUnderline>
-                Öppna Hem
+              <Link href="/todo" hasUnderline>
+                Öppna Att göra
               </Link>
             </HStack>
           </VStack>

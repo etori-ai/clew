@@ -229,6 +229,24 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       expect(await store.readThread(b, t.id)).toBeUndefined();
       expect(await store.readThreadById(t.id)).toEqual(read);
     });
+    test("an action's read-receipt mark is kept with the action and read back as stored (D111)", async () => {
+      const {
+        store,
+        people: [a],
+      } = await make();
+      const receipt = {
+        id: 'ack',
+        label: 'Jag har läst',
+        capability: 'communication.acknowledge',
+        kind: 'execute' as const,
+        role: 'primary' as const,
+        acknowledgement: { publishedAt: '2026-11-10T06:30:00+01:00' },
+      };
+      const t = draft(a, { connector: 'communication', area: 'communication', actions: [receipt] });
+      await store.transaction(tx => tx.insertThread(t));
+      expect((await store.readThread(a, t.id))!.actions).toEqual([receipt]);
+      expect((await store.readThreadById(t.id))!.actions).toEqual([receipt]);
+    });
     test('one open pushed thread per person and topic: a second insert is a no-op, a closed one frees the topic', async () => {
       const {
         store,
@@ -579,6 +597,48 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       expect(await hasJob('job:lost:' + t.id)).toBe(false);
       await store.transaction(tx => tx.scheduleJob({ id: 'job:' + t.id, kind: 'receipt-final', runAt: plus(T0, 1) }));
       expect(await hasJob('job:' + t.id)).toBe(true);
+    });
+    test("an item's history is its subjects' committed audit rows, oldest first, the newest within the limit (D111)", async () => {
+      const {
+        store,
+        people: [a],
+      } = await make();
+      const t = draft(a);
+      const subject = 'thread:' + t.id,
+        timer = `timer:reminder:${t.id}`;
+      const row = (action: string, ms: number, on = subject) => ({
+        actor: 'person:' + a,
+        action,
+        subject: on,
+        at: plus(T0, ms),
+        details: { n: ms },
+      });
+      await store.transaction(async tx => {
+        await tx.insertThread(t);
+        // Written out of order: the history is ordered by when, not by when it was written.
+        await tx.writeAudit(row('thread.snoozed', 2000));
+        await tx.writeAudit(row('thread.pushed', 1000));
+        await tx.writeAudit(row('timer.blocked', 3000, timer));
+        await tx.writeAudit(row('thread.dismissed', 4000, 'thread:another'));
+      });
+      await expect(
+        store.transaction(async tx => {
+          await tx.writeAudit(row('thread.reopened', 5000));
+          throw new Error('rolled back');
+        }),
+      ).rejects.toThrow('rolled back');
+      const shape = (rows: Awaited<ReturnType<typeof store.history>>) =>
+        rows.map(r => ({ action: r.action, subject: r.subject, at: r.at, details: r.details ?? {} }));
+      expect(shape(await store.history([subject, timer], 10))).toEqual([
+        { action: 'thread.pushed', subject, at: plus(T0, 1000), details: { n: 1000 } },
+        { action: 'thread.snoozed', subject, at: plus(T0, 2000), details: { n: 2000 } },
+        { action: 'timer.blocked', subject: timer, at: plus(T0, 3000), details: { n: 3000 } },
+      ]);
+      expect((await store.history([subject, timer], 2)).map(r => r.action)).toEqual([
+        'thread.snoozed',
+        'timer.blocked',
+      ]);
+      expect(await store.history(['thread:nothing'], 10)).toEqual([]);
     });
   });
 }

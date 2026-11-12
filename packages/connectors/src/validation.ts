@@ -1,6 +1,6 @@
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
-import { ENTITY_KEYS_MAX, rowsKey } from '@clew/contracts';
+import { ENTITY_KEYS_MAX, rowsKey, type Ask } from '@clew/contracts';
 import { menuProblem, viewProblem, type ViewSubject } from './views';
 
 /** Rules shared by manifest preview, remote loading and in-process registration. No installation state. */
@@ -15,6 +15,8 @@ interface Descriptor {
       creates?: string;
       kinds?: unknown[];
       about?: { entity: string; param?: string; page?: unknown };
+      asks?: Ask[];
+      effect?: string;
     }
   >;
   facts?: Array<{ kind: string; attributes: object }>;
@@ -32,8 +34,8 @@ const asSchema = (value: unknown): Schema | undefined =>
   value && typeof value === 'object' ? (value as Schema) : undefined;
 const requires = (schema: Schema | undefined, name: string) =>
   Array.isArray(schema?.required) && schema.required.includes(name);
-/** The names whose shape a profile of the protocol fixes (D26, D35, D89, D96): none of them is about an entity. */
-const PROFILES = ['search', 'fetch', 'errands', 'talks', 'commitments'];
+/** The names whose shape a profile of the protocol fixes (D26, D35, D89, D96, D111): none of them is about an entity. */
+const PROFILES = ['search', 'fetch', 'errands', 'talks', 'commitments', 'news'];
 
 /**
  * Why a capability's `about` (D97) may not be used, or undefined when it may. A read is asked with `{ keys }`, at most
@@ -79,10 +81,101 @@ function aboutProblem(c: Descriptor['capabilities'][number], connector: Descript
   }
   if (about.param === undefined || asSchema(input?.properties?.[about.param])?.type !== 'string')
     return `Capability ${c.name}: an action about an entity names in param a string property of its input that takes the key (D97).`;
-  // The entity's menu starts the action with the key alone (D97, D8): nothing else may be required.
-  const required = new Set(Array.isArray(input?.required) ? (input.required as unknown[]) : []);
-  if (required.size !== 1 || !required.has(about.param))
-    return `Capability ${c.name}: an action about an entity requires ${about.param} and nothing else in its input, so the entity's menu can start it with the key alone; anything more is optional with a default the source chooses (D97).`;
+  // The entity's menu starts the action with the key (D97, D8); anything else it requires, the person is asked (D111).
+  const required = Array.isArray(input?.required) ? (input.required as unknown[]) : [];
+  const asked = new Set((c.asks ?? []).map(a => a.property));
+  if (!required.includes(about.param) || required.some(r => r !== about.param && !asked.has(r as string)))
+    return `Capability ${c.name}: an action about an entity requires ${about.param} and otherwise only what it asks, so the entity's menu can start it with the key and the person's answers; anything more is optional with a default the source chooses (D97, D111).`;
+  return undefined;
+}
+
+/** Why an ask does not fit the property it names (D111), as the end of a sentence; undefined when it does. */
+function fitProblem(ask: Ask, property: Schema & { format?: unknown; enum?: unknown }): string | undefined {
+  const values = Array.isArray(property.enum) ? (property.enum as unknown[]) : undefined;
+  const string = property.type === 'string' || (property.type === undefined && !!values);
+  switch (ask.kind) {
+    case 'meeting':
+      return !string || values || (property.format !== undefined && property.format !== 'date-time')
+        ? 'is a meeting, which takes a string property without enum (format date-time when it declares one)'
+        : undefined;
+    case 'date':
+      return !string || values || (property.format !== undefined && property.format !== 'date')
+        ? 'is a date, which takes a string property without enum (format date when it declares one)'
+        : undefined;
+    case 'text':
+    case 'long-text':
+      return !string || values || property.format !== undefined
+        ? `is ${ask.kind}, which takes a string property without enum or format`
+        : undefined;
+    case 'choice': {
+      const offered = ask.options.map(o => o.value);
+      return !string ||
+        !values ||
+        new Set(offered).size !== offered.length ||
+        offered.length !== values.length ||
+        values.some(v => !offered.includes(v as string))
+        ? "is a choice, whose options name every value of the property's enum once"
+        : undefined;
+    }
+  }
+}
+/**
+ * Why a capability's asks (D111) may not be used: an ask belongs to a propose or an execute that is not a follower; it
+ * names a property of the input once, never the entity's key, of a type its kind takes; and a property the input
+ * requires is a required ask.
+ */
+function asksProblems(c: Descriptor['capabilities'][number]): string[] {
+  if (!c.asks) return [];
+  if (c.kind !== 'propose' && c.kind !== 'execute')
+    return [`Capability ${c.name}: asks belong to a propose or an execute (D111).`];
+  if (c.follows) return [`Capability ${c.name}: a follower is asked with a fact and asks the person nothing (D111).`];
+  const input = asSchema(c.input);
+  const problems: string[] = [];
+  const seen = new Set<string>();
+  for (const ask of c.asks) {
+    const name = ask.property;
+    const property = asSchema(input?.properties?.[name]);
+    if (seen.has(name)) problems.push(`Capability ${c.name}: ask "${name}" is asked twice (D111).`);
+    else if (!property) problems.push(`Capability ${c.name}: ask "${name}" names no property of the input (D111).`);
+    else if (c.about?.param === name)
+      problems.push(`Capability ${c.name}: ask "${name}" names the input that takes the entity's key (D111).`);
+    else {
+      const fit = fitProblem(ask, property);
+      if (fit) problems.push(`Capability ${c.name}: ask "${name}" ${fit} (D111).`);
+      if (requires(input, name) && !ask.required)
+        problems.push(`Capability ${c.name}: ask "${name}" is optional, but the input requires ${name} (D111).`);
+    }
+    seen.add(name);
+  }
+  return problems;
+}
+/** JSON with its keys in order: two schemas written alike compare alike. */
+const canonical = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(canonical)
+    : value && typeof value === 'object'
+      ? Object.fromEntries(
+          Object.entries(value)
+            .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+            .map(([k, v]) => [k, canonical(v)]),
+        )
+      : value;
+const sameSchema = (a: unknown, b: unknown) =>
+  JSON.stringify(canonical(JSON.parse(JSON.stringify(a ?? {})))) ===
+  JSON.stringify(canonical(JSON.parse(JSON.stringify(b ?? {}))));
+/**
+ * Why a capability's `effect` (D111) may not be used: it belongs to an execute and names a read of the same connector
+ * that takes the same input and is never offered to the model. A read writes nothing by contract.
+ */
+function effectProblem(c: Descriptor['capabilities'][number], connector: Descriptor): string | undefined {
+  if (c.kind !== 'execute') return `Capability ${c.name}: effect belongs to an execute (D111).`;
+  const read = connector.capabilities.find(r => r.name === c.effect);
+  if (!read || read.kind !== 'read')
+    return `Capability ${c.name}: effect names ${c.effect}, which is not a read of this connector (D111).`;
+  if (read.model)
+    return `Capability ${c.name}: effect ${c.effect} is offered to the model; an effect read declares model: false (D111).`;
+  if (!sameSchema(read.input, c.input))
+    return `Capability ${c.name}: effect ${c.effect} takes another input than ${c.name}; it declares the same input schema (D111).`;
   return undefined;
 }
 
@@ -132,6 +225,11 @@ export function connectorProblems(
     if (c.about) {
       const about = aboutProblem(c, connector, header);
       if (about) problems.push(about);
+    }
+    problems.push(...asksProblems(c));
+    if (c.effect !== undefined) {
+      const effect = effectProblem(c, connector);
+      if (effect) problems.push(effect);
     }
     schemaProblem(`Capability ${c.name} input`, c.input as object);
     schemaProblem(`Capability ${c.name} output`, c.output as object);

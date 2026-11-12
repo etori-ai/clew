@@ -112,7 +112,7 @@ function ToolSwitch({
       />
       {row.kind === 'execute' && (
         <InfoTip
-          content="Åtgärder utförs bara genom att en person bekräftar på ett kort, aldrig av assistenten."
+          content="Åtgärder utförs bara genom att en person bekräftar i ett ärende, aldrig av assistenten."
           label="Varför kan åtgärder inte bli verktyg"
         />
       )}
@@ -333,7 +333,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
           container="section"
           collapsible={false}
           title={`${c.source}: ${healthLabel[c.health.status].toLowerCase()}${c.health.at ? ' sedan ' : ''}`}
-          description={`Kort och figurer visas från senast kända läge.${c.health.detail ? ` Teknisk orsak: ${c.health.detail}.` : ''}`}
+          description={`Ärenden och figurer visas från senast kända läge.${c.health.detail ? ` Teknisk orsak: ${c.health.detail}.` : ''}`}
           endContent={<Timestamp value={c.health.at} format="date_time" />}
         />
       )}
@@ -377,8 +377,8 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                 {/* What an administrator acts on stands open; what a technician looks up when something is wrong folds away. The name, the status and the address are in the page's head. */}
                 <MetadataList columns={mobile ? 'single' : 'multi'}>
                   <MetadataListItem label="Vem ser det">{audienceLabel(c.audience)}</MetadataListItem>
-                  <MetadataListItem label="Skickar kort">
-                    {c.scan ? (c.scanEnabled ? 'Ja' : 'Avstängt') : 'Anslutningen skickar inga kort'}
+                  <MetadataListItem label="Skickar ärenden">
+                    {c.scan ? (c.scanEnabled ? 'Ja' : 'Avstängt') : 'Anslutningen skickar inga ärenden'}
                   </MetadataListItem>
                   <MetadataListItem label="Ger sidhuvudet">
                     {c.header ? 'Ja' : c.headerCapability ? 'Kan ge sidhuvudet' : 'Anslutningen kan inte ge sidhuvudet'}
@@ -515,11 +515,11 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
             <div id={panel('omraden')} role={mobile ? 'region' : 'tabpanel'} aria-label="Områden">
               <VStack gap={3}>
                 <Switch
-                  label="Skicka kort"
-                  description="Anslutningen får föreslå kort i strömmen."
+                  label="Skicka ärenden"
+                  description="Anslutningen får föreslå ärenden till Att göra."
                   value={c.scanEnabled}
                   isDisabled={busy || !c.scan}
-                  disabledMessage="Anslutningen skickar inga kort."
+                  disabledMessage="Anslutningen skickar inga ärenden."
                   changeAction={on =>
                     run(async () => {
                       await api.admin.update(id, { scanEnabled: on });
@@ -878,7 +878,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                   key={'r' + n}
                   startContent={<StatusDot variant="error" label="Borttagen" />}
                   label={<Text>Borttagen funktion: {n}</Text>}
-                  description={<Text type="supporting">Kort som pekar på den slutar fungera.</Text>}
+                  description={<Text type="supporting">Ärenden som pekar på den slutar fungera.</Text>}
                 />
               ))}
               {diff.changed.map(n => (
@@ -910,7 +910,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
         isOpen={removeOpen}
         onOpenChange={setRemoveOpen}
         title={removeLabel}
-        description={`Anslutningen försvinner från alla sidor och dess öppna kort stängs. Kvitton i Redan hanterat finns kvar. Nyckeln raderas.`}
+        description={`Anslutningen försvinner från alla sidor och dess öppna ärenden stängs. Kvitton under Klart finns kvar. Nyckeln raderas.`}
         actionLabel="Ta bort"
         cancelLabel="Avbryt"
         isActionLoading={removal.busy}
@@ -920,7 +920,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
             setRemoveOpen(false);
             client.removeQueries({ queryKey: keys.admin.connector(id) });
             navigate('/admin/connectors');
-            return `${c.source} är borttagen${r.closedCards ? `, ${r.closedCards} kort stängdes` : ''}.`;
+            return `${c.source} är borttagen${r.closedCards ? `, ${r.closedCards} ${r.closedCards === 1 ? 'ärende' : 'ärenden'} stängdes` : ''}.`;
           })
         }
       />

@@ -56,6 +56,24 @@ export function createConnector({
         })),
       };
     },
+    // The news profile (D111): the notices the person may read as news, newest first. A record seeded before notices
+    // had a sender carries the system's own name.
+    'communication.news': actor => ({
+      rows: forActor(actor)
+        .map(n => ({ ref: n.ref, title: n.title, sender: n.sender ?? manifest.source, publishedAt: n.publishedAt }))
+        .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt)),
+    }),
+    'communication.newsItem': (actor, input) => {
+      const n = forActor(actor).find(x => x.ref === input.ref);
+      if (!n) throw new Invalid('Nyheten finns inte.');
+      return {
+        ref: n.ref,
+        title: n.title,
+        sender: n.sender ?? manifest.source,
+        publishedAt: n.publishedAt,
+        body: n.body,
+      };
+    },
     'communication.lookup': (actor, input) => {
       const op = state.get('op:' + input.operationId);
       return op && op.person === personKey(actor) ? { found: true, result: op.result } : { found: false };
@@ -133,8 +151,14 @@ export function createConnector({
             },
           ],
         };
+        // The receipt is the item's point (D111): the action says so, with when the notice was published, so Hem can
+        // lift the item until it is given. Not part of the revision: marking it changes nothing the person decides on.
+        const marked = draft.actions.map(a =>
+          a.id === 'ack' ? { ...a, acknowledgement: { publishedAt: n.publishedAt } } : a,
+        );
         return {
           ...draft,
+          actions: marked,
           occurrences: draft.items.map(i => ({
             key: i.ref,
             revision: hash([i.label, i.detail, draft.summary, draft.actions]),

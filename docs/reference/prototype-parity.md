@@ -30,13 +30,13 @@ The prototype's feature list has 40 features. The architecture carries 38 of the
 
 | Verdict | Features |
 |---|---|
-| Built | 12 |
-| Ready | 15 |
+| Built | 13 |
+| Ready | 14 |
 | Extension | 8 |
 | New block | 3 |
 | Line decision | 2 |
 
-Version 1.0 leans on the harder rows: of its seven modules one is built, four are ready, and two wait for a line decision. Dialogstöd is counted as ready for its figures; its dialogue needs two building blocks.
+Version 1.0 leans on the harder rows, and Hem now holds most of them ([D111, amended 2026-11-11](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md)): of its seven modules five are built against fixtures, one is ready, and one waits for a line decision. Dialogstöd is counted as built for its figures, drawn on Hem as Läget; its dialogue needs two building blocks.
 
 ## Version 1.0, for managers
 
@@ -46,12 +46,12 @@ The prototype defines version 1.0 as three functions of the shell and seven modu
 |---|---|---|---|
 | Att agera på and Mina aktiviteter | Built | Real sources | [Approved writes](status/work.md#approved-writes) |
 | Personal | Ready | Connectors for employment, competence and cases; each becomes its own section without changing the page | [Personal](status/people.md#personal) |
-| Dialogstöd: the figures | Ready | A connector to the data warehouse. Key figures, charts with tables, tone, "last updated" and a minimum group size fit today's views | [Views](status/views.md), [sick-leave statistics](status/connectors.md#sick-leave-statistics) |
+| Dialogstöd: the figures | Built | Läget's tiles on Hem under the three blocks, headed by the unit with "Öppna dialogstödet" leading to the unit's page, against fixtures. Real figures need a connector to the data warehouse; key figures, charts with tables, tone, "last updated" and a minimum group size fit today's views | [Hem under the box](status/interface.md#hem-under-the-box), [Views](status/views.md), [sick-leave statistics](status/connectors.md#sick-leave-statistics) |
 | Dialogstöd: the dialogue | New block | B1 and B2: status with history, activities and notes as an owned domain, and following a branch of the tree | [Organisation tree](status/identity.md#organisation-tree) |
-| Nyheter | Ready | A connector to the news source: the list as its own page in the menu, a figure on Hem that says what is new and opens the list, cards for what must be seen. The communication fixture runs this pattern | [Fixture connectors](status/connectors.md#fixture-connectors) |
-| Fokusnyhet | Ready | The same connector lifts an item as a card that stays until the person has acknowledged it. Drawn as a card, not as a picture surface under the box | [Fixture connectors](status/connectors.md#fixture-connectors) |
+| Nyheter | Built | Against a fixture: a news profile, `<id>.news`, joined as `clew.news`; the three newest as a block on Hem and "Alla nyheter" as a tool's page an administrator can place in the menu. A connector to the news source | [News](status/connectors.md#news), [Hem under the box](status/interface.md#hem-under-the-box) |
+| Fokusnyhet | Built | Against a fixture: a work item whose receipt action the source marks is a callout between the box and the blocks, with "Läs" and the receipt, until the person has acknowledged it. Drawn as Astryx's banner, not as a picture surface. A connector to the news source | [Hem under the box](status/interface.md#hem-under-the-box), [Fixture connectors](status/connectors.md#fixture-connectors) |
 | Min AI | Line decision | A link to Eneo in the header works today. Inside Clew it needs the path for [tools with their own interface](#tools-with-their-own-interface) | [D14](../decisions/D14-clew-stands-alone-eneo-enhances.md) |
-| Verktygslådan | Line decision | The page itself is editorial and belongs in the intranet ([not made for](#not-made-for)). The tools behind it can be connectors | |
+| Verktygslådan | Built | The tools an administrator placed, as tiles on Hem, and a link to the intranet's own page of tools when the shared header marks one. The page itself is editorial and stays the intranet's ([not made for](#not-made-for)) | [Hem under the box](status/interface.md#hem-under-the-box), [Views and menu tools](status/views.md#views-and-menu-tools) |
 | The AI field | Built | | |
 | Anpassa startsidan | Line decision | B8, if the line moves | |
 | The intranet's menu | Ready | A connector to the intranet's content system; the header already takes its places from a connector | [Shared header](status/interface.md#shared-header) |
@@ -87,7 +87,7 @@ The prototype's own ids are kept so a row can be found in `apps/projekt/src/app/
 | Dokument, rutiner och protokoll | `dokument` | Ready | A connector to the document source. Must-read with a receipt runs against a fixture | [Document catalogue](status/views.md#document-and-semantic-catalogue) |
 | Kalendern | `kalender` | Built | | [Calendar](status/calendar.md#calendar) |
 | Notiser och påminnelser | `notiser` | New block | B4 and B5, deferred and to be built | [Browser updates](status/work.md#browser-updates) |
-| Nyheter och information | `nyheter` | Ready | A connector to the news source; opting out of feeds needs B8 | |
+| Nyheter och information | `nyheter` | Built | Against a fixture: the news profile, Hem's block and "Alla nyheter"; a connector to the news source. Opting out of feeds needs B8 | [News](status/connectors.md#news) |
 | Kontakt och support | `kontakt` | Ready | Disruption status and "who is responsible for what" become connectors | [Errands](status/connectors.md#errands) |
 | Snabbåtgärder och genvägar | `snabbatgarder` | Extension | Actions from the menu exist; a person's own shortcuts need B8 | [Actions about a person](status/people.md#actions-about-a-person) |
 | Min startsida, mina val | `mittval` | Line decision | B8, if the line moves | |

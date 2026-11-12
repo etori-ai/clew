@@ -183,8 +183,11 @@ The [testing and deployment guide](testing-and-deployment.md) covers this from a
 | Scans and figures | The source can report outstanding occurrences or a meaningful area figure | [Actions](actions-and-receipts.md), [protocol](../reference/connector-protocol.md) |
 | Writes and undo | Source permissions, preconditions, evidence and recovery are established | [Actions and receipts](actions-and-receipts.md) |
 | Callbacks and jobs | A read needs another source, or one task needs changes/follow-up in several systems | [Working across connectors](../architecture/working-across-connectors.md) |
+| The news profile | Your system publishes news the person reads (an intranet, a newsroom): the newest show as "Nyheter" on Hem and all of them as "Alla nyheter" | A read `<id>.news` taking `{}` and answering `NewsOutput` (`ref`, `title`, `sender`, `publishedAt`, optional `link`; nothing else) in the [protocol](../reference/connector-protocol.md#related-profiles); a row with `link` leaves Clew, a row without opens the read your view's `open` names (`<id>.newsItem`). Clew joins every source as `clew.news`; a source that fails contributes nothing. The fixture [connectors/communication](../../connectors/communication/README.md) |
+| A read receipt | Something published must be acknowledged: the person's "Jag har läst" is a write in your system | Mark that execute on your scan draft's action with `acknowledgement: { publishedAt }`, one per draft; Hem lifts the open card above its blocks until it is pressed ([where things open](where-things-open.md)) |
 | The talks profile | Your system holds utvecklingssamtal and their action points, and an installation uses it instead of Clew's own module | Reads `<id>.talks` and `<id>.commitments` in the [protocol](../reference/connector-protocol.md#related-profiles), [D96](../decisions/D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md), the fixture [connectors/appraisals](../../connectors/appraisals/README.md) |
 | Rows about a person or a unit | Your records concern a person or a unit Clew holds and belong on the opened person or unit, as a lens on Personal, or as an action in the person's menu | [Say what your rows are about](#8-say-what-your-rows-are-about), [Entities](../architecture/entities.md) |
+| Input the person gives, and what a write says it will do | A write needs a time, a place, a comment or a choice from the person, or the person should see what it will write before it is sent | [Ask the person, and say what a write will do](#9-ask-the-person-and-say-what-a-write-will-do), [protocol](../reference/connector-protocol.md#what-a-write-asks-and-what-it-says-it-will-do) |
 
 For a connector that participates in multi-system tasks, declare the fact kinds it creates and the facts its proposal capabilities follow. Clew assembles those offered steps into a job for one approval after an administrator binds them. Each connector supplies only its own writes or watches; Clew coordinates their progress. [The job design](../architecture/working-across-connectors.md#jobs-facts-followers-and-one-approval) also explains the planned next proposal after a confirmed result.
 
@@ -266,7 +269,7 @@ What each part buys:
 
 The handler answers one row per key it knows, each carrying `key` as Clew asked it, and nothing for an unknown key or a person outside the caller's scope in your system. Compare a person's key without regard to case. The caller's own user name is `actor.userName` in the verified assertion; the fixture uses it to find the manager. Beside `rows` an output may declare `heading` and `note`, two strings Clew draws over the lens.
 
-An action about a person names the input property that takes the key, and requires nothing else. The HR fixture's `hr.prepareAbsence` ([manifest](../../connectors/hr/manifest.mjs)) declares `about: { entity: 'person', param: 'person' }` with an input that requires only `person`; it shows as "Registrera frånvaro" in a manager's menu on a person. Clew starts it with `{ person: <key> }` without the model: a propose answers a `ThreadDraft`, which becomes the manager's card, and an execute is a card whose button is the human decision. Either card opens beside the page the action was started on ([Where things open](where-things-open.md)).
+An action about a person names the input property that takes the key, and requires nothing else that it does not ask the person for ([section 9](#9-ask-the-person-and-say-what-a-write-will-do)). The HR fixture's `hr.prepareAbsence` ([manifest](../../connectors/hr/manifest.mjs)) declares `about: { entity: 'person', param: 'person' }` with an input that requires only `person`; it shows as "Registrera frånvaro" in a manager's menu on a person. Clew starts it with `{ person: <key> }` without the model: a propose answers a `ThreadDraft`, which becomes the manager's card, and an execute is a card whose button is the human decision. Either card opens beside the page the action was started on ([Where things open](where-things-open.md)).
 
 For values drawn in a column or a section, three view options help: the `tones` key `*` warns for any present value ("2 försenade") while an absent one stays neutral; `beside: true` draws a field on the line of the one before it ("Bokat", "tors 12 nov kl. 09:00"); `compact: true` marks the one field that says the row in one value where there is room for only one ("Inte bokat").
 
@@ -283,3 +286,69 @@ docker exec -w /workspace clew-app-1 bun scripts/connector-check.ts http://127.0
 **Place it.** Registration places nothing. An administrator offers the read as a lens and chooses a column on the connector's page under Administration › Anslutna system, in "På Personal och andra listor".
 
 Not available: a read about an entity is never offered to the model, the entity kinds are `person` and `unit` only, and a page inside Clew where the person writes (`about.page`) is for Clew's own domains.
+
+## 9. Ask the person, and say what a write will do
+
+Some writes need something only the person knows: when a talk is held, where, what to tell the employee. Declare it on the capability as **asks**, and Clew draws them as the first step, "Uppgifter", of one dialog wherever the action can be started: a work item's button, a person's or a unit's page, the row menu on Personal. Declare an **effect** on an execute, and the dialog's last step, "Det här händer", shows what your system will do with exactly those answers before anything is sent ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md)). You never send a form or markup.
+
+The HR fixture's `hr.bookTalk` is the worked example, from [connectors/hr/manifest.mjs](../../connectors/hr/manifest.mjs):
+
+```js
+const talkInput = object(
+  {
+    refs: array({ type: 'string', pattern: '^hr:emp:' }),
+    when: { type: 'string', format: 'date-time' },
+    place: { type: 'string', maxLength: 120 },
+    message: { type: 'string', maxLength: 400 },
+  },
+  ['refs'],
+);
+
+// In manifest.capabilities:
+{
+  name: 'hr.bookTalk',
+  kind: 'execute',
+  title: 'Boka samtalet',
+  description: 'Registrerar ett omtankesamtal i personalsystemet.',
+  model: false,
+  scope: { roles: ['manager'] },
+  execution: deduplicated,
+  input: talkInput,
+  output: executeResult,
+  asks: [
+    { kind: 'meeting', property: 'when', label: 'När', required: true, durationMinutes: 45 },
+    { kind: 'text', property: 'place', label: 'Plats', required: false },
+    { kind: 'long-text', property: 'message', label: 'Meddelande till medarbetaren', required: false },
+  ],
+  effect: 'hr.bookTalkEffect',
+},
+{
+  name: 'hr.bookTalkEffect',
+  kind: 'read',
+  title: 'Det här händer när samtalet bokas',
+  description: 'Vad bokningen av ett omtankesamtal gör i personalsystemet, utan att något skrivs.',
+  model: false,
+  scope: { roles: ['manager'] },
+  input: talkInput,
+  output: effectOutput, // { rows: [{ label, detail?, source? }], undoMinutes? }
+},
+```
+
+What each part buys:
+
+| Part | What Clew does with it |
+|---|---|
+| `kind: 'meeting'` with `durationMinutes` | "När": three free times of that length from the manager's own calendar, "Annan tid", and the chosen day drawn underneath. The answer is the start as an ISO 8601 instant, never in the past. Clew reads nobody else's calendar and writes nothing to a calendar: the time reaches your system only |
+| `kind: 'text'`, `'long-text'` | A field and a text area, trimmed; an optional one left empty is not sent |
+| `kind: 'date'`, `'choice'` | A day as `YYYY-MM-DD`; one of the property's `enum` values, each named in `options` with a Swedish label |
+| `required` | The person must answer before the last step. `true` whenever your input schema requires the property |
+| `effect` | "Det här händer": Clew posts your read as the person with exactly the input the execute would get and draws its rows; `undoMinutes` says how long Ångra lasts. Without it the dialog names your `source` and shows the `description` |
+
+Only the asks an action does not already fill are drawn: on the rehab card the rows give `refs`, so the manager meets "När", "Plats" and the message; on the leave card the button's own `input` gives `decision`, so "Godkänn" asks only for the optional comment (`hr.decideLeave` asks for `comment`). An answer to anything not asked is refused, so a person cannot change what the work item fixed. When the manager presses the last button, Clew validates the merged input against your schema, records the answers in the audit row with the approved intent, and your execute receives them in `input`, under its operation id, like any approved write. Store what you are given: the fixture keeps the place and the message with the talk.
+
+The effect read answers as the write would check (the fixture refuses an employee outside the manager's unit) but writes nothing, and declares `model: false`; its input schema is the execute's own. A write without asks whose result can be undone stays one press. `confirm` and `review: "each"` on a work item's action still apply: a reviewed action keeps its review, and a `confirm` on an action that opens the dialog is shown on Det här händer instead of a second dialog.
+
+What the person sees ([where things open](where-things-open.md#asks-and-effect) has the whole list): the dialog opens at "Uppgifter" when an ask is required and at "Det här händer" when none is, so "Godkänn" with its optional comment is two presses. "Det här händer" lists the values, then your effect read's rows with the system each is written in, and "Du kan ångra i 10 minuter." from `undoMinutes`; nothing can be sent until your effect read has answered. A refusal whose sentence starts with an ask's label (Clew's checks of the answers do, and a source's own refusal may) is shown on that field with the focus there, so write yours that way: "Plats: rummet finns inte." An execute about a person or a unit starts its work item first and takes the answers at its decision; a propose about one takes them when it starts.
+
+The loader refuses an ask on a read or a follower, an ask that names no property of the input or the entity's key, a kind that does not fit its property, an optional ask for a property the input requires, and an `effect` that is not such a read. An action about a person may now require more than the key, as long as it asks for it. The [manifest preview](../reference/connector-protocol.md#served-by-the-instance) shows, for every propose and execute, where a person can start it, which steps of the path it draws and who fills each property of its input; the [field reference](../generated/manifest-reference.md) has every rule.
+

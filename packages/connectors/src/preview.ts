@@ -1,11 +1,13 @@
 import { ANY_TONE, rowsKey, type ViewField } from '@clew/contracts';
 import { menuRowOf, placesOf } from './views';
 import { manifestProblems } from './remote';
-import { RULES, anchorOf, manifestReference } from './reference';
+import { RULES, anchorOf, manifestReference, shapeOf } from './reference';
 import {
   PROTOCOL_ACCEPTED,
   PROTOCOL_VERSION,
+  type ActionPathPreview,
   type ConnectorManifest,
+  type InputFiller,
   type ManifestIssue,
   type ManifestPreview,
 } from './protocol';
@@ -68,6 +70,9 @@ export function previewManifest(document: unknown, options: PreviewOptions = {})
       ),
       audience: audienceOf(c, roles),
       ...(samples ? { samples } : {}),
+      ...(c.asks ? { asks: c.asks } : {}),
+      ...(c.effect ? { effect: c.effect } : {}),
+      ...(c.kind !== 'read' ? { path: pathPreviewOf(c, manifest) } : {}),
     };
   });
   return {
@@ -94,6 +99,71 @@ export function previewManifest(document: unknown, options: PreviewOptions = {})
       })),
       menu: capabilities.flatMap(c => (c.menu ? [{ capability: c.name, label: c.menu.label, icon: c.menu.icon }] : [])),
     },
+  };
+}
+
+/**
+ * Both halves of a write (D111 item 11), from the declaration alone: where a person can start it, which steps of the one
+ * path it draws, and who fills each property of its input. What a draft's action declares (`confirm`, `review: "each"`,
+ * its `input`) the manifest cannot say, and the preview says so.
+ */
+function pathPreviewOf(c: ManifestCapability, manifest: ConnectorManifest): ActionPathPreview {
+  const execute = c.kind === 'execute';
+  const state = (declared: boolean) => (declared ? ('declared' as const) : ('not-declared' as const));
+  const draftsWorkItems = manifest.scan || manifest.capabilities.some(o => o.kind === 'propose' && o.about?.param);
+  const standing = manifest.areas.some(a => a.standing.includes(c.name));
+  const follower = manifest.capabilities.some(o => o.kind === 'propose' && o.follows?.length);
+  const input = c.input as { properties?: Record<string, Record<string, unknown>>; required?: unknown };
+  const required = new Set(Array.isArray(input.required) ? (input.required as string[]) : []);
+  const refs = input.properties?.['refs'] as { type?: unknown } | undefined;
+  return {
+    starts: [
+      { place: 'work-item', state: state(draftsWorkItems), declares: 'scan: true' },
+      { place: 'entity', state: state(!!c.about?.param), declares: 'about: { entity, param }' },
+      { place: 'question-box', state: state(standing), declares: 'areas[].standing' },
+      execute
+        ? { place: 'conversation', state: 'never', declares: 'model: true' }
+        : { place: 'conversation', state: state(c.model), declares: 'model: true' },
+      execute
+        ? { place: 'fact', state: state(follower), declares: 'follows, on a propose of this manifest' }
+        : { place: 'fact', state: state(!!c.follows?.length), declares: 'follows' },
+    ],
+    steps: [
+      { step: 'fill-in', state: state(!!c.asks?.length), declares: 'asks' },
+      execute
+        ? { step: 'effect', state: state(!!c.effect), declares: 'effect' }
+        : { step: 'effect', state: 'never', declares: 'effect' },
+      { step: 'confirm', state: 'on-the-work-item', declares: 'ThreadDraft.actions[].confirm' },
+      execute && refs?.type === 'array'
+        ? { step: 'review', state: 'on-the-work-item', declares: 'ThreadDraft.actions[].review: "each", preview' }
+        : { step: 'review', state: 'never', declares: 'ThreadDraft.actions[].review: "each", preview' },
+      execute
+        ? { step: 'receipt', state: 'always', declares: 'ExecuteResult { rows, undoCapability, undoMinutes }' }
+        : { step: 'receipt', state: 'never', declares: 'ExecuteResult' },
+    ],
+    input: Object.entries(input.properties ?? {}).map(([property, schema]) => {
+      const ask = c.asks?.find(a => a.property === property);
+      const by: InputFiller = c.follows?.length
+        ? 'fact'
+        : property === c.about?.param
+          ? 'entity'
+          : ask
+            ? 'person'
+            : (property === 'refs' && (schema as { type?: unknown }).type === 'array') ||
+                (property === 'reviews' && !!c.review)
+              ? 'rows'
+              : required.has(property)
+                ? 'work-item'
+                : 'source';
+      const format = typeof schema['format'] === 'string' ? `, ${schema['format']}` : '';
+      return {
+        property,
+        type: shapeOf(schema) + format,
+        required: required.has(property),
+        by,
+        ...(ask ? { ask } : {}),
+      };
+    }),
   };
 }
 
@@ -212,7 +282,11 @@ function samplesOf(c: ManifestCapability): Array<Record<string, unknown>> | unde
  */
 type Located = { rule?: string; path: string };
 type Manifestish = {
-  capabilities?: Array<{ name?: string; view?: { fields?: Array<{ key?: string }> } }>;
+  capabilities?: Array<{
+    name?: string;
+    view?: { fields?: Array<{ key?: string }> };
+    asks?: Array<{ property?: string }>;
+  }>;
   facts?: Array<{ kind?: string }>;
   areas?: Array<{ id?: string; standing?: string[] }>;
 };
@@ -265,6 +339,12 @@ const CAPABILITY_PROBLEMS: Array<[RegExp, string | undefined, string | ((match: 
   [/^: a read about an entity is never a tool/, 'about-never-a-tool', '.model'],
   [/^: an action about an entity names in param/, 'about-action-param', '.about.param'],
   [/^: an action about an entity requires /, 'about-action-key-alone', '.input.required'],
+  [/^: (asks belong to a propose or an execute|a follower is asked with a fact)/, 'asks-on-an-action', '.asks'],
+  [/^: ask "([^"]*)" (is asked twice|names no property|names the input that takes)/, 'ask-names-input', 'ask:property'],
+  [/^: ask "([^"]*)" is optional, but the input requires/, 'ask-fits-input', 'ask:required'],
+  [/^: ask "([^"]*)" is a choice, whose options/, 'ask-fits-input', 'ask:options'],
+  [/^: ask "([^"]*)" is (a meeting|a date|text|long-text), which takes/, 'ask-fits-input', 'ask:kind'],
+  [/^: effect /, 'effect-is-a-read', '.effect'],
   [/^ input: /, undefined, '.input'],
   [/^ output: /, undefined, '.output'],
 ];
@@ -298,6 +378,11 @@ function locate(problem: string, document: Manifestish): Located {
         const fields = document.capabilities?.find(c => c.name === name)?.view?.fields;
         const j = indexOf(fields, f => f.key === match[1]);
         path = `${base}.view.${at('fields', j)}${j < 0 ? '' : '.' + suffix.slice('field:'.length)}`;
+      } else if (suffix.startsWith('ask:')) {
+        // The last ask with the name: an ask asked twice is placed at the second.
+        const asks = document.capabilities?.find(c => c.name === name)?.asks;
+        const j = indexOf(asks, a => a.property === match[1], true);
+        path = `${base}.${at('asks', j)}${j < 0 ? '' : '.' + suffix.slice('ask:'.length)}`;
       } else path = base + suffix;
       return { ...(rule ? { rule } : {}), path };
     }

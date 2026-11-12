@@ -2,6 +2,7 @@ import type {
   CommitmentAddBody,
   CommitmentsInput,
   CommitmentsResult,
+  NewsResult,
   TalkHeldBody,
   TalksResult,
   GroupCapabilityInputType,
@@ -17,6 +18,9 @@ import type {
   ReviewEvidence,
   ReviewPreview,
   SiteHeaderView,
+  AskValues,
+  EffectPreview,
+  MeetingTimes,
 } from '@clew/contracts';
 import type {
   AddModelInput,
@@ -60,6 +64,7 @@ import type {
   ConversationEvent,
   ConversationInput,
   ConversationResponse,
+  ItemEvents,
   TurnEvent,
   ManifestDiff,
   Proposal,
@@ -202,8 +207,11 @@ export const api = {
      * Start one of the entity's actions from its menu, without the model (D97, D8): the answer is the card the person
      * decides on. A refusal is the source's Swedish sentence (400); an action the entity does not offer is a 404.
      */
-    start: (kind: EntityKind, key: string, capability: string) =>
-      post<EntityActionStarted>(`/api/entities/${kind}/${encodeURIComponent(key)}/actions`, { capability }),
+    start: (kind: EntityKind, key: string, capability: string, values?: AskValues) =>
+      post<EntityActionStarted>(`/api/entities/${kind}/${encodeURIComponent(key)}/actions`, {
+        capability,
+        ...(values ? { values } : {}),
+      }),
   },
   /**
    * Utvecklingssamtal (D96 items 7 to 9): the two composites of Clew's core connector and the built-in module's writes.
@@ -274,6 +282,8 @@ export const api = {
   dismiss: (id: string) => post<Thread>(`/api/threads/${id}/dismiss`),
   completions: () => call<Completions>('/api/completions'),
   thread: (id: string) => call<Thread>(`/api/threads/${id}`),
+  /** A work item's Händelser (D111 item 4), from its audit rows. */
+  itemEvents: (id: string) => call<ItemEvents>(`/api/threads/${id}/events`),
   converse: (input: ConversationInput) => post<ConversationResponse>('/api/conversation', input),
   converseStream,
   objects: (q: string, near: string[] = []) =>
@@ -289,10 +299,27 @@ export const api = {
   attention: () => call<Attention>('/api/attention'),
   areas: () => call<{ areas: Area[]; menu?: MenuEntry[]; systems?: SystemMark[] }>('/api/areas'),
   connectors: () => call<{ connectors: unknown[]; tools: string[] }>('/api/connectors'),
-  act: (id: string, actionId: string, refs?: string[], reviews?: ReviewEvidence[]) =>
+  /** The human decision on a work item's action (D45/D47), with the person's answers to its asks (D111) in `values`. */
+  act: (id: string, actionId: string, refs?: string[], reviews?: ReviewEvidence[], values?: AskValues) =>
     post<{ kind: 'execute'; thread: Thread } | { kind: 'read' | 'propose'; output: unknown; view?: PanelViewSpec }>(
       `/api/threads/${id}/act`,
-      { actionId, refs, reviews },
+      { actionId, refs, reviews, ...(values ? { values } : {}) },
+    ),
+  /** "Det här händer" (D111): what the action would write with these rows and answers, from its effect read. Writes nothing. */
+  effect: (id: string, actionId: string, refs?: string[], values?: AskValues) =>
+    post<EffectPreview>(`/api/threads/${id}/effect`, { actionId, refs, ...(values ? { values } : {}) }),
+  /**
+   * Free times for an action's meeting ask (D111) from the person's own calendar, before `before` (a work item's
+   * deadline), and the person's own `date` when the dialog draws a day. Empty slots and no day without a calendar.
+   */
+  meetingTimes: (capability: string, property: string, options: { date?: string; before?: string } = {}) =>
+    call<MeetingTimes>(
+      `/api/asks/times?${new URLSearchParams({
+        capability,
+        property,
+        ...(options.date ? { date: options.date } : {}),
+        ...(options.before ? { before: options.before } : {}),
+      })}`,
     ),
   undoReceipt: (id: string) => post<Thread>(`/api/threads/${id}/undo-receipt`),
   retryRejected: (id: string) => post<Thread>(`/api/threads/${id}/retry`),
@@ -336,6 +363,11 @@ export const api = {
   // Administration (D23). Every call is checked again on the server; no secret ever comes back.
   /** The shared header (D88): what the person's header connector lists for them, else Clew's default. */
   header: () => call<SiteHeaderView>('/api/header'),
+  /**
+   * `clew.news` (D111, amended 2026-11-11): the news from every source the person may read, newest first. Refused for a
+   * person with no news source; `queries.ts` turns that refusal into `null`.
+   */
+  news: () => read<NewsResult>('clew.news', {}),
   admin: {
     connectors: () => call<{ connectors: ConnectorSummary[] }>('/api/admin/connectors'),
     units: () => call<{ units: Array<{ id: string; label: string }> }>('/api/admin/units'),

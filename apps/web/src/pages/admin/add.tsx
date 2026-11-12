@@ -247,8 +247,8 @@ export function AddConnectorDialog({ isOpen, onClose, units, groups }: Props) {
             <VStack gap={3}>
               <AudienceEditor value={audience} onChange={setAudience} units={units} groups={groups} />
               <Switch
-                label="Skicka kort"
-                description="Anslutningen får föreslå kort i strömmen (den nattliga genomgången och första besöket)."
+                label="Skicka ärenden"
+                description="Anslutningen får föreslå ärenden till Att göra (den nattliga genomgången och första besöket)."
                 value={scan}
                 onChange={setScan}
               />
@@ -267,7 +267,7 @@ export function AddConnectorDialog({ isOpen, onClose, units, groups }: Props) {
               <MetadataListItem label="Adress">{result.connector.url}</MetadataListItem>
               <MetadataListItem label="Funktioner">{`${result.connector.counts.capabilities} · ${result.connector.counts.execute} utför`}</MetadataListItem>
               <MetadataListItem label="Vem ser det">{audienceLabel(audience)}</MetadataListItem>
-              <MetadataListItem label="Skickar kort">{scan ? 'Ja' : 'Nej'}</MetadataListItem>
+              <MetadataListItem label="Skickar ärenden">{scan ? 'Ja' : 'Nej'}</MetadataListItem>
               <MetadataListItem label="Erbjuder assistenten">{tools ? 'Ja' : 'Nej'}</MetadataListItem>
             </MetadataList>
           )}

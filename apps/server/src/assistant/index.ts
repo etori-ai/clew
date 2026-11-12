@@ -34,6 +34,7 @@ import {
   viewInput,
 } from './router';
 import { modelAnswer, systemPrompt, type ToolCallRecord } from './model';
+import { DRAFT_TOOL, draftableActions, draftTool, type ActionDraft } from './drafts';
 import { listObjects } from './objects';
 import type { AssistantDeps, ResolvedModel } from './ports';
 import { draftSelection, parseVerb, verbsFor } from './verbs';
@@ -145,14 +146,14 @@ export function assistantUsecases(deps: AssistantDeps) {
         return {
           ...base,
           shape: 'svar',
-          body: `Vill du att jag avfärdar kortet "${chipped.title}"? Det försvinner från Behöver dig och ligger kvar under Redan hanterat; du kan ångra i tio minuter.`,
+          body: `Vill du att jag avfärdar ärendet "${chipped.title}"? Det försvinner från Behöver dig och ligger kvar under Klart; du kan ångra i tio minuter.`,
           clewActions: [{ n: 1, kind: 'dismiss', threadId: chipped.id, label: `Avfärda "${chipped.title}"` }],
         };
       case 'snooze':
         return {
           ...base,
           shape: 'svar',
-          body: `Vill du att jag tar upp kortet "${chipped.title}" i morgon 06:00 i stället?`,
+          body: `Vill du att jag tar upp ärendet "${chipped.title}" i morgon 06:00 i stället?`,
           clewActions: [
             { n: 1, kind: 'snooze', threadId: chipped.id, label: `Inte nu: "${chipped.title}" tas upp i morgon 06:00` },
           ],
@@ -165,7 +166,7 @@ export function assistantUsecases(deps: AssistantDeps) {
           ...base,
           shape: 'forslag',
           source: 'Kalendern',
-          body: `Jag har ritat om förslagen i vecka ${weekNumber(verb.week!)}. Inget är skickat förrän du trycker på knappen i kortet.`,
+          body: `Jag har ritat om förslagen i vecka ${weekNumber(verb.week!)}. Inget är skickat förrän du trycker på knappen i ärendet.`,
           draft: { kind: 'replan', threadId: chipped.id, week: verb.week!, thread: updated },
         };
       }
@@ -183,7 +184,7 @@ export function assistantUsecases(deps: AssistantDeps) {
           await tx.addMessage(chipped.id, {
             role: 'assistant',
             at,
-            body: `Utkast: ${chosen.length} av ${items.filter(i => i.selectable).length} valda. Knappen på kortet skickar.`,
+            body: `Utkast: ${chosen.length} av ${items.filter(i => i.selectable).length} valda. Knappen i ärendet skickar.`,
             meta: { draft: { kind: 'select', threadId: chipped.id, refs: verb.refs ?? [] } },
           });
           await tx.writeAudit({
@@ -197,7 +198,7 @@ export function assistantUsecases(deps: AssistantDeps) {
         return {
           ...base,
           shape: 'forslag',
-          body: `Jag har ändrat kortet: ${chosen.join(', ')} ${chosen.length === 1 ? 'är vald' : 'är valda'}. Inget är skickat förrän du trycker på knappen i kortet.`,
+          body: `Jag har ändrat ärendet: ${chosen.join(', ')} ${chosen.length === 1 ? 'är vald' : 'är valda'}. Inget är skickat förrän du trycker på knappen i ärendet.`,
           draft: {
             kind: 'select',
             threadId: chipped.id,
@@ -293,7 +294,7 @@ export function assistantUsecases(deps: AssistantDeps) {
             .filter(Boolean)
             .map(s => s.replace(/\.$/, ''))
             .join('. ') + '.'
-        : `${named.length} kort väntar på dig: ${named.map(t => t.title).join('; ')}.`;
+        : `${named.length} ${named.length === 1 ? 'ärende' : 'ärenden'} väntar på dig: ${named.map(t => t.title).join('; ')}.`;
     return {
       body,
       source: [...new Set(named.map(t => t.trigger.source))].join(', '),
@@ -320,6 +321,18 @@ export function assistantUsecases(deps: AssistantDeps) {
     if (!models.health.available(model.providerId)) return { unavailable: 'provider marked down' };
     const tools = model.tools ? registry.tools(actorOf(persona)) : [];
     const now = clock();
+    // The one work item the conversation is about may have its actions filled in as a draft (D111 item 8): only what
+    // the person may do, only with a model that uses tools, and nothing is sent.
+    const subject = chips.primaryThread;
+    const draftable = model.tools && subject ? draftableActions(registry, persona, subject) : [];
+    const drafts: { last?: ActionDraft } = {};
+    const own = draftable.length
+      ? [
+          draftTool(draftable, now.toISOString(), d => {
+            drafts.last = d;
+          }),
+        ]
+      : [];
     const system = systemPrompt({
       name: persona.name,
       role: persona.role,
@@ -327,6 +340,7 @@ export function assistantUsecases(deps: AssistantDeps) {
       now,
       week: weekNumber(displayDate(now.toISOString())),
       objects: serialiseContext(chips.objects, now.toISOString()),
+      drafts: draftable.length > 0,
     });
     let sent = '';
     const onText = (step: string) => {
@@ -350,7 +364,10 @@ export function assistantUsecases(deps: AssistantDeps) {
         timeoutMs,
         onText,
         ...(turn.signal ? { signal: turn.signal } : {}),
+        ...(own.length ? { own } : {}),
       });
+      // The draft is not a read: it names no source, offers no view and is kept as the turn's draft instead.
+      const reads = answer.toolCalls.filter(c => c.capability !== DRAFT_TOOL);
       const ended = clock();
       models.health.mark(model.providerId, true, ended.toISOString());
       // The turn's record (D91): what it cost and where its trace is, never what was said.
@@ -364,12 +381,10 @@ export function assistantUsecases(deps: AssistantDeps) {
         ...(answer.usage?.finishReason ? { finishReason: answer.usage.finishReason.slice(0, 40) } : {}),
         ...(traceId ? { traceId } : {}),
       };
-      const source = answer.toolCalls.length
-        ? [
-            ...new Set(answer.toolCalls.map(c => tools.find(t => t.name === c.capability)?.source ?? 'Startsidan')),
-          ].join(', ')
+      const source = reads.length
+        ? [...new Set(reads.map(c => tools.find(t => t.name === c.capability)?.source ?? 'Startsidan'))].join(', ')
         : 'Assistenten';
-      const searched = answer.toolCalls.find(c => c.capability === SEARCH_TOOL && isSearchResult(c.output));
+      const searched = reads.find(c => c.capability === SEARCH_TOOL && isSearchResult(c.output));
       const parsed = parseAnswer(answer.body);
       const sources = searched ? citationsOf(searched.output as SearchResult) : undefined;
       // A document answer's view is its sources, named so; follow-ups come from the model's trailer, else the document's headings, else the nearest capabilities.
@@ -380,17 +395,29 @@ export function assistantUsecases(deps: AssistantDeps) {
         : searched
           ? headingFollowUps((searched.output as SearchResult).rows)
           : nearest(text, tools).map(t => t.title);
-      const shape: Produced['shape'] = parsed.shape ?? (view ? 'vy' : 'svar');
+      const draft = drafts.last;
+      const shape: Produced['shape'] = draft ? 'forslag' : (parsed.shape ?? (view ? 'vy' : 'svar'));
       return {
         body: parsed.body,
         source,
         shape,
         assistant: 'model',
         clewActions: [],
-        toolCalls: answer.toolCalls,
+        toolCalls: reads,
         followUps,
         ...(view ? { view } : {}),
         ...(sources?.length ? { sources } : {}),
+        ...(draft && subject
+          ? {
+              draft: {
+                kind: 'action' as const,
+                threadId: subject.id,
+                actionId: draft.actionId,
+                values: draft.values,
+                thread: subject,
+              },
+            }
+          : {}),
         model: { id: model.id, title: model.title },
         modelCall,
       };
@@ -482,6 +509,8 @@ export function assistantUsecases(deps: AssistantDeps) {
               threadId: produced.draft.threadId,
               ...(produced.draft.refs ? { refs: produced.draft.refs } : {}),
               ...(produced.draft.week ? { week: produced.draft.week } : {}),
+              ...(produced.draft.actionId ? { actionId: produced.draft.actionId } : {}),
+              ...(produced.draft.values ? { values: produced.draft.values } : {}),
             },
           }
         : {}),
@@ -537,6 +566,17 @@ export function assistantUsecases(deps: AssistantDeps) {
           chips: refs,
           tools: (produced!.toolCalls ?? []).map(c => c.capability),
           ...(produced!.view ? { view: produced!.view.capability } : {}),
+          // An action the assistant filled in (D111 item 8): which one, on which item, and which asks it answered.
+          // The values are the conversation's, never the audit row's.
+          ...(produced!.draft?.kind === 'action'
+            ? {
+                drafted: {
+                  thread: produced!.draft.threadId,
+                  action: produced!.draft.actionId,
+                  asks: Object.keys(produced!.draft.values ?? {}),
+                },
+              }
+            : {}),
           ...(produced!.sources?.length ? { sources: produced!.sources.map(s => s.ref) } : {}),
           ...(cards.length ? { cards } : {}),
           ...(produced!.model ? { model: produced!.model.id } : {}),
@@ -573,7 +613,7 @@ export function assistantUsecases(deps: AssistantDeps) {
   /** A reply in a card keeps today's in-card router; a reply in a question thread is a conversation turn. */
   async function reply(persona: AuthenticatedContext, threadId: string, body: string): Promise<Thread> {
     const current = await access.read(persona, threadId);
-    if (!current) throw new InputError('Kortet finns inte.');
+    if (!current) throw new InputError('Ärendet finns inte.');
     if (current.kind === 'question') return (await converse(persona, { text: body, conversationId: threadId })).thread;
     const chipped = await converse(persona, {
       text: body,

@@ -64,18 +64,28 @@ test.describe('the shared header on every page', () => {
     await expect(pages.getByRole('link', { name: 'Mina kort' })).toHaveAttribute('href', '/?tab=waiting');
     await expect(banner.getByRole('button', { name: 'Påminnelser: 0', exact: true })).toBeVisible();
     await expect(banner.getByRole('button', { name: 'Testa Testsson, inställningar', exact: true })).toBeVisible();
-    // The rail stays the rail: Clew's own places, nothing of the header's.
+    // The rail stays the rail: Clew's own places, nothing of the header's, and no heading or person of its own, since
+    // the band says who the installation is and who is signed in.
     const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
     await expect(rail.getByRole('link', { name: 'Organisation' })).toHaveCount(0);
     await expect(rail.getByRole('link', { name: /^Hem/ })).toBeVisible();
+    await expect(rail.getByRole('link', { name: 'Intranätet' })).toHaveCount(0);
+    await expect(rail.getByRole('button', { name: 'Testa Testsson', exact: true })).toHaveCount(0);
     await expectNoAxeViolations(page);
   });
-  test('without a header connector the default has Start alone and no row under the band', async ({ page, api: _ }) => {
+  test('without a header connector there is no band: the rail carries the installation’s name, the bell and the person (D111 item 1)', async ({
+    page,
+    api: _,
+  }) => {
     await page.setViewportSize(desktop);
     await open(page, '/');
-    const banner = page.getByRole('banner');
-    await expect(banner.getByRole('navigation', { name: 'Huvudmeny', exact: true }).getByRole('link')).toHaveCount(1);
-    await expect(banner.getByRole('navigation', { name: 'Start', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('banner')).toHaveCount(0);
+    await expect(page.getByRole('navigation', { name: 'Huvudmeny', exact: true })).toHaveCount(0);
+    const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
+    await expect(rail.getByRole('link', { name: 'Startsidan' })).toHaveAttribute('href', '/');
+    await expect(rail.getByRole('button', { name: 'Påminnelser: 0', exact: true })).toBeVisible();
+    await expect(rail.getByRole('button', { name: 'Testa Testsson', exact: true })).toBeVisible();
+    await expectNoAxeViolations(page);
   });
   test('on a phone the bar holds the heading, the bell and the person, and the places are rows in the drawer', async ({
     page,

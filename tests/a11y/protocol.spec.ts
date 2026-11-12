@@ -12,6 +12,7 @@ import {
   test,
 } from './support';
 import { appraisals, appraisalsWithoutKey } from './protocol-preview-data';
+import { manifest as hrManifest } from '../../connectors/hr/connector.mjs';
 
 /**
  * The manifest reference (D60, item 5): integrator documentation inside the web app, public, English, drawn from the
@@ -151,6 +152,61 @@ test.describe('the manifest preview', () => {
     await expect
       .poll(() => announcements(page))
       .toContainEqual(expect.stringMatching(/^Boka samtal: in Clew this starts a card/));
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(desktop.width);
+    await expectNoAxeViolations(page);
+  });
+
+  test('every write, both halves (D111 item 11): where it starts, what the person passes through, and its input as they meet it', async ({
+    page,
+    api,
+  }) => {
+    void api;
+    await page.setViewportSize(desktop);
+    await open(page, preview);
+    // The HR fixture as it is registered: "Boka samtalet" asks for a time, a place and a message, and says what it writes.
+    await field(page).fill(JSON.stringify(hrManifest, null, 2));
+    await runButton(page).click();
+    await expect(page.getByRole('status').filter({ hasText: /^Clew would load it/ })).toBeVisible();
+    const write = page.getByRole('region', { name: 'hr.bookTalk · execute' });
+    await expect(write).toBeVisible();
+    await expect(heading(page, 2, 'Every write, both halves')).toBeVisible();
+    // Where it starts: the person, what the manifest declares, what Clew draws, and this capability's state.
+    const starts = write.getByRole('table', { name: 'Where hr.bookTalk starts' });
+    await expect(starts.getByRole('row', { name: /^On a work item / })).toContainText('scan: true');
+    await expect(starts.getByRole('row', { name: /^On a work item / })).toContainText('Declared');
+    await expect(starts.getByRole('row', { name: /^On a person or a unit / })).toContainText('Not declared');
+    await expect(starts.getByRole('row', { name: /^In a conversation / })).toContainText('Never for an execute');
+    // What the person passes through: the dialog's two steps declared, the receipt always.
+    const steps = write.getByRole('table', { name: 'What the person passes through for hr.bookTalk' });
+    await expect(steps.getByRole('row', { name: /^Fill in / })).toContainText('Declared');
+    await expect(steps.getByRole('row', { name: /^See what happens / })).toContainText('Declared');
+    await expect(steps.getByRole('row', { name: /^Ask first / })).toContainText("On the work item's action");
+    await expect(steps.getByRole('row', { name: /^Receipt and undo / })).toContainText('Always');
+    // The input, as the person will meet it: the rows from the item, the rest from the person in the dialog.
+    const input = write.getByRole('table', { name: 'The input of hr.bookTalk' });
+    await expect(input.getByRole('row', { name: /^refs / })).toContainText('The selected rows of the work item');
+    await expect(input.getByRole('row', { name: /^when / })).toContainText('string, date-time, optional');
+    await expect(input.getByRole('row', { name: /^when / })).toContainText(
+      "“När”: three free 45-minute times from the person's own calendar, “Annan tid” and the day",
+    );
+    await expect(input.getByRole('row', { name: /^message / })).toContainText(
+      '“Meddelande till medarbetaren”, optional: a text area',
+    );
+    // A propose about a person starts on its page; its effect step is never an execute's.
+    const prepare = page.getByRole('region', { name: 'hr.prepareAbsence · propose' });
+    await expect(
+      prepare.getByRole('table', { name: 'Where hr.prepareAbsence starts' }).getByRole('row', {
+        name: /^On a person or a unit /,
+      }),
+    ).toContainText('Declared');
+    await expect(
+      prepare
+        .getByRole('table', { name: 'What the person passes through for hr.prepareAbsence' })
+        .getByRole('row', { name: /^See what happens / }),
+    ).toContainText('Never for a propose');
+    // A read has no path, and the board's actions on a view's rows are not drawn.
+    await expect(page.getByRole('region', { name: /^hr\.whoIsOn · / })).toHaveCount(0);
+    await expect(page.getByText('Proposed', { exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(desktop.width);
     await expectNoAxeViolations(page);
   });

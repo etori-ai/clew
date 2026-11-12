@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import fc from 'fast-check';
-import { collides, planWeek, withinOfficeHours, type Interval } from '../../packages/calendar/src/proposals';
+import { collides, freeSlots, planWeek, withinOfficeHours, type Interval } from '../../packages/calendar/src/proposals';
 import { displayDate, localInstant } from '../../packages/calendar/src/dates';
 
 /**
@@ -73,6 +73,48 @@ describe('planWeek', () => {
           expect(planWeek({ week, managerBusy: busy, candidates: [c], notBefore })).toEqual([]);
         }
       }),
+      { numRuns: 200 },
+    );
+  });
+});
+
+describe('freeSlots', () => {
+  test("a suggested time (D111) never collides with the person's own calendar, stays in office hours and the window, never looks back, and is no more than asked for", () => {
+    fc.assert(
+      fc.property(
+        calendar,
+        notBefore,
+        fc.integer({ min: 15, max: 180 }),
+        fc.integer({ min: 1, max: 5 }),
+        (busy, notBefore, durationMinutes, count) => {
+          const slots = freeSlots({ from: week, until: '2026-11-14', busy, notBefore, durationMinutes, count });
+          expect(slots.length).toBeLessThanOrEqual(count);
+          expect(freeSlots({ from: week, until: '2026-11-14', busy, notBefore, durationMinutes, count })).toEqual(
+            slots,
+          );
+          for (const slot of slots) {
+            expect(collides(slot, busy)).toBe(false);
+            expect(withinOfficeHours(slot)).toBe(true);
+            expect(Date.parse(slot.start)).toBeGreaterThanOrEqual(Date.parse(notBefore));
+            expect(Date.parse(slot.end) - Date.parse(slot.start)).toBe(durationMinutes * 60_000);
+            expect(displayDate(slot.start) >= week && displayDate(slot.start) < '2026-11-14').toBe(true);
+          }
+          // Spread before cluster: a day gets a second time only when every day with a free time has one.
+          const days = slots.map(s => displayDate(s.start));
+          if (new Set(days).size < days.length)
+            for (const day of ['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13'])
+              if (!days.includes(day))
+                expect(
+                  freeSlots({
+                    from: day,
+                    until: day.slice(0, 8) + String(Number(day.slice(8)) + 1),
+                    busy,
+                    notBefore,
+                    durationMinutes,
+                  }),
+                ).toEqual([]);
+        },
+      ),
       { numRuns: 200 },
     );
   });

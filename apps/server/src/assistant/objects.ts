@@ -36,7 +36,7 @@ export async function listObjects(
       ref: 'thread:' + t.id,
       kind: 'thread',
       label: t.title,
-      detail: `kort · ${t.trigger.source}`,
+      detail: `ärende · ${t.trigger.source}`,
       threadId: t.id,
       visible,
     });

@@ -3,9 +3,10 @@ import { desktop, expect, expectNoAxeViolations, narrow, open, openNav, phone, t
 import { menuRow, menuRows } from './phonebook';
 
 /**
- * Verktyg in the menu (D40): the calendar and the views an administrator chose as tools, one click away on every page.
- * A row leads to the tool's own page (D42), as Kalender does; the page itself is tested in `tools.spec.ts`.
- * The test person is a manager, so Personal (D94) stands after Kalender as Clew's own second row; `staff.spec.ts` owns it.
+ * Verktyg in the menu (D40, D111 item 1): the views an administrator chose as tools, one click away on every page, under
+ * Clew's own places (Hem, Att göra, Kalender and a manager's Personal). A row leads to the tool's own page (D42), as
+ * Kalender does; the page itself is tested in `tools.spec.ts`. The test person is a manager, so Personal (D94) stands
+ * after Kalender among the places; `staff.spec.ts` owns it.
  * The shared header (D88) marks Start as the current place on every page of Clew, so "the current row" is asked of the
  * rail, where one row is current at a time.
  * The phone book's rows are named by its real manifest; they are in the menu only where a test puts them, as they are in
@@ -24,16 +25,16 @@ const tool = (label: string, n: number): MenuEntry => ({
 test.describe('Verktyg in the menu', () => {
   test.use({ viewport: desktop });
 
-  // The suite's person is a manager, so Personal (D94) stands under the calendar, before the chosen views.
-  test("the section is named, holds the calendar, a manager's Personal and then the chosen views of a connector in alphabetical order, and has no axe violations", async ({
+  // The suite's person is a manager, so Personal (D94) stands among the places, after the calendar, before the tools.
+  test("the section is named and holds the chosen views of a connector in alphabetical order, after Clew's places, and has no axe violations", async ({
     page,
     api,
   }) => {
     api.menu = menuRows;
     await open(page, '/');
     const section = rail(page).getByRole('group', { name: 'Verktyg' });
-    await expect(section.getByRole('link')).toHaveText(['Kalender', 'Personal', 'Mitt team', 'Telefonbok']);
-    await expect(section.getByRole('link', { name: 'Personal' })).toHaveAttribute('href', '/staff');
+    await expect(section.getByRole('link')).toHaveText(['Mitt team', 'Telefonbok']);
+    await expect(rail(page).getByRole('link', { name: 'Personal' })).toHaveAttribute('href', '/staff');
     await expect(section.getByRole('link', { name: 'Mitt team' })).toHaveAttribute('href', '/tools/phonebook.team');
     await expect(section.getByRole('link', { name: 'Telefonbok' })).toHaveAttribute(
       'href',
@@ -45,15 +46,16 @@ test.describe('Verktyg in the menu', () => {
     await expectNoAxeViolations(page);
   });
 
-  test("without a tool the section still holds the calendar and a manager's Personal, and nothing else", async ({
+  test("without a tool there is no Verktyg, and the places hold Hem, Att göra, the calendar and a manager's Personal", async ({
     page,
     api: _,
   }) => {
     await open(page, '/');
-    await expect(rail(page).getByRole('group', { name: 'Verktyg' }).getByRole('link')).toHaveText([
-      'Kalender',
-      'Personal',
-    ]);
+    await expect(rail(page).getByRole('group', { name: 'Verktyg' })).toHaveCount(0);
+    const order = await rail(page).getByRole('link').allTextContents();
+    const places = ['Hem', 'Att göra', 'Kalender', 'Personal'].map(p => order.findIndex(o => o.startsWith(p)));
+    expect(places.every(i => i >= 0)).toBe(true);
+    expect([...places].sort((a, b) => a - b)).toEqual(places);
   });
 
   test('the row opens the tool as a page by keyboard, not in the side panel, and is marked as current', async ({
@@ -88,7 +90,12 @@ test.describe('Verktyg in the menu', () => {
   test("the menu's search finds a tool by its name and opens its page", async ({ page, api }) => {
     api.menu = [menuRow];
     await open(page, '/');
-    const search = rail(page).getByRole('combobox', { name: 'Sök i samtal och kort' });
+    // Sök is a row of the rail (board Sidebar) that opens Astryx's command palette over the page.
+    await rail(page).getByRole('button', { name: 'Sök', exact: true }).click();
+    const search = page
+      .getByRole('dialog', { name: 'Sök i samtal och ärenden' })
+      .getByRole('combobox', { name: 'Sök i samtal och ärenden' });
+    await expect(search).toBeFocused();
     await search.fill('telefon');
     await page.getByRole('option', { name: /Telefonbok/ }).click();
     await expect(page).toHaveURL(/\/tools\/phonebook\.directory$/);
@@ -132,11 +139,8 @@ test.describe('Verktyg on a phone', () => {
     api.menu = [menuRow];
     await open(page, '/');
     const drawer = await openNav(page);
-    await expect(drawer.getByRole('group', { name: 'Verktyg' }).getByRole('link')).toHaveText([
-      'Kalender',
-      'Personal',
-      'Telefonbok',
-    ]);
+    await expect(drawer.getByRole('group', { name: 'Verktyg' }).getByRole('link')).toHaveText(['Telefonbok']);
+    await expect(drawer.getByRole('link', { name: 'Kalender' })).toBeVisible();
     await expectNoAxeViolations(page);
     await drawer.getByRole('link', { name: 'Telefonbok' }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Telefonbok' })).toBeVisible();
