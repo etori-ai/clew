@@ -1287,7 +1287,7 @@ describe('the synthetic provisioner', () => {
         ),
         scope,
       );
-      // A loses its name, and B is renamed and moved below a new unit without a name.
+      // A loses its name, and B is renamed and moved below a new unit without a name, which Cia is to manage as well.
       const summary = await reconcile(
         client,
         source(
@@ -1298,7 +1298,7 @@ describe('the synthetic provisioner', () => {
             unit('b', 'B, nytt namn', 'x'),
             unit('c', 'C', 'b'),
           ],
-          people,
+          people.map(p => (p.userName === 'cia' ? { ...p, alsoManages: ['x'] } : p)),
         ),
         scope,
       );
@@ -1307,6 +1307,7 @@ describe('the synthetic provisioner', () => {
         { externalId: 'unit:a', detail: blank },
         { externalId: 'unit:x', detail: blank },
         { externalId: 'unit:b', detail: "The unit above it, 'unit:x', was not written." },
+        { externalId: 'unit-manager:x', detail: "The unit 'unit:x' was not written." },
       ]);
       expect(['unit:a', 'unit-manager:a', 'unit:b', 'unit-manager:b'].map(label)).toEqual([
         'A',
