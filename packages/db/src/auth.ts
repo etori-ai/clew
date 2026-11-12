@@ -216,7 +216,7 @@ export class RebindRefused extends Error {
 /**
  * An operator binds a person to a new sign-in account, or releases their binding (Q8 of the 2026-11-12 users review,
  * amending D68 item 6): the person's binding under the issuer moves to the new subject, or with `subject: null` is
- * removed, so that the next sign-in whose claim names the person binds it again as a first login does. One
+ * removed, so that the next sign-in whose claim names the person binds them again as a first login does. One
  * `identity.rebound` audit row about the person (issuer, old subject, new subject or null, the operator's name) is
  * written in the same transaction. Refused, writing nothing, for a person id the people table does not hold and for a
  * subject already bound to another person: a subject is moved off its holder only by releasing the holder first, named
