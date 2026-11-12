@@ -18,17 +18,20 @@ import { fullName, type Directory, type DirectoryPerson } from './directory';
  * account name once, and not withdrawing a large share of the people. Then who has left is deactivated, before anything
  * about the organisation is read from the export, so nothing the export has wrong about a unit or a group keeps a
  * leaver active. Then the organisation is checked whole (every unit id and group id once, no reserved key on a plain
- * group, inside the writer's prefixes, not withdrawing a large share of a kind of group), and D101's order follows: the
- * organisation, as nodes without people; the people; who is placed where, everybody added before anybody is removed,
- * so a person who moves between two units is never on neither; the groups that left the source; and last the people
- * who return.
+ * group, every unit and plain group the directory lists inside the writer's keys, not withdrawing a large share of a
+ * kind of group), and D101's order follows: the organisation, as nodes without people; the people; who is placed
+ * where, everybody added before anybody is removed, so a person who moves between two units is never on neither; the
+ * groups that left the source; and last the people who return.
  *
- * One row the source has wrong is that row's alone. A person, a unit or a group Clew refuses, a unit whose parent the
- * export does not list or that stands in a cycle, and a unit or a group an active person names that the export does
- * not list are recorded and skipped with what depends on them; the run carries on with everybody else's changes and
- * removals and reports them at the end. Somebody the source places on a unit that was not written stays on the units
- * Clew holds them on until it is, so a fault in the source never leaves a person without a unit; a manager's role or a
- * capability the source withdraws from them goes all the same.
+ * One row the source has wrong is that row's alone. A person, a unit or a group Clew refuses; a unit whose parent the
+ * export does not list or that stands in a cycle; a unit or a group an active person names that the export does not
+ * list, with the managers' group of such a unit; and a group that only people's rows give (a manager's group, a
+ * capability) outside the writer's keys: each is recorded and skipped with what depends on it, and the run carries on
+ * with everybody else's changes and removals and reports them at the end, each once. Somebody the source places on no
+ * unit that was written stays on the units Clew holds them on until one is; a newcomer in that place is not created,
+ * and one who returns stays inactive. So a fault in the source never takes a person off their last unit, and nobody is
+ * created or made active on no unit without the run saying so. Everything else the source withdraws goes all the same:
+ * a manager's role, a capability, a plain group, and the old units of somebody it places on a unit that was written.
  */
 /** D114: the extension a user's current employments travel in. */
 const SCIM_EMPLOYMENT_SCHEMA = 'urn:clew:params:scim:schemas:extension:employment:2.0:User';
@@ -51,8 +54,9 @@ export interface PlannedGroup {
   members: string[];
   /**
    * Why the example does not write this unit or group itself, when the directory has it wrong: its parent is not
-   * listed, it stands in a cycle, or an active person names it and the directory does not list it. It is never
-   * created, renamed, moved or removed; one Clew holds keeps its members as the source gives them.
+   * listed, it stands in a cycle, an active person names it and the directory does not list it, or it is the managers'
+   * group of such a unit. `push` also sets it on a group that only people's rows give and that is outside the writer's
+   * keys. It is never created, renamed, moved or removed; one Clew holds keeps its members as the source gives them.
    */
   refused?: string;
 }
@@ -67,6 +71,14 @@ export interface Plan {
 /** At most five names and how many more: enough to start looking, as the check names them. */
 const some = (names: readonly string[]) =>
   names.slice(0, 5).join(', ') + (names.length > 5 ? ` (and ${names.length - 5} more)` : '');
+/** "an active person names: anna", or "3 active people name: anna, bo, cia": who in the export a refusal is about. */
+const activePeople = (names: readonly string[], one: string, many: string) =>
+  `${names.length === 1 ? `an active person ${one}` : `${names.length} active people ${many}`}: ${some(names)}`;
+const isUnit = (key: string) => key.startsWith(UNIT_KEY);
+/** The unit a `unit:` or a `unit-manager:` key is about, as its `unit:` key; any other key is its own. */
+const unitOf = (key: string) => (key.startsWith(MANAGER_KEY) ? UNIT_KEY + key.slice(MANAGER_KEY.length) : key);
+/** A key that places a person on a unit: as one of its people, or as one of its managers (D99). */
+const placesOn = (key: string) => isUnit(key) || key.startsWith(MANAGER_KEY);
 /**
  * An account name as Clew compares it: without regard to case, and in the composed form (NFC) Clew stores it in, so two
  * spellings of one name are one name here as well.
@@ -110,8 +122,8 @@ export function planPeople(directory: Directory): PlannedUser[] {
  *
  * A fault in the export as a whole throws: a unit id or a group id listed twice, or a plain group, or a person's plain
  * group, with a key Clew reserves. A fault in one row is that row's alone and comes back as a group's `refused`: a
- * unit whose parent the directory does not list, units that are each other's parents, and a unit or a group an active
- * person names that the directory does not list.
+ * unit whose parent the directory does not list, units that are each other's parents, a unit or a group an active
+ * person names that the directory does not list, and the managers' group of such a unit.
  */
 export function planOrganisation(directory: Directory): PlannedGroup[] {
   once(
@@ -209,7 +221,19 @@ export function planOrganisation(directory: Directory): PlannedGroup[] {
   }
   for (const [key, who] of unlisted)
     groups.get(key)!.refused =
-      `The directory does not list the ${key.startsWith(UNIT_KEY) ? `unit '${key.slice(UNIT_KEY.length)}'` : `group '${key}'`}, which ${who.length === 1 ? 'an active person names' : `${who.length} active people name`}: ${some(who)}.`;
+      `The directory does not list the ${isUnit(key) ? `unit '${key.slice(UNIT_KEY.length)}'` : `group '${key}'`}, which ${activePeople(who, 'names', 'name')}.`;
+  // The managers' group of such a unit is not written either. It is reported for itself, since it is where a manager's
+  // role would have been.
+  const userNameOf = new Map(directory.people.map(p => [p.externalId, p.userName]));
+  for (const key of unlisted.keys()) {
+    const managers = isUnit(key) ? groups.get(MANAGER_KEY + key.slice(UNIT_KEY.length)) : undefined;
+    if (managers)
+      managers.refused = `The directory does not list the unit '${key.slice(UNIT_KEY.length)}', which ${activePeople(
+        [...new Set(managers.members)].map(id => userNameOf.get(id)!),
+        'manages',
+        'manage',
+      )}.`;
+  }
   // The units first and from the root down, since a parent has to exist before the unit below it (D99); then the
   // rest by key.
   return [...groups.values()]
@@ -250,15 +274,17 @@ export interface PushSummary {
   groupsReplaced: number;
   groupsRemoved: number;
   /**
-   * The people Clew refused, and the people returning to a unit that was not written, whom the example leaves inactive,
-   * each with the reason. Everybody else was sent: one row the source has wrong does not keep a leaver active or a
-   * newcomer out. A run with anybody here has not succeeded, and its caller says so.
+   * The people Clew refused, and those the example does not place as the source has them, each with the reason: a
+   * newcomer on no unit that was written is not created, and one who returns to no unit that took them is left
+   * inactive; a newcomer no unit took is created and named here. Everybody else was sent: one row the source has wrong
+   * does not keep a leaver active or a newcomer out. A run with anybody here has not succeeded, and its caller says so.
    */
   refused: Array<{ externalId: string; userName: string; detail: string }>;
   /**
-   * The units and groups that were not written as the source has them, each by its key with the reason: the directory
-   * has it wrong, or Clew refused it. Everything that does not depend on them was written, removals included. A run
-   * with anything here has not succeeded either.
+   * The units and groups that were not written as the source has them, each once, by its key with the first reason the
+   * run met: the directory has it wrong, it is outside the writer's keys, the unit it belongs to or stands below was not
+   * written, or Clew refused it. Everything that does not depend on them was written, removals included. A run with
+   * anything here has not succeeded either.
    */
   groupsRefused: Array<{ externalId: string; detail: string }>;
 }
@@ -357,7 +383,7 @@ async function reconcile(
 ): Promise<PushSummary> {
   if (directory.complete !== true) throw new Error('Incomplete source snapshot. Nothing was written.');
   if (!scope.userPrefix || scope.groupPrefixes.some(prefix => !prefix))
-    throw new Error('Source ownership requires nonempty prefixes.');
+    throw new Error('Source ownership requires nonempty prefixes. Nothing was written.');
   const ownsGroup = (key: string) =>
     scope.groupKeys.includes(key) || scope.groupPrefixes.some(prefix => key.startsWith(prefix));
   // The people rows alone, checked whole before the first write: everything a deactivation needs.
@@ -416,8 +442,21 @@ async function reconcile(
   } catch (error) {
     throw stop((error as Error).message);
   }
+  // A unit or a plain group the directory lists outside the writer's keys is the writer's configuration set against
+  // the source's own list, and stops the rest. A group that only people's rows give, a manager's group or a capability,
+  // is that group's alone: it is not written, and the people the source puts in it are named.
+  const lists = new Set([...directory.units.map(u => UNIT_KEY + u.id), ...directory.groups.map(g => g.id)]);
   for (const g of groups)
-    if (!g.refused && !ownsGroup(g.externalId)) throw stop(`Group '${g.externalId}' is outside the source namespace.`);
+    if (lists.has(g.externalId) && !ownsGroup(g.externalId))
+      throw stop(`Group '${g.externalId}' is outside the source namespace.`);
+  const userNameOf = new Map(directory.people.map(p => [p.externalId, p.userName]));
+  for (const g of groups)
+    if (!g.refused && !ownsGroup(g.externalId))
+      g.refused = `Group '${g.externalId}' is outside the source namespace, and ${activePeople(
+        g.members.map(id => userNameOf.get(id)!),
+        'is in it',
+        'are in it',
+      )}.`;
   // What Clew holds of this writer's groups, read once as well: which to remove, and each unit as it stands.
   const planned = new Map(groups.map(g => [g.externalId, g])),
     listed = new Map<string, HeldGroup>(),
@@ -452,9 +491,13 @@ async function reconcile(
   const unwritten = new Set<string>();
   /** Groups that no longer follow from the source and stay, without the people the source has withdrawn from them. */
   const kept = new Set<string>();
+  /** Each unit or group is reported once, with the first reason the run met; the log has every one. */
+  const refusedKeys = new Set<string>();
   const refuseGroup = (externalId: string, detail: string) => {
-    summary.groupsRefused.push({ externalId, detail });
     options.log?.(`refused group ${externalId}: ${detail}`);
+    if (refusedKeys.has(externalId)) return;
+    refusedKeys.add(externalId);
+    summary.groupsRefused.push({ externalId, detail });
   };
   for (const g of groups) if (g.refused) refuseGroup(g.externalId, g.refused);
   const findGroup = async (key: string, members = false) =>
@@ -545,6 +588,8 @@ async function reconcile(
       refuseGroup(key, error.message);
     }
   }
+  /** What this run leaves named as it stands: the units, which are named above alone, and what was refused by now. */
+  const unnamed = new Set(refusedKeys);
   // 3. The people.
   // An account name that is given to somebody new is first moved off the row that holds it. A person who leaves is
   // deactivated, not erased, and keeps their `userName`, which is unique in the installation, so without this the
@@ -554,19 +599,29 @@ async function reconcile(
     givenAway = (userName: string, externalId: string) => (taker.get(nameKey(userName)) ?? externalId) !== externalId,
     holderOf = new Map(held.map(u => [nameKey(u.userName), u])),
     rowOf = new Map(held.flatMap(u => (u.externalId ? [[u.externalId, u] as const] : [])));
-  const named = (u: PlannedUser, userName: string) => ({ ...u, body: { ...u.body, userName } });
+  // A leaver Clew holds is sent with a name nobody else has once the run is done: the source's, if it is free; else the
+  // one Clew holds the row under; else the row's own `externalId`. A name is taken when an active person is given it,
+  // when a leaver sent before this one has it, or when another row Clew holds has it. So the source may keep a leaver's
+  // row or drop it, rename leavers, give two of them one name, or give the name two leavers held in turn to somebody
+  // new: none of it is wrong, and nothing is refused.
+  const claimed = new Map(taker);
+  const taken = (userName: string, externalId: string) => {
+    const key = nameKey(userName),
+      by = claimed.get(key);
+    if (by !== undefined) return by !== externalId;
+    const holder = holderOf.get(key);
+    return holder !== undefined && holder !== rowOf.get(externalId);
+  };
   const users = people.map(u => {
-    if (u.body.active) return u;
-    // The source may keep the leaver's row with the name it has given to somebody else: that row is sent parked too.
-    if (givenAway(u.body.userName, u.externalId)) return named(u, u.externalId);
-    // A leaver whose name went to somebody who has left as well keeps the name Clew holds it under while another row
-    // holds the source's name, active or not: two people who held one name in turn are both gone, and nothing in the
-    // source is wrong.
-    const row = rowOf.get(u.externalId),
-      holder = holderOf.get(nameKey(u.body.userName));
-    if (row && holder && holder !== row && nameKey(row.userName) !== nameKey(u.body.userName))
-      return named(u, row.userName);
-    return u;
+    const row = rowOf.get(u.externalId);
+    if (u.body.active || !row) return u;
+    const userName = !taken(u.body.userName, u.externalId)
+      ? u.body.userName
+      : !taken(row.userName, u.externalId)
+        ? row.userName
+        : u.externalId;
+    claimed.set(nameKey(userName), u.externalId);
+    return userName === u.body.userName ? u : { ...u, body: { ...u.body, userName } };
   });
   const nameNow = new Map(users.map(u => [u.externalId, u.body.userName]));
   for (const holder of held) {
@@ -585,7 +640,34 @@ async function reconcile(
   const findUser = async (externalId: string) =>
     (await client.request('GET', `/Users${eq('externalId', externalId)}&attributes=externalId,userName,active`)).body
       .Resources?.[0];
+  // Where the source places each person: the units they are on and those they manage (D99).
+  const placements = new Map<string, string[]>();
+  for (const g of groups)
+    if (placesOn(g.externalId))
+      for (const externalId of g.members)
+        placements.set(externalId, [...(placements.get(externalId) ?? []), unitOf(g.externalId)]);
+  /** Whether no unit the source places this person on was written above, so that nothing can place them this run. */
+  const nowhere = (externalId: string) => placements.get(externalId)?.every(key => absent.has(key)) === true;
+  /** Somebody the run does not place as the source has them, reported with the people Clew refused. */
+  const notPlaced = (user: PlannedUser, detail: string) => {
+    summary.refused.push({ externalId: user.externalId, userName: user.body.userName, detail });
+    options.log?.(`refused ${user.body.userName}: ${detail}`);
+  };
   const rehires: Array<{ id: string; user: PlannedUser }> = [];
+  /**
+   * A person the read did not show, whom Clew holds after all, found by the source's id: sent to as to a row that was
+   * read, and one who returns waits for the returners' step as they would have. Whether the request was sent now.
+   */
+  const sendFound = async (user: PlannedUser, found: { id: string; active?: boolean }) => {
+    ids.set(user.externalId, found.id);
+    if (!run.postedUsers.has(user.externalId)) initial.held.add(user.externalId);
+    if (found.active === false) {
+      rehires.push({ id: found.id, user });
+      return false;
+    }
+    await client.request('PUT', '/Users/' + found.id, user.body);
+    return true;
+  };
   /**
    * One person's request. What Clew says is wrong about one person (a 400) or their name (a 409) is that person's
    * alone: everybody else is sent, and the run reports the refusals when it is done. Anything else stops the run.
@@ -594,8 +676,21 @@ async function reconcile(
     try {
       if (id) {
         await client.request('PUT', '/Users/' + id, user.body);
+      } else if (!user.body.active) {
+        return;
+      } else if (nowhere(user.externalId)) {
+        // Somebody new is created once a unit the source places them on is written: active on no unit, they could do
+        // nothing. The read may have missed them, so they are looked for first.
+        const found = await findUser(user.externalId);
+        if (!found) {
+          notPlaced(
+            user,
+            'Not created: no unit the source places this person on was written, so they are not placed yet.',
+          );
+          return;
+        }
+        if (!(await sendFound(user, found))) return;
       } else {
-        if (!user.body.active) return;
         const postedBefore = run.postedUsers.has(user.externalId);
         run.postedUsers.add(user.externalId);
         try {
@@ -609,13 +704,7 @@ async function reconcile(
           // source's id, the person is sent to it as to a row that was read.
           const found = await findUser(user.externalId);
           if (!found) throw error;
-          ids.set(user.externalId, found.id);
-          if (!run.postedUsers.has(user.externalId)) initial.held.add(user.externalId);
-          if (found.active === false) {
-            rehires.push({ id: found.id, user });
-            return;
-          }
-          await client.request('PUT', '/Users/' + found.id, user.body);
+          if (!(await sendFound(user, found))) return;
         }
       }
       if (initial.held.has(user.externalId)) summary.replaced++;
@@ -634,27 +723,24 @@ async function reconcile(
   // 4. Who is in which group, in two rounds. First everybody a group gains, in every group; then everybody a group
   // loses. A person who moves from one unit to another is in both for a moment and never in neither, so their grant
   // is not taken away and handed back, and they are not signed out in the middle of a push (D101).
-  const isUnit = (key: string) => key.startsWith(UNIT_KEY);
-  const unitOf = (key: string) => (key.startsWith(MANAGER_KEY) ? UNIT_KEY + key.slice(MANAGER_KEY.length) : key);
-  /**
-   * Who the source places on a unit and Clew does not hold on it once this round is done, because the unit was not
-   * written or did not take them. They stay on the units Clew holds them on until it does, so that a fault in the
-   * source never leaves a person without a unit (D101: never on neither). Only the units: a manager's role, a
-   * capability or a plain group the source withdraws from them goes as it does from everybody else.
-   */
-  const unplaced = new Set<string>();
-  const notPlaced = (key: string, people: readonly string[]) => {
-    if (isUnit(key)) for (const id of people) unplaced.add(id);
-  };
+  /** Who the source places on a unit, as one of its people or a manager, and who is on one of those once added. */
+  const placing = new Set<string>(),
+    placed = new Set<string>();
   const trims: Array<{ key: string; id: string; lost: string[]; rename?: string }> = [];
   for (const group of groups) {
-    const key = group.externalId;
+    const key = group.externalId,
+      places = placesOn(key);
     // A refused newcomer has no SCIM id. An inactive returner already has one for the membership update.
     const members = group.members.flatMap(externalId => ids.get(externalId) ?? []);
+    const place = (people: readonly string[]) => {
+      if (places) for (const id of people) placed.add(id);
+    };
+    if (places) for (const id of members) placing.add(id);
     // Nothing is written on a unit Clew does not hold, nor its managers; nor on a group outside this writer's keys.
     if (absent.has(unitOf(key)) || (group.refused && !ownsGroup(key))) {
+      // The unit has been reported, and its managers' group is not written either.
+      if (!refusedKeys.has(key)) refuseGroup(key, `The unit '${unitOf(key)}' was not written.`);
       unwritten.add(key);
-      notPlaced(key, members);
       continue;
     }
     let found = await findGroup(key, true);
@@ -663,7 +749,6 @@ async function reconcile(
       // One the directory has wrong is not created.
       if (group.refused) {
         unwritten.add(key);
-        notPlaced(key, members);
         continue;
       }
       const created = await create(key, {
@@ -671,10 +756,12 @@ async function reconcile(
         displayName: group.displayName,
         members: asMembers(members),
       });
-      if (created === 'created') continue;
+      if (created === 'created') {
+        place(members);
+        continue;
+      }
       if (!created) {
         unwritten.add(key);
-        notPlaced(key, members);
         continue;
       }
       found = created;
@@ -683,16 +770,18 @@ async function reconcile(
       wants = new Set(members),
       gained = members.filter(id => !has.has(id)),
       lost = [...has].filter(id => !wants.has(id));
+    place(members.filter(id => has.has(id)));
     if (gained.length)
       try {
         await patch(client, '/Groups/' + found.id, [{ op: 'add', path: 'members', value: asMembers(gained) }]);
+        place(gained);
       } catch (error) {
         if (!refusal(error)) throw error;
         refuseGroup(key, error.message);
-        notPlaced(key, gained);
       }
-    // The name of a unit the directory has wrong, and of its managers' group, is left as it stands.
-    const leaveName = group.refused !== undefined || planned.get(unitOf(key))?.refused !== undefined;
+    // A unit is named in step 2 alone. A group refused before this step, and the managers' group of a unit refused
+    // before it, keep the names they have.
+    const leaveName = isUnit(key) || unnamed.has(key) || unnamed.has(unitOf(key));
     trims.push({
       key,
       id: found.id,
@@ -700,6 +789,18 @@ async function reconcile(
       ...(!leaveName && found.displayName !== group.displayName ? { rename: group.displayName } : {}),
     });
   }
+  /**
+   * Who the source places on units none of which has them once the first round is done, because those were not
+   * written or did not take them. They stay on the units Clew holds them on until one does, so that a fault in the
+   * source never takes a person off their last unit (D101: never on neither). Only the units: a manager's role, a
+   * capability or a plain group the source withdraws from them goes as it does from everybody else, and somebody on
+   * one unit the source gives them loses the units it withdrew.
+   */
+  const unplaced = new Set([...placing].filter(id => !placed.has(id)));
+  // Somebody new whom no unit took is created on none, and said so; a later run places them once one does.
+  for (const user of users)
+    if (run.postedUsers.has(user.externalId) && unplaced.has(ids.get(user.externalId) ?? ''))
+      notPlaced(user, 'Created, but not placed: no unit the source places this person on took them.');
   for (const trim of trims) {
     const lost = isUnit(trim.key) ? trim.lost.filter(id => !unplaced.has(id)) : trim.lost;
     for (const operations of [
@@ -717,8 +818,8 @@ async function reconcile(
   }
   // 5. The groups that no longer follow from the source.
   // From the leaves up (D99): a unit goes once no unit that is also going still stands below it. The units that stay
-  // were written above, so none of them names a unit that goes. A group that has to stay (somebody on it could not be
-  // placed elsewhere, a unit below it stays, or Clew refuses to remove it) loses everybody else the source has
+  // were written above, so none of them names a unit that goes. A group that has to stay (somebody on it is on no unit
+  // the source gives them yet, a unit below it stays, or Clew refuses to remove it) loses everybody else the source has
   // withdrawn from it.
   const above = new Set<string>();
   /** The units above one that stays, as far up as the source has withdrawn them: they stay while it stands below. */
@@ -764,7 +865,7 @@ async function reconcile(
     if (unplaced.size && isUnit(group!.externalId)) {
       const members = await membersOf(group!.id);
       if (members?.some(id => unplaced.has(id))) {
-        await keep(group!, 'somebody on it could not be placed on the unit the source gives them', members);
+        await keep(group!, 'somebody on it is on no unit the source gives them yet', members);
         continue;
       }
     }
@@ -783,14 +884,11 @@ async function reconcile(
     }
   }
   // 6. A returning person regains access only after expired duties have been removed, and only with a row Clew takes.
-  // One the source places on a unit that was not written is not placed as the source has them, so stays inactive
-  // until the unit is written.
+  // One that no unit the source places them on has taken stays inactive until one does: active, they would be on no
+  // unit.
   for (const { id, user } of rehires) {
     if (unplaced.has(id)) {
-      const detail =
-        'Left inactive: a unit the source places this person on was not written, so they are not placed yet.';
-      summary.refused.push({ externalId: user.externalId, userName: user.body.userName, detail });
-      options.log?.(`refused ${user.body.userName}: ${detail}`);
+      notPlaced(user, 'Left inactive: no unit the source places this person on took them, so they are not placed yet.');
       continue;
     }
     await sendPerson(user, id);

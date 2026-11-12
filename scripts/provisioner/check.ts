@@ -3,7 +3,8 @@
  * points at Clew to see whether its mapping did what it meant. It only reads. A finding is `ok`, a `warn` (the push
  * was accepted and somebody will not get what the source intended) or a `fail` (the endpoint or the token is wrong).
  * It needs nothing of Clew's but the group keys and capability names in `packages/contracts/src/scim-group-key.ts`,
- * which a copy of this folder carries along.
+ * which a copy of this folder carries along. Take that file from the installation's own release, and again on every
+ * upgrade: a capability the installation has and the copy does not is reported as one the check does not know.
  */
 import {
   UNIT_KEY,
@@ -100,19 +101,26 @@ export async function checkProvisioning(
     ),
     groups = await all<GroupRow>(client, '/Groups', 'excludedAttributes=members');
   // A key written wrong, stored before the server began refusing it (D96): a reserved word in another case or with
-  // space in it, a unit key without a unit id, `protected`, or a capability name outside the closed list (D85). It
-  // means nothing, the next write of it is refused, and it is counted as none of the kinds below.
+  // space in it, a unit key without a unit id, or `protected`. It means nothing, the next write of it is refused, and it
+  // is counted as none of the kinds below.
   const miswritten = groups.filter(g => {
     const key = g.externalId ?? '',
       prefix = reservedScimGroupKey(key);
     if (!prefix) return false;
     if (prefix === PROTECTED_KEY) return true;
     const rest = key.slice(prefix.length);
-    return (
-      !key.startsWith(prefix) || !rest || rest !== rest.trim() || (prefix === CAPABILITY_KEY && !isCapability(rest))
-    );
+    return !key.startsWith(prefix) || !rest || rest !== rest.trim();
   });
-  const flagged = new Set(miswritten),
+  // A `capability:` key whose name is not in the closed list (D85) is written wrong as well, unless the installation is
+  // newer than the check's copy of the list and knows the name, so it is named apart. It is counted as none of the
+  // kinds below either.
+  const unknown = groups.filter(
+    g =>
+      !miswritten.includes(g) &&
+      g.externalId?.startsWith(CAPABILITY_KEY) &&
+      !isCapability(g.externalId.slice(CAPABILITY_KEY.length)),
+  );
+  const flagged = new Set([...miswritten, ...unknown]),
     sound = groups.filter(g => !flagged.has(g));
   const active = users.filter(u => u.active),
     deactivated = users.filter(u => !u.active),
@@ -123,9 +131,14 @@ export async function checkProvisioning(
     capabilities = keyed(CAPABILITY_KEY),
     plain = sound.length - units.length - managers.length - capabilities.length;
   say('ok', `${plural(users.length, 'user', 'users')}: ${active.length} active, ${deactivated.length} deactivated.`);
+  const counts = [
+    `${units.length} unit, ${managers.length} unit-manager, ${capabilities.length} capability, ${plain} plain (${groups.filter(g => !g.externalId).length} without an externalId)`,
+    ...(miswritten.length ? [`${miswritten.length} with a key written wrong`] : []),
+    ...(unknown.length ? [`${unknown.length} with a capability the check does not know`] : []),
+  ];
   say(
     'ok',
-    `${plural(groups.length, 'group', 'groups')}: ${units.length} unit, ${managers.length} unit-manager, ${capabilities.length} capability, ${plain} plain (${groups.filter(g => !g.externalId).length} without an externalId)${miswritten.length ? ` and ${miswritten.length} with a key written wrong` : ''}.`,
+    `${plural(groups.length, 'group', 'groups')}: ${counts.length === 1 ? counts[0] : `${counts.slice(0, -1).join(', ')} and ${counts.at(-1)}`}.`,
   );
   // Who is in a group counts the active people only: a deactivated person is nobody's colleague and leads nobody (D99),
   // as Administration › Organisation reads the same tree.
@@ -255,6 +268,11 @@ export async function checkProvisioning(
     say(
       'warn',
       `${plural(miswritten.length, 'group carries', 'groups carry')} a key that is written wrong and gives nobody anything: ${some(miswritten.map(g => `'${g.externalId}'`))}.`,
+    );
+  if (unknown.length)
+    say(
+      'warn',
+      `${plural(unknown.length, 'group names', 'groups name')} a capability the check does not know, so ${unknown.length === 1 ? 'it gives' : 'they give'} nobody anything unless the installation is newer than the check's copy of packages/contracts/src/scim-group-key.ts: ${some(unknown.map(g => `'${g.externalId}'`))}.`,
     );
   return findings;
 }
