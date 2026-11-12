@@ -106,7 +106,7 @@ A source system owns records. A connector exposes capabilities that read those r
 | Unit (*enhet*) | A named node in the organisation tree. An administration or department can be a unit at any level. |
 | Employment (*anställning*) | A current job on a unit. Its title, employment type, start date and percentage of full-time hours are optional and describe that job. The profile lists each employment the directory supplies, including several on one unit. |
 | Assignment (*placering*) | One person in one unit with one role, `manager` or `employee`; a person may hold several. |
-| Position (*befattning*) | What a person is employed as, such as undersköterska or maskinförare: a code and a label from the source, pushed as membership of a `position:<code>` group (D108 item 5). Tied to the person, not to an assignment; a person may hold several. It grants nothing, and Clew builds in no classification of positions. |
+| Position (*befattning*) | What a person is employed as, such as undersköterska or maskinförare: a code and a label from the source, pushed as membership of a `position:<code>` group (D108 item 5). Tied to the person, not to an assignment; a person may hold several. By itself it decides no access; like any provisioned group, an administrator can map it to a capability (D85). Clew builds in no classification of positions. |
 | Grant | The one assignment a person acts as, with their capabilities: the derived projection every request and connector reads. |
 | Binding | The link from an identity provider's subject to a person, written at the first login. (Distinct from a follower binding in the integration vocabulary.) |
 

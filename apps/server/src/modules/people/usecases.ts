@@ -326,12 +326,19 @@ export function scimUsecases(deps: {
    * the position's row is written whether anyone holds it or not: the organisation's positions are the ones its source
    * sends. A position needs no check of the organisation beyond the group's (D101): it has one key, and a group's key
    * is unique across the installation, so one organisation holds a code at a time. Written before anyone is derived,
-   * so a holder is given the row as it now reads.
+   * so a holder is given the row as it now reads. True when the row was missing, so the caller derives everyone in the
+   * group: a group stored before Clew read the key has members who hold nothing yet. A missing row is written only
+   * once `holders` are locked, in id order as a derivation locks them: a holder's own write, which derives them and
+   * writes the same row, then waits for this one instead of the two waiting on each other.
    */
-  const namePosition = async (tx: ProvisionTx, p: Provisioner, fields: GroupFields) => {
+  const namePosition = async (tx: ProvisionTx, p: Provisioner, fields: GroupFields, holders: string[] = []) => {
     const code = positionOfKey(fields.externalId);
-    if (code !== undefined && (await tx.positionLabels(p.organisationId, [code]))[code] !== fields.label)
-      await tx.writePositions(p.organisationId, [{ code, label: fields.label }]);
+    if (code === undefined) return false;
+    const label = (await tx.positionLabels(p.organisationId, [code]))[code];
+    if (label === fields.label) return false;
+    if (label === undefined) for (const id of [...new Set(holders)].sort()) await tx.lockPerson(id);
+    await tx.writePositions(p.organisationId, [{ code, label: fields.label }]);
+    return label === undefined;
   };
   /**
    * The position a group stops carrying, once the people who held it through the group have been derived without it:
@@ -464,9 +471,12 @@ export function scimUsecases(deps: {
     // Only who comes is asked about: who is already in the group was asked about when they came.
     await membersExist(tx, p, added);
     // Also on a write that changes nothing else: a `position:` group stored before Clew read the key gets its row on
-    // the next write of it, as D96 has a key written wrong refused on its next write.
-    await namePosition(tx, p, fields);
-    if (!renamed && !moved && !added.length && !removed.length) return groupView(tx, current, base);
+    // this write, and everyone in the group is derived in it, so each holds the position and has it in the audit.
+    const positioned = await namePosition(tx, p, fields, [...before, ...added]);
+    if (!renamed && !moved && !added.length && !removed.length) {
+      if (positioned) await derivation.deriveAll(tx, actorOf(p), before);
+      return groupView(tx, current, base);
+    }
     // The time of the change is the group's whoever caused it: a member who came or went changes the resource a
     // client reads, and `meta.lastModified` once went back to the old time on the next read (RFC 7643 §3.1).
     await tx.updateGroup(current.id, {
@@ -492,14 +502,14 @@ export function scimUsecases(deps: {
         ...(removed.length && removed.length <= NAMED_IN_AUDIT ? { removedPeople: removed } : {}),
       },
     });
-    // A renamed or re-keyed group changes what every member gets, and a unit's label what its managers carry;
-    // otherwise only those who came or went.
+    // A renamed or re-keyed group changes what every member gets, and a unit's label what its managers carry, as does
+    // a position row written for the first time; otherwise only those who came or went.
     if (renamed) {
       const assigned = [...fields.members, ...(await managersOfUnit(tx, fields.externalId))];
       await nameUnit(tx, p, fields, assigned);
       await derivation.deriveAll(tx, actorOf(p), [...before, ...assigned]);
       await dropPosition(tx, p, current.externalId, fields.externalId);
-    } else await derivation.deriveAll(tx, actorOf(p), [...added, ...removed]);
+    } else await derivation.deriveAll(tx, actorOf(p), [...added, ...removed, ...(positioned ? before : [])]);
     return groupView(
       tx,
       { ...current, externalId: fields.externalId, label: fields.label, parentUnitId: fields.parent, updatedAt: at },

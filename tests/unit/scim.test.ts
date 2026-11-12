@@ -903,6 +903,113 @@ describe('SCIM groups and derivation', () => {
     await scim.replaceGroup(p, 'old-2', group('position:ssk', 'Sjuksköterska', []), BASE);
     expect([...store.state.positions.values()].map(row => row.code).sort()).toEqual(['hl', 'ssk']);
   });
+  test('a position group stored before the key was read gives every member the position in the write that gives it its row, an unchanged PUT and a PATCH that adds one alike (D108 item 5)', async () => {
+    const { scim, p, store } = harness();
+    const [a, b, c] = [
+      (await scim.createUser(p, anna, BASE)).id,
+      (await scim.createUser(p, { ...anna, externalId: 'mk-2', userName: 'bo' }, BASE)).id,
+      (await scim.createUser(p, { ...anna, externalId: 'mk-3', userName: 'cia' }, BASE)).id,
+    ];
+    const positionsOf = (id: string) => store.transaction(tx => tx.positionsOf(id)),
+      T = '2026-11-01T00:00:00.000Z';
+    // Two groups as a provisioner stored them before `position:` was reserved: members, and no position row.
+    for (const [id, externalId, label, members] of [
+      ['old-usk', 'position:usk', 'Undersköterska', [a, b]],
+      ['old-ssk', 'position:ssk', 'Sjuksköterska', [c]],
+    ] as const) {
+      store.state.groups.set(id, {
+        id,
+        organisationId: 'sundsvall',
+        externalId,
+        label,
+        parentUnitId: null,
+        createdAt: T,
+        updatedAt: T,
+      });
+      for (const member of members) store.state.members.add(memberKey(id, member));
+    }
+    const rows = (from: number) =>
+      store.state.audit.slice(from).map(row => [row.action, row.subject, row.details.positions]);
+    // A PUT that changes nothing: the row is written and both members are derived in the same write.
+    let audited = store.state.audit.length;
+    await scim.replaceGroup(p, 'old-usk', group('position:usk', 'Undersköterska', [a, b]), BASE);
+    for (const id of [a, b]) expect(await positionsOf(id)).toEqual([{ code: 'usk', label: 'Undersköterska' }]);
+    expect(rows(audited)).toEqual([
+      ['positions.derived', 'person:' + a, ['usk']],
+      ['positions.derived', 'person:' + b, ['usk']],
+    ]);
+    // The row is there now: the same PUT again derives nobody.
+    audited = store.state.audit.length;
+    await scim.replaceGroup(p, 'old-usk', group('position:usk', 'Undersköterska', [a, b]), BASE);
+    expect(store.state.audit.length).toBe(audited);
+    // A PATCH that adds one person derives the member who was there before too.
+    await scim.patchGroup(
+      p,
+      'old-ssk',
+      { schemas: [], Operations: [{ op: 'add', path: 'members', value: [{ value: a }] }] },
+      BASE,
+    );
+    expect(await positionsOf(a)).toEqual([
+      { code: 'ssk', label: 'Sjuksköterska' },
+      { code: 'usk', label: 'Undersköterska' },
+    ]);
+    expect(await positionsOf(c)).toEqual([{ code: 'ssk', label: 'Sjuksköterska' }]);
+    expect(rows(audited)).toEqual([
+      ['scim.group.patched', 'group:old-ssk', undefined],
+      ['positions.derived', 'person:' + a, ['ssk', 'usk']],
+      ['positions.derived', 'person:' + c, ['ssk']],
+    ]);
+  });
+  test('a missing position row is written only once the members are locked, in id order, as a derivation locks them (D108 item 5)', async () => {
+    const inner = memoryProvisionStore(),
+      calls: string[] = [];
+    const store: ProvisionStore = {
+      transaction: fn =>
+        inner.transaction(tx =>
+          fn({
+            ...tx,
+            lockPerson: id => (calls.push('lock ' + id), tx.lockPerson(id)),
+            writePositions: (organisationId, positions) => (
+              calls.push('write ' + positions.map(x => x.code).join()),
+              tx.writePositions(organisationId, positions)
+            ),
+          }),
+        ),
+    };
+    let seq = 0;
+    const scim = scimUsecases({ store, clock: () => new Date(), ids: () => 'id-' + ++seq, digest: t => t });
+    const p = { id: 'mk', organisationId: 'sundsvall', label: 'Metakatalogen' };
+    const b = (await scim.createUser(p, { ...anna, externalId: 'mk-2', userName: 'bo' }, BASE)).id,
+      a = (await scim.createUser(p, anna, BASE)).id;
+    const T = '2026-11-01T00:00:00.000Z';
+    inner.state.groups.set('old', {
+      id: 'old',
+      organisationId: 'sundsvall',
+      externalId: 'position:usk',
+      label: 'Undersköterska',
+      parentUnitId: null,
+      createdAt: T,
+      updatedAt: T,
+    });
+    inner.state.members.add(memberKey('old', b));
+    calls.length = 0;
+    await scim.replaceGroup(p, 'old', group('position:usk', 'Undersköterska', [b, a]), BASE);
+    expect(calls.slice(0, 3)).toEqual(['lock ' + b, 'lock ' + a, 'write usk']);
+  });
+  test('like any provisioned group, a position group mapped to a capability gives its holders that capability (D85, D108 item 5)', async () => {
+    const { scim, p, store } = harness();
+    const a = (await scim.createUser(p, anna, BASE)).id;
+    await scim.createGroup(p, group('unit:hemtjanst', 'Hemtjänst', [a]), BASE);
+    await scim.createGroup(p, group('position:usk', 'Undersköterska', [a]), BASE);
+    expect(store.state.grants.get(a)?.capabilities).toEqual([]);
+    store.state.groupCapabilities.push({
+      organisationId: 'sundsvall',
+      groupExternalId: 'position:usk',
+      capability: 'admin.users',
+    });
+    await scim.replaceUser(p, a, anna, BASE);
+    expect(store.state.grants.get(a)?.capabilities).toEqual(['admin.users']);
+  });
   test('a group as a member is refused with the reason: nested groups are not supported', async () => {
     const { scim, p } = harness();
     const inner = await scim.createGroup(p, { displayName: 'Inner' }, BASE);

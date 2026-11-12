@@ -6,8 +6,9 @@
  * the same unit; `capability:<name>` gives a capability of the closed list; `protected` was to keep the person out of
  * lists others see, and D93 refuses that key at the boundary until Clew decides whether it may hold the fact, so the
  * flag below is false in any installation provisioned since; `position:<code>` gives the person that position, named
- * with the group's `displayName` (D108 item 5), which says what the person is and grants nothing. Any other group
- * gives nothing here; a rules row (group to capability) may give a capability. A person with no unit membership has no
+ * with the group's `displayName` (D108 item 5), which says what the person is and by itself decides no access; like
+ * any provisioned group it can be mapped to a capability (D85). Any other group gives nothing here; a rules row (group
+ * to capability) may give a capability. A person with no unit membership has no
  * active grant, so a mapping mistake fails closed.
  */
 import {
