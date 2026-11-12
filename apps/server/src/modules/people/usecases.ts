@@ -1190,6 +1190,25 @@ export function staffUsecases(deps: { store: ProvisionStore }) {
 export type StaffUsecases = ReturnType<typeof staffUsecases>;
 
 /**
+ * D62's `people.directory`, "Vilka användare finns i min enhet?": the people placed on the unit, each with the role they
+ * hold there, as Personal and Administration › Organisation read a unit (`unitPeople`, one read on either adapter). A
+ * person on two units, a manager of two units and an employee who leads another unit are on each of their units,
+ * though the grant names one (A4). A deactivated person is nobody's colleague to ask about. By name in Swedish order.
+ * The unit is the reader's own: the capability passes the actor's, and its input names none. Nothing is written.
+ */
+export function directoryUsecases(deps: { store: ProvisionStore }) {
+  return {
+    directory: (unitId: string): Promise<Array<{ id: string; name: string; role: Role }>> =>
+      deps.store.transaction(async tx =>
+        ((await tx.unitPeople([unitId]))[unitId] ?? [])
+          .filter(person => person.enabled)
+          .sort(byName)
+          .map(({ id, name, role }) => ({ id, name, role })),
+      ),
+  };
+}
+
+/**
  * Administration › Organisation (D99): the organisation tree as the provisioner pushed it, for an administrator with
  * `admin.users`, read only as Användare is. The tree, who leads each unit and how many are placed on it and below it
  * are one read; the people of one unit are another, asked for when the unit is selected. Nothing is written, so there

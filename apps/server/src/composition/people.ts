@@ -1,10 +1,23 @@
 import { postgresProvisionStore, postgresUserReads } from '../modules/people/adapters/postgres';
-import { organisationUsecases, scimUsecases, staffUsecases, usersAdminUsecases } from '../modules/people/usecases';
+import type { UserReads } from '../modules/people/ports';
+import {
+  directoryUsecases,
+  organisationUsecases,
+  scimUsecases,
+  staffUsecases,
+  usersAdminUsecases,
+} from '../modules/people/usecases';
 import { randomToken, tokenDigest } from '../auth-crypto';
 import { clock, ids } from './ambient';
 
-/** Local identity reads use the same scoped capability dispatch as other internal functions. */
-export const userReads = postgresUserReads();
+/**
+ * Local identity reads use the same scoped capability dispatch as other internal functions. The directory reads the
+ * unit's placements through the provisioning store, as Personal does (A4).
+ */
+export const userReads: UserReads = {
+  ...postgresUserReads(),
+  ...directoryUsecases({ store: postgresProvisionStore() }),
+};
 /**
  * The SCIM server's use cases and the derivation of a person's grant from memberships and the mapping (D68, D85):
  * `scim` serves `/scim/v2`. A grant is derived inside the transaction of the change that moves it, by the SCIM use

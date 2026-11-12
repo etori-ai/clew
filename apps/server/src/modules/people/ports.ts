@@ -15,6 +15,10 @@ import type {
 /** Clew's own user records; identity and unit are always taken from the authenticated actor. */
 export interface UserReads {
   capabilities(personId: string): Promise<string[]>;
+  /**
+   * The active people placed on the unit, each with the role they hold there, whatever unit they act in: one read over
+   * the provisioning store for either adapter (`directoryUsecases`).
+   */
   directory(unitId: string): Promise<Array<{ id: string; name: string; role: string }>>;
   /**
    * The person's provisioned user name (D96 item 8: what another system keys a row on); null for an unknown person or

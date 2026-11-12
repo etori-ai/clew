@@ -5,24 +5,17 @@ import { UNIT_KEY } from '@clew/contracts/scim-group-key';
 import { unitGroupOf, type GroupRecord, type UserRecord, type UserSearch } from '../domain';
 import type { ProvisionStore, ProvisionTx, UserReads } from '../ports';
 
-/** Read the local user/grant tables; directory access is restricted to the actor's unit. */
-export const postgresUserReads = (): UserReads => ({
+/**
+ * Read the local user and grant tables. The directory is not read here: it is `directoryUsecases` over the provisioning
+ * store, one read for either adapter.
+ */
+export const postgresUserReads = (): Omit<UserReads, 'directory'> => ({
   async capabilities(personId) {
     const [row] = await database()
       .select({ capabilities: schema.accessGrants.capabilities })
       .from(schema.accessGrants)
       .where(eq(schema.accessGrants.personId, personId));
     return row?.capabilities ?? [];
-  },
-  async directory(unitId) {
-    return (
-      database()
-        .select({ id: schema.people.id, name: schema.people.name, role: schema.accessGrants.role })
-        .from(schema.people)
-        .innerJoin(schema.accessGrants, eq(schema.accessGrants.personId, schema.people.id))
-        // A deactivated person keeps their grant row and is nobody's colleague to ask about.
-        .where(and(eq(schema.accessGrants.unitId, unitId), eq(schema.people.enabled, true)))
-    );
   },
   async userName(personId) {
     const [row] = await database()

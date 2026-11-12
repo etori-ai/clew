@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import type { GroupRecord, UserRecord } from '../apps/server/src/modules/people/domain';
+import type { Assignment, GroupRecord, UserRecord } from '../apps/server/src/modules/people/domain';
 import type { Provisioner, ProvisionStore } from '../apps/server/src/modules/people/ports';
+import { directoryUsecases } from '../apps/server/src/modules/people/usecases';
 
 /**
  * The SCIM half of the provisioning store (D68): users within an organisation, groups and their members, the provisioner
@@ -638,6 +639,74 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         expect(await found({ words: ['a'], unitIds: [u2], status: 'not-signed-in' })).toEqual([zara, ake]);
         expect(await found({ words: ['zara'], role: 'manager' })).toEqual([]);
       });
+    });
+    test('the directory of a unit is everyone active placed on it, with the role held there, whichever unit they act in (A4)', async () => {
+      const { store, prefix: p } = await make();
+      const org = p + '-org',
+        [u1, u2, u3] = [p + '-u1', p + '-u2', p + '-u3'],
+        [two, both, leads, here, gone] = [p + '-two', p + '-both', p + '-leads', p + '-here', p + '-gone'];
+      // Each grant names the unit the person acts in (manager first, then the lowest unit id): only `here` acts in the
+      // second unit, and the directory once listed by the grant.
+      const people: Array<[id: string, name: string, placed: Assignment[], enabled: boolean]> = [
+        [
+          two,
+          'Örjan Två',
+          [
+            { unitId: u1, role: 'employee' },
+            { unitId: u2, role: 'employee' },
+          ],
+          true,
+        ],
+        [
+          both,
+          'Bodil Båda',
+          [
+            { unitId: u1, role: 'manager' },
+            { unitId: u2, role: 'manager' },
+          ],
+          true,
+        ],
+        [
+          leads,
+          'Ali Leder',
+          [
+            { unitId: u2, role: 'employee' },
+            { unitId: u3, role: 'manager' },
+          ],
+          true,
+        ],
+        [here, 'Cecilia Här', [{ unitId: u2, role: 'employee' }], true],
+        [gone, 'Gun Slutat', [{ unitId: u2, role: 'employee' }], false],
+      ];
+      const units = [
+        { id: u1, label: 'Enhet 1' },
+        { id: u2, label: 'Enhet 2' },
+        { id: u3, label: 'Enhet 3' },
+      ];
+      await store.transaction(async tx => {
+        await tx.writeUnits(org, units);
+        for (const [id, name, placed, enabled] of people) {
+          await tx.insertUser(userRow(id, org, { name, enabled }));
+          await tx.replaceAssignments(id, placed);
+          const active = id === leads ? placed[1]! : placed[0]!,
+            unitLabel = units.find(unit => unit.id === active.unitId)!.label;
+          await tx.writeGrant(id, { unitId: active.unitId, unitLabel, role: active.role, capabilities: [] });
+        }
+      });
+      const { directory } = directoryUsecases({ store });
+      // By name in Swedish order, Ö after the rest; the deactivated person is left out.
+      expect(await directory(u2)).toEqual([
+        { id: leads, name: 'Ali Leder', role: 'employee' },
+        { id: both, name: 'Bodil Båda', role: 'manager' },
+        { id: here, name: 'Cecilia Här', role: 'employee' },
+        { id: two, name: 'Örjan Två', role: 'employee' },
+      ]);
+      expect(await directory(u1)).toEqual([
+        { id: both, name: 'Bodil Båda', role: 'manager' },
+        { id: two, name: 'Örjan Två', role: 'employee' },
+      ]);
+      expect(await directory(u3)).toEqual([{ id: leads, name: 'Ali Leder', role: 'manager' }]);
+      expect(await directory(p + '-nowhere')).toEqual([]);
     });
     test('a locked person and a locked group read as they do unlocked', async () => {
       const { store, prefix: p } = await make();
