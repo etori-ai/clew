@@ -146,6 +146,32 @@ export function refreshUsecases({ store, clock, ids, key, current, sources, syst
         let thread = oldThreadId
           ? await tx.lockThread(job.personId, oldThreadId)
           : await tx.findTopic(job.personId, job.connector, topic);
+        // A connector that named its work by topic alone and now reports occurrences (D47) keys one of them on the topic
+        // it used: an open legacy occurrence under that key, of a card under the same authority with no write under way,
+        // is the same work. Its card is taken over, unchanged, rather than left open beside a new one, and the legacy
+        // occurrence is retired here, once, since a complete observation never resolves a legacy one.
+        if (!thread && d.occurrences?.length) {
+          const legacy = existing.find(
+            o => o.legacy && o.sourceState === 'open' && o.threadId && identities.some(i => i.key === o.sourceKey),
+          );
+          const held = legacy ? await tx.lockThread(job.personId, legacy.threadId!) : undefined;
+          if (
+            legacy &&
+            held &&
+            held.sourceAuthorization === job.authorizationVersion &&
+            !(held.execution && ['pending', 'running', 'unknown'].includes(held.execution.state))
+          ) {
+            thread = held;
+            await tx.saveOccurrence({ ...legacy, sourceState: 'resolved', observedAt });
+            await tx.writeAudit({
+              actor: 'system:refresh',
+              action: 'work.adopted',
+              subject: `occurrence:${legacy.id}`,
+              at,
+              details: { connector: job.connector, thread: held.id },
+            });
+          }
+        }
         if (!thread && topic !== d.topic) {
           const legacy = await tx.findTopic(job.personId, job.connector, d.topic);
           if (legacy && !existing.some(o => o.threadId === legacy.id)) thread = legacy;

@@ -122,32 +122,35 @@ export interface SourceTypeCount {
   holdings: number;
 }
 /**
- * What is required of whom (D108 item 6): a type and exactly one of a position, a unit or one person. `minLevel` is the
- * least level of a skill (D120 item 4), stored and unused until skills are built. `createdBy` is an actor string.
+ * What is required of whom (D108 item 6): a type and exactly one of a position (by its code in the organisation), a unit
+ * (by the id of its `unit:` key) or one person. A position and a unit are named by key, not by a row, so one that is
+ * pushed again keeps its requirements and one that is gone counts towards nothing until it comes back. `minLevel` is the
+ * least level of a skill (D120 item 4), stored and unused until skills are built. `createdBy` is an actor string, null
+ * once that person was erased.
  */
 export interface RequirementRecord {
   id: string;
   organisationId: string;
   typeId: string;
-  positionId: string | null;
+  positionCode: string | null;
   unitId: string | null;
   personId: string | null;
   minLevel: number | null;
-  createdBy: string;
+  createdBy: string | null;
   createdAt: string;
 }
 /**
- * A share target (D108 item 6): of the people who hold `positionId`, at least `minShare` percent hold `typeId`, on the
- * branch of `unitId` or, null, across the whole organisation. It names no person.
+ * A share target (D108 item 6): of the people who hold the position `positionCode`, at least `minShare` percent hold
+ * `typeId`, on the branch of `unitId` or, null, across the whole organisation. It names no person.
  */
 export interface ShareTargetRecord {
   id: string;
   organisationId: string;
   typeId: string;
-  positionId: string;
+  positionCode: string;
   unitId: string | null;
   minShare: number;
-  createdBy: string;
+  createdBy: string | null;
   createdAt: string;
 }
 /** A position of the organisation (D108 item 5), as SCIM wrote it. */
@@ -157,22 +160,21 @@ export interface PositionRecord {
   code: string;
   label: string;
 }
-/** A unit somebody is or was assigned to, by the name the directory holds for it. */
+/**
+ * A unit of the organisation's tree as pushed (D99): a `unit:` group's unit id, its name and the unit above it, null on a
+ * root. Every node is one, also one nobody is placed on.
+ */
 export interface UnitRecord {
   id: string;
   organisationId: string;
   label: string;
-}
-/** A node of the organisation tree (D99): a pushed unit and the unit above it, null on a root. */
-export interface TreeNode {
-  id: string;
   parentId: string | null;
 }
-/** Where one person stands in the directory: the units they are assigned to and the positions they hold. */
+/** Where one person stands in the directory: the units they are assigned to and the codes of the positions they hold. */
 export interface Placed {
   personId: string;
   unitIds: string[];
-  positionIds: string[];
+  positionCodes: string[];
 }
 /** A durable workflow start committed with the transaction that decides it (D86); the memory store records it. */
 export interface WorkflowStart {
@@ -200,14 +202,17 @@ export interface CompetenceAudit {
 export interface Erased {
   /** Holdings removed because they were the person's own. */
   holdings: number;
-  /** Other people's holdings from which the person was removed (registered by, revoked by). */
+  /**
+   * Rows from which the person was removed: other people's holdings they registered or revoked, and the requirements and
+   * share targets they set (`createdBy`).
+   */
   cleared: number;
   /** Requirements set on the person alone (D108 item 6), removed with them. */
   requirements: number;
 }
 /**
  * The whole domain for one organisation (D108 item 14), copied rows, the mappings of sources, the requirements and the
- * share targets included; the use case turns it into `clew.competence/3`.
+ * share targets included; the use case turns it into `clew.competence/4`.
  */
 export interface CompetenceExport {
   types: TypeRecord[];
@@ -327,18 +332,20 @@ export interface CompetenceTx {
   // imports no other module; written only by the SCIM use cases.
   /** The organisation's positions, by label in Swedish order. */
   positions(organisationId: string): Promise<PositionRecord[]>;
-  /** One position; an unknown id is absent. */
-  position(id: string): Promise<PositionRecord | undefined>;
-  /** The organisation's units, by name in Swedish order. */
+  /**
+   * The organisation's tree as pushed, by name in Swedish order: every `unit:` group with the unit above it, a node
+   * nobody is placed on included. A unit people are assigned to that no group names is not in it.
+   */
   units(organisationId: string): Promise<UnitRecord[]>;
-  /** One unit; an unknown id is absent. */
-  unit(id: string): Promise<UnitRecord | undefined>;
-  /** The organisation's tree as pushed: every `unit:` group with the unit above it. */
-  unitTree(organisationId: string): Promise<TreeNode[]>;
-  /** The active people assigned to any of these units, each once. */
-  placedOn(unitIds: readonly string[]): Promise<string[]>;
-  /** For each of these people the units they are assigned to and the positions they hold; an unknown id is absent. */
-  placesOf(personIds: readonly string[]): Promise<Placed[]>;
+  /** The active people of the organisation assigned to any of these units, each once. */
+  placedOn(organisationId: string, unitIds: readonly string[]): Promise<string[]>;
+  /**
+   * For each of these people of the organisation the units they are assigned to and the codes of the positions they
+   * hold; an unknown id, or a person of another organisation, is absent.
+   */
+  placesOf(organisationId: string, personIds: readonly string[]): Promise<Placed[]>;
+  /** The active people of the organisation who hold a position of one of these codes, once per person and code. */
+  positionHolders(organisationId: string, codes: readonly string[]): Promise<Array<{ personId: string; code: string }>>;
   // Requirements and share targets (D108 item 6).
   /** Every requirement of the organisation, on a position, a unit or a person, oldest first. */
   requirements(organisationId: string): Promise<RequirementRecord[]>;
@@ -359,7 +366,8 @@ export interface CompetenceTx {
   // Erasure and export (D108 item 14).
   /**
    * Remove the person's holdings, copied ones included, and the requirements set on them alone, and remove them from
-   * other people's holdings (null `registeredBy`, `revokedBy`). Takes the row lock of every source the person has copied
+   * other people's holdings (null `registeredBy`, `revokedBy`) and from the requirements and share targets they set
+   * (null `createdBy`, which holds `person:<id>`). Takes the row lock of every source the person has copied
    * rows from first, in the order of their ids.
    */
   erasePerson(personId: string): Promise<Erased>;

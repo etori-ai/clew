@@ -1,5 +1,5 @@
 /**
- * Export the competence domain of one organisation (D108 item 14) as one versioned document, `clew.competence/3`: the
+ * Export the competence domain of one organisation (D108 item 14) as one versioned document, `clew.competence/4`: the
  * catalogue, archived types included, every holding of its people (copied ones with their source), the mappings of
  * sources' types (item 9), and the requirements and share targets (item 6). Runs inside the app container with the server's local
  * settings (DATABASE_URL); no route and no `package.json` entry. The export is audited (`competence.exported`, counts

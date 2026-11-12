@@ -97,6 +97,10 @@ test.describe('Administration › Kompetens › Krav', () => {
       await expect(
         positions.getByRole('row', { name: /Sjuksköterska/ }).getByText('Arkiverad', { exact: true }),
       ).toBeVisible();
+      // So does one on a position the provisioner has removed, listed by its code so that it can be removed.
+      const gone = positions.getByRole('row', { name: /tolk/ });
+      await expect(gone.getByText('Finns inte längre', { exact: true })).toBeVisible();
+      await expect(gone.getByRole('button', { name: /Ta bort kravet på Heta arbeten/ })).toBeVisible();
       await expect(units.getByRole('columnheader')).toHaveText(['Enhet', 'Kompetens', 'Ta bort']);
       await expect(units.getByRole('row', { name: /Gata och park/ })).toContainText('Fallskydd');
       await expect(targets.getByRole('columnheader')).toHaveText([
@@ -104,12 +108,18 @@ test.describe('Administration › Kompetens › Krav', () => {
         'Befattning',
         'Gäller',
         'Minst',
+        'Utfall',
         'Ta bort',
       ]);
+      // A target across the organisation is measured over it once, a figure naming nobody, or is too few to show; a
+      // unit's target is read by the manager who leads the unit.
       const target = targets.getByRole('row', { name: /HLR/ });
       await expect(target).toContainText('Undersköterska');
       await expect(target).toContainText('Hela organisationen');
       await expect(target).toContainText('80 %');
+      await expect(target).toContainText('83 %, uppfyllt');
+      await expect(targets.getByRole('row', { name: /Fallskydd/ })).toContainText('För få för att visas');
+      await expect(targets.getByRole('row', { name: /Heta arbeten/ })).toContainText('Visas för enhetens chef');
     });
 
     test('a requirement is added by keyboard: what is missing is said on its field, then it is saved, said and listed', async ({
@@ -129,10 +139,10 @@ test.describe('Administration › Kompetens › Krav', () => {
       const save = dialog.getByRole('button', { name: 'Spara', exact: true });
       await save.focus();
       await page.keyboard.press('Enter');
-      // The field says what is missing; Astryx's live region of the dialog repeats the words to announce them, so the
-      // field's own is the first of the two.
-      await expect(dialog.getByText('Välj en kompetens.', { exact: true }).first()).toBeVisible();
+      // The field itself is marked invalid and takes the focus; its message is the field's description.
       const competence = dialog.getByRole('combobox', { name: /Kompetens/ });
+      await expect(competence).toHaveAttribute('aria-invalid', 'true');
+      await expect(competence).toHaveAccessibleDescription(/Välj en kompetens\./);
       await expect(competence).toBeFocused();
       expect(api.requirementWrites).toEqual([]);
 
@@ -145,8 +155,9 @@ test.describe('Administration › Kompetens › Krav', () => {
       await dialog.getByRole('radio', { name: /En enhet/ }).check();
       await save.focus();
       await page.keyboard.press('Enter');
-      await expect(dialog.getByText('Välj en enhet.', { exact: true }).first()).toBeVisible();
       const unit = dialog.getByRole('combobox', { name: /Enhet/ });
+      await expect(unit).toHaveAttribute('aria-invalid', 'true');
+      await expect(competence).not.toHaveAttribute('aria-invalid', 'true');
       await expect(unit).toBeFocused();
       await page.keyboard.press('Enter');
       await page.getByRole('option', { name: 'Hemtjänst Norr' }).click();
@@ -155,6 +166,8 @@ test.describe('Administration › Kompetens › Krav', () => {
 
       await expect(dialog).toBeHidden();
       await expect(page).toHaveURL(REQUIREMENTS);
+      // Saved, the focus is back on the button that opened the dialog.
+      await expect(page.getByRole('link', { name: 'Lägg till krav' })).toBeFocused();
       expect(api.requirementWrites).toEqual([
         { method: 'POST', path: '/competence/requirements', body: { typeId: 't-heta', unitId: 'unit-hemtjanst' } },
       ]);
@@ -216,6 +229,8 @@ test.describe('Administration › Kompetens › Krav', () => {
       await page.keyboard.press('Escape');
       await expect(dialog).toBeHidden();
       await expect(page).toHaveURL(REQUIREMENTS);
+      // Opened by its address nothing on the page opened it: the button that opens it takes the focus.
+      await expect(page.getByRole('link', { name: 'Lägg till andelsmål' })).toBeFocused();
       expect(api.requirementWrites).toEqual([]);
 
       await page.getByRole('link', { name: 'Lägg till andelsmål' }).focus();
@@ -230,14 +245,16 @@ test.describe('Administration › Kompetens › Krav', () => {
       await save.focus();
       await page.keyboard.press('Enter');
       // The unit is asked for first, then the share.
-      await expect(dialog.getByText('Välj en enhet.', { exact: true }).first()).toBeVisible();
-      await expect(dialog.getByRole('combobox', { name: /Enhet/ })).toBeFocused();
+      const unit = dialog.getByRole('combobox', { name: /Enhet/ });
+      await expect(unit).toHaveAttribute('aria-invalid', 'true');
+      await expect(unit).toBeFocused();
       await page.keyboard.press('Enter');
       await page.getByRole('option', { name: 'Gata och park' }).click();
       await save.focus();
       await page.keyboard.press('Enter');
       const share = dialog.getByRole('spinbutton', { name: /Minst/ });
-      await expect(dialog.getByText('Ange en andel, 1 till 100 procent.', { exact: true }).first()).toBeVisible();
+      await expect(share).toHaveAttribute('aria-invalid', 'true');
+      await expect(share).toHaveAccessibleDescription(/Ange en andel, 1 till 100 procent\./);
       await expect(share).toBeFocused();
       await page.keyboard.type('50');
       await page.keyboard.press('Tab');
@@ -250,7 +267,7 @@ test.describe('Administration › Kompetens › Krav', () => {
         {
           method: 'POST',
           path: '/competence/share-targets',
-          body: { typeId: 't-fall', positionId: 'pos-mask', minShare: 50, unitId: 'unit-gata' },
+          body: { typeId: 't-fall', positionCode: 'maskinforare', minShare: 50, unitId: 'unit-gata' },
         },
       ]);
       await expect(
@@ -259,9 +276,10 @@ test.describe('Administration › Kompetens › Krav', () => {
       const row = page
         .getByRole('table')
         .nth(2)
-        .getByRole('row', { name: /Fallskydd/ });
-      await expect(row).toContainText('Gata och park');
+        .getByRole('row', { name: /Fallskydd/ })
+        .filter({ hasText: 'Gata och park' });
       await expect(row).toContainText('50 %');
+      await expect(page.getByRole('link', { name: 'Lägg till andelsmål' })).toBeFocused();
     });
 
     test('a refusal of the server is an alert in the dialog, and what was chosen stays', async ({ page, api }) => {
@@ -295,6 +313,14 @@ test.describe('Administration › Kompetens › Krav', () => {
       for (const title of ['Inga krav på befattningar', 'Inga krav på enheter', 'Inga andelsmål'])
         await expect(page.getByRole('heading', { level: 3, name: title })).toBeVisible();
       await settled(page);
+      await expectNoAxeViolations(page);
+    });
+
+    test('a catalogue that cannot be read is said as an alert, as on the other pages', async ({ page, api }) => {
+      switchedOn(api);
+      api.catalogueReadFails = true;
+      await open(page, REQUIREMENTS);
+      await expect(page.getByRole('alert').filter({ hasText: 'Något gick fel. Försök igen.' })).toBeVisible();
       await expectNoAxeViolations(page);
     });
 

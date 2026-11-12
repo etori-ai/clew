@@ -30,7 +30,9 @@ import {
   coverageOf,
   deciding,
   endOf,
-  lineAbove,
+  COVERAGE_MIN_GROUP,
+  countable,
+  organisationOutcome,
   matrixCellText,
   matrixCsv,
   personStatus,
@@ -587,7 +589,7 @@ describe('erasure and export', () => {
     await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2026-01-10' });
     await competence.seedType('operator:test', 'org-2', { name: 'Annan', area: 'X', kind: 'course' });
     const doc = await competence.exportDomain('operator:cli', ORG);
-    expect(doc).toMatchObject({ format: 'clew.competence/3', exportedAt: now.toISOString(), organisationId: ORG });
+    expect(doc).toMatchObject({ format: 'clew.competence/4', exportedAt: now.toISOString(), organisationId: ORG });
     expect(doc.types.map(t => t.name).sort()).toEqual(['HLR', 'Heta arbeten', 'Socionomexamen']);
     expect(doc.holdings).toHaveLength(1);
     expect(lastAudit()).toEqual({
@@ -771,12 +773,13 @@ describe('the built-in connector', () => {
  * branch) holding the undersköterska position, Cia deactivated on Enhet 1, and the manager herself on Enhet 1.
  */
 describe('requirements, missing and coverage (D108 item 6)', () => {
-  const USK = 'pos-usk',
-    SSK = 'pos-ssk';
+  /** The positions by their codes, as requirements name them; the rows are the store's own (`pos-<code>`). */
+  const USK = 'usk',
+    SSK = 'ssk';
   function directory() {
-    store.addPosition({ id: USK, organisationId: ORG, code: 'usk', label: 'Undersköterska' });
-    store.addPosition({ id: SSK, organisationId: ORG, code: 'ssk', label: 'Sjuksköterska' });
-    store.addPosition({ id: 'pos-foreign', organisationId: 'org-2', code: 'usk', label: 'Undersköterska' });
+    store.addPosition({ id: 'pos-usk', organisationId: ORG, code: USK, label: 'Undersköterska' });
+    store.addPosition({ id: 'pos-ssk', organisationId: ORG, code: SSK, label: 'Sjuksköterska' });
+    store.addPosition({ id: 'pos-foreign', organisationId: 'org-2', code: 'tolk', label: 'Tolk' });
     store.addUnit({ id: 'u1', organisationId: ORG, label: 'Enhet 1', parentId: null });
     store.addUnit({ id: 'u3', organisationId: ORG, label: 'Enhet 3', parentId: 'u1' });
     store.addUnit({ id: 'u2', organisationId: ORG, label: 'Enhet 2', parentId: null });
@@ -791,24 +794,24 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
     ])
       store.assign(personId!, unitId!);
     store.deactivate('cia');
-    store.holdPosition('anna', USK);
-    store.holdPosition('bo', USK);
-    store.holdPosition('bo', SSK);
-    store.holdPosition('dan', USK);
+    store.holdPosition('anna', 'pos-usk');
+    store.holdPosition('bo', 'pos-usk');
+    store.holdPosition('bo', 'pos-ssk');
+    store.holdPosition('dan', 'pos-usk');
   }
-  const ids = { organisationId: ORG, positionId: null, unitId: null, personId: null };
+  const ids = { organisationId: ORG, positionCode: null, unitId: null, personId: null };
 
   describe('the requirements an administrator keeps', () => {
     test('an administrator adds one on a position and one on a unit after the step-up, each audited with ids only', async () => {
       directory();
       const { hlr, degree } = await catalogue();
       const before = admin.authorized;
-      const onPosition = await competence.addRequirement(admin, { typeId: hlr, positionId: USK });
+      const onPosition = await competence.addRequirement(admin, { typeId: hlr, positionCode: USK });
       expect(store.state.requirements.get(onPosition)).toEqual({
         id: onPosition,
         organisationId: ORG,
         typeId: hlr,
-        positionId: USK,
+        positionCode: USK,
         unitId: null,
         personId: null,
         minLevel: null,
@@ -820,7 +823,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
         action: 'competence.requirement_added',
         subject: 'competence-requirement:' + onPosition,
         at: now.toISOString(),
-        details: { ...ids, typeId: hlr, positionId: USK },
+        details: { ...ids, typeId: hlr, positionCode: USK },
       });
       const onUnit = await competence.addRequirement(admin, { typeId: degree, unitId: 'u3' });
       expect(lastAudit()).toEqual({
@@ -837,7 +840,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
       directory();
       const { hot, hlr } = await catalogue();
       const onUnit = await competence.addRequirement(admin, { typeId: hlr, unitId: 'u2' });
-      const onPosition = await competence.addRequirement(admin, { typeId: hlr, positionId: USK });
+      const onPosition = await competence.addRequirement(admin, { typeId: hlr, positionCode: USK });
       // A requirement on one person is their manager's (D118): never listed to the administrator.
       await competence.addRequirement(boss, { typeId: hot, personId: 'anna' });
       expect(await competence.requirements(admin)).toEqual({
@@ -846,8 +849,8 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
           { id: onUnit, typeId: hlr, on: 'unit', targetId: 'u2', targetLabel: 'Enhet 2' },
         ],
         positions: [
-          { id: SSK, code: 'ssk', label: 'Sjuksköterska' },
-          { id: USK, code: 'usk', label: 'Undersköterska' },
+          { code: SSK, label: 'Sjuksköterska' },
+          { code: USK, label: 'Undersköterska' },
         ],
         units: [
           { id: 'u1', label: 'Enhet 1' },
@@ -861,19 +864,19 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
     test('exactly one target, a type, position and unit of the organisation, not archived and not twice; nothing written', async () => {
       directory();
       const { hot, hlr } = await catalogue();
-      await competence.addRequirement(admin, { typeId: hlr, positionId: USK });
+      await competence.addRequirement(admin, { typeId: hlr, positionCode: USK });
       await competence.archiveType(admin, hot);
       const written = audits().length;
       for (const [body, message] of [
         [{ typeId: hlr }, 'Ett krav gäller en befattning, en enhet eller en person.'],
-        [{ typeId: hlr, positionId: SSK, unitId: 'u1' }, 'Ett krav gäller en befattning, en enhet eller en person.'],
-        [{ typeId: 'nope', positionId: SSK }, 'Kompetensen finns inte i katalogen.'],
-        [{ typeId: hot, positionId: SSK }, 'Kompetensen är arkiverad och kan inte krävas.'],
-        [{ typeId: hlr, positionId: 'nope' }, 'Befattningen finns inte.'],
-        [{ typeId: hlr, positionId: 'pos-foreign' }, 'Befattningen finns inte.'],
+        [{ typeId: hlr, positionCode: SSK, unitId: 'u1' }, 'Ett krav gäller en befattning, en enhet eller en person.'],
+        [{ typeId: 'nope', positionCode: SSK }, 'Kompetensen finns inte i katalogen.'],
+        [{ typeId: hot, positionCode: SSK }, 'Kompetensen är arkiverad och kan inte krävas.'],
+        [{ typeId: hlr, positionCode: 'nope' }, 'Befattningen finns inte.'],
+        [{ typeId: hlr, positionCode: 'tolk' }, 'Befattningen finns inte.'],
         [{ typeId: hlr, unitId: 'nope' }, 'Enheten finns inte.'],
         [{ typeId: hlr, unitId: 'u-foreign' }, 'Enheten finns inte.'],
-        [{ typeId: hlr, positionId: USK }, 'Det kravet finns redan.'],
+        [{ typeId: hlr, positionCode: USK }, 'Det kravet finns redan.'],
       ] as const) {
         const attempt = competence.addRequirement(admin, body);
         await expect(attempt).rejects.toBeInstanceOf(CompetenceError);
@@ -903,7 +906,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
         [boss, { typeId: hlr, personId: 'boss' }, 'Personen finns inte bland dem du är chef för.'],
         [asAnna, { typeId: hlr, personId: 'bo' }, 'Krav på en enskild person sätts av den som är personens chef.'],
         // A manager is no administrator: a position or a unit is not theirs to set.
-        [boss, { typeId: hlr, positionId: USK }, undefined],
+        [boss, { typeId: hlr, positionCode: USK }, undefined],
         [boss, { typeId: hlr, unitId: 'u1' }, undefined],
       ] as const) {
         const attempt = competence.addRequirement(persona, body);
@@ -917,22 +920,29 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
     test('removal is the administrator’s for a position or a unit and the manager’s for one person, each audited once', async () => {
       directory();
       const { hot, hlr } = await catalogue();
-      const onPosition = await competence.addRequirement(admin, { typeId: hlr, positionId: USK });
+      const onPosition = await competence.addRequirement(admin, { typeId: hlr, positionCode: USK });
       const onAnna = await competence.addRequirement(boss, { typeId: hot, personId: 'anna' });
+      // An id the reader may not touch and one that does not exist are refused in the same words: a refusal never tells
+      // whether a requirement exists.
       for (const [persona, id] of [
         [boss, onPosition],
         [asAnna, onPosition],
         [admin, onAnna],
         [other, onAnna],
-      ] as const)
-        await expect(competence.removeRequirement(persona, id)).rejects.toBeInstanceOf(ForbiddenError);
+        [admin, 'nope'],
+        [boss, 'nope'],
+      ] as const) {
+        const attempt = competence.removeRequirement(persona, id);
+        await expect(attempt).rejects.toBeInstanceOf(ForbiddenError);
+        await expect(attempt).rejects.toThrow('Du kan inte ta bort det här kravet.');
+      }
       await competence.removeRequirement(admin, onPosition);
       expect(lastAudit()).toEqual({
         actor: 'person:ada',
         action: 'competence.requirement_removed',
         subject: 'competence-requirement:' + onPosition,
         at: now.toISOString(),
-        details: { ...ids, typeId: hlr, positionId: USK },
+        details: { ...ids, typeId: hlr, positionCode: USK },
       });
       await competence.removeRequirement(boss, onAnna);
       expect(lastAudit()).toEqual({
@@ -943,7 +953,88 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
         details: { ...ids, typeId: hot, personId: 'anna' },
       });
       expect(store.state.requirements.size).toBe(0);
-      await expect(competence.removeRequirement(admin, onPosition)).rejects.toThrow('Kravet finns inte.');
+      await expect(competence.removeRequirement(admin, onPosition)).rejects.toThrow(
+        'Du kan inte ta bort det här kravet.',
+      );
+    });
+  });
+
+  describe('requirements by key, whose they are, and who set them', () => {
+    test('a unit nobody is placed on can be chosen; a position or unit that is gone is listed so, counts for nobody, and applies again when it comes back', async () => {
+      directory();
+      const { hlr } = await catalogue();
+      // A node of the tree nobody is placed on: it can be required of, by its id.
+      store.addUnit({ id: 'u-new', organisationId: ORG, label: 'Ny enhet', parentId: 'u1' });
+      const onUnit = await competence.addRequirement(admin, { typeId: hlr, unitId: 'u-new' });
+      const onPosition = await competence.addRequirement(admin, { typeId: hlr, positionCode: USK });
+      expect((await competence.holdings(asAnna)).rows.map(r => [r.competence, r.status])).toEqual([['HLR', 'missing']]);
+      // The provisioner removes the undersköterska group and the new unit: both requirements stay, marked, and require
+      // nothing of anyone.
+      store.removePosition('pos-usk');
+      store.removeUnit('u-new');
+      expect((await competence.requirements(admin)).rows).toEqual([
+        { id: onPosition, typeId: hlr, on: 'position', targetId: USK, targetLabel: USK, gone: true },
+        { id: onUnit, typeId: hlr, on: 'unit', targetId: 'u-new', targetLabel: 'u-new', gone: true },
+      ]);
+      expect((await competence.holdings(asAnna)).rows).toEqual([]);
+      // Pushed again under the same code, as a new row: its holders are under the requirement again.
+      store.addPosition({ id: 'pos-usk-again', organisationId: ORG, code: USK, label: 'Undersköterska' });
+      store.holdPosition('anna', 'pos-usk-again');
+      expect((await competence.holdings(asAnna)).rows.map(r => [r.competence, r.status])).toEqual([['HLR', 'missing']]);
+      expect((await competence.requirements(admin)).rows[0]).toEqual({
+        id: onPosition,
+        typeId: hlr,
+        on: 'position',
+        targetId: USK,
+        targetLabel: 'Undersköterska',
+      });
+      // A share target on a position that is gone is marked too, and measured over nobody.
+      store.removePosition('pos-usk-again');
+      const target = await competence.seedShareTarget('operator:cli', ORG, {
+        typeId: hlr,
+        positionCode: SSK,
+        minShare: 50,
+      });
+      store.removePosition('pos-ssk');
+      expect((await competence.shareTargets(admin)).rows).toEqual([
+        { id: target, typeId: hlr, positionCode: SSK, positionLabel: SSK, minShare: 50, gone: true },
+      ]);
+    });
+
+    test('a one-person requirement is the manager’s the person reports to now, whoever set it: found in the matrix and removed there', async () => {
+      directory();
+      const { hot } = await catalogue();
+      const id = await competence.addRequirement(boss, { typeId: hot, personId: 'anna' });
+      // Anna moves to Olle, who set nothing.
+      staff.set('boss', { units: [{ unitId: 'u1', unitLabel: 'Enhet 1', people: [bo] }] });
+      staff.set('other', { units: [{ unitId: 'u3', unitLabel: 'Enhet 3', people: [dan, anna] }] });
+      const cell = (await competence.matrix(other)).rows
+        .find(r => r.personId === 'anna')!
+        .cells.find(c => c.typeId === hot)!;
+      expect(cell).toMatchObject({ status: 'missing', required: true, through: [{ on: 'person', requirementId: id }] });
+      // The former manager is refused in the same words as for an id that does not exist.
+      for (const asked of [id, 'nope'])
+        await expect(competence.removeRequirement(boss, asked)).rejects.toThrow('Du kan inte ta bort det här kravet.');
+      await competence.removeRequirement(other, id);
+      expect(lastAudit()).toMatchObject({
+        actor: 'person:other',
+        action: 'competence.requirement_removed',
+        subject: 'competence-requirement:' + id,
+      });
+    });
+
+    test('erasing a person takes their name off the requirements and share targets they set, which stay', async () => {
+      directory();
+      const { hot, hlr } = await catalogue();
+      store.addPerson({ id: 'ada', organisationId: ORG, name: 'Ada Admin', userName: 'ada' });
+      const onPosition = await competence.addRequirement(admin, { typeId: hlr, positionCode: USK });
+      const target = await competence.addShareTarget(admin, { typeId: hlr, positionCode: SSK, minShare: 40 });
+      const onAnna = await competence.addRequirement(boss, { typeId: hot, personId: 'anna' });
+      store.deactivate('ada');
+      expect(await competence.erasePerson('operator:cli', 'ada')).toEqual({ holdings: 0, cleared: 2, requirements: 0 });
+      expect(store.state.requirements.get(onPosition)?.createdBy).toBeNull();
+      expect(store.state.shareTargets.get(target)?.createdBy).toBeNull();
+      expect(store.state.requirements.get(onAnna)?.createdBy).toBe('person:boss');
     });
   });
 
@@ -951,27 +1042,35 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
     test('an administrator adds, lists and removes them, each audited with ids and the share; nobody else', async () => {
       directory();
       const { hlr, degree } = await catalogue();
-      const everywhere = await competence.addShareTarget(admin, { typeId: hlr, positionId: USK, minShare: 60 });
+      const everywhere = await competence.addShareTarget(admin, { typeId: hlr, positionCode: USK, minShare: 60 });
       expect(lastAudit()).toEqual({
         actor: 'person:ada',
         action: 'competence.share_target_added',
         subject: 'competence-share-target:' + everywhere,
         at: now.toISOString(),
-        details: { organisationId: ORG, typeId: hlr, positionId: USK, unitId: null, minShare: 60 },
+        details: { organisationId: ORG, typeId: hlr, positionCode: USK, unitId: null, minShare: 60 },
       });
       const onUnit = await competence.addShareTarget(admin, {
         typeId: degree,
-        positionId: SSK,
+        positionCode: SSK,
         unitId: 'u1',
         minShare: 50,
       });
       expect(await competence.shareTargets(admin)).toEqual({
         rows: [
-          { id: everywhere, typeId: hlr, positionId: USK, positionLabel: 'Undersköterska', minShare: 60 },
+          // Measured over the organisation for its administrator: three undersköterskor are too few to show.
+          {
+            id: everywhere,
+            typeId: hlr,
+            positionCode: USK,
+            positionLabel: 'Undersköterska',
+            minShare: 60,
+            outcome: { tooFew: true },
+          },
           {
             id: onUnit,
             typeId: degree,
-            positionId: SSK,
+            positionCode: SSK,
             positionLabel: 'Sjuksköterska',
             unitId: 'u1',
             unitLabel: 'Enhet 1',
@@ -982,18 +1081,18 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
       const written = audits().length;
       for (const [body, message] of [
         [
-          { typeId: hlr, positionId: USK, minShare: 80 },
+          { typeId: hlr, positionCode: USK, minShare: 80 },
           'Det finns redan ett andelsmål för den kompetensen och befattningen där.',
         ],
-        [{ typeId: hlr, positionId: USK, minShare: 0 }, 'Ange en andel mellan 1 och 100 procent.'],
-        [{ typeId: hlr, positionId: USK, minShare: 12.5 }, 'Ange en andel mellan 1 och 100 procent.'],
-        [{ typeId: hlr, positionId: 'pos-foreign', minShare: 10 }, 'Befattningen finns inte.'],
-        [{ typeId: hlr, positionId: SSK, unitId: 'u-foreign', minShare: 10 }, 'Enheten finns inte.'],
+        [{ typeId: hlr, positionCode: USK, minShare: 0 }, 'Ange en andel mellan 1 och 100 procent.'],
+        [{ typeId: hlr, positionCode: USK, minShare: 12.5 }, 'Ange en andel mellan 1 och 100 procent.'],
+        [{ typeId: hlr, positionCode: 'tolk', minShare: 10 }, 'Befattningen finns inte.'],
+        [{ typeId: hlr, positionCode: SSK, unitId: 'u-foreign', minShare: 10 }, 'Enheten finns inte.'],
       ] as const)
         await expect(competence.addShareTarget(admin, body)).rejects.toThrow(message);
       for (const p of [boss, asAnna]) {
         await expect(
-          competence.addShareTarget(p, { typeId: hlr, positionId: SSK, minShare: 10 }),
+          competence.addShareTarget(p, { typeId: hlr, positionCode: SSK, minShare: 10 }),
         ).rejects.toBeInstanceOf(ForbiddenError);
         await expect(competence.shareTargets(p)).rejects.toBeInstanceOf(ForbiddenError);
         await expect(competence.removeShareTarget(p, everywhere)).rejects.toBeInstanceOf(ForbiddenError);
@@ -1005,7 +1104,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
         action: 'competence.share_target_removed',
         subject: 'competence-share-target:' + onUnit,
         at: now.toISOString(),
-        details: { organisationId: ORG, typeId: degree, positionId: SSK, unitId: 'u1', minShare: 50 },
+        details: { organisationId: ORG, typeId: degree, positionCode: SSK, unitId: 'u1', minShare: 50 },
       });
       await expect(competence.removeShareTarget(admin, onUnit)).rejects.toThrow('Andelsmålet finns inte.');
       expect([...store.state.shareTargets.keys()]).toEqual([everywhere]);
@@ -1029,7 +1128,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
         id,
         organisationId: ORG,
         typeId,
-        positionId: null,
+        positionCode: null,
         unitId: null,
         personId: null,
         minLevel: null,
@@ -1038,21 +1137,21 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
         ...target,
       });
       const requirements = [
-        r('1', 'hlr', { positionId: USK }),
-        r('2', 'iv', { positionId: SSK }),
+        r('1', 'hlr', { positionCode: USK }),
+        r('2', 'iv', { positionCode: SSK }),
         r('3', 'fire', { unitId: 'u1' }),
         r('4', 'hlr', { unitId: 'u1' }),
         r('5', 'drive', { personId: 'bo' }),
         r('6', 'other', { unitId: 'u2' }),
       ];
       // Two positions: under both sets.
-      expect(requiredOf({ personId: 'bo', unitIds: ['u1'], positionIds: [USK, SSK] }, requirements).sort()).toEqual([
+      expect(requiredOf({ personId: 'bo', unitIds: ['u1'], positionCodes: [USK, SSK] }, requirements).sort()).toEqual([
         'drive',
         'fire',
         'hlr',
         'iv',
       ]);
-      expect(requiredOf({ personId: 'anna', unitIds: [], positionIds: [] }, requirements)).toEqual([]);
+      expect(requiredOf({ personId: 'anna', unitIds: [], positionCodes: [] }, requirements)).toEqual([]);
     });
 
     test('a required type is missing until a holding counts; an expired one stays expired; an archived one is required of nobody', () => {
@@ -1102,7 +1201,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
     test('a person’s own list has a row for each required type they lack, until one is registered or the type archived', async () => {
       directory();
       const { hot, hlr, degree } = await catalogue();
-      await competence.addRequirement(admin, { typeId: hlr, positionId: USK });
+      await competence.addRequirement(admin, { typeId: hlr, positionCode: USK });
       await competence.addRequirement(admin, { typeId: degree, unitId: 'u1' });
       await competence.addRequirement(boss, { typeId: hot, personId: 'bo' });
       // Anna's HLR ran out by the employer's 24 months: it stays expired, never missing.
@@ -1141,7 +1240,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
     test('what is to act on among the reports counts missing beside expired and expiring, and names each in its row', async () => {
       directory();
       const { hot, degree } = await catalogue();
-      await competence.addRequirement(admin, { typeId: degree, positionId: USK });
+      await competence.addRequirement(admin, { typeId: degree, positionCode: USK });
       await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2021-06-01', expiresOn: '2026-05-31' });
       const out = await competence.attention(boss);
       expect(checkContract(CompetenceAttentionOutputSchema, out)).toBe(true);
@@ -1178,7 +1277,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
     test('the read about a person says Saknas after Utgånget and before Går ut snart, with what is missing counted', async () => {
       directory();
       const { hot, hlr, degree } = await catalogue();
-      await competence.addRequirement(admin, { typeId: degree, positionId: USK });
+      await competence.addRequirement(admin, { typeId: degree, positionCode: USK });
       await competence.registerHolding(boss, 'anna', { typeId: hlr, issuedOn: '2025-01-10' }); // expires in 61 days
       const r = registry();
       const read = async () =>
@@ -1200,7 +1299,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
     test('the figure and the manager’s card count what is missing and name nobody; the person gets a card per missing type', async () => {
       directory();
       const { hot, degree } = await catalogue();
-      await competence.addRequirement(admin, { typeId: degree, positionId: USK });
+      await competence.addRequirement(admin, { typeId: degree, positionCode: USK });
       const r = registry();
       const figureOf = async (p: AuthenticatedContext) =>
         (await r.areas(actor(p))).find(a => a.id === 'competence')?.figure ?? null;
@@ -1252,30 +1351,39 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
     test('the read about a unit counts its branch and names nobody; its row opens the table per required type and target', async () => {
       directory();
       const { hlr, degree } = await catalogue();
-      await competence.addRequirement(admin, { typeId: hlr, positionId: USK });
+      await competence.addRequirement(admin, { typeId: hlr, positionCode: USK });
       await competence.addRequirement(admin, { typeId: degree, unitId: 'u3' });
-      const everywhere = await competence.addShareTarget(admin, { typeId: hlr, positionId: USK, minShare: 60 });
+      await competence.addShareTarget(admin, { typeId: hlr, positionCode: USK, minShare: 60 });
       const onU1 = await competence.addShareTarget(admin, {
         typeId: degree,
-        positionId: SSK,
+        positionCode: SSK,
         unitId: 'u1',
         minShare: 50,
       });
-      await competence.addShareTarget(admin, { typeId: hlr, positionId: SSK, unitId: 'u2', minShare: 50 });
+      await competence.addShareTarget(admin, { typeId: hlr, positionCode: SSK, unitId: 'u2', minShare: 50 });
       await competence.registerHolding(boss, 'anna', { typeId: hlr, issuedOn: '2026-01-10' });
       await competence.registerHolding(boss, 'bo', { typeId: hlr, issuedOn: '2023-01-10' }); // expired by the rule
       await competence.registerHolding(other, 'dan', { typeId: hlr, issuedOn: '2026-02-10' });
       const r = registry();
       expect(r.aboutReads(actor(boss), 'unit').map(x => x.name)).toEqual(['competence.unit']);
-      // Enhet 1's branch is Anna, Bo and Dan below it (Cia is deactivated; Karin is under nothing). Enhet 3 is not
-      // Karin's own, and an unknown key is nobody's: neither has a row.
+      // Enhet 1's branch is Anna and Bo, Karin's reports, and Dan below it, who is not (Cia is deactivated; Karin herself
+      // is never counted). One person besides her reports is too few to count without naming him, so the figures are
+      // her reports' and say so; Dan's unit's degree, required of him alone, has no row. Enhet 3 is not Karin's own, and
+      // an unknown key is nobody's: neither has a row. Only the targets set on the unit itself are read on it.
       const units = await r.run<{ rows: unknown[] }>(actor(boss), 'competence.unit', {
         keys: ['u1', 'u2', 'u3', 'nope'],
       });
       expect(units.rows).toEqual([
-        { key: 'u1', covered: '1 av 3 personer', short: '2 personer', targets: '1 av 2 nås', below: '1 mål' },
+        {
+          key: 'u1',
+          covered: '1 av 2 personer',
+          short: '1 person',
+          targets: '0 av 1 nås',
+          below: '1 mål',
+          counted: 'Endast dina medarbetare',
+        },
         // Nobody on Enhet 2 holds the sjuksköterska position: that target is neither reached nor missed.
-        { key: 'u2', covered: '1 av 1 person', targets: '1 av 2 nås' },
+        { key: 'u2', covered: '1 av 1 person', targets: '0 av 1 nås' },
       ]);
       const text = JSON.stringify(units);
       for (const name of NAMES) expect(text).not.toContain(name);
@@ -1289,23 +1397,10 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
         {
           id: 'requirement:' + hlr,
           competence: 'HLR',
-          goal: 'Krav för 3 personer',
-          actual: '2 av 3',
+          goal: 'Krav för 2 personer',
+          actual: '1 av 2',
           state: 'Inte uppfyllt',
-        },
-        {
-          id: 'requirement:' + degree,
-          competence: 'Socionomexamen',
-          goal: 'Krav för 1 person',
-          actual: '0 av 1',
-          state: 'Inte uppfyllt',
-        },
-        {
-          id: 'target:' + everywhere,
-          competence: 'HLR',
-          goal: 'Minst 60 % av dem med befattningen Undersköterska, mål för hela organisationen',
-          actual: '66 %, 2 av 3',
-          state: 'Uppfyllt',
+          counted: 'Endast dina medarbetare',
         },
         {
           id: 'target:' + onU1,
@@ -1315,21 +1410,79 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
           state: 'Inte uppfyllt',
         },
       ]);
-      // A target set on a unit above applies below it, measured over the branch read, and says where it is set.
+      // A target set on a unit above is not read below it: Olle leads Enhet 3 under Enhet 1 and sees his own figures,
+      // over Dan, his report, and none of Enhet 1's target.
       const below = await r.run<{ rows: Array<Record<string, string>> }>(actor(other), 'competence.coverage', {
         unit: 'u3',
       });
-      expect(below.rows.find(x => x.id === 'target:' + onU1)).toEqual({
-        id: 'target:' + onU1,
-        competence: 'Socionomexamen',
-        goal: 'Minst 50 % av dem med befattningen Sjuksköterska, mål för Enhet 1',
-        actual: 'Ingen har befattningen',
-        state: 'Ingen att räkna',
-      });
+      expect(below.rows).toEqual([
+        { id: 'requirement:' + hlr, competence: 'HLR', goal: 'Krav för 1 person', actual: '1 av 1', state: 'Uppfyllt' },
+        {
+          id: 'requirement:' + degree,
+          competence: 'Socionomexamen',
+          goal: 'Krav för 1 person',
+          actual: '0 av 1',
+          state: 'Inte uppfyllt',
+        },
+      ]);
       // Only a unit the reader manages: Karin does not manage Enhet 3, Anna manages nothing.
       await expect(competence.coverage(boss, 'u3')).rejects.toThrow('Enheten finns inte bland dem du är chef för.');
       await expect(r.run(actor(asAnna), 'competence.coverage', { unit: 'u1' })).rejects.toThrow();
       expect(await competence.aboutUnits(asAnna, ['u1'])).toEqual([]);
+    });
+
+    test('the rest of a branch is counted from five people, a one-person requirement only for the reader’s own report, and an organisation’s target once', async () => {
+      directory();
+      const { hot, hlr } = await catalogue();
+      // Five more people on Enhet 3, Olle's reports, each an undersköterska: with Dan, six besides Karin's own.
+      const five = ['e1', 'e2', 'e3', 'e4', 'e5'];
+      for (const id of five) {
+        store.addPerson({ id, organisationId: ORG, name: 'Person ' + id, userName: id });
+        store.assign(id, 'u3');
+        store.holdPosition(id, 'pos-usk');
+      }
+      staff.get('other')!.units[0]!.people.push(...five.map(id => person(id, 'Person ' + id, id)));
+      await competence.addRequirement(admin, { typeId: hlr, positionCode: USK });
+      // Olle sets a requirement on e1 alone: it is his to count, never Karin's.
+      await competence.addRequirement(other, { typeId: hot, personId: 'e1' });
+      const everywhere = await competence.addShareTarget(admin, { typeId: hlr, positionCode: USK, minShare: 60 });
+      for (const id of ['anna', 'e1', 'e2', 'e3']) {
+        const manager = id === 'anna' ? boss : other;
+        await competence.registerHolding(manager, id, { typeId: hlr, issuedOn: '2026-01-10' });
+      }
+      const table = await competence.coverage(boss, 'u1');
+      // Anna, Bo, Dan and e1 to e5 are under HLR: everyone counted, the reader's reports and the rest alike.
+      expect(table.requirements.map(r => [r.type.name, r.under, r.meeting, r.ownOnly])).toEqual([['HLR', 8, 4, false]]);
+      expect(table).toMatchObject({ under: 8, meetingAll: 4, ownOnly: false });
+      expect((await competence.coverage(other, 'u3')).requirements.map(r => [r.type.name, r.under, r.meeting])).toEqual(
+        [
+          ['HLR', 6, 3],
+          ['Heta arbeten', 1, 0],
+        ],
+      );
+      // The organisation's target, measured over the organisation once, for its administrator: 4 of 8 undersköterskor.
+      expect((await competence.shareTargets(admin)).rows.find(t => t.id === everywhere)?.outcome).toEqual({
+        holders: 8,
+        meeting: 4,
+        share: 50,
+        met: false,
+      });
+    });
+
+    test('an organisation’s target held by fewer than five is too few to show', async () => {
+      directory();
+      const { hlr } = await catalogue();
+      const everywhere = await competence.addShareTarget(admin, { typeId: hlr, positionCode: USK, minShare: 60 });
+      const onUnit = await competence.addShareTarget(admin, {
+        typeId: hlr,
+        positionCode: SSK,
+        unitId: 'u1',
+        minShare: 60,
+      });
+      const rows = (await competence.shareTargets(admin)).rows;
+      expect(rows.find(t => t.id === everywhere)?.outcome).toEqual({ tooFew: true });
+      // A unit's target is read by the manager who leads it, not here.
+      expect(rows.find(t => t.id === onUnit)).not.toHaveProperty('outcome');
     });
 
     test('a unit where nothing is required and no target applies has no row', async () => {
@@ -1341,7 +1494,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
     });
   });
 
-  test('the domain: a branch is the unit and everything below; the line above ends at the root; coverage counts', () => {
+  test('the domain: a branch is the unit and everything below; a small rest of a branch is left out; coverage counts', () => {
     const tree = [
       { id: 'root', parentId: null },
       { id: 'a', parentId: 'root' },
@@ -1353,8 +1506,13 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
     expect(branchOf(tree, 'a').sort()).toEqual(['a', 'a1']);
     expect(branchOf(tree, 'root').sort()).toEqual(['a', 'a1', 'b', 'root']);
     expect(branchOf(tree, 'lost')).toEqual(['lost']);
-    expect(lineAbove(tree, 'a1')).toEqual(['a1', 'a', 'root']);
-    expect(lineAbove(tree, 'loop1')).toEqual(['loop1', 'loop2']);
+    expect(COVERAGE_MIN_GROUP).toBe(5);
+    const own = (id: string) => id.startsWith('own');
+    const of = (ids: string[]) => ids.map(personId => ({ personId }));
+    // None besides the reader's own, or at least five: everyone. One to four: the reader's own alone, said so.
+    expect(countable(of(['own1', 'own2']), own)).toEqual({ people: of(['own1', 'own2']), ownOnly: false });
+    expect(countable(of(['own1', 'x1', 'x2', 'x3', 'x4']), own)).toEqual({ people: of(['own1']), ownOnly: true });
+    expect(countable(of(['own1', 'x1', 'x2', 'x3', 'x4', 'x5']), own).people).toHaveLength(6);
     const type: TypeRecord = {
       id: 't',
       organisationId: ORG,
@@ -1370,45 +1528,60 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
       id: 's',
       organisationId: ORG,
       typeId: 't',
-      positionId: 'p',
-      unitId: null,
+      positionCode: 'p',
+      unitId: 'a',
       minShare: 34,
       createdBy: 'x',
       createdAt: now.toISOString(),
     };
-    const people = ['x', 'y', 'z'].map(personId => ({ personId, unitIds: ['a'], positionIds: ['p'] }));
+    const people = ['x', 'y', 'z'].map(personId => ({ personId, unitIds: ['a'], positionCodes: ['p'] }));
     const held = { holding: null, type, end: null } as const;
     const covered = coverageOf({
       people,
+      reader: 'boss',
+      reports: new Set(['x', 'y', 'z']),
       requirements: [],
       targets: [target],
       types: new Map([['t', type]]),
       standings: [{ ...held, personId: 'x', status: 'missing' as const }],
     });
     // Nobody meets it: 0 of 3. A share is rounded down, so 1 of 3 (33 %) misses 34 %.
-    expect(covered.targets.map(t => [t.share, t.met])).toEqual([[0, false]]);
+    expect(covered.targets.map(t => [t.share, t.met, t.ownOnly])).toEqual([[0, false, false]]);
     expect(covered).toMatchObject({ under: 0, meetingAll: 0, requirements: [] });
+    // An organisation's target over fewer than five is no figure; over five or more it is one.
+    expect(organisationOutcome({ minShare: 50 }, ['a', 'b', 'c', 'd'], () => true)).toEqual({ tooFew: true });
+    expect(organisationOutcome({ minShare: 50 }, ['a', 'b', 'c', 'd', 'e'], id => id < 'c')).toEqual({
+      holders: 5,
+      meeting: 2,
+      share: 40,
+      met: false,
+    });
   });
 
   test('erasure takes a person’s own requirements, the export is version 3 with requirements and targets, and no audit row names anyone', async () => {
     directory();
     const { hot, hlr } = await catalogue();
-    await competence.addRequirement(admin, { typeId: hlr, positionId: USK });
+    await competence.addRequirement(admin, { typeId: hlr, positionCode: USK });
     await competence.addRequirement(admin, { typeId: hlr, unitId: 'u1' });
     const onBo = await competence.addRequirement(boss, { typeId: hot, personId: 'bo' });
-    const target = await competence.addShareTarget(admin, { typeId: hlr, positionId: SSK, unitId: 'u1', minShare: 40 });
+    const target = await competence.addShareTarget(admin, {
+      typeId: hlr,
+      positionCode: SSK,
+      unitId: 'u1',
+      minShare: 40,
+    });
     await competence.removeShareTarget(admin, target);
-    await competence.addShareTarget(admin, { typeId: hlr, positionId: SSK, minShare: 40 });
+    await competence.addShareTarget(admin, { typeId: hlr, positionCode: SSK, minShare: 40 });
     await competence.removeRequirement(boss, onBo);
     await competence.addRequirement(boss, { typeId: hot, personId: 'bo' });
     const doc = await competence.exportDomain('operator:cli', ORG);
-    expect(doc.format).toBe('clew.competence/3');
-    expect(doc.requirements.map(r => [r.typeId, r.positionId, r.unitId, r.personId])).toEqual([
+    expect(doc.format).toBe('clew.competence/4');
+    expect(doc.requirements.map(r => [r.typeId, r.positionCode, r.unitId, r.personId])).toEqual([
       [hlr, USK, null, null],
       [hlr, null, 'u1', null],
       [hot, null, null, 'bo'],
     ]);
-    expect(doc.shareTargets.map(t => [t.positionId, t.unitId, t.minShare])).toEqual([[SSK, null, 40]]);
+    expect(doc.shareTargets.map(t => [t.positionCode, t.unitId, t.minShare])).toEqual([[SSK, null, 40]]);
     expect(lastAudit().details).toEqual({ types: 3, holdings: 0, mappings: 0, requirements: 3, shareTargets: 1 });
     store.deactivate('bo');
     expect(await competence.erasePerson('operator:cli', 'bo')).toEqual({ holdings: 0, cleared: 0, requirements: 1 });
@@ -1428,7 +1601,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
   test('an operator seeds a requirement and a share target for an organisation, audited with the operator as actor', async () => {
     directory();
     const { hlr } = await catalogue();
-    const id = await competence.seedRequirement('operator:cli', ORG, { typeId: hlr, positionId: USK });
+    const id = await competence.seedRequirement('operator:cli', ORG, { typeId: hlr, positionCode: USK });
     expect(lastAudit()).toMatchObject({
       actor: 'operator:cli',
       action: 'competence.requirement_added',
@@ -1436,7 +1609,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
     });
     const target = await competence.seedShareTarget('operator:cli', ORG, {
       typeId: hlr,
-      positionId: USK,
+      positionCode: USK,
       minShare: 75,
     });
     expect(lastAudit()).toMatchObject({
@@ -1444,7 +1617,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
       action: 'competence.share_target_added',
       subject: 'competence-share-target:' + target,
     });
-    await expect(competence.seedRequirement('operator:cli', ORG, { typeId: hlr, positionId: USK })).rejects.toThrow(
+    await expect(competence.seedRequirement('operator:cli', ORG, { typeId: hlr, positionCode: USK })).rejects.toThrow(
       'Det kravet finns redan.',
     );
   });
@@ -1494,9 +1667,9 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
     test('a manager reads their reports against the types required of any of them, each cell where the person stands', async () => {
       directory();
       const { hot, hlr, degree } = await catalogue();
-      await competence.addRequirement(admin, { typeId: hlr, positionId: USK });
+      await competence.addRequirement(admin, { typeId: hlr, positionCode: USK });
       await competence.addRequirement(admin, { typeId: hlr, unitId: 'u1' });
-      await competence.addRequirement(admin, { typeId: degree, positionId: SSK });
+      await competence.addRequirement(admin, { typeId: degree, positionCode: SSK });
       const onAnna = await competence.addRequirement(boss, { typeId: hot, personId: 'anna' });
       // Anna's HLR ran out by the employer's 24 months; Bo's degree never ends; Bo holds Heta arbeten without its being
       // required of him, copied from a source and ending within 90 days.
@@ -1562,7 +1735,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
     test('only a manager reads it, and only their own reports', async () => {
       directory();
       const { hlr } = await catalogue();
-      await competence.addRequirement(admin, { typeId: hlr, positionId: USK });
+      await competence.addRequirement(admin, { typeId: hlr, positionCode: USK });
       for (const p of [asAnna, admin])
         await expect(competence.matrix(p)).rejects.toThrow(
           'Medarbetarnas kompetens visas för den som är chef för en enhet.',
@@ -1579,7 +1752,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
     test('more than ten required types are offered as sets by area and by position, ten at a time, the chosen one in the address', async () => {
       directory();
       const { hlr } = await catalogue();
-      await competence.addRequirement(admin, { typeId: hlr, positionId: USK });
+      await competence.addRequirement(admin, { typeId: hlr, positionCode: USK });
       const safety: string[] = [];
       for (let i = 1; i <= 11; i++) {
         const id = await competence.addType(admin, {
@@ -1588,7 +1761,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
           kind: 'certificate',
         });
         safety.push(id);
-        await competence.addRequirement(admin, { typeId: id, positionId: SSK });
+        await competence.addRequirement(admin, { typeId: id, positionCode: SSK });
       }
       const names = (m: CompetenceMatrixOutput) => m.columns.map(c => c.name);
       const first = await competence.matrix(boss);
@@ -1629,7 +1802,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
     test('the export is the matrix as shown, with an audit row of counts that names nobody', async () => {
       directory();
       const { hot, hlr, degree } = await catalogue();
-      await competence.addRequirement(admin, { typeId: hlr, positionId: USK });
+      await competence.addRequirement(admin, { typeId: hlr, positionCode: USK });
       await competence.addRequirement(boss, { typeId: hot, personId: 'anna' });
       await competence.registerHolding(boss, 'anna', { typeId: hlr, issuedOn: '2025-12-01', expiresOn: '2028-01-31' });
       await competence.registerHolding(boss, 'bo', { typeId: degree, issuedOn: '2015-06-05' });

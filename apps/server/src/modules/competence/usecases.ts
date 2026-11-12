@@ -36,10 +36,11 @@ import {
   holdingRow,
   isCalendarDay,
   leaseUntil,
-  lineAbove,
   matrixCsv,
   matrixOf,
+  meets,
   needsAttention,
+  organisationOutcome,
   nextDailyCopy,
   normaliseArea,
   normaliseName,
@@ -58,7 +59,6 @@ import {
   statusOn,
   summarise,
   swedishDay,
-  targetApplies,
   typeRow,
   UNAVAILABLE_PAUSES_MS,
   uncounted,
@@ -109,9 +109,11 @@ export const COMPETENCE_ADMIN: Capability = 'admin.competence';
 /**
  * The version of the export document (D108 item 14); a breaking change is a new version. Version 2 (item 9): a holding
  * may have no type (a copied row whose source type is not mapped) and carries `copy`, and the document lists the
- * mappings of sources. Version 3 (item 6): the document lists the requirements and the share targets.
+ * mappings of sources. Version 3 (item 6): the document lists the requirements and the share targets. Version 4: a
+ * requirement and a share target name a position by its code (`positionCode`) and a unit by the id of its `unit:` key,
+ * never by an internal row, and `createdBy` may be null (its author was erased).
  */
-export const COMPETENCE_EXPORT_FORMAT = 'clew.competence/3';
+export const COMPETENCE_EXPORT_FORMAT = 'clew.competence/4';
 /** The actor of the scheduled copy (D108 item 9) in its audit rows. */
 export const COPY_ACTOR = 'system:competence-copy';
 const NOT_A_MANAGER = 'Intyg registreras av den som är chef för en enhet.';
@@ -134,7 +136,7 @@ const ARCHIVED_REQUIREMENT = 'Kompetensen är arkiverad och kan inte krävas.';
 const NO_POSITION = 'Befattningen finns inte.';
 const NO_UNIT = 'Enheten finns inte.';
 const REQUIREMENT_TAKEN = 'Det kravet finns redan.';
-const NO_REQUIREMENT = 'Kravet finns inte.';
+const NOT_YOUR_REQUIREMENT = 'Du kan inte ta bort det här kravet.';
 const BAD_SHARE = 'Ange en andel mellan 1 och 100 procent.';
 const TARGET_TAKEN = 'Det finns redan ett andelsmål för den kompetensen och befattningen där.';
 const NO_TARGET = 'Andelsmålet finns inte.';
@@ -142,25 +144,25 @@ const NOT_YOUR_UNIT = 'Enheten finns inte bland dem du är chef för.';
 const NOT_A_MANAGER_MATRIX = 'Medarbetarnas kompetens visas för den som är chef för en enhet.';
 /**
  * A unit's coverage (D108 items 6 and 8) as the read about a unit and its table answer it: counts only, each share
- * target with its position's label and the name of the unit it is set on (null: the whole organisation).
+ * target set on the unit with its position's label.
  */
 export interface UnitCoverageResult extends Omit<UnitCoverage, 'targets'> {
   unitId: string;
   unitLabel: string;
-  targets: Array<UnitCoverage['targets'][number] & { positionLabel: string; unitLabel: string | null }>;
+  targets: Array<UnitCoverage['targets'][number] & { positionLabel: string }>;
 }
-/** The ids a requirement's audit row carries: never a name. */
+/** The keys a requirement's audit row carries: ids and a position's code, never a name. */
 const requirementDetails = (r: RequirementRecord) => ({
   organisationId: r.organisationId,
   typeId: r.typeId,
-  positionId: r.positionId,
+  positionCode: r.positionCode,
   unitId: r.unitId,
   personId: r.personId,
 });
 const targetDetails = (t: ShareTargetRecord) => ({
   organisationId: t.organisationId,
   typeId: t.typeId,
-  positionId: t.positionId,
+  positionCode: t.positionCode,
   unitId: t.unitId,
   minShare: t.minShare,
 });
@@ -204,7 +206,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
     for (const unit of staff.units)
       for (const p of unit.people)
         if (p.id !== persona.id && p.enabled !== false && !people.has(p.id)) people.set(p.id, p);
-    return { manages: staff.units.length > 0, people };
+    return { manages: staff.units.length > 0, people, units: staff.units };
   }
   async function reportOf(persona: AuthenticatedContext, personId: string, notAManager = NOT_A_MANAGER) {
     const { manages, people } = await reports(persona);
@@ -225,11 +227,11 @@ export function competenceUsecases(deps: CompetenceDeps) {
     if (!personIds.length) return new Map();
     const requirements = await tx.requirements(organisationId);
     if (!requirements.length) return new Map();
-    const placed = new Map((await tx.placesOf(personIds)).map(p => [p.personId, p]));
+    const placed = new Map((await tx.placesOf(organisationId, personIds)).map(p => [p.personId, p]));
     return new Map(
       personIds.map(id => [
         id,
-        requiredOf(placed.get(id) ?? { personId: id, unitIds: [], positionIds: [] }, requirements),
+        requiredOf(placed.get(id) ?? { personId: id, unitIds: [], positionCodes: [] }, requirements),
       ]),
     );
   }
@@ -255,22 +257,23 @@ export function competenceUsecases(deps: CompetenceDeps) {
   const standings = async (tx: CompetenceTx, organisationId: string, personIds: readonly string[], today: string) =>
     (await standingsWith(tx, organisationId, personIds, today)).standings;
   /**
-   * How a unit's branch is covered today (D108 items 6 and 8, D99 item 5): the active people assigned to the unit or a
-   * unit below it, against the requirements that apply to each of them and the share targets set on the unit, on a unit
-   * above it or on the whole organisation. Counts only.
+   * How a unit's branch is covered today (D108 items 6 and 8, D99 item 5), for its manager: the active people assigned
+   * to the unit or a unit below it, against the requirements that apply to each of them, and the share targets set on
+   * this unit, each measured over this branch once. `reports` are the reader's own reports, whom they know; the rest of
+   * the branch is counted only where it is large enough (`coverageOf`). Counts only.
    */
   async function coverageIn(
     tx: CompetenceTx,
-    organisationId: string,
+    persona: AuthenticatedContext,
+    reports: ReadonlySet<string>,
     unitId: string,
     today: string,
   ): Promise<Omit<UnitCoverageResult, 'unitId' | 'unitLabel'>> {
-    const tree = await tx.unitTree(organisationId);
-    const personIds = await tx.placedOn(branchOf(tree, unitId));
-    const people = await tx.placesOf(personIds);
+    const organisationId = persona.organisationId;
+    const personIds = await tx.placedOn(organisationId, branchOf(await tx.units(organisationId), unitId));
+    const people = await tx.placesOf(organisationId, personIds);
     const requirements = await tx.requirements(organisationId);
-    const above = lineAbove(tree, unitId);
-    const targets = (await tx.shareTargets(organisationId)).filter(t => targetApplies(t, above));
+    const targets = (await tx.shareTargets(organisationId)).filter(t => t.unitId === unitId);
     const holdings = await tx.holdingsOf(personIds);
     const typeIds = new Set([
       ...holdings.flatMap(h => (h.typeId === null ? [] : [h.typeId])),
@@ -278,16 +281,22 @@ export function competenceUsecases(deps: CompetenceDeps) {
       ...targets.map(t => t.typeId),
     ]);
     const types = new Map((await tx.typesById([...typeIds])).map(t => [t.id, t]));
-    const covered = coverageOf({ people, requirements, targets, types, standings: deciding(holdings, types, today) });
+    const covered = coverageOf({
+      people,
+      reader: persona.id,
+      reports,
+      requirements,
+      targets,
+      types,
+      standings: deciding(holdings, types, today),
+    });
     if (!covered.targets.length) return { ...covered, targets: [] };
-    const positionLabel = new Map((await tx.positions(organisationId)).map(p => [p.id, p.label])),
-      unitLabel = new Map((await tx.units(organisationId)).map(u => [u.id, u.label]));
+    const positionLabel = new Map((await tx.positions(organisationId)).map(p => [p.code, p.label]));
     return {
       ...covered,
       targets: covered.targets.map(t => ({
         ...t,
-        positionLabel: positionLabel.get(t.target.positionId) ?? t.target.positionId,
-        unitLabel: t.target.unitId === null ? null : (unitLabel.get(t.target.unitId) ?? t.target.unitId),
+        positionLabel: positionLabel.get(t.target.positionCode) ?? t.target.positionCode,
       })),
     };
   }
@@ -303,7 +312,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
     input: CompetenceMatrixInput,
   ): Promise<CompetenceMatrixOutput> {
     const personIds = people.map(p => p.id);
-    const placed = await tx.placesOf(personIds);
+    const placed = await tx.placesOf(organisationId, personIds);
     const requirements = await tx.requirements(organisationId);
     const holdings = await tx.holdingsOf(personIds);
     const typeIds = new Set([
@@ -325,8 +334,16 @@ export function competenceUsecases(deps: CompetenceDeps) {
     });
   }
   /**
-   * Add a requirement as `actor` (D108 item 6). The type must be the organisation's and not archived, and the position or
-   * the unit the organisation's; who may set it on what is the caller's to check.
+   * Whether a position (by code) or a unit (by id) is one the organisation has now: a position the provisioner pushed, a
+   * node of the tree as pushed, a unit nobody is placed on included.
+   */
+  const positionExists = async (tx: CompetenceTx, organisationId: string, code: string) =>
+    (await tx.positions(organisationId)).some(p => p.code === code);
+  const unitExists = async (tx: CompetenceTx, organisationId: string, unitId: string) =>
+    (await tx.units(organisationId)).some(u => u.id === unitId);
+  /**
+   * Add a requirement as `actor` (D108 item 6). The type must be the organisation's and not archived, the position's code
+   * one the organisation has and the unit one of its tree; who may set it on what is the caller's to check.
    */
   async function insertRequirement(
     actor: string,
@@ -340,19 +357,15 @@ export function competenceUsecases(deps: CompetenceDeps) {
         const type = await tx.type(body.typeId);
         if (!type || type.organisationId !== organisationId) throw new CompetenceError(NO_TYPE);
         if (type.archivedAt) throw new CompetenceError(ARCHIVED_REQUIREMENT);
-        if (body.positionId !== undefined) {
-          const position = await tx.position(body.positionId);
-          if (!position || position.organisationId !== organisationId) throw new CompetenceError(NO_POSITION);
-        }
-        if (body.unitId !== undefined) {
-          const unit = await tx.unit(body.unitId);
-          if (!unit || unit.organisationId !== organisationId) throw new CompetenceError(NO_UNIT);
-        }
+        if (body.positionCode !== undefined && !(await positionExists(tx, organisationId, body.positionCode)))
+          throw new CompetenceError(NO_POSITION);
+        if (body.unitId !== undefined && !(await unitExists(tx, organisationId, body.unitId)))
+          throw new CompetenceError(NO_UNIT);
         const record: RequirementRecord = {
           id,
           organisationId,
           typeId: type.id,
-          positionId: body.positionId ?? null,
+          positionCode: body.positionCode ?? null,
           unitId: body.unitId ?? null,
           personId: body.personId ?? null,
           minLevel: null,
@@ -374,7 +387,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
       throw error;
     }
   }
-  /** Add a share target as `actor` (D108 item 6): the type, the position and the unit, if any, the organisation's. */
+  /** Add a share target as `actor` (D108 item 6): the type, the position (by code) and the unit, if any, the organisation's. */
   async function insertShareTarget(
     actor: string,
     organisationId: string,
@@ -389,17 +402,14 @@ export function competenceUsecases(deps: CompetenceDeps) {
         const type = await tx.type(body.typeId);
         if (!type || type.organisationId !== organisationId) throw new CompetenceError(NO_TYPE);
         if (type.archivedAt) throw new CompetenceError(ARCHIVED_REQUIREMENT);
-        const position = await tx.position(body.positionId);
-        if (!position || position.organisationId !== organisationId) throw new CompetenceError(NO_POSITION);
-        if (body.unitId !== undefined) {
-          const unit = await tx.unit(body.unitId);
-          if (!unit || unit.organisationId !== organisationId) throw new CompetenceError(NO_UNIT);
-        }
+        if (!(await positionExists(tx, organisationId, body.positionCode))) throw new CompetenceError(NO_POSITION);
+        if (body.unitId !== undefined && !(await unitExists(tx, organisationId, body.unitId)))
+          throw new CompetenceError(NO_UNIT);
         const record: ShareTargetRecord = {
           id,
           organisationId,
           typeId: type.id,
-          positionId: position.id,
+          positionCode: body.positionCode,
           unitId: body.unitId ?? null,
           minShare: body.minShare,
           createdBy: actor,
@@ -1191,6 +1201,43 @@ export function competenceUsecases(deps: CompetenceDeps) {
     },
 
     /**
+     * What the scan reads (D108 item 12, D47): when it read, the reader's own standings to act on (`ownAttention`), and,
+     * for a manager, what is due among their reports, one entry per person and type with its status and end, from which
+     * the manager's one card is counted and its occurrences named. Never stored: the scan derives it each time.
+     */
+    async scanOf(persona: AuthenticatedContext, manager: boolean) {
+      const at = now(),
+        today = swedishDay(at);
+      const own = (
+        await deps.store.transaction(tx => standings(tx, persona.organisationId, [persona.id], today))
+      ).filter(needsAttention);
+      let team: {
+        expired: number;
+        missing: number;
+        expiring: number;
+        people: number;
+        due: Array<{ personId: string; typeId: string; status: Standing['status']; end: string | null }>;
+      } | null = null;
+      if (manager) {
+        const { manages, people } = await reports(persona);
+        if (manages) {
+          const due = (
+            await deps.store.transaction(tx => standings(tx, persona.organisationId, [...people.keys()], today))
+          ).filter(needsAttention);
+          const count = (status: Standing['status']) => due.filter(d => d.status === status).length;
+          team = {
+            expired: count('expired'),
+            missing: count('missing'),
+            expiring: count('expiring'),
+            people: new Set(due.map(d => d.personId)).size,
+            due: due.map(d => ({ personId: d.personId, typeId: d.type.id, status: d.status, end: d.end })),
+          };
+        }
+      }
+      return { observedAt: at.toISOString(), own: own.sort(byUrgency), team };
+    },
+
+    /**
      * Administration › Kompetens › Krav (D108 item 6): the requirements set on positions and units, and the positions and
      * units of the organisation they can be set on. A requirement set on one person is their manager's, not the
      * administrator's (D118), and is not listed here. Behind the capability and the step-up.
@@ -1200,31 +1247,30 @@ export function competenceUsecases(deps: CompetenceDeps) {
       return deps.store.transaction(async tx => {
         const org = persona.organisationId;
         const [rows, positions, units] = [await tx.requirements(org), await tx.positions(org), await tx.units(org)];
-        const positionLabel = new Map(positions.map(p => [p.id, p.label])),
+        const positionLabel = new Map(positions.map(p => [p.code, p.label])),
           unitLabel = new Map(units.map(u => [u.id, u.label]));
-        const listed = rows.flatMap((r): CompetenceRequirement[] => {
-          if (r.positionId !== null)
-            return [
-              {
-                id: r.id,
-                typeId: r.typeId,
-                on: 'position',
-                targetId: r.positionId,
-                targetLabel: positionLabel.get(r.positionId) ?? r.positionId,
-              },
-            ];
-          if (r.unitId !== null)
-            return [
-              {
-                id: r.id,
-                typeId: r.typeId,
-                on: 'unit',
-                targetId: r.unitId,
-                targetLabel: unitLabel.get(r.unitId) ?? r.unitId,
-              },
-            ];
-          return [];
+        // A position or a unit that is gone keeps its requirement, which counts towards nothing until it comes back, and
+        // is listed by its key and marked, so an administrator can remove it.
+        const on = (
+          r: RequirementRecord,
+          kind: 'position' | 'unit',
+          key: string,
+          label: string | undefined,
+        ): CompetenceRequirement => ({
+          id: r.id,
+          typeId: r.typeId,
+          on: kind,
+          targetId: key,
+          targetLabel: label ?? key,
+          ...(label === undefined ? { gone: true as const } : {}),
         });
+        const listed = rows.flatMap((r): CompetenceRequirement[] =>
+          r.positionCode !== null
+            ? [on(r, 'position', r.positionCode, positionLabel.get(r.positionCode))]
+            : r.unitId !== null
+              ? [on(r, 'unit', r.unitId, unitLabel.get(r.unitId))]
+              : [],
+        );
         return {
           rows: listed.sort(
             (a, b) =>
@@ -1233,7 +1279,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
               a.targetId.localeCompare(b.targetId) ||
               a.id.localeCompare(b.id),
           ),
-          positions: positions.map(p => ({ id: p.id, code: p.code, label: p.label })),
+          positions: positions.map(p => ({ code: p.code, label: p.label })),
           units: units.map(u => ({ id: u.id, label: u.label })),
         };
       });
@@ -1245,7 +1291,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
      * requirement per type and target; the same again is refused. Returns its id.
      */
     async addRequirement(persona: AuthenticatedContext, body: CompetenceRequirementBody): Promise<string> {
-      const named = [body.positionId, body.unitId, body.personId].filter(v => v !== undefined);
+      const named = [body.positionCode, body.unitId, body.personId].filter(v => v !== undefined);
       if (named.length !== 1) throw new CompetenceError(ONE_TARGET);
       if (body.personId !== undefined) await reportOf(persona, body.personId, NOT_THEIR_MANAGER);
       else await admin(persona);
@@ -1257,13 +1303,20 @@ export function competenceUsecases(deps: CompetenceDeps) {
 
     /**
      * Remove a requirement (D108 item 6): one on a position or a unit as an administrator, one on a person as the manager
-     * that person reports to now. Audited with the ids it carried.
+     * that person reports to now, whoever set it. An id that is unknown, of another organisation or not the reader's to
+     * remove is refused in the same words, so a refusal never tells whether a requirement exists. Audited with the keys
+     * it carried.
      */
     async removeRequirement(persona: AuthenticatedContext, requirementId: string): Promise<void> {
       const found = await deps.store.transaction(tx => tx.requirement(requirementId));
-      if (!found || found.organisationId !== persona.organisationId) throw new CompetenceError(NO_REQUIREMENT);
-      if (found.personId !== null) await reportOf(persona, found.personId, NOT_THEIR_MANAGER);
-      else await admin(persona);
+      const refused = () => new ForbiddenError(NOT_YOUR_REQUIREMENT);
+      if (!found || found.organisationId !== persona.organisationId) throw refused();
+      if (found.personId !== null) {
+        if (!(await reports(persona)).people.has(found.personId)) throw refused();
+      } else {
+        if (!persona.capabilities.includes(COMPETENCE_ADMIN)) throw refused();
+        await persona.authorize();
+      }
       const at = now().toISOString();
       await deps.store.transaction(async tx => {
         const current = await tx.requirement(requirementId);
@@ -1279,23 +1332,62 @@ export function competenceUsecases(deps: CompetenceDeps) {
       });
     },
 
-    /** Administration › Kompetens › Krav: the organisation's share targets (D108 item 6), behind the capability and the step-up. */
+    /**
+     * Administration › Kompetens › Krav: the organisation's share targets (D108 item 6), behind the capability and the
+     * step-up. A target across the whole organisation is measured over it here, once, as a figure that names nobody
+     * (D118), shown only over at least `COVERAGE_MIN_GROUP` people (`organisationOutcome`); a unit's target is measured
+     * on that unit's read, for the manager who leads it. A target whose position or unit is gone is marked and counts
+     * towards nothing.
+     */
     async shareTargets(persona: AuthenticatedContext): Promise<CompetenceShareTargetsOutput> {
       await admin(persona);
+      const today = swedishDay(now());
       return deps.store.transaction(async tx => {
         const org = persona.organisationId;
         const [rows, positions, units] = [await tx.shareTargets(org), await tx.positions(org), await tx.units(org)];
-        const positionLabel = new Map(positions.map(p => [p.id, p.label])),
+        const positionLabel = new Map(positions.map(p => [p.code, p.label])),
           unitLabel = new Map(units.map(u => [u.id, u.label]));
+        const gone = (t: ShareTargetRecord) =>
+          !positionLabel.has(t.positionCode) || (t.unitId !== null && !unitLabel.has(t.unitId));
+        const measured = rows.filter(t => t.unitId === null && !gone(t));
+        const holders = measured.length
+          ? await tx.positionHolders(org, [...new Set(measured.map(t => t.positionCode))])
+          : [];
+        const holdings = await tx.holdingsOf([...new Set(holders.map(h => h.personId))]);
+        const types = new Map(
+          (
+            await tx.typesById([
+              ...new Set([...holdings.flatMap(h => (h.typeId ? [h.typeId] : [])), ...rows.map(t => t.typeId)]),
+            ])
+          ).map(t => [t.id, t]),
+        );
+        const met = new Set(
+          deciding(holdings, types, today)
+            .filter(meets)
+            .map(s => s.personId + '\n' + s.type.id),
+        );
         return {
-          rows: rows.map((t): CompetenceShareTarget => ({
-            id: t.id,
-            typeId: t.typeId,
-            positionId: t.positionId,
-            positionLabel: positionLabel.get(t.positionId) ?? t.positionId,
-            ...(t.unitId !== null ? { unitId: t.unitId, unitLabel: unitLabel.get(t.unitId) ?? t.unitId } : {}),
-            minShare: t.minShare,
-          })),
+          rows: rows.map((t): CompetenceShareTarget => {
+            const type = types.get(t.typeId);
+            const outcome =
+              t.unitId === null && !gone(t) && type && type.archivedAt === null
+                ? organisationOutcome(
+                    t,
+                    holders.filter(h => h.code === t.positionCode).map(h => h.personId),
+                    personId => met.has(personId + '\n' + t.typeId),
+                  )
+                : undefined;
+            return {
+              id: t.id,
+              typeId: t.typeId,
+              positionCode: t.positionCode,
+              positionLabel: positionLabel.get(t.positionCode) ?? t.positionCode,
+              ...(t.unitId !== null ? { unitId: t.unitId, unitLabel: unitLabel.get(t.unitId) ?? t.unitId } : {}),
+              minShare: t.minShare,
+              ...(gone(t) ? { gone: true as const } : {}),
+              ...(outcome ? { outcome } : {}),
+            };
+          }),
         };
       });
     },
@@ -1336,10 +1428,13 @@ export function competenceUsecases(deps: CompetenceDeps) {
      * refused.
      */
     async coverage(persona: AuthenticatedContext, unitId: string): Promise<UnitCoverageResult> {
-      const unit = (await deps.staff(persona)).units.find(u => u.unitId === unitId);
+      const { units, people } = await reports(persona);
+      const unit = units.find(u => u.unitId === unitId);
       if (!unit) throw new ForbiddenError(NOT_YOUR_UNIT);
       const today = swedishDay(now());
-      const covered = await deps.store.transaction(tx => coverageIn(tx, persona.organisationId, unitId, today));
+      const covered = await deps.store.transaction(tx =>
+        coverageIn(tx, persona, new Set(people.keys()), unitId, today),
+      );
       return { unitId, unitLabel: unit.unitLabel, ...covered };
     },
 
@@ -1350,17 +1445,17 @@ export function competenceUsecases(deps: CompetenceDeps) {
      */
     async aboutUnits(persona: AuthenticatedContext, keys: readonly string[]): Promise<UnitCoverageResult[]> {
       const asked = new Set(keys);
+      const managed = await reports(persona);
       const units = [
-        ...new Map(
-          (await deps.staff(persona)).units.filter(u => asked.has(u.unitId)).map(u => [u.unitId, u] as const),
-        ).values(),
+        ...new Map(managed.units.filter(u => asked.has(u.unitId)).map(u => [u.unitId, u] as const)).values(),
       ];
       if (!units.length) return [];
       const today = swedishDay(now());
+      const own = new Set(managed.people.keys());
       return deps.store.transaction(async tx => {
         const rows: UnitCoverageResult[] = [];
         for (const unit of units) {
-          const covered = await coverageIn(tx, persona.organisationId, unit.unitId, today);
+          const covered = await coverageIn(tx, persona, own, unit.unitId, today);
           if (covered.under || covered.targets.length)
             rows.push({ unitId: unit.unitId, unitLabel: unit.unitLabel, ...covered });
         }

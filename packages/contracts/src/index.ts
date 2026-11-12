@@ -1812,18 +1812,25 @@ export interface CompetenceRequirement {
   id: string;
   typeId: string;
   on: CompetenceRequirementTarget;
-  /** The position's, the unit's or the person's id. */
+  /** The position's code, the unit's id (from its `unit:` key) or the person's id. */
   targetId: string;
-  /** Swedish. The position's label or the unit's name; a one-person requirement is never listed to an administrator. */
+  /**
+   * Swedish. The position's label or the unit's name; a one-person requirement is never listed to an administrator.
+   * The key itself where the position or the unit is gone.
+   */
   targetLabel: string;
+  /**
+   * The position or the unit is no longer one the organisation has: the requirement counts towards nothing until one
+   * comes back under the same key, and is listed so that it can be removed.
+   */
+  gone?: true;
 }
-/** A position of the organisation (D108 item 5) as a requirement or a share target is set on it. */
+/** A position of the organisation (D108 item 5) as a requirement or a share target is set on it, by its code. */
 export interface CompetencePosition {
-  id: string;
   code: string;
   label: string;
 }
-/** A unit of the organisation as a requirement or a share target is set on it. */
+/** A unit of the organisation's tree as a requirement or a share target is set on it, nobody placed on it or not. */
 export interface CompetenceUnit {
   id: string;
   label: string;
@@ -1834,13 +1841,18 @@ export interface CompetenceRequirementsOutput {
   positions: CompetencePosition[];
   units: CompetenceUnit[];
 }
+const positionCode = Type.String({
+  minLength: 1,
+  maxLength: 200,
+  description: 'A position by its code in the organisation, as the provisioner sends it (`position:<code>`).',
+});
 /**
- * A requirement is added for exactly one of a position, a unit (an administrator with `admin.competence`) or one person
- * (the manager that person reports to, D118). `personId` is Clew's id of the person.
+ * A requirement is added for exactly one of a position (by its code) or a unit (by its id), as an administrator with
+ * `admin.competence`, or one person, as the manager that person reports to (D118). `personId` is Clew's id of the person.
  */
 export const CompetenceRequirementBodySchema = object({
   typeId: id,
-  positionId: Type.Optional(id),
+  positionCode: Type.Optional(positionCode),
   unitId: Type.Optional(id),
   personId: Type.Optional(id),
 });
@@ -1852,20 +1864,29 @@ export type CompetenceRequirementBody = Static<typeof CompetenceRequirementBodyS
 export interface CompetenceShareTarget {
   id: string;
   typeId: string;
-  positionId: string;
+  positionCode: string;
   positionLabel: string;
   /** Absent: the whole organisation. */
   unitId?: string;
   unitLabel?: string;
   /** The least share, in whole percent from 1 to 100. */
   minShare: number;
+  /** The position or the unit is gone: the target counts towards nothing and is listed so that it can be removed. */
+  gone?: true;
+  /**
+   * For a target across the whole organisation, measured over it once and naming nobody: the share of the position's
+   * holders who meet it, rounded down, and whether that reaches the least share; `tooFew` where fewer than five hold the
+   * position, so no figure is shown. Absent for a unit's target, which its unit's manager reads, and for one that counts
+   * towards nothing.
+   */
+  outcome?: { holders: number; meeting: number; share: number; met: boolean } | { tooFew: true };
 }
 export interface CompetenceShareTargetsOutput {
   rows: CompetenceShareTarget[];
 }
 export const CompetenceShareTargetBodySchema = object({
   typeId: id,
-  positionId: id,
+  positionCode,
   unitId: Type.Optional({
     ...id,
     description: 'The unit whose branch the target is for. Absent: the whole organisation.',
@@ -1891,7 +1912,7 @@ export type CompetenceMatrixStatus = (typeof COMPETENCE_MATRIX_STATUSES)[number]
 const matrixBy = Type.String({
   minLength: 1,
   maxLength: 200,
-  description: '`area:<the area as the catalogue names it>` or `position:<the position id>`.',
+  description: '`area:<the area as the catalogue names it>` or `position:<the position code>`.',
 });
 const matrixPart = Type.Integer({ minimum: 1, maximum: 99 });
 /** One set of columns the reader may choose, as the selector offers it. */

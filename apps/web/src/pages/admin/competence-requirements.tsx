@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type Ref } from 'react';
+import { useCallback, useEffect, useRef, useState, type Ref, type RefObject } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import type {
@@ -103,6 +103,49 @@ function CompetenceCell({ name, archived }: { name: string; archived: boolean })
     </VStack>
   );
 }
+/**
+ * A position or a unit a row is set on, and that it no longer exists when the provisioner has removed it: the row counts
+ * towards nothing until one comes back under the same key, and stays listed so that it can be removed.
+ */
+function TargetCell({ label, gone }: { label: string; gone: boolean }) {
+  return (
+    <VStack gap={1} hAlign="start">
+      <Text>{label}</Text>
+      {gone && <Badge variant="warning" label="Finns inte längre" />}
+    </VStack>
+  );
+}
+/**
+ * How a share target stands, as the administrator may read it: a target across the organisation is measured over it
+ * once, a figure naming nobody, and only over enough people; a unit's target is read by the manager who leads it.
+ */
+const outcomeWords = (t: CompetenceShareTarget) =>
+  t.gone
+    ? 'Räknas inte'
+    : t.unitId !== undefined
+      ? 'Visas för enhetens chef'
+      : !t.outcome
+        ? 'Räknas inte'
+        : 'tooFew' in t.outcome
+          ? 'För få för att visas'
+          : `${t.outcome.share} %, ${t.outcome.met ? 'uppfyllt' : 'inte uppfyllt'}`;
+
+/**
+ * The focus when a dialog closes (D83 rule 7), whichever way it closed: Astryx gives it back to what had it when the
+ * dialog opened, which is nothing when the dialog was opened by its address, so the page's own button that opens it takes
+ * it once the dialog has closed. `frame` goes on an element inside the dialog, which finds the dialog from it.
+ */
+function useFocusOnClose(opener: RefObject<HTMLElement | null>) {
+  const [dialog, setDialog] = useState<HTMLDialogElement | null>(null);
+  const frame = useCallback((el: HTMLDivElement | null) => setDialog(el?.closest('dialog') ?? null), []);
+  useEffect(() => {
+    if (!dialog) return;
+    const closed = () => requestAnimationFrame(() => opener.current?.focus());
+    dialog.addEventListener('close', closed);
+    return () => dialog.removeEventListener('close', closed);
+  }, [dialog, opener]);
+  return frame;
+}
 
 /** Adding a requirement on a position or a unit. Filled afresh each time it opens; what is missing is said on its field. */
 function RequirementDialog({
@@ -110,15 +153,19 @@ function RequirementDialog({
   catalogue,
   positions,
   units,
+  opener,
   onClose,
 }: {
   isOpen: boolean;
   catalogue: CompetenceType[];
   positions: CompetencePosition[];
   units: CompetenceUnit[];
+  /** The page's own button that opens the dialog: it takes the focus when the dialog closes. */
+  opener: RefObject<HTMLElement | null>;
   onClose: () => void;
 }) {
   const mobile = useMediaQuery(mobileQuery);
+  const frame = useFocusOnClose(opener);
   const save = useAdminAction({
     invalidate: [keys.competenceAll, keys.entities.all, keys.viewAll],
     toastId: 'competence:requirement',
@@ -138,7 +185,10 @@ function RequirementDialog({
     // Filled once per opening: a refetch while the dialog is open must not undo the choices being made.
   }, [isOpen]);
   const types = typeOptions(catalogue);
-  const targets = (on === 'position' ? positions : units).map(x => ({ value: x.id, label: x.label }));
+  const targets =
+    on === 'position'
+      ? positions.map(p => ({ value: p.code, label: p.label }))
+      : units.map(u => ({ value: u.id, label: u.label }));
   const submit = async () => {
     if (save.busy) return;
     if (!typeId || !targetId) {
@@ -150,7 +200,7 @@ function RequirementDialog({
     const target = targets.find(t => t.value === targetId);
     await save.run(async () => {
       await api.competence.addRequirement(
-        on === 'position' ? { typeId, positionId: targetId } : { typeId, unitId: targetId },
+        on === 'position' ? { typeId, positionCode: targetId } : { typeId, unitId: targetId },
       );
       onClose();
       return `${type?.name ?? 'Kompetensen'} krävs nu av ${onWords({ on, targetLabel: target?.label ?? '' })}.`;
@@ -179,49 +229,51 @@ function RequirementDialog({
           </>
         }
       >
-        <FormLayout direction="vertical" defaultOptionality="required">
-          <Selector
-            ref={typeField}
-            label="Kompetens"
-            placeholder="Välj kompetens"
-            options={types}
-            value={(typeId ?? undefined) as never}
-            onChange={value => setTypeId(value || null)}
-            presentation="adaptive"
-            hasSearch={optionCount(types) > 8}
-            searchPlaceholder="Sök kompetens"
-            emptySearchText="Ingen kompetens matchar"
-            emptyText="Katalogen är tom"
-            {...required(typeId, 'Välj en kompetens.')}
-          />
-          <RadioList
-            label="Gäller"
-            value={on}
-            onChange={value => {
-              setOn(value === 'unit' ? 'unit' : 'position');
-              setTargetId(null);
-            }}
-          >
-            <RadioListItem value="position" label="En befattning" description="Alla som har befattningen." />
-            <RadioListItem value="unit" label="En enhet" description="Alla som är placerade på enheten." />
-          </RadioList>
-          <Selector
-            ref={targetField}
-            label={on === 'position' ? 'Befattning' : 'Enhet'}
-            placeholder={on === 'position' ? 'Välj befattning' : 'Välj enhet'}
-            options={targets}
-            value={(targetId ?? undefined) as never}
-            onChange={value => setTargetId(value || null)}
-            presentation="adaptive"
-            hasSearch={targets.length > 8}
-            searchPlaceholder={on === 'position' ? 'Sök befattning' : 'Sök enhet'}
-            emptySearchText="Inget matchar"
-            emptyText={
-              on === 'position' ? 'Inga befattningar har skickats till Clew' : 'Inga enheter har någon placerad'
-            }
-            {...required(targetId, on === 'position' ? 'Välj en befattning.' : 'Välj en enhet.')}
-          />
-        </FormLayout>
+        <VStack gap={3} ref={frame}>
+          <FormLayout direction="vertical" defaultOptionality="required">
+            <Selector
+              ref={typeField}
+              label="Kompetens"
+              placeholder="Välj kompetens"
+              options={types}
+              value={(typeId ?? undefined) as never}
+              onChange={value => setTypeId(value || null)}
+              presentation="adaptive"
+              hasSearch={optionCount(types) > 8}
+              searchPlaceholder="Sök kompetens"
+              emptySearchText="Ingen kompetens matchar"
+              emptyText="Katalogen är tom"
+              {...required(typeId, 'Välj en kompetens.')}
+            />
+            <RadioList
+              label="Gäller"
+              value={on}
+              onChange={value => {
+                setOn(value === 'unit' ? 'unit' : 'position');
+                setTargetId(null);
+              }}
+            >
+              <RadioListItem value="position" label="En befattning" description="Alla som har befattningen." />
+              <RadioListItem value="unit" label="En enhet" description="Alla som är placerade på enheten." />
+            </RadioList>
+            <Selector
+              ref={targetField}
+              label={on === 'position' ? 'Befattning' : 'Enhet'}
+              placeholder={on === 'position' ? 'Välj befattning' : 'Välj enhet'}
+              options={targets}
+              value={(targetId ?? undefined) as never}
+              onChange={value => setTargetId(value || null)}
+              presentation="adaptive"
+              hasSearch={targets.length > 8}
+              searchPlaceholder={on === 'position' ? 'Sök befattning' : 'Sök enhet'}
+              emptySearchText="Inget matchar"
+              emptyText={
+                on === 'position' ? 'Inga befattningar har skickats till Clew' : 'Inga enheter har någon placerad'
+              }
+              {...required(targetId, on === 'position' ? 'Välj en befattning.' : 'Välj en enhet.')}
+            />
+          </FormLayout>
+        </VStack>
       </DialogFrame>
     </Dialog>
   );
@@ -233,21 +285,25 @@ function TargetDialog({
   catalogue,
   positions,
   units,
+  opener,
   onClose,
 }: {
   isOpen: boolean;
   catalogue: CompetenceType[];
   positions: CompetencePosition[];
   units: CompetenceUnit[];
+  /** The page's own button that opens the dialog: it takes the focus when the dialog closes. */
+  opener: RefObject<HTMLElement | null>;
   onClose: () => void;
 }) {
   const mobile = useMediaQuery(mobileQuery);
+  const frame = useFocusOnClose(opener);
   const save = useAdminAction({
     invalidate: [keys.competenceAll, keys.entities.all, keys.viewAll],
     toastId: 'competence:target',
   });
   const [typeId, setTypeId] = useState<string | null>(null);
-  const [positionId, setPositionId] = useState<string | null>(null);
+  const [positionCode, setPositionCode] = useState<string | null>(null);
   const [scope, setScope] = useState<'organisation' | 'unit'>('organisation');
   const [unitId, setUnitId] = useState<string | null>(null);
   const [share, setShare] = useState<number | null>(null);
@@ -258,7 +314,7 @@ function TargetDialog({
   const shareField = useRef<HTMLInputElement>(null);
   useEffect(() => {
     setTypeId(null);
-    setPositionId(null);
+    setPositionCode(null);
     setScope('organisation');
     setUnitId(null);
     setShare(null);
@@ -273,21 +329,21 @@ function TargetDialog({
   const submit = async () => {
     if (save.busy) return;
     const missingUnit = scope === 'unit' && !unitId;
-    if (!typeId || !positionId || missingUnit || shareProblem) {
+    if (!typeId || !positionCode || missingUnit || shareProblem) {
       setTried(true);
       if (!typeId) typeField.current?.focus();
-      else if (!positionId) positionField.current?.focus();
+      else if (!positionCode) positionField.current?.focus();
       else if (missingUnit) unitField.current?.focus();
       else shareField.current?.focus();
       return;
     }
     const type = catalogue.find(t => t.id === typeId);
-    const position = positions.find(p => p.id === positionId);
+    const position = positions.find(p => p.code === positionCode);
     const unit = scope === 'unit' ? units.find(u => u.id === unitId) : undefined;
     await save.run(async () => {
       await api.competence.addShareTarget({
         typeId,
-        positionId,
+        positionCode,
         minShare: share!,
         ...(scope === 'unit' && unitId ? { unitId } : {}),
       });
@@ -318,77 +374,79 @@ function TargetDialog({
           </>
         }
       >
-        <FormLayout direction="vertical" defaultOptionality="required">
-          <Selector
-            ref={typeField}
-            label="Kompetens"
-            placeholder="Välj kompetens"
-            options={types}
-            value={(typeId ?? undefined) as never}
-            onChange={value => setTypeId(value || null)}
-            presentation="adaptive"
-            hasSearch={optionCount(types) > 8}
-            searchPlaceholder="Sök kompetens"
-            emptySearchText="Ingen kompetens matchar"
-            emptyText="Katalogen är tom"
-            {...required(typeId, 'Välj en kompetens.')}
-          />
-          <Selector
-            ref={positionField}
-            label="Befattning"
-            description="Andelen räknas bland dem som har befattningen."
-            placeholder="Välj befattning"
-            options={positions.map(p => ({ value: p.id, label: p.label }))}
-            value={(positionId ?? undefined) as never}
-            onChange={value => setPositionId(value || null)}
-            presentation="adaptive"
-            hasSearch={positions.length > 8}
-            searchPlaceholder="Sök befattning"
-            emptySearchText="Inget matchar"
-            emptyText="Inga befattningar har skickats till Clew"
-            {...required(positionId, 'Välj en befattning.')}
-          />
-          <RadioList
-            label="Gäller"
-            value={scope}
-            onChange={value => {
-              setScope(value === 'unit' ? 'unit' : 'organisation');
-              setUnitId(null);
-            }}
-          >
-            <RadioListItem value="organisation" label="Hela organisationen" />
-            <RadioListItem value="unit" label="En enhet" description="Enheten och enheterna under den." />
-          </RadioList>
-          {scope === 'unit' && (
+        <VStack gap={3} ref={frame}>
+          <FormLayout direction="vertical" defaultOptionality="required">
             <Selector
-              ref={unitField}
-              label="Enhet"
-              placeholder="Välj enhet"
-              options={units.map(u => ({ value: u.id, label: u.label }))}
-              value={(unitId ?? undefined) as never}
-              onChange={value => setUnitId(value || null)}
+              ref={typeField}
+              label="Kompetens"
+              placeholder="Välj kompetens"
+              options={types}
+              value={(typeId ?? undefined) as never}
+              onChange={value => setTypeId(value || null)}
               presentation="adaptive"
-              hasSearch={units.length > 8}
-              searchPlaceholder="Sök enhet"
-              emptySearchText="Inget matchar"
-              emptyText="Inga enheter har någon placerad"
-              {...required(unitId, 'Välj en enhet.')}
+              hasSearch={optionCount(types) > 8}
+              searchPlaceholder="Sök kompetens"
+              emptySearchText="Ingen kompetens matchar"
+              emptyText="Katalogen är tom"
+              {...required(typeId, 'Välj en kompetens.')}
             />
-          )}
-          <NumberInput
-            ref={shareField}
-            label="Minst"
-            description="Hur stor del av dem med befattningen som ska ha kompetensen."
-            units="%"
-            value={share}
-            onChange={setShare}
-            min={1}
-            max={100}
-            isIntegerOnly
-            isWheelEnabled={false}
-            {...(tried && shareProblem ? { status: { type: 'error' as const, message: shareProblem } } : {})}
-          />
-        </FormLayout>
+            <Selector
+              ref={positionField}
+              label="Befattning"
+              description="Andelen räknas bland dem som har befattningen."
+              placeholder="Välj befattning"
+              options={positions.map(p => ({ value: p.code, label: p.label }))}
+              value={(positionCode ?? undefined) as never}
+              onChange={value => setPositionCode(value || null)}
+              presentation="adaptive"
+              hasSearch={positions.length > 8}
+              searchPlaceholder="Sök befattning"
+              emptySearchText="Inget matchar"
+              emptyText="Inga befattningar har skickats till Clew"
+              {...required(positionCode, 'Välj en befattning.')}
+            />
+            <RadioList
+              label="Gäller"
+              value={scope}
+              onChange={value => {
+                setScope(value === 'unit' ? 'unit' : 'organisation');
+                setUnitId(null);
+              }}
+            >
+              <RadioListItem value="organisation" label="Hela organisationen" />
+              <RadioListItem value="unit" label="En enhet" description="Enheten och enheterna under den." />
+            </RadioList>
+            {scope === 'unit' && (
+              <Selector
+                ref={unitField}
+                label="Enhet"
+                placeholder="Välj enhet"
+                options={units.map(u => ({ value: u.id, label: u.label }))}
+                value={(unitId ?? undefined) as never}
+                onChange={value => setUnitId(value || null)}
+                presentation="adaptive"
+                hasSearch={units.length > 8}
+                searchPlaceholder="Sök enhet"
+                emptySearchText="Inget matchar"
+                emptyText="Inga enheter har någon placerad"
+                {...required(unitId, 'Välj en enhet.')}
+              />
+            )}
+            <NumberInput
+              ref={shareField}
+              label="Minst"
+              description="Hur stor del av dem med befattningen som ska ha kompetensen."
+              units="%"
+              value={share}
+              onChange={setShare}
+              min={1}
+              max={100}
+              isIntegerOnly
+              isWheelEnabled={false}
+              {...(tried && shareProblem ? { status: { type: 'error' as const, message: shareProblem } } : {})}
+            />
+          </FormLayout>
+        </VStack>
       </DialogFrame>
     </Dialog>
   );
@@ -448,6 +506,7 @@ function RequirementsCard({
                 <HStack gap={1} wrap="wrap" vAlign="center">
                   <Text type="supporting">{row.name}</Text>
                   {row.archived && <Badge variant="neutral" label="Arkiverad" />}
+                  {row.r.gone && <Badge variant="warning" label="Finns inte längre" />}
                 </HStack>
               }
               endContent={removeButton(row)}
@@ -463,7 +522,7 @@ function RequirementsCard({
               key: 'target',
               header: targetHeader,
               width: proportional(2, { minWidth: 180 }),
-              renderCell: row => <Text>{row.r.targetLabel}</Text>,
+              renderCell: row => <TargetCell label={row.r.targetLabel} gone={!!row.r.gone} />,
             },
             {
               key: 'competence',
@@ -494,6 +553,8 @@ export function AdminCompetenceRequirementsPage({ user }: { user: SessionUser })
   const refused = query.error instanceof ApiError && query.error.status === 403;
   const error = query.isError && !refused ? errorMessage(query.error, 'Kraven kunde inte läsas.') : null;
   const targetsError = targetsQuery.isError ? errorMessage(targetsQuery.error, 'Andelsmålen kunde inte läsas.') : null;
+  const catalogueError =
+    catalogue.isError && !refused ? errorMessage(catalogue.error, 'Katalogen kunde inte läsas.') : null;
   const positions = query.data?.positions ?? [];
   const units = query.data?.units ?? [];
   const named = <T extends { typeId: string }>(x: T) => ({
@@ -515,6 +576,8 @@ export function AdminCompetenceRequirementsPage({ user }: { user: SessionUser })
         a.id.localeCompare(b.id),
     );
   const ready = !!query.data && !!targetsQuery.data && !!catalogue.data;
+  const requirementOpener = useRef<HTMLButtonElement>(null);
+  const targetOpener = useRef<HTMLButtonElement>(null);
   const close = () => navigate(REQUIREMENTS_PATH);
 
   // Removal is asked for through Astryx's confirmation, which has no address; a row that goes takes its button with it,
@@ -579,8 +642,8 @@ export function AdminCompetenceRequirementsPage({ user }: { user: SessionUser })
         end={
           !refused && ready ? (
             <HStack gap={2} wrap="wrap">
-              <Button variant="secondary" label="Lägg till andelsmål" href={newTargetHref} />
-              <Button variant="primary" label="Lägg till krav" href={newRequirementHref} />
+              <Button ref={targetOpener} variant="secondary" label="Lägg till andelsmål" href={newTargetHref} />
+              <Button ref={requirementOpener} variant="primary" label="Lägg till krav" href={newRequirementHref} />
             </HStack>
           ) : undefined
         }
@@ -588,6 +651,11 @@ export function AdminCompetenceRequirementsPage({ user }: { user: SessionUser })
       {error && (
         <Text as="p" role="alert" color="accent">
           {error}
+        </Text>
+      )}
+      {catalogueError && (
+        <Text as="p" role="alert" color="accent">
+          {catalogueError}
         </Text>
       )}
       {removal.error && (
@@ -661,9 +729,13 @@ export function AdminCompetenceRequirementsPage({ user }: { user: SessionUser })
                     key={row.id}
                     label={<Text weight="semibold">{row.name}</Text>}
                     description={
-                      <Text type="supporting">
-                        Minst {row.t.minShare} % av {row.t.positionLabel} · {scopeWords(row.t)}
-                      </Text>
+                      <VStack gap={1} hAlign="start">
+                        <Text type="supporting">
+                          Minst {row.t.minShare} % av {row.t.positionLabel} · {scopeWords(row.t)}
+                        </Text>
+                        <Text type="supporting">{outcomeWords(row.t)}</Text>
+                        {row.t.gone && <Badge variant="warning" label="Finns inte längre" />}
+                      </VStack>
                     }
                     endContent={removeTargetButton(row)}
                   />
@@ -684,19 +756,35 @@ export function AdminCompetenceRequirementsPage({ user }: { user: SessionUser })
                     key: 'position',
                     header: 'Befattning',
                     width: proportional(2, { minWidth: 160 }),
-                    renderCell: row => <Text>{row.t.positionLabel}</Text>,
+                    renderCell: row => (
+                      <TargetCell
+                        label={row.t.positionLabel}
+                        gone={!positions.some(p => p.code === row.t.positionCode)}
+                      />
+                    ),
                   },
                   {
                     key: 'scope',
                     header: 'Gäller',
                     width: proportional(2, { minWidth: 160 }),
-                    renderCell: row => <Text>{scopeWords(row.t)}</Text>,
+                    renderCell: row => (
+                      <TargetCell
+                        label={scopeWords(row.t)}
+                        gone={row.t.unitId !== undefined && !units.some(u => u.id === row.t.unitId)}
+                      />
+                    ),
                   },
                   {
                     key: 'share',
                     header: 'Minst',
                     width: pixel(90),
                     renderCell: row => <Text>{row.t.minShare} %</Text>,
+                  },
+                  {
+                    key: 'outcome',
+                    header: 'Utfall',
+                    width: proportional(2, { minWidth: 160 }),
+                    renderCell: row => <Text>{outcomeWords(row.t)}</Text>,
                   },
                   { key: 'remove', header: 'Ta bort', width: pixel(110), renderCell: removeTargetButton },
                 ]}
@@ -717,6 +805,7 @@ export function AdminCompetenceRequirementsPage({ user }: { user: SessionUser })
         catalogue={types}
         positions={positions}
         units={units}
+        opener={requirementOpener}
         onClose={close}
       />
       <TargetDialog
@@ -724,6 +813,7 @@ export function AdminCompetenceRequirementsPage({ user }: { user: SessionUser })
         catalogue={types}
         positions={positions}
         units={units}
+        opener={targetOpener}
         onClose={close}
       />
       <AlertDialog

@@ -27,7 +27,6 @@ const {
   competenceShareTargets: targets,
   positions,
   personPositions,
-  units,
   groups,
   assignments,
   people,
@@ -412,55 +411,77 @@ export function competenceTx(tx: Transaction, durable: DurableQueue): Competence
       const rows = await tx.select().from(positions).where(eq(positions.organisationId, organisationId));
       return rows.sort((a, b) => sv(a.label, b.label) || a.code.localeCompare(b.code));
     },
-    async position(id) {
-      const [r] = await tx.select().from(positions).where(eq(positions.id, id));
-      return r;
-    },
     async units(organisationId) {
-      const rows = await tx.select().from(units).where(eq(units.organisationId, organisationId));
-      return rows.sort((a, b) => sv(a.label, b.label) || a.id.localeCompare(b.id));
-    },
-    async unit(id) {
-      const [r] = await tx.select().from(units).where(eq(units.id, id));
-      return r;
-    },
-    async unitTree(organisationId) {
+      // The tree as pushed (D99), as the people module's `unitTree` reads it: every `unit:` group of the organisation.
       const rows = await tx
-        .select({ externalId: groups.externalId, parentId: groups.parentUnitId })
+        .select({ externalId: groups.externalId, label: groups.label, parentId: groups.parentUnitId })
         .from(groups)
         .where(and(eq(groups.organisationId, organisationId), like(groups.externalId, UNIT_KEY + '%')));
       return rows
-        .map(r => ({ id: r.externalId!.slice(UNIT_KEY.length), parentId: r.parentId }))
-        .sort((a, b) => a.id.localeCompare(b.id));
+        .map(r => ({ id: r.externalId!.slice(UNIT_KEY.length), organisationId, label: r.label, parentId: r.parentId }))
+        .sort((a, b) => sv(a.label, b.label) || a.id.localeCompare(b.id));
     },
-    async placedOn(unitIds) {
+    async placedOn(organisationId, unitIds) {
       const found = new Set<string>();
       for (const slice of slices([...new Set(unitIds)]))
         for (const r of await tx
           .selectDistinct({ id: assignments.personId })
           .from(assignments)
           .innerJoin(people, eq(people.id, assignments.personId))
-          .where(and(inArray(assignments.unitId, slice), eq(people.enabled, true))))
+          .where(
+            and(
+              inArray(assignments.unitId, slice),
+              eq(people.enabled, true),
+              eq(people.organisationId, organisationId),
+            ),
+          ))
           found.add(r.id);
       return [...found].sort();
     },
-    async placesOf(personIds) {
+    async placesOf(organisationId, personIds) {
       const places = new Map<string, Placed>();
       for (const slice of slices([...new Set(personIds)])) {
-        for (const r of await tx.select({ id: people.id }).from(people).where(inArray(people.id, slice)))
-          places.set(r.id, { personId: r.id, unitIds: [], positionIds: [] });
+        for (const r of await tx
+          .select({ id: people.id })
+          .from(people)
+          .where(and(inArray(people.id, slice), eq(people.organisationId, organisationId))))
+          places.set(r.id, { personId: r.id, unitIds: [], positionCodes: [] });
+        const known = [...places.keys()].filter(id => slice.includes(id));
+        if (!known.length) continue;
         for (const r of await tx
           .select({ personId: assignments.personId, unitId: assignments.unitId })
           .from(assignments)
-          .where(inArray(assignments.personId, slice)))
+          .where(inArray(assignments.personId, known)))
           places.get(r.personId)?.unitIds.push(r.unitId);
         for (const r of await tx
-          .select({ personId: personPositions.personId, positionId: personPositions.positionId })
+          .select({ personId: personPositions.personId, code: positions.code })
           .from(personPositions)
-          .where(inArray(personPositions.personId, slice)))
-          places.get(r.personId)?.positionIds.push(r.positionId);
+          .innerJoin(positions, eq(positions.id, personPositions.positionId))
+          .where(and(inArray(personPositions.personId, known), eq(positions.organisationId, organisationId))))
+          places.get(r.personId)?.positionCodes.push(r.code);
       }
-      return [...places.values()].map(p => ({ ...p, unitIds: p.unitIds.sort(), positionIds: p.positionIds.sort() }));
+      return [...places.values()].map(p => ({
+        ...p,
+        unitIds: p.unitIds.sort(),
+        positionCodes: p.positionCodes.sort(),
+      }));
+    },
+    async positionHolders(organisationId, codes) {
+      if (!codes.length) return [];
+      const rows = await tx
+        .select({ personId: personPositions.personId, code: positions.code })
+        .from(personPositions)
+        .innerJoin(positions, eq(positions.id, personPositions.positionId))
+        .innerJoin(people, eq(people.id, personPositions.personId))
+        .where(
+          and(
+            eq(positions.organisationId, organisationId),
+            inArray(positions.code, [...new Set(codes)]),
+            eq(people.organisationId, organisationId),
+            eq(people.enabled, true),
+          ),
+        );
+      return rows.sort((a, b) => a.personId.localeCompare(b.personId) || a.code.localeCompare(b.code));
     },
     async requirements(organisationId) {
       const rows = await tx
@@ -536,7 +557,24 @@ export function competenceTx(tx: Transaction, durable: DurableQueue): Competence
           .where(eq(holdings[column], personId))
           .returning({ id: holdings.id }))
           cleared.add(r.id);
-      return { holdings: removed.length, cleared: cleared.size, requirements: required.length };
+      // The requirements and share targets the person set keep standing, without their author.
+      const actor = 'person:' + personId;
+      const authored =
+        (
+          await tx
+            .update(requirements)
+            .set({ createdBy: null })
+            .where(eq(requirements.createdBy, actor))
+            .returning({ id: requirements.id })
+        ).length +
+        (
+          await tx
+            .update(targets)
+            .set({ createdBy: null })
+            .where(eq(targets.createdBy, actor))
+            .returning({ id: targets.id })
+        ).length;
+      return { holdings: removed.length, cleared: cleared.size + authored, requirements: required.length };
     },
     async exportOrganisation(organisationId) {
       const typeRows = await tx

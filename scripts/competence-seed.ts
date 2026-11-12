@@ -90,28 +90,32 @@ export async function seedCompetence(organisationId: string, today = new Date())
  */
 async function seedRequirements(organisationId: string, typeIds: ReadonlyMap<string, string>) {
   const { positions, required, targeted } = await competenceStore.transaction(async tx => ({
-    positions: new Map((await tx.positions(organisationId)).map(p => [p.code, p.id])),
+    positions: new Set((await tx.positions(organisationId)).map(p => p.code)),
     required: new Set(
-      (await tx.requirements(organisationId)).flatMap(r => (r.positionId ? [r.typeId + '\n' + r.positionId] : [])),
+      (await tx.requirements(organisationId)).flatMap(r => (r.positionCode ? [r.typeId + '\n' + r.positionCode] : [])),
     ),
     targeted: new Set(
-      (await tx.shareTargets(organisationId)).flatMap(t => (t.unitId === null ? [t.typeId + '\n' + t.positionId] : [])),
+      (await tx.shareTargets(organisationId)).flatMap(t =>
+        t.unitId === null ? [t.typeId + '\n' + t.positionCode] : [],
+      ),
     ),
   }));
   let requirements = 0,
     targets = 0;
   for (const r of DEVELOPMENT_REQUIREMENTS) {
-    const typeId = typeIds.get(r.type),
-      positionId = positions.get(r.position);
-    if (!typeId || !positionId || required.has(typeId + '\n' + positionId)) continue;
-    await competence.seedRequirement(OPERATOR, organisationId, { typeId, positionId });
+    const typeId = typeIds.get(r.type);
+    if (!typeId || !positions.has(r.position) || required.has(typeId + '\n' + r.position)) continue;
+    await competence.seedRequirement(OPERATOR, organisationId, { typeId, positionCode: r.position });
     requirements++;
   }
   for (const t of DEVELOPMENT_SHARE_TARGETS) {
-    const typeId = typeIds.get(t.type),
-      positionId = positions.get(t.position);
-    if (!typeId || !positionId || targeted.has(typeId + '\n' + positionId)) continue;
-    await competence.seedShareTarget(OPERATOR, organisationId, { typeId, positionId, minShare: t.minShare });
+    const typeId = typeIds.get(t.type);
+    if (!typeId || !positions.has(t.position) || targeted.has(typeId + '\n' + t.position)) continue;
+    await competence.seedShareTarget(OPERATOR, organisationId, {
+      typeId,
+      positionCode: t.position,
+      minShare: t.minShare,
+    });
     targets++;
   }
   return { requirements, targets };

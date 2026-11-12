@@ -272,6 +272,8 @@ export class MockApi {
   validityImpact: CompetenceValidityImpact = { holdings: 3, expiredBefore: 0, expiredAfter: 2 };
   /** The next write to the catalogue answers 400 with this sentence; it resets itself after that one. */
   catalogueFail: string | null = null;
+  /** The catalogue cannot be read (a 503), while the rest of the module answers. */
+  catalogueReadFails = false;
   /** What the registrations sent, in order. */
   registered: Array<{ personId: string; body: CompetenceHoldingBody }> = [];
   /** The next registration answers 400 with this sentence; it resets itself after that one. */
@@ -879,7 +881,10 @@ export class MockApi {
         status: 403,
         json: { error: 'Kompetens är inte påslaget i den här installationen.', code: 'denied' },
       });
-    if (path === '/competence/types' && route.request().method() === 'GET') return json({ rows: this.competenceTypes });
+    if (path === '/competence/types' && route.request().method() === 'GET')
+      return this.catalogueReadFails
+        ? route.fulfill({ status: 503, json: { error: 'Något gick fel. Försök igen.' } })
+        : json({ rows: this.competenceTypes });
     const typePath = /^\/competence\/types(?:\/([^/]+))?(\/archive|\/validity)?$/.exec(path);
     if (typePath && this.competenceTypes && path !== '/competence/types') {
       const id = decodeURIComponent(typePath[1]!),
@@ -1018,14 +1023,14 @@ export class MockApi {
           this.requirePerson(body.personId, body.typeId, created);
           return route.fulfill({ status: 201, json: { id: created } });
         }
-        const position = positions.find(p => p.id === body.positionId),
+        const position = positions.find(p => p.code === body.positionCode),
           unit = units.find(u => u.id === body.unitId);
         if (targets)
           this.competenceShareTargets.push({
             id: created,
             typeId: body.typeId,
-            positionId: body.positionId!,
-            positionLabel: position?.label ?? body.positionId!,
+            positionCode: body.positionCode!,
+            positionLabel: position?.label ?? body.positionCode!,
             ...(unit ? { unitId: unit.id, unitLabel: unit.label } : {}),
             minShare: body.minShare,
           });
@@ -1034,7 +1039,7 @@ export class MockApi {
             id: created,
             typeId: body.typeId,
             on: body.unitId ? 'unit' : 'position',
-            targetId: (body.unitId ?? body.positionId)!,
+            targetId: (body.unitId ?? body.positionCode)!,
             targetLabel: (unit?.label ?? position?.label)!,
           });
         return route.fulfill({ status: 201, json: { id: created } });

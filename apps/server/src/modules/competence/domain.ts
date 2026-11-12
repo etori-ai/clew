@@ -24,7 +24,6 @@ import {
   type ShareTargetRecord,
   type SourceHolding,
   type SourceReadError,
-  type TreeNode,
   type TypeRecord,
   type UnitRecord,
   type WorkflowStart,
@@ -175,15 +174,16 @@ export const needsAttention = (standing: Pick<Standing, 'status'>) => standing.s
 export const meets = (standing: Pick<Standing, 'status'>) =>
   standing.status === 'valid' || standing.status === 'expiring';
 /**
- * The requirements that apply to one person (D108 item 6): those set on a position they hold, on a unit they are
- * assigned to, and on them alone.
+ * The requirements that apply to one person (D108 item 6): those set on a position they hold (by its code), on a unit
+ * they are assigned to, and on them alone. A requirement whose position or unit no longer exists applies to nobody,
+ * since nobody holds the one or is placed on the other, until it comes back under the same key.
  */
 export function requirementsOn(person: Placed, requirements: readonly RequirementRecord[]): RequirementRecord[] {
-  const positions = new Set(person.positionIds),
+  const positions = new Set(person.positionCodes),
     units = new Set(person.unitIds);
   return requirements.filter(
     r =>
-      (r.positionId !== null && positions.has(r.positionId)) ||
+      (r.positionCode !== null && positions.has(r.positionCode)) ||
       (r.unitId !== null && units.has(r.unitId)) ||
       r.personId === person.personId,
   );
@@ -200,33 +200,47 @@ export function requiredOf(person: Placed, requirements: readonly RequirementRec
  * alone, and each unit is taken once, so a stored chain that were ever a cycle ends. The people module's rule, worked out
  * here again since a module never imports another.
  */
-export function branchOf(tree: readonly TreeNode[], unitId: string): string[] {
+export function branchOf(tree: readonly Pick<UnitRecord, 'id' | 'parentId'>[], unitId: string): string[] {
   const below = new Map<string, string[]>();
   for (const u of tree) if (u.parentId !== null) below.set(u.parentId, [...(below.get(u.parentId) ?? []), u.id]);
   const branch = new Set([unitId]);
   for (const id of branch) for (const next of below.get(id) ?? []) branch.add(next);
   return [...branch];
 }
-/** A unit and every unit above it, the unit first; a chain that were ever a cycle ends. */
-export function lineAbove(tree: readonly TreeNode[], unitId: string): string[] {
-  const parent = new Map(tree.map(u => [u.id, u.parentId]));
-  const line: string[] = [];
-  for (let at: string | null | undefined = unitId; at && !line.includes(at); at = parent.get(at)) line.push(at);
-  return line;
+/**
+ * The least number of people a count may be taken over without the reader knowing each of them (D108 item 8, D118: a
+ * figure names nobody). A manager knows where their own reports stand; the rest of a branch is a group counted only when
+ * it holds at least this many people, and otherwise left out of the figure, which then covers the reader's reports
+ * alone and says so. The same bound keeps an organisation's share target from being shown over fewer.
+ */
+export const COVERAGE_MIN_GROUP = 5;
+/**
+ * The people a figure counts (D108 item 8): all of them, when those who are not the reader's own reports are none or at
+ * least `COVERAGE_MIN_GROUP`; else the reader's reports alone, marked `ownOnly`.
+ */
+export function countable<T extends { personId: string }>(
+  people: readonly T[],
+  own: (personId: string) => boolean,
+): { people: T[]; ownOnly: boolean } {
+  const others = people.filter(p => !own(p.personId)).length;
+  return others === 0 || others >= COVERAGE_MIN_GROUP
+    ? { people: [...people], ownOnly: false }
+    : { people: people.filter(p => own(p.personId)), ownOnly: true };
 }
-/** A share target applies on a unit when it is set on that unit, on a unit above it, or on the whole organisation. */
-export const targetApplies = (target: Pick<ShareTargetRecord, 'unitId'>, above: readonly string[]) =>
-  target.unitId === null || above.includes(target.unitId);
-/** One required type over a branch: how many people it is required of, and how many of them meet it. */
+/**
+ * One required type over a branch: how many people it is required of, and how many of them meet it. `ownOnly`: the
+ * figure covers the reader's own reports alone (`countable`).
+ */
 export interface RequirementCoverage {
   type: TypeRecord;
   under: number;
   meeting: number;
+  ownOnly: boolean;
 }
 /**
- * One share target over a branch: how many people hold its position, how many of them meet its type, the share they are
- * (whole percent, rounded down, so a share shown at the target meets it) and whether it reaches the least share. With
- * nobody in the position, no share and no verdict.
+ * One share target over what it was set on: how many people hold its position, how many of them meet its type, the
+ * share they are (whole percent, rounded down, so a share shown at the target meets it) and whether it reaches the least
+ * share. With nobody to count, no share and no verdict. `ownOnly` as for a requirement.
  */
 export interface TargetCoverage {
   target: ShareTargetRecord;
@@ -235,24 +249,38 @@ export interface TargetCoverage {
   meeting: number;
   share: number | null;
   met: boolean | null;
+  ownOnly: boolean;
 }
 /** A unit's branch against what is required (D108 items 6 and 8, D99 item 5): counts only, never a person. */
 export interface UnitCoverage {
   /** The people with at least one requirement, and of them the ones who meet every one. */
   under: number;
   meetingAll: number;
+  ownOnly: boolean;
   requirements: RequirementCoverage[];
   targets: TargetCoverage[];
 }
+/** The share of `holders` who meet a type, rounded down, and whether it reaches a least share; none of nobody. */
+const shareOf = (meeting: number, holders: number, minShare: number) => ({
+  share: holders ? Math.floor((meeting * 100) / holders) : null,
+  met: holders ? meeting * 100 >= minShare * holders : null,
+});
 /**
  * How a branch is covered (D108 items 6 and 8): for each type required of anyone in it, how many it is required of and
- * how many meet it; for each share target that applies, the share of the position's holders who meet its type. `people`
- * are the active people of the branch, each with every unit and position of theirs (a requirement on a unit outside the
- * branch still applies to a person in it); `standings` are the holdings that decide for them (`deciding`). A requirement
- * or a target whose type is archived or unknown counts towards nothing.
+ * how many meet it; for each share target set on the unit, the share of the position's holders who meet its type.
+ * `people` are the active people of the branch, each with every unit and position of theirs (a requirement on a unit
+ * outside the branch still applies to a person in it); `standings` are the holdings that decide for them (`deciding`).
+ *
+ * The reader knows where their own reports stand (`reports`), so each figure follows `countable`: the rest of the branch
+ * is counted only when it is at least `COVERAGE_MIN_GROUP` people, else the figure covers the reports alone. The reader
+ * is never counted: their own standing is theirs. A requirement set on one person counts only for the reader's own
+ * report, never in another manager's figure. A requirement or a target whose type is archived or unknown counts towards
+ * nothing, and so does one whose position or unit is gone. A row that would count nobody is left out.
  */
 export function coverageOf(input: {
   people: readonly Placed[];
+  reader: string;
+  reports: ReadonlySet<string>;
   requirements: readonly RequirementRecord[];
   targets: readonly ShareTargetRecord[];
   types: ReadonlyMap<string, TypeRecord>;
@@ -262,46 +290,83 @@ export function coverageOf(input: {
     const type = input.types.get(typeId);
     return type && type.archivedAt === null ? type : undefined;
   };
+  const own = (personId: string) => input.reports.has(personId);
   const met = new Set(input.standings.filter(meets).map(s => s.personId + '\n' + s.type.id));
   const meetsType = (personId: string, typeId: string) => met.has(personId + '\n' + typeId);
-  const byType = new Map<string, RequirementCoverage>();
-  let under = 0,
-    meetingAll = 0;
-  for (const person of input.people) {
-    const required = requiredOf(person, input.requirements).filter(id => live(id));
-    if (!required.length) continue;
-    under++;
-    if (required.every(id => meetsType(person.personId, id))) meetingAll++;
-    for (const typeId of required) {
-      const row = byType.get(typeId) ?? { type: live(typeId)!, under: 0, meeting: 0 };
-      row.under++;
-      if (meetsType(person.personId, typeId)) row.meeting++;
-      byType.set(typeId, row);
-    }
+  const people = input.people.filter(p => p.personId !== input.reader);
+  const required = new Map(
+    people.map(p => [
+      p.personId,
+      [
+        ...new Set(
+          requirementsOn(p, input.requirements)
+            .filter(r => r.personId === null || own(p.personId))
+            .map(r => r.typeId),
+        ),
+      ].filter(id => live(id)),
+    ]),
+  );
+  const requiredOfPerson = (p: Placed) => required.get(p.personId) ?? [];
+  const requirements: RequirementCoverage[] = [];
+  for (const typeId of new Set([...required.values()].flat())) {
+    const counted = countable(
+      people.filter(p => requiredOfPerson(p).includes(typeId)),
+      own,
+    );
+    if (!counted.people.length) continue;
+    requirements.push({
+      type: live(typeId)!,
+      under: counted.people.length,
+      meeting: counted.people.filter(p => meetsType(p.personId, typeId)).length,
+      ownOnly: counted.ownOnly,
+    });
   }
+  const anything = countable(
+    people.filter(p => requiredOfPerson(p).length),
+    own,
+  );
   const targets: TargetCoverage[] = [];
   for (const target of input.targets) {
     const type = live(target.typeId);
     if (!type) continue;
-    const holders = input.people.filter(p => p.positionIds.includes(target.positionId));
-    const meeting = holders.filter(p => meetsType(p.personId, target.typeId)).length;
+    const counted = countable(
+      people.filter(p => p.positionCodes.includes(target.positionCode)),
+      own,
+    );
+    const meeting = counted.people.filter(p => meetsType(p.personId, target.typeId)).length;
     targets.push({
       target,
       type,
-      holders: holders.length,
+      holders: counted.people.length,
       meeting,
-      share: holders.length ? Math.floor((meeting * 100) / holders.length) : null,
-      met: holders.length ? meeting * 100 >= target.minShare * holders.length : null,
+      ...shareOf(meeting, counted.people.length, target.minShare),
+      ownOnly: counted.ownOnly,
     });
   }
   const byName = (a: { type: TypeRecord }, b: { type: TypeRecord }) =>
     sv(a.type.area, b.type.area) || sv(a.type.name, b.type.name) || a.type.id.localeCompare(b.type.id);
   return {
-    under,
-    meetingAll,
-    requirements: [...byType.values()].sort(byName),
+    under: anything.people.length,
+    meetingAll: anything.people.filter(p => requiredOfPerson(p).every(id => meetsType(p.personId, id))).length,
+    ownOnly: anything.ownOnly,
+    requirements: requirements.sort(byName),
     targets: targets.sort((a, b) => byName(a, b) || a.target.id.localeCompare(b.target.id)),
   };
+}
+/**
+ * A share target across the whole organisation (D108 item 6), measured over it once, as the administrator reads it on
+ * the requirements page: the share of `holders` (the organisation's active people in the position) who meet its type, a
+ * figure that names nobody (D118), shown only over at least `COVERAGE_MIN_GROUP` people.
+ */
+export function organisationOutcome(
+  target: Pick<ShareTargetRecord, 'minShare'>,
+  holders: readonly string[],
+  meetsType: (personId: string) => boolean,
+): { holders: number; meeting: number; share: number; met: boolean } | { tooFew: true } {
+  if (holders.length < COVERAGE_MIN_GROUP) return { tooFew: true };
+  const meeting = holders.filter(meetsType).length;
+  const { share, met } = shareOf(meeting, holders.length, target.minShare);
+  return { holders: holders.length, meeting, share: share!, met: met! };
 }
 
 const sv = (a: string, b: string) => a.localeCompare(b, 'sv');
@@ -475,14 +540,14 @@ export function matrixOf(input: {
     return type && type.archivedAt === null ? type : undefined;
   };
   const placed = new Map(input.placed.map(p => [p.personId, p]));
-  const placeOf = (personId: string): Placed => placed.get(personId) ?? { personId, unitIds: [], positionIds: [] };
+  const placeOf = (personId: string): Placed => placed.get(personId) ?? { personId, unitIds: [], positionCodes: [] };
   /** The requirements on a type that is not archived, that apply to each person. */
   const applying = new Map(
     input.people.map(p => [p.id, requirementsOn(placeOf(p.id), input.requirements).filter(r => live(r.typeId))]),
   );
   const required = new Map([...applying].map(([id, rs]) => [id, [...new Set(rs.map(r => r.typeId))]]));
   const all = orderTypes([...new Set([...required.values()].flat())].map(id => live(id)!));
-  const positionLabel = new Map(input.positions.map(p => [p.id, p.label])),
+  const positionLabel = new Map(input.positions.map(p => [p.code, p.label])),
     unitLabel = new Map(input.units.map(u => [u.id, u.label]));
 
   const sets: MatrixSet[] = [];
@@ -509,14 +574,13 @@ export function matrixOf(input: {
           all.filter(t => t.area === area),
         ),
       );
-    const held = [...new Set(input.people.flatMap(p => placeOf(p.id).positionIds))]
-      .filter(id => positionLabel.has(id))
+    const held = [...new Set(input.people.flatMap(p => placeOf(p.id).positionCodes))]
+      .filter(code => positionLabel.has(code))
       .sort((a, b) => sv(positionLabel.get(a)!, positionLabel.get(b)!) || a.localeCompare(b));
-    for (const positionId of held) {
-      const asked = new Set(input.requirements.filter(r => r.positionId === positionId).map(r => r.typeId));
+    for (const code of held) {
+      const asked = new Set(input.requirements.filter(r => r.positionCode === code).map(r => r.typeId));
       const types = all.filter(t => asked.has(t.id));
-      if (types.length)
-        sets.push(...split('position:' + positionId, 'position', positionLabel.get(positionId)!, types));
+      if (types.length) sets.push(...split('position:' + code, 'position', positionLabel.get(code)!, types));
     }
     chosen =
       sets.find(s => s.by === input.by && s.part === (input.part ?? 1)) ??
@@ -529,8 +593,8 @@ export function matrixOf(input: {
   const standings = deciding(input.holdings, input.types, input.today, required);
   const at = new Map(standings.map(s => [s.personId + '\n' + s.type.id, s]));
   const reason = (r: RequirementRecord): CompetenceMatrixReason =>
-    r.positionId !== null
-      ? { on: 'position', label: positionLabel.get(r.positionId) ?? r.positionId }
+    r.positionCode !== null
+      ? { on: 'position', label: positionLabel.get(r.positionCode) ?? r.positionCode }
       : r.unitId !== null
         ? { on: 'unit', label: unitLabel.get(r.unitId) ?? r.unitId }
         : { on: 'person', requirementId: r.id };

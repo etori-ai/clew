@@ -136,19 +136,21 @@ export const competenceSources = (): CompetenceSource[] => [
   },
 ];
 /**
- * Administration › Kompetens › Krav (D108 item 6): two requirements on positions, one of them on a type since archived,
- * one on a unit, and the positions and units the dialog offers.
+ * Administration › Kompetens › Krav (D108 item 6): requirements on positions, by code, one of them on a type since
+ * archived and one on a position the provisioner has since removed; one on a unit; and the positions and units the
+ * dialog offers.
  */
 export const competenceRequirements = (): CompetenceRequirementsOutput => ({
   rows: [
-    { id: 'r-hlr-usk', typeId: 't-hlr', on: 'position', targetId: 'pos-usk', targetLabel: 'Undersköterska' },
-    { id: 'r-old-ssk', typeId: 't-old', on: 'position', targetId: 'pos-ssk', targetLabel: 'Sjuksköterska' },
+    { id: 'r-hlr-usk', typeId: 't-hlr', on: 'position', targetId: 'underskoterska', targetLabel: 'Undersköterska' },
+    { id: 'r-old-ssk', typeId: 't-old', on: 'position', targetId: 'sjukskoterska', targetLabel: 'Sjuksköterska' },
+    { id: 'r-heta-tolk', typeId: 't-heta', on: 'position', targetId: 'tolk', targetLabel: 'tolk', gone: true },
     { id: 'r-fall-gata', typeId: 't-fall', on: 'unit', targetId: 'unit-gata', targetLabel: 'Gata och park' },
   ],
   positions: [
-    { id: 'pos-mask', code: 'maskinforare', label: 'Maskinförare' },
-    { id: 'pos-ssk', code: 'sjukskoterska', label: 'Sjuksköterska' },
-    { id: 'pos-usk', code: 'underskoterska', label: 'Undersköterska' },
+    { code: 'maskinforare', label: 'Maskinförare' },
+    { code: 'sjukskoterska', label: 'Sjuksköterska' },
+    { code: 'underskoterska', label: 'Undersköterska' },
   ],
   units: [
     { id: 'unit-skola', label: 'Bergsåkers skola' },
@@ -156,9 +158,36 @@ export const competenceRequirements = (): CompetenceRequirementsOutput => ({
     { id: 'unit-hemtjanst', label: 'Hemtjänst Norr' },
   ],
 });
-/** One share target across the organisation. */
+/**
+ * Share targets: one across the organisation measured over enough people, one held by too few to show, and one on a unit,
+ * which its manager reads.
+ */
 export const competenceShareTargets = (): CompetenceShareTarget[] => [
-  { id: 's-hlr-usk', typeId: 't-hlr', positionId: 'pos-usk', positionLabel: 'Undersköterska', minShare: 80 },
+  {
+    id: 's-hlr-usk',
+    typeId: 't-hlr',
+    positionCode: 'underskoterska',
+    positionLabel: 'Undersköterska',
+    minShare: 80,
+    outcome: { holders: 24, meeting: 20, share: 83, met: true },
+  },
+  {
+    id: 's-fall-mask',
+    typeId: 't-fall',
+    positionCode: 'maskinforare',
+    positionLabel: 'Maskinförare',
+    minShare: 50,
+    outcome: { tooFew: true },
+  },
+  {
+    id: 's-heta-gata',
+    typeId: 't-heta',
+    positionCode: 'maskinforare',
+    positionLabel: 'Maskinförare',
+    unitId: 'unit-gata',
+    unitLabel: 'Gata och park',
+    minShare: 50,
+  },
 ];
 /**
  * The manager's matrix (D108 item 11) over three of the people Personal lists (`staffOverview()`): three columns, each
@@ -250,12 +279,12 @@ export const competenceMatrix = (): CompetenceMatrixOutput => ({
 export const matrixSets = [
   { by: 'area:Akut omhändertagande', part: 1, parts: 1, kind: 'area', label: 'Akut omhändertagande', types: 1 },
   { by: 'area:Säkerhet', part: 1, parts: 1, kind: 'area', label: 'Säkerhet', types: 2 },
-  { by: 'position:pos-usk', part: 1, parts: 1, kind: 'position', label: 'Undersköterska', types: 2 },
+  { by: 'position:underskoterska', part: 1, parts: 1, kind: 'position', label: 'Undersköterska', types: 2 },
 ] as const;
 const setColumns: Record<string, string[]> = {
   'area:Akut omhändertagande': ['t-hlr'],
   'area:Säkerhet': ['t-fall', 't-heta'],
-  'position:pos-usk': ['t-hlr', 't-heta'],
+  'position:underskoterska': ['t-hlr', 't-heta'],
 };
 /** The matrix the mock answers: whole, or in sets, with the set `by` names (the first when it names none it knows). */
 export function matrixAnswer(base: CompetenceMatrixOutput, sets: boolean, by: string | null): CompetenceMatrixOutput {

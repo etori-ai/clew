@@ -37,7 +37,7 @@ export interface CompetenceStoreHarness {
   /** The person holds the position, as their `position:` membership derives it. */
   holdPosition(personId: string, positionId: string): Promise<void>;
   /** A unit's row and, unless `pushed` is false, its `unit:` group with the unit above it (D99). */
-  seedUnit(unit: UnitRecord & { parentId?: string | null; pushed?: boolean }): Promise<void>;
+  seedUnit(unit: Omit<UnitRecord, 'parentId'> & { parentId?: string | null; pushed?: boolean }): Promise<void>;
   /** The person is assigned to the unit. */
   place(personId: string, unitId: string): Promise<void>;
 }
@@ -665,9 +665,9 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
 
     describe('requirements and share targets (D108 item 6)', () => {
       /**
-       * The world with two positions, a tree of a root and two units under it, a unit no group names, a type, and the
-       * people placed: Anna on A holding the first position, Bo on B holding both, the manager on the root, and a
-       * deactivated person on A.
+       * The world with two positions (and one of another organisation under the same code), a tree of a root and two
+       * units under it, a unit no group names, a type, and the people placed: Anna on A holding the first position, Bo
+       * on B holding both, the manager on the root, a deactivated person on A, and a person of another organisation.
        */
       async function organised() {
         const w = await world();
@@ -698,33 +698,36 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
           unit('alone', 'Bemanning', null, false),
         ];
         for (const u of [root, a, b, alone]) await w.seedUnit(u);
-        const cia = w.p + '-cia';
+        const [cia, eve] = [w.p + '-cia', w.p + '-eve'];
         await w.seedPerson(person(cia, w.org));
+        await w.seedPerson(person(eve, w.p + '-org2'));
         await w.place(w.anna, a.id);
         await w.place(w.bo, b.id);
         await w.place(w.boss, root.id);
         await w.place(cia, a.id);
+        await w.place(eve, a.id);
         await w.deactivate(cia);
         await w.holdPosition(w.anna, usk.id);
         await w.holdPosition(w.bo, usk.id);
         await w.holdPosition(w.bo, ssk.id);
+        await w.holdPosition(eve, other.id);
         await w.store.transaction(async tx => {
           await tx.insertType(typeRow(w.p + '-t1', w.org));
           await tx.insertType(typeRow(w.p + '-t2', w.org, { name: 'Typ två' }));
         });
-        return { ...w, usk, ssk, other, root, a, b, alone, cia };
+        return { ...w, usk, ssk, other, root, a, b, alone, cia, eve };
       }
       const requirementRow = (
         id: string,
         organisationId: string,
         typeId: string,
-        target: Partial<Pick<RequirementRecord, 'positionId' | 'unitId' | 'personId'>>,
+        target: Partial<Pick<RequirementRecord, 'positionCode' | 'unitId' | 'personId'>>,
         extra: Partial<RequirementRecord> = {},
       ): RequirementRecord => ({
         id,
         organisationId,
         typeId,
-        positionId: null,
+        positionCode: null,
         unitId: null,
         personId: null,
         minLevel: null,
@@ -737,13 +740,13 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
         id: string,
         organisationId: string,
         typeId: string,
-        positionId: string,
+        positionCode: string,
         extra: Partial<ShareTargetRecord> = {},
       ): ShareTargetRecord => ({
         id,
         organisationId,
         typeId,
-        positionId,
+        positionCode,
         unitId: null,
         minShare: 30,
         createdBy: 'person:ada',
@@ -751,40 +754,43 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
         ...extra,
       });
 
-      test('the directory as requirements read it: positions and units by name, the tree, who is placed and holds what', async () => {
+      test('the directory as requirements read it: positions, the tree by name, who is placed and holds what, per organisation', async () => {
         const w = await organised();
-        const strip = ({ parentId: _p, pushed: _q, ...u }: UnitRecord & { parentId?: unknown; pushed?: unknown }) => u;
         expect(await w.store.transaction(tx => tx.positions(w.org))).toEqual([w.ssk, w.usk]);
-        expect(await w.store.transaction(tx => tx.position(w.usk.id))).toEqual(w.usk);
-        expect(await w.store.transaction(tx => tx.position(w.p + '-none'))).toBeUndefined();
-        expect(await w.store.transaction(tx => tx.units(w.org))).toEqual([w.alone, w.a, w.b, w.root].map(strip));
-        expect(await w.store.transaction(tx => tx.unit(w.a.id))).toEqual(strip(w.a));
-        expect(await w.store.transaction(tx => tx.unit(w.p + '-none'))).toBeUndefined();
-        // The tree is the pushed groups: a unit no group names is not in it.
-        expect(await w.store.transaction(tx => tx.unitTree(w.org))).toEqual(
-          [
-            { id: w.a.id, parentId: w.root.id },
-            { id: w.b.id, parentId: w.root.id },
-            { id: w.root.id, parentId: null },
-          ].sort((x, y) => x.id.localeCompare(y.id)),
+        // The tree is the pushed groups, a node nobody is placed on included; a unit no group names is not in it.
+        const node = (u: typeof w.a) => ({ id: u.id, organisationId: w.org, label: u.label, parentId: u.parentId });
+        expect(await w.store.transaction(tx => tx.units(w.org))).toEqual([node(w.a), node(w.b), node(w.root)]);
+        expect(await w.store.transaction(tx => tx.units(w.p + '-org2'))).toEqual([]);
+        // The active people of the organisation placed on any of the units, each once: the deactivated one is not, and
+        // neither is a person of another organisation placed on the same unit id.
+        expect(await w.store.transaction(tx => tx.placedOn(w.org, [w.a.id, w.b.id, w.a.id]))).toEqual(
+          [w.anna, w.bo].sort(),
         );
-        expect(await w.store.transaction(tx => tx.unitTree(w.p + '-org2'))).toEqual([]);
-        // The active people placed on any of the units, each once; the deactivated one is not.
-        expect(await w.store.transaction(tx => tx.placedOn([w.a.id, w.b.id, w.a.id]))).toEqual([w.anna, w.bo].sort());
-        expect(await w.store.transaction(tx => tx.placedOn([]))).toEqual([]);
-        const places = await w.store.transaction(tx => tx.placesOf([w.bo, w.anna, w.p + '-nobody', w.boss]));
+        expect(await w.store.transaction(tx => tx.placedOn(w.p + '-org2', [w.a.id]))).toEqual([w.eve]);
+        expect(await w.store.transaction(tx => tx.placedOn(w.org, []))).toEqual([]);
+        const places = await w.store.transaction(tx =>
+          tx.placesOf(w.org, [w.bo, w.anna, w.p + '-nobody', w.boss, w.eve]),
+        );
         expect(places.sort((x, y) => x.personId.localeCompare(y.personId))).toEqual(
           [
-            { personId: w.anna, unitIds: [w.a.id], positionIds: [w.usk.id] },
-            { personId: w.bo, unitIds: [w.b.id], positionIds: [w.ssk.id, w.usk.id].sort() },
-            { personId: w.boss, unitIds: [w.root.id], positionIds: [] },
+            { personId: w.anna, unitIds: [w.a.id], positionCodes: ['usk'] },
+            { personId: w.bo, unitIds: [w.b.id], positionCodes: ['ssk', 'usk'] },
+            { personId: w.boss, unitIds: [w.root.id], positionCodes: [] },
           ].sort((x, y) => x.personId.localeCompare(y.personId)),
         );
+        // Who holds a position, by code: the active people of the organisation, never another's under the same code.
+        expect(await w.store.transaction(tx => tx.positionHolders(w.org, ['usk', 'none']))).toEqual(
+          [
+            { personId: w.anna, code: 'usk' },
+            { personId: w.bo, code: 'usk' },
+          ].sort((x, y) => x.personId.localeCompare(y.personId)),
+        );
+        expect(await w.store.transaction(tx => tx.positionHolders(w.org, []))).toEqual([]);
       });
 
-      test('a requirement names one of a position, a unit or a person, once per type and target, oldest first', async () => {
+      test('a requirement names one of a position by code, a unit by id or a person, once per type and target, oldest first', async () => {
         const w = await organised();
-        const onPosition = requirementRow(w.p + '-r1', w.org, w.p + '-t1', { positionId: w.usk.id });
+        const onPosition = requirementRow(w.p + '-r1', w.org, w.p + '-t1', { positionCode: 'usk' });
         const onUnit = requirementRow(w.p + '-r2', w.org, w.p + '-t1', { unitId: w.a.id }, { createdAt: T2 });
         const onPerson = requirementRow(w.p + '-r3', w.org, w.p + '-t1', { personId: w.anna }, { minLevel: 2 });
         await w.store.transaction(async tx => {
@@ -797,29 +803,29 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
         expect(await w.store.transaction(tx => tx.requirement(onPerson.id))).toEqual(onPerson);
         // The same type on the same target again is refused by name; another type on it, or the type elsewhere, is not.
         for (const again of [
-          requirementRow(w.p + '-r4', w.org, w.p + '-t1', { positionId: w.usk.id }),
+          requirementRow(w.p + '-r4', w.org, w.p + '-t1', { positionCode: 'usk' }),
           requirementRow(w.p + '-r4', w.org, w.p + '-t1', { unitId: w.a.id }),
           requirementRow(w.p + '-r4', w.org, w.p + '-t1', { personId: w.anna }),
         ])
           expect((await refused(() => w.store.transaction(tx => tx.insertRequirement(again))))?.name).toBe(
             'RequirementTaken',
           );
+        // A position and a unit are keys, not rows: a code or a unit nobody has yet is stored, and counts for nobody.
         await w.store.transaction(async tx => {
-          await tx.insertRequirement(requirementRow(w.p + '-r5', w.org, w.p + '-t2', { positionId: w.usk.id }));
-          await tx.insertRequirement(requirementRow(w.p + '-r6', w.org, w.p + '-t1', { positionId: w.ssk.id }));
+          await tx.insertRequirement(requirementRow(w.p + '-r5', w.org, w.p + '-t2', { positionCode: 'usk' }));
+          await tx.insertRequirement(requirementRow(w.p + '-r6', w.org, w.p + '-t1', { positionCode: 'tolk' }));
+          await tx.insertRequirement(requirementRow(w.p + '-r7', w.org, w.p + '-t1', { unitId: w.p + '-later' }));
         });
-        // Exactly one target, a known one, and a level of 1 to 3.
+        // Exactly one target, a known type and person, and a level of 1 to 3.
         for (const wrong of [
-          requirementRow(w.p + '-r7', w.org, w.p + '-t2', { positionId: w.ssk.id, unitId: w.a.id }),
-          requirementRow(w.p + '-r7', w.org, w.p + '-t2', {}),
-          requirementRow(w.p + '-r7', w.org, w.p + '-t2', { positionId: w.p + '-none' }),
-          requirementRow(w.p + '-r7', w.org, w.p + '-t2', { unitId: w.p + '-none' }),
-          requirementRow(w.p + '-r7', w.org, w.p + '-t2', { personId: w.p + '-nobody' }),
-          requirementRow(w.p + '-r7', w.org, w.p + '-none', { unitId: w.b.id }),
-          requirementRow(w.p + '-r7', w.org, w.p + '-t2', { unitId: w.b.id }, { minLevel: 4 }),
+          requirementRow(w.p + '-r8', w.org, w.p + '-t2', { positionCode: 'ssk', unitId: w.a.id }),
+          requirementRow(w.p + '-r8', w.org, w.p + '-t2', {}),
+          requirementRow(w.p + '-r8', w.org, w.p + '-t2', { personId: w.p + '-nobody' }),
+          requirementRow(w.p + '-r8', w.org, w.p + '-none', { unitId: w.b.id }),
+          requirementRow(w.p + '-r8', w.org, w.p + '-t2', { unitId: w.b.id }, { minLevel: 4 }),
         ])
           expect(await refused(() => w.store.transaction(tx => tx.insertRequirement(wrong)))).toBeDefined();
-        expect(await w.store.transaction(tx => tx.requirements(w.org))).toHaveLength(5);
+        expect(await w.store.transaction(tx => tx.requirements(w.org))).toHaveLength(6);
         expect(await w.store.transaction(tx => tx.removeRequirement(onUnit.id))).toBe(true);
         expect(await w.store.transaction(tx => tx.removeRequirement(onUnit.id))).toBe(false);
         expect(await w.store.transaction(tx => tx.requirement(onUnit.id))).toBeUndefined();
@@ -827,8 +833,8 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
 
       test('a share target is one per type, position and unit, or per type and position across the organisation', async () => {
         const w = await organised();
-        const everywhere = targetRow(w.p + '-s1', w.org, w.p + '-t1', w.usk.id);
-        const onA = targetRow(w.p + '-s2', w.org, w.p + '-t1', w.usk.id, { unitId: w.a.id, minShare: 50 });
+        const everywhere = targetRow(w.p + '-s1', w.org, w.p + '-t1', 'usk');
+        const onA = targetRow(w.p + '-s2', w.org, w.p + '-t1', 'usk', { unitId: w.a.id, minShare: 50 });
         await w.store.transaction(async tx => {
           await tx.insertShareTarget(onA);
           await tx.insertShareTarget(everywhere);
@@ -838,20 +844,19 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
         );
         expect(await w.store.transaction(tx => tx.shareTarget(onA.id))).toEqual(onA);
         for (const again of [
-          targetRow(w.p + '-s3', w.org, w.p + '-t1', w.usk.id, { minShare: 80 }),
-          targetRow(w.p + '-s3', w.org, w.p + '-t1', w.usk.id, { unitId: w.a.id }),
+          targetRow(w.p + '-s3', w.org, w.p + '-t1', 'usk', { minShare: 80 }),
+          targetRow(w.p + '-s3', w.org, w.p + '-t1', 'usk', { unitId: w.a.id }),
         ])
           expect((await refused(() => w.store.transaction(tx => tx.insertShareTarget(again))))?.name).toBe(
             'ShareTargetTaken',
           );
         await w.store.transaction(tx =>
-          tx.insertShareTarget(targetRow(w.p + '-s4', w.org, w.p + '-t1', w.usk.id, { unitId: w.b.id })),
+          tx.insertShareTarget(targetRow(w.p + '-s4', w.org, w.p + '-t1', 'usk', { unitId: w.b.id })),
         );
         for (const wrong of [
-          targetRow(w.p + '-s5', w.org, w.p + '-t2', w.usk.id, { minShare: 0 }),
-          targetRow(w.p + '-s5', w.org, w.p + '-t2', w.usk.id, { minShare: 101 }),
-          targetRow(w.p + '-s5', w.org, w.p + '-t2', w.p + '-none'),
-          targetRow(w.p + '-s5', w.org, w.p + '-t2', w.usk.id, { unitId: w.p + '-none' }),
+          targetRow(w.p + '-s5', w.org, w.p + '-t2', 'usk', { minShare: 0 }),
+          targetRow(w.p + '-s5', w.org, w.p + '-t2', 'usk', { minShare: 101 }),
+          targetRow(w.p + '-s5', w.org, w.p + '-none', 'usk'),
         ])
           expect(await refused(() => w.store.transaction(tx => tx.insertShareTarget(wrong)))).toBeDefined();
         expect(await w.store.transaction(tx => tx.removeShareTarget(onA.id))).toBe(true);
@@ -862,11 +867,17 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
         ]);
       });
 
-      test('erasure takes the requirements set on the person alone; the export lists requirements and share targets', async () => {
+      test('erasure takes the requirements set on the person alone and their name off what they set; the export lists both', async () => {
         const w = await organised();
         const onAnna = requirementRow(w.p + '-r1', w.org, w.p + '-t1', { personId: w.anna });
-        const onPosition = requirementRow(w.p + '-r2', w.org, w.p + '-t1', { positionId: w.usk.id }, { createdAt: T2 });
-        const target = targetRow(w.p + '-s1', w.org, w.p + '-t1', w.usk.id);
+        const onPosition = requirementRow(
+          w.p + '-r2',
+          w.org,
+          w.p + '-t1',
+          { positionCode: 'usk' },
+          { createdAt: T2, createdBy: 'person:' + w.anna },
+        );
+        const target = targetRow(w.p + '-s1', w.org, w.p + '-t1', 'usk', { createdBy: 'person:' + w.anna });
         await w.store.transaction(async tx => {
           await tx.insertRequirement(onAnna);
           await tx.insertRequirement(onPosition);
@@ -878,13 +889,14 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
         expect(exported.shareTargets).toEqual([target]);
         expect(await w.store.transaction(tx => tx.erasePerson(w.anna))).toEqual({
           holdings: 0,
-          cleared: 0,
+          cleared: 2,
           requirements: 1,
         });
-        expect((await w.store.transaction(tx => tx.requirements(w.org))).map(r => r.id)).toEqual([
-          w.p + '-r3',
-          w.p + '-r2',
+        expect(await w.store.transaction(tx => tx.requirements(w.org))).toEqual([
+          requirementRow(w.p + '-r3', w.org, w.p + '-t2', { personId: w.bo }),
+          { ...onPosition, createdBy: null },
         ]);
+        expect(await w.store.transaction(tx => tx.shareTarget(target.id))).toEqual({ ...target, createdBy: null });
       });
     });
   });

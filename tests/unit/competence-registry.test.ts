@@ -230,11 +230,11 @@ describe('the competence wiring (D108 item 13)', () => {
     const added = await w.call(mikael, 'POST', '/types', { name: 'HLR', area: 'Akut', kind: 'course' });
     const { id: typeId } = (await added.json()) as { id: string };
 
-    const onPosition = await w.call(mikael, 'POST', '/requirements', { typeId, positionId: 'pos-usk' });
+    const onPosition = await w.call(mikael, 'POST', '/requirements', { typeId, positionCode: 'usk' });
     expect(onPosition.status).toBe(201);
     const { id: requirementId } = (await onPosition.json()) as { id: string };
     // A body outside the contract, a body naming no target, a taken one and a missing capability each have their answer.
-    expect((await w.call(mikael, 'POST', '/requirements', { typeId, positionId: 'pos-usk', minLevel: 2 })).status).toBe(
+    expect((await w.call(mikael, 'POST', '/requirements', { typeId, positionCode: 'usk', minLevel: 2 })).status).toBe(
       400,
     );
     const none = await w.call(mikael, 'POST', '/requirements', { typeId });
@@ -242,7 +242,7 @@ describe('the competence wiring (D108 item 13)', () => {
     expect(((await none.json()) as { error: string }).error).toBe(
       'Ett krav gäller en befattning, en enhet eller en person.',
     );
-    const again = await w.call(mikael, 'POST', '/requirements', { typeId, positionId: 'pos-usk' });
+    const again = await w.call(mikael, 'POST', '/requirements', { typeId, positionCode: 'usk' });
     expect(((await again.json()) as { error: string }).error).toBe('Det kravet finns redan.');
     expect((await w.call(hillevi, 'POST', '/requirements', { typeId, unitId: 'unit-skola' })).status).toBe(403);
     // One person: their manager, never the administrator (D118).
@@ -254,27 +254,30 @@ describe('the competence wiring (D108 item 13)', () => {
     expect(listed.status).toBe(200);
     expect(listed.headers.get('cache-control')).toContain('no-store');
     expect(await listed.json()).toEqual({
-      rows: [{ id: requirementId, typeId, on: 'position', targetId: 'pos-usk', targetLabel: 'Undersköterska' }],
-      positions: [{ id: 'pos-usk', code: 'usk', label: 'Undersköterska' }],
+      rows: [{ id: requirementId, typeId, on: 'position', targetId: 'usk', targetLabel: 'Undersköterska' }],
+      positions: [{ code: 'usk', label: 'Undersköterska' }],
       units: [{ id: 'unit-skola', label: 'Bergsåkers skola' }],
     });
     expect((await w.call(hillevi, 'GET', '/requirements')).status).toBe(403);
     expect((await w.call(hillevi, 'DELETE', `/requirements/${requirementId}`)).status).toBe(403);
     expect((await w.call(mikael, 'DELETE', `/requirements/${requirementId}`)).status).toBe(204);
-    expect((await w.call(mikael, 'DELETE', `/requirements/${requirementId}`)).status).toBe(400);
+    // Gone now: refused in the same words as one the reader may not touch, so a refusal never tells which.
+    const gone = await w.call(mikael, 'DELETE', `/requirements/${requirementId}`);
+    expect(gone.status).toBe(403);
+    expect(((await gone.json()) as { error: string }).error).toBe('Du kan inte ta bort det här kravet.');
 
-    const target = await w.call(mikael, 'POST', '/share-targets', { typeId, positionId: 'pos-usk', minShare: 40 });
+    const target = await w.call(mikael, 'POST', '/share-targets', { typeId, positionCode: 'usk', minShare: 40 });
     expect(target.status).toBe(201);
     const { id: targetId } = (await target.json()) as { id: string };
     for (const minShare of [0, 101, 12.5, '40'])
-      expect((await w.call(mikael, 'POST', '/share-targets', { typeId, positionId: 'pos-usk', minShare })).status).toBe(
+      expect((await w.call(mikael, 'POST', '/share-targets', { typeId, positionCode: 'usk', minShare })).status).toBe(
         400,
       );
     expect(
       (
         await w.call(hillevi, 'POST', '/share-targets', {
           typeId,
-          positionId: 'pos-usk',
+          positionCode: 'usk',
           unitId: 'unit-skola',
           minShare: 40,
         })
@@ -283,7 +286,16 @@ describe('the competence wiring (D108 item 13)', () => {
     const targets = await w.call(mikael, 'GET', '/share-targets');
     expect(targets.headers.get('cache-control')).toContain('no-store');
     expect(await targets.json()).toEqual({
-      rows: [{ id: targetId, typeId, positionId: 'pos-usk', positionLabel: 'Undersköterska', minShare: 40 }],
+      rows: [
+        {
+          id: targetId,
+          typeId,
+          positionCode: 'usk',
+          positionLabel: 'Undersköterska',
+          minShare: 40,
+          outcome: { tooFew: true },
+        },
+      ],
     });
     expect((await w.call(hillevi, 'DELETE', `/share-targets/${targetId}`)).status).toBe(403);
     expect((await w.call(mikael, 'DELETE', `/share-targets/${targetId}`)).status).toBe(204);
@@ -298,7 +310,7 @@ describe('the competence wiring (D108 item 13)', () => {
     w.store.holdPosition('p-anna', 'pos-usk');
     const added = await w.call(mikael, 'POST', '/types', { name: 'HLR', area: 'Akut', kind: 'course' });
     const { id: typeId } = (await added.json()) as { id: string };
-    expect((await w.call(mikael, 'POST', '/requirements', { typeId, positionId: 'pos-usk' })).status).toBe(201);
+    expect((await w.call(mikael, 'POST', '/requirements', { typeId, positionCode: 'usk' })).status).toBe(201);
 
     const read = await w.call(hillevi, 'GET', '/matrix?by=area%3AAkut&part=1');
     expect(read.status).toBe(200);

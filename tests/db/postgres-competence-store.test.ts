@@ -142,10 +142,12 @@ test('removing a connector removes what it put in the competence register, and n
 });
 
 /**
- * D108 item 6: a requirement and a share target go with what they are set on. A position goes when its `position:` group
- * does, so does what is required of its holders; a person's own requirement goes with the person's row.
+ * D108 item 6, amended: a requirement and a share target name a position by its code and a unit by its id, not by a row.
+ * A provisioner that removes a position group and pushes it again (a new row, a new id) leaves them standing: while the
+ * position is gone they count for nobody, and when it comes back under the same code its holders are under them again.
+ * Removing a unit's group or row takes nothing either. A person's own requirement still goes with the person's row.
  */
-test('a requirement and a share target go with the position, and a requirement with the person, they are set on', async () => {
+test('a requirement and a share target outlive their position and unit rows, and apply again when the code comes back', async () => {
   const p = 'test-comp-' + randomUUID().slice(0, 8);
   prefixes.push(p);
   const store = postgresCompetenceStore(durable);
@@ -153,37 +155,58 @@ test('a requirement and a share target go with the position, and a requirement w
   const org = p + '-org';
   await db.insert(schema.people).values({ id: p + '-anna', organisationId: org, name: 'Synthetic' });
   await db.insert(schema.positions).values({ id: p + '-usk', organisationId: org, code: 'usk', label: 'Usk' });
+  await db.insert(schema.personPositions).values({ personId: p + '-anna', positionId: p + '-usk' });
+  await db.insert(schema.units).values({ id: p + '-u1', organisationId: org, label: 'Enhet' });
   const at = new Date().toISOString();
+  const requirement = (id: string, target: { positionCode?: string; unitId?: string; personId?: string }) => ({
+    id,
+    organisationId: org,
+    typeId: p + '-t1',
+    positionCode: null,
+    unitId: null,
+    personId: null,
+    minLevel: null,
+    createdBy: 't',
+    createdAt: at,
+    ...target,
+  });
   await store.transaction(async tx => {
     await tx.insertType(typeRow(p + '-t1', org));
-    for (const [id, target] of [
-      [p + '-r1', { positionId: p + '-usk', personId: null }],
-      [p + '-r2', { positionId: null, personId: p + '-anna' }],
-    ] as const)
-      await tx.insertRequirement({
-        id,
-        organisationId: org,
-        typeId: p + '-t1',
-        unitId: null,
-        minLevel: null,
-        createdBy: 't',
-        createdAt: at,
-        ...target,
-      });
+    await tx.insertRequirement(requirement(p + '-r1', { positionCode: 'usk' }));
+    await tx.insertRequirement(requirement(p + '-r2', { personId: p + '-anna' }));
+    await tx.insertRequirement(requirement(p + '-r3', { unitId: p + '-u1' }));
     await tx.insertShareTarget({
       id: p + '-s1',
       organisationId: org,
       typeId: p + '-t1',
-      positionId: p + '-usk',
+      positionCode: 'usk',
       unitId: null,
       minShare: 40,
       createdBy: 't',
       createdAt: at,
     });
   });
+  // The position group is removed: its row goes, and with it who held it. The requirement and the target stay.
   await db.delete(schema.positions).where(eq(schema.positions.id, p + '-usk'));
-  expect((await store.transaction(tx => tx.requirements(org))).map(r => r.id)).toEqual([p + '-r2']);
-  expect(await store.transaction(tx => tx.shareTargets(org))).toEqual([]);
+  await db.delete(schema.units).where(eq(schema.units.id, p + '-u1'));
+  expect((await store.transaction(tx => tx.requirements(org))).map(r => r.id).sort()).toEqual(
+    [p + '-r1', p + '-r2', p + '-r3'].sort(),
+  );
+  expect((await store.transaction(tx => tx.shareTargets(org))).map(t => t.id)).toEqual([p + '-s1']);
+  expect(await store.transaction(tx => tx.placesOf(org, [p + '-anna']))).toEqual([
+    { personId: p + '-anna', unitIds: [], positionCodes: [] },
+  ]);
+  // Pushed again under the same code: a new row, and the holder is under the position's requirement again.
+  await db.insert(schema.positions).values({ id: p + '-usk-again', organisationId: org, code: 'usk', label: 'Usk' });
+  await db.insert(schema.personPositions).values({ personId: p + '-anna', positionId: p + '-usk-again' });
+  expect(await store.transaction(tx => tx.placesOf(org, [p + '-anna']))).toEqual([
+    { personId: p + '-anna', unitIds: [], positionCodes: ['usk'] },
+  ]);
+  expect(await store.transaction(tx => tx.positionHolders(org, ['usk']))).toEqual([
+    { personId: p + '-anna', code: 'usk' },
+  ]);
   await db.delete(schema.people).where(eq(schema.people.id, p + '-anna'));
-  expect(await store.transaction(tx => tx.requirements(org))).toEqual([]);
+  expect((await store.transaction(tx => tx.requirements(org))).map(r => r.id).sort()).toEqual(
+    [p + '-r1', p + '-r3'].sort(),
+  );
 });
