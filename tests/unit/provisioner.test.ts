@@ -1137,8 +1137,9 @@ describe('the synthetic provisioner', () => {
         chef = someone('dev:4', 'chef', 'unit-c', { manager: true }),
         rest = ['b', 'd', 'e'].map((id, n) => someone('dev:' + (n + 5), 'chef-' + id, 'unit-' + id, { manager: true }));
       await reconcile(client, source(units, [anna, ada, bo, chef, ...rest]), developmentScope);
-      // Anna steps down and gives the capability back. Beside her, Bo's capability is written wrong, and the unit Chef
-      // manages is written without its prefix, so the export names a unit it does not list.
+      // Anna steps down and gives the capability back. Beside her, Bo's capability is written wrong (twice on his row,
+      // and he is named once), and the unit Chef manages is written without its prefix, so the export names a unit it
+      // does not list.
       const typo = 'admin.user' as Capability,
         log: string[] = [];
       const bad = await reconcile(
@@ -1146,7 +1147,7 @@ describe('the synthetic provisioner', () => {
         source(units, [
           { ...anna, manager: false, capabilities: [] },
           ada,
-          { ...bo, capabilities: [typo] },
+          { ...bo, capabilities: [typo, typo] },
           { ...chef, department: 'c' },
           ...rest,
         ]),
