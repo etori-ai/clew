@@ -36,7 +36,7 @@ Clew holds one name per person. Send `displayName` (or `name.formatted`). Withou
 {
   "phoneNumbers": [
     { "type": "work", "value": "070-174 06 05" },
-    { "type": "mobile", "value": "070-174 06 06" },
+    { "type": "work", "value": "070-174 06 06" },
     { "type": "Jour", "value": "070-174 06 07" }
   ]
 }
@@ -47,7 +47,26 @@ Clew holds one name per person. Send `displayName` (or `name.formatted`). Withou
 - **`type`** is one of the standard's (`work`, `mobile`, `home`, `fax`, `pager`, `other`, in any case) or the directory's own word, such as `Jour`, which is shown as written. A number without a type is listed as "Övrigt". A type may occur several times.
 - **A person without a number is not a mistake.** A number Clew cannot read (empty, `null`, not text, longer than 512 characters) is left out, and the person is stored. The [check](#checking-a-push) says how many people have a number.
 - **A list holds at most 50 numbers**, each once.
-- **To change the numbers, send the list.** A `PUT` replaces it, and so does a `PATCH` with `replace` on `phoneNumbers`; `add` appends, and `remove` clears it. A filter picks numbers by type or by value: `phoneNumbers[type eq "mobile"].value` is every number of that type, and with `add` or `replace` it sets the person's first one, as Microsoft Entra sends it; `phoneNumbers[value eq "070-174 06 05"].value` is that number. A value that is set to nothing takes the number away. Any other path under `phoneNumbers` answers 400 `invalidPath`.
+- **To change one of several work numbers, send the complete list.** A full user `PUT` or a `PATCH` with `replace` on `phoneNumbers` replaces the list. An unfiltered `add` appends. An unfiltered `remove` clears the entire list, even if it carries a `value`.
+- **A filter selects every match.** A write to `phoneNumbers[type eq "work"].value` sets the value of every work number. Identical type/value pairs then collapse to one. A value filter matches the number across all categories where it occurs. Clearing a selected value removes every match. A type filter with `.value` can also set the first number in an empty category.
+- Clew supports the filtered sub-attributes `.value` and `.type`. It accepts writes to other sub-attributes such as `.display` or `.primary` without storing them. Unsupported filter syntax returns 400 `invalidPath`. A write with an additional `and primary eq true` or `and primary eq false` predicate returns 400 `invalidPath` if multiple numbers match the type or value and the operation would modify them. Clew stores no primary flag. Replacing the value of a number selected by its old value returns 400 `noTarget` if that number is missing.
+
+For the three numbers above, this `PATCH /scim/v2/Users/{id}` changes the second work number from `070-174 06 06` to `070-174 06 08` and keeps the first work number and the on-call number.
+
+```json
+{
+  "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+  "Operations": [{
+    "op": "replace",
+    "path": "phoneNumbers",
+    "value": [
+      { "type": "work", "value": "070-174 06 05" },
+      { "type": "work", "value": "070-174 06 08" },
+      { "type": "Jour", "value": "070-174 06 07" }
+    ]
+  }]
+}
+```
 
 ### Current employments
 
@@ -77,7 +96,7 @@ This example creates Mikael with `POST /scim/v2/Users` in a test installation wh
 - **`unitId` is the unit's id**: what follows `unit:` in the `externalId` of the unit's group, written exactly as there. It is required. The unit must be one Clew holds for the organisation, so a unit is sent before an employment names it; an employment on any other unit answers 400 `invalidValue` and names the unit.
 - **An employment gives no access.** It says where a person works and what they are called. What a person may do comes from membership of the `unit:` and `unit-manager:` groups, which is sent as [the groups below](#groups) say: a person with an employment on a unit and no membership of its group can do nothing there.
 - **The titles of the employments are the person's titles** in the product: on the profile each with its unit, and in the list on Administration › Användare and its search, each title once. Where no employment carries a title, the core `title` is shown.
-- **The list is sent whole.** A `PUT` replaces it, and one without the extension clears it. In a `PATCH`, `replace` on `urn:clew:params:scim:schemas:extension:employment:2.0:User:employments` replaces it, `add` appends and `remove` clears it. An entry has no id, so one cannot be picked by a filter, and two entries that say the same are one. A list holds at most 50.
+- **The list is sent whole.** A `PUT` replaces it, and one without the extension clears it. In a `PATCH`, `replace` on `urn:clew:params:scim:schemas:extension:employment:2.0:User:employments` replaces it, `add` appends and `remove` clears the entire list even if it carries a `value`. To withdraw one job, replace the list with the jobs that remain. An entry has no id, so one cannot be picked by a filter, and two entries that say the same are one. A list holds at most 50.
 - **The attribute is named with its URN.** `employments` by itself, in a body or as a `PATCH` path, answers 400 `invalidPath` with the name to use.
 - **Each employment can carry its own details.** Send `employmentType` as the source's label (such as `Vikariat`) and `startDate` as the first calendar day of this employment in `YYYY-MM-DD` format. Both are optional. An empty entry is left out. An entry with details needs a `unitId`. Clew omits an unreadable date. The date is displayed on the profile. The provisioner sends changes to placements and access when they take effect.
 - **Each employment has its own percentage.** The percentages may total more or less than 100. Clew omits an out-of-range value or a string such as `"50"` or `"50%"`. The employment stays on the profile with its other details.
@@ -111,7 +130,7 @@ The same rules hold for a full representation (`POST`, `PUT`) and for a `PATCH`.
 
 - **Unknown attributes are ignored.** Extension schemas and attributes Clew does not hold (`name.middleName`, the enterprise extension's `manager`) are accepted and change nothing, whatever the operation.
 - **Names are read without regard to case**, as the standard says (RFC 7643 §2.1): `Title`, `Active` and `DisplayName` are `title`, `active` and `displayName`. That holds for the attributes of a body, the nested ones (`emails[].Value`, `members[].Value`, the unit extension's `Parent`), a `PATCH` path, the PatchOp message's own `Operations`, `op`, `path` and `value`, and a `.search` body.
-- **`null` is the same as leaving the attribute out** (RFC 7643 §2.5), so a serializer that writes every empty field as `null` is not refused for it. In a `PATCH`, a value of `null` takes the attribute away, as a `remove` does.
+- **`null` is the same as leaving the attribute out** (RFC 7643 §2.5), so a serializer that writes every empty field as `null` is not refused for it. In a `PATCH`, an explicit `null` takes the attribute away, as a `remove` does. On a user, a path-based `add` or `replace` with its `value` member missing returns 400 `invalidSyntax`. A simultaneous deactivation follows the rule below.
 - **A required attribute that is wrong is refused by name**, with 400 `invalidValue`: one that is missing, empty, only space, longer than 512 characters, not text, or holding a NUL character. The same holds for a group's name, key, parent and members. A body that is not a JSON object at all answers 400 `invalidSyntax`.
 - **What is only shown never refuses a person for being empty.** A title, a phone number or an employment entry with nothing readable in it is left out, and the rest of the request is stored. What is refused is a request that says something Clew cannot take as said: an employment on a unit it does not hold, a list past its limit.
 - **A required attribute cannot be taken away.** A `remove` of one, or a value of `null`, answers 400 `mutability`.
@@ -204,7 +223,7 @@ A change in the source is sent to Clew when it happens, not saved for a nightly 
 | A name, a user name or a work address changes | `PATCH /Users/<id>` |
 | A title is set, changed or taken away | `PATCH /Users/<id>`: `replace` on `title`, or `remove` |
 | A phone number is added, changed or taken away | `PATCH /Users/<id>`: `replace` on `phoneNumbers` with the numbers the person now has |
-| An employment begins, ends or gets another title | `PATCH /Users/<id>`: `replace` on `urn:clew:params:scim:schemas:extension:employment:2.0:User:employments` with the employments the person now has |
+| An employment begins, ends, or changes unit, title, employment type, start date or percentage | Send the [complete employment list](#updating-employment-details) in a user PATCH as soon as any published detail changes. |
 | A person leaves | `PATCH /Users/<id>` with `active` `false` |
 | A person moves to another unit | `PATCH` `add` on the unit they join, then `PATCH` `remove` on the unit they leave; their employments, when the source sends them, with a `PATCH` on the user |
 | A person becomes a manager, or stops being one | `PATCH` `add` or `remove` on `unit-manager:<id>` |

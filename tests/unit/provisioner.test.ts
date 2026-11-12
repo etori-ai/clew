@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import { SCIM_EMPLOYMENT_SCHEMA } from '@clew/contracts';
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { scimUsecases, staffUsecases } from '../../apps/server/src/modules/people/usecases';
@@ -1051,7 +1052,7 @@ describe('the synthetic provisioner', () => {
     expect(warned.filter(f => f.level === 'fail')).toEqual([]);
     expect(warned.filter(f => f.level === 'warn').map(f => f.text)).toEqual([
       '1 active user has no unit: or unit-manager: group and can do nothing in Clew: lost.',
-      '1 employment names a unit that is no longer held, so the profile shows the title without a unit: lost (unit-closed).',
+      '1 employment names a unit that is no longer held. Reconcile lost (unit-closed) with the directory.',
       '1 unit has a unit-manager: group and no unit: group, so the unit is shown by its id instead of a name: unit-nameless.',
       '1 unit or unit-manager group has no members: unit:unit-empty.',
       '1 unit has people and no manager, on the unit or on any unit above it, so its people report to nobody: unit:unit-adrift-below.',
@@ -1242,6 +1243,50 @@ describe('a run that is interrupted', () => {
           expect(s.store.state.audit.length).toBe(audited);
         }
     });
+});
+
+test('the profile guide changes one of two work numbers and one of two employment percentages', async () => {
+  const { client } = stack();
+  const guide = await Bun.file(new URL('../../docs/guides/writing-a-provisioner.md', import.meta.url)).text();
+  const examples = guide.slice(guide.indexOf('### Phone numbers'), guide.indexOf('### How a request is read'));
+  const blocks = [...examples.matchAll(/^```json\n([\s\S]*?)\n```/gm)].map(match => JSON.parse(match[1]!) as unknown);
+  expect(blocks).toHaveLength(4);
+  const [phones, changePhone, createPerson, changeEmployment] = blocks;
+  await client.request('POST', '/Groups', { externalId: 'unit:9540', displayName: 'Utveckling' });
+  const created = await client.request('POST', '/Users', createPerson);
+  const path = '/Users/' + created.body.id;
+  expect(created.body[SCIM_EMPLOYMENT_SCHEMA].employments).toMatchObject([
+    { employmentPercentage: 60 },
+    { employmentPercentage: 40 },
+  ]);
+  await client.request('PATCH', path, {
+    schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+    Operations: [{ op: 'replace', value: phones }],
+  });
+  await client.request('PATCH', path, changePhone);
+  await client.request('PATCH', path, changeEmployment);
+  const { body } = await client.request('GET', path);
+  expect(body.phoneNumbers).toEqual([
+    { type: 'work', value: '070-174 06 05' },
+    { type: 'work', value: '070-174 06 08' },
+    { type: 'Jour', value: '070-174 06 07' },
+  ]);
+  expect(body[SCIM_EMPLOYMENT_SCHEMA].employments).toEqual([
+    {
+      unitId: '9540',
+      title: 'Systemförvaltare',
+      employmentType: 'Tillsvidare',
+      startDate: '2019-02-01',
+      employmentPercentage: 62.5,
+    },
+    {
+      unitId: '9540',
+      title: 'Projektsamordnare',
+      employmentType: 'Vikariat',
+      startDate: '2026-09-01',
+      employmentPercentage: 40,
+    },
+  ]);
 });
 
 test('the published school walkthrough produces the printed output and the promised organisation', async () => {

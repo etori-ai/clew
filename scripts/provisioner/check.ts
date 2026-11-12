@@ -151,7 +151,7 @@ export async function checkProvisioning(
   if (adrift.length)
     say(
       'warn',
-      `${plural(adrift.length, 'employment names', 'employments name')} a unit that is no longer held, so the profile shows the title without a unit: ${some(adrift)}.`,
+      `${plural(adrift.length, 'employment names', 'employments name')} a unit that is no longer held. Reconcile ${some(adrift)} with the directory.`,
     );
   const unnamed = managers.map(g => g.externalId!.slice(MANAGER_KEY.length)).filter(id => !named.has(id));
   if (unnamed.length)

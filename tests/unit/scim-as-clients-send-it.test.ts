@@ -189,7 +189,7 @@ describe('phone numbers on a SCIM user', () => {
       (await patch(path, { op: 'Add', path: 'phoneNumbers[type eq "mobile"].value', value: mobile.value })).body
         .phoneNumbers,
     ).toEqual([mobile]);
-    // Clew holds a type and a value: another sub-attribute is nothing to change, and `primary` in a filter is not asked.
+    // Clew holds a type and a value. A client can include a primary predicate when only one number matches.
     expect(
       (await patch(path, { op: 'replace', path: 'phoneNumbers[type eq "mobile"].display', value: 'Shown' })).body
         .phoneNumbers,
@@ -207,6 +207,27 @@ describe('phone numbers on a SCIM user', () => {
       (await patch(path, { op: 'replace', path: 'phoneNumbers[type eq "mobile"].type', value: 'Jour' })).body
         .phoneNumbers,
     ).toEqual([{ type: 'Jour', value: '070-9' }]);
+  });
+  test('a primary predicate cannot choose among repeated types or shared values', async () => {
+    const { create, json, patch } = app();
+    const second = { ...mobile, value: '070-100 00 03' };
+    const shared = { ...work, value: mobile.value };
+    const phoneNumbers = [mobile, second, shared];
+    const path = '/Users/' + (await create(1, { phoneNumbers }));
+    const byType = 'phoneNumbers[type eq "mobile" and primary eq true].value';
+    for (const operation of [
+      { op: 'replace', path: byType, value: '070-100 00 04' },
+      { op: 'add', path: byType, value: '070-100 00 04' },
+      { op: 'remove', path: `phoneNumbers[value eq "${mobile.value}" and primary eq false]` },
+    ]) {
+      expect(await patch(path, operation)).toMatchObject({ status: 400, body: { scimType: 'invalidPath' } });
+      expect((await json('GET', path)).body.phoneNumbers).toEqual(phoneNumbers);
+    }
+    const corrected = [mobile, { ...second, value: '070-100 00 04' }, shared];
+    await patch(path, { op: 'replace', path: 'phoneNumbers', value: corrected });
+    expect((await json('GET', path)).body.phoneNumbers).toEqual(corrected);
+    await patch(path, { op: 'replace', path: 'phoneNumbers[type eq "mobile"].value', value: second.value });
+    expect((await json('GET', path)).body.phoneNumbers).toEqual([second, shared]);
   });
   test('what a request gets wrong about the numbers is refused by name, and never beside a deactivation', async () => {
     const { create, patch, json, person } = app();
@@ -268,6 +289,38 @@ describe('current employments on a SCIM user', () => {
   const units = async (group: ReturnType<typeof app>['group']) => ({
     school: await group({ externalId: 'unit:school', displayName: 'Skolan' }),
     office: await group({ externalId: 'unit:office', displayName: 'Kansliet' }),
+  });
+  test('a missing PATCH value preserves both profile lists, including beside a deactivation', async () => {
+    const { create, group, json, patch } = app();
+    await units(group);
+    const phoneNumbers = [{ type: 'work', value: '010-100 00 01' }];
+    const stored = { phoneNumbers, [urn]: { employments: jobs } };
+    const path = '/Users/' + (await create(1, stored));
+    for (const list of ['phoneNumbers', field]) {
+      for (const op of ['add', 'replace']) {
+        expect(
+          await patch(path, { op: 'replace', path: 'displayName', value: 'Changed' }, { op, path: list }),
+        ).toMatchObject({ status: 400, body: { scimType: 'invalidSyntax' } });
+        expect((await json('GET', path)).body).toMatchObject({ ...stored, active: true, displayName: 'User 1' });
+      }
+    }
+    expect(
+      await patch(
+        path,
+        { op: 'add', path: field },
+        { op: 'replace', path: 'active', value: false },
+        { op: 'replace', path: 'phoneNumbers' },
+      ),
+    ).toMatchObject({ status: 200 });
+    expect((await json('GET', path)).body).toMatchObject({ ...stored, active: false });
+    await patch(
+      path,
+      { op: 'replace', path: 'phoneNumbers', value: null },
+      { op: 'remove', path: field, value: [jobs[0]] },
+    );
+    const cleared = (await json('GET', path)).body;
+    expect(cleared).not.toHaveProperty('phoneNumbers');
+    expect(cleared).not.toHaveProperty(urn);
   });
   test('employment type and start date belong to each job and can be withdrawn independently', async () => {
     const { create, group, json, patch, person } = app();

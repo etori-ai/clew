@@ -979,9 +979,8 @@ const emailTarget = (key: string, path: string): { held: boolean; sub: string | 
 };
 /**
  * A path under `phoneNumbers`: the list, or the numbers a filter picks, by type (every number of that category) or by
- * value (one number). A number set to nothing is taken away, as an emptied field in the source is. Clew holds a type
- * and a value for a number: `and primary eq …` in a filter is not asked about, and another sub-attribute (`display`,
- * `primary`) is nothing to change.
+ * value (across categories). Clew holds a type and a value. A client can qualify a single match with `primary`,
+ * but Clew has no primary flag to distinguish multiple matches. Other sub-attributes have nothing to update.
  */
 function patchPhones(next: UserFields, path: string, op: 'add' | 'replace' | 'remove', value?: unknown) {
   const target = corePath(path, 'user');
@@ -991,7 +990,7 @@ function patchPhones(next: UserFields, path: string, op: 'add' | 'replace' | 're
   if (target.toLowerCase() === 'phonenumbers')
     return store(op === 'remove' ? [] : [...(op === 'add' ? next.phoneNumbers : []), ...phoneList(value)]);
   const match =
-    /^phonenumbers\[\s*(type|value)\s+eq\s+("(?:[^"\\]|\\.)*")(?:\s+and\s+primary\s+eq\s+(?:true|false))?\s*\](?:\.([a-z$]+))?$/i.exec(
+    /^phonenumbers\[\s*(type|value)\s+eq\s+("(?:[^"\\]|\\.)*")(?:\s+and\s+primary\s+eq\s+(true|false))?\s*\](?:\.([a-z$]+))?$/i.exec(
       target,
     );
   let filter: unknown;
@@ -1014,12 +1013,21 @@ function patchPhones(next: UserFields, path: string, op: 'add' | 'replace' | 're
       byType ? row.type.toLowerCase() === picked.toLowerCase() : row.value === picked,
     rows = next.phoneNumbers,
     others = rows.filter(row => !matches(row)),
-    sub = match[3]?.toLowerCase();
+    matchCount = rows.length - others.length,
+    sub = match[4]?.toLowerCase();
   if (sub !== undefined && sub !== 'value' && sub !== 'type') return;
+  if (match[3] !== undefined && matchCount > 1)
+    throw beside(
+      new ScimError(
+        400,
+        `Path '${path}' matches multiple numbers. Replace the complete phoneNumbers list to select the intended number.`,
+        'invalidPath',
+      ),
+    );
   const noTarget = () => beside(new ScimError(400, `No phone number matches the filter of '${path}'.`, 'noTarget'));
   if (sub === 'type') {
     // A type taken away, or set to nothing readable, leaves the number in the category for those without one.
-    if (op !== 'remove' && !rows.some(matches)) throw noTarget();
+    if (op !== 'remove' && matchCount === 0) throw noTarget();
     const type = op === 'remove' ? 'other' : phoneType(value);
     return store(rows.map(row => (matches(row) ? { ...row, type } : row)));
   }
@@ -1027,12 +1035,12 @@ function patchPhones(next: UserFields, path: string, op: 'add' | 'replace' | 're
   if (sub === 'value') {
     const number = phoneValue(value);
     if (!number) return store(others);
-    if (rows.some(matches)) return store(rows.map(row => (matches(row) ? { ...row, value: number } : row)));
+    if (matchCount > 0) return store(rows.map(row => (matches(row) ? { ...row, value: number } : row)));
     // Entra adds a person's first number of a type as `phoneNumbers[type eq "mobile"].value`.
     if (byType) return store([...rows, { type: phoneType(picked), value: number }]);
     throw noTarget();
   }
-  if (op === 'replace' && !byType && !rows.some(matches)) throw noTarget();
+  if (op === 'replace' && !byType && matchCount === 0) throw noTarget();
   store([...(op === 'add' ? rows : others), ...phoneList(value, byType ? picked : undefined)]);
 }
 const employmentUrn = SCIM.employment.toLowerCase();
@@ -1099,8 +1107,10 @@ export function applyUserPatch(
   };
   const set = (path: string, value: unknown, op: 'add' | 'replace', pathless: boolean) => {
     const key = coreKey(path, 'user');
+    if (value === undefined)
+      throw beside(new ScimError(400, `Operation '${op}' on '${path}' requires a value.`, 'invalidSyntax'));
     // RFC 7643 §2.5: a value of `null` is the attribute taken away.
-    if (value === null || value === undefined) {
+    if (value === null) {
       if (pathless && isReadOnly(key, 'user')) return;
       return unset(key, path);
     }
@@ -1365,7 +1375,7 @@ export const schemaDocuments = (base: string) => [
     schemas: [SCIM.schema],
     id: SCIM.user,
     name: 'User',
-    description: 'A person who may sign in to Clew. externalId, userName, displayName and a work e-mail are required.',
+    description: 'A person who may sign in to Clew. Requires an externalId, a userName, a name and an e-mail address.',
     attributes: [
       attribute('userName', 'string', { required: true, uniqueness: 'server' }),
       attribute('externalId', 'string', { required: true, caseExact: true, uniqueness: 'server' }),
@@ -1381,6 +1391,8 @@ export const schemaDocuments = (base: string) => [
       attribute('emails', 'complex', {
         multiValued: true,
         required: true,
+        description:
+          'Clew publishes the first work address. Otherwise it prefers untyped addresses, then any remaining addresses. Within each fallback it takes the primary address or the first.',
         subAttributes: [attribute('value', 'string'), attribute('type', 'string'), attribute('primary', 'boolean')],
       }),
       attribute('phoneNumbers', 'complex', {

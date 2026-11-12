@@ -1,6 +1,6 @@
 # SCIM profile updates before the directory handover
 
-Reviewed on 2026-11-12 against the working tree based on `eb8d4a8`. This follows the [earlier D114 review](2026-11-12-scim-and-the-guides-before-the-handover.md) and covers the two guides, contact details and updates to concurrent employments. The findings below are open.
+Reviewed on 2026-11-12 against the working tree based on `eb8d4a8`. This follows the [earlier D114 review](2026-11-12-scim-and-the-guides-before-the-handover.md) and covers the two guides, contact details and updates to concurrent employments. The [outcome](#outcome) records the fixes made after the review.
 
 ## Changes before handover
 
@@ -37,3 +37,12 @@ Codex reviewed the working tree and exercised the public SCIM routes with synthe
 Two lower-priority wording changes follow from those checks. An unfiltered `remove` on either list clears it even if a client supplies a `value` identifying one entry. To withdraw one job, replace the list with the remaining jobs. The checker also says a deleted unit leaves the title on the profile. Some jobs only have a date or percentage, and a row with no remaining details disappears from the profile. State only which unit reference needs reconciliation. [List operations](../../apps/server/src/modules/people/domain.ts) · [Checker warning](../../scripts/provisioner/check.ts) · [Profile projection](../../apps/server/src/modules/people/usecases.ts)
 
 Twelve focused tests for phone numbers, employments and the synthetic Mikael passed. The documentation checks passed. The HTTP and profile checks used the memory store. This review covers the working copy. A real Meta directory push, PostgreSQL and browser rendering were outside this run.
+
+## Outcome
+
+1. **Missing PATCH value.** A user `add` or `replace` targeting a path without a `value` now returns HTTP 400 with `invalidSyntax`. Route tests read the person back to verify that both lists and any earlier operation remain unchanged. Explicit `null` and `remove` still clear the target. When the request also deactivates the person, Clew applies the deactivation and preserves the lists.
+2. **Repeated phone categories.** A primary predicate with multiple candidate numbers now returns HTTP 400 for a write to the numbers. An ordinary type or value filter still selects every match. The protocol guide describes filtered writes and shows a full-list replacement that changes just the second work number. A test runs the published example through the HTTP routes.
+3. **Published e-mail.** The operations guide and SCIM User schema describe the existing selection order, including the primary address in each fallback. The e-mail contract test covers a primary address that comes second when both addresses have a non-work type.
+4. **Employment change events.** The protocol guide lists the unit, title, employment type, start date and percentage as triggers for sending the current jobs. The acceptance check asks the writer to compare a two-job GET with the source. The executable example verifies both jobs after a percentage changes.
+
+Both list descriptions explain the effect of an unfiltered `remove` with a value. The provisioning checker names the user and the missing unit for reconciliation. The 33 focused tests for SCIM clients, the guide examples, the checker and e-mail selection passed against the in-memory implementation.
