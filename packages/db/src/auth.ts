@@ -204,58 +204,71 @@ export async function bindFirstLogin(
     return accessOf(tx, person.id);
   });
 }
-/** Why an operator's rebind was refused. Nothing was written. */
+/** Why an operator's rebind was refused; nothing was written. `holder` holds the subject, when that is why. */
 export class RebindRefused extends Error {
-  constructor(message: string) {
+  holder?: string;
+  constructor(message: string, holder?: string) {
     super(message);
     this.name = 'RebindRefused';
+    this.holder = holder;
   }
 }
 /**
- * An operator binds a person to a new sign-in account (Q8 of the 2026-11-12 users review, amending D68 item 6): the
- * person's binding under the issuer moves to the new subject, with one `identity.rebound` audit row about the person
- * (issuer, old subject, new subject, the operator's name), in one transaction. Refused, writing nothing, for a person
- * id the people table does not hold and for a subject already bound to another person. Never automatic and never on a
- * page: `scripts/identity-rebind.ts` is its one caller. The person's sessions under the old subject end at their next
+ * An operator binds a person to a new sign-in account, or releases their binding (Q8 of the 2026-11-12 users review,
+ * amending D68 item 6): the person's binding under the issuer moves to the new subject, or with `subject: null` is
+ * removed, so that the next sign-in whose claim names the person binds it again as a first login does. One
+ * `identity.rebound` audit row about the person (issuer, old subject, new subject or null, the operator's name) is
+ * written in the same transaction. Refused, writing nothing, for a person id the people table does not hold and for a
+ * subject already bound to another person: a subject is moved off its holder only by releasing the holder first, named
+ * by its own id, so every change is audited on the person it changes. Never automatic and never on a page:
+ * `scripts/identity-rebind.ts` is its one caller. The person's sessions under the old subject end at their next
  * request, because that subject no longer resolves to them.
  */
 export async function rebindIdentity(
   actor: string,
-  input: { issuer: string; personId: string; subject: string; operator: string },
+  input: { issuer: string; personId: string; subject: string | null; operator: string },
 ) {
   const { issuer, personId, subject, operator } = input;
   return database().transaction(async tx => {
     const [person] = await tx.select({ id: people.id }).from(people).where(eq(people.id, personId));
     if (!person) throw new RebindRefused(`no person has the id "${personId}"`);
-    const [holder] = await tx
-      .select({ personId: identityBindings.personId })
-      .from(identityBindings)
-      .where(and(eq(identityBindings.issuer, issuer), eq(identityBindings.subject, subject)));
-    if (holder && holder.personId !== personId)
-      throw new RebindRefused(`the subject is already bound to another person, "${holder.personId}"`);
+    if (subject !== null) {
+      const [holder] = await tx
+        .select({ personId: identityBindings.personId })
+        .from(identityBindings)
+        .where(and(eq(identityBindings.issuer, issuer), eq(identityBindings.subject, subject)));
+      if (holder && holder.personId !== personId)
+        throw new RebindRefused(
+          `the subject is already bound to another person, "${holder.personId}"`,
+          holder.personId,
+        );
+    }
     const [current] = await tx
       .select({ subject: identityBindings.subject })
       .from(identityBindings)
       .where(and(eq(identityBindings.issuer, issuer), eq(identityBindings.personId, personId)));
-    if (current?.subject === subject) return { changed: false, oldSubject: subject };
+    const oldSubject = current?.subject ?? null;
+    if (oldSubject === subject) return { changed: false, oldSubject };
     if (current)
       await tx
         .delete(identityBindings)
         .where(and(eq(identityBindings.issuer, issuer), eq(identityBindings.personId, personId)));
-    // A first sign-in may bind the subject between the read above and here; the primary key refuses it then.
-    const inserted = await tx
-      .insert(identityBindings)
-      .values({ issuer, subject, personId })
-      .onConflictDoNothing()
-      .returning({ personId: identityBindings.personId });
-    if (!inserted.length) throw new RebindRefused('the subject was bound to another person meanwhile');
+    if (subject !== null) {
+      // A first sign-in may bind the subject between the read above and here; the primary key refuses it then.
+      const inserted = await tx
+        .insert(identityBindings)
+        .values({ issuer, subject, personId })
+        .onConflictDoNothing()
+        .returning({ personId: identityBindings.personId });
+      if (!inserted.length) throw new RebindRefused('the subject was bound to another person meanwhile');
+    }
     await tx.insert(audit).values({
       actor,
       action: 'identity.rebound',
       subject: 'person:' + personId,
-      details: { issuer, oldSubject: current?.subject ?? null, newSubject: subject, operator },
+      details: { issuer, oldSubject, newSubject: subject, operator },
     });
-    return { changed: true, oldSubject: current?.subject ?? null };
+    return { changed: true, oldSubject };
   });
 }
 export async function auditAuth(action: string, actor?: string) {
