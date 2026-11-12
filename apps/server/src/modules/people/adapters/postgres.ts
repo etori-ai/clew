@@ -1,7 +1,8 @@
 import { and, eq, gt, inArray, isNotNull, isNull, like, not, or, sql, type SQL } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
 import { writeAudit } from '@clew/db/threads';
-import { UNIT_KEY, unitGroupOf, type GroupRecord, type UserRecord, type UserSearch } from '../domain';
+import { UNIT_KEY } from '@clew/contracts/scim-group-key';
+import { unitGroupOf, type GroupRecord, type UserRecord, type UserSearch } from '../domain';
 import type { ProvisionStore, ProvisionTx, UserReads } from '../ports';
 
 /** Read the local user/grant tables; directory access is restricted to the actor's unit. */

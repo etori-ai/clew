@@ -16,10 +16,12 @@ const USER = 'urn:ietf:params:scim:schemas:core:2.0:User',
   PATCH = 'urn:ietf:params:scim:api:messages:2.0:PatchOp';
 function app(authenticate?: () => never) {
   const store = memoryProvisionStore();
-  let seq = 0;
+  let seq = 0,
+    tick = 0;
   const scim = scimUsecases({
     store,
-    clock: () => new Date('2026-11-09T06:00:00.000Z'),
+    // A second on for every reading, so that a change has a later time than what it changed.
+    clock: () => new Date(Date.UTC(2026, 10, 9, 6, 0, tick++)),
     ids: () => 'id-' + ++seq,
     digest: token => 'digest:' + token,
   });
@@ -877,6 +879,81 @@ describe('filters, pages and what a write answers', () => {
       attribute(GROUP, 'members').subAttributes.find((a: { name: string }) => a.name === '$ref').referenceTypes,
     ).toEqual(['User']);
     expect(attribute(GROUP, 'displayName').caseExact).toBe(false);
+  });
+});
+describe('what an outside review of the merged server found (2026-11-12)', () => {
+  test("a group's time of change is the same in the answer to the change and in the next read, and a repeat leaves it", async () => {
+    const { create, json, patch, group } = app();
+    const [a, b] = [await create(1), await create(2)];
+    const g = await group({ externalId: 'ad:g', displayName: 'G' });
+    const created = (await json('GET', '/Groups/' + g)).body.meta.lastModified;
+    const changed = await patch('/Groups/' + g, { op: 'add', path: 'members', value: [{ value: a }] });
+    // It once answered the new time here and the old one on the next read, with the new member.
+    expect(changed.body.meta.lastModified > created).toBe(true);
+    const read = (await json('GET', '/Groups/' + g)).body;
+    expect([read.meta.lastModified, read.members.length]).toEqual([changed.body.meta.lastModified, 1]);
+    // The same change again is no change.
+    const repeated = await patch('/Groups/' + g, { op: 'add', path: 'members', value: [{ value: a }] });
+    expect(repeated.body.meta.lastModified).toBe(read.meta.lastModified);
+    const replaced = await json('PUT', '/Groups/' + g, {
+      externalId: 'ad:g',
+      displayName: 'G',
+      members: [{ value: b }],
+    });
+    expect(replaced.body.meta.lastModified > read.meta.lastModified).toBe(true);
+    expect((await json('GET', '/Groups/' + g)).body.meta.lastModified).toBe(replaced.body.meta.lastModified);
+  });
+  test('email lists use the same work and primary preference for filtered and unfiltered PATCH paths', async () => {
+    const { create, patch } = app();
+    const id = await create(1);
+    const untyped = [{ value: 'first@x.se' }, { value: 'primary@x.se', primary: true }];
+    for (const path of ['emails', 'emails[type eq "work"]', 'emails[primary eq true]']) {
+      const write = (value: Array<{ value: string; type?: string; primary?: boolean }>) =>
+        patch('/Users/' + id, { op: 'replace', path, value });
+      expect((await write([...untyped, { value: 'work@x.se', type: 'Work' }])).body.emails[0].value).toBe('work@x.se');
+      expect((await write(untyped)).body.emails[0].value).toBe('primary@x.se');
+    }
+  });
+  test('a value that says home under a path that says work is not stored as the work address', async () => {
+    const { create, patch } = app();
+    const id = await create(1);
+    const home = await patch('/Users/' + id, {
+      op: 'replace',
+      path: 'emails[type eq "work"]',
+      value: { value: 'private@home.se', type: 'home' },
+    });
+    expect(home).toMatchObject({
+      status: 400,
+      body: {
+        scimType: 'invalidValue',
+        detail: expect.stringContaining('names the work address, and the value says it is of another type'),
+      },
+    });
+    const kept = await patch('/Users/' + id, {
+      op: 'replace',
+      path: 'emails[primary eq true]',
+      value: [{ value: 'p@home.se', type: 'Home' }],
+    });
+    expect(kept.status).toBe(400);
+    // A value without a type, or one that says work, is the work address the path names.
+    for (const value of [
+      { value: 'a@x.se' },
+      { value: 'b@x.se', type: 'Work' },
+      [
+        { value: 'h@home.se', type: 'home' },
+        { value: 'c@x.se', type: 'work' },
+      ],
+    ]) {
+      const taken = await patch('/Users/' + id, { op: 'replace', path: 'emails[type eq "work"]', value });
+      expect(taken.body.emails[0].value).toBe(Array.isArray(value) ? 'c@x.se' : value.value);
+    }
+    // Beside a deactivation it is passed over, as every wrong value is (D113).
+    const left = await patch(
+      '/Users/' + id,
+      { op: 'replace', path: 'emails[type eq "work"]', value: { value: 'private@home.se', type: 'home' } },
+      { op: 'replace', path: 'active', value: false },
+    );
+    expect(left.body).toMatchObject({ active: false, emails: [{ value: 'c@x.se' }] });
   });
 });
 describe('the edges of the HTTP layer', () => {

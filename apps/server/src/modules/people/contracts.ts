@@ -1,5 +1,4 @@
 import { SCIM_EMPLOYMENT_SCHEMA, type DirectoryPhone, type Employment } from '@clew/contracts';
-import { Type, type Static } from 'typebox';
 
 /**
  * The SCIM 2.0 contract Clew serves (RFC 7643, RFC 7644; D68): the names, the error and the resources it answers.

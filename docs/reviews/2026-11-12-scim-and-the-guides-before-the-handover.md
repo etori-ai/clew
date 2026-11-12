@@ -138,7 +138,7 @@ The product owner answered the findings the same day, and every one was fixed in
 | S9 | At most 50 numbers and 50 employments on a person; more answers 400 and says the limit. |
 | S10 | Under `phoneNumbers[…]` a sub-attribute Clew does not hold is nothing to change, and `and primary eq …` in the filter is not asked about, as under `emails[…]`. |
 | S11 | The store contract has a case for employments, and for the search in their titles, on both adapters. |
-| S12 | The example and the check write the URN out and import nothing of Clew's. The check counts people with a number and with an employment, and warns for an employment on a unit that is gone. |
+| S12 | The example and the check write the URN out and no longer import Clew's contracts package; the group keys come from the one small file that [#36](https://github.com/etori-ai/clew/pull/36) gave them. The check counts people with a number and with an employment, and warns for an employment on a unit that is gone. |
 
 **The guides.** The protocol guide has a section for each subject (users, phone numbers, employments, how a request is
 read, deactivation, groups, the tree, transport, authentication), so its outline reads as its contents (G5). Each of

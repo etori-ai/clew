@@ -1,3 +1,14 @@
+/**
+ * Deriving a person's authority from what was pushed (D68) and mapped (D85). Pure: no I/O, no clock.
+ *
+ * A group's meaning is a key in its `externalId`: `unit:<unitId>` makes the member an employee of that unit and names
+ * it with the group's `displayName`; `unit-manager:<unitId>` makes the member its manager, which wins over `unit:` for
+ * the same unit; `capability:<name>` gives a capability of the closed list; `protected` was to keep the person out of
+ * lists others see, and D93 refuses that key at the boundary until Clew decides whether it may hold the fact, so the
+ * flag below is false in any installation provisioned since. Any other group gives nothing here; a rules row (group
+ * to capability) may give a capability. A person with no unit membership has no active grant, so a mapping mistake
+ * fails closed.
+ */
 import {
   CAPABILITIES,
   EmploymentSchema,
@@ -11,22 +22,14 @@ import {
   type Role,
   type UserStatus,
 } from '@clew/contracts';
+import {
+  UNIT_KEY,
+  MANAGER_KEY,
+  CAPABILITY_KEY,
+  PROTECTED_KEY,
+  reservedScimGroupKey,
+} from '@clew/contracts/scim-group-key';
 
-/**
- * Deriving a person's authority from what was pushed (D68) and mapped (D85). Pure: no I/O, no clock.
- *
- * A group's meaning is a key in its `externalId`: `unit:<unitId>` makes the member an employee of that unit and names
- * it with the group's `displayName`; `unit-manager:<unitId>` makes the member its manager, which wins over `unit:` for
- * the same unit; `capability:<name>` gives a capability of the closed list; `protected` was to keep the person out of
- * lists others see, and D93 refuses that key at the boundary until Clew decides whether it may hold the fact, so the
- * flag below is false in any installation provisioned since. Any other group gives nothing here; a rules row (group
- * to capability) may give a capability. A person with no unit membership has no active grant, so a mapping mistake
- * fails closed.
- */
-export const UNIT_KEY = 'unit:',
-  MANAGER_KEY = 'unit-manager:',
-  CAPABILITY_KEY = 'capability:',
-  PROTECTED_KEY = 'protected';
 /** The unit a group's key names, whichever of the unit's two groups it is; undefined for any other key. */
 export const unitOfKey = (externalId: string | null | undefined): string | undefined =>
   externalId?.startsWith(MANAGER_KEY)
@@ -710,19 +713,15 @@ export function groupFields(body: unknown): GroupFields {
  * a reserved word in another case (`Unit:skola`, `Protected`) or with space in or before it (` unit:skola`,
  * `unit :skola`), `unit:` or `unit-manager:` without a unit id or with space around it, and `capability:` with a name outside the closed list. Any other `externalId` is a plain group.
  */
-const RESERVED_PREFIXES = [MANAGER_KEY, UNIT_KEY, CAPABILITY_KEY] as const;
 const refusedKey = (detail: string) => new ScimError(400, `${detail} The group was not stored.`, 'invalidValue');
 export function assertAcceptedKey(fields: GroupFields): void {
   const key = fields.externalId;
   if (key === null) return;
-  // Read without its space and in lower case to see what was meant: ` unit:x`, `unit :x` and `Protected ` are keys
-  // written wrong, not plain groups that give nobody anything.
-  const lower = key.replace(/\s+/g, '').toLowerCase();
-  if (lower === PROTECTED_KEY)
+  const prefix = reservedScimGroupKey(key);
+  if (prefix === PROTECTED_KEY)
     throw refusedKey(
       `The key '${PROTECTED_KEY}' is not accepted: Clew has not decided whether it may hold that fact (D93).`,
     );
-  const prefix = RESERVED_PREFIXES.find(p => lower.startsWith(p));
   if (!prefix) return;
   if (!key.startsWith(prefix)) throw refusedKey(`The key '${key}' must begin with '${prefix}' in lower case (D96).`);
   const rest = key.slice(prefix.length);
@@ -1126,11 +1125,17 @@ export function applyUserPatch(
       if (email.sub === 'value') next.email = asString(value, path);
       else {
         const sent = emailList(value, path),
-          // A filter that picked the work address has said which one it is; a list says it by type. `replace` gives
-          // the whole list; `add` appends (RFC 7644 §3.5.2.1), and an address of another type is then beside the one
-          // Clew holds and changes nothing.
-          work = key === 'emails' ? workEmail(sent, op === 'replace') : sent[0]?.value;
+          // A filter that picked the work address has said which one it is; a list says it by type. `replace` on
+          // `emails` gives the whole list, as a body does; `add` appends (RFC 7644 §3.5.2.1), and an address of another
+          // type is then beside the one Clew holds and changes nothing.
+          work = workEmail(sent, key === 'emails' && op === 'replace');
         if (work !== undefined) next.email = work;
+        else if (key !== 'emails' && sent.length)
+          throw new ScimError(
+            400,
+            `Path '${path}' names the work address, and the value says it is of another type. It was not stored.`,
+            'invalidValue',
+          );
         else if (!sent.length) need('emails');
       }
     } else if (key === 'name') {

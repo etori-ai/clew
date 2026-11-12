@@ -142,6 +142,21 @@ test('a title PostgreSQL cannot hold does not stop the deactivation beside it, a
   });
   expect((await row())?.name).toBe('Person 1');
 });
+test("a member who comes or goes moves the group's time of change in the store, so the next read answers it too", async () => {
+  const { p, user, scim } = stack();
+  const { id: person } = await scim.createUser(p, user(1), BASE);
+  const group = await scim.createGroup(p, { externalId: `${p.id}:plain`, displayName: 'Plain' }, BASE);
+  await new Promise(resolve => setTimeout(resolve, 5));
+  const changed = await scim.patchGroup(
+    p,
+    group.id,
+    { schemas: [PATCH], Operations: [{ op: 'add', path: 'members', value: [{ value: person }] }] },
+    BASE,
+  );
+  expect(changed.meta.lastModified > group.meta.lastModified).toBe(true);
+  const read = await scim.getGroup(p, group.id, BASE);
+  expect([read.meta.lastModified, read.members.length]).toEqual([changed.meta.lastModified, 1]);
+});
 test('concurrent user patches preserve the name and the deactivation', async () => {
   const { deps, p, store, user, scim } = stack();
   const { id } = await scim.createUser(p, user(1), BASE);
