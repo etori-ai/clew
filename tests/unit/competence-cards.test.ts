@@ -8,15 +8,18 @@ import {
 } from '../../apps/server/src/modules/competence/adapters/memory';
 import { competenceConnector } from '../../apps/server/src/modules/competence/capabilities';
 import { competenceUsecases, type CompetenceUsecases } from '../../apps/server/src/modules/competence/usecases';
+import type { CompetenceStore } from '../../apps/server/src/modules/competence/model';
 import { memoryRefreshStore } from '../../apps/server/src/threads/adapters/refresh-memory';
 import { refreshUsecases } from '../../apps/server/src/threads/usecases/refresh';
+import { legacyCardsUsecases } from '../../apps/server/src/threads/usecases/legacy-cards';
 import { Registry } from '../registry';
 
 /**
- * The competence cards through the real refresh (D108 item 12, D47), on memory adapters: the scan is a complete
- * observation with stable occurrences, so a card whose cause is gone is resolved at the next scan, one whose cause stands
- * is neither reopened nor duplicated, and an open card from when the scan named topics alone is taken over, not left
- * beside a new one.
+ * The competence cards through the real refresh use case (D108 item 12, D47), on memory adapters. The scan is a complete
+ * observation and every card one occurrence: a card closes when its cause is gone, stays as it is while its cause stands,
+ * and a cause that comes back is a new card; a person's card follows the person and the type, not a holding's row; the
+ * manager's card is one occurrence that names nobody; and a scan that cannot read says nothing rather than "nothing".
+ * Then the operator's reset of cards from when the scan named topics alone.
  */
 const ORG = 'org-1';
 function personaOf(
@@ -67,10 +70,14 @@ let refresh: ReturnType<typeof refreshUsecases>;
 let threads: ReturnType<typeof memoryRefreshStore>;
 /** What the scan answers: the connector's own observation, or, `legacy`, the drafts alone as the scan once gave them. */
 let legacy = false;
+/** The staff port fails, as when the directory cannot be read. */
+let staffFails = false;
+/** The competence store fails, as when the database cannot be reached. */
+let storeFails = false;
 beforeEach(() => {
   now = Date.parse('2026-11-10T09:00:00.000Z');
   let n = 0;
-  legacy = false;
+  legacy = staffFails = storeFails = false;
   store = memoryCompetenceStore({
     persons: [
       { id: 'anna', organisationId: ORG, name: 'Anna Andersson', userName: 'anna.a' },
@@ -79,12 +86,20 @@ beforeEach(() => {
   });
   store.addUnit({ id: 'u1', organisationId: ORG, label: 'Enhet 1' });
   store.assign('anna', 'u1');
+  store.addPosition({ id: 'pos-usk', organisationId: ORG, code: 'usk', label: 'Undersköterska' });
+  store.holdPosition('anna', 'pos-usk');
   const staff = new Map<string, StaffOverview>([
     ['boss', { units: [{ unitId: 'u1', unitLabel: 'Enhet 1', people: [staffAnna] }] }],
   ]);
+  const failing: CompetenceStore = {
+    transaction: fn => (storeFails ? Promise.reject(new Error('the database is away')) : store.transaction(fn)),
+  };
   competence = competenceUsecases({
-    store,
-    staff: async p => staff.get(p.id) ?? { units: [] },
+    store: failing,
+    staff: async p => {
+      if (staffFails) throw new Error('the directory is away');
+      return staff.get(p.id) ?? { units: [] };
+    },
     clock: () => new Date(now),
     ids: () => 'id-' + ++n,
   });
@@ -114,96 +129,302 @@ const cards = (personId: string) =>
   threads.threads
     .dump()
     .filter(t => t.personId === personId)
-    .map(t => t.thread);
+    .map(t => t.thread)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+const states = (personId: string) => cards(personId).map(c => [c.title, c.state]);
 const audited = (action: string) => threads.threads.audit.filter(a => a.action === action);
-/** Socionomexamen required of everyone on Enhet 1, which Anna is placed on. */
-async function required() {
-  const degree = await competence.addType(admin, { name: 'Socionomexamen', area: 'Examen', kind: 'degree' });
-  await competence.addRequirement(admin, { typeId: degree, unitId: 'u1' });
-  return degree;
+const handle = (id: string, state: 'handled' | 'dismissed') =>
+  threads.threads.transaction(tx => tx.updateThread(id, { state }));
+/** A type, required of everyone in the undersköterska position, which Anna holds. */
+async function requiredOfAnna(name = 'Socionomexamen') {
+  const typeId = await competence.addType(admin, { name, area: 'Examen', kind: 'degree' });
+  const requirementId = await competence.addRequirement(admin, { typeId, positionCode: 'usk' });
+  return { typeId, requirementId };
 }
 
-describe('the competence cards (D108 item 12, D47)', () => {
-  test('a missing card opens, stands unchanged through later scans, and is resolved once the certificate is registered', async () => {
-    const degree = await required();
+describe('a person’s cards close, stay and come back (D108 item 12, D47)', () => {
+  test('a missing card opens, stands unchanged through scans, closes when registered, and a revocation opens a new one', async () => {
+    const { typeId } = await requiredOfAnna();
     await scan(anna);
-    expect(cards('anna').map(c => [c.title, c.state])).toEqual([['Socionomexamen saknas', 'open']]);
-    // The cause stands: the same card, not reopened, not duplicated, not rewritten.
+    expect(states('anna')).toEqual([['Socionomexamen saknas', 'open']]);
     await scan(anna);
     await scan(anna);
-    expect(cards('anna').map(c => [c.title, c.state])).toEqual([['Socionomexamen saknas', 'open']]);
+    expect(states('anna')).toEqual([['Socionomexamen saknas', 'open']]);
     expect(audited('thread.pushed')).toHaveLength(1);
     expect(audited('thread.refreshed')).toEqual([]);
-    // The cause goes: the next scan resolves the card, and a scan after it leaves it so.
-    await competence.registerHolding(boss, 'anna', { typeId: degree, issuedOn: '2015-06-05' });
+    const holding = await competence.registerHolding(boss, 'anna', { typeId, issuedOn: '2015-06-05' });
     await scan(anna);
-    expect(cards('anna').map(c => [c.title, c.state])).toEqual([['Socionomexamen saknas', 'handled']]);
-    expect(audited('thread.source_resolved')).toHaveLength(1);
+    expect(states('anna')).toEqual([['Socionomexamen saknas', 'handled']]);
     await scan(anna);
     expect(cards('anna')).toHaveLength(1);
-    expect(threads.dump().every(o => o.sourceState === 'resolved')).toBe(true);
+    // The certificate is revoked: the cause is back, and it is a new card, not the handled one left as it was.
+    now += 60_000;
+    await competence.revokeHolding(boss, holding);
+    await scan(anna);
+    expect(states('anna')).toEqual([
+      ['Socionomexamen saknas', 'handled'],
+      ['Socionomexamen saknas', 'open'],
+    ]);
   });
 
-  test('removing the requirement resolves the card; a dismissed card stays dismissed while its cause stands', async () => {
-    const degree = await required();
+  test('a requirement removed closes the card; set again it is a new requirement and a new card', async () => {
+    const { typeId, requirementId } = await requiredOfAnna();
     await scan(anna);
-    const [card] = cards('anna');
-    await threads.threads.transaction(tx => tx.updateThread(card!.id, { state: 'dismissed' }));
+    await competence.removeRequirement(admin, requirementId);
     await scan(anna);
-    expect(cards('anna').map(c => c.state)).toEqual(['dismissed']);
-    const { rows } = await competence.requirements(admin);
-    await competence.removeRequirement(admin, rows.find(r => r.typeId === degree)!.id);
+    expect(states('anna')).toEqual([['Socionomexamen saknas', 'handled']]);
+    await competence.addRequirement(admin, { typeId, positionCode: 'usk' });
     await scan(anna);
-    expect(threads.dump().map(o => o.sourceState)).toEqual(['resolved']);
-    expect(cards('anna')).toHaveLength(1);
+    expect(states('anna')).toEqual([
+      ['Socionomexamen saknas', 'handled'],
+      ['Socionomexamen saknas', 'open'],
+    ]);
   });
 
-  test("an expiring holding's card reopens when it runs out, and the manager's card goes when nothing is due", async () => {
+  test('the known limit: a position gone and back under the same code is the same cause, so its handled card stays handled', async () => {
+    await requiredOfAnna();
+    await scan(anna);
+    store.removePosition('pos-usk');
+    await scan(anna);
+    expect(states('anna')).toEqual([['Socionomexamen saknas', 'handled']]);
+    store.addPosition({ id: 'pos-usk-again', organisationId: ORG, code: 'usk', label: 'Undersköterska' });
+    store.holdPosition('anna', 'pos-usk-again');
+    await scan(anna);
+    expect(states('anna')).toEqual([['Socionomexamen saknas', 'handled']]);
+  });
+
+  test('a renewal closes the card; revoked, the older holding decides again and a new card opens', async () => {
     const hlr = await competence.addType(admin, { name: 'HLR', area: 'Akut', kind: 'course', validityMonths: 24 });
-    // Ends 2027-01-10, 61 days ahead: expiring.
-    await competence.registerHolding(boss, 'anna', { typeId: hlr, issuedOn: '2025-01-10' });
+    await competence.registerHolding(boss, 'anna', { typeId: hlr, issuedOn: '2024-01-10' }); // ran out 2026-01-10
     await scan(anna);
-    await scan(boss);
-    expect(cards('anna').map(c => [c.title, c.state])).toEqual([['HLR går ut 10 januari', 'open']]);
-    expect(cards('boss').map(c => c.title)).toEqual(['Intyg att åtgärda bland dina medarbetare']);
-    await threads.threads.transaction(tx => tx.updateThread(cards('anna')[0]!.id, { state: 'handled' }));
-    // Two months on it has run out: the same occurrence in a new state, so the same card opens again and says why.
+    expect(states('anna')).toEqual([['HLR gick ut 10 januari', 'open']]);
+    const renewal = await competence.registerHolding(boss, 'anna', { typeId: hlr, issuedOn: '2026-11-01' });
+    await scan(anna);
+    expect(states('anna')).toEqual([['HLR gick ut 10 januari', 'handled']]);
+    now += 60_000;
+    await competence.revokeHolding(boss, renewal);
+    await scan(anna);
+    expect(states('anna')).toEqual([
+      ['HLR gick ut 10 januari', 'handled'],
+      ['HLR gick ut 10 januari', 'open'],
+    ]);
+  });
+
+  test('an expiring card handled by the person is a new card when the holding runs out', async () => {
+    const hlr = await competence.addType(admin, { name: 'HLR', area: 'Akut', kind: 'course', validityMonths: 24 });
+    await competence.registerHolding(boss, 'anna', { typeId: hlr, issuedOn: '2025-01-10' }); // ends 2027-01-10
+    await scan(anna);
+    await handle(cards('anna')[0]!.id, 'handled');
+    // The same holding a day later: the same card, still handled.
+    await scan(anna);
+    expect(states('anna')).toEqual([['HLR går ut 10 januari', 'handled']]);
     now = Date.parse('2027-01-11T09:00:00.000Z');
     await scan(anna);
-    expect(cards('anna').map(c => [c.title, c.state, c.trigger.reason])).toEqual([
-      ['HLR gick ut 10 januari', 'open', 'Källan har ändrat uppgiften. Har gått ut'],
+    expect(states('anna')).toEqual([
+      ['HLR går ut 10 januari', 'handled'],
+      ['HLR gick ut 10 januari', 'open'],
     ]);
-    // Renewed: both the person's card and the manager's are resolved.
-    await competence.registerHolding(boss, 'anna', { typeId: hlr, issuedOn: '2027-01-11' });
-    await scan(anna);
-    await scan(boss);
-    expect(cards('anna').map(c => c.state)).toEqual(['handled']);
-    expect(cards('boss').map(c => c.state)).toEqual(['handled']);
-    expect(threads.threads.dump()).toHaveLength(2);
   });
 
-  test('an open card from when the scan named topics alone is taken over, unchanged, and then resolves like any other', async () => {
-    const degree = await required();
-    legacy = true;
+  test('a card follows the person and the type: a copied row read again under a new id keeps the card and its dismissal', async () => {
+    const hlr = await competence.addType(admin, { name: 'HLR', area: 'Akut', kind: 'course' });
+    const copied = (id: string) => ({
+      id,
+      personId: 'anna',
+      typeId: hlr,
+      issuedOn: '2024-01-10',
+      expiresOn: '2027-01-10',
+      evidence: 'system' as const,
+      state: 'valid' as const,
+      registeredBy: null,
+      createdAt: new Date(now).toISOString(),
+      revokedAt: null,
+      revokedBy: null,
+      copy: {
+        connectorId: 'lms',
+        sourceId: 'row-' + id,
+        sourceType: 'hlr',
+        sourceLabel: 'HLR',
+        readAt: '2026-11-10T04:00:00.000Z',
+      },
+    });
+    await store.transaction(async tx => {
+      await tx.putSource({
+        connectorId: 'lms',
+        source: 'Lärplattformen',
+        run: null,
+        claimedAt: null,
+        leaseUntil: null,
+        startedAt: null,
+        finishedAt: null,
+        outcome: null,
+        counts: null,
+      });
+      await tx.putCopied([copied('c1')]);
+    });
     await scan(anna);
-    expect(threads.dump().map(o => [o.legacy, o.sourceState])).toEqual([[true, 'open']]);
-    const [old] = cards('anna');
-    legacy = false;
+    await handle(cards('anna')[0]!.id, 'dismissed');
+    // The source answers the same holding under a new row id: the old row goes, the new one comes.
+    await store.transaction(async tx => {
+      await tx.removeCopied('lms', ['c1']);
+      await tx.putCopied([copied('c2')]);
+    });
     await scan(anna);
-    // One card, the same one, still open and not marked as changed; the legacy occurrence is retired.
-    expect(cards('anna').map(c => [c.id, c.state, c.trigger.reason])).toEqual([[old!.id, 'open', 'Saknas']]);
-    expect(audited('work.adopted')).toHaveLength(1);
+    expect(states('anna')).toEqual([['HLR går ut 10 januari', 'dismissed']]);
+  });
+
+  test('a new validity of the type moves the end date: the card for the old date closes and one for the new date opens', async () => {
+    const hlr = await competence.addType(admin, { name: 'HLR', area: 'Akut', kind: 'course', validityMonths: 24 });
+    await competence.registerHolding(boss, 'anna', { typeId: hlr, issuedOn: '2025-01-10' }); // ends 2027-01-10
+    await scan(anna);
+    await competence.updateType(admin, hlr, { validityMonths: 23 }); // ends 2026-12-10
+    await scan(anna);
+    expect(states('anna')).toEqual([
+      ['HLR går ut 10 januari', 'handled'],
+      ['HLR går ut 10 december', 'open'],
+    ]);
+  });
+});
+
+describe('the manager’s card (D108 item 12)', () => {
+  test('one occurrence that names nobody: counts that rise or fall bring a handled card back, counts that stand do not', async () => {
+    const { typeId } = await requiredOfAnna();
+    await scan(boss);
+    expect(states('boss')).toEqual([['Intyg att åtgärda bland dina medarbetare', 'open']]);
+    const [card] = cards('boss');
+    const mine = threads.dump().filter(o => o.personId === 'boss');
+    expect(mine.map(o => [o.sourceKey, o.period, o.revision])).toEqual([['competence:attention', 'once', '1|0']]);
+    // Nothing about Anna in the card, its occurrence or the audit rows written for it.
+    const said = JSON.stringify([card, mine, threads.threads.audit.filter(a => a.subject === 'thread:' + card!.id)]);
+    for (const word of ['anna', 'Anna', 'Andersson']) expect(said).not.toContain(word);
+    await handle(card!.id, 'handled');
+    // The counts stand: the card stays handled.
+    await scan(boss);
+    expect(states('boss')).toEqual([['Intyg att åtgärda bland dina medarbetare', 'handled']]);
+    // They rise: a second type required of Anna. The same card comes back, saying why.
+    await requiredOfAnna('Fallskydd');
+    await scan(boss);
+    expect(cards('boss').map(c => [c.id, c.state, c.trigger.reason])).toEqual([
+      [card!.id, 'open', 'Källan har ändrat uppgiften. Intyg saknas'],
+    ]);
+    // They fall: a scan that keeps nothing cannot tell a fall from a rise, so the handled card comes back too.
+    await handle(card!.id, 'handled');
+    await competence.registerHolding(boss, 'anna', { typeId, issuedOn: '2015-06-05' });
+    await scan(boss);
+    expect(cards('boss').map(c => [c.id, c.state])).toEqual([[card!.id, 'open']]);
     expect(
       threads
         .dump()
-        .map(o => [o.legacy, o.sourceState])
-        .sort(),
-    ).toEqual([
-      [false, 'open'],
-      [true, 'resolved'],
-    ]);
-    await competence.registerHolding(boss, 'anna', { typeId: degree, issuedOn: '2015-06-05' });
+        .filter(o => o.personId === 'boss')
+        .map(o => o.revision),
+    ).toEqual(['1|0']);
+  });
+
+  test('nothing due closes it', async () => {
+    const { typeId } = await requiredOfAnna();
+    await scan(boss);
+    await competence.registerHolding(boss, 'anna', { typeId, issuedOn: '2015-06-05' });
+    await scan(boss);
+    expect(states('boss')).toEqual([['Intyg att åtgärda bland dina medarbetare', 'handled']]);
+  });
+});
+
+describe('a scan that cannot read says nothing', () => {
+  test('a directory or a store that fails is a failed scan: open cards stay open, nothing is resolved', async () => {
+    await requiredOfAnna();
+    await scan(boss);
     await scan(anna);
-    expect(cards('anna').map(c => [c.id, c.state])).toEqual([[old!.id, 'handled']]);
+    staffFails = true;
+    await scan(boss);
+    storeFails = true;
+    await scan(anna);
+    expect(states('boss')).toEqual([['Intyg att åtgärda bland dina medarbetare', 'open']]);
+    expect(states('anna')).toEqual([['Socionomexamen saknas', 'open']]);
+    expect(audited('thread.source_resolved')).toEqual([]);
+    expect(threads.dump().every(o => o.sourceState === 'open')).toBe(true);
+    expect(audited('refresh.failed').length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('the reset of cards from topic-only scans (D47)', () => {
+  test('a dry run counts; with confirm each open topic-only card is resolved and handled, its timers ended, one audit row each', async () => {
+    const { typeId } = await requiredOfAnna();
+    legacy = true;
+    await scan(anna);
+    await scan(boss);
+    const [annas] = cards('anna');
+    const [boss1] = cards('boss');
+    expect(threads.dump().map(o => o.legacy)).toEqual([true, true]);
+    // Anna snoozed hers; the boss dismissed his, which is left as it is.
+    await threads.threads.transaction(tx =>
+      tx.scheduleTimer({
+        id: 'snooze:' + annas!.id,
+        personId: 'anna',
+        threadId: annas!.id,
+        kind: 'snooze',
+        unitId: 'u1',
+        authorizationVersion: 'v1',
+        dueAt: '2026-11-20T07:00:00.000Z',
+        requestedAt: new Date(now).toISOString(),
+      }),
+    );
+    await handle(boss1!.id, 'dismissed');
+    const reset = legacyCardsUsecases({ store: threads, clock: () => new Date(now) });
+    expect(await reset.reset('competence', 'operator:cli', { confirm: false })).toEqual({
+      cards: 1,
+      occurrences: 1,
+      skipped: 0,
+      left: 1,
+    });
+    expect(states('anna')).toEqual([['Socionomexamen saknas', 'open']]);
+    expect(await reset.reset('competence', 'operator:cli', { confirm: true })).toEqual({
+      cards: 1,
+      occurrences: 1,
+      skipped: 0,
+      left: 1,
+    });
+    expect(states('anna')).toEqual([['Socionomexamen saknas', 'handled']]);
+    expect(await threads.threads.transaction(tx => tx.readTimer('snooze:' + annas!.id))).toMatchObject({
+      state: 'cancelled',
+    });
+    expect(audited('thread.source_resolved')).toEqual([
+      {
+        actor: 'operator:cli',
+        action: 'thread.source_resolved',
+        subject: 'thread:' + annas!.id,
+        at: new Date(now).toISOString(),
+        details: { connector: 'competence', reason: 'legacy-reset', occurrences: 1 },
+      },
+    ]);
+    // A second run finds nothing more to do.
+    expect(await reset.reset('competence', 'operator:cli', { confirm: true })).toMatchObject({ cards: 0 });
+    // The next scan pushes a fresh card for the cause that still stands, which then closes like any other.
+    legacy = false;
+    await scan(anna);
+    expect(states('anna')).toEqual([
+      ['Socionomexamen saknas', 'handled'],
+      ['Socionomexamen saknas', 'open'],
+    ]);
+    await competence.registerHolding(boss, 'anna', { typeId, issuedOn: '2015-06-05' });
+    await scan(anna);
+    expect(states('anna').map(([, state]) => state)).toEqual(['handled', 'handled']);
+  });
+
+  test('a card with a write under way is skipped and counted, never touched', async () => {
+    await requiredOfAnna();
+    legacy = true;
+    await scan(anna);
+    const [card] = cards('anna');
+    await threads.threads.transaction(tx =>
+      tx.updateThread(card!.id, { execution: { id: 'x', state: 'pending' } } as never),
+    );
+    const reset = legacyCardsUsecases({ store: threads, clock: () => new Date(now) });
+    expect(await reset.reset('competence', 'operator:cli', { confirm: true })).toEqual({
+      cards: 0,
+      occurrences: 0,
+      skipped: 1,
+      left: 0,
+    });
+    expect(states('anna')).toEqual([['Socionomexamen saknas', 'open']]);
   });
 });

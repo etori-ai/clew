@@ -72,6 +72,13 @@ export function memoryRefreshStore(threads = memoryThreadStore()) {
               ),
             );
           },
+          async openOccurrences(connector) {
+            return copy(
+              [...o.values()]
+                .filter(x => x.connector === connector && x.sourceState === 'open')
+                .sort((a, b) => a.id.localeCompare(b.id)),
+            );
+          },
           async saveOccurrence(value) {
             o.set(value.id, copy(value));
           },

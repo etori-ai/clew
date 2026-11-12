@@ -93,6 +93,8 @@ test.describe('Administration › Kompetens › Krav', () => {
       const [positions, units, targets] = [tables.nth(0), tables.nth(1), tables.nth(2)];
       await expect(positions.getByRole('columnheader')).toHaveText(['Befattning', 'Kompetens', 'Ta bort']);
       await expect(positions.getByRole('row', { name: /Undersköterska/ })).toContainText('HLR');
+      // A requirement is bound to the position's code, shown beside its current name.
+      await expect(positions.getByRole('row', { name: /Undersköterska/ })).toContainText('underskoterska');
       // A requirement on a type since archived counts towards nothing, and says so.
       await expect(
         positions.getByRole('row', { name: /Sjuksköterska/ }).getByText('Arkiverad', { exact: true }),
@@ -345,7 +347,9 @@ test.describe('Administration › Kompetens › Krav', () => {
       const positions = page.getByRole('list', { name: 'Krav på befattningar' });
       await expect(positions.getByRole('listitem').filter({ hasText: 'Undersköterska' })).toContainText('HLR');
       await expect(
-        page.getByRole('list', { name: 'Andelsmål' }).getByText('Minst 80 % av Undersköterska · Hela organisationen'),
+        page
+          .getByRole('list', { name: 'Andelsmål' })
+          .getByText('Minst 80 % av Undersköterska (underskoterska) · Hela organisationen'),
       ).toBeVisible();
       await expect(
         positions.getByRole('button', { name: 'Ta bort kravet på HLR för dem med befattningen Undersköterska' }),

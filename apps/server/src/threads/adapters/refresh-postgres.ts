@@ -143,6 +143,21 @@ export function postgresRefreshStore(options: RefreshStoreOptions, personId?: st
               observedAt: o.observedAt.toISOString(),
             }));
           },
+          async openOccurrences(connector) {
+            return (
+              await tx
+                .select()
+                .from(occurrences)
+                .where(and(eq(occurrences.connector, connector), eq(occurrences.sourceState, 'open')))
+                .orderBy(occurrences.id)
+                .for('update')
+            ).map(o => ({
+              ...o,
+              sourceState: o.sourceState as Occurrence['sourceState'],
+              disposition: o.disposition as Occurrence['disposition'],
+              observedAt: o.observedAt.toISOString(),
+            }));
+          },
           async saveOccurrence(o) {
             const row = { ...o, observedAt: new Date(o.observedAt) };
             await tx.insert(occurrences).values(row).onConflictDoUpdate({ target: occurrences.id, set: row });

@@ -37,6 +37,7 @@ import {
   isCalendarDay,
   leaseUntil,
   matrixCsv,
+  lastRevoked,
   matrixOf,
   meets,
   needsAttention,
@@ -46,12 +47,14 @@ import {
   normaliseName,
   orderHoldingRows,
   orderTypes,
+  ownCard,
   COPY_HOLDINGS_MAX,
   PAGES_MAX,
   personKey,
   planCopy,
   readNowStart,
   requiredOf,
+  requirementsOn,
   SOURCE_ID_MAX,
   SOURCE_KEY_MAX,
   safeText,
@@ -59,6 +62,7 @@ import {
   statusOn,
   summarise,
   swedishDay,
+  teamCard,
   typeRow,
   UNAVAILABLE_PAUSES_MS,
   uncounted,
@@ -66,6 +70,7 @@ import {
   usableHolding,
   type PersonSummary,
   type ReadHolding,
+  type CardIdentity,
   type Standing,
   type UnitCoverage,
 } from './domain';
@@ -1210,34 +1215,54 @@ export function competenceUsecases(deps: CompetenceDeps) {
      */
     async scanOf(persona: AuthenticatedContext, manager: boolean) {
       const at = now(),
-        today = swedishDay(at);
-      const own = (
-        await deps.store.transaction(tx => standings(tx, persona.organisationId, [persona.id], today))
-      ).filter(needsAttention);
-      let team: {
-        expired: number;
-        missing: number;
-        expiring: number;
-        people: number;
-        due: Array<{ personId: string; typeId: string; status: Standing['status']; end: string | null }>;
-      } | null = null;
+        today = swedishDay(at),
+        org = persona.organisationId;
+      // Everything is read before anything is said: a store or a staff port that fails throws, and the scan is then
+      // no observation at all, never a complete one with nothing in it.
+      const own = await deps.store.transaction(async tx => {
+        const holdings = await tx.holdingsOf([persona.id]);
+        const [placed] = await tx.placesOf(org, [persona.id]);
+        const applying = requirementsOn(
+          placed ?? { personId: persona.id, unitIds: [], positionCodes: [] },
+          await tx.requirements(org),
+        );
+        const typeIds = new Set([
+          ...holdings.flatMap(h => (h.typeId ? [h.typeId] : [])),
+          ...applying.map(r => r.typeId),
+        ]);
+        const types = new Map((await tx.typesById([...typeIds])).map(t => [t.id, t]));
+        const required = new Map([[persona.id, [...new Set(applying.map(r => r.typeId))]]]);
+        return deciding(holdings, types, today, required)
+          .filter(needsAttention)
+          .sort(byUrgency)
+          .map(standing => ({
+            standing,
+            card: ownCard(standing, {
+              requirementIds: applying.filter(r => r.typeId === standing.type.id).map(r => r.id),
+              lastRevoked: lastRevoked(holdings, persona.id, standing.type.id),
+            }),
+          }));
+      });
+      let team: { expired: number; missing: number; expiring: number; people: number; card: CardIdentity } | null =
+        null;
       if (manager) {
         const { manages, people } = await reports(persona);
         if (manages) {
-          const due = (
-            await deps.store.transaction(tx => standings(tx, persona.organisationId, [...people.keys()], today))
-          ).filter(needsAttention);
+          const due = (await deps.store.transaction(tx => standings(tx, org, [...people.keys()], today))).filter(
+            needsAttention,
+          );
           const count = (status: Standing['status']) => due.filter(d => d.status === status).length;
+          const [expired, missing, expiring] = [count('expired'), count('missing'), count('expiring')];
           team = {
-            expired: count('expired'),
-            missing: count('missing'),
-            expiring: count('expiring'),
+            expired,
+            missing,
+            expiring,
             people: new Set(due.map(d => d.personId)).size,
-            due: due.map(d => ({ personId: d.personId, typeId: d.type.id, status: d.status, end: d.end })),
+            card: teamCard({ toActOn: expired + missing, expiring }),
           };
         }
       }
-      return { observedAt: at.toISOString(), own: own.sort(byUrgency), team };
+      return { observedAt: at.toISOString(), own, team };
     },
 
     /**

@@ -189,6 +189,63 @@ export function requirementsOn(person: Placed, requirements: readonly Requiremen
   );
 }
 /**
+ * The last time any of a person's holdings of a type was revoked, by a manager or by its source withdrawing it; null
+ * when none was. A card's identity carries it, so a cause that comes back after a revocation is new work.
+ */
+export function lastRevoked(holdings: readonly HoldingRecord[], personId: string, typeId: string): string | null {
+  let last: string | null = null;
+  for (const h of holdings)
+    if (h.personId === personId && h.typeId === typeId && h.revokedAt && (!last || h.revokedAt > last))
+      last = h.revokedAt;
+  return last;
+}
+/** A card's work as the refresh keys it (D47): the draft's topic, and its one occurrence's key, period and revision. */
+export interface CardIdentity {
+  topic: string;
+  key: string;
+  period: string;
+  revision: string;
+}
+/**
+ * What a person's own card is (D108 item 12, D47), keyed on the person and the competence type, never a holding's row,
+ * so a row copied again under a new id (item 9) is the same card, its dismissal kept. The period says which cause it
+ * is: the refresh never reopens a resolved occurrence whose identity comes back, so a cause that returns must be a new
+ * period. A holding that has run out or soon will is `due:<type>`, its period the status, the end date and the last
+ * revocation of the type: one that runs out after its "går ut snart" card was handled, a new end date (a renewal, or an
+ * administrator's change of the type's validity) and a renewal revoked so that the older holding decides again are each
+ * a new card. A missing type is `missing:<type>`, its period the requirements that ask for it and the last revocation:
+ * a requirement removed and set again (a new id), or a holding revoked, is a new card. The one known limit: a requirement
+ * that stops applying to the person and applies again unchanged, such as a position or a unit that disappears and comes
+ * back under the same code or id, brings back the same identity, so that card does not open again.
+ */
+export function ownCard(
+  standing: Standing,
+  cause: { requirementIds: readonly string[]; lastRevoked: string | null },
+): CardIdentity {
+  const revoked = cause.lastRevoked ?? 'none';
+  if (standing.holding === null) {
+    const topic = `${COMPETENCE_CONNECTOR}:missing:${standing.type.id}`;
+    return {
+      topic,
+      key: topic,
+      period: `${[...cause.requirementIds].sort().join(',')}|${revoked}`,
+      revision: 'missing',
+    };
+  }
+  const topic = `${COMPETENCE_CONNECTOR}:due:${standing.type.id}`;
+  return { topic, key: topic, period: `${standing.status}|${standing.end}|${revoked}`, revision: standing.status };
+}
+/**
+ * The manager's one card (D108 item 12): one occurrence on its topic, its revision the counts it shows (what is to act
+ * on, expired and missing together, and what soon runs out), so it names nobody and does not grow with the reports. A
+ * refresh reopens a handled card whenever the revision differs, and a scan that keeps nothing cannot tell counts that
+ * rise from counts that fall: either brings the card back, counts that stand do not.
+ */
+export function teamCard(counts: { toActOn: number; expiring: number }): CardIdentity {
+  const topic = `${COMPETENCE_CONNECTOR}:attention`;
+  return { topic, key: topic, period: 'once', revision: `${counts.toActOn}|${counts.expiring}` };
+}
+/**
  * The types required of one person (D108 item 6), each once: those set on a position they hold, on a unit they are
  * assigned to, and on them alone. A person with two positions is under both sets.
  */
@@ -208,39 +265,31 @@ export function branchOf(tree: readonly Pick<UnitRecord, 'id' | 'parentId'>[], u
   return [...branch];
 }
 /**
- * The least number of people a count may be taken over without the reader knowing each of them (D108 item 8, D118: a
- * figure names nobody). A manager knows where their own reports stand; the rest of a branch is a group counted only when
- * it holds at least this many people, and otherwise left out of the figure, which then covers the reader's reports
- * alone and says so. The same bound keeps an organisation's share target from being shown over fewer.
+ * The least number of people a figure may count beyond those the reader already knows (D108 item 8, D118: a figure names
+ * nobody). A manager knows where their own reports stand, and they are all the coverage of required types counts; the
+ * rest of a branch enters only a share target, and only when it holds at least this many people. The same bound keeps
+ * an organisation's share target from being shown over fewer.
  */
 export const COVERAGE_MIN_GROUP = 5;
 /**
- * The people a figure counts (D108 item 8): all of them, when those who are not the reader's own reports are none or at
- * least `COVERAGE_MIN_GROUP`; else the reader's reports alone, marked `ownOnly`.
+ * Whether a figure over `people` may be shown to a reader who knows `known` of them (D108 item 8): yes when the rest are
+ * none (the figure says nothing the reader does not know) or at least `COVERAGE_MIN_GROUP`.
  */
-export function countable<T extends { personId: string }>(
-  people: readonly T[],
-  own: (personId: string) => boolean,
-): { people: T[]; ownOnly: boolean } {
-  const others = people.filter(p => !own(p.personId)).length;
-  return others === 0 || others >= COVERAGE_MIN_GROUP
-    ? { people: [...people], ownOnly: false }
-    : { people: people.filter(p => own(p.personId)), ownOnly: true };
+export function showable(people: readonly string[], known: (personId: string) => boolean): boolean {
+  const others = people.filter(id => !known(id)).length;
+  return others === 0 || others >= COVERAGE_MIN_GROUP;
 }
-/**
- * One required type over a branch: how many people it is required of, and how many of them meet it. `ownOnly`: the
- * figure covers the reader's own reports alone (`countable`).
- */
+/** One required type over the reader's own reports: how many it is required of, and how many of them meet it. */
 export interface RequirementCoverage {
   type: TypeRecord;
   under: number;
   meeting: number;
-  ownOnly: boolean;
 }
 /**
- * One share target over what it was set on: how many people hold its position, how many of them meet its type, the
- * share they are (whole percent, rounded down, so a share shown at the target meets it) and whether it reaches the least
- * share. With nobody to count, no share and no verdict. `ownOnly` as for a requirement.
+ * One share target over what it was set on, the unit's whole branch: how many people hold its position, how many of
+ * them meet its type, the share they are (whole percent, rounded down, so a share shown at the target meets it) and
+ * whether it reaches the least share. With nobody to count, no share and no verdict. `withheld`: the people the reader
+ * does not know are too few to count (`showable`), so no figure is given.
  */
 export interface TargetCoverage {
   target: ShareTargetRecord;
@@ -249,14 +298,13 @@ export interface TargetCoverage {
   meeting: number;
   share: number | null;
   met: boolean | null;
-  ownOnly: boolean;
+  withheld: boolean;
 }
 /** A unit's branch against what is required (D108 items 6 and 8, D99 item 5): counts only, never a person. */
 export interface UnitCoverage {
-  /** The people with at least one requirement, and of them the ones who meet every one. */
+  /** The reader's own reports with at least one requirement, and of them the ones who meet every one. */
   under: number;
   meetingAll: number;
-  ownOnly: boolean;
   requirements: RequirementCoverage[];
   targets: TargetCoverage[];
 }
@@ -266,16 +314,19 @@ const shareOf = (meeting: number, holders: number, minShare: number) => ({
   met: holders ? meeting * 100 >= minShare * holders : null,
 });
 /**
- * How a branch is covered (D108 items 6 and 8): for each type required of anyone in it, how many it is required of and
- * how many meet it; for each share target set on the unit, the share of the position's holders who meet its type.
- * `people` are the active people of the branch, each with every unit and position of theirs (a requirement on a unit
- * outside the branch still applies to a person in it); `standings` are the holdings that decide for them (`deciding`).
+ * How a branch is covered (D108 items 6 and 8), for its manager. Coverage per required type, and the summary of who
+ * meets everything, count the reader's own reports alone (`reports`, whom they already see one by one), however many
+ * others the branch holds: so no row of it can be set against another to single anyone out. The rest of the branch
+ * enters only the share targets set on the unit, each measured once over the whole branch (`people`: its active people,
+ * the reader included where they hold the position), and given only when the people in its denominator whom the reader
+ * does not know (neither a report nor the reader) are none or at least `COVERAGE_MIN_GROUP`. Set against a requirement
+ * row of the same type, a target row then gives away at most a figure over that many. Two targets of the same type whose
+ * denominators overlap could be set against each other: where the part of one that is not in the other holds one to four
+ * people the reader does not know, both are withheld.
  *
- * The reader knows where their own reports stand (`reports`), so each figure follows `countable`: the rest of the branch
- * is counted only when it is at least `COVERAGE_MIN_GROUP` people, else the figure covers the reports alone. The reader
- * is never counted: their own standing is theirs. A requirement set on one person counts only for the reader's own
- * report, never in another manager's figure. A requirement or a target whose type is archived or unknown counts towards
- * nothing, and so does one whose position or unit is gone. A row that would count nobody is left out.
+ * Each person comes with every unit and position of theirs (a requirement on a unit outside the branch still applies to
+ * a person in it); `standings` are the holdings that decide for them (`deciding`). A requirement or a target whose type
+ * is archived or unknown counts towards nothing, and so does one whose position or unit is gone.
  */
 export function coverageOf(input: {
   people: readonly Placed[];
@@ -290,65 +341,64 @@ export function coverageOf(input: {
     const type = input.types.get(typeId);
     return type && type.archivedAt === null ? type : undefined;
   };
-  const own = (personId: string) => input.reports.has(personId);
+  const known = (personId: string) => input.reports.has(personId) || personId === input.reader;
   const met = new Set(input.standings.filter(meets).map(s => s.personId + '\n' + s.type.id));
   const meetsType = (personId: string, typeId: string) => met.has(personId + '\n' + typeId);
-  const people = input.people.filter(p => p.personId !== input.reader);
+  const own = input.people.filter(p => input.reports.has(p.personId));
   const required = new Map(
-    people.map(p => [
+    own.map(p => [
       p.personId,
-      [
-        ...new Set(
-          requirementsOn(p, input.requirements)
-            .filter(r => r.personId === null || own(p.personId))
-            .map(r => r.typeId),
-        ),
-      ].filter(id => live(id)),
+      [...new Set(requirementsOn(p, input.requirements).map(r => r.typeId))].filter(id => live(id)),
     ]),
   );
   const requiredOfPerson = (p: Placed) => required.get(p.personId) ?? [];
   const requirements: RequirementCoverage[] = [];
   for (const typeId of new Set([...required.values()].flat())) {
-    const counted = countable(
-      people.filter(p => requiredOfPerson(p).includes(typeId)),
-      own,
-    );
-    if (!counted.people.length) continue;
+    const under = own.filter(p => requiredOfPerson(p).includes(typeId));
     requirements.push({
       type: live(typeId)!,
-      under: counted.people.length,
-      meeting: counted.people.filter(p => meetsType(p.personId, typeId)).length,
-      ownOnly: counted.ownOnly,
+      under: under.length,
+      meeting: under.filter(p => meetsType(p.personId, typeId)).length,
     });
   }
-  const anything = countable(
-    people.filter(p => requiredOfPerson(p).length),
-    own,
-  );
-  const targets: TargetCoverage[] = [];
-  for (const target of input.targets) {
+  const anything = own.filter(p => requiredOfPerson(p).length);
+  const measured = input.targets.flatMap(target => {
     const type = live(target.typeId);
-    if (!type) continue;
-    const counted = countable(
-      people.filter(p => p.positionCodes.includes(target.positionCode)),
-      own,
-    );
-    const meeting = counted.people.filter(p => meetsType(p.personId, target.typeId)).length;
-    targets.push({
+    if (!type) return [];
+    const holders = input.people.filter(p => p.positionCodes.includes(target.positionCode)).map(p => p.personId);
+    return [{ target, type, holders, withheld: !showable(holders, known) }];
+  });
+  // Two targets of one type over overlapping denominators: the part of either outside the other must be safe to count.
+  for (const a of measured)
+    for (const b of measured) {
+      if (a === b || a.target.typeId !== b.target.typeId) continue;
+      const inB = new Set(b.holders);
+      if (!a.holders.some(id => inB.has(id))) continue;
+      if (
+        !showable(
+          a.holders.filter(id => !inB.has(id)),
+          known,
+        )
+      )
+        a.withheld = b.withheld = true;
+    }
+  const targets = measured.map(({ target, type, holders, withheld }): TargetCoverage => {
+    if (withheld) return { target, type, holders: 0, meeting: 0, share: null, met: null, withheld };
+    const meeting = holders.filter(id => meetsType(id, target.typeId)).length;
+    return {
       target,
       type,
-      holders: counted.people.length,
+      holders: holders.length,
       meeting,
-      ...shareOf(meeting, counted.people.length, target.minShare),
-      ownOnly: counted.ownOnly,
-    });
-  }
+      ...shareOf(meeting, holders.length, target.minShare),
+      withheld,
+    };
+  });
   const byName = (a: { type: TypeRecord }, b: { type: TypeRecord }) =>
     sv(a.type.area, b.type.area) || sv(a.type.name, b.type.name) || a.type.id.localeCompare(b.type.id);
   return {
-    under: anything.people.length,
-    meetingAll: anything.people.filter(p => requiredOfPerson(p).every(id => meetsType(p.personId, id))).length,
-    ownOnly: anything.ownOnly,
+    under: anything.length,
+    meetingAll: anything.filter(p => requiredOfPerson(p).every(id => meetsType(p.personId, id))).length,
     requirements: requirements.sort(byName),
     targets: targets.sort((a, b) => byName(a, b) || a.target.id.localeCompare(b.target.id)),
   };

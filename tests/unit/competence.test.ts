@@ -31,7 +31,7 @@ import {
   deciding,
   endOf,
   COVERAGE_MIN_GROUP,
-  countable,
+  showable,
   organisationOutcome,
   matrixCellText,
   matrixCsv,
@@ -731,15 +731,16 @@ describe('the built-in connector', () => {
     expect(await figureOf(asAnna)).toBeNull();
   });
 
-  test('the scan gives a person one card per holding of their own, with the end date as the deadline', async () => {
-    await world();
+  test('the scan gives a person one card per competence of their own, with the end date as the deadline', async () => {
+    const { hot } = await world();
     const drafts = await registry().scan(actor(asAnna));
     expect(drafts.map(d => [d.title, d.reason, d.deadline])).toEqual([
       ['Heta arbeten gick ut 31 maj', 'Har gått ut', '2026-05-31'],
       ['HLR går ut 10 januari', 'Går ut inom 90 dagar', '2027-01-10'],
     ]);
     expect(drafts.every(d => d.area === 'competence' && d.connector === 'competence')).toBe(true);
-    expect(drafts[0]!.topic).toMatch(/^competence:holding:id-\d+$/);
+    // Keyed on the competence type, not the holding's row (D47 occurrences: see the cards' own tests).
+    expect(drafts[0]!.topic).toBe('competence:due:' + hot);
     expect(drafts[0]!.actions).toEqual([
       { id: 'open', label: 'Visa mina kompetenser', capability: 'competence.holdings', kind: 'read', role: 'primary' },
     ]);
@@ -1351,7 +1352,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
       ]);
     });
 
-    test('the read about a unit counts its branch and names nobody; its row opens the table per required type and target', async () => {
+    test('the read about a unit counts the reader’s own reports and names nobody; its row opens the table per required type and target', async () => {
       directory();
       const { hlr, degree } = await catalogue();
       await competence.addRequirement(admin, { typeId: hlr, positionCode: USK });
@@ -1363,6 +1364,12 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
         unitId: 'u1',
         minShare: 50,
       });
+      const hlrOnU1 = await competence.addShareTarget(admin, {
+        typeId: hlr,
+        positionCode: USK,
+        unitId: 'u1',
+        minShare: 50,
+      });
       await competence.addShareTarget(admin, { typeId: hlr, positionCode: SSK, unitId: 'u2', minShare: 50 });
       await competence.registerHolding(boss, 'anna', { typeId: hlr, issuedOn: '2026-01-10' });
       await competence.registerHolding(boss, 'bo', { typeId: hlr, issuedOn: '2023-01-10' }); // expired by the rule
@@ -1370,23 +1377,16 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
       const r = registry();
       expect(r.aboutReads(actor(boss), 'unit').map(x => x.name)).toEqual(['competence.unit']);
       // Enhet 1's branch is Anna and Bo, Karin's reports, and Dan below it, who is not (Cia is deactivated; Karin herself
-      // is never counted). One person besides her reports is too few to count without naming him, so the figures are
-      // her reports' and say so; Dan's unit's degree, required of him alone, has no row. Enhet 3 is not Karin's own, and
-      // an unknown key is nobody's: neither has a row. Only the targets set on the unit itself are read on it.
+      // is never counted). What is required is counted over her reports alone: Dan's unit's degree, required of him
+      // only, has no row. Enhet 3 is not Karin's own, and an unknown key is nobody's: neither has a row. Only the targets
+      // set on the unit itself are read on it.
       const units = await r.run<{ rows: unknown[] }>(actor(boss), 'competence.unit', {
         keys: ['u1', 'u2', 'u3', 'nope'],
       });
       expect(units.rows).toEqual([
-        {
-          key: 'u1',
-          covered: '1 av 2 personer',
-          short: '1 person',
-          targets: '0 av 1 nås',
-          below: '1 mål',
-          counted: 'Endast dina medarbetare',
-        },
+        { key: 'u1', covered: '1 av 2 medarbetare', short: '1 medarbetare', targets: '0 av 2 nås', below: '1 mål' },
         // Nobody on Enhet 2 holds the sjuksköterska position: that target is neither reached nor missed.
-        { key: 'u2', covered: '1 av 1 person', targets: '0 av 1 nås' },
+        { key: 'u2', covered: '1 av 1 medarbetare', targets: '0 av 1 nås' },
       ]);
       const text = JSON.stringify(units);
       for (const name of NAMES) expect(text).not.toContain(name);
@@ -1400,30 +1400,44 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
         {
           id: 'requirement:' + hlr,
           competence: 'HLR',
-          goal: 'Krav för 2 personer',
+          goal: 'Krav för 2 av dina medarbetare',
           actual: '1 av 2',
           state: 'Inte uppfyllt',
-          counted: 'Endast dina medarbetare',
         },
+        // The undersköterskor of the branch are Anna and Bo, whom Karin knows, and Dan alone besides: too few to count.
+        {
+          id: 'target:' + hlrOnU1,
+          competence: 'HLR',
+          goal: 'Minst 50 % av alla på enheten med befattningen Undersköterska',
+          actual: '–',
+          state: 'För få för att visas',
+        },
+        // Bo, her own report, is the one sjuksköterska: a figure over people she knows tells her nothing new.
         {
           id: 'target:' + onU1,
           competence: 'Socionomexamen',
-          goal: 'Minst 50 % av dem med befattningen Sjuksköterska',
+          goal: 'Minst 50 % av alla på enheten med befattningen Sjuksköterska',
           actual: '0 %, 0 av 1',
           state: 'Inte uppfyllt',
         },
       ]);
       // A target set on a unit above is not read below it: Olle leads Enhet 3 under Enhet 1 and sees his own figures,
-      // over Dan, his report, and none of Enhet 1's target.
+      // over Dan, his report, and none of Enhet 1's targets.
       const below = await r.run<{ rows: Array<Record<string, string>> }>(actor(other), 'competence.coverage', {
         unit: 'u3',
       });
       expect(below.rows).toEqual([
-        { id: 'requirement:' + hlr, competence: 'HLR', goal: 'Krav för 1 person', actual: '1 av 1', state: 'Uppfyllt' },
+        {
+          id: 'requirement:' + hlr,
+          competence: 'HLR',
+          goal: 'Krav för 1 av dina medarbetare',
+          actual: '1 av 1',
+          state: 'Uppfyllt',
+        },
         {
           id: 'requirement:' + degree,
           competence: 'Socionomexamen',
-          goal: 'Krav för 1 person',
+          goal: 'Krav för 1 av dina medarbetare',
           actual: '0 av 1',
           state: 'Inte uppfyllt',
         },
@@ -1434,7 +1448,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
       expect(await competence.aboutUnits(asAnna, ['u1'])).toEqual([]);
     });
 
-    test('the rest of a branch is counted from five people, a one-person requirement only for the reader’s own report, and an organisation’s target once', async () => {
+    test('others on the branch enter only a share target, from five people; a one-person requirement only for the reader’s own report; an organisation’s target once', async () => {
       directory();
       const { hot, hlr } = await catalogue();
       // Five more people on Enhet 3, Olle's reports, each an undersköterska: with Dan, six besides Karin's own.
@@ -1449,14 +1463,24 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
       // Olle sets a requirement on e1 alone: it is his to count, never Karin's.
       await competence.addRequirement(other, { typeId: hot, personId: 'e1' });
       const everywhere = await competence.addShareTarget(admin, { typeId: hlr, positionCode: USK, minShare: 60 });
+      const onU1 = await competence.addShareTarget(admin, {
+        typeId: hlr,
+        positionCode: USK,
+        unitId: 'u1',
+        minShare: 60,
+      });
       for (const id of ['anna', 'e1', 'e2', 'e3']) {
         const manager = id === 'anna' ? boss : other;
         await competence.registerHolding(manager, id, { typeId: hlr, issuedOn: '2026-01-10' });
       }
       const table = await competence.coverage(boss, 'u1');
-      // Anna, Bo, Dan and e1 to e5 are under HLR: everyone counted, the reader's reports and the rest alike.
-      expect(table.requirements.map(r => [r.type.name, r.under, r.meeting, r.ownOnly])).toEqual([['HLR', 8, 4, false]]);
-      expect(table).toMatchObject({ under: 8, meetingAll: 4, ownOnly: false });
+      // What is required is Karin's reports' alone, however many others the branch holds.
+      expect(table.requirements.map(r => [r.type.name, r.under, r.meeting])).toEqual([['HLR', 2, 1]]);
+      expect(table).toMatchObject({ under: 2, meetingAll: 1 });
+      // The unit's target counts everyone on the branch in the position, six of them people Karin does not know.
+      expect(table.targets.map(t => [t.target.id, t.holders, t.meeting, t.share, t.met, t.withheld])).toEqual([
+        [onU1, 8, 4, 50, false, false],
+      ]);
       expect((await competence.coverage(other, 'u3')).requirements.map(r => [r.type.name, r.under, r.meeting])).toEqual(
         [
           ['HLR', 6, 3],
@@ -1497,7 +1521,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
     });
   });
 
-  test('the domain: a branch is the unit and everything below; a small rest of a branch is left out; coverage counts', () => {
+  test('the domain: a branch is the unit and everything below; coverage counts own reports, and a target only over enough others', () => {
     const tree = [
       { id: 'root', parentId: null },
       { id: 'a', parentId: 'root' },
@@ -1511,11 +1535,10 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
     expect(branchOf(tree, 'lost')).toEqual(['lost']);
     expect(COVERAGE_MIN_GROUP).toBe(5);
     const own = (id: string) => id.startsWith('own');
-    const of = (ids: string[]) => ids.map(personId => ({ personId }));
-    // None besides the reader's own, or at least five: everyone. One to four: the reader's own alone, said so.
-    expect(countable(of(['own1', 'own2']), own)).toEqual({ people: of(['own1', 'own2']), ownOnly: false });
-    expect(countable(of(['own1', 'x1', 'x2', 'x3', 'x4']), own)).toEqual({ people: of(['own1']), ownOnly: true });
-    expect(countable(of(['own1', 'x1', 'x2', 'x3', 'x4', 'x5']), own).people).toHaveLength(6);
+    // None besides those the reader knows, or at least five: a figure may be shown. One to four: never.
+    expect(showable(['own1', 'own2'], own)).toBe(true);
+    expect(showable(['own1', 'x1', 'x2', 'x3', 'x4'], own)).toBe(false);
+    expect(showable(['own1', 'x1', 'x2', 'x3', 'x4', 'x5'], own)).toBe(true);
     const type: TypeRecord = {
       id: 't',
       organisationId: ORG,
@@ -1527,30 +1550,46 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
       createdBy: 'x',
       createdAt: now.toISOString(),
     };
-    const target: ShareTargetRecord = {
-      id: 's',
+    const target = (id: string, positionCode: string): ShareTargetRecord => ({
+      id,
       organisationId: ORG,
       typeId: 't',
-      positionCode: 'p',
+      positionCode,
       unitId: 'a',
       minShare: 34,
       createdBy: 'x',
       createdAt: now.toISOString(),
-    };
-    const people = ['x', 'y', 'z'].map(personId => ({ personId, unitIds: ['a'], positionCodes: ['p'] }));
+    });
+    const placed = (personId: string, positionCodes: string[]) => ({ personId, unitIds: ['a'], positionCodes });
     const held = { holding: null, type, end: null } as const;
     const covered = coverageOf({
-      people,
+      people: ['x', 'y', 'z'].map(id => placed(id, ['p'])),
       reader: 'boss',
       reports: new Set(['x', 'y', 'z']),
       requirements: [],
-      targets: [target],
+      targets: [target('s', 'p')],
       types: new Map([['t', type]]),
       standings: [{ ...held, personId: 'x', status: 'missing' as const }],
     });
     // Nobody meets it: 0 of 3. A share is rounded down, so 1 of 3 (33 %) misses 34 %.
-    expect(covered.targets.map(t => [t.share, t.met, t.ownOnly])).toEqual([[0, false, false]]);
+    expect(covered.targets.map(t => [t.share, t.met, t.withheld])).toEqual([[0, false, false]]);
     expect(covered).toMatchObject({ under: 0, meetingAll: 0, requirements: [] });
+    // Two targets of one type over overlapping positions: q's holders are five people the reader does not know, p's
+    // are those five, one more, and the reader's own. Each alone may be shown, but p less q is one person: both withheld.
+    const others = ['o1', 'o2', 'o3', 'o4', 'o5'];
+    const overlapping = coverageOf({
+      people: [...others.map(id => placed(id, ['p', 'q'])), placed('o6', ['p']), placed('own1', ['p'])],
+      reader: 'boss',
+      reports: new Set(['own1']),
+      requirements: [],
+      targets: [target('s1', 'p'), target('s2', 'q')],
+      types: new Map([['t', type]]),
+      standings: [],
+    });
+    expect(overlapping.targets.map(t => [t.target.id, t.withheld, t.share])).toEqual([
+      ['s1', true, null],
+      ['s2', true, null],
+    ]);
     // An organisation's target over fewer than five is no figure; over five or more it is one.
     expect(organisationOutcome({ minShare: 50 }, ['a', 'b', 'c', 'd'], () => true)).toEqual({ tooFew: true });
     expect(organisationOutcome({ minShare: 50 }, ['a', 'b', 'c', 'd', 'e'], id => id < 'c')).toEqual({

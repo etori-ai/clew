@@ -107,10 +107,16 @@ function CompetenceCell({ name, archived }: { name: string; archived: boolean })
  * A position or a unit a row is set on, and that it no longer exists when the provisioner has removed it: the row counts
  * towards nothing until one comes back under the same key, and stays listed so that it can be removed.
  */
-function TargetCell({ label, gone }: { label: string; gone: boolean }) {
+function TargetCell({ label, code, gone }: { label: string; code?: string; gone: boolean }) {
   return (
     <VStack gap={1} hAlign="start">
       <Text>{label}</Text>
+      {/* A requirement is bound to a position's code, not its name: a code used again later carries it over. */}
+      {code !== undefined && code !== label && (
+        <Text type="code" color="secondary">
+          {code}
+        </Text>
+      )}
       {gone && <Badge variant="warning" label="Finns inte längre" />}
     </VStack>
   );
@@ -187,7 +193,7 @@ function RequirementDialog({
   const types = typeOptions(catalogue);
   const targets =
     on === 'position'
-      ? positions.map(p => ({ value: p.code, label: p.label }))
+      ? positions.map(p => ({ value: p.code, label: p.label, description: p.code }))
       : units.map(u => ({ value: u.id, label: u.label }));
   const submit = async () => {
     if (save.busy) return;
@@ -395,7 +401,7 @@ function TargetDialog({
               label="Befattning"
               description="Andelen räknas bland dem som har befattningen."
               placeholder="Välj befattning"
-              options={positions.map(p => ({ value: p.code, label: p.label }))}
+              options={positions.map(p => ({ value: p.code, label: p.label, description: p.code }))}
               value={(positionCode ?? undefined) as never}
               onChange={value => setPositionCode(value || null)}
               presentation="adaptive"
@@ -505,6 +511,11 @@ function RequirementsCard({
               description={
                 <HStack gap={1} wrap="wrap" vAlign="center">
                   <Text type="supporting">{row.name}</Text>
+                  {row.r.on === 'position' && row.r.targetId !== row.r.targetLabel && (
+                    <Text type="code" color="secondary">
+                      {row.r.targetId}
+                    </Text>
+                  )}
                   {row.archived && <Badge variant="neutral" label="Arkiverad" />}
                   {row.r.gone && <Badge variant="warning" label="Finns inte längre" />}
                 </HStack>
@@ -522,7 +533,13 @@ function RequirementsCard({
               key: 'target',
               header: targetHeader,
               width: proportional(2, { minWidth: 180 }),
-              renderCell: row => <TargetCell label={row.r.targetLabel} gone={!!row.r.gone} />,
+              renderCell: row => (
+                <TargetCell
+                  label={row.r.targetLabel}
+                  {...(row.r.on === 'position' ? { code: row.r.targetId } : {})}
+                  gone={!!row.r.gone}
+                />
+              ),
             },
             {
               key: 'competence',
@@ -731,7 +748,7 @@ export function AdminCompetenceRequirementsPage({ user }: { user: SessionUser })
                     description={
                       <VStack gap={1} hAlign="start">
                         <Text type="supporting">
-                          Minst {row.t.minShare} % av {row.t.positionLabel} · {scopeWords(row.t)}
+                          Minst {row.t.minShare} % av {row.t.positionLabel} ({row.t.positionCode}) · {scopeWords(row.t)}
                         </Text>
                         <Text type="supporting">{outcomeWords(row.t)}</Text>
                         {row.t.gone && <Badge variant="warning" label="Finns inte längre" />}
@@ -759,6 +776,7 @@ export function AdminCompetenceRequirementsPage({ user }: { user: SessionUser })
                     renderCell: row => (
                       <TargetCell
                         label={row.t.positionLabel}
+                        code={row.t.positionCode}
                         gone={!positions.some(p => p.code === row.t.positionCode)}
                       />
                     ),

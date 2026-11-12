@@ -14,7 +14,7 @@ import {
   literals,
 } from '@clew/contracts';
 import { systemContext } from '../../system-context';
-import { personStatus, swedishDayAndMonth } from './domain';
+import { personStatus, swedishDayAndMonth, type CardIdentity } from './domain';
 import type { CompetenceUsecases, UnitCoverageResult } from './usecases';
 
 /**
@@ -143,15 +143,10 @@ const dueWords = (expired: number, missing: number, expiring: number) =>
 const listWords = (parts: readonly string[]) =>
   parts.length < 2 ? (parts[0] ?? '') : `${parts.slice(0, -1).join(', ')} och ${parts.at(-1)}`;
 /**
- * What a figure of a unit says it counts when the rest of the branch was too few to count without naming anyone
- * (`COVERAGE_MIN_GROUP`): the reader's own reports alone.
- */
-export const OWN_ONLY = 'Endast dina medarbetare';
-/**
- * A unit's coverage in a row (D108 items 6 and 8): how many of the people of its branch that something is required of
- * meet all of it, the ones who do not beside it, warning; then how many of the share targets set on the unit are
- * reached, the ones that are not beside them, warning; and, where the rest of the branch was too few to count, that the
- * figures are the reader's own reports'. Counts only: a row names nobody. A row opens the table per type and target.
+ * A unit's coverage in a row (D108 items 6 and 8): how many of the reader's own reports on the unit's branch that
+ * something is required of meet all of it, the ones who do not beside it, warning; then how many of the share targets
+ * set on the unit are reached, the ones that are not beside them, warning. Counts only: a row names nobody. A row opens
+ * the table per type and target.
  */
 export const UnitCompetenceOutputSchema = Type.Object(
   {
@@ -163,7 +158,6 @@ export const UnitCompetenceOutputSchema = Type.Object(
           short: Type.Optional(Type.String({ maxLength: 40 })),
           targets: Type.Optional(Type.String({ maxLength: 60 })),
           below: Type.Optional(Type.String({ maxLength: 40 })),
-          counted: Type.Optional(Type.Literal(OWN_ONLY)),
         },
         { additionalProperties: false },
       ),
@@ -176,13 +170,12 @@ export const unitView: View = {
   kind: 'list',
   title: 'covered',
   noun: { one: 'enhet', other: 'enheter' },
-  empty: 'Inga kompetenskrav gäller på enheten.',
+  empty: 'Inga kompetenskrav gäller dina medarbetare på enheten.',
   fields: [
-    { key: 'covered', label: 'Uppfyller kraven' },
+    { key: 'covered', label: 'Medarbetare som uppfyller kraven' },
     { key: 'short', label: 'Uppfyller inte', format: 'status', tones: { '*': 'warn' }, beside: true },
     { key: 'targets', label: 'Andelsmål' },
     { key: 'below', label: 'Under målet', format: 'status', tones: { '*': 'warn' }, beside: true },
-    { key: 'counted', label: 'Räknade' },
   ],
   open: { capability: COMPETENCE_CONNECTOR + '.coverage', title: 'Kompetenstäckning', params: { unit: 'key' } },
 };
@@ -192,8 +185,13 @@ export const CoverageInputSchema = Type.Object(
   { additionalProperties: false },
 );
 type CoverageInput = Static<typeof CoverageInputSchema>;
-/** The words a coverage row says where it stands: met, not met, or nobody to count. */
-export const COVERAGE_WORDS = { met: 'Uppfyllt', short: 'Inte uppfyllt', none: 'Ingen att räkna' } as const;
+/** The words a coverage row says where it stands: met, not met, nobody to count, or too few to show. */
+export const COVERAGE_WORDS = {
+  met: 'Uppfyllt',
+  short: 'Inte uppfyllt',
+  none: 'Ingen att räkna',
+  tooFew: 'För få för att visas',
+} as const;
 export const CoverageOutputSchema = Type.Object(
   {
     rows: Type.Array(
@@ -204,7 +202,6 @@ export const CoverageOutputSchema = Type.Object(
           goal: Type.String({ maxLength: 200 }),
           actual: Type.String({ maxLength: 60 }),
           state: literals(Object.values(COVERAGE_WORDS)),
-          counted: Type.Optional(Type.Literal(OWN_ONLY)),
         },
         { additionalProperties: false },
       ),
@@ -214,15 +211,16 @@ export const CoverageOutputSchema = Type.Object(
   { additionalProperties: false },
 );
 /**
- * A unit's branch per required type and per share target set on the unit (D108 items 6 and 8): what is asked, what is
- * there, and whether it is met. A requirement asks it of everyone it is set on; a share target asks a least share of a
- * position's holders, measured over this branch. A figure over the reader's own reports alone says so.
+ * A unit's branch per required type and per share target set on the unit (D108 items 6 and 8): what is asked, of whom,
+ * what is there, and whether it is met. A required type is counted over the reader's own reports, and its row says so;
+ * a share target over everyone on the branch who holds its position, or not at all where too few of them are people the
+ * reader does not know (`coverageOf`).
  */
 export const coverageView: View = {
   kind: 'table',
   title: 'competence',
   noun: { one: 'krav', other: 'krav' },
-  empty: 'Inga kompetenskrav gäller på enheten.',
+  empty: 'Inga kompetenskrav gäller dina medarbetare på enheten.',
   fields: [
     { key: 'competence', label: 'Kompetens' },
     { key: 'goal', label: 'Vad som krävs' },
@@ -233,51 +231,50 @@ export const coverageView: View = {
       format: 'status',
       tones: { [COVERAGE_WORDS.met]: 'ok', [COVERAGE_WORDS.short]: 'warn' },
     },
-    { key: 'counted', label: 'Räknade' },
   ],
 };
-const persons = (n: number) => `${n} ${n === 1 ? 'person' : 'personer'}`;
+const reportsWords = (n: number) => `${n} medarbetare`;
 const cut = (text: string, max: number) => ([...text].length > max ? [...text].slice(0, max - 1).join('') + '…' : text);
-const countedWords = (ownOnly: boolean) => (ownOnly ? { counted: OWN_ONLY } : {});
 /** The table's rows: the required types first, in the catalogue's order, then the share targets set on the unit. */
 export function coverageRows(c: UnitCoverageResult) {
   return [
     ...c.requirements.map(r => ({
       id: 'requirement:' + r.type.id,
       competence: r.type.name,
-      goal: `Krav för ${persons(r.under)}`,
+      goal: `Krav för ${r.under} av dina medarbetare`,
       actual: `${r.meeting} av ${r.under}`,
       state: r.meeting === r.under ? COVERAGE_WORDS.met : COVERAGE_WORDS.short,
-      ...countedWords(r.ownOnly),
     })),
     ...c.targets.map(t => ({
       id: 'target:' + t.target.id,
       competence: t.type.name,
-      goal: cut(`Minst ${t.target.minShare} % av dem med befattningen ${t.positionLabel}`, 200),
-      actual:
-        t.share === null
-          ? t.ownOnly
-            ? 'Ingen av dina medarbetare har befattningen'
-            : 'Ingen har befattningen'
+      goal: cut(`Minst ${t.target.minShare} % av alla på enheten med befattningen ${t.positionLabel}`, 200),
+      actual: t.withheld
+        ? '–'
+        : t.share === null
+          ? 'Ingen har befattningen'
           : `${t.share} %, ${t.meeting} av ${t.holders}`,
-      state: t.met === null ? COVERAGE_WORDS.none : t.met ? COVERAGE_WORDS.met : COVERAGE_WORDS.short,
-      ...countedWords(t.ownOnly),
+      state: t.withheld
+        ? COVERAGE_WORDS.tooFew
+        : t.met === null
+          ? COVERAGE_WORDS.none
+          : t.met
+            ? COVERAGE_WORDS.met
+            : COVERAGE_WORDS.short,
     })),
   ].slice(0, 500);
 }
-/** A unit's row: what is met of what is required, and of the share targets, in counts only. */
+/** A unit's row: what is met of what is required of the reader's reports, and of the share targets, in counts only. */
 function unitRow(c: UnitCoverageResult) {
   const short = c.under - c.meetingAll;
   const counted = c.targets.filter(t => t.met !== null);
   const below = counted.filter(t => !t.met).length;
-  const ownOnly = c.ownOnly || c.requirements.some(r => r.ownOnly) || c.targets.some(t => t.ownOnly);
   return {
     key: c.unitId,
-    covered: c.under ? `${c.meetingAll} av ${persons(c.under)}` : 'Inga krav på någon',
-    ...(short ? { short: persons(short) } : {}),
+    covered: c.under ? `${c.meetingAll} av ${reportsWords(c.under)}` : 'Inga krav på någon',
+    ...(short ? { short: reportsWords(short) } : {}),
     ...(c.targets.length ? { targets: `${counted.length - below} av ${c.targets.length} nås` } : {}),
     ...(below ? { below: `${below} mål` } : {}),
-    ...countedWords(ownOnly),
   };
 }
 /** The persona a use case takes, built from the person's current grant as the talks connector does. */
@@ -429,18 +426,19 @@ export function competenceConnector(
     ],
     /**
      * What needs a person (D108 item 12), derived from the dates and the requirements each time and never stored. A person
-     * gets one card per holding of their own that has run out or soon will, with its end date as the deadline, and one
+     * gets one card per competence of their own that has run out or soon will, with its end date as the deadline, and one
      * per required type they lack. A manager gets one card that counts their reports' and names nobody: its rows are the
      * read it opens.
      *
-     * The scan is a complete observation of the person's scope (D47): every card carries its occurrences, so a card whose
-     * cause is gone (a certificate registered, a requirement removed, a type archived) is resolved at the next scan and
-     * one whose cause stands is neither reopened nor duplicated. A card's first occurrence is keyed on its topic, the key
-     * the card had while the scan named topics alone, so such an open card is taken over rather than duplicated. A
-     * holding's card is the holding in the period of its end date, its status the revision, so a holding that runs out
-     * reopens its card with an explanation. The manager's card also carries one occurrence per person and type due, by
-     * ids that never reach the card's text: one that is new or changes status reopens the card, one that is settled only
-     * leaves it.
+     * The scan is a complete observation of the person's scope (D47), and every card is one occurrence (`ownCard`,
+     * `teamCard` in the domain): a card whose cause is gone (a certificate registered or renewed, a requirement removed,
+     * a type archived) is resolved at the next scan; one whose cause stands is neither reopened nor duplicated; a cause
+     * that comes back is a new period and so a new card. A person's card follows the person and the type, not a holding's
+     * row, so a copied row read again under a new id keeps the card and its dismissal. The known limit: a requirement that
+     * stops applying and applies again unchanged (a position or a unit gone and back under the same code or id) is the
+     * same identity, so its card does not open again. The manager's card is one occurrence whose revision is its counts:
+     * counts that change bring a handled card back, counts that stand do not. Whatever cannot be read throws, so the scan
+     * is never a complete observation of nothing.
      */
     scan: async actor => {
       const { observedAt, own, team } = await competence.scanOf(await persona(actor), actor.role === 'manager');
@@ -448,26 +446,25 @@ export function competenceConnector(
       const open = [
         { id: 'open', label: 'Visa mina kompetenser', capability: holdings.name, kind: 'read', role: 'primary' },
       ] as const;
-      for (const s of own) {
+      const occurrence = (card: CardIdentity) => [{ key: card.key, revision: card.revision, period: card.period }];
+      for (const { standing: s, card } of own) {
         if (s.holding === null) {
-          const topic = `${COMPETENCE_CONNECTOR}:missing:${s.type.id}`;
           drafts.push({
-            topic,
+            topic: card.topic,
             area: COMPETENCE_AREA,
             title: `${s.type.name} saknas`,
             summary:
               'Det här krävs i ditt arbete men finns inte registrerat för dig. Prata med din chef om hur du får det.',
             reason: 'Saknas',
             actions: [...open],
-            occurrences: [{ key: topic, revision: 'missing', period: 'once' }],
+            occurrences: occurrence(card),
           });
           continue;
         }
         const day = swedishDayAndMonth(s.end!);
         const expired = s.status === 'expired';
-        const topic = `${COMPETENCE_CONNECTOR}:holding:${s.holding.id}`;
         drafts.push({
-          topic,
+          topic: card.topic,
           area: COMPETENCE_AREA,
           title: expired ? `${s.type.name} gick ut ${day}` : `${s.type.name} går ut ${day}`,
           summary: expired
@@ -476,7 +473,7 @@ export function competenceConnector(
           reason: expired ? 'Har gått ut' : 'Går ut inom 90 dagar',
           deadline: s.end,
           actions: [...open],
-          occurrences: [{ key: topic, revision: s.status, period: s.end! }],
+          occurrences: occurrence(card),
         });
       }
       if (team && (team.expired || team.missing || team.expiring)) {
@@ -485,22 +482,14 @@ export function competenceConnector(
           ...(team.missing ? [`${plural(team.missing, 'intyg saknas', 'intyg saknas')}`] : []),
           ...(team.expiring ? [`${plural(team.expiring, 'intyg går', 'intyg går')} ut inom 90 dagar`] : []),
         ];
-        const topic = `${COMPETENCE_CONNECTOR}:attention`;
         drafts.push({
-          topic,
+          topic: team.card.topic,
           area: COMPETENCE_AREA,
           title: 'Intyg att åtgärda bland dina medarbetare',
           summary: `${listWords(parts)}, hos ${plural(team.people, 'person', 'personer')}.`,
           reason: team.expired ? 'Intyg har gått ut' : team.missing ? 'Intyg saknas' : 'Intyg går ut inom 90 dagar',
           actions: [{ id: 'open', label: 'Visa intygen', capability: attention.name, kind: 'read', role: 'primary' }],
-          occurrences: [
-            { key: topic, revision: 'due', period: 'once' },
-            ...team.due.map(d => ({
-              key: `${topic}:${d.personId}:${d.typeId}`,
-              revision: d.status,
-              period: d.end ?? 'once',
-            })),
-          ],
+          occurrences: occurrence(team.card),
         });
       }
       return {
