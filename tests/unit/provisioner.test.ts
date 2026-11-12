@@ -7,7 +7,7 @@ import {
   type Employment as ClewEmployment,
 } from '@clew/contracts';
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
-import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
+import { memberKey, memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { scimUsecases, staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { scimRoutes } from '../../apps/server/src/routes/scim';
 import { checkProvisioning } from '../../scripts/provisioner/check';
@@ -156,7 +156,13 @@ describe('the synthetic provisioner', () => {
     expect(names).toContain('Åsa Öberg-Ångström');
     expect(names.filter(name => name === 'Anna Lindqvist')).toHaveLength(2);
     for (const g of p.groups) expect(new Set(g.members).size).toBe(g.members.length);
-    expect(() => plan({ ...developmentDirectory, units: [] })).toThrow("department 'unit-skola'");
+    expect(p.groups.filter(g => g.refused)).toEqual([]);
+    // A unit the people name and the directory does not list is that unit's fault, planned with them and refused.
+    const unlisted = plan({ ...developmentDirectory, units: [] }).groups.find(g => g.externalId === 'unit:unit-skola')!;
+    expect(unlisted.refused).toBe(
+      "The directory does not list the unit 'unit-skola', which 12 active people name: hillevi, anna, erik, maria, johan (and 7 more).",
+    );
+    expect(unlisted.members).toEqual(by('unit:unit-skola').members);
   });
   test("the units are a tree: every unit names the one above it, the units are planned from the root down, and a broken tree is the source's mistake (D99)", () => {
     const p = plan(developmentDirectory),
@@ -221,13 +227,21 @@ describe('the synthetic provisioner', () => {
     expect(p.groups.find(g => g.externalId === 'unit-manager:unit-hr')!.members).toEqual(
       p.groups.find(g => g.externalId === 'unit-manager:unit-ekonomi')!.members,
     );
+    // A broken tree refuses the units it breaks and nothing else: what stands below them is planned as below a root.
     const unit = (id: string, parent?: string) => ({ id, label: id, ...(parent ? { parent } : {}) });
-    expect(() => plan({ complete: true, units: [unit('a', 'missing')], groups: [], people: [] })).toThrow(
-      "The unit 'a' has parent 'missing', which the directory does not list.",
-    );
-    expect(() => plan({ complete: true, units: [unit('a', 'b'), unit('b', 'a')], groups: [], people: [] })).toThrow(
-      "The units a → b → a are each other's parents.",
-    );
+    const broken = (...units: Directory['units']) =>
+      plan({ complete: true, units, groups: [], people: [] }).groups.map(g => [g.externalId, g.refused]);
+    expect(broken(unit('a', 'missing'), unit('b', 'a'), unit('r'))).toEqual([
+      ['unit:a', "The unit 'a' has parent 'missing', which the directory does not list."],
+      ['unit:r', undefined],
+      ['unit:b', undefined],
+    ]);
+    expect(broken(unit('c', 'a'), unit('a', 'b'), unit('b', 'a'), unit('s', 's'))).toEqual([
+      ['unit:a', "The units a → b → a are each other's parents."],
+      ['unit:b', "The units a → b → a are each other's parents."],
+      ['unit:s', "The units s → s are each other's parents."],
+      ['unit:c', undefined],
+    ]);
   });
   test('a first push creates everything, grants follow, and a second push is silent', async () => {
     const { store, client, grantOf } = stack();
@@ -240,6 +254,7 @@ describe('the synthetic provisioner', () => {
       groupsReplaced: 0,
       groupsRemoved: 0,
       refused: [],
+      groupsRefused: [],
     });
     expect(grantOf('hillevi')).toEqual({
       unitId: 'unit-skola',
@@ -283,6 +298,7 @@ describe('the synthetic provisioner', () => {
       groupsReplaced: 113,
       groupsRemoved: 0,
       refused: [],
+      groupsRefused: [],
     });
     expect(store.state.audit.length).toBe(audited);
   });
@@ -546,19 +562,20 @@ describe('the synthetic provisioner', () => {
       { id: 'a', label: 'Enhet A' },
       { id: 'b', label: 'Enhet B' },
     ];
-    test('an id that names two rows refuses the whole export before the first write: a person, a unit, a group, an active account name', async () => {
+    test('an id that names two rows refuses the whole export: a person or an account name before the first write, a unit or a group once who has left is deactivated', async () => {
       const { store, client } = stack();
       await reconcile(client, source([a, b], someone('e-1', 'anna'), someone('e-2', 'bo')), scope);
       const before = { audit: store.state.audit.length, users: store.state.users.size };
       // A person with two employments, exported as two rows with one id: written, it was one person with the later
       // row's name and both rows' placements, and nothing said so.
+      const bo = someone('e-2', 'bo');
       const twice: Array<[Directory, string]> = [
         [source([a, b], someone('e-1', 'anna'), someone('e-1', 'bo', 'b')), "the person 'e-1' more than once"],
-        [source([a, b, { ...a }], someone('e-1', 'anna')), "the unit 'a' more than once"],
+        [source([a, b, { ...a }], someone('e-1', 'anna'), bo), "the unit 'a' more than once"],
         [source([a, b], someone('e-1', 'anna'), someone('e-3', 'ANNA', 'b')), "the account name 'anna' more than once"],
         [
           {
-            ...source([a], someone('e-1', 'anna')),
+            ...source([a, b], someone('e-1', 'anna'), bo),
             groups: [
               { id: 'ad:x', label: 'X' },
               { id: 'ad:x', label: 'Y' },
@@ -567,13 +584,21 @@ describe('the synthetic provisioner', () => {
           "the group 'ad:x' more than once",
         ],
       ];
+      const owner = { ...scope, groupPrefixes: [...scope.groupPrefixes, 'ad:'] };
       for (const [directory, message] of twice) {
         expect(() => plan(directory)).toThrow(message);
-        await expect(
-          reconcile(client, directory, { ...scope, groupPrefixes: [...scope.groupPrefixes, 'ad:'] }),
-        ).rejects.toThrow('Nothing was written.');
+        await expect(reconcile(client, directory, owner)).rejects.toThrow(`${message}; `);
+        await expect(reconcile(client, directory, owner)).rejects.toThrow('Nothing was written.');
       }
       expect({ audit: store.state.audit.length, users: store.state.users.size }).toEqual(before);
+      // The people rows say who has left whatever the organisation's rows say: Bo is deactivated, and nothing else is
+      // written, neither the unit nor anything about anybody else.
+      await expect(reconcile(client, source([a, b, { ...a }], someone('e-1', 'anna')), owner)).rejects.toThrow(
+        "The source lists the unit 'a' more than once; a unit id is one unit. The person who has left was deactivated; nothing else was written.",
+      );
+      expect(store.state.audit.slice(before.audit).map(row => [row.action, row.subject])).toEqual([
+        ['scim.user.deactivated', 'person:' + ekonomiId(store, 'e-2')],
+      ]);
       // A person who has left may keep the name somebody active now has: that is the reuse the example handles.
       expect(() =>
         plan(source([a], someone('e-1', 'anna', 'a', { active: false }), someone('e-2', 'anna'))),
@@ -596,8 +621,13 @@ describe('the synthetic provisioner', () => {
         await expect(reconcile(client, directory, allowed, { force: true })).rejects.toThrow('reserved');
         expect(store.state.groups.size).toBe(0);
         expect(store.state.users.size).toBe(0);
-        expect(store.state.audit).toHaveLength(0);
+        // The people were read, so the run was seen (D107), and nothing was written.
+        expect(store.state.audit.map(row => row.action)).toEqual(['provisioner.seen']);
       }
+      // A person's row that names a reserved key as a plain group is the same mistake, though the directory lists none.
+      await expect(
+        reconcile(client, { ...empty, people: [someone('e-1', 'anna', 'a', { groups: ['unit:b'] })] }, allowed),
+      ).rejects.toThrow("anna has group 'unit:b', which uses a reserved SCIM key.");
       const plain = { id: 'ad:unit:b', label: 'Newsletter' };
       const result = await reconcile(client, { ...empty, groups: [plain] }, allowed);
       expect(result.groupsCreated).toBe(3);
@@ -652,6 +682,7 @@ describe('the synthetic provisioner', () => {
           groupsReplaced: 1,
           groupsRemoved: 1,
           refused: [],
+          groupsRefused: [],
         });
       }
     });
@@ -663,13 +694,25 @@ describe('the synthetic provisioner', () => {
         [cia, dan] = [someone('e-11', 'cia'), someone('e-12', 'dan')];
       await reconcile(client, source([a], ...staying, cia, dan), scope);
       // Cia is gone from the source, Dan is still listed and marked inactive, and a new unit has a name Clew refuses.
-      await expect(
-        reconcile(client, source([a, { id: 'b', label: '   ' }], ...staying, { ...dan, active: false }), scope),
-      ).rejects.toThrow("Attribute 'displayName'");
+      const refused = await reconcile(
+        client,
+        source([a, { id: 'b', label: '   ' }], ...staying, { ...dan, active: false }),
+        scope,
+      );
+      expect(refused).toMatchObject({
+        deactivated: 2,
+        refused: [],
+        groupsRefused: [
+          {
+            externalId: 'unit:b',
+            detail: "Attribute 'displayName' needs a non-empty string of at most 512 characters.",
+          },
+        ],
+      });
       expect([enabled('cia'), enabled('dan'), enabled('person1')]).toEqual([false, false, true]);
-      // The run failed and says so; the next one, with the unit put right, finds nothing left to deactivate.
+      // The run reports the unit; the next one, with the unit put right, creates it and has nothing left to deactivate.
       const next = await reconcile(client, source([a, b], ...staying, { ...dan, active: false }), scope);
-      expect(next).toMatchObject({ deactivated: 0, refused: [] });
+      expect(next).toMatchObject({ deactivated: 0, refused: [], groupsRefused: [], groupsCreated: 1 });
     });
     test('a person who returns is activated only with a row Clew takes, and a wrong one is reported and left inactive', async () => {
       const { store, client } = stack();
@@ -709,6 +752,462 @@ describe('the synthetic provisioner', () => {
     });
   });
   describe('one row the source has wrong, and a second writer (the review of users and the organisation, 2026-11-12)', () => {
+    type Store = ReturnType<typeof stack>['store'];
+    const scope = { userPrefix: 'e-', groupPrefixes: ['unit:', 'unit-manager:', 'capability:', 'ad:'], groupKeys: [] };
+    const someone = (
+      externalId: string,
+      userName: string,
+      department: string,
+      extra: Partial<DirectoryPerson> = {},
+    ): DirectoryPerson => ({
+      active: true,
+      externalId,
+      userName,
+      givenName: userName,
+      familyName: 'X',
+      email: userName + '@clew.test',
+      department,
+      manager: false,
+      capabilities: [],
+      ...extra,
+    });
+    const unit = (id: string, label: string, parent?: string) => ({ id, label, ...(parent ? { parent } : {}) });
+    const source = (
+      units: Directory['units'],
+      people: DirectoryPerson[],
+      groups: Directory['groups'] = [],
+    ): Directory => ({ complete: true, units, groups, people });
+    /** Who Clew holds in the group with this key, by account name; undefined when Clew holds no such group. */
+    const holders = (store: Store, key: string) => {
+      const group = [...store.state.groups.values()].find(g => g.externalId === key);
+      return (
+        group &&
+        [...store.state.users.values()]
+          .filter(u => store.state.members.has(memberKey(group.id, u.id)))
+          .map(u => u.userName)
+          .sort()
+      );
+    };
+    const held = (store: Store, userName: string) =>
+      [...store.state.users.values()].find(u => u.userName === userName)!;
+    const parentOf = (store: Store, key: string) =>
+      [...store.state.groups.values()].find(g => g.externalId === key)?.parentUnitId;
+    test("a unit the source has wrong is that row's alone: it is reported, who the source places on it keeps their unit, and every other change and removal is made", async () => {
+      const { store, client, grantOf } = stack();
+      const units = [
+        unit('kommun', 'Kommunen'),
+        unit('skola', 'Skolan', 'kommun'),
+        unit('forskola', 'Förskolan', 'kommun'),
+        unit('kansli', 'Kansliet', 'kommun'),
+        unit('kok', 'Köket', 'kommun'),
+        unit('vard', 'Vården', 'kommun'),
+      ];
+      const staff = [7, 8, 9, 10].map(n => someone('e-' + n, 'p' + n, 'vard'));
+      const chef = someone('e-1', 'chef', 'skola', { manager: true }),
+        admin = someone('e-2', 'admin', 'kansli', { capabilities: ['admin.users'] }),
+        flytt = someone('e-3', 'flytt', 'skola'),
+        vilse = someone('e-4', 'vilse', 'forskola'),
+        admin2 = someone('e-5', 'admin2', 'kansli', { capabilities: ['admin.users'] }),
+        slutar = someone('e-6', 'slutar', 'kok');
+      await reconcile(client, source(units, [chef, admin, flytt, vilse, admin2, slutar, ...staff]), scope);
+      // A bad day's export: the office names a parent the export does not list, a new unit has no name and a unit
+      // below it, and a person is placed on a unit the export does not list. Beside them a manager steps down, an
+      // administrator gives the role back, and somebody leaves with the unit they were the last one on.
+      const people = [
+        { ...chef, manager: false },
+        { ...admin, capabilities: [] },
+        { ...flytt, department: 'ny-under' },
+        { ...vilse, department: 'okand' },
+        admin2,
+        ...staff,
+      ];
+      const kept = units.filter(u => u.id !== 'kok' && u.id !== 'kansli'),
+        log: string[] = [];
+      const bad = await reconcile(
+        client,
+        source(
+          [
+            ...kept,
+            unit('kansli', 'Kansliet', 'saknas'),
+            unit('ny', '   ', 'kommun'),
+            unit('ny-under', 'Under den nya', 'ny'),
+          ],
+          people,
+        ),
+        scope,
+        { log: line => log.push(line) },
+      );
+      expect(bad).toEqual({
+        created: 0,
+        replaced: 9,
+        deactivated: 1,
+        groupsCreated: 0,
+        groupsReplaced: 6,
+        groupsRemoved: 2,
+        refused: [],
+        groupsRefused: [
+          {
+            externalId: 'unit:kansli',
+            detail: "The unit 'kansli' has parent 'saknas', which the directory does not list.",
+          },
+          {
+            externalId: 'unit:okand',
+            detail: "The directory does not list the unit 'okand', which an active person names: vilse.",
+          },
+          {
+            externalId: 'unit:ny',
+            detail: "Attribute 'displayName' needs a non-empty string of at most 512 characters.",
+          },
+          { externalId: 'unit:ny-under', detail: "The unit above it, 'unit:ny', was not written." },
+        ],
+      });
+      expect(log).toContain(
+        "refused group unit:ny: Attribute 'displayName' needs a non-empty string of at most 512 characters.",
+      );
+      // The office stands where Clew holds it, with the people the source gives it.
+      expect([parentOf(store, 'unit:kansli'), holders(store, 'unit:kansli')]).toEqual(['kommun', ['admin', 'admin2']]);
+      // Who the source places on a unit that was not written keeps the unit Clew holds for them.
+      expect([holders(store, 'unit:skola'), holders(store, 'unit:forskola')]).toEqual([['chef', 'flytt'], ['vilse']]);
+      expect(grantOf('vilse')).toMatchObject({ unitId: 'forskola', role: 'employee' });
+      // Everything else is done: the leaver is deactivated, the manager's role and the capability are taken back, and
+      // the unit the leaver was the last one on is removed.
+      expect(held(store, 'slutar').enabled).toBe(false);
+      expect(grantOf('chef')).toMatchObject({ unitId: 'skola', role: 'employee' });
+      expect(grantOf('admin')?.capabilities).toEqual([]);
+      expect(holders(store, 'capability:admin.users')).toEqual(['admin2']);
+      for (const key of ['unit:kok', 'unit-manager:skola', 'unit:ny', 'unit:ny-under', 'unit:okand'])
+        expect(holders(store, key)).toBeUndefined();
+      // The export put right: the units are written, the people placed on them, and their old placements go.
+      const right = await reconcile(
+        client,
+        source(
+          [
+            ...kept,
+            unit('kansli', 'Kansliet', 'kommun'),
+            unit('ny', 'Nya enheten', 'kommun'),
+            unit('ny-under', 'Under den nya', 'ny'),
+            unit('okand', 'Okänd', 'kommun'),
+          ],
+          people,
+        ),
+        scope,
+      );
+      expect(right).toMatchObject({ groupsCreated: 3, groupsRemoved: 0, refused: [], groupsRefused: [] });
+      expect(['unit:skola', 'unit:forskola', 'unit:ny-under', 'unit:okand'].map(key => holders(store, key))).toEqual([
+        ['chef'],
+        [],
+        ['flytt'],
+        ['vilse'],
+      ]);
+      expect(grantOf('vilse')).toMatchObject({ unitId: 'okand' });
+    });
+    test('a unit Clew will not remove, and one above a unit the source has wrong, stay without the people the source withdrew from them', async () => {
+      const { store, client, grantOf } = stack();
+      const mine = { userPrefix: 'e-', groupPrefixes: ['unit:mine-', 'unit-manager:mine-'], groupKeys: [] };
+      const units = [
+        unit('mine-kommun', 'Kommunen'),
+        unit('mine-gammal', 'Gamla enheten', 'mine-kommun'),
+        unit('mine-a', 'A', 'mine-kommun'),
+        unit('mine-b', 'B', 'mine-a'),
+        unit('mine-skola', 'Skolan', 'mine-kommun'),
+        ...[1, 2, 3, 4, 5].map(n => unit('mine-' + n, 'Enhet ' + n, 'mine-kommun')),
+      ];
+      const [anna, bo, cia, dan] = [
+        someone('e-1', 'anna', 'mine-gammal'),
+        someone('e-2', 'bo', 'mine-skola'),
+        someone('e-3', 'cia', 'mine-b'),
+        someone('e-4', 'dan', 'mine-a'),
+      ];
+      await reconcile(client, source(units, [anna, bo, cia, dan]), mine);
+      // Another writer of the organisation, with keys of its own, has a unit below the old one.
+      await client.request('POST', '/Groups', {
+        externalId: 'unit:theirs',
+        displayName: 'Deras enhet',
+        'urn:clew:params:scim:schemas:extension:unit:2.0:Group': { parent: 'unit:mine-gammal' },
+      });
+      // The source closes the old unit and A and moves Anna and Dan to the school, and B still names A as its parent.
+      const moved = [{ ...anna, department: 'mine-skola' }, bo, cia, { ...dan, department: 'mine-skola' }],
+        kept = units.filter(u => u.id !== 'mine-gammal' && u.id !== 'mine-a'),
+        log: string[] = [];
+      const summary = await reconcile(client, source(kept, moved), mine, { log: line => log.push(line) });
+      expect(summary).toMatchObject({
+        groupsRemoved: 0,
+        refused: [],
+        groupsRefused: [
+          {
+            externalId: 'unit:mine-b',
+            detail: "The unit 'mine-b' has parent 'mine-a', which the directory does not list.",
+          },
+          {
+            externalId: 'unit:mine-gammal',
+            detail:
+              "The unit 'mine-gammal' still has a unit below it ('unit:theirs'); move or remove them first, a tree is removed from the leaves up (D99). The group was not removed.",
+          },
+        ],
+      });
+      expect(log).toEqual(
+        expect.arrayContaining([
+          'kept group unit:mine-a: a unit below it stays',
+          'kept group unit:mine-gammal: Clew did not remove it',
+        ]),
+      );
+      expect(
+        ['unit:mine-gammal', 'unit:mine-a', 'unit:mine-b', 'unit:mine-skola'].map(key => holders(store, key)),
+      ).toEqual([[], [], ['cia'], ['anna', 'bo', 'dan']]);
+      expect([parentOf(store, 'unit:mine-b'), grantOf('anna')?.unitId, grantOf('dan')?.unitId]).toEqual([
+        'mine-a',
+        'mine-skola',
+        'mine-skola',
+      ]);
+      // B is given a parent the source lists, and A goes; the old unit stays while the other writer's unit is below it.
+      const right = await reconcile(
+        client,
+        source(
+          kept.map(u => (u.id === 'mine-b' ? { ...u, parent: 'mine-kommun' } : u)),
+          moved,
+        ),
+        mine,
+      );
+      expect(right).toMatchObject({ groupsRemoved: 1, groupsRefused: [{ externalId: 'unit:mine-gammal' }] });
+      expect([holders(store, 'unit:mine-a'), parentOf(store, 'unit:mine-b')]).toEqual([undefined, 'mine-kommun']);
+    });
+    test('a group Clew refuses to create is reported by its key and the run carries on: a capability outside the list, a plain group without a name', async () => {
+      const { client, grantOf } = stack();
+      const summary = await reconcile(
+        client,
+        source(
+          [unit('a', 'Enheten')],
+          [
+            someone('e-1', 'anna', 'a', { capabilities: ['admin.everything' as Capability], groups: ['ad:tom'] }),
+            someone('e-2', 'bo', 'a', { manager: true }),
+          ],
+          [{ id: 'ad:tom', label: ' ' }],
+        ),
+        scope,
+      );
+      expect(summary).toEqual({
+        created: 2,
+        replaced: 0,
+        deactivated: 0,
+        groupsCreated: 2,
+        groupsReplaced: 0,
+        groupsRemoved: 0,
+        refused: [],
+        groupsRefused: [
+          {
+            externalId: 'ad:tom',
+            detail: "Attribute 'displayName' needs a non-empty string of at most 512 characters.",
+          },
+          {
+            externalId: 'capability:admin.everything',
+            detail:
+              "The key 'capability:admin.everything' names no capability of this installation; the capabilities are admin.connectors, admin.users, admin.appearance, admin.competence (D96). The group was not stored.",
+          },
+        ],
+      });
+      expect([grantOf('anna'), grantOf('bo')]).toMatchObject([
+        { unitId: 'a', role: 'employee', capabilities: [] },
+        { unitId: 'a', role: 'manager' },
+      ]);
+    });
+    test('somebody the source places on a unit that was not written keeps the units Clew holds, and one who returns to it stays inactive until it is written', async () => {
+      const { store, client, grantOf } = stack();
+      const units = ['gammal', 'a', 'b', 'c', 'd', 'e'].map(id => unit(id, 'Enhet ' + id));
+      const anna = someone('e-1', 'anna', 'gammal'),
+        bo = someone('e-2', 'bo', 'a'),
+        rest = [someone('e-3', 'cia', 'b'), someone('e-4', 'dan', 'c'), someone('e-5', 'eva', 'd')];
+      await reconcile(client, source(units, [anna, bo, ...rest]), scope);
+      // The source moves Anna to a unit it does not list and closes her old one, and Bo leaves.
+      const lost = { ...anna, department: 'okand' },
+        log: string[] = [];
+      const first = await reconcile(client, source(units.slice(1), [lost, { ...bo, active: false }, ...rest]), scope, {
+        log: line => log.push(line),
+      });
+      expect(first).toMatchObject({
+        deactivated: 1,
+        groupsRemoved: 0,
+        refused: [],
+        groupsRefused: [
+          {
+            externalId: 'unit:okand',
+            detail: "The directory does not list the unit 'okand', which an active person names: anna.",
+          },
+        ],
+      });
+      expect(log).toContain(
+        'kept group unit:gammal: somebody on it could not be placed on the unit the source gives them',
+      );
+      expect([holders(store, 'unit:gammal'), holders(store, 'unit:a')]).toEqual([['anna'], []]);
+      expect(grantOf('anna')).toMatchObject({ unitId: 'gammal' });
+      // Bo comes back to a new unit Clew refuses, while Anna's unit is still missing: he stays inactive.
+      const back = await reconcile(
+        client,
+        source([...units.slice(1), unit('ny', '  ')], [lost, { ...bo, department: 'ny' }, ...rest]),
+        scope,
+      );
+      expect(back.refused).toEqual([
+        {
+          externalId: 'e-2',
+          userName: 'bo',
+          detail: 'Left inactive: a unit the source places this person on was not written, so they are not placed yet.',
+        },
+      ]);
+      expect(back.groupsRefused.map(g => g.externalId)).toEqual(['unit:okand', 'unit:ny']);
+      expect(held(store, 'bo').enabled).toBe(false);
+      // Put right, both are placed, Bo is active again, and Anna's old unit goes.
+      const right = await reconcile(
+        client,
+        source(
+          [...units.slice(1), unit('ny', 'Ny enhet'), unit('okand', 'Okänd')],
+          [lost, { ...bo, department: 'ny' }, ...rest],
+        ),
+        scope,
+      );
+      expect(right).toMatchObject({ groupsRemoved: 1, refused: [], groupsRefused: [] });
+      expect([grantOf('anna')?.unitId, grantOf('bo')?.unitId, held(store, 'bo').enabled]).toEqual([
+        'okand',
+        'ny',
+        true,
+      ]);
+      expect(holders(store, 'unit:gammal')).toBeUndefined();
+    });
+    test('two people who held one account name in turn have both left: the first keeps the name Clew holds it under, and nothing is refused', async () => {
+      for (const second of ['kept', 'dropped'] as const) {
+        const { store, client } = stack();
+        const names = () =>
+          Object.fromEntries([...store.state.users.values()].map(u => [u.externalId, [u.userName, u.enabled]]));
+        const bo = someone('e-9', 'bo', 'a'),
+          units = [unit('a', 'A')];
+        await reconcile(client, source(units, [someone('e-1', 'anna', 'a'), bo]), scope);
+        // Anna leaves and her name goes to a newcomer, so her row is parked under its own id.
+        await reconcile(
+          client,
+          source(units, [someone('e-1', 'anna', 'a', { active: false }), someone('e-2', 'anna', 'a'), bo]),
+          scope,
+        );
+        // The newcomer leaves as well. The source keeps the first row, and the second one too or not at all.
+        const both = source(units, [
+          someone('e-1', 'anna', 'a', { active: false }),
+          ...(second === 'kept' ? [someone('e-2', 'anna', 'a', { active: false })] : []),
+          bo,
+        ]);
+        expect(await reconcile(client, both, scope)).toMatchObject({ deactivated: 1, refused: [] });
+        expect(names()).toEqual({ 'e-1': ['e-1', false], 'e-2': ['anna', false], 'e-9': ['bo', true] });
+        // And every run after it is silent.
+        const audited = store.state.audit.length;
+        expect((await reconcile(client, both, scope)).refused).toEqual([]);
+        expect(store.state.audit.length).toBe(audited);
+      }
+    });
+    test('a row another writer shifts between two pages of a read is counted once, and one it hides is found by its key', async () => {
+      const { store, client, app } = stack();
+      const units = ['a', 'b', 'c', 'd', 'e'].map(id => unit(id, 'Enhet ' + id));
+      const people = ['anna', 'bo', 'cia', 'dan', 'eva', 'fia'].map((name, n) =>
+        someone('e-' + (n + 1), name, units[n % units.length]!.id),
+      );
+      await reconcile(client, source(units, people), scope);
+      const sent: string[] = [];
+      /** A list as the server could page it while another writer works: `shown` decides what each page shows. */
+      const paging = (shown: (rows: Array<{ externalId?: string }>) => unknown[]): ScimClient => ({
+        async request(method, path, body) {
+          sent.push(`${method} ${path.split('?')[0]}`);
+          const response = await client.request(method, path, body);
+          if (method !== 'GET' || !path.includes('startIndex=')) return response;
+          return { ...response, body: { ...response.body, Resources: shown(response.body.Resources) } };
+        },
+      });
+      // Every row comes round twice, as a writer that adds rows ahead of them while they are read shifts them.
+      const twice = paging(rows => [...rows, ...rows]);
+      // Eva leaves, and the unit she was the only one on with her.
+      const staying = people.filter(p => p.userName !== 'eva');
+      expect(await reconcile(twice, source(units.slice(0, 4), staying), scope)).toMatchObject({
+        deactivated: 1,
+        groupsRemoved: 1,
+        refused: [],
+        groupsRefused: [],
+      });
+      expect([
+        sent.filter(request => request.startsWith('PATCH /Users/')).length,
+        sent.filter(request => request.startsWith('DELETE ')).length,
+      ]).toEqual([1, 1]);
+      // The check reads the same way, and counts every row once.
+      const findings = (
+        await checkProvisioning('http://clew.local', twice, (input, init) => app.request(input, init))
+      ).map(f => f.text);
+      expect(findings).toContain('6 users: 5 active, 1 deactivated.');
+      expect(findings).toContain('4 groups: 4 unit, 0 unit-manager, 0 capability, 0 plain (0 without an externalId).');
+      // A unit and a person Clew holds are missing from the read, as a writer that removes rows ahead of them would
+      // have them slip past. Each is found by its key, and nothing is created twice or refused.
+      const hidden = paging(rows => rows.filter(r => r.externalId !== 'unit:b' && r.externalId !== 'e-2'));
+      sent.length = 0;
+      const renamed = await reconcile(
+        hidden,
+        source(
+          units.slice(0, 4).map(u => (u.id === 'b' ? { ...u, label: 'Enhet b, ny' } : u)),
+          staying.map(p => (p.userName === 'bo' ? { ...p, email: 'bosse@clew.test' } : p)),
+        ),
+        scope,
+      );
+      expect(renamed).toMatchObject({
+        created: 0,
+        replaced: 5,
+        groupsCreated: 0,
+        groupsReplaced: 4,
+        refused: [],
+        groupsRefused: [],
+      });
+      expect(sent).not.toContain('POST /Groups');
+      expect([...store.state.groups.values()].find(g => g.externalId === 'unit:b')?.label).toBe('Enhet b, ny');
+      expect(held(store, 'bo').email).toBe('bosse@clew.test');
+    });
+    test('a create that meets a row another writer has just written patches that row, and a removal another writer made first is done', async () => {
+      const { store, client, grantOf } = stack();
+      const units = ['a', 'b', 'c', 'd', 'e'].map(id => unit(id, 'Enhet ' + id));
+      const anna = someone('e-1', 'anna', 'a'),
+        bo = someone('e-2', 'bo', 'e');
+      await reconcile(client, source(units, [anna, bo]), scope);
+      const log: string[] = [];
+      const racing: ScimClient = {
+        async request(method, path, body) {
+          const key = (body as { externalId?: string } | undefined)?.externalId;
+          // Another writer creates the new unit and the capability group the moment before this run does,
+          if (method === 'POST' && path === '/Groups' && (key === 'unit:f' || key === 'capability:admin.users'))
+            await client.request('POST', '/Groups', { externalId: key, displayName: 'Another writer' });
+          // and removes the unit this run removes the moment before it does.
+          if (method === 'DELETE') await client.request('DELETE', path);
+          return client.request(method, path, body);
+        },
+      };
+      const summary = await reconcile(
+        racing,
+        source(
+          [...units.slice(0, 4), unit('f', 'Enhet f', 'a')],
+          [
+            { ...anna, capabilities: ['admin.users'] },
+            { ...bo, department: 'f' },
+          ],
+        ),
+        scope,
+        { log: line => log.push(line) },
+      );
+      expect(summary).toMatchObject({
+        groupsCreated: 0,
+        groupsReplaced: 6,
+        groupsRemoved: 1,
+        refused: [],
+        groupsRefused: [],
+      });
+      expect([...store.state.groups.values()].find(g => g.externalId === 'unit:f')).toMatchObject({
+        label: 'Enhet f',
+        parentUnitId: 'a',
+      });
+      expect([grantOf('anna'), grantOf('bo')]).toMatchObject([
+        { unitId: 'a', capabilities: ['admin.users'] },
+        { unitId: 'f' },
+      ]);
+      expect(log).toContain('group unit:e was removed already');
+      expect(holders(store, 'unit:e')).toBeUndefined();
+    });
     test('the check counts the active people in a group, and warns of who has left still holding a duty or a plain group, and of a capability outside the list (D85, D96)', async () => {
       const { store, client, app } = stack();
       // A provisioner that only deactivates: who leaves stays in every group they were in.

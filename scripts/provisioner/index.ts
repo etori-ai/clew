@@ -32,8 +32,15 @@ console.log(
   `Pushed the development directory to ${url}: ${summary.created} users created, ${summary.replaced} replaced, ${summary.deactivated} deactivated; ${summary.groupsCreated} groups created, ${summary.groupsReplaced} replaced, ${summary.groupsRemoved} removed.`,
 );
 if (summary.refused.length) {
-  console.error(`Clew refused ${summary.refused.length} of the people. Everybody else was sent.`);
+  console.error(`${summary.refused.length} of the people were not written. Everybody else was sent.`);
   for (const refused of summary.refused)
     console.error(`  ${refused.userName} (${refused.externalId}): ${refused.detail}`);
+  process.exitCode = 1;
+}
+if (summary.groupsRefused.length) {
+  console.error(
+    `${summary.groupsRefused.length} units or groups were not written as the directory has them. Everything else was sent, and every removal made.`,
+  );
+  for (const refused of summary.groupsRefused) console.error(`  ${refused.externalId}: ${refused.detail}`);
   process.exitCode = 1;
 }
