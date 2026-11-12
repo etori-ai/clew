@@ -342,7 +342,7 @@ describe('current employments on a SCIM user', () => {
     }
     expect(store.state.audit).toHaveLength(audited);
     // Beside a deactivation each waits: the person is deactivated, in either order and in Okta's path-less form, and
-    // what the operation named is as it was.
+    // what the operation named is as it was. The deactivation is all the patch records, path-less forms included.
     for (const [operation] of missing)
       for (const operations of [
         [operation, { op: 'replace', path: 'active', value: false }],
@@ -350,8 +350,19 @@ describe('current employments on a SCIM user', () => {
       ]) {
         const left = await patch(path, ...operations);
         expect(left).toMatchObject({ status: 200, body: { ...stored, active: false, displayName: 'User 1' } });
+        const row = store.state.audit.at(-1)!;
+        expect([row.action, row.subject, row.details]).toEqual([
+          'scim.user.deactivated',
+          'person:' + id,
+          { changed: ['enabled'], via: 'scim.user.patched', userName: 'user1', externalId: 'e-1' },
+        ]);
         await patch(path, { op: 'replace', path: 'active', value: true });
       }
+    expect(store.state.audit.slice(audited).map(row => row.action)).toEqual(
+      Array(missing.length * 2)
+        .fill(['scim.user.deactivated', 'scim.user.reactivated'])
+        .flat(),
+    );
     // An explicit null takes a list away, by its path and in the extension's object; so does a remove. (The URN holds
     // a dot, so the answer is read by key and not by a property path.)
     for (const [operation, gone] of [
@@ -1266,7 +1277,7 @@ describe('the edges of the HTTP layer', () => {
 });
 describe('what the review of users, the organisation and the guides found (2026-11-12)', () => {
   test('a blank e-mail entry is left out before the address is chosen, and a home address is published when the work entry is blank (S5, Q2)', async () => {
-    const { json, patch, person } = app();
+    const { json, patch, person, store } = app();
     const address = (answer: { body: { emails?: Array<{ value: string }> } }) => answer.body.emails?.[0]?.value;
     // A directory's empty fields beside the work address: empty, null, only space, no value at all, a null entry.
     const blanks = [
@@ -1316,10 +1327,46 @@ describe('what the review of users, the organisation and the guides found (2026-
         body: { scimType: 'invalidValue', detail: "Attribute 'emails' is required." },
       });
     expect(address(await json('GET', path))).toBe('d@x.se');
+    // An `add` appends, by a path and path-less: the blank entries beside a work address are left out and the work
+    // address is stored, where they once refused it. A home address added beside a blank work entry is beside the one
+    // Clew holds, which stays.
+    expect(
+      address(await patch(path, { op: 'add', path: 'emails', value: [...blanks, { type: 'work', value: 'x@x.se' }] })),
+    ).toBe('x@x.se');
+    expect(
+      address(await patch(path, { op: 'add', value: { emails: [...blanks, { type: 'work', value: 'y@x.se' }] } })),
+    ).toBe('y@x.se');
+    const homeBesideBlank = [
+      { type: 'work', value: '' },
+      { type: 'home', value: 'h@home.se' },
+    ];
+    expect(address(await patch(path, { op: 'add', path: 'emails', value: homeBesideBlank }))).toBe('y@x.se');
+    // One of only blank entries carries no address, as an empty list does; beside a deactivation it waits and the
+    // address stays: the deactivation is all the patch records (D113).
+    for (const operation of [
+      { op: 'add', path: 'emails', value: blanks },
+      { op: 'add', value: { emails: blanks } },
+    ]) {
+      expect(await patch(path, operation)).toMatchObject({
+        status: 400,
+        body: { scimType: 'invalidValue', detail: "Attribute 'emails' is required." },
+      });
+      expect(await patch(path, operation, { op: 'replace', path: 'active', value: false })).toMatchObject({
+        status: 200,
+        body: { active: false, emails: [{ value: 'y@x.se' }] },
+      });
+      const row = store.state.audit.at(-1)!;
+      expect([row.action, row.details.changed, row.details.via]).toEqual([
+        'scim.user.deactivated',
+        ['enabled'],
+        'scim.user.patched',
+      ]);
+      await patch(path, { op: 'replace', path: 'active', value: true });
+    }
     // Beside a deactivation the address stays, as every wrong value does (D113).
     expect(await json('PUT', path, person(1, { active: false, emails: blanks }))).toMatchObject({
       status: 200,
-      body: { active: false, emails: [{ value: 'd@x.se' }] },
+      body: { active: false, emails: [{ value: 'y@x.se' }] },
     });
   });
   test('among work addresses the one marked primary is taken before the first, on every way in (S8)', async () => {
