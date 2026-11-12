@@ -1,13 +1,13 @@
 import { and, eq } from 'drizzle-orm';
 import { database, schema } from '@clew/db';
-import type { Job } from '../model';
+import type { Job, JobExecutions } from '../model';
 const jobs = schema.jobs;
 /**
  * The engine's side of the job table (D47, D85): a `scheduledJob` workflow, enqueued with the row (D86), claims the
  * execution under a lease and completes it with its audit. The status `temporal` is the engine owner's historical
  * name; `dispatched` and the delivery columns belong to the retired outbox and are left as evidence.
  */
-export const durableJobs = {
+export const durableJobs: JobExecutions = {
   claimExecution: (id: string, at: string) =>
     database().transaction(async tx => {
       const [j] = await tx.select().from(jobs).where(eq(jobs.id, id)).for('update');

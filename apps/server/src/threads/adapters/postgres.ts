@@ -76,7 +76,7 @@ async function read(db: Transaction | ReturnType<typeof database>, where: Return
   return toThread(row, messages, proposalRows, timerRows);
 }
 export const threadTx = (tx: Transaction, options: ThreadStoreOptions, ended?: string[]): ThreadTx => ({
-  ...attentionTx(tx),
+  ...attentionTx(tx, options.durable),
   ...timerTx(tx, ended),
   enqueue: start => enqueueWorkflow(tx, options.durable, start),
   async lockThreadById(id) {

@@ -42,7 +42,7 @@ const place = (connector: string) => {
 // Every approval starts its workflow inside the ledger's transaction (D86); there is no outbox loop behind it.
 export const executionStore = postgresExecutionStore({ seal: sealSecret, open: openSecret }, ledger, {
   project: projectExecution(ledger),
-  pushCard: watchCardSink(place),
+  pushCard: watchCardSink(place, ledger),
 });
 const source: ExecutionSource = {
   async authorize(persona, operation, input) {

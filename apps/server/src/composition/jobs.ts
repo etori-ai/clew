@@ -1,18 +1,16 @@
 import { durableJobs } from '../scheduler/adapters/durable-postgres';
+import { scheduledJobRunner } from '../scheduler/usecases';
 import { scheduler, attention } from './index';
 import { clock } from './ambient';
 import { logger } from '../logging';
 
-export async function runScheduledJob(id: string): Promise<'done' | 'busy'> {
-  const job = await durableJobs.claimExecution(id, clock().toISOString());
-  if (!job) return 'done';
-  if (job === 'busy') return 'busy';
-  if (job.kind === 'attention-release' && typeof job.payload.batch === 'string')
-    await attention.release(job.payload.batch);
-  else await scheduler.run(job);
-  await durableJobs.completed(id, job.attempt, clock().toISOString());
-  return 'done';
-}
+/** The `scheduledJob` workflow's step (D47, D86) over the live job table, the attention store and the scheduler. */
+export const runScheduledJob = scheduledJobRunner({
+  executions: durableJobs,
+  release: batch => attention.release(batch),
+  run: job => scheduler.run(job),
+  clock,
+});
 /**
  * The nightly scan is scheduled at boot (idempotent by date; the job reschedules the next one when it runs). Every job
  * row starts its workflow inside the transaction that writes it (D86), so nothing here polls for delivery; the retry is
