@@ -170,6 +170,12 @@ export interface ScimQuery extends Projection {
 }
 /** A group change names the people it added or removed in its audit row up to this many; past it the count stands alone. */
 const NAMED_IN_AUDIT = 50;
+/**
+ * Who came or went, by id, while the list is short enough to read: a plain group (a connector audience, say) carries no
+ * grant, so no other row says it on the person. A `POST` names everyone it put in, a `DELETE` everyone it took out.
+ */
+const namedInAudit = (key: 'addedPeople' | 'removedPeople', people: readonly string[]) =>
+  people.length && people.length <= NAMED_IN_AUDIT ? { [key]: [...people] } : {};
 /** How often a provisioner's last-seen time is written at most: a push is thousands of requests, the mark one a minute. */
 const SEEN_INTERVAL_MS = 60_000;
 /** A provisioner seen again after this long is a new run, and a run is what the audit records (`provisioner.seen`). */
@@ -440,9 +446,8 @@ export function scimUsecases(deps: {
         added: added.length,
         removed: removed.length,
         members: fields.members.length,
-        // Who, while the list is short enough to read: a plain group carries no grant to say it on the person.
-        ...(added.length && added.length <= NAMED_IN_AUDIT ? { addedPeople: added } : {}),
-        ...(removed.length && removed.length <= NAMED_IN_AUDIT ? { removedPeople: removed } : {}),
+        ...namedInAudit('addedPeople', added),
+        ...namedInAudit('removedPeople', removed),
       },
     });
     // A renamed or re-keyed group changes what every member gets, and a unit's label what its managers carry;
@@ -594,6 +599,7 @@ export function scimUsecases(deps: {
             displayName: fields.label,
             ...(fields.parent !== null ? { parent: fields.parent } : {}),
             members: fields.members.length,
+            ...namedInAudit('addedPeople', fields.members),
           },
         });
         const assigned = [...fields.members, ...(await managersOfUnit(tx, fields.externalId))];
@@ -661,7 +667,12 @@ export function scimUsecases(deps: {
           actor: actorOf(p),
           action: 'scim.group.removed',
           subject: 'group:' + id,
-          details: { externalId: current.externalId, displayName: current.label, members: members.length },
+          details: {
+            externalId: current.externalId,
+            displayName: current.label,
+            members: members.length,
+            ...namedInAudit('removedPeople', members),
+          },
         });
         await derivation.deriveAll(tx, actorOf(p), members);
       }),

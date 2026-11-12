@@ -258,6 +258,57 @@ describe('what a group write costs and what it leaves in the audit', () => {
     await scim.patchGroup(a, plain.id, patch([{ op: 'remove', path: `members[value eq "${other}"]` }]), BASE);
     expect(store.state.audit.at(-1)?.details).toMatchObject({ removed: 1, removedPeople: [other] });
   });
+  test('who a POST put in a group and who a DELETE took out are in the audit by person, up to fifty (S3)', async () => {
+    const { store, scim, a, person } = stack();
+    const people: string[] = [];
+    for (let i = 0; i < 51; i++) people.push(await person(a));
+    const row = (action: string, id: string) =>
+      store.state.audit.find(entry => entry.action === action && entry.subject === 'group:' + id)?.details;
+    // A connector audience: no grant follows from it, so these two rows are all that says who was in it.
+    const [first, second] = [people[1]!, people[0]!];
+    const audience = await scim.createGroup(
+      a,
+      { externalId: 'ad:audience', displayName: 'Publik', members: [{ value: first }, { value: second }] },
+      BASE,
+    );
+    expect(row('scim.group.created', audience.id)).toEqual({
+      externalId: 'ad:audience',
+      displayName: 'Publik',
+      members: 2,
+      addedPeople: [first, second],
+    });
+    await scim.deleteGroup(a, audience.id);
+    expect(row('scim.group.removed', audience.id)).toEqual({
+      externalId: 'ad:audience',
+      displayName: 'Publik',
+      members: 2,
+      removedPeople: [first, second].sort(),
+    });
+    // Nobody to name, fifty named, and past fifty the count stands alone.
+    const empty = await scim.createGroup(a, { externalId: 'ad:empty', displayName: 'Tom' }, BASE);
+    await scim.deleteGroup(a, empty.id);
+    expect([row('scim.group.created', empty.id), row('scim.group.removed', empty.id)]).toEqual([
+      { externalId: 'ad:empty', displayName: 'Tom', members: 0 },
+      { externalId: 'ad:empty', displayName: 'Tom', members: 0 },
+    ]);
+    for (const [externalId, count] of [
+      ['ad:fifty', 50],
+      ['ad:many', 51],
+    ] as const) {
+      const group = await scim.createGroup(
+        a,
+        { externalId, displayName: externalId, members: people.slice(0, count).map(value => ({ value })) },
+        BASE,
+      );
+      await scim.deleteGroup(a, group.id);
+      const [created, removed] = [row('scim.group.created', group.id), row('scim.group.removed', group.id)];
+      expect([created?.members, removed?.members]).toEqual([count, count]);
+      expect([
+        (created?.addedPeople as string[] | undefined)?.length,
+        (removed?.removedPeople as string[] | undefined)?.length,
+      ]).toEqual(count === 50 ? [50, 50] : [undefined, undefined]);
+    }
+  });
   test('a row from before provisioning is changed without being given an empty id, and a second such row is not refused for it', async () => {
     const { store, scim, a, patch } = stack();
     for (const id of ['L1', 'L2'])
