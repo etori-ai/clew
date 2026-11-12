@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from 'bun:test';
 import { createHash, randomBytes } from 'node:crypto';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { database, schema, closeDatabase } from '../../packages/db/src';
 import { postgresRefreshStore } from '../../apps/server/src/threads/adapters/refresh-postgres';
 import { postgresThreadStore } from '../../apps/server/src/threads/adapters/postgres';
@@ -306,6 +306,82 @@ test('a delivery deferred by quiet hours waits with its release job and workflow
   expect((await attention.pending(actor.id, due)).map(d => d.id).sort()).toEqual(
     [actor.id + ':evening', actor.id + ':late'].sort(),
   );
+  expect(await auditActions('job:' + job)).toEqual(['job.completed', 'job.scheduled']);
+  expect(await enqueuedWorkflows('job:' + job)).toHaveLength(1);
+});
+test('a release that comes while a delivery of its batch is being admitted waits for that commit, and one job releases both deliveries', async () => {
+  const actor = await person(),
+    store = postgresThreadStore({ durable: testDurable }),
+    attention = postgresAttention(),
+    card = draft(actor.id);
+  subjects.push('thread:' + card.id);
+  await store.transaction(tx => tx.insertThread(card));
+  const mine = async () =>
+    (await database().select().from(schema.deliveries).where(eq(schema.deliveries.personId, actor.id)))
+      .map(d => [d.id, d.state, d.batch])
+      .sort();
+  const admission = (suffix: string, at: string) => ({
+    id: actor.id + suffix,
+    personId: actor.id,
+    threadId: card.id,
+    kind: 'automatic' as const,
+    at,
+  });
+  // 21:00 and 21:30 in Stockholm are quiet hours: both deliveries wait for 06:00 in one batch.
+  const due = '2098-11-06T05:00:00.000Z',
+    batch = `automatic:${actor.id}:${due}`,
+    job = 'attention:' + batch;
+  subjects.push('job:' + job, 'delivery:' + batch);
+  await store.transaction(tx => tx.admitDelivery(admission(':first', '2098-11-05T20:00:00.000Z')));
+  // The second delivery is admitted and its transaction held open before it commits.
+  let admitted!: () => void, commit!: () => void;
+  const inside = new Promise<void>(resolve => (admitted = resolve)),
+    gate = new Promise<void>(resolve => (commit = resolve));
+  const second = store.transaction(async tx => {
+    await tx.admitDelivery(admission(':second', '2098-11-05T20:30:00.000Z'));
+    admitted();
+    await gate;
+  });
+  await inside;
+  // The job's step at the due time cannot claim the job row while the admission holds it: it is seen waiting for the
+  // row's lock, and does not settle until the admission commits.
+  let settled = false;
+  const step = jobStepAt(attention, due)(job).finally(() => (settled = true));
+  const claimWaits = async () =>
+    (
+      await database().execute<{ waiting: number }>(
+        sql`select count(*)::int as waiting from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like ${'%from "job" where "job"."id" = $1 for update'}`,
+      )
+    )[0]!.waiting > 0;
+  let waited = false,
+    settledWhileHeld = false,
+    held: string[][] = [];
+  try {
+    for (let n = 0; n < 250 && !settled && !waited; n++) {
+      waited = await claimWaits();
+      if (!waited) await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    held = await mine();
+    settledWhileHeld = settled;
+  } finally {
+    commit();
+    await second;
+  }
+  expect({ waited, settled: settledWhileHeld }).toEqual({ waited: true, settled: false });
+  expect(held).toEqual([[actor.id + ':first', 'waiting', batch]]);
+  expect(await step).toBe('done');
+  expect(await mine()).toEqual([
+    [actor.id + ':first', 'ready', batch],
+    [actor.id + ':second', 'ready', batch],
+  ]);
+  expect((await attention.pending(actor.id, due)).map(d => d.id).sort()).toEqual(
+    [actor.id + ':first', actor.id + ':second'].sort(),
+  );
+  const released = await database()
+    .select()
+    .from(schema.audit)
+    .where(and(eq(schema.audit.subject, 'delivery:' + batch), eq(schema.audit.action, 'attention.released')));
+  expect(released.map(a => a.details)).toEqual([{ count: 2 }]);
   expect(await auditActions('job:' + job)).toEqual(['job.completed', 'job.scheduled']);
   expect(await enqueuedWorkflows('job:' + job)).toHaveLength(1);
 });
