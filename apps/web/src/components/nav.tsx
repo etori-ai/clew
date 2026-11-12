@@ -75,7 +75,7 @@ export const toolHref = (
 type Found = ({ href: string } | { card: string }) & { detail: string; group: string };
 
 /**
- * The rail (D111 item 1, board Sidebar, the `shell-side-nav` template): Ny fråga and Sök as its first rows, each with
+ * The rail (D112 item 1, board Sidebar, the `shell-side-nav` template): Ny fråga and Sök as its first rows, each with
  * its icon, so the rail's own collapse draws them as icons named by their labels as it does every row; Sök opens
  * Astryx's `CommandPalette` over the page, which finds conversations, work items, areas and tools. Then the places,
  * Hem, Att göra with how much needs the person, Kalender and a manager's Personal (D94); Verktyg, the views an
@@ -145,7 +145,7 @@ export function useRail({
   );
   const more = menu.slice(TOOLS_SHOWN);
   // The search (board Sidebar's "Sök"): Astryx's command palette over the page, opened from its row in the rail. A pick
-  // opens what it found: a work item over the page the person is on (D110 rule 2), anything else at its address.
+  // opens what it found: a work item over the page the person is on (D111 rule 2), anything else at its address.
   const [searching, setSearching] = useState(false);
   const pick = (id: string) => {
     const hit = byId.get(id);
@@ -188,7 +188,7 @@ export function useRail({
             isSelected={current.surface === 'start' && !current.conversationId}
             endContent={word ? <Badge variant={word.variant} label={word.word} /> : undefined}
           />
-          {/* Att göra (D111 item 3) with how much needs the person: the count Behöver dig has in the queue. */}
+          {/* Att göra (D112 item 3) with how much needs the person: the count Behöver dig has in the queue. */}
           <SideNavItem
             label="Att göra"
             icon={InboxIcon}

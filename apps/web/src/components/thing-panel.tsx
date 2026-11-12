@@ -15,7 +15,7 @@ import { cardBody } from './card-panel';
 import { HeadSlot } from './thing-head';
 
 /**
- * "Fråga Clew" (D111 item 7, boards Assistant and Calendar) in a page's header: the panel opens with the page itself as
+ * "Fråga Clew" (D112 item 7, boards Assistant and Calendar) in a page's header: the panel opens with the page itself as
  * the thing it is about ("Fråga om veckan" on Kalender). The address says so (`ask=1`), so the panel is there after a
  * reload and the back button closes it. Without a model there is nothing to ask, and the button is not drawn (D8).
  * `onAsk` is a page that already has the thing beside it with its box (Att göra's reading pane): the box takes the focus.
@@ -46,7 +46,7 @@ export const drawn = (threadId: string) =>
   !!document.getElementById('card-' + threadId) || !!document.getElementById('thread-' + threadId);
 
 /**
- * The thing and the conversation about it in one panel (D111 item 7, boards Calendar and Assistant, the `ChatLayout`
+ * The thing and the conversation about it in one panel (D112 item 7, boards Calendar and Assistant, the `ChatLayout`
  * panel view): the thing's head on top and out of the scroll (`useThingHead`), its facts under it and folded while a
  * conversation runs, the transcript under them, and the box docked at the foot by ChatLayout, which owns the scroll and
  * keeps the newest answer above the box. On a short screen (1.4.10) nothing is docked: the thing, the transcript and
@@ -95,7 +95,7 @@ export function ThingWithConversation({
   );
   const box = <Composer place="thing" about={{ label: subject.label, chips: subject.chips, search: subject.search }} />;
   // While a conversation runs the thing's head is docked above ChatLayout, which owns the scroll of what is under it
-  // (D111 gap 10: its panel view has no slot above the messages): the stack gives ChatLayout what the head leaves of the
+  // (D112 gap 10: its panel view has no slot above the messages): the stack gives ChatLayout what the head leaves of the
   // panel's height. Before anything is asked there is no transcript to push the thing away, and it is drawn whole.
   const [head, setHead] = useState<HTMLElement | null>(null);
   const docked = head && talk.running ? { slot: head, inset } : null;

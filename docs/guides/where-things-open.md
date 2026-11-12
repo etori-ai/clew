@@ -1,10 +1,10 @@
 # Where things open
 
-Your manifest says what a capability is. Clew decides where it shows, and it decides from what the thing is, never from the page the person clicked on ([D110](../decisions/D110-where-something-opens-is-decided-by-what-it-is.md)). The same declaration opens the same way on Hem, on Personal, on a person's page and anywhere else, so the table below is the whole rule for an author.
+Your manifest says what a capability is. Clew decides where it shows, and it decides from what the thing is, never from the page the person clicked on ([D111](../decisions/D111-where-something-opens-is-decided-by-what-it-is.md)). The same declaration opens the same way on Hem, on Personal, on a person's page and anywhere else, so the table below is the whole rule for an author.
 
 ## The page and the panel
 
-A **page** is where the person chose to be: Hem, Att göra, a work item's page, Kalender, Personal, a tool, a person, a unit. The rail and a name that leads to a person or a unit change the page, and so do the few links that say where they go: a work item's row on Hem leads to it in Att göra, and "Öppna som sida" leads to the work item's own page ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md)).
+A **page** is where the person chose to be: Hem, Att göra, a work item's page, Kalender, Personal, a tool, a person, a unit. The rail and a name that leads to a person or a unit change the page, and so do the few links that say where they go: a work item's row on Hem leads to it in Att göra, and "Öppna som sida" leads to the work item's own page ([D112](../decisions/D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md)).
 
 Every page has one **panel**, which holds one opened thing: a work item, a view, a record, a calendar entry or the page itself, never a list of work items. Under the thing is the conversation about it and, while a model is configured, a question box that asks about that thing alone. From a window 1336 px wide the panel stands beside the page and the page makes room for it; in a narrower window, on a short screen and on a phone it is a drawer over the page. Administration always uses the drawer. Closing the panel puts the page back as it was. In Att göra the chosen work item is drawn in a reading pane beside the queue, in the panel's shape.
 
@@ -58,7 +58,7 @@ Both are fields of a work item's action (`ThreadDraft.actions[]`).
 
 ## `asks` and `effect`
 
-Both are fields of a capability ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md)). A write passes one path from every place it starts, and a step is drawn only when your declaration calls for it:
+Both are fields of a capability ([D112](../decisions/D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md)). A write passes one path from every place it starts, and a step is drawn only when your declaration calls for it:
 
 | Step | Drawn when |
 |---|---|

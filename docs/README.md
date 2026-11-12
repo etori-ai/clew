@@ -10,7 +10,7 @@ Read these in order if you are new to the project:
 2. [Architecture overview](architecture/overview.md): the running components, data boundaries and end-to-end read, scan and action flows.
 3. [Implementation status](reference/status.md): what works in this checkout and what remains a fixture, proposal or release gate.
 
-[Interface spaces and navigation](reference/interface-spaces.md) defines where pages, the panel, Att göra's reading pane, the work item's page, overlays and the action dialog open, and how people return (D111).
+[Interface spaces and navigation](reference/interface-spaces.md) defines where pages, the panel, Att göra's reading pane, the work item's page, overlays and the action dialog open, and how people return (D112).
 
 The [vocabulary and entity map](reference/vocabulary.md) defines work items, cards, proposals, conversations and interface containers, and connects those terms to the current code.
 

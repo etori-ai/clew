@@ -227,7 +227,7 @@ test.describe('Personal', () => {
       await page.keyboard.press('Enter');
       await expect(page).toHaveURL('/people/johan?section=needs-you&from=%2Fstaff');
       await expect(page.getByRole('heading', { level: 1, name: 'Johan Byström' })).toBeVisible();
-      // The page lands on Behöver dig: its heading takes the focus (D111 item 5).
+      // The page lands on Behöver dig: its heading takes the focus (D112 item 5).
       await expect(page.getByRole('heading', { level: 2, name: 'Behöver dig' })).toBeFocused();
       // Nothing is open beside the page: the panel holds one opened thing, never a list of work items.
       await expect(page.getByRole('complementary', { name: 'Ärende' })).toHaveCount(0);
@@ -283,7 +283,7 @@ test.describe('Personal', () => {
       const card = page.getByRole('complementary', { name: 'Ärende' });
       const before = api.entityReads.length;
       await card.getByRole('button', { name: 'Godkänn', exact: true }).click();
-      // Godkänn asks for an optional comment (D111): the dialog opens at what happens, and its own Godkänn decides.
+      // Godkänn asks for an optional comment (D112): the dialog opens at what happens, and its own Godkänn decides.
       await page.getByRole('dialog', { name: 'Godkänn' }).getByRole('button', { name: 'Godkänn', exact: true }).click();
       await expect.poll(() => api.entityReads.slice(before)).toEqual(expect.arrayContaining(['/entities/person']));
       await expect(page.getByRole('table')).toBeVisible();
@@ -310,7 +310,7 @@ test.describe('Personal', () => {
       await expect(panel.getByText('Tre korta sjukperioder sedan juni.', { exact: false })).toBeVisible();
       await expect(panel.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
       await expect(panel.getByRole('button', { name: 'Se mönstret' })).toBeVisible();
-      // Personal has no question box, so nothing offers to add the card to one (D110 rule 6).
+      // Personal has no question box, so nothing offers to add the card to one (D111 rule 6).
       await expect(panel.getByRole('button', { name: 'Inte nu', exact: true }).first()).toBeVisible();
       await expect(page.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
       // Beside the card the list is whole, as it was.
@@ -612,7 +612,7 @@ test.describe('Personal', () => {
         `/staff?show=${PRESENCE_LENS}&talk=karin`,
       );
       // An action starts on the server without the model, and its card opens beside the list it was started on, with
-      // the lens kept and the focus on the card (D110 rule 4): Personal never gives way to Hem.
+      // the lens kept and the focus on the card (D111 rule 4): Personal never gives way to Hem.
       await menu.getByRole('menuitem', { name: 'Boka samtal' }).click();
       await expect(page).toHaveURL(`/staff?show=${PRESENCE_LENS}&card=entity-clew-bookTalk-karin`);
       expect(api.entityStarts).toEqual([{ key: 'karin', capability: 'clew.bookTalk' }]);

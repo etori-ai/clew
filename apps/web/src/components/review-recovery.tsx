@@ -148,7 +148,7 @@ export function ReviewRecovery({
         {(error || result.isError) && (
           <Text role="alert">{error ?? errorMessage(result.error, 'Status kunde inte läsas.')}</Text>
         )}
-        {/* The source's own page is out of Clew: a new tab, marked as leaving with Astryx's external link (D110 rule 8). */}
+        {/* The source's own page is out of Clew: a new tab, marked as leaving with Astryx's external link (D111 rule 8). */}
         {source &&
           (link.data ? (
             <HStack>

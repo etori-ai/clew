@@ -22,7 +22,7 @@ test.describe('a decision the card is left waiting on keeps its way back where t
     await expect(page.locator('#card-samtal').getByRole('button', { name: 'Skicka 2 inbjudningar' })).toBeVisible();
   });
 
-  test('the receipt’s toast stays when the person moves on, and its Visa opens the card over the page they are on (D110)', async ({
+  test('the receipt’s toast stays when the person moves on, and its Visa opens the card over the page they are on (D111)', async ({
     page,
     api: _,
   }) => {
@@ -30,7 +30,7 @@ test.describe('a decision the card is left waiting on keeps its way back where t
     await page.locator('#card-samtal').getByRole('button', { name: 'Skicka 2 inbjudningar' }).click();
     const toasts = page.getByRole('region', { name: 'Aviseringar' });
     const show = toasts.getByRole('link', { name: 'Visa' });
-    // In Att göra it leads to the pile the item went to, with the item in the reading pane (D111).
+    // In Att göra it leads to the pile the item went to, with the item in the reading pane (D112).
     await expect(show).toHaveAttribute('href', '/todo?tab=waiting&item=samtal');
     // The person goes to Kalender with the toast still there.
     await page
@@ -50,7 +50,7 @@ test.describe('a decision the card is left waiting on keeps its way back where t
     api: _,
   }) => {
     await open(page, '/todo?item=samtal');
-    // The work item in Att göra's reading pane (D111 item 3).
+    // The work item in Att göra's reading pane (D112 item 3).
     const pane = page.getByRole('complementary', { name: 'Valt ärende' });
     const card = pane.locator('#card-samtal');
     await card.getByRole('button', { name: 'Skicka 2 inbjudningar' }).click();

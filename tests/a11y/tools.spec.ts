@@ -13,7 +13,7 @@ import { menuRows } from './phonebook';
 import { roomsMenuRow } from './rooms';
 
 /**
- * A tool as a page (D42, D111 item 6, board Tool): a view an administrator chose for the menu opens at
+ * A tool as a page (D42, D112 item 6, board Tool): a view an administrator chose for the menu opens at
  * `/tools/:capability` inside the one shell, as Kalender does, and never in the side panel. The phone book is the
  * example, answered by the connector itself. The page is the tool's name with the system's badge, the filter bar (the
  * view's search field and choice, the count of its rows) and the rows; a row's own read, the contact card, is the
@@ -49,7 +49,7 @@ test.describe('a tool as a page', () => {
     const [t, f, c] = await Promise.all([title.boundingBox(), field.boundingBox(), count.boundingBox()]);
     expect(f!.y).toBeGreaterThanOrEqual(t!.y + t!.height);
     expect(c!.x).toBeGreaterThan(f!.x + f!.width);
-    // No "Samtal" column: a row goes into a conversation only beside a conversation's own box (D111 item 7).
+    // No "Samtal" column: a row goes into a conversation only beside a conversation's own box (D112 item 7).
     await expect(page.getByRole('columnheader')).toHaveText(['Namn', 'Titel', 'Enhet', 'Telefon', 'Mobil', 'E-post']);
     await expect(page.getByRole('row')).toHaveCount(15);
     await expect(page.getByRole('link', { name: '0980-319 203' })).toHaveAttribute('href', 'tel:0980319203');
@@ -180,7 +180,7 @@ test.describe('a tool as a page', () => {
     api,
   }) => {
     api.menu = menuRows;
-    // The table needs 1720 px with the panel beside it (D111 item 6, board Tool: a table with an inspector).
+    // The table needs 1720 px with the panel beside it (D112 item 6, board Tool: a table with an inspector).
     await page.setViewportSize({ width: 1920, height: 1080 });
     await open(page, directory);
     const name = page.getByRole('link', { name: 'Hassan Ali' });

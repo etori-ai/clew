@@ -1,7 +1,7 @@
 import type { NewsRow } from '@clew/contracts';
 
 /**
- * The pure part of the combined news list (D111, amended 2026-11-11): how rows from several news sources become one
+ * The pure part of the combined news list (D112, amended 2026-11-11): how rows from several news sources become one
  * list. No I/O and no clock: the order depends only on what the sources answered.
  */
 export const ROW_LIMIT = 100;

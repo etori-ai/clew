@@ -73,7 +73,7 @@ const acknowledge = {
   output: executeResult,
 };
 
-// The news profile (D111): every notice is news the person may read, newest first, each opening in Clew with its text.
+// The news profile (D112): every notice is news the person may read, newest first, each opening in Clew with its text.
 // Clew joins this with every other news source as `clew.news`, Hem's "Nyheter" and "Alla nyheter".
 const news = {
   name: 'communication.news',

@@ -156,7 +156,7 @@ test.describe('the manifest preview', () => {
     await expectNoAxeViolations(page);
   });
 
-  test('every write, both halves (D111 item 11): where it starts, what the person passes through, and its input as they meet it', async ({
+  test('every write, both halves (D112 item 11): where it starts, what the person passes through, and its input as they meet it', async ({
     page,
     api,
   }) => {

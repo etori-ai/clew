@@ -20,7 +20,7 @@ The status is kept as one page per area. Every entry has the same three parts: w
 
 To change an entry, edit its page. A new entry goes on the page for its area and gets a link in the table above; a one-screen adjustment is recorded in the entry of its page ([D102](../decisions/D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)).
 
-Where each surface opens, its address, close target and focus, is the [interface spaces](interface-spaces.md) reference ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md)); the entries here say what of it works and what has been run.
+Where each surface opens, its address, close target and focus, is the [interface spaces](interface-spaces.md) reference ([D112](../decisions/D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md)); the entries here say what of it works and what has been run.
 
 What the product manager's prototype asks for, and whether the architecture carries each item, is kept in [prototype parity](prototype-parity.md). When an entry here changes what a row there says, change the row in the same commit.
 

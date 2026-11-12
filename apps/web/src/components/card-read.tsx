@@ -15,7 +15,7 @@ export interface ReadShown {
 }
 
 /**
- * Whether a read's answer unfolds inside its card (D110, amended 2026-11-11). Every view a card's read declares today
+ * Whether a read's answer unfolds inside its card (D111, amended 2026-11-11). Every view a card's read declares today
  * reads at the panel's width but a table (`hr.leaveRequests` behind "Se i personalsystemet" on a leave request), which
  * the product owner has not placed yet: a table keeps opening in the card's place in the panel, with ✕ back to the
  * card, as every card's read did before (`page-panel.tsx`), until they say where it goes.
@@ -86,7 +86,7 @@ export function CardRead({
     said.current = now;
     if (query.isError) announce(errorMessage(query.error, 'Kunde inte hämta.'));
     else if (url) {
-      // A read that answers with an address is a way out (D110 rule 8): the tab opens once, and nothing unfolds.
+      // A read that answers with an address is a way out (D111 rule 8): the tab opens once, and nothing unfolds.
       window.open(url, '_blank', 'noopener');
       announce(`${action.label} öppnades i en ny flik.`);
       onFold(false);

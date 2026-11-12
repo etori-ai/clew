@@ -186,7 +186,7 @@ test.describe('appearance administration', () => {
     }) => {
       api.admin = true;
       await open(page, '/admin/appearance');
-      // Without a header connector the logo stands in the rail's heading (D98, D111 item 1).
+      // Without a header connector the logo stands in the rail's heading (D98, D112 item 1).
       const header = page
         .getByRole('navigation', { name: 'Sidonavigering' })
         .locator('.astryx-side-nav-heading')

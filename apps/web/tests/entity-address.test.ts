@@ -28,7 +28,7 @@ describe('a row that names an entity leads to it (D97 item 6, D83 rule 4)', () =
   });
 });
 
-describe('a person is a page only (D110 rule 3)', () => {
+describe('a person is a page only (D111 rule 3)', () => {
   test('a name in a list leads to the page, with the list as it stands and nothing of its panel as the way back', () => {
     expect(personPageFrom('/staff', '?show=clew.talkPeople&card=t1&open-card=t1&open-action=pattern', 'johan')).toBe(
       '/people/johan?from=%2Fstaff%3Fshow%3Dclew.talkPeople',

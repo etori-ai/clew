@@ -105,7 +105,7 @@ const session = { csrfToken: 'test', sessionKey: 'test', expiresAt: '2026-11-04T
 import type { ConnectorSummary } from '@clew/contracts';
 
 /**
- * What a thread's audit rows would say about it (D111 item 4), newest first: created by Clew, set aside or dismissed by
+ * What a thread's audit rows would say about it (D112 item 4), newest first: created by Clew, set aside or dismissed by
  * the person, and a decision with the source's answer when it has a receipt.
  */
 export function eventsOf(t: Thread): ItemEvent[] {
@@ -163,7 +163,7 @@ export class MockApi {
   mutationDelay = 0;
   mutationFails = false;
   /**
-   * The action dialog (D111 item 10). Every decision that reached `act`, as its body; the next decision refused with this
+   * The action dialog (D112 item 10). Every decision that reached `act`, as its body; the next decision refused with this
    * Swedish sentence (it resets itself after that one); every effect read, as its thread and body, and whether they fail
    * or wait; the free times the person's calendar answers (null: no calendar, so no times and no day), and every read of
    * them as its query.
@@ -270,7 +270,7 @@ export class MockApi {
   /** The shared header (D88) every page draws: Clew's default until a test gives the person a connector's header. */
   header: SiteHeaderView = siteHeader();
   /**
-   * The combined news list (D111, amended 2026-11-11). Null: the person has no news source, so `clew.news` is refused
+   * The combined news list (D112, amended 2026-11-11). Null: the person has no news source, so `clew.news` is refused
    * as the registry refuses it and Hem draws no "Nyheter"; a test gives the person news with `newsOutput()`.
    */
   news: NewsResult | null = null;
@@ -297,7 +297,7 @@ export class MockApi {
   cardReadDelay = 0;
   /** Every card's read fails as a source that does not answer does. */
   cardReadFails = false;
-  /** A work item's Händelser (D111 item 4), by thread id; without one, the facts the thread itself holds (`eventsOf`). */
+  /** A work item's Händelser (D112 item 4), by thread id; without one, the facts the thread itself holds (`eventsOf`). */
   itemEvents: Record<string, ItemEvent[]> = {};
   /** Händelser cannot be read. */
   itemEventsFail = false;
@@ -634,7 +634,7 @@ export class MockApi {
       return json({ areas: this.areas, menu: this.menu, systems: this.systems });
     }
     if (path === '/today') return json(today);
-    // A meeting ask's free times and the person's own day (D111), as `GET /api/asks/times` answers them.
+    // A meeting ask's free times and the person's own day (D112), as `GET /api/asks/times` answers them.
     if (path === '/asks/times') {
       this.timesReads.push(url.search);
       const date = url.searchParams.get('date');
@@ -728,7 +728,7 @@ export class MockApi {
     if (path === '/cap/clew.errands') return json({ output: errandsOutput, source: 'Startsidan', view: errandsSpec });
     if (path === '/cap/sm.errand')
       return json({ output: smErrandOutput, source: 'Ärendesystemet', view: smErrandSpec });
-    // The combined news list (D111, amended 2026-11-11), refused without a news source as the registry refuses an
+    // The combined news list (D112, amended 2026-11-11), refused without a news source as the registry refuses an
     // out-of-scope read, and one piece of news opened in the source it came from.
     if (path === '/cap/clew.news')
       return this.news
@@ -966,7 +966,7 @@ export class MockApi {
         data: Buffer.from(svg).toString('base64'),
       });
     }
-    // "Det här händer" (D111): the HR fixture's effect read for exactly the values the dialog holds; writes nothing.
+    // "Det här händer" (D112): the HR fixture's effect read for exactly the values the dialog holds; writes nothing.
     if (path.endsWith('/effect') && post) {
       const body = (request.postDataJSON() ?? {}) as { actionId?: string; values?: Record<string, string> };
       this.effectReads.push({ threadId: id, body });
@@ -1044,7 +1044,7 @@ export class MockApi {
                   ],
                 }
               : action.capability === 'communication.acknowledge'
-                ? // A read receipt (D111, amended 2026-11-11), as the communication fixture answers it: no way back.
+                ? // A read receipt (D112, amended 2026-11-11), as the communication fixture answers it: no way back.
                   {
                     at: NOW,
                     headline: 'Läskvittot är registrerat.',
@@ -1070,7 +1070,7 @@ export class MockApi {
                     })),
                   };
         const decided = this.update(id, { state: 'handled', handledAt: NOW, receipt });
-        // A decision through the dialog is a new version of the item, so its Händelser are read again (D111 item 4).
+        // A decision through the dialog is a new version of the item, so its Händelser are read again (D112 item 4).
         if (action.path) decided.updatedAt = '2026-11-04T08:00:01.000Z';
         return json({ kind: 'execute', thread: decided });
       }
@@ -1079,7 +1079,7 @@ export class MockApi {
       const read = body.actionId ? this.cardReads[body.actionId] : undefined;
       return json(read ? { kind: 'read', ...read } : { kind: 'read', output: this.output });
     }
-    // A work item's Händelser (D111 item 4), as the audit rows of what the thread shows would read back.
+    // A work item's Händelser (D112 item 4), as the audit rows of what the thread shows would read back.
     if (/^\/threads\/[^/]+\/events$/.test(path) && !post) {
       const t = this.threads.find(t => t.id === id);
       if (!t) return route.fulfill({ status: 404, json: { error: 'Ärendet finns inte.' } });
@@ -1142,7 +1142,7 @@ export class MockApi {
         summary: 'Inget har gjorts ännu. Du bestämmer på kortet.',
         state: 'open',
         items: [],
-        // An execute is the item's one button (`decide`), its path resolved as the server resolves it (D111): the entity's
+        // An execute is the item's one button (`decide`), its path resolved as the server resolves it (D112): the entity's
         // key is the action's own input, never asked. A propose's draft is the source's; here it has no button.
         actions:
           action.kind === 'execute'
@@ -1446,7 +1446,7 @@ export const composer = (page: Page) => page.getByRole('combobox', { name: /^(Va
 /** A heading by the level assistive technology gets: `aria-level` when Astryx separates it from the visual level. */
 /** "Inte nu" on the first work item, the way a person does it (D29): open the picker, choose "I morgon". */
 export async function snoozeFirst(page: Page) {
-  // A card keeps Inte nu in view; a row is one link to its work item (D111), so the first row's item is opened first,
+  // A card keeps Inte nu in view; a row is one link to its work item (D112), so the first row's item is opened first,
   // in Att göra's reading pane or alone where the pane does not fit, where Inte nu stands among the card's buttons.
   const button = page.getByRole('main').getByRole('button', { name: 'Inte nu', exact: true }).first();
   if (await button.isVisible()) await button.click();
@@ -1455,7 +1455,7 @@ export async function snoozeFirst(page: Page) {
     const own = page.getByRole('button', { name: 'Inte nu', exact: true }).first();
     // The item has its buttons once Fler val is there, in either layout.
     await expect(page.getByRole('main').getByRole('button', { name: 'Fler val' }).first()).toBeVisible();
-    // On a phone the item is its page with the next step pinned to the foot and Inte nu under Fler val (D111 item 12).
+    // On a phone the item is its page with the next step pinned to the foot and Inte nu under Fler val (D112 item 12).
     if (await own.isVisible()) await own.click();
     else {
       await page.getByRole('main').getByRole('button', { name: 'Fler val' }).first().click();
@@ -1463,7 +1463,7 @@ export async function snoozeFirst(page: Page) {
     }
   }
   await page.getByRole('menuitem', { name: /^I morgon/ }).click();
-  // The item leaves with its row (D111: the queue lets go of it), so the toast and the page are reachable again.
+  // The item leaves with its row (D112: the queue lets go of it), so the toast and the page are reachable again.
   await expect(page.getByRole('dialog', { name: 'Ärende', exact: true })).toBeHidden();
   await expect(page).not.toHaveURL(/[?&]item=/);
 }

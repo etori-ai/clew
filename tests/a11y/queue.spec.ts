@@ -12,11 +12,11 @@ import {
 } from './support';
 
 /**
- * Att göra (D111 item 3, board Inbox, the `table-inbox` template): a queue that indexes a reading pane. The piles are
+ * Att göra (D112 item 3, board Inbox, the `table-inbox` template): a queue that indexes a reading pane. The piles are
  * tabs that lead to their address; a row is one link, and choosing it puts the work item in the pane and in the
  * address (`/todo?item=`). Where the pane does not fit beside the list (the template measures the page's own box,
  * 900 px), the row leads to the item as its page, alone on the surface, with the way back to the list. Keyboard, focus, announcements, axe and
- * reflow at 320 px, and the addresses of Hem from before D111.
+ * reflow at 320 px, and the addresses of Hem from before D112.
  */
 const wide = { width: 1440, height: 900 };
 /** The page's box is under 900 px beside the rail: one surface. */
@@ -198,7 +198,7 @@ test.describe('Att göra where the pane does not fit', () => {
     await open(page, '/todo');
     await row(page, 'Ledighetsansökan från Johan Byström').click();
     await expect(page).toHaveURL(/\/todo\?item=ledighet$/);
-    // The item alone is its page (D111 items 3 and 4): its title is the page's heading, the details behind a button.
+    // The item alone is its page (D112 items 3 and 4): its title is the page's heading, the details behind a button.
     await expect(page.getByRole('complementary')).toHaveCount(0);
     await expect(queue(page)).toHaveCount(0);
     await expect(page.getByRole('heading', { level: 1, name: 'Ledighetsansökan från Johan Byström' })).toBeFocused();

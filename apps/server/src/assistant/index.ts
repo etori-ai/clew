@@ -321,7 +321,7 @@ export function assistantUsecases(deps: AssistantDeps) {
     if (!models.health.available(model.providerId)) return { unavailable: 'provider marked down' };
     const tools = model.tools ? registry.tools(actorOf(persona)) : [];
     const now = clock();
-    // The one work item the conversation is about may have its actions filled in as a draft (D111 item 8): only what
+    // The one work item the conversation is about may have its actions filled in as a draft (D112 item 8): only what
     // the person may do, only with a model that uses tools, and nothing is sent.
     const subject = chips.primaryThread;
     const draftable = model.tools && subject ? draftableActions(registry, persona, subject) : [];
@@ -566,7 +566,7 @@ export function assistantUsecases(deps: AssistantDeps) {
           chips: refs,
           tools: (produced!.toolCalls ?? []).map(c => c.capability),
           ...(produced!.view ? { view: produced!.view.capability } : {}),
-          // An action the assistant filled in (D111 item 8): which one, on which item, and which asks it answered.
+          // An action the assistant filled in (D112 item 8): which one, on which item, and which asks it answered.
           // The values are the conversation's, never the audit row's.
           ...(produced!.draft?.kind === 'action'
             ? {

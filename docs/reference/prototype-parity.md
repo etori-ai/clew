@@ -36,7 +36,7 @@ The prototype's feature list has 40 features. The architecture carries 38 of the
 | New block | 3 |
 | Line decision | 2 |
 
-Version 1.0 leans on the harder rows, and Hem now holds most of them ([D111, amended 2026-11-11](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md)): of its seven modules five are built against fixtures, one is ready, and one waits for a line decision. Dialogstöd is counted as built for its figures, drawn on Hem as Läget; its dialogue needs two building blocks.
+Version 1.0 leans on the harder rows, and Hem now holds most of them ([D112, amended 2026-11-11](../decisions/D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md)): of its seven modules five are built against fixtures, one is ready, and one waits for a line decision. Dialogstöd is counted as built for its figures, drawn on Hem as Läget; its dialogue needs two building blocks.
 
 ## Version 1.0, for managers
 

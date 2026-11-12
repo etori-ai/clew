@@ -103,7 +103,7 @@ export function previewManifest(document: unknown, options: PreviewOptions = {})
 }
 
 /**
- * Both halves of a write (D111 item 11), from the declaration alone: where a person can start it, which steps of the one
+ * Both halves of a write (D112 item 11), from the declaration alone: where a person can start it, which steps of the one
  * path it draws, and who fills each property of its input. What a draft's action declares (`confirm`, `review: "each"`,
  * its `input`) the manifest cannot say, and the preview says so.
  */

@@ -14,7 +14,7 @@ import {
 } from './support';
 
 /**
- * One person's utvecklingssamtal (D96 item 7) as a focused overlay over the page it was opened on (D83, D110 rule 5): an
+ * One person's utvecklingssamtal (D96 item 7) as a focused overlay over the page it was opened on (D83, D111 rule 5): an
  * end Drawer on a desktop, a tall sheet on a phone, at the page's own address with `talk=<personId>` (`/staff?talk=` is
  * Personal with the talk over it). Both surfaces are a modal dialog named "Samtal med <name>". Since D97 Personal knows
  * no talk: the way in is the source's page, "Öppna samtalet" in the person's menu and in the talks section of the
@@ -256,7 +256,7 @@ for (const [layout, viewport] of [
       await new People().route(page);
       const here = `/people/karin?section=${TALK_LENS}&from=%2Fstaff`;
       await open(page, here);
-      // The address names the talks section: the page lands on it (D111 item 5), and its way in is in it.
+      // The address names the talks section: the page lands on it (D112 item 5), and its way in is in it.
       const section = page.getByRole('region', { name: 'Utvecklingssamtal', exact: true });
       await expect(page.getByRole('heading', { level: 2, name: 'Utvecklingssamtal' })).toBeFocused();
       const way = section.getByRole('link', { name: 'Öppna samtalet' });

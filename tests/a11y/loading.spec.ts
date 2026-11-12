@@ -32,7 +32,7 @@ for (const viewport of [{ width: 1440, height: 1000 }, narrow]) {
       const before = await composer(page).boundingBox();
       await page.screenshot({ path: `test-results/screens/loading-${viewport.width}.png` });
       threads();
-      // Each block arrives with its own read (D111 item 2): the work items and Sedan i går with the cards, while the
+      // Each block arrives with its own read (D112 item 2): the work items and Sedan i går with the cards, while the
       // figures keep their shape until the areas have answered and the day until it has.
       await expect(page.getByText('Hämtar det som behöver dig …')).toHaveCount(0);
       await expect(page.getByText('Hämtar sedan i går …')).toHaveCount(0);

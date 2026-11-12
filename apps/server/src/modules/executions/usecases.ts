@@ -42,7 +42,7 @@ type ApproveInput = {
   compensates?: string;
   presentation?: Execution['presentation'];
   /**
-   * The person's answers to the capability's asks (D111), already merged into `payload`: the approved intent holds them
+   * The person's answers to the capability's asks (D112), already merged into `payload`: the approved intent holds them
    * there, and the approval's audit row names them, in the same transaction.
    */
   asked?: Record<string, string>;
@@ -107,7 +107,7 @@ export function executionUsecases({ store, source, sessions, watch, clock, ids, 
   }
   /**
    * One approved intent into the ledger: the row, its audit and its workflow start (D86), or the existing row for the same
-   * decision. Composable, so a job commits its steps in one transaction. `asked` is what the person answered (D111): it is
+   * decision. Composable, so a job commits its steps in one transaction. `asked` is what the person answered (D112): it is
    * in the payload, and the audit row names it.
    */
   async function commit(
@@ -141,7 +141,7 @@ export function executionUsecases({ store, source, sessions, watch, clock, ids, 
   }
   async function approve(persona: AuthenticatedContext, input: ApproveInput) {
     await persona.authorize();
-    // The answers are part of the approved input, never beside it (D111).
+    // The answers are part of the approved input, never beside it (D112).
     const payload = (input.payload ?? {}) as Record<string, unknown>;
     if (input.asked && Object.entries(input.asked).some(([key, value]) => payload[key] !== value))
       throw new ExecutionError('Svaren och beslutet gäller olika innehåll.');

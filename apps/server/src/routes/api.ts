@@ -337,7 +337,7 @@ api.post('/threads/:id/act', async c => {
     await act(c.get('session').context, c.req.param('id'), input.actionId, input.refs, input.reviews, input.values),
   );
 });
-/** "Det här händer" (D111): what the card's action would write with these rows and answers, from its effect read. Nothing is written. */
+/** "Det här händer" (D112): what the card's action would write with these rows and answers, from its effect read. Nothing is written. */
 api.post('/threads/:id/effect', async c => {
   const input = await body(
     c.req.raw,
@@ -346,7 +346,7 @@ api.post('/threads/:id/effect', async c => {
   );
   return c.json(await effect(c.get('session').context, c.req.param('id'), input.actionId, input.refs, input.values));
 });
-/** Free times for an action's meeting ask (D111), from the person's own calendar, and their day when `date` is given. */
+/** Free times for an action's meeting ask (D112), from the person's own calendar, and their day when `date` is given. */
 api.get('/asks/times', async c => {
   const capability = c.req.query('capability') ?? '',
     property = c.req.query('property') ?? '',
@@ -445,7 +445,7 @@ api.post('/threads/:id/remind/cancel', async c =>
     ),
   ),
 );
-/** A work item's "Händelser" (D111 item 4): what the person and Clew did to it, read from its audit rows. A read. */
+/** A work item's "Händelser" (D112 item 4): what the person and Clew did to it, read from its audit rows. A read. */
 api.get('/threads/:id/events', async c =>
   c.json(await threads.itemHistory(c.get('session').context, c.req.param('id'))),
 );

@@ -120,7 +120,7 @@ for (const [layout, viewport] of [
   });
 }
 
-test.describe('rows with a document are reviewed one at a time in a drawer over the page, and the receipt earns the check (D70, D73 amended, D110 rule 5)', () => {
+test.describe('rows with a document are reviewed one at a time in a drawer over the page, and the receipt earns the check (D70, D73 amended, D111 rule 5)', () => {
   test.use({ viewport: desktop });
 
   test('Granska on a work item in Att göra opens the review over the queue, each row is decided beside its document with the step in the address, one button writes, and the queue keeps the row in place with the receipt before it goes to Klart', async ({
@@ -131,7 +131,7 @@ test.describe('rows with a document are reviewed one at a time in a drawer over 
     await open(page, '/todo');
     await page.locator('#work-fakturor').getByRole('link').click();
     await page.getByRole('complementary', { name: 'Valt ärende' }).getByRole('link', { name: 'Granska 3' }).click();
-    // A drawer over Att göra, in its own address (D110 rule 5): named by its title, the queue under the scrim with the
+    // A drawer over Att göra, in its own address (D111 rule 5): named by its title, the queue under the scrim with the
     // item in its pane, so its row is the current one; the ✕ is the one close, and no "Spara och stäng" in words.
     await expect(page).toHaveURL('/todo?item=fakturor&review=fakturor');
     const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
@@ -169,7 +169,7 @@ test.describe('rows with a document are reviewed one at a time in a drawer over 
     await expect(hemRow).toContainText('2 fakturor attesterade');
     await expect(hemRow.getByRole('img', { name: 'Klart' })).toBeVisible();
     const card = page.getByRole('complementary', { name: 'Valt ärende' });
-    // The receipt is on the item, row by row, with its Ångra and the time left (D111 item 4, board ActReceipt).
+    // The receipt is on the item, row by row, with its Ångra and the time left (D112 item 4, board ActReceipt).
     await expect(card.getByRole('button', { name: /^Ångra · \d+ min kvar$/ })).toBeVisible();
     await expect(card.getByRole('list', { name: 'Kvitto, rad för rad' }).getByRole('listitem')).toHaveCount(2);
     const toasts = page.getByRole('region', { name: 'Aviseringar' });
@@ -212,7 +212,7 @@ test.describe('rows with a document are reviewed one at a time in a drawer over 
   }) => {
     reviewed(api);
     // A link from before the review lay over its page (D73 amended): the work item in Att göra with the review over it,
-    // at its step (D111).
+    // at its step (D112).
     await open(page, '/cards/fakturor/review?step=2');
     await expect(page).toHaveURL('/todo?item=fakturor&review=fakturor&step=2');
     const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
@@ -262,7 +262,7 @@ test.describe('rows with a document are reviewed one at a time in a drawer over 
   });
 });
 
-test.describe('the review where the work item stands beside the queue (D73 amended, D111)', () => {
+test.describe('the review where the work item stands beside the queue (D73 amended, D112)', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
   test('the item is the reading pane beside the list under the drawer, and Esc gives the focus back to its Granska', async ({
@@ -322,7 +322,7 @@ test.describe('the review where the work item stands beside the queue (D73 amend
   });
 });
 
-test.describe('the review lies over the page it was opened on and closes to it as it was (D110 rule 5)', () => {
+test.describe('the review lies over the page it was opened on and closes to it as it was (D111 rule 5)', () => {
   test.use({ viewport: desktop });
   const invoices = (page: Page) => page.getByRole('article', { name: 'Ärende: Attestera 3 fakturor, 48 200 kr' });
 
@@ -398,7 +398,7 @@ test.describe('the review lies over the page it was opened on and closes to it a
   });
 });
 
-test.describe('the review on a phone: a tall sheet over the work item alone (D73, second amendment, D111)', () => {
+test.describe('the review on a phone: a tall sheet over the work item alone (D73, second amendment, D112)', () => {
   test.use({ viewport: phone });
 
   test('Granska on the item opens the review over it, the steps follow the address, and Esc leads back to the item with the selection and the focus on Granska', async ({
@@ -409,7 +409,7 @@ test.describe('the review on a phone: a tall sheet over the work item alone (D73
     await open(page, '/todo');
     await page.locator('#work-fakturor').getByRole('link').click();
     await expect(page).toHaveURL('/todo?item=fakturor');
-    // Where the pane does not fit the item is its page, alone on the surface (D111 item 12).
+    // Where the pane does not fit the item is its page, alone on the surface (D112 item 12).
     const card = page.getByRole('main');
     await expect(page.getByRole('heading', { level: 1, name: 'Attestera 3 fakturor, 48 200 kr' })).toBeVisible();
     await expect(card).toBeVisible();
@@ -485,7 +485,7 @@ test.describe('the review across a resize (D73, second amendment)', () => {
     await expect(page).toHaveURL('/todo?item=fakturor&review=fakturor&step=2');
     await expect(review).not.toHaveAttribute('data-sheet-stack');
     await page.setViewportSize(phone);
-    // The item is alone on the page there (D111 item 12), so the review is the one sheet, with no stack under it.
+    // The item is alone on the page there (D112 item 12), so the review is the one sheet, with no stack under it.
     await expect(review.getByRole('heading', { name: 'Skolmaterial Norrland AB · 18 300 kr' })).toBeVisible();
     await expect(review).toContainText('1 av 3 bedömda');
     await review.getByRole('button', { name: 'Översikt', exact: true }).click();

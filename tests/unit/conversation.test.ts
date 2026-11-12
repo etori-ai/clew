@@ -906,12 +906,12 @@ test('a transferred person cannot use old source cards through chips, object sug
 });
 
 /**
- * The assistant drafts, the person decides (D111 item 8). With one work item as the subject the model may fill in one
+ * The assistant drafts, the person decides (D112 item 8). With one work item as the subject the model may fill in one
  * of its actions that asks: the values are checked as the decision checks them, the draft is kept in the conversation
  * and its audit row names the action and the asks it answered, never the values or the text. Nothing is executed and
  * the work item itself is left as it was. An execute is never a tool; the draft tool lists only what the person may do.
  */
-describe('the assistant drafts, the person decides (D111 item 8)', () => {
+describe('the assistant drafts, the person decides (D112 item 8)', () => {
   const LATER = '2026-11-12T13:15:00.000Z';
   type Callable = { execute: (input: unknown, options: unknown) => Promise<unknown> };
   async function rehab(w: ReturnType<typeof world>) {

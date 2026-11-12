@@ -102,11 +102,11 @@ function useSurfaceWidth() {
 }
 
 /**
- * Att göra (D111 item 3, board Inbox, the `table-inbox` template): a queue that indexes a reading pane. The tabs are the
+ * Att göra (D112 item 3, board Inbox, the `table-inbox` template): a queue that indexes a reading pane. The tabs are the
  * piles (Behöver dig, Väntar på andra, Klart) as links, so the address names the pile; a filter field and the system
  * narrow the rows. A row is one link: choosing it shows the work item in the pane beside the list and puts it in the
  * address as `item`, so Back, Forward and a reload show the same. The pane draws the work item at its narrow width
- * (D111 item 4, `WorkItem`), with "Öppna som sida". Where the pane does not fit beside the list (the template measures
+ * (D112 item 4, `WorkItem`), with "Öppna som sida". Where the pane does not fit beside the list (the template measures
  * the page's own box) the item takes the whole surface as its page draws it (`WorkItemPage`: the details behind an
  * information button, on a phone the buttons pinned to the foot), with the way back to the list.
  */
@@ -172,15 +172,15 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   const isMeasured = surfaceWidth > 0;
   const single = isMeasured ? surfaceWidth < SINGLE_SURFACE_BELOW : mobile;
   const fullWidth = single && !!itemId;
-  // The item alone on the surface is its page (D111 item 12): the tab names the item.
+  // The item alone on the surface is its page (D112 item 12): the tab names the item.
   usePageTitle(fullWidth && item ? item.title : 'Att göra');
-  // The reading pane is the panel of an opened thing (D111 item 7): the work item on top, the conversation about it
+  // The reading pane is the panel of an opened thing (D112 item 7): the work item on top, the conversation about it
   // under it and the box at the foot, while a model is configured (D8). Without one it is the item alone, as before.
   const model = useModelConfigured();
   const paneSubject = item && model && !single ? itemSubject(item) : null;
   const paneTalk = useThingConversation(paneSubject);
   const focusPaneBox = useFocusThingBox();
-  // "Fråga Clew" (D111 item 7): without an item in the pane the queue is the thing, its rows what the box asks about;
+  // "Fråga Clew" (D112 item 7): without an item in the pane the queue is the thing, its rows what the box asks about;
   // an item the whole surface shows (the template's single surface) is the thing itself.
   const pageThing: OwnThing | null =
     item && single
@@ -399,7 +399,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
   );
   /**
    * The item beside the list (board Inbox): ✕ lets go of it, and the work item at its narrow width. With a model the
-   * pane is the thing's panel (D111 item 7): the conversation about the item under it, its facts folding while it runs,
+   * pane is the thing's panel (D112 item 7): the conversation about the item under it, its facts folding while it runs,
    * and the box at the foot.
    */
   const closeItem = (
@@ -429,7 +429,7 @@ export function TodoPage({ user, admin = false }: { user: SessionUser; admin?: b
     </VStack>
   );
   /**
-   * The item alone where the pane does not fit (D111 items 3 and 12): its page, the way back to the list as its trail.
+   * The item alone where the pane does not fit (D112 items 3 and 12): its page, the way back to the list as its trail.
    * An item that is not there says so under the way back.
    */
   const alone =

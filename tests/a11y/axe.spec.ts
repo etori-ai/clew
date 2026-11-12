@@ -86,11 +86,11 @@ for (const [layout, viewport] of [
     });
 
     test('every work item opened has no axe violations', async ({ page, api: _ }) => {
-      // A pile is a tab of Att göra (D111 item 3): Väntar på andra lists what waits.
+      // A pile is a tab of Att göra (D112 item 3): Väntar på andra lists what waits.
       await open(page, '/todo?tab=waiting');
       await expect(page.getByRole('list', { name: 'Väntar på andra' })).toBeVisible();
       await expectNoAxeViolations(page);
-      // A work item opened from its row: in the reading pane on a desktop, as its page alone on a phone (D111 items 3
+      // A work item opened from its row: in the reading pane on a desktop, as its page alone on a phone (D112 items 3
       // and 12; the calendar's proposals keep their own card). One of each kind, and the item's own page.
       for (const [id, title] of [
         ['omtanke', 'Omtankesamtal med Anna Lindqvist'],

@@ -20,17 +20,17 @@ const tableQuery = '(min-width: 1280px)';
 const tableBesideQuery = panelBesideQuery(1280 - RAIL);
 
 /**
- * A tool as a page (D42, D111 item 6, board Tool): a view an administrator has chosen for the menu (D40) is opened at
+ * A tool as a page (D42, D112 item 6, board Tool): a view an administrator has chosen for the menu (D40) is opened at
  * `/tools/:capability`, inside the one shell, as Kalender is. The page follows Astryx's `table-filter` template: the
  * name as the heading with the system's badge on its line, the filter bar under it (the view's own search field and
  * choice, and the count of its rows), then the rows, all in one scrolling column. The view is drawn by the one renderer
  * (D38). A row's own read (`view.open`, a contact card) is the inspector, and the inspector is the page's panel
- * (`usePagePanel`, D111 item 7, so the box under it asks about it): beside the page from the one width every page has
+ * (`usePagePanel`, D112 item 7, so the box under it asks about it): beside the page from the one width every page has
  * (`BESIDE_FROM`), over it in a narrower window (D50). The row whose read it is is the current one; ✕ or Esc closes it
  * and gives the focus back to the row's name. The page gives way, the panel does not: beside the panel the rows are the
  * list they are on a narrower window until the table fits too. The address names both, so a reload, a link and the
  * back button land where the person was.
- * "Fråga Clew" at the end of the title's line asks about the page (D111 item 7): the panel opens with the tool's view as
+ * "Fråga Clew" at the end of the title's line asks about the page (D112 item 7): the panel opens with the tool's view as
  * its thing, the conversation under it and the box at its foot. It replaces the box that stood at the foot of the page.
  */
 export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: boolean }) {
@@ -50,7 +50,7 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
   const inputJson = search.get('input');
   const main = useView(entry ? capability : null, inputJson, { title: entry?.label ?? '', via: false, address });
   const tool = main.shown?.capability === capability ? main.shown : null;
-  // "Fråga Clew" (D111 item 7): the tool's view as it stands is the thing the panel asks about; it is on the page, so
+  // "Fråga Clew" (D112 item 7): the tool's view as it stands is the thing the panel asks about; it is on the page, so
   // the panel holds only its name, the conversation and the box.
   const pageThing: OwnThing | null = entry
     ? {
@@ -62,7 +62,7 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
     : null;
   // The page says a failed read in its banner, as it says its own.
   const slot = usePagePanel({ overlayOnly: short, failures: 'page', pageThing });
-  // The inspector (D111 item 6, board Tool): a row's own read in the page's panel. The row it is the read of is the
+  // The inspector (D112 item 6, board Tool): a row's own read in the page's panel. The row it is the read of is the
   // current one; a read opened from within the panel (`via`) is no row's.
   const opened = slot.ref?.kind === 'view' && !slot.ref.via ? slot.ref : null;
   const isOpen = opened

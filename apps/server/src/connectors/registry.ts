@@ -41,7 +41,7 @@ export const answerCards: AnswerCards = {};
 const internal = [userCapabilities(userReads)];
 /** The combined errand list (D35 item 4, D89) lists its case systems from the registry the same way. */
 const errands = errandUsecases({ sources: actor => registry.errandSources(actor) });
-/** The combined news list (D111, amended 2026-11-11) lists its news sources from the registry the same way. */
+/** The combined news list (D112, amended 2026-11-11) lists its news sources from the registry the same way. */
 const news = newsUsecases({ sources: actor => registry.newsSources(actor) });
 /**
  * The talks seam (D96 items 8 and 9): `clew.talks` and `clew.commitments` ask the one system that answers the talks

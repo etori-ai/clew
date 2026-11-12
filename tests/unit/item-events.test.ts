@@ -9,7 +9,7 @@ import { reminderUsecases } from '../../apps/server/src/threads/usecases/reminde
 import { itemEvents } from '../../apps/server/src/threads/domain';
 
 /**
- * A work item's "Händelser" (D111 item 4): what the person and Clew did to it, read back from the audit rows its own
+ * A work item's "Händelser" (D112 item 4): what the person and Clew did to it, read back from the audit rows its own
  * mutations wrote, on the memory adapters. Only for an item the person may see; never a row anyone else wrote; and the
  * read itself writes nothing.
  */
@@ -63,7 +63,7 @@ function world() {
   return { store, clock, threads, reminders };
 }
 
-describe("a work item's Händelser (D111 item 4)", () => {
+describe("a work item's Händelser (D112 item 4)", () => {
   test('the person and Clew, newest first, from the rows the item’s own mutations wrote; a read writes nothing', async () => {
     const w = world();
     await w.threads.ensureThreads(hillevi);

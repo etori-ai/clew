@@ -267,7 +267,7 @@ export function createConnector({
       const op = state.get('op:' + input.operationId);
       return op && op.person === personKey(actor) ? { found: true, result: op.result } : { found: false };
     },
-    // What hr.bookTalk will do with the same input (D111), checked as the write checks it and written nowhere: the talk
+    // What hr.bookTalk will do with the same input (D112), checked as the write checks it and written nowhere: the talk
     // registered on the employee with its time and place, and the ten minutes the write can be undone.
     'hr.bookTalkEffect': (actor, input) => {
       const unit = staff(unitOf(actor)).map(e => e.ref);
@@ -368,7 +368,7 @@ export function createConnector({
       const unit = staff(unitOf(actor)).map(e => e.ref);
       const rows = input.refs.map(ref => {
         if (!unit.includes(ref)) return { ref, label: 'Omtankesamtal', outcome: 'failed', detail: 'inte i din enhet' };
-        // The time, the place and the message the manager gave (D111) are kept with the talk.
+        // The time, the place and the message the manager gave (D112) are kept with the talk.
         talks[ref] = {
           at: now(),
           when: input.when ?? 'nästa lediga tid',

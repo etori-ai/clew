@@ -3,7 +3,7 @@ import { People } from './person-data';
 
 /**
  * Not a test: screenshots of the opened person (D97 item 5) for the comparison with the canvas: as a page at 1440 × 900
- * (C2), on a phone at 390 × 844 (D), and read by a colleague (G). A person is a page only (D110 rule 3), so artboard C,
+ * (C2), on a phone at 390 × 844 (D), and read by a colleague (G). A person is a page only (D111 rule 3), so artboard C,
  * the person beside Personal, has no screenshot. Run on demand with `CLEW_SCREENS=1`; the images land in
  * test-results/screens/.
  */

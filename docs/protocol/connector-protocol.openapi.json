@@ -992,7 +992,7 @@
                   "type": "string",
                   "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
                   "maxLength": 80,
-                  "description": "`<connector id>.<verb>`, stable. Two names are profiles Clew combines across connectors: `<id>.search` (D26, see `kinds`), and `<id>.errands` (D35, D89), a read that takes `{ view?: \"assigned\" | \"reported\" }` and answers an ErrandsOutput with the errands the case system lets the person see. Its view's `open` names the read that shows one errand, by convention `<id>.errand`. Clew lists every `<id>.errands` in the person's scope as `clew.errands`. A third is combined the same way: `<id>.news` (D111), a read that takes `{}` and answers a NewsOutput with the news the person may read; its view's `open`, when a row should open in Clew rather than by its `link`, names the read that shows one item, by convention `<id>.newsItem`. Clew lists every `<id>.news` in the person's scope as `clew.news`, newest first, on Hem and as \"Alla nyheter\"; a source that fails contributes nothing. Two more are the talks profile (D96), answered by one system per installation rather than combined: `<id>.talks`, a read that takes `{}` and answers a TalksOutput (the open round of development talks and one row per person the reader manages, keyed on the SCIM `userName`), and `<id>.commitments`, a read that takes `{ person?: <userName> }` and answers a CommitmentsOutput (that employee's action points for a manager of their unit, or without `person` the ones the reader owns and the ones about the reader). `<id>.talks` may be limited to managers; `<id>.commitments` should be callable by everyone who owns action points or is their subject. Clew's built-in `talks` connector answers while either of its reads is enabled for the person; otherwise the one connector whose `<id>.talks` or `<id>.commitments` the person may call does, and with several none does. Neither is ever offered to the model."
+                  "description": "`<connector id>.<verb>`, stable. Two names are profiles Clew combines across connectors: `<id>.search` (D26, see `kinds`), and `<id>.errands` (D35, D89), a read that takes `{ view?: \"assigned\" | \"reported\" }` and answers an ErrandsOutput with the errands the case system lets the person see. Its view's `open` names the read that shows one errand, by convention `<id>.errand`. Clew lists every `<id>.errands` in the person's scope as `clew.errands`. A third is combined the same way: `<id>.news` (D112), a read that takes `{}` and answers a NewsOutput with the news the person may read; its view's `open`, when a row should open in Clew rather than by its `link`, names the read that shows one item, by convention `<id>.newsItem`. Clew lists every `<id>.news` in the person's scope as `clew.news`, newest first, on Hem and as \"Alla nyheter\"; a source that fails contributes nothing. Two more are the talks profile (D96), answered by one system per installation rather than combined: `<id>.talks`, a read that takes `{}` and answers a TalksOutput (the open round of development talks and one row per person the reader manages, keyed on the SCIM `userName`), and `<id>.commitments`, a read that takes `{ person?: <userName> }` and answers a CommitmentsOutput (that employee's action points for a manager of their unit, or without `person` the ones the reader owns and the ones about the reader). `<id>.talks` may be limited to managers; `<id>.commitments` should be callable by everyone who owns action points or is their subject. Clew's built-in `talks` connector answers while either of its reads is enabled for the person; otherwise the one connector whose `<id>.talks` or `<id>.commitments` the person may call does, and with several none does. Neither is ever offered to the model."
                 },
                 "kind": {
                   "anyOf": [
@@ -2833,13 +2833,13 @@
                   },
                   "minItems": 1,
                   "maxItems": 6,
-                  "description": "On a `propose` or `execute` (D111): what the person fills in before it runs, each naming one property of the input. Clew draws the asks as the first step of the action's dialog, \"Fyll i\", from every place the action can be started, and merges the answers into the input; the rest comes from the selected rows (`refs`), the action's own `input` on a work item, or the entity (`about.param`). An answer for anything not asked is refused."
+                  "description": "On a `propose` or `execute` (D112): what the person fills in before it runs, each naming one property of the input. Clew draws the asks as the first step of the action's dialog, \"Fyll i\", from every place the action can be started, and merges the answers into the input; the rest comes from the selected rows (`refs`), the action's own `input` on a work item, or the entity (`about.param`). An answer for anything not asked is refused."
                 },
                 "effect": {
                   "type": "string",
                   "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
                   "maxLength": 80,
-                  "description": "On an `execute` (D111): a `read` of this connector that takes the same input and answers an `EffectOutput`, what the write will do where, without writing anything. Clew calls it as the person with the input the execute would get and draws the answer as \"Det här händer\", the last step before anything is sent. Without it Clew names the source and shows the capability's `description`."
+                  "description": "On an `execute` (D112): a `read` of this connector that takes the same input and answers an `EffectOutput`, what the write will do where, without writing anything. Clew calls it as the person with the input the execute would get and draws the answer as \"Det här händer\", the last step before anything is sent. Without it Clew names the source and shows the capability's `description`."
                 }
               },
               "additionalProperties": false
@@ -3465,7 +3465,7 @@
           }
         },
         "additionalProperties": false,
-        "description": "What an `effect` read answers (D111 item 10): for exactly the input the execute would get, what it will write where, without writing anything. Drawn as \"Det här händer\", the dialog's last step."
+        "description": "What an `effect` read answers (D112 item 10): for exactly the input the execute would get, what it will write where, without writing anything. Drawn as \"Det här händer\", the dialog's last step."
       },
       "PreviewOutput": {
         "type": "object",
@@ -4265,7 +4265,7 @@
                             "const": "link"
                           }
                         ],
-                        "description": "For a `read`: absent or `panel` unfolds the read's answer inside the card, under its buttons (a `table` view opens in the card's place in the panel); `link` marks the button as leaving Clew and opens the `url` the read answers in a new tab (D110 rule 8). Ignored on a propose or execute."
+                        "description": "For a `read`: absent or `panel` unfolds the read's answer inside the card, under its buttons (a `table` view opens in the card's place in the panel); `link` marks the button as leaving Clew and opens the `url` the read answers in a new tab (D111 rule 8). Ignored on a propose or execute."
                       },
                       "input": {
                         "type": "object",
@@ -4301,7 +4301,7 @@
                           }
                         },
                         "additionalProperties": false,
-                        "description": "The action is the read receipt for something published, which Hem lifts until it is given (D111)."
+                        "description": "The action is the read receipt for something published, which Hem lifts until it is given (D112)."
                       }
                     },
                     "additionalProperties": false
@@ -4598,7 +4598,7 @@
                       "const": "link"
                     }
                   ],
-                  "description": "For a `read`: absent or `panel` unfolds the read's answer inside the card, under its buttons (a `table` view opens in the card's place in the panel); `link` marks the button as leaving Clew and opens the `url` the read answers in a new tab (D110 rule 8). Ignored on a propose or execute."
+                  "description": "For a `read`: absent or `panel` unfolds the read's answer inside the card, under its buttons (a `table` view opens in the card's place in the panel); `link` marks the button as leaving Clew and opens the `url` the read answers in a new tab (D111 rule 8). Ignored on a propose or execute."
                 },
                 "input": {
                   "type": "object",
@@ -4634,7 +4634,7 @@
                     }
                   },
                   "additionalProperties": false,
-                  "description": "The action is the read receipt for something published, which Hem lifts until it is given (D111)."
+                  "description": "The action is the read receipt for something published, which Hem lifts until it is given (D112)."
                 }
               },
               "additionalProperties": false
@@ -5365,7 +5365,7 @@
           }
         },
         "additionalProperties": false,
-        "description": "One piece of news in a news source's list (D111)."
+        "description": "One piece of news in a news source's list (D112)."
       },
       "NewsOutput": {
         "type": "object",
@@ -5417,7 +5417,7 @@
                 }
               },
               "additionalProperties": false,
-              "description": "One piece of news in a news source's list (D111)."
+              "description": "One piece of news in a news source's list (D112)."
             },
             "maxItems": 100
           }
@@ -8268,11 +8268,11 @@
                         ],
                         "description": "One thing a propose or an execute asks the person for, naming one property of its input."
                       },
-                      "description": "The asks the capability declares (D111)."
+                      "description": "The asks the capability declares (D112)."
                     },
                     "effect": {
                       "type": "string",
-                      "description": "The read that says what the execute will do (D111)."
+                      "description": "The read that says what the execute will do (D112)."
                     },
                     "path": {
                       "type": "object",
@@ -8674,7 +8674,7 @@
                         }
                       },
                       "additionalProperties": false,
-                      "description": "Where a write can start and what the person passes through before it reaches the source (D111 item 11)."
+                      "description": "Where a write can start and what the person passes through before it reaches the source (D112 item 11)."
                     }
                   },
                   "additionalProperties": false

@@ -2,7 +2,7 @@ import { useRef, useState, type ReactNode } from 'react';
 import { Collapsible, Text, VStack, useAnimatedLayout, type AnimatedLayout } from '@clew/ui';
 
 /**
- * "Visa allt" (D111 item 7, board Calendar): while a conversation about the thing runs, its facts fold to the essentials
+ * "Visa allt" (D112 item 7, board Calendar): while a conversation about the thing runs, its facts fold to the essentials
  * and the buttons, and the rest is behind this disclosure. Astryx's Collapsible, folded to start with, gliding what comes
  * after it with `useAnimatedLayout` as every Collapsible here does. Not folded, the content is drawn as it is.
  */

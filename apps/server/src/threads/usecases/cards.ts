@@ -72,7 +72,7 @@ export function threadUsecases(deps: ThreadDeps) {
   const access = threadAccess(store, registry);
   const inFlight = new Map<string, Promise<void>>();
   /**
-   * A card as the API answers it (D111 item 10): each propose or execute of the card's own connector carries its path,
+   * A card as the API answers it (D112 item 10): each propose or execute of the card's own connector carries its path,
    * what it asks the person and whether it says beforehand what it writes, from the registered declaration on every read.
    * The store keeps the draft's actions as they came; a path never comes from a draft.
    */
@@ -487,7 +487,7 @@ export function threadUsecases(deps: ThreadDeps) {
     return thread && pathed(thread);
   };
   /**
-   * A work item's "Händelser" (D111 item 4): what the person and Clew did to it, from the audit rows its own mutations
+   * A work item's "Händelser" (D112 item 4): what the person and Clew did to it, from the audit rows its own mutations
    * wrote, newest first. Only for an item the person may see now (the same check as reading it); a read, so nothing is
    * written and no audit row is kept.
    */

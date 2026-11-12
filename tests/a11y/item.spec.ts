@@ -2,11 +2,11 @@ import type { Page } from '@playwright/test';
 import { desktop, expect, expectNoAxeViolations, narrow, open, phone, reflowProblems, short, test } from './support';
 
 /**
- * A work item as a page (D111 item 4, board WorkItem, `/items/<threadId>`, the `work-item-detail` template): reached
+ * A work item as a page (D112 item 4, board WorkItem, `/items/<threadId>`, the `work-item-detail` template): reached
  * with "Öppna som sida" from Att göra's reading pane and from the panel beside a page, with `from` as the way back. The
  * page is the item's header (the trail, the title, the status and badges, the buttons), the main column (Varför ser
  * jag detta?, the rows, Dokument, Händelser) and the details rail; at 1024 px and below the rail is behind "Visa
- * detaljer" in a fullscreen dialog, and on a phone the buttons are pinned to the foot (board PhoneItem, D111 item 12).
+ * detaljer" in a fullscreen dialog, and on a phone the buttons are pinned to the foot (board PhoneItem, D112 item 12).
  */
 const wide = { width: 1440, height: 900 };
 const tablet = { width: 1024, height: 768 };
@@ -56,7 +56,7 @@ test.describe('the work item as a page', () => {
     const events = page.getByRole('list', { name: 'Händelser, de senaste först' });
     await expect(events).toContainText('Clew');
     await expect(events).toContainText('skapade ärendet: Fakturorna förfaller i veckan');
-    // The details rail: the facts the item has, and the way out to the source, marked as leaving Clew (D110 rule 8).
+    // The details rail: the facts the item has, and the way out to the source, marked as leaving Clew (D111 rule 8).
     const details = page.getByRole('complementary', { name: 'Detaljer' });
     await expect(details.locator('[aria-level="2"]').filter({ hasText: /^Detaljer$/ })).toBeVisible();
     for (const term of ['Status', 'Källa', 'Förfaller', 'Skapat']) await expect(details).toContainText(term);
@@ -98,7 +98,7 @@ test.describe('the work item as a page', () => {
       'href',
       '/todo',
     );
-    // An address from before D111 leads to the same page.
+    // An address from before D112 leads to the same page.
     await page.goto('/cards/omtanke');
     await expect(page).toHaveURL('/items/omtanke');
     await expect(page.getByRole('heading', { level: 1, name: 'Omtankesamtal med Anna Lindqvist' })).toBeVisible();
@@ -168,7 +168,7 @@ test.describe('the work item page where the rail does not fit', () => {
   });
 });
 
-test.describe('the work item page on a phone (D111 item 12, board PhoneItem)', () => {
+test.describe('the work item page on a phone (D112 item 12, board PhoneItem)', () => {
   test.use({ viewport: phone, hasTouch: true, isMobile: true });
 
   test('the buttons are pinned to the foot, the rest is under Fler val, and the details are behind the information button', async ({

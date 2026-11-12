@@ -62,7 +62,7 @@ import { entityHref } from '../person-address';
  * fields with which Swedish labels) and this file draws it, with Astryx components only. It is the one renderer for
  * every placement: the side panel, a tool's page and the compact embed under an answer, and every kind gets the one
  * header (D71, artboards 4 and 7): the area's chip, the source and the count in supporting, the view's own controls or
- * "Visa allt" at the end of the same line. On a tool's page (D111 item 6, board Tool) the title comes first with the
+ * "Visa allt" at the end of the same line. On a tool's page (D112 item 6, board Tool) the title comes first with the
  * system's badge at the end of its line, then the filter bar: the view's own controls and the count of its rows. A
  * connector never sends markup, so a view looks, reads and tabs the same whichever system it comes from.
  */
@@ -87,10 +87,10 @@ export interface DeclaredViewProps {
   title?: string;
   /** Under an answer (artboard 4): "Visa allt" at the end of the header opens the whole view. */
   onShowAll?: () => void;
-  /** A tool page's own control after the view's (D111 item 7: "Fråga Clew"), at the end of the title's line. */
+  /** A tool page's own control after the view's (D112 item 7: "Fråga Clew"), at the end of the title's line. */
   pageAction?: ReactNode;
   /**
-   * Whether a row's own read is the one open beside the page (D111 item 6, board Tool: the inspector): that row is the
+   * Whether a row's own read is the one open beside the page (D112 item 6, board Tool: the inspector): that row is the
    * current one, marked on the row and on its name.
    */
   isOpen?: ((view: ViewRef) => boolean) | undefined;
@@ -486,7 +486,7 @@ function Rows({
     );
   };
   // A row with a ref of a connector that can read it back can go into the box (D12), as a search hit can, where the
-  // page has a box (D110 rule 6); without one neither the `@` nor its column is drawn.
+  // page has a box (D111 rule 6); without one neither the `@` nor its column is drawn.
   const chips = view.chip && !!view.ref && talk.hasBox;
   const chip = (row: Row) => {
     const ref =
@@ -513,7 +513,7 @@ function Rows({
         width: share(130),
         renderCell: (r: TableRow) => {
           const cell = titleGroup ? <Cell group={titleGroup} row={r.row} lead={name(r.row)} /> : name(r.row);
-          // Astryx's Table has no state for the row open in an inspector (D111, Astryx gaps): the row says so with
+          // Astryx's Table has no state for the row open in an inspector (D112, Astryx gaps): the row says so with
           // `aria-current` and its name with a dot that says it in words.
           return current(r.row) ? (
             <HStack gap={2} vAlign="center" wrap="wrap">
@@ -674,7 +674,7 @@ export function DeclaredView({
   ) : onShowAll ? (
     <Button size="sm" variant="secondary" label="Visa allt" onClick={onShowAll} />
   ) : undefined;
-  // A tool's page (D111 item 6, board Tool, the `table-filter` template): the title with the system's badge and the
+  // A tool's page (D112 item 6, board Tool, the `table-filter` template): the title with the system's badge and the
   // page's own control at the end of its line, then the filter bar: the view's search field and its choice, and how
   // many rows there are at the bar's end. Any other placement keeps the one view header (D71).
   const header = title ? (

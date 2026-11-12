@@ -18,7 +18,7 @@ for (const [layout, viewport] of [
           compensates: null,
         };
         api.threads = [card];
-        // The work item in Att göra (D111): beside the queue on a desktop, whose row says where it stands, alone at 320 px.
+        // The work item in Att göra (D112): beside the queue on a desktop, whose row says where it stands, alone at 320 px.
         await open(page, '/todo?item=fakturor');
         if (layout === 'desktop')
           await expect(page.locator('#work-fakturor').getByRole('img')).toHaveAccessibleName(

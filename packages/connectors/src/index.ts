@@ -169,9 +169,9 @@ export interface Capability<I = unknown, O = unknown> {
    * cannot carry it, so a remote connector never claims a page inside Clew.
    */
   about?: About & { page?: EntityPage };
-  /** On a propose or execute (D111): what the person fills in before it runs, each naming one input property. */
+  /** On a propose or execute (D112): what the person fills in before it runs, each naming one input property. */
   asks?: Ask[];
-  /** On an execute (D111): a read of the same connector, same input, that says what the write will do where. */
+  /** On an execute (D112): a read of the same connector, same input, that says what the write will do where. */
   effect?: string;
   run: (actor: Actor, input: I, clew: Clew) => Promise<O>;
 }
@@ -183,7 +183,7 @@ export const SEARCH_CONNECTOR = 'clew';
 /** A capability is an errand source when it is named `<id>.errands` and is a read (D35, D89); the composite `clew.errands` is never one itself. */
 export const isErrandSource = (c: Pick<Capability, 'name' | 'kind'>, connectorId: string) =>
   c.kind === 'read' && c.name === connectorId + '.errands' && connectorId !== SEARCH_CONNECTOR;
-/** A capability is a news source when it is named `<id>.news` and is a read (D111, amended 2026-11-11); the composite `clew.news` is never one itself. */
+/** A capability is a news source when it is named `<id>.news` and is a read (D112, amended 2026-11-11); the composite `clew.news` is never one itself. */
 export const isNewsSource = (c: Pick<Capability, 'name' | 'kind'>, connectorId: string) =>
   c.kind === 'read' && c.name === connectorId + '.news' && connectorId !== SEARCH_CONNECTOR;
 /** The built-in connector of the talks domain (D96 item 9): Clew's own module, which answers the talks profile while it is enabled. */
@@ -245,7 +245,7 @@ export interface AboutAction {
   kind: 'propose' | 'execute';
   /** The input property that takes the entity's key. */
   param: string;
-  /** What the person passes through before it runs (D111): the asks less the key, the effect and the description. */
+  /** What the person passes through before it runs (D112): the asks less the key, the effect and the description. */
   path: ActionPath;
   /** The connector is one of Clew's own (`kind: 'core'`). */
   core?: true;
@@ -462,7 +462,7 @@ export class Registry {
     await this.refresh();
   }
   /**
-   * Validate an approval without performing its source effect. `pending` names asked properties (D111) the person
+   * Validate an approval without performing its source effect. `pending` names asked properties (D112) the person
    * answers later, when they decide: the input may lack them though the schema requires them, and nothing else.
    */
   async validate(actor: Actor, name: string, input: unknown, pending: readonly string[] = []) {
@@ -790,14 +790,14 @@ export class Registry {
           return `action ${a.id} names ${a.preview} as preview, which is not a read`;
       }
       if (a.review && !a.preview) return `action ${a.id} asks for a review but names no preview`;
-      // A read receipt (D111, amended 2026-11-11) is a write the person makes, with the time of what they acknowledge.
+      // A read receipt (D112, amended 2026-11-11) is a write the person makes, with the time of what they acknowledge.
       if (a.acknowledgement !== undefined) {
         if (a.kind !== 'execute') return `action ${a.id} is marked as a read receipt, which only an execute can be`;
         const published = (a.acknowledgement as { publishedAt?: unknown } | null)?.publishedAt;
         if (typeof published !== 'string' || Number.isNaN(Date.parse(published)))
           return `action ${a.id} is a read receipt without the instant it was published`;
       }
-      // Every property the input requires has someone to fill it (D111): the action's input, the rows, the review or an ask.
+      // Every property the input requires has someone to fill it (D112): the action's input, the rows, the review or an ask.
       const unfilled = a.kind === 'read' ? undefined : unfilledInput(found.capability, a);
       if (unfilled)
         return `action ${a.id} leaves ${unfilled}, which ${a.capability} requires, to nobody: give it in input, use the rows or ask for it`;
@@ -885,7 +885,7 @@ export class Registry {
       }));
   }
   /**
-   * The news sources a person may read (D111, amended 2026-11-11): every `<id>.news` read in scope, with the read a row
+   * The news sources a person may read (D112, amended 2026-11-11): every `<id>.news` read in scope, with the read a row
    * of it opens in Clew. As in `errandSources`, the name is tested before the scope: `clew.news` is in scope only for a
    * person with a source, so its own scope asks this, and must never be asked from here.
    */
@@ -1113,7 +1113,7 @@ export class Registry {
    * Tool definitions for the model: `model: true` capabilities the person may call, from connectors whose tools are on (D8).
    * The per-connector search sources are left out while the composite search is registered, so the model sees one search tool (D26).
    * The per-connector errand lists are left out the same way while `clew.errands` is registered (D35 item 4), and the
-   * per-connector news lists while `clew.news` is (D111, amended 2026-11-11).
+   * per-connector news lists while `clew.news` is (D112, amended 2026-11-11).
    * The talks profile and its composites are never tools, registered or not: no read of that domain reaches a model (D96 item 6).
    * A read about an entity is never a tool either (D97 item 7): the loader refuses `model: true` on one, and this holds
    * whatever a registration says.
@@ -1122,7 +1122,7 @@ export class Registry {
     const composite = this.capabilities.has(SEARCH_CONNECTOR + '.search');
     const errands = this.capabilities.has(SEARCH_CONNECTOR + '.errands');
     const news = this.capabilities.has(SEARCH_CONNECTOR + '.news');
-    // An execute's effect read (D111) says what a decision will write; the loader holds it to model: false, and this holds whatever a registration says.
+    // An execute's effect read (D112) says what a decision will write; the loader holds it to model: false, and this holds whatever a registration says.
     const effects = new Set(
       [...this.capabilities.values()].flatMap(c => (c.capability.effect ? [c.capability.effect] : [])),
     );

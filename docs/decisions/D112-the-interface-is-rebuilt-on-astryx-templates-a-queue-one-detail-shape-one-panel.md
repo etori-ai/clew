@@ -1,8 +1,8 @@
-# D111 · The interface is rebuilt on Astryx's templates: a queue, one detail shape, and one panel with the assistant in it
+# D112 · The interface is rebuilt on Astryx's templates: a queue, one detail shape, and one panel with the assistant in it
 
 **Status:** provisional (accepted when a manager has done a day's work in it and one connector author has declared an action that asks for input from the author's page alone) · **Date:** 2026-11-11 · **Area:** ui
 
-**Context.** Views, cards and navigation had grown by amendment (D50, D53, D63, D66, D72, D83, D97, D110) and were
+**Context.** Views, cards and navigation had grown by amendment (D50, D53, D63, D66, D72, D83, D97, D111) and were
 hard to hold together. The product owner asked for a fresh approach drawn only from what Astryx already ships, saw it
 on the canvas [Clew · a fresh start on Astryx templates](https://claude.ai/artifact/22VoDaxdttcxZMq2C4ijpa), and
 decided on 2026-11-11 that the canvas is the reference where it differs from earlier choices. The owner also lifted
@@ -64,7 +64,7 @@ for what this record needs: the destination Att göra, the work item's page, and
 12. **Phone** [PhoneInbox, PhoneItem]: the rail is AppShell's drawer, a row opens the item full screen, the details
     are behind an information button, the panel is a sheet, and the buttons are pinned to the bottom.
 
-**What this replaces.** [D110](D110-where-something-opens-is-decided-by-what-it-is.md) rule 7 ("no control chooses a
+**What this replaces.** [D111](D111-where-something-opens-is-decided-by-what-it-is.md) rule 7 ("no control chooses a
 surface": "Öppna som sida" is back) and its panel header; rules 1, 4, 6 and 8 stand, and rule 2 stands with the panel
 of item 7. [D66](D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md) stays superseded. Hem as the day's
 work under the box ([D53](D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md),

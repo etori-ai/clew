@@ -289,7 +289,7 @@ Not available: a read about an entity is never offered to the model, the entity 
 
 ## 9. Ask the person, and say what a write will do
 
-Some writes need something only the person knows: when a talk is held, where, what to tell the employee. Declare it on the capability as **asks**, and Clew draws them as the first step, "Uppgifter", of one dialog wherever the action can be started: a work item's button, a person's or a unit's page, the row menu on Personal. Declare an **effect** on an execute, and the dialog's last step, "Det här händer", shows what your system will do with exactly those answers before anything is sent ([D111](../decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md)). You never send a form or markup.
+Some writes need something only the person knows: when a talk is held, where, what to tell the employee. Declare it on the capability as **asks**, and Clew draws them as the first step, "Uppgifter", of one dialog wherever the action can be started: a work item's button, a person's or a unit's page, the row menu on Personal. Declare an **effect** on an execute, and the dialog's last step, "Det här händer", shows what your system will do with exactly those answers before anything is sent ([D112](../decisions/D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md)). You never send a form or markup.
 
 The HR fixture's `hr.bookTalk` is the worked example, from [connectors/hr/manifest.mjs](../../connectors/hr/manifest.mjs):
 

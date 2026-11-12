@@ -31,7 +31,7 @@ import { cardOverPage } from '../panel-address';
 /**
  * The bell and its list (D39): an anchored Popover on a screen with a pointer, Astryx's BottomSheet on a touch phone
  * (`presentation="adaptive"`). The count sits inside the button, as plain figures like the rail's own counts. A reminder
- * opens its card over the page the person is on (D110 rule 2): beside it where the page holds the panel, else the
+ * opens its card over the page the person is on (D111 rule 2): beside it where the page holds the panel, else the
  * shell's drawer over it.
  *
  * The bell stands in the header's band (D88), whose theme turns text white for the band's dark ground. From Astryx

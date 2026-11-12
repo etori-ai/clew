@@ -19,10 +19,10 @@ import { menuRows } from './phonebook';
 import { Units } from './unit-data';
 
 /**
- * Hem with the parts of the prototype's version 1.0 (D111, amended 2026-11-11, board Hem10): the item that asks for a
+ * Hem with the parts of the prototype's version 1.0 (D112, amended 2026-11-11, board Hem10): the item that asks for a
  * read receipt as a callout between the box and the blocks, "Behöver dig", "I dag" and "Nyheter" side by side, Läget
  * with its way to the unit's page as Dialogstöd's figures, Verktygslådan with the person's tools, and under them what
- * D111 kept. "Anpassa startsidan" is not built, so nothing here looks for it.
+ * D112 kept. "Anpassa startsidan" is not built, so nothing here looks for it.
  */
 const rail = (page: Page) => page.getByRole('navigation', { name: 'Sidonavigering' });
 const news = (page: Page) => page.getByRole('region', { name: 'Nyheter' });
@@ -83,7 +83,7 @@ const headingsOf = (page: Page) =>
 test.describe('Hem with the parts of version 1.0', () => {
   test.use({ viewport: desktop });
 
-  test('the callout, then Behöver dig, I dag and Nyheter side by side, then Läget, Verktygslådan and what D111 kept, in one heading order', async ({
+  test('the callout, then Behöver dig, I dag and Nyheter side by side, then Läget, Verktygslådan and what D112 kept, in one heading order', async ({
     page,
     api,
   }) => {
@@ -106,7 +106,7 @@ test.describe('Hem with the parts of version 1.0', () => {
     expect(Math.abs(w.y - n.y)).toBeLessThan(2);
     expect(d.x).toBeGreaterThanOrEqual(n.x + n.width);
     expect(w.x).toBeGreaterThanOrEqual(d.x + d.width);
-    // Under them Läget, Verktygslådan, then what D111 kept, Sedan i går last.
+    // Under them Läget, Verktygslådan, then what D112 kept, Sedan i går last.
     const lage = heading(page, 2, `Läget på ${user.unitLabel}`),
       tools = heading(page, 2, 'Verktygslådan'),
       own = heading(page, 2, 'Mina åtgärdspunkter'),
@@ -135,7 +135,7 @@ test.describe('Hem with the parts of version 1.0', () => {
     ];
     expect(order.every(i => i > 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
-    // Not built (D111, amended 2026-11-11): no control arranges the page, and no chips sit under the box.
+    // Not built (D112, amended 2026-11-11): no control arranges the page, and no chips sit under the box.
     await expect(page.getByText(/Anpassa startsidan/)).toHaveCount(0);
     await expectNoAxeViolations(page);
   });
@@ -157,7 +157,7 @@ test.describe('Hem with the parts of version 1.0', () => {
     await expect(rows.nth(2)).toContainText('Kommunledningen · 2 november');
     await expect(block.getByText('Enkät om matsalen')).toHaveCount(0);
     for (const i of [0, 1, 2]) await expect(rows.nth(i).getByRole('link')).toHaveCount(1);
-    // A link out of Clew says so in its name and opens a new tab (D110 rule 8).
+    // A link out of Clew says so in its name and opens a new tab (D111 rule 8).
     const out = rows.nth(0).getByRole('link');
     await expect(out).toHaveAccessibleName(/^Nytt lönesystem från årsskiftet\s*\(öppnas i ny flik\)$/);
     await expect(out).toHaveAttribute('href', NEWS_LINK);

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { itemPageHref } from '../src/work-items';
 
-describe('a work item as a page (D111 item 4)', () => {
+describe('a work item as a page (D112 item 4)', () => {
   test('the page is the item’s own address, with the page it was opened from as the way back', () => {
     expect(itemPageHref('fakturor')).toBe('/items/fakturor');
     expect(itemPageHref('fakturor', '/todo?item=fakturor')).toBe('/items/fakturor?from=%2Ftodo%3Fitem%3Dfakturor');

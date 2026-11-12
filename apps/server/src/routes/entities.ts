@@ -17,7 +17,7 @@ import type { EntityActions } from '../modules/entities/actions';
  * source the reader may not use (or that nobody placed, for the list) all answer the same 404 as an unknown address, so
  * the answer never tells which. A person who manages nobody gets a list without groups, not a refusal: the web decides
  * what to draw. One write: an action from the entity's menu becomes a card (D8), and the same 404 answers an action the
- * entity does not offer the reader. Its effect (D111) is a read of what the action would write, with the same 404.
+ * entity does not offer the reader. Its effect (D112) is a read of what the action would write, with the same 404.
  */
 export interface EntityRouteDeps {
   entities: Pick<EntityUsecases, 'list' | 'rows' | 'detail' | 'section'>;
@@ -33,7 +33,7 @@ function capabilityOf(value: string | undefined) {
   if (!value || !CAPABILITY.test(value)) throw new InputError('Ogiltig förfrågan.');
   return value;
 }
-/** The body of a start or an effect: `{ capability }`, with the person's answers to its asks in `values` (D111), and nothing else. */
+/** The body of a start or an effect: `{ capability }`, with the person's answers to its asks in `values` (D112), and nothing else. */
 async function actionInput(request: Request): Promise<EntityActionInput> {
   const text = await request.text();
   let value: unknown;
@@ -98,7 +98,7 @@ export function entityRoutes(deps: EntityRouteDeps) {
       const { capability, values } = await actionInput(c.req.raw);
       return answer(c, await actions.start(c.get('session').context, kind, c.req.param('key'), capability, values));
     });
-    /** "Det här händer" before the card exists (D111): what the action would write; a read, nothing is written. */
+    /** "Det här händer" before the card exists (D112): what the action would write; a read, nothing is written. */
     routes.post('/:kind/:key/effect', async c => {
       const kind = kindOf(c);
       if (!kind) return notFound(c);

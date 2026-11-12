@@ -73,7 +73,7 @@ test.describe('the shared header on every page', () => {
     await expect(rail.getByRole('button', { name: 'Testa Testsson', exact: true })).toHaveCount(0);
     await expectNoAxeViolations(page);
   });
-  test('without a header connector there is no band: the rail carries the installation’s name, the bell and the person (D111 item 1)', async ({
+  test('without a header connector there is no band: the rail carries the installation’s name, the bell and the person (D112 item 1)', async ({
     page,
     api: _,
   }) => {

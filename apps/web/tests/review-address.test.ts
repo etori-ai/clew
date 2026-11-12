@@ -12,7 +12,7 @@ import {
   withoutReview,
 } from '../src/review-address';
 
-describe('the review lies over the page it was opened on (D73 amended, D110 rule 5)', () => {
+describe('the review lies over the page it was opened on (D73 amended, D111 rule 5)', () => {
   test('its address is the page’s own with the card as `review` and the step, 1-based, the first left out', () => {
     expect(REVIEW_KEYS).toEqual(['review', 'step']);
     expect(withReview('/', '?card=fakturor', 'fakturor')).toBe('/?card=fakturor&review=fakturor');
@@ -60,7 +60,7 @@ describe('the review lies over the page it was opened on (D73 amended, D110 rule
       '/conversations/c1?review=retry%3A1',
     );
   });
-  test('the address from before is a cold link to the work item in Att göra with the review over it (D111)', () => {
+  test('the address from before is a cold link to the work item in Att göra with the review over it (D112)', () => {
     expect(legacyReview('fakturor', '')).toBe('/todo?item=fakturor&review=fakturor');
     expect(legacyReview('fakturor', '?step=2')).toBe('/todo?item=fakturor&review=fakturor&step=2');
     expect(legacyReview('a b', '?step=2&other=x')).toBe('/todo?item=a+b&review=a+b&step=2');

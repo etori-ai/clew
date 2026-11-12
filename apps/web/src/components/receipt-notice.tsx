@@ -24,7 +24,7 @@ export const receiptMessage = (thread: Thread & { receipt: NonNullable<Thread['r
 /**
  * A live receipt notice: expiry, pending compensation and errors must not leave a stale Undo button. The toast stays
  * until closed (2.2.1), also when the person moves on, so Visa follows them: on Hem and Att göra it leads to the pile
- * the item went to with the item in the reading pane (D111), on any other page to the card over that page (D110 rule 2).
+ * the item went to with the item in the reading pane (D112), on any other page to the card over that page (D111 rule 2).
  */
 export function ReceiptNotice({
   threadId,

@@ -24,7 +24,7 @@ test.describe('screens', () => {
   });
   test('artboard 7: a list, a record and the hits in the panel', async ({ page, api: _ }) => {
     await page.setViewportSize(desktop);
-    // A row goes into a conversation's box beside the conversation (D111 item 7).
+    // A row goes into a conversation's box beside the conversation (D112 item 7).
     await open(page, `/conversations/fraga?open=phonebook.team&open-title=${at('Mitt teams kontaktlista')}`);
     await page.getByRole('dialog').waitFor();
     await page.screenshot({ path: out('pattern-7-panel-list') });
@@ -60,7 +60,7 @@ test.describe('screens', () => {
       .first()
       .waitFor();
     await page.screenshot({ path: out('pattern-8-banner') });
-    // A row goes into a conversation's box beside the conversation (D111 item 7).
+    // A row goes into a conversation's box beside the conversation (D112 item 7).
     await open(page, `/conversations/fraga?open=phonebook.team&open-title=${at('Mitt teams kontaktlista')}`);
     await page.getByRole('dialog').getByRole('button', { name: 'Lägg till i samtalet' }).first().click();
     await page.keyboard.press('Escape');
@@ -84,7 +84,7 @@ test.describe('screens', () => {
   test('the answer and the banner on a phone', async ({ page, api }) => {
     api.sources = [{ connector: 'finance', state: 'idle', lastSuccess: NOW, error: 'unavailable' }];
     await page.setViewportSize(phone);
-    // A row goes into a conversation's box beside the conversation (D111 item 7).
+    // A row goes into a conversation's box beside the conversation (D112 item 7).
     await open(page, `/conversations/fraga?open=phonebook.team&open-title=${at('Mitt teams kontaktlista')}`);
     await page.getByRole('dialog').waitFor();
     await page.screenshot({ path: out('pattern-phone-panel') });

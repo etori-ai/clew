@@ -122,7 +122,7 @@ test.describe('the answer on its way', () => {
     const greeting = (await heading(page, 1, 'Vad vill du få gjort?').boundingBox())!;
     const top = (await input.boundingBox())!.y;
     expect(top).toBeGreaterThan(greeting.y);
-    // The quiet page (D111 item 2): Behöver dig says that nothing does, and the day stands beside it.
+    // The quiet page (D112 item 2): Behöver dig says that nothing does, and the day stands beside it.
     await expect(
       page.getByRole('region', { name: 'Behöver dig' }).getByText('Inget behöver dig just nu.'),
     ).toBeVisible();

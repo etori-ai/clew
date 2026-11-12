@@ -21,7 +21,7 @@ import {
 } from '../src/action-path';
 
 /**
- * The action dialog's pure part (D111 item 10): which actions open it, where it opens, the answers checked in the
+ * The action dialog's pure part (D112 item 10): which actions open it, where it opens, the answers checked in the
  * server's sentences, a refusal placed on its field, and the words for the values and the person's day. The HR fixture's
  * "Boka samtalet" and "Godkänn" as the server resolves their paths.
  */

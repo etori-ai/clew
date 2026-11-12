@@ -1,6 +1,6 @@
 # D53 · Hem is the start page: the day's work under the box, and the day beside it
 
-**Status:** accepted, built 2026-11-06 on branch `hem`; not built: the phone's shift strip (artboard D needs a schedule capability no connector declares), the panel's tabs for everything a conversation has opened (artboards F, H, J) (built 2026-11-06, [D66](D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md)), a conversation carrying a job across connectors with a step list (artboard J), and the mark on an earlier conversation that something happened since (artboard H); items 2 and 6 and the pixels changed by [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) on 2026-11-06 (the greeting drawn small with the day on its line, the day and Sedan i går as cards in the page's own side column); Hem as the day's work under the box replaced by [D111](D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) items 2 and 3 (2026-11-11: the box with Behöver dig, I dag and Nyheter under it; the work list is Att göra) · **Date:** 2026-11-06 · **Area:** ui
+**Status:** accepted, built 2026-11-06 on branch `hem`; not built: the phone's shift strip (artboard D needs a schedule capability no connector declares), the panel's tabs for everything a conversation has opened (artboards F, H, J) (built 2026-11-06, [D66](D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md)), a conversation carrying a job across connectors with a step list (artboard J), and the mark on an earlier conversation that something happened since (artboard H); items 2 and 6 and the pixels changed by [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) on 2026-11-06 (the greeting drawn small with the day on its line, the day and Sedan i går as cards in the page's own side column); Hem as the day's work under the box replaced by [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) items 2 and 3 (2026-11-11: the box with Behöver dig, I dag and Nyheter under it; the work list is Att göra) · **Date:** 2026-11-06 · **Area:** ui
 
 **Decision.** The landing and Att göra are one page, **Hem**, at `/`. It answers three questions above the fold at
 1440 px: what needs me, how my day looks, and how my unit stands. Drawn as artboard A of the canvas
@@ -100,8 +100,8 @@ frosted-glass layer the page scrolls under, with no scroll-to-bottom button sinc
 `VStack height="100%"` so the layout owns the scroll. The focus checks of `tests/a11y/reflow.spec.ts` (2.4.11) hold:
 every stop scrolls into view above the dock.
 
-**Amended 2026-11-11 (D110 rule 6): item 7 is withdrawn.** The box no longer asks about the card open beside Hem
-([D110](D110-where-something-opens-is-decided-by-what-it-is.md), the product owner's answer 3; the details are in
+**Amended 2026-11-11 (D111 rule 6): item 7 is withdrawn.** The box no longer asks about the card open beside Hem
+([D111](D111-where-something-opens-is-decided-by-what-it-is.md), the product owner's answer 3; the details are in
 [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md)'s amendment of the same day). A card
 goes into the box only with "Lägg till i samtalet". A question sent with the card open still takes it along beside the
 transcript, and "Stäng samtalet" still leads back to Hem with the card open.

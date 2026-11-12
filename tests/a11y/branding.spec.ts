@@ -29,7 +29,7 @@ test.describe(`D98 installation logo and theme (${profile})`, () => {
         // By level, not by tag: the calendar's month on a phone is an h3 that says level 1.
         await expect(page.getByRole('main').locator('h1:not([aria-level]), [aria-level="1"]')).toBeVisible();
         await page.evaluate(() => document.fonts.ready.then(() => undefined));
-        // Without a header connector the logo and the name are the rail's heading (D98, D111 item 1); on a phone the
+        // Without a header connector the logo and the name are the rail's heading (D98, D112 item 1); on a phone the
         // shell draws that heading as its bar, the banner. With a connector they are the band's (`header.spec.ts`).
         const header =
           viewport === narrow ? page.getByRole('banner') : page.getByRole('navigation', { name: 'Sidonavigering' });

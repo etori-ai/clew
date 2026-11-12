@@ -1,10 +1,10 @@
 # Review: where things open, and a proposal for one place per thing · 2026-11-11
 
 Status: decided. The product owner answered the seven choices on 2026-11-11 and the rules are
-[D110](../decisions/D110-where-something-opens-is-decided-by-what-it-is.md); choice 6 was answered with the
+[D111](../decisions/D111-where-something-opens-is-decided-by-what-it-is.md); choice 6 was answered with the
 alternative, the list of cards beside Personal. The text below is the review as it was written, before the answers.
 The inventory in the second half is a reading of the working tree on 2026-11-11, not of a running application, and
-describes the code before D110 was built.
+describes the code before D111 was built.
 
 ## Why
 

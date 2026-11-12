@@ -36,7 +36,7 @@ test.describe('2.4.2 page titled', () => {
 });
 
 test.describe('1.3.1 and 2.4.6 structure', () => {
-  // Without a header connector there is no shared header (D111 item 1): the rail is the page's one navigation of places,
+  // Without a header connector there is no shared header (D112 item 1): the rail is the page's one navigation of places,
   // with the installation's name as its heading; Att göra adds its piles as a navigation of their own. The header's
   // landmarks with a connector are header.spec.ts's.
   for (const [path, navigations] of [
@@ -67,7 +67,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
     await expect(rail).toHaveCount(1);
     await expect(rail.getByRole('link', { name: 'Ny fråga' })).toBeVisible();
-    // The places (D111 item 1): Hem says the worst tone among the person's figures in one word (D54), Att göra how much
+    // The places (D112 item 1): Hem says the worst tone among the person's figures in one word (D54), Att göra how much
     // needs the person, then Kalender; the piles and the areas are Att göra's tabs and filter, not rows here.
     await expect(rail.getByRole('link', { name: /^Hem/ })).toHaveAttribute('href', '/');
     await expect(rail.getByRole('link', { name: /^Hem/ })).toContainText('behöver dig');
@@ -101,7 +101,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await open(page, '/');
     await expect(heading(page, 1, 'Vad vill du få gjort?')).toBeVisible();
     await expect(heading(page, 2, 'Behöver dig')).toBeVisible();
-    // A row is one link to its work item in Att göra (D111 item 2); none is the current one on Hem.
+    // A row is one link to its work item in Att göra (D112 item 2); none is the current one on Hem.
     const row = page.locator('#work-omtanke');
     await expect(row.getByRole('link', { name: /^Omtankesamtal med Anna Lindqvist/ })).toHaveAttribute(
       'href',
@@ -140,7 +140,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     api: _,
   }) => {
     await open(page, '/');
-    // One heading (D111 item 2, board Main) with the box under it; nothing sums the day up in a sentence.
+    // One heading (D112 item 2, board Main) with the box under it; nothing sums the day up in a sentence.
     const lead = page.getByRole('region', { name: 'Vad vill du göra' });
     await expect(lead.getByRole('heading', { level: 1, name: 'Vad vill du få gjort?' })).toBeVisible();
     await expect(page.getByText(/behöver dig i dag/)).toHaveCount(0);
@@ -158,7 +158,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     expect(n.y).toBeGreaterThan(box.y + box.height);
     expect(d.x).toBeGreaterThanOrEqual(n.x + n.width);
     expect(Math.abs(d.y - n.y)).toBeLessThan(2);
-    // Läget follows the blocks (D111: kept under them until decided), and Sedan i går ends the page.
+    // Läget follows the blocks (D112: kept under them until decided), and Sedan i går ends the page.
     const lage = heading(page, 2, 'Läget på Skönsmons skola');
     await expect(lage).toBeVisible();
     expect((await lage.boundingBox())!.y).toBeGreaterThan(n.y + n.height);
@@ -282,7 +282,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expect(page).toHaveURL(/\/todo\?item=fakturor$/);
   });
 
-  test('a card picked in the rail’s search opens over the page the person is on, which stays (D110 rule 2)', async ({
+  test('a card picked in the rail’s search opens over the page the person is on, which stays (D111 rule 2)', async ({
     page,
     api: _,
   }) => {
@@ -376,12 +376,12 @@ test.describe('D26 questions answered from documents', () => {
     await expect(rows).toHaveCount(3);
     await expect(rows.nth(0)).toContainText('Rutin vid fall i ordinärt boende · Vid fall');
     await expect(rows.nth(0)).toContainText('Intranätet · MAS · granskad 12 mars 2026');
-    // A link out of Clew opens a new tab and says so (D110 rule 8).
+    // A link out of Clew opens a new tab and says so (D111 rule 8).
     await expect(rows.nth(0).getByRole('link', { name: /^Öppna\s*\(öppnas i ny flik\)$/ })).toHaveAttribute(
       'target',
       '_blank',
     );
-    // On Hem the sources view has its own box in the panel: a passage goes into a conversation only beside one (D111 item 7).
+    // On Hem the sources view has its own box in the panel: a passage goes into a conversation only beside one (D112 item 7).
     await expect(rows.nth(0).getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
     await expect(panel.getByRole('textbox', { name: 'Fråga Clew' })).toBeVisible();
     await expect(rows.nth(2)).toContainText('2 år sedan');

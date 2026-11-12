@@ -14,7 +14,7 @@ import { settlingUntil } from './mutations';
 import { wayBack } from './person-address';
 
 /**
- * Att göra (D111 item 3): the queue's piles, named as the address names them (D43). Behöver dig is the first and is
+ * Att göra (D112 item 3): the queue's piles, named as the address names them (D43). Behöver dig is the first and is
  * left out of the address. What the person set aside (Inte nu, D28) waits like what waits on others and comes back by
  * itself, so it is listed under Väntar på andra with its own state; the canvas draws no fourth pile.
  */
@@ -54,7 +54,7 @@ export function todoHref(next: TodoState, search: URLSearchParams | string = '')
 /** The work item's own address in the queue: the reading pane beside the list, or the item alone where it does not fit. */
 export const itemHref = (threadId: string) => todoHref({ item: threadId });
 /**
- * The work item as a page (D111 item 4): `/items/<threadId>`, with `from` the address it was opened from, for the way
+ * The work item as a page (D112 item 4): `/items/<threadId>`, with `from` the address it was opened from, for the way
  * back, as a person's page keeps it (`person-address.ts`): a path inside Clew with its own search, never a `from` of its own.
  */
 export function itemPageHref(threadId: string, from?: string | null): string {
@@ -63,7 +63,7 @@ export function itemPageHref(threadId: string, from?: string | null): string {
 }
 
 /**
- * Where an address of Hem from before D111 leads, or null when it is Hem's own: a card opened on Hem (`card`) is the
+ * Where an address of Hem from before D112 leads, or null when it is Hem's own: a card opened on Hem (`card`) is the
  * work item in Att göra, and Hem's tabs (`tab`) and area (`area`) are Att göra's. What lies over the card (its review,
  * a read unfolded in it, a view opened from one of its rows) goes along.
  */
@@ -185,7 +185,7 @@ export const rowFacts = (thread: Thread, now: string, today: string): RowFacts =
 });
 
 /**
- * What the rail's dot says about a conversation (D111 item 1), only where the data holds it: the answer being written
+ * What the rail's dot says about a conversation (D112 item 1), only where the data holds it: the answer being written
  * now, or a card the assistant drafted in it that still waits for the person's decision. Anything else draws no dot.
  */
 export function conversationState(

@@ -85,7 +85,7 @@ const thread = (values: Partial<Thread> & Pick<Thread, 'id' | 'title'>): Thread 
   ...values,
 });
 /**
- * What the HR fixture's writes declare (D111 item 10), as the server resolves a work item's action's `path` from the
+ * What the HR fixture's writes declare (D112 item 10), as the server resolves a work item's action's `path` from the
  * registered manifest: "Boka samtalet" asks for the time, the place and a message and says beforehand what it writes;
  * "Godkänn" on a leave request asks for an optional comment and has no effect read.
  */
@@ -783,7 +783,7 @@ export const conversation = (source: Thread[], text: string, conversationId = 'k
       model,
     };
   }
-  // The assistant fills in an action of the work item the conversation is about (D111 item 8): a draft kept in the
+  // The assistant fills in an action of the work item the conversation is about (D112 item 8): a draft kept in the
   // conversation, never sent. The time is the first free time on Friday the person's calendar answers (`meetingSlots`).
   if (/^boka det/i.test(text)) {
     const body = 'Ni är båda lediga fredag 09:00. Jag har fyllt i bokningen; inget är skickat.';
@@ -1825,7 +1825,7 @@ export const organisationReports: Record<string, OrganisationUnitPeople['reports
 };
 
 /**
- * Nyheter (D111, amended 2026-11-11): the combined news list as the server answers `clew.news`, four pieces of news
+ * Nyheter (D112, amended 2026-11-11): the combined news list as the server answers `clew.news`, four pieces of news
  * from two sources, newest first. Two leave Clew by their link; two open in Clew beside the page, by the read the
  * communication fixture declares for one item. The views are the ones the core connector and the fixture really
  * declare, so the suite draws the declarations.
@@ -1914,7 +1914,7 @@ export const newsMenuRow: MenuEntry = {
   label: 'Nyheter',
   icon: 'book',
 };
-/** The shared header (D88) with the intranet's page of tools marked (D111, amended 2026-11-11). */
+/** The shared header (D88) with the intranet's page of tools marked (D112, amended 2026-11-11). */
 export const TOOLBOX_HREF = 'https://intranat.example/verktyg';
 export const siteHeaderWithToolbox = (): SiteHeaderView => ({
   menu: {

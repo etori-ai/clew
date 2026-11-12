@@ -130,7 +130,7 @@ const proposalStatus: Partial<Record<Proposal['status'], string>> = {
 };
 
 /**
- * A meeting in the panel (D111 item 9, board Calendar, the `invited` state): when it is, and while no conversation runs
+ * A meeting in the panel (D112 item 9, board Calendar, the `invited` state): when it is, and while no conversation runs
  * where and with whom; a meeting the person does not organise says they are invited. The buttons are what the calendar
  * lets the person do: move or cancel their own booking (the dialog that was the entry's, opened at that step, so the
  * keyboard path is the same as before). A meeting someone else organises has no buttons of the organiser's, and the
@@ -202,7 +202,7 @@ function EventFacts({
 }
 
 /**
- * A proposal in the panel (D111 item 9, board Calendar, the `thing` and `asking` states): that it is a proposal and not
+ * A proposal in the panel (D112 item 9, board Calendar, the `thing` and `asking` states): that it is a proposal and not
  * booked, when the round must be done, when it is and with whom. Its buttons are the proposal's existing decisions,
  * through the same use cases as before (`modules/calendar/usecases/decisions.ts`): send the invitation for this time,
  * move it (the dialog, never drag alone), draw the proposals again in the next week, and undo while the calendar allows
@@ -308,7 +308,7 @@ function ProposalFacts({
 }
 
 /**
- * The calendar as a page (D27, D32, D111 item 9, board Calendar): one day, one week or one month on FullCalendar under
+ * The calendar as a page (D27, D32, D112 item 9, board Calendar): one day, one week or one month on FullCalendar under
  * Clew's theme, inside the one shell. `EventCalendar` is not redesigned. An event or a proposal chosen in the grid opens
  * in the panel in the end slot, as any thing does (`entry` in the address): its facts and buttons, the conversation
  * about it and the box. The proposals are reached from "Förslag N" in the page's header, a menu that leads to each one;
@@ -404,7 +404,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
   const proposed = thread?.state === 'open' ? thread.proposals.filter(p => p.status === 'proposed') : [];
   const mark = thread ? marks.ofThread(thread) : null;
 
-  /** An entry as the thing in the panel (D111 items 7 and 9): its facts and buttons, and what the box asks about. */
+  /** An entry as the thing in the panel (D112 items 7 and 9): its facts and buttons, and what the box asks about. */
   const entryThing = (item: AgendaItem): OwnThing | null => {
     if (item.proposal) {
       const p = item.proposal;
@@ -510,7 +510,7 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
     </HStack>
   );
   /**
-   * "Förslag N" (D111 item 9): the proposals that wait for the person, each a link to its week with it open in the
+   * "Förslag N" (D112 item 9): the proposals that wait for the person, each a link to its week with it open in the
    * panel. Nothing waits, no button.
    */
   const proposalsMenu = proposed.length > 0 && (

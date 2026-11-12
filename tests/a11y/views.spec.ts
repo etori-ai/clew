@@ -32,7 +32,7 @@ test.describe('a declared view in the side panel', () => {
   }) => {
     await open(page, directory);
     const panel = page.getByRole('dialog', { name: 'Sök i telefonboken' });
-    // No "Samtal" column of chips: a row goes into a conversation only beside a conversation's own box (D111 item 7),
+    // No "Samtal" column of chips: a row goes into a conversation only beside a conversation's own box (D112 item 7),
     // and on Hem the view has its own box in the panel.
     await expect(panel.getByRole('columnheader')).toHaveText(['Namn', 'Titel', 'Enhet', 'Telefon', 'Mobil', 'E-post']);
     await expect(panel.getByRole('row')).toHaveCount(15);
@@ -122,7 +122,7 @@ test.describe('a declared view in the side panel', () => {
         }),
       );
     }
-    // A row goes into a conversation only beside a conversation's own box (D111 item 7); here the view has its own box.
+    // A row goes into a conversation only beside a conversation's own box (D112 item 7); here the view has its own box.
     expect(stops.join(' | ')).toContain('Anna Lindqvist | 0980-319 203 | anna.lindqvist@kommun.example');
     expect(stops).not.toContain('Lägg till i samtalet');
   });
@@ -178,7 +178,7 @@ test.describe('a declared view in the side panel', () => {
     page,
     api: _,
   }) => {
-    // Beside a conversation's own box (D111 item 7): on Hem the view has its own box in the panel instead.
+    // Beside a conversation's own box (D112 item 7): on Hem the view has its own box in the panel instead.
     await open(page, team.replace(/^\/\?/, '/conversations/fraga?'));
     const panel = page.getByRole('dialog', { name: 'Mitt teams kontaktlista' });
     await expect(panel.getByRole('listitem')).toHaveCount(5);

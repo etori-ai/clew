@@ -20,7 +20,7 @@ async function personaFor(actorId: string) {
   return persona;
 }
 /**
- * What `calendar.freeTimes` answers (D111 item 10): free gaps of the asked length in the reader's own calendar, earliest
+ * What `calendar.freeTimes` answers (D112 item 10): free gaps of the asked length in the reader's own calendar, earliest
  * first; named as `calendar.today` names its free gaps.
  */
 export const FreeTimesOutput = Type.Object(
@@ -103,7 +103,7 @@ export function calendarConnector(
         run: async (actor, input: { date: string }) => events.dayView(await personaFor(actor.id), input.date),
       },
       {
-        // The suggestions of a write that asks for a meeting time (D111): the reader's own calendar only, never a tool.
+        // The suggestions of a write that asks for a meeting time (D112): the reader's own calendar only, never a tool.
         name: 'calendar.freeTimes',
         kind: 'read',
         title: 'Lediga tider',

@@ -6,18 +6,18 @@ import { TALK_PARAM } from './talk-address';
  * What the panel holds is named in the address (D50), the same way on every page (`usePagePanel`, the shell's drawer):
  * `open` is a view (with `open-title`, `open-input` and `via`, the names a tool's page already uses, D42) and `card` is
  * a card. A view lies over a card: closing the view leaves the card, closing the card leaves the page. The panel holds
- * one opened thing (D110, amended 2026-11-11). Everything else in the address is the page's own and is kept.
+ * one opened thing (D111, amended 2026-11-11). Everything else in the address is the page's own and is kept.
  *
- * `open-card` with `open-action` is one of a card's own reads unfolded inside that card (D110, amended 2026-11-11),
+ * `open-card` with `open-action` is one of a card's own reads unfolded inside that card (D111, amended 2026-11-11),
  * wherever the card is drawn: beside the page, in Hem's sheet, in a conversation's answer. It is the card's state, not
  * a thing in the panel: it stays under a view opened from one of its rows, and goes when the card goes.
  */
 export type PanelRef =
   | { kind: 'view'; capability: string; title: string; input: Record<string, unknown>; via: boolean }
   | { kind: 'card'; threadId: string }
-  /** A thing the page itself holds open in the panel: Kalender's event or proposal (`entry`, D111 item 9). */
+  /** A thing the page itself holds open in the panel: Kalender's event or proposal (`entry`, D112 item 9). */
   | { kind: 'entry'; id: string }
-  /** "Fråga Clew" in the page's header (D111 item 7): the page itself is the thing the panel is about. */
+  /** "Fråga Clew" in the page's header (D112 item 7): the page itself is the thing the panel is about. */
   | { kind: 'page' };
 /** A card's own read the address unfolds in that card. */
 export interface ReadRef {
@@ -34,7 +34,7 @@ const OWN_KEYS = [ENTRY_PARAM, ASK_PARAM];
 /** Every name the panel's part of an address uses: what a page drops when it opens its own thing in the panel's place. */
 const PANEL_KEYS: readonly string[] = [...VIEW_KEYS, 'card', ...READ_KEYS, ...OWN_KEYS];
 /**
- * What lies over the page and the panel and holds the focus (D110 rule 5): a card's review (`review-address.ts`) and
+ * What lies over the page and the panel and holds the focus (D111 rule 5): a card's review (`review-address.ts`) and
  * one person's talk (`talk-address.ts`). Closing one leaves the page's address as it was under it.
  */
 const FOCUSED_KEYS: readonly string[] = [...REVIEW_KEYS, TALK_PARAM];
@@ -73,13 +73,13 @@ export function panelOf(search: URLSearchParams): PanelRef | null {
   if (entry) return { kind: 'entry', id: entry };
   return search.get(ASK_PARAM) === '1' ? { kind: 'page' } : null;
 }
-/** The same page with the page itself as the thing in the panel ("Fråga Clew", D111 item 7): nothing else open in it. */
+/** The same page with the page itself as the thing in the panel ("Fråga Clew", D112 item 7): nothing else open in it. */
 export function withAsk(pathname: string, search: URLSearchParams | string): string {
   const q = without(search, [...PANEL_KEYS, ...FOCUSED_KEYS]);
   q.set(ASK_PARAM, '1');
   return address(pathname, q);
 }
-/** The same page with one of its own calendar entries in the panel (D111 item 9), in the place of anything open there. */
+/** The same page with one of its own calendar entries in the panel (D112 item 9), in the place of anything open there. */
 export function withEntry(pathname: string, search: URLSearchParams | string, id: string): string {
   const q = without(search, PANEL_KEYS);
   q.set(ENTRY_PARAM, id);
@@ -149,12 +149,12 @@ export function withCard(pathname: string, search: URLSearchParams | string, thr
 }
 /**
  * A card opened from something that belongs to no page (the bell, a toast, the rail's search), over the page the person
- * is on (D110 rule 2): that page's address with the card in its panel. A review or a talk lying over the page is let go
- * of, so the card asked for is the thing in front. On Att göra the card is the work item in its reading pane (D111),
+ * is on (D111 rule 2): that page's address with the card in its panel. A review or a talk lying over the page is let go
+ * of, so the card asked for is the thing in front. On Att göra the card is the work item in its reading pane (D112),
  * on Hem, which no longer holds a card, it is the work item in Att göra, and on the item's own page it is that page.
  */
 export function cardOverPage(pathname: string, search: URLSearchParams | string, threadId: string): string {
-  // On the item's own page (D111 item 4) the item is the page: nothing opens over it.
+  // On the item's own page (D112 item 4) the item is the page: nothing opens over it.
   if (pathname === `/items/${encodeURIComponent(threadId)}`) return address(pathname, without(search, FOCUSED_KEYS));
   if (pathname === '/todo' || pathname === '/') {
     const q = pathname === '/todo' ? without(search, [...FOCUSED_KEYS, ...PANEL_KEYS]) : new URLSearchParams();
@@ -164,7 +164,7 @@ export function cardOverPage(pathname: string, search: URLSearchParams | string,
   return withCard(pathname, without(search, FOCUSED_KEYS), threadId);
 }
 /**
- * Where a row's "Granska N" leads (D110 rule 5): the row's card in the page's panel, as the row's title opens it, and the
+ * Where a row's "Granska N" leads (D111 rule 5): the row's card in the page's panel, as the row's title opens it, and the
  * card's review over the page. The review hands its decisions back to the card and its receipt shows there, so a review
  * opened from a row closes to that card beside the page, as one opened from the card itself does.
  */

@@ -21,7 +21,7 @@ import { Registry } from '../registry';
 import { fixtureConnectors } from '../fixture-connectors';
 
 /**
- * The one path a write passes (D111 item 10): what a capability asks the person (`asks`) and what it says beforehand that
+ * The one path a write passes (D112 item 10): what a capability asks the person (`asks`) and what it says beforehand that
  * it will write (`effect`). The loader's rules for both, the answers checked against the asks, the card's path resolved
  * from the registered manifest, the effect read that writes nothing, the human decision with the answers in its audit
  * row and approved intent, the started card of an execute that waits for its answers, and the free times a meeting ask
@@ -55,7 +55,7 @@ const edited = (change: (m: any) => void) => {
 const cap = (m: any, name: string) => m.capabilities.find((c: any) => c.name === name);
 const problemsOf = (change: (m: any) => void) => manifestProblems(edited(change), 'hr');
 
-describe('the loader holds asks and effect to their rules (D111)', () => {
+describe('the loader holds asks and effect to their rules (D112)', () => {
   test("the HR fixture's talk asks for a time, a place and a message, and names the read that says what it writes", () => {
     expect(manifestProblems(hrManifest, 'hr')).toEqual([]);
     const m = parseManifest(hrManifest, 'hr');
@@ -75,27 +75,27 @@ describe('the loader holds asks and effect to their rules (D111)', () => {
   test('asks belong to a propose or an execute that is not a follower', () => {
     expect(
       problemsOf(m => (cap(m, 'hr.whoIsOn').asks = [{ kind: 'text', property: 'x', label: 'X', required: false }])),
-    ).toContain('Capability hr.whoIsOn: asks belong to a propose or an execute (D111).');
+    ).toContain('Capability hr.whoIsOn: asks belong to a propose or an execute (D112).');
     expect(
       problemsOf(
         m => (cap(m, 'hr.proposeAbsence').asks = [{ kind: 'text', property: 'fact', label: 'X', required: false }]),
       ),
-    ).toContain('Capability hr.proposeAbsence: a follower is asked with a fact and asks the person nothing (D111).');
+    ).toContain('Capability hr.proposeAbsence: a follower is asked with a fact and asks the person nothing (D112).');
   });
   test('an ask names a property of the input, once, and never the entity key', () => {
     expect(problemsOf(m => cap(m, 'hr.bookTalk').asks.push({ ...cap(m, 'hr.bookTalk').asks[1] }))).toContain(
-      'Capability hr.bookTalk: ask "place" is asked twice (D111).',
+      'Capability hr.bookTalk: ask "place" is asked twice (D112).',
     );
     expect(
       problemsOf(m =>
         cap(m, 'hr.bookTalk').asks.push({ kind: 'text', property: 'room', label: 'Rum', required: false }),
       ),
-    ).toContain('Capability hr.bookTalk: ask "room" names no property of the input (D111).');
+    ).toContain('Capability hr.bookTalk: ask "room" names no property of the input (D112).');
     expect(
       problemsOf(
         m => (cap(m, 'hr.prepareAbsence').asks = [{ kind: 'text', property: 'person', label: 'Vem', required: true }]),
       ),
-    ).toContain('Capability hr.prepareAbsence: ask "person" names the input that takes the entity\'s key (D111).');
+    ).toContain('Capability hr.prepareAbsence: ask "person" names the input that takes the entity\'s key (D112).');
   });
   test("an ask's kind fits its property, and a property the input requires is a required ask", () => {
     const talk = (change: (input: any, asks: Ask[]) => void) =>
@@ -105,22 +105,22 @@ describe('the loader holds asks and effect to their rules (D111)', () => {
         cap(m, 'hr.bookTalkEffect').input = c.input;
       });
     expect(talk(input => (input.properties.when = { type: 'integer' }))).toContain(
-      'Capability hr.bookTalk: ask "when" is a meeting, which takes a string property without enum (format date-time when it declares one) (D111).',
+      'Capability hr.bookTalk: ask "when" is a meeting, which takes a string property without enum (format date-time when it declares one) (D112).',
     );
     expect(talk(input => (input.properties.when = { type: 'string', format: 'date' }))).toContain(
-      'Capability hr.bookTalk: ask "when" is a meeting, which takes a string property without enum (format date-time when it declares one) (D111).',
+      'Capability hr.bookTalk: ask "when" is a meeting, which takes a string property without enum (format date-time when it declares one) (D112).',
     );
     expect(talk(input => (input.properties.place = { type: 'string', enum: ['a', 'b'] }))).toContain(
-      'Capability hr.bookTalk: ask "place" is text, which takes a string property without enum or format (D111).',
+      'Capability hr.bookTalk: ask "place" is text, which takes a string property without enum or format (D112).',
     );
     expect(
       talk((_input, asks) => (asks[2] = { kind: 'date', property: 'message', label: 'Dag', required: false })),
     ).toEqual([]);
     expect(talk(input => (input.properties.message = { type: 'string', format: 'email' }))).toContain(
-      'Capability hr.bookTalk: ask "message" is long-text, which takes a string property without enum or format (D111).',
+      'Capability hr.bookTalk: ask "message" is long-text, which takes a string property without enum or format (D112).',
     );
     expect(talk(input => (input.required = ['refs', 'place']))).toContain(
-      'Capability hr.bookTalk: ask "place" is optional, but the input requires place (D111).',
+      'Capability hr.bookTalk: ask "place" is optional, but the input requires place (D112).',
     );
     // A choice names every value of the enum once, with its Swedish label.
     const choice = (options: Array<{ value: string; label: string }>) =>
@@ -147,7 +147,7 @@ describe('the loader holds asks and effect to their rules (D111)', () => {
       ],
     ])
       expect(choice(options)).toContain(
-        'Capability hr.decideLeave: ask "decision" is a choice, whose options name every value of the property\'s enum once (D111).',
+        'Capability hr.decideLeave: ask "decision" is a choice, whose options name every value of the property\'s enum once (D112).',
       );
   });
   test('an action about a person may require what it asks, and nothing else beside the key', () => {
@@ -160,24 +160,24 @@ describe('the loader holds asks and effect to their rules (D111)', () => {
     const from: Ask = { kind: 'date', property: 'from', label: 'Från', required: true };
     expect(asking(['person', 'from'], [from])).toEqual([]);
     expect(asking(['person', 'from'], [])).toContain(
-      "Capability hr.prepareAbsence: an action about an entity requires person and otherwise only what it asks, so the entity's menu can start it with the key and the person's answers; anything more is optional with a default the source chooses (D97, D111).",
+      "Capability hr.prepareAbsence: an action about an entity requires person and otherwise only what it asks, so the entity's menu can start it with the key and the person's answers; anything more is optional with a default the source chooses (D97, D112).",
     );
   });
   test('the effect is a read of this connector with the same input, never a tool, and belongs to an execute', () => {
     expect(problemsOf(m => (cap(m, 'hr.prepareAbsence').effect = 'hr.bookTalkEffect'))).toContain(
-      'Capability hr.prepareAbsence: effect belongs to an execute (D111).',
+      'Capability hr.prepareAbsence: effect belongs to an execute (D112).',
     );
     expect(problemsOf(m => (cap(m, 'hr.bookTalk').effect = 'hr.unbookTalk'))).toContain(
-      'Capability hr.bookTalk: effect names hr.unbookTalk, which is not a read of this connector (D111).',
+      'Capability hr.bookTalk: effect names hr.unbookTalk, which is not a read of this connector (D112).',
     );
     expect(problemsOf(m => (cap(m, 'hr.bookTalk').effect = 'hr.nothing'))).toContain(
-      'Capability hr.bookTalk: effect names hr.nothing, which is not a read of this connector (D111).',
+      'Capability hr.bookTalk: effect names hr.nothing, which is not a read of this connector (D112).',
     );
     expect(problemsOf(m => (cap(m, 'hr.bookTalkEffect').model = true))).toContain(
-      'Capability hr.bookTalk: effect hr.bookTalkEffect is offered to the model; an effect read declares model: false (D111).',
+      'Capability hr.bookTalk: effect hr.bookTalkEffect is offered to the model; an effect read declares model: false (D112).',
     );
     expect(problemsOf(m => delete cap(m, 'hr.bookTalkEffect').input.properties.message)).toContain(
-      'Capability hr.bookTalk: effect hr.bookTalkEffect takes another input than hr.bookTalk; it declares the same input schema (D111).',
+      'Capability hr.bookTalk: effect hr.bookTalkEffect takes another input than hr.bookTalk; it declares the same input schema (D112).',
     );
     // The same schema written in another key order is the same input.
     expect(
@@ -210,7 +210,7 @@ describe('the loader holds asks and effect to their rules (D111)', () => {
     );
     expect(registry.draftProblem('hr', { actions: [{ ...decide, input: { decision: 'approve' } }] })).toBeUndefined();
   });
-  test('the preview shows both halves of a write: where it starts, what it draws, who fills its input (D111 item 11)', () => {
+  test('the preview shows both halves of a write: where it starts, what it draws, who fills its input (D112 item 11)', () => {
     const preview = previewManifest(hrManifest, { id: 'hr' });
     expect(preview.ok).toBe(true);
     const book = preview.manifest!.capabilities.find(c => c.name === 'hr.bookTalk')!;
@@ -253,7 +253,7 @@ describe('the loader holds asks and effect to their rules (D111)', () => {
   });
 });
 
-describe("the person's answers (D111)", () => {
+describe("the person's answers (D112)", () => {
   const asks: Ask[] = [
     { kind: 'meeting', property: 'when', label: 'När', required: true, durationMinutes: 45 },
     { kind: 'text', property: 'place', label: 'Plats', required: false },
@@ -362,7 +362,7 @@ async function rehabCard(w: ReturnType<typeof world>, p = persona()) {
   };
 }
 
-describe('a work item whose write asks (D111)', () => {
+describe('a work item whose write asks (D112)', () => {
   test("the card's actions carry their path from the registered manifest, never from the draft", async () => {
     const w = world();
     const { rehab, leave } = await rehabCard(w);
@@ -492,7 +492,7 @@ describe('a work item whose write asks (D111)', () => {
   });
 });
 
-describe('an execute about a person that asks (D111)', () => {
+describe('an execute about a person that asks (D112)', () => {
   const talks: Connector = {
     id: 'talks2',
     kind: 'passthrough',
@@ -660,7 +660,7 @@ describe('an execute about a person that asks (D111)', () => {
   });
 });
 
-describe('free times for a meeting ask, from the person own calendar (D111)', () => {
+describe('free times for a meeting ask, from the person own calendar (D112)', () => {
   test('three times, one a day where possible, weekdays 09–16 with lunch free, never in the past', () => {
     const busy = [{ start: '2026-11-05T08:00:00.000Z', end: '2026-11-05T15:00:00.000Z' }];
     expect(

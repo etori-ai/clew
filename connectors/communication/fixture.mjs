@@ -1,6 +1,6 @@
 // The generic communication system's records (D52: a kind of system, no vendor). Generated from the day the fixture is
 // seeded: one notice that requires a read receipt, published yesterday morning, and one that does not. Refs are stable.
-// Each notice is also news (D111): the sender is the department that published it, as a reader knows it.
+// Each notice is also news (D112): the sender is the department that published it, as a reader knows it.
 
 export const dateIn = date => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm' }).format(date);
 export const addDays = (day, n) => new Date(Date.parse(day + 'T12:00:00Z') + n * 86400000).toISOString().slice(0, 10);

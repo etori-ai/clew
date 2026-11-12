@@ -71,7 +71,7 @@ type Props = {
   children: ReactNode;
 };
 /**
- * One shell for every surface (D31, D39, D88, D111 item 1), the `shell-side-nav` template: Astryx owns navigation,
+ * One shell for every surface (D31, D39, D88, D112 item 1), the `shell-side-nav` template: Astryx owns navigation,
  * overlays and focus restoration. The rail is collapsible and resizable. Without a header connector the rail carries
  * the installation's identity: its heading is the installation's logo and name (D98) with the reminder bell, and the
  * person is the last row at its foot, opening the settings (D39). An installation whose header connector answers (D88)
@@ -97,7 +97,7 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
   const threadsQ = useQuery(threadsQuery);
   // The header is public and the same for everyone; a save on Sidhuvud invalidates it for the administrator at once.
   const headerQ = useQuery(headerQuery);
-  // A header connector's answer is the band (D88); Clew's default (no source) is no band at all (D111 item 1).
+  // A header connector's answer is the band (D88); Clew's default (no source) is no band at all (D112 item 1).
   const shared = headerQ.data?.source ? headerQ.data : null;
   const here = window.location.origin + location.pathname + location.search;
   const selected = shared ? selectedItem(shared.menu, here) : null;
@@ -256,7 +256,7 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
         }
         sideNav={
           // Collapsible as the template has it. Not resizable: Astryx draws the rail's resize handle beside the navigation
-          // landmark, outside every landmark (axe: region), so the rail keeps its own width (D111's gaps).
+          // landmark, outside every landmark (axe: region), so the rail keeps its own width (D112's gaps).
           <SideNav
             collapsible
             header={heading}

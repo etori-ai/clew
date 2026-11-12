@@ -25,7 +25,7 @@ for (const viewport of [desktop, narrow])
   test(`the bell beside the installation's name works by keyboard at ${viewport.width}px`, async ({ page, api: _ }) => {
     await page.setViewportSize(viewport);
     await open(page, '/');
-    // Without a header connector (D111 item 1) the rail's heading is the installation's name with the bell; on a phone
+    // Without a header connector (D112 item 1) the rail's heading is the installation's name with the bell; on a phone
     // the shell draws that heading as its bar.
     const header =
       viewport === narrow ? page.getByRole('banner') : page.getByRole('navigation', { name: 'Sidonavigering' });
@@ -50,7 +50,7 @@ for (const viewport of [desktop, narrow])
     api.admin = true;
     await page.setViewportSize(viewport);
     await open(page, '/');
-    // Without a header connector the person is the rail's last row, under Administration (D111 item 1, board Sidebar);
+    // Without a header connector the person is the rail's last row, under Administration (D112 item 1, board Sidebar);
     // on a phone in the drawer, which stays under the settings so Escape gives the focus back to the row.
     const nav = await openNav(page);
     const account = nav.getByRole('button', { name: 'Testa Testsson', exact: true });
@@ -101,7 +101,7 @@ test('a reminder opens its work item in Att göra’s reading pane, with the foc
   await expect(list).toBeVisible();
   await expectNoAxeViolations(page);
   await list.getByRole('link', { name: /Ledighetsansökan/ }).click();
-  // On Att göra the card is the work item in the pane (D111), with the queue's own address kept around it.
+  // On Att göra the card is the work item in the pane (D112), with the queue's own address kept around it.
   await expect(page).toHaveURL('/todo?area=budget&item=ledighet');
   await expect(list).not.toBeVisible();
   const pane = page.getByRole('complementary', { name: 'Valt ärende' });
@@ -129,7 +129,7 @@ for (const [source, heading] of [['/calendar', 'Vecka']] as const)
     await expect(list).toBeVisible();
     await expectNoAxeViolations(page);
     await list.getByRole('link', { name: /Ledighetsansökan/ }).click();
-    // The card opens over the page the person is on, with that page's own address kept (D110 rule 2): on Kalender in
+    // The card opens over the page the person is on, with that page's own address kept (D111 rule 2): on Kalender in
     // the shell's drawer, on Hem in its panel, over the page at this width, and the focus is in it.
     await expect(page).toHaveURL(`${source}${source.includes('?') ? '&' : '?'}card=ledighet`);
     await expect(list).not.toBeVisible();
@@ -335,7 +335,7 @@ test.describe('the panel over a page that has none of its own', () => {
     const drawer = page.getByRole('dialog', { name: 'Ärende' });
     await expect(drawer.locator('#card-fakturor').getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
     await expect.poll(() => drawer.evaluate(el => el.contains(document.activeElement))).toBe(true);
-    // The card has its own box in the panel (D111 item 7), so it offers no way into another one.
+    // The card has its own box in the panel (D112 item 7), so it offers no way into another one.
     await expect(drawer.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
     // Kalender stays the page under it: its heading, its title and its path.
     await expect(week).toBeAttached();
@@ -346,7 +346,7 @@ test.describe('the panel over a page that has none of its own', () => {
     await expect(page).toHaveURL(/\/calendar$/);
     await expect(opener).toBeFocused();
     await expect(week).toBeVisible();
-    // On Att göra the card is the work item in the reading pane (D111), drawn once and in no drawer.
+    // On Att göra the card is the work item in the reading pane (D112), drawn once and in no drawer.
     await page.evaluate(() => {
       window.history.pushState(null, '', '/todo?item=fakturor');
       window.dispatchEvent(new PopStateEvent('popstate'));
@@ -483,7 +483,7 @@ test.describe('one panel on every page, from one width', () => {
 });
 
 /**
- * The rail folded to its icons (D111 item 1, board Sidebar, the `shell-side-nav` template): Ny fråga and Sök are rows
+ * The rail folded to its icons (D112 item 1, board Sidebar, the `shell-side-nav` template): Ny fråga and Sök are rows
  * with icons like every other row, so the rail's own fold draws them as icons named by their labels, never cut at its
  * edge, and the keyboard reaches each in turn.
  */

@@ -15,7 +15,7 @@ test.describe('appearance (D39)', () => {
   test('follows the computer until the person chooses, and the choice is kept', async ({ page, api: _ }) => {
     await open(page, '/');
     await expect.poll(() => dark(page)).toBe(true);
-    // Without a header connector the person is the rail's last row, in the drawer on a phone (D111 item 1).
+    // Without a header connector the person is the rail's last row, in the drawer on a phone (D112 item 1).
     await (await openNav(page)).getByRole('button', { name: 'Testa Testsson', exact: true }).click();
     await expect(page.getByRole('radio', { name: 'Samma som datorn', exact: true })).toBeChecked();
     await page.getByRole('radio', { name: 'Ljust', exact: true }).check();

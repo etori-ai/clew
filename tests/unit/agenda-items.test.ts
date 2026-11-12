@@ -70,7 +70,7 @@ describe('agendaItems', () => {
     expect(items[0]!.meta).toBeUndefined();
     expect(items[1]).toMatchObject({ title: 'Ledigt till 17:00', meta: LONGEST_GAP });
   });
-  test('the time a person is choosing in the action dialog is their proposal, without the assistant mark (D111)', () => {
+  test('the time a person is choosing in the action dialog is their proposal, without the assistant mark (D112)', () => {
     const items = agendaItems([event('e1', 'APT', '2026-11-05T14:00:00Z', '2026-11-05T15:30:00Z')], [], [], {
       start: '2026-11-05T12:15:00Z',
       end: '2026-11-05T13:00:00Z',

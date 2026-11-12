@@ -1,10 +1,10 @@
 import type { Locator, Page } from '@playwright/test';
 import { desktop, expect, open, phone, test } from './support';
 
-/** Avfärda the way a person does it (D48): from Fler val on the work item, opened from its row in Att göra (D111). */
+/** Avfärda the way a person does it (D48): from Fler val on the work item, opened from its row in Att göra (D112). */
 async function dismiss(page: Page, row: Locator) {
   await row.getByRole('link').click();
-  // The work item in the pane beside the queue, or its page alone on a phone (D111 items 3 and 12).
+  // The work item in the pane beside the queue, or its page alone on a phone (D112 items 3 and 12).
   await page.getByRole('main').getByRole('button', { name: 'Fler val' }).first().click();
   await page.getByRole('menuitem', { name: 'Avfärda · inte aktuellt' }).click();
 }
@@ -25,7 +25,7 @@ test.describe("a card shows the person's own action at once (D64)", () => {
     await expect(omtanke).toHaveCount(0, { timeout: 700 });
     // Focus has moved on (2.4.3) and the toast with Ångra is the way back, as before.
     await expect(page.locator(':focus')).toHaveCount(1);
-    // The item leaves the pane with its row (D111: the queue lets go of it), so the focus lands on the row after it.
+    // The item leaves the pane with its row (D112: the queue lets go of it), so the focus lands on the row after it.
     await expect(page.getByRole('complementary', { name: 'Valt ärende' })).toHaveCount(0);
     await expect(row(page, 'ledighet').getByRole('link')).toBeFocused();
     // The toast's words are also in Astryx's live region, so the toast is read from its own region.
@@ -50,7 +50,7 @@ test.describe("a card shows the person's own action at once (D64)", () => {
   });
 });
 
-test.describe('on a phone the work item is alone on the page (D111 item 12)', () => {
+test.describe('on a phone the work item is alone on the page (D112 item 12)', () => {
   test.use({ viewport: phone, hasTouch: true, isMobile: true });
 
   test('Avfärda leads back to the list without the item, and the focus lands on the row after it', async ({

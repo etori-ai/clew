@@ -32,7 +32,7 @@ export interface StartContext {
   items?: ThreadItem[];
   /** What the action is about, for the audit row (D97: `{ entity, key }`). */
   about?: Record<string, unknown>;
-  /** The person's answers to a propose's asks (D111), already in the input: the audit row names them. */
+  /** The person's answers to a propose's asks (D112), already in the input: the audit row names them. */
   asked?: Record<string, string>;
 }
 
@@ -46,7 +46,7 @@ export function startedCards({ store, registry, run, digest, clock, ids }: Start
   ): Promise<{ threadId: string }> {
     await persona.authorize();
     let found: Awaited<ReturnType<typeof registry.validate>>;
-    // An execute's asks are answered when the person decides on its card (D111): until then the input may lack them.
+    // An execute's asks are answered when the person decides on its card (D112): until then the input may lack them.
     const declared = registry.find(capability)?.capability;
     const pending = declared?.kind === 'execute' ? pendingAsks(declared, Object.keys(input)) : [];
     try {

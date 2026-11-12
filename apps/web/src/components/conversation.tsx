@@ -54,7 +54,7 @@ import { requestAction } from '../action-requests';
 import { valueText, type ActionStep } from '../action-path';
 import { executionStatus } from '../execution-status';
 
-/** An action the assistant filled in (D111 item 8), as the transcript keeps it. */
+/** An action the assistant filled in (D112 item 8), as the transcript keeps it. */
 export type ActionDraftRef = Draft & { kind: 'action'; actionId: string };
 const isActionDraft = (draft: Draft | undefined): draft is ActionDraftRef =>
   draft?.kind === 'action' && !!draft.actionId;
@@ -62,9 +62,9 @@ const isActionDraft = (draft: Draft | undefined): draft is ActionDraftRef =>
 const verbOf = (label: string) => (label.split(' ')[0] ?? label).toLocaleLowerCase('sv-SE');
 
 /**
- * The assistant's draft of an action (D111 item 8, boards Assistant and Calendar): the action's name, an "Utkast"
+ * The assistant's draft of an action (D112 item 8, boards Assistant and Calendar): the action's name, an "Utkast"
  * badge, the filled-in values as a short list, and two buttons. "Granska och <verb>" opens the action's own dialog at its
- * last step with these values, "Ändra" at its first; both are the dialog the action's button opens (D111 item 10), on
+ * last step with these values, "Ändra" at its first; both are the dialog the action's button opens (D112 item 10), on
  * the work item, which sends through the human decision. Nothing is sent from here. The draft reads the work item from
  * the same cache as every screen (D33), so once the person has sent it the draft says what came back, and a newer draft
  * of the same action marks this one as replaced.
@@ -290,13 +290,13 @@ export function Transcript({
   renderCard: (thread: Thread) => ReactNode;
   viewHref?: (view: ViewRef) => string;
   /**
-   * `panel`: under the thing in the panel (D111 item 7). The messages start at the top under the thing, and what belongs
+   * `panel`: under the thing in the panel (D112 item 7). The messages start at the top under the thing, and what belongs
    * to a conversation's own page is left out: the questions to follow up with and the line about Esc and Samtal.
    */
   place?: 'page' | 'panel';
   /** The ref of the thing the panel is about: not drawn again as a token above each question. */
   subject?: string[] | undefined;
-  /** A draft's button was pressed: the host makes sure the work item is drawn, so its dialog can open (D111 item 8). */
+  /** A draft's button was pressed: the host makes sure the work item is drawn, so its dialog can open (D112 item 8). */
   onDraft?: (draft: ActionDraftRef) => void;
 }) {
   const talk = useConversation();
@@ -323,7 +323,7 @@ export function Transcript({
   // The thing the panel is about is named in its header: its chip is not repeated above every question.
   const tokens = (chips: { ref: string; label: string }[] | undefined) =>
     (chips ?? []).filter(c => !subject?.includes(c.ref));
-  // A draft is replaced by a newer draft of the same action on the same item further down (D111 item 8).
+  // A draft is replaced by a newer draft of the same action on the same item further down (D112 item 8).
   const replaced = (i: number, draft: ActionDraftRef) =>
     messages
       .slice(i + 1)

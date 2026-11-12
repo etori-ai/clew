@@ -89,7 +89,7 @@ export const fieldLabels: Record<string, string> = {
   reminders: 'Påminnelser',
   room: 'Rum',
   email: 'E-post',
-  // The news profile (D111): a news row and one item's read.
+  // The news profile (D112): a news row and one item's read.
   sender: 'Avsändare',
   publishedAt: 'Publicerad',
   body: 'Text',

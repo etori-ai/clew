@@ -42,7 +42,7 @@ import { DeclaredView, FieldCell, FieldValue, fieldText, isBadged } from './view
 import { WorkList, WorkRow } from './work-row';
 
 /**
- * The opened person's or unit's content (D97 item 5, D111 item 5, board Person): "Behöver dig" with the reader's work
+ * The opened person's or unit's content (D97 item 5, D112 item 5, board Person): "Behöver dig" with the reader's work
  * items about them, then one section per source that is about them, each named with its source and each read on its
  * own, so a slow or silent source never holds the others. A source that answered without a row says nothing (no row
  * means "none" or "not allowed"); one that did not answer says so in its own place with a way to ask again. The person's
@@ -338,7 +338,7 @@ export function SourceBadge({ source }: { source: EntitySource }) {
 }
 
 /**
- * A source's own page in Clew for the entity (D95, D110 rule 5: "Öppna samtalet" over the page, "Visa i Personal"), the
+ * A source's own page in Clew for the entity (D95, D111 rule 5: "Öppna samtalet" over the page, "Visa i Personal"), the
  * one way into it, at the end of its section's heading line. A link, never an action.
  */
 export function SourceWay({
@@ -403,7 +403,7 @@ export function UnitSourceBody({ answer }: { answer: SectionAnswer }) {
 /**
  * "Behöver dig" on a person's or a unit's page (board Person): the reader's work items about them, each the one row a
  * work item has everywhere (`WorkRow`: its state, title, why, when it is due, its source), opening beside the page as a
- * card does (D110 rules 2 and 3), the page's address kept. The row of the item open beside the page is the current one.
+ * card does (D111 rules 2 and 3), the page's address kept. The row of the item open beside the page is the current one.
  * An item the stream does not hold (not read yet, or past its history) keeps a plain row with its title and source.
  */
 export function NeedsYouRows({ cards }: { cards: EntityCard[] }) {
@@ -457,7 +457,7 @@ export function NeedsYouRows({ cards }: { cards: EntityCard[] }) {
 }
 
 /**
- * The opened person's or unit's actions in the page's header (D111 item 5, board Person), every one of them: the first
+ * The opened person's or unit's actions in the page's header (D112 item 5, board Person), every one of them: the first
  * two as buttons, the rest under "Fler" grouped by the system they act in, as the row menu on Personal is (artboard
  * A3). On a phone one button, "Åtgärder", the width of the column, holds them all. An action starts on the server and
  * its work item opens beside the page it was started on (`entity-actions.ts`); a source's refusal is said aloud and

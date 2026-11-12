@@ -48,7 +48,7 @@ test.describe('screens', () => {
     await page.setViewportSize(desktop);
     await open(page, `/calendar?date=${NEXT_WEEK}`);
     await page.locator('.clew-cal-event-proposal').first().click();
-    // The proposal opens in the panel (D111 item 9); its "Flytta …" opens the move dialog.
+    // The proposal opens in the panel (D112 item 9); its "Flytta …" opens the move dialog.
     await page.getByRole('dialog', { name: 'Utvecklingssamtal' }).getByRole('button', { name: 'Flytta …' }).click();
     await page.waitForTimeout(500);
     await page.screenshot({ path: out('proposal-move-1280') });

@@ -18,7 +18,7 @@ import {
   withoutRead,
 } from '../src/panel-address';
 
-describe('a card opens over the page the person is on (D110 rule 2)', () => {
+describe('a card opens over the page the person is on (D111 rule 2)', () => {
   test('the page keeps its own address, and the card is added to it', () => {
     expect(withCard('/people/johan', '?section=needs-you&from=%2Fstaff', 'samtal-svar')).toBe(
       '/people/johan?section=needs-you&from=%2Fstaff&card=samtal-svar',
@@ -35,12 +35,12 @@ describe('a card opens over the page the person is on (D110 rule 2)', () => {
       '/people/johan?section=x&from=%2Fstaff',
     );
   });
-  test('from the bell, a toast or the search: over the page, letting go of a review or a talk over it (D110 rule 5, D111)', () => {
+  test('from the bell, a toast or the search: over the page, letting go of a review or a talk over it (D111 rule 5, D112)', () => {
     expect(cardOverPage('/admin/connectors', '', 'ledighet')).toBe('/admin/connectors?card=ledighet');
     expect(
       cardOverPage('/staff', '?show=clew.talkPeople&card=samtal&open-card=samtal&open-action=pattern', 'ledighet'),
     ).toBe('/staff?show=clew.talkPeople&card=ledighet');
-    // Hem holds no card since D111: the item is the work item in Att göra's pane, and on Att göra it takes the pane.
+    // Hem holds no card since D112: the item is the work item in Att göra's pane, and on Att göra it takes the pane.
     expect(cardOverPage('/', '?tab=done&card=fakturor&review=fakturor&step=2', 'ledighet')).toBe('/todo?item=ledighet');
     expect(cardOverPage('/todo', '?tab=waiting&item=fakturor&review=fakturor&step=2', 'ledighet')).toBe(
       '/todo?tab=waiting&item=ledighet',
@@ -57,7 +57,7 @@ describe('a card opens over the page the person is on (D110 rule 2)', () => {
   });
 });
 
-describe("a row's Granska N opens its card beside the page and the review over it (D110 rule 5)", () => {
+describe("a row's Granska N opens its card beside the page and the review over it (D111 rule 5)", () => {
   test('the card in the panel, as the row’s title opens it, and the review of that card', () => {
     expect(reviewOverCard('/', '', 'fakturor')).toBe('/?card=fakturor&review=fakturor');
     expect(reviewOverCard('/', '?tab=done&area=ekonomi', 'fakturor')).toBe(
@@ -86,7 +86,7 @@ describe('a move within the page keeps what is open beside it', () => {
   });
 });
 
-describe('a card’s own read unfolds inside the card (D110, amended 2026-11-11)', () => {
+describe('a card’s own read unfolds inside the card (D111, amended 2026-11-11)', () => {
   test('the read is the card’s state, not a thing in the panel: the panel still holds the card', () => {
     const q = new URLSearchParams('?show=x&card=t1&open-card=t1&open-action=pattern');
     expect(panelOf(q)).toEqual({ kind: 'card', threadId: 't1' });
@@ -133,7 +133,7 @@ describe('a card’s own read unfolds inside the card (D110, amended 2026-11-11)
   });
 });
 
-describe("a page's own thing in the panel (D111 items 7 and 9)", () => {
+describe("a page's own thing in the panel (D112 items 7 and 9)", () => {
   test('Fråga Clew makes the page the thing: it takes the place of what the panel held and lets go of what lay over it', () => {
     expect(withAsk('/items/omtanke', '?from=%2Ftodo')).toBe('/items/omtanke?from=%2Ftodo&ask=1');
     expect(withAsk('/staff', '?show=talks&card=c1&open-card=c1&open-action=pattern&review=c1')).toBe(

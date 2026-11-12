@@ -44,13 +44,13 @@ export interface EntityActionStart {
   /** The source's Swedish sentence, shown beside what started it until the next start. */
   error: string | null;
   busy: boolean;
-  /** The action dialog of a propose that asks (D111 item 10); the page renders it wherever it renders the buttons. */
+  /** The action dialog of a propose that asks (D112 item 10); the page renders it wherever it renders the buttons. */
   dialog: ReactNode;
 }
 /**
  * Starting an action about an entity (D97, D8): the server starts it on the entity's key without the model and answers
  * the card the person decides on; nothing reaches the source's write before that decision. The card opens beside the
- * page the action was started on (D110 rule 4): that page's address with the card in its panel (`withCard`), beside the
+ * page the action was started on (D111 rule 4): that page's address with the card in its panel (`withCard`), beside the
  * page's column where both fit and over it where they do not, so starting something never takes the person away and
  * closing the card leaves the page as it was, with its lens, its section and a person's cards listed beside it. The
  * address is the page's when the start has answered, and the focus lands on the card's heading as on every card opened
@@ -64,7 +64,7 @@ export function useEntityAction(): EntityActionStart {
   here.current = location;
   const announce = useAnnounce();
   const { start, busy, error, reset } = useEntityStart();
-  // A propose that asks is filled in before it starts (D111 item 10): its dialog, and what the person typed per action
+  // A propose that asks is filled in before it starts (D112 item 10): its dialog, and what the person typed per action
   // and entity while the page stays, so a closed and reopened dialog keeps it.
   const [asking, setAsking] = useState<{ action: EntityAction; subject: ActionSubject; open: boolean } | null>(null);
   const [drafts, setDrafts] = useState<Record<string, AskValues>>({});
@@ -81,7 +81,7 @@ export function useEntityAction(): EntityActionStart {
         started => {
           if (!started) return;
           if ('threadId' in started) {
-            // An execute's answers are given at its decision (D111): its work item opens beside the page with the dialog
+            // An execute's answers are given at its decision (D112): its work item opens beside the page with the dialog
             // over it, on the item's own button.
             if (action.kind === 'execute' && opensDialog(action))
               requestAction({ threadId: started.threadId, actionId: 'decide' });

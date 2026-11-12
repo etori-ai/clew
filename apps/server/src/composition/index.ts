@@ -104,7 +104,7 @@ export const threads = {
 };
 const meetingFailed = logPort('asks', 'warn');
 /**
- * What a write's dialog draws for a meeting ask (D111): the calendar module's reads of the person's own calendar, through
+ * What a write's dialog draws for a meeting ask (D112): the calendar module's reads of the person's own calendar, through
  * the registry as the person (D20), so its audience, switch and scope hold. A person without the calendar, or a calendar
  * that does not answer, gets no suggestions and no day; the dialog still offers "Annan tid".
  */

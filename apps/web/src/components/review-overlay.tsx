@@ -72,7 +72,7 @@ const REVIEW_WIDTH = 1040;
 
 /**
  * The review one row at a time (D70 item 2) as an overlay over the page it was opened on (D73, amended 2026-11-07 and
- * 2026-11-11 under D110 rule 5): an Astryx `Drawer` from the end edge, and on a phone a tall `BottomSheet`, stacked over
+ * 2026-11-11 under D111 rule 5): an Astryx `Drawer` from the end edge, and on a phone a tall `BottomSheet`, stacked over
  * the card's sheet where the card is one, Astryx's drill-in (D73, second amendment). Mounted once for every page of the
  * session, after the page in the tree (`main.tsx`), so a cold open stacks it over the card the same update opens: the
  * page's own drawer, Hem's sheet or the shell's drawer over Kalender (Astryx: sibling overlays opened together stack in
@@ -846,7 +846,7 @@ function Review({
                       clickAction={() =>
                         run(async () => {
                           const next = await api.retryRejected(thread.id);
-                          // The new card's review in this one's place, over the same page (D80, D110 rule 5).
+                          // The new card's review in this one's place, over the same page (D80, D111 rule 5).
                           navigate(withRetriedReview(pathname, search, thread.id, next.id));
                           return next;
                         })

@@ -21,7 +21,7 @@ import { PanelBody, usePanel, type PanelFrame } from './panel';
 import { Unfold } from './unfold';
 import type { ThingSubject } from './conversation-context';
 
-/** A work item as what the box beside it asks about (D111 item 7): its chip, and its card beside the conversation's page. */
+/** A work item as what the box beside it asks about (D112 item 7): its chip, and its card beside the conversation's page. */
 export const itemSubject = (thread: Pick<Thread, 'id' | 'title'>): ThingSubject => ({
   key: 'thread:' + thread.id,
   label: 'ärendet',
@@ -41,7 +41,7 @@ export const viewSubject = (view: {
   search: viewSearch(view),
 });
 /**
- * A thing a page holds in the panel itself (D111 items 7 and 9): Kalender's event or proposal (`entry` in the address),
+ * A thing a page holds in the panel itself (D112 items 7 and 9): Kalender's event or proposal (`entry` in the address),
  * or the page asked about with "Fråga Clew" (`ask=1`). The page draws it; the panel gives it the header, the box and the
  * conversation like any other thing.
  */
@@ -135,9 +135,9 @@ export interface PagePanelOptions {
   onChange?: (thread: Thread) => void;
   /** An entry in a day view (D32) was chosen: the page opens its dialog over the panel. */
   onOpenItem?: (item: AgendaItem, dayItems: AgendaItem[]) => void;
-  /** The page itself as the thing, when "Fråga Clew" is pressed in its header (`ask=1`, D111 item 7). */
+  /** The page itself as the thing, when "Fråga Clew" is pressed in its header (`ask=1`, D112 item 7). */
   pageThing?: OwnThing | null;
-  /** The thing the page holds open in the panel by its own address (`entry`: Kalender's event or proposal, D111 item 9). */
+  /** The thing the page holds open in the panel by its own address (`entry`: Kalender's event or proposal, D112 item 9). */
   entry?: OwnThing | null;
   /** Whether a thing gets the box under it; false on a conversation's own page (`usePanel`'s `asks`). */
   asks?: boolean;
@@ -257,7 +257,7 @@ function usePanelOnPage({
         address: shown.address,
         wide: shown.spec?.kind === 'table',
         onClose: close,
-        // What the box beside it asks about: the view, by its capability (D111 item 7).
+        // What the box beside it asks about: the view, by its capability (D112 item 7).
         subject: viewSubject({ capability: shown.capability, title: shown.title, input: shown.input }),
         // A view has no buttons of its own to keep: while a conversation about it runs, the whole view is behind "Visa allt".
         body: (inline, folded) => (
@@ -307,7 +307,7 @@ function usePanelOnPage({
       address,
       wide: true,
       onClose: () => navigate(withoutRead(pathname, search), { replace: true }),
-      // The read is the work item's: the box beside it asks about the item (D111 item 7).
+      // The read is the work item's: the box beside it asks about the item (D112 item 7).
       ...(readOfThread ? { subject: itemSubject(readOfThread) } : {}),
       /* A card's read has no controls: its input is the card's. Its rows' own views are links, as in any view. */
       body: (inline, folded) => (
@@ -337,7 +337,7 @@ function usePanelOnPage({
         address,
         onClose: close,
         subject: itemSubject(thread),
-        // The item's buttons, Inte nu among them, are the item's own (D111 item 4): the header holds the small title and ✕.
+        // The item's buttons, Inte nu among them, are the item's own (D112 item 4): the header holds the small title and ✕.
         // While a conversation about it runs, its main column folds under "Visa allt" and the buttons stay (item 7).
         body: (_inline, folded) =>
           cardBody(thread, { place: 'panel', compact: true, level: 3, onChange: changedCard, folded }),
@@ -361,7 +361,7 @@ function usePanelOnPage({
         body: () => <Text as="p">Ärendet finns inte längre bland dina ärenden.</Text>,
       };
   }
-  // A thing the page holds itself (D111 items 7 and 9): its calendar entry, or the page asked about with "Fråga Clew".
+  // A thing the page holds itself (D112 items 7 and 9): its calendar entry, or the page asked about with "Fråga Clew".
   const own = !frame ? (ref?.kind === 'entry' ? entry : ref?.kind === 'page' ? pageThing : null) : null;
   if (own)
     frame = {
@@ -434,7 +434,7 @@ export function PanelOverPage() {
 }
 function Overlay() {
   // Over the page only: Administration's pages grow with the shell's scroll and have no narrow layout to give way to
-  // (D110, amended 2026-11-11).
+  // (D111, amended 2026-11-11).
   const slot = usePanelOnPage({ overlayOnly: true });
   return <>{slot.overlay}</>;
 }

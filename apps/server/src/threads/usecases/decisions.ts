@@ -26,7 +26,7 @@ export interface CardDecisionsDeps {
       payload: unknown;
       compensates?: string;
       presentation: { threadId: string; version: string; actionId: string };
-      /** The person's answers to the asks (D111), already in `payload`; the audit row names them. */
+      /** The person's answers to the asks (D112), already in `payload`; the audit row names them. */
       asked?: Record<string, string>;
     },
   ): Promise<unknown>;
@@ -40,7 +40,7 @@ export function cardDecisions({ read, registry, run, approve, clock, documentPre
     return t;
   };
   /**
-   * The input an action on a card runs with, as the person decides it (D111): the action's own input, the selected
+   * The input an action on a card runs with, as the person decides it (D112): the action's own input, the selected
    * rows, the review's evidence and the answers to the asks the action does not already fill. An answer to anything
    * else, a required ask left empty or an answer that does not fit its kind is refused here, before anything runs.
    */
@@ -60,7 +60,7 @@ export function cardDecisions({ read, registry, run, approve, clock, documentPre
     const selected = refs ?? t.items.filter(i => i.selected).map(i => i.ref);
     if (action.usesItems && selected.some(ref => !t.items.some(i => i.ref === ref)))
       throw new InputError('Något val är inte längre aktuellt.');
-    // The asks come from the registered declaration, never from the card (D111).
+    // The asks come from the registered declaration, never from the card (D112).
     const asks = found.capability.kind === 'read' ? [] : asksFor(found.capability, givenBy(found.capability, action));
     const answered = answersOf(asks, values, clock().toISOString(), found.capability.input);
     if ('problem' in answered) throw new InputError(answered.problem);
@@ -108,13 +108,13 @@ export function cardDecisions({ read, registry, run, approve, clock, documentPre
         ...(Object.keys(asked).length ? { asked } : {}),
       });
     } catch (error) {
-      // An approved input the capability's schema refuses (the answers merged in, D111) is the person's to correct.
+      // An approved input the capability's schema refuses (the answers merged in, D112) is the person's to correct.
       throw error instanceof CapabilityError ? new InputError(error.message) : error;
     }
     return { kind: 'execute' as const, thread: await required(persona, id) };
   }
   /**
-   * What an execute declares it will do (D111), for exactly the input the person would approve: its `effect` read of the
+   * What an execute declares it will do (D112), for exactly the input the person would approve: its `effect` read of the
    * same connector, run as the person, its answer checked against the contract. A read: nothing is written and no audit
    * row is kept. Undefined input problems are the person's, in Swedish.
    */
@@ -137,7 +137,7 @@ export function cardDecisions({ read, registry, run, approve, clock, documentPre
       throw new InputError(`${found.connector.source} kunde inte säga vad som händer.`);
     return { ...output, source: found.connector.source };
   }
-  /** "Det här händer" for an action on a card (D111): the input `act` would approve with these rows and answers. */
+  /** "Det här händer" for an action on a card (D112): the input `act` would approve with these rows and answers. */
   async function effect(
     persona: AuthenticatedContext,
     id: string,

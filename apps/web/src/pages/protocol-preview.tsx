@@ -434,7 +434,7 @@ const PathHeading = ({ children }: { children: string }) => (
 );
 
 /**
- * Both halves of one write (D111 item 11, board Entrypoints), from the dry run's `path`: where a person can start it, the
+ * Both halves of one write (D112 item 11, board Entrypoints), from the dry run's `path`: where a person can start it, the
  * steps of the one path its declaration draws, and each property of its input as the person will meet it. The board's
  * row for actions on a view's rows is a proposal, not the protocol, and is not drawn.
  */

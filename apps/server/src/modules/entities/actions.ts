@@ -15,7 +15,7 @@ import { InputError } from '../../context';
  * An action about an entity, started from its menu without the model (D97, D8). The action must be one the opened entity
  * offers the reader (an about action of that kind they may call), on a key inside the rule of who may be asked about;
  * anything else is undefined, which the route answers 404 as it answers every other address the reader may not reach.
- * The action gets the key in its `param`, and a propose that asks gets the person's answers (D111); an execute's asks are
+ * The action gets the key in its `param`, and a propose that asks gets the person's answers (D112); an execute's asks are
  * answered when the person decides on its card. It becomes a card through the stream: a propose's draft, or an execute
  * behind its human decision. Nothing is written to a source here, and nothing is kept about the entity beyond the card.
  */
@@ -43,7 +43,7 @@ export interface EntityActionDeps {
     },
   ): Promise<EntityActionStarted>;
   /**
-   * What an execute would write for this input (D111, composition: the stream's `effectFor`): its effect read, run as the
+   * What an execute would write for this input (D112, composition: the stream's `effectFor`): its effect read, run as the
    * person; nothing is written. Throws in Swedish when it has none or the source refuses.
    */
   effect(
@@ -62,7 +62,7 @@ export function entityActionUsecases(deps: EntityActionDeps) {
     const action = opened?.actions.find(a => a.capability === capability);
     return opened && action ? { entity: opened.entity, action } : undefined;
   }
-  /** The person's answers to the asks they meet on this action (D111), refused in Swedish when they do not fit. */
+  /** The person's answers to the asks they meet on this action (D112), refused in Swedish when they do not fit. */
   function answered(action: EntityAction, values: AskValues | undefined, now: string) {
     const result = answersOf(action.path?.asks ?? [], values, now);
     if ('problem' in result) throw new InputError(result.problem);
@@ -79,7 +79,7 @@ export function entityActionUsecases(deps: EntityActionDeps) {
     const found = await offered(persona, kind, key, capability);
     if (!found) return undefined;
     const { entity, action } = found;
-    // An execute's asks are answered on its card, when the person decides (D111): nothing of them is taken here.
+    // An execute's asks are answered on its card, when the person decides (D112): nothing of them is taken here.
     if (action.kind === 'execute' && values && Object.keys(values).length)
       throw new InputError('Svaren ges när du beslutar på ärendet.');
     const asked = action.kind === 'propose' ? answered(action, values, deps.clock().toISOString()) : {};
@@ -110,7 +110,7 @@ export function entityActionUsecases(deps: EntityActionDeps) {
     );
   }
   /**
-   * "Det här händer" for an execute about the entity behind `key` (D111), before any card exists: its effect read with the
+   * "Det här händer" for an execute about the entity behind `key` (D112), before any card exists: its effect read with the
    * key and the person's answers, as the person; undefined when the reader may not start it. Nothing is written.
    */
   async function effect(

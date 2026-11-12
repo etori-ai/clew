@@ -23,7 +23,7 @@ import { mobileQuery, shortQuery } from '../media';
 import { narrowItemQuery } from './work-item';
 
 /**
- * A person's or a unit's page (D111 item 5, board Person): the work item's page shape (`work-item-detail`,
+ * A person's or a unit's page (D112 item 5, board Person): the work item's page shape (`work-item-detail`,
  * `WorkItemPage`) drawn for an entity. The header holds the way back with where the entity stands, the avatar, the name
  * and its line, and the actions with "Fråga Clew" at the end of the name's line (on a phone "Åtgärder" under it, the
  * width of the column). The main column holds every section one under the other, each with its heading, the source's

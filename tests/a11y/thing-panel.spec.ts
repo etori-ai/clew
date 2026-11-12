@@ -16,7 +16,7 @@ import { People } from './person-data';
 import { Units } from './unit-data';
 
 /**
- * One panel, always about a thing (D111 item 7, boards Calendar and Assistant): on top the thing, under it the
+ * One panel, always about a thing (D112 item 7, boards Calendar and Assistant): on top the thing, under it the
  * conversation about it, at the foot the box, while a model is configured (D8: without one the panel is the thing alone).
  * Asking starts or continues one conversation whose subject is the thing, drawn in the panel with the Chat family; while
  * it runs the thing's facts fold under "Visa allt" and its buttons stay. "Fråga Clew" in a page's header makes the page
@@ -71,7 +71,7 @@ test.describe('without a model the panel is the thing alone (D8)', () => {
   });
 });
 
-test.describe('the box beside a thing (D111 item 7)', () => {
+test.describe('the box beside a thing (D112 item 7)', () => {
   test.use({ viewport: WIDE });
 
   test('with a model the box stands at the foot of the panel; opening the thing sends nothing and leaves the box alone', async ({
@@ -293,7 +293,7 @@ test.describe('Fråga Clew in a page’s header makes the page the thing', () =>
   });
 });
 
-test.describe('the assistant drafts, the person decides (D111 item 8)', () => {
+test.describe('the assistant drafts, the person decides (D112 item 8)', () => {
   test.use({ viewport: WIDE });
 
   test('a draft shows its values with Utkast; Granska och boka opens the dialog at its last step and Ändra at its first; once sent the draft says so', async ({

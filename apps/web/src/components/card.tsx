@@ -53,7 +53,7 @@ import { returnedReview, selectionAfterReview, withReview } from '../review-addr
 import { entityHref } from '../person-address';
 
 /**
- * What a work item can do (D111 item 4), shared by every place one is drawn (`work-item.tsx`) and by the review over it
+ * What a work item can do (D112 item 4), shared by every place one is drawn (`work-item.tsx`) and by the review over it
  * (D73): its actions, the confirm they ask, the time pickers, Avfärda and Återöppna, and the row of buttons. The item's
  * shape is `work-item.tsx`'s; this file holds no layout of its own beyond the buttons.
  */
@@ -369,7 +369,7 @@ export function useCardAction({
     answered.current = null;
     setAsked(null);
   };
-  // The action dialog (D111 item 10): the action it is open for, the rows chosen when it opened, the step it opens at,
+  // The action dialog (D112 item 10): the action it is open for, the rows chosen when it opened, the step it opens at,
   // and whether the focus goes back to the action's own button on a close (it was opened from elsewhere: an execute
   // started on a person, an assistant's draft). It stays mounted once opened, so its close gives the focus back.
   const [dialog, setDialog] = useState<{
@@ -501,7 +501,7 @@ export function useCardAction({
     dialog: actionDialog,
   };
 }
-/** The execute a card reviews one row at a time before it sends (D70): its next step is then "Granska N", which opens the review over the page (D73, D110 rule 5). */
+/** The execute a card reviews one row at a time before it sends (D70): its next step is then "Granska N", which opens the review over the page (D73, D111 rule 5). */
 export const reviewedAction = (thread: Thread) =>
   thread.actions.find(a => a.role === 'primary' && a.kind === 'execute' && a.review === 'each');
 
@@ -537,7 +537,7 @@ export function useThreadActions({ thread, onChange, onRead }: ActionProps) {
   // row the review never judged keeps the tick it had, so a review opened and closed again changes nothing (it used to
   // hand back the approved rows as the whole selection, which cleared the connector's marks; the product owner,
   // 2026-11-11). A change to the thread starts it over from the connector's marks. The card stood under the review all
-  // along, wherever it is drawn (D110 rule 5), so the decisions are taken for each entry that hands them back, not only
+  // along, wherever it is drawn (D111 rule 5), so the decisions are taken for each entry that hands them back, not only
   // when the card is drawn.
   const { state, key } = useLocation();
   const returned = returnedReview(state, thread.id);
@@ -630,14 +630,14 @@ export function useThreadActions({ thread, onChange, onRead }: ActionProps) {
     returned: returnedAt,
     /** The alert dialog an action with `confirm` asks in; the card and the row render it. */
     confirmation,
-    /** The action dialog (D111 item 10) of an action that asks or says what it writes; the item renders it. */
+    /** The action dialog (D112 item 10) of an action that asks or says what it writes; the item renders it. */
     dialog,
   };
 }
 export type Actions = ReturnType<typeof useThreadActions>;
 
 /**
- * A read whose answer is an address out of Clew (`target: 'link'`) says on its control that it leaves (D110 rule 8):
+ * A read whose answer is an address out of Clew (`target: 'link'`) says on its control that it leaves (D111 rule 8):
  * Astryx's external-link glyph after the label, named with the words Astryx's own external link says in Swedish, so the
  * control's name is "Öppna i ekonomisystemet (öppnas i ny flik)" as a link out's is. A read into the panel unfolds in
  * the card instead and is not marked.
@@ -651,11 +651,11 @@ const reopenable = (thread: Thread) =>
   thread.state === 'dismissed' && !!thread.handledAt && Date.now() - Date.parse(thread.handledAt) <= 10 * 60_000;
 
 /**
- * A work item's buttons (D111 item 4, boards WorkItem, Inbox and PhoneItem): the one next step from the connector,
+ * A work item's buttons (D112 item 4, boards WorkItem, Inbox and PhoneItem): the one next step from the connector,
  * filled only when the item is due today (D48), its secondary actions, the item's one time action (D49: Inte nu while
- * it is the person's, Påminn mig while it waits on someone else), "Lägg till i samtalet" where the page has a box (D110
+ * it is the person's, Påminn mig while it waits on someone else), "Lägg till i samtalet" where the page has a box (D111
  * rule 6), and ⋯ with the rest and Avfärda. A step reviewed one row at a time is "Granska N", a link that lays the review
- * over the page (D70, D73, D110 rule 5). A decision on its way says so with Kontrollera status; a decided item keeps
+ * over the page (D70, D73, D111 rule 5). A decision on its way says so with Kontrollera status; a decided item keeps
  * "Visa granskning" and its reads; a dismissed one offers Återöppna. The receipt's Ångra is the receipt's own
  * (`work-item.tsx`). `pinned` is the phone's bar at the foot of the page (board PhoneItem): the next step and the first
  * secondary side by side the width of the screen, everything else under ⋯.
@@ -749,7 +749,7 @@ export function ActionRow({
   ) : null;
   const addChip = () =>
     conversation.addChip({ ref: chipRef, kind: 'thread', label: thread.title, threadId: thread.id });
-  // Only beside a conversation's own box (D111 item 7): everywhere else the item has its own box in the panel.
+  // Only beside a conversation's own box (D112 item 7): everywhere else the item has its own box in the panel.
   const addToConversation = conversation.hasBox ? (
     <Button
       size={size}

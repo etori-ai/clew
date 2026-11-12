@@ -19,7 +19,7 @@ import { AskClew } from '../components/thing-panel';
 import { PageHeader } from '../components/page-header';
 
 /**
- * A work item as a page (D111 item 4, board WorkItem, `/items/<threadId>`): the item's own address, reached with "Öppna
+ * A work item as a page (D112 item 4, board WorkItem, `/items/<threadId>`): the item's own address, reached with "Öppna
  * som sida" from Att göra's reading pane and from the panel beside any page, with `from` as the way back (the same
  * convention as a person's page, `person-address.ts`). The way back names the page it came from when Clew can name it,
  * else Att göra. The item comes from the stream every page shares (D33), so a decision here is the decision everywhere;
@@ -70,7 +70,7 @@ export function ItemPage({ user, admin }: { user: SessionUser; admin: boolean })
     },
     [threadId, navigate],
   );
-  // "Fråga Clew" (D111 item 7, board Assistant): the item on the page is the thing the panel asks about. Its facts and
+  // "Fråga Clew" (D112 item 7, board Assistant): the item on the page is the thing the panel asks about. Its facts and
   // buttons are the page's, so the panel holds only its name, the conversation and the box.
   const pageThing: OwnThing | null = thread
     ? { id: `page:item:${thread.id}`, title: thread.title, subtitle: 'Ärendet på sidan', subject: itemSubject(thread) }
@@ -79,7 +79,7 @@ export function ItemPage({ user, admin }: { user: SessionUser; admin: boolean })
   let body;
   if (thread && !thread.proposals.length)
     body = <WorkItemPage thread={thread} back={back} onChange={onChange} ask={<AskClew size="lg" />} panel={panel} />;
-  // The calendar's proposals keep their own card (D111 item 9), under the way back and the item's title.
+  // The calendar's proposals keep their own card (D112 item 9), under the way back and the item's title.
   else if (thread)
     body = (
       <Layout

@@ -709,7 +709,7 @@
       "number": 53,
       "path": "docs/decisions/D53-hem-is-the-start-page-the-days-work-under-the-box-and-the-day-beside-it.md",
       "title": "D53 · Hem is the start page: the day's work under the box, and the day beside it",
-      "status": "accepted, built 2026-11-06 on branch `hem`; not built: the phone's shift strip (artboard D needs a schedule capability no connector declares), the panel's tabs for everything a conversation has opened (artboards F, H, J) (built 2026-11-06, [D66](D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md)), a conversation carrying a job across connectors with a step list (artboard J), and the mark on an earlier conversation that something happened since (artboard H); items 2 and 6 and the pixels changed by [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) on 2026-11-06 (the greeting drawn small with the day on its line, the day and Sedan i går as cards in the page's own side column); Hem as the day's work under the box replaced by [D111](D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) items 2 and 3 (2026-11-11: the box with Behöver dig, I dag and Nyheter under it; the work list is Att göra)",
+      "status": "accepted, built 2026-11-06 on branch `hem`; not built: the phone's shift strip (artboard D needs a schedule capability no connector declares), the panel's tabs for everything a conversation has opened (artboards F, H, J) (built 2026-11-06, [D66](D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md)), a conversation carrying a job across connectors with a step list (artboard J), and the mark on an earlier conversation that something happened since (artboard H); items 2 and 6 and the pixels changed by [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) on 2026-11-06 (the greeting drawn small with the day on its line, the day and Sedan i går as cards in the page's own side column); Hem as the day's work under the box replaced by [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) items 2 and 3 (2026-11-11: the box with Behöver dig, I dag and Nyheter under it; the work list is Att göra)",
       "date": "2026-11-06",
       "area": "ui"
     },
@@ -799,7 +799,7 @@
       "number": 63,
       "path": "docs/decisions/D63-hem-is-drawn-as-the-canvas-draws-it.md",
       "title": "D63 · Hem is drawn as the canvas draws it, pixel for pixel, with Astryx's own tokens",
-      "status": "accepted, built 2026-11-06 on `main`; the elements the artboards draw without anything behind them are listed under \"Asked, not built\" and wait for the product owner; Hem's layout replaced by [D111](D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) items 2 and 3 (2026-11-11), with the board Hem10 as the reference",
+      "status": "accepted, built 2026-11-06 on `main`; the elements the artboards draw without anything behind them are listed under \"Asked, not built\" and wait for the product owner; Hem's layout replaced by [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) items 2 and 3 (2026-11-11), with the board Hem10 as the reference",
       "date": "2026-11-06",
       "area": "ui"
     },
@@ -826,7 +826,7 @@
       "number": 66,
       "path": "docs/decisions/D66-the-panel-keeps-everything-opened-beside-the-page-as-tabs.md",
       "title": "D66 · The panel keeps everything opened beside the page as tabs",
-      "status": "superseded by D110 as amended 2026-11-11 (the panel holds one thing; the tabs are removed), built 2026-11-06 on `main`, revised the same day (items 2, 4 and 5: a menu, not a row; item 3 the same evening: the fold keeps the tabs, Stäng alla closes all); stays superseded under [D111](D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) (2026-11-11)",
+      "status": "superseded by D111 as amended 2026-11-11 (the panel holds one thing; the tabs are removed), built 2026-11-06 on `main`, revised the same day (items 2, 4 and 5: a menu, not a row; item 3 the same evening: the fold keeps the tabs, Stäng alla closes all); stays superseded under [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) (2026-11-11)",
       "date": "2026-11-06",
       "area": "ui"
     },
@@ -979,7 +979,7 @@
       "number": 83,
       "path": "docs/decisions/D83-interface-spaces-have-stable-navigation-roles.md",
       "title": "D83 · Interface spaces have stable navigation roles",
-      "status": "accepted; the placement rules for pages, panels, overlays and confirmations stand. The MCP catalogue and App flow it also placed left the code with D81's prototype on 2026-11-11 ([closing note](../reviews/2026-11-11-external-mcp-chat-services-exploration.md)); the spaces stand under [D111](D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) (2026-11-11), and the reference `docs/reference/interface-spaces.md` is rewritten to it",
+      "status": "accepted; the placement rules for pages, panels, overlays and confirmations stand. The MCP catalogue and App flow it also placed left the code with D81's prototype on 2026-11-11 ([closing note](../reviews/2026-11-11-external-mcp-chat-services-exploration.md)); the spaces stand under [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) (2026-11-11), and the reference `docs/reference/interface-spaces.md` is rewritten to it",
       "date": "2026-11-09",
       "area": "ui, product"
     },
@@ -1123,7 +1123,7 @@
       "number": 97,
       "path": "docs/decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md",
       "title": "D97 · A source says what its rows are about, and Clew places them",
-      "status": "accepted as the direction (product owner, 2026-11-10), built 2026-11-10 (see \"As built\"); the items under \"Open\" were taken provisionally for the build and are not decided; the placement of a person's action in its source's section (amended 2026-11-11) replaced by [D111](D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) item 5 (2026-11-11: every action in the page's header)",
+      "status": "accepted as the direction (product owner, 2026-11-10), built 2026-11-10 (see \"As built\"); the items under \"Open\" were taken provisionally for the build and are not decided; the placement of a person's action in its source's section (amended 2026-11-11) replaced by [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) item 5 (2026-11-11: every action in the page's header)",
       "date": "2026-11-10",
       "area": "integrations, ui"
     },
@@ -1263,19 +1263,19 @@
       "area": "identity"
     },
     {
-      "key": "D110-where-something-opens-is-decided-by-what-it-is",
+      "key": "D111-where-something-opens-is-decided-by-what-it-is",
       "number": 110,
-      "path": "docs/decisions/D110-where-something-opens-is-decided-by-what-it-is.md",
-      "title": "D110 · Where something opens is decided by what it is, never by the page it was clicked on",
-      "status": "provisional (accepted when the rules have been used by people outside the repository: a manager on Personal and one connector author placing a view and a card from the author's page alone); rule 7 (\"no control chooses a surface\") and the panel's header replaced by [D111](D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) (2026-11-11: \"Öppna som sida\" is back and the panel holds the thing with the conversation about it); rules 1, 4, 6 and 8 stand, and rule 2 stands with D111's panel",
+      "path": "docs/decisions/D111-where-something-opens-is-decided-by-what-it-is.md",
+      "title": "D111 · Where something opens is decided by what it is, never by the page it was clicked on",
+      "status": "provisional (accepted when the rules have been used by people outside the repository: a manager on Personal and one connector author placing a view and a card from the author's page alone); rule 7 (\"no control chooses a surface\") and the panel's header replaced by [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) (2026-11-11: \"Öppna som sida\" is back and the panel holds the thing with the conversation about it); rules 1, 4, 6 and 8 stand, and rule 2 stands with D112's panel",
       "date": "2026-11-11",
       "area": "ui"
     },
     {
-      "key": "D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel",
+      "key": "D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel",
       "number": 111,
-      "path": "docs/decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md",
-      "title": "D111 · The interface is rebuilt on Astryx's templates: a queue, one detail shape, and one panel with the assistant in it",
+      "path": "docs/decisions/D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md",
+      "title": "D112 · The interface is rebuilt on Astryx's templates: a queue, one detail shape, and one panel with the assistant in it",
       "status": "provisional (accepted when a manager has done a day's work in it and one connector author has declared an action that asks for input from the author's page alone)",
       "date": "2026-11-11",
       "area": "ui"
@@ -1827,14 +1827,14 @@
       "headings": []
     },
     {
-      "path": "docs/decisions/D110-where-something-opens-is-decided-by-what-it-is.md",
-      "title": "D110 · Where something opens is decided by what it is, never by the page it was clicked on",
+      "path": "docs/decisions/D111-where-something-opens-is-decided-by-what-it-is.md",
+      "title": "D111 · Where something opens is decided by what it is, never by the page it was clicked on",
       "category": "decision-history",
       "headings": []
     },
     {
-      "path": "docs/decisions/D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md",
-      "title": "D111 · The interface is rebuilt on Astryx's templates: a queue, one detail shape, and one panel with the assistant in it",
+      "path": "docs/decisions/D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md",
+      "title": "D112 · The interface is rebuilt on Astryx's templates: a queue, one detail shape, and one panel with the assistant in it",
       "category": "decision-history",
       "headings": []
     },

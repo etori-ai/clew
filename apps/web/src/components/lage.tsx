@@ -33,7 +33,7 @@ const PHONE_TILE = 172;
  * Läget (D54, artboard 3): one tile per area with a figure, in the order the areas come; an area whose connector
  * answered none, or that the person may not see, has no tile, and a connector that did not answer is the warning tile.
  * The figure is the connector's and the drawing Clew's (`figureItems`, `FigureTile`); nobody arranges the tiles: they
- * flow into as many columns as the page's width holds. On Hem it stands for the prototype's Dialogstöd (D111, amended
+ * flow into as many columns as the page's width holds. On Hem it stands for the prototype's Dialogstöd (D112, amended
  * 2026-11-11, board Hem10): the unit's name in the heading and "Öppna dialogstödet" both lead to the unit's page.
  */
 export function Lage({ areas, loading, sources, now, unitLabel, unitId, viewHref, twoAcross = false }: Props) {

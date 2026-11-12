@@ -2,7 +2,7 @@ import { sameSubject, type Subject } from '@clew/contracts';
 import { pageOnly } from './panel-address';
 
 /**
- * Where a person or a unit is (D97, D43, D83 rule 4, D110 rule 3): `/people/<key>` is the person as a page, with
+ * Where a person or a unit is (D97, D43, D83 rule 4, D111 rule 3): `/people/<key>` is the person as a page, with
  * `section` the source whose fuller view is drawn and `from` the page they were opened from, for the way back;
  * `/units/<id>` is the unit as a page, with `from` the same way. A person is a page only: nothing draws them beside a
  * list, and the address that once did (`?person=`) leads to their page (`fromPersonBeside`).
@@ -47,7 +47,7 @@ export function personPageHref(key: string, options: { section?: string; from?: 
 export const personPageFrom = (pathname: string, search: URLSearchParams | string, key: string): string =>
   personPageHref(key, { from: pageOnly(pathname, search) });
 /**
- * Where an address that drew a person beside a list now leads (D110 answer 1): `?person=<key>` on the list, kept in
+ * Where an address that drew a person beside a list now leads (D111 answer 1): `?person=<key>` on the list, kept in
  * bookmarks and sent links, is the person's page with the list as its way back. The section drilled into on a phone
  * (`person-section`) is the page's `section`, and a card open over the person stays open beside the page. Null for any
  * other address.
@@ -64,7 +64,7 @@ export function fromPersonBeside(pathname: string, search: URLSearchParams | str
   return card ? `${page}${page.includes('?') ? '&' : '?'}card=${encodeURIComponent(card)}` : page;
 }
 /**
- * Where an address that listed a person's cards beside Personal now leads (D110, amended 2026-11-11: the panel holds one
+ * Where an address that listed a person's cards beside Personal now leads (D111, amended 2026-11-11: the panel holds one
  * opened thing): `?cards=<key>`, with `cards-kind`, is the person's page at Behöver dig with the list as its way back,
  * and a card open over that list stays open beside the page. Null for any other address.
  */

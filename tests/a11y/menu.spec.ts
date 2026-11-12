@@ -3,7 +3,7 @@ import { desktop, expect, expectNoAxeViolations, narrow, open, openNav, phone, t
 import { menuRow, menuRows } from './phonebook';
 
 /**
- * Verktyg in the menu (D40, D111 item 1): the views an administrator chose as tools, one click away on every page, under
+ * Verktyg in the menu (D40, D112 item 1): the views an administrator chose as tools, one click away on every page, under
  * Clew's own places (Hem, Att göra, Kalender and a manager's Personal). A row leads to the tool's own page (D42), as
  * Kalender does; the page itself is tested in `tools.spec.ts`. The test person is a manager, so Personal (D94) stands
  * after Kalender among the places; `staff.spec.ts` owns it.

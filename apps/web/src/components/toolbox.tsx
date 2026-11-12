@@ -8,7 +8,7 @@ const EMPTY_MENU: MenuEntry[] = [];
 
 /**
  * The intranet's page of tools, when the shared header (D88) lists one the installation marked as such (`purpose:
- * 'toolbox'`, D111 amended 2026-11-11): the first in the band's order, a place or a page under one. Null without one:
+ * 'toolbox'`, D112 amended 2026-11-11): the first in the band's order, a place or a page under one. Null without one:
  * Clew never makes up the address.
  */
 export function toolboxPage(header: SiteHeaderView | undefined): SiteMenuLink | null {
@@ -21,7 +21,7 @@ export function toolboxPage(header: SiteHeaderView | undefined): SiteMenuLink | 
 }
 
 /**
- * Verktygslådan on Hem (D111, amended 2026-11-11, board Hem10): one tile per tool an administrator placed for the
+ * Verktygslådan on Hem (D112, amended 2026-11-11, board Hem10): one tile per tool an administrator placed for the
  * person (D40), the same list and order as the rail's Verktyg, each with its icon, its name and the source's name, and
  * each leading to the tool's page (D42). Beside the heading, when the shared header names the intranet's page of tools,
  * a link out to it in a new tab. No tools, no section: the link alone is the header's to give.

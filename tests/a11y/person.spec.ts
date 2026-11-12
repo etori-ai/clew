@@ -13,7 +13,7 @@ import { PRESENCE_LENS, SILENT_SECTION, TALK_LENS } from './data';
 import { CONTACT, POINTS, People, pointsOutput, pointsSpec } from './person-data';
 
 /**
- * The opened person (D111 item 5, board Person; D97 item 5, D110 rule 3: a person is a page only), in the work item's
+ * The opened person (D112 item 5, board Person; D97 item 5, D111 rule 3: a person is a page only), in the work item's
  * page shape: the header with the way back, the unit, the name and title, every action and "Fråga Clew"; the main
  * column with "Behöver dig" and then every source's section one under the other, each with its source's badge; the
  * details rail with the directory's facts and the unit, behind "Visa detaljer" where it does not fit or while the panel
@@ -215,7 +215,7 @@ test.describe('the person as a page', () => {
     await expect(rows.getByText('Väntar på svar från 1 medarbetare')).toBeVisible();
     await title.focus();
     await page.keyboard.press('Enter');
-    // The person's page stays: its address with the item added, its title, its heading and its way back (D110 rule 3).
+    // The person's page stays: its address with the item added, its title, its heading and its way back (D111 rule 3).
     await expect(page).toHaveURL('/people/johan?section=needs-you&from=%2Fstaff&card=samtal-svar');
     const panel = page.getByRole('complementary', { name: 'Ärende' });
     await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -291,11 +291,11 @@ test.describe('the person as a page', () => {
     await page.keyboard.press('Escape');
     await expect(menu).toHaveCount(0);
     await expect(page).toHaveURL('/people/johan?from=%2Fstaff');
-    // A section holds its source's read and its way in, never an action (D111 item 5 replaces D97's placement).
+    // A section holds its source's read and its way in, never an action (D112 item 5 replaces D97's placement).
     for (const name of EVERY_SECTION)
       await expect(region(page, name).getByRole('button', { name: /^Boka|^Registrera/ })).toHaveCount(0);
     await expect(region(page, 'Utvecklingssamtal').getByRole('link', { name: 'Öppna samtalet' })).toBeVisible();
-    // A person is a page only (D110 rule 7): nothing offers another place to show them.
+    // A person is a page only (D111 rule 7): nothing offers another place to show them.
     await expect(page.getByText('Öppna som sida')).toHaveCount(0);
     await expect(page.getByText('Visa bredvid')).toHaveCount(0);
   });

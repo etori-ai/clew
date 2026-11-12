@@ -53,7 +53,7 @@ for (const [layout, viewport] of [
       await open(page, '/');
       const mine = section(page);
       await expect(heading(page, 2, 'Mina åtgärdspunkter · 5')).toBeVisible();
-      // After the day's work and after Läget, with Mina ärenden (D90) under the board's parts (D111, amended 2026-11-11).
+      // After the day's work and after Läget, with Mina ärenden (D90) under the board's parts (D112, amended 2026-11-11).
       const work = heading(page, 2, 'Behöver dig'),
         own = heading(page, 2, 'Mina åtgärdspunkter'),
         lage = heading(page, 2, 'Läget på Skönsmons skola');

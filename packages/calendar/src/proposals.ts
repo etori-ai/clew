@@ -162,7 +162,7 @@ export interface FreeSlotInput {
   count?: number;
 }
 /**
- * Free times for one meeting in one person's own calendar (D111 item 10), deterministic and without a model: weekdays
+ * Free times for one meeting in one person's own calendar (D112 item 10), deterministic and without a model: weekdays
  * 09–16 on whole or half hours, lunch kept free, as the planner searches (D30). At most one a day while there are days
  * left, earliest first, then the next free time of each day in turn, so the person is offered a spread before a cluster.
  */

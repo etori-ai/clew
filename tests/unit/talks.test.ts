@@ -722,7 +722,7 @@ describe('the built-in connector', () => {
       'talks.person': { entity: 'person', page: { title: 'Öppna samtalet', href: '?talk={id}' } },
       'talks.unit': { entity: 'unit', page: { title: 'Visa i Personal', href: '/staff?show=talks.person' } },
     });
-    // The talk is a query alone, laid over the page its way in is on (D110 rule 5); Personal is a destination, a path.
+    // The talk is a query alone, laid over the page its way in is on (D111 rule 5); Personal is a destination, a path.
     for (const name of ['talks.person', 'talks.unit'])
       expect(checkContract(EntityPageSchema, connector.capabilities.find(c => c.name === name)!.about!.page)).toBe(
         true,

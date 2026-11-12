@@ -17,7 +17,7 @@ import { mergedSearch } from './unit-data';
 test.use({ viewport: desktop });
 
 /**
- * Inte nu on the first row of Att göra, from the keyboard (D111 item 3): the row opens its work item in the reading pane
+ * Inte nu on the first row of Att göra, from the keyboard (D112 item 3): the row opens its work item in the reading pane
  * beside the list, with the focus on its heading, where Inte nu stands among the card's own buttons.
  */
 async function openSnoozeRows(page: Page) {
@@ -153,7 +153,7 @@ test.describe('D26 a source becomes a chip', () => {
     page,
     api: _,
   }) => {
-    // Beside a conversation's own box (D111 item 7): elsewhere the sources view has its own box in the panel.
+    // Beside a conversation's own box (D112 item 7): elsewhere the sources view has its own box in the panel.
     await open(
       page,
       '/conversations/fraga?open=clew.search&open-title=K%C3%A4llor&open-input=%7B%22query%22%3A%22fall%22%7D',
@@ -230,7 +230,7 @@ test.describe('D97 a hit about a person', () => {
     // The hit leads to the person instead of one source's record: no contact card, no link out.
     await expect(person.getByRole('link', { name: 'Kontaktkort' })).toHaveCount(0);
     await expect(person.getByRole('link', { name: /Öppna/ })).toHaveCount(0);
-    // On Hem the panel asks about the sources in its own box: no hit goes into a conversation from here (D111 item 7).
+    // On Hem the panel asks about the sources in its own box: no hit goes into a conversation from here (D112 item 7).
     await expect(person.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
     // A document from one source is drawn as before.
     const document = hits.nth(1);

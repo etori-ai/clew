@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { EntityPage } from '@clew/contracts';
 import { TALK_PARAM, sourcePageHref, talkOf, withTalk, withoutTalk } from '../src/talk-address';
 
-describe("a person's talk lies over the page it was opened on (D96 item 7, D110 rule 5)", () => {
+describe("a person's talk lies over the page it was opened on (D96 item 7, D111 rule 5)", () => {
   test('the talk is the page with the person as `talk`, everything else in its address kept', () => {
     expect(TALK_PARAM).toBe('talk');
     expect(withTalk('/staff', '', 'anna')).toBe('/staff?talk=anna');
@@ -38,7 +38,7 @@ describe("a person's talk lies over the page it was opened on (D96 item 7, D110 
   });
 });
 
-describe("a source's page in Clew is filled in by one function, wherever its way in is drawn (D97, D110 rule 5)", () => {
+describe("a source's page in Clew is filled in by one function, wherever its way in is drawn (D97, D111 rule 5)", () => {
   const talk: EntityPage = { title: 'Öppna samtalet', href: '?talk={id}' };
   const karin = { key: 'karin', id: 'p-karin' };
   test('a query alone lies over the page the person is on, with everything in its address kept', () => {

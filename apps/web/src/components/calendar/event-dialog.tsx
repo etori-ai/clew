@@ -38,7 +38,7 @@ type Props = {
   onAddChip?: (item: AgendaItem) => void;
   /**
    * Where the dialog opens: on the entry's details, or straight at moving or cancelling it, which is how Kalender's
-   * panel opens it from the entry's own "Flytta …" and "Ställ in …" (D111 item 9).
+   * panel opens it from the entry's own "Flytta …" and "Ställ in …" (D112 item 9).
    */
   startIn?: Mode;
 };
@@ -166,7 +166,7 @@ export function EventDialog({ item, dayItems, onClose, onChanged, onOpenDay, onA
                     }}
                   />
                 )}
-                {/* Only where the page has a question box (D110 rule 6): Kalender has none. */}
+                {/* Only where the page has a question box (D111 rule 6): Kalender has none. */}
                 {onAddChip && hasBox && (
                   <AddToConversation
                     onAdd={() => {

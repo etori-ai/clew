@@ -523,7 +523,7 @@ describe('the fixture connectors declare their views', () => {
         name,
       ).toBeUndefined();
     }
-    // An execute's effect read (D111) answers rows the write's dialog draws as "Det här händer", never as a view.
+    // An execute's effect read (D112) answers rows the write's dialog draws as "Det här händer", never as a view.
     const effects = new Set(all.flatMap(c => (c.effect ? [c.effect] : [])));
     for (const cap of all)
       if (

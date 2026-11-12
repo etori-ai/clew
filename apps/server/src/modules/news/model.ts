@@ -2,7 +2,7 @@ import type { Actor } from '@clew/connectors';
 import type { ViewOpen } from '@clew/contracts';
 
 /**
- * The ports of the combined news list (D25, D111 amended 2026-11-11). The sources come from the registry at call time,
+ * The ports of the combined news list (D25, D112 amended 2026-11-11). The sources come from the registry at call time,
  * so a news source an administrator enables is listed from the next read on; the call handle is the one the registry
  * gives the capability for this run, so scope and the person's delegated token travel with it.
  */

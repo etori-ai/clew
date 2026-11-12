@@ -3,7 +3,7 @@ import { actorOf, type Registry } from '@clew/connectors';
 import { InputError } from '../../context';
 
 /**
- * What the dialog of a write needs to draw its asks (D111 item 10), as reads: for an ask of a meeting time, free times in
+ * What the dialog of a write needs to draw its asks (D112 item 10), as reads: for an ask of a meeting time, free times in
  * the person's own calendar and their day. The person must be allowed the action and the action must ask for a meeting
  * at that property, checked on every call; the calendar is reached through the registry as the person, never imported.
  * Nobody else's calendar is read and nothing is written.

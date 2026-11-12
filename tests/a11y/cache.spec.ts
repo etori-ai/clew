@@ -16,7 +16,7 @@ test.describe('D33 the browser cache', () => {
     await open(page, '/');
     expect(count('/api/threads')).toBe(1);
     expect(count('/api/areas')).toBe(1);
-    // Hem draws no card since D111, so no picker reads its times there (D29).
+    // Hem draws no card since D112, so no picker reads its times there (D29).
     expect(count('/api/snooze/presets')).toBe(0);
     await page
       .getByRole('navigation', { name: 'Sidonavigering' })

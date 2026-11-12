@@ -91,7 +91,7 @@ describe('the manifest preview, in words (artboard J)', () => {
   });
 });
 
-describe('every write, both halves (D111 item 11, board Entrypoints), from the dry run over the HR fixture', () => {
+describe('every write, both halves (D112 item 11, board Entrypoints), from the dry run over the HR fixture', () => {
   const hr = previewManifest(hrManifest, { id: 'hr' }) as ManifestPreview;
   const write = (name: string) => hr.manifest!.capabilities.find(c => c.name === name)!;
   test("the restated path is the dry run's: where it starts, the steps, the input", () => {

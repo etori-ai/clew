@@ -15,7 +15,7 @@ import {
 } from './support';
 
 /**
- * The action dialog (D111 item 10, boards ActBook, ActEffect and ActReceipt, the `form-wizard-dialog` template): a write
+ * The action dialog (D112 item 10, boards ActBook, ActEffect and ActReceipt, the `form-wizard-dialog` template): a write
  * that asks the person something or says beforehand what it writes opens one dialog over the page, from every place its
  * button is drawn. "Uppgifter" asks what the capability's `asks` say (a meeting time from three free times in the
  * person's own calendar, "Annan tid" and the day under it), "Det här händer" lists the values and what the source says it
@@ -43,7 +43,7 @@ async function tabTo(page: Page, target: Locator, max = 25) {
   }
   await expect(target).toBeFocused();
 }
-/** An execute about a person that asks (D111): the entity's key is its own input, the rest the person gives. */
+/** An execute about a person that asks (D112): the entity's key is its own input, the rest the person gives. */
 const bookAbout: EntityAction = {
   capability: 'hr.bookTalk',
   connector: 'hr',
@@ -440,10 +440,10 @@ test.describe('an action about a person or a unit that asks', () => {
     await page.setViewportSize(WIDE);
     const here = `/people/johan?section=${PRESENCE_LENS}&from=%2Fstaff`;
     await open(page, here);
-    // Every action about the person is in the page's header (D111 item 5): the third and on under Fler.
+    // Every action about the person is in the page's header (D112 item 5): the third and on under Fler.
     await page.getByRole('main').getByRole('button', { name: 'Fler åtgärder för Johan Byström' }).click();
     await page.getByRole('menuitem', { name: 'Boka omtankesamtal' }).click();
-    // The work item is started first, without the answers: they are given at its decision (D111).
+    // The work item is started first, without the answers: they are given at its decision (D112).
     expect(api.entityStarts).toEqual([{ key: 'johan', capability: 'hr.bookTalk' }]);
     await expect(page).toHaveURL(`${here}&card=entity-hr-bookTalk-johan`);
     const dialog = dialogOf(page, 'Boka omtankesamtal');

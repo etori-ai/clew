@@ -22,10 +22,10 @@ const tableBesideQuery = panelBesideQuery(1280 - RAIL);
 const TITLE = 'Nyheter';
 
 /**
- * "Alla nyheter" (D111, amended 2026-11-11, board Hem10): the combined news list `clew.news` as a tool's page, at the
+ * "Alla nyheter" (D112, amended 2026-11-11, board Hem10): the combined news list `clew.news` as a tool's page, at the
  * address a tool has (`/tools/clew.news`, D42), whether or not an administrator placed it in the rail under Verktyg
  * (D40): Hem's "Alla nyheter" leads here for everyone with a news source, and a placed row marks itself current here.
- * Drawn as the tool's page draws a view (`tool.tsx`, D111 item 6): the one page header, the view by the one renderer
+ * Drawn as the tool's page draws a view (`tool.tsx`, D112 item 6): the one page header, the view by the one renderer
  * (D38), a row's own read beside the page in the panel, "Fråga Clew" making the list the panel's thing. A person with
  * no news source is told there is none, as a tool that is not theirs is.
  */

@@ -125,8 +125,8 @@ function SearchRows({ result, hrefFor }: { result: SearchResult; hrefFor?: ((vie
               .filter(Boolean)
               .join(' · ');
             // A hit whose source declares its view (D38) opens here, drawn by Startsidan; the link still leads to the
-            // source, in a new tab and marked as leaving Clew with Astryx's external link (D110 rule 8). A hit about an
-            // entity leads to the entity instead. "Lägg till i samtalet" only where the page has a box (D110 rule 6); a
+            // source, in a new tab and marked as leaving Clew with Astryx's external link (D111 rule 8). A hit about an
+            // entity leads to the entity instead. "Lägg till i samtalet" only where the page has a box (D111 rule 6); a
             // hit with none of the three has no line of buttons.
             const viewHref = !r.subject && r.view && hrefFor ? hrefFor(r.view) : null;
             const link = !r.subject && r.link ? r.link : null;
@@ -341,12 +341,12 @@ export interface PanelFrame {
   subtitle?: string;
   /**
    * The content, told whether it is drawn beside the page (narrow, non-modal) or over it, and whether a conversation
-   * about it runs, so its facts fold to the essentials and its buttons with "Visa allt" (D111 item 7).
+   * about it runs, so its facts fold to the essentials and its buttons with "Visa allt" (D112 item 7).
    */
   body: (inline: boolean, folded: boolean) => ReactNode;
   onClose: () => void;
   /**
-   * What the box under the thing asks about (D111 item 7). The box is drawn whenever the thing has one and a model is
+   * What the box under the thing asks about (D112 item 7). The box is drawn whenever the thing has one and a model is
    * configured; without a model, or a thing that is not asked about (a read that failed), the panel is the thing alone.
    */
   subject?: ThingSubject;
@@ -368,7 +368,7 @@ export const RAIL = 256,
 export const PAGE_MIN = 640;
 /**
  * The one window width from which the panel stands beside the page, on every page that holds it (the product owner,
- * 2026-11-11, D110 amended): the rail, Hem's least column and the panel, 256 + 640 + 440 = 1336 px. Narrower, or short
+ * 2026-11-11, D111 amended): the rail, Hem's least column and the panel, 256 + 640 + 440 = 1336 px. Narrower, or short
  * (1.4.10), or on a phone, it is the drawer over the page. A page whose own layout needs more than 640 px does not move
  * this line: it gives way, drawing the narrow layout it already has while the panel is open beside it (its own
  * breakpoint shifted by the panel, `panelBesideQuery`).
@@ -398,7 +398,7 @@ type Options = {
    */
   onClosed?: () => void;
   /**
-   * Whether the thing gets the box under it (D111 item 7). False on a conversation's own page, where the transcript is
+   * Whether the thing gets the box under it (D112 item 7). False on a conversation's own page, where the transcript is
    * the column and the panel is its artifact: the conversation's box is the one to ask in.
    */
   asks?: boolean;
@@ -406,7 +406,7 @@ type Options = {
 /**
  * The panel (D50): the one place beside the page's column for what the person holds next to it, a view, a source or a
  * card, and nothing else: with nothing open there is no panel, and a page's own content (Hem's day) stays the page's
- * (D72). It holds one opened thing (D110, amended 2026-11-11, which withdrew D66's tabs): what is opened from the page
+ * (D72). It holds one opened thing (D111, amended 2026-11-11, which withdrew D66's tabs): what is opened from the page
  * takes the place of what was open, on every page, and the link it was opened with is where the focus goes back to on
  * close. From the one width `BESIDE_FROM` it is a `LayoutPanel` in the page's `end` slot, non-modal, so the column stays
  * in use (the `ai-chat` template's artifact beside the transcript, composed as the calendar page composes its own
@@ -434,7 +434,7 @@ export function usePanel(
   // 1.4.10: on a short screen nothing is docked in the panel either; the thing, the transcript and the box scroll as one.
   const short = useMediaQuery(shortQuery);
   const announce = useAnnounce();
-  // The thing and the conversation about it (D111 item 7): the box is there while a model is configured (D8) and the
+  // The thing and the conversation about it (D112 item 7): the box is there while a model is configured (D8) and the
   // thing is one that is asked about; the conversation is the thing's own, and folds its facts while it runs.
   const model = useModelConfigured();
   const subject = asks && model && panel?.subject ? panel.subject : null;
@@ -636,7 +636,7 @@ export function usePanel(
    * the card, as artboard E draws "KORT"; a view keeps its title as the heading. A heading and a button, not a toolbar:
    * the heading takes the focus when the panel opens (beside the page from `usePanel`'s effect, in the drawer by
    * Astryx's `data-autofocus`), and a toolbar would offer its arrow keys there. ✕ closes the panel and what it holds;
-   * there is never a second thing in it to name or switch to (D110, amended 2026-11-11). Astryx's `DrawerHeader` is not
+   * there is never a second thing in it to name or switch to (D111, amended 2026-11-11). Astryx's `DrawerHeader` is not
    * used in the drawer: its title is always a full-size h2 that takes no ref, so the same card would be named
    * differently in the two, which is what the product owner saw.
    */
@@ -663,7 +663,7 @@ export function usePanel(
           </VStack>
         </StackItem>
         <HStack gap={1} vAlign="center">
-          {/* A long exchange continues in the conversation view (D111 item 7, board Assistant): the transcript as the
+          {/* A long exchange continues in the conversation view (D112 item 7, board Assistant): the transcript as the
               page's column and the thing as its artifact beside it. */}
           {continueHref && (
             <IconButton
@@ -687,7 +687,7 @@ export function usePanel(
     </LayoutHeader>
   );
   /**
-   * The header and the body, laid out the same beside the page and in the drawer. With a box (D111 item 7) the body is
+   * The header and the body, laid out the same beside the page and in the drawer. With a box (D112 item 7) the body is
    * the thing with the conversation under it, docked by ChatLayout, which owns the scroll; without one it is the thing
    * alone in the content's own scroll, as before.
    */

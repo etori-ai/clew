@@ -12,7 +12,7 @@ the sentence "Inget nytt sedan i går." `communication.acknowledge` registers th
 the verified person only (after `FIXTURE_PERSON_MAP`), deduplicated by Clew's operation id and read back through
 `communication.lookup` (D45). Receipts are the one record this system keeps about a person.
 
-The card's "Jag har läst" carries `acknowledgement: { publishedAt }` (D111, amended 2026-11-11): it is the person's read
+The card's "Jag har läst" carries `acknowledgement: { publishedAt }` (D112, amended 2026-11-11): it is the person's read
 receipt, so Hem lifts the card above its blocks until it is given. The same notices are the system's news, the news
 profile's first source: `communication.news` lists them newest first with their sender (the department that published
 them), and `communication.newsItem` opens one with its text in Clew. Clew joins them with every other news source as

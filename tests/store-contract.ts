@@ -229,7 +229,7 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       expect(await store.readThread(b, t.id)).toBeUndefined();
       expect(await store.readThreadById(t.id)).toEqual(read);
     });
-    test("an action's read-receipt mark is kept with the action and read back as stored (D111)", async () => {
+    test("an action's read-receipt mark is kept with the action and read back as stored (D112)", async () => {
       const {
         store,
         people: [a],
@@ -598,7 +598,7 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       await store.transaction(tx => tx.scheduleJob({ id: 'job:' + t.id, kind: 'receipt-final', runAt: plus(T0, 1) }));
       expect(await hasJob('job:' + t.id)).toBe(true);
     });
-    test("an item's history is its subjects' committed audit rows, oldest first, the newest within the limit (D111)", async () => {
+    test("an item's history is its subjects' committed audit rows, oldest first, the newest within the limit (D112)", async () => {
       const {
         store,
         people: [a],

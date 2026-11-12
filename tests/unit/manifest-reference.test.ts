@@ -207,7 +207,7 @@ describe('the field list', () => {
           creates: HANDWRITTEN_EXAMPLES['capabilities[].creates'],
           execution: HANDWRITTEN_EXAMPLES['capabilities[].execution'],
         },
-        // A write that asks (D111): a meeting time and a choice, and the read that says what it will write.
+        // A write that asks (D112): a meeting time and a choice, and the read that says what it will write.
         {
           name: 'hr.bookTalk',
           kind: 'execute',

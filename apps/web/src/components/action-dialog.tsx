@@ -60,7 +60,7 @@ import { errorMessage } from '../query-policy';
 import { DialogFrame } from './dialog-frame';
 
 /**
- * The action dialog (D111 item 10, the `form-wizard-dialog` template, boards ActBook and ActEffect): the one path a
+ * The action dialog (D112 item 10, the `form-wizard-dialog` template, boards ActBook and ActEffect): the one path a
  * write passes, from every place its button is drawn. "Uppgifter" asks what the capability's `asks` say and the action
  * does not already give, one Astryx field per ask; "Det här händer", always last, lists the values and what will be
  * written where (the connector's `effect` read for exactly those values, else its system and the capability's

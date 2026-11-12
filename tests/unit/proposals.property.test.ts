@@ -79,7 +79,7 @@ describe('planWeek', () => {
 });
 
 describe('freeSlots', () => {
-  test("a suggested time (D111) never collides with the person's own calendar, stays in office hours and the window, never looks back, and is no more than asked for", () => {
+  test("a suggested time (D112) never collides with the person's own calendar, stays in office hours and the window, never looks back, and is no more than asked for", () => {
     fc.assert(
       fc.property(
         calendar,

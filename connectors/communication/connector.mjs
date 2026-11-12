@@ -56,7 +56,7 @@ export function createConnector({
         })),
       };
     },
-    // The news profile (D111): the notices the person may read as news, newest first. A record seeded before notices
+    // The news profile (D112): the notices the person may read as news, newest first. A record seeded before notices
     // had a sender carries the system's own name.
     'communication.news': actor => ({
       rows: forActor(actor)
@@ -151,7 +151,7 @@ export function createConnector({
             },
           ],
         };
-        // The receipt is the item's point (D111): the action says so, with when the notice was published, so Hem can
+        // The receipt is the item's point (D112): the action says so, with when the notice was published, so Hem can
         // lift the item until it is given. Not part of the revision: marking it changes nothing the person decides on.
         const marked = draft.actions.map(a =>
           a.id === 'ack' ? { ...a, acknowledgement: { publishedAt: n.publishedAt } } : a,

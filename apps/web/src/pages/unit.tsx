@@ -89,7 +89,7 @@ function StaffValue({ count, read }: { count: number | undefined; read: UseQuery
 }
 
 /**
- * The details rail of a unit's page (D111 item 5): "Detaljer", what the directory (Katalogen) says of the unit that the
+ * The details rail of a unit's page (D112 item 5): "Detaljer", what the directory (Katalogen) says of the unit that the
  * page has: that it is a unit, the reader's role on it, and for a unit the reader manages how many people it has, with
  * the way to Personal as a link. The directory's tree (the unit above, the units below, their managers) does not reach
  * this page, so none of it is drawn.
@@ -126,7 +126,7 @@ function UnitDetails({ staff }: { staff: StaffCount }) {
 }
 
 /**
- * The unit as a page (D111 item 5, the shape of board Person; D97 items 5 and 6), at `/units/:id`: the way back, its
+ * The unit as a page (D112 item 5, the shape of board Person; D97 items 5 and 6), at `/units/:id`: the way back, its
  * name, its actions and "Fråga Clew" in the header; in the main column "Behöver dig" (the reader's work items about the
  * unit) and then every source about a unit that answered for this one, one under the other, each with its source's
  * badge, its row, its fuller read as a short list and its own way in ("Visa i Personal"), a link, never an action; the
@@ -136,7 +136,7 @@ function UnitDetails({ staff }: { staff: StaffCount }) {
  * rail's tools): Läget on Hem, the person's page and any row that names the unit do, and `from` names the page it was
  * opened from for the way back.
  *
- * The page holds the panel beside its column (D110 rules 2 to 4, `usePagePanel`): a work item under Behöver dig and the
+ * The page holds the panel beside its column (D111 rules 2 to 4, `usePagePanel`): a work item under Behöver dig and the
  * one an action makes open there, with the way back kept in the address, and closing leaves the page as it was. While
  * the panel holds something beside the page the details are behind "Visa detaljer"; in a narrower window the panel is
  * the drawer over the page.
@@ -173,7 +173,7 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
   const cardChanged = useCallback(() => {
     void client.invalidateQueries({ queryKey: keys.entities.detail('unit', id), exact: true });
   }, [client, id]);
-  // "Fråga Clew" (D111 item 7): the unit on the page is the thing the panel is about. A source's read about a unit never
+  // "Fråga Clew" (D112 item 7): the unit on the page is the thing the panel is about. A source's read about a unit never
   // reaches the model (D97 item 7): the question goes without a chip, and the conversation is drawn beside the unit.
   const pageThing: OwnThing | null = detail
     ? {
@@ -287,7 +287,7 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
       {body}
       {panel.overlay}
-      {/* A source's way in that is a talk lies over the page and its panel, as on a person's page (D110 rule 5). */}
+      {/* A source's way in that is a talk lies over the page and its panel, as on a person's page (D111 rule 5). */}
       {user.role === 'manager' && <TalkOverlay back={detail ? `Tillbaka till ${detail.entity.name}` : 'Tillbaka'} />}
     </Shell>
   );

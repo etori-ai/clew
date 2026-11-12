@@ -158,7 +158,7 @@ export function RowMenu({ entity, ctx, lens }: { entity: EntityRef; ctx: Context
  * opening the card beside the list when the server named the one card there is (D83 rule 1: the list stays, and the
  * card shows what it asks before anything is decided; one thing at a time, so it takes the place of what the panel
  * held). With several the link leads to the person's page at Behöver dig, with the list as its way back, where each
- * card opens beside that page (D110, amended 2026-11-11: the panel holds one opened thing, never a list of cards).
+ * card opens beside that page (D111, amended 2026-11-11: the panel holds one opened thing, never a list of cards).
  */
 export function cardLinks(
   list: EntityList,

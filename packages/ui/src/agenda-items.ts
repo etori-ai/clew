@@ -49,7 +49,7 @@ const meta = (span: { start: string; end: string; allDay: boolean }, ...rest: (s
  * covered by a proposal is drawn once, as the proposal, so the week never shows the same hour twice. A proposal carries
  * the assistant's mark; every entry carries its meta line. The day's free gaps, when given (I dag on Hem), become `gap`
  * rows, the longest one saying that nothing is booked there without asking; the grid and the week agenda draw no gap.
- * The time a person is choosing in the action dialog (D111 item 10), when given, is a `proposal` of theirs: drawn as the
+ * The time a person is choosing in the action dialog (D112 item 10), when given, is a `proposal` of theirs: drawn as the
  * time they propose, without the assistant's mark, since nobody drew it for them.
  */
 export function agendaItems(

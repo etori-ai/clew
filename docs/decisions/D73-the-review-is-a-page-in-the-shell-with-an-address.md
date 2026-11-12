@@ -205,10 +205,10 @@ review, which is read and not decided, hands back no decisions. The address, the
 written are unchanged: the card's ticks still write nothing on a card whose next step is the review, and the review
 still starts with no row judged. Evidence: `apps/web/tests/review-address.test.ts`, `tests/a11y/review.spec.ts`.
 
-**Amended 2026-11-11 (D110 rule 5): the review lies over the page it was opened on.** The review was a drawer over
+**Amended 2026-11-11 (D111 rule 5): the review lies over the page it was opened on.** The review was a drawer over
 Hem only: "Granska N" on a card beside Personal, over Kalender or in a conversation's answer took the person to Hem,
 and closing it led to `/?card=<threadId>` whatever was under it, a Klart row's `tab=done` included. Under
-[D110](D110-where-something-opens-is-decided-by-what-it-is.md) rule 5 the review is a focused overlay over whichever
+[D111](D111-where-something-opens-is-decided-by-what-it-is.md) rule 5 the review is a focused overlay over whichever
 page it was opened from, and closing it leaves that page as it was. What changes:
 
 1. **The address is a part of the page's own**: `?review=<threadId>`, with the step as `step` as before (1-based, the

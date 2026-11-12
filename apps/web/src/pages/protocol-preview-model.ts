@@ -25,10 +25,10 @@ export interface PreviewCapability {
   samples?: Array<Record<string, unknown>>;
   asks?: Ask[];
   effect?: string;
-  /** Both halves of a write (D111 item 11), for a propose or an execute: `ActionPathPreviewSchema` in the protocol. */
+  /** Both halves of a write (D112 item 11), for a propose or an execute: `ActionPathPreviewSchema` in the protocol. */
   path?: PreviewPath;
 }
-/** Where a person can start a write, the steps of the one path it draws, and who fills its input (D111 item 11). */
+/** Where a person can start a write, the steps of the one path it draws, and who fills its input (D112 item 11). */
 export type PathStart = 'work-item' | 'entity' | 'question-box' | 'conversation' | 'fact';
 export type PathStep = 'fill-in' | 'effect' | 'confirm' | 'review' | 'receipt';
 export type PathState = 'declared' | 'not-declared' | 'on-the-work-item' | 'always' | 'never';
@@ -178,7 +178,7 @@ export function actionsAbout(manifest: NonNullable<ManifestPreview['manifest']>,
 export const SAMPLE_NAMES: Record<EntityKind, string> = { person: 'Exempel Person', unit: 'Exempelenheten' };
 
 /**
- * "Where it starts" (D111 item 11, board Entrypoints): each place a person can start a write, in the developer's words:
+ * "Where it starts" (D112 item 11, board Entrypoints): each place a person can start a write, in the developer's words:
  * where the person is, and what Clew draws there once the manifest declares it.
  */
 export const START_WORDS: Record<PathStart, { where: string; draws: string }> = {

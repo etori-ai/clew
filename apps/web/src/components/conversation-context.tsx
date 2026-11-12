@@ -75,7 +75,7 @@ export interface ConversationState {
   verbs: Verb[];
   input: RefObject<ChatComposerInputHandle | null>;
   /**
-   * A conversation's own box is on the page (`/conversations/<id>`). "Lägg till i samtalet" is offered only then (D111
+   * A conversation's own box is on the page (`/conversations/<id>`). "Lägg till i samtalet" is offered only then (D112
    * item 7): everywhere else an opened thing has its own box in the panel, which asks about that thing.
    */
   hasBox: boolean;
@@ -150,7 +150,7 @@ export function useClaimBox(claims = true) {
 /** A conversation's title is the question as it was typed; as a title it starts with a capital. */
 export const titled = (question: string) => question.charAt(0).toLocaleUpperCase('sv-SE') + question.slice(1);
 /**
- * Whether the assistant may be asked here (D8, D111 item 7): a model is configured. Without one no box is drawn beside a
+ * Whether the assistant may be asked here (D8, D112 item 7): a model is configured. Without one no box is drawn beside a
  * thing and no "Fråga Clew" is offered; the thing is drawn alone, as before.
  */
 export function useModelConfigured(): boolean {
@@ -204,7 +204,7 @@ interface Turns {
  * it is written. The written turn replaces the pending one when it is done. Stopped or failed, nothing was saved and the
  * question goes back in the box; a turn left behind (another conversation, another thing) is stopped and nothing goes
  * back. Every thread an answer carries goes into the cache (D33), the same path as a card's own action. The landing's
- * conversation and the conversation about a thing in the panel (D111 item 7) are this one machinery twice.
+ * conversation and the conversation about a thing in the panel (D112 item 7) are this one machinery twice.
  */
 function useTurns(onThreadChange: (thread: Thread) => void): Turns {
   const announce = useAnnounce();
@@ -680,7 +680,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
 }
 
 /**
- * What a thing in the panel is asked about (D111 item 7): a key that names the thing (`thread:<id>`, a view and its
+ * What a thing in the panel is asked about (D112 item 7): a key that names the thing (`thread:<id>`, a view and its
  * input, a calendar entry, the page itself), the words the box uses for it, the chips that go with every question so
  * the answer is about it, and the panel's part of the conversation page's address, where the thing is the transcript's
  * artifact (`/conversations/<id>` with it beside).
@@ -702,7 +702,7 @@ interface ThingConversations {
 const ThingContext = createContext<ThingConversations | null>(null);
 
 /**
- * The conversation about the thing in the panel (D111 item 7), above the pages so it follows the thing from one page to
+ * The conversation about the thing in the panel (D112 item 7), above the pages so it follows the thing from one page to
  * another (Att göra's item opened as its page continues the same exchange). One at a time: asking about another thing
  * starts a new conversation, and the earlier one stays under Samtal in the rail. It is the landing's turn machinery
  * (`useTurns`), the same API, the same transcript and the same box; only where it is drawn differs.
@@ -741,7 +741,7 @@ export function ThingConversationProvider({ children }: { children: ReactNode })
 
 /** The thing's conversation as the panel reads it, in the shape the box and the transcript already read. */
 export type ThingConversation = ConversationState & {
-  /** A conversation about this thing exists or is on its way: the thing's facts fold (D111 item 7). */
+  /** A conversation about this thing exists or is on its way: the thing's facts fold (D112 item 7). */
   running: boolean;
 };
 /**

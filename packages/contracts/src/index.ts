@@ -1104,7 +1104,7 @@ export const CommitmentAddBodySchema = object({
 export type CommitmentAddBody = Static<typeof CommitmentAddBodySchema>;
 
 /**
- * One piece of news as a news source's connector lists it (D111, amended 2026-11-11): what Hem's "Nyheter" and the
+ * One piece of news as a news source's connector lists it (D112, amended 2026-11-11): what Hem's "Nyheter" and the
  * list "Alla nyheter" draw, and nothing else. A row either leaves Clew by its `link` or opens in Clew by the read its
  * view's `open` names (by convention `<id>.newsItem`). No body, no image, no author: Clew is not a news site (vision).
  */
@@ -1129,7 +1129,7 @@ export const NewsRowSchema = object(
         "The item in its own system, opened in a new tab. Without it the row opens in Clew through the view's `open`.",
     }),
   },
-  "One piece of news in a news source's list (D111).",
+  "One piece of news in a news source's list (D112).",
 );
 export type NewsRow = Static<typeof NewsRowSchema>;
 /** What `<id>.news` and the composite `clew.news` take: nothing. The source lists what the person may read. */
@@ -1142,7 +1142,7 @@ export const NewsOutputSchema = object(
 );
 export type NewsOutput = Static<typeof NewsOutputSchema>;
 /**
- * What the composite `clew.news` returns (D111, amended 2026-11-11): every source's rows in one list, newest first,
+ * What the composite `clew.news` returns (D112, amended 2026-11-11): every source's rows in one list, newest first,
  * each marked with the connector it came from, the source as a person reads it (`system`) and the view that opens it
  * there when the source declares one. A source that did not answer contributes nothing and is not named.
  */
@@ -1182,7 +1182,7 @@ export type About = Static<typeof AboutSchema>;
  * A page of an owned domain where the person writes about one entity (D95, D96): a core connector's in-process `about`
  * may name one, never a remote manifest. `href` may hold `{key}` and `{id}`, which the web fills in. A path (`/staff?…`)
  * is a page of its own, a destination; a query alone (`?talk={id}`) is something that lies over the page the way in is
- * drawn on, its parameters added to that page's address with everything else in it kept (D110 rule 5).
+ * drawn on, its parameters added to that page's address with everything else in it kept (D111 rule 5).
  */
 export const EntityPageSchema = object({
   title: Type.String({ minLength: 1, maxLength: 60 }),
@@ -1226,7 +1226,7 @@ export const EntityColumnSchema = object({
 });
 export type EntityColumn = Static<typeof EntityColumnSchema>;
 /**
- * What a write asks the person for (D111 item 10): a closed list of kinds, each naming one property of the capability's
+ * What a write asks the person for (D112 item 10): a closed list of kinds, each naming one property of the capability's
  * own input. Clew draws them as the first step of the action's dialog and merges the answers into the input the source
  * receives; the source never draws a form.
  */
@@ -1298,7 +1298,7 @@ export const AskSchema = Type.Union(
 );
 export type Ask = Static<typeof AskSchema>;
 /**
- * The values a person gave for an action's asks (D111 item 10), by input property: an instant for a meeting, a day for a
+ * The values a person gave for an action's asks (D112 item 10), by input property: an instant for a meeting, a day for a
  * date, an `enum` value for a choice, the text for the rest. Only the asked properties; Clew refuses anything else.
  */
 export const AskValuesSchema = Type.Record(
@@ -1307,7 +1307,7 @@ export const AskValuesSchema = Type.Record(
   { maxProperties: ASKS_MAX, additionalProperties: false },
 );
 export type AskValues = Static<typeof AskValuesSchema>;
-/** One thing a write will do (D111 item 10), as an `effect` read says it before anything is written. */
+/** One thing a write will do (D112 item 10), as an `effect` read says it before anything is written. */
 export const EffectRowSchema = object(
   {
     label: Type.String({
@@ -1342,7 +1342,7 @@ export const EffectOutputSchema = object(
       }),
     ),
   },
-  'What an `effect` read answers (D111 item 10): for exactly the input the execute would get, what it will write where, without writing anything. Drawn as "Det här händer", the dialog\'s last step.',
+  'What an `effect` read answers (D112 item 10): for exactly the input the execute would get, what it will write where, without writing anything. Drawn as "Det här händer", the dialog\'s last step.',
 );
 export type EffectOutput = Static<typeof EffectOutputSchema>;
 /** `POST /api/threads/:id/effect` and `POST /api/entities/:kind/:key/effect`: the effect read's answer and whose it is. */
@@ -1352,7 +1352,7 @@ export const EffectPreviewSchema = object({
 });
 export type EffectPreview = Static<typeof EffectPreviewSchema>;
 /**
- * What a propose or an execute draws on its way (D111 item 10), resolved from the registered declaration on every read,
+ * What a propose or an execute draws on its way (D112 item 10), resolved from the registered declaration on every read,
  * never from a draft: what it asks the person, whether "Det här händer" comes from an `effect` read, and the capability's
  * own description for when it does not. The web draws the dialog from it; a write without asks whose result can be
  * undone stays one press.
@@ -1378,7 +1378,7 @@ export const EntityActionSchema = object({
   kind: Type.Union([Type.Literal('propose'), Type.Literal('execute')]),
   param: Type.String(),
   own,
-  /** The way to the decision (D111 item 10); the entity's key is its `param` and never asked. */
+  /** The way to the decision (D112 item 10); the entity's key is its `param` and never asked. */
   path: Type.Optional(ActionPathSchema),
 });
 export type EntityAction = Static<typeof EntityActionSchema>;
@@ -1447,7 +1447,7 @@ export const EntitySectionSchema = object({
 export type EntitySection = Static<typeof EntitySectionSchema>;
 /**
  * `POST /api/entities/:kind/:key/actions`: start one of the entity's actions (D97, D8), named as `EntityAction.capability`.
- * `values` answers a propose's asks (D111): the propose drafts with them. An execute's asks are answered when the person
+ * `values` answers a propose's asks (D112): the propose drafts with them. An execute's asks are answered when the person
  * decides on its work item (`ActInput.values`), never here.
  */
 export const EntityActionInputSchema = object({
@@ -1455,7 +1455,7 @@ export const EntityActionInputSchema = object({
   values: Type.Optional(AskValuesSchema),
 });
 export type EntityActionInput = Static<typeof EntityActionInputSchema>;
-/** `POST /api/entities/:kind/:key/effect`: what the action would write for the entity with these answers (D111). */
+/** `POST /api/entities/:kind/:key/effect`: what the action would write for the entity with these answers (D112). */
 export const EntityEffectInputSchema = object({
   capability: Type.String({ minLength: 3, maxLength: 120 }),
   values: Type.Optional(AskValuesSchema),
@@ -1592,7 +1592,7 @@ export const ClewActionSchema = object({
 export type ClewAction = Static<typeof ClewActionSchema>;
 /**
  * A change the conversation made to a card as a draft. The card's own button executes; the conversation never touches a
- * source. `action` (D111 item 8) is one of the work item's actions filled in by the assistant: which action and the
+ * source. `action` (D112 item 8) is one of the work item's actions filled in by the assistant: which action and the
  * values for what it asks, checked against the asks when drafted and again when the person sends. It is kept in the
  * conversation only, and the person opens it in the action's own dialog; nothing is executed from it.
  */
@@ -1703,11 +1703,11 @@ export const ThreadActionSchema = object({
   capability: Type.String(),
   kind: Type.Union([Type.Literal('read'), Type.Literal('propose'), Type.Literal('execute')]),
   role: ActionRole,
-  /** Where a read's answer goes (D110): unfolded inside the card, or a link out to the source system in a new tab. */
+  /** Where a read's answer goes (D111): unfolded inside the card, or a link out to the source system in a new tab. */
   target: Type.Optional(
     Type.Union([Type.Literal('panel'), Type.Literal('link')], {
       description:
-        "For a `read`: absent or `panel` unfolds the read's answer inside the card, under its buttons (a `table` view opens in the card's place in the panel); `link` marks the button as leaving Clew and opens the `url` the read answers in a new tab (D110 rule 8). Ignored on a propose or execute.",
+        "For a `read`: absent or `panel` unfolds the read's answer inside the card, under its buttons (a `table` view opens in the card's place in the panel); `link` marks the button as leaving Clew and opens the `url` the read answers in a new tab (D111 rule 8). Ignored on a propose or execute.",
     }),
   ),
   /** Fixed input merged with the selected item refs at execution time. */
@@ -1728,21 +1728,21 @@ export const ThreadActionSchema = object({
   /** A read capability of the same connector that takes `{ ref }` for one item and answers a `PreviewOutput` (D70). */
   preview: Type.Optional(Type.String()),
   /**
-   * The action is the person's read receipt (D111, amended 2026-11-11): the work item asks the person to acknowledge
+   * The action is the person's read receipt (D112, amended 2026-11-11): the work item asks the person to acknowledge
    * that they have read something published. Only on an execute, at most one per item. While such an item is open, Hem
    * lifts the most urgent one above its blocks with this action as its button.
    */
   acknowledgement: Type.Optional(
     object(
       { publishedAt: { ...instant, description: 'When what the person acknowledges was published.' } },
-      'The action is the read receipt for something published, which Hem lifts until it is given (D111).',
+      'The action is the read receipt for something published, which Hem lifts until it is given (D112).',
     ),
   ),
 });
 export type ThreadAction = Static<typeof ThreadActionSchema>;
 /**
  * A card action as the API answers it: the draft's action and, for a propose or an execute of the card's own connector,
- * its `path` (D111 item 10), resolved from the registered manifest on every read. A draft cannot carry a path.
+ * its `path` (D112 item 10), resolved from the registered manifest on every read. A draft cannot carry a path.
  */
 export const CardActionSchema = object({
   ...ThreadActionSchema.properties,
@@ -1862,7 +1862,7 @@ export const unresolvedExecution = (t: Pick<Thread, 'execution'>) =>
   !!t.execution && ['pending', 'running', 'unknown', 'partial', 'failed'].includes(t.execution.state);
 
 /**
- * What happened to a work item, as its "Händelser" lists it (D111 item 4): read from the audit rows the item's own
+ * What happened to a work item, as its "Händelser" lists it (D112 item 4): read from the audit rows the item's own
  * mutations wrote, nothing else. Who did it is the person (`you`) or Clew on its own (`clew`); a row anyone else wrote is
  * left out, so no other person is ever named. No text of a model turn, no source content: what the person reads beside
  * it (the receipt, the action's label) comes from the item they may already see.
@@ -1911,7 +1911,7 @@ export const ItemEventSchema = object(
     /** `decided`, `undo-decided` and `answered`: the decision in the ledger, so an answer is matched to its receipt. */
     execution: Type.Optional(id),
   },
-  "One thing that happened to a work item (D111 item 4): who, what and when, from the item's audit rows.",
+  "One thing that happened to a work item (D112 item 4): who, what and when, from the item's audit rows.",
 );
 export type ItemEvent = Static<typeof ItemEventSchema>;
 export const ItemEventsSchema = object({ events: Type.Array(ItemEventSchema) });
@@ -2766,11 +2766,11 @@ export const ActInput = object({
   actionId: id,
   refs: Type.Optional(Type.Array(Type.String({ maxLength: 200 }), { maxItems: 50 })),
   reviews: Type.Optional(Type.Array(ReviewEvidenceSchema, { maxItems: 50 })),
-  /** The person's answers to the action's asks (D111 item 10): the asked properties only, merged into the input. */
+  /** The person's answers to the action's asks (D112 item 10): the asked properties only, merged into the input. */
   values: Type.Optional(AskValuesSchema),
 });
 export type ActInput = Static<typeof ActInput>;
-/** `POST /api/threads/:id/effect`: what the action would write with these rows and answers; nothing is written (D111). */
+/** `POST /api/threads/:id/effect`: what the action would write with these rows and answers; nothing is written (D112). */
 export const EffectInput = object({
   actionId: id,
   refs: Type.Optional(Type.Array(Type.String({ maxLength: 200 }), { maxItems: 50 })),
@@ -2779,7 +2779,7 @@ export const EffectInput = object({
 export type EffectInput = Static<typeof EffectInput>;
 /**
  * `GET /api/asks/times`: for an ask of kind `meeting`, three free times of the ask's length in the person's own calendar
- * (D111 item 10), and the person's day when `date` is asked for, so the dialog can draw it. Nobody else's calendar is
+ * (D112 item 10), and the person's day when `date` is asked for, so the dialog can draw it. Nobody else's calendar is
  * read and nothing is written to a calendar.
  */
 export const MeetingTimesSchema = object({
@@ -3039,7 +3039,7 @@ const siteLabel = Type.String({ minLength: 1, maxLength: 60, pattern: '^[^\\r\\n
 const siteHref = Type.String({ minLength: 1, maxLength: 500, pattern: '^(/(?!/)[^\\s\\\\]*|https?://[^\\s\\\\]+)$' });
 const siteId = Type.String({ minLength: 1, maxLength: 60, pattern: '^[a-z0-9][a-z0-9-]*$' });
 /**
- * What a place or a page is to Clew beyond the band (D111, amended 2026-11-11): `toolbox` is the intranet's page of
+ * What a place or a page is to Clew beyond the band (D112, amended 2026-11-11): `toolbox` is the intranet's page of
  * tools, which Hem links to under Verktygslådan as "Fler verktyg på intranätet". The installation marks it in its
  * content system; without a marked page Hem draws no such link.
  */

@@ -70,7 +70,7 @@ import { useThingHead } from './thing-head';
 import { Unfold } from './unfold';
 
 /**
- * A work item (D111 item 4, the `work-item-detail` template, boards WorkItem, Inbox, PhoneItem and ActReceipt): one
+ * A work item (D112 item 4, the `work-item-detail` template, boards WorkItem, Inbox, PhoneItem and ActReceipt): one
  * shape at two widths. Narrow (`WorkItem`), in Att göra's reading pane, in the panel beside a page and in a
  * conversation's answer, it is the header (the source line, the title, the status, the badges and the buttons) and the
  * main column. As a page (`WorkItemPage`, `/items/<threadId>`) the same header and column get the details rail, which
@@ -128,7 +128,7 @@ function useWorkItem(thread: Thread, onChange: (thread: Thread) => void, idBase:
   const animatedLayout = useAnimatedLayout({ containerRef: root });
   const { pathname, search } = useLocation();
   const navigate = useNavigate();
-  // One of the item's own reads unfolded in it (`open-card` and `open-action`, D110 amended 2026-11-11), wherever it is
+  // One of the item's own reads unfolded in it (`open-card` and `open-action`, D111 amended 2026-11-11), wherever it is
   // drawn. The address is replaced, not pushed: unfolding is a change within the item, so Back never steps through it.
   const asked = readOf(new URLSearchParams(search));
   const unfolded = asked?.threadId === thread.id ? asked.actionId : null;
@@ -563,7 +563,7 @@ function Notes({ thread, item }: { thread: Thread; item: ItemState }) {
 /** Where a work item is drawn at its narrow width: the reading pane, the panel beside a page, a conversation's answer. */
 export type ItemPlace = 'pane' | 'panel' | 'answer';
 /**
- * The work item at its narrow width (D111 item 4): the source line, the title with "Öppna som sida", the status and the
+ * The work item at its narrow width (D112 item 4): the source line, the title with "Öppna som sida", the status and the
  * badges, the buttons and what one of its reads unfolded, then the main column. An `article` named by its title.
  */
 export function WorkItem({
@@ -579,7 +579,7 @@ export function WorkItem({
   headingLevel: 2 | 3;
   onChange: (thread: Thread) => void;
   /**
-   * A conversation about the item runs under it in the panel (D111 item 7): the header stays, with the status, the
+   * A conversation about the item runs under it in the panel (D112 item 7): the header stays, with the status, the
    * badges and the buttons, and the main column folds under "Visa allt".
    */
   folded?: boolean;
@@ -648,7 +648,7 @@ export function WorkItem({
 
 /**
  * The details rail (board WorkItem): "Detaljer" as the facts the item really has, "Berör" as the people and units its
- * rows name, linked to their pages, and "Öppna i källan" as the item's own read that leads out of Clew (D110 rule 8).
+ * rows name, linked to their pages, and "Öppna i källan" as the item's own read that leads out of Clew (D111 rule 8).
  */
 function Details({ thread, item }: { thread: Thread; item: ItemState }) {
   const now = new Date().toISOString(),
@@ -755,7 +755,7 @@ function Details({ thread, item }: { thread: Thread; item: ItemState }) {
 }
 
 /**
- * The work item as a page (D111 item 4, `/items/<threadId>`, the `work-item-detail` template): the trail back (to where
+ * The work item as a page (D112 item 4, `/items/<threadId>`, the `work-item-detail` template): the trail back (to where
  * the person came from when Clew can name it, else Att göra) with the source, the title as the page's heading, the
  * status and badges and the buttons in the header; the main column; and the details rail, 340 px beside the column. At
  * 1024 px and below the rail's content is behind "Visa detaljer" in a fullscreen dialog, and on a phone the buttons are
@@ -771,7 +771,7 @@ export function WorkItemPage({
   thread: Thread;
   back: { label: string; href: string };
   onChange: (thread: Thread) => void;
-  /** "Fråga Clew" (D111 item 7, board Assistant), after the item's own buttons in the header. */
+  /** "Fråga Clew" (D112 item 7, board Assistant), after the item's own buttons in the header. */
   ask?: ReactNode;
   /**
    * The page's panel (`usePagePanel`), in the end slot after the details rail. While it holds something beside the page

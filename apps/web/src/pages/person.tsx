@@ -115,7 +115,7 @@ function PersonDetails({ detail, from }: { detail: EntityDetail; from: string | 
 }
 
 /**
- * The person as a page (D111 item 5, board Person; D97 item 5), at `/people/:key`, the one way a person is shown (D110
+ * The person as a page (D112 item 5, board Person; D97 item 5), at `/people/:key`, the one way a person is shown (D111
  * rule 3), reached from a name on Personal or on any row that names them. The work item's page shape (`EntityPage`):
  * the way back with their unit, their avatar, name and title, and every action about them with "Fråga Clew" in the
  * header; in the main column "Behöver dig" (the reader's work items about them) and then one section per source that
@@ -124,7 +124,7 @@ function PersonDetails({ detail, from }: { detail: EntityDetail; from: string | 
  * agera på" on Personal and a talk's way back land where they did. A person the reader may not ask about is the page's
  * own "finns inte" (the server answers 404 for both).
  *
- * The page holds the panel beside its column (D110 rules 2 to 4, `usePagePanel`): a work item under Behöver dig and the
+ * The page holds the panel beside its column (D111 rules 2 to 4, `usePagePanel`): a work item under Behöver dig and the
  * one an action makes open there, with the address kept, and closing leaves the page as it was. While the panel holds
  * something beside the page the details are behind "Visa detaljer"; in a narrower window the panel is the drawer over
  * the page.
@@ -145,7 +145,7 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
   const cardChanged = useCallback(() => {
     void client.invalidateQueries({ queryKey: keys.entities.detail('person', key), exact: true });
   }, [client, key]);
-  // "Fråga Clew" (D111 item 7): the person on the page is the thing the panel is about. What a source says about a
+  // "Fråga Clew" (D112 item 7): the person on the page is the thing the panel is about. What a source says about a
   // person never reaches the model (D97 item 7), so the question goes without a chip: the conversation is drawn beside
   // the person, and the person is named only where the one asking names them.
   const pageThing: OwnThing | null = detail
@@ -282,7 +282,7 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
     <Shell user={user} nav={nav} height={short ? 'auto' : 'fill'}>
       {body}
       {panel.overlay}
-      {/* The talk from the talks section's "Öppna samtalet" lies over the page and its panel (D110 rule 5). */}
+      {/* The talk from the talks section's "Öppna samtalet" lies over the page and its panel (D111 rule 5). */}
       {user.role === 'manager' && <TalkOverlay back={detail ? `Tillbaka till ${detail.entity.name}` : 'Tillbaka'} />}
     </Shell>
   );

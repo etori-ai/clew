@@ -5,7 +5,7 @@ import { newsQuery } from '../queries';
 import { toolHref } from './nav';
 import { LinkRow, WorkList } from './work-row';
 
-/** The combined news list (D111, amended 2026-11-11): Clew's core read over every news source the person may read. */
+/** The combined news list (D112, amended 2026-11-11): Clew's core read over every news source the person may read. */
 export const NEWS_CAPABILITY = 'clew.news';
 /** How many pieces of news Hem shows (board Hem10): the newest; the rest are in "Alla nyheter". */
 const ON_HEM = 3;
@@ -59,7 +59,7 @@ function NewsRowItem({ row, hrefFor }: { row: NewsEntry; hrefFor: (view: ViewRef
 }
 
 /**
- * "Nyheter" on Hem (D111, amended 2026-11-11, board Hem10): the third block beside "Behöver dig" and "I dag", the three
+ * "Nyheter" on Hem (D112, amended 2026-11-11, board Hem10): the third block beside "Behöver dig" and "I dag", the three
  * newest pieces of news from every news source the person may read, and the way to all of them. Drawn only when there
  * is news: a person with no news source, a read that fails and sources that answered nothing all leave no block and
  * say nothing (Hem is not where a news source's silence is reported).

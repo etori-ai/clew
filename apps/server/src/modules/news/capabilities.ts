@@ -3,7 +3,7 @@ import { NewsInputSchema, NewsResultSchema, type NewsInput } from '@clew/contrac
 import type { NewsUsecases } from './usecases';
 
 /**
- * The combined news list as part of Clew's core connector (D111, amended 2026-11-11): `clew.news` is the one news list
+ * The combined news list as part of Clew's core connector (D112, amended 2026-11-11): `clew.news` is the one news list
  * a person sees, the block "Nyheter" on Hem and "Alla nyheter", and the one news tool the model sees, whatever the
  * number of news sources. As with the errand list (D89) the registry joins this with the composite search under the
  * core connector's id, so neither module knows the other. The model reads how many rows there are, never the rows:

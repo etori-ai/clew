@@ -168,7 +168,7 @@ export interface ThreadStore {
   threadsNaming(personId: string, subjects: readonly Subject[]): Promise<NamingThread[]>;
   /**
    * The audit rows written about these subjects, oldest first, at most `limit` of the newest: what a work item's
-   * "Händelser" is read from (D111 item 4). The caller has checked that the person may see the item; this reads no owner.
+   * "Händelser" is read from (D112 item 4). The caller has checked that the person may see the item; this reads no owner.
    */
   history(subjects: readonly string[], limit: number): Promise<AuditEntry[]>;
   transaction<T>(fn: (tx: ThreadTx) => Promise<T>): Promise<T>;

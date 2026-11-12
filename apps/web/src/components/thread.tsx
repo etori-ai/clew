@@ -144,7 +144,7 @@ export function ThreadCard({ thread, compact, headingLevel = 3, beside = false, 
   const events = week.data?.events ?? EMPTY_EVENTS;
   const chipRef = 'thread:' + thread.id;
   const inConversation = talk.chipped.includes(chipRef);
-  // The menus' first item where the page has a question box, and no item where it has none (D110 rule 6).
+  // The menus' first item where the page has a question box, and no item where it has none (D111 rule 6).
   const addItems = talk.hasBox
     ? [
         {

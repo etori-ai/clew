@@ -1,6 +1,6 @@
 /**
  * The review of a card's rows one at a time (D70 item 2) lies over the page it was opened on (D73, amended 2026-11-11
- * under D110 rule 5): its address is that page's own with the card as `review` and the step as `step`, 1-based, the
+ * under D111 rule 5): its address is that page's own with the card as `review` and the step as `step`, 1-based, the
  * rows in the card's order and the last step Skicka; the first step leaves `step` out. Closing it is the same address
  * without the two, so what was under it is there again as it was: Hem's tab, Personal's lens, a person's section and
  * way back, a conversation, and the card open in the page's panel. Everything else in the address is the
@@ -13,7 +13,7 @@ export const STEP_PARAM = 'step';
 export const REVIEW_KEYS: readonly string[] = [REVIEW_PARAM, STEP_PARAM];
 /** The panel's card (`panel-address.ts`), which the review keeps, names again or lets go of. */
 const CARD = 'card';
-/** Att göra's chosen work item (`work-items.ts`, D111), which the review treats as the panel's card. */
+/** Att göra's chosen work item (`work-items.ts`, D112), which the review treats as the panel's card. */
 const ITEM = 'item';
 
 const address = (pathname: string, query: URLSearchParams) => {
@@ -69,7 +69,7 @@ export function withRetriedReview(
 }
 /**
  * Where `/cards/:threadId/review?step=n`, a link from before the review lay over its page, leads: the work item in Att
- * göra (D111) with the review over it, at the step it named. Nothing else of its query is kept.
+ * göra (D112) with the review over it, at the step it named. Nothing else of its query is kept.
  */
 export function legacyReview(threadId: string, search: URLSearchParams | string): string {
   const q = new URLSearchParams({ item: threadId, [REVIEW_PARAM]: threadId });

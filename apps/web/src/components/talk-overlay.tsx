@@ -59,7 +59,7 @@ const responsible = (row: Pick<CommitmentEntry, 'owner' | 'mine'>) =>
   row.mine ? 'Du' : row.owner === 'employee' ? 'Medarbetaren' : 'Chefen';
 
 /**
- * One person's utvecklingssamtal (D96 item 7) as a focused overlay over the page it was opened on (D83, D110 rule 5):
+ * One person's utvecklingssamtal (D96 item 7) as a focused overlay over the page it was opened on (D83, D111 rule 5):
  * an end `Drawer` on a desktop and a tall `BottomSheet` on a phone, composed as the service catalogue's overlay is
  * (`DrawerHeader` in a `Layout`, the sheet's own heading row with Stäng). Mounted by the pages where its way in is
  * drawn, after their panel so it stacks over a card opened beside them: Personal (a row's menu), a person's page (the

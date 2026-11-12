@@ -197,7 +197,7 @@ const absencePattern = {
 };
 
 /**
- * What an `effect` read answers (D111, the protocol's EffectOutput): what a write will do where, without writing, and how
+ * What an `effect` read answers (D112, the protocol's EffectOutput): what a write will do where, without writing, and how
  * long it can be undone.
  */
 const effectOutput = object(
@@ -220,7 +220,7 @@ const effectOutput = object(
   ['rows'],
 );
 
-/** A talk's input: the employee by ref, and what the manager fills in (D111): the time, the place and a message. */
+/** A talk's input: the employee by ref, and what the manager fills in (D112): the time, the place and a message. */
 const talkInput = object(
   {
     refs: array({ type: 'string', pattern: '^hr:emp:' }),
@@ -242,7 +242,7 @@ const bookTalk = {
   execution: deduplicated,
   input: talkInput,
   output: executeResult,
-  // The dialog (D111): the time from the manager's own calendar, the place and an optional message; then what is written.
+  // The dialog (D112): the time from the manager's own calendar, the place and an optional message; then what is written.
   asks: [
     { kind: 'meeting', property: 'when', label: 'När', required: true, durationMinutes: TALK_MINUTES },
     { kind: 'text', property: 'place', label: 'Plats', required: false },
@@ -251,7 +251,7 @@ const bookTalk = {
   effect: 'hr.bookTalkEffect',
 };
 
-// What hr.bookTalk will do, for the same input, without writing (D111): the one thing true in this system, the talk
+// What hr.bookTalk will do, for the same input, without writing (D112): the one thing true in this system, the talk
 // registered with its time, and the undo window the write gives.
 const bookTalkEffect = {
   name: 'hr.bookTalkEffect',
@@ -325,7 +325,7 @@ const decideLeave = {
     ['refs', 'decision'],
   ),
   output: executeResult,
-  // The manager may say why (D111); the decision itself comes from the card's button.
+  // The manager may say why (D112); the decision itself comes from the card's button.
   asks: [{ kind: 'long-text', property: 'comment', label: 'Kommentar till medarbetaren', required: false }],
 };
 

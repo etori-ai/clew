@@ -11,7 +11,7 @@ import { memoryState } from '../../connectors/communication/state.mjs';
 import { assertionFor, testJwks } from '../connector-authority';
 
 /**
- * The combined news list (D111, amended 2026-11-11): every news source in the person's scope at once under a budget,
+ * The combined news list (D112, amended 2026-11-11): every news source in the person's scope at once under a budget,
  * the rows newest first whichever source holds them, each opening in Clew in its own source or leaving by its link,
  * and a source that fails, is late or answers out of shape contributing nothing, never an error. Fake in-process news
  * sources stand in for an intranet and a newsroom; the communication fixture joins as a source over the protocol.

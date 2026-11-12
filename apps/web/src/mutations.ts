@@ -121,7 +121,7 @@ export function useThreadAction({
 }
 
 /**
- * A decision sent from the action dialog (D111 item 10): the same path as `useThreadAction`'s `run` with `settle` (the
+ * A decision sent from the action dialog (D112 item 10): the same path as `useThreadAction`'s `run` with `settle` (the
  * answer goes into the cache for every screen, `onChange` first, and an answer not at rest keeps the item on its way),
  * but the failure is the dialog's to place on the field it concerns, so `send` resolves the server's Swedish sentence
  * instead of keeping it in an `error` the item would also show. Null once it went through, or for a second send while
@@ -214,7 +214,7 @@ const TALK_KEYS: readonly QueryKey[] = [keys.talks.all, keys.staff];
 /**
  * What it changes beside them and is re-read without waiting (D96 item 5): the action point's card in the stream and the
  * counts and figure beside it, and what Clew's talks say about people and units (D97) on whichever page the talk lay
- * over (D110 rule 5): Personal's lens, column and "Just nu", the talks section on a person's page, a unit's section.
+ * over (D111 rule 5): Personal's lens, column and "Just nu", the talks section on a person's page, a unit's section.
  */
 const TALK_SIDE_KEYS: readonly QueryKey[] = [keys.threads, keys.attention, keys.areas, keys.entities.all];
 /** What a caller may add to a talk write's completion toast. */

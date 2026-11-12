@@ -9,7 +9,7 @@ import { parseManifest, remoteConnector, type FetchLike } from '../../packages/c
 import { assertionFor, testJwks } from '../connector-authority';
 
 /**
- * A read receipt on a work item (D111, amended 2026-11-11): a source marks the execute that is the person's
+ * A read receipt on a work item (D112, amended 2026-11-11): a source marks the execute that is the person's
  * acknowledgement that they have read something published, with when it was published, so Hem can lift the item until
  * it is given. The mark is explicit in the draft contract, never read from the reason's words, and the registry refuses
  * a draft that marks it wrongly as it refuses any draft that breaks the action rule (D35).

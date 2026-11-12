@@ -57,7 +57,7 @@ test('two tabs and a reconnect announce a persisted reminder once; Visa opens it
       .getByRole('button', { name: 'Visa', exact: true })
       .click();
     // Visa opens the card over the page the toast was on, Kalender; from Hem, which holds no card, the work item in Att
-    // göra (D110, D111).
+    // göra (D111, D112).
     await expect(winner).toHaveURL(winner === page ? '/calendar?card=ledighet' : '/todo?item=ledighet');
     await expect(winner.getByRole('article', { name: 'Ärende: ' + thread.title })).toBeVisible();
     await Promise.all([page.reload(), second.reload()]);
@@ -75,7 +75,7 @@ for (const state of ['queued', 'blocked'] as const)
     api.threads = [card];
     await page.setViewportSize(narrow);
     await open(page, '/todo');
-    // Att göra draws rows (D111): the row says the state, words on the line for a reminder that waits and its dot for
+    // Att göra draws rows (D112): the row says the state, words on the line for a reminder that waits and its dot for
     // one that was stopped, and never that it will remind.
     const row = page.getByRole('main').locator('#work-ledighet');
     if (state === 'queued') await expect(row).toContainText('påminnelsen väntar på schemaläggning');
@@ -83,7 +83,7 @@ for (const state of ['queued', 'blocked'] as const)
     await expect(row).not.toContainText('påminner dig');
     await expectNoAxeViolations(page);
     expect(await reflowProblems(page)).toEqual([]);
-    // The whole sentence is the work item's, its page alone on the surface at this width (D111 item 12).
+    // The whole sentence is the work item's, its page alone on the surface at this width (D112 item 12).
     await row.getByRole('link').click();
     await expect(page.getByRole('heading', { level: 1, name: card.title })).toBeVisible();
     await expect(

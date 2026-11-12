@@ -4,7 +4,7 @@ import type { AssistantDeps } from './ports';
 import type { ClewTool } from './model';
 
 /**
- * The assistant drafts, the person decides (D111 item 8). With exactly one work item as the conversation's subject the
+ * The assistant drafts, the person decides (D112 item 8). With exactly one work item as the conversation's subject the
  * model may fill in one of the item's actions that asks the person for something: which action and the values for its
  * asks. The values are checked against the asks the way the decision checks them (`answersOf`), the draft is kept in the
  * conversation's message, and nothing is executed: the person opens the draft in the action's own dialog and sends it

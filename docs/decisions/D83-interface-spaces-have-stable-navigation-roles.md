@@ -1,6 +1,6 @@
 # D83 · Interface spaces have stable navigation roles
 
-**Status:** accepted; the placement rules for pages, panels, overlays and confirmations stand. The MCP catalogue and App flow it also placed left the code with D81's prototype on 2026-11-11 ([closing note](../reviews/2026-11-11-external-mcp-chat-services-exploration.md)); the spaces stand under [D111](D111-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) (2026-11-11), and the reference `docs/reference/interface-spaces.md` is rewritten to it · **Date:** 2026-11-09 · **Area:** ui, product
+**Status:** accepted; the placement rules for pages, panels, overlays and confirmations stand. The MCP catalogue and App flow it also placed left the code with D81's prototype on 2026-11-11 ([closing note](../reviews/2026-11-11-external-mcp-chat-services-exploration.md)); the spaces stand under [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) (2026-11-11), and the reference `docs/reference/interface-spaces.md` is rewritten to it · **Date:** 2026-11-09 · **Area:** ui, product
 
 **Decision.** Use [Interface spaces and navigation](../reference/interface-spaces.md) as the current placement reference. Navigation destinations own the main page; opened contextual information stays beside it; focused service and review interactions use the existing sidebar overlay; confirmations and feedback belong to the interaction that caused them. Page-owned information such as I dag is not panel content. A content address does not imply a full page.
 
@@ -12,7 +12,7 @@
 
 **Verification.** The targeted MCP browser suite (`tests/a11y/mcp.spec.ts`) covers catalogue/App drill-in, close and focus return, draft/filter retention, Back/Forward/reload, old addresses, AI-off, completion and desktop/mobile accessibility. The existing native panel and review suites remain the owners of those established flows. Hillevi's dev account is the live visual check. Production MCP readiness and manual screen-reader conformance are not claimed.
 
-**Amended 2026-11-11 (D110): rule 1's promotion is withdrawn.** Rule 1 of the [reference](../reference/interface-spaces.md#placement-and-return-rules)
+**Amended 2026-11-11 (D111): rule 1's promotion is withdrawn.** Rule 1 of the [reference](../reference/interface-spaces.md#placement-and-return-rules)
 said that only an explicit "Öppna som sida" promotes a contextual view to a tool's page. Under
-[D110](D110-where-something-opens-is-decided-by-what-it-is.md) rule 7 no control does: a view in the panel offers no
+[D111](D111-where-something-opens-is-decided-by-what-it-is.md) rule 7 no control does: a view in the panel offers no
 way to its tool's page, and the tool is reached from the rail. The rule now says so; the other placement rules stand.

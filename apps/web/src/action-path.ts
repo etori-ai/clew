@@ -2,7 +2,7 @@ import type { ActionPath, Ask, AskValues } from '@clew/contracts';
 import { dayLabel, displayDate, localClock, localInstant, timeLabel, timeRange } from '@clew/calendar/dates';
 
 /**
- * The one path a write passes (D111 item 10), the pure part the action dialog draws from: whether an action opens the
+ * The one path a write passes (D112 item 10), the pure part the action dialog draws from: whether an action opens the
  * dialog at all, its steps and where it opens, the person's answers checked the way the server checks them, a refusal
  * placed on the field it concerns, and the words the dialog says the values and the person's day in. No React, no I/O;
  * the server's `answersOf` (`packages/connectors/src/asks.ts`) is the authority and speaks the same sentences.
@@ -67,7 +67,7 @@ export function sentValues(asks: readonly Ask[], values: AskValues): AskValues {
 
 /**
  * Where the dialog opens. Without asks there is only "Det här händer". `startAt` is the caller's (an assistant's draft
- * opens at "Det här händer" with "Granska och …" and at the fill-in with "Ändra", D111 item 8); an `effect` start whose
+ * opens at "Det här händer" with "Granska och …" and at the fill-in with "Ändra", D112 item 8); an `effect` start whose
  * values do not pass opens at the fill-in with the problems shown. Without `startAt` a path that requires nothing opens at
  * "Det här händer", so an approval with an optional comment is two presses; one that requires an answer opens at the fill-in.
  */

@@ -93,8 +93,8 @@ test.describe('the shared document and semantic catalogue', () => {
         rows: card.items.map(i => ({ ref: i.ref, label: i.label, outcome: 'done', detail: 'Attesterad.' })),
       };
       await open(page, '/todo?tab=done');
-      // The row opens its work item beside Klart (D111), and the item's way to the review lays it over both, in Klart's
-      // own address (D110 rule 5).
+      // The row opens its work item beside Klart (D112), and the item's way to the review lays it over both, in Klart's
+      // own address (D111 rule 5).
       await page.locator('#work-fakturor').getByRole('link').click();
       await page.getByRole('link', { name: 'Visa granskning', exact: true }).click();
       await expect(page).toHaveURL('/todo?tab=done&item=fakturor&review=fakturor');
@@ -381,7 +381,7 @@ test.describe('document review on a narrow phone', () => {
     api,
   }) => {
     await originals(page, api);
-    // On a phone the item is its page, alone on the surface, its next step pinned to the foot (D111 item 12).
+    // On a phone the item is its page, alone on the surface, its next step pinned to the foot (D112 item 12).
     await open(page, '/todo?item=fakturor');
     await expect(page.getByRole('heading', { level: 1, name: 'Attestera 3 fakturor, 48 200 kr' })).toBeVisible();
     const card = page.getByRole('main');

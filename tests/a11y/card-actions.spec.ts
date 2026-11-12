@@ -21,14 +21,14 @@ test.describe('a row is one link; the steps are on the open work item', () => {
   }) => {
     await open(page, '/todo');
     const row = page.locator('#work-omtanke');
-    // A row is one link to its work item (D111 item 3): the steps are the item's.
+    // A row is one link to its work item (D112 item 3): the steps are the item's.
     await expect(row.getByRole('button')).toHaveCount(0);
     await row.getByRole('link').focus();
     await page.keyboard.press('Enter');
     const card = page.getByRole('complementary', { name: 'Valt ärende' });
     await expect(card.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
     await expect(card.getByRole('button', { name: 'Se mönstret' })).toBeVisible();
-    // Att göra has no question box, so the card offers no way into one (D110 rule 6).
+    // Att göra has no question box, so the card offers no way into one (D111 rule 6).
     await expect(card.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
     await card.getByRole('button', { name: 'Fler val' }).focus();
     await page.keyboard.press('Enter');
@@ -46,7 +46,7 @@ test.describe('a row is one link; the steps are on the open work item', () => {
     page,
     api: _,
   }) => {
-    // The work item in Att göra's reading pane (D111 item 3).
+    // The work item in Att göra's reading pane (D112 item 3).
     await open(page, '/todo?item=fakturor');
     const card = page.getByRole('complementary', { name: 'Valt ärende' });
     await expect(card.getByRole('button', { name: 'Inte nu', exact: true })).toBeVisible();
@@ -61,7 +61,7 @@ test.describe('a row is one link; the steps are on the open work item', () => {
     api: _,
   }) => {
     // A source's name is a name ("Nextcloud"), so it is never lower-cased: on the item's source line and where it says
-    // why it is here (D111 item 4). Whether a write can be undone is only known from its receipt, so nothing says so before.
+    // why it is here (D112 item 4). Whether a write can be undone is only known from its receipt, so nothing says so before.
     await open(page, '/todo?item=ledighet');
     const card = page.locator('#card-ledighet');
     await expect(card.getByText('Personalsystemet · Personal', { exact: true })).toBeVisible();
@@ -146,7 +146,7 @@ test.describe('a row is one link; the steps are on the open work item', () => {
   });
 
   test('a card put in the box says so on its button and on its line', async ({ page, api: _ }) => {
-    // Where a box is on the page: the card beside a conversation (Hem holds no card since D111).
+    // Where a box is on the page: the card beside a conversation (Hem holds no card since D112).
     await page.setViewportSize({ width: 1440, height: 900 });
     await open(page, '/conversations/fraga?card=omtanke');
     const card = page.locator('#card-omtanke');
@@ -225,7 +225,7 @@ test.describe('a phone', () => {
     page,
     api: _,
   }) => {
-    // On a phone the item is its page with the buttons pinned to the foot (D111 item 12): Inte nu is under Fler val.
+    // On a phone the item is its page with the buttons pinned to the foot (D112 item 12): Inte nu is under Fler val.
     await open(page, '/todo?item=fakturor');
     await page.getByRole('main').getByRole('button', { name: 'Fler val' }).click();
     await page.getByRole('menuitem', { name: 'Inte nu' }).click();
@@ -248,7 +248,7 @@ test.describe('a phone', () => {
         confirm: 'Avslå ansökan? Medarbetaren meddelas direkt.',
       });
     await open(page, '/todo?item=ledighet');
-    // On a phone a second step is under Fler val beside the pinned next step (D111 item 12).
+    // On a phone a second step is under Fler val beside the pinned next step (D112 item 12).
     await page.getByRole('main').getByRole('button', { name: 'Fler val' }).click();
     await page.getByRole('menuitem', { name: 'Avslå', exact: true }).click();
     const question = page.getByRole('alertdialog', { name: 'Avslå ansökan?' });
@@ -324,7 +324,7 @@ test.describe('nothing is cut off', () => {
       await open(page, '/todo');
       await expect(page.locator('#work-omtanke').getByRole('link')).toBeVisible();
       expect(await cutOff(page.getByRole('main'))).toEqual([]);
-      // The pane does not fit beside the list at these widths: the item is its page (D111 items 3 and 4).
+      // The pane does not fit beside the list at these widths: the item is its page (D112 items 3 and 4).
       await open(page, '/todo?item=omtanke');
       await expect(page.getByRole('heading', { level: 1, name: 'Omtankesamtal med Anna Lindqvist' })).toBeVisible();
       expect(await cutOff(page.getByRole('main'))).toEqual([]);

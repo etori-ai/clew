@@ -282,7 +282,7 @@ export const api = {
   dismiss: (id: string) => post<Thread>(`/api/threads/${id}/dismiss`),
   completions: () => call<Completions>('/api/completions'),
   thread: (id: string) => call<Thread>(`/api/threads/${id}`),
-  /** A work item's Händelser (D111 item 4), from its audit rows. */
+  /** A work item's Händelser (D112 item 4), from its audit rows. */
   itemEvents: (id: string) => call<ItemEvents>(`/api/threads/${id}/events`),
   converse: (input: ConversationInput) => post<ConversationResponse>('/api/conversation', input),
   converseStream,
@@ -299,17 +299,17 @@ export const api = {
   attention: () => call<Attention>('/api/attention'),
   areas: () => call<{ areas: Area[]; menu?: MenuEntry[]; systems?: SystemMark[] }>('/api/areas'),
   connectors: () => call<{ connectors: unknown[]; tools: string[] }>('/api/connectors'),
-  /** The human decision on a work item's action (D45/D47), with the person's answers to its asks (D111) in `values`. */
+  /** The human decision on a work item's action (D45/D47), with the person's answers to its asks (D112) in `values`. */
   act: (id: string, actionId: string, refs?: string[], reviews?: ReviewEvidence[], values?: AskValues) =>
     post<{ kind: 'execute'; thread: Thread } | { kind: 'read' | 'propose'; output: unknown; view?: PanelViewSpec }>(
       `/api/threads/${id}/act`,
       { actionId, refs, reviews, ...(values ? { values } : {}) },
     ),
-  /** "Det här händer" (D111): what the action would write with these rows and answers, from its effect read. Writes nothing. */
+  /** "Det här händer" (D112): what the action would write with these rows and answers, from its effect read. Writes nothing. */
   effect: (id: string, actionId: string, refs?: string[], values?: AskValues) =>
     post<EffectPreview>(`/api/threads/${id}/effect`, { actionId, refs, ...(values ? { values } : {}) }),
   /**
-   * Free times for an action's meeting ask (D111) from the person's own calendar, before `before` (a work item's
+   * Free times for an action's meeting ask (D112) from the person's own calendar, before `before` (a work item's
    * deadline), and the person's own `date` when the dialog draws a day. Empty slots and no day without a calendar.
    */
   meetingTimes: (capability: string, property: string, options: { date?: string; before?: string } = {}) =>
@@ -364,7 +364,7 @@ export const api = {
   /** The shared header (D88): what the person's header connector lists for them, else Clew's default. */
   header: () => call<SiteHeaderView>('/api/header'),
   /**
-   * `clew.news` (D111, amended 2026-11-11): the news from every source the person may read, newest first. Refused for a
+   * `clew.news` (D112, amended 2026-11-11): the news from every source the person may read, newest first. Refused for a
    * person with no news source; `queries.ts` turns that refusal into `null`.
    */
   news: () => read<NewsResult>('clew.news', {}),

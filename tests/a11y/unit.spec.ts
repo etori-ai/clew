@@ -4,7 +4,7 @@ import { ENTITY_UNIT, TALK_LENS, user } from './data';
 import { MEMBER_UNIT, SICK_UNIT, TALK_UNITS, Units, unitAction, unitCard } from './unit-data';
 
 /**
- * The unit as an entity (D111 item 5, the shape of board Person; D97): a page of its own at `/units/:id`, in the work
+ * The unit as an entity (D112 item 5, the shape of board Person; D97): a page of its own at `/units/:id`, in the work
  * item's page shape: the way back, its name and its actions with "Fråga Clew" in the header, "Behöver dig" and every
  * source about a unit one under the other in the main column, each with its source's badge, and the unit's facts in the
  * details rail (Clew's own count of the people on a unit the reader manages, with the way to Personal as a link).
@@ -157,7 +157,7 @@ test.describe('the unit as a page', () => {
     await expect(title).toHaveAttribute('href', `${school}?from=%2F&card=${unitCard.threadId}`);
     await title.focus();
     await page.keyboard.press('Enter');
-    // The unit's page stays: its address with the item added, its heading and its way back (D110 rules 2 and 3).
+    // The unit's page stays: its address with the item added, its heading and its way back (D111 rules 2 and 3).
     await expect(page).toHaveURL(`${school}?from=%2F&card=${unitCard.threadId}`);
     const panel = page.getByRole('complementary', { name: 'Ärende' });
     await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -197,7 +197,7 @@ test.describe('the unit as a page', () => {
     await expect(panel.getByText(`${unitAction.title}: ${ENTITY_UNIT.label}`).first()).toBeVisible();
     await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Ärende' })).toBeFocused();
     await expect(heading(page, 1, ENTITY_UNIT.label)).toBeVisible();
-    // The unit's page has no question box of its own, so the work item offers no way into one (D110 rule 6).
+    // The unit's page has no question box of its own, so the work item offers no way into one (D111 rule 6).
     await expect(panel.getByRole('button', { name: 'Inte nu', exact: true }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
     await page.keyboard.press('Escape');

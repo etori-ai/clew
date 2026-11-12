@@ -70,7 +70,7 @@ import { Toolbox } from '../components/toolbox';
 import { usePageTitle } from '../page-title';
 import { useMarks } from '../marks';
 
-/** How many work items Hem shows under "Behöver dig" (D111 item 2): the most urgent; the rest are in Att göra. */
+/** How many work items Hem shows under "Behöver dig" (D112 item 2): the most urgent; the rest are in Att göra. */
 const ON_HEM = 3;
 /** The question box's reading width (the `ai-chat-landing` template, board Main): the heading and the box, centred. */
 const LANDING_WIDTH = 720;
@@ -83,14 +83,14 @@ const EMPTY_THREADS: Thread[] = [];
 const EMPTY_AREAS: Area[] = [];
 
 /**
- * The start page (D34, D50, D111). At `/` the column is Hem, the `ai-chat-landing` template (D111 item 2, board Main,
+ * The start page (D34, D50, D112). At `/` the column is Hem, the `ai-chat-landing` template (D112 item 2, board Main,
  * amended 2026-11-11 by board Hem10): one heading, the box under it, the one item that asks for the person's read
  * receipt as a callout (Fokusnyhet), and three blocks side by side that stack when narrow: "Behöver dig", the three most
  * urgent work items, each leading to it in Att göra, "I dag", the day as the calendar family draws it (D32), and
  * "Nyheter", the newest news from the person's news sources. The work list itself is Att göra's (`/todo`). Under the
- * blocks Läget's figures stand for Dialogstöd, then Verktygslådan, the person's tools, and then what D111 keeps as it
+ * blocks Läget's figures stand for Dialogstöd, then Verktygslådan, the person's tools, and then what D112 keeps as it
  * was until it is decided: Mina ärenden, the person's own action points and Sedan i går. A view opened from them is in
- * the panel beside Hem; opening it is not asking about it (D110 rule 6).
+ * the panel beside Hem; opening it is not asking about it (D111 rule 6).
  * A conversation takes the column at `/conversations/:id` (D31), with what it is about in the panel: the view an answer
  * names, the card or view that was open when it was asked, or the page it was asked on. The address is the state
  * throughout (`panel-address.ts`).
@@ -116,7 +116,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   const navigate = useNavigate();
   const location = useLocation();
   const params = useParams<{ conversationId?: string }>();
-  // A card's review lies over the page in its own part of the address (`?review=`, D110 rule 5), which Hem reads past.
+  // A card's review lies over the page in its own part of the address (`?review=`, D111 rule 5), which Hem reads past.
   const [search] = useSearchParams();
   const here = location.pathname;
   const conversationId = params.conversationId && params.conversationId !== 'new' ? params.conversationId : null;
@@ -170,7 +170,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   );
   // What needs the person, in Att göra's order (D34): Hem shows the first three.
   const needsYou = useMemo(() => needsYouOf(all), [all]);
-  // Fokusnyhet (D111, amended 2026-11-11): the most urgent item that asks for a read receipt stands above the blocks,
+  // Fokusnyhet (D112, amended 2026-11-11): the most urgent item that asks for a read receipt stands above the blocks,
   // and is not a row under them too; any other such item stays an ordinary row.
   const focus = useMemo(() => focusOf(needsYou), [needsYou]);
   const first = useMemo(() => needsYou.filter(t => t.id !== focus?.id).slice(0, ON_HEM), [needsYou, focus]);
@@ -187,7 +187,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     failures: 'page',
     onChange: replace,
     onOpenItem: (item, dayItems) => setOpenItem({ item, dayItems }),
-    // On a conversation's own page the panel is the transcript's artifact (D111 item 7): the conversation's box is the
+    // On a conversation's own page the panel is the transcript's artifact (D112 item 7): the conversation's box is the
     // one to ask in, so the thing beside it has none of its own. On Hem a view opened beside it gets its box.
     asks: !talk.open,
   });
@@ -200,7 +200,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   usePageTitle(pageTitle, slot.view || conversationId ? false : pageTitle);
   const nav = useRail({ current: railCurrent, admin, manager: user.role === 'manager' });
 
-  /** A work item an answer is about, drawn in the turn at its narrow width (D111 item 4). */
+  /** A work item an answer is about, drawn in the turn at its narrow width (D112 item 4). */
   const card = (t: Thread) => cardBody(t, { place: 'answer', level: 2, compact: mobile, onChange: replace });
   const assistantDown = !!assistant && assistant.configured && !assistant.available;
   const sources = threadsQ.data?.sources;
@@ -212,7 +212,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   // On a phone the box is docked at the foot (G on the phone): the heading sits right above it.
   const docked = mobile && !short;
   /**
-   * "Behöver dig" (D111 item 2, board Main): the three most urgent work items as rows, each leading to the item in Att
+   * "Behöver dig" (D112 item 2, board Main): the three most urgent work items as rows, each leading to the item in Att
    * göra, and the way to all of them. While the cards load the block keeps its shape.
    */
   const needsBlock = (
@@ -267,8 +267,8 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
       {day && <Today view={day} threads={threads} cardHref={itemHref} />}
     </AsyncContent>
   );
-  // The landing (D111 item 2, amended 2026-11-11, board Hem10): one heading, the box under it (docked at the foot on a
-  // phone), the item that asks for a read receipt, the three blocks, Läget, Verktygslådan, and under them what D111 keeps
+  // The landing (D112 item 2, amended 2026-11-11, board Hem10): one heading, the box under it (docked at the foot on a
+  // phone), the item that asks for a read receipt, the three blocks, Läget, Verktygslådan, and under them what D112 keeps
   // until it is decided. The box is anchored under the heading (D53): what grows under it while the person types
   // ("Menar du") pushes the blocks down, never the field they are typing in (D36).
   const landing = () => (
@@ -313,7 +313,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
         twoAcross={mobile}
       />
       <Toolbox />
-      {/* What D111 keeps as it was until decided, under the board's parts: Mina ärenden (D90), the person's own action
+      {/* What D112 keeps as it was until decided, under the board's parts: Mina ärenden (D90), the person's own action
           points (D96 item 7), then Sedan i går. */}
       <MyErrands areas={areas} hrefFor={ref => viewHref(ref.capability, ref.title, ref.input)} />
       <MyCommitments />
@@ -393,7 +393,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
     />
   );
   // The card beside the transcript is not drawn again in the turn that is about it: one card, one place.
-  // An assistant's draft (D111 item 8) opens in its work item's dialog: the item is drawn beside the transcript first
+  // An assistant's draft (D112 item 8) opens in its work item's dialog: the item is drawn beside the transcript first
   // when it is on the page nowhere (not beside it, not in a turn), and its dialog opens once it is.
   const transcript = (
     <Transcript
@@ -437,7 +437,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
           }
         />
       );
-    // Hem (D111 item 2): the landing in the template's column, the panel beside it only while a view is open; on a
+    // Hem (D112 item 2): the landing in the template's column, the panel beside it only while a view is open; on a
     // phone the box is docked at the foot, and on a short screen nothing is docked.
     return short ? (
       <VStack gap={4} padding={3} xstyle={entry}>

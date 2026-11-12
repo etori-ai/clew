@@ -11,17 +11,17 @@ export interface CardPlace {
   compact?: boolean;
   onChange: (thread: Thread) => void;
   /**
-   * A conversation about the item runs under it (D111 item 7): its main column folds under "Visa allt", and its header
+   * A conversation about the item runs under it (D112 item 7): its main column folds under "Visa allt", and its header
    * with the status and the buttons stays.
    */
   folded?: boolean;
 }
 
 /**
- * One work item, drawn the same wherever it is open at its narrow width (D111 item 4): in Att göra's reading pane,
+ * One work item, drawn the same wherever it is open at its narrow width (D112 item 4): in Att göra's reading pane,
  * beside a page or over it in the panel (`page-panel.tsx`) and in a conversation's answer. The items read the same cache
  * (D33), so a decision made in one place is the decision made everywhere: the same confirm, the same decision endpoint,
- * the same receipt. The calendar's proposals keep their own card (D111 item 9: the calendar is not redesigned); every
+ * the same receipt. The calendar's proposals keep their own card (D112 item 9: the calendar is not redesigned); every
  * other item is `WorkItem`.
  */
 export const cardBody = (thread: Thread, place: CardPlace) =>

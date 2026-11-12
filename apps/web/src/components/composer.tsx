@@ -133,7 +133,7 @@ function Dictation({ onResult }: { onResult: (text: string) => void }) {
 /**
  * Where the box sits decides what it says about itself (the canvas's rule H3.3: the scope line always says what the box
  * talks to). On Hem it is the page and says nothing above the field, also with a card open beside it: opening is not
- * asking (D110 rule 6), and a card is what the box asks about only once the person has added it as a chip. In a
+ * asking (D111 rule 6), and a card is what the box asks about only once the person has added it as a chip. In a
  * conversation (H1) it says "Det här samtalet" with the way to a new question; at the foot of a tool's page (D50) the
  * placeholder says what the box asks about, or that it starts a new conversation, and the box keeps to one line.
  */
@@ -164,7 +164,7 @@ const STOP = new Set([
   'om',
 ]);
 /**
- * `thing` is the box at the foot of the panel beside an opened thing (D111 item 7): it asks about that thing only, so it
+ * `thing` is the box at the foot of the panel beside an opened thing (D112 item 7): it asks about that thing only, so it
  * has no drawer, no `@`, no model menu and no verbs, and its placeholder names the thing ("Fråga om ärendet …").
  */
 export type ComposerPlace = 'landing' | 'conversation' | 'page' | 'thing';
@@ -191,7 +191,7 @@ export function Composer({
   about?: ComposerAbout | undefined;
 }) {
   const talk = useConversation();
-  // While a conversation's own box is on the page, "Lägg till i samtalet" is offered (D111 item 7): elsewhere an opened
+  // While a conversation's own box is on the page, "Lägg till i samtalet" is offered (D112 item 7): elsewhere an opened
   // thing has its own box beside it, which asks about that thing.
   useClaimBox(place === 'conversation');
   const thing = place === 'thing';
@@ -203,7 +203,7 @@ export function Composer({
   };
   // A tool page's box hands the conversation what the page shows. Hem's box hands over nothing to ask about, only the
   // way back: the card or view open beside Hem goes beside the transcript and "Stäng samtalet" returns to Hem as it
-  // stood (D110 rule 6). A conversation's own box has nothing to hand over.
+  // stood (D111 rule 6). A conversation's own box has nothing to hand over.
   const from: AskFrom | undefined =
     place === 'conversation' ? undefined : { chips: about?.chips ?? [], search: about?.search ?? '' };
   // What `@` treats as the context: what the page shows (`near`), what is in the drawer and the field, and in a
@@ -337,7 +337,7 @@ export function Composer({
       footerActions={
         <HStack gap={1} wrap="wrap">
           {/* The verbs about a card the person added with "Lägg till i samtalet", the one chip with nothing typed;
-              a card merely open beside Hem brings none (D110 rule 6). */}
+              a card merely open beside Hem brings none (D111 rule 6). */}
           {!thing && talk.chips.length === 1 && !plain && talk.verbs.length > 0 && (
             <HStack gap={1} wrap="wrap" role="group" aria-label="Om ärendet">
               {talk.verbs.map(v => (

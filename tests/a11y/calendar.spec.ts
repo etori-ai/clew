@@ -14,11 +14,11 @@ import {
 import type { Page } from '@playwright/test';
 import { NEXT_WEEK, events } from './data';
 
-/** Wide enough for the panel to stand beside the grid (1336 px, D110 amended): an entry opens in the end slot. */
+/** Wide enough for the panel to stand beside the grid (1336 px, D111 amended): an entry opens in the end slot. */
 const WIDE = { width: 1440, height: 900 };
 
 /**
- * The calendar page (D27, D32, D111 item 9): three views on two widths, the view switch, a booking of one's own, an
+ * The calendar page (D27, D32, D112 item 9): three views on two widths, the view switch, a booking of one's own, an
  * entry opened from the grid into the panel, the proposals reached from the header, and a proposal moved without a
  * mouse. The grid itself is a picture (FullCalendar's time grid is not a WAI-ARIA grid); every change goes through a
  * dialog, which is the path these tests take.
@@ -102,7 +102,7 @@ test.describe('the levels and the mark (D71, artboard 6)', () => {
   }) => {
     await page.setViewportSize(WIDE);
     await open(page, '/calendar');
-    // The proposals' list is reached from the header (D111 item 9): the count is part of the button's name.
+    // The proposals' list is reached from the header (D112 item 9): the count is part of the button's name.
     const menu = page.getByRole('button', { name: /^Förslag\s*\d+$/ });
     await menu.click();
     await page
@@ -281,7 +281,7 @@ test.describe('a booking started on the grid (D58)', () => {
   });
 });
 
-test.describe('an entry opened from the grid (D111 item 9)', () => {
+test.describe('an entry opened from the grid (D112 item 9)', () => {
   test('Enter on a meeting opens it in the panel beside the grid with its facts and own buttons; Escape returns focus to the meeting', async ({
     page,
     api: _,

@@ -32,7 +32,7 @@ export interface EventDeps {
   ids: () => string;
 }
 const DAY_MS = 86_400_000;
-/** How far ahead free times are looked for (D111): two weeks, ten working days. */
+/** How far ahead free times are looked for (D112): two weeks, ten working days. */
 const FREE_DAYS = 14;
 /** A suggested time starts at least this long from now. */
 const FREE_LEAD_MS = 60 * 60_000;
@@ -90,7 +90,7 @@ export function eventUsecases({ store, bind, team, clock, ids }: EventDeps) {
     return { from: date, events: events.map(e => toEvent(e, binding, persona.name, members)), proposals };
   }
   /**
-   * Free times for a meeting a write asks the person to set (D111 item 10): `count` of `durationMinutes` in the person's
+   * Free times for a meeting a write asks the person to set (D112 item 10): `count` of `durationMinutes` in the person's
    * own calendar, from an hour from now over two weeks, or until the day `before` when it comes sooner, one a day where
    * possible. Nobody else's calendar is read and nothing is written.
    */

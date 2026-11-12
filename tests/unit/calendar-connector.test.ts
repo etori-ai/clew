@@ -72,7 +72,7 @@ describe('the calendar connector declares what the fixtures declare', () => {
       },
     ]);
   });
-  test("today, a week and a day take the source's own event handles, however long (D111 item 10's day)", () => {
+  test("today, a week and a day take the source's own event handles, however long (D112 item 10's day)", () => {
     // The registry checks every answer against the read's declared output; a handle over that output's limit made each
     // of the three refuse a real day ("Källans svar kunde inte verifieras"). As the Nextcloud adapter names an
     // occurrence: the base64 of its CalDAV path, and the recurrence after a colon.

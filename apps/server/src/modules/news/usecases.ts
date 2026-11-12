@@ -4,7 +4,7 @@ import { merge, type SourceOutcome } from './domain';
 import { DEFAULT_BUDGET, type NewsCall, type NewsDeps, type NewsSourceRef } from './model';
 
 /**
- * The combined news list (D111, amended 2026-11-11): one read to every news source in the person's scope, all at the
+ * The combined news list (D112, amended 2026-11-11): one read to every news source in the person's scope, all at the
  * same time, each under its own budget inside one budget for the whole. Every source answers for what it lets the
  * person read; nothing here knows an audience or a feed. A source that fails, is late or answers out of shape
  * contributes nothing and is not named: news is never an error on Hem. Nothing of what came back is kept.

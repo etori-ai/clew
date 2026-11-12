@@ -4,7 +4,7 @@ import { Badge, Link, List, ListItem, StatusDot, Text, VStack } from '@clew/ui';
 import type { RowFacts } from '../work-items';
 
 /**
- * A row that is one link (D111 items 2 and 3, boards Inbox and Main): the title is the row's one link and its one tab
+ * A row that is one link (D112 items 2 and 3, boards Inbox and Main): the title is the row's one link and its one tab
  * stop, named by the title alone (and, for a link out of Clew, Astryx's words that it opens in a new tab); the row
  * around it is Astryx's enlarged target for that link (`ListItem`'s `interactiveRef`), so a press anywhere on the row,
  * on the supporting line, a badge or the empty space beside them, follows the link, and the row's own hover, focus ring,
@@ -66,7 +66,7 @@ export function LinkRow({
 }
 
 /**
- * A work item as a row (D111 items 2 and 3, boards Inbox and Main): the state dot, the title, why it is here, when it
+ * A work item as a row (D112 items 2 and 3, boards Inbox and Main): the state dot, the title, why it is here, when it
  * is due and where it comes from, as the one link row.
  */
 export function WorkRow({

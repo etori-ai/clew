@@ -13,14 +13,14 @@ import { menuRow } from './phonebook';
 
 /** Wide enough for the panel to stand beside the page's column (D50); at the suite's desktop width it lies over it. */
 const wide = { width: 1440, height: 900 };
-/** Hem's box as it is with nothing added: also with a card open beside it (D110 rule 6). */
+/** Hem's box as it is with nothing added: also with a card open beside it (D111 rule 6). */
 const HEM_PLACEHOLDER = 'Skriv eller säg vad du vill göra …';
 
 /**
  * D50: the column is where the person is, the panel is what they hold beside it, and the conversation is never in the
- * panel. A work item opened from Att göra is in its reading pane (D111 item 3, `queue.spec.ts`); the card is drawn
+ * panel. A work item opened from Att göra is in its reading pane (D112 item 3, `queue.spec.ts`); the card is drawn
  * there as it is drawn everywhere, so its own reads and its rows' links are tested here, in the pane. Opening is not
- * asking (D110 rule 6): a card goes into the box only with "Lägg till i samtalet", where a box is on the page.
+ * asking (D111 rule 6): a card goes into the box only with "Lägg till i samtalet", where a box is on the page.
  */
 test.describe('the panel beside the page', () => {
   test.use({ viewport: wide });
@@ -76,7 +76,7 @@ test.describe('the panel beside the page', () => {
     expect(await sideways()).toBe(0);
     await fold.click();
     // Folding hides and nothing more (D63 item 14, revised): the address keeps the view, the box is as it was
-    // (opening is not asking, D110 rule 6), and the focus stays on the button, which now says the way back, at the
+    // (opening is not asking, D111 rule 6), and the focus stays on the button, which now says the way back, at the
     // window's edge.
     await expect(panel).toHaveCount(0);
     await expect(page).toHaveURL(/\/\?open=hr\.whoIsOn&open-title=Bemanning$/);
@@ -109,11 +109,11 @@ test.describe('the panel beside the page', () => {
     page,
     api: _,
   }) => {
-    // The card's verbs, so the test sees when they show: only for the chip, never for the card merely open (D110 rule 6).
+    // The card's verbs, so the test sees when they show: only for the chip, never for the card merely open (D111 rule 6).
     await page.route('**/api/threads/fakturor/verbs', route =>
       route.fulfill({ json: { verbs: [{ id: 'why', label: 'Varför nu?', kind: 'why', threadId: 'fakturor' }] } }),
     );
-    // Beside a conversation, where a box is on the page (Hem holds no card since D111: its cards are Att göra's).
+    // Beside a conversation, where a box is on the page (Hem holds no card since D112: its cards are Att göra's).
     await open(page, '/conversations/fraga?card=fakturor');
     const panel = page.getByRole('complementary', { name: 'Ärende' });
     const card = panel.locator('#card-fakturor');
@@ -234,7 +234,7 @@ test.describe('the panel beside the page', () => {
       .poll(async () => (await announcements(page)).filter(a => a.includes('öppnades i en ny flik')))
       .toHaveLength(1);
     // A read declared as a link out (`target: 'link'`) says on its button that it leaves Clew, in the words Astryx's own
-    // link out says (D110 rule 8).
+    // link out says (D111 rule 8).
     await open(page, '/todo?item=fakturor');
     await expect(card.getByRole('button', { name: /^Öppna i ekonomisystemet\s*\(öppnas i ny flik\)$/ })).toBeVisible();
     await expectNoAxeViolations(page);
@@ -262,7 +262,7 @@ test.describe('the panel beside the page', () => {
     await expect(log).toContainText('Sök i telefonboken: 2 rader.');
     await expect(panel.getByRole('heading', { level: 2, name: 'Sök i telefonboken' })).toBeFocused();
     await expectNoAxeViolations(page);
-    // No control chooses a surface (D110 rule 7): the tool is in the rail where an administrator put it.
+    // No control chooses a surface (D111 rule 7): the tool is in the rail where an administrator put it.
     await expect(panel.getByText('Öppna som sida')).toHaveCount(0);
     await expect(panel.locator('a[href^="/tools/"]')).toHaveCount(0);
     // The box is in use while the panel is open, and typing there never loses the panel.
@@ -283,7 +283,7 @@ test.describe('the panel beside the page', () => {
   }) => {
     api.menu = [menuRow];
     await open(page, `/tools/phonebook.directory?input=${encodeURIComponent(JSON.stringify({ query: 'lärare' }))}`);
-    // The tool's page asks with "Fråga Clew" in its header (D111 item 7): no box at its foot.
+    // The tool's page asks with "Fråga Clew" in its header (D112 item 7): no box at its foot.
     await expect(composer(page)).toHaveCount(0);
     await page.getByRole('main').getByRole('link', { name: 'Fråga Clew' }).click();
     const panel = page.getByRole('complementary', { name: 'Telefonbok' });

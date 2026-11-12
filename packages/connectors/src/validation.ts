@@ -34,7 +34,7 @@ const asSchema = (value: unknown): Schema | undefined =>
   value && typeof value === 'object' ? (value as Schema) : undefined;
 const requires = (schema: Schema | undefined, name: string) =>
   Array.isArray(schema?.required) && schema.required.includes(name);
-/** The names whose shape a profile of the protocol fixes (D26, D35, D89, D96, D111): none of them is about an entity. */
+/** The names whose shape a profile of the protocol fixes (D26, D35, D89, D96, D112): none of them is about an entity. */
 const PROFILES = ['search', 'fetch', 'errands', 'talks', 'commitments', 'news'];
 
 /**
@@ -81,15 +81,15 @@ function aboutProblem(c: Descriptor['capabilities'][number], connector: Descript
   }
   if (about.param === undefined || asSchema(input?.properties?.[about.param])?.type !== 'string')
     return `Capability ${c.name}: an action about an entity names in param a string property of its input that takes the key (D97).`;
-  // The entity's menu starts the action with the key (D97, D8); anything else it requires, the person is asked (D111).
+  // The entity's menu starts the action with the key (D97, D8); anything else it requires, the person is asked (D112).
   const required = Array.isArray(input?.required) ? (input.required as unknown[]) : [];
   const asked = new Set((c.asks ?? []).map(a => a.property));
   if (!required.includes(about.param) || required.some(r => r !== about.param && !asked.has(r as string)))
-    return `Capability ${c.name}: an action about an entity requires ${about.param} and otherwise only what it asks, so the entity's menu can start it with the key and the person's answers; anything more is optional with a default the source chooses (D97, D111).`;
+    return `Capability ${c.name}: an action about an entity requires ${about.param} and otherwise only what it asks, so the entity's menu can start it with the key and the person's answers; anything more is optional with a default the source chooses (D97, D112).`;
   return undefined;
 }
 
-/** Why an ask does not fit the property it names (D111), as the end of a sentence; undefined when it does. */
+/** Why an ask does not fit the property it names (D112), as the end of a sentence; undefined when it does. */
 function fitProblem(ask: Ask, property: Schema & { format?: unknown; enum?: unknown }): string | undefined {
   const values = Array.isArray(property.enum) ? (property.enum as unknown[]) : undefined;
   const string = property.type === 'string' || (property.type === undefined && !!values);
@@ -120,30 +120,30 @@ function fitProblem(ask: Ask, property: Schema & { format?: unknown; enum?: unkn
   }
 }
 /**
- * Why a capability's asks (D111) may not be used: an ask belongs to a propose or an execute that is not a follower; it
+ * Why a capability's asks (D112) may not be used: an ask belongs to a propose or an execute that is not a follower; it
  * names a property of the input once, never the entity's key, of a type its kind takes; and a property the input
  * requires is a required ask.
  */
 function asksProblems(c: Descriptor['capabilities'][number]): string[] {
   if (!c.asks) return [];
   if (c.kind !== 'propose' && c.kind !== 'execute')
-    return [`Capability ${c.name}: asks belong to a propose or an execute (D111).`];
-  if (c.follows) return [`Capability ${c.name}: a follower is asked with a fact and asks the person nothing (D111).`];
+    return [`Capability ${c.name}: asks belong to a propose or an execute (D112).`];
+  if (c.follows) return [`Capability ${c.name}: a follower is asked with a fact and asks the person nothing (D112).`];
   const input = asSchema(c.input);
   const problems: string[] = [];
   const seen = new Set<string>();
   for (const ask of c.asks) {
     const name = ask.property;
     const property = asSchema(input?.properties?.[name]);
-    if (seen.has(name)) problems.push(`Capability ${c.name}: ask "${name}" is asked twice (D111).`);
-    else if (!property) problems.push(`Capability ${c.name}: ask "${name}" names no property of the input (D111).`);
+    if (seen.has(name)) problems.push(`Capability ${c.name}: ask "${name}" is asked twice (D112).`);
+    else if (!property) problems.push(`Capability ${c.name}: ask "${name}" names no property of the input (D112).`);
     else if (c.about?.param === name)
-      problems.push(`Capability ${c.name}: ask "${name}" names the input that takes the entity's key (D111).`);
+      problems.push(`Capability ${c.name}: ask "${name}" names the input that takes the entity's key (D112).`);
     else {
       const fit = fitProblem(ask, property);
-      if (fit) problems.push(`Capability ${c.name}: ask "${name}" ${fit} (D111).`);
+      if (fit) problems.push(`Capability ${c.name}: ask "${name}" ${fit} (D112).`);
       if (requires(input, name) && !ask.required)
-        problems.push(`Capability ${c.name}: ask "${name}" is optional, but the input requires ${name} (D111).`);
+        problems.push(`Capability ${c.name}: ask "${name}" is optional, but the input requires ${name} (D112).`);
     }
     seen.add(name);
   }
@@ -164,18 +164,18 @@ const sameSchema = (a: unknown, b: unknown) =>
   JSON.stringify(canonical(JSON.parse(JSON.stringify(a ?? {})))) ===
   JSON.stringify(canonical(JSON.parse(JSON.stringify(b ?? {}))));
 /**
- * Why a capability's `effect` (D111) may not be used: it belongs to an execute and names a read of the same connector
+ * Why a capability's `effect` (D112) may not be used: it belongs to an execute and names a read of the same connector
  * that takes the same input and is never offered to the model. A read writes nothing by contract.
  */
 function effectProblem(c: Descriptor['capabilities'][number], connector: Descriptor): string | undefined {
-  if (c.kind !== 'execute') return `Capability ${c.name}: effect belongs to an execute (D111).`;
+  if (c.kind !== 'execute') return `Capability ${c.name}: effect belongs to an execute (D112).`;
   const read = connector.capabilities.find(r => r.name === c.effect);
   if (!read || read.kind !== 'read')
-    return `Capability ${c.name}: effect names ${c.effect}, which is not a read of this connector (D111).`;
+    return `Capability ${c.name}: effect names ${c.effect}, which is not a read of this connector (D112).`;
   if (read.model)
-    return `Capability ${c.name}: effect ${c.effect} is offered to the model; an effect read declares model: false (D111).`;
+    return `Capability ${c.name}: effect ${c.effect} is offered to the model; an effect read declares model: false (D112).`;
   if (!sameSchema(read.input, c.input))
-    return `Capability ${c.name}: effect ${c.effect} takes another input than ${c.name}; it declares the same input schema (D111).`;
+    return `Capability ${c.name}: effect ${c.effect} takes another input than ${c.name}; it declares the same input schema (D112).`;
   return undefined;
 }
 

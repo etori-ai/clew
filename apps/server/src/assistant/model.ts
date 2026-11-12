@@ -26,7 +26,7 @@ export type ToolSchemaInfo = ToolInfo & { input: unknown };
 export type ToolCallRecord = { capability: string; input: Record<string, unknown>; output: unknown };
 /**
  * A tool of Clew's own beside the read capabilities, named like one (`clew.<verb>`): the draft of a work item's action
- * (D111 item 8, `drafts.ts`). It runs in the process, writes nothing and never reaches a connector's execute.
+ * (D112 item 8, `drafts.ts`). It runs in the process, writes nothing and never reaches a connector's execute.
  */
 export interface ClewTool {
   name: string;
@@ -85,7 +85,7 @@ export interface PromptContext {
   now: Date;
   week: number;
   objects: string[];
-  /** The work item's actions may be filled in as a draft (D111 item 8): the prompt says how and that nothing is sent. */
+  /** The work item's actions may be filled in as a draft (D112 item 8): the prompt says how and that nothing is sent. */
   drafts?: boolean;
 }
 /** The Swedish system prompt: who is asking, what day it is, the rules, and the chipped objects as "Du tittar på". */
@@ -219,7 +219,7 @@ export async function modelAnswer(args: {
   timeoutMs?: number;
   onText?: (text: string) => void;
   signal?: AbortSignal;
-  /** Clew's own tools for this turn (the draft of an action, D111 item 8); their calls are in `toolCalls` by name. */
+  /** Clew's own tools for this turn (the draft of an action, D112 item 8); their calls are in `toolCalls` by name. */
   own?: ClewTool[];
 }): Promise<{ body: string; view?: ViewRef; toolCalls: ToolCallRecord[]; usage?: ModelUsage }> {
   const messages: ModelMessage[] = [

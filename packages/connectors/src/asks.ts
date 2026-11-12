@@ -1,7 +1,7 @@
 import type { ActionPath, Ask, AskValues } from '@clew/contracts';
 
 /**
- * The one path a write passes (D111 item 10), the pure part: which of a capability's asks a person meets on one action,
+ * The one path a write passes (D112 item 10), the pure part: which of a capability's asks a person meets on one action,
  * what nothing fills, and the person's answers checked against the asks. No I/O. The loader holds a declaration to its
  * rules (`validation.ts`); the stream, the entities module and the route use these to draw and to decide.
  */
@@ -38,7 +38,7 @@ export function asksFor(capability: Pick<AskingCapability, 'asks'>, given: Itera
   const fixed = new Set(given);
   return (capability.asks ?? []).filter(a => !fixed.has(a.property));
 }
-/** The way a propose or an execute draws (D111): what it asks, whether its effect is the source's answer, and its description. */
+/** The way a propose or an execute draws (D112): what it asks, whether its effect is the source's answer, and its description. */
 export function pathOf(capability: AskingCapability, given: Iterable<string>): ActionPath | undefined {
   if (capability.kind !== 'propose' && capability.kind !== 'execute') return undefined;
   return {
@@ -48,7 +48,7 @@ export function pathOf(capability: AskingCapability, given: Iterable<string>): A
   };
 }
 /**
- * The first property the capability's input requires that nothing on this action fills (D111): not its own input, not
+ * The first property the capability's input requires that nothing on this action fills (D112): not its own input, not
  * the rows, not the review and not an ask. Undefined when every one is filled.
  */
 export function unfilledInput(capability: AskingCapability, action: GivingAction): string | undefined {
@@ -92,7 +92,7 @@ function answerProblem(ask: Ask, value: string, now: string, property?: Schema):
   }
 }
 /**
- * The person's answers to the asks they met (D111), ready to merge into the input: a text is trimmed, an optional answer
+ * The person's answers to the asks they met (D112), ready to merge into the input: a text is trimmed, an optional answer
  * left empty is not sent. Refused, in Swedish: an answer to anything not asked here, a required ask left empty, and an
  * answer that does not fit its kind (a time that has passed, a day that does not exist, a value outside the choice) or
  * the length its property in `input` allows. The whole input schema is checked on the merged input by whoever runs it.
