@@ -176,6 +176,187 @@ describe('what a group write costs and what it leaves in the audit', () => {
       scim.patchGroup(a, group.id, patch([{ op: 'add', path: 'members', value: [{ value: group.id }] }]), BASE),
     ).rejects.toMatchObject({ detail: expect.stringContaining('is a group') });
   });
+  test('a write of a group that gives nobody anything derives nobody, one that does derives whom it can move, and the rules are read once a write (B1)', async () => {
+    const calls: Record<string, number> = {};
+    const { store, scim, admin, administrator, a, person, patch } = stack(inner => ({
+      transaction: fn =>
+        inner.transaction(tx =>
+          fn(
+            new Proxy(tx, {
+              get(target, name: string) {
+                const value = target[name as keyof ProvisionTx];
+                if (typeof value !== 'function') return value;
+                return (...args: unknown[]) => {
+                  calls[name] = (calls[name] ?? 0) + 1;
+                  return (value as (...a: unknown[]) => unknown).apply(target, args);
+                };
+              },
+            }),
+          ),
+        ),
+    }));
+    const staff: string[] = [];
+    for (let i = 0; i < 30; i++) staff.push(await person(a));
+    const [head, newcomer] = [await person(a), await person(a)];
+    const everyone = (ids: string[]) => ids.map(value => ({ value }));
+    // Each derivation begins by locking its person, so the locks count the people derived.
+    const cost = async (write: () => Promise<unknown>) => {
+      for (const key of Object.keys(calls)) delete calls[key];
+      await write();
+      return {
+        derived: calls.lockPerson ?? 0,
+        rules: calls.groupCapabilities ?? 0,
+        calls: Object.values(calls).reduce((sum, n) => sum + n, 0),
+      };
+    };
+    const derivedRows = () => store.state.audit.filter(row => row.action === 'grant.derived').length;
+    // An all-staff group that grants nothing: created, joined, left, renamed, re-keyed and removed, nobody derived.
+    // Created whole it was one derivation a member, six to nine store calls each.
+    let plain!: { id: string };
+    const rows = derivedRows();
+    const created = await cost(async () => {
+      plain = await scim.createGroup(a, { externalId: 'ad:all', displayName: 'Alla', members: everyone(staff) }, BASE);
+    });
+    expect(created).toMatchObject({ derived: 0, rules: 1 });
+    // A few store calls whatever the size of the group, where it was some two hundred for these thirty.
+    expect(created.calls).toBeLessThan(12);
+    expect(
+      await cost(() =>
+        scim.patchGroup(a, plain.id, patch([{ op: 'add', path: 'members', value: [{ value: newcomer }] }]), BASE),
+      ),
+    ).toMatchObject({ derived: 0, rules: 1 });
+    expect(
+      await cost(() =>
+        scim.patchGroup(a, plain.id, patch([{ op: 'remove', path: `members[value eq "${newcomer}"]` }]), BASE),
+      ),
+    ).toMatchObject({ derived: 0, rules: 1 });
+    // A new name of a group that is no unit moves no grant, so the rules are not even read.
+    expect(
+      await cost(() =>
+        scim.patchGroup(a, plain.id, patch([{ op: 'replace', path: 'displayName', value: 'Samtliga' }]), BASE),
+      ),
+    ).toEqual(expect.objectContaining({ derived: 0, rules: 0 }));
+    expect(
+      await cost(() =>
+        scim.patchGroup(a, plain.id, patch([{ op: 'replace', path: 'externalId', value: 'ad:everyone' }]), BASE),
+      ),
+    ).toMatchObject({ derived: 0, rules: 1 });
+    expect(await cost(() => scim.deleteGroup(a, plain.id))).toMatchObject({ derived: 0, rules: 1 });
+    expect(derivedRows()).toBe(rows);
+    // A unit group derives its members, once each, with one read of the rules for all of them.
+    let unit!: { id: string };
+    expect(
+      await cost(async () => {
+        unit = await scim.createGroup(a, { externalId: 'unit:a1', displayName: 'A1', members: everyone(staff) }, BASE);
+      }),
+    ).toMatchObject({ derived: staff.length, rules: 1 });
+    expect(store.state.grants.get(staff[0]!)).toMatchObject({ unitId: 'a1', unitLabel: 'A1' });
+    // Who comes or goes, and nobody else.
+    expect(
+      await cost(() =>
+        scim.patchGroup(a, unit.id, patch([{ op: 'add', path: 'members', value: [{ value: newcomer }] }]), BASE),
+      ),
+    ).toMatchObject({ derived: 1, rules: 1 });
+    expect(store.state.grants.get(newcomer)).toMatchObject({ unitId: 'a1' });
+    // The unit's managers carry its name without being members: a manager group derives its own members only, its new
+    // name nobody, and the unit's new name every member and the manager.
+    let managers!: { id: string };
+    expect(
+      await cost(async () => {
+        managers = await scim.createGroup(
+          a,
+          { externalId: 'unit-manager:a1', displayName: 'Chefer', members: everyone([head]) },
+          BASE,
+        );
+      }),
+    ).toMatchObject({ derived: 1, rules: 1 });
+    expect(
+      await cost(() =>
+        scim.patchGroup(a, managers.id, patch([{ op: 'replace', path: 'displayName', value: 'Ledning' }]), BASE),
+      ),
+    ).toMatchObject({ derived: 0, rules: 0 });
+    expect(
+      await cost(() =>
+        scim.patchGroup(a, unit.id, patch([{ op: 'replace', path: 'displayName', value: 'Enhet A1' }]), BASE),
+      ),
+    ).toMatchObject({ derived: staff.length + 2, rules: 1 });
+    expect([store.state.grants.get(staff[0]!)?.unitLabel, store.state.grants.get(head)?.unitLabel]).toEqual([
+      'Enhet A1',
+      'Enhet A1',
+    ]);
+    // A capability group: its members, and its new name nobody.
+    let admins!: { id: string };
+    expect(
+      await cost(async () => {
+        admins = await scim.createGroup(
+          a,
+          { externalId: 'capability:admin.users', displayName: 'Admin', members: everyone([head]) },
+          BASE,
+        );
+      }),
+    ).toMatchObject({ derived: 1, rules: 1 });
+    expect(
+      await cost(() =>
+        scim.patchGroup(a, admins.id, patch([{ op: 'replace', path: 'displayName', value: 'Administratörer' }]), BASE),
+      ),
+    ).toMatchObject({ derived: 0, rules: 0 });
+    expect(store.state.grants.get(head)?.capabilities).toEqual(['admin.users']);
+    // A plain group a D85 row names gives what the row says: its members are derived, and a key that comes to name it
+    // or stops naming it derives every member.
+    store.state.groupCapabilities.push({
+      organisationId: 'org-a',
+      groupExternalId: 'ad:connectors',
+      capability: 'admin.connectors',
+    });
+    let mapped!: { id: string };
+    expect(
+      await cost(async () => {
+        mapped = await scim.createGroup(
+          a,
+          { externalId: 'ad:connectors', displayName: 'Anslutningar', members: everyone(staff.slice(0, 3)) },
+          BASE,
+        );
+      }),
+    ).toMatchObject({ derived: 3, rules: 1 });
+    expect(store.state.grants.get(staff[0]!)?.capabilities).toEqual(['admin.connectors']);
+    expect(
+      await cost(() =>
+        scim.patchGroup(a, mapped.id, patch([{ op: 'replace', path: 'externalId', value: 'ad:connectors-old' }]), BASE),
+      ),
+    ).toMatchObject({ derived: 3, rules: 1 });
+    expect(store.state.grants.get(staff[0]!)?.capabilities).toEqual([]);
+    expect(
+      await cost(() =>
+        scim.replaceGroup(
+          a,
+          mapped.id,
+          { externalId: 'ad:connectors', displayName: 'Anslutningar', members: everyone(staff.slice(0, 3)) },
+          BASE,
+        ),
+      ),
+    ).toMatchObject({ derived: 3, rules: 1 });
+    expect(store.state.grants.get(staff[0]!)?.capabilities).toEqual(['admin.connectors']);
+    // A unit group whose key is taken away, and one that is removed, derive every member: they lose the unit.
+    expect(
+      await cost(() => scim.patchGroup(a, unit.id, patch([{ op: 'remove', path: 'externalId' }]), BASE)),
+    ).toMatchObject({ derived: staff.length + 1, rules: 1 });
+    expect(store.state.grants.get(staff[5]!)).toBeUndefined();
+    const second = await scim.createGroup(
+      a,
+      { externalId: 'unit:a2', displayName: 'A2', members: everyone(staff) },
+      BASE,
+    );
+    expect(await cost(() => scim.deleteGroup(a, second.id))).toMatchObject({ derived: staff.length, rules: 1 });
+    expect(store.state.grants.get(staff[5]!)).toBeUndefined();
+    // A mapping on the users page derives every member of its group, with one read of the rules for all of them; the
+    // other read is the overview the page gets back.
+    await scim.createGroup(a, { externalId: 'ad:staff', displayName: 'Personal', members: everyone(staff) }, BASE);
+    expect(
+      await cost(() =>
+        admin.addGroupCapability(administrator('org-a'), { groupExternalId: 'ad:staff', capability: 'admin.users' }),
+      ),
+    ).toMatchObject({ derived: staff.length, rules: 2 });
+  });
   test("a list that leaves out a person's groups does not read them: the daily comparison asks for three attributes", async () => {
     const calls: Record<string, number> = {};
     const { scim, a, person } = stack(store => ({

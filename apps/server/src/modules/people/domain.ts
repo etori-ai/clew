@@ -139,6 +139,21 @@ export function deriveAuthority(
     },
   };
 }
+/**
+ * Whether a group with this key can give its members anything: a key `deriveAuthority` reads (`unit:`, `unit-manager:`,
+ * `capability:`, `protected`), or one a D85 row of the organisation names. A write of any other group moves nobody's
+ * grant, whatever it does to the group, so nobody is derived for it.
+ */
+export function givesAuthority(key: string | null, rules: readonly GroupCapabilityRule[]): boolean {
+  return (
+    key !== null &&
+    (key.startsWith(UNIT_KEY) ||
+      key.startsWith(MANAGER_KEY) ||
+      key.startsWith(CAPABILITY_KEY) ||
+      key === PROTECTED_KEY ||
+      rules.some(row => row.groupExternalId === key))
+  );
+}
 /** Whether two grant projections carry the same authority and label, so an unchanged derivation writes no audit row. */
 export function sameGrant(a: Grant | undefined, b: Grant | undefined) {
   if (!a || !b) return a === b;

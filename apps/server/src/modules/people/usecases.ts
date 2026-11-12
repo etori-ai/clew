@@ -35,6 +35,7 @@ import {
   bySwedish,
   closesCycle,
   deriveAuthority,
+  givesAuthority,
   groupFields,
   patchOperations,
   groupResource,
@@ -66,6 +67,14 @@ import {
 import type { Provisioner, ProvisionStore, ProvisionTx } from './ports';
 
 /**
+ * D85's rows of one organisation as a write that derives many of its people read them, once, after any change it made
+ * to them: a group of thousands is not thousands of reads of the same rows.
+ */
+export interface OrganisationRules {
+  organisationId: string;
+  rules: readonly GroupCapabilityRule[];
+}
+/**
  * Deriving authority (D68, D85): the only path from memberships and the group-capability rows to the grant a person acts
  * with. Called by whatever changed a membership or such a row, inside that change's transaction, so the grant never lags the
  * fact that produced it. An unchanged grant writes no audit row; a changed one writes `grant.derived` on the person
@@ -73,12 +82,20 @@ import type { Provisioner, ProvisionStore, ProvisionTx } from './ports';
  * `protected` key never reaches these tables (D93), so the derived flag stays false and is never written to the audit row.
  */
 export function provisioningUsecases(deps: { store: ProvisionStore }) {
-  async function deriveWithin(tx: ProvisionTx, actor: string, personId: string): Promise<Derived | undefined> {
+  async function deriveWithin(
+    tx: ProvisionTx,
+    actor: string,
+    personId: string,
+    known?: OrganisationRules,
+  ): Promise<Derived | undefined> {
     // Locked first: a second derivation of the same person waits here and then reads what this one committed.
     const person = await tx.lockPerson(personId);
     if (!person) return undefined;
     const memberships = await tx.memberships(personId),
-      rules = await tx.groupCapabilities(person.organisationId);
+      rules =
+        known?.organisationId === person.organisationId
+          ? known.rules
+          : await tx.groupCapabilities(person.organisationId);
     // Every unit the memberships name, as the unit table knows it: the label of a managed unit without a `unit:` group,
     // and the comparison that lets an unchanged derivation write nothing (a reconciliation replays every person).
     const named = [...new Set(memberships.flatMap(m => unitOfKey(m.externalId) ?? []))];
@@ -134,10 +151,11 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
   }
   /**
    * Several people in one transaction, each once and in id order: every caller locks in the same order, so two
-   * requests that touch the same people queue behind each other instead of waiting on each other.
+   * requests that touch the same people queue behind each other instead of waiting on each other. `known` is the
+   * organisation's rows, read once by the caller for all of them.
    */
-  async function deriveAll(tx: ProvisionTx, actor: string, personIds: Iterable<string>) {
-    for (const id of [...new Set(personIds)].sort()) await deriveWithin(tx, actor, id);
+  async function deriveAll(tx: ProvisionTx, actor: string, personIds: Iterable<string>, known?: OrganisationRules) {
+    for (const id of [...new Set(personIds)].sort()) await deriveWithin(tx, actor, id, known);
   }
   return {
     deriveWithin,
@@ -157,11 +175,11 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
 /**
  * The SCIM 2.0 server (RFC 7644; D68): one use case per operation, the provisioner first. Each mutation runs in one
  * transaction with its audit row (`scim.user.*`, `scim.group.*`, actor `provisioner:<id>`) and re-derives the grants
- * of everyone it touched. `DELETE` on a user deactivates, because audit rows and threads reference the person; `DELETE`
- * on a group removes it and its memberships, and the members lose what the group gave them. Users are read and written
- * within the provisioner's organisation, and so are groups (another organisation's group does not exist for a client),
- * while `userName` and a group's or a person's `externalId` are unique across the installation: a login carries no
- * organisation, and D68's keys are shared vocabulary.
+ * of everyone whose grant it can move. `DELETE` on a user deactivates, because audit rows and threads reference the
+ * person; `DELETE` on a group removes it and its memberships, and the members lose what the group gave them. Users are
+ * read and written within the provisioner's organisation, and so are groups (another organisation's group does not
+ * exist for a client), while `userName` and a group's or a person's `externalId` are unique across the installation: a
+ * login carries no organisation, and D68's keys are shared vocabulary.
  */
 export interface ScimQuery extends Projection {
   filter?: string;
@@ -234,6 +252,17 @@ export function scimUsecases(deps: {
         : `Member '${id}' is not a user of this organisation.`,
       'invalidValue',
     );
+  };
+  /**
+   * Whether a group write can move anyone's grant, asked of the keys the group had and gets (`givesAuthority`) with the
+   * organisation's D85 rows. The rows are read here once, and handed on to every derivation the write makes.
+   */
+  const authorityOf = async (tx: ProvisionTx, p: Provisioner, ...keys: Array<string | null>) => {
+    const known: OrganisationRules = {
+      organisationId: p.organisationId,
+      rules: await tx.groupCapabilities(p.organisationId),
+    };
+    return { gives: keys.some(key => givesAuthority(key, known.rules)), known };
   };
   /**
    * The managers of the unit a `unit:` group names. Their grant carries the unit's label without their being members of
@@ -421,7 +450,9 @@ export function scimUsecases(deps: {
       wanted = new Set(fields.members),
       added = fields.members.filter(id => !had.has(id)),
       removed = before.filter(id => !wanted.has(id)),
-      renamed = current.label !== fields.label || current.externalId !== fields.externalId,
+      relabelled = current.label !== fields.label,
+      rekeyed = current.externalId !== fields.externalId,
+      renamed = relabelled || rekeyed,
       at = now();
     // Only who comes is asked about: who is already in the group was asked about when they came.
     await membersExist(tx, p, added);
@@ -450,13 +481,23 @@ export function scimUsecases(deps: {
         ...namedInAudit('removedPeople', removed),
       },
     });
-    // A renamed or re-keyed group changes what every member gets, and a unit's label what its managers carry;
-    // otherwise only those who came or went.
-    if (renamed) {
-      const assigned = [...fields.members, ...(await managersOfUnit(tx, fields.externalId))];
-      await nameUnit(tx, p, fields, assigned);
-      await derivation.deriveAll(tx, actorOf(p), [...before, ...assigned]);
-    } else await derivation.deriveAll(tx, actorOf(p), [...added, ...removed]);
+    // Who may hold another grant afterwards. Only a group that gives its members something, under the key it had or
+    // the key it gets, moves a grant; any other group moves none, whatever the write did to it. A new key changes what
+    // every member gets, and a `unit:` group's new name the label its members and the unit's managers carry. A new
+    // name of any other group, and a move in the tree, change nobody's grant. Otherwise only those who came or went.
+    const unitRenamed = relabelled && unitGroupOf(fields.externalId) !== undefined;
+    if (added.length || removed.length || rekeyed || unitRenamed) {
+      const authority = await authorityOf(tx, p, current.externalId, fields.externalId);
+      if (authority.gives) {
+        let derived = [...added, ...removed];
+        if (rekeyed || unitRenamed) {
+          const assigned = [...fields.members, ...(await managersOfUnit(tx, fields.externalId))];
+          await nameUnit(tx, p, fields, assigned);
+          derived = [...before, ...assigned];
+        }
+        await derivation.deriveAll(tx, actorOf(p), derived, authority.known);
+      }
+    }
     return groupView(
       tx,
       { ...current, externalId: fields.externalId, label: fields.label, parentUnitId: fields.parent, updatedAt: at },
@@ -602,9 +643,15 @@ export function scimUsecases(deps: {
             ...namedInAudit('addedPeople', fields.members),
           },
         });
+        // Its members, and the managers of a unit it names, only when the group gives them something.
         const assigned = [...fields.members, ...(await managersOfUnit(tx, fields.externalId))];
-        await nameUnit(tx, p, fields, assigned);
-        await derivation.deriveAll(tx, actorOf(p), assigned);
+        if (assigned.length) {
+          const authority = await authorityOf(tx, p, fields.externalId);
+          if (authority.gives) {
+            await nameUnit(tx, p, fields, assigned);
+            await derivation.deriveAll(tx, actorOf(p), assigned, authority.known);
+          }
+        }
         return groupView(tx, record, base);
       }),
     getGroup: (p: Provisioner, id: string, base: string, projection?: Projection) =>
@@ -674,7 +721,10 @@ export function scimUsecases(deps: {
             ...namedInAudit('removedPeople', members),
           },
         });
-        await derivation.deriveAll(tx, actorOf(p), members);
+        if (members.length) {
+          const authority = await authorityOf(tx, p, current.externalId);
+          if (authority.gives) await derivation.deriveAll(tx, actorOf(p), members, authority.known);
+        }
       }),
   };
 }
@@ -787,7 +837,12 @@ export function usersAdminUsecases(deps: {
           subject: 'group:' + input.groupExternalId,
           details: { capability: input.capability, groupLabel: group?.label ?? null },
         });
-        await derivation.deriveAll(tx, 'person:' + persona.id, await tx.members(input.groupExternalId));
+        // The organisation's rows as this change leaves them, read once for every member of the group.
+        const known = {
+          organisationId: persona.organisationId,
+          rules: await tx.groupCapabilities(persona.organisationId),
+        };
+        await derivation.deriveAll(tx, 'person:' + persona.id, await tx.members(input.groupExternalId), known);
       }
       return overviewWithin(tx, persona);
     });
