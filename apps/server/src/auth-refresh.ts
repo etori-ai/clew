@@ -7,9 +7,17 @@
  * the session and its tokens, because Clew's own authorization never reads them; until a refresh succeeds delegation
  * has no fresh token and answers 503 (L4 of the 2026-11-12 users review). No database connection is held while the
  * provider answers (L1): the row is read, the provider is asked, and the new tokens are stored only over the ones they
- * were refreshed from, so a refresh that another process made meanwhile wins and its tokens are used.
+ * were refreshed from, so a refresh that another process made meanwhile wins and its tokens are used. What a log line
+ * says about a failure at the provider is here too: `failureOf` for a refresh or a token exchange, `failureDetails` for
+ * a sign-in or a logout (L11).
  */
-import { ResponseBodyError, refreshTokenGrant, type Configuration } from 'openid-client';
+import {
+  AuthorizationResponseError,
+  ResponseBodyError,
+  WWWAuthenticateChallengeError,
+  refreshTokenGrant,
+  type Configuration,
+} from 'openid-client';
 
 export interface RefreshRow {
   digest: string;
@@ -81,6 +89,15 @@ const statusOf = (value: unknown) =>
   value && typeof value === 'object' && 'status' in value && typeof value.status === 'number'
     ? value.status
     : undefined;
+/** A code as a log line carries it: printable ASCII, at most 64 characters, since a provider's answer can say anything. */
+const printable = (value: string) => value.replace(/[^\x21-\x7e]/g, '?').slice(0, 64);
+/** The OAuth error the provider answered with: in a token endpoint's body, a callback's query or a challenge. */
+const oauthErrorOf = (error: unknown) =>
+  error instanceof ResponseBodyError || error instanceof AuthorizationResponseError
+    ? error.error
+    : error instanceof WWWAuthenticateChallengeError
+      ? error.cause[0]?.parameters.error
+      : undefined;
 /**
  * What a log line may say about a failed call to the identity provider: the OAuth error of its answer, else
  * openid-client's code (`OAUTH_TIMEOUT`, `OAUTH_RESPONSE_IS_NOT_CONFORM`, ...), else the network's (`ECONNREFUSED`,
@@ -94,7 +111,30 @@ export function failureOf(error: unknown): { code: string; status?: number } {
       ? error.error
       : (codeOf(error) ?? codeOf(cause) ?? (error instanceof Error ? error.name : 'unknown'));
   const status = statusOf(error) ?? statusOf(cause);
-  return { code: code.replace(/[^\x21-\x7e]/g, '?').slice(0, 64), ...(status ? { status } : {}) };
+  return { code: printable(code), ...(status ? { status } : {}) };
+}
+/**
+ * What the log line of a failed sign-in or logout says (L11 of the 2026-11-12 users review), so that the hosting and
+ * identity provider teams can tell a wrong client secret, a wrong redirect address, a clock that is off and a refused
+ * logout token apart: the error's name, its code (openid-client's, jose's, the network's or Clew's own), the OAuth error
+ * the provider answered with and the HTTP status, and the messages of the error and of its cause, which name a claim or
+ * a parameter but never its value. Never the error itself, nor the provider's `error_description`: a failed claim check
+ * carries the ID token's claims in its cause, a ResponseBodyError the provider's answer, jose's errors the logout
+ * token's payload, and a description can name the account.
+ */
+export function failureDetails(error: unknown) {
+  const cause = error instanceof Error ? error.cause : undefined;
+  const code = codeOf(error) ?? codeOf(cause),
+    oauthError = oauthErrorOf(error),
+    status = statusOf(error) ?? statusOf(cause);
+  return {
+    name: error instanceof Error ? printable(error.name) : typeof error,
+    ...(code ? { code: printable(code) } : {}),
+    ...(oauthError ? { oauthError: printable(oauthError) } : {}),
+    ...(status ? { status } : {}),
+    ...(error instanceof Error && error.message ? { message: error.message.slice(0, 300) } : {}),
+    ...(cause instanceof Error && cause.message ? { cause: cause.message.slice(0, 300) } : {}),
+  };
 }
 /** A token is refreshed in its last seconds; its row's expiry is capped at 300 seconds when it is stored. */
 const WINDOW_MS = 15_000;
