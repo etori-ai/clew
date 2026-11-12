@@ -10,7 +10,16 @@ import {
   test,
 } from './support';
 import { PRESENCE_LENS, SILENT_SECTION, TALK_LENS } from './data';
-import { CONTACT, FRITIDS, LONG_PHONE_CATEGORY, POINTS, People, pointsOutput, pointsSpec } from './person-data';
+import {
+  CONTACT,
+  FRITIDS,
+  JOHAN_EMAIL,
+  LONG_PHONE_CATEGORY,
+  POINTS,
+  People,
+  pointsOutput,
+  pointsSpec,
+} from './person-data';
 
 /**
  * The opened person (D112 item 5, board Person; D97 item 5, D111 rule 3: a person is a page only), in the work item's
@@ -53,12 +62,12 @@ const EVERY_SECTION = [
   'Kompetenser',
 ];
 /**
- * Each number under Kontaktuppgifter with how many lines its text is drawn on, counted by the tops of its text's line
- * boxes: one each, however long a category is (W2).
+ * The e-mail address and each number under Kontaktuppgifter with how many lines its text is drawn on, counted by the
+ * tops of its text's line boxes: one each, however long a category is (W2).
  */
-const numberLines = (page: Page) =>
+const valueLines = (page: Page) =>
   region(page, 'Kontaktuppgifter')
-    .locator('a[href^="tel:"]')
+    .locator('a[href^="mailto:"], a[href^="tel:"]')
     .evaluateAll(links =>
       links.map(a => {
         const tops = new Set<number>();
@@ -71,6 +80,12 @@ const numberLines = (page: Page) =>
         return [a.textContent?.trim(), tops.size];
       }),
     );
+/** Where the first value of a section's labelled facts starts, in px from the window's left edge. */
+const valueStart = (page: Page, name: string) =>
+  region(page, name)
+    .locator('dd')
+    .first()
+    .evaluate(dd => Math.round(dd.getBoundingClientRect().left));
 /** The work item about Johan under Behöver dig, by its title as the stream has it. */
 const ITEM = 'Planera utvecklingssamtal vecka 45';
 
@@ -116,19 +131,21 @@ test.describe('the person as a page', () => {
     // removed, the word as its name, its first day a date in the house format, its percentage with at most two decimals.
     const jobs = region(page, 'Anställningar').getByRole('list', { name: 'Anställningar' });
     await expect(jobs.getByRole('listitem')).toHaveCount(2);
-    await expect(jobs.getByRole('listitem').nth(0)).toContainText('Bergsåkers skola');
+    // Each item's name exactly, so that "Anställningsform" among the details cannot stand in for it.
+    await expect(jobs.getByRole('listitem').nth(0).getByText('Bergsåkers skola', { exact: true })).toBeVisible();
     await expect(jobs.getByRole('listitem').nth(0).locator('time')).toHaveText('15 augusti 2018');
     await expect(jobs.getByRole('listitem').nth(0)).toContainText(/Sysselsättningsgrad\s*57\s%/);
-    await expect(jobs.getByRole('listitem').nth(1)).toContainText('Anställning');
+    await expect(jobs.getByRole('listitem').nth(1).getByText('Anställning', { exact: true })).toBeVisible();
     await expect(jobs.getByRole('listitem').nth(1)).toContainText('Vikariat');
     await expect(jobs.getByRole('listitem').nth(1)).toContainText(/43\s%/);
     const contacts = region(page, 'Kontaktuppgifter');
     await expect(contacts.getByText(LONG_PHONE_CATEGORY, { exact: true })).toBeVisible();
     await expect(contacts.getByRole('link', { name: '070-000 00 03' })).toHaveAttribute('href', 'tel:0700000003');
-    await expect(contacts.getByRole('link', { name: 'johan.bystrom@clew.test' })).toHaveAttribute(
-      'href',
-      'mailto:johan.bystrom@clew.test',
-    );
+    await expect(contacts.getByRole('link', { name: JOHAN_EMAIL })).toHaveAttribute('href', `mailto:${JOHAN_EMAIL}`);
+    // Where the column is wide, the profile's values start where the sources' values do: one label column (W2).
+    const sourceStart = await valueStart(page, 'Kontakt');
+    expect(await valueStart(page, 'Kontaktuppgifter')).toBe(sourceStart);
+    expect(await valueStart(page, 'Anställningar')).toBe(sourceStart);
     // The talks section keeps its fuller read and its way in.
     await expect(region(page, 'Utvecklingssamtal').getByText('Skicka underlag om schemaläggning')).toBeVisible();
     await expect(region(page, 'Utvecklingssamtal').getByRole('link', { name: 'Öppna samtalet' })).toBeVisible();
@@ -567,11 +584,12 @@ test.describe('1.4.10 reflow', () => {
     await open(page, '/people/johan?from=%2Fstaff');
     await expect(page.getByRole('heading', { level: 1, name: 'Johan Byström' })).toBeVisible();
     expect(await reflowProblems(page)).toEqual([]);
-    // Anställningar and Kontaktuppgifter are drawn; a long phone category wraps in its own column and leaves every
-    // number on one line (W2).
+    // Anställningar and Kontaktuppgifter are drawn. On a phone each contact label stands above its value, so a long
+    // phone category narrows nothing, and the address and every number have the column's width, each on one line (W2).
     await expect(region(page, 'Anställningar').getByRole('listitem')).toHaveCount(2);
     await expect(region(page, 'Kontaktuppgifter').getByText(LONG_PHONE_CATEGORY, { exact: true })).toBeVisible();
-    expect(await numberLines(page)).toEqual([
+    expect(await valueLines(page)).toEqual([
+      [JOHAN_EMAIL, 1],
       ['060-19 20 00', 1],
       ['070-000 00 00', 1],
       ['070-000 00 03', 1],

@@ -64,8 +64,10 @@ export const pointsOutput = {
   ],
 };
 
-/** A long category the directory may send for a number (D114 item 3): it wraps in its own column (W2). */
+/** A long category the directory may send for a number (D114 item 3): it wraps and narrows no value (W2). */
 export const LONG_PHONE_CATEGORY = 'Beredskapstelefon för elevhälsan och fritidshemmet';
+/** An address of an ordinary length, 33 characters: on one line at 320 px (W2). */
+export const JOHAN_EMAIL = 'johan.bystrom@bergsaker.clew.test';
 /**
  * Johan's profile as the directory sent it (D114): a core title and two employments without titles of their own, the
  * second on a unit since removed, and his e-mail and three numbers, the third under a long category, so that every run
@@ -73,7 +75,7 @@ export const LONG_PHONE_CATEGORY = 'Beredskapstelefon för elevhälsan och friti
  * provisioner sends it: 0.57 × 100 is 56.99999999999999 in binary floating point.
  */
 export const johanProfile = (): PersonProfile => ({
-  email: 'johan.bystrom@clew.test',
+  email: JOHAN_EMAIL,
   title: 'Lärare 4–6',
   phoneNumbers: [
     { type: 'work', value: '060-19 20 00' },

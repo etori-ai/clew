@@ -10,9 +10,9 @@ import {
 } from '../../packages/connectors/src/index';
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { staffUsecases } from '../../apps/server/src/modules/people/usecases';
-import { checkRows, chunk, isKey, listedKeys } from '../../apps/server/src/modules/entities/domain';
+import { checkRows, chunk, isKey, listedKeys, managedPerson } from '../../apps/server/src/modules/entities/domain';
 import { entityUsecases } from '../../apps/server/src/modules/entities/usecases';
-import type { EntityBudget } from '../../apps/server/src/modules/entities/model';
+import type { EntityBudget, ManagedPerson } from '../../apps/server/src/modules/entities/model';
 
 /**
  * Entities (D97) as the person meets them: the real registry with small in-test sources that declare `about`, the
@@ -315,6 +315,31 @@ describe('the pure rules: keys, calls and what is kept of an answer', () => {
     expect(listedKeys('unit', { units: [{ unitId: 'a', unitLabel: 'A', role: 'employee' }], managed: [] })).toEqual([
       { key: 'a', sourceKey: 'a' },
     ]);
+  });
+  test("a person on the reader's cards is found on the first card that places them, else on the first they report to from below (D99, W1)", () => {
+    const sara = { id: 'sara', name: 'Sara Ek', userName: 'sara', enabled: true };
+    const fromBelow = { ...sara, below: [{ unitId: 'depa', unitLabel: 'Arkivdepån' }] };
+    const card = (unitId: string, unitLabel: string, people: ManagedPerson[]) => ({ unitId, unitLabel, people });
+    const arkivet = card('arkiv', 'Arkivet', [fromBelow]);
+    // Placed on two cards and reporting from below on one before them: the first card that places her.
+    expect(
+      managedPerson(
+        {
+          units: [],
+          managed: [arkivet, card('skola', 'Bergsåkers skola', [sara]), card('omsorg', 'Hemtjänsten', [sara])],
+        },
+        'sara',
+      ),
+    ).toEqual({ person: sara, unit: { unitId: 'skola', unitLabel: 'Bergsåkers skola' }, placed: true });
+    // Only from below: the first such card, which does not say where she works.
+    expect(
+      managedPerson({ units: [], managed: [arkivet, card('bad', 'Badhuset', [{ ...fromBelow }])] }, 'sara'),
+    ).toEqual({ person: fromBelow, unit: { unitId: 'arkiv', unitLabel: 'Arkivet' }, placed: false });
+    // Not on the reader's cards, or not someone who can be asked about: nobody.
+    expect(managedPerson({ units: [], managed: [arkivet] }, 'anna')).toBeUndefined();
+    expect(
+      managedPerson({ units: [], managed: [card('skola', 'Bergsåkers skola', [{ ...sara, userName: null }])] }, 'sara'),
+    ).toBeUndefined();
   });
   test('a key with a NUL names no entity of either kind, and a person key is no longer than an id (D116)', () => {
     for (const kind of ['person', 'unit'] as const) {
@@ -728,10 +753,11 @@ describe('the opened person or unit', () => {
       opens: true,
     });
   });
-  test('someone placed on a unit the reader manages is shown on it, also when they report from below on a card that comes first (D99, W1)', async () => {
+  test('someone placed on a unit the reader manages is shown on it, whatever unit they act in, also when they report from below on a card that comes first (D99, W1)', async () => {
     const people = directory();
-    // Hillevi also leads Arkivet, whose card comes before the school's; Sara leads Arkivdepån under it and is placed on
-    // the school as well.
+    // Hillevi also leads Arkivet, whose card comes before the school's. Sara is placed on the school and leads
+    // Arkivdepån under Arkivet, the unit she acts in (her grant), so the first card, her own unit and the card she is
+    // placed on are three different units.
     people.node('unit-skola', 'Bergsåkers skola', null);
     people.node('unit-arkiv', 'Arkivet', null);
     people.node('unit-depa', 'Arkivdepån', 'unit-arkiv');
@@ -739,8 +765,8 @@ describe('the opened person or unit', () => {
       ...people.state.assignments.get('hillevi')!,
       { unitId: 'unit-arkiv', role: 'manager' },
     ]);
-    people.place({ id: 'sara', name: 'Sara Ek', userName: 'sara' }, 'unit-depa', 'manager');
     people.place({ id: 'sara', name: 'Sara Ek', userName: 'sara' }, 'unit-skola', 'employee');
+    people.place({ id: 'sara', name: 'Sara Ek', userName: 'sara' }, 'unit-depa', 'manager');
     const w = world([connector('hr', 'Personalsystemet', [aboutRead('hr.absence', 'Frånvaro')])], {
       directory: people,
     });
@@ -750,9 +776,18 @@ describe('the opened person or unit', () => {
       ['Arkivet', 1],
       ['Bergsåkers skola', 0],
     ]);
+    expect((await people.staff.person(hillevi, 'sara', false))?.unit).toEqual({
+      unitId: 'unit-depa',
+      unitLabel: 'Arkivdepån',
+    });
     const sara = await w.entities.detail(hillevi, 'person', 'sara');
     expect(sara).toMatchObject({ relation: 'managed', entity: { key: 'sara', detail: 'Bergsåkers skola' } });
     expect(sara?.entity.unit).toEqual({ id: 'unit-skola', label: 'Bergsåkers skola', opens: true });
+    // A colleague who opens her reads the unit she acts in, which is not theirs to open.
+    expect((await w.entities.detail(people.persona('hassan'), 'person', 'sara'))?.entity.unit).toEqual({
+      id: 'unit-depa',
+      label: 'Arkivdepån',
+    });
   });
   test('a person is opened by their id only: a user name, in any spelling, names nobody (D116)', async () => {
     const { entities, people, cardsAsked } = standard();

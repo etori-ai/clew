@@ -44,6 +44,7 @@ import {
   EntityActions,
   NeedsYouRows,
   PersonSourceBody,
+  SECTION_LABELS,
   SourceBadge,
   SourceWay,
   drawnSections,
@@ -55,10 +56,11 @@ import { employmentLabel, employmentPercent } from './person-model';
 /** The details rail's width beside the column (`EntityPage`). */
 const DETAILS = 340;
 /**
- * The label column of the sources' sections (`SectionRow`), so the profile's values start where theirs do, and a long
- * label, such as a phone category the directory sent, wraps in its own column instead of narrowing every value.
+ * Kontaktuppgifter on a phone and at 400 % zoom: each label above its value, as Astryx advises for long values, so an
+ * e-mail address and every number take the column's whole width and a long category the directory sent wraps on a
+ * line of its own. A 140 px label column would leave them 132 px at 320 px and break an ordinary address over lines.
  */
-const LABELS = { position: 'start', width: 140 } as const;
+const LABELS_ABOVE = { position: 'top' } as const;
 const phoneLabel = new Map([
   ['work', 'Arbete'],
   ['mobile', 'Mobil'],
@@ -284,7 +286,8 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
                             {(employment.employmentType ||
                               employment.startDate ||
                               employment.employmentPercentage !== undefined) && (
-                              <MetadataList label={LABELS}>
+                              // Short labels and short values: beside each other at every width.
+                              <MetadataList label={SECTION_LABELS}>
                                 {employment.employmentType && (
                                   <MetadataListItem label="Anställningsform">
                                     {employment.employmentType}
@@ -325,7 +328,8 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
               key: 'contact',
               node: (
                 <PageSection title="Kontaktuppgifter" headingRef={headingRef('contact')}>
-                  <MetadataList label={LABELS}>
+                  {/* Beside the sources' values where the column is wide, above on a phone (W2). */}
+                  <MetadataList label={mobile ? LABELS_ABOVE : SECTION_LABELS}>
                     {detail.profile.email && (
                       <MetadataListItem label="E-post">
                         <FieldValue
