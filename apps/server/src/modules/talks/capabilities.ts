@@ -204,8 +204,9 @@ export function talksConnector(
     output: PersonTalksOutputSchema,
     view: personTalksView,
     scope: { roles: ['manager'] },
-    // The person's talk is written on Personal, in the talk drawer (D96 item 7): the section's second way in.
-    about: { entity: 'person', page: { title: 'Öppna samtalet', href: '/staff?talk={id}' } },
+    // The person's talk is written in the talk drawer (D96 item 7), the section's second way in. A query alone: the drawer
+    // lies over whichever page the way in is drawn on, Personal or the person's own (D111 rule 5).
+    about: { entity: 'person', page: { title: 'Öppna samtalet', href: '?talk={id}' } },
     run: async (actor, input) => {
       const { round, rows } = await talks.aboutPeople(await persona(actor), input.keys);
       return {

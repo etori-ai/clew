@@ -21,14 +21,19 @@ test.describe('4.1.3 status messages', () => {
       .toContainEqual(expect.stringContaining('Tio personer är på plats i dag.'));
   });
 
-  test('moving between pages is spoken, and so is the area Hem is narrowed to', async ({ page, api: _ }) => {
+  test('moving between pages is spoken, and so is the system Att göra is narrowed to', async ({ page, api: _ }) => {
     await open(page, '/calendar');
     await page.getByRole('navigation', { name: 'Sidonavigering' }).getByRole('link', { name: /^Hem/ }).click();
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Hem'));
-    await page.getByRole('button', { name: 'Alla områden' }).click();
+    await page
+      .getByRole('navigation', { name: 'Sidonavigering' })
+      .getByRole('link', { name: /^Att göra/ })
+      .click();
+    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Att göra'));
+    await page.getByRole('button', { name: 'Alla system' }).click();
     await page.getByRole('menuitemradio', { name: 'Personal' }).click();
-    await expect(page).toHaveURL(/\/\?area=personal$/);
-    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Visar området Personal'));
+    await expect(page).toHaveURL(/\/todo\?area=personal$/);
+    await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Visar Personal'));
   });
 
   test('a card leaving the stream is spoken with its way back', async ({ page, api: _ }) => {

@@ -73,6 +73,56 @@ const acknowledge = {
   output: executeResult,
 };
 
+// The news profile (D112): every notice is news the person may read, newest first, each opening in Clew with its text.
+// Clew joins this with every other news source as `clew.news`, Hem's "Nyheter" and "Alla nyheter".
+const news = {
+  name: 'communication.news',
+  kind: 'read',
+  title: 'Nyheter',
+  description: 'Kommunens nyheter som den inloggade får läsa: rubrik, avsändare och när de publicerades.',
+  model: false,
+  scope: everyone,
+  input: empty,
+  output: object({
+    rows: array(
+      object({ ref: string, title: string, sender: string, publishedAt: { type: 'string', format: 'date-time' } }),
+    ),
+  }),
+  view: {
+    kind: 'list',
+    title: 'title',
+    ref: 'ref',
+    open: { capability: 'communication.newsItem', title: 'Nyhet', params: { ref: 'ref' } },
+    noun: { one: 'nyhet', other: 'nyheter' },
+    empty: 'Inga nyheter just nu.',
+    fields: [
+      { key: 'title', label: 'Rubrik' },
+      { key: 'sender', label: 'Avsändare' },
+      { key: 'publishedAt', label: 'Publicerad', format: 'date' },
+    ],
+  },
+};
+
+const newsItem = {
+  name: 'communication.newsItem',
+  kind: 'read',
+  title: 'Nyhet',
+  description: 'En nyhet med sin text, som den inloggade får läsa.',
+  model: false,
+  scope: everyone,
+  input: object({ ref: { type: 'string', minLength: 1, maxLength: 200 } }),
+  output: object({ ref: string, title: string, sender: string, publishedAt: string, body: string }),
+  view: {
+    kind: 'detail',
+    title: 'title',
+    fields: [
+      { key: 'sender', label: 'Avsändare' },
+      { key: 'publishedAt', label: 'Publicerad', format: 'instant' },
+      { key: 'body', label: 'Text' },
+    ],
+  },
+};
+
 const lookup = {
   name: 'communication.lookup',
   kind: 'read',
@@ -102,5 +152,5 @@ export const manifest = {
       figure: true,
     },
   ],
-  capabilities: [notices, acknowledge, lookup],
+  capabilities: [notices, acknowledge, news, newsItem, lookup],
 };

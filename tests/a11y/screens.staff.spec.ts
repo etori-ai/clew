@@ -3,7 +3,8 @@ import { TALK_LENS } from './data';
 
 /**
  * Not a test: screenshots of Personal (D97) for the comparison with the canvas: "Alla" (artboard A2) with its Visa menu
- * open, a lens (artboard B), a row's menu (artboard A3), at 1440 × 900 and 390 wide. Run on demand with
+ * open, a lens (artboard B), a row's menu (artboard A3), at 1440 × 900 and 390 wide, and one person's cards listed beside
+ * the whole list (D111 answer 6), which has no artboard. Run on demand with
  * `CLEW_SCREENS=1 … playwright test -c tests/a11y screens.staff`; the images land in test-results/screens/.
  */
 const out = (name: string) => `test-results/screens/${name}.png`;
@@ -36,12 +37,12 @@ test.describe('screens', () => {
       await page.screenshot({ path: out(`staff-row-menu-${name}`) });
     });
   }
-  test('personal compact beside a person 1440', async ({ page, api: _ }) => {
-    await page.setViewportSize(wide);
-    await open(page, `/staff?show=${TALK_LENS}&person=johan`);
-    await page.getByRole('link', { name: 'Karin Lindqvist' }).waitFor();
+  test('personal cards beside the list 1840', async ({ page, api: _ }) => {
+    await page.setViewportSize({ width: 1840, height: 1000 });
+    await open(page, `/staff?show=${TALK_LENS}&cards=johan&cards-kind=act`);
+    await page.getByRole('complementary', { name: 'Johan Byström' }).getByRole('link').first().waitFor();
     await page.waitForTimeout(400);
-    await page.screenshot({ path: out('staff-compact-1440'), fullPage: true });
+    await page.screenshot({ path: out('staff-cards-1840'), fullPage: true });
   });
   test('personal phone 375', async ({ page, api: _ }) => {
     await page.setViewportSize(phone);

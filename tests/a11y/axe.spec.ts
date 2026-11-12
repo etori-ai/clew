@@ -3,9 +3,10 @@ import { answer, composer, desktop, expect, expectNoAxeViolations, open, phone, 
 /** axe over every route and over the states a route can reach, at both layouts. */
 const routes = [
   ['start', '/'],
-  ['an area', '/?area=personal'],
-  ['the calendar lens', '/?area=kalender'],
-  ['the log', '/?tab=done'],
+  ['Att göra', '/todo'],
+  ['an area', '/todo?area=personal'],
+  ['the calendar lens', '/todo?area=kalender'],
+  ['the log', '/todo?tab=done'],
   ['the calendar page', '/calendar'],
 ] as const;
 
@@ -52,7 +53,7 @@ for (const [layout, viewport] of [
       await open(page, '/');
       await composer(page).fill('attestera en faktura');
       await composer(page).press('Enter');
-      await expect(page.getByRole('article', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' })).toBeVisible();
+      await expect(page.getByRole('article', { name: 'Ärende: Attestera 3 fakturor, 48 200 kr' })).toBeVisible();
       await expectNoAxeViolations(page);
     });
 
@@ -84,16 +85,27 @@ for (const [layout, viewport] of [
       await expectNoAxeViolations(page);
     });
 
-    test('every card opened has no axe violations', async ({ page, api: _ }) => {
-      // A card's state is a tab on Hem (D50, D53): Väntar på andra lists what waits on someone else.
-      await open(page, '/?tab=waiting');
-      await expect(page.locator('#att-gora-lista')).toHaveAccessibleName('Väntar på andra');
+    test('every work item opened has no axe violations', async ({ page, api: _ }) => {
+      // A pile is a tab of Att göra (D112 item 3): Väntar på andra lists what waits.
+      await open(page, '/todo?tab=waiting');
+      await expect(page.getByRole('list', { name: 'Väntar på andra' })).toBeVisible();
       await expectNoAxeViolations(page);
-      // A card open from its row: in the panel on a desktop, in the list on a phone. One of each kind of card.
-      for (const id of ['omtanke', 'samtal']) {
-        await open(page, `/?card=${id}`);
-        await expect(page.locator(`#card-${id}, #thread-${id}[aria-label]`).first()).toBeVisible();
+      // A work item opened from its row: in the reading pane on a desktop, as its page alone on a phone (D112 items 3
+      // and 12; the calendar's proposals keep their own card). One of each kind, and the item's own page.
+      for (const [id, title] of [
+        ['omtanke', 'Omtankesamtal med Anna Lindqvist'],
+        ['samtal', ''],
+      ] as const) {
+        await open(page, `/todo?item=${id}`);
+        await expect(
+          layout === 'phone' && title
+            ? page.getByRole('heading', { level: 1, name: title })
+            : page.locator(`#card-${id}`),
+        ).toBeVisible();
         await expectNoAxeViolations(page);
       }
+      await open(page, '/items/omtanke');
+      await expect(page.getByRole('heading', { level: 1, name: 'Omtankesamtal med Anna Lindqvist' })).toBeVisible();
+      await expectNoAxeViolations(page);
     });
   });

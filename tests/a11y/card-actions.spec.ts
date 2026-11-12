@@ -12,26 +12,24 @@ const cutOff = (root: Locator) =>
       .map(e => (e as HTMLElement).innerText),
   );
 
-test.describe('a row shows the next step and Lägg till i samtalet; the rest is on the open card', () => {
+test.describe('a row is one link; the steps are on the open work item', () => {
   test.use({ viewport: desktop });
 
-  test('a row has its two buttons, and the keyboard reaches everything else on its card, the time picker included', async ({
+  test('a row has no buttons of its own, and the keyboard reaches everything on its work item, the time picker included', async ({
     page,
     api: _,
   }) => {
-    await open(page, '/');
-    const row = page.locator('#thread-omtanke');
-    await expect(row.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
-    await expect(row.getByRole('button', { name: 'Lägg till i samtalet' })).toBeVisible();
-    await expect(row.getByRole('button', { name: 'Se mönstret' })).toHaveCount(0);
-    await expect(row.getByRole('button', { name: 'Inte nu', exact: true })).toHaveCount(0);
-    await expect(row.getByRole('button', { name: 'Fler val' })).toHaveCount(0);
-    // The title is the way to the card (artboard E), where the rest stands: at this width the card is over the page.
-    await row.getByRole('link', { name: 'Omtankesamtal med Anna Lindqvist', exact: true }).focus();
+    await open(page, '/todo');
+    const row = page.locator('#work-omtanke');
+    // A row is one link to its work item (D112 item 3): the steps are the item's.
+    await expect(row.getByRole('button')).toHaveCount(0);
+    await row.getByRole('link').focus();
     await page.keyboard.press('Enter');
-    const card = page.getByRole('dialog', { name: 'Kort', exact: true });
+    const card = page.getByRole('complementary', { name: 'Valt ärende' });
+    await expect(card.getByRole('button', { name: 'Boka samtalet' })).toBeVisible();
     await expect(card.getByRole('button', { name: 'Se mönstret' })).toBeVisible();
-    await expect(card.getByRole('button', { name: 'Lägg till i samtalet' })).toBeVisible();
+    // Att göra has no question box, so the card offers no way into one (D111 rule 6).
+    await expect(card.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
     await card.getByRole('button', { name: 'Fler val' }).focus();
     await page.keyboard.press('Enter');
     await expect(page.getByRole('menuitem', { name: 'Avfärda · inte aktuellt' })).toBeVisible();
@@ -48,9 +46,9 @@ test.describe('a row shows the next step and Lägg till i samtalet; the rest is 
     page,
     api: _,
   }) => {
-    // The row opened as a card, in the panel (D50); over the page here, where the panel's header is the drawer's top.
-    await open(page, '/?card=fakturor');
-    const card = page.getByRole('dialog', { name: 'Kort', exact: true });
+    // The work item in Att göra's reading pane (D112 item 3).
+    await open(page, '/todo?item=fakturor');
+    const card = page.getByRole('complementary', { name: 'Valt ärende' });
     await expect(card.getByRole('button', { name: 'Inte nu', exact: true })).toBeVisible();
     await expect(card.getByRole('button', { name: 'Påminn mig' })).toHaveCount(0);
     await card.getByRole('button', { name: 'Fler val' }).click();
@@ -58,17 +56,17 @@ test.describe('a row shows the next step and Lägg till i samtalet; the rest is 
     await expect(page.getByRole('menuitem', { name: /Påminn mig|Inte nu/ })).toHaveCount(0);
   });
 
-  test('what the next step does names the source as the source wrote it and promises no undo before a receipt says so', async ({
+  test('the work item names its source as the source wrote it and promises no undo before a receipt says so', async ({
     page,
     api: _,
   }) => {
-    // A source's name is a name ("Nextcloud"), so it is never lower-cased; and whether a write can be undone is only
-    // known from its receipt, so the line under the buttons says nothing about undo.
-    await open(page, '/?card=ledighet');
-    await expect(
-      page.getByText('Godkänn skrivs till Personalsystemet och läses tillbaka som kvitto. Fungerar utan modellen.'),
-    ).toBeVisible();
-    await expect(page.getByText(/Ångra i 10 minuter/)).toHaveCount(0);
+    // A source's name is a name ("Nextcloud"), so it is never lower-cased: on the item's source line and where it says
+    // why it is here (D112 item 4). Whether a write can be undone is only known from its receipt, so nothing says so before.
+    await open(page, '/todo?item=ledighet');
+    const card = page.locator('#card-ledighet');
+    await expect(card.getByText('Personalsystemet · Personal', { exact: true })).toBeVisible();
+    await expect(card.getByText(/Ärendet kom från Personalsystemet /)).toBeVisible();
+    await expect(page.getByText(/Ångra/)).toHaveCount(0);
   });
 
   test('an action that asks first asks in an alert dialog: Avbryt has the focus, Esc sends nothing and gives the focus back, a yes sends it', async ({
@@ -91,8 +89,8 @@ test.describe('a row shows the next step and Lägg till i samtalet; the rest is 
       if (request.method() === 'POST' && request.url().endsWith('/api/threads/ledighet/act'))
         sent.push(request.postData() ?? '');
     });
-    await open(page, '/?card=ledighet');
-    const card = page.getByRole('dialog', { name: 'Kort', exact: true });
+    await open(page, '/todo?item=ledighet');
+    const card = page.getByRole('complementary', { name: 'Valt ärende' });
     const reject = card.getByRole('button', { name: 'Avslå', exact: true });
     await reject.click();
     // The question is the dialog's name and what follows from a yes is its description (the alert dialog pattern).
@@ -116,18 +114,18 @@ test.describe('a row shows the next step and Lägg till i samtalet; the rest is 
     api.threads.find(t => t.id === 'tillbud')!.timers = [
       { kind: 'reminder', dueAt: '2026-11-05T10:00:00.000Z', state: 'scheduled' },
     ];
-    await open(page, '/?tab=waiting');
-    const card = page.locator('#thread-tillbud');
-    await expect(card).toContainText('väntar på skyddsombudet · påminner dig');
+    await open(page, '/todo?item=tillbud');
+    const card = page.locator('#card-tillbud');
+    await expect(card).toContainText('påminner dig');
     await expect(card.getByRole('button', { name: 'Inte nu', exact: true })).toHaveCount(0);
     await card.getByRole('button', { name: 'Påminn mig' }).click();
     await expect(page.getByRole('menuitem', { name: /^I morgon/ })).toBeVisible();
     await page.keyboard.press('Escape');
-    await expect(card.getByRole('button', { name: 'Fler val' })).toHaveCount(0);
+    await expect(page.getByRole('menuitem', { name: /^I morgon/ })).toHaveCount(0);
   });
 
   test('the open proposal has the same picker as every other card', async ({ page, api: _ }) => {
-    await open(page, '/?card=samtal');
+    await open(page, '/todo?item=samtal');
     await page.getByRole('button', { name: 'Skicka', exact: false }).first().waitFor();
     const proposal = page
       .getByRole('article')
@@ -139,7 +137,7 @@ test.describe('a row shows the next step and Lägg till i samtalet; the rest is 
   });
 
   test('Skriv själv opens its dialog from the picker and the focus lands in the field', async ({ page, api: _ }) => {
-    await open(page, '/?card=omtanke');
+    await open(page, '/todo?item=omtanke');
     await page.getByRole('button', { name: 'Inte nu', exact: true }).first().click();
     await page.getByRole('menuitem', { name: /^Skriv själv/ }).click();
     const dialog = page.getByRole('dialog', { name: 'När ska jag ta upp det igen?' });
@@ -148,12 +146,14 @@ test.describe('a row shows the next step and Lägg till i samtalet; the rest is 
   });
 
   test('a card put in the box says so on its button and on its line', async ({ page, api: _ }) => {
-    await open(page, '/');
-    const row = page.locator('#thread-omtanke');
-    await row.getByRole('button', { name: 'Lägg till i samtalet' }).click();
-    await expect(row).toContainText('i samtalet');
+    // Where a box is on the page: the card beside a conversation (Hem holds no card since D112).
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await open(page, '/conversations/fraga?card=omtanke');
+    const card = page.locator('#card-omtanke');
+    await card.getByRole('button', { name: 'Lägg till i samtalet' }).click();
+    await expect(card).toContainText('I samtalet');
     await expect(composer(page)).toBeVisible();
-    await expect(row.getByRole('button', { name: 'I samtalet' })).toBeDisabled();
+    await expect(card.getByRole('button', { name: 'I samtalet' })).toBeDisabled();
   });
 
   // D92: the chip enters the drawer on Astryx's entry motion, the field has the focus from the same click, and a screen
@@ -164,8 +164,9 @@ test.describe('a row shows the next step and Lägg till i samtalet; the rest is 
       api: _,
     }) => {
       await page.emulateMedia({ reducedMotion });
-      await open(page, '/');
-      await page.locator('#thread-omtanke').getByRole('button', { name: 'Lägg till i samtalet' }).click();
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await open(page, '/conversations/fraga?card=omtanke');
+      await page.locator('#card-omtanke').getByRole('button', { name: 'Lägg till i samtalet' }).click();
       const remove = page.getByRole('button', { name: 'Ta bort Omtankesamtal med Anna Lindqvist' });
       await expect(remove).toBeVisible();
       await expect(composer(page)).toBeFocused();
@@ -192,8 +193,8 @@ test.describe('a row shows the next step and Lägg till i samtalet; the rest is 
 test.describe('the page says one thing at a time', () => {
   test.use({ viewport: desktop });
 
-  test('the one filled button on the overview is what is due today', async ({ page, api: _ }) => {
-    await open(page, '/');
+  test('the one filled button beside the queue is what is due today', async ({ page, api: _ }) => {
+    await open(page, '/todo?item=fakturor');
     // Filled means opaque and dark: black in Neutral, the profile's own colour under a municipal one. A secondary button is a translucent tint.
     const filled = await page.getByRole('main').evaluate(main =>
       [...main.querySelectorAll('button')]
@@ -206,27 +207,28 @@ test.describe('the page says one thing at a time', () => {
         .map(button => button.textContent?.trim()),
     );
     // The box's send button is an icon with no text, and rests dimmed until something is written.
-    expect(filled.filter(Boolean)).toEqual(['Attestera 2']);
+    expect(filled.filter(Boolean)).toEqual(['Attestera 2 valda']);
   });
 });
 
 test.describe('a phone', () => {
   test.use({ viewport: phone });
 
-  test("the day's work comes before the day", async ({ page, api: _ }) => {
+  test('what needs the person comes before the day', async ({ page, api: _ }) => {
     await open(page, '/');
-    const work = await page.getByRole('heading', { name: 'Nu · 1' }).boundingBox();
+    const work = await page.getByRole('heading', { name: 'Behöver dig' }).boundingBox();
     const day = await page.getByRole('region', { name: 'I dag' }).boundingBox();
     expect(work!.y).toBeLessThan(day!.y);
   });
 
-  test('Inte nu opens from the card in the sheet and shows its rows', async ({ page, api: _ }) => {
-    await open(page, '/?card=fakturor');
-    await page
-      .getByRole('dialog', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' })
-      .getByRole('article', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' })
-      .getByRole('button', { name: 'Inte nu', exact: true })
-      .click();
+  test('Inte nu opens from Fler val on the work item alone on the page and shows its rows', async ({
+    page,
+    api: _,
+  }) => {
+    // On a phone the item is its page with the buttons pinned to the foot (D112 item 12): Inte nu is under Fler val.
+    await open(page, '/todo?item=fakturor');
+    await page.getByRole('main').getByRole('button', { name: 'Fler val' }).click();
+    await page.getByRole('menuitem', { name: 'Inte nu' }).click();
     await expect(page.getByRole('menuitem', { name: /^I morgon/ })).toBeVisible();
     await expect(page.getByRole('menuitem', { name: /^Skriv själv/ })).toBeVisible();
   });
@@ -245,11 +247,10 @@ test.describe('a phone', () => {
         role: 'secondary',
         confirm: 'Avslå ansökan? Medarbetaren meddelas direkt.',
       });
-    await open(page, '/?card=ledighet');
-    await page
-      .getByRole('dialog', { name: 'Kort: Ledighetsansökan från Johan Byström' })
-      .getByRole('button', { name: 'Avslå', exact: true })
-      .click();
+    await open(page, '/todo?item=ledighet');
+    // On a phone a second step is under Fler val beside the pinned next step (D112 item 12).
+    await page.getByRole('main').getByRole('button', { name: 'Fler val' }).click();
+    await page.getByRole('menuitem', { name: 'Avslå', exact: true }).click();
     const question = page.getByRole('alertdialog', { name: 'Avslå ansökan?' });
     await expect(question.getByRole('button', { name: 'Avbryt', exact: true })).toBeFocused();
     await expect(question.getByRole('button', { name: 'Avslå', exact: true })).toBeVisible();
@@ -270,16 +271,19 @@ test.describe('the side panel', () => {
   });
 });
 
-test.describe('Redan hanterat', () => {
+test.describe('Klart', () => {
   test.use({ viewport: desktop });
 
-  test('when and what are two choices, and the times stand under each other', async ({ page, api: _ }) => {
-    await open(page, '/?tab=done');
-    await expect(page.getByRole('radiogroup', { name: 'Tid' }).getByRole('radio', { name: 'I dag' })).toBeChecked();
-    await page.getByRole('radiogroup', { name: 'Typ' }).getByRole('radio', { name: 'Frågor' }).click();
-    const region = page.getByRole('region', { name: 'Redan hanterat' });
-    await expect(region).toContainText('Fråga: Vem är på plats i dag?');
-    await expect(region).not.toContainText('Attesterade fakturor');
+  test('Klart holds what is done or set aside, each with its state; the conversations are the rail’s', async ({
+    page,
+    api: _,
+  }) => {
+    await open(page, '/todo?tab=done');
+    const done = page.getByRole('list', { name: 'Klart' });
+    await expect(done.getByRole('listitem')).toHaveCount(2);
+    await expect(done.locator('#work-attest').getByRole('img', { name: 'Klart' })).toBeVisible();
+    await expect(done.locator('#work-avfardad').getByRole('img', { name: 'Avfärdat' })).toBeVisible();
+    await expect(done).not.toContainText('Vem är på plats i dag?');
   });
 });
 
@@ -315,12 +319,14 @@ test.describe('the calendar on a phone', () => {
 
 test.describe('nothing is cut off', () => {
   for (const width of [1024, 768])
-    test(`a row and a card keep their words beside the rail at ${width} px`, async ({ page, api: _ }) => {
+    test(`a row and a work item keep their words beside the rail at ${width} px`, async ({ page, api: _ }) => {
       await page.setViewportSize({ width, height: 900 });
-      await open(page, '/');
-      await expect(
-        page.locator('#thread-omtanke').getByRole('link', { name: 'Omtankesamtal med Anna Lindqvist' }),
-      ).toBeVisible();
+      await open(page, '/todo');
+      await expect(page.locator('#work-omtanke').getByRole('link')).toBeVisible();
+      expect(await cutOff(page.getByRole('main'))).toEqual([]);
+      // The pane does not fit beside the list at these widths: the item is its page (D112 items 3 and 4).
+      await open(page, '/todo?item=omtanke');
+      await expect(page.getByRole('heading', { level: 1, name: 'Omtankesamtal med Anna Lindqvist' })).toBeVisible();
       expect(await cutOff(page.getByRole('main'))).toEqual([]);
     });
 

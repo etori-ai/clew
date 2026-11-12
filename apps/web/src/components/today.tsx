@@ -7,7 +7,7 @@ import { timeLabel } from '@clew/calendar/dates';
  * "I dag" (D53, artboard A; D71, artboard 6): a card with the day's meetings in order, each with its time, its name and
  * its length and room, and the free gaps as their own rows ("Ledigt till …"); the longest gap says that the assistant
  * books nothing there without asking. The rows come from `agendaItems()`, the calendar family's one mapping (D32). The
- * week is one link away. No sentence sums the day up: the rows do.
+ * calendar is one link away (board Main: "Kalender"). No sentence sums the day up: the rows do.
  */
 type Props = {
   view: TodayView;
@@ -42,7 +42,7 @@ export function Today({ view, threads = [], cardHref }: Props) {
           </Heading>
           <Text type="supporting" weight="medium">
             <Link href="/calendar" color="primary" hasUnderline>
-              Hela veckan
+              Kalender
             </Link>
           </Text>
         </HStack>
@@ -97,7 +97,7 @@ export function Today({ view, threads = [], cardHref }: Props) {
                       <>
                         {' · '}
                         <Link href={cardHref(card.id)} color="secondary" hasUnderline>
-                          från kortet {card.title}
+                          från ärendet {card.title}
                         </Link>
                       </>
                     )}

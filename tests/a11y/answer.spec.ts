@@ -54,7 +54,7 @@ test.describe('the answer on its way', () => {
     await input.press('Enter');
     await page.getByRole('button', { name: 'Stoppa' }).click();
     await expect(page.getByRole('log')).toHaveCount(0);
-    await expect(heading(page, 1, 'Hej Testa')).toBeVisible();
+    await expect(heading(page, 1, 'Vad vill du få gjort?')).toBeVisible();
     await expect(composer(page)).toHaveText('Vem är på plats?');
     await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Frågan avbröts'));
     await page.waitForTimeout(api.answerDelay + 500);
@@ -92,7 +92,7 @@ test.describe('the answer on its way', () => {
       release();
       await expect(log).not.toHaveAttribute('aria-busy', 'true');
       await page.getByRole('button', { name: 'Stäng samtalet' }).click();
-      const greeting = heading(page, 1, 'Hej Testa');
+      const greeting = heading(page, 1, 'Vad vill du få gjort?');
       await expect(greeting).toBeVisible();
       expect(await entering(greeting)).toBe(reducedMotion === 'no-preference');
     });
@@ -119,10 +119,13 @@ test.describe('the answer on its way', () => {
     api.threads = [];
     await open(page, '/');
     const input = composer(page);
-    const greeting = (await heading(page, 1, 'Hej Testa').boundingBox())!;
+    const greeting = (await heading(page, 1, 'Vad vill du få gjort?').boundingBox())!;
     const top = (await input.boundingBox())!.y;
     expect(top).toBeGreaterThan(greeting.y);
-    await expect(heading(page, 2, 'Lugnt läge')).toBeVisible();
+    // The quiet page (D112 item 2): Behöver dig says that nothing does, and the day stands beside it.
+    await expect(
+      page.getByRole('region', { name: 'Behöver dig' }).getByText('Inget behöver dig just nu.'),
+    ).toBeVisible();
     await expect(page.getByRole('region', { name: 'I dag' })).toBeVisible();
     await expect(
       page.getByRole('region', { name: 'Sedan i går' }).getByText('Inget är klart och inget väntar på andra.'),
@@ -141,7 +144,7 @@ test.describe('the answer on its way', () => {
     await page.goto('/');
     await expect(page.getByText('Hämtar det som behöver dig …')).toBeAttached();
     await expect(page.getByText(/Lugnt läge|Inget brådskar/)).toHaveCount(0);
-    await expect(heading(page, 2, 'Nu · 1')).toBeVisible();
+    await expect(page.locator('#work-fakturor')).toBeVisible();
     await expect(page.getByText('Hämtar det som behöver dig …')).toHaveCount(0);
   });
 });

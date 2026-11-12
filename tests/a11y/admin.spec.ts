@@ -444,7 +444,7 @@ test.describe('administration', () => {
       await open(page, '/admin/connectors/hello');
       await page.getByRole('button', { name: 'Ta bort' }).click();
       const alert = page.getByRole('alertdialog');
-      await expect(alert.getByText(/öppna kort stängs/)).toBeVisible();
+      await expect(alert.getByText(/öppna ärenden stängs/)).toBeVisible();
       await alert.getByRole('button', { name: 'Avbryt' }).click();
       await expect(alert).toHaveCount(0);
       await page.getByRole('button', { name: 'Ta bort' }).click();

@@ -283,7 +283,7 @@ export function calendarUsecases(deps: CalendarDeps) {
       planned < members
         ? ` ${members - planned} fick ingen tid vecka ${weekNumber(week)}; jag föreslår dem i nästa vecka om du vill.`
         : '';
-    return `${head} Jag har ritat in ${planned} förslag vecka ${weekNumber(week)} som inte krockar med något i din eller medarbetarnas kalendrar. Bekräfta så skickar jag inbjudningarna. Kortet visar resultatet och vad som går att ångra.${tail}`;
+    return `${head} Jag har ritat in ${planned} förslag vecka ${weekNumber(week)} som inte krockar med något i din eller medarbetarnas kalendrar. Bekräfta så skickar jag inbjudningarna. Ärendet visar resultatet och vad som går att ångra.${tail}`;
   }
   const records = (
     persona: AuthenticatedContext,
@@ -390,7 +390,7 @@ export function calendarUsecases(deps: CalendarDeps) {
   /** "Vecka 47 i stället": redraw every unconfirmed proposal of the thread in another week. */
   async function replan(persona: AuthenticatedContext, threadId: string, week: string) {
     const current = await store.readThread(persona.id, threadId);
-    if (!current || current.thread.state !== 'open') throw new InputError('Kortet är redan hanterat.');
+    if (!current || current.thread.state !== 'open') throw new InputError('Ärendet är redan hanterat.');
     if (Date.parse(dayStart(week)) < Date.parse(dayStart(todayDate())) || weekStartMismatch(week))
       throw new InputError('Välj en kommande vecka.');
     const open = await round(persona);
@@ -627,7 +627,7 @@ export function calendarUsecases(deps: CalendarDeps) {
   /** Avfärda on a proposal thread: the drawn times are declined, nothing was ever sent. */
   async function dismiss(persona: AuthenticatedContext, threadId: string) {
     const current = await store.readThread(persona.id, threadId);
-    if (!current || current.thread.state !== 'open') throw new InputError('Kortet är redan hanterat.');
+    if (!current || current.thread.state !== 'open') throw new InputError('Ärendet är redan hanterat.');
     const at = clock().toISOString();
     await persona.authorize();
     await store.transaction(async tx => {
@@ -638,7 +638,7 @@ export function calendarUsecases(deps: CalendarDeps) {
         locked.thread.updatedAt !== current.thread.updatedAt ||
         (locked.thread.execution && ['pending', 'running', 'unknown'].includes(locked.thread.execution.state))
       )
-        throw new InputError('Kortet har ändrats. Läs om sidan.');
+        throw new InputError('Ärendet har ändrats. Läs om sidan.');
       await tx.transition(threadId, 'proposed', { status: 'declined' });
       await tx.updateThread(threadId, { state: 'dismissed', handledAt: at, updatedAt: at });
       await tx.writeAudit({ actor: principal(persona), action: 'thread.dismissed', subject: 'thread:' + threadId, at });

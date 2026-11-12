@@ -244,7 +244,7 @@ test.describe('review', () => {
   shot(
     '32-panel-card',
     async page => {
-      await open(page, '/?open-card=omtanke&open-action=pattern');
+      await open(page, '/?card=omtanke&open-card=omtanke&open-action=pattern');
     },
     ['1280'],
   );
@@ -423,7 +423,11 @@ test.describe('review', () => {
     '75-rail-search',
     async page => {
       await open(page, '/');
-      await page.getByRole('combobox', { name: 'Sök i samtal och kort' }).fill('fak');
+      await page
+        .getByRole('navigation', { name: 'Sidonavigering' })
+        .getByRole('button', { name: 'Sök', exact: true })
+        .click();
+      await page.getByRole('combobox', { name: 'Sök i samtal och ärenden' }).fill('fak');
     },
     ['1280'],
   );

@@ -1,6 +1,6 @@
 import { test as base, expect, type Locator, type Page, type Route } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import type { MenuEntry, Thread, SiteHeaderView } from '@clew/contracts';
+import type { ItemEvent, MenuEntry, PanelViewSpec, Thread, SiteHeaderView } from '@clew/contracts';
 import {
   NEXT_WEEK,
   NOW,
@@ -24,6 +24,8 @@ import {
   user,
   siteHeader,
 } from './data';
+import { newsItemOutput, newsItemSpec, newsSpec } from './data';
+import type { NewsResult } from '@clew/contracts';
 import {
   assistantStatus,
   modelDetail,
@@ -40,6 +42,8 @@ import {
   entityDetail,
   entityList,
   entityRows,
+  meetingSlots,
+  ownDay,
   SILENT_SECTION,
   TALKS_FAIL_ERROR,
   TODAY,
@@ -100,6 +104,43 @@ export const short = { width: 320, height: 256 };
 const session = { csrfToken: 'test', sessionKey: 'test', expiresAt: '2026-11-04T16:00:00.000Z', user };
 import type { ConnectorSummary } from '@clew/contracts';
 
+/**
+ * What a thread's audit rows would say about it (D112 item 4), newest first: created by Clew, set aside or dismissed by
+ * the person, and a decision with the source's answer when it has a receipt.
+ */
+export function eventsOf(t: Thread): ItemEvent[] {
+  const events: ItemEvent[] = [{ at: t.createdAt, by: 'clew', kind: 'created' }];
+  if (t.receipt) {
+    const action = t.actions.find(a => a.kind === 'execute' && a.role === 'primary');
+    const failed = t.receipt.rows.some(r => r.outcome === 'failed'),
+      unknown = t.receipt.rows.some(r => r.outcome === 'unknown');
+    events.push(
+      { at: t.receipt.at, by: 'you', kind: 'decided', ...(action ? { action: action.label } : {}) },
+      {
+        at: t.receipt.at,
+        by: 'clew',
+        kind: 'answered',
+        outcome: failed ? 'failed' : unknown ? 'unknown' : 'succeeded',
+      },
+    );
+  }
+  if (t.state === 'open' && t.snoozedUntil)
+    events.push({ at: t.updatedAt, by: 'you', kind: 'snoozed', until: t.snoozedUntil });
+  if (t.state === 'dismissed' && t.handledAt) events.push({ at: t.handledAt, by: 'you', kind: 'dismissed' });
+  return events.reverse();
+}
+
+/** A talk's time as the HR fixture writes it: "torsdag 5 november kl. 13:15". */
+const talkTime = (instant: string) =>
+  new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Europe/Stockholm',
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(instant));
+
 /** The API as the browser sees it, held in memory per test. `/api/**` never leaves the page. */
 export class MockApi {
   threads = threads();
@@ -121,6 +162,19 @@ export class MockApi {
   /** How long Avfärda, Inte nu and Ta upp nu take to answer, and whether the server refuses, so a test can see the card as the person's action leaves it (D64). */
   mutationDelay = 0;
   mutationFails = false;
+  /**
+   * The action dialog (D112 item 10). Every decision that reached `act`, as its body; the next decision refused with this
+   * Swedish sentence (it resets itself after that one); every effect read, as its thread and body, and whether they fail
+   * or wait; the free times the person's calendar answers (null: no calendar, so no times and no day), and every read of
+   * them as its query.
+   */
+  acted: Array<{ threadId: string; body: Record<string, unknown> }> = [];
+  actRefusal: string | null = null;
+  effectReads: Array<{ threadId: string; body: Record<string, unknown> }> = [];
+  effectFails = false;
+  effectDelay = 0;
+  freeTimes: Array<{ start: string; end: string }> | null = meetingSlots();
+  timesReads: string[] = [];
   sessionDelay = 0;
   signedIn = true;
   /** The development sign-in (D6): the personas the sign-in page lists, or undefined for the server's 404 when it is off. */
@@ -165,12 +219,17 @@ export class MockApi {
   entityRowsDelay: Record<string, number> = {};
   /** Every entities read that reached the mock, as path and query, in order. */
   entityReads: string[] = [];
-  /** Every action started from an entity's menu (D97), as person key and capability, in order. */
-  entityStarts: Array<{ key: string; capability: string }> = [];
+  /** Every action started from an entity's menu (D97), as the entity's key and capability, in order. */
+  entityStarts: Array<{ key: string; capability: string; values?: Record<string, string> }> = [];
   /** Actions the source refuses, by capability, with its Swedish sentence (a 400, as the server passes it on). */
   entityRefusals: Record<string, string> = {};
-  /** The opened person whose actions a start is checked against; a spec that answers the person itself sets it. */
+  /**
+   * The opened person, when a spec answers them itself: what the person's read answers (unless the spec routes it
+   * itself, as `person-data.ts` does) and whose actions a start is checked against.
+   */
   entityDetailOf?: (key: string) => EntityDetail | undefined;
+  /** The opened unit whose actions a start is checked against; the unit's routes set it (`unit-data.ts`). */
+  unitDetailOf?: (id: string) => EntityDetail | undefined;
   /**
    * The session person is an employee who manages nobody: the session's role is `employee`, Personal is refused, the
    * round lists nobody and their own action points are only the ones about them. For Hem without Personal.
@@ -210,6 +269,11 @@ export class MockApi {
   private nextCommitment = 1;
   /** The shared header (D88) every page draws: Clew's default until a test gives the person a connector's header. */
   header: SiteHeaderView = siteHeader();
+  /**
+   * The combined news list (D112, amended 2026-11-11). Null: the person has no news source, so `clew.news` is refused
+   * as the registry refuses it and Hem draws no "Nyheter"; a test gives the person news with `newsOutput()`.
+   */
+  news: NewsResult | null = null;
   connectors: ConnectorSummary[] = connectors();
   /** The rows under Verktyg in the menu (D40): none until a test puts one there, as none is shown until an administrator switches one on. */
   menu: MenuEntry[] = [];
@@ -227,6 +291,16 @@ export class MockApi {
     onDuty: ['Anna Lindqvist 07:00–16:00'],
     absent: [{ name: 'Sara Nyström', kind: 'short' }],
   };
+  /** A card's read that answers with a declared view (D38), by the action's id; any other read answers `output`. */
+  cardReads: Record<string, { output: unknown; view?: PanelViewSpec }> = {};
+  /** How long a card's read waits before it answers, in ms: for a test that sees it on its way. */
+  cardReadDelay = 0;
+  /** Every card's read fails as a source that does not answer does. */
+  cardReadFails = false;
+  /** A work item's Händelser (D112 item 4), by thread id; without one, the facts the thread itself holds (`eventsOf`). */
+  itemEvents: Record<string, ItemEvent[]> = {};
+  /** Händelser cannot be read. */
+  itemEventsFail = false;
   unmocked: string[] = [];
   /** Keeps every turn pending until the returned function is called, for a test that works while the answer is on its way: `answerDelay` can run out first on a slow machine. */
   holdAnswer() {
@@ -562,6 +636,16 @@ export class MockApi {
       return json({ areas: this.areas, menu: this.menu, systems: this.systems });
     }
     if (path === '/today') return json(today);
+    // A meeting ask's free times and the person's own day (D112), as `GET /api/asks/times` answers them.
+    if (path === '/asks/times') {
+      this.timesReads.push(url.search);
+      const date = url.searchParams.get('date');
+      return json({
+        durationMinutes: 45,
+        slots: this.freeTimes ?? [],
+        ...(date && this.freeTimes ? { day: ownDay(date) } : {}),
+      });
+    }
     if (path === '/attention') return json(attention);
     if (path === '/completions') return json(completions);
     if (path === '/assistant/status') return json(assistantStatus(this.modelChoices, this.currentModel));
@@ -646,6 +730,14 @@ export class MockApi {
     if (path === '/cap/clew.errands') return json({ output: errandsOutput, source: 'Startsidan', view: errandsSpec });
     if (path === '/cap/sm.errand')
       return json({ output: smErrandOutput, source: 'Ärendesystemet', view: smErrandSpec });
+    // The combined news list (D112, amended 2026-11-11), refused without a news source as the registry refuses an
+    // out-of-scope read, and one piece of news opened in the source it came from.
+    if (path === '/cap/clew.news')
+      return this.news
+        ? json({ output: this.news, source: 'Startsidan', view: newsSpec })
+        : route.fulfill({ status: 400, json: { error: 'Okänd förmåga.' } });
+    if (path === '/cap/communication.newsItem')
+      return json({ output: newsItemOutput, source: 'Kommunikation', view: newsItemSpec });
     // Kompetens (D108): the catalogue and a manager's registration.
     if (path.startsWith('/competence/') && !this.competenceTypes)
       return route.fulfill({
@@ -846,8 +938,9 @@ export class MockApi {
         }),
       );
     }
-    // The receipt's way back (D70): the card is as it was before the decision, its proposals proposed again.
-    if (path.endsWith('/undo-receipt') && post) {
+    // The receipt's way back (D70): the card is as it was before the decision, its proposals proposed again. A proposal
+    // card's own "Ångra allt" (`/undo`) is the same way back, from the card rather than from its row.
+    if ((path.endsWith('/undo-receipt') || path.endsWith('/undo')) && post) {
       if (this.mutationDelay) await new Promise(resolve => setTimeout(resolve, this.mutationDelay));
       if (this.mutationFails) return route.fulfill({ status: 503, json: { error: 'Källan svarade inte.' } });
       const t = this.threads.find(t => t.id === id)!;
@@ -875,32 +968,130 @@ export class MockApi {
         data: Buffer.from(svg).toString('base64'),
       });
     }
+    // "Det här händer" (D112): the HR fixture's effect read for exactly the values the dialog holds; writes nothing.
+    if (path.endsWith('/effect') && post) {
+      const body = (request.postDataJSON() ?? {}) as { actionId?: string; values?: Record<string, string> };
+      this.effectReads.push({ threadId: id, body });
+      if (this.effectDelay) await new Promise(resolve => setTimeout(resolve, this.effectDelay));
+      if (this.effectFails) return route.fulfill({ status: 503, json: { error: 'Personalsystemet svarade inte.' } });
+      const values = body.values ?? {};
+      const details = [values.when ? talkTime(values.when) : 'nästa lediga tid', values.place].filter(Boolean);
+      return json({
+        rows: [
+          {
+            label: 'Omtankesamtalet registreras',
+            detail: `På medarbetaren, ${details.join(', ')}${values.message ? ', med ditt meddelande' : ''}`,
+          },
+        ],
+        undoMinutes: 10,
+        source: 'Personalsystemet',
+      });
+    }
     if (path.endsWith('/act') && post) {
       // An execute answers with the card as the source read it back (D70): here at once, with the refs the person approved.
-      const body = (request.postDataJSON() ?? {}) as { actionId?: string; refs?: string[] };
+      const body = (request.postDataJSON() ?? {}) as {
+        actionId?: string;
+        refs?: string[];
+        values?: Record<string, string>;
+      };
       const t = this.threads.find(t => t.id === id);
       const action = t?.actions.find(a => a.id === body.actionId);
       if (t && action?.kind === 'execute') {
+        this.acted.push({ threadId: id, body });
         if (this.mutationDelay) await new Promise(resolve => setTimeout(resolve, this.mutationDelay));
         if (this.mutationFails) return route.fulfill({ status: 503, json: { error: 'Källan svarade inte.' } });
+        // The answers are checked against the asks as the server checks them (`answersOf`), and a refusal is its sentence.
+        const values = body.values ?? {};
+        const missing = (action.path?.asks ?? []).find(a => a.required && !values[a.property]);
+        const refusal =
+          this.actRefusal ??
+          (missing ? `${missing.label} behöver fyllas i.` : undefined) ??
+          (Object.keys(values).some(k => !(action.path?.asks ?? []).some(a => a.property === k))
+            ? 'Åtgärden frågar inte efter det värdet.'
+            : undefined);
+        this.actRefusal = null;
+        if (refusal) return route.fulfill({ status: 400, json: { error: refusal } });
         const refs = body.refs ?? t.items.filter(i => i.selected).map(i => i.ref);
-        const receipt: Thread['receipt'] = {
-          at: NOW,
-          headline: `${refs.length} ${refs.length === 1 ? 'faktura attesterad' : 'fakturor attesterade'}`,
-          undoUntil: '2026-11-04T08:10:00.000Z',
-          undoCapability: 'finance.unapprove',
-          rows: refs.map(ref => ({
-            ref,
-            label: t.items.find(i => i.ref === ref)?.label ?? ref,
-            outcome: 'done',
-            detail: 'Läst tillbaka från ekonomisystemet',
-          })),
-        };
-        return json({ kind: 'execute', thread: this.update(id, { state: 'handled', handledAt: NOW, receipt }) });
+        const receipt: Thread['receipt'] =
+          action.capability === 'hr.bookTalk'
+            ? {
+                at: NOW,
+                headline: 'Samtalet är registrerat i personalsystemet.',
+                undoUntil: '2026-11-04T08:10:00.000Z',
+                undoCapability: 'hr.unbookTalk',
+                rows: [
+                  {
+                    ref: 'hr:emp:anna',
+                    label: 'Omtankesamtal',
+                    outcome: 'done',
+                    detail: ['registrerat i personalsystemet', values.when && talkTime(values.when), values.place]
+                      .filter(Boolean)
+                      .join(', '),
+                  },
+                ],
+              }
+            : action.capability === 'hr.decideLeave'
+              ? {
+                  at: NOW,
+                  headline: 'Ansökan är godkänd.',
+                  undoUntil: '2026-11-04T08:10:00.000Z',
+                  undoCapability: 'hr.undecideLeave',
+                  rows: [
+                    {
+                      ref: 'hr:leave:1',
+                      label: 'Ansökan 21–22 dec',
+                      outcome: 'done',
+                      detail: 'godkänd i personalsystemet, medarbetaren meddelad',
+                    },
+                  ],
+                }
+              : action.capability === 'communication.acknowledge'
+                ? // A read receipt (D112, amended 2026-11-11), as the communication fixture answers it: no way back.
+                  {
+                    at: NOW,
+                    headline: 'Läskvittot är registrerat.',
+                    undoUntil: null,
+                    undoCapability: null,
+                    rows: refs.map(ref => ({
+                      ref,
+                      label: t.items.find(i => i.ref === ref)?.label ?? t.title,
+                      outcome: 'done' as const,
+                      detail: 'kvitterat 09:00',
+                    })),
+                  }
+                : {
+                    at: NOW,
+                    headline: `${refs.length} ${refs.length === 1 ? 'faktura attesterad' : 'fakturor attesterade'}`,
+                    undoUntil: '2026-11-04T08:10:00.000Z',
+                    undoCapability: 'finance.unapprove',
+                    rows: refs.map(ref => ({
+                      ref,
+                      label: t.items.find(i => i.ref === ref)?.label ?? ref,
+                      outcome: 'done',
+                      detail: 'Läst tillbaka från ekonomisystemet',
+                    })),
+                  };
+        const decided = this.update(id, { state: 'handled', handledAt: NOW, receipt });
+        // A decision through the dialog is a new version of the item, so its Händelser are read again (D112 item 4).
+        if (action.path) decided.updatedAt = '2026-11-04T08:00:01.000Z';
+        return json({ kind: 'execute', thread: decided });
       }
-      return json({ kind: 'read', output: this.output });
+      if (this.cardReadDelay) await new Promise(resolve => setTimeout(resolve, this.cardReadDelay));
+      if (this.cardReadFails) return route.fulfill({ status: 503, json: { error: 'Källan svarade inte.' } });
+      const read = body.actionId ? this.cardReads[body.actionId] : undefined;
+      return json(read ? { kind: 'read', ...read } : { kind: 'read', output: this.output });
     }
-    if (path.startsWith('/threads/') && !post) return json(this.threads.find(t => t.id === id));
+    // A work item's Händelser (D112 item 4), as the audit rows of what the thread shows would read back.
+    if (/^\/threads\/[^/]+\/events$/.test(path) && !post) {
+      const t = this.threads.find(t => t.id === id);
+      if (!t) return route.fulfill({ status: 404, json: { error: 'Ärendet finns inte.' } });
+      if (this.itemEventsFail) return route.fulfill({ status: 503, json: { error: 'Källan svarade inte.' } });
+      return json({ events: this.itemEvents[id] ?? eventsOf(t) });
+    }
+    if (path.startsWith('/threads/') && !post) {
+      const t = this.threads.find(t => t.id === id);
+      return t ? json(t) : route.fulfill({ status: 404, json: { error: 'Ärendet finns inte.' } });
+    }
     this.unmocked.push(`${request.method()} ${path}`);
     return route.fulfill({ status: 500, json: { error: 'Inte mockat' } });
   }
@@ -910,21 +1101,30 @@ export class MockApi {
    * with no groups (no refusal).
    */
   /**
-   * An action from an entity's menu (D97, D8), answered as the server would: an action the opened person does not offer
-   * is a 404, a refusal is the source's sentence as a 400, and otherwise the card it became, which joins the stream and
-   * is opened on Hem. The same start while that card is open gives the same card.
+   * An action from an entity's menu (D97, D8), answered as the server would: an action the opened person or unit does
+   * not offer is a 404, a refusal is the source's sentence as a 400, and otherwise the card it became, which joins the
+   * stream and opens beside the page it was started on. The same start while that card is open gives the same card.
    */
   private entityStart(route: Route, path: string) {
     const [, , kind, key = '', sub] = path.split('/');
-    const capability = (route.request().postDataJSON() as { capability?: string } | null)?.capability ?? '';
+    const posted = route.request().postDataJSON() as { capability?: string; values?: Record<string, string> } | null;
+    const capability = posted?.capability ?? '';
     const opened = decodeURIComponent(key);
     const detail =
-      kind === 'person' && sub === 'actions'
-        ? (this.entityDetailOf?.(opened) ?? entityDetail(this.entityList, opened))
-        : undefined;
+      sub !== 'actions'
+        ? undefined
+        : kind === 'person'
+          ? (this.entityDetailOf?.(opened) ?? entityDetail(this.entityList, opened))
+          : kind === 'unit'
+            ? this.unitDetailOf?.(opened)
+            : undefined;
     const action = detail?.actions.find(a => a.capability === capability);
     if (!detail || !action) return route.fulfill({ status: 404, json: { error: 'Okänd adress.' } });
-    this.entityStarts.push({ key: detail.entity.key, capability });
+    this.entityStarts.push({
+      key: detail.entity.key,
+      capability,
+      ...(posted?.values ? { values: posted.values } : {}),
+    });
     const refusal = this.entityRefusals[capability];
     if (refusal) return route.fulfill({ status: 400, json: { error: refusal } });
     const id = `entity-${capability.replace(/\W/g, '-')}-${detail.entity.key}`;
@@ -944,7 +1144,22 @@ export class MockApi {
         summary: 'Inget har gjorts ännu. Du bestämmer på kortet.',
         state: 'open',
         items: [],
-        actions: [],
+        // An execute is the item's one button (`decide`), its path resolved as the server resolves it (D112): the entity's
+        // key is the action's own input, never asked. A propose's draft is the source's; here it has no button.
+        actions:
+          action.kind === 'execute'
+            ? [
+                {
+                  id: 'decide',
+                  label: action.title,
+                  capability: action.capability,
+                  kind: 'execute',
+                  role: 'primary',
+                  input: { [action.param]: detail.entity.key },
+                  ...(action.path ? { path: action.path } : {}),
+                },
+              ]
+            : [],
         proposals: [],
         receipt: null,
         deadline: null,
@@ -973,7 +1188,7 @@ export class MockApi {
           : { capability, status: 'ok', rows: [] };
       return json(answer);
     }
-    const detail = entityDetail(list, decodeURIComponent(key));
+    const detail = this.entityDetailOf?.(decodeURIComponent(key)) ?? entityDetail(list, decodeURIComponent(key));
     if (!detail) return missing();
     if (sub === undefined) return json(detail);
     if (sub !== 'section' || !detail.sections.some(s => s.capability === capability)) return missing();
@@ -1231,18 +1446,28 @@ export const answer = (page: Page) =>
 /** The box: named after the landing's heading, "Svara i samtalet" once a conversation is open (the scope line, H3.3). */
 export const composer = (page: Page) => page.getByRole('combobox', { name: /^(Vad vill du göra|Svara i samtalet)$/ });
 /** A heading by the level assistive technology gets: `aria-level` when Astryx separates it from the visual level. */
-/** "Inte nu" on the first card, the way a person does it (D29): open the picker, choose "I morgon". */
+/** "Inte nu" on the first work item, the way a person does it (D29): open the picker, choose "I morgon". */
 export async function snoozeFirst(page: Page) {
-  // A card keeps Inte nu in view (a phone draws cards); a row has only its next step (artboard A), so its card is opened beside the column first, where Inte nu stands in the panel's header (artboard E).
+  // A card keeps Inte nu in view; a row is one link to its work item (D112), so the first row's item is opened first,
+  // in Att göra's reading pane or alone where the pane does not fit, where Inte nu stands among the card's buttons.
   const button = page.getByRole('main').getByRole('button', { name: 'Inte nu', exact: true }).first();
   if (await button.isVisible()) await button.click();
   else {
     await page.getByRole('main').getByRole('listitem').getByRole('link').first().click();
-    await page.getByRole('button', { name: 'Inte nu', exact: true }).first().click();
+    const own = page.getByRole('button', { name: 'Inte nu', exact: true }).first();
+    // The item has its buttons once Fler val is there, in either layout.
+    await expect(page.getByRole('main').getByRole('button', { name: 'Fler val' }).first()).toBeVisible();
+    // On a phone the item is its page with the next step pinned to the foot and Inte nu under Fler val (D112 item 12).
+    if (await own.isVisible()) await own.click();
+    else {
+      await page.getByRole('main').getByRole('button', { name: 'Fler val' }).first().click();
+      await page.getByRole('menuitem', { name: 'Inte nu' }).click();
+    }
   }
   await page.getByRole('menuitem', { name: /^I morgon/ }).click();
-  // Over the page the card is a drawer: it leaves with its row, so the toast and the page are reachable again.
-  await expect(page.getByRole('dialog', { name: 'Kort', exact: true })).toBeHidden();
+  // The item leaves with its row (D112: the queue lets go of it), so the toast and the page are reachable again.
+  await expect(page.getByRole('dialog', { name: 'Ärende', exact: true })).toBeHidden();
+  await expect(page).not.toHaveURL(/[?&]item=/);
 }
 export const heading = (page: Page, level: number, name: string) =>
   page.locator(`h${level}:not([aria-level]), [aria-level="${level}"]`).filter({ hasText: name });
@@ -1332,48 +1557,68 @@ export async function expectNoAxeViolations(page: Page, { without = [] }: { with
 /**
  * 1.4.10: nothing may need sideways scrolling, and no text may be clipped to fit. A drawer still sliding in is not a
  * reflow fault, so finite animations settle first. `scope` limits the text to one surface, for a check made with the
- * rail open: the rail ends a long row with an ellipsis on purpose, and the page's width is still checked.
+ * rail open: the rail ends a long row with an ellipsis on purpose, and the page's width is still checked. `table` names a
+ * data table that 1.4.10 lets scroll in two dimensions: what lies beyond the edge inside it is not counted while the
+ * table's own scroll region ends inside the window; the page's width and every other part are still checked.
  */
-export async function reflowProblems(page: Page, scope?: Locator) {
+export async function reflowProblems(page: Page, scope?: Locator, { table }: { table?: Locator } = {}) {
   const root = scope ? await scope.elementHandle() : null;
-  return page.evaluate(async root => {
-    await Promise.all(
-      document
-        .getAnimations()
-        .filter(a => a.effect?.getComputedTiming().iterations !== Infinity)
-        .map(a => a.finished.catch(() => undefined)),
-    );
-    const width = document.documentElement.clientWidth;
-    const visible = (el: Element) => {
-      const r = el.getBoundingClientRect(),
-        s = getComputedStyle(el);
-      if (!(r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none')) return false;
-      // Astryx keeps hidden section headings in the accessibility tree. Their
-      // descendants have text dimensions but are deliberately clipped by the
-      // VisuallyHidden ancestor; they are not visible reflow failures.
-      for (let parent: Element | null = el; parent; parent = parent.parentElement) {
-        const style = getComputedStyle(parent);
-        if (style.clip === 'rect(0px, 0px, 0px, 0px)' || style.clipPath === 'inset(50%)') return false;
+  const exempt = table ? await table.elementHandle() : null;
+  return page.evaluate(
+    async ([root, exempt]) => {
+      await Promise.all(
+        document
+          .getAnimations()
+          .filter(a => a.effect?.getComputedTiming().iterations !== Infinity)
+          .map(a => a.finished.catch(() => undefined)),
+      );
+      const width = document.documentElement.clientWidth;
+      const visible = (el: Element) => {
+        const r = el.getBoundingClientRect(),
+          s = getComputedStyle(el);
+        if (!(r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none')) return false;
+        // Astryx keeps hidden section headings in the accessibility tree. Their
+        // descendants have text dimensions but are deliberately clipped by the
+        // VisuallyHidden ancestor; they are not visible reflow failures.
+        for (let parent: Element | null = el; parent; parent = parent.parentElement) {
+          const style = getComputedStyle(parent);
+          if (style.clip === 'rect(0px, 0px, 0px, 0px)' || style.clipPath === 'inset(50%)') return false;
+        }
+        return true;
+      };
+      const label = (el: Element) => `${el.tagName.toLowerCase()} "${(el.textContent ?? '').trim().slice(0, 50)}"`;
+      const problems: string[] = [];
+      if (document.documentElement.scrollWidth > width)
+        problems.push(`page is ${document.documentElement.scrollWidth} px wide at ${width} px`);
+      /** The data table's own sideways scroll region, when the table has one: its overflow is the exception, not the page's. */
+      const region = (() => {
+        for (let at = exempt?.parentElement ?? null; at && at !== document.body; at = at.parentElement) {
+          const x = getComputedStyle(at).overflowX;
+          if (x === 'auto' || x === 'scroll') return at;
+        }
+        return null;
+      })();
+      for (const el of (root ?? document.body).querySelectorAll('*')) {
+        if (!visible(el)) continue;
+        const position = getComputedStyle(el).position;
+        if (position === 'absolute' && el.getBoundingClientRect().width <= 1) continue;
+        const inTable = !!region && !!exempt?.contains(el) && region.getBoundingClientRect().right <= width + 1;
+        if (
+          el.getBoundingClientRect().right > width + 1 &&
+          el.children.length === 0 &&
+          el.textContent?.trim() &&
+          !inTable
+        )
+          problems.push(`beyond the edge: ${label(el)}`);
+        const style = getComputedStyle(el);
+        const clips = style.overflowX === 'hidden' || style.textOverflow === 'ellipsis';
+        const hasText = [...el.childNodes].some(n => n.nodeType === Node.TEXT_NODE && n.textContent?.trim());
+        if (clips && hasText && el.scrollWidth > el.clientWidth + 1) problems.push(`clipped: ${label(el)}`);
       }
-      return true;
-    };
-    const label = (el: Element) => `${el.tagName.toLowerCase()} "${(el.textContent ?? '').trim().slice(0, 50)}"`;
-    const problems: string[] = [];
-    if (document.documentElement.scrollWidth > width)
-      problems.push(`page is ${document.documentElement.scrollWidth} px wide at ${width} px`);
-    for (const el of (root ?? document.body).querySelectorAll('*')) {
-      if (!visible(el)) continue;
-      const position = getComputedStyle(el).position;
-      if (position === 'absolute' && el.getBoundingClientRect().width <= 1) continue;
-      if (el.getBoundingClientRect().right > width + 1 && el.children.length === 0 && el.textContent?.trim())
-        problems.push(`beyond the edge: ${label(el)}`);
-      const style = getComputedStyle(el);
-      const clips = style.overflowX === 'hidden' || style.textOverflow === 'ellipsis';
-      const hasText = [...el.childNodes].some(n => n.nodeType === Node.TEXT_NODE && n.textContent?.trim());
-      if (clips && hasText && el.scrollWidth > el.clientWidth + 1) problems.push(`clipped: ${label(el)}`);
-    }
-    return [...new Set(problems)];
-  }, root);
+      return [...new Set(problems)];
+    },
+    [root, exempt] as const,
+  );
 }
 
 /** Tabs through the page and names every stop entirely hidden by sticky or fixed content (2.4.11) or without a focus ring (2.4.7). */

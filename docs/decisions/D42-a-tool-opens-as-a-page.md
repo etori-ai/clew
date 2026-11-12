@@ -77,3 +77,9 @@ needs a row drawn. A manual screen-reader pass.
 **Replaces.** Item 5 of D40 where it says a row opens in the side panel, and its paragraph "Why the panel and not a
 page". Closes "a view lifted to a full page" in D38's and D40's lists of what is not built, for the views that are
 tools.
+
+**Amended 2026-11-11 (D111): no link from the panel to the tool's page.** The link from a view in the panel to its
+tool's own page, listed above as not built and built by [D50](D50-the-conversation-is-the-column-and-the-panel-holds-what-it-is-about.md)
+item 7 as "Öppna som sida", is removed ([D111](D111-where-something-opens-is-decided-by-what-it-is.md) rule 7, the
+product owner's answer 5). A tool's page is reached from the rail, where an administrator placed the tool; the page
+itself is as decided here.

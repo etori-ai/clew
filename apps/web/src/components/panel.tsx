@@ -1,16 +1,14 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { useLocation, useNavigate } from 'react-router';
-import { useQuery } from '@tanstack/react-query';
+import { useLocation } from 'react-router';
 import type { DayView, PanelViewSpec, SearchResult, TodayView, ViewRef, WeekView } from '@clew/contracts';
 import {
   AreaLine,
+  ArrowsPointingOutIcon,
   Badge,
   Button,
   DayStrip,
   Drawer,
   EventList,
-  DrawerHeader,
-  DropdownMenu,
   EmptyState,
   Heading,
   HStack,
@@ -24,8 +22,7 @@ import {
   List,
   ListItem,
   ResizeHandle,
-  TabList,
-  TabMenu,
+  StackItem,
   Text,
   VStack,
   agendaItems,
@@ -33,17 +30,17 @@ import {
   useLayer,
   useMediaQuery,
   useResizable,
-  worstWord,
   type AgendaItem,
 } from '@clew/ui';
 import { dayLabel, timeRange } from '@clew/calendar/dates';
 import { fieldLabel, fieldValue, hiddenFields, reviewLabel, staleLabel } from './panel-labels';
-import { useConversation } from './conversation-context';
+import { useConversation, useModelConfigured, useThingConversation, type ThingSubject } from './conversation-context';
 import { AddToConversation } from './add-to-conversation';
 import { DeclaredView } from './view';
+import { ThingWithConversation } from './thing-panel';
 import { useMarks } from '../marks';
-import { areasQuery } from '../queries';
 import { entityHref } from '../person-address';
+import { shortQuery } from '../media';
 
 const plain = (address: string) => {
   try {
@@ -53,6 +50,9 @@ const plain = (address: string) => {
   }
 };
 const sameAddress = (href: string | null, address: string) => !!href && plain(href) === plain(address);
+/** The link on the page that leads to `address`, the way back to what it opened. */
+const linkTo = (address: string) =>
+  [...document.querySelectorAll<HTMLElement>('a[href]')].find(el => sameAddress(el.getAttribute('href'), address));
 type BodyProps = {
   output: unknown;
   onOpenItem?: (item: AgendaItem, dayItems: AgendaItem[]) => void;
@@ -92,8 +92,9 @@ const rowTitle = ['name', 'title', 'label', 'supplier'];
 const NEVER = 'not all';
 
 /**
- * Found text as objects (D12, D26): every hit is numbered as the answer cites it, opens where it lives and can be added to
- * the conversation as a chip. The row itself is not interactive, so its two buttons are the only stops (Astryx's rule).
+ * Found text as objects (D12, D26): every hit is numbered as the answer cites it, opens where it lives and, where the
+ * page has a box, can be added to the conversation as a chip. The row itself is not interactive, so its buttons are the
+ * only stops (Astryx's rule).
  * A hit about a person or a unit (D97 item 6, artboard P) leads to them instead of to one source's record: its name is
  * the link, and a hit several sources answered for names them all at the end of its line.
  */
@@ -116,11 +117,19 @@ function SearchRows({ result, hrefFor }: { result: SearchResult; hrefFor?: ((vie
             const note = r.kind === 'document' ? staleLabel(r.stale, reviewed) : '';
             const mark = marks.ofObject(`document:${r.connector}:`);
             const title = `${r.label}${r.section ? ` · ${r.section}` : ''}`;
+            // The entity's page, except on that page itself (`entityHref`): the name is then plain text.
+            const entity = r.subject ? entityHref(r.subject, pathname + search) : null;
             // Every source that answered for the same entity, the hit's own first: said once, on the hit's line.
             const merged = r.sources?.map(s => s.source).join(' · ');
             const meta = [merged ? '' : r.source, r.owner, reviewLabel(reviewed), r.stale ? '' : note.toLowerCase()]
               .filter(Boolean)
               .join(' · ');
+            // A hit whose source declares its view (D38) opens here, drawn by Startsidan; the link still leads to the
+            // source, in a new tab and marked as leaving Clew with Astryx's external link (D111 rule 8). A hit about an
+            // entity leads to the entity instead. "Lägg till i samtalet" only where the page has a box (D111 rule 6); a
+            // hit with none of the three has no line of buttons.
+            const viewHref = !r.subject && r.view && hrefFor ? hrefFor(r.view) : null;
+            const link = !r.subject && r.link ? r.link : null;
             return (
               <ListItem
                 key={ref}
@@ -129,8 +138,8 @@ function SearchRows({ result, hrefFor }: { result: SearchResult; hrefFor?: ((vie
                 label={
                   r.subject || merged ? (
                     <HStack gap={2} justify="between" vAlign="center" wrap="wrap">
-                      {r.subject ? (
-                        <Link href={entityHref(r.subject, pathname + search)} weight="semibold" hasUnderline>
+                      {entity ? (
+                        <Link href={entity} weight="semibold" hasUnderline>
                           {title}
                         </Link>
                       ) : (
@@ -156,25 +165,24 @@ function SearchRows({ result, hrefFor }: { result: SearchResult; hrefFor?: ((vie
                         {r.stale && note && <Badge variant="warning" label={note} />}
                       </HStack>
                     )}
-                    <HStack gap={1} wrap="wrap">
-                      {/* A hit whose source declares its view (D38) opens here, drawn by Startsidan; the link still leads to the source. A hit about an entity leads to the entity instead. */}
-                      {!r.subject && r.view && hrefFor && (
-                        <Button size="sm" variant="secondary" label={r.view.title} href={hrefFor(r.view)} />
-                      )}
-                      {!r.subject && r.link && (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          label={r.view ? `Öppna i ${r.source}` : 'Öppna'}
-                          href={r.link}
-                          target="_blank"
-                        />
-                      )}
-                      <AddToConversation
-                        added={inConversation}
-                        onAdd={() => talk.addChip({ ref, kind: 'document', label: r.label })}
-                      />
-                    </HStack>
+                    {(viewHref || link || talk.hasBox) && (
+                      <HStack gap={2} vAlign="center" wrap="wrap">
+                        {viewHref && r.view && (
+                          <Button size="sm" variant="secondary" label={r.view.title} href={viewHref} />
+                        )}
+                        {link && (
+                          <Link href={link} isExternalLink isStandalone>
+                            {r.view ? `Öppna i ${r.source}` : 'Öppna'}
+                          </Link>
+                        )}
+                        {talk.hasBox && (
+                          <AddToConversation
+                            added={inConversation}
+                            onAdd={() => talk.addChip({ ref, kind: 'document', label: r.label })}
+                          />
+                        )}
+                      </HStack>
+                    )}
                   </VStack>
                 }
               />
@@ -329,35 +337,44 @@ export interface PanelFrame {
   /** What is shown, apart from its input: one view's search does not move focus, another view taking its place does. */
   id: string;
   title: string;
-  /** The content, told whether it is drawn beside the page (narrow, non-modal) or over it. */
-  body: (inline: boolean) => ReactNode;
+  /** What the thing is and where it is from, under its name in the header ("Möte · Kalendern", board Calendar). */
+  subtitle?: string;
+  /**
+   * The content, told whether it is drawn beside the page (narrow, non-modal) or over it, and whether a conversation
+   * about it runs, so its facts fold to the essentials and its buttons with "Visa allt" (D112 item 7).
+   */
+  body: (inline: boolean, folded: boolean) => ReactNode;
   onClose: () => void;
+  /**
+   * What the box under the thing asks about (D112 item 7). The box is drawn whenever the thing has one and a model is
+   * configured; without a model, or a thing that is not asked about (a read that failed), the panel is the thing alone.
+   */
+  subject?: ThingSubject;
   /** The address of what is on screen, so focus finds the link that led away when the person comes back to it. */
   address?: string | undefined;
-  /** Beside the close button: "Öppna som sida" for a view that is also a tool. */
-  actions?: ReactNode;
   /** A table: over the page it gets a wide drawer. */
   wide?: boolean;
   /** A card: its name is the small label over the card, as artboard E draws "KORT"; a view keeps its title as the heading. */
   kind?: 'card' | 'view';
-  /** The thing's own name for its tab when several are open beside the page (D66): a card's title; a view keeps `title`. */
-  tab?: string;
-  /** What stands before the heading, as a person's avatar does (D97, artboard C); over the page, the drawer header's start. */
-  lead?: ReactNode;
-  /** One line under the heading, as a person's role and unit (D97, artboard C). */
-  subtitle?: ReactNode;
+  /** What is said aloud when this thing takes another's place in the panel: a card's own title, not "Kort"; a view says `title`. */
+  spoken?: string;
 }
-/** One thing opened beside the page, waiting as a tab while another is current (D66). */
-type OpenTab = { id: string; name: string; search: string };
-/** The one body region, where the current thing is drawn. */
+/** The one body region, where the open thing is drawn. */
 const BODY_ID = 'panel-body';
-const searchOf = (address: string) => {
-  const i = address.indexOf('?');
-  return i < 0 ? '' : address.slice(i);
-};
-/** The rail and the panel as the shell draws them; with the page's own least width they decide when the panel fits beside it. */
+/** The rail and the panel as the shell draws them. */
 export const RAIL = 256,
   PANEL = 440;
+/** The least width a page's own column keeps beside the panel: Hem's rows with their day, their line and their one button. */
+export const PAGE_MIN = 640;
+/**
+ * The one window width from which the panel stands beside the page, on every page that holds it (the product owner,
+ * 2026-11-11, D111 amended): the rail, Hem's least column and the panel, 256 + 640 + 440 = 1336 px. Narrower, or short
+ * (1.4.10), or on a phone, it is the drawer over the page. A page whose own layout needs more than 640 px does not move
+ * this line: it gives way, drawing the narrow layout it already has while the panel is open beside it (its own
+ * breakpoint shifted by the panel, `panelBesideQuery`).
+ */
+export const BESIDE_FROM = RAIL + PAGE_MIN + PANEL;
+export const besideQuery = `(min-width: ${BESIDE_FROM}px)`;
 /**
  * What stands on the panel's inner edge beside its width while it is shown: the 1 px resize handle, as measured in the
  * browser. The fold button floats over the page beside it (D63 item 14, revised 2026-11-10), so it takes no width of
@@ -366,81 +383,69 @@ export const RAIL = 256,
 export const PANEL_EDGE = 1;
 /** How far in from the panel's own edge the fold button stands: 20 px in from the handle, which is on that edge while the panel is shown. */
 const FOLD_OFFSET = 20 + PANEL_EDGE;
-/** The window width from which the panel, `width` px wide, fits beside a column that needs `minMain` px. */
-export const panelBesideQuery = (minMain: number, width: number = PANEL) => `(min-width: ${RAIL + minMain + width}px)`;
 /**
- * A panel of its own width (D97: the opened person is drawn 520 to 600 px wide, artboard C): its width at first, the
- * narrowest and widest it can be dragged to, and the name its width is remembered under in this browser.
+ * A page's own breakpoint while the panel stands beside it: the window width from which a column that needs `minMain`
+ * px still has it beside the panel. Below it, with the panel open, the page draws its narrow layout; the panel's own
+ * line is `BESIDE_FROM`.
  */
-export interface PanelSize {
-  default: number;
-  min: number;
-  max: number;
-  id: string;
-}
-/** What a transcript needs beside the panel: a conversation asked on a page brings the page along only where both fit (D50). */
-export const CONVERSATION_MIN = 600;
+export const panelBesideQuery = (minMain: number, width: number = PANEL) => `(min-width: ${RAIL + minMain + width}px)`;
 type Options = {
-  /** The least width the page's own column needs beside the panel. Narrower windows get the panel as a drawer over the page. */
-  minMain: number;
-  /** Nothing is pinned on a short screen (1.4.10): the panel is always a drawer there. */
+  /** Nothing is pinned on a short screen (1.4.10), nor beside a page that has no room for it: the panel is always a drawer there. */
   overlayOnly?: boolean;
-  /** Whether a thing may stay open as a tab (D66): a card that left the stream (Inte nu, Avfärda, done) leaves the tabs too. The current one always stays. */
-  isOpen?: (id: string) => boolean;
   /**
    * The drawer over the page has closed and Astryx has given the focus back to what opened it. Until then the page
    * under it is inert; a page whose opener is gone (the row of a card that was sent away) sends the focus on from here.
    */
   onClosed?: () => void;
-  /** The panel's own width; without it the shared panel's 440 px (320 to 560), remembered for every page. */
-  size?: PanelSize;
   /**
-   * One thing at a time (D97: one person beside a list): what is opened from the page takes the place of what was open,
-   * and the link it was opened with is where the focus goes back to on close. Without it the first opener keeps that role
-   * while the others wait as tabs (D66).
+   * Whether the thing gets the box under it (D112 item 7). False on a conversation's own page, where the transcript is
+   * the column and the panel is its artifact: the conversation's box is the one to ask in.
    */
-  replaces?: boolean;
+  asks?: boolean;
 };
 /**
  * The panel (D50): the one place beside the page's column for what the person holds next to it, a view, a source or a
  * card, and nothing else: with nothing open there is no panel, and a page's own content (Hem's day) stays the page's
- * (D72). Where it fits it is a `LayoutPanel` in the page's `end` slot, non-modal, so the column stays in use (the
- * `ai-chat` template's artifact beside the transcript, composed as the calendar page composes its own panel); where it
- * does not fit, and on a phone, it is the drawer it always was. Beside the page it is a named complementary region:
- * opening it moves focus to its heading (never away from a field the person is typing in: the box keeps the focus
- * when a conversation brings its panel along), Esc inside it closes it and gives focus back to what opened it, and one
- * thing taking another's place is named aloud (2.4.3, 4.1.3). A drawer does all of that itself.
+ * (D72). It holds one opened thing (D111, amended 2026-11-11, which withdrew D66's tabs): what is opened from the page
+ * takes the place of what was open, on every page, and the link it was opened with is where the focus goes back to on
+ * close. From the one width `BESIDE_FROM` it is a `LayoutPanel` in the page's `end` slot, non-modal, so the column stays
+ * in use (the `ai-chat` template's artifact beside the transcript, composed as the calendar page composes its own
+ * panel); in a narrower window, on a short screen and on a phone it is the drawer over the page. Both are drawn with
+ * the same header, the same title and the same ✕ (the product owner, 2026-11-11: one sidebar, not two), so only the
+ * page around it changes. Beside the page it is a named complementary region: opening it moves focus to its heading
+ * (never away from a field the person is typing in: the box keeps the focus when a conversation brings its panel
+ * along), Esc inside it closes it and gives focus back to what opened it, and one thing taking another's place is named
+ * aloud (2.4.3, 4.1.3). Over the page the drawer gives the heading the focus and takes it back itself.
  */
 const TYPING = 'input, textarea, [contenteditable="true"], [role="textbox"], [role="combobox"]';
 export function usePanel(
   panel: PanelFrame | null,
-  { minMain, overlayOnly = false, isOpen, onClosed, size, replaces = false }: Options,
+  { overlayOnly = false, onClosed, asks = true }: Options,
 ): {
   end: ReactNode | undefined;
   overlay: ReactNode;
   /** Whether the panel takes width beside the page: something is open in it, or the person is looking at it empty. */
   occupied: boolean;
+  /** Whether the panel stands beside the page (non-modal) rather than over it: the one rule, so a page never works it out again. */
+  inline: boolean;
 } {
-  const width = size?.default ?? PANEL;
-  const fits = useMediaQuery(panelBesideQuery(minMain, width));
+  const fits = useMediaQuery(besideQuery);
   const inline = fits && !overlayOnly;
+  // 1.4.10: on a short screen nothing is docked in the panel either; the thing, the transcript and the box scroll as one.
+  const short = useMediaQuery(shortQuery);
   const announce = useAnnounce();
-  const navigate = useNavigate();
-  const { pathname } = useLocation();
+  // The thing and the conversation about it (D112 item 7): the box is there while a model is configured (D8) and the
+  // thing is one that is asked about; the conversation is the thing's own, and folds its facts while it runs.
+  const model = useModelConfigured();
+  const subject = asks && model && panel?.subject ? panel.subject : null;
+  const talk = useThingConversation(subject);
+  const folded = !!subject && talk.running;
+  const continueHref = subject && talk.conversation ? `/conversations/${talk.conversation.id}${subject.search}` : null;
   const region = useRef<HTMLDivElement>(null);
+  /** The drawer's dialog, where the panel is drawn over the page. */
+  const drawer = useRef<HTMLDialogElement>(null);
+  /** The panel's start, where the focus lands: the heading of its one header. */
   const heading = useRef<HTMLHeadingElement>(null);
-  const menu = useRef<HTMLButtonElement>(null);
-  /** Where focus lands at the panel's start: the heading, or the menu of open things, named by the current one, when several are open. */
-  const start = () => heading.current ?? menu.current;
-  // Everything opened beside the page since the panel was last empty, in the order it came (D66): the address holds
-  // the current one, the others wait as tabs behind the menu. A ref mirrors the state so a close can tell a deliberate
-  // clearing (Stäng alla) from the current tab leaving.
-  const tabsRef = useRef<OpenTab[]>([]);
-  const [tabs, setTabsState] = useState<OpenTab[]>([]);
-  const setTabs = (next: OpenTab[]) => {
-    tabsRef.current = next;
-    setTabsState(next);
-  };
   // Beside the page the panel is Astryx's resizable region: dragged by its handle, or folded away and brought back
   // with the one button that floats over the page on the panel's inner edge, at the top, so it rides that edge in and
   // out (the product owner, 2026-11-06: an icon in the top right corner, never a button among the page's own;
@@ -462,11 +467,12 @@ export function usePanel(
     else edge.hide();
   }, [inline]);
   const resizable = useResizable({
-    defaultSize: width,
-    minSize: size?.min ?? 320,
-    maxSize: size?.max ?? 560,
+    // The shared panel's width, the same on every page (320 to 560 px), remembered in this browser.
+    defaultSize: PANEL,
+    minSize: 320,
+    maxSize: 560,
     collapsible: true,
-    autoSaveId: size?.id ?? 'clew-panel-width',
+    autoSaveId: 'clew-panel-width',
     isCollapsed: collapsed,
     onCollapseChange: setCollapsed,
   });
@@ -474,21 +480,15 @@ export function usePanel(
     resizable.expand();
     setCollapsed(false);
     announce('Panelen visas');
-    requestAnimationFrame(() => start()?.focus());
+    requestAnimationFrame(() => heading.current?.focus());
   };
-  // Folding hides and nothing more (D63 item 14, revised 2026-11-06 evening): the tabs, the current thing and the
-  // address stay, so the row keeps saying "öppet bredvid" and the box keeps its token, and the button keeps the focus,
-  // now saying the way back. Letting go of everything is a decision of its own, Stäng alla in the header. (The
-  // afternoon's fold closed the card with it, which made a layout act the only way to close all.)
+  // Folding hides and nothing more (D63 item 14, revised 2026-11-06 evening): what is open and the address stay, so
+  // the row keeps saying "öppet bredvid", and the button keeps the focus, now saying the way back. Letting go of what
+  // is open is ✕ in the header. (The afternoon's fold closed the card with it, which made a layout act a close.)
   const collapse = () => {
     resizable.collapse();
     setCollapsed(true);
     announce('Panelen är ihopfälld');
-  };
-  /** Stäng alla: every tab dropped and the current thing closed, so the panel empties at once. */
-  const closeAll = () => {
-    setTabs([]);
-    panel?.onClose();
   };
   /** The layer beside the handle, on the page's side: the button in the corner the page's own padding leaves free. */
   const toggle = edge.render(
@@ -507,71 +507,43 @@ export function usePanel(
   );
   const opener = useRef<HTMLElement | null>(null);
   const shown = useRef<{ id: string; address: string | undefined } | null>(null);
-  // A view whose area has a figure says the figure's word on its tab (D54, artboard 3): "Budget · lugnt".
-  const areas = useQuery(areasQuery).data?.areas;
-  const viewed = panel?.id.startsWith('view:') ? panel.id.slice('view:'.length) : null;
-  const figured = viewed ? areas?.find(a => a.figure && a.standing.some(s => s.capability === viewed)) : undefined;
-  const figureWord = figured ? worstWord([figured.figure])?.word : undefined;
+  /** The address of what was closed, while the page may still draw the link that opened it anew (see below). */
+  const returnTo = useRef<string | null>(null);
+  /** The address the drawer showed when it was let go of, until it has slid away. */
+  const drawerFrom = useRef<string | null>(null);
+  // Folded away after the last thing closed, the page draws its own layout again, the link that opened the panel with
+  // it: the focus follows that link into the layout, so it is never left on what the page took away (2.4.3).
+  useEffect(() => {
+    const address = returnTo.current;
+    returnTo.current = null;
+    if (!address || !collapsed) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active !== document.body && active.isConnected) return;
+    linkTo(address)?.focus();
+  }, [collapsed]);
   const id = panel?.id ?? null,
     address = panel?.address,
-    title = panel?.title ?? null,
-    name = panel?.tab ?? (title && figureWord ? `${title} · ${figureWord}` : title);
-  // What the panel holds changed: it is shown again, so the thing just opened is seen. Not when a closed tab's
-  // neighbour takes its place: nothing was opened, and a folded panel stays folded.
-  const revealing = useRef(false);
+    spoken = panel?.spoken ?? panel?.title ?? null;
+  // What the panel holds changed. Something opened shows the panel again, so it is seen; closing what it held folds the
+  // panel away, and its button stays, saying the way back.
+  const lastId = useRef<string | null>(null);
   useEffect(() => {
-    const reveal = revealing.current;
-    revealing.current = false;
-    if (id !== null && collapsed && !reveal) {
+    const was = lastId.current;
+    lastId.current = id;
+    if (id !== null && collapsed) {
       resizable.expand();
       setCollapsed(false);
       // The heading mounts with the next paint, after the focus rule below has run. Never away from a field the
       // person is typing in: the box keeps the focus when a conversation brings its panel along.
       requestAnimationFrame(() => {
         const active = document.activeElement;
-        if (!(active instanceof HTMLElement && active.matches(TYPING))) start()?.focus();
+        if (!(active instanceof HTMLElement && active.matches(TYPING))) heading.current?.focus();
       });
-    }
-  }, [id]);
-  // The tabs follow the address (D66): what it names joins the row, or keeps its place with a fresh search; when the
-  // address names nothing the current tab is closed, and the one before it (else the first) takes its place in the
-  // address, so the panel empties only with its last tab.
-  const lastId = useRef<string | null>(null);
-  useEffect(() => {
-    const was = lastId.current;
-    lastId.current = id;
-    if (id !== null) {
-      // One thing at a time keeps no tabs: what is opened takes the place of what was open.
-      if (!address || !name || replaces) return;
-      const current = tabsRef.current;
-      const search = searchOf(address);
-      const i = current.findIndex(t => t.id === id);
-      if (i < 0) setTabs([...current, { id, name, search }]);
-      else if (current[i]!.search !== search || current[i]!.name !== name)
-        setTabs(current.map(t => (t.id === id ? { id, name, search } : t)));
-      return;
-    }
-    if (was === null) return;
-    const current = tabsRef.current;
-    const i = current.findIndex(t => t.id === was);
-    const rest = current.filter(t => t.id !== was);
-    setTabs(rest);
-    const next = rest[Math.min(Math.max(i - 1, 0), rest.length - 1)];
-    if (next) {
-      revealing.current = true;
-      navigate(pathname + next.search, { replace: true });
-    } else {
-      // The last thing was closed: the panel folds away and its button stays, saying the way back.
+    } else if (id === null && was !== null) {
       resizable.collapse();
       setCollapsed(true);
     }
-  }, [id, address, name]);
-  // A thing that is no longer open beside the page (the page's word: a card snoozed, dismissed or done) leaves the row.
-  useEffect(() => {
-    if (!isOpen) return;
-    const kept = tabsRef.current.filter(t => t.id === id || isOpen(t.id));
-    if (kept.length !== tabsRef.current.length) setTabs(kept);
-  });
+  }, [id]);
   useEffect(() => {
     const from = shown.current;
     shown.current = id === null ? null : { id, address };
@@ -580,20 +552,20 @@ export function usePanel(
       // while its card was open (it says "öppet bredvid") is found by the address it leads to.
       const back = opener.current;
       opener.current = null;
+      // Over the page Astryx's drawer gives the focus back itself, once it has slid away (`closed` below).
+      drawerFrom.current = !inline ? (from?.address ?? null) : null;
       if (!from || !inline) return;
-      const target = back?.isConnected
-        ? back
-        : from.address
-          ? [...document.querySelectorAll<HTMLElement>('a[href]')].find(el =>
-              sameAddress(el.getAttribute('href'), from.address!),
-            )
-          : undefined;
+      const target = back?.isConnected ? back : from.address ? linkTo(from.address) : undefined;
       target?.focus();
+      // The page gave way to the panel (Personal's rows, a person's drill-in, a tool's list): folded away, the panel
+      // gives the page its own layout back on the next render, and the link that opened it is drawn anew there.
+      returnTo.current = back?.isConnected ? null : (from.address ?? null);
       return;
     }
+    returnTo.current = null;
     if (from?.id === id) return;
     // One thing at a time: a link on the page that opened another thing in its place is the new way back.
-    if (from && replaces && inline) {
+    if (from && inline) {
       const active = document.activeElement;
       if (active instanceof HTMLElement && active !== document.body && !region.current?.contains(active))
         opener.current = active;
@@ -605,65 +577,20 @@ export function usePanel(
       heading.current?.focus();
       return;
     }
-    // One thing took another's place in the open panel (a row's own view, and back): nobody hears that, and focus would
-    // stay on a link that is gone. Focus goes to the link that led away when the person comes back to it, else to the
-    // panel's start (the menu of open things, once it has been drawn), and the new name is spoken.
-    const root: ParentNode | null = inline ? region.current : document.querySelector('dialog[open]');
+    // One thing took another's place in the open panel (another card, a row's own view, and back): nobody hears that,
+    // and focus would stay on a link that is gone. Focus goes to the link that led away when the person comes back to
+    // it, else to the panel's heading, and the new thing's name is spoken. The same beside the page and in the drawer,
+    // whose header is the same.
+    const root: ParentNode | null = inline ? region.current : drawer.current;
     const stops = [
       ...(root?.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled])') ?? []),
     ];
     const led = from.address ? stops.find(el => sameAddress(el.getAttribute('href'), from.address!)) : undefined;
-    // With several things open the heading gives way to the menu on the next render: the focus waits for it.
-    const several = inline && tabsRef.current.length > 1;
-    const target = led ?? (several ? null : inline ? heading.current : (stops[1] ?? stops[0]));
+    const target = led ?? heading.current;
     if (target) target.focus();
-    else if (inline) requestAnimationFrame(() => start()?.focus());
-    if (name) announce(name);
+    else requestAnimationFrame(() => heading.current?.focus());
+    if (spoken) announce(spoken);
   }, [id, inline]);
-  /**
-   * What is open beside the page when it is more than one thing (D66, revised 2026-11-06): Astryx's tab strip holding
-   * one `TabMenu`, a button that reads the current thing's name and opens the list of the others, each leading to its
-   * address. Not a row of `Tab`s: two card titles already overflow the panel, and a strip that scrolls shows neither
-   * the whole current name nor what else is open. The strip is a nav landmark; the menu says how many are open.
-   */
-  const tabRow =
-    tabs.length > 1 && panel ? (
-      <TabList
-        aria-label="Öppet bredvid"
-        size="sm"
-        value={panel.id}
-        onChange={v => {
-          const t = tabs.find(t => t.id === v);
-          if (t) navigate(pathname + t.search);
-        }}
-      >
-        <TabMenu
-          ref={menu}
-          label={`${tabs.length} öppna bredvid`}
-          options={tabs.map(t => ({ value: t.id, label: t.name }))}
-        />
-      </TabList>
-    ) : null;
-  /** ✕ closes the current thing: the panel with one open, the current tab among several (D66 item 3). */
-  const closeLabel = tabs.length > 1 && name ? `Stäng ${name}` : 'Stäng panelen';
-  /** From two open, closing all is one choice in a menu beside ✕ (D66 item 3, revised): ✕ keeps closing the one it names. */
-  const more =
-    tabs.length > 1 ? (
-      <DropdownMenu
-        renderTrigger={trigger => (
-          <IconButton
-            {...trigger}
-            size="sm"
-            variant="ghost"
-            label="Fler val för panelen"
-            tooltip="Fler val för panelen"
-            icon={<Icon icon="moreHorizontal" />}
-          />
-        )}
-        alignment="end"
-        items={[{ label: `Stäng alla (${tabs.length})`, onClick: closeAll }]}
-      />
-    ) : null;
   const close = (open: boolean) => {
     if (!open) panel?.onClose();
   };
@@ -699,31 +626,94 @@ export function usePanel(
       />
     </VStack>
   );
-  const titleHeading = panel && (
-    <Heading
-      ref={heading}
-      tabIndex={-1}
-      level={panel.kind === 'card' ? 4 : 2}
-      accessibilityLevel={2}
-      color={panel.kind === 'card' ? 'secondary' : 'primary'}
-    >
-      {panel.title}
-    </Heading>
-  );
-  // What stands before the heading and the line under it, when the frame has them (D97, artboard C): a person's avatar
-  // beside their name, their role and unit under it.
-  const titleBlock =
-    panel && (panel.lead || panel.subtitle) ? (
-      <HStack gap={3} vAlign="center">
-        {panel.lead}
-        <VStack gap={0}>
-          {titleHeading}
-          {panel.subtitle && <Text type="supporting">{panel.subtitle}</Text>}
-        </VStack>
+  // The drawer keeps the last thing's name while it slides away, so its heading is never empty (axe: empty-heading).
+  const last = useRef<PanelFrame | null>(null);
+  if (panel) last.current = panel;
+  const named = panel ?? last.current;
+  /**
+   * The panel's one header, beside the page and in the drawer alike (the product owner, 2026-11-11: one sidebar): the
+   * name of what is open and ✕, in the same place and at the same size either way. A card's name is the small label over
+   * the card, as artboard E draws "KORT"; a view keeps its title as the heading. A heading and a button, not a toolbar:
+   * the heading takes the focus when the panel opens (beside the page from `usePanel`'s effect, in the drawer by
+   * Astryx's `data-autofocus`), and a toolbar would offer its arrow keys there. ✕ closes the panel and what it holds;
+   * there is never a second thing in it to name or switch to (D111, amended 2026-11-11). Astryx's `DrawerHeader` is not
+   * used in the drawer: its title is always a full-size h2 that takes no ref, so the same card would be named
+   * differently in the two, which is what the product owner saw.
+   */
+  const header = named && (
+    <LayoutHeader hasDivider={named.kind !== 'card'}>
+      <HStack justify="between" vAlign="center" gap={2}>
+        <StackItem size="fill">
+          <VStack gap={0}>
+            <Heading
+              ref={heading}
+              tabIndex={-1}
+              data-autofocus=""
+              level={named.kind === 'card' ? 4 : 2}
+              accessibilityLevel={2}
+              color={named.kind === 'card' ? 'secondary' : 'primary'}
+            >
+              {named.title}
+            </Heading>
+            {named.subtitle && (
+              <Text type="supporting" color="secondary">
+                {named.subtitle}
+              </Text>
+            )}
+          </VStack>
+        </StackItem>
+        <HStack gap={1} vAlign="center">
+          {/* A long exchange continues in the conversation view (D112 item 7, board Assistant): the transcript as the
+              page's column and the thing as its artifact beside it. */}
+          {continueHref && (
+            <IconButton
+              size="sm"
+              variant="ghost"
+              label="Fortsätt som samtal"
+              tooltip="Fortsätt som samtal"
+              icon={<Icon icon={ArrowsPointingOutIcon} />}
+              href={continueHref}
+            />
+          )}
+          <IconButton
+            size="sm"
+            variant="ghost"
+            label="Stäng panelen"
+            icon={<Icon icon="close" />}
+            onClick={() => panel?.onClose()}
+          />
+        </HStack>
       </HStack>
-    ) : (
-      titleHeading
+    </LayoutHeader>
+  );
+  /**
+   * The header and the body, laid out the same beside the page and in the drawer. With a box (D112 item 7) the body is
+   * the thing with the conversation under it, docked by ChatLayout, which owns the scroll; without one it is the thing
+   * alone in the content's own scroll, as before.
+   */
+  const framed = (frame: PanelFrame | null, inline: boolean) => {
+    const thing = frame?.body(inline, folded);
+    return (
+      <Layout
+        height="fill"
+        padding={6}
+        header={header}
+        content={
+          subject && frame ? (
+            <LayoutContent isScrollable={short} padding={short ? 6 : 0}>
+              <VStack id={BODY_ID} height={short ? undefined : '100%'}>
+                <ThingWithConversation talk={talk} subject={subject} thing={thing} short={short} />
+              </VStack>
+            </LayoutContent>
+          ) : (
+            <LayoutContent>
+              <VStack id={BODY_ID}>{thing}</VStack>
+            </LayoutContent>
+          )
+        }
+      />
     );
+  };
   // The handle stands between the page and the panel only while the panel is shown, as Astryx's `ai-chat` template
   // mounts its handle with the open panel. A folded panel has no width to change, and its handle would stand on the
   // window's edge with half of its 16 px grab zone past it: Astryx keeps the whole zone for a folded region, the
@@ -766,34 +756,7 @@ export function usePanel(
               panel.onClose();
             }}
           >
-            <Layout
-              height="fill"
-              padding={6}
-              /* A heading and a button, not a toolbar: the heading takes the focus when the panel opens, and a toolbar would offer its arrow keys there. With several things open the menu of them stands where the heading stood, and ✕ beside it closes the one it names. */
-              header={
-                <LayoutHeader hasDivider={panel.kind !== 'card' || !!tabRow}>
-                  <HStack justify="between" vAlign={panel.lead || panel.subtitle ? 'start' : 'center'} gap={2}>
-                    {tabRow ?? titleBlock}
-                    <HStack gap={1} vAlign="center">
-                      {panel.actions}
-                      {more}
-                      <IconButton
-                        size="sm"
-                        variant="ghost"
-                        label={closeLabel}
-                        icon={<Icon icon="close" />}
-                        onClick={panel.onClose}
-                      />
-                    </HStack>
-                  </HStack>
-                </LayoutHeader>
-              }
-              content={
-                <LayoutContent>
-                  <VStack id={BODY_ID}>{panel.body(true)}</VStack>
-                </LayoutContent>
-              }
-            />
+            {framed(panel, true)}
           </VStack>
         )}
       </LayoutPanel>
@@ -802,53 +765,37 @@ export function usePanel(
   const occupied = inline && (panel !== null || !collapsed);
   // The drawer's dialog fires `close` when it has slid away and left the top layer, after Astryx's own focus return:
   // the moment the page under it takes focus again, and so the one a consumer's listener is given the last word at.
-  const drawer = useRef<HTMLDialogElement>(null);
   const closed = useRef(onClosed);
   closed.current = onClosed;
   useEffect(() => {
     const dialog = drawer.current;
     if (!dialog) return;
-    const tell = () => closed.current?.();
+    const tell = () => {
+      // The link that opened the drawer was drawn anew while it was open (a tool's row marked as shown beside, a row
+      // that says "öppet bredvid"): Astryx's return found it gone and the focus fell to the page's body. It goes to the
+      // link with the address the drawer showed, as beside the page (2.4.3).
+      const address = drawerFrom.current;
+      drawerFrom.current = null;
+      const active = document.activeElement;
+      if (address && (!active || active === document.body)) linkTo(address)?.focus();
+      closed.current?.();
+    };
     dialog.addEventListener('close', tell);
     return () => dialog.removeEventListener('close', tell);
   }, [inline]);
-  // The drawer keeps the last name while it slides away, so its heading is never empty (axe: empty-heading).
-  const lastTitle = useRef<string | null>(null);
-  if (panel) lastTitle.current = panel.title;
+  // The drawer's own inset is the panel's: none of its own, the layout's 24 px, as beside the page.
   const overlay = inline ? null : (
     <Drawer
       ref={drawer}
       isOpen={panel !== null}
       onOpenChange={close}
       side="end"
-      width={panel?.wide ? 'min(1100px, 100vw)' : width}
-      label={lastTitle.current ?? 'Vy'}
+      width={panel?.wide ? 'min(1100px, 100vw)' : PANEL}
+      label={named?.title ?? 'Vy'}
+      padding={0}
     >
-      <Layout
-        header={
-          <DrawerHeader
-            title={lastTitle.current ?? 'Vy'}
-            onOpenChange={close}
-            {...(panel?.lead ? { startContent: panel.lead } : {})}
-            {...(panel?.subtitle ? { subtitle: panel.subtitle } : {})}
-          />
-        }
-        content={
-          <LayoutContent>
-            <VStack gap={3}>
-              {tabRow}
-              {(panel?.actions || more) && (
-                <HStack gap={1} wrap="wrap" vAlign="center">
-                  {panel?.actions}
-                  {more}
-                </HStack>
-              )}
-              <VStack id={BODY_ID}>{panel?.body(false)}</VStack>
-            </VStack>
-          </LayoutContent>
-        }
-      />
+      {framed(panel, false)}
     </Drawer>
   );
-  return { end, overlay, occupied };
+  return { end, overlay, occupied, inline };
 }

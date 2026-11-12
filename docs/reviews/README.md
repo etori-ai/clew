@@ -61,6 +61,7 @@ Dated evidence, design explorations and recommendations. They are historical con
 - [Dependency refresh: every package and image to its newest release · 2026-11-11](2026-11-11-dependency-refresh.md)
 - [Exploration note: external MCP services in AI chat, built and removed · 2026-11-11](2026-11-11-external-mcp-chat-services-exploration.md)
 - [Comparison: Frappe HR's appraisal cycle against the talks profile · 2026-11-11](2026-11-11-frappe-hr-appraisals-against-the-talks-profile.md)
+- [Review: where things open, and a proposal for one place per thing · 2026-11-11](2026-11-11-navigation-where-things-open.md)
 - [Operations handover for SCIM, people and the organisation](2026-11-11-provisioning-operations-guide-and-source-lifecycle.md)
 - [Review: the SCIM flow end to end, people and the organisation tree · 2026-11-11](2026-11-11-scim-flow-people-and-organisation.md)
 - [Review: the SCIM server in full, and the guides a provisioner is written from · 2026-11-11](2026-11-11-scim-full-review.md)

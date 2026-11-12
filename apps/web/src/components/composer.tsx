@@ -33,7 +33,7 @@ import { assistantQuery, completionsQuery, threadsQuery } from '../queries';
 import { keys } from '../query-keys';
 import { errorMessage } from '../query-policy';
 import { addDays, displayDate, shortDayLabel, timeLabel, today } from '@clew/calendar/dates';
-import { tokenValue, useConversation, type AskFrom } from './conversation-context';
+import { tokenValue, useClaimBox, useConversation, type AskFrom } from './conversation-context';
 import { useObjectMark } from '../marks';
 
 /**
@@ -132,9 +132,10 @@ function Dictation({ onResult }: { onResult: (text: string) => void }) {
 }
 /**
  * Where the box sits decides what it says about itself (the canvas's rule H3.3: the scope line always says what the box
- * talks to). On Hem it is the page and says nothing above the field, until a card is open beside it, when it says "Om kortet" (D53); in a conversation (H1) it says "Det här
- * samtalet" with the way to a new question; at the foot of a page (D50: Att göra, a tool) the placeholder says what the
- * box asks about, or that it starts a new conversation, and the box keeps to one line.
+ * talks to). On Hem it is the page and says nothing above the field, also with a card open beside it: opening is not
+ * asking (D111 rule 6), and a card is what the box asks about only once the person has added it as a chip. In a
+ * conversation (H1) it says "Det här samtalet" with the way to a new question; at the foot of a tool's page (D50) the
+ * placeholder says what the box asks about, or that it starts a new conversation, and the box keeps to one line.
  */
 const STOP = new Set([
   'att',
@@ -162,12 +163,13 @@ const STOP = new Set([
   'över',
   'om',
 ]);
-export type ComposerPlace = 'landing' | 'conversation' | 'page';
-/** What a page's box asks about (D50): its name in the scope line, and what the conversation takes with it. */
-export type ComposerAbout = AskFrom & {
-  label: string;
-  /** Hem's box: the way to let go of the card and ask a new question instead. */ clearHref?: string;
-};
+/**
+ * `thing` is the box at the foot of the panel beside an opened thing (D112 item 7): it asks about that thing only, so it
+ * has no drawer, no `@`, no model menu and no verbs, and its placeholder names the thing ("Fråga om ärendet …").
+ */
+export type ComposerPlace = 'landing' | 'conversation' | 'page' | 'thing';
+/** What a box asks about (D50): its name in the placeholder, and what the conversation takes with it. */
+export type ComposerAbout = AskFrom & { label: string };
 /** The landing's field is three lines tall from the start, as the `ai-chat-landing` template sets it on its `ChatComposerInput` (D41). */
 const landingField = { minHeight: 84 };
 /**
@@ -189,16 +191,21 @@ export function Composer({
   about?: ComposerAbout | undefined;
 }) {
   const talk = useConversation();
-  const navigate = useNavigate();
+  // While a conversation's own box is on the page, "Lägg till i samtalet" is offered (D112 item 7): elsewhere an opened
+  // thing has its own box beside it, which asks about that thing.
+  useClaimBox(place === 'conversation');
+  const thing = place === 'thing';
   // A token and an `@` row carry the glyph of the system the ref belongs to (D71, artboard 8): the glyph beside the word, no hue.
   const markOf = useObjectMark();
   const glyph = (ref: string, threadId?: string) => {
     const icon = markOf(ref, threadId)?.icon;
     return icon ? <AreaGlyph icon={icon} /> : undefined;
   };
-  // A page's box hands the conversation what the page shows; the landing's and a conversation's own box have nothing to hand over.
+  // A tool page's box hands the conversation what the page shows. Hem's box hands over nothing to ask about, only the
+  // way back: the card or view open beside Hem goes beside the transcript and "Stäng samtalet" returns to Hem as it
+  // stood (D111 rule 6). A conversation's own box has nothing to hand over.
   const from: AskFrom | undefined =
-    place === 'page' || about ? { chips: about?.chips ?? [], search: about?.search ?? '' } : undefined;
+    place === 'conversation' ? undefined : { chips: about?.chips ?? [], search: about?.search ?? '' };
   // What `@` treats as the context: what the page shows (`near`), what is in the drawer and the field, and in a
   // conversation every card and row it has touched (the chips of its turns, a draft's card, a proposal's card).
   const context = useRef<string[]>([]);
@@ -224,7 +231,7 @@ export function Composer({
       hasMultiWordQuery: true,
       menuLabel: 'Objekt',
       loadingText: 'Söker …',
-      emptySearchText: 'Inget här matchar. Skriv för att söka bland alla kort, rader och system.',
+      emptySearchText: 'Inget här matchar. Skriv för att söka bland alla ärenden, rader och system.',
       searchSource: {
         search: async q => toItems((await api.objects(q, context.current)).objects),
         bootstrap: async () => toItems((await api.objects('', context.current)).objects),
@@ -250,10 +257,11 @@ export function Composer({
           ? 'Nytt samtal: skriv eller säg vad du vill göra …'
           : 'Skriv eller säg vad du vill göra …';
   const plain = talk.value.replace(/@\[[^\]]+\]/g, '').trim();
-  const aboutChips = (about?.chips ?? []).filter(c => !talk.chips.some(t => t.ref === c.ref));
+  // The thing beside the box is named in the panel's header and in the placeholder; its chip is not drawn again here.
+  const aboutChips = thing ? [] : (about?.chips ?? []).filter(c => !talk.chips.some(t => t.ref === c.ref));
   const announced = useAddedAnnouncement(talk.chips);
   const mobile = useMediaQuery(mobileQuery);
-  // The scope line (H3.3): in a conversation the conversation; on Hem with a card open beside it, the card (D53, artboard E).
+  // The scope line (H3.3): in a conversation, the conversation. Hem's box has none, also with a card open beside it.
   const scope =
     place === 'conversation' ? (
       <Text type="supporting">
@@ -261,12 +269,6 @@ export function Composer({
           Det här samtalet
         </Text>
         {mobile ? '' : ' · svaret kommer under frågan'}
-      </Text>
-    ) : place === 'landing' && about ? (
-      <Text type="supporting">
-        <Text as="span" weight="semibold" color="primary">
-          Om kortet
-        </Text>
       </Text>
     ) : undefined;
   // While an answer is on its way the send button is Stoppa and the field stays open, so the person can write the next
@@ -288,14 +290,9 @@ export function Composer({
             {...(talk.chips.length > 0 ? { count: talk.chips.length + aboutChips.length } : {})}
             label="Objekt i samtalet"
           >
-            {/* What the page's box asks about (artboard E): the open card as a token, let go of with its X or with "Ny fråga i stället" (both close the card). */}
+            {/* What a tool page's box asks about: the page's own view as a token, which stays while the page does. */}
             {aboutChips.map(c => (
-              <Chip
-                key={c.ref}
-                label={c.label}
-                icon={glyph(c.ref)}
-                {...(about?.clearHref ? { onRemove: () => navigate(about.clearHref!) } : {})}
-              />
+              <Chip key={c.ref} label={c.label} icon={glyph(c.ref)} />
             ))}
             {talk.chips.map(c => (
               <Chip
@@ -312,11 +309,11 @@ export function Composer({
       input={
         <ChatComposerInput
           handleRef={talk.input}
-          label={place === 'conversation' ? 'Svara i samtalet' : 'Vad vill du göra'}
+          label={place === 'conversation' ? 'Svara i samtalet' : thing ? 'Fråga Clew' : 'Vad vill du göra'}
           maxRows={place === 'landing' ? 4 : 3}
           style={place === 'landing' && roomy ? landingField : undefined}
           hasHistory={false}
-          triggers={[trigger]}
+          triggers={thing ? [] : [trigger]}
           placeholder={placeholder}
           onKeyDown={e => {
             if (talk.pending && e.key === 'Enter' && !e.shiftKey) e.preventDefault();
@@ -335,14 +332,14 @@ export function Composer({
           >
             Ny fråga i stället
           </Link>
-        ) : place === 'landing' && about?.clearHref ? (
-          <Link href={about.clearHref}>Ny fråga i stället</Link>
         ) : undefined
       }
       footerActions={
         <HStack gap={1} wrap="wrap">
-          {talk.chips.length === 1 && !plain && talk.verbs.length > 0 && (
-            <HStack gap={1} wrap="wrap" role="group" aria-label="Om kortet">
+          {/* The verbs about a card the person added with "Lägg till i samtalet", the one chip with nothing typed;
+              a card merely open beside Hem brings none (D111 rule 6). */}
+          {!thing && talk.chips.length === 1 && !plain && talk.verbs.length > 0 && (
+            <HStack gap={1} wrap="wrap" role="group" aria-label="Om ärendet">
               {talk.verbs.map(v => (
                 <Verb
                   key={v.id}
@@ -355,7 +352,7 @@ export function Composer({
               ))}
             </HStack>
           )}
-          {place !== 'page' && <ModelMenu isDisabled={talk.busy} />}
+          {place !== 'page' && !thing && <ModelMenu isDisabled={talk.busy} />}
           <VisuallyHidden role="status">{announced}</VisuallyHidden>
         </HStack>
       }
@@ -410,7 +407,7 @@ export function Suggestions({
     ...cards.map(t => ({
       key: 'card:' + t.id,
       label: t.title,
-      detail: `${t.trigger.source} · öppnar kortet`,
+      detail: `${t.trigger.source} · öppnar ärendet`,
       go: () => navigate(cardHref(t.id)),
     })),
     ...completions.do
@@ -418,7 +415,7 @@ export function Suggestions({
       .map(d => ({
         key: 'do:' + d.capability,
         label: d.text,
-        detail: `${d.source} · ${d.kind === 'read' ? 'öppnar vyn' : 'öppnar kortet'}`,
+        detail: `${d.source} · ${d.kind === 'read' ? 'öppnar vyn' : 'öppnar ärendet'}`,
         go: () => (d.kind === 'read' ? navigate(viewHref(d.capability, d.text)) : talk.ask(d.text)),
       })),
     ...completions.ask

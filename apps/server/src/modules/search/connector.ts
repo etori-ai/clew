@@ -87,12 +87,12 @@ export function searchConnector(search: SearchUsecases, cards: AnswerCards = {})
         title: 'Lägg under Behöver dig',
         model: false,
         description:
-          'Ett kort under Behöver dig av ett svar som bygger på dokument: källorna som rader, länken som knapp.',
+          'Ett ärende under Behöver dig av ett svar som bygger på dokument: källorna som rader, länken som knapp.',
         input: CardFromAnswerInputSchema,
         output: Type.Object({ threadId: Type.String() }),
         scope: () => true,
         run: async (actor, input: CardFromAnswerInput) => {
-          if (!cards.create) throw new CapabilityError('Kort kan inte skapas här.');
+          if (!cards.create) throw new CapabilityError('Ärenden kan inte skapas här.');
           return cards.create(actor.id, input);
         },
       },

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import {
   checkContract,
   CommitmentsOutputSchema,
+  EntityPageSchema,
   TalksOutputSchema,
   type AuthenticatedContext,
   type StaffOverview,
@@ -718,9 +719,15 @@ describe('the built-in connector', () => {
     expect(about).toEqual({
       'talks.talks': undefined,
       'talks.commitments': undefined,
-      'talks.person': { entity: 'person', page: { title: 'Öppna samtalet', href: '/staff?talk={id}' } },
+      'talks.person': { entity: 'person', page: { title: 'Öppna samtalet', href: '?talk={id}' } },
       'talks.unit': { entity: 'unit', page: { title: 'Visa i Personal', href: '/staff?show=talks.person' } },
     });
+    // The talk is a query alone, laid over the page its way in is on (D111 rule 5); Personal is a destination, a path.
+    for (const name of ['talks.person', 'talks.unit'])
+      expect(checkContract(EntityPageSchema, connector.capabilities.find(c => c.name === name)!.about!.page)).toBe(
+        true,
+      );
+    expect(checkContract(EntityPageSchema, { title: 'Öppna', href: 'staff?talk={id}' })).toBe(false);
     const person = connector.capabilities.find(c => c.name === 'talks.person')!;
     expect(placesOf(person)).toEqual(['lens', 'mark', 'section']);
     expect(markFields(person.view).map(f => f.key)).toEqual(['state', 'next', 'overdue']);

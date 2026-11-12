@@ -89,6 +89,10 @@ export const fieldLabels: Record<string, string> = {
   reminders: 'Påminnelser',
   room: 'Rum',
   email: 'E-post',
+  // The news profile (D112): a news row and one item's read.
+  sender: 'Avsändare',
+  publishedAt: 'Publicerad',
+  body: 'Text',
 };
 /** Addresses and references: useful to the code, never to the person reading the panel. */
 /** A follower's step drafts (D55) are Clew's input, drawn as a job, never as panel fields. */

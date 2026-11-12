@@ -7,7 +7,6 @@ import {
   lensNeed,
   markText,
   marksFor,
-  pageHref,
   peopleLine,
   rowOf,
   silentOf,
@@ -42,7 +41,7 @@ const lens: EntitySource = {
   source: 'Utvecklingssamtal',
   title: 'Utvecklingssamtal',
   view,
-  page: { title: 'Öppna samtalet', href: '/staff?talk={id}' },
+  page: { title: 'Öppna samtalet', href: '?talk={id}' },
 };
 const presence: EntitySource = {
   capability: 'hr.person',
@@ -162,20 +161,6 @@ describe('Personal (D97)', () => {
     ]);
     expect(marksFor(list, answers({ status: 'unavailable' }), 'karin')).toEqual([]);
   });
-  test("a source's page fills in the key and the id, and on the same page keeps the page's own address", () => {
-    const karin = person('karin', 'p-karin');
-    expect(pageHref(lens.page!, karin, { pathname: '/staff', search: '' })).toBe('/staff?talk=p-karin');
-    expect(pageHref(lens.page!, karin, { pathname: '/staff', search: '?show=hr.person&talk=old' })).toBe(
-      '/staff?show=hr.person&talk=p-karin',
-    );
-    expect(pageHref(lens.page!, karin, { pathname: '/people/karin', search: '?section=x' })).toBe(
-      '/staff?talk=p-karin',
-    );
-    expect(pageHref({ title: 'Öppna', href: '/people/{key}' }, person('k å'), { pathname: '/', search: '' })).toBe(
-      '/people/k%20%C3%A5',
-    );
-    expect(pageHref(lens.page!, person('karin'), { pathname: '/staff', search: '' })).toBeNull();
-  });
   test('the systems that did not answer are named once, in one sentence, a late one said as late', () => {
     expect(silentText([])).toBe('');
     expect(silentText([{ source: 'Personalsystemet', status: 'unavailable' }])).toBe('Personalsystemet svarade inte.');
@@ -203,12 +188,12 @@ describe('Personal (D97)', () => {
         { key: 'karin', act: 0, proposals: 1, threadId: 't-karin' },
       ],
     };
-    expect(cardLinkTexts(withCards, 'ERIK')).toEqual([{ id: 'act', text: '1 att agera på', threadId: 't-erik' }]);
+    expect(cardLinkTexts(withCards, 'ERIK')).toEqual([{ kind: 'act', text: '1 att agera på', threadId: 't-erik' }]);
     expect(cardLinkTexts(withCards, 'johan')).toEqual([
-      { id: 'act', text: '2 att agera på' },
-      { id: 'proposals', text: '1 förslag' },
+      { kind: 'act', text: '2 att agera på' },
+      { kind: 'proposal', text: '1 förslag' },
     ]);
-    expect(cardLinkTexts(withCards, 'karin')).toEqual([{ id: 'proposals', text: '1 förslag', threadId: 't-karin' }]);
+    expect(cardLinkTexts(withCards, 'karin')).toEqual([{ kind: 'proposal', text: '1 förslag', threadId: 't-karin' }]);
     expect(cardLinkTexts(withCards, 'anna')).toEqual([]);
   });
   test('the count line names the unit, or how many units there are', () => {

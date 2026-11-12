@@ -233,6 +233,15 @@ export function memoryThreadStore(): MemoryThreadStore {
         .sort((a, b) => Date.parse(b.thread.createdAt) - Date.parse(a.thread.createdAt))
         .map(r => ({ thread: withTimers(r.thread), subjects: r.subjects }));
     },
+    async history(subjects, limit) {
+      // Oldest first by time, then in the order written, as Postgres orders by its timestamp and serial id.
+      const rows = audit
+        .map((entry, at) => ({ entry, at }))
+        .filter(r => subjects.includes(r.entry.subject))
+        .sort((a, b) => Date.parse(a.entry.at) - Date.parse(b.entry.at) || a.at - b.at)
+        .map(r => copy(r.entry));
+      return rows.slice(Math.max(0, rows.length - limit));
+    },
     async transaction(fn) {
       const previous = transactions;
       let release!: () => void;

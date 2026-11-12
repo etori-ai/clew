@@ -56,8 +56,10 @@ test('two tabs and a reconnect announce a persisted reminder once; Visa opens it
       .getByRole('region', { name: 'Aviseringar' })
       .getByRole('button', { name: 'Visa', exact: true })
       .click();
-    await expect(winner).toHaveURL('/?card=ledighet');
-    await expect(winner.getByRole('article', { name: 'Kort: ' + thread.title })).toBeVisible();
+    // Visa opens the card over the page the toast was on, Kalender; from Hem, which holds no card, the work item in Att
+    // göra (D111, D112).
+    await expect(winner).toHaveURL(winner === page ? '/calendar?card=ledighet' : '/todo?item=ledighet');
+    await expect(winner.getByRole('article', { name: 'Ärende: ' + thread.title })).toBeVisible();
     await Promise.all([page.reload(), second.reload()]);
     await expect(page.getByRole('region', { name: 'Aviseringar' }).getByText(body)).toHaveCount(0);
     await expect(second.getByRole('region', { name: 'Aviseringar' }).getByText(body)).toHaveCount(0);
@@ -72,20 +74,21 @@ for (const state of ['queued', 'blocked'] as const)
     card.timers = [{ kind: 'reminder', dueAt: '2026-11-05T10:00:00.000Z', state }];
     api.threads = [card];
     await page.setViewportSize(narrow);
-    await open(page, '/');
-    // Hem draws rows (D63): the row says the state in its own idiom, words on the line for a reminder that waits and a
-    // badge for one that was stopped, and never that it will remind.
-    const row = page.getByRole('main').locator('#thread-ledighet');
+    await open(page, '/todo');
+    // Att göra draws rows (D112): the row says the state, words on the line for a reminder that waits and its dot for
+    // one that was stopped, and never that it will remind.
+    const row = page.getByRole('main').locator('#work-ledighet');
     if (state === 'queued') await expect(row).toContainText('påminnelsen väntar på schemaläggning');
-    else await expect(row.getByText('Påminnelsen stoppad', { exact: true })).toBeVisible();
+    else await expect(row.getByRole('img', { name: 'Påminnelsen stoppad' })).toBeVisible();
     await expect(row).not.toContainText('påminner dig');
     await expectNoAxeViolations(page);
     expect(await reflowProblems(page)).toEqual([]);
-    // The whole sentence is the open card's, in the sheet at this width (artboard 12).
-    await row.getByRole('link', { name: card.title, exact: true }).click();
+    // The whole sentence is the work item's, its page alone on the surface at this width (D112 item 12).
+    await row.getByRole('link').click();
+    await expect(page.getByRole('heading', { level: 1, name: card.title })).toBeVisible();
     await expect(
       page
-        .getByRole('dialog', { name: 'Kort: ' + card.title })
+        .getByRole('main')
         .getByRole('status')
         .filter({
           hasText:
@@ -101,7 +104,10 @@ test('an empty local view with an unavailable source says it is awaiting evidenc
   api.threads = [];
   api.sources = [{ connector: 'reference', lastSuccess: null, state: 'failed', error: 'unavailable' }];
   await open(page, '/');
-  await expect(page.getByRole('heading', { name: 'Inväntar källornas besked' })).toBeVisible();
-  await expect(page.getByText('Lugnt läge', { exact: true })).toHaveCount(0);
+  // Hem never says that nothing needs the person while a source has not answered (D8).
+  const needs = page.getByRole('region', { name: 'Behöver dig' });
+  await expect(needs.getByText('Inväntar källornas besked.')).toBeVisible();
+  await expect(needs.getByRole('status')).toContainText('Någon källa kunde inte kontrolleras');
+  await expect(page.getByText('Inget behöver dig just nu.', { exact: true })).toHaveCount(0);
   await expectNoAxeViolations(page);
 });

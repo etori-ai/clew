@@ -375,16 +375,16 @@ describe('the model path only reads, and falls back when the provider fails', ()
     expect(prompt).toContain('chef på Skönsmons skola');
     expect(prompt).toContain('vecka 45');
     expect(prompt).toContain('Du tittar på');
-    expect(prompt).toContain('Kort "Attestera 3 fakturor, 37 050 kr" (Ekonomisystemet');
+    expect(prompt).toContain('Ärende "Attestera 3 fakturor, 37 050 kr" (Ekonomisystemet');
     expect(prompt).toContain('Skolgrossisten · 11 200 kr · 6451 · förfaller 5 nov [vald]');
     expect(prompt).toContain(
-      'Knappar på kortet nu: Attestera valda, Öppna i ekonomisystemet, Inte nu, Fler val (Lägg till i samtalet, Avfärda, Varför ser jag detta?).',
+      'Knappar i ärendet nu: Attestera valda, Öppna i ekonomisystemet, Inte nu, Fler val (Lägg till i samtalet, Avfärda).',
     );
     expect(
       systemPrompt({ name: 'x', role: 'employee', unitLabel: 'y', now: new Date(now), week: 45, objects: [] }),
     ).not.toContain('Du tittar på');
   });
-  test('a card already acted on offers Ångra allt, never its own buttons, and nothing once the window has closed', () => {
+  test('a card already acted on offers Ångra, never its own buttons, and nothing once the window has closed', () => {
     const handledAt = '2026-11-03T09:47:00.000Z',
       undoUntil = '2026-11-03T09:57:00.000Z';
     const acted: Thread = {
@@ -412,16 +412,16 @@ describe('the model path only reads, and falls back when the provider fails', ()
       '2026-11-03T09:50:00.000Z',
     );
     expect(within).toContain(
-      'Kortet är redan hanterat 10:47: Två fakturor är attesterade. Kvitto: Skolgrossisten · 11 200 kr · attesterad i ekonomisystemet (klart); Skolgrossisten · 7 200 kr · inget svar (okänt).',
+      'Ärendet är redan hanterat 10:47: Två fakturor är attesterade. Kvitto: Skolgrossisten · 11 200 kr · attesterad i ekonomisystemet (klart); Skolgrossisten · 7 200 kr · inget svar (okänt).',
     );
-    expect(within).toContain('Knappar på kortet nu: Ångra allt (fram till 10:57), Öppna i ekonomisystemet.');
-    expect(within).toContain('först därefter visar kortet Attestera valda igen');
-    expect(within).not.toContain('Knappar på kortet nu: Attestera valda');
+    expect(within).toContain('Knappar i ärendet nu: Ångra (fram till 10:57), Öppna i ekonomisystemet.');
+    expect(within).toContain('först därefter visar ärendet Attestera valda igen');
+    expect(within).not.toContain('Knappar i ärendet nu: Attestera valda');
     const [after] = serialiseContext([{ kind: 'thread', ref: 'thread:c1', thread: acted }], '2026-11-03T09:58:00.000Z');
     expect(after).toContain(
-      'Det går inte längre att ångra i Startsidan; en ändring görs i Ekonomisystemet. Kortet har inga knappar nu.',
+      'Det går inte längre att ångra i Startsidan; en ändring görs i Ekonomisystemet. Ärendet har inga knappar nu.',
     );
-    expect(after).not.toContain('Ångra allt');
+    expect(after).not.toContain('Ångra (');
     const prompt = systemPrompt({
       name: 'Hillevi Berg',
       role: 'manager',
@@ -430,7 +430,7 @@ describe('the model path only reads, and falls back when the provider fails', ()
       week: 45,
       objects: [within!],
     });
-    expect(prompt).toContain('Nämn bara knappar som står under "Knappar på kortet nu"');
+    expect(prompt).toContain('Nämn bara knappar som står under "Knappar i ärendet nu"');
   });
   test('a snoozed, a waiting and a dismissed card name only what they show', () => {
     const [snoozed] = serialiseContext(
@@ -438,18 +438,18 @@ describe('the model path only reads, and falls back when the provider fails', ()
       now,
     );
     expect(snoozed).toContain(
-      'Kortet ligger under Inte nu. Knappar på kortet nu: Ta upp nu, Fler val (Lägg till i samtalet, Avfärda, Varför ser jag detta?).',
+      'Ärendet ligger under Inte nu. Knappar i ärendet nu: Ta upp nu, Fler val (Lägg till i samtalet, Avfärda).',
     );
     const [waiting] = serialiseContext(
       [{ kind: 'thread', ref: 'thread:c1', thread: { ...card, waitingOn: 'Ekonomisystemet' } }],
       now,
     );
-    expect(waiting).toContain('Kortet väntar på Ekonomisystemet. Knappar på kortet nu: Påminn mig, Fler val');
+    expect(waiting).toContain('Ärendet väntar på Ekonomisystemet. Knappar i ärendet nu: Påminn mig, Fler val');
     const [dismissed] = serialiseContext(
       [{ kind: 'thread', ref: 'thread:c1', thread: { ...card, state: 'dismissed' } }],
       now,
     );
-    expect(dismissed).toContain('Kortet är avfärdat. Kortet har inga knappar nu.');
+    expect(dismissed).toContain('Ärendet är avfärdat. Ärendet har inga knappar nu.');
   });
   test('an injected generate yields the answer and a view from the first rows result', async () => {
     const r = registry();

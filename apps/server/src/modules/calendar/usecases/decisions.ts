@@ -69,7 +69,7 @@ const active = (t: Thread) => t.execution && ['pending', 'running', 'unknown'].i
 export function calendarDecisions({ store, bind, team, clock, approve, previous }: CalendarDecisionDeps) {
   const required = async (p: AuthenticatedContext, id: string) => {
     const t = await store.readThread(p.id, id);
-    if (!t) throw new InputError('Kortet finns inte.');
+    if (!t) throw new InputError('Ärendet finns inte.');
     return t;
   };
   async function existing(
@@ -167,7 +167,7 @@ export function calendarDecisions({ store, bind, team, clock, approve, previous 
     const current = await required(p, threadId),
       t = current.thread;
     if (active(t)) return t;
-    if (t.state !== 'open') throw new InputError('Kortet är redan hanterat.');
+    if (t.state !== 'open') throw new InputError('Ärendet är redan hanterat.');
     if (!proposalIds.length) throw new InputError('Välj minst en tid.');
     const selected = current.proposals.filter(x => proposalIds.includes(x.id) && x.status === 'proposed');
     if (selected.length !== new Set(proposalIds).size)

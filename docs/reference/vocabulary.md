@@ -72,7 +72,7 @@ Within a job, steps are currently independent and prepared from the same fact. T
 | View | A presentation of information. Connector-declared views have the supported forms `table`, `list`, `detail` and `text`. |
 | Side panel | The container beside the current page for opened work item details or other views. On narrow screens it can be a drawer. |
 | Focused overlay | A temporary interaction above the current page, shown as the existing sidebar Drawer or corresponding mobile sheet. Catalogue drill-in and confirmation retain their parent. |
-| Tab | An entry for content kept open in the panel. Several tabs may be available through the panel's open-content menu. |
+| Tab | A choice in a tab strip on a page (Att göra's piles). A person's page has none since D112 item 5: its sections stand one under the other. The panel beside a page has no tabs: it holds one thing (D111, D66 amended). |
 | Context chip | A visible reference attached to a conversation, identifying the work item, record, proposal or other supported object being discussed. |
 | Tool | A standing entry point in the product to a capability or view, such as the phone book. Qualify an assistant-callable operation as a **model tool**. |
 | Area | A grouping of related capabilities and work available to eligible people. It is not the source record itself. |
@@ -121,7 +121,7 @@ A source system owns records. A connector exposes capabilities that read those r
 | Mark | A badge under **Just nu** | A value of a lens with a `warn` or `alert` tone, shown on the entity's row on "Alla". "Just nu" also counts the reader's cards about the person ("1 att agera på", "2 förslag"). |
 | Section | **Behöver dig**, then each source's title | One source's part of the opened person or unit, named with its source ("Clew" for Clew's own domain). "Behöver dig" is the section of the reader's own cards that name the entity. |
 | Column on "Alla" | A column heading with the source under it | One field of a read about an entity, chosen by an administrator under "Kolumn på Alla" and shown to everyone who has the list. At most three per entity kind. |
-| Opened entity | **Öppna som sida**; the list **Om <namn>** | A person beside the list or as a page, or a unit as a page. |
+| Opened entity | The page's heading, the person's or the unit's name, with every section under it and the details rail beside it (D112 item 5) | A person or a unit as a page ([D111](../decisions/D111-where-something-opens-is-decided-by-what-it-is.md) rule 3). |
 
 ## Naming rules
 
@@ -149,7 +149,7 @@ These names clarify product language without renaming types, API routes or store
 | Decision, job, step, execution and watch | The [execution model](../../apps/server/src/modules/executions/model.ts) records `decisionId`, `Job`, `JobStep`, `Execution` and watch state. A product term does not imply a separate table of the same name. |
 | Receipt | [`Receipt`](../../packages/contracts/src/index.ts) is the displayed outcome; connector execution results provide the underlying evidence. |
 | Context chip and object | [`Chip` and `ClewObject`](../../packages/contracts/src/index.ts) provide references for conversation context and object selection. |
-| Side panel and tab | [`PanelFrame` and `OpenTab`](../../apps/web/src/components/panel.tsx) hold opened content. Their existing `card` and `view` names remain implementation identifiers. |
+| Side panel | [`PanelFrame`](../../apps/web/src/components/panel.tsx) holds the one thing opened. Their existing `card` and `view` names remain implementation identifiers. |
 | Entity, subject, lens, section and column | [`EntityKind`, `Subject`, `About`, `EntityList`, `EntityDetail`, `EntitySource` and `EntityColumn`](../../packages/contracts/src/index.ts); the use cases in [`modules/entities`](../../apps/server/src/modules/entities/); the index from entity to cards is the table `thread_subject` in [the schema](../../packages/db/src/schema.ts). A capability's lens and column are `lens` and `column` in its stored overrides. |
 | Person, group, assignment and grant | [`auth_person`, `auth_group`, `auth_assignment` and `auth_access_grant`](../../packages/db/src/schema.ts); the SCIM resources `User` and `Group` are drawn from them in [`modules/people/domain.ts`](../../apps/server/src/modules/people/domain.ts). A group's name is `label` in Clew and `displayName` on the wire. |
 

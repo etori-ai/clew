@@ -10,7 +10,7 @@ Read these in order if you are new to the project:
 2. [Architecture overview](architecture/overview.md): the running components, data boundaries and end-to-end read, scan and action flows.
 3. [Implementation status](reference/status.md): what works in this checkout and what remains a fixture, proposal or release gate.
 
-[Interface spaces and navigation](reference/interface-spaces.md) defines where pages, contextual details, overlays and confirmations open, and how people return.
+[Interface spaces and navigation](reference/interface-spaces.md) defines where pages, the panel, Att göra's reading pane, the work item's page, overlays and the action dialog open, and how people return (D112).
 
 The [vocabulary and entity map](reference/vocabulary.md) defines work items, cards, proposals, conversations and interface containers, and connects those terms to the current code.
 
@@ -24,6 +24,7 @@ A connector is your independently deployed HTTP service. It translates a source 
 |---|---|---|
 | Define and build a first integration | [Create a connector](guides/creating-a-connector.md) | [Phone book](../connectors/phonebook/README.md) |
 | Map source records, add search and views | [Directory walkthrough](guides/example-custom-directory.md) | [Manifest](../connectors/phonebook/manifest.mjs), [adapter](../connectors/phonebook/directory.mjs) |
+| Know where Clew shows what your manifest declares, and what opens a new tab | [Where things open](guides/where-things-open.md) | [Interface spaces](reference/interface-spaces.md) |
 | Show original documents, records, metrics, charts and history | [Document and semantic views](guides/document-and-semantic-views.md) | [Finance fixture](../connectors/finance/manifest.mjs) |
 | Understand who authenticates to whom, and where a write is approved | [Authentication overview](guides/authentication-overview.md) | [Token exchange](../apps/server/src/auth-exchange.ts), [Eneo connector](../connectors/eneo/README.md) |
 | Verify the actor and narrow source access | [Authorization](guides/authorization.md) | [Standalone verifier](../connectors/hello/verification.mjs) |
@@ -55,6 +56,7 @@ Clew's integration contract is the connector protocol. A connector can use an MC
 | Upgrade, diagnose and recover | [Reliability operations](maintainers/reliability-operations.md) |
 | Maintain these docs | [Documentation workflow](maintainers/README.md) |
 | See what is undecided | [Open questions](maintainers/open-questions.md) |
+| Check what the product manager's prototype asks for and whether the architecture carries it | [Prototype parity](reference/prototype-parity.md) |
 | Check or record a dependency's licence | [Licence record](reference/licences.md) |
 | Compare a screen with its design | [Design canvases](reference/design-canvases.md) |
 | See every connector in the repository | [Connectors](../connectors/README.md) |

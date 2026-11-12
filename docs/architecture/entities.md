@@ -19,13 +19,13 @@ A capability declares `about: { entity }` on a read, or `about: { entity, param 
 
 | Declared | Place | Who places it |
 |---|---|---|
-| A propose or execute about the kind | The entity's menu: the row menu on Personal and the actions of the opened person | Nobody: scope and audience decide |
+| A propose or execute about the kind | The entity's menu: the row menu on Personal; on the person's page the section of the source that offers it, or beside the name when that source has no section to hold it; beside the name on the unit's page | Nobody: scope and audience decide |
 | A read about the kind (always a table or list) | A section on the opened entity | Nobody |
 | The same read | A lens under "Visa" on the entity's list | An administrator |
 | A field of that read with a `warn` or `alert` tone | A mark on the entity's row on "Alla", under "Just nu" | An administrator, by offering the read as a lens |
 | One field of that read | A column on "Alla", the source's name under its heading | An administrator, at most three per kind |
 
-The opened entity starts with "Behöver dig" when the reader has cards about it, then, on a unit the reader manages, Clew's own "Personal" section, then one section per source: Clew's own domain first, captioned "Clew", then the others by source name. Each section is read on its own. A source that did not answer says so in its own section with "Försök igen" and the rest stand; a source that answered without a row for this entity leaves no section, since no row means "none" or "not allowed".
+The opened entity starts with "Behöver dig" when the reader has work items about it, then one section per source: Clew's own domain first, badged "Clew", then the others by source name; on a unit the reader manages, Clew's own count of its people stands in the page's details rail. Each section is read on its own. A source that did not answer says so in its own section with "Försök igen" and the rest stand; a source that answered without a row for this entity leaves no section, since no row means "none" or "not allowed". Both pages draw every section at once, one under the other (D112 item 5); `?section=` scrolls to one and gives its heading the focus.
 
 The code: the [entities module](../../apps/server/src/modules/entities/) and its [routes](../../apps/server/src/routes/entities.ts) (`GET /api/entities/:kind`, `/:kind/rows?capability=`, `/:kind/:key`, `/:kind/:key/section?capability=`, `POST /:kind/:key/actions`), wired in [composition](../../apps/server/src/composition/entities.ts). The registry lists the reads and actions about a kind that a person may call (`aboutReads`, `aboutActions` in [the registry](../../packages/connectors/src/index.ts)).
 
@@ -68,11 +68,11 @@ A card of Clew's own may carry `Thread.subjects` instead: an action point's card
 The thread store keeps an index from entity to cards, the table `thread_subject` ([migration 0046](../../packages/db/migrations/0046_thread_subjects.sql)), rewritten in the transaction that writes the card's rows. It answers two questions ([subjects.ts](../../apps/server/src/threads/usecases/subjects.ts)):
 
 - "Behöver dig" on the opened entity: the reader's own cards naming it that still ask for them (not waiting on someone else, not set aside under Inte nu, still visible under current authority), the cards that wait for the reader first, then proposals, then information.
-- "Just nu" on the list: per person, how many cards wait for the reader ("N att agera på") and how many are proposals ("N förslag"), with the card itself when there is only one.
+- "Just nu" on the list: per person, how many cards wait for the reader ("N att agera på") and how many are proposals ("N förslag"), with the card itself when there is only one, opened beside the list. Several lead to the person's page at "Behöver dig" ([D111](../decisions/D111-where-something-opens-is-decided-by-what-it-is.md), amended 2026-11-11); each card's `kind` (`act`, `proposal`, `fyi`) tells them apart.
 
 ## Actions started as cards
 
-`POST /api/entities/:kind/:key/actions` with `{ capability }` starts an action from the entity's menu without the model ([actions.ts](../../apps/server/src/modules/entities/actions.ts), [started.ts](../../apps/server/src/threads/usecases/started.ts)). The action must be one the opened entity offers the reader. The key goes into its `param`, which the loader requires to be its only required input. A propose runs as the person, and the `ThreadDraft` it answers becomes the card. An execute is never called here: the card's one button is the human decision ([D8](../decisions/D08-every-action-works-without-the-model.md)), and the execute runs after it through the ledger. The card's reason is the person's choice ("Du valde … för …"), not the source's. The same request while the card is open gives the same card. The card, its first message and the `thread.started` audit row, which names the entity by Clew's id, share one transaction. A follower and an execute with a `review` cannot be started this way. The web opens the card beside Hem.
+`POST /api/entities/:kind/:key/actions` with `{ capability }` starts an action from the entity's menu without the model ([actions.ts](../../apps/server/src/modules/entities/actions.ts), [started.ts](../../apps/server/src/threads/usecases/started.ts)). The action must be one the opened entity offers the reader. The key goes into its `param`, which the loader requires to be its only required input. A propose runs as the person, and the `ThreadDraft` it answers becomes the card. An execute is never called here: the card's one button is the human decision ([D8](../decisions/D08-every-action-works-without-the-model.md)), and the execute runs after it through the ledger. The card's reason is the person's choice ("Du valde … för …"), not the source's. The same request while the card is open gives the same card. The card, its first message and the `thread.started` audit row, which names the entity by Clew's id, share one transaction. A follower and an execute with a `review` cannot be started this way. The web opens the card beside the page the action was started on ([D111](../decisions/D111-where-something-opens-is-decided-by-what-it-is.md) rule 4), and a card under an entity's Behöver dig opens beside that entity's page.
 
 ## Erasure
 
@@ -91,7 +91,7 @@ The thread store keeps an index from entity to cards, the table `thread_subject`
 
 | Capability | Source | About | Places it can take |
 |---|---|---|---|
-| `talks.person` | Clew's talks module ([capabilities.ts](../../apps/server/src/modules/talks/capabilities.ts)) | person | Section, lens, column, marks; the section's way in is the talk at `/staff?talk={id}` |
+| `talks.person` | Clew's talks module ([capabilities.ts](../../apps/server/src/modules/talks/capabilities.ts)) | person | Section, lens, column, marks; the section's way in is the talk, `?talk={id}`, laid over the page it is drawn on (D111 rule 5) |
 | `talks.unit` | Clew's talks module | unit | Section on the unit page; its way in is the lens on Personal |
 | `competence.person` | Clew's competence module ([capabilities.ts](../../apps/server/src/modules/competence/capabilities.ts)), proposed in D108 and switched off until an administrator enables it | person | Section, lens, column, a mark for "Utgånget" and "Går ut snart"; the section's way in is the registration form at `/staff?register={id}` |
 | `hr.person` | The HR fixture ([manifest](../../connectors/hr/manifest.mjs)) | person | Section, lens, column; no field warns, so no mark |

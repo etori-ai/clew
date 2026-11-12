@@ -347,7 +347,7 @@ describe('avfärda, inte nu and ångra', () => {
     const back = (await w.threads.threadFor(hillevi, card.id))!;
     expect(back).toMatchObject({ state: 'open', snoozedUntil: null, remindedAt: '2026-11-04T09:00:00.000Z' });
     expect(back.trigger.reason).toBe(`Du bad 08:00 om en påminnelse · ${card.trigger.reason}`);
-    expect(back.messages.at(-1)!.body).toBe('Påminnelse: du bad 08:00 om att få det här kortet igen.');
+    expect(back.messages.at(-1)!.body).toBe('Påminnelse: du bad 08:00 om att få det här ärendet igen.');
     expect(w.store.deliveries).toEqual([`reminded:${card.id}:1`]);
     expect(w.store.audit.at(-1)).toMatchObject({
       actor: 'assistant:reminder',
@@ -376,12 +376,12 @@ describe('avfärda, inte nu and ångra', () => {
   test('a card dismissed more than ten minutes ago stays dismissed, an open card cannot be reopened', async () => {
     const w = world();
     const card = await invoices(w);
-    await expect(w.threads.reopenThread(hillevi, card.id)).rejects.toThrow('Kortet går inte att återöppna.');
+    await expect(w.threads.reopenThread(hillevi, card.id)).rejects.toThrow('Ärendet går inte att återöppna.');
     await w.threads.dismissThread(hillevi, card.id, 'fel kostnadsställe');
     expect((await w.threads.threadFor(hillevi, card.id))!.messages.at(-1)!.body).toBe('Avfärdad · fel kostnadsställe');
     w.clock.advance(10 * MINUTE + 1);
     await expect(w.threads.reopenThread(hillevi, card.id)).rejects.toThrow('Ångerfönstret har gått ut.');
-    await expect(w.threads.snoozeThread(hillevi, card.id)).rejects.toThrow('Kortet är redan hanterat.');
+    await expect(w.threads.snoozeThread(hillevi, card.id)).rejects.toThrow('Ärendet är redan hanterat.');
   });
 });
 
@@ -528,7 +528,7 @@ describe('påminn mig', () => {
       remindedAt: at,
       trigger: { reason: `Du bad 08:00 om en påminnelse · ${card.trigger.reason}`, source: card.trigger.source, at },
     });
-    expect(back.messages.at(-1)!.body).toBe('Påminnelse: du bad 08:00 om att få det här kortet igen.');
+    expect(back.messages.at(-1)!.body).toBe('Påminnelse: du bad 08:00 om att få det här ärendet igen.');
     expect(w.store.audit.at(-1)).toMatchObject({
       actor: 'assistant:reminder',
       action: 'thread.reminded',
@@ -640,7 +640,7 @@ describe('a cited answer becomes a card (D26)', () => {
       topic: 'answer:' + answerId,
       title: 'Följ upp: Brukaren har ramlat, vad gör jag?',
       summary: '1. Lyft inte själv [1].\n2. Skriv avvikelse [2].',
-      trigger: { source: 'Startsidan', reason: 'Du frågade 08:00 och gjorde svaret till ett kort' },
+      trigger: { source: 'Startsidan', reason: 'Du frågade 08:00 och gjorde svaret till ett ärende' },
     });
     expect(card.items).toEqual([
       {
@@ -684,12 +684,12 @@ describe('a cited answer becomes a card (D26)', () => {
     const q = await conversation(w, false);
     await expect(
       w.threads.cardFromAnswer(hassan, { conversationId: 'q1', messageId: q.messages[1]!.id }),
-    ).rejects.toThrow('Svaret har inga källor att göra ett kort av.');
+    ).rejects.toThrow('Svaret har inga källor att göra ett ärende av.');
     await expect(
       w.threads.cardFromAnswer(hillevi, { conversationId: 'q1', messageId: q.messages[1]!.id }),
     ).rejects.toThrow('Samtalet finns inte.');
     await expect(w.threads.cardFromAnswer(hassan, { conversationId: 'q1', messageId: 'nope' })).rejects.toThrow(
-      'Svaret har inga källor att göra ett kort av.',
+      'Svaret har inga källor att göra ett ärende av.',
     );
   });
 });

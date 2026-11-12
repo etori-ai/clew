@@ -196,6 +196,42 @@ const absencePattern = {
   },
 };
 
+/**
+ * What an `effect` read answers (D112, the protocol's EffectOutput): what a write will do where, without writing, and how
+ * long it can be undone.
+ */
+const effectOutput = object(
+  {
+    rows: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 10,
+      items: object(
+        {
+          label: { type: 'string', minLength: 1, maxLength: 200 },
+          detail: { type: 'string', maxLength: 400 },
+          source: { type: 'string', minLength: 1, maxLength: 80 },
+        },
+        ['label'],
+      ),
+    },
+    undoMinutes: { type: 'integer', minimum: 1, maximum: 1440 },
+  },
+  ['rows'],
+);
+
+/** A talk's input: the employee by ref, and what the manager fills in (D112): the time, the place and a message. */
+const talkInput = object(
+  {
+    refs: array({ type: 'string', pattern: '^hr:emp:' }),
+    when: { type: 'string', format: 'date-time', description: 'När samtalet börjar.' },
+    place: { type: 'string', maxLength: 120, description: 'Var samtalet hålls.' },
+    message: { type: 'string', maxLength: 400, description: 'Ett meddelande till medarbetaren, sparat med samtalet.' },
+  },
+  ['refs'],
+);
+/** How long a talk is, in minutes: what the meeting ask looks for in the manager's calendar. */
+export const TALK_MINUTES = 45;
 const bookTalk = {
   name: 'hr.bookTalk',
   kind: 'execute',
@@ -204,8 +240,28 @@ const bookTalk = {
   model: false,
   scope: manager,
   execution: deduplicated,
-  input: object({ refs: array({ type: 'string', pattern: '^hr:emp:' }), when: string }, ['refs']),
+  input: talkInput,
   output: executeResult,
+  // The dialog (D112): the time from the manager's own calendar, the place and an optional message; then what is written.
+  asks: [
+    { kind: 'meeting', property: 'when', label: 'När', required: true, durationMinutes: TALK_MINUTES },
+    { kind: 'text', property: 'place', label: 'Plats', required: false },
+    { kind: 'long-text', property: 'message', label: 'Meddelande till medarbetaren', required: false },
+  ],
+  effect: 'hr.bookTalkEffect',
+};
+
+// What hr.bookTalk will do, for the same input, without writing (D112): the one thing true in this system, the talk
+// registered with its time, and the undo window the write gives.
+const bookTalkEffect = {
+  name: 'hr.bookTalkEffect',
+  kind: 'read',
+  title: 'Det här händer när samtalet bokas',
+  description: 'Vad bokningen av ett omtankesamtal gör i personalsystemet, utan att något skrivs.',
+  model: false,
+  scope: manager,
+  input: talkInput,
+  output: effectOutput,
 };
 
 const unbookTalk = {
@@ -269,6 +325,8 @@ const decideLeave = {
     ['refs', 'decision'],
   ),
   output: executeResult,
+  // The manager may say why (D112); the decision itself comes from the card's button.
+  asks: [{ kind: 'long-text', property: 'comment', label: 'Kommentar till medarbetaren', required: false }],
 };
 
 const undecideLeave = {
@@ -495,6 +553,7 @@ export const manifest = {
     absenceOverview,
     absencePattern,
     bookTalk,
+    bookTalkEffect,
     unbookTalk,
     leaveRequests,
     decideLeave,

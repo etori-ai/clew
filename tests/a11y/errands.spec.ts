@@ -54,7 +54,7 @@ test.describe('Mina ärenden on Hem', () => {
     );
     await open(page, '/');
     const section = page.getByRole('region', { name: 'Mina ärenden' });
-    // The section's heading is one of Hem's group headings, at the level of Nu, Senare and Läget.
+    // The section's heading is one of Hem's, at the level of Behöver dig and Läget.
     await expect(section.getByRole('heading', { name: 'Mina ärenden' })).toBeVisible();
     await expect(section.getByRole('listitem')).toHaveCount(5);
     await expect(section.getByText('5 av 7 rader')).toBeVisible();
@@ -86,7 +86,7 @@ test.describe('Mina ärenden on Hem', () => {
 
   test('a person without a case system has no errand section', async ({ page, api: _ }) => {
     await open(page, '/');
-    await expect(page.getByRole('heading', { name: /Nu/ }).first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Behöver dig' })).toBeVisible();
     await expect(page.getByRole('region', { name: 'Mina ärenden' })).toHaveCount(0);
   });
 

@@ -14,13 +14,23 @@ import {
   type Attention,
   type AuthenticatedContext,
   type Area,
+  type ItemEvents,
   type Receipt,
   type SnoozeInput,
   type SnoozePreset,
   type Thread,
 } from '@clew/contracts';
-import { reminderStart, rhythmFor } from '../domain';
-import { actorOf, receipt, type Actor, type ExecuteResult, type Registry, type ThreadDraft } from '@clew/connectors';
+import { HISTORY_LIMIT, historySubjects, itemEvents, reminderStart, rhythmFor } from '../domain';
+import {
+  actorOf,
+  givenBy,
+  pathOf,
+  receipt,
+  type Actor,
+  type ExecuteResult,
+  type Registry,
+  type ThreadDraft,
+} from '@clew/connectors';
 import { InputError } from '../../context';
 import type { ThreadStore, ThreadTx } from '../model';
 import { threadAccess } from '../access';
@@ -61,8 +71,24 @@ export function threadUsecases(deps: ThreadDeps) {
   const { store, registry, run, calendar, clock, ids } = deps;
   const access = threadAccess(store, registry);
   const inFlight = new Map<string, Promise<void>>();
+  /**
+   * A card as the API answers it (D112 item 10): each propose or execute of the card's own connector carries its path,
+   * what it asks the person and whether it says beforehand what it writes, from the registered declaration on every read.
+   * The store keeps the draft's actions as they came; a path never comes from a draft.
+   */
+  const pathed = (thread: Thread): Thread => ({
+    ...thread,
+    actions: thread.actions.map(({ path: _, ...action }) => {
+      const found = registry.find(action.capability);
+      const path =
+        found && found.connector.id === thread.connector
+          ? pathOf(found.capability, givenBy(found.capability, action))
+          : undefined;
+      return path ? { ...action, path } : action;
+    }),
+  });
   const read = async (persona: Pick<AuthenticatedContext, 'id'>, threadId: string) =>
-    (await store.readThread(persona.id, threadId))!;
+    pathed((await store.readThread(persona.id, threadId))!);
 
   /**
    * First visit of the day and the nightly scan: every connector says what it wants to push, one open thread per topic.
@@ -214,7 +240,7 @@ export function threadUsecases(deps: ThreadDeps) {
   async function retryRejected(persona: AuthenticatedContext, threadId: string): Promise<Thread> {
     await persona.authorize();
     const original = await access.read(persona, threadId);
-    if (!original) throw new InputError('Kortet finns inte.');
+    if (!original) throw new InputError('Ärendet finns inte.');
     const execution = original.execution;
     if (!execution || execution.compensates || !['failed', 'partial'].includes(execution.state))
       throw new InputError('Kontrollera källans besked innan ett nytt försök görs.');
@@ -231,7 +257,7 @@ export function threadUsecases(deps: ThreadDeps) {
     await store.transaction(async tx => {
       const current = await tx.lockThread(persona.id, original.id);
       if (!current || current.updatedAt !== original.updatedAt || current.execution?.id !== execution.id)
-        throw new InputError('Resultatet har ändrats. Läs in kortet igen.');
+        throw new InputError('Resultatet har ändrats. Läs in ärendet igen.');
       if (await tx.lockThread(persona.id, id)) return;
       await tx.insertThread({
         id,
@@ -261,7 +287,7 @@ export function threadUsecases(deps: ThreadDeps) {
         details: { originalThreadId: original.id, originalExecutionId: execution.id, refs: items.map(i => i.ref) },
       });
     });
-    return (await access.read(persona, id))!;
+    return pathed((await access.read(persona, id))!);
   }
   /** Areas with live counts for the sidebar, and each figure with the time Clew read it (D54: "Personalsystemet 06:00"). */
   async function listAreas(persona: AuthenticatedContext): Promise<Area[]> {
@@ -304,7 +330,7 @@ export function threadUsecases(deps: ThreadDeps) {
   }
   async function dismissThread(persona: AuthenticatedContext, threadId: string, reason = 'inte aktuellt') {
     const thread = await threadFor(persona, threadId);
-    if (!thread || thread.state !== 'open') throw new InputError('Kortet är redan hanterat.');
+    if (!thread || thread.state !== 'open') throw new InputError('Ärendet är redan hanterat.');
     const at = clock().toISOString();
     await store.transaction(async tx => {
       const locked = await tx.lockThread(persona.id, threadId);
@@ -314,7 +340,7 @@ export function threadUsecases(deps: ThreadDeps) {
         locked.updatedAt !== thread.updatedAt ||
         (locked.execution && ['pending', 'running', 'unknown'].includes(locked.execution.state))
       )
-        throw new InputError('Kortet har ändrats. Läs om sidan.');
+        throw new InputError('Ärendet har ändrats. Läs om sidan.');
       await tx.updateThread(threadId, { state: 'dismissed', handledAt: at, updatedAt: at });
       await tx.addMessage(threadId, { role: 'user', body: `Avfärdad · ${reason}`, at });
       await tx.writeAudit({
@@ -341,7 +367,7 @@ export function threadUsecases(deps: ThreadDeps) {
    */
   async function snoozeThread(persona: AuthenticatedContext, threadId: string, input: SnoozeInput = {}) {
     const thread = await threadFor(persona, threadId);
-    if (!thread || thread.state !== 'open') throw new InputError('Kortet är redan hanterat.');
+    if (!thread || thread.state !== 'open') throw new InputError('Ärendet är redan hanterat.');
     const now = clock(),
       at = now.toISOString();
     let until: string;
@@ -361,7 +387,7 @@ export function threadUsecases(deps: ThreadDeps) {
     await persona.authorize();
     await store.transaction(async tx => {
       const current = await tx.lockThread(persona.id, threadId);
-      if (!current || current.state !== 'open') throw new InputError('Kortet är redan hanterat.');
+      if (!current || current.state !== 'open') throw new InputError('Ärendet är redan hanterat.');
       const timer = await tx.scheduleTimer({
         id: `snooze:${threadId}`,
         personId: persona.id,
@@ -398,17 +424,17 @@ export function threadUsecases(deps: ThreadDeps) {
    */
   async function reopenThread(persona: AuthenticatedContext, threadId: string) {
     const t = await access.read(persona, threadId);
-    if (!t) throw new InputError('Kortet finns inte.');
+    if (!t) throw new InputError('Ärendet finns inte.');
     const now = clock(),
       at = now.toISOString();
     const snoozed = t.state === 'open' && !!t.snoozedUntil;
     const dismissed = t.state === 'dismissed' && !!t.handledAt && now.getTime() - Date.parse(t.handledAt) <= REOPEN_MS;
     if (!snoozed && !dismissed)
-      throw new InputError(t.state === 'dismissed' ? 'Ångerfönstret har gått ut.' : 'Kortet går inte att återöppna.');
+      throw new InputError(t.state === 'dismissed' ? 'Ångerfönstret har gått ut.' : 'Ärendet går inte att återöppna.');
     await store.transaction(async tx => {
       const current = await tx.lockThread(persona.id, threadId);
       if (!current || current.updatedAt !== t.updatedAt)
-        throw new InputError('Kortet har ändrats. Läs tillbaka det först.');
+        throw new InputError('Ärendet har ändrats. Läs tillbaka det först.');
       if (snoozed) await tx.cancelTimer(`snooze:${threadId}`, at);
       await tx.updateThread(threadId, {
         state: 'open',
@@ -453,14 +479,29 @@ export function threadUsecases(deps: ThreadDeps) {
   /** The person's own threads, newest first, as the stream shows them. */
   const listThreadsFor = async (persona: AuthenticatedContext) => {
     await wakeDue(persona);
-    return access.list(persona, clock().toISOString());
+    return (await access.list(persona, clock().toISOString())).map(pathed);
   };
   /** One of the person's threads, or undefined when it is not theirs. */
-  const threadFor = (persona: AuthenticatedContext, threadId: string) => access.read(persona, threadId);
+  const threadFor = async (persona: AuthenticatedContext, threadId: string) => {
+    const thread = await access.read(persona, threadId);
+    return thread && pathed(thread);
+  };
+  /**
+   * A work item's "Händelser" (D112 item 4): what the person and Clew did to it, from the audit rows its own mutations
+   * wrote, newest first. Only for an item the person may see now (the same check as reading it); a read, so nothing is
+   * written and no audit row is kept.
+   */
+  async function itemHistory(persona: AuthenticatedContext, threadId: string): Promise<ItemEvents> {
+    await persona.authorize();
+    const thread = await threadFor(persona, threadId);
+    if (!thread) throw new InputError('Ärendet finns inte.');
+    const rows = await store.history(historySubjects(thread.id), HISTORY_LIMIT);
+    return { events: itemEvents(rows, thread, persona.principal.id) };
+  }
   /** Avfärda from the card: proposal threads decline their drawn times through the planner, every other card is dismissed as is. */
   async function dismissAny(persona: AuthenticatedContext, threadId: string) {
     const thread = await threadFor(persona, threadId);
-    if (!thread) throw new InputError('Kortet finns inte.');
+    if (!thread) throw new InputError('Ärendet finns inte.');
     return thread.proposals.length ? calendar.dismiss(persona, threadId) : dismissThread(persona, threadId);
   }
   /**
@@ -473,7 +514,7 @@ export function threadUsecases(deps: ThreadDeps) {
     const index = conversation.messages.findIndex(m => m.id === input.messageId && m.role === 'assistant');
     const message = conversation.messages[index];
     const sources = message?.meta?.sources ?? [];
-    if (!message || !sources.length) throw new InputError('Svaret har inga källor att göra ett kort av.');
+    if (!message || !sources.length) throw new InputError('Svaret har inga källor att göra ett ärende av.');
     const topic = 'answer:' + input.messageId;
     const existing = await store.openThread(persona.id, topic);
     if (existing) return { threadId: existing.id };
@@ -519,7 +560,7 @@ export function threadUsecases(deps: ThreadDeps) {
         waitingOn: null,
         deadline: null,
         trigger: {
-          reason: `Du frågade ${now.toLocaleTimeString('sv-SE', { timeStyle: 'short', timeZone: 'Europe/Stockholm' })} och gjorde svaret till ett kort`,
+          reason: `Du frågade ${now.toLocaleTimeString('sv-SE', { timeStyle: 'short', timeZone: 'Europe/Stockholm' })} och gjorde svaret till ett ärende`,
           source: 'Startsidan',
           at,
         },
@@ -547,7 +588,7 @@ export function threadUsecases(deps: ThreadDeps) {
     if (!inserted) {
       const raced = await store.openThread(persona.id, topic);
       if (raced) return { threadId: raced.id };
-      throw new InputError('Kortet kunde inte skapas.');
+      throw new InputError('Ärendet kunde inte skapas.');
     }
     return { threadId: id };
   }
@@ -564,6 +605,7 @@ export function threadUsecases(deps: ThreadDeps) {
     attentionFor,
     listThreadsFor,
     threadFor,
+    itemHistory,
     dismissAny,
     cardFromAnswer,
   };

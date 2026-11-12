@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import type { MockApi } from './support';
-import { desktop, expect, expectNoAxeViolations, narrow, open, phone, reflowProblems, test } from './support';
+import { composer, desktop, expect, expectNoAxeViolations, narrow, open, phone, reflowProblems, test } from './support';
 
 /** The invoice card as a connector that asks for a review one row at a time declares it (D70). */
 const reviewed = (api: MockApi) => {
@@ -16,7 +16,7 @@ test.describe('confirmed review completion', () => {
     test(`a confirmed receipt shows a check and respects ${reducedMotion} motion`, async ({ page, api }) => {
       await page.emulateMedia({ reducedMotion });
       reviewed(api);
-      await open(page, '/cards/fakturor/review');
+      await open(page, '/todo?item=fakturor&review=fakturor');
       const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
       await review.getByRole('button', { name: 'Attestera', exact: true }).click();
       await review.getByRole('button', { name: 'Lämna kvar', exact: true }).click();
@@ -38,7 +38,7 @@ test.describe('confirmed review completion', () => {
       else expect(animation.name).not.toBe('none');
       await expect(completion).toContainText('1 faktura attesterad');
       if (reducedMotion === 'no-preference') await page.screenshot({ path: 'test-results/review-completed.png' });
-      await expect(page).toHaveURL('/?card=fakturor');
+      await expect(page).toHaveURL('/todo?item=fakturor');
       await expect(review).toHaveCount(0);
     });
   }
@@ -71,13 +71,13 @@ test.describe('confirmed review completion', () => {
       api.threads = api.threads.map(t => (t.id === card.id ? next : t));
       await route.fulfill({ json: { kind: 'execute', thread: next } });
     });
-    await open(page, '/cards/fakturor/review');
+    await open(page, '/todo?item=fakturor&review=fakturor');
     const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
     await review.getByRole('button', { name: 'Attestera', exact: true }).click();
     await review.getByRole('button', { name: 'Hoppa över', exact: true }).click();
     await review.getByRole('button', { name: 'Hoppa över', exact: true }).click();
     await review.getByRole('button', { name: 'Attestera 1', exact: true }).click();
-    await expect(page).toHaveURL('/?card=fakturor');
+    await expect(page).toHaveURL('/todo?item=fakturor');
     expect(completionShown).toBe(false);
   });
 });
@@ -97,7 +97,7 @@ for (const [layout, viewport] of [
           ref: `invoice-${index}`,
           label: `Leverantör ${index + 1} · 1 000 kr`,
         }));
-        await open(page, '/cards/fakturor/review');
+        await open(page, '/todo?item=fakturor&review=fakturor');
         const review = page.getByRole('dialog', { name: `Granska ${count} rader` });
         await expect(review.getByRole('button', { name: 'Attestera', exact: true })).toBeEnabled();
         await expect(review.getByRole('list', { name: 'Rader', exact: true })).toHaveCount(count < 5 ? 1 : 0);
@@ -109,7 +109,7 @@ for (const [layout, viewport] of [
         }
         await review.getByRole('button', { name: 'Översikt', exact: true }).click();
         await review.getByRole('button', { name: `Granska rad ${count}:`, exact: false }).click();
-        await expect(page).toHaveURL(`/cards/fakturor/review?step=${count}`);
+        await expect(page).toHaveURL(`/todo?item=fakturor&review=fakturor&step=${count}`);
         await expect(review.getByRole('heading', { name: `Leverantör ${count} · 1 000 kr` })).toBeVisible();
         await review.getByRole('button', { name: 'Attestera', exact: true }).click();
         await expect(review.getByRole('list', { name: 'Hittills' })).toContainText('Vald för godkännande');
@@ -120,27 +120,27 @@ for (const [layout, viewport] of [
   });
 }
 
-test.describe('rows with a document are reviewed one at a time in a drawer over Hem, and the receipt earns the check (D70, D73 amended)', () => {
+test.describe('rows with a document are reviewed one at a time in a drawer over the page, and the receipt earns the check (D70, D73 amended, D111 rule 5)', () => {
   test.use({ viewport: desktop });
 
-  test('Granska opens the review over Hem at its own address, each row is decided beside its document with the step in the address, one button writes, and Hem keeps the row in place with the receipt before it goes to Klart', async ({
+  test('Granska on a work item in Att göra opens the review over the queue, each row is decided beside its document with the step in the address, one button writes, and the queue keeps the row in place with the receipt before it goes to Klart', async ({
     page,
     api,
   }) => {
     reviewed(api);
-    await open(page, '/');
-    const row = page.getByRole('main').locator('#thread-fakturor');
-    await row.getByRole('link', { name: 'Granska 3' }).click();
-    // A drawer over Hem with an address of its own (D73 amended): named by its title, Hem under the scrim with the card
-    // beside the column, so the row says "öppet bredvid"; the ✕ is the one close, and no "Spara och stäng" in words.
-    await expect(page).toHaveURL('/cards/fakturor/review');
+    await open(page, '/todo');
+    await page.locator('#work-fakturor').getByRole('link').click();
+    await page.getByRole('complementary', { name: 'Valt ärende' }).getByRole('link', { name: 'Granska 3' }).click();
+    // A drawer over Att göra, in its own address (D111 rule 5): named by its title, the queue under the scrim with the
+    // item in its pane, so its row is the current one; the ✕ is the one close, and no "Spara och stäng" in words.
+    await expect(page).toHaveURL('/todo?item=fakturor&review=fakturor');
     const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
     await expect(review).toBeVisible();
     await expect(review.getByRole('heading', { level: 2, name: 'Granska 3 rader' })).toBeVisible();
     await expect(review).toContainText('Attestera 3 fakturor, 48 200 kr · inget skrivs förrän du skickar');
     await expect(review).toContainText('Dina val skickas i sista steget.');
     await expect(page).toHaveTitle('Granska 3 rader · Startsidan');
-    await expect(page.locator('#thread-fakturor')).toContainText('öppet bredvid');
+    await expect(page.locator('#work-fakturor')).toHaveAttribute('aria-current', 'true');
     await expect(review.getByRole('button', { name: 'Stäng', exact: true })).toBeVisible();
     await expect(review.getByRole('button', { name: 'Spara och stäng' })).toHaveCount(0);
     // The document is read from the connector and named; the row's one next step holds the focus, so Enter takes it.
@@ -148,34 +148,37 @@ test.describe('rows with a document are reviewed one at a time in a drawer over 
     const attest = review.getByRole('button', { name: 'Attestera', exact: true });
     await expect(attest).toBeFocused();
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL('/cards/fakturor/review?step=2');
+    await expect(page).toHaveURL('/todo?item=fakturor&review=fakturor&step=2');
     await expect(review.getByRole('heading', { name: 'Skolmaterial Norrland AB · 18 300 kr' })).toBeVisible();
     await review.getByRole('button', { name: 'Lämna kvar' }).click();
-    await expect(page).toHaveURL('/cards/fakturor/review?step=3');
+    await expect(page).toHaveURL('/todo?item=fakturor&review=fakturor&step=3');
     await expect(review.getByRole('heading', { name: 'Städservice Mitt AB · 8 500 kr' })).toBeVisible();
     await review.getByRole('button', { name: 'Attestera', exact: true }).click();
     // The last step says what was chosen, and nothing has been written yet.
-    await expect(page).toHaveURL('/cards/fakturor/review?step=4');
+    await expect(page).toHaveURL('/todo?item=fakturor&review=fakturor&step=4');
     await expect(review.getByRole('heading', { name: 'Det du valt' })).toBeVisible();
     await expect(review).toContainText('2 av 3 skickas, 1 lämnas kvar');
     await expectNoAxeViolations(page);
     await review.getByRole('button', { name: 'Attestera 2' }).click();
-    // Back on Hem with the card beside it: the row keeps its place with the receipt and the check, the card carries
-    // Ångra, the toast says where the card went; then the row leaves. The steps were replaced, so Back leaves Hem's card.
-    await expect(page).toHaveURL('/?card=fakturor');
+    // Back in Att göra with the item in its pane: the row keeps its place with the receipt and its state, the card
+    // carries Ångra, the toast says where the card went; then the row leaves. The steps were replaced, so Back leaves
+    // the item.
+    await expect(page).toHaveURL('/todo?item=fakturor');
     await expect(review).toHaveCount(0);
-    const hemRow = page.getByRole('main').locator('#thread-fakturor');
-    await expect(hemRow).toContainText('2 fakturor attesterade · Ekonomisystemet svarade');
+    const hemRow = page.getByRole('list', { name: 'Behöver dig' }).locator('#work-fakturor');
+    await expect(hemRow).toContainText('2 fakturor attesterade');
     await expect(hemRow.getByRole('img', { name: 'Klart' })).toBeVisible();
-    const card = page.getByRole('dialog', { name: 'Kort', exact: true });
-    await expect(card.getByRole('button', { name: /^Ångra allt · / })).toBeVisible();
+    const card = page.getByRole('complementary', { name: 'Valt ärende' });
+    // The receipt is on the item, row by row, with its Ångra and the time left (D112 item 4, board ActReceipt).
+    await expect(card.getByRole('button', { name: /^Ångra · \d+ min kvar$/ })).toBeVisible();
+    await expect(card.getByRole('list', { name: 'Kvitto, rad för rad' }).getByRole('listitem')).toHaveCount(2);
     const toasts = page.getByRole('region', { name: 'Aviseringar' });
-    await expect(toasts.getByText(/^2 fakturor attesterade\. Kortet ligger under Klart\./)).toBeVisible();
+    await expect(toasts.getByText(/^2 fakturor attesterade\. Ärendet ligger under Klart\./)).toBeVisible();
     await expect(toasts.getByRole('button', { name: 'Ångra' })).toBeVisible();
     await expect(toasts.getByRole('link', { name: 'Visa' })).toBeVisible();
     await expect(hemRow).toHaveCount(0, { timeout: 5_000 });
     await page.goBack();
-    await expect(page).toHaveURL('/');
+    await expect(page).not.toHaveURL(/review=/);
   });
 
   test('Esc on a step leads back to the card with the decisions as its selection, writes nothing, and gives the focus back to Granska', async ({
@@ -183,16 +186,16 @@ test.describe('rows with a document are reviewed one at a time in a drawer over 
     api,
   }) => {
     reviewed(api);
-    await open(page, '/?card=fakturor');
-    const card = page.getByRole('dialog', { name: 'Kort', exact: true });
+    await open(page, '/todo?item=fakturor');
+    const card = page.getByRole('complementary', { name: 'Valt ärende' });
     await card.getByRole('link', { name: 'Granska 3' }).click();
     const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
     await review.getByRole('button', { name: 'Lämna kvar' }).click();
     await review.getByRole('button', { name: 'Attestera', exact: true }).click();
     await review.getByRole('button', { name: 'Föregående' }).click();
-    await expect(page).toHaveURL('/cards/fakturor/review?step=2');
+    await expect(page).toHaveURL('/todo?item=fakturor&review=fakturor&step=2');
     await page.keyboard.press('Escape');
-    await expect(page).toHaveURL('/?card=fakturor');
+    await expect(page).toHaveURL('/todo?item=fakturor');
     await expect(review).toHaveCount(0);
     const boxes = card.getByRole('checkbox');
     await expect(boxes.nth(0)).not.toBeChecked();
@@ -203,78 +206,82 @@ test.describe('rows with a document are reviewed one at a time in a drawer over 
     expect(api.threads.find(t => t.id === 'fakturor')!.state).toBe('open');
   });
 
-  test('the address opens a step directly and survives a reload, Föregående rewrites it, ✕ leads back to the card, and a card or a step that is not there says so in the drawer', async ({
+  test('the address opens a step directly and survives a reload, the address from before leads there, Föregående rewrites it, ✕ leads back to the card, and a card or a step that is not there says so in the drawer', async ({
     page,
     api,
   }) => {
     reviewed(api);
+    // A link from before the review lay over its page (D73 amended): the work item in Att göra with the review over it,
+    // at its step (D112).
     await open(page, '/cards/fakturor/review?step=2');
+    await expect(page).toHaveURL('/todo?item=fakturor&review=fakturor&step=2');
     const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
     await expect(review.getByRole('heading', { name: 'Skolmaterial Norrland AB · 18 300 kr' })).toBeVisible();
     await expect(review.getByText('2 av 3', { exact: true })).toBeVisible();
     await expect(review.getByRole('img', { name: /Skolmaterial Norrland AB/ })).toBeVisible();
-    // Under the drawer stands what `/?card=fakturor` draws.
-    await expect(page.locator('#thread-fakturor')).toContainText('öppet bredvid');
+    // Under the drawer stands what `/todo?item=fakturor` draws.
+    await expect(page.locator('#work-fakturor')).toHaveAttribute('aria-current', 'true');
     await page.reload();
     await expect(review.getByRole('heading', { name: 'Skolmaterial Norrland AB · 18 300 kr' })).toBeVisible();
     await review.getByRole('button', { name: 'Föregående' }).click();
-    await expect(page).toHaveURL('/cards/fakturor/review');
+    await expect(page).toHaveURL('/todo?item=fakturor&review=fakturor');
     await expect(review.getByRole('heading', { name: 'Energibolaget AB · 21 400 kr' })).toBeVisible();
     await review.getByRole('button', { name: 'Attestera', exact: true }).click();
     await review.getByRole('button', { name: 'Stäng', exact: true }).click();
-    await expect(page).toHaveURL('/?card=fakturor');
-    const card = page.getByRole('dialog', { name: 'Kort', exact: true });
+    await expect(page).toHaveURL('/todo?item=fakturor');
+    const card = page.getByRole('complementary', { name: 'Valt ärende' });
     await expect(card.getByRole('checkbox').nth(0)).toBeChecked();
     await expect(card.getByRole('link', { name: 'Granska 3' })).toBeFocused();
 
-    await open(page, '/cards/fakturor/review?step=9');
+    await open(page, '/todo?item=fakturor&review=fakturor&step=9');
     const noStep = page.getByRole('dialog', { name: 'Steget finns inte' });
     await expect(noStep.getByRole('heading', { level: 2, name: 'Steget finns inte' })).toBeVisible();
     await expect(noStep.getByRole('link', { name: 'Till första steget' })).toHaveAttribute(
       'href',
-      '/cards/fakturor/review',
+      '/todo?item=fakturor&review=fakturor',
     );
     await expectNoAxeViolations(page);
     await noStep.getByRole('button', { name: 'Stäng', exact: true }).click();
-    await expect(page).toHaveURL('/?card=fakturor');
+    await expect(page).toHaveURL('/todo?item=fakturor');
 
-    await open(page, '/cards/okand/review');
-    const noCard = page.getByRole('dialog', { name: 'Kortet finns inte' });
-    await expect(noCard.getByRole('heading', { level: 2, name: 'Kortet finns inte' })).toBeVisible();
-    await expect(page).toHaveTitle('Kortet finns inte · Startsidan');
+    await open(page, '/todo?item=okand&review=okand');
+    const noCard = page.getByRole('dialog', { name: 'Ärendet finns inte' });
+    await expect(noCard.getByRole('heading', { level: 2, name: 'Ärendet finns inte' })).toBeVisible();
+    await expect(page).toHaveTitle('Ärendet finns inte · Startsidan');
     await page.keyboard.press('Escape');
-    await expect(page).toHaveURL('/');
+    await expect(page).toHaveURL('/todo');
     await expect(noCard).toHaveCount(0);
   });
 
   test('a card without a review has nothing to review', async ({ page, api }) => {
     expect(api.threads.find(t => t.id === 'fakturor')!.actions.some(a => a.review)).toBe(false);
-    await open(page, '/cards/fakturor/review');
+    await open(page, '/todo?item=fakturor&review=fakturor');
     await expect(
-      page.getByRole('dialog', { name: 'Kortet finns inte' }).getByRole('heading', { name: 'Kortet finns inte' }),
+      page.getByRole('dialog', { name: 'Ärendet finns inte' }).getByRole('heading', { name: 'Ärendet finns inte' }),
     ).toBeVisible();
   });
 });
 
-test.describe('the review where the card stands beside Hem (D73 amended)', () => {
+test.describe('the review where the work item stands beside the queue (D73 amended, D112)', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test('the card is the panel beside the column under the drawer, and Esc gives the focus back to its Granska', async ({
+  test('the item is the reading pane beside the list under the drawer, and Esc gives the focus back to its Granska', async ({
     page,
     api,
   }) => {
     reviewed(api);
-    await open(page, '/cards/fakturor/review?step=2');
+    await open(page, '/todo?item=fakturor&review=fakturor&step=2');
     const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
     await expect(review.getByRole('heading', { name: 'Skolmaterial Norrland AB · 18 300 kr' })).toBeVisible();
-    await expect(page.getByRole('dialog', { name: 'Kort', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: 'Ärende' })).toHaveCount(0);
+    await expect(page.getByRole('complementary', { name: 'Valt ärende' })).toHaveCount(1);
     await review.getByRole('button', { name: 'Attestera', exact: true }).click();
-    await expect(page).toHaveURL('/cards/fakturor/review?step=3');
+    await expect(page).toHaveURL('/todo?item=fakturor&review=fakturor&step=3');
     await expectNoAxeViolations(page);
     await page.keyboard.press('Escape');
-    await expect(page).toHaveURL('/?card=fakturor');
+    await expect(page).toHaveURL('/todo?item=fakturor');
     // The approved row is ticked; the rows the review never judged are as the source marked them (amended 2026-11-11).
-    const card = page.getByRole('complementary', { name: 'Kort' });
+    const card = page.getByRole('complementary', { name: 'Valt ärende' });
     await expect(card.getByRole('checkbox').nth(1)).toBeChecked();
     await expect(card.getByRole('checkbox').nth(0)).toBeChecked();
     await expect(card.getByRole('checkbox').nth(2)).not.toBeChecked();
@@ -286,8 +293,8 @@ test.describe('the review where the card stands beside Hem (D73 amended)', () =>
     api,
   }) => {
     reviewed(api);
-    await open(page, '/?card=fakturor');
-    const card = page.getByRole('complementary', { name: 'Kort' });
+    await open(page, '/todo?item=fakturor');
+    const card = page.getByRole('complementary', { name: 'Valt ärende' });
     const boxes = card.getByRole('checkbox');
     // The source marks the two rows that match an order.
     await expect(boxes.nth(0)).toBeChecked();
@@ -297,7 +304,7 @@ test.describe('the review where the card stands beside Hem (D73 amended)', () =>
     const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
     await expect(review).toBeVisible();
     await review.getByRole('button', { name: 'Stäng', exact: true }).click();
-    await expect(page).toHaveURL('/?card=fakturor');
+    await expect(page).toHaveURL('/todo?item=fakturor');
     await expect(review).toHaveCount(0);
     await expect(boxes.nth(0)).toBeChecked();
     await expect(boxes.nth(1)).toBeChecked();
@@ -308,40 +315,109 @@ test.describe('the review where the card stands beside Hem (D73 amended)', () =>
     await card.getByRole('link', { name: 'Granska 3' }).click();
     await review.getByRole('button', { name: 'Lämna kvar' }).click();
     await page.keyboard.press('Escape');
-    await expect(page).toHaveURL('/?card=fakturor');
+    await expect(page).toHaveURL('/todo?item=fakturor');
     await expect(boxes.nth(0)).not.toBeChecked();
     await expect(boxes.nth(1)).toBeChecked();
     await expect(boxes.nth(2)).toBeChecked();
   });
 });
 
-test.describe("the review on a phone: a tall sheet stacked over the card's sheet (D73, second amendment)", () => {
-  test.use({ viewport: phone });
+test.describe('the review lies over the page it was opened on and closes to it as it was (D111 rule 5)', () => {
+  test.use({ viewport: desktop });
+  const invoices = (page: Page) => page.getByRole('article', { name: 'Ärende: Attestera 3 fakturor, 48 200 kr' });
 
-  /** The card's sheet, found by its dialog: covered by the review it is inert and hidden, so not by its role. */
-  const cardSheet = (page: Page) => page.locator('dialog[aria-label="Kort: Attestera 3 fakturor, 48 200 kr"]');
-
-  test("Granska in the card's sheet opens the review over it, the steps follow the address, and Esc leads back into the card's sheet with the selection and the focus on Granska", async ({
+  test('Granska on a card beside Personal stays over Personal and closes to that card, with the focus on Granska', async ({
     page,
     api,
   }) => {
     reviewed(api);
+    await open(page, '/staff?card=fakturor');
+    const granska = invoices(page).getByRole('link', { name: 'Granska 3' });
+    await expect(granska).toHaveAttribute('href', '/staff?card=fakturor&review=fakturor');
+    await granska.click();
+    await expect(page).toHaveURL('/staff?card=fakturor&review=fakturor');
+    const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
+    await expect(review.getByRole('heading', { level: 2, name: 'Granska 3 rader' })).toBeVisible();
+    await expect(page).toHaveTitle('Granska 3 rader · Startsidan');
+    // Personal stays the page under it; nothing leads to Hem.
+    await expect(page.getByRole('heading', { level: 1, name: 'Personal' })).toBeAttached();
+    await expect(page.getByRole('heading', { level: 1, name: /^Hej / })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+    await review.getByRole('button', { name: 'Lämna kvar' }).click();
+    await page.keyboard.press('Escape');
+    await expect(review).toHaveCount(0);
+    await expect(page).toHaveURL('/staff?card=fakturor');
+    await expect(page).toHaveTitle('Personal · Startsidan');
+    // The row left behind loses its tick on the card, and the focus is back on the card's Granska.
+    await expect(invoices(page).getByRole('checkbox').nth(0)).not.toBeChecked();
+    await expect(granska).toBeFocused();
+    expect(api.threads.find(t => t.id === 'fakturor')!.state).toBe('open');
+  });
+
+  test('Granska on a card in an answer lies over the conversation and closes to it', async ({ page, api }) => {
+    reviewed(api);
     await open(page, '/');
-    await page
-      .locator('#thread-fakturor')
-      .getByRole('link', { name: 'Attestera 3 fakturor, 48 200 kr', exact: true })
-      .click();
-    await expect(page).toHaveURL('/?card=fakturor');
-    const card = page.getByRole('dialog', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' });
+    await composer(page).fill('attestera en faktura');
+    await composer(page).press('Enter');
+    const card = invoices(page);
     await expect(card).toBeVisible();
+    await expect(page).toHaveURL(/\/conversations\/[^/?]+$/);
+    const conversation = new URL(page.url()).pathname;
     await card.getByRole('link', { name: 'Granska 3' }).click();
-    await expect(page).toHaveURL('/cards/fakturor/review');
-    // Two sheets, one stack: the review on top with the focus, the card's sheet receding beneath it and inert.
+    await expect(page).toHaveURL(`${conversation}?review=fakturor`);
     const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
     await expect(review).toBeVisible();
-    await expect(review).toHaveAttribute('data-sheet-stack', 'top');
-    await expect(cardSheet(page)).toHaveAttribute('data-sheet-stack', 'covered');
-    await expect(cardSheet(page)).toHaveAttribute('inert', '');
+    await review.getByRole('button', { name: 'Stäng', exact: true }).click();
+    await expect(review).toHaveCount(0);
+    await expect(page).toHaveURL(conversation);
+    await expect(page.getByRole('article', { name: /^Assistenten/ })).toContainText('saknar beställning');
+    await expect(card.getByRole('link', { name: 'Granska 3' })).toBeFocused();
+  });
+
+  test("over the shell's drawer on Kalender Esc closes the review, then the card, and Kalender stays", async ({
+    page,
+    api,
+  }) => {
+    reviewed(api);
+    await open(page, '/calendar?card=fakturor');
+    const drawer = page.getByRole('dialog', { name: 'Ärende' });
+    const granska = drawer.getByRole('link', { name: 'Granska 3' });
+    await granska.click();
+    await expect(page).toHaveURL('/calendar?card=fakturor&review=fakturor');
+    const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
+    await expect(review.getByRole('button', { name: 'Attestera', exact: true })).toBeFocused();
+    await expectNoAxeViolations(page);
+    await page.keyboard.press('Escape');
+    await expect(review).toHaveCount(0);
+    await expect(page).toHaveURL('/calendar?card=fakturor');
+    await expect(granska).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(drawer).toHaveCount(0);
+    await expect(page).toHaveURL(/\/calendar$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Vecka' })).toBeVisible();
+  });
+});
+
+test.describe('the review on a phone: a tall sheet over the work item alone (D73, second amendment, D112)', () => {
+  test.use({ viewport: phone });
+
+  test('Granska on the item opens the review over it, the steps follow the address, and Esc leads back to the item with the selection and the focus on Granska', async ({
+    page,
+    api,
+  }) => {
+    reviewed(api);
+    await open(page, '/todo');
+    await page.locator('#work-fakturor').getByRole('link').click();
+    await expect(page).toHaveURL('/todo?item=fakturor');
+    // Where the pane does not fit the item is its page, alone on the surface (D112 item 12).
+    const card = page.getByRole('main');
+    await expect(page.getByRole('heading', { level: 1, name: 'Attestera 3 fakturor, 48 200 kr' })).toBeVisible();
+    await expect(card).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await card.getByRole('link', { name: 'Granska 3' }).click();
+    await expect(page).toHaveURL('/todo?item=fakturor&review=fakturor');
+    const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
+    await expect(review).toBeVisible();
     await expect(review.getByRole('heading', { level: 2, name: 'Granska 3 rader' })).toBeVisible();
     await expect(review).toContainText('Attestera 3 fakturor, 48 200 kr · inget skrivs förrän du skickar');
     await expect(review.getByRole('button', { name: 'Stäng', exact: true })).toBeVisible();
@@ -359,12 +435,12 @@ test.describe("the review on a phone: a tall sheet stacked over the card's sheet
     await expect(attest).toBeInViewport();
     await expectNoAxeViolations(page);
     await review.getByRole('button', { name: 'Lämna kvar' }).click();
-    await expect(page).toHaveURL('/cards/fakturor/review?step=2');
+    await expect(page).toHaveURL('/todo?item=fakturor&review=fakturor&step=2');
     await expect(review.getByRole('heading', { name: 'Skolmaterial Norrland AB · 18 300 kr' })).toBeVisible();
     await review.getByRole('button', { name: 'Attestera', exact: true }).click();
-    await expect(page).toHaveURL('/cards/fakturor/review?step=3');
+    await expect(page).toHaveURL('/todo?item=fakturor&review=fakturor&step=3');
     await page.keyboard.press('Escape');
-    await expect(page).toHaveURL('/?card=fakturor');
+    await expect(page).toHaveURL('/todo?item=fakturor');
     await expect(review).toHaveCount(0);
     await expect(card).toBeVisible();
     const boxes = card.getByRole('checkbox');
@@ -375,26 +451,20 @@ test.describe("the review on a phone: a tall sheet stacked over the card's sheet
     expect(api.threads.find(t => t.id === 'fakturor')!.state).toBe('open');
   });
 
-  test("a cold open of a step stacks the review over the card's sheet, and ✕ leads back into the card's sheet", async ({
-    page,
-    api,
-  }) => {
+  test('a cold open of a step lays the review over the item, and ✕ leads back to the item', async ({ page, api }) => {
     reviewed(api);
-    await open(page, '/cards/fakturor/review?step=2');
+    await open(page, '/todo?item=fakturor&review=fakturor&step=2');
     const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
     await expect(review.getByRole('heading', { name: 'Skolmaterial Norrland AB · 18 300 kr' })).toBeVisible();
     await expect(review.getByText('2 av 3', { exact: true })).toBeVisible();
-    // Both sheets opened in one update: tree order puts the review on top.
-    await expect(review).toHaveAttribute('data-sheet-stack', 'top');
-    await expect(cardSheet(page)).toHaveAttribute('data-sheet-stack', 'covered');
     await expect(review.getByRole('heading', { name: 'Underlag från ekonomisystemet' })).toBeFocused();
     await expectNoAxeViolations(page);
     await review.getByRole('button', { name: 'Attestera', exact: true }).click();
-    await expect(page).toHaveURL('/cards/fakturor/review?step=3');
+    await expect(page).toHaveURL('/todo?item=fakturor&review=fakturor&step=3');
     await review.getByRole('button', { name: 'Stäng', exact: true }).click();
-    await expect(page).toHaveURL('/?card=fakturor');
+    await expect(page).toHaveURL('/todo?item=fakturor');
     await expect(review).toHaveCount(0);
-    const card = page.getByRole('dialog', { name: 'Kort: Attestera 3 fakturor, 48 200 kr' });
+    const card = page.getByRole('main');
     await expect(card).toBeVisible();
     await expect(card.getByRole('checkbox').nth(1)).toBeChecked();
     await expect(card.getByRole('link', { name: 'Granska 3' })).toBeFocused();
@@ -409,13 +479,13 @@ test.describe('the review across a resize (D73, second amendment)', () => {
     api,
   }) => {
     reviewed(api);
-    await open(page, '/cards/fakturor/review');
+    await open(page, '/todo?item=fakturor&review=fakturor');
     const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
     await review.getByRole('button', { name: 'Attestera', exact: true }).click();
-    await expect(page).toHaveURL('/cards/fakturor/review?step=2');
+    await expect(page).toHaveURL('/todo?item=fakturor&review=fakturor&step=2');
     await expect(review).not.toHaveAttribute('data-sheet-stack');
     await page.setViewportSize(phone);
-    await expect(review).toHaveAttribute('data-sheet-stack', 'top');
+    // The item is alone on the page there (D112 item 12), so the review is the one sheet, with no stack under it.
     await expect(review.getByRole('heading', { name: 'Skolmaterial Norrland AB · 18 300 kr' })).toBeVisible();
     await expect(review).toContainText('1 av 3 bedömda');
     await review.getByRole('button', { name: 'Översikt', exact: true }).click();
@@ -428,7 +498,7 @@ test.describe('the review at 320 px', () => {
 
   test('reflows without sideways scrolling', async ({ page, api }) => {
     reviewed(api);
-    await open(page, '/cards/fakturor/review');
+    await open(page, '/todo?item=fakturor&review=fakturor');
     const review = page.getByRole('dialog', { name: 'Granska 3 rader' });
     await expect(review.getByRole('heading', { level: 2, name: 'Granska 3 rader' })).toBeVisible();
     expect(await reflowProblems(page)).toEqual([]);

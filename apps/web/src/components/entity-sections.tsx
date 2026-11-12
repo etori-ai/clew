@@ -1,20 +1,22 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { useLocation } from 'react-router';
 import { useQueries, useQuery, type UseQueryResult } from '@tanstack/react-query';
 import {
-  fieldTone,
   openRef,
   viewRows,
+  type EntityAction,
   type EntityCard,
   type EntityDetail,
   type EntityKind,
   type EntitySection,
   type EntitySource,
   type View,
-  type ViewField,
 } from '@clew/contracts';
 import {
+  AreaChip,
   Button,
   Card,
+  DropdownMenu,
   HStack,
   Heading,
   Link,
@@ -27,20 +29,24 @@ import {
   Text,
   VStack,
   useAnnounce,
-  type AnimatedLayout,
 } from '@clew/ui';
-import { entitySectionQuery, viewQuery } from '../queries';
+import { today } from '@clew/calendar/dates';
+import { entitySectionQuery, threadsQuery, viewQuery } from '../queries';
+import { actionMenuItems, useEntityAction } from '../entity-actions';
+import { useMarks } from '../marks';
 import { withCard } from '../panel-address';
-import { unitPageHref } from '../person-address';
-import { compactField, groupFields, present, rowGroups, wholeRow, type FieldGroup } from '../view-fields';
+import { sourcePageHref } from '../talk-address';
+import { rowFacts } from '../work-items';
+import { groupFields, present, rowGroups, wholeRow, type FieldGroup } from '../view-fields';
 import { DeclaredView, FieldCell, FieldValue, fieldText, isBadged } from './view';
+import { WorkList, WorkRow } from './work-row';
 
 /**
- * The opened person's content (D97 item 5, artboards C, C2, D and G): "Behöver dig" with the reader's cards about them,
- * then one section per source that is about a person, each named with its source and each read on its own, so a slow
- * or silent source never holds the others. A source that answered without a row for this person says nothing (no row
- * means "none" or "not allowed"); one that did not answer says so in its own place with a way to ask again. The
- * panel beside a list, the person's page and the phone draw from the same pieces.
+ * The opened person's or unit's content (D97 item 5, D112 item 5, board Person): "Behöver dig" with the reader's work
+ * items about them, then one section per source that is about them, each named with its source and each read on its
+ * own, so a slow or silent source never holds the others. A source that answered without a row says nothing (no row
+ * means "none" or "not allowed"); one that did not answer says so in its own place with a way to ask again. The person's
+ * page and the unit's page draw from the same pieces, in the frame of `entity-page.tsx`.
  */
 type RowsView = Extract<View, { kind: 'table' | 'list' }>;
 type Row = Record<string, unknown>;
@@ -49,8 +55,6 @@ export interface SectionAnswer {
   source: EntitySource;
   query: UseQueryResult<EntitySection, Error>;
 }
-/** The value Behöver dig takes in the address (`?section=`): never a capability's name, which always has a dot. */
-export const NEEDS_YOU = 'needs-you';
 const rowsView = (view: View): RowsView | null => (view.kind === 'table' || view.kind === 'list' ? view : null);
 /** The source answered, and had no row for this person: the section is left out. */
 export const rowless = (a: SectionAnswer) => a.query.data?.status === 'ok' && !a.query.data.row;
@@ -63,42 +67,6 @@ export const rowOf = (a: SectionAnswer): Row | undefined =>
 export const drawnSections = (answers: SectionAnswer[]) => answers.filter(a => !rowless(a));
 /** Whose a source is, as a section names it (D97, artboards B and C): Clew's own domain as Clew, any other by its name. */
 export const sourceCaption = (source: Pick<EntitySource, 'source' | 'own'>) => (source.own ? 'Clew' : source.source);
-
-/**
- * The line under a person's name (artboards C, C2 and D): their role and unit as the directory says it, the unit a link
- * to the unit's page (D97) with the page they were opened from as its way back, but only for a unit the reader may open:
- * one they manage (`managed`) or their own (`self`). A colleague's unit is plain text.
- */
-export function PersonLine({
-  entity,
-  relation,
-  from,
-}: {
-  entity: EntityDetail['entity'];
-  relation: EntityDetail['relation'];
-  from?: string | null;
-}) {
-  const { detail, unit } = entity;
-  if (!unit || (relation !== 'managed' && relation !== 'self'))
-    return detail || unit ? <>{detail ?? unit?.label}</> : null;
-  const link = (
-    <Link href={unitPageHref(unit.id, { from: from ?? null })} hasUnderline>
-      {unit.label}
-    </Link>
-  );
-  const suffix = ` · ${unit.label}`;
-  const before =
-    !detail || detail === unit.label ? '' : detail.endsWith(suffix) ? detail.slice(0, -suffix.length) : detail;
-  return before ? (
-    <>
-      {before}
-      {' · '}
-      {link}
-    </>
-  ) : (
-    link
-  );
-}
 
 /**
  * Every source's answer for the person, each its own read (artboard C: "Kompetenssystemet svarade inte" while the
@@ -175,47 +143,6 @@ export function SectionRow({ source, row }: { source: EntitySource; row: Row }) 
       )}
     </VStack>
   );
-}
-
-/**
- * One line about a section, for the list of sections (artboards C2 and D): the row's state, the row in one value where
- * the view declares one (D97: "tors 12 nov"), and every other value with a tone ("2 försenade"), each once.
- */
-export function SectionSummary({ source, row }: { source: EntitySource; row: Row }) {
-  const view = rowsView(source.view);
-  if (!view) return null;
-  const title = view.fields.find(f => f.key === view.title);
-  const toned = view.fields.filter(f => f.format === 'status' && fieldTone(f, row[f.key]) !== 'none');
-  const shown = [title, compactField(view.fields), ...toned]
-    .filter((f): f is ViewField => !!f && present(row[f.key]))
-    .filter((f, i, all) => all.findIndex(x => x.key === f.key) === i);
-  if (shown.length === 0) return <Text type="supporting">Inget att visa.</Text>;
-  // The line sits in a row that is itself a link: an address, a number or a link out is said as text there.
-  return (
-    <HStack gap={2} vAlign="center" wrap="wrap">
-      {shown.map(f =>
-        f.format === 'email' || f.format === 'phone' || f.format === 'link' ? (
-          <Text key={f.key}>{String(row[f.key])}</Text>
-        ) : (
-          <FieldValue key={f.key} field={f} value={row[f.key]} text="ordinary" />
-        ),
-      )}
-    </HStack>
-  );
-}
-
-/** "1 att agera på · 1 till kännedom": what Behöver dig holds, for the list of sections. */
-export function cardsSummary(cards: EntityCard[]): string {
-  const fyi = cards.filter(c => c.kind === 'fyi').length;
-  const act = cards.length - fyi;
-  return [act ? `${act} att agera på` : '', fyi ? `${fyi} till kännedom` : ''].filter(Boolean).join(' · ');
-}
-
-/** A source's page in Clew, with the person's key and Clew's id filled in; none when the page needs an id Clew does not have. */
-export function pageHref(source: EntitySource, key: string, id: string | undefined): string | null {
-  if (!source.page) return null;
-  if (source.page.href.includes('{id}') && !id) return null;
-  return source.page.href.replaceAll('{key}', encodeURIComponent(key)).replaceAll('{id}', encodeURIComponent(id ?? ''));
 }
 
 /** The source's fuller read for this person (its view's `open`), as the row says how to ask for it. */
@@ -391,239 +318,201 @@ export function SectionFrame({
   );
 }
 
-/** The reader's cards about the person, each leading to the card on Hem, its source at the end of the line. */
-export function CardList({ cards }: { cards: EntityCard[] }) {
+/**
+ * A person's title as the directory says it, without the unit their page names elsewhere: the line before " · <unit>"
+ * ("Lärare 4–6"). None when the line is the unit alone, which is all a directory that knows no titles gives.
+ */
+export function personTitle(entity: EntityDetail['entity']): string | undefined {
+  const { detail, unit } = entity;
+  if (!detail) return undefined;
+  if (!unit) return detail;
+  if (detail === unit.label) return undefined;
+  const suffix = ` · ${unit.label}`;
+  return detail.endsWith(suffix) ? detail.slice(0, -suffix.length) : detail;
+}
+
+/** Whose a section is (board Person): the source's name as a badge in the system's hue, Clew's own domain as Clew. */
+export function SourceBadge({ source }: { source: EntitySource }) {
+  const ordinal = useMarks().system(source.connector)?.ordinal ?? null;
+  return <AreaChip ordinal={source.own ? null : ordinal} label={sourceCaption(source)} />;
+}
+
+/**
+ * A source's own page in Clew for the entity (D95, D111 rule 5: "Öppna samtalet" over the page, "Visa i Personal"), the
+ * one way into it, at the end of its section's heading line. A link, never an action.
+ */
+export function SourceWay({
+  source,
+  entity,
+}: {
+  source: EntitySource;
+  entity: { key: string; id?: string | undefined };
+}) {
+  const { pathname, search } = useLocation();
+  const href = source.page ? sourcePageHref(source.page, entity, { pathname, search }) : null;
+  return href && source.page ? (
+    <Link href={href} weight="semibold" isStandalone>
+      {source.page.title}
+    </Link>
+  ) : null;
+}
+
+/** A section's body while its source has not answered yet. */
+function Pending() {
   return (
-    <List density="compact" hasDividers edge="flush">
-      {cards.map(c => (
-        <ListItem
-          key={c.threadId}
-          label={
-            <Link href={withCard('/', '', c.threadId)} hasUnderline>
-              {c.title}
-            </Link>
-          }
-          endContent={
-            <Text type="supporting">
-              {c.source}
-              {c.kind === 'fyi' ? ' · till kännedom' : ''}
-            </Text>
-          }
-        />
-      ))}
-    </List>
+    <VStack gap={2}>
+      <Skeleton height={20} width="60%" />
+      <Skeleton height={20} width="40%" />
+    </VStack>
   );
 }
 
 /**
- * The one way into a source's fuller view (artboard C: "Öppna samtalet"): the source's own page in Clew when it has one,
- * otherwise its `open` read, by that read's title, as the person's page with this section chosen. Never both.
+ * One source's section body on a person's page (board Person): the source's row drawn by its declared view, then its
+ * fuller read in full (`view.open`), as the chosen section drew them before the sections stood one under the other. A
+ * source that did not answer says so with "Försök igen".
  */
-function WayIn({
-  answer,
-  row,
-  fullerHref,
-  page,
-}: {
-  answer: SectionAnswer;
-  row: Row;
-  fullerHref?: string;
-  page: string | null;
-}) {
-  const view = rowsView(answer.source.view);
-  const way =
-    page && answer.source.page
-      ? { title: answer.source.page.title, href: page }
-      : view?.open && openOf(answer.source, row) && fullerHref
-        ? { title: view.open.title, href: fullerHref }
-        : null;
-  if (!way) return null;
-  return (
-    <HStack>
-      <Link href={way.href} weight="semibold" isStandalone>
-        {way.title}
-      </Link>
-    </HStack>
-  );
-}
-
-/**
- * One source's section on the opened person or unit: its row, the fuller read under it as a short list, and the way in.
- * Its heading is level 3 under the person's name in the panel, level 2 on a page whose sections stand under its h1.
- */
-export function SourceSection({
-  answer,
-  personKey,
-  personId,
-  fullerHref,
-  headingLevel = 3,
-}: {
-  answer: SectionAnswer;
-  personKey: string;
-  personId: string | undefined;
-  /** The person's page with this section chosen. */
-  fullerHref?: string;
-  headingLevel?: 2 | 3;
-}) {
+export function PersonSourceBody({ answer, tableQuery }: { answer: SectionAnswer; tableQuery: string }) {
   const row = rowOf(answer);
+  if (answer.query.isPending) return <Pending />;
+  if (unanswered(answer) || !row) return <Unanswered answer={answer} />;
   return (
-    <SectionFrame title={answer.source.title} caption={sourceCaption(answer.source)} headingLevel={headingLevel}>
-      {answer.query.isPending ? (
-        <VStack gap={2}>
-          <Skeleton height={20} width="60%" />
-          <Skeleton height={20} width="40%" />
-        </VStack>
-      ) : unanswered(answer) || !row ? (
-        <Unanswered answer={answer} />
-      ) : (
-        <VStack gap={3}>
-          <SectionRow source={answer.source} row={row} />
-          <InlineRead source={answer.source} row={row} />
-          <WayIn
-            answer={answer}
-            row={row}
-            page={pageHref(answer.source, personKey, personId)}
-            {...(fullerHref ? { fullerHref } : {})}
-          />
-        </VStack>
-      )}
-    </SectionFrame>
-  );
-}
-
-/** Behöver dig: the cards about the person, first, named after the place they come from (Clew). */
-export function NeedsYouSection({ cards, headingLevel = 3 }: { cards: EntityCard[]; headingLevel?: 2 | 3 }) {
-  return (
-    <SectionFrame title="Behöver dig" caption="Clew" headingLevel={headingLevel}>
-      <CardList cards={cards} />
-    </SectionFrame>
+    <VStack gap={5}>
+      <SectionRow source={answer.source} row={row} />
+      {openOf(answer.source, row) && <OpenRead source={answer.source} row={row} tableQuery={tableQuery} />}
+    </VStack>
   );
 }
 
 /**
- * Every section on the opened person, one after the other, as they arrive: a section that turns out to have nothing
- * for the person leaves the list, and the ones after it glide up (Astryx's animated layout) instead of jumping.
+ * One source's section body on a unit's page: its row, and its fuller read under it as a short list of at most five,
+ * as the unit's sections have drawn them.
  */
-export function PersonSections({
-  cards,
-  answers,
-  personKey,
-  personId,
-  name,
-  fullerHref,
-  animatedLayout,
-}: {
-  cards: EntityCard[];
-  answers: SectionAnswer[];
-  personKey: string;
-  personId: string | undefined;
-  name: string;
-  fullerHref: (capability: string) => string;
-  animatedLayout: AnimatedLayout;
-}) {
-  const drawn = drawnSections(answers);
+export function UnitSourceBody({ answer }: { answer: SectionAnswer }) {
+  const row = rowOf(answer);
+  if (answer.query.isPending) return <Pending />;
+  if (unanswered(answer) || !row) return <Unanswered answer={answer} />;
   return (
-    <List aria-label={`Om ${name}`} density="compact" edge="flush" animatedLayout={animatedLayout}>
-      {cards.length > 0 && <ListItem itemKey={NEEDS_YOU} label={<NeedsYouSection cards={cards} />} />}
-      {drawn.map(a => (
-        <ListItem
-          key={a.source.capability}
-          itemKey={a.source.capability}
-          label={
-            <SourceSection
-              answer={a}
-              personKey={personKey}
-              personId={personId}
-              fullerHref={fullerHref(a.source.capability)}
-            />
-          }
-        />
-      ))}
-    </List>
+    <VStack gap={3}>
+      <SectionRow source={answer.source} row={row} />
+      <InlineRead source={answer.source} row={row} />
+    </VStack>
   );
 }
 
-/** One row in the list of sections (artboards C2 and D): the section's name, its source, one line about it. */
-export interface SectionNavRow {
-  id: string;
-  title: string;
-  source: string;
-  summary: ReactNode;
-  href?: string;
-  isSelected?: boolean;
-  /** A control at the row's end, for a row that is not a link (a source that did not answer: Försök igen). */
-  end?: ReactNode;
-}
-/** The list of sections: each row leads to its section, the chosen one marked as current. */
-export function SectionNav({ rows, label }: { rows: SectionNavRow[]; label?: string }) {
+/**
+ * "Behöver dig" on a person's or a unit's page (board Person): the reader's work items about them, each the one row a
+ * work item has everywhere (`WorkRow`: its state, title, why, when it is due, its source), opening beside the page as a
+ * card does (D111 rules 2 and 3), the page's address kept. The row of the item open beside the page is the current one.
+ * An item the stream does not hold (not read yet, or past its history) keeps a plain row with its title and source.
+ */
+export function NeedsYouRows({ cards }: { cards: EntityCard[] }) {
+  const { pathname, search } = useLocation();
+  const threads = useQuery(threadsQuery);
+  const marks = useMarks();
+  if (threads.isPending)
+    return (
+      <VStack gap={2}>
+        {cards.map(c => (
+          <Skeleton key={c.threadId} height={48} width="100%" />
+        ))}
+      </VStack>
+    );
+  const now = new Date().toISOString(),
+    day = today();
+  const open = new URLSearchParams(search).get('card');
   return (
-    <List hasDividers {...(label ? { 'aria-label': label } : {})}>
-      {rows.map(r => (
-        <ListItem
-          key={r.id}
-          itemKey={r.id}
-          align="start"
-          label={
-            <HStack gap={2} justify="between" vAlign="center" wrap="wrap">
-              <Text weight="semibold">{r.title}</Text>
-              <Text type="supporting">{r.source}</Text>
-            </HStack>
-          }
-          description={r.summary}
-          {...(r.href ? { href: r.href } : {})}
-          {...(r.isSelected ? { isSelected: true } : {})}
-          {...(r.end ? { endContent: r.end } : {})}
-        />
-      ))}
-    </List>
+    <WorkList label="Behöver dig">
+      {cards.map(c => {
+        const thread = threads.data?.threads.find(t => t.id === c.threadId);
+        const href = withCard(pathname, search, c.threadId);
+        return thread ? (
+          <WorkRow
+            key={c.threadId}
+            thread={thread}
+            facts={rowFacts(thread, now, day)}
+            source={marks.ofThread(thread).source}
+            href={href}
+            isSelected={open === c.threadId}
+          />
+        ) : (
+          <ListItem
+            key={c.threadId}
+            isSelected={open === c.threadId}
+            label={
+              <Link href={href} weight="semibold" color="primary">
+                {c.title}
+              </Link>
+            }
+            endContent={
+              <Text type="supporting" color="secondary" textWrap="nowrap">
+                {c.source}
+              </Text>
+            }
+          />
+        );
+      })}
+    </WorkList>
   );
 }
-/** The rows of the list of sections for a person: Behöver dig when there are cards, then each source that has something. */
-export function sectionNavRows(
-  cards: EntityCard[],
-  answers: SectionAnswer[],
-  href: (id: string) => string,
-  selected: string | undefined,
-): SectionNavRow[] {
-  const rows: SectionNavRow[] = [];
-  if (cards.length > 0)
-    rows.push({
-      id: NEEDS_YOU,
-      title: 'Behöver dig',
-      source: 'Clew',
-      summary: <Text type="supporting">{cardsSummary(cards)}</Text>,
-      href: href(NEEDS_YOU),
-      isSelected: selected === NEEDS_YOU,
-    });
-  for (const a of drawnSections(answers)) {
-    const row = rowOf(a);
-    const failed = unanswered(a);
-    rows.push({
-      id: a.source.capability,
-      title: a.source.title,
-      source: sourceCaption(a.source),
-      summary: a.query.isPending ? (
-        <Skeleton height={16} width={160} />
-      ) : failed || !row ? (
-        <Text type="supporting">Svarade inte.</Text>
-      ) : (
-        <SectionSummary source={a.source} row={row} />
-      ),
-      ...(failed
-        ? {
-            end: (
-              <Button
-                size="sm"
-                variant="secondary"
-                label="Försök igen"
-                aria-label={`Försök igen med ${a.source.title}`}
-                isLoading={a.query.isFetching}
-                onClick={() => void a.query.refetch()}
-              />
-            ),
-          }
-        : { href: href(a.source.capability), isSelected: selected === a.source.capability }),
-    });
-  }
-  return rows;
+
+/**
+ * The opened person's or unit's actions in the page's header (D112 item 5, board Person), every one of them: the first
+ * two as buttons, the rest under "Fler" grouped by the system they act in, as the row menu on Personal is (artboard
+ * A3). On a phone one button, "Åtgärder", the width of the column, holds them all. An action starts on the server and
+ * its work item opens beside the page it was started on (`entity-actions.ts`); a source's refusal is said aloud and
+ * stands under the buttons until the next action. They hold what can be done about the entity, never a choice of where
+ * Clew shows it, and never a way into a source's page, which is a link in its section.
+ */
+export function EntityActions({ detail, mobile }: { detail: EntityDetail; mobile: boolean }) {
+  const { start, error, dialog } = useEntityAction();
+  const { kind, key, name } = detail.entity;
+  const actions = detail.actions;
+  const run = (a: EntityAction) => start(a, { kind, key, name });
+  const refusal = error ? <Text as="p">{error}</Text> : null;
+  if (mobile)
+    return actions.length > 0 ? (
+      <VStack gap={2}>
+        <DropdownMenu
+          renderTrigger={trigger => (
+            <Button
+              {...trigger}
+              variant="secondary"
+              label="Åtgärder"
+              aria-label={`Åtgärder för ${name}`}
+              width="100%"
+            />
+          )}
+          presentation="adaptive"
+          items={actionMenuItems(actions, run)}
+        />
+        {refusal}
+        {dialog}
+      </VStack>
+    ) : null;
+  const shown = actions.slice(0, 2),
+    rest = actions.slice(2);
+  if (shown.length === 0) return null;
+  // One shape with or without a refusal, so the button that was pressed keeps the focus when the refusal appears.
+  return (
+    <VStack gap={2}>
+      <HStack gap={2} wrap="wrap" vAlign="center">
+        {shown.map(a => (
+          <Button key={a.capability} variant="secondary" label={a.title} onClick={() => run(a)} />
+        ))}
+        {rest.length > 0 && (
+          // The menu is named by its button, which says whose actions they are (Astryx's renderTrigger).
+          <DropdownMenu
+            renderTrigger={trigger => (
+              <Button {...trigger} variant="secondary" label="Fler" aria-label={`Fler åtgärder för ${name}`} />
+            )}
+            presentation="adaptive"
+            items={actionMenuItems(rest, run)}
+          />
+        )}
+      </HStack>
+      {refusal}
+      {dialog}
+    </VStack>
+  );
 }

@@ -24,12 +24,14 @@ import {
   VisuallyHidden,
   pixel,
   proportional,
+  resolveColumnWidths,
   useAnnounce,
 } from '@clew/ui';
 import { FieldCell, FieldValue, badgeVariant, fieldText, fieldWord, isBadged } from '../components/view';
-import { personHref } from '../components/person-panel';
 import type { EntityActionStart } from '../entity-actions';
-import { withCard } from '../panel-address';
+import { pageOnly, withCard } from '../panel-address';
+import { NEEDS_YOU, personPageFrom, personPageHref } from '../person-address';
+import { sourcePageHref } from '../talk-address';
 import { groupFields, present, rowGroups, type FieldGroup } from '../view-fields';
 import {
   byNeed,
@@ -37,10 +39,8 @@ import {
   columnValue,
   lensNeed,
   marksFor,
-  pageHref,
   rowOf,
   silentText,
-  titleField,
   viewFields,
   type Answer,
   type Row,
@@ -48,9 +48,9 @@ import {
 } from './staff-model';
 
 /**
- * The parts of Personal (D97, artboards A2, B, A3 and the left of C), each an Astryx composition: the Visa menu, the
- * row's menu, a unit's card on "Alla", under a lens and drawn compact beside an opened person, and the sentence that
- * says which system did not answer. `staff.tsx` reads the API and puts them together.
+ * The parts of Personal (D97, artboards A2, B and A3), each an Astryx composition: the Visa menu, the row's menu, a
+ * unit's card on "Alla" and under a lens, and the sentence that says which system did not answer. `staff.tsx` reads the
+ * API and puts them together.
  */
 
 type MenuItems = ComponentProps<typeof MoreMenu>['items'];
@@ -125,7 +125,8 @@ export function ShowMenu({
  * One person's menu (artboard A3): every action about a person, one section per system with the system as its title,
  * and a source's page as a way in under that source ("Öppna samtalet"). Under a lens its own source comes first. An
  * action starts on the server without the model (`useEntityAction`) and opens its card; nothing reaches the source's
- * write before the person decides on the card.
+ * write before the person decides on the card. The menu holds what can be done about the person, never a choice of
+ * where Clew shows them (the product owner, 2026-11-11).
  */
 export function RowMenu({ entity, ctx, lens }: { entity: EntityRef; ctx: Context; lens?: EntitySource }) {
   const { list, start } = ctx;
@@ -142,7 +143,7 @@ export function RowMenu({ entity, ctx, lens }: { entity: EntityRef; ctx: Context
       onClick: () => start(a, { key: entity.key, name: entity.name }),
     });
   for (const s of list.lenses) {
-    const href = s.page ? pageHref(s.page, entity, here) : null;
+    const href = s.page ? sourcePageHref(s.page, entity, here) : null;
     if (s.page && href) add(s.source, { id: `page:${s.capability}`, label: s.page.title, href });
   }
   const items: MenuItems = [...sections]
@@ -154,18 +155,32 @@ export function RowMenu({ entity, ctx, lens }: { entity: EntityRef; ctx: Context
 
 /**
  * The person's cards as links in "Just nu" (artboard A2, D97 item 5): "1 att agera på" and "1 förslag" (or "N …"), each
- * opening the card as Hem opens one when the server named the one card there is, and otherwise the person beside the
- * list, where Behöver dig lists their cards.
+ * opening the card beside the list when the server named the one card there is (D83 rule 1: the list stays, and the
+ * card shows what it asks before anything is decided; one thing at a time, so it takes the place of what the panel
+ * held). With several the link leads to the person's page at Behöver dig, with the list as its way back, where each
+ * card opens beside that page (D111, amended 2026-11-11: the panel holds one opened thing, never a list of cards).
  */
-export function cardLinks(list: EntityList, entity: EntityRef, opensPerson: string): ReactNode[] {
+export function cardLinks(
+  list: EntityList,
+  entity: EntityRef,
+  here: { pathname: string; search: string },
+): ReactNode[] {
   return cardLinkTexts(list, entity.key).map(link => (
-    <Link key={link.id} href={link.threadId ? withCard('/', '', link.threadId) : opensPerson} hasUnderline>
+    <Link
+      key={link.kind}
+      href={
+        link.threadId
+          ? withCard(here.pathname, pageOnly('', here.search), link.threadId)
+          : personPageHref(entity.key, { section: NEEDS_YOU, from: pageOnly(here.pathname, here.search) })
+      }
+      hasUnderline
+    >
       {link.text}
     </Link>
   ));
 }
 
-/** The person's name as the way to open them beside the list (D83 rule 1), with their initials before it. */
+/** The person's name as the way to their page, with the list as its way back, and their initials before it. */
 function Person({ entity, openers }: { entity: EntityRef; openers: Openers }) {
   const location = useLocation();
   return (
@@ -173,7 +188,7 @@ function Person({ entity, openers }: { entity: EntityRef; openers: Openers }) {
       <Avatar name={entity.name} size={32} tooltip={false} />
       <Link
         ref={openers(entity.id)}
-        href={personHref(location.pathname, location.search, entity.key)}
+        href={personPageFrom(location.pathname, location.search, entity.key)}
         weight="semibold"
       >
         {entity.name}
@@ -194,7 +209,7 @@ const columnHeader = (column: EntityColumn) => (
 function Marks({ entity, ctx }: { entity: EntityRef; ctx: Context }) {
   const location = useLocation();
   const marks = marksFor(ctx.list, ctx.answers, entity.key);
-  const links = cardLinks(ctx.list, entity, personHref(location.pathname, location.search, entity.key));
+  const links = cardLinks(ctx.list, entity, location);
   if (!marks.length && !links.length) return null;
   return (
     <HStack gap={2} vAlign="center" wrap="wrap">
@@ -212,8 +227,8 @@ interface TableRow extends Record<string, unknown> {
 }
 type Group = EntityList['groups'][number];
 const count = (n: number) => (n === 0 ? 'Ingen medarbetare' : `${n} medarbetare`);
-/** The unit's caption, as the card's toolbar: its name, and how many people it has unless the list is compact. */
-function UnitCard({ group, compact, children }: { group: Group; compact?: boolean; children: ReactNode }) {
+/** The unit's caption, as the card's toolbar: its name, and how many people it has. */
+function UnitCard({ group, children }: { group: Group; children: ReactNode }) {
   return (
     <Card padding={0}>
       <Toolbar
@@ -223,7 +238,7 @@ function UnitCard({ group, compact, children }: { group: Group; compact?: boolea
         startContent={
           <VStack gap={0}>
             <Text weight="semibold">{group.label}</Text>
-            {!compact && <Text type="supporting">{count(group.entities.length)}</Text>}
+            <Text type="supporting">{count(group.entities.length)}</Text>
           </VStack>
         }
       />
@@ -268,8 +283,9 @@ function phoneParts(groups: FieldGroup[], row: Row): { badges: ViewField[]; word
   return { badges, words };
 }
 /**
- * One person as a row on a phone (the shape the page had before D97): the initials and the name, which opens them,
- * the states that are badges, the rest as one line of words, and the row's menu at the end.
+ * One person as a row on a phone, and beside the panel where the table does not fit (the shape the page had before
+ * D97): the initials and the name, which leads to their page, the states that are badges, the rest as one line of
+ * words, and the row's menu at the end.
  */
 function PhoneRow({
   entity,
@@ -296,7 +312,7 @@ function PhoneRow({
       label={
         <Link
           ref={ctx.openers(entity.id)}
-          href={personHref(location.pathname, location.search, entity.key)}
+          href={personPageFrom(location.pathname, location.search, entity.key)}
           weight="semibold"
         >
           {entity.name}
@@ -327,38 +343,59 @@ function PhoneRow({
     />
   );
 }
+/** The widths of the list's columns: the name, a value on "Alla", Just nu and the menu. */
+const PERSON_WIDTH = proportional(2, { minWidth: 220 }),
+  VALUE_WIDTH = proportional(1, { minWidth: 160 }),
+  NOW_WIDTH = proportional(2, { minWidth: 200 }),
+  MENU_WIDTH = pixel(60);
+/** A cell of a lens: a state with its moment ("Bokat", "tors 12 nov. kl. 09:00") has room for both on one line. */
+const cellWidth = (g: FieldGroup) =>
+  proportional(1, { minWidth: groupFields(g).some(f => f.format === 'instant') ? 240 : g.beside.length ? 200 : 140 });
+/**
+ * The least width the whole list needs as a table, under a lens or on "Alla", as Astryx's Table works it out from its
+ * columns' widths (below it the table scrolls sideways). With the panel open beside the list, a window that does not
+ * keep this much for the list draws it as its rows instead, as a phone does: the page gives way to the panel, never
+ * scrolls sideways for it, and the panel keeps the width and the line every page has.
+ */
+export function listMinWidth(list: EntityList | undefined, lens: EntitySource | undefined): number {
+  const widths = lens
+    ? [PERSON_WIDTH, ...rowGroups(viewFields(lens.view)).map(cellWidth), MENU_WIDTH]
+    : [PERSON_WIDTH, ...(list?.columns ?? []).map(() => VALUE_WIDTH), NOW_WIDTH, MENU_WIDTH];
+  return resolveColumnWidths(widths.map((width, i) => ({ key: String(i), width }))).tableMinWidth;
+}
 const personColumn = (ctx: Context) => ({
   key: 'person',
   header: 'Person',
-  width: proportional(2, { minWidth: 220 }),
+  width: PERSON_WIDTH,
   renderCell: (r: TableRow) => <Person entity={r.entity} openers={ctx.openers} />,
 });
 const menuColumn = (ctx: Context, lens?: EntitySource) => ({
   key: 'menu',
   header: <VisuallyHidden>Åtgärder</VisuallyHidden>,
-  width: pixel(60),
+  width: MENU_WIDTH,
   renderCell: (r: TableRow) => <RowMenu entity={r.entity} ctx={ctx} {...(lens ? { lens } : {})} />,
 });
 
 /**
  * A unit on "Alla" (artboard A2): Person, one column per field an administrator chose, each from its source, "Just nu"
- * and the row's menu. On a phone the same people as rows: the name, the columns' words and the marks, the menu.
+ * and the row's menu. `narrow` (on a phone, and beside the panel where the table does not fit) the same people as rows:
+ * the name, the columns' words and the marks, the menu.
  */
 export function AllUnit({
   group,
   ctx,
-  mobile,
+  narrow,
   animatedLayout,
 }: {
   group: Group;
   ctx: Context;
-  mobile: boolean;
+  narrow: boolean;
   animatedLayout: AnimatedLayout;
 }) {
   const location = useLocation();
   return (
     <UnitCard group={group}>
-      {mobile ? (
+      {narrow ? (
         <List aria-label={group.label} hasDividers animatedLayout={animatedLayout}>
           {group.entities.map(e => {
             const values = ctx.list.columns
@@ -370,7 +407,7 @@ export function AllUnit({
                 key={e.key}
                 entity={e}
                 ctx={ctx}
-                links={cardLinks(ctx.list, e, personHref(location.pathname, location.search, e.key))}
+                links={cardLinks(ctx.list, e, location)}
                 badges={[
                   ...toned.map(({ c, value }) => (
                     <FieldValue key={`${c.capability}:${c.field.key}`} field={c.field} value={value} />
@@ -394,7 +431,7 @@ export function AllUnit({
             ...ctx.list.columns.map(c => ({
               key: `column:${c.capability}:${c.field.key}`,
               header: columnHeader(c),
-              width: proportional(1, { minWidth: 160 }),
+              width: VALUE_WIDTH,
               // A value without a tone is ordinary text, as the artboard draws "I tjänst" and "mån 16 nov".
               renderCell: (r: TableRow) => {
                 const row = rowOf(ctx.answers.get(c.capability), r.entity.key);
@@ -404,7 +441,7 @@ export function AllUnit({
             {
               key: 'now',
               header: 'Just nu',
-              width: proportional(2, { minWidth: 200 }),
+              width: NOW_WIDTH,
               renderCell: (r: TableRow) => <Marks entity={r.entity} ctx={ctx} />,
             },
             menuColumn(ctx),
@@ -436,19 +473,20 @@ function LensCell({ group, row }: { group: FieldGroup; row: Row }) {
 /**
  * A unit under a lens (artboard B): Person, one column per cell of the lens's view (a field and what it puts beside it,
  * the compact one left out, D97), and the row's menu; the people sorted by need, those the source has no row for last
- * with nothing in its columns. On a phone the same rows with the badges and the words under the name.
+ * with nothing in its columns. `narrow` (on a phone, and beside the panel where the table does not fit) the same rows
+ * with the badges and the words under the name.
  */
 export function LensUnit({
   group,
   lens,
   ctx,
-  mobile,
+  narrow,
   animatedLayout,
 }: {
   group: Group;
   lens: EntitySource;
   ctx: Context;
-  mobile: boolean;
+  narrow: boolean;
   animatedLayout: AnimatedLayout;
 }) {
   const answer = ctx.answers.get(lens.capability);
@@ -456,7 +494,7 @@ export function LensUnit({
   const people = byNeed(group.entities, lens, answer);
   return (
     <UnitCard group={group}>
-      {mobile ? (
+      {narrow ? (
         <List aria-label={group.label} hasDividers animatedLayout={animatedLayout}>
           {people.map(e => {
             const row = rowOf(answer, e.key);
@@ -484,10 +522,7 @@ export function LensUnit({
             ...groups.map(g => ({
               key: `field:${g.lead.key}`,
               header: g.lead.label,
-              // A state with its moment ("Bokat", "tors 12 nov. kl. 09:00") has room for both on one line.
-              width: proportional(1, {
-                minWidth: groupFields(g).some(f => f.format === 'instant') ? 240 : g.beside.length ? 200 : 140,
-              }),
+              width: cellWidth(g),
               ...(g.lead.format === 'number' && !g.beside.length ? { align: 'end' as const } : {}),
               renderCell: (r: TableRow) => {
                 const row = rowOf(answer, r.entity.key);
@@ -500,50 +535,6 @@ export function LensUnit({
           hasHover
         />
       )}
-    </UnitCard>
-  );
-}
-
-/**
- * The list drawn compact while a person is open beside it (artboard C, left): one row per person, the name the way to
- * open them, the opened one marked current, and under a lens the lens's state at the end, sorted as the lens sorts.
- */
-export function CompactUnit({
-  group,
-  lens,
-  ctx,
-  opened,
-  animatedLayout,
-}: {
-  group: Group;
-  lens: EntitySource | undefined;
-  ctx: Context;
-  opened: string | undefined;
-  animatedLayout: AnimatedLayout;
-}) {
-  const location = useLocation();
-  const answer = lens ? ctx.answers.get(lens.capability) : undefined;
-  const title = lens ? titleField(lens.view) : undefined;
-  const people = lens ? byNeed(group.entities, lens, answer) : group.entities;
-  return (
-    <UnitCard group={group} compact>
-      <List aria-label={group.label} hasDividers animatedLayout={animatedLayout}>
-        {people.map(e => {
-          const value = title ? rowOf(answer, e.key)?.[title.key] : undefined;
-          return (
-            <ListItem
-              key={e.key}
-              itemKey={e.key}
-              label={<Text weight="semibold">{e.name}</Text>}
-              href={personHref(location.pathname, location.search, e.key)}
-              isSelected={!!opened && opened.toLowerCase() === e.key.toLowerCase()}
-              endContent={
-                title && present(value) ? <FieldValue field={title} value={value} text="ordinary" /> : undefined
-              }
-            />
-          );
-        })}
-      </List>
     </UnitCard>
   );
 }

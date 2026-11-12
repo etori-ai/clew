@@ -16,25 +16,53 @@ test.describe('D33 the browser cache', () => {
     await open(page, '/');
     expect(count('/api/threads')).toBe(1);
     expect(count('/api/areas')).toBe(1);
-    // Every card's picker shows the same times from one read (D29).
-    expect(count('/api/snooze/presets')).toBe(1);
-    await page.getByRole('link', { name: 'Kalender', exact: true }).click();
+    // Hem draws no card since D112, so no picker reads its times there (D29).
+    expect(count('/api/snooze/presets')).toBe(0);
+    await page
+      .getByRole('navigation', { name: 'Sidonavigering' })
+      .getByRole('link', { name: 'Kalender', exact: true })
+      .click();
     await expect(heading(page, 1, 'Vecka')).toBeVisible();
     await page.waitForLoadState('networkidle');
     expect(count('/api/threads')).toBe(1);
     expect(count('/api/areas')).toBe(1);
     await page.goBack();
-    await expect(heading(page, 2, 'Nu')).toBeVisible();
+    await expect(heading(page, 2, 'Behöver dig')).toBeVisible();
     await page.waitForLoadState('networkidle');
     expect(count('/api/threads')).toBe(1);
   });
-  test('a card view posts its action once and opens the panel', async ({ page, api: _ }) => {
+  test('a card’s read posts its action once, for the card that unfolds it and the panel that would draw a table', async ({
+    page,
+    api: _,
+  }) => {
     const posts: string[] = [];
     page.on('request', r => {
       if (r.method() === 'POST' && r.url().includes('/act')) posts.push(r.url());
     });
-    await open(page, '/?open-card=omtanke&open-action=pattern');
-    await expect(page.getByRole('dialog', { name: 'Se mönstret' })).toBeVisible();
+    await open(page, '/todo?item=omtanke&open-card=omtanke&open-action=pattern');
+    const card = page.getByRole('complementary', { name: 'Valt ärende' });
+    await expect(card.locator('#read-card-omtanke').getByText('Anna Lindqvist 07:00–16:00')).toBeVisible();
+    await page.waitForLoadState('networkidle');
     expect(posts).toHaveLength(1);
+  });
+  test('an address that names a card’s decision asks for nothing: only the card’s button decides', async ({
+    page,
+    api,
+  }) => {
+    const posts: string[] = [];
+    page.on('request', r => {
+      if (r.method() === 'POST' && r.url().includes('/act')) posts.push(r.url());
+    });
+    // "Boka samtalet" is an execute. Opened by address it must not run, in Att göra or beside Personal.
+    for (const path of [
+      '/todo?item=omtanke&open-card=omtanke&open-action=book',
+      '/staff?card=omtanke&open-card=omtanke&open-action=book',
+    ]) {
+      await open(page, path);
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+      await page.waitForLoadState('networkidle');
+      expect(posts).toEqual([]);
+      expect(api.threads.find(t => t.id === 'omtanke')?.state).toBe('open');
+    }
   });
 });

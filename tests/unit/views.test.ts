@@ -523,8 +523,14 @@ describe('the fixture connectors declare their views', () => {
         name,
       ).toBeUndefined();
     }
+    // An execute's effect read (D112) answers rows the write's dialog draws as "Det här händer", never as a view.
+    const effects = new Set(all.flatMap(c => (c.effect ? [c.effect] : [])));
     for (const cap of all)
-      if (cap.kind === 'read' && (cap.output as { properties?: { rows?: unknown } }).properties?.rows)
+      if (
+        cap.kind === 'read' &&
+        !effects.has(cap.name) &&
+        (cap.output as { properties?: { rows?: unknown } }).properties?.rows
+      )
         expect(cap.view, cap.name).toBeDefined();
   });
   test('absence per person and leave requests hand the model a summary, the invoices and the budget their output', () => {

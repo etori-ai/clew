@@ -106,7 +106,7 @@ export function BookingDialog({ isOpen, initial, onClose }: Props) {
       await applyThread(client, thread);
       void client.invalidateQueries({ queryKey: keys.calendarAll });
       toast({
-        body: 'Bokningsbeslutet är sparat. Kortet visar när kalendern har bekräftat bokningen.',
+        body: 'Bokningsbeslutet är sparat. Ärendet visar när kalendern har bekräftat bokningen.',
         uniqueID: 'booking:' + thread.id,
       });
       onClose(true);

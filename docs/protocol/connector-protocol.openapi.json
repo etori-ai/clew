@@ -801,13 +801,13 @@
                   "type": "string",
                   "pattern": "^[a-z][a-z0-9-]*$",
                   "maxLength": 40,
-                  "description": "Stable and lowercase. It is the area's address, `/areas/<id>`, and what a scan draft names in `area`."
+                  "description": "Stable and lowercase. Hem's area filter names it in its address (`/?area=<id>`), and a scan draft names it in `area`."
                 },
                 "title": {
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 200,
-                  "description": "Swedish. The area's name on its button under the box and in the sidebar."
+                  "description": "Swedish. The area's name: a choice in Hem's area filter and the rail's search, and the word that marks its cards (D71)."
                 },
                 "roles": {
                   "type": "array",
@@ -832,7 +832,7 @@
                   "items": {
                     "type": "string"
                   },
-                  "description": "Capability names shown under \"Gör själv\": what a person can do here without composing a question. Each must be a capability of this manifest."
+                  "description": "Capability names the area offers, each a capability of this manifest. A propose or execute among them is suggested under \"Menar du\" while the person types in the question box on Hem; a read among them marks its view with the area's word and icon and has no entry of its own."
                 },
                 "schedules": {
                   "type": "array",
@@ -854,7 +854,7 @@
                     },
                     "additionalProperties": false
                   },
-                  "description": "What the connector does for this area on its own and when, as a person reads it under the area. Informational text; the scan itself runs nightly and on first visit."
+                  "description": "What the connector does for this area on its own and when. Informational text that Clew keeps with the manifest and draws nowhere today; the scan itself runs nightly and on first visit."
                 },
                 "figure": {
                   "type": "boolean",
@@ -908,7 +908,7 @@
               },
               "additionalProperties": false
             },
-            "description": "The areas this connector gives a person: each is a button under the box on Hem (D41, D53) with its standing actions, schedules and figure. Empty is allowed for a connector that only answers questions."
+            "description": "The areas this connector gives a person: each names and marks the connector's cards, is a choice in Hem's area filter, and holds its standing capabilities, schedules and figure. Where each shows is in docs/guides/where-things-open.md. Empty is allowed for a connector that only answers questions."
           },
           "capabilities": {
             "type": "array",
@@ -992,7 +992,7 @@
                   "type": "string",
                   "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
                   "maxLength": 80,
-                  "description": "`<connector id>.<verb>`, stable. Two names are profiles Clew combines across connectors: `<id>.search` (D26, see `kinds`), and `<id>.errands` (D35, D89), a read that takes `{ view?: \"assigned\" | \"reported\" }` and answers an ErrandsOutput with the errands the case system lets the person see. Its view's `open` names the read that shows one errand, by convention `<id>.errand`. Clew lists every `<id>.errands` in the person's scope as `clew.errands`. Two more are the talks profile (D96), answered by one system per installation rather than combined: `<id>.talks`, a read that takes `{}` and answers a TalksOutput (the open round of development talks and one row per person the reader manages, keyed on the SCIM `userName`), and `<id>.commitments`, a read that takes `{ person?: <userName> }` and answers a CommitmentsOutput (that employee's action points for a manager of their unit, or without `person` the ones the reader owns and the ones about the reader). `<id>.talks` may be limited to managers; `<id>.commitments` should be callable by everyone who owns action points or is their subject. Clew's built-in `talks` connector answers while either of its reads is enabled for the person; otherwise the one connector whose `<id>.talks` or `<id>.commitments` the person may call does, and with several none does. Neither is ever offered to the model."
+                  "description": "`<connector id>.<verb>`, stable. Two names are profiles Clew combines across connectors: `<id>.search` (D26, see `kinds`), and `<id>.errands` (D35, D89), a read that takes `{ view?: \"assigned\" | \"reported\" }` and answers an ErrandsOutput with the errands the case system lets the person see. Its view's `open` names the read that shows one errand, by convention `<id>.errand`. Clew lists every `<id>.errands` in the person's scope as `clew.errands`. A third is combined the same way: `<id>.news` (D112), a read that takes `{}` and answers a NewsOutput with the news the person may read; its view's `open`, when a row should open in Clew rather than by its `link`, names the read that shows one item, by convention `<id>.newsItem`. Clew lists every `<id>.news` in the person's scope as `clew.news`, newest first, on Hem and as \"Alla nyheter\"; a source that fails contributes nothing. Two more are the talks profile (D96), answered by one system per installation rather than combined: `<id>.talks`, a read that takes `{}` and answers a TalksOutput (the open round of development talks and one row per person the reader manages, keyed on the SCIM `userName`), and `<id>.commitments`, a read that takes `{ person?: <userName> }` and answers a CommitmentsOutput (that employee's action points for a manager of their unit, or without `person` the ones the reader owns and the ones about the reader). `<id>.talks` may be limited to managers; `<id>.commitments` should be callable by everyone who owns action points or is their subject. Clew's built-in `talks` connector answers while either of its reads is enabled for the person; otherwise the one connector whose `<id>.talks` or `<id>.commitments` the person may call does, and with several none does. Neither is ever offered to the model."
                 },
                 "kind": {
                   "anyOf": [
@@ -2622,6 +2622,224 @@
                   "pattern": "^[a-z][a-z0-9-]*:[a-z][a-zA-Z0-9-]*$",
                   "maxLength": 80,
                   "description": "The fact kind this `propose` or `execute` brings about (D55); must be one of the manifest's `facts`."
+                },
+                "asks": {
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "required": [
+                          "kind",
+                          "property",
+                          "label",
+                          "required",
+                          "durationMinutes"
+                        ],
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "meeting",
+                            "description": "a meeting time, in a `string` property (format `date-time` when it declares one) that takes the start as an ISO 8601 instant. Clew suggests three free times from the person's own calendar, offers \"Annan tid\" and draws the chosen day."
+                          },
+                          "property": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                            "maxLength": 80,
+                            "description": "The input property the person's answer fills: one of the input schema's `properties`, of a type the kind takes."
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80,
+                            "description": "Swedish. The field's label: \"När\", \"Plats\"."
+                          },
+                          "required": {
+                            "type": "boolean",
+                            "description": "Whether the person must answer before the last step. `true` whenever the input schema requires the property; an optional answer left empty is not sent."
+                          },
+                          "durationMinutes": {
+                            "type": "integer",
+                            "minimum": 5,
+                            "maximum": 480,
+                            "description": "For `meeting`: how long the meeting is, in minutes. Clew looks for free times this long."
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "kind",
+                          "property",
+                          "label",
+                          "required"
+                        ],
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "text",
+                            "description": "one line of text, in a `string` property without `enum` or `format`."
+                          },
+                          "property": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                            "maxLength": 80,
+                            "description": "The input property the person's answer fills: one of the input schema's `properties`, of a type the kind takes."
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80,
+                            "description": "Swedish. The field's label: \"När\", \"Plats\"."
+                          },
+                          "required": {
+                            "type": "boolean",
+                            "description": "Whether the person must answer before the last step. `true` whenever the input schema requires the property; an optional answer left empty is not sent."
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "kind",
+                          "property",
+                          "label",
+                          "required"
+                        ],
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "long-text",
+                            "description": "a paragraph such as a message, in a `string` property without `enum` or `format`."
+                          },
+                          "property": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                            "maxLength": 80,
+                            "description": "The input property the person's answer fills: one of the input schema's `properties`, of a type the kind takes."
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80,
+                            "description": "Swedish. The field's label: \"När\", \"Plats\"."
+                          },
+                          "required": {
+                            "type": "boolean",
+                            "description": "Whether the person must answer before the last step. `true` whenever the input schema requires the property; an optional answer left empty is not sent."
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "kind",
+                          "property",
+                          "label",
+                          "required"
+                        ],
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "date",
+                            "description": "a calendar day as `YYYY-MM-DD`, in a `string` property (format `date` when it declares one)."
+                          },
+                          "property": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                            "maxLength": 80,
+                            "description": "The input property the person's answer fills: one of the input schema's `properties`, of a type the kind takes."
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80,
+                            "description": "Swedish. The field's label: \"När\", \"Plats\"."
+                          },
+                          "required": {
+                            "type": "boolean",
+                            "description": "Whether the person must answer before the last step. `true` whenever the input schema requires the property; an optional answer left empty is not sent."
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "kind",
+                          "property",
+                          "label",
+                          "required",
+                          "options"
+                        ],
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "choice",
+                            "description": "one of the property's `enum` values, each named in `options`."
+                          },
+                          "property": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                            "maxLength": 80,
+                            "description": "The input property the person's answer fills: one of the input schema's `properties`, of a type the kind takes."
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80,
+                            "description": "Swedish. The field's label: \"När\", \"Plats\"."
+                          },
+                          "required": {
+                            "type": "boolean",
+                            "description": "Whether the person must answer before the last step. `true` whenever the input schema requires the property; an optional answer left empty is not sent."
+                          },
+                          "options": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "value",
+                                "label"
+                              ],
+                              "properties": {
+                                "value": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 80,
+                                  "description": "One of the property's `enum` values."
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 80,
+                                  "description": "Swedish. What the person reads."
+                                }
+                              },
+                              "additionalProperties": false
+                            },
+                            "minItems": 2,
+                            "maxItems": 8,
+                            "description": "For `choice`: every value of the property's `enum` once, with its Swedish label, in order."
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    ],
+                    "description": "One thing a propose or an execute asks the person for, naming one property of its input."
+                  },
+                  "minItems": 1,
+                  "maxItems": 6,
+                  "description": "On a `propose` or `execute` (D112): what the person fills in before it runs, each naming one property of the input. Clew draws the asks as the first step of the action's dialog, \"Fyll i\", from every place the action can be started, and merges the answers into the input; the rest comes from the selected rows (`refs`), the action's own `input` on a work item, or the entity (`about.param`). An answer for anything not asked is refused."
+                },
+                "effect": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
+                  "maxLength": 80,
+                  "description": "On an `execute` (D112): a `read` of this connector that takes the same input and answers an `EffectOutput`, what the write will do where, without writing anything. Clew calls it as the person with the input the execute would get and draws the answer as \"Det här händer\", the last step before anything is sent. Without it Clew names the source and shows the capability's `description`."
                 }
               },
               "additionalProperties": false
@@ -2994,6 +3212,260 @@
         },
         "additionalProperties": false,
         "description": "What an execute capability returns: one outcome per ref, read back from the source."
+      },
+      "Ask": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "property",
+              "label",
+              "required",
+              "durationMinutes"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "meeting",
+                "description": "a meeting time, in a `string` property (format `date-time` when it declares one) that takes the start as an ISO 8601 instant. Clew suggests three free times from the person's own calendar, offers \"Annan tid\" and draws the chosen day."
+              },
+              "property": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                "maxLength": 80,
+                "description": "The input property the person's answer fills: one of the input schema's `properties`, of a type the kind takes."
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80,
+                "description": "Swedish. The field's label: \"När\", \"Plats\"."
+              },
+              "required": {
+                "type": "boolean",
+                "description": "Whether the person must answer before the last step. `true` whenever the input schema requires the property; an optional answer left empty is not sent."
+              },
+              "durationMinutes": {
+                "type": "integer",
+                "minimum": 5,
+                "maximum": 480,
+                "description": "For `meeting`: how long the meeting is, in minutes. Clew looks for free times this long."
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "property",
+              "label",
+              "required"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "text",
+                "description": "one line of text, in a `string` property without `enum` or `format`."
+              },
+              "property": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                "maxLength": 80,
+                "description": "The input property the person's answer fills: one of the input schema's `properties`, of a type the kind takes."
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80,
+                "description": "Swedish. The field's label: \"När\", \"Plats\"."
+              },
+              "required": {
+                "type": "boolean",
+                "description": "Whether the person must answer before the last step. `true` whenever the input schema requires the property; an optional answer left empty is not sent."
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "property",
+              "label",
+              "required"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "long-text",
+                "description": "a paragraph such as a message, in a `string` property without `enum` or `format`."
+              },
+              "property": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                "maxLength": 80,
+                "description": "The input property the person's answer fills: one of the input schema's `properties`, of a type the kind takes."
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80,
+                "description": "Swedish. The field's label: \"När\", \"Plats\"."
+              },
+              "required": {
+                "type": "boolean",
+                "description": "Whether the person must answer before the last step. `true` whenever the input schema requires the property; an optional answer left empty is not sent."
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "property",
+              "label",
+              "required"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "date",
+                "description": "a calendar day as `YYYY-MM-DD`, in a `string` property (format `date` when it declares one)."
+              },
+              "property": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                "maxLength": 80,
+                "description": "The input property the person's answer fills: one of the input schema's `properties`, of a type the kind takes."
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80,
+                "description": "Swedish. The field's label: \"När\", \"Plats\"."
+              },
+              "required": {
+                "type": "boolean",
+                "description": "Whether the person must answer before the last step. `true` whenever the input schema requires the property; an optional answer left empty is not sent."
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "property",
+              "label",
+              "required",
+              "options"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "choice",
+                "description": "one of the property's `enum` values, each named in `options`."
+              },
+              "property": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                "maxLength": 80,
+                "description": "The input property the person's answer fills: one of the input schema's `properties`, of a type the kind takes."
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80,
+                "description": "Swedish. The field's label: \"När\", \"Plats\"."
+              },
+              "required": {
+                "type": "boolean",
+                "description": "Whether the person must answer before the last step. `true` whenever the input schema requires the property; an optional answer left empty is not sent."
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "value",
+                    "label"
+                  ],
+                  "properties": {
+                    "value": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80,
+                      "description": "One of the property's `enum` values."
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80,
+                      "description": "Swedish. What the person reads."
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "minItems": 2,
+                "maxItems": 8,
+                "description": "For `choice`: every value of the property's `enum` once, with its Swedish label, in order."
+              }
+            },
+            "additionalProperties": false
+          }
+        ],
+        "description": "One thing a propose or an execute asks the person for, naming one property of its input."
+      },
+      "EffectOutput": {
+        "type": "object",
+        "required": [
+          "rows"
+        ],
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "label"
+              ],
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "Swedish. What will be written: \"Omtankesamtalet registreras\"."
+                },
+                "detail": {
+                  "type": "string",
+                  "maxLength": 400,
+                  "description": "Swedish. One line more: on what, with what values."
+                },
+                "source": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80,
+                  "description": "Swedish. The system it is written in, as cards name a system (\"Kalendern\"), when it is not the connector's own `source`."
+                }
+              },
+              "additionalProperties": false,
+              "description": "One thing the write will do, in one system."
+            },
+            "minItems": 1,
+            "maxItems": 10
+          },
+          "undoMinutes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1440,
+            "description": "How long the person can undo the write when the source lets them: \"Du kan ångra bokningen i 10 minuter.\" Absent, Clew promises no undo."
+          }
+        },
+        "additionalProperties": false,
+        "description": "What an `effect` read answers (D112 item 10): for exactly the input the execute would get, what it will write where, without writing anything. Drawn as \"Det här händer\", the dialog's last step."
       },
       "PreviewOutput": {
         "type": "object",
@@ -3792,7 +4264,8 @@
                             "type": "string",
                             "const": "link"
                           }
-                        ]
+                        ],
+                        "description": "For a `read`: absent or `panel` unfolds the read's answer inside the card, under its buttons (a `table` view opens in the card's place in the panel); `link` marks the button as leaving Clew and opens the `url` the read answers in a new tab (D111 rule 8). Ignored on a propose or execute."
                       },
                       "input": {
                         "type": "object",
@@ -3804,7 +4277,8 @@
                         "type": "boolean"
                       },
                       "confirm": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "Swedish. Asked in a dialog over the card before the action runs, with \"Avbryt\" and the action's own label as the buttons: up to the first \"?\" is the question, the rest says what follows from yes (\"Avvisa filen? Ditt beslut gäller för alla som kan godkänna den.\")."
                       },
                       "review": {
                         "type": "string",
@@ -3812,6 +4286,22 @@
                       },
                       "preview": {
                         "type": "string"
+                      },
+                      "acknowledgement": {
+                        "type": "object",
+                        "required": [
+                          "publishedAt"
+                        ],
+                        "properties": {
+                          "publishedAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "maxLength": 40,
+                            "description": "When what the person acknowledges was published."
+                          }
+                        },
+                        "additionalProperties": false,
+                        "description": "The action is the read receipt for something published, which Hem lifts until it is given (D112)."
                       }
                     },
                     "additionalProperties": false
@@ -4107,7 +4597,8 @@
                       "type": "string",
                       "const": "link"
                     }
-                  ]
+                  ],
+                  "description": "For a `read`: absent or `panel` unfolds the read's answer inside the card, under its buttons (a `table` view opens in the card's place in the panel); `link` marks the button as leaving Clew and opens the `url` the read answers in a new tab (D111 rule 8). Ignored on a propose or execute."
                 },
                 "input": {
                   "type": "object",
@@ -4119,7 +4610,8 @@
                   "type": "boolean"
                 },
                 "confirm": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "Swedish. Asked in a dialog over the card before the action runs, with \"Avbryt\" and the action's own label as the buttons: up to the first \"?\" is the question, the rest says what follows from yes (\"Avvisa filen? Ditt beslut gäller för alla som kan godkänna den.\")."
                 },
                 "review": {
                   "type": "string",
@@ -4127,6 +4619,22 @@
                 },
                 "preview": {
                   "type": "string"
+                },
+                "acknowledgement": {
+                  "type": "object",
+                  "required": [
+                    "publishedAt"
+                  ],
+                  "properties": {
+                    "publishedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "maxLength": 40,
+                      "description": "When what the person acknowledges was published."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "The action is the read receipt for something published, which Hem lifts until it is given (D112)."
                 }
               },
               "additionalProperties": false
@@ -4279,7 +4787,7 @@
           "opens": {
             "type": "string",
             "maxLength": 80,
-            "description": "A read capability of this connector with a declared view that needs no input: the tile is then a link to that view. Clew drops it when it names another connector or a capability without such a view."
+            "description": "A read capability of this connector with a declared view that needs no input: the tile is then a link to that view, which opens in the panel beside Hem. Clew drops it when it names another connector or a capability without such a view."
           }
         },
         "additionalProperties": false,
@@ -4358,7 +4866,7 @@
                   "opens": {
                     "type": "string",
                     "maxLength": 80,
-                    "description": "A read capability of this connector with a declared view that needs no input: the tile is then a link to that view. Clew drops it when it names another connector or a capability without such a view."
+                    "description": "A read capability of this connector with a declared view that needs no input: the tile is then a link to that view, which opens in the panel beside Hem. Clew drops it when it names another connector or a capability without such a view."
                   }
                 },
                 "additionalProperties": false,
@@ -4814,6 +5322,108 @@
         },
         "additionalProperties": false,
         "description": "What `<id>.errands` returns: the person's errands in this system, as the system lets them see them."
+      },
+      "NewsRow": {
+        "type": "object",
+        "required": [
+          "ref",
+          "title",
+          "sender",
+          "publishedAt"
+        ],
+        "properties": {
+          "ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9:_.@-]+$",
+            "description": "The source's own id for the item, stable. What the read the view's `open` names takes back."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Swedish. The headline as the source has it."
+          },
+          "sender": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "Swedish. Who published it, as a reader knows the sender: a department, a unit or the newsroom."
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 40,
+            "description": "When it was published."
+          },
+          "link": {
+            "type": "string",
+            "maxLength": 1000,
+            "pattern": "^https?://[^\\s]+$",
+            "description": "The item in its own system, opened in a new tab. Without it the row opens in Clew through the view's `open`."
+          }
+        },
+        "additionalProperties": false,
+        "description": "One piece of news in a news source's list (D112)."
+      },
+      "NewsOutput": {
+        "type": "object",
+        "required": [
+          "rows"
+        ],
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "ref",
+                "title",
+                "sender",
+                "publishedAt"
+              ],
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "^[A-Za-z0-9:_.@-]+$",
+                  "description": "The source's own id for the item, stable. What the read the view's `open` names takes back."
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "Swedish. The headline as the source has it."
+                },
+                "sender": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80,
+                  "description": "Swedish. Who published it, as a reader knows the sender: a department, a unit or the newsroom."
+                },
+                "publishedAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "maxLength": 40,
+                  "description": "When it was published."
+                },
+                "link": {
+                  "type": "string",
+                  "maxLength": 1000,
+                  "pattern": "^https?://[^\\s]+$",
+                  "description": "The item in its own system, opened in a new tab. Without it the row opens in Clew through the view's `open`."
+                }
+              },
+              "additionalProperties": false,
+              "description": "One piece of news in a news source's list (D112)."
+            },
+            "maxItems": 100
+          }
+        },
+        "additionalProperties": false,
+        "description": "What `<id>.news` returns: the news the person may read in this source, newest first or in any order; Clew orders them."
       },
       "TalkRow": {
         "type": "object",
@@ -7392,7 +8002,7 @@
                       "items": {
                         "type": "string"
                       },
-                      "description": "The reads of this manifest whose rows open it (their view's `open`). Opened from a read about an entity, it is drawn under that read's section and in full on the entity's page; from any other read, a row opens it beside the list. Empty when nothing opens it."
+                      "description": "The reads of this manifest whose rows open it (their view's `open`). Opened from a read about an entity, it is drawn under that read's section and in full on the entity's page; from any other read, a row's name opens it in the panel beside the page, in the list's place with Tillbaka when the list is itself in the panel. Empty when nothing opens it."
                     },
                     "audience": {
                       "type": "array",
@@ -7449,6 +8059,622 @@
                         }
                       },
                       "description": "For a read about an entity: rows made from the declaration alone, to draw its places with before any service runs. Each carries a synthetic `key`; a status field takes in turn each value its view gives a tone, an instant a fixed time, any other field a value its output schema allows or a placeholder. Samples, never data: no connector is called."
+                    },
+                    "asks": {
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "required": [
+                              "kind",
+                              "property",
+                              "label",
+                              "required",
+                              "durationMinutes"
+                            ],
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "meeting",
+                                "description": "a meeting time, in a `string` property (format `date-time` when it declares one) that takes the start as an ISO 8601 instant. Clew suggests three free times from the person's own calendar, offers \"Annan tid\" and draws the chosen day."
+                              },
+                              "property": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                                "maxLength": 80,
+                                "description": "The input property the person's answer fills: one of the input schema's `properties`, of a type the kind takes."
+                              },
+                              "label": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 80,
+                                "description": "Swedish. The field's label: \"När\", \"Plats\"."
+                              },
+                              "required": {
+                                "type": "boolean",
+                                "description": "Whether the person must answer before the last step. `true` whenever the input schema requires the property; an optional answer left empty is not sent."
+                              },
+                              "durationMinutes": {
+                                "type": "integer",
+                                "minimum": 5,
+                                "maximum": 480,
+                                "description": "For `meeting`: how long the meeting is, in minutes. Clew looks for free times this long."
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "kind",
+                              "property",
+                              "label",
+                              "required"
+                            ],
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "text",
+                                "description": "one line of text, in a `string` property without `enum` or `format`."
+                              },
+                              "property": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                                "maxLength": 80,
+                                "description": "The input property the person's answer fills: one of the input schema's `properties`, of a type the kind takes."
+                              },
+                              "label": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 80,
+                                "description": "Swedish. The field's label: \"När\", \"Plats\"."
+                              },
+                              "required": {
+                                "type": "boolean",
+                                "description": "Whether the person must answer before the last step. `true` whenever the input schema requires the property; an optional answer left empty is not sent."
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "kind",
+                              "property",
+                              "label",
+                              "required"
+                            ],
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "long-text",
+                                "description": "a paragraph such as a message, in a `string` property without `enum` or `format`."
+                              },
+                              "property": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                                "maxLength": 80,
+                                "description": "The input property the person's answer fills: one of the input schema's `properties`, of a type the kind takes."
+                              },
+                              "label": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 80,
+                                "description": "Swedish. The field's label: \"När\", \"Plats\"."
+                              },
+                              "required": {
+                                "type": "boolean",
+                                "description": "Whether the person must answer before the last step. `true` whenever the input schema requires the property; an optional answer left empty is not sent."
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "kind",
+                              "property",
+                              "label",
+                              "required"
+                            ],
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "date",
+                                "description": "a calendar day as `YYYY-MM-DD`, in a `string` property (format `date` when it declares one)."
+                              },
+                              "property": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                                "maxLength": 80,
+                                "description": "The input property the person's answer fills: one of the input schema's `properties`, of a type the kind takes."
+                              },
+                              "label": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 80,
+                                "description": "Swedish. The field's label: \"När\", \"Plats\"."
+                              },
+                              "required": {
+                                "type": "boolean",
+                                "description": "Whether the person must answer before the last step. `true` whenever the input schema requires the property; an optional answer left empty is not sent."
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "kind",
+                              "property",
+                              "label",
+                              "required",
+                              "options"
+                            ],
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "choice",
+                                "description": "one of the property's `enum` values, each named in `options`."
+                              },
+                              "property": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                                "maxLength": 80,
+                                "description": "The input property the person's answer fills: one of the input schema's `properties`, of a type the kind takes."
+                              },
+                              "label": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 80,
+                                "description": "Swedish. The field's label: \"När\", \"Plats\"."
+                              },
+                              "required": {
+                                "type": "boolean",
+                                "description": "Whether the person must answer before the last step. `true` whenever the input schema requires the property; an optional answer left empty is not sent."
+                              },
+                              "options": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "required": [
+                                    "value",
+                                    "label"
+                                  ],
+                                  "properties": {
+                                    "value": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 80,
+                                      "description": "One of the property's `enum` values."
+                                    },
+                                    "label": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 80,
+                                      "description": "Swedish. What the person reads."
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                },
+                                "minItems": 2,
+                                "maxItems": 8,
+                                "description": "For `choice`: every value of the property's `enum` once, with its Swedish label, in order."
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        ],
+                        "description": "One thing a propose or an execute asks the person for, naming one property of its input."
+                      },
+                      "description": "The asks the capability declares (D112)."
+                    },
+                    "effect": {
+                      "type": "string",
+                      "description": "The read that says what the execute will do (D112)."
+                    },
+                    "path": {
+                      "type": "object",
+                      "required": [
+                        "starts",
+                        "steps",
+                        "input"
+                      ],
+                      "properties": {
+                        "starts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "place",
+                              "state",
+                              "declares"
+                            ],
+                            "properties": {
+                              "place": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "const": "work-item"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "const": "entity"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "const": "question-box"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "const": "conversation"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "const": "fact"
+                                  }
+                                ]
+                              },
+                              "state": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "const": "declared"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "const": "not-declared"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "const": "never"
+                                  }
+                                ],
+                                "description": "`declared`: the manifest puts it there; `not-declared`: it could, with the field in `declares`; `never`: not for this kind (an execute is never drafted by the model)."
+                              },
+                              "declares": {
+                                "type": "string",
+                                "description": "The manifest field that puts it there."
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "description": "`work-item`: a button on a work item a scan pushes or a propose drafts (`scan: true`, or a propose about an entity); `entity`: an action on a person or a unit (`about.param`); `question-box`: a suggestion under \"Menar du\" (`areas[].standing`); `conversation`: drafted by the assistant, a propose with `model: true`; `fact`: a step of a job after a fact elsewhere (`follows` on a propose; an execute is such a step when a propose of the manifest follows a fact)."
+                        },
+                        "steps": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "step",
+                              "state",
+                              "declares"
+                            ],
+                            "properties": {
+                              "step": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "const": "fill-in"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "const": "effect"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "const": "confirm"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "const": "review"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "const": "receipt"
+                                  }
+                                ]
+                              },
+                              "state": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "const": "declared"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "const": "not-declared"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "const": "on-the-work-item"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "const": "always"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "const": "never"
+                                  }
+                                ],
+                                "description": "`declared` or `not-declared` by this capability; `on-the-work-item`: a draft's action declares it (`confirm`, `review: \"each\"`), so the manifest cannot say; `always`: every execute has it; `never`: not for this kind."
+                              },
+                              "declares": {
+                                "type": "string",
+                                "description": "The field that draws it."
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "description": "`fill-in`: the asks (`asks`); `effect`: \"Det här händer\", the source's answer from `effect`, else the source's name and the description; `confirm`: one question before a write; `review`: the rows one at a time, each with its document; `receipt`: one outcome per row read back, with Ångra while the source allows it."
+                        },
+                        "input": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "property",
+                              "type",
+                              "required",
+                              "by"
+                            ],
+                            "properties": {
+                              "property": {
+                                "type": "string"
+                              },
+                              "type": {
+                                "type": "string",
+                                "description": "The property's type in words, as the manifest reference says it."
+                              },
+                              "required": {
+                                "type": "boolean",
+                                "description": "The input schema requires it."
+                              },
+                              "by": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "const": "rows"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "const": "entity"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "const": "person"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "const": "fact"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "const": "work-item"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "const": "source"
+                                  }
+                                ],
+                                "description": "`rows`: the selected rows of the work item (`refs`) or the review's evidence (`reviews`); `entity`: the key of the person or unit (`about.param`); `person`: an ask; `fact`: the fact a follower is asked with; `work-item`: the action's own `input` on a draft must give it; `source`: optional, the source's default unless a draft gives it."
+                              },
+                              "ask": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "required": [
+                                      "kind",
+                                      "property",
+                                      "label",
+                                      "required",
+                                      "durationMinutes"
+                                    ],
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "const": "meeting",
+                                        "description": "a meeting time, in a `string` property (format `date-time` when it declares one) that takes the start as an ISO 8601 instant. Clew suggests three free times from the person's own calendar, offers \"Annan tid\" and draws the chosen day."
+                                      },
+                                      "property": {
+                                        "type": "string",
+                                        "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                                        "maxLength": 80,
+                                        "description": "The input property the person's answer fills: one of the input schema's `properties`, of a type the kind takes."
+                                      },
+                                      "label": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 80,
+                                        "description": "Swedish. The field's label: \"När\", \"Plats\"."
+                                      },
+                                      "required": {
+                                        "type": "boolean",
+                                        "description": "Whether the person must answer before the last step. `true` whenever the input schema requires the property; an optional answer left empty is not sent."
+                                      },
+                                      "durationMinutes": {
+                                        "type": "integer",
+                                        "minimum": 5,
+                                        "maximum": 480,
+                                        "description": "For `meeting`: how long the meeting is, in minutes. Clew looks for free times this long."
+                                      }
+                                    },
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "required": [
+                                      "kind",
+                                      "property",
+                                      "label",
+                                      "required"
+                                    ],
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "const": "text",
+                                        "description": "one line of text, in a `string` property without `enum` or `format`."
+                                      },
+                                      "property": {
+                                        "type": "string",
+                                        "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                                        "maxLength": 80,
+                                        "description": "The input property the person's answer fills: one of the input schema's `properties`, of a type the kind takes."
+                                      },
+                                      "label": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 80,
+                                        "description": "Swedish. The field's label: \"När\", \"Plats\"."
+                                      },
+                                      "required": {
+                                        "type": "boolean",
+                                        "description": "Whether the person must answer before the last step. `true` whenever the input schema requires the property; an optional answer left empty is not sent."
+                                      }
+                                    },
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "required": [
+                                      "kind",
+                                      "property",
+                                      "label",
+                                      "required"
+                                    ],
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "const": "long-text",
+                                        "description": "a paragraph such as a message, in a `string` property without `enum` or `format`."
+                                      },
+                                      "property": {
+                                        "type": "string",
+                                        "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                                        "maxLength": 80,
+                                        "description": "The input property the person's answer fills: one of the input schema's `properties`, of a type the kind takes."
+                                      },
+                                      "label": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 80,
+                                        "description": "Swedish. The field's label: \"När\", \"Plats\"."
+                                      },
+                                      "required": {
+                                        "type": "boolean",
+                                        "description": "Whether the person must answer before the last step. `true` whenever the input schema requires the property; an optional answer left empty is not sent."
+                                      }
+                                    },
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "required": [
+                                      "kind",
+                                      "property",
+                                      "label",
+                                      "required"
+                                    ],
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "const": "date",
+                                        "description": "a calendar day as `YYYY-MM-DD`, in a `string` property (format `date` when it declares one)."
+                                      },
+                                      "property": {
+                                        "type": "string",
+                                        "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                                        "maxLength": 80,
+                                        "description": "The input property the person's answer fills: one of the input schema's `properties`, of a type the kind takes."
+                                      },
+                                      "label": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 80,
+                                        "description": "Swedish. The field's label: \"När\", \"Plats\"."
+                                      },
+                                      "required": {
+                                        "type": "boolean",
+                                        "description": "Whether the person must answer before the last step. `true` whenever the input schema requires the property; an optional answer left empty is not sent."
+                                      }
+                                    },
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "required": [
+                                      "kind",
+                                      "property",
+                                      "label",
+                                      "required",
+                                      "options"
+                                    ],
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "const": "choice",
+                                        "description": "one of the property's `enum` values, each named in `options`."
+                                      },
+                                      "property": {
+                                        "type": "string",
+                                        "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+                                        "maxLength": 80,
+                                        "description": "The input property the person's answer fills: one of the input schema's `properties`, of a type the kind takes."
+                                      },
+                                      "label": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 80,
+                                        "description": "Swedish. The field's label: \"När\", \"Plats\"."
+                                      },
+                                      "required": {
+                                        "type": "boolean",
+                                        "description": "Whether the person must answer before the last step. `true` whenever the input schema requires the property; an optional answer left empty is not sent."
+                                      },
+                                      "options": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "required": [
+                                            "value",
+                                            "label"
+                                          ],
+                                          "properties": {
+                                            "value": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 80,
+                                              "description": "One of the property's `enum` values."
+                                            },
+                                            "label": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 80,
+                                              "description": "Swedish. What the person reads."
+                                            }
+                                          },
+                                          "additionalProperties": false
+                                        },
+                                        "minItems": 2,
+                                        "maxItems": 8,
+                                        "description": "For `choice`: every value of the property's `enum` once, with its Swedish label, in order."
+                                      }
+                                    },
+                                    "additionalProperties": false
+                                  }
+                                ],
+                                "description": "One thing a propose or an execute asks the person for, naming one property of its input."
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "description": "Each property of the input schema's `properties`, as the person will meet it."
+                        }
+                      },
+                      "additionalProperties": false,
+                      "description": "Where a write can start and what the person passes through before it reaches the source (D112 item 11)."
                     }
                   },
                   "additionalProperties": false

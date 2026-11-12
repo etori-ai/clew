@@ -587,9 +587,9 @@ describe('connector-check holds a scan to the card-action rule (D35)', () => {
     expect(report.items.filter(i => i.level === 'fail')).toContainEqual({
       level: 'fail',
       group: 'surfaces',
-      label: 'Kort',
+      label: 'Ärenden',
       description:
-        'Kortet hello:open-items avvisades: action done names finance.approve, which is not a capability of hello',
+        'Ärendet hello:open-items avvisades: action done names finance.approve, which is not a capability of hello',
     });
   });
 });

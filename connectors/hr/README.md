@@ -47,6 +47,13 @@ it answers a `ThreadDraft`, the card the manager reads before deciding, whose ro
 decision with the write safety above, undone by `hr.withdrawAbsence`. It declares no `creates`: the card is one write in
 this system; telling time reporting and payroll is the job the fact `hr:absence` starts.
 
+`hr.bookTalk` asks the manager for the talk (D112): `asks` names the time (`when`, a meeting of 45 minutes, required),
+the place and an optional message to the employee, all optional properties of its input, and the write keeps them with
+the talk. Its `effect`, `hr.bookTalkEffect`, takes the same input and answers what the booking will do, the talk
+registered on the employee with its time and place, and the ten minutes it can be undone, without writing anything; it
+refuses an employee outside the manager's unit as the write does. `hr.decideLeave` asks for an optional comment to the
+employee; the decision itself is the card button's own input.
+
 The scan's rows about one employee (the rehab talk, a leave request) carry `subject: { entity: 'person', key }`, the
 employee's user name (D97 item 6), so the card shows on that person for the manager; their text still names nobody.
 

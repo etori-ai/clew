@@ -11,9 +11,21 @@ export { manifest };
 class Invalid extends Error {}
 class Denied extends Error {}
 class Conflict extends Error {}
+/** How long a booked talk can be undone, in minutes: what the write answers and its effect read says beforehand. */
+const TALK_UNDO_MINUTES = 10;
 /** The realism switches, process configuration only (never a route): what a real source does to a connector now and then. */
 export const FAULTS = ['', 'unavailable', 'slow', 'unauthorized', 'conflict', 'crash-after-commit'];
 
+/** A talk's time as a manager reads it, in Swedish time: "torsdag 19 november kl. 13:15". */
+const meetingTime = instant =>
+  new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Europe/Stockholm',
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(instant));
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const fail = (code, message, status) => json({ error: { code, message } }, status);
@@ -255,6 +267,28 @@ export function createConnector({
       const op = state.get('op:' + input.operationId);
       return op && op.person === personKey(actor) ? { found: true, result: op.result } : { found: false };
     },
+    // What hr.bookTalk will do with the same input (D112), checked as the write checks it and written nowhere: the talk
+    // registered on the employee with its time and place, and the ten minutes the write can be undone.
+    'hr.bookTalkEffect': (actor, input) => {
+      const unit = staff(unitOf(actor)).map(e => e.ref);
+      if (!input.refs.length || input.refs.some(ref => !unit.includes(ref)))
+        throw new Invalid('Medarbetaren finns inte i din enhet.');
+      const n = input.refs.length;
+      const details = [
+        input.when ? meetingTime(input.when) : 'nästa lediga tid',
+        input.place,
+        input.message ? 'med ditt meddelande' : undefined,
+      ].filter(Boolean);
+      return {
+        rows: [
+          {
+            label: n === 1 ? 'Omtankesamtalet registreras' : `${n} omtankesamtal registreras`,
+            detail: `På medarbetaren, ${details.join(', ')}`,
+          },
+        ],
+        undoMinutes: TALK_UNDO_MINUTES,
+      };
+    },
   };
 
   const proposals = {
@@ -334,12 +368,20 @@ export function createConnector({
       const unit = staff(unitOf(actor)).map(e => e.ref);
       const rows = input.refs.map(ref => {
         if (!unit.includes(ref)) return { ref, label: 'Omtankesamtal', outcome: 'failed', detail: 'inte i din enhet' };
-        talks[ref] = { at: now(), when: input.when ?? 'nästa lediga tid' };
+        // The time, the place and the message the manager gave (D112) are kept with the talk.
+        talks[ref] = {
+          at: now(),
+          when: input.when ?? 'nästa lediga tid',
+          ...(input.place ? { place: input.place } : {}),
+          ...(input.message ? { message: input.message } : {}),
+        };
         return {
           ref,
           label: 'Omtankesamtal',
           outcome: 'done',
-          detail: `registrerat i personalsystemet ${input.when ? shortDate(input.when) : ''}`.trim(),
+          detail: ['registrerat i personalsystemet', input.when ? meetingTime(input.when) : undefined, input.place]
+            .filter(Boolean)
+            .join(', '),
         };
       });
       state.set('talks', talks);
@@ -348,7 +390,7 @@ export function createConnector({
         headline: `${n === 1 ? 'Samtalet är' : n + ' samtal är'} registrerat i personalsystemet.`,
         rows,
         undoCapability: 'hr.unbookTalk',
-        undoMinutes: 10,
+        undoMinutes: TALK_UNDO_MINUTES,
       };
     },
     'hr.unbookTalk': (_actor, input) => {

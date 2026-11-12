@@ -204,3 +204,39 @@ not, and a row the review never judged keeps the tick it had, whether the source
 review, which is read and not decided, hands back no decisions. The address, the focus on "Granska N" and what is
 written are unchanged: the card's ticks still write nothing on a card whose next step is the review, and the review
 still starts with no row judged. Evidence: `apps/web/tests/review-address.test.ts`, `tests/a11y/review.spec.ts`.
+
+**Amended 2026-11-11 (D111 rule 5): the review lies over the page it was opened on.** The review was a drawer over
+Hem only: "Granska N" on a card beside Personal, over Kalender or in a conversation's answer took the person to Hem,
+and closing it led to `/?card=<threadId>` whatever was under it, a Klart row's `tab=done` included. Under
+[D111](D111-where-something-opens-is-decided-by-what-it-is.md) rule 5 the review is a focused overlay over whichever
+page it was opened from, and closing it leaves that page as it was. What changes:
+
+1. **The address is a part of the page's own**: `?review=<threadId>`, with the step as `step` as before (1-based, the
+   first left out, rewritten with `replace`), added to whatever the page's address holds: Hem's tab and area, Personal's
+   lens and the card or cards in its panel, a person's section and way back, a conversation. "Granska N" on a card keeps
+   the card where it is drawn; on a row, which shows the card's next step without the card, it also opens the card in
+   the page's panel, as the row's title would (`/?card=<threadId>&review=<threadId>`, `/?tab=done&card=…&review=…` from
+   Klart), since the review hands its decisions back to the card and its receipt shows there.
+2. **Closing** (✕, Esc, the scrim, "Tillbaka till kortet", Skicka's answer) replaces the address with the same one
+   without `review` and `step`, the decisions on the entry's state as before, so the card puts the focus on its
+   "Granska N" wherever it is drawn: beside the page, in its sheet, in the shell's drawer, in an answer. A card that is
+   not there leaves the panel too. "Granska avvisade igen" puts the new card's review in the old one's place on the same
+   page, and the new card in the panel where the panel held the old one. "Till första steget" stays on the page.
+3. **One overlay for every page.** `ReviewOverlay` is mounted once for the session's pages, after the page in the tree,
+   so a cold open stacks it over the card the same update opens (Astryx: sibling drawers and sheets opened together stack
+   in tree order, last-opened on top, and Escape closes the top one only): over Hem's panel or sheet, Personal's, a
+   person's or a unit's panel, and the shell's drawer over Kalender and Administration. Hem no longer reads a review's
+   address as `/?card=`; it reads its own.
+4. **`/cards/:threadId/review` is a cold link only**: signed in, it is replaced by `/?card=<threadId>&review=<threadId>`
+   with its `step`. Nothing on the server builds that path.
+5. **The browser tab** names the review while it is open and the page's own name comes back when it closes, without
+   being spoken; the page under it no longer yields its title.
+
+Built: `apps/web/src/review-address.ts` (`withReview`, `withoutReview`, `withRetriedReview`, `legacyReview`, `reviewOf`),
+`reviewOverCard` and `cardOverPage` in `apps/web/src/panel-address.ts` (a card opened from the bell, a toast or the
+search lets go of a review or a talk over the page), `ReviewOverlay` in `apps/web/src/components/review-overlay.tsx`
+mounted in `apps/web/src/main.tsx`, `useOverlayTitle` in `apps/web/src/page-title.ts`; `usePagePanel` loses the option
+that read another address. Evidence: `apps/web/tests/review-address.test.ts`, `apps/web/tests/panel-address.test.ts`,
+`tests/a11y/review.spec.ts` (over Hem from a row and from the card, beside Personal, in a conversation's answer, over
+the drawer on Kalender where Esc closes the review and then the card, the address from before), `tests/a11y/documents.spec.ts`
+(from a Klart row, closing to `/?tab=done&card=<threadId>`). No screen-reader pass.

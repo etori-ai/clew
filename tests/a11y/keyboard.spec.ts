@@ -17,40 +17,45 @@ import { mergedSearch } from './unit-data';
 test.use({ viewport: desktop });
 
 /**
- * Inte nu on the first row, from the keyboard (artboards A and E): the row's title opens its card beside the column, where
- * Inte nu stands among the card's own buttons (D66). At 1440 px the panel fits beside the column.
+ * Inte nu on the first row of Att göra, from the keyboard (D112 item 3): the row opens its work item in the reading pane
+ * beside the list, with the focus on its heading, where Inte nu stands among the card's own buttons.
  */
 async function openSnoozeRows(page: Page) {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.getByRole('main').getByRole('listitem').getByRole('link').first().focus();
+  await page.getByRole('list', { name: 'Behöver dig' }).getByRole('link').first().focus();
   await page.keyboard.press('Enter');
-  const panel = page.getByRole('complementary', { name: 'Kort' });
-  await expect(panel.locator('[aria-level="2"]').filter({ hasText: 'Kort' })).toBeFocused();
+  const panel = page.getByRole('complementary', { name: 'Valt ärende' });
+  await expect(panel.getByRole('heading', { level: 2, name: 'Attestera 3 fakturor, 48 200 kr' })).toBeFocused();
   await panel.getByRole('button', { name: 'Inte nu', exact: true }).focus();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('menuitem', { name: /^I morgon/ })).toBeVisible();
 }
 
 test.describe('2.4.7 focus visible', () => {
-  for (const path of ['/', '/?tab=done', '/calendar'])
+  for (const path of ['/', '/todo', '/todo?tab=done', '/calendar'])
     test(`every stop on ${path} shows a focus ring`, async ({ page, api: _ }) => {
       await open(page, path);
       const { unmarked } = await hiddenFocusStops(page);
       expect(unmarked).toEqual([]);
     });
 
-  test('a card that receives focus from the page shows it', async ({ page, api: _ }) => {
-    await open(page, '/');
+  test('a row that receives focus from the page shows it', async ({ page, api: _ }) => {
+    await open(page, '/todo');
     await openSnoozeRows(page);
     await page.getByRole('menuitem', { name: /^I morgon/ }).focus();
     await page.keyboard.press('Enter');
-    // The next thread is a row (D31): its title link takes the focus, and the ring is on the link.
-    const title = page.locator('#thread-samtal').getByRole('link', { name: 'Planera utvecklingssamtal', exact: true });
-    await expect(title).toBeFocused();
+    // The item left its pile: the next row's link takes the focus, and the ring is drawn on it or the row around it.
+    const next = page.locator('#work-omtanke').getByRole('link');
+    await expect(next).toBeFocused();
     expect(
-      await title.evaluate(
-        el => getComputedStyle(el).outlineStyle !== 'none' || getComputedStyle(el).boxShadow !== 'none',
-      ),
+      await next.evaluate(el => {
+        for (let at: Element | null = el, depth = 0; at && depth < 4; at = at.parentElement, depth++) {
+          const s = getComputedStyle(at);
+          if ((s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0) || (at === el && s.boxShadow !== 'none'))
+            return true;
+        }
+        return false;
+      }),
     ).toBe(true);
   });
 });
@@ -58,51 +63,49 @@ test.describe('2.4.7 focus visible', () => {
 test.describe('2.4.3 focus order', () => {
   test('regaining the window keeps focus where it was', async ({ page, api }) => {
     await open(page, '/');
-    const button = page.getByRole('main').getByRole('button', { name: 'Lägg till i samtalet' }).first();
-    await button.focus();
+    const row = page.locator('#work-fakturor').getByRole('link');
+    await row.focus();
     api.sessionDelay = 200;
     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
     await page.waitForTimeout(350);
-    expect((await focused(page)).text).toBe('Lägg till i samtalet');
+    await expect(row).toBeFocused();
   });
 
-  test('a row leads to its card in the panel, and gets the focus back when the panel closes', async ({
+  test('a row leads to its work item in the pane, and gets the focus back when the pane closes', async ({
     page,
     api: _,
   }) => {
-    await open(page, '/');
+    await open(page, '/todo');
     const title = 'Omtankesamtal med Anna Lindqvist';
-    const expand = page.getByRole('link', { name: title, exact: true });
-    await expect(page.locator('#thread-omtanke')).not.toHaveAttribute('aria-current', 'true');
+    const row = page.locator('#work-omtanke');
+    const expand = row.getByRole('link');
+    await expect(row).not.toHaveAttribute('aria-current', 'true');
     await expand.focus();
     await page.keyboard.press('Enter');
-    // At this width the panel is over the page: a dialog named for what it holds, with the focus in it.
-    const panel = page.getByRole('dialog', { name: 'Kort', exact: true });
-    await expect(panel.getByRole('heading', { name: title })).toBeVisible();
-    await expect.poll(() => panel.evaluate(el => el.contains(document.activeElement))).toBe(true);
-    await expect(page).toHaveURL(/\/\?card=omtanke$/);
+    // Beside the list at this width (the page's box is 1000 px): a region named for what it holds, the focus on the item.
+    const panel = page.getByRole('complementary', { name: 'Valt ärende' });
+    await expect(panel.getByRole('heading', { name: title })).toBeFocused();
+    await expect(page).toHaveURL(/\/todo\?item=omtanke$/);
     await page.keyboard.press('Escape');
     await expect(panel).toBeHidden();
     await expect(expand).toBeFocused();
-    await expect(page.locator('#thread-omtanke')).not.toHaveAttribute('aria-current', 'true');
+    await expect(row).not.toHaveAttribute('aria-current', 'true');
   });
 
-  test('Inte nu moves focus to the next card instead of losing it', async ({ page, api: _ }) => {
-    await open(page, '/');
+  test('Inte nu moves focus to the next row instead of losing it', async ({ page, api: _ }) => {
+    await open(page, '/todo');
     await openSnoozeRows(page);
     await page.getByRole('menuitem', { name: /^I morgon/ }).focus();
     await page.keyboard.press('Enter');
     await expect(page.getByRole('region', { name: 'Aviseringar' })).toBeVisible();
-    await expect(
-      page.locator('#thread-samtal').getByRole('link', { name: 'Planera utvecklingssamtal', exact: true }),
-    ).toBeFocused();
+    await expect(page.locator('#work-omtanke').getByRole('link')).toBeFocused();
   });
 
   test('Ångra in the toast stays available and reachable by keyboard', async ({ page, api: _ }) => {
     await page.clock.install({ time: new Date('2026-11-04T08:00:00.000Z') });
-    // At 1440 px the card stands beside the column, so the whole page stays reachable after Inte nu.
+    // At 1440 px the item stands beside the list, so the whole page stays reachable after Inte nu.
     await page.setViewportSize({ width: 1440, height: 900 });
-    await open(page, '/');
+    await open(page, '/todo');
     await snoozeFirst(page);
     const undo = page.getByRole('button', { name: 'Ångra' });
     await expect(undo).toBeVisible();
@@ -115,8 +118,8 @@ test.describe('2.4.3 focus order', () => {
     ).toBe(true);
     await undo.focus();
     await page.keyboard.press('Enter');
-    // The card is back beside the column, where its next step is drawn in full.
-    await expect(page.getByRole('button', { name: 'Attestera 2 valda' })).toBeVisible();
+    // The item is back in its pile.
+    await expect(page.getByRole('list', { name: 'Behöver dig' }).locator('#work-fakturor')).toBeVisible();
   });
 
   test('the side panel can be closed with a button and hands focus back', async ({ page, api }) => {
@@ -128,7 +131,7 @@ test.describe('2.4.3 focus order', () => {
     await page.keyboard.press('Enter');
     const panel = page.getByRole('dialog');
     await expect(panel).toBeVisible();
-    await panel.getByRole('button', { name: 'Stäng', exact: true }).click();
+    await panel.getByRole('button', { name: 'Stäng panelen' }).click();
     await expect(panel).toBeHidden();
     await expect(trigger).toBeFocused();
   });
@@ -146,11 +149,15 @@ test.describe('2.4.3 focus order', () => {
 });
 
 test.describe('D26 a source becomes a chip', () => {
-  test("Lägg till i samtalet in the sources view puts the passage in the row's drawer and says so on the row", async ({
+  test("Lägg till i samtalet in the sources view beside a conversation puts the passage in the box's drawer and says so on the row", async ({
     page,
     api: _,
   }) => {
-    await open(page, '/?open=clew.search&open-title=K%C3%A4llor&open-input=%7B%22query%22%3A%22fall%22%7D');
+    // Beside a conversation's own box (D112 item 7): elsewhere the sources view has its own box in the panel.
+    await open(
+      page,
+      '/conversations/fraga?open=clew.search&open-title=K%C3%A4llor&open-input=%7B%22query%22%3A%22fall%22%7D',
+    );
     const panel = page.getByRole('dialog');
     const add = panel
       .getByRole('list', { name: 'Källor' })
@@ -174,8 +181,8 @@ test.describe('D29 the Inte nu picker', () => {
     page,
     api: _,
   }) => {
-    // The open card's one time action stands in the panel's header (artboard E); a row has only its next step.
-    await open(page, '/?card=fakturor');
+    // The work item's one time action stands among its buttons in Att göra's reading pane.
+    await open(page, '/todo?item=fakturor');
     await page.getByRole('button', { name: 'Inte nu', exact: true }).first().click();
     const menu = page.getByRole('menu');
     await expect(menu).toBeVisible();
@@ -223,7 +230,8 @@ test.describe('D97 a hit about a person', () => {
     // The hit leads to the person instead of one source's record: no contact card, no link out.
     await expect(person.getByRole('link', { name: 'Kontaktkort' })).toHaveCount(0);
     await expect(person.getByRole('link', { name: /Öppna/ })).toHaveCount(0);
-    await expect(person.getByRole('button', { name: 'Lägg till i samtalet' })).toBeVisible();
+    // On Hem the panel asks about the sources in its own box: no hit goes into a conversation from here (D112 item 7).
+    await expect(person.getByRole('button', { name: 'Lägg till i samtalet' })).toHaveCount(0);
     // A document from one source is drawn as before.
     const document = hits.nth(1);
     await expect(document.getByRole('link', { name: 'Öppna' })).toHaveAttribute(

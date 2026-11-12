@@ -208,6 +208,19 @@ export const HANDWRITTEN_EXAMPLES: Record<string, unknown> = {
   'capabilities[].about': { entity: 'person' },
   'capabilities[].about.entity': 'person',
   'capabilities[].about.param': 'person',
+  'capabilities[].asks': [{ kind: 'meeting', property: 'when', label: 'När', required: true, durationMinutes: 45 }],
+  'capabilities[].asks[].kind': 'meeting',
+  'capabilities[].asks[].property': 'when',
+  'capabilities[].asks[].label': 'När',
+  'capabilities[].asks[].required': true,
+  'capabilities[].asks[].durationMinutes': 45,
+  'capabilities[].asks[].options': [
+    { value: 'approve', label: 'Godkänn' },
+    { value: 'reject', label: 'Avslå' },
+  ],
+  'capabilities[].asks[].options[].value': 'approve',
+  'capabilities[].asks[].options[].label': 'Godkänn',
+  'capabilities[].effect': 'hr.bookTalkEffect',
 };
 
 /** The rules between fields, as Clew applies them. Each `loader` rule is proven by a test that breaks it and reads the problem. */
@@ -372,11 +385,48 @@ export const RULES: Rule[] = [
   },
   {
     id: 'about-action-key-alone',
-    title: 'An action about an entity starts with the key alone',
+    title: 'An action about an entity starts with the key and what it asks',
     fields: ['capabilities[].about.param', 'capabilities[].input'],
     enforced: 'loader',
     decision: 'D97',
-    text: "On a `propose` or `execute` that declares `about`, `param` is the one property the input requires. Anything else is optional, with a default the source chooses, so the entity's menu can start the action without asking a question (D8).",
+    text: "On a `propose` or `execute` that declares `about`, the input requires `param`, and every other property it requires is one the capability asks for (`asks`, D112). Anything else is optional, with a default the source chooses, so the entity's menu can start the action with the key and the person's answers, without the model (D8).",
+  },
+  {
+    id: 'asks-on-an-action',
+    title: 'Only a propose or an execute asks',
+    fields: ['capabilities[].kind', 'capabilities[].asks', 'capabilities[].follows'],
+    enforced: 'loader',
+    decision: 'D112',
+    text: '`asks` may be declared only on a `propose` or an `execute`, and not on a follower: a follower is asked with a fact, never by a person.',
+  },
+  {
+    id: 'ask-names-input',
+    title: 'An ask names a property of the input',
+    fields: ['capabilities[].asks[].property', 'capabilities[].input'],
+    enforced: 'loader',
+    decision: 'D112',
+    text: "Each ask names, once, a property the input schema declares under `properties`, and never the one `about.param` fills with the entity's key.",
+  },
+  {
+    id: 'ask-fits-input',
+    title: "An ask's kind fits its property",
+    fields: [
+      'capabilities[].asks[].kind',
+      'capabilities[].asks[].required',
+      'capabilities[].asks[].options',
+      'capabilities[].input',
+    ],
+    enforced: 'loader',
+    decision: 'D112',
+    text: 'A `meeting` takes a string property without `enum` (format `date-time` when it declares one), a `date` the same with format `date`, `text` and `long-text` a string property without `enum` or `format`, and a `choice` a property with an `enum` whose every value `options` names once. A property the input requires is a required ask.',
+  },
+  {
+    id: 'effect-is-a-read',
+    title: 'The effect is a read of this connector that takes the same input',
+    fields: ['capabilities[].effect', 'capabilities[].kind', 'capabilities[].model'],
+    enforced: 'loader',
+    decision: 'D112',
+    text: "`effect` may be declared only on an `execute`. It names a `read` of this manifest whose input schema is the execute's own and which declares `model: false`. A read writes nothing: Clew calls it before the person decides.",
   },
   {
     id: 'about-not-a-follower',
@@ -392,7 +442,7 @@ export const RULES: Rule[] = [
     fields: ['capabilities[].about', 'capabilities[].name', 'capabilities[].kinds', 'header.capability'],
     enforced: 'loader',
     decision: 'D97',
-    text: '`<id>.search`, `<id>.fetch`, `<id>.errands`, `<id>.talks`, `<id>.commitments`, a capability with `kinds` and the read the header names have shapes of their own and cannot declare `about`.',
+    text: '`<id>.search`, `<id>.fetch`, `<id>.errands`, `<id>.talks`, `<id>.commitments`, `<id>.news`, a capability with `kinds` and the read the header names have shapes of their own and cannot declare `about`.',
   },
   {
     id: 'scan-route',
@@ -400,7 +450,7 @@ export const RULES: Rule[] = [
     fields: ['scan', 'areas[].id'],
     enforced: 'check',
     decision: 'D35',
-    text: 'With `scan: true` Clew posts `/clew/scan` per person, nightly and on first visit. Each draft names an `area` of this manifest, its `topic` is the same for the same occurrence, and its actions name capabilities of this connector only. The conformance check runs the scan twice and compares.',
+    text: "With `scan: true` Clew posts `/clew/scan` per person, nightly and on first visit. Each draft names an `area` of this manifest, its `topic` is the same for the same occurrence, and its actions name capabilities of this connector only. An execute action that is the person's read receipt for something published carries `acknowledgement: { publishedAt }` (D112), at most one per draft: Hem then lifts the open item above its blocks, with that action as its button, until it is pressed. The conformance check runs the scan twice and compares.",
   },
   {
     id: 'figure-route',
@@ -426,6 +476,14 @@ export const RULES: Rule[] = [
     text: "A `read` named `<id>.search` with `kinds` is a source of Clew's composite search: its output is a `SearchOutput`, and `<id>.fetch` takes one of its refs back and returns one `SearchHit`.",
   },
   {
+    id: 'news-profile',
+    title: 'news makes a news source',
+    fields: ['capabilities[].name', 'capabilities[].view.open.capability'],
+    enforced: 'call',
+    decision: 'D112',
+    text: 'A `read` named `<id>.news` that takes `{}` is a source of Clew\'s news: its output is a `NewsOutput`, rows of `ref`, `title`, `sender`, `publishedAt` and an optional `link`, and nothing else. Clew asks every news source in the person\'s scope as the person, at once and under a short budget, and lists the rows as `clew.news`, newest first: the three newest under "Nyheter" on Hem, all of them on "Alla nyheter". An answer that is not a `NewsOutput`, a source that fails and a source that is late contribute nothing, and no error is shown. A row with `link` leaves Clew in a new tab; without one it opens the read the view\'s `open` names (by convention `<id>.newsItem`) beside the page. While `clew.news` is registered the model is offered it and never the per-source read.',
+  },
+  {
     id: 'delegation-token',
     title: "Delegation brings the person's own token",
     fields: ['delegation.audience'],
@@ -447,7 +505,23 @@ export const RULES: Rule[] = [
     fields: ['capabilities[].kind', 'capabilities[].about.param'],
     enforced: 'call',
     decision: 'D97',
-    text: "When the person chooses the action in an entity's menu, Clew starts it without the model, as the person, with `{ <param>: key }`. A `propose` answers a `ThreadDraft`, the shape a scan pushes: its actions name capabilities of this connector, it prepares and writes nothing, and it becomes the person's card. Clew writes the card's reason itself (the person chose it), so your `reason` is not shown. Refuse a key outside the person's scope in Swedish, as any call is refused. An `execute` is not called: Clew makes a card whose button is the human decision, and the execute runs only after it, with its write safety. The same request while the card is open gives the same card.",
+    text: "When the person chooses the action in an entity's menu, Clew starts it without the model, as the person, with `{ <param>: key }` and, for a propose that asks, the person's answers. A `propose` answers a `ThreadDraft`, the shape a scan pushes: its actions name capabilities of this connector, it prepares and writes nothing, and it becomes the person's card. Clew writes the card's reason itself (the person chose it), so your `reason` is not shown. Refuse a key outside the person's scope in Swedish, as any call is refused. An `execute` is not called: Clew makes a card whose button is the human decision, and the execute runs only after it, with its write safety and the answers to its asks. The same request while the card is open gives the same card.",
+  },
+  {
+    id: 'action-input-filled',
+    title: 'Every required input has someone to fill it',
+    fields: ['capabilities[].input', 'capabilities[].asks'],
+    enforced: 'call',
+    decision: 'D112',
+    text: "A propose or execute on a work item (an action of a `ThreadDraft`) leaves no property its capability's input requires to nobody: it comes from the action's own `input`, the selected rows (`refs`, with `usesItems`), the review's evidence (`reviews`, with `review`) or an ask. A draft that leaves one is refused and reported, as a draft that names another connector's capability is.",
+  },
+  {
+    id: 'asks-call',
+    title: 'Clew asks, shows what will happen, and sends the answers in the input',
+    fields: ['capabilities[].asks', 'capabilities[].effect'],
+    enforced: 'call',
+    decision: 'D112',
+    text: 'The person meets the asks the action does not already fill, as the first step of one dialog, from every place the action starts; a write without asks whose result can be undone stays one press. Clew checks each answer against its kind (a meeting time not yet passed, a day that exists, one of the choices) and leaves an optional ask that was not answered out. For a meeting it suggests three free times from the person\'s own calendar. With `effect` Clew calls the read as the person with exactly the input the execute would get and draws its `EffectOutput` as "Det här händer"; nothing is written and no audit row is kept for it. On the last button the answers are merged into the input, validated against the input schema and approved as every decision is: they are in the audit row and the approved intent, and the execute runs with them. An answer to anything the action does not ask is refused.',
   },
 ];
 
@@ -670,6 +744,9 @@ const JOB_MANIFESTS = {
 export function recipes(examples: ConnectorManifest[]): Recipe[] {
   const tool = examples.flatMap(m => m.capabilities).find(c => c.menu);
   const scanning = examples.find(m => m.scan && m.areas.length);
+  const asking = examples.flatMap(m => m.capabilities).find(c => c.asks && c.effect);
+  const effect = asking && examples.flatMap(m => m.capabilities).find(c => c.name === asking.effect);
+  const write = asking && effect ? { write: asking, effect } : undefined;
   return [
     {
       id: 'menu-tool',
@@ -681,8 +758,15 @@ export function recipes(examples: ConnectorManifest[]): Recipe[] {
     {
       id: 'scan-cards',
       title: 'A scan that becomes cards',
-      text: 'With `scan: true` Clew asks the connector, per person, what needs attention; each draft names an area of the manifest and carries actions of this connector (D35). The area shows the drafts as cards, its standing actions under "Gör själv", its schedules as text, and, with `figure: true`, its figure from `/clew/figure` as a tile on Hem.',
+      text: 'With `scan: true` Clew asks the connector, per person, what needs attention; each draft names an area of the manifest and carries actions of this connector (D35). Each draft becomes a card on Hem, marked with its area, whose title opens the card in the panel beside Hem; the area is a choice in Hem\'s area filter, its standing proposes and executes are suggested under "Menar du" as the person types in the question box, and, with `figure: true`, its figure from `/clew/figure` is a tile on Hem.',
       example: scanning ? { scan: scanning.scan, areas: scanning.areas } : {},
+    },
+    {
+      id: 'asking-write',
+      title: 'A write that asks the person and says what it will do (D112)',
+      text: "An `execute` that needs more than the work item gives declares `asks`: each names a property of its input and says what kind of answer it takes. Clew draws them as the first step of one dialog wherever the action starts (a work item's button, a person's page), suggests three free times from the person's own calendar for a `meeting`, and checks every answer before anything is sent. `effect` names a read of the same connector with the same input that answers an `EffectOutput`: what the write will do where, and how long it can be undone. Clew draws it as \"Det här händer\", the dialog's last step, and calls the execute only after the last button, with the answers merged into its input and recorded in the audit row. Declare the effect read `model: false`; it must write nothing.",
+      example: write ?? {},
+      ...(write ? { typebox: typeboxModule(write) } : {}),
     },
     {
       id: 'job-follower',

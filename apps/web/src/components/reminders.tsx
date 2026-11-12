@@ -26,10 +26,13 @@ import { useBranding } from '../branding';
 import { threadsQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { activeReminders } from '../stream';
+import { cardOverPage } from '../panel-address';
 
 /**
  * The bell and its list (D39): an anchored Popover on a screen with a pointer, Astryx's BottomSheet on a touch phone
- * (`presentation="adaptive"`). The count sits inside the button, as plain figures like the rail's own counts.
+ * (`presentation="adaptive"`). The count sits inside the button, as plain figures like the rail's own counts. A reminder
+ * opens its card over the page the person is on (D111 rule 2): beside it where the page holds the panel, else the
+ * shell's drawer over it.
  *
  * The bell stands in the header's band (D88), whose theme turns text white for the band's dark ground. From Astryx
  * 0.7.12 the popover's content is drawn inside the theme of its trigger, so the list would be white words on the
@@ -99,7 +102,7 @@ export function ReminderBell() {
                   headingLevel={3}
                   icon={<Icon icon={BellIcon} size="lg" />}
                   title="Inga aktuella påminnelser"
-                  description="När ett kort kommer tillbaka vid tiden du valde visas det här."
+                  description="När ett ärende kommer tillbaka vid tiden du valde visas det här."
                 />
               ) : (
                 <List density="spacious" aria-label="Aktuella påminnelser">
@@ -117,15 +120,15 @@ export function ReminderBell() {
                           <Timestamp value={thread.trigger.at} format="relative" hasTooltip={false} />
                         </Text>
                       }
-                      href={`/?card=${encodeURIComponent(thread.id)}`}
+                      href={cardOverPage(location.pathname, location.search, thread.id)}
                     />
                   ))}
                 </List>
               ))}
             <Divider />
             <HStack padding={3}>
-              <Link href="/" hasUnderline>
-                Öppna Hem
+              <Link href="/todo" hasUnderline>
+                Öppna Att göra
               </Link>
             </HStack>
           </VStack>

@@ -1,15 +1,22 @@
 import { describe, expect, test } from 'bun:test';
 import { previewManifest } from '../../../packages/connectors/src/preview';
 import { appraisals } from '../../../tests/a11y/protocol-preview-data';
+import { manifest as hrManifest } from '../../../connectors/hr/connector.mjs';
 import {
+  START_WORDS,
+  STEP_WORDS,
   aboutText,
   actionsAbout,
   declarationOf,
+  drawnText,
+  fillerText,
   parseDocument,
   placesLabel,
   placesText,
   problemsSummary,
+  schemaText,
   sourceOf,
+  stateWords,
   type ManifestPreview,
 } from '../src/pages/protocol-preview-model';
 
@@ -81,5 +88,63 @@ describe('the manifest preview, in words (artboard J)', () => {
     expect(parseDocument('{ "a": ')).toEqual({ ok: false, message: expect.any(String) });
     expect(problemsSummary(1)).toBe('1 problem, the manifest would be refused');
     expect(problemsSummary(3)).toBe('3 problems, the manifest would be refused');
+  });
+});
+
+describe('every write, both halves (D112 item 11, board Entrypoints), from the dry run over the HR fixture', () => {
+  const hr = previewManifest(hrManifest, { id: 'hr' }) as ManifestPreview;
+  const write = (name: string) => hr.manifest!.capabilities.find(c => c.name === name)!;
+  test("the restated path is the dry run's: where it starts, the steps, the input", () => {
+    const book = write('hr.bookTalk');
+    expect(book.path!.starts.map(s => [START_WORDS[s.place].where, stateWords(s.state, book.kind).label])).toEqual([
+      ['On a work item', 'Declared'],
+      ['On a person or a unit', 'Not declared'],
+      ['Typing in the question box', 'Not declared'],
+      ['In a conversation', 'Never for an execute'],
+      ['After something happened elsewhere', 'Declared'],
+    ]);
+    expect(book.path!.steps.map(s => [STEP_WORDS[s.step].name, stateWords(s.state, book.kind).label])).toEqual([
+      ['Fill in', 'Declared'],
+      ['See what happens', 'Declared'],
+      ['Ask first', "On the work item's action"],
+      ['One at a time', "On the work item's action"],
+      ['Receipt and undo', 'Always'],
+    ]);
+    expect(book.path!.input.map(i => [i.property, schemaText(i), fillerText(i), drawnText(i)])).toEqual([
+      [
+        'refs',
+        'array of string, required',
+        'The selected rows of the work item',
+        'Nothing; the checkboxes on the work item',
+      ],
+      [
+        'when',
+        'string, date-time, optional',
+        'The person, in the dialog',
+        "“När”: three free 45-minute times from the person's own calendar, “Annan tid” and the day",
+      ],
+      ['place', 'string, optional', 'The person, in the dialog', '“Plats”, optional: a text field'],
+      [
+        'message',
+        'string, optional',
+        'The person, in the dialog',
+        '“Meddelande till medarbetaren”, optional: a text area',
+      ],
+    ]);
+  });
+  test('a propose about a person: its entity fills the key, nothing fills the rest, and it never has an effect step', () => {
+    const prepare = write('hr.prepareAbsence');
+    expect(prepare.path!.input.map(i => fillerText(i))).toEqual([
+      'The key of the person or unit',
+      'Nobody: your default, unless a draft gives it',
+    ]);
+    expect(stateWords('never', prepare.kind)).toEqual({ label: 'Never for a propose', variant: 'neutral' });
+    const decide = write('hr.decideLeave');
+    expect(decide.path!.input.map(i => fillerText(i))).toEqual([
+      'The selected rows of the work item',
+      "The action's own input on the draft",
+      'The person, in the dialog',
+    ]);
+    expect(write('hr.whoIsOn').path).toBeUndefined();
   });
 });

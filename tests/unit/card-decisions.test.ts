@@ -48,7 +48,7 @@ test('a stored execute action always becomes an approval, even if the card label
 test('foreign actions, stale selections and another owner cannot approve effects', async () => {
   const w = await world();
   await expect(w.uc.act({ id: 'other' } as AuthenticatedContext, w.t.id, 'approve')).rejects.toThrow(
-    'Kortet finns inte.',
+    'Ärendet finns inte.',
   );
   await expect(w.uc.act(persona, w.t.id, 'approve', ['gone'])).rejects.toThrow('aktuellt');
   await w.store.transaction(tx =>
@@ -76,7 +76,7 @@ test("a preview is a read of the card's own rows through the action's preview ca
   expect(w.calls).toEqual(['finance.preview']);
   await expect(w.uc.preview(persona, w.t.id, 'finance:inv:other')).rejects.toThrow('Raden finns inte');
   await expect(w.uc.preview({ id: 'other' } as AuthenticatedContext, w.t.id, 'finance:inv:1')).rejects.toThrow(
-    'Kortet finns inte.',
+    'Ärendet finns inte.',
   );
   // An answer outside the contract never reaches the browser.
   const bad = await world(() => ({ title: 'x', mediaType: 'text/html', data: '<b>' }));

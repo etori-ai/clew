@@ -24,7 +24,8 @@ test.describe('screens', () => {
   });
   test('artboard 7: a list, a record and the hits in the panel', async ({ page, api: _ }) => {
     await page.setViewportSize(desktop);
-    await open(page, `/?open=phonebook.team&open-title=${at('Mitt teams kontaktlista')}`);
+    // A row goes into a conversation's box beside the conversation (D112 item 7).
+    await open(page, `/conversations/fraga?open=phonebook.team&open-title=${at('Mitt teams kontaktlista')}`);
     await page.getByRole('dialog').waitFor();
     await page.screenshot({ path: out('pattern-7-panel-list') });
     await open(
@@ -59,7 +60,8 @@ test.describe('screens', () => {
       .first()
       .waitFor();
     await page.screenshot({ path: out('pattern-8-banner') });
-    await open(page, `/?open=phonebook.team&open-title=${at('Mitt teams kontaktlista')}`);
+    // A row goes into a conversation's box beside the conversation (D112 item 7).
+    await open(page, `/conversations/fraga?open=phonebook.team&open-title=${at('Mitt teams kontaktlista')}`);
     await page.getByRole('dialog').getByRole('button', { name: 'Lägg till i samtalet' }).first().click();
     await page.keyboard.press('Escape');
     await composer(page).fill('@');
@@ -82,7 +84,8 @@ test.describe('screens', () => {
   test('the answer and the banner on a phone', async ({ page, api }) => {
     api.sources = [{ connector: 'finance', state: 'idle', lastSuccess: NOW, error: 'unavailable' }];
     await page.setViewportSize(phone);
-    await open(page, `/?open=phonebook.team&open-title=${at('Mitt teams kontaktlista')}`);
+    // A row goes into a conversation's box beside the conversation (D112 item 7).
+    await open(page, `/conversations/fraga?open=phonebook.team&open-title=${at('Mitt teams kontaktlista')}`);
     await page.getByRole('dialog').waitFor();
     await page.screenshot({ path: out('pattern-phone-panel') });
   });
@@ -97,7 +100,7 @@ test.describe('screens', () => {
     await page.setViewportSize(phone);
     await open(page, '/?card=fakturor');
     await page
-      .getByRole('dialog', { name: /^Kort: / })
+      .getByRole('dialog', { name: /^Ärende: / })
       .getByRole('link', { name: 'Granska 3' })
       .click();
     await page

@@ -1,6 +1,6 @@
 # D97 · A source says what its rows are about, and Clew places them
 
-**Status:** accepted as the direction (product owner, 2026-11-10), built 2026-11-10 (see "As built"); the items under "Open" were taken provisionally for the build and are not decided; item 9 amended by [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md) (2026-11-11, provisional: a person's title is one line Clew holds, pushed as SCIM's `title`; phone and employment facts are still read from their source) · **Date:** 2026-11-10 · **Area:** integrations, ui
+**Status:** accepted as the direction (product owner, 2026-11-10), built 2026-11-10 (see "As built"); the items under "Open" were taken provisionally for the build and are not decided; the placement of a person's action in its source's section (amended 2026-11-11) replaced by [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) item 5 (2026-11-11: every action in the page's header); item 9 amended by [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md) (2026-11-11, provisional: a person's title is one line Clew holds, pushed as SCIM's `title`; phone and employment facts are still read from their source) · **Date:** 2026-11-10 · **Area:** integrations, ui
 
 **Decision.** A feature that belongs on top of an entity (a person, a unit, later a room) is not written into the
 entity's page. Its source, a connector or a module Clew owns, declares what its rows are **about**, and Clew decides
@@ -144,3 +144,82 @@ page have not been looked up. The pattern is unproven beyond people and units. N
 page), [D96](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md) item 7 (the status
 column on Personal becomes a lens and a section) and the line in `docs/architecture/working-across-connectors.md`
 that cross-connector view enrichment is not supported.
+
+**Amended 2026-11-11: a card about a person opens beside the list, not on Hem.** The product owner followed "1 att
+agera på" on Personal and landed on Hem with the card already attached to the box: the list was gone, and a link that
+counts what waits had started the work instead of showing it. Under item 5 the one card "Just nu" counts now opens in
+the list's own panel (`/staff?card=<threadId>`), and a card under the opened person's Behöver dig opens over the person
+(`/staff?person=<key>&card=<threadId>`); closing leaves the person or the list (D83 rules 1 and 3). The card is the one
+Hem draws, from the same cache, so its decision goes through the same endpoint. The person's page and the unit's page
+have no panel and still lead to Hem, as does an action started from a person's menu and the review of a card's rows
+(D73). `docs/reference/interface-spaces.md` has the placement row.
+
+**Amended 2026-11-11, the same day: the name leads to the page.** With the person in the panel and "Öppna som sida"
+as a link inside it, the product owner found the two the wrong way round. On Personal a name now leads to the person's
+page (`/people/<key>?from=<the list>`). A menu choice that opened the person beside the list instead was tried and
+taken out the same day: a menu holds what can be done about a person, never where Clew shows them. The person is still
+drawn beside the list where "Just nu" counts several cards, and the focus goes to the row's name when that closes.
+Whether a person is shown beside a list at all, or only as a page, is open and waits for the navigation review.
+
+**Amended 2026-11-11 (D111): a card opens beside the page it is on, and an action's card beside the page it was
+started on.** Under [D111](D111-where-something-opens-is-decided-by-what-it-is.md) rules 2 to 4 the person's page and
+the unit's page hold the panel beside their column, as Personal does: a card under their Behöver dig opens there
+(`/people/<key>?section=needs-you&from=<the list>&card=<threadId>`, `/units/<id>?card=<threadId>`), with the section
+and the way back kept, and closing leaves the page as it was. An action about a person or a unit no longer leads to
+Hem: its card opens beside the page where it was started, over the person when it was started from the person beside
+the list (`/staff?person=<key>&card=<threadId>`), beside the list from a row's menu, beside the person's or the unit's
+page from their buttons. The unit's page now draws its actions as the person's do, the first two as buttons and the
+rest under "Fler" ("Åtgärder" on a phone); no source in the repository offers an action about a unit yet. This
+replaces the first amendment's sentence that the person's and the unit's pages have no panel and lead to Hem, and that
+an action leads there; the review of a card's rows still opens over Hem (D73) until D111's rule 5 is built.
+
+**Amended 2026-11-11 (D111): a person is a page only, and several cards are listed beside Personal.** Under
+[D111](D111-where-something-opens-is-decided-by-what-it-is.md) rule 3 and the product owner's answers 1 and 6, nothing
+draws a person beside a list. `?person=<key>`, the section drilled into on a phone (`person-section`) and the list drawn
+compact beside the person are gone; an address that still holds them leads to the person's page
+(`/people/<key>?from=<the list>`), with `person-section` as the page's `section` and an open card kept. "Just nu" that
+counts several cards now lists them beside Personal, of the kind the link counted ("N att agera på", "N förslag"), from
+the person's Behöver dig (`/staff?cards=<key>&cards-kind=act|proposal`); a title there opens its card over that list,
+and closing leaves the card, then the list, then Personal with its lens. One card still opens directly. The list is
+always drawn whole, so the panel stands beside it only where the list keeps its table's least width and is the drawer
+over it elsewhere, and closing an action's card gives the focus back to the row's menu button. The person's actions
+no longer offer "Öppna som sida". This replaces item 5's person beside the list and the sentences of the amendments
+above that keep the person beside the list where "Just nu" counts several cards, that open an action's card over the
+person, and that leave open whether a person is shown beside a list at all.
+
+**Amended 2026-11-11: actions are drawn once, beside the name.** Actions about a person or a unit are drawn once,
+beside the name, whichever section is open, and are no longer repeated in the opened section, which shows only what its
+source read (the product owner saw "Registrera frånvaro" twice on a person's page).
+
+**Amended 2026-11-11 (D111 rule 5): a card's review and a person's talk lie over the page they were opened on.** The
+sentences above that keep the review of a card's rows over Hem until D111's rule 5 is built no longer hold: "Granska N"
+on a card beside Personal, a person's or a unit's page opens the review over that page, and closing it leaves the page
+with the card beside it ([D73](D73-the-review-is-a-page-in-the-shell-with-an-address.md), amended the same day). A
+source's `about.page` may be a query alone, which lies over the page its way in is drawn on: the talks section's
+"Öppna samtalet" is `?talk={id}`, so the talk opens over the person's page as well as over Personal
+([D96](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md), amended the same day).
+
+**Amended 2026-11-11 (D111 amended): several cards lead to the person's page.** The list of a person's cards beside
+Personal is gone: "Just nu" counting several cards leads to the person's page at Behöver dig
+(`/people/<key>?section=needs-you&from=<the list>`), and an old `/staff?cards=<key>` address leads there in its place.
+Personal's panel stands beside the list from the one width every page has, 1336 px, and the list gives way, drawn as
+its rows where the table does not fit beside the panel.
+
+**Amended 2026-11-11, later the same day: an action is drawn in its source's section.** On seeing the amendment
+"actions are drawn once, beside the name" built, the product owner reversed it: "Registrera frånvaro" beside the name
+was more prominent than it deserves, and it can live under Frånvaro. On the person's page an action about the person is
+drawn once, in the section of the source (the connector) that offers it: a secondary button on the line of the
+section's heading, on a phone a button the width of the column under it, with the source's refusal under them. Beside
+the name stands only an action whose source has no section that holds it (none on the page, one that answered without
+a row, or one that did not answer and so is no way in from the list of sections), so no action is lost; when every
+action has its section, nothing stands beside the name. The unit's page, whose sections are drawn by another component
+and all at once, keeps every action beside its name. This replaces that amendment for the person's page.
+
+**Amended 2026-11-11: the person's sections are a tab strip.** The product owner chose top tabs over the list of
+sections beside the chosen one. The sections are chosen in a tab strip under the name, "Om <namn>", one tab per
+section in the same order ("Behöver dig" with the count of the reader's cards, then each source's title), each a link
+to `?section=`, with the chosen section under the strip at the column's full width; without a section in the address
+the first tab is chosen at every width. The list of sections with its line per section, and the phone's drill-in into
+a section and back, are gone; the strip is the same on a phone and scrolls sideways. A source that did not answer keeps
+its tab, so its section now holds its source's actions too: beside the name stands only an action whose source has no
+section on the page or answered without a row. The unit's page is unchanged.
