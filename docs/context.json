@@ -3935,6 +3935,16 @@
       ]
     },
     {
+      "path": "docs/reviews/2026-11-12-scim-profile-fields-and-directory-handover.md",
+      "title": "SCIM profile updates before the directory handover",
+      "category": "review-history",
+      "headings": [
+        "Changes before handover",
+        "Verified profile example",
+        "Review and verification"
+      ]
+    },
+    {
       "path": "docs/reviews/README.md",
       "title": "Reviews and explorations",
       "category": "review-history",
