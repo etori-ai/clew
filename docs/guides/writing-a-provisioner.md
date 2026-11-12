@@ -51,7 +51,11 @@ Clew holds one name per person. Send `displayName` (or `name.formatted`). Withou
 
 ### Current employments
 
-Send one entry per current employment in the user's employment extension. The directory chooses which employment details to publish to signed-in colleagues. This example creates Mikael with `POST /scim/v2/Users` in a test installation where the group `unit:9540` already exists and the account name and external id are available.
+Send one entry per current employment in the user's employment extension. The directory chooses which employment details to publish to signed-in colleagues.
+
+**For 50 % of full-time hours, send `"employmentPercentage": 50` on that employment.** The field takes a JSON number from 0 to 100 inclusive, without quotes or a percent sign. Clew displays `0.5` as 0.5 %. If the source expresses full-time hours as a fraction from 0 to 1, multiply that fraction by 100 before sending it. Omit the field when unknown. An explicit `0` displays as 0 %.
+
+This example creates Mikael with `POST /scim/v2/Users` in a test installation where the group `unit:9540` already exists and the account name and external id are available.
 
 ```json
 {
@@ -76,7 +80,7 @@ Send one entry per current employment in the user's employment extension. The di
 - **The list is sent whole.** A `PUT` replaces it, and one without the extension clears it. In a `PATCH`, `replace` on `urn:clew:params:scim:schemas:extension:employment:2.0:User:employments` replaces it, `add` appends and `remove` clears it. An entry has no id, so one cannot be picked by a filter, and two entries that say the same are one. A list holds at most 50.
 - **The attribute is named with its URN.** `employments` by itself, in a body or as a `PATCH` path, answers 400 `invalidPath` with the name to use.
 - **Each employment can carry its own details.** Send `employmentType` as the source's label (such as `Vikariat`) and `startDate` as the first calendar day of this employment in `YYYY-MM-DD` format. Both are optional. An empty entry is left out. An entry with details needs a `unitId`. Clew omits an unreadable date. The date is displayed on the profile. The provisioner sends changes to placements and access when they take effect.
-- **`employmentPercentage` measures this job's share of full-time hours.** Send a JSON number from 0 to 100 inclusive. Use `60` for 60 % or `62.5` for 62.5 %. A supplied `0` displays as 0 %. Omit the field when unknown and the profile hides the percentage row for that employment. There is no default. Clew omits out-of-range values and strings such as `"60 %"`. Each employment is independent, so the percentages may total more or less than 100.
+- **Each employment has its own percentage.** The percentages may total more or less than 100. Clew omits an out-of-range value or a string such as `"50"` or `"50%"`. The employment stays on the profile with its other details.
 - **When a unit is removed**, send the employments of its people first. The profile shows any remaining employment details without a unit name, and the [check](#checking-a-push) names the affected employment.
 
 [Employments and phone numbers (D114)](../decisions/D114-person-profiles-show-employments-and-categorised-phone-numbers.md).
