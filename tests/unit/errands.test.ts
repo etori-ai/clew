@@ -2,6 +2,7 @@ import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import type { ErrandRow, ErrandsResult } from '../../packages/contracts/src/index';
 import {
+  audiencedActorOf,
   CapabilityError,
   SEARCH_CONNECTOR,
   type Actor,
@@ -347,15 +348,18 @@ test('a case system for one provisioned group only is asked for its members, thr
     toolsEnabled: true,
     capabilities: {},
   });
-  // The composite runs as the person with their groups, and its call into each system keeps them.
-  const member = { ...mikael, groups: ['S-1-5-21-it'] };
+  // The server hands the registry the person with their groups (audiencedActorOf), and the list's call into each system
+  // keeps them.
+  const member = audiencedActorOf({ ...mikael, groups: ['S-1-5-21-it'] }),
+    outsider = audiencedActorOf({ ...mikael, groups: ['S-1-5-21-annan'] });
   expect((await list(registry, member)).systems.map(s => [s.id, s.status])).toEqual([
     ['permits', 'ok'],
     ['support', 'ok'],
   ]);
-  expect((await list(registry, { ...mikael, groups: ['S-1-5-21-annan'] })).systems.map(s => s.id)).toEqual(['permits']);
+  expect((await list(registry, outsider)).systems.map(s => s.id)).toEqual(['permits']);
   // With only the group's system there, the list is not offered outside the group at all.
   registry.govern('permits', { ...registry.governance('support') });
   expect(registry.allowed(member, 'clew.errands')).toBeDefined();
+  expect(registry.allowed(outsider, 'clew.errands')).toBeUndefined();
   expect(registry.allowed(mikael, 'clew.errands')).toBeUndefined();
 });
