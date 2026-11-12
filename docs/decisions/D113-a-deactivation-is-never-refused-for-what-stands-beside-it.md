@@ -1,4 +1,4 @@
-# D111 · A deactivation is never refused for what stands beside it, and the SCIM server says no to what it did not do
+# D113 · A deactivation is never refused for what stands beside it, and the SCIM server says no to what it did not do
 
 **Status:** provisional (chosen in the build that followed [the full review of the SCIM server](../reviews/2026-11-11-scim-full-review.md), which the product owner asked for on 2026-11-11; he has not read the three rules), built 2026-11-11; accepted once a real directory has sent a leaver through it · **Date:** 2026-11-11 · **Area:** identity
 

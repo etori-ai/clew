@@ -50,7 +50,7 @@ of three kinds:
 
 They came from one cause: a full body was checked by a schema and a patch by hand-written code, and neither knew what
 the other allowed. The fix was to read every request one way
-([D111](../decisions/D111-a-deactivation-is-never-refused-for-what-stands-beside-it.md)).
+([D113](../decisions/D113-a-deactivation-is-never-refused-for-what-stands-beside-it.md)).
 
 **The example provisioner did what the guides warn against.** It stopped at the first person Clew refused, before it
 had deactivated anybody who had left, and it never moved a reused account name off its old row although both guides
@@ -83,7 +83,7 @@ removed with the unit.
 | P12 | A failure in the token check was answered by the application around the SCIM server, not as a SCIM error; `bearer` in lower case was refused; a wrong method answered 404 | Reproduced | Fixed: 503 with `Retry-After`, the scheme without regard to case, 405 with `Allow` |
 | P13 | A value of the wrong type answered `invalidSyntax`; a boolean as a word was taken in a patch and refused in a body | Reproduced | Fixed: `invalidValue` naming the attribute, one reading of a boolean |
 | P14 | `startIndex` past the range of a bigint | Read; reproduced on memory | Fixed: capped |
-| P15 | A required attribute removed beside a deactivation refused the deactivation | Reproduced; the reviewer was unsure whether it was deliberate | Fixed: D111 |
+| P15 | A required attribute removed beside a deactivation refused the deactivation | Reproduced; the reviewer was unsure whether it was deliberate | Fixed: D113 |
 | P16 | The limit of 500 operations in a patch could not be found out | Reproduced | The answer says the limit, and the guide lists it |
 | P17 | Only space was taken as a `userName`, a name or an address | Reproduced | Fixed |
 
@@ -139,7 +139,7 @@ removed with the unit.
   what is supported; it is an [open question](../maintainers/open-questions.md).
 - **A unit's id answers differently when another organisation holds it** (409, 400 or 201), so its existence can be
   read. It follows from ids that are unique in the installation, which D101 chose.
-- **A taken `userName` beside a deactivation still refuses the request.** D111 says so.
+- **A taken `userName` beside a deactivation still refuses the request.** D113 says so.
 - **A capability row whose group is gone, changed while that group is being created again**, is not locked against
   each other. Rare, and it heals at the next derivation of the member.
 - **A possible deadlock** between a change of `externalId` and a membership write of the same person. From reading,
@@ -153,7 +153,7 @@ removed with the unit.
 ## Outcome
 
 Built on the branch `scim-full-review`, on top of D110's title. A request is read one way
-([D111](../decisions/D111-a-deactivation-is-never-refused-for-what-stands-beside-it.md)); a capability row has an
+([D113](../decisions/D113-a-deactivation-is-never-refused-for-what-stands-beside-it.md)); a capability row has an
 organisation ([D85](../decisions/D85-capabilities-are-mapped-from-provisioned-groups-in-clew.md), amended); the
 example provisioner carries on past a refused person and moves a reused account name; both guides and three figures
 are corrected. New tests: `tests/unit/scim-as-clients-send-it.test.ts` and `tests/unit/scim-integrity.test.ts`, with

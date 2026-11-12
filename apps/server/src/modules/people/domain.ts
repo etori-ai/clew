@@ -438,7 +438,7 @@ const titleOf = (value: unknown): string | null =>
         .trimEnd() || null
     : null;
 /**
- * D111: a deactivation is never refused for what stands beside it. A request that says `active: false` and also
+ * D113: a deactivation is never refused for what stands beside it. A request that says `active: false` and also
  * carries an attribute Clew cannot take (an address that is gone, a name that is empty, a required attribute removed)
  * deactivates the person and leaves that attribute as it was. Refusing the whole request would keep a leaver active
  * for a mistake about their name. `beside` marks the refusals this applies to: those about one attribute's value.
@@ -455,7 +455,7 @@ const standsBeside = (error: unknown): error is ScimError =>
 /**
  * A full user representation (POST, PUT) to the fields Clew holds, with D68's requirements checked by name. `current`
  * is the person a `PUT` replaces: an `externalId` the body leaves out is kept (Okta's update sends none), and so is
- * every required attribute the body gets wrong when it deactivates the person (D111).
+ * every required attribute the body gets wrong when it deactivates the person (D113).
  */
 export function userFields(body: unknown, current?: UserFields): UserFields {
   const input = asResource(body, USER_NAMES, 'User');
@@ -849,7 +849,7 @@ const USER_URN = SCIM.user.toLowerCase(),
  * a key. An attribute Clew does not hold is accepted and ignored whatever the operation; one it requires cannot be
  * taken away. `id` is the resource's own, for a path-less value that repeats it.
  *
- * D111: when the patch says `active: false`, what it gets wrong about another attribute is left as it was and the
+ * D113: when the patch says `active: false`, what it gets wrong about another attribute is left as it was and the
  * person is deactivated. Entra sends the emptied mailbox of a leaver beside the deactivation.
  */
 export function applyUserPatch(

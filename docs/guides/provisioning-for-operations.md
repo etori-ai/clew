@@ -230,7 +230,7 @@ Omar deactivated.
 
 Removing a person's last placement before adding the new one leaves a gap. A protected request during that gap ends their session. A deactivated person retains their identity binding and existing memberships until the writer removes them. On return, reconcile current duties before enabling access. If several sources own groups, confirm that every writer has withdrawn its expired duties. Use `active=false` for a leaver. Clew also treats user `DELETE` as deactivation and keeps the row searchable, which differs from the 404 and search omission required after deletion by [RFC 7644 §3.6](https://www.rfc-editor.org/rfc/rfc7644.html#section-3.6). A full user `PUT` without `active` enables the person.
 
-A deactivation is never refused for what stands beside it ([D111](../decisions/D111-a-deactivation-is-never-refused-for-what-stands-beside-it.md)): a request that says `active: false` deactivates the person even when the same request gets another attribute wrong, such as an address the source has already emptied. That attribute is left as it was.
+A deactivation is never refused for what stands beside it ([D113](../decisions/D113-a-deactivation-is-never-refused-for-what-stands-beside-it.md)): a request that says `active: false` deactivates the person even when the same request gets another attribute wrong, such as an address the source has already emptied. That attribute is left as it was.
 
 ### What the daily comparison does
 

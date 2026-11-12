@@ -455,7 +455,7 @@ describe('the synthetic provisioner', () => {
     expect(held(leaver!.userName)?.enabled).toBe(false);
     expect(held('ny.person')?.enabled).toBe(true);
     expect(held(first!.userName)).toMatchObject({ enabled: true, email: first!.email });
-    // The same row for a person the source says has left is no obstacle: a deactivation is never refused (D111).
+    // The same row for a person the source says has left is no obstacle: a deactivation is never refused (D113).
     const gone = await push(client, {
       ...broken,
       people: [...broken.people.map((p, i) => (i === 0 ? { ...p, active: false } : p)), newcomer],

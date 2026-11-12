@@ -51,7 +51,7 @@ function app(authenticate?: () => never) {
     (await json('POST', '/Groups', { schemas: [GROUP], ...body })).body.id as string;
   return { call, json, store, person, create, patch, group, logged };
 }
-describe('a deactivation is never refused for what stands beside it (D111)', () => {
+describe('a deactivation is never refused for what stands beside it (D113)', () => {
   test('a patch that deactivates goes through although it takes a required attribute away, sets one wrongly or names a path Clew cannot read', async () => {
     const { create, patch, store } = app();
     const id = await create(1);
