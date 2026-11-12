@@ -26,6 +26,10 @@ user names (`{ keys }`, at most 200), it gives one row per employee of the manag
 today, upcoming }`, the key as it was asked: "I tjänst", or the absence ("Sjuk · dag 1", "Sjukskriven", "VAB",
 "Semester") as the column Närvaro on Personal, today in a few words, and the next known absence, a leave request not yet
 decided saying so. Anyone else, an unknown key and a key asked twice are no row; an employee is refused by the scope.
+It declares `person: { admits: ['managed'] }`, so Clew sends it only the manager's own reports and tells it each key's
+relation in the request body the assertion is bound to
+([D117](../../docs/decisions/D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md));
+the system still narrows to its own unit as well.
 A row opens the person's absence pattern. An employee's `personId` is their user name; the people on Bergsåkers skola in
 the development directory carry the names it gives them, so every person on the manager's Personal has an answer. An employee the HR system knows (by person id
 after `FIXTURE_PERSON_MAP`) gets `my-shift`: today's shift, the balance, a delegation about to expire, the own leave
@@ -39,7 +43,8 @@ does not exist yet, none when it does. A follower cannot also be an action about
 takes the HR system's own employee ref (`hr:emp:N`), so the person's menu gets its own propose.
 
 `hr.prepareAbsence` is "Registrera frånvaro" in a manager's menu on a person (D97): `about: { entity: 'person', param:
-'person' }`, and `person`, the user name, is the only input it requires (`from`, the first day, is optional and today
+'person' }` with `person: { admits: ['managed'] }` (D117: Clew offers and starts it only on the manager's reports), and
+`person`, the user name, is the only input it requires (`from`, the first day, is optional and today
 when absent). It finds the employee as `hr.person` does, on the manager's own unit only, and refuses anyone else in
 Swedish ("Medarbetaren finns inte i din enhet."), as it refuses a day the employee is already away. It writes nothing:
 it answers a `ThreadDraft`, the card the manager reads before deciding, whose row names the employee (with the key as

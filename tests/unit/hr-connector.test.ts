@@ -134,7 +134,13 @@ describe('the HR fixture connector', () => {
       { level: 'ok', text: 'hr.prepareAbsence: employee refused by scope' },
       { level: 'ok', text: 'hr.prepareAbsence about person, propose, input: takes person' },
       { level: 'ok', text: 'hr.prepareAbsence about person, propose, model tool: not offered to the model' },
+      // What it admits (D117), from the declaration: Clew starts it only on the manager's own reports.
+      { level: 'ok', text: 'hr.prepareAbsence names a person in person: Clew sends only managed (person.admits)' },
     ]);
+    expect(about.findings).toContainEqual({
+      level: 'ok',
+      text: 'hr.person names a person in keys: Clew sends only managed (person.admits)',
+    });
   });
   test('the scan gives the manager the rehab talk and the leave requests, and the employee the delegation and the waiting leave', async () => {
     const { registry } = stack();

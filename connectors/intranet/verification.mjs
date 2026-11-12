@@ -1,7 +1,27 @@
 // Protocol v2 verifier. No Clew packages or private signing material are needed.
-import { createPublicKey, verify, timingSafeEqual } from 'node:crypto';
+import { createHash, createPublicKey, verify, timingSafeEqual } from 'node:crypto';
 export const b64 = value => Buffer.from(value, 'base64url');
-export function verifyAssertion(token, jwks, audience, now = Date.now()) {
+/** SHA-256 of the exact request body, base64url: what Clew signs as the assertion's `body` claim (D117). */
+export const bodyDigest = text => createHash('sha256').update(text, 'utf8').digest('base64url');
+const CAPABILITY_ROUTE = '/clew/capabilities/';
+/**
+ * What a request binds an assertion to (D117): the digest of its exact body and, on a capability's route, the
+ * capability's name. Reads a clone, so the handler can still read the body after verifying.
+ */
+export async function bindingOf(request) {
+  const path = new URL(request.url).pathname;
+  const at = path.indexOf(CAPABILITY_ROUTE);
+  return {
+    body: bodyDigest(await request.clone().text()),
+    capability: at < 0 ? undefined : decodeURIComponent(path.slice(at + CAPABILITY_ROUTE.length)),
+  };
+}
+/**
+ * The verified actor, or null. With `binding`, the assertion must have been issued for exactly that request: its
+ * `body` claim the digest of the body received, and its `capability` claim the capability of the route (absent on any
+ * other route). The body's `input` and `about` are then Clew's, and an assertion cannot be replayed with another body.
+ */
+export function verifyAssertion(token, jwks, audience, now = Date.now(), binding) {
   try {
     const parts = String(token).split('.');
     if (parts.length !== 3) return null;
@@ -38,6 +58,8 @@ export function verifyAssertion(token, jwks, audience, now = Date.now()) {
       !['manager', 'employee'].includes(actor.role)
     )
       return null;
+    if (binding && (claims.body !== binding.body || (claims.capability ?? undefined) !== binding.capability))
+      return null;
     return actor;
   } catch {
     return null;
@@ -50,12 +72,15 @@ export function createVerifier(
   let cached,
     until = 0,
     lastFetch = 0;
-  return async (token, suppliedKey) => {
+  // Pass the incoming request to bind the assertion to it (D117); every connector in this repository does.
+  return async (token, suppliedKey, request) => {
     try {
       const expected = Buffer.from(secret ?? ''),
         supplied = Buffer.from(suppliedKey ?? '');
       if (!expected.length || expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) return null;
-      if (jwks) return verifyAssertion(token, typeof jwks === 'function' ? await jwks() : jwks, audience);
+      const binding = request ? await bindingOf(request) : undefined;
+      if (jwks)
+        return verifyAssertion(token, typeof jwks === 'function' ? await jwks() : jwks, audience, Date.now(), binding);
       let kid;
       try {
         kid = JSON.parse(b64(String(token).split('.')[0])).kid;
@@ -77,7 +102,7 @@ export function createVerifier(
         cached = await response.json();
         until = Date.now() + 60_000;
       }
-      return verifyAssertion(token, cached, audience);
+      return verifyAssertion(token, cached, audience, Date.now(), binding);
     } catch {
       return null;
     }

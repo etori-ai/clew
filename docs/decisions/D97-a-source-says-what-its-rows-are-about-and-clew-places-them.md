@@ -1,6 +1,6 @@
 # D97 · A source says what its rows are about, and Clew places them
 
-**Status:** accepted as the direction (product owner, 2026-11-10), built 2026-11-10 (see "As built"); the items under "Open" were taken provisionally for the build and are not decided; the placement of a person's action in its source's section (amended 2026-11-11) replaced by [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) item 5 (2026-11-11: every action in the page's header); item 9 amended by [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md) (2026-11-11, provisional: a person's title is one line Clew holds, pushed as SCIM's `title`; phone and employment facts are still read from their source) · **Date:** 2026-11-10 · **Area:** integrations, ui
+**Status:** accepted as the direction (product owner, 2026-11-10), built 2026-11-10 (see "As built"); the items under "Open" were taken provisionally for the build and are not decided; the placement of a person's action in its source's section (amended 2026-11-11) replaced by [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) item 5 (2026-11-11: every action in the page's header); item 9 amended by [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md) (2026-11-11, provisional: a person's title is one line Clew holds, pushed as SCIM's `title`; phone and employment facts are still read from their source); item 8's rule of who may be asked about amended by [D117](D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md) (2026-11-12, provisional: the registry applies it to every call, `managed` is D99's direct reports only, a capability says which relations it admits, and the source is told each key's relation in a request the assertion binds) · **Date:** 2026-11-10 · **Area:** integrations, ui
 
 **Decision.** A feature that belongs on top of an entity (a person, a unit, later a room) is not written into the
 entity's page. Its source, a connector or a module Clew owns, declares what its rows are **about**, and Clew decides
@@ -223,3 +223,16 @@ the first tab is chosen at every width. The list of sections with its line per s
 a section and back, are gone; the strip is the same on a phone and scrolls sideways. A source that did not answer keeps
 its tab, so its section now holds its source's actions too: beside the name stands only an action whose source has no
 section on the page or answered without a row. The unit's page is unchanged.
+
+**Amended 2026-11-12 (D117): the rule holds on every call.** Item 8 and "As built" item 8 made who may be asked about a
+core rule, but only the entities module applied it: `/api/cap`, a connector's callback and the read a section's row
+opens let the caller choose the keys, and `colleague` sent a colleague's key to every source. Under
+[D117](D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md) the registry
+resolves the caller's relation to every key an input names before any connector is called, on every path. `managed` is
+now D99's direct reports alone: a co-manager of the reader's unit and anyone who manages the reader are colleagues, though
+Personal still lists them. A unit has two relations, `manages` and `member`. A capability says in `person.admits` or
+`unit.admits` which relations it takes (`self` and `managed`, or `manages`, when it does not say); a key outside them is
+left out or the call refused as an unknown capability is, and the source is told each key's relation in a request body
+the assertion is bound to. The telling and the binding are protocol 3, a break from 2 (D60): a connector on 2 is loaded
+for a window and held to the rule, but is told nothing. The entities module keeps its own check and shares the rule (`personRelation`,
+`unitRelation`); `colleague` now reaches only a source that admits it.

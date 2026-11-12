@@ -96,7 +96,7 @@ On manifest changes, restart/deploy the connector and use Hämta manifest igen i
 | Callback denied | Separate callback grant, exact `uses` target, actor's current assignment and target scope; no executes or cycles. |
 | Delegated call denied | Manifest audience, IdP exchange configuration, session token and source-side resource-server configuration. |
 | A view is not in the menu | It must be an eligible read with a view and no required input, selected by an administrator, within the person's access. |
-| A read about a person shows no section, lens or column | A section needs a row for that key: check that the row carries `key` as asked and that the person may be asked about. A lens or a column needs an administrator's choice. Every place needs the capability in the person's scope and audience. |
+| A read about a person shows no section, lens or column | A section needs a row for that key: check that the row carries `key` as asked, that the person may be asked about, and that the read admits how the reader stands to them (`person.admits`, `self` and `managed` when omitted; D117). A lens or a column needs an administrator's choice. Every place needs the capability in the person's scope and audience. |
 | Unknown write outcome | Recover source evidence by operation lookup; do not retry with a new operation id to make the warning disappear. |
 
 ## Additional write verification

@@ -21,16 +21,19 @@ import { talkDirectory, talks } from '../composition/talks';
 import { competenceConnector } from '../modules/competence/capabilities';
 import { competence } from '../composition/competence';
 import { logger } from '../logging';
+import { relations } from '../composition/relations';
 
 /**
  * The registry the BFF runs with: the bundled connectors below plus every enabled connector row
  * (`remote.ts`, D21, D23). Every REST route, card action and tool definition is derived from here. Nothing in
  * `routes/`, `threads/` or `assistant/` knows a connector by name, and connectors reach each other only through
  * the registry (D20): in-process through the `clew.call` handle, remote through `POST /api/connectors/call`.
+ * Who may be asked about (D117) is installed with it, so no call that names a person runs without the rule.
  */
 export const registry = new Registry({
   onRefused: (id, topic, problem) =>
     logger.error({ scope: 'connectors', connector: id, topic, problem }, 'connector draft refused (D35)'),
+  relations: relations.relate,
 });
 /** The composite search (D26) lists its sources from the registry at call time, so a connector enabled by an administrator is searched from the next question on. */
 const search = searchUsecases({ sources: actor => registry.searchSources(actor), clock });

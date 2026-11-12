@@ -77,7 +77,8 @@ test(
           remoteConnector(await fetchManifest(url), {
             url,
             key,
-            assert: actor => authority.assert('reference', actor),
+            // Bound to each request's body and capability, as the reference connector's verifier requires (D117).
+            assert: (actor, chain, binding) => authority.assert('reference', actor, [], chain, binding),
           }),
         )
         .govern('reference', openGovernance());

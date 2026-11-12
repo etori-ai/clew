@@ -1,6 +1,13 @@
 import type { Actor, Registry } from '@clew/connectors';
-import type { ConnectorManifest } from '@clew/connectors/protocol';
-import { ManifestError, fetchManifest, parseManifest, remoteConnector, type FetchLike } from '@clew/connectors/remote';
+import { healthOf, type ConnectorManifest } from '@clew/connectors/protocol';
+import {
+  ManifestError,
+  fetchManifest,
+  parseManifest,
+  remoteConnector,
+  type AssertionBinding,
+  type FetchLike,
+} from '@clew/connectors/remote';
 import { enabledConnectors, recordHealth, type ConnectorHealth, type ConnectorRow } from '@clew/db/connectors';
 import { openSecret } from '../auth-crypto';
 import { signingAuthority } from './signing';
@@ -15,11 +22,14 @@ export { AssertionError } from './authority';
  * call with its installation RSA key; the connector verifies public keys and uses a separate callback grant.
  */
 export const secretPurpose = (connectorId: string) => 'connector:secret:' + connectorId;
-/** The bearer token Clew sends to one connector for one call: who is acting, for that connector only, for two minutes. */
+/**
+ * The bearer token Clew sends to one connector for one call: who is acting, for that connector only, for two minutes,
+ * bound to the request it is sent with (D117).
+ */
 export const assertionFor =
   (connectorId: string, uses: string[] = []) =>
-  async (actor: Actor, chain: string[] = []) =>
-    (await signingAuthority()).assert(connectorId, actor, uses, chain);
+  async (actor: Actor, chain: string[] = [], binding?: AssertionBinding) =>
+    (await signingAuthority()).assert(connectorId, actor, uses, chain, binding);
 export const verifyAssertion = async (token: string) => (await signingAuthority()).verify(token);
 
 /** What the loader needs from a row: the secret already opened. The admin use cases and the CLI build the same shape. */
@@ -59,7 +69,7 @@ export function registerConnector(
       url: source.url,
       key: source.secret,
       assert: authority
-        ? (actor, chain) => authority.assert(source.id, actor, manifest.uses, chain)
+        ? (actor, chain, binding) => authority.assert(source.id, actor, manifest.uses, chain, binding)
         : assertionFor(source.id, manifest.uses),
       ...(fetchImpl ? { fetch: fetchImpl } : {}),
     }),
@@ -93,7 +103,7 @@ export async function loadConnectors(registry: Registry, options: LoadOptions = 
           const manifest = await fetchManifest(source.url, source.id, options.fetch);
           if (JSON.stringify(manifest) !== JSON.stringify(stored))
             registerConnector(registry, source, manifest, options.fetch, options.authority);
-          await record(source.id, { status: 'ok', at: new Date().toISOString() }, manifest);
+          await record(source.id, healthOf(manifest, new Date().toISOString()), manifest);
           log(
             `Connector "${source.id}" (${manifest.source}) registered from ${source.url}: ${manifest.capabilities.length} capabilities, ${manifest.areas.length} areas${manifest.scan ? ', scan' : ''}.`,
           );

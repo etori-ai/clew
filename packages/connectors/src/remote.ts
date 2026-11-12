@@ -8,6 +8,7 @@ import {
   ConnectorManifestSchema,
   PROTOCOL_ACCEPTED,
   PROTOCOL_RETIRED,
+  protocolTerms,
   ScanResponseSchema,
   type ConnectorManifest,
 } from './protocol';
@@ -24,11 +25,24 @@ export interface RemoteTransport {
   url: string;
   /** Connector transport credential. It never signs user identity or callback authority. */
   key?: string;
-  /** The assertion Clew sends as the bearer token: who is acting, signed for this connector. */
-  assert: (actor: Actor, chain?: string[]) => Promise<string>;
+  /**
+   * The assertion Clew sends as the bearer token: who is acting, signed for this connector and bound to the one request
+   * it was issued for (D117): the exact body it is sent with and, on a capability's route, the capability's name.
+   */
+  assert: (actor: Actor, chain?: string[], binding?: AssertionBinding) => Promise<string>;
   fetch?: FetchLike;
   /** Milliseconds before a call counts as unavailable. */
   timeoutMs?: number;
+}
+/**
+ * What an assertion is bound to (D117): `body`, the exact request body it is sent with, which the signer digests
+ * (SHA-256, base64url, the `body` claim), and on `/clew/capabilities/{name}` the capability's `name` (the `capability`
+ * claim). A connector's verifier recomputes both from the request it received, so neither the input nor the `about` it
+ * carries can be changed and the assertion cannot be replayed on another capability.
+ */
+export interface AssertionBinding {
+  body: string;
+  capability?: string;
 }
 export class ManifestError extends Error {
   constructor(message: string) {
@@ -99,6 +113,7 @@ async function delegated(
     throw new CapabilityError(`${source} kunde inte få din behörighet just nu.`);
   }
 }
+const CAPABILITY_ROUTE = '/clew/capabilities/';
 async function post(
   transport: RemoteTransport,
   source: string,
@@ -111,6 +126,14 @@ async function post(
   signal?: AbortSignal,
 ) {
   const fetchImpl = transport.fetch ?? fetch;
+  // The body is serialised once: the assertion is bound to exactly these bytes (D117).
+  const text = JSON.stringify(body);
+  const binding: AssertionBinding = {
+    body: text,
+    ...(path.startsWith(CAPABILITY_ROUTE)
+      ? { capability: decodeURIComponent(path.slice(CAPABILITY_ROUTE.length)) }
+      : {}),
+  };
   let response: Response;
   try {
     response = await fetchImpl(transport.url + path, {
@@ -118,12 +141,12 @@ async function post(
       headers: {
         'content-type': 'application/json',
         accept: 'application/json',
-        authorization: 'Bearer ' + (await transport.assert(actor, chain)),
+        authorization: 'Bearer ' + (await transport.assert(actor, chain, binding)),
         ...(operationId ? { 'x-clew-operation-id': operationId } : {}),
         ...(transport.key ? { 'x-clew-connector-key': transport.key } : {}),
         ...(token ? { [DELEGATED_TOKEN_HEADER]: token } : {}),
       },
-      body: JSON.stringify(body),
+      body: text,
       signal: AbortSignal.any([AbortSignal.timeout(transport.timeoutMs ?? 10_000), ...(signal ? [signal] : [])]),
     });
   } catch {
@@ -147,6 +170,8 @@ function failWith(json: unknown, source: string): never {
 /** Build the `Connector` the registry runs: every operation is a call to the service as the acting person. */
 export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTransport): Connector {
   const source = manifest.source;
+  // A connector on the previous protocol (D60) was written against bodies without `about`; it is never sent one.
+  const told = (clew: Clew) => (protocolTerms(manifest.protocol).about && clew.about ? { about: clew.about } : {});
   const capabilities: Capability<any, any>[] = manifest.capabilities.map(c => ({
     name: c.name,
     kind: c.kind,
@@ -164,15 +189,18 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
     ...(c.view ? { view: c.view } : {}),
     ...(c.menu ? { menu: c.menu } : {}),
     ...(c.about ? { about: c.about } : {}),
+    ...(c.person ? { person: c.person } : {}),
+    ...(c.unit ? { unit: c.unit } : {}),
     ...(c.asks ? { asks: c.asks } : {}),
     ...(c.effect ? { effect: c.effect } : {}),
     run: async (actor, input, clew) => {
       const { status, json } = await post(
         transport,
         source,
-        '/clew/capabilities/' + encodeURIComponent(c.name),
+        CAPABILITY_ROUTE + encodeURIComponent(c.name),
         actor,
-        { actor, input },
+        // How the actor stands to each key the input names (D117), bound with the input by the assertion.
+        { actor, input, ...told(clew) },
         await delegated(manifest, clew, source),
         clew.chain,
         clew.operationId,
@@ -194,19 +222,20 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
             request: import('@clew/contracts').DocumentRequest,
             clew: Clew,
           ): Promise<DocumentContent> => {
+            const text = JSON.stringify({ actor, request, ...told(clew) });
             const response = await (transport.fetch ?? fetch)(transport.url + '/clew/documents', {
               redirect: 'error',
               method: 'POST',
               headers: {
                 'content-type': 'application/json',
                 accept: 'application/octet-stream',
-                authorization: 'Bearer ' + (await transport.assert(actor, clew.chain)),
+                authorization: 'Bearer ' + (await transport.assert(actor, clew.chain, { body: text })),
                 ...(transport.key ? { 'x-clew-connector-key': transport.key } : {}),
                 ...(manifest.delegation
                   ? { [DELEGATED_TOKEN_HEADER]: (await delegated(manifest, clew, source)) ?? '' }
                   : {}),
               },
-              body: JSON.stringify({ actor, request }),
+              body: text,
               signal: AbortSignal.any([
                 AbortSignal.timeout(transport.timeoutMs ?? 10_000),
                 ...(clew.signal ? [clew.signal] : []),
@@ -255,6 +284,7 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
         }
       : {}),
     uses: manifest.uses ?? [],
+    protocol: manifest.protocol,
     ...(manifest.facts ? { facts: manifest.facts } : {}),
     ...(manifest.header ? { header: manifest.header.capability } : {}),
     ...(manifest.delegation ? { delegation: manifest.delegation } : {}),

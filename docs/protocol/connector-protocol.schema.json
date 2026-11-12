@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://clew.dev/protocol/2/connector-protocol.schema.json",
+  "$id": "https://clew.dev/protocol/3/connector-protocol.schema.json",
   "title": "Clew connector protocol",
   "description": "Shapes exchanged between Clew and a connector service. See docs/reference/connector-protocol.md.",
   "$defs": {
@@ -17,9 +17,17 @@
       ],
       "properties": {
         "protocol": {
-          "type": "number",
-          "const": 2,
-          "description": "The version of this contract the manifest is written to, not of the connector (D60). This instance loads 2; an additive change to the protocol keeps the number."
+          "anyOf": [
+            {
+              "type": "number",
+              "const": 3
+            },
+            {
+              "type": "number",
+              "const": 2
+            }
+          ],
+          "description": "The version of this contract the manifest is written to, not of the connector (D60). This instance loads 3, and 2 for a window: a connector on 2 is loaded, shown with a warning in administration and in the conformance check, sent no `about` in its request bodies and held to the looser rules of 2. An additive change keeps the number; a break is a new one. 3 (D117) binds the request assertion to its body and capability, sends `about` in the body of a call whose input names people or units, and refuses a manifest in which an input that names someone is not a plain string property."
         },
         "id": {
           "type": "string",
@@ -1866,6 +1874,68 @@
                 "additionalProperties": false,
                 "description": "What the rows concern (D97). A `read` takes `{ keys }` (an array of at most 200 strings, required) and answers `rows` (or its view's rows), one per key it knows, each with a string `key` it was asked with; a key outside the caller's scope is answered as no row, never as a refusal. It declares a `table` or `list` view, is never a tool (`model: false`), and may answer `heading` and `note`, two strings beside the rows. A `propose` or `execute` names in `param` the input property that takes one key. Clew decides where it shows: an action in the entity's menu, a read as a section on the opened entity, a `warn` or `alert` tone as a mark on its row, a table or list as a lens an administrator may offer."
               },
+              "person": {
+                "type": "object",
+                "properties": {
+                  "param": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                    "maxLength": 40,
+                    "description": "On a capability that is not `about` a person: the plain string property of the input that takes one person's key, a provisioned `userName`, such as the `person` of a read a row of a section opens. Absent on a capability about a person, whose key is in `keys` or `about.param`."
+                  },
+                  "admits": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "const": "self"
+                        },
+                        {
+                          "type": "string",
+                          "const": "managed"
+                        },
+                        {
+                          "type": "string",
+                          "const": "colleague"
+                        }
+                      ],
+                      "description": "`self`: the caller is the person. `managed`: the person reports to the caller (D99): placed without a manager's role on a unit the caller manages, or reporting to it from below (the managers of the nearest led units below it, and the people of units nobody leads in between); a co-manager of the caller's unit only when their line runs to a unit above it that the caller leads, never someone who manages the caller. `colleague`: any other active person of the caller's organisation."
+                    },
+                    "minItems": 1,
+                    "uniqueItems": true,
+                    "description": "The relations a caller may have to a person this capability is asked about. Omitted means `[\"self\", \"managed\"]`, the strictest that still lets a person read their own and a manager their reports'."
+                  }
+                },
+                "additionalProperties": false,
+                "description": "Who may be asked about (D117). Clew resolves the caller's relation to every person the input names from its own directory before the connector is called: a key in `keys` the caller may not ask about is left out of the call, and a call whose single key names such a person, or holds anything but a string there, is refused as an unknown capability is, so the answer never tells whether the person exists. The relation of each key sent travels in the request body's `about`, which the assertion binds. A capability about a person, a `<id>.commitments` read, a read a row of a section about a person opens with the row's `key` and an execute's effect read name a person whether or not they declare this, and each such input must be a plain string property of the input schema; without `admits` they admit `self` and `managed`."
+              },
+              "unit": {
+                "type": "object",
+                "properties": {
+                  "admits": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "const": "manages"
+                        },
+                        {
+                          "type": "string",
+                          "const": "member"
+                        }
+                      ],
+                      "description": "`manages`: the caller holds a manager's role on the unit. `member`: the caller is placed on it otherwise."
+                    },
+                    "minItems": 1,
+                    "uniqueItems": true,
+                    "description": "The relations a caller may have to a unit this capability is asked about. Omitted means `[\"manages\"]`."
+                  }
+                },
+                "additionalProperties": false,
+                "description": "Who may be asked about through a capability whose `about.entity` is `unit` (D117). A unit key outside `admits` is left out of `keys`, and a call whose `about.param` names such a unit is refused as an unknown capability is."
+              },
               "follows": {
                 "type": "array",
                 "items": {
@@ -2194,7 +2264,7 @@
         }
       },
       "additionalProperties": false,
-      "$id": "https://clew.dev/protocol/2/connector-manifest.schema.json",
+      "$id": "https://clew.dev/protocol/3/connector-manifest.schema.json",
       "title": "Clew connector manifest"
     },
     "Actor": {
@@ -2242,6 +2312,70 @@
       },
       "additionalProperties": false,
       "description": "The acting person as Clew knows them. Never a token."
+    },
+    "CallAbout": {
+      "type": "object",
+      "required": [
+        "entity",
+        "relations"
+      ],
+      "properties": {
+        "entity": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "person"
+            },
+            {
+              "type": "string",
+              "const": "unit"
+            }
+          ],
+          "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id."
+        },
+        "relations": {
+          "type": "object",
+          "patternProperties": {
+            "^.*$": {
+              "anyOf": [
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "self"
+                    },
+                    {
+                      "type": "string",
+                      "const": "managed"
+                    },
+                    {
+                      "type": "string",
+                      "const": "colleague"
+                    }
+                  ],
+                  "description": "`self`: the caller is the person. `managed`: the person reports to the caller (D99): placed without a manager's role on a unit the caller manages, or reporting to it from below (the managers of the nearest led units below it, and the people of units nobody leads in between); a co-manager of the caller's unit only when their line runs to a unit above it that the caller leads, never someone who manages the caller. `colleague`: any other active person of the caller's organisation."
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "manages"
+                    },
+                    {
+                      "type": "string",
+                      "const": "member"
+                    }
+                  ],
+                  "description": "`manages`: the caller holds a manager's role on the unit. `member`: the caller is placed on it otherwise."
+                }
+              ]
+            }
+          },
+          "description": "Every key the input carries (each of `keys`, or the value of the property that takes one key), exactly as the input spells it, mapped to how the actor stands to it: a person's `self`, `managed` or `colleague`, a unit's `manages` or `member`. Clew sends no key the capability does not admit, so a key the input carries and this map does not name is one Clew did not vouch for: answer it as no row."
+        }
+      },
+      "additionalProperties": false,
+      "description": "How the actor stands to the people or units the input names (D117), present when the input names any. Trust it only from a body whose digest the verified assertion's `body` claim holds."
     },
     "CallRequest": {
       "type": "object",
@@ -2296,7 +2430,71 @@
           "additionalProperties": false,
           "description": "The acting person as Clew knows them. Never a token."
         },
-        "input": {}
+        "input": {},
+        "about": {
+          "type": "object",
+          "required": [
+            "entity",
+            "relations"
+          ],
+          "properties": {
+            "entity": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "person"
+                },
+                {
+                  "type": "string",
+                  "const": "unit"
+                }
+              ],
+              "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id."
+            },
+            "relations": {
+              "type": "object",
+              "patternProperties": {
+                "^.*$": {
+                  "anyOf": [
+                    {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "const": "self"
+                        },
+                        {
+                          "type": "string",
+                          "const": "managed"
+                        },
+                        {
+                          "type": "string",
+                          "const": "colleague"
+                        }
+                      ],
+                      "description": "`self`: the caller is the person. `managed`: the person reports to the caller (D99): placed without a manager's role on a unit the caller manages, or reporting to it from below (the managers of the nearest led units below it, and the people of units nobody leads in between); a co-manager of the caller's unit only when their line runs to a unit above it that the caller leads, never someone who manages the caller. `colleague`: any other active person of the caller's organisation."
+                    },
+                    {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "const": "manages"
+                        },
+                        {
+                          "type": "string",
+                          "const": "member"
+                        }
+                      ],
+                      "description": "`manages`: the caller holds a manager's role on the unit. `member`: the caller is placed on it otherwise."
+                    }
+                  ]
+                }
+              },
+              "description": "Every key the input carries (each of `keys`, or the value of the property that takes one key), exactly as the input spells it, mapped to how the actor stands to it: a person's `self`, `managed` or `colleague`, a unit's `manages` or `member`. Clew sends no key the capability does not admit, so a key the input carries and this map does not name is one Clew did not vouch for: answer it as no row."
+            }
+          },
+          "additionalProperties": false,
+          "description": "How the actor stands to the people or units the input names (D117), present when the input names any. Trust it only from a body whose digest the verified assertion's `body` claim holds."
+        }
       },
       "additionalProperties": false
     },
@@ -2870,6 +3068,70 @@
             }
           },
           "additionalProperties": false
+        },
+        "about": {
+          "type": "object",
+          "required": [
+            "entity",
+            "relations"
+          ],
+          "properties": {
+            "entity": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "person"
+                },
+                {
+                  "type": "string",
+                  "const": "unit"
+                }
+              ],
+              "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id."
+            },
+            "relations": {
+              "type": "object",
+              "patternProperties": {
+                "^.*$": {
+                  "anyOf": [
+                    {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "const": "self"
+                        },
+                        {
+                          "type": "string",
+                          "const": "managed"
+                        },
+                        {
+                          "type": "string",
+                          "const": "colleague"
+                        }
+                      ],
+                      "description": "`self`: the caller is the person. `managed`: the person reports to the caller (D99): placed without a manager's role on a unit the caller manages, or reporting to it from below (the managers of the nearest led units below it, and the people of units nobody leads in between); a co-manager of the caller's unit only when their line runs to a unit above it that the caller leads, never someone who manages the caller. `colleague`: any other active person of the caller's organisation."
+                    },
+                    {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "const": "manages"
+                        },
+                        {
+                          "type": "string",
+                          "const": "member"
+                        }
+                      ],
+                      "description": "`manages`: the caller holds a manager's role on the unit. `member`: the caller is placed on it otherwise."
+                    }
+                  ]
+                }
+              },
+              "description": "Every key the input carries (each of `keys`, or the value of the property that takes one key), exactly as the input spells it, mapped to how the actor stands to it: a person's `self`, `managed` or `colleague`, a unit's `manages` or `member`. Clew sends no key the capability does not admit, so a key the input carries and this map does not name is one Clew did not vouch for: answer it as no row."
+            }
+          },
+          "additionalProperties": false,
+          "description": "How the actor stands to the people or units the input names (D117), present when the input names any. Trust it only from a body whose digest the verified assertion's `body` claim holds."
         }
       },
       "additionalProperties": false

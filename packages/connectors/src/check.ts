@@ -6,11 +6,21 @@ import type {
   CheckLevel,
   CheckReport,
   EntityKind,
+  Relation,
   Role,
 } from '@clew/contracts';
-import { Registry, openGovernance, type Actor } from './index';
-import { fetchManifest, remoteConnector, type FetchLike } from './remote';
-import type { AboutPlace, ConnectorManifest } from './protocol';
+import {
+  CapabilityError,
+  Registry,
+  UNKNOWN,
+  namedInputs,
+  openGovernance,
+  type Actor,
+  type NamedInputs,
+  type RelationResolver,
+} from './index';
+import { fetchManifest, remoteConnector, type AssertionBinding, type FetchLike } from './remote';
+import { PROTOCOL_VERSION, protocolTerms, type AboutPlace, type ConnectorManifest } from './protocol';
 import { menuRowOf, placesOf, rowsKey, viewRows, viewOutputProblem } from './views';
 
 /**
@@ -27,7 +37,7 @@ export interface CheckOptions {
   url: string;
   key?: string;
   id?: string;
-  assert: (actor: Actor) => Promise<string>;
+  assert: (actor: Actor, chain?: string[], binding?: AssertionBinding) => Promise<string>;
   assertForeign: (actor: Actor) => Promise<string>;
   fetch?: FetchLike;
   /** Validates `{}` against a capability's input schema with a real validator. Absent, a schema that lists `required` properties is taken to need input. */
@@ -35,9 +45,13 @@ export interface CheckOptions {
   /**
    * For the reads about an entity (D97): `keys` are asked in one batch, signed as `as`, a person who may see them
    * (the check's manager when absent, for whom every real key is out of scope). Without keys the rows are not checked;
-   * an unknown key and the keys asked from another unit are checked anyway.
+   * an unknown key and the keys asked from another unit are checked anyway. `relations` is the installation's rule of
+   * who may be asked about (D117), which the batch passes through as any call does and which tells the connector how
+   * `as` stands to each key. With `as` and without `relations` (a test's harness) the check vouches for the keys given,
+   * for `as` alone, under the first relation the read admits. Without `as` it vouches for nobody: the check's own
+   * manager is no one's manager, so no real key is sent with a relation Clew would never give it.
    */
-  about?: { keys?: string[]; as?: Actor };
+  about?: { keys?: string[]; as?: Actor; relations?: RelationResolver };
 }
 /** How long a read about an entity may take before Clew shows its section as not answering (D97 item 7, D75). */
 export const ABOUT_BUDGET_MS = 1500;
@@ -80,6 +94,38 @@ const ENTITY: Record<EntityKind, { one: string; plural: string }> = {
   person: { one: 'person', plural: 'personer' },
   unit: { one: 'enhet', plural: 'enheter' },
 };
+/** How the caller stands to a person a capability is asked about (D117), in the administrator's words. */
+const RELATION: Record<Relation, string> = {
+  self: 'den inloggade själv',
+  managed: 'den inloggades medarbetare',
+  colleague: 'andra i organisationen',
+  manages: 'enheter den inloggade är chef för',
+  member: 'enheter den inloggade är placerad på',
+};
+/** The relations a person-naming capability admits, in the order of the closed list. */
+const relationWords = (admits: readonly Relation[]) => admits.map(r => RELATION[r]).join(' och ');
+/**
+ * Without the installation's rule (D117) the check vouches for the operator's keys alone, and only as the person the
+ * operator named to sign the batch: their own user name as `self` when the capability admits it, any other key under the
+ * first other relation it admits, a unit under the first it admits. Any other caller, and any key the operator did not
+ * give, is no one's.
+ */
+const vouchedFor =
+  (as: Actor, given: readonly string[]): RelationResolver =>
+  async (actor, entity, keys, admits) => {
+    if (actor.id !== as.id) return [];
+    const fold = (k: string) => (entity === 'person' ? k.toLowerCase() : k);
+    const known = new Set(given.map(fold));
+    return keys.flatMap(asked => {
+      if (!known.has(fold(asked))) return [];
+      const own = entity === 'person' && !!actor.userName && fold(actor.userName) === fold(asked);
+      const relation =
+        entity === 'unit' ? admits[0] : own ? admits.find(r => r === 'self') : admits.find(r => r !== 'self');
+      return relation ? [{ asked, key: asked, relation }] : [];
+    });
+  };
+/** Nobody may be asked about by anyone: what the check signs without a person named to sign as. */
+const vouchesForNobody: RelationResolver = async () => [];
 /** Where a capability about an entity would show (D97 item 2), in the administrator's words. */
 const PLACE: Record<AboutPlace, (entity: EntityKind) => string> = {
   menu: e => `i menyn för en ${ENTITY[e].one}`,
@@ -122,6 +168,17 @@ export async function checkConnector(
     'Systemets beskrivning är giltig',
     `${count(manifest.capabilities.length, 'funktion', 'funktioner')}, ${count(manifest.areas.length, 'område', 'områden')}. ${manifest.scan ? 'Skickar ärenden.' : 'Skickar inga ärenden.'}`,
   );
+  // The previous protocol is loaded for a window (D60), and the check says so as administration does.
+  const deprecated = protocolTerms(manifest.protocol).deprecated;
+  if (deprecated) {
+    warn(`protocol ${manifest.protocol}: ${deprecated}`);
+    item(
+      'warn',
+      'connection',
+      'Följer ett äldre protokoll',
+      `Systemet följer protokoll ${manifest.protocol}, som Clew läser bara under en övergångstid. Det behöver uppdateras till protokoll ${PROTOCOL_VERSION}.`,
+    );
+  }
   if (manifest.delegation) {
     warn(
       `delegation: acts as the person for audience "${manifest.delegation.audience}"; not verified by this check (it has no session), so a "denied" answer below is the expected one`,
@@ -133,6 +190,7 @@ export async function checkConnector(
       `Använder personens egen behörighet mot ${manifest.delegation.audience}. Kontrollen har ingen inloggning och kan inte pröva det, så nekade svar är väntade.`,
     );
   }
+  const remote = remoteConnector(manifest, { url, key: options.key, assert: options.assert, fetch: fetchImpl });
   const registry = new Registry({
     onRefused: (_id, topic, problem) => {
       if (topic.startsWith('figure:')) {
@@ -143,8 +201,50 @@ export async function checkConnector(
       fail(`draft ${topic} refused: ${problem}`);
       item('fail', 'surfaces', 'Ärenden', `Ärendet ${topic} avvisades: ${problem}`);
     },
-  }).register(remoteConnector(manifest, { url, key: options.key, assert: options.assert, fetch: fetchImpl }));
+    relations:
+      options.about?.relations ??
+      (options.about?.as ? vouchedFor(options.about.as, options.about.keys ?? []) : vouchesForNobody),
+  }).register(remote);
   registry.govern(manifest.id, openGovernance());
+  /** The inputs that name a person or a unit, and what each capability admits (D117), as the registry reads them. */
+  const named = namedInputs(remote);
+  /**
+   * A call straight to the service, past Clew's rule of who may be asked about (D117) and with no `about` claim: what the
+   * connector does with a key Clew did not vouch for. Clew never sends one; the check does, to see the source's own
+   * narrowing, which must answer it as no row.
+   */
+  const unvouched = (actor: Actor, name: string, input: unknown) =>
+    remote.capabilities
+      .find(x => x.name === name)!
+      .run(actor, input, {
+        chain: [name],
+        call: async () => {
+          throw new CapabilityError(UNKNOWN);
+        },
+      });
+  /** What a capability that names a person or a unit admits (D117): a finding for the builder, a note for the administrator. */
+  const admitted = (name: string, inputs: NamedInputs, row: { note(level: CheckLevel, text: string): void }) => {
+    const where = [...(inputs.keys ? ['keys'] : []), ...inputs.params].join(', ');
+    if (inputs.entity === 'unit') {
+      if (inputs.declared)
+        ok(`${name} names a unit in ${where}: Clew sends only ${inputs.admits.join(', ')} (unit.admits)`);
+      else
+        warn(
+          `${name} names a unit in ${where} and declares no unit.admits, so Clew sends only the units the caller manages; declare what it admits`,
+        );
+      const words = relationWords(inputs.admits);
+      if (inputs.declared) row.note('ok', `Clew frågar bara om ${words}.`);
+      else row.note('warn', `Anger inte vilka enheter den gäller, så Clew frågar bara om ${words}.`);
+    } else if (inputs.declared) {
+      ok(`${name} names a person in ${where}: Clew sends only ${inputs.admits.join(', ')} (person.admits)`);
+      row.note('ok', `Clew frågar bara om ${relationWords(inputs.admits)}.`);
+    } else {
+      warn(
+        `${name} names a person in ${where} and declares no person.admits, so Clew sends only self and managed; declare what it admits`,
+      );
+      row.note('warn', `Anger inte vilka personer den gäller, så Clew frågar bara om ${relationWords(inputs.admits)}.`);
+    }
+  };
   const accepts = options.acceptsEmptyInput ?? listsNothingRequired;
   /** What one capability came to, for the row the administrator reads: every finding about it folds into one sentence each. */
   type Row = {
@@ -234,10 +334,10 @@ export async function checkConnector(
   const inRoles = (c: Declared) =>
     [CHECK_MANAGER, CHECK_EMPLOYEE].filter(a => !c.scope.roles || c.scope.roles.includes(a.role));
   const rowsOf = (c: Declared, output: unknown) => (c.view ? (viewRows(c.view, output) ?? []) : []);
-  /** A call that should answer with no row: whether it did, refused, or answered rows. */
+  /** A call that should answer with no row, sent past the rule and without a claim: whether it did, refused, or answered rows. */
   const noRow = async (c: Declared, actor: Actor, keys: string[]) => {
     try {
-      const rows = rowsOf(c, await registry.run(actor, c.name, { keys }));
+      const rows = rowsOf(c, await unvouched(actor, c.name, { keys }));
       return rows.length ? { rows: rows.length } : { ok: true as const };
     } catch (error) {
       return { error: (error as Error).message };
@@ -372,21 +472,20 @@ export async function checkConnector(
         if (c.kind === 'execute') ok(`${c.name}: execute, not a tool, not called by the check`);
         probeAboutAction(c, row);
       }
+      if (named.has(c.name)) admitted(c.name, named.get(c.name)!, row);
       item(row.level, 'capabilities', c.title, rowText(row), c.name);
       continue;
     }
     if (c.kind === 'execute') {
       ok(`${c.name}: execute, not a tool, not called by the check`);
-      item(
-        'ok',
-        'capabilities',
-        c.title,
-        'Åtgärd som bara körs efter ett mänskligt beslut. Kontrollen anropar den inte.',
-        c.name,
-      );
+      const row = newRow();
+      row.note('ok', 'Åtgärd som bara körs efter ett mänskligt beslut. Kontrollen anropar den inte.');
+      if (named.has(c.name)) admitted(c.name, named.get(c.name)!, row);
+      item(row.level, 'capabilities', c.title, rowText(row), c.name);
       continue;
     }
     const row = newRow();
+    if (named.has(c.name)) admitted(c.name, named.get(c.name)!, row);
     for (const actor of [CHECK_MANAGER, CHECK_EMPLOYEE]) {
       const allowed = !c.scope.roles || c.scope.roles.includes(actor.role);
       if (!allowed) {

@@ -8,8 +8,10 @@
  *
  * A read about an entity (D97) is asked with keys: `--keys` are the user names (or unit ids) to ask in one batch, and
  * `--as` the user name of the person in this installation's directory to sign that batch as, someone who may see them.
- * Without `--as` the batch is signed as the check's own manager on a unit no installation has, for whom every real key
- * is out of scope; without `--keys` the rows are not checked, while an unknown key and another unit still are.
+ * With `--as` the batch passes this installation's rule of who may be asked about (D117): a key that person may not ask
+ * about is left out, as Clew leaves it out. Without `--as` the batch is signed as the check's own manager on a unit no
+ * installation has, and the check vouches for no key, so nothing real is sent; without `--keys` the rows are not
+ * checked, while an unknown key and another unit, sent past the rule and without a relation, still are.
  */
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
@@ -19,6 +21,7 @@ import { sql } from 'drizzle-orm';
 import { closeDatabase, database, schema } from '@clew/db';
 import { signingAuthority } from '../apps/server/src/connectors/signing';
 import { systemContext } from '../apps/server/src/system-context';
+import { relations } from '../apps/server/src/composition/relations';
 import { actorOf, type Actor } from '../packages/connectors/src/index';
 import { checkConnector } from '../packages/connectors/src/check';
 
@@ -87,14 +90,17 @@ try {
   await closeDatabase();
   process.exit(2);
 }
+// With `--as` the batch passes this installation's own rule of who may be asked about (D117), as every call does, and the
+// request body tells the connector how that person stands to each key sent; without `--as` the check vouches for nobody,
+// so no real key is sent. Every assertion is bound to its request's body and capability.
 const report = await checkConnector({
   url,
   id: audience,
   key: secret,
-  assert: actor => authority.assert(audience, actor, manifest.uses),
+  assert: (actor, chain, binding) => authority.assert(audience, actor, manifest.uses, chain, binding),
   assertForeign: signer('wrong-secret-wrong-secret'),
   acceptsEmptyInput: schema => !!ajv.compile(schema)({}),
-  about: { keys, ...(as ? { as } : {}) },
+  about: { keys, ...(as ? { as, relations: relations.relate } : {}) },
 });
 console.log(`Connector "${manifest.id}" (${manifest.source}), protocol ${manifest.protocol}`);
 for (const f of report.findings)

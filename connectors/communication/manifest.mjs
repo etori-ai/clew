@@ -135,7 +135,7 @@ const lookup = {
 };
 
 export const manifest = {
-  protocol: 2,
+  protocol: 3,
   id: CONNECTOR,
   kind: 'passthrough',
   source: 'Kommunikation',

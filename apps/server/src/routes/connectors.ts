@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import { Value } from 'typebox/value';
 import { CallbackRequestSchema } from '@clew/connectors/protocol';
-import { InputError, privateHeaders } from '../context';
+import { privateHeaders } from '../context';
+import { callbackRefusal } from '../connectors/callback-errors';
 import { registry } from '../connectors/registry';
 import { signingAuthority } from '../connectors/signing';
 import { refreshConnectors } from '../composition';
@@ -55,12 +56,9 @@ connectorRoutes.post('/call', async c => {
       .call(body.name, body.input ?? {});
     return c.json({ output }, 200, privateHeaders);
   } catch (e) {
-    if (e instanceof InputError)
-      return error(
-        e.message === 'Okänd förmåga.' ? 'not-found' : /behörighet|annan modul/.test(e.message) ? 'denied' : 'invalid',
-        e.message,
-        e.message === 'Okänd förmåga.' ? 404 : 400,
-      );
+    // A refusal, a person the caller may not ask about included (D117), is answered as the protocol says, never logged as a failure.
+    const refused = callbackRefusal(e);
+    if (refused) return error(refused.code, refused.message, refused.status);
     logger.error({ scope: 'connectors', connector: assertion.connectorId, error: e }, 'connector callback failed');
     return error('unavailable', 'Tjänsten går inte att nå just nu.', 503);
   }

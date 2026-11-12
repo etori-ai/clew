@@ -13,7 +13,7 @@ const Refs = {
 };
 
 export const manifest = {
-  protocol: 2,
+  protocol: 3,
   id: CONNECTOR,
   kind: 'passthrough',
   source: 'Hello',
@@ -197,7 +197,7 @@ export function createConnector({
     if (request.method !== 'POST' || !url.pathname.startsWith('/clew/'))
       return json({ error: { code: 'not-found', message: 'Okänd adress.' } }, 404);
     const token = (request.headers.get('authorization') ?? '').replace(/^Bearer /, '');
-    const actor = await verify(token, request.headers.get('x-clew-connector-key'));
+    const actor = await verify(token, request.headers.get('x-clew-connector-key'), request);
     if (!actor) return fail('denied', 'Ogiltigt behörighetsbevis.', 401);
     let body;
     try {

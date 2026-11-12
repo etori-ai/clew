@@ -143,6 +143,9 @@ export function competenceConnector(
     output: CompetenceHoldingsOutputSchema,
     view: holdingsView,
     scope: () => true,
+    // `person` is the reader or one of their reports (D117); without it the reader reads their own. Someone without a
+    // user name is named by Clew's id, as the competence domain names them.
+    person: { param: 'person', admits: ['self', 'managed'], ids: true },
     run: async (actor, input) => competence.holdings(await persona(actor), input),
   };
   const aboutPerson: Capability<Keys> = {
@@ -158,6 +161,8 @@ export function competenceConnector(
     scope: { roles: ['manager'] },
     // A certificate is registered on Personal, in the dialog (D108 item 7): the section's second way in.
     about: { entity: 'person', page: { title: 'Registrera intyg', href: '/staff?register={id}' } },
+    // A manager's reports (D99), nobody else (D117).
+    person: { admits: ['managed'] },
     run: async (actor, input) => {
       const { rows } = await competence.aboutPeople(await persona(actor), input.keys);
       return {

@@ -137,6 +137,8 @@ const unitAboutCapability = {
   model: false,
   scope: { roles: ['manager'] },
   about: { entity: 'unit' },
+  // Clew asks only about units the manager manages (D117); the statistics still answer only for the active one.
+  unit: { admits: ['manages'] },
   description:
     'Sjukfrånvaro i procent den senaste månaden för enheter du är chef för, mot samma månad i fjol. Bara sammanställningar per enhet, aldrig personer.',
   input: {
@@ -196,7 +198,7 @@ const unitAboutCapability = {
 };
 
 export const manifest = {
-  protocol: 2,
+  protocol: 3,
   id: 'qlik',
   kind: 'passthrough',
   source: 'Qlik',

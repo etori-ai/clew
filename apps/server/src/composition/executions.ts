@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { actorOf, type ExecuteResult } from '@clew/connectors';
+import { Resolution, actorOf, type ExecuteResult } from '@clew/connectors';
 import { Value } from 'typebox/value';
 import { ExecuteResultSchema } from '@clew/connectors/protocol';
 import { registry } from '../connectors/registry';
@@ -10,6 +10,7 @@ import { retainsAuthority } from '../modules/executions/domain';
 import { executionUsecases } from '../modules/executions/usecases';
 import {
   ExecutionError,
+  type AuthorizeOptions,
   type ExecutionSessions,
   type ExecutionSource,
   type WatchSource,
@@ -22,6 +23,7 @@ import { projectExecution } from './execution-projection';
 import { watchCardSink } from './watch-card';
 import { calendarApproval, calendarSource } from './calendar';
 import { calendarOperations, type CalendarCommand } from '../modules/calendar/usecases/decisions';
+import type { AuthenticatedContext } from '@clew/contracts';
 
 /** Object key order is not approved business content. Arrays preserve the approved order. */
 const canonical = (value: unknown): unknown =>
@@ -44,14 +46,21 @@ export const executionStore = postgresExecutionStore({ seal: sealSecret, open: o
   project: projectExecution(ledger),
   pushCard: watchCardSink(place),
 });
+/**
+ * The registry's check of an approval as the executions ask it (D117): whom the input names is resolved for a new effect
+ * and not for reading one already decided. A directory that cannot be read throws `RelationsUnavailableError`, which the
+ * ledger takes as unavailable, never as revoked.
+ */
+const validated = (persona: AuthenticatedContext, operation: string, input: unknown, options?: AuthorizeOptions) =>
+  registry.validate(actorOf(persona), operation, input, [], { subjects: !options?.reading });
 const source: ExecutionSource = {
-  async authorize(persona, operation, input) {
+  async authorize(persona, operation, input, options) {
     if (calendarOperations.includes(operation as (typeof calendarOperations)[number])) {
       await registry.refreshGovernance();
       if (!registry.visible(persona, 'calendar')) throw new ExecutionError('Kalendern är inte tillgänglig.');
       return calendarSource.authorize(persona, operation, input);
     }
-    const found = await registry.validate(actorOf(persona), operation, input);
+    const found = await validated(persona, operation, input, options);
     if (found.capability.kind !== 'execute') throw new ExecutionError('Förmågan är ingen åtgärd.');
     const safety = found.capability.execution ?? { strategy: 'manual' as const };
     if (safety.strategy !== 'manual') {
@@ -59,16 +68,23 @@ const source: ExecutionSource = {
       if (!lookup || lookup.connector.id !== found.connector.id || lookup.capability.kind !== 'read')
         throw new ExecutionError('Källans återläsning är inte tillgänglig.');
     }
-    return { connector: found.connector.id, safety, needsSession: !!found.connector.delegation };
+    return {
+      connector: found.connector.id,
+      safety,
+      needsSession: !!found.connector.delegation,
+      ...('resolution' in found ? { resolution: found.resolution } : {}),
+    };
   },
   current: id => systemContext(id, 'system:execution'),
   // The persona carries a delegate only when the ledger found the person's own live session behind this execution (D26).
-  async execute(persona, e) {
+  async execute(persona, e, resolution) {
     if (e.connector === 'calendar' && calendarOperations.includes(e.operation as (typeof calendarOperations)[number]))
       return calendarSource.execute(persona, e);
+    // The resolution `authorize` made just before (D117): the registry redeems it once, for this very call, or resolves again.
     const result = await registry.run<ExecuteResult>(actorOf(persona), e.operation, e.payload, {
       operationId: e.id,
       ...(persona.delegate ? { delegate: persona.delegate } : {}),
+      ...(resolution instanceof Resolution ? { resolution } : {}),
     });
     if (!Value.Check(ExecuteResultSchema, result)) throw new Error('Invalid execution result');
     return result;
@@ -106,8 +122,8 @@ const sessions: ExecutionSessions = {
 };
 /** A watch step's read (D55): a `read` the person may call, run as the person; never an execute. */
 const watch: WatchSource = {
-  async authorize(persona, operation, input) {
-    const found = await registry.validate(actorOf(persona), operation, input);
+  async authorize(persona, operation, input, options) {
+    const found = await validated(persona, operation, input, options);
     if (found.capability.kind !== 'read') throw new ExecutionError('En bevakning måste vara en läsning.');
     return { connector: found.connector.id };
   },

@@ -131,7 +131,7 @@ export function createConnector({ jwks, secret, directory = createFixtureDirecto
     }
 
     const token = (request.headers.get('authorization') ?? '').replace(/^Bearer /, '');
-    const actor = await verify(token, request.headers.get('x-clew-connector-key'));
+    const actor = await verify(token, request.headers.get('x-clew-connector-key'), request);
     if (!actor) {
       return errorResponse('denied', 'Ogiltigt behörighetsbevis.', 401);
     }

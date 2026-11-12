@@ -381,6 +381,8 @@ const prepareAbsence = {
   model: false,
   scope: manager,
   about: { entity: 'person', param: 'person' },
+  // Clew starts it only on someone who reports to the manager (D117); the system still finds them on its own unit.
+  person: { admits: ['managed'] },
   input: object(
     {
       person: { type: 'string', minLength: 1, maxLength: 256, description: 'Medarbetarens användarnamn i katalogen.' },
@@ -460,6 +462,8 @@ const person = {
   model: false,
   scope: manager,
   about: { entity: 'person' },
+  // Clew sends only the keys of the manager's own reports (D117); the system still answers for its own unit alone.
+  person: { admits: ['managed'] },
   input: object({
     keys: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 256 }, maxItems: KEYS_MAX },
   }),
@@ -518,7 +522,7 @@ const lookup = {
 };
 
 export const manifest = {
-  protocol: 2,
+  protocol: 3,
   id: CONNECTOR,
   kind: 'passthrough',
   source: 'Personalsystemet',

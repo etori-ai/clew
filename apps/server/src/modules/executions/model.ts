@@ -179,21 +179,43 @@ export interface ExecutionStore {
   readJob(id: string): Promise<Job | undefined>;
   transaction<T>(fn: (tx: ExecutionTx) => Promise<T>): Promise<T>;
 }
+/**
+ * Whether an authorization is for a new effect or for reading one already decided (D117). Who an input names is
+ * resolved for an approval and a dispatch; reading a decision, a job's history or what is left to undo does not depend
+ * on whether its subject has since moved away from the person.
+ */
+export interface AuthorizeOptions {
+  reading?: boolean;
+}
 export interface ExecutionSource {
-  /** `needsSession`: the connector acts as the person (D26), so one of their live sessions must stand behind dispatch and read-back. */
+  /**
+   * `needsSession`: the connector acts as the person (D26), so one of their live sessions must stand behind dispatch and
+   * read-back. Throws `SourceUnavailableError` (or the registry's `RelationsUnavailableError`) when the directory cannot
+   * say now whom the input names (D117): a transient failure, never a revocation.
+   */
   authorize(
     persona: AuthenticatedContext,
     operation: string,
     input: unknown,
-  ): Promise<{ connector: string; safety: WriteSafety; needsSession: boolean }>;
+    options?: AuthorizeOptions,
+  ): Promise<{ connector: string; safety: WriteSafety; needsSession: boolean; resolution?: unknown }>;
   current(personId: string): Promise<AuthenticatedContext | undefined>;
-  execute(persona: AuthenticatedContext, execution: Execution): Promise<ExecuteResult>;
+  /**
+   * `resolution` is what `authorize` resolved about whom the payload names, just before (D117): handed on so the
+   * dispatch does not read the directory again after it is recorded. Opaque to the ledger.
+   */
+  execute(persona: AuthenticatedContext, execution: Execution, resolution?: unknown): Promise<ExecuteResult>;
   /** undefined proves absence only for the declared source lookup contract; throw means unknown. */
   lookup(persona: AuthenticatedContext, execution: Execution): Promise<ExecuteResult | undefined>;
 }
 /** The read behind a watch step (D55): a `read` of the step's own connector, run as the person, never an execute. */
 export interface WatchSource {
-  authorize(persona: AuthenticatedContext, operation: string, input: unknown): Promise<{ connector: string }>;
+  authorize(
+    persona: AuthenticatedContext,
+    operation: string,
+    input: unknown,
+    options?: AuthorizeOptions,
+  ): Promise<{ connector: string }>;
   read(persona: AuthenticatedContext, operation: string, input: unknown): Promise<unknown>;
 }
 /** A signed-in session a binding names, while it is active: whose it is, and its delegate (D26). */
@@ -232,3 +254,10 @@ export interface ExecutionDeps {
   digest: (input: unknown) => string;
 }
 export class ExecutionError extends Error {}
+/** The authority could not be established now, for a reason that may pass (D117): retried as unavailable, not revoked. */
+export class SourceUnavailableError extends Error {
+  constructor(cause?: unknown) {
+    super('Källan kan inte bekräfta behörigheten just nu.', { cause });
+    this.name = 'SourceUnavailableError';
+  }
+}

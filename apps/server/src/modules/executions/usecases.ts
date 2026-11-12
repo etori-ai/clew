@@ -1,7 +1,9 @@
 import type { AuthenticatedContext } from '@clew/contracts';
-import type { ExecuteResult } from '@clew/connectors';
+import { RelationsUnavailableError, type ExecuteResult } from '@clew/connectors';
 import {
   ExecutionError,
+  SourceUnavailableError,
+  type AuthorizeOptions,
   type Execution,
   type ExecutionDeps,
   type ExecutionTx,
@@ -27,6 +29,14 @@ import {
   watchIntentOf,
   watchStart,
 } from './domain';
+/** An authorization for reading what was already decided, not for a new effect (D117). */
+const READING: AuthorizeOptions = { reading: true };
+/**
+ * Authority that could not be established now, rather than authority refused (D117): the source port says so, or the
+ * registry could not read the directory to resolve whom the input names. Retried as unavailable, never revoked.
+ */
+const unavailable = (error: unknown) =>
+  error instanceof SourceUnavailableError || error instanceof RelationsUnavailableError;
 
 const LEASE_MS = 120_000,
   APPROVAL_MS = 24 * 3600_000,
@@ -306,10 +316,11 @@ export function executionUsecases({ store, source, sessions, watch, clock, ids, 
     // Do not release part of a composite snapshot when any participating source is no longer allowed.
     try {
       for (const step of job.steps) {
+        // Reading what was decided (D117): whom a step names is resolved when it is dispatched, not when it is shown.
         const access =
           step.kind === 'execute'
-            ? await source.authorize(persona, step.operation, executions[step.executionId]!.payload)
-            : await watch?.authorize(persona, step.operation, step.input);
+            ? await source.authorize(persona, step.operation, executions[step.executionId]!.payload, READING)
+            : await watch?.authorize(persona, step.operation, step.input, READING);
         if (access?.connector !== step.connector) return undefined;
       }
     } catch {
@@ -442,7 +453,10 @@ export function executionUsecases({ store, source, sessions, watch, clock, ids, 
       await persona.authorize();
       if ((await watch.authorize(persona, step.operation, step.input)).connector !== step.connector)
         throw new Error('moved');
-    } catch {
+    } catch (error) {
+      // A directory that cannot say now whom the read names is a check that did not happen, not lost authority (D117).
+      if (unavailable(error))
+        return settleWatch('waiting', null, { check, at, seen: false, error: 'source-unavailable' });
       return settleWatch('blocked', 'authority-revoked');
     }
     let output: unknown;
@@ -459,7 +473,7 @@ export function executionUsecases({ store, source, sessions, watch, clock, ids, 
     const e = await store.read(id);
     if (!e || !retainsAuthority(persona, e)) return undefined;
     await persona.authorize();
-    const access = await source.authorize(persona, e.operation, e.payload);
+    const access = await source.authorize(persona, e.operation, e.payload, READING);
     if (access.connector !== e.connector) return undefined;
     await persona.authorize();
     return { e, access };
@@ -545,7 +559,8 @@ export function executionUsecases({ store, source, sessions, watch, clock, ids, 
     if (!e) return 'done';
     if (e === 'busy') return 'busy';
     let persona: AuthenticatedContext | undefined,
-      needsSession = false;
+      needsSession = false,
+      resolution: unknown;
     try {
       persona = await source.current(e.personId);
       if (!persona || persona.unitId !== e.unitId || persona.authorizationVersion !== e.authorizationVersion)
@@ -553,12 +568,21 @@ export function executionUsecases({ store, source, sessions, watch, clock, ids, 
       await persona.authorize();
       const access = await source.authorize(persona, e.operation, e.payload);
       needsSession = access.needsSession;
+      // Whom the payload names is resolved here, before the dispatch is recorded, and the send uses this (D117): a
+      // directory that cannot be read is found now, while nothing has been sent, and never after.
+      resolution = access.resolution;
       if (!sameSafety(access.safety, e.safety)) {
         await settle(e, e.dispatchedAt ? 'unknown' : 'pending', 'source-contract-changed');
         return 'done';
       }
-    } catch {
-      await settle(e, e.dispatchedAt ? 'unknown' : 'pending', 'authority-revoked');
+    } catch (error) {
+      // Only an answer that the person may no longer do this revokes it. A directory that cannot be read now (D117) is
+      // the same as a source that cannot be reached: nothing has been sent, and it says so.
+      await settle(
+        e,
+        e.dispatchedAt ? 'unknown' : 'pending',
+        unavailable(error) ? 'source-unavailable' : 'authority-revoked',
+      );
       return 'done';
     }
     // An approval that was never sent lives 24 hours (D45), whether or not a session could stand behind it meanwhile.
@@ -627,7 +651,7 @@ export function executionUsecases({ store, source, sessions, watch, clock, ids, 
     });
     if (!dispatched) return 'done';
     try {
-      const result = await source.execute(persona, e);
+      const result = await source.execute(persona, e, resolution);
       await settle(e, outcome(result), null, result, backing);
       return 'done';
     } catch {

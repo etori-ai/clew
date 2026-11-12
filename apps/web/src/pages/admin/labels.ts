@@ -54,6 +54,7 @@ export function statusOf(c: Pick<ConnectorSummary, 'state' | 'health' | 'bundled
   if (c.bundled || c.health.status === 'ok' || c.health.status === 'untested')
     return { label: 'Ansluten', tone: 'success' };
   if (c.health.status === 'unreachable') return { label: 'Svarar inte', tone: 'warning' };
+  if (c.health.status === 'protocol-outdated') return { label: 'Äldre protokoll', tone: 'warning' };
   return { label: 'Fel', tone: 'error' };
 }
 export const healthLabel: Record<ConnectorSummary['health']['status'], string> = {
@@ -62,6 +63,7 @@ export const healthLabel: Record<ConnectorSummary['health']['status'], string> =
   'manifest-invalid': 'Fel i systemets beskrivning',
   'secret-rejected': 'Nyckeln avvisas',
   untested: 'Inte kontrollerad',
+  'protocol-outdated': 'Följer ett äldre protokoll',
 };
 /** One line for the audience: "Alla", "Chefer", "Chefer · 2 enheter", "Ingen". */
 export function audienceLabel(a: ConnectorAudience): string {

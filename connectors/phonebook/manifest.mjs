@@ -231,7 +231,7 @@ const fetchCapability = {
 
 // Registration: the connector's identity, area and available operations.
 export const manifest = {
-  protocol: 2,
+  protocol: 3,
   id: 'phonebook',
   kind: 'passthrough',
   source: 'Telefonboken',

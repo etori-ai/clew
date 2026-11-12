@@ -16,7 +16,10 @@ import type {
   MenuEntry,
   MenuHint,
   MenuIcon,
+  PersonAccess,
   Receipt,
+  Relation,
+  UnitAccess,
   ReceiptRow,
   SearchKind,
   SessionUser,
@@ -37,6 +40,7 @@ import {
   MAX_DOCUMENT_BYTES,
   SiteHeaderOutputSchema,
   contractProblems,
+  foldEntityKey,
   isEntityKind,
   type DocumentRequest,
   type DocumentContent,
@@ -44,6 +48,7 @@ import {
 } from '@clew/contracts';
 import { Value } from 'typebox/value';
 import { connectorProblems } from './validation';
+import { namedInputs, type NamedInputs } from './named';
 import { pathOf, unfilledInput } from './asks';
 export {
   answersOf,
@@ -108,12 +113,57 @@ export type Scope = ScopeRule | ((actor: Actor) => boolean);
 export const inScope = (scope: Scope, actor: Actor) =>
   typeof scope === 'function' ? scope(actor) : !scope.roles || scope.roles.includes(actor.role);
 
+/**
+ * The people or the units a call names, and how the caller stands to each (D117), as the registry resolved them from
+ * Clew's own directory before the call: every key exactly as the input carries it, in the directory's spelling. A
+ * remote connector receives it as `about` in the request body, which the assertion binds.
+ */
+export interface AboutClaim {
+  entity: EntityKind;
+  relations: Record<string, Relation>;
+}
+/** How the caller stands to one key the input names (D117): `asked` as the input spelled it, `key` as the directory does. */
+export interface Related {
+  asked: string;
+  key: string;
+  relation: Relation;
+}
+/**
+ * The core rule of who may be asked about (D97 item 8, D117), as the registry asks it: how `actor` stands to each of
+ * these keys of `entity`, for the relations in `admits` only. A key the directory does not know, or that names someone
+ * outside `admits`, is absent. With `ids`, a person without a user name may be named by Clew's own id (a core
+ * capability of Clew's own domains only). Throws when the directory cannot be read: never an empty answer for an error.
+ * Composition binds it to the entities module over the people directory.
+ */
+export type RelationResolver = (
+  actor: Actor,
+  entity: EntityKind,
+  keys: readonly string[],
+  admits: readonly Relation[],
+  options?: { ids?: boolean },
+) => Promise<Related[]>;
+/**
+ * The directory could not say how the caller stands to someone (D117): a transient failure, never a refusal. A route
+ * answers it as an error, and an approved write is left unsent as `source-unavailable`, not revoked.
+ */
+export class RelationsUnavailableError extends Error {
+  constructor(cause?: unknown) {
+    super('Katalogen svarar inte just nu.', { cause });
+    this.name = 'RelationsUnavailableError';
+  }
+}
+export { namedInputs, plainStringProperty, type NamedInputs } from './named';
 /** What a capability gets besides the actor and the input: the rest of Clew, as capabilities, for that actor. */
 export interface Clew {
   signal?: AbortSignal;
   chain?: string[];
   /** Stable approved intent key for a direct source write; never propagated through nested calls. */
   operationId?: string;
+  /**
+   * The people or units this call's input names and how the caller stands to each (D117): set by the registry for the
+   * capability it runs, never carried into a nested call and never taken from a caller.
+   */
+  about?: AboutClaim;
   /** Run another connector's `read` or `propose` as the same actor. Scope applies; `execute` is refused. */
   call<O = unknown>(name: string, input?: unknown): Promise<O>;
   /**
@@ -130,6 +180,21 @@ export interface RunContext {
   delegate?: Clew['delegate'];
   chain?: string[];
   operationId?: string;
+  /**
+   * Whom the input names, as `validate` resolved it just before (D117): an approved write's dispatch hands it on so the
+   * directory is read once, and a failure to read it can only come before the dispatch is recorded. Used once, and only
+   * for the same actor, capability and input it was issued for; anything else, or something not issued by this
+   * registry, is ignored and the input resolved again. Never carried into a nested call.
+   */
+  resolution?: Resolution;
+}
+/** What `Registry.validate` resolved about whom an input names (D117): opaque, issued and redeemed by one registry. */
+export class Resolution {
+  private constructor() {}
+  /** @internal The registry's own constructor; a caller cannot make one the registry will accept. */
+  static issue() {
+    return new Resolution();
+  }
 }
 
 export type WriteSafety =
@@ -169,6 +234,15 @@ export interface Capability<I = unknown, O = unknown> {
    * cannot carry it, so a remote connector never claims a page inside Clew.
    */
   about?: About & { page?: EntityPage };
+  /**
+   * Who may be asked about through it (D117): the relations a caller may have to a person its input names, and on a
+   * capability not about a person the input property that takes the key. The registry enforces it on every path. Only
+   * Clew's own connectors may add `ids`: a person without a user name may then be named by Clew's own id, as the talks
+   * domain names them; a manifest cannot carry it, since Clew's id is never sent to a connector.
+   */
+  person?: PersonAccess & { ids?: true };
+  /** On a capability about a unit (D117): the relations a caller may have to the unit, `manages` when absent. */
+  unit?: UnitAccess;
   /** On a propose or execute (D112): what the person fills in before it runs, each naming one input property. */
   asks?: Ask[];
   /** On an execute (D112): a read of the same connector, same input, that says what the write will do where. */
@@ -235,6 +309,8 @@ export interface AboutRead {
   column?: string;
   /** The connector is one of Clew's own (`kind: 'core'`): the source is Clew's own domain (D97). */
   core?: true;
+  /** The relations it admits (D117): a key of anyone else is never sent, so the entities module does not ask. */
+  admits: readonly Relation[];
 }
 /** A propose or execute about an entity kind as `Registry.aboutActions` names it for one person (D97). */
 export interface AboutAction {
@@ -249,6 +325,8 @@ export interface AboutAction {
   path: ActionPath;
   /** The connector is one of Clew's own (`kind: 'core'`). */
   core?: true;
+  /** The relations it admits (D117): it is offered only on an entity the reader stands to so. */
+  admits: readonly Relation[];
 }
 /** Plain ordering of ids and names, the same in every locale. */
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
@@ -324,6 +402,8 @@ export interface Connector {
   scan?: (actor: Actor, clew: Clew) => Promise<ThreadDraft[] | ScanObservation>;
   /** The read capability that answers the shared header (D88), when this connector gives Clew one. */
   header?: string;
+  /** The protocol a remote connector's manifest is written to (D60); absent for Clew's own, which follow the current one. */
+  protocol?: number;
 }
 
 export class CapabilityError extends Error {
@@ -398,6 +478,12 @@ export interface RegistryOptions {
    * logs it, the connector check fails on it. The other drafts still become cards, the figure is drawn without its link.
    */
   onRefused?: (connectorId: string, topic: string, problem: string) => void;
+  /**
+   * Who may be asked about (D117): how the caller stands to the people or units an input names. Without it nobody may
+   * be asked about anyone: every key is left out and a call that names one is refused, so a registry built without the
+   * rule fails closed.
+   */
+  relations?: RelationResolver;
 }
 
 export class Registry {
@@ -407,7 +493,82 @@ export class Registry {
   private connectors = new Map<string, Connector>();
   private capabilities = new Map<string, { connector: Connector; capability: Capability<any, any> }>();
   private governed = new Map<string, Governance>();
+  /** The inputs of each capability that name an entity (D117), drawn from the declarations at installation. */
+  private named = new Map<string, NamedInputs>();
+  /** What `validate` resolved, by the opaque handle it gave out (D117): redeemed once by `run`, for the same call only. */
+  private resolutions = new WeakMap<
+    Resolution,
+    { actor: string; name: string; input: string; narrowed: { input: unknown; about?: AboutClaim } }
+  >();
   constructor(private readonly options: RegistryOptions = {}) {}
+  /** The inputs of a capability that name a person or a unit, and what it admits (D117); undefined when none does. */
+  namedInputs(name: string): NamedInputs | undefined {
+    return this.named.get(name);
+  }
+  /**
+   * Who may be asked about, applied to one call (D97 item 8, D117). Every key the input names is resolved against the
+   * caller's place in Clew's own directory: a key in `keys` the caller may not ask about is left out, a second spelling of
+   * one person is left out, and a key that stays is written as the directory spells it. A single key (`about.param`,
+   * `person.param` and the inputs that name a person without declaring it) that the caller may not ask about, or that is
+   * not a string, refuses the call as an unknown capability is refused, so the answer never tells whether that person
+   * exists; it is checked whether or not the input schema lists it. `about` is what the connector is told: each key sent
+   * and its relation. A directory that cannot be read throws `RelationsUnavailableError`, never an empty answer.
+   */
+  private async narrow(actor: Actor, name: string, input: unknown): Promise<{ input: unknown; about?: AboutClaim }> {
+    const named = this.named.get(name);
+    if (!named) return { input };
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new CapabilityError(UNKNOWN);
+    const given = input as Record<string, unknown>;
+    if (
+      named.keys &&
+      given.keys !== undefined &&
+      (!Array.isArray(given.keys) || given.keys.some(k => typeof k !== 'string'))
+    )
+      throw new CapabilityError(UNKNOWN);
+    const keys = named.keys ? ((given.keys as string[] | undefined) ?? []) : [];
+    const single = named.params.filter(p => given[p] !== undefined);
+    if (single.some(p => typeof given[p] !== 'string')) throw new CapabilityError(UNKNOWN);
+    if (!named.keys && !single.length) return { input };
+    const asked = [...new Set([...keys, ...single.map(p => given[p] as string)])];
+    let related: Related[] = [];
+    if (asked.length && this.options.relations)
+      try {
+        related = await this.options.relations(actor, named.entity, asked, named.admits, { ids: named.ids });
+      } catch (cause) {
+        throw new RelationsUnavailableError(cause);
+      }
+    // The resolver answers for the relations admitted; anything else it says is not trusted.
+    const found = new Map(related.filter(r => named.admits.includes(r.relation)).map(r => [r.asked, r]));
+    const relations: Record<string, Relation> = {};
+    const out: Record<string, unknown> = { ...given };
+    if (named.keys) {
+      const seen = new Set<string>();
+      out.keys = keys.flatMap(k => {
+        const r = found.get(k);
+        const folded = r && foldEntityKey(named.entity, r.key);
+        if (!r || seen.has(folded!)) return [];
+        seen.add(folded!);
+        relations[r.key] = r.relation;
+        return [r.key];
+      });
+    }
+    for (const p of single) {
+      const r = found.get(given[p] as string);
+      if (!r) throw new CapabilityError(UNKNOWN);
+      out[p] = r.key;
+      relations[r.key] = r.relation;
+    }
+    return { input: out, about: { entity: named.entity, relations } };
+  }
+  /** What `validate` resolved for exactly this call, once (D117); undefined for anything else, which is resolved again. */
+  private redeem(actor: Actor, name: string, input: unknown, resolution: Resolution | undefined) {
+    const kept = resolution && this.resolutions.get(resolution);
+    if (!kept) return undefined;
+    this.resolutions.delete(resolution!);
+    return kept.actor === actor.id && kept.name === name && kept.input === JSON.stringify(input)
+      ? kept.narrowed
+      : undefined;
+  }
   private check(connector: Connector) {
     const problems = connectorProblems(connector, schema => this.validator(schema));
     if (problems.length) throw new Error(problems[0]);
@@ -419,6 +580,7 @@ export class Registry {
   }
   private install(connector: Connector) {
     for (const c of connector.capabilities) this.capabilities.set(c.name, { connector, capability: c });
+    for (const [name, inputs] of namedInputs(connector)) this.named.set(name, inputs);
     this.connectors.set(connector.id, connector);
     return this;
   }
@@ -432,7 +594,10 @@ export class Registry {
     const found = this.connectors.get(id);
     this.governed.delete(id);
     if (!found) return false;
-    for (const c of found.capabilities) this.capabilities.delete(c.name);
+    for (const c of found.capabilities) {
+      this.capabilities.delete(c.name);
+      this.named.delete(c.name);
+    }
     this.connectors.delete(id);
     return true;
   }
@@ -464,8 +629,16 @@ export class Registry {
   /**
    * Validate an approval without performing its source effect. `pending` names asked properties (D112) the person
    * answers later, when they decide: the input may lack them though the schema requires them, and nothing else.
+   * `subjects: false` is for reading what was already decided (D117): who the input names is resolved for a new effect,
+   * an approval or a dispatch, not for showing a decision that someone has since moved away from.
    */
-  async validate(actor: Actor, name: string, input: unknown, pending: readonly string[] = []) {
+  async validate(
+    actor: Actor,
+    name: string,
+    input: unknown,
+    pending: readonly string[] = [],
+    options: { subjects?: boolean } = {},
+  ) {
     await this.refresh();
     const found = this.allowed(actor, name);
     if (!found) throw new CapabilityError(UNKNOWN);
@@ -473,7 +646,12 @@ export class Registry {
     const waiting = pending.filter(p => asked.has(p));
     if (!this.validator(found.capability.input, waiting)(input))
       throw new CapabilityError('Ogiltig förfrågan till ' + name + '.');
-    return found;
+    // A write about someone the person may not ask about is refused before it is approved (D117), as it is when it runs.
+    if (options.subjects === false) return found;
+    const narrowed = await this.narrow(actor, name, input);
+    const resolution = Resolution.issue();
+    this.resolutions.set(resolution, { actor: actor.id, name, input: JSON.stringify(input), narrowed });
+    return { ...found, resolution };
   }
   private pendingValidators = new WeakMap<object, Map<string, ReturnType<Ajv['compile']>>>();
   private validator(schema: object, pending: readonly string[] = []) {
@@ -573,9 +751,20 @@ export class Registry {
   /**
    * Run a capability for an actor. Visibility, the capability switch and scope are checked here, so every path (REST,
    * tool, card action, connector callback) is equal. A hidden connector answers exactly as an unknown capability does.
+   * Who may be asked about is checked here too (D117): an input that names a person or a unit reaches the connector
+   * with only the keys the caller may ask about, and the connector is told how the caller stands to each.
    * The context (the session's delegate) travels into every nested call the capability makes.
    */
   async run<O = unknown>(actor: Actor, name: string, input: unknown, context: RunContext = {}): Promise<O> {
+    return (await this.invoke<O>(actor, name, input, context)).output;
+  }
+  /** `run`, with what the call was narrowed to (D117): the input the connector got and what it was told. */
+  private async invoke<O>(
+    actor: Actor,
+    name: string,
+    input: unknown,
+    context: RunContext,
+  ): Promise<{ output: O; narrowed: { input: unknown; about?: AboutClaim } }> {
     await this.refresh();
     const found = this.capabilities.get(name);
     if (
@@ -587,10 +776,13 @@ export class Registry {
     if (!inScope(found.capability.scope, actor)) throw new CapabilityError('Du saknar behörighet för åtgärden.');
     if (!this.validator(found.capability.input)(input))
       throw new CapabilityError('Ogiltig förfrågan till ' + name + '.');
+    const narrowed = this.redeem(actor, name, input, context.resolution) ?? (await this.narrow(actor, name, input));
+    const { resolution: _resolution, ...nested } = context;
+    const clew = this.clewFor(actor, { ...nested, chain: [...(context.chain ?? []), name] }, found.connector.id);
     const output = await found.capability.run(
       actor,
-      input,
-      this.clewFor(actor, { ...context, chain: [...(context.chain ?? []), name] }, found.connector.id),
+      narrowed.input,
+      narrowed.about ? { ...clew, about: narrowed.about } : clew,
     );
     if (!this.validator(found.capability.output)(output))
       throw new CapabilityError('Källans svar kunde inte verifieras.');
@@ -599,14 +791,19 @@ export class Registry {
     // Permission can change while a source is answering. Do not release the result under the old policy.
     await this.refresh();
     if (!this.allowed(actor, name)) throw new CapabilityError(UNKNOWN);
-    return output as O;
+    return { output: output as O, narrowed };
   }
   /** Metadata and binary bytes share the read's scope and source, with a final descriptor/policy check. */
   async document(actor: Actor, request: DocumentRequest, context: RunContext = {}): Promise<DocumentContent> {
     await this.refresh();
     const initial = this.allowed(actor, request.capability);
     if (initial?.capability.kind !== 'read' || !initial.connector.documents) throw new CapabilityError(UNKNOWN);
-    const output = await this.run<Record<string, unknown>>(actor, request.capability, request.input, context);
+    const { output, narrowed } = await this.invoke<Record<string, unknown>>(
+      actor,
+      request.capability,
+      request.input,
+      context,
+    );
     const found = this.allowed(actor, request.capability);
     if (found?.connector !== initial.connector) throw new CapabilityError(UNKNOWN);
     const view = found?.capability.view;
@@ -622,7 +819,13 @@ export class Registry {
       document.revision !== request.documentRevision
     )
       throw new CapabilityError('Underlaget har ändrats. Öppna dokumentet igen.');
-    const content = await found.connector.documents(actor, request, this.clewFor(actor, context, found.connector.id));
+    // The bytes are asked for with the input the metadata read was narrowed to, and told the same relations (D117).
+    const clew = this.clewFor(actor, context, found.connector.id);
+    const content = await found.connector.documents(
+      actor,
+      { ...request, input: narrowed.input as DocumentRequest['input'] },
+      narrowed.about ? { ...clew, about: narrowed.about } : clew,
+    );
     if (
       content.bytes.length !== document.size ||
       content.bytes.length > MAX_DOCUMENT_BYTES ||
@@ -931,6 +1134,7 @@ export class Registry {
           lens: choice?.lens === true,
           ...(column ? { column } : {}),
           ...(connector.kind === 'core' ? { core: true as const } : {}),
+          admits: this.named.get(capability.name)?.admits ?? [],
         },
       ];
     });
@@ -949,6 +1153,7 @@ export class Registry {
               param: capability.about.param,
               path: pathOf(capability, [capability.about.param])!,
               ...(connector.kind === 'core' ? { core: true as const } : {}),
+              admits: this.named.get(capability.name)?.admits ?? [],
             },
           ]
         : [],

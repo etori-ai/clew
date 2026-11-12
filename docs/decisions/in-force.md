@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**109 in force**: 98 accepted and 11 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 10 proposed and not decided. 6 no longer in force.
+**110 in force**: 98 accepted and 12 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 10 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -50,14 +50,15 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D79 · Semantic views and versioned document review](D79-semantic-views-and-versioned-document-review.md) | 2026-11-08 | accepted |  |
 | [D80 · Recover rejected rows without replaying confirmed writes](D80-recover-rejected-rows-without-replaying-confirmed-writes.md) | 2026-11-08 | accepted |  |
 | [D89 · An errand connector acts as the person, and the case system decides access](D89-an-errand-connector-acts-as-the-person-and-the-case-system-decides-access.md) | 2026-11-09 | accepted |  |
-| [D97 · A source says what its rows are about, and Clew places them](D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md) | 2026-11-10 | accepted | [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md), [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) |
+| [D97 · A source says what its rows are about, and Clew places them](D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md) | 2026-11-10 | accepted | [D99](README.md), [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md), [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md), [D117](D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md) |
+| [D117 · The core decides who a source may be asked about, on every call, and signs the relation](D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md) | 2026-11-12 | provisional |  |
 
 ## Identity
 
 | Decision | Date | Standing | Read with |
 |---|---|---|---|
 | [D5 · OIDC and OAuth 2.1 with JWT access tokens are the only identification path](D05-oidc-and-oauth-only-identification-path.md) | 2026-11-03 | accepted |  |
-| [D44 · Authorized reads and Clew-signed connector authority](D44-authorized-reads-and-clew-signed-connector-authority.md) | 2026-11-05 | accepted |  |
+| [D44 · Authorized reads and Clew-signed connector authority](D44-authorized-reads-and-clew-signed-connector-authority.md) | 2026-11-05 | accepted | [D117](D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md) |
 | [D62 · Users are core entities, not connected systems](D62-users-are-core-entities-not-connected-systems.md) | 2026-11-06 | accepted |  |
 | [D68 · People are pushed into Clew through standard SCIM, and mapping happens outside Clew](D68-people-are-pushed-into-clew-through-standard-scim.md) | 2026-11-06 | accepted | [D85](README.md), [D99](README.md), [D109](D109-a-provisioner-sends-a-change-when-it-happens-and-reconciles-the-whole-source-daily.md), [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md) |
 | [D75 · Source snapshots retain the authority that produced them](D75-source-snapshots-retain-the-authority-that-produced-them.md) | 2026-11-07 | accepted |  |

@@ -19,10 +19,25 @@ export interface DirectoryUnit {
   unitId: string;
   unitLabel: string;
 }
-/** Where the reader stands: every unit they are assigned to, and the units they manage with the people on them except the reader. */
+/** A person on a unit the reader manages, as Personal lists them (D99). */
+export interface ReachPerson extends DirectoryPerson {
+  /** Their role on the unit itself; for someone who reports to it from below, the role they hold there. Absent: unknown. */
+  role?: 'manager' | 'employee';
+  /** Set for someone who reports to the unit from a unit below it (D99) rather than being placed on it. */
+  below?: readonly unknown[];
+}
+/**
+ * Where the reader stands: every unit they are assigned to, the units they manage with the people Personal lists on
+ * them except the reader, and their place on D99's line. `above`: who manages the reader, the other leaders of the
+ * nearest led unit above a unit they manage or of a unit they are placed on. `lineReports`: the co-managers of a unit
+ * the reader manages whose line runs to a unit above it that the reader leads too. Personal lists everyone placed on a
+ * managed unit, co-managers included; who reports to the reader is narrower (`reportsTo`).
+ */
 export interface Reach {
   units: Array<DirectoryUnit & { role: 'manager' | 'employee' }>;
-  managed: Array<DirectoryUnit & { people: DirectoryPerson[] }>;
+  managed: Array<DirectoryUnit & { people: ReachPerson[] }>;
+  above: readonly string[];
+  lineReports: readonly string[];
 }
 /**
  * The directory (composition: the people module's `staffUsecases`). `person` finds an active person of the reader's
@@ -36,6 +51,16 @@ export interface Directory {
     userName: string,
     includeProfile: boolean,
   ): Promise<(DirectoryPerson & { unit: DirectoryUnit | null; profile?: PersonProfile }) | undefined>;
+}
+/**
+ * The person behind a call as the directory reads them (D117): their current grant, built for the actor the registry was
+ * handed (composition: `systemContext`); undefined for somebody Clew does not know. Throws when it cannot be read.
+ */
+export type Reader = (actor: Actor) => Promise<AuthenticatedContext | undefined>;
+/** The ports of the rule of who may be asked about (`relations.ts`, D117). */
+export interface RelationDeps {
+  directory: Pick<Directory, 'reach' | 'person'>;
+  reader: Reader;
 }
 /** The reads and actions about an entity kind this person may call now (composition: `registry.aboutReads`/`aboutActions`). */
 export interface Sources {

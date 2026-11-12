@@ -18,7 +18,7 @@ import type {
 } from '@clew/contracts';
 import { ENTITY_COLUMNS_MAX } from '@clew/contracts';
 import { menuRowOf, type Actor, type Connector, type Governance, type Registry } from '@clew/connectors';
-import type { ConnectorManifest } from '@clew/connectors/protocol';
+import { healthOf, type ConnectorManifest } from '@clew/connectors/protocol';
 import { ForbiddenError, InputError } from '../../context';
 import { describeBundled } from '../describe';
 import type {
@@ -114,7 +114,7 @@ export function connectorUsecases(deps: AdminDeps) {
       return { status: /Invalid connector manifest/.test(text) ? 'manifest-invalid' : 'unreachable', at, detail: text };
     }
     const failed = report.findings.filter(f => f.level === 'fail');
-    if (!failed.length) return { status: 'ok', at };
+    if (!failed.length) return healthOf(report.manifest, at);
     // A service that refuses our assertion says so in the protocol's words ('Ogiltigt behörighetsbevis.'), or by not refusing a foreign one.
     return {
       status: failed.some(f => /behörighetsbevis|secret|401/i.test(f.text)) ? 'secret-rejected' : 'manifest-invalid',

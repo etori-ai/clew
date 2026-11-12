@@ -32,7 +32,7 @@ const resultSchema = object(
   ['headline', 'rows'],
 );
 export const manifest = {
-  protocol: 2,
+  protocol: 3,
   id: 'reference',
   kind: 'passthrough',
   source: 'Testkälla',
@@ -93,6 +93,7 @@ export function createConnector({ path, secret, clewUrl, jwks, fault = '' }) {
     const actor = await verify(
       (request.headers.get('authorization') ?? '').replace(/^Bearer /, ''),
       request.headers.get('x-clew-connector-key'),
+      request,
     );
     if (!actor || actor.role !== 'manager') return fail('Du saknar behörighet.', 401);
     if (request.method !== 'POST') return fail('Okänd adress.', 404);

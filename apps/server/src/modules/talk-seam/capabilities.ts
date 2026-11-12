@@ -46,6 +46,9 @@ export function talkSeamCapabilities(
     input: CommitmentsInputSchema,
     output: CommitmentsResultSchema,
     scope: offered,
+    // `person` is the reader or one of their reports (D117); the system that answers is asked again under its own rule.
+    // The talk drawer names a report without a user name by Clew's id, which only Clew's own talks module takes.
+    person: { param: 'person', admits: ['self', 'managed'], ids: true },
     run: (actor, input, clew) => seam.commitments(actor, input, clew.call),
   };
   return { capabilities: [talks as Capability, commitments as Capability] };

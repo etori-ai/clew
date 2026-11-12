@@ -144,14 +144,17 @@ describe('the payroll fixture connector', () => {
       status: 'registered',
     });
     expect((await mapped.registry.run<{ rows: unknown[] }>(outside, 'payroll.absences', {})).rows).toHaveLength(1);
+    // Signed for `outside`, bound to this very body (D117): the body's actor is not who asks.
+    const body = JSON.stringify({ actor: hillevi, input: {} });
     const response = await w.connectorFetch('http://payroll/clew/capabilities/payroll.absences', {
       method: 'POST',
       headers: {
-        authorization: 'Bearer ' + (await assertionFor('payroll', secret)(outside)),
+        authorization:
+          'Bearer ' + (await assertionFor('payroll', secret)(outside, [], { body, capability: 'payroll.absences' })),
         'x-clew-connector-key': secret,
         'content-type': 'application/json',
       },
-      body: JSON.stringify({ actor: hillevi, input: {} }),
+      body,
     });
     expect(await response.json()).toEqual({ output: { rows: [] } });
   });

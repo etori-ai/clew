@@ -37,7 +37,7 @@ const keysInput = {
   required: ['keys'],
 };
 const aboutManifest = {
-  protocol: 2,
+  protocol: 3,
   id: 'hr',
   kind: 'passthrough',
   source: 'Personalsystemet',
@@ -82,6 +82,19 @@ const aboutManifest = {
         entity: HANDWRITTEN_EXAMPLES['capabilities[].about.entity'],
         param: HANDWRITTEN_EXAMPLES['capabilities[].about.param'],
       },
+      person: { admits: HANDWRITTEN_EXAMPLES['capabilities[].person.admits'] },
+    },
+    // A read that is not about a person but takes one person's key (D117): the read a section's row opens.
+    {
+      name: 'hr.notes',
+      kind: 'read',
+      title: 'Anteckningar',
+      description: 'En persons anteckningar.',
+      input: { type: 'object', properties: { person: { type: 'string' } } },
+      output: {},
+      model: false,
+      scope: {},
+      person: HANDWRITTEN_EXAMPLES['capabilities[].person'],
     },
   ],
 };
@@ -141,7 +154,7 @@ describe('the field list', () => {
   });
   test('types and constraints read as words', () => {
     const byPath = Object.fromEntries(reference.fields.map(f => [f.path, f]));
-    expect(byPath['protocol']!.type).toBe('2');
+    expect(byPath['protocol']!.type).toBe('3 / 2');
     expect(byPath['capabilities']!.type).toBe('array of object');
     expect(byPath['capabilities[].input']!.type).toBe('object (free keys)');
     expect(byPath['capabilities[].view.fields[].tones']!.type).toBe(
@@ -176,7 +189,7 @@ describe('the field list', () => {
       required: ['refs'],
     };
     const manifest = {
-      protocol: 2,
+      protocol: 3,
       id: 'hr',
       kind: 'passthrough',
       source: 'Personalsystemet',
@@ -321,6 +334,7 @@ describe('the field list', () => {
       'about-read-keys',
       'about-action-param',
       'about-action-key-alone',
+      'named-input-is-a-string',
       'about-action-start',
     ]);
   });
@@ -331,7 +345,7 @@ describe('the field list', () => {
     };
     const loaded: Record<string, ReturnType<typeof parseManifest>> = {};
     for (const [id, fragment] of Object.entries(example.manifests)) {
-      const manifest = { protocol: 2, kind: 'passthrough', source: 'System', scan: false, areas: [], ...fragment };
+      const manifest = { protocol: 3, kind: 'passthrough', source: 'System', scan: false, areas: [], ...fragment };
       expect({ id, problems: manifestProblems(manifest, id) }).toEqual({ id, problems: [] });
       loaded[id] = parseManifest(manifest, id);
       expect(() => new Registry().register(remoteConnector(loaded[id]!, transport))).not.toThrow();
@@ -496,6 +510,31 @@ describe('the rules', () => {
     'about-not-a-profile': [
       broken(aboutManifest, m => {
         m.capabilities[0].name = 'hr.search';
+      }),
+      'hr',
+    ],
+    'person-param': [
+      broken(aboutManifest, m => {
+        m.capabilities[2].person.param = 'nobody';
+      }),
+      'hr',
+    ],
+    'person-not-a-unit': [
+      broken(aboutManifest, m => {
+        m.capabilities[0].about.entity = 'unit';
+        m.capabilities[0].person = { admits: ['managed'] };
+      }),
+      'hr',
+    ],
+    'unit-on-a-unit': [
+      broken(aboutManifest, m => {
+        m.capabilities[0].unit = { admits: ['manages'] };
+      }),
+      'hr',
+    ],
+    'named-input-is-a-string': [
+      broken(aboutManifest, m => {
+        m.capabilities[2].input.properties.person = { type: 'array', items: { type: 'string' } };
       }),
       'hr',
     ],

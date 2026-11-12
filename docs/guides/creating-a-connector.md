@@ -18,7 +18,7 @@ From this repository's host terminal:
 docker exec -w /workspace clew-app-1 bun run docs:smoke
 ```
 
-Expected final line: `Documentation smoke passed.` The [walkthrough](../../scripts/docs-smoke.ts) validates the phone book manifest, exercises real handlers with ephemeral signed requests and verifies that a forged body cannot change the actor. Its private signing key is test-only; a deployed connector trusts Clew's public keys.
+Expected final line: `Documentation smoke passed.` The [walkthrough](../../scripts/docs-smoke.ts) validates the phone book manifest, exercises real handlers with ephemeral signed requests bound to their bodies, and verifies that a forged body is refused. Its private signing key is test-only; a deployed connector trusts Clew's public keys.
 
 A running instance serves JSON Schema at `/api/protocol/connector-protocol.schema.json`, OpenAPI at `/api/protocol/openapi.json` and a manifest dry run at `POST /api/protocol/manifest?id=<id>`. Use that instance's contract when integrating with it. The committed [protocol reference](../reference/connector-protocol.md) explains the same boundary.
 
@@ -44,7 +44,7 @@ This complete minimal manifest declares one team list. It is a contract example,
 <!-- minimal-connector-manifest -->
 ```json
 {
-  "protocol": 2,
+  "protocol": 3,
   "id": "directory",
   "kind": "passthrough",
   "source": "Personalkatalogen",
@@ -241,6 +241,8 @@ export const PersonOutput = object({
   model: false,
   scope: { roles: ['manager'] },
   about: { entity: 'person' },
+  // Only the manager's reports are asked about (D117); the system still answers only for those it has them as manager of.
+  person: { admits: ['managed'] },
   input: PersonInput,
   output: PersonOutput,
   view: {
@@ -264,14 +266,19 @@ What each part buys:
 | `about: { entity: 'person' }` on a read | A section "Utvecklingssamtal" on the opened person, captioned with the connector's `source` ("Samtalssystemet"); once an administrator chooses to, a lens under "Visa" on Personal and one of its fields as a column on "Alla" |
 | The `list` view | How the section, the lens and the column draw the rows; a read about an entity must declare a table or a list |
 | `tones: { Saknas: 'warn' }` | A row whose talk is missing gets a mark under "Just nu", where the read is a lens |
+| `person: { admits: ['managed'] }` | Who Clew may ask it about: only the caller's direct reports, never the caller or a colleague ([D117](../decisions/D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md)) |
 | `open` with `params: { person: 'key' }` | The fuller read under the section and on the person's page |
 | `model: false` | Required: a read about an entity is never a model tool |
 
 The handler answers one row per key it knows, each carrying `key` as Clew asked it, and nothing for an unknown key or a person outside the caller's scope in your system. Compare a person's key without regard to case. The caller's own user name is `actor.userName` in the verified assertion; the fixture uses it to find the manager. Beside `rows` an output may declare `heading` and `note`, two strings Clew draws over the lens.
 
+**Say who it may be asked about.** `person.admits` lists the relations Clew may send keys under: `self` (the caller), `managed` (the caller's direct reports under D99, a co-manager only when their line runs to the caller, never their own manager) and `colleague` (anyone else active in the organisation); a read about a unit says `unit.admits`, `manages` or `member`. Without it Clew sends `self` and `managed` only. Clew resolves every key against its own directory before the call, on every path, a page, a card, a tool or another connector's callback: a key outside what you admit never reaches you, and `about` in the request body, which the verified assertion binds, tells you each key's relation, so you can answer the caller's own row differently from a report's without a copy of the organisation ([Authorization](authorization.md#reads-about-a-person-or-a-unit)). Keep narrowing as the person in your own system; a relation is Clew's floor, not your permission. A read that is not about a person but takes one person's user name declares the property too: `appraisals.commitments` says `person: { param: 'person', admits: ['self', 'managed'] }`. The read a section's row opens with the row's `key`, and a `<id>.commitments` read's `person`, are treated as naming a person even when they do not say so, and every input that names someone must be a plain string property of the input schema, or the manifest is refused.
+
 An action about a person names the input property that takes the key, and requires nothing else that it does not ask the person for ([section 9](#9-ask-the-person-and-say-what-a-write-will-do)). The HR fixture's `hr.prepareAbsence` ([manifest](../../connectors/hr/manifest.mjs)) declares `about: { entity: 'person', param: 'person' }` with an input that requires only `person`; it shows as "Registrera frånvaro" in a manager's menu on a person. Clew starts it with `{ person: <key> }` without the model: a propose answers a `ThreadDraft`, which becomes the manager's card, and an execute is a card whose button is the human decision. Either card opens beside the page the action was started on ([Where things open](where-things-open.md)).
 
 For values drawn in a column or a section, three view options help: the `tones` key `*` warns for any present value ("2 försenade") while an absent one stays neutral; `beside: true` draws a field on the line of the one before it ("Bokat", "tors 12 nov kl. 09:00"); `compact: true` marks the one field that says the row in one value where there is room for only one ("Inte bokat").
+
+**Protocol 3.** Who may be asked about, `about` in the request body and the assertion's binding to its body are protocol 3, a break from 2 ([D117](../decisions/D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md)): declare `"protocol": 3`, validate request bodies against the schema of 3 (its `CallRequest` has `about`), copy the verifier of 3 and hand it the request (`verify(token, key, request)`), and make every input that names a person a plain string property. A connector still on 2 keeps working for a window, gets no `about`, is held to the looser rules of 2 and shows a warning in administration; the [protocol reference](../reference/connector-protocol.md#contract-changes) lists exactly what breaks.
 
 **Preview it.** Open `/protocol/preview` on a running instance and paste the manifest or choose its file. The page posts it to the dry run and shows every problem placed in the document, where each capability about an entity would show, who would see it there, and the row mark, the section and the menu drawn with sample rows. The samples are made from your declaration; nothing is called. The same answer comes from `POST /api/protocol/manifest?id=<id>` as `places`, `audience` and `samples`.
 
@@ -281,7 +288,7 @@ For values drawn in a column or a section, three view options help: the `tones` 
 docker exec -w /workspace clew-app-1 bun scripts/connector-check.ts http://127.0.0.1:4051 --id appraisals --secret <transport key> --keys anna,erik --as hillevi
 ```
 
-`--keys` are user names (or unit ids) asked in one batch; `--as` is the user name of a person in that installation's directory to sign the batch as. Without `--as` the batch is signed as the check's own manager, for whom every real key is out of scope; without `--keys` the rows are not checked.
+`--keys` are user names (or unit ids) asked in one batch; `--as` is the user name of a person in that installation's directory to sign the batch as. With `--as` the batch passes the installation's own rule of who may be asked about, so a key that person may not ask about is left out as Clew leaves it out, and the body carries each key's relation. Without `--as` the batch is signed as the check's own manager and vouches for no key, so nothing real is sent; without `--keys` the rows are not checked. The unknown key and the keys of another unit are sent straight to your service, past the rule and with no `about`: answer them as no row. The check also lists what each capability that names a person admits, and warns when it declares nothing.
 
 **Place it.** Registration places nothing. An administrator offers the read as a lens and chooses a column on the connector's page under Administration › Anslutna system, in "På Personal och andra listor".
 

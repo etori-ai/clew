@@ -11,9 +11,11 @@ import {
   type EntityList,
   type EntityRef,
   type EntitySource,
+  type PersonRelation,
+  type UnitRelation,
   type View,
 } from '@clew/contracts';
-import type { DirectoryPerson, DirectoryUnit, NamedCard, Reach } from './model';
+import type { DirectoryPerson, DirectoryUnit, NamedCard, Reach, ReachPerson } from './model';
 
 /**
  * The pure part of the entities module (D97): who may be asked about, which keys a source is sent, and what of its
@@ -76,20 +78,66 @@ export function listedKeys(kind: EntityKind, reach: Reach): string[] {
   else for (const unit of reach.managed) for (const p of unit.people) if (askable(p)) add(p.userName);
   return [...keys.values()];
 }
-/** A person on a unit the reader manages, by key without regard to case, with the first such unit in the list's order. */
-export function managedPerson(
+/**
+ * Whether someone on a unit the reader manages reports to the reader (D99 item 4, D117): placed there without a
+ * manager's role, reporting to it from below (the managers of the nearest led units below, and the people of units
+ * nobody leads in between), or leading it beside the reader while their line runs to a unit above that the reader leads
+ * (`lineReports`). Never someone who manages the reader (`above`), never a co-manager whose line runs elsewhere, and
+ * never someone whose role there the directory did not say. Personal lists more than this; who may be asked about as a
+ * report is exactly this.
+ */
+export const reportsTo = (reach: Reach, person: ReachPerson) =>
+  !reach.above.includes(person.id) &&
+  (person.below !== undefined || person.role === 'employee' || reach.lineReports.includes(person.id));
+/** A report of the reader's (`reportsTo`) by user name without regard to case, with the first unit they report on. */
+export function reportOf(
   reach: Reach,
   key: string,
-): { person: DirectoryPerson & { userName: string }; unit: DirectoryUnit } | undefined {
+): { person: ReachPerson & { userName: string }; unit: DirectoryUnit } | undefined {
   const folded = foldKey('person', key);
   for (const unit of reach.managed)
     for (const person of unit.people)
-      if (askable(person) && foldKey('person', person.userName) === folded)
+      if (askable(person) && foldKey('person', person.userName) === folded && reportsTo(reach, person))
         return { person, unit: { unitId: unit.unitId, unitLabel: unit.unitLabel } };
+  return undefined;
+}
+/**
+ * A report of the reader's without a user name, named by Clew's own id (D117): for a core capability of Clew's own
+ * domains that takes a person by id, as the talks domain does. Someone with a user name is never named by id.
+ */
+export function reportById(reach: Reach, id: string): (ReachPerson & { userName: null }) | undefined {
+  for (const unit of reach.managed)
+    for (const person of unit.people)
+      if (person.id === id && person.userName === null && person.enabled && reportsTo(reach, person))
+        return person as ReachPerson & { userName: null };
   return undefined;
 }
 /** A unit the reader manages or belongs to, by its id. */
 export const memberUnit = (reach: Reach, key: string) => readerUnits(reach).find(u => u.unitId === key);
+/** How the reader stands to a unit (D117): `manages` it, is placed on it otherwise (`member`), or undefined. */
+export function unitRelation(reach: Reach, key: string): UnitRelation | undefined {
+  if (!memberUnit(reach, key)) return undefined;
+  return reach.managed.some(u => u.unitId === key) || reach.units.some(u => u.unitId === key && u.role === 'manager')
+    ? 'manages'
+    : 'member';
+}
+/**
+ * How the reader stands to a person of the directory (D97 item 8, D117): the reader themself, under the user name they
+ * act with (`self`); a direct report on D99's line (`managed`, `reportsTo`); anyone else (`colleague`), a co-manager of
+ * the reader's unit and their own manager included. Undefined for the reader's own record under another user name, who
+ * is nobody to ask about. The one rule: the opened entity and the registry's check of every call both ask it.
+ */
+export function personRelation(
+  reader: { id: string; userName?: string },
+  reach: Reach,
+  person: { id: string; userName: string },
+): PersonRelation | undefined {
+  if (person.id === reader.id)
+    return reader.userName && foldKey('person', reader.userName) === foldKey('person', person.userName)
+      ? 'self'
+      : undefined;
+  return reportOf(reach, person.userName) ? 'managed' : 'colleague';
+}
 
 /** Keys in calls of at most `size` (never more than `ENTITY_KEYS_MAX`), in order. */
 export function chunk(keys: string[], size: number): string[][] {

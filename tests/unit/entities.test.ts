@@ -12,6 +12,7 @@ import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapt
 import { staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { checkRows, chunk, listedKeys } from '../../apps/server/src/modules/entities/domain';
 import { entityUsecases } from '../../apps/server/src/modules/entities/usecases';
+import { relationUsecases } from '../../apps/server/src/modules/entities/relations';
 import type { EntityBudget } from '../../apps/server/src/modules/entities/model';
 
 /**
@@ -96,6 +97,8 @@ function directory(extra: { onSkola?: Person[] } = {}) {
 
 interface SourceOptions {
   entity?: 'person' | 'unit';
+  /** Who it may be asked about (D117); undeclared, the reader themself and their reports. */
+  admits?: Array<'self' | 'managed' | 'colleague'>;
   /** The rows the source answers for the keys it is asked; default one row per key. */
   answer?: (keys: string[], actor: Actor) => Record<string, unknown>;
   roles?: Actor['role'][];
@@ -119,6 +122,7 @@ function aboutRead(name: string, title: string, options: SourceOptions = {}): Ca
     description: 'x',
     model: false,
     about: { entity: options.entity ?? 'person' },
+    ...(options.admits ? { person: { admits: options.admits } } : {}),
     input: {
       type: 'object',
       properties: { keys: { type: 'array', items: { type: 'string' }, maxItems: options.maxItems ?? 200 } },
@@ -201,7 +205,10 @@ function world(
   options: { budget?: Partial<EntityBudget>; directory?: ReturnType<typeof directory> } = {},
 ) {
   const people = options.directory ?? directory();
-  const registry = new Registry();
+  // Who may be asked about as composition installs it (D117): the entities module's rule over the same directory, so
+  // every scenario here runs with the real rule, not the test registry's trusting one.
+  const relations = relationUsecases({ directory: people.staff, reader: async actor => people.persona(actor.id) });
+  const registry = new Registry({ relations: relations.relate });
   for (const c of sources) registry.register(c);
   const cardsAsked: Subject[] = [];
   const card: EntityCard = { threadId: 'thread-1', title: 'Sjukanmälan', source: 'Personalsystemet', kind: 'act' };
@@ -297,6 +304,8 @@ describe('the pure rules: keys, calls and what is kept of an answer', () => {
         },
         { unitId: 'b', unitLabel: 'B', people: [{ id: '1', name: 'Anna', userName: 'ANNA', enabled: true }] },
       ],
+      above: [],
+      lineReports: [],
     };
     expect(listedKeys('person', reach)).toEqual(['anna']);
   });
@@ -635,11 +644,13 @@ describe('the opened person or unit', () => {
   });
   test('a unit the reader manages or belongs to, and no other', async () => {
     const { entities, people } = standard();
+    // Two relations to a unit (D117): the one she manages, and one an employee is placed on.
     expect(await entities.detail(people.persona('hillevi'), 'unit', 'unit-skola')).toMatchObject({
-      relation: 'member',
+      relation: 'manages',
       entity: { kind: 'unit', key: 'unit-skola', name: 'Bergsåkers skola' },
       sections: [],
     });
+    expect((await entities.detail(people.persona('anna'), 'unit', 'unit-skola'))?.relation).toBe('member');
     expect(await entities.detail(people.persona('hillevi'), 'unit', 'unit-omsorg')).toBeUndefined();
     expect(await entities.detail(people.persona('hillevi'), 'unit', 'UNIT-SKOLA')).toBeUndefined();
   });
@@ -663,11 +674,25 @@ describe("one source's section on the opened entity", () => {
       row: { key: 'anna', state: 'Bokat', count: 3 },
     });
     expect(await w.entities.section(hillevi, 'person', 'hillevi', 'hr.skills')).toMatchObject({ status: 'ok' });
-    expect(await w.entities.section(w.people.persona('hassan'), 'person', 'karin', 'hr.skills')).toMatchObject({
+    // A colleague the reader may open, but the read admits only the reader and their reports (D117): no row, no call.
+    expect(await w.entities.section(w.people.persona('hassan'), 'person', 'karin', 'hr.skills')).toEqual({
+      capability: 'hr.skills',
+      status: 'ok',
+    });
+    expect(calls).toEqual([['anna'], ['hillevi']]);
+  });
+  test('a read that admits colleagues answers for one (D117)', async () => {
+    const calls: string[][] = [];
+    const w = world([
+      connector('phonebook', 'Telefonkatalogen', [
+        aboutRead('phonebook.person', 'Kontakt', { calls, admits: ['self', 'managed', 'colleague'] }),
+      ]),
+    ]);
+    expect(await w.entities.section(w.people.persona('hassan'), 'person', 'karin', 'phonebook.person')).toMatchObject({
       status: 'ok',
       row: { key: 'karin' },
     });
-    expect(calls).toEqual([['anna'], ['hillevi'], ['karin']]);
+    expect(calls).toEqual([['karin']]);
   });
   test('no row is an answer; a key outside the rule or a source not about the kind calls nothing', async () => {
     const calls: string[][] = [];

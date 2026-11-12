@@ -18,6 +18,7 @@ import {
 } from '@clew/contracts';
 import { PEOPLE, createConnector, manifest as appraisalsManifest } from '../../connectors/appraisals/connector.mjs';
 import { assertionFor, testJwks } from '../connector-authority';
+import { trustingRelations } from '../registry';
 
 /**
  * The appraisals fixture (D96 items 8 and 9): a system other than Clew's own module answers the talks profile, keyed on
@@ -56,7 +57,9 @@ const lone: Actor = {
 function stack(options: { personMap?: Record<string, string> } = {}) {
   const service = createConnector({ jwks: testJwks, secret, today: () => TODAY, ...options });
   const connectorFetch: FetchLike = (input, init) => service.handle(new Request(input, init));
-  const registry = new Registry();
+  // What this suite tests is the system's own narrowing, so the core lets every key through (D117): the rule itself is
+  // tested in asked-about.test.ts.
+  const registry = new Registry({ relations: trustingRelations });
   registry.register(
     remoteConnector(parseManifest(appraisalsManifest, 'appraisals'), {
       url: 'http://appraisals',
@@ -242,8 +245,20 @@ describe('the appraisals connector answers the talks profile (D96)', () => {
     expect((await call({ 'x-clew-connector-key': secret, authorization: 'Bearer x.y.z' })).status).toBe(401);
     const foreign = await assertionFor('appraisals', 'another-secret-entirely')(hillevi);
     expect((await call({ 'x-clew-connector-key': secret, authorization: 'Bearer ' + foreign })).status).toBe(401);
-    const valid = await assertionFor('appraisals', secret)(hillevi);
+    // The assertion is bound to the request it was issued for (D117): this body, this capability.
+    const body = JSON.stringify({ input: {} });
+    const valid = await assertionFor('appraisals', secret)(hillevi, [], { body, capability: 'appraisals.talks' });
     expect((await call({ 'x-clew-connector-key': secret, authorization: 'Bearer ' + valid })).status).toBe(200);
+    for (const other of [
+      await assertionFor('appraisals', secret)(hillevi),
+      await assertionFor('appraisals', secret)(hillevi, [], {
+        body: JSON.stringify({ input: { x: 1 } }),
+        capability: 'appraisals.talks',
+      }),
+      await assertionFor('appraisals', secret)(hillevi, [], { body, capability: 'appraisals.round' }),
+      await assertionFor('appraisals', secret)(hillevi, [], { body }),
+    ])
+      expect((await call({ 'x-clew-connector-key': secret, authorization: 'Bearer ' + other })).status).toBe(401);
   });
 
   test('the conformance check passes, and asks appraisals.person as Clew would (D97)', async () => {
@@ -286,8 +301,17 @@ describe('the appraisals connector answers the talks profile (D96)', () => {
       group: 'capabilities',
       label: 'Utvecklingssamtal',
       description:
-        'Svarar för chef, medarbetare nekas som väntat. 5 nycklar gav 5 rader. Visas som lista med 3 fält. En okänd nyckel ger ingen rad. En person utanför behörigheten ger ingen rad.',
+        'Svarar för chef, medarbetare nekas som väntat. 5 nycklar gav 5 rader. Visas som lista med 3 fält. En okänd nyckel ger ingen rad. En person utanför behörigheten ger ingen rad. Clew frågar bara om den inloggades medarbetare.',
       capability: 'appraisals.person',
+    });
+    // What each read admits (D117) is checked from the declaration: the section's read and the read its row opens.
+    expect(full.findings).toContainEqual({
+      level: 'ok',
+      text: 'appraisals.person names a person in keys: Clew sends only managed (person.admits)',
+    });
+    expect(full.findings).toContainEqual({
+      level: 'ok',
+      text: 'appraisals.commitments names a person in person: Clew sends only self, managed (person.admits)',
     });
     expect(full.items).toContainEqual({
       level: 'ok',

@@ -187,7 +187,7 @@ export function createConnector({
     if (fault === 'slow') await new Promise(resolve => setTimeout(resolve, 1500));
     if (fault === 'unauthorized') return fail('denied', 'Tidrapporteringen godtar inte anslutningens behörighet.', 401);
     const token = (request.headers.get('authorization') ?? '').replace(/^Bearer /, '');
-    const actor = await verify(token, request.headers.get('x-clew-connector-key'));
+    const actor = await verify(token, request.headers.get('x-clew-connector-key'), request);
     if (!actor) return fail('denied', 'Ogiltigt behörighetsbevis.', 401);
     let body;
     try {

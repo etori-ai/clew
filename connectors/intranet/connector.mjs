@@ -16,7 +16,7 @@ const link = {
 const place = { ...link, properties: { ...link.properties, children: { type: 'array', items: link } } };
 
 export const manifest = {
-  protocol: 2,
+  protocol: 3,
   id: CONNECTOR,
   kind: 'passthrough',
   source: 'Intranätet',
@@ -105,7 +105,7 @@ export function createConnector({
     if (request.method !== 'POST' || !url.pathname.startsWith('/clew/')) return fail('not-found', 'Okänd adress.', 404);
     // The actor is the verified assertion's, never the body's: Clew signed who is asking.
     const token = (request.headers.get('authorization') ?? '').replace(/^Bearer /, '');
-    const actor = await verify(token, request.headers.get('x-clew-connector-key'));
+    const actor = await verify(token, request.headers.get('x-clew-connector-key'), request);
     if (!actor) return fail('denied', 'Ogiltigt behörighetsbevis.', 401);
     try {
       await request.json();

@@ -2,6 +2,8 @@ import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import { ENTITY_KEYS_MAX, rowsKey, type Ask } from '@clew/contracts';
 import { menuProblem, viewProblem, type ViewSubject } from './views';
+import { namedInputs, plainStringProperty } from './named';
+import { PROTOCOL_VERSION, protocolTerms } from './protocol';
 
 /** Rules shared by manifest preview, remote loading and in-process registration. No installation state. */
 interface Descriptor {
@@ -15,6 +17,8 @@ interface Descriptor {
       creates?: string;
       kinds?: unknown[];
       about?: { entity: string; param?: string; page?: unknown };
+      person?: { param?: string; admits?: readonly string[]; ids?: boolean };
+      unit?: { admits?: readonly string[] };
       asks?: Ask[];
       effect?: string;
     }
@@ -24,6 +28,8 @@ interface Descriptor {
   documents?: unknown;
   /** The manifest names the capability in an object; a Connector carries its name. */
   header?: string | { capability: string };
+  /** The protocol a remote connector's manifest is written to (D60); absent for Clew's own, which follow the current one. */
+  protocol?: number;
 }
 function schemaCompiler() {
   const ajv = addFormats(new Ajv({ strict: false, addUsedSchema: false }));
@@ -86,6 +92,31 @@ function aboutProblem(c: Descriptor['capabilities'][number], connector: Descript
   const asked = new Set((c.asks ?? []).map(a => a.property));
   if (!required.includes(about.param) || required.some(r => r !== about.param && !asked.has(r as string)))
     return `Capability ${c.name}: an action about an entity requires ${about.param} and otherwise only what it asks, so the entity's menu can start it with the key and the person's answers; anything more is optional with a default the source chooses (D97, D112).`;
+  return undefined;
+}
+
+/**
+ * Why a capability's `person` or `unit` (D117) may not be used, or undefined when it may. A capability about a person
+ * has its key where `about` says and declares only `admits`; any other names in `param` a string property of its input
+ * that takes one person's key. `unit` belongs to a capability about a unit, and `person` never does. Only Clew's own
+ * connectors take a person by Clew's id (`ids`).
+ */
+function accessProblem(c: Descriptor['capabilities'][number], connector: Descriptor): string | undefined {
+  if (c.unit && c.about?.entity !== 'unit')
+    return `Capability ${c.name}: unit belongs to a capability about a unit; declare who it may be asked about in person (D117).`;
+  const person = c.person;
+  if (!person) return undefined;
+  if (c.about?.entity === 'unit')
+    return `Capability ${c.name}: person is about people; a capability about a unit declares who it may be asked about in unit (D117).`;
+  if (person.ids && connector.kind !== 'core')
+    return `Capability ${c.name}: only Clew's own connectors take a person by Clew's id (D117).`;
+  if (c.about?.entity === 'person') {
+    if (person.param !== undefined)
+      return `Capability ${c.name}: a capability about a person takes its key in keys or about.param and declares no person.param (D117).`;
+    return undefined;
+  }
+  if (person.param === undefined)
+    return `Capability ${c.name}: person names no input; a capability not about a person names in person.param the input that takes the key (D117).`;
   return undefined;
 }
 
@@ -226,6 +257,8 @@ export function connectorProblems(
       const about = aboutProblem(c, connector, header);
       if (about) problems.push(about);
     }
+    const access = accessProblem(c, connector);
+    if (access) problems.push(access);
     problems.push(...asksProblems(c));
     if (c.effect !== undefined) {
       const effect = effectProblem(c, connector);
@@ -233,6 +266,19 @@ export function connectorProblems(
     }
     schemaProblem(`Capability ${c.name} input`, c.input as object);
     schemaProblem(`Capability ${c.name} output`, c.output as object);
+  }
+  // Every input that names a person or a unit, declared or not, is a plain string property (D117), so what the loader
+  // let in is what the registry resolves: never an array, an object or a property the schema does not list.
+  // A connector on the previous protocol (D60) is held to it: the registry still refuses anything but a string at every call.
+  for (const [name, inputs] of protocolTerms(connector.protocol ?? PROTOCOL_VERSION).strictNamedInputs
+    ? namedInputs(connector)
+    : []) {
+    const c = connector.capabilities.find(x => x.name === name)!;
+    for (const param of inputs.params)
+      if (!plainStringProperty(c.input, param))
+        problems.push(
+          `Capability ${name}: ${param} names a ${inputs.entity}, so it must be a plain string property of the input: listed under properties with type string, in an object schema without allOf, anyOf, oneOf or patternProperties (D117).`,
+        );
   }
   for (const f of connector.facts ?? []) {
     if (!f.kind.startsWith(connector.id + ':'))

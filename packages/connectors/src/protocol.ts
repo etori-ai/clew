@@ -1,6 +1,11 @@
 import { Type, type Static } from 'typebox';
 import {
   AboutSchema,
+  EntityKind,
+  PersonAccessSchema,
+  PersonRelationSchema,
+  UnitAccessSchema,
+  UnitRelationSchema,
   ASKS_MAX,
   AskSchema,
   EffectOutputSchema,
@@ -28,6 +33,7 @@ import {
   SeriesSchema,
   ActivitySchema,
   literals,
+  type ConnectorHealth,
 } from '@clew/contracts';
 
 /**
@@ -48,11 +54,16 @@ import {
  *   POST /clew/scan                     ScanRequest  -> ScanResponse        (only when manifest.scan is true)
  *   POST /clew/figure                   FigureRequest -> FigureResponse     (only for areas with figure: true)
  * Every POST carries an installation-signed RS256 bearer assertion and X-Clew-Connector-Key (transport only).
- * Verify public keys at the configured Clew URL, issuer, audience, subject/actor and bounded lifetime (D44).
+ * Verify public keys at the configured Clew URL, issuer, audience, subject/actor and bounded lifetime (D44), and that
+ * the assertion was issued for this request: its `body` claim the SHA-256 of the exact body, its `capability` claim the
+ * capability of the route (D117). When the input names people or units, Clew has already left out every key the caller
+ * may not ask about, and the body's `about` says how the caller stands to each key sent (`CallAbout`).
  * A callback uses the separate signed `callback` claim, never the request assertion, and only targets declared
  * in `uses`. See docs/guides/authorization.md and docs/reference/connector-protocol.md.
  */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
+/** The protocol before it (D60): still loaded for a stated window, its connectors shown with a warning (`PROTOCOL_DEPRECATED`). */
+export const PROTOCOL_PREVIOUS = 2;
 const object = <T extends Record<string, import('typebox').TSchema>>(properties: T, description?: string) =>
   Type.Object(properties, { additionalProperties: false, ...(description ? { description } : {}) });
 const swedish = (description: string) => Type.String({ minLength: 1, maxLength: 200, description });
@@ -82,6 +93,27 @@ export const ActorSchema = object(
   'The acting person as Clew knows them. Never a token.',
 );
 export type ProtocolActor = Static<typeof ActorSchema>;
+/**
+ * `about` in a call's body (D117): how the actor stands to each person or unit the call's input names, resolved by Clew
+ * from its own directory before the call. The assertion binds the body, so a connector may trust it as it trusts the
+ * actor, and may answer `self` differently from `managed` without a copy of the organisation. In the body rather than the
+ * bearer, so a batch of long keys never makes a header too large for a proxy.
+ */
+export const CallAboutSchema = object(
+  {
+    entity: EntityKind,
+    relations: Type.Record(
+      Type.String({ minLength: 1, maxLength: 512 }),
+      Type.Union([PersonRelationSchema, UnitRelationSchema]),
+      {
+        description:
+          "Every key the input carries (each of `keys`, or the value of the property that takes one key), exactly as the input spells it, mapped to how the actor stands to it: a person's `self`, `managed` or `colleague`, a unit's `manages` or `member`. Clew sends no key the capability does not admit, so a key the input carries and this map does not name is one Clew did not vouch for: answer it as no row.",
+      },
+    ),
+  },
+  "How the actor stands to the people or units the input names (D117), present when the input names any. Trust it only from a body whose digest the verified assertion's `body` claim holds.",
+);
+export type CallAbout = Static<typeof CallAboutSchema>;
 export const ScopeRuleSchema = object(
   {
     roles: Type.Optional(
@@ -237,6 +269,8 @@ export const ManifestCapabilitySchema = object({
   ),
   menu: Type.Optional(MenuHintSchema),
   about: Type.Optional(AboutSchema),
+  person: Type.Optional(PersonAccessSchema),
+  unit: Type.Optional(UnitAccessSchema),
   follows: Type.Optional(
     Type.Array(FactKindName, {
       uniqueItems: true,
@@ -323,9 +357,9 @@ export const DelegationSchema = object(
 );
 export const ConnectorManifestSchema = Type.Object(
   {
-    protocol: Type.Literal(PROTOCOL_VERSION, {
+    protocol: Type.Union([Type.Literal(PROTOCOL_VERSION), Type.Literal(PROTOCOL_PREVIOUS)], {
       description:
-        'The version of this contract the manifest is written to, not of the connector (D60). This instance loads 2; an additive change to the protocol keeps the number.',
+        'The version of this contract the manifest is written to, not of the connector (D60). This instance loads 3, and 2 for a window: a connector on 2 is loaded, shown with a warning in administration and in the conformance check, sent no `about` in its request bodies and held to the looser rules of 2. An additive change keeps the number; a break is a new one. 3 (D117) binds the request assertion to its body and capability, sends `about` in the body of a call whose input names people or units, and refuses a manifest in which an input that names someone is not a plain string property.',
     }),
     id: Type.String({
       pattern: '^[a-z][a-z0-9-]*$',
@@ -385,14 +419,22 @@ export const ConnectorManifestSchema = Type.Object(
   },
   {
     additionalProperties: false,
-    $id: 'https://clew.dev/protocol/2/connector-manifest.schema.json',
+    $id: 'https://clew.dev/protocol/3/connector-manifest.schema.json',
     title: 'Clew connector manifest',
   },
 );
 export type ConnectorManifest = Static<typeof ConnectorManifestSchema>;
 
-export const CallRequestSchema = object({ actor: ActorSchema, input: Type.Unknown() });
-export const DocumentReadRequestSchema = object({ actor: ActorSchema, request: DocumentRequestSchema });
+export const CallRequestSchema = object({
+  actor: ActorSchema,
+  input: Type.Unknown(),
+  about: Type.Optional(CallAboutSchema),
+});
+export const DocumentReadRequestSchema = object({
+  actor: ActorSchema,
+  request: DocumentRequestSchema,
+  about: Type.Optional(CallAboutSchema),
+});
 export type CallRequest = Static<typeof CallRequestSchema>;
 export const ProtocolErrorSchema = object({
   code: Type.Union([
@@ -530,12 +572,13 @@ export type CallbackRequest = Static<typeof CallbackRequestSchema>;
 export function protocolSchema() {
   return {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'https://clew.dev/protocol/2/connector-protocol.schema.json',
+    $id: 'https://clew.dev/protocol/3/connector-protocol.schema.json',
     title: 'Clew connector protocol',
     description: 'Shapes exchanged between Clew and a connector service. See docs/reference/connector-protocol.md.',
     $defs: {
       ConnectorManifest: ConnectorManifestSchema,
       Actor: ActorSchema,
+      CallAbout: CallAboutSchema,
       CallRequest: CallRequestSchema,
       CallResponse: CallResponseSchema,
       ProtocolError: ProtocolErrorSchema,
@@ -583,11 +626,40 @@ export function protocolSchema() {
  * number; views, the menu, delegation and facts all arrived under 2. A break is a new number, and Clew then accepts the
  * new number and the one before it for a stated window, loading a manifest on the older one with a warning in
  * administration rather than refusing it. The one exception is a security change, which retires the old number at
- * once with its reason recorded here; that is what happened to 1.
+ * once with its reason recorded here; that is what happened to 1. 3 is a break (D117): the request body gained `about`
+ * in closed objects, the assertion's binding is required by the verifier, and the loader refuses a named input that is
+ * not a plain string; 2 stays accepted for the window in `PROTOCOL_DEPRECATED`.
  */
-export const PROTOCOL_ACCEPTED: readonly number[] = [PROTOCOL_VERSION];
+export const PROTOCOL_ACCEPTED: readonly number[] = [PROTOCOL_VERSION, PROTOCOL_PREVIOUS];
+/**
+ * A number still accepted for a window (D60), with what a connector on it must change and until when. 2 became the
+ * previous number on 2026-11-12 (D117); the window closes by a decision of its own, no earlier than the first release
+ * after that day.
+ */
+export const PROTOCOL_DEPRECATED: Readonly<Record<number, string>> = {
+  2: "deprecated 2026-11-12 (D117), accepted until a decision closes the window, no earlier than the first release after that day: declare protocol 3, accept `about` in the request body (CallRequest and DocumentReadRequest gained it), verify the assertion's `body` and `capability` claims against the request (connectors/hello/verification.mjs), and make every input that names a person a plain string property, the `person` of a `<id>.commitments` read included.",
+};
+/**
+ * What differs for a connector on the previous number (D60): the one place the loader and the transport ask, so a
+ * manifest on 2 is read as a manifest on 3 with these exceptions. A connector on 2 was written against a `CallRequest`
+ * without `about` (a closed object), so its bodies carry none; and the plain-string rule for inputs that name someone is
+ * not a refusal for it, since the registry refuses anything but a string there at every call regardless.
+ */
+export function protocolTerms(protocol: number): { about: boolean; strictNamedInputs: boolean; deprecated?: string } {
+  return protocol === PROTOCOL_PREVIOUS
+    ? { about: false, strictNamedInputs: false, deprecated: PROTOCOL_DEPRECATED[protocol] }
+    : { about: true, strictNamedInputs: true };
+}
+/**
+ * The health of a connector that answered with a valid manifest (D60): `ok`, or on the previous protocol the warning
+ * that it is loaded for a window only, with what it must change.
+ */
+export function healthOf(manifest: { protocol: number }, at: string): ConnectorHealth {
+  const deprecated = protocolTerms(manifest.protocol).deprecated;
+  return deprecated ? { status: 'protocol-outdated', at, detail: deprecated } : { status: 'ok', at };
+}
 export const PROTOCOL_RETIRED: Readonly<Record<number, string>> = {
-  1: "retired 2026-11-05: shared-secret (HS256) identity signing was replaced by RS256 installation keys (D44). Move the verifier to the installation's public keys and declare protocol 2.",
+  1: "retired 2026-11-05: shared-secret (HS256) identity signing was replaced by RS256 installation keys (D44). Move the verifier to the installation's public keys and declare protocol 3 (2 for its window).",
 };
 
 /**
@@ -882,12 +954,17 @@ export function openApiDocument(options: OpenApiOptions = {}) {
       description:
         'A connector is an HTTP service of your own. It serves the routes tagged **Connector**; Clew loads its manifest and calls it as the acting person, with an RS256 assertion it can verify against the keys at the route tagged **Clew**. Shapes are the same JSON Schemas the instance validates with, published under `components.schemas` and, as one bundle, as `connector-protocol.schema.json` under `/api/protocol/`. Generate server stubs from this document or implement the paths by hand; the examples under `connectors/` in the repository are complete. Try `POST /api/protocol/manifest` with a manifest before any service exists. The manifest field by field, with examples: [manifest reference](/protocol/manifest).',
     },
-    'x-clew-protocol': { current: PROTOCOL_VERSION, accepted: [...PROTOCOL_ACCEPTED], retired: PROTOCOL_RETIRED },
+    'x-clew-protocol': {
+      current: PROTOCOL_VERSION,
+      accepted: [...PROTOCOL_ACCEPTED],
+      deprecated: PROTOCOL_DEPRECATED,
+      retired: PROTOCOL_RETIRED,
+    },
     tags: [
       {
         name: 'Connector',
         description:
-          'Routes the connector serves and Clew calls. All JSON, all under the registered base URL. Every POST carries `Authorization: Bearer <assertion>` and `X-Clew-Connector-Key`; take the actor from the verified assertion, never from the body.',
+          "Routes the connector serves and Clew calls. All JSON, all under the registered base URL. Every POST carries `Authorization: Bearer <assertion>` and `X-Clew-Connector-Key`; take the actor from the verified assertion, never from the body, and check that the assertion's `body` claim is the SHA-256 of the body received (D117).",
       },
       {
         name: 'Clew',
@@ -1112,7 +1189,7 @@ export function openApiDocument(options: OpenApiOptions = {}) {
           scheme: 'bearer',
           bearerFormat: 'JWT',
           description:
-            'RS256 assertion signed by the installation: who is acting, for which connector, for at most two minutes. Verify against `/api/connectors/jwks`.',
+            "RS256 assertion signed by the installation: who is acting (`actor`), for which connector, for at most two minutes, bound to one request (D117): `body` is the SHA-256 of the exact request body, base64url, and on `/clew/capabilities/{name}` `capability` is that name. Verify against `/api/connectors/jwks`, and recompute both from the request received; the body's `input` and `about` (`CallAbout`) are then Clew's.",
         },
         connectorKey: {
           type: 'apiKey',

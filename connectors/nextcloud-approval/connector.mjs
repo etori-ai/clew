@@ -413,7 +413,7 @@ export function createConnector({
     if (request.method !== 'POST' || !url.pathname.startsWith('/clew/')) return fail('not-found', 'Okänd adress.', 404);
 
     const assertion = (request.headers.get('authorization') ?? '').replace(/^Bearer /, '');
-    const actor = await verify(assertion, request.headers.get('x-clew-connector-key'));
+    const actor = await verify(assertion, request.headers.get('x-clew-connector-key'), request);
     if (!actor) return fail('denied', 'Ogiltigt behörighetsbevis.', 401);
 
     let body;

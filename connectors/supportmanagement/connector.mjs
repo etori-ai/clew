@@ -163,7 +163,7 @@ export function createConnector({
       return errorResponse('not-found', 'Okänd adress.', 404);
 
     const assertion = (request.headers.get('authorization') ?? '').replace(/^Bearer /, '');
-    const actor = await verify(assertion, request.headers.get('x-clew-connector-key'));
+    const actor = await verify(assertion, request.headers.get('x-clew-connector-key'), request);
     if (!actor) return errorResponse('denied', 'Ogiltigt behörighetsbevis.', 401);
 
     let body;

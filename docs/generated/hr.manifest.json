@@ -1,5 +1,5 @@
 {
-  "protocol": 2,
+  "protocol": 3,
   "id": "hr",
   "kind": "passthrough",
   "source": "Personalsystemet",
@@ -1186,6 +1186,11 @@
         "entity": "person",
         "param": "person"
       },
+      "person": {
+        "admits": [
+          "managed"
+        ]
+      },
       "input": {
         "type": "object",
         "properties": {
@@ -1703,6 +1708,11 @@
       },
       "about": {
         "entity": "person"
+      },
+      "person": {
+        "admits": [
+          "managed"
+        ]
       },
       "input": {
         "type": "object",

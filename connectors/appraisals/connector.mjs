@@ -120,7 +120,7 @@ export const PersonOutput = object({
 });
 
 export const manifest = {
-  protocol: 2,
+  protocol: 3,
   id: CONNECTOR,
   kind: 'passthrough',
   source: 'Samtalssystemet',
@@ -149,6 +149,8 @@ export const manifest = {
         'Åtgärdspunkter från utvecklingssamtalen: en medarbetares, för medarbetarens chef, eller utan medarbetare de som är dina och de som gäller dig.',
       model: false,
       scope: {},
+      // `person` names someone (D117): Clew lets through the caller themself and their reports, and says which.
+      person: { param: 'person', admits: ['self', 'managed'] },
       input: CommitmentsInput,
       output: CommitmentsOutput,
       view: {
@@ -205,6 +207,8 @@ export const manifest = {
       model: false,
       scope: { roles: ['manager'] },
       about: { entity: 'person' },
+      // Only the manager's reports are asked about (D117); the system still answers only for those it has them as manager of.
+      person: { admits: ['managed'] },
       input: PersonInput,
       output: PersonOutput,
       view: {
@@ -421,7 +425,7 @@ export function createConnector({
     if (request.method !== 'POST' || !url.pathname.startsWith('/clew/')) return fail('not-found', 'Okänd adress.', 404);
     // The actor is the verified assertion's, never the body's: Clew signed who is asking.
     const token = (request.headers.get('authorization') ?? '').replace(/^Bearer /, '');
-    const actor = await verify(token, request.headers.get('x-clew-connector-key'));
+    const actor = await verify(token, request.headers.get('x-clew-connector-key'), request);
     if (!actor) return fail('denied', 'Ogiltigt behörighetsbevis.', 401);
     let body;
     try {

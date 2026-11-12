@@ -1179,6 +1179,71 @@ export const AboutSchema = object(
 );
 export type About = Static<typeof AboutSchema>;
 /**
+ * How a caller stands to a person they ask a source about (D97 item 8, D117), from Clew's own directory (D99): the person
+ * themself (`self`), one of their direct reports (`managed`) or another active person of the organisation
+ * (`colleague`). A closed list, as `ENTITY_KINDS` is: a new relation is a contract change that comes with the rule that
+ * resolves it.
+ */
+export const PERSON_RELATIONS = ['self', 'managed', 'colleague'] as const;
+export type PersonRelation = (typeof PERSON_RELATIONS)[number];
+/** How a caller stands to a unit (D117): they manage it (`manages`), or are placed on it without managing it (`member`). */
+export const UNIT_RELATIONS = ['manages', 'member'] as const;
+export type UnitRelation = (typeof UNIT_RELATIONS)[number];
+export type Relation = PersonRelation | UnitRelation;
+export const RELATIONS: readonly Relation[] = [...PERSON_RELATIONS, ...UNIT_RELATIONS];
+/** What a capability that names a person admits when it does not say (D117): the person themself and their reports. */
+export const STRICT_RELATIONS: readonly PersonRelation[] = ['self', 'managed'];
+/** What a capability about a unit admits when it does not say (D117): a unit the caller manages. */
+export const STRICT_UNIT_RELATIONS: readonly UnitRelation[] = ['manages'];
+export const PersonRelationSchema = literals(PERSON_RELATIONS, {
+  description:
+    "`self`: the caller is the person. `managed`: the person reports to the caller (D99): placed without a manager's role on a unit the caller manages, or reporting to it from below (the managers of the nearest led units below it, and the people of units nobody leads in between); a co-manager of the caller's unit only when their line runs to a unit above it that the caller leads, never someone who manages the caller. `colleague`: any other active person of the caller's organisation.",
+});
+export const UnitRelationSchema = literals(UNIT_RELATIONS, {
+  description:
+    "`manages`: the caller holds a manager's role on the unit. `member`: the caller is placed on it otherwise.",
+});
+/**
+ * Who may be asked about through a capability (D117). Clew resolves how the caller stands to every person the input
+ * names before the connector is called, and lets through only the relations `admits` lists. On a capability about a
+ * person the key is where `about` says (`keys`, or `about.param`); any other capability names the input property in
+ * `param`.
+ */
+export const PersonAccessSchema = object(
+  {
+    param: Type.Optional({
+      ...viewKey,
+      description:
+        "On a capability that is not `about` a person: the plain string property of the input that takes one person's key, a provisioned `userName`, such as the `person` of a read a row of a section opens. Absent on a capability about a person, whose key is in `keys` or `about.param`.",
+    }),
+    admits: Type.Optional(
+      Type.Array(PersonRelationSchema, {
+        minItems: 1,
+        uniqueItems: true,
+        description:
+          'The relations a caller may have to a person this capability is asked about. Omitted means `["self", "managed"]`, the strictest that still lets a person read their own and a manager their reports\'.',
+      }),
+    ),
+  },
+  "Who may be asked about (D117). Clew resolves the caller's relation to every person the input names from its own directory before the connector is called: a key in `keys` the caller may not ask about is left out of the call, and a call whose single key names such a person, or holds anything but a string there, is refused as an unknown capability is, so the answer never tells whether the person exists. The relation of each key sent travels in the request body's `about`, which the assertion binds. A capability about a person, a `<id>.commitments` read, a read a row of a section about a person opens with the row's `key` and an execute's effect read name a person whether or not they declare this, and each such input must be a plain string property of the input schema; without `admits` they admit `self` and `managed`.",
+);
+export type PersonAccess = Static<typeof PersonAccessSchema>;
+/** Who may be asked about through a capability about a unit (D117): the relations a caller may have to the unit. */
+export const UnitAccessSchema = object(
+  {
+    admits: Type.Optional(
+      Type.Array(UnitRelationSchema, {
+        minItems: 1,
+        uniqueItems: true,
+        description:
+          'The relations a caller may have to a unit this capability is asked about. Omitted means `["manages"]`.',
+      }),
+    ),
+  },
+  'Who may be asked about through a capability whose `about.entity` is `unit` (D117). A unit key outside `admits` is left out of `keys`, and a call whose `about.param` names such a unit is refused as an unknown capability is.',
+);
+export type UnitAccess = Static<typeof UnitAccessSchema>;
+/**
  * A page of an owned domain where the person writes about one entity (D95, D96): a core connector's in-process `about`
  * may name one, never a remote manifest. `href` may hold `{key}` and `{id}`, which the web fills in. A path (`/staff?…`)
  * is a page of its own, a destination; a query alone (`?talk={id}`) is something that lies over the page the way in is
@@ -1452,6 +1517,7 @@ export const EntityDetailSchema = object({
     Type.Literal('managed'),
     Type.Literal('self'),
     Type.Literal('colleague'),
+    Type.Literal('manages'),
     Type.Literal('member'),
   ]),
   actions: Type.Array(EntityActionSchema),
@@ -2447,6 +2513,8 @@ export const ConnectorHealthSchema = object({
     Type.Literal('manifest-invalid'),
     Type.Literal('secret-rejected'),
     Type.Literal('untested'),
+    // Loaded on the previous protocol for its window (D60): it works, and must move to the current one.
+    Type.Literal('protocol-outdated'),
   ]),
   at: Type.String(),
   detail: Type.Optional(Type.String()),
