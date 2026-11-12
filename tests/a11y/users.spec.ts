@@ -16,9 +16,9 @@ import type { Locator, Page } from '@playwright/test';
 /**
  * Användare (D62, D68, D85, D100): the provisioned people a page at a time with unit, role, capabilities and whether
  * they have signed in, narrowed by a search and four filters, and the mapping from a group to a capability that an
- * administrator adds and removes, and the catalogues' keys: one is issued, replaced and taken back (D107). A person's
- * title stands under the name when the catalogue sent one (D110). Keyboard, structure, announcements, axe and reflow,
- * at desktop, phone and 320 px.
+ * administrator adds and removes, the group found by searching every group of the organisation (D85), and the
+ * catalogues' keys: one is issued, replaced and taken back (D107). A person's title stands under the name when the
+ * catalogue sent one (D110). Keyboard, structure, focus, announcements, axe and reflow, at desktop, phone and 320 px.
  */
 /** The line over the list that counts the people: Astryx's own live regions repeat other words about them. */
 const readout = (page: Page) => page.getByRole('status').filter({ hasText: /^\d+ (av \d+ )?person(er)?$/ });
@@ -97,13 +97,49 @@ test.describe('users administration', () => {
         await main.getByRole('link', { name: 'Användare', exact: true }).click();
         await expect(page).toHaveURL(/\/admin\/users\?role=manager$/);
       });
-      test('the page has no axe violations and every focus stop is marked', async ({ page, api }) => {
+      test('the page has no axe violations, every focus stop is marked, and its parts are headings under its title', async ({
+        page,
+        api,
+      }) => {
         api.admin = true;
         await open(page, '/admin/users');
         await expect(page.getByRole('heading', { level: 1, name: 'Användare' })).toBeVisible();
+        // A list of the headings finds the two cards by their titles (W5): drawn at D71's level for a part of a page and
+        // read as level 2 under the title. Playwright gives a heading the level of its tag, so the outline's level is
+        // read from the attribute, as admin.spec reads it.
+        for (const name of ['Inläsning från katalogen', 'Behörigheter från grupper'])
+          await expect(page.getByRole('heading', { name, exact: true })).toHaveAttribute('aria-level', '2');
         await expectNoAxeViolations(page);
         const { unmarked } = await hiddenFocusStops(page);
         expect(unmarked).toEqual([]);
+      });
+      test('a mapping taken away from the keyboard gives the focus to the next row, else the one before, else the group picker (W4)', async ({
+        page,
+        api,
+      }) => {
+        api.admin = true;
+        api.users.groupCapabilities = [
+          { groupExternalId: 'S-1-5-21-it-staff', groupLabel: 'IT-personal', capability: 'admin.connectors' },
+          { groupExternalId: 'S-1-5-21-rektorer', groupLabel: 'Rektorer', capability: 'admin.connectors' },
+          { groupExternalId: 'S-1-5-21-rektorer', groupLabel: 'Rektorer', capability: 'admin.users' },
+        ];
+        await open(page, '/admin/users');
+        const remove = (name: string) => page.getByRole('button', { name: `Ta bort: ${name}` });
+        await remove('Rektorer ger administrera anslutna system').focus();
+        await page.keyboard.press('Enter');
+        await expect(remove('Rektorer ger administrera anslutna system')).toHaveCount(0);
+        await expect(remove('Rektorer ger administrera användare')).toBeFocused();
+        // The last row leaves the focus to the row before it.
+        await page.keyboard.press('Enter');
+        await expect(remove('Rektorer ger administrera användare')).toHaveCount(0);
+        await expect(remove('IT-personal ger administrera anslutna system')).toBeFocused();
+        // The only row leaves it to the field that adds the next one.
+        await page.keyboard.press('Enter');
+        await expect(page.getByText(/^Ingen grupp ger någon behörighet ännu/)).toBeVisible();
+        await expect(
+          page.getByRole('form', { name: 'Lägg till behörighet från grupp' }).getByRole('combobox', { name: 'Grupp' }),
+        ).toBeFocused();
+        await expectNoAxeViolations(page);
       });
     });
   test.describe('desktop', () => {
@@ -400,6 +436,8 @@ test.describe('users administration', () => {
       // A day's grace is chosen from the start: the choice that breaks no push.
       await expect(dialog.getByRole('radio', { name: 'Ett dygn till' })).toBeChecked();
       await expect(dialog.getByRole('radio')).toHaveCount(3);
+      // No key replaced before this one still answers, so nothing is ended at once and the dialog warns of nothing.
+      await expect(dialog).not.toContainText('Den förra nyckeln slutar gälla direkt');
       await expectNoAxeViolations(page);
       await dialog.getByRole('button', { name: 'Byt nyckel' }).click();
       const shown = page.getByRole('alertdialog', { name: 'Byt nyckel' });
@@ -417,6 +455,55 @@ test.describe('users administration', () => {
         'Den förra nyckeln gäller till 12 november 2026 kl. 06:00',
       );
       await expect(page.getByText('a11y-key-rotated')).toHaveCount(0);
+    });
+    test('a key replaced while the key replaced before it still answers says, before and after, that that key ends at once (K1)', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      // Metakatalogen's key was replaced, and the key before it answers until 8 November.
+      api.users.provisioners = api.users.provisioners.map(p =>
+        p.id === 'metakatalogen' ? { ...p, previousValidUntil: '2026-11-08T05:00:00.000Z' } : p,
+      );
+      await open(page, '/admin/users');
+      const menu = page
+        .getByRole('list', { name: 'Inläsning från katalogen' })
+        .getByRole('button', { name: 'Åtgärder för Metakatalogen' });
+      const shown = page.getByRole('alertdialog', { name: 'Byt nyckel' });
+      const replace = async () => {
+        await menu.focus();
+        await page.keyboard.press('Enter');
+        await page.getByRole('menuitem', { name: 'Byt nyckel' }).click();
+        const dialog = page.getByRole('dialog', { name: 'Byt nyckel' });
+        await expect(dialog.getByRole('heading', { name: 'Den gamla nyckeln' })).toBeFocused();
+        return dialog;
+      };
+      let dialog = await replace();
+      // Before anything is confirmed, above the choice: Clew keeps one replaced key, so the one replaced before ends
+      // now, whatever time is chosen for the key replaced now.
+      await expect(dialog).toContainText('Den förra nyckeln slutar gälla direkt');
+      await expect(dialog).toContainText(
+        'Den gäller annars till 8 november 2026 kl. 06:00. Clew behåller bara en utbytt nyckel, så när du byter nu slutar den gälla direkt, vilken tid du än väljer nedan.',
+      );
+      await expect(dialog.getByRole('radio', { name: 'Ett dygn till' })).toBeChecked();
+      await expectNoAxeViolations(page);
+      await dialog.getByRole('button', { name: 'Byt nyckel' }).click();
+      // Afterwards both: until when the key just replaced answers, and that the one before it no longer does.
+      await expect(shown.getByRole('heading', { name: 'Den nya nyckeln' })).toBeFocused();
+      await expect(shown).toContainText(
+        'Den förra nyckeln gäller till 12 november 2026 kl. 06:00. Byt den i katalogen före dess. Den äldre nyckeln, som skulle ha gällt till 8 november 2026 kl. 06:00, har slutat gälla.',
+      );
+      await shown.getByRole('button', { name: 'Jag har sparat nyckeln' }).click();
+      await expect(menu).toBeFocused();
+      // Once more, with the key replaced now ended at once too.
+      dialog = await replace();
+      await expect(dialog).toContainText('Den gäller annars till 12 november 2026 kl. 06:00.');
+      await dialog.getByRole('radio', { name: 'Den slutar gälla direkt' }).check();
+      await dialog.getByRole('button', { name: 'Byt nyckel' }).click();
+      await expect(shown).toContainText(
+        'Den förra nyckeln har slutat gälla. Inläsningen står stilla tills katalogen har fått den nya. Den äldre nyckeln, som skulle ha gällt till 12 november 2026 kl. 06:00, har också slutat gälla.',
+      );
+      await expectNoAxeViolations(page);
     });
     test('a key is taken back after a confirmation, said aloud, and the focus goes to the control that is left (D107)', async ({
       page,
@@ -493,14 +580,31 @@ test.describe('users administration', () => {
       await expect(filters(page)).toHaveCount(0);
       await expectNoAxeViolations(page);
     });
-    test('a group is mapped to a capability by keyboard, said aloud, and taken back again', async ({ page, api }) => {
+    test('a group is found by its name, mapped to a capability by keyboard, said aloud, and taken back again', async ({
+      page,
+      api,
+    }) => {
       api.admin = true;
       await open(page, '/admin/users');
       const form = page.getByRole('form', { name: 'Lägg till behörighet från grupp' });
       const group = form.getByRole('combobox', { name: 'Grupp' });
       await group.focus();
+      await page.keyboard.type('rekt');
+      // The external id stands under the name, so two groups with one name are told apart.
+      await expect(page.getByRole('option')).toHaveCount(1);
+      await expect(page.getByRole('option')).toHaveAccessibleName('Rektorer S-1-5-21-rektorer');
+      // Escape closes the list before the server has answered, and that stops the search: the list stays closed.
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('listbox', { name: 'Sökresultat' })).toBeHidden();
+      await page.waitForTimeout(600);
+      await expect(page.getByRole('listbox', { name: 'Sökresultat' })).toBeHidden();
+      await group.fill('');
+      await page.keyboard.type('rekt');
+      await expect(page.getByRole('option', { name: /^Rektorer/ })).toBeVisible();
+      await page.keyboard.press('ArrowDown');
       await page.keyboard.press('Enter');
-      await page.getByRole('option', { name: 'Rektorer' }).click();
+      // The chosen group stands in the field, which keeps the focus on it.
+      await expect(form.getByRole('button', { name: 'Grupp Rektorer' })).toBeFocused();
       const gives = form.getByRole('combobox', { name: 'Ger behörigheten' });
       await gives.focus();
       await page.keyboard.press('Enter');
@@ -515,13 +619,95 @@ test.describe('users administration', () => {
       await mapping.getByRole('button', { name: 'Ta bort: Rektorer ger administrera anslutna system' }).click();
       await expect.poll(() => announcements(page)).toContainEqual(expect.stringContaining('Borttaget: Rektorer'));
       await expect(mapping.getByText('Rektorer', { exact: true })).toHaveCount(0);
+      // With a group chosen, the chosen group is the picker's one focus stop, and takes the focus when no row is left
+      // (W4).
+      await group.focus();
+      await page.keyboard.type('rekt');
+      await expect(page.getByRole('option', { name: /^Rektorer/ })).toBeVisible();
+      await page.keyboard.press('ArrowDown');
+      await page.keyboard.press('Enter');
+      await mapping.getByRole('button', { name: 'Ta bort: IT-personal ger administrera anslutna system' }).focus();
+      await page.keyboard.press('Enter');
+      await expect(page.getByText(/^Ingen grupp ger någon behörighet ännu/)).toBeVisible();
+      await expect(form.getByRole('button', { name: 'Grupp Rektorer' })).toBeFocused();
     });
-    test('without admin.users the server says no and the page says so', async ({ page, api }) => {
+    test('a group beyond those the page holds is found on the server, and a mapping on one is named by its group (K2)', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      // An organisation with more groups than the page is sent: only the server's search finds this one.
+      api.groupsBeyond = [{ id: 'S-1-5-21-ostra-chefer', label: 'Östra skolområdets chefer' }];
+      api.users.groupCapabilities.push({
+        groupExternalId: 'S-1-5-21-ostra-chefer',
+        groupLabel: 'Östra skolområdets chefer',
+        capability: 'admin.users',
+      });
+      await open(page, '/admin/users');
+      // The row is named by its own group, though the groups the page holds do not include it.
+      const mapping = page.getByRole('table').nth(1);
+      await expect(mapping.getByRole('row', { name: /Östra skolområdets chefer/ })).toContainText(
+        'Administrera användare',
+      );
+      await expect(mapping).not.toContainText('Grupp som inte längre provisioneras');
+      const form = page.getByRole('form', { name: 'Lägg till behörighet från grupp' });
+      const group = form.getByRole('combobox', { name: 'Grupp' });
+      // Nothing matches here or on the server, which the list says once the server has answered.
+      await group.focus();
+      await page.keyboard.type('zzz');
+      await expect(page.getByRole('option', { name: 'Ingen grupp matchar.' })).toBeVisible();
+      await group.fill('');
+      // No group the page holds matches, and the server's answer is the list.
+      await page.keyboard.type('östra');
+      await expect(page.getByRole('option')).toHaveAccessibleName('Östra skolområdets chefer S-1-5-21-ostra-chefer');
+      // One question for the word, not one for each letter, sent in the body.
+      expect(api.groupSearches).toEqual(['zzz', 'östra']);
+      await expectNoAxeViolations(page);
+      await page.keyboard.press('ArrowDown');
+      await page.keyboard.press('Enter');
+      await expect(form.getByRole('button', { name: 'Grupp Östra skolområdets chefer' })).toBeFocused();
+      await form.getByRole('combobox', { name: 'Ger behörigheten' }).focus();
+      await page.keyboard.press('Enter');
+      await page.getByRole('option', { name: 'Administrera anslutna system' }).click();
+      await form.getByRole('button', { name: 'Lägg till' }).click();
+      await expect
+        .poll(() => announcements(page))
+        .toContainEqual(expect.stringContaining('Sparat: Östra skolområdets chefer ger administrera anslutna system'));
+      await expect(mapping.getByRole('row', { name: /Östra skolområdets chefer/ })).toHaveCount(2);
+    });
+    test('without admin.users the server says no and the page says so, and nothing about groups or catalogues', async ({
+      page,
+      api,
+    }) => {
       api.admin = true;
       api.usersForbidden = true;
       await open(page, '/admin/users');
       // Astryx keeps an empty assertive live region on every page; the page's own alert is the one with words.
       await expect(page.getByRole('alert').filter({ hasText: 'behörighet' })).toHaveCount(1);
+      // The cards are drawn from an overview that was not read, so none is drawn (W3).
+      await expect(page.getByRole('heading', { name: 'Behörigheter från grupper' })).toHaveCount(0);
+      await expect(page.getByText(/^Ingen grupp ger någon behörighet ännu/)).toHaveCount(0);
+      await expect(page.getByRole('list', { name: 'Inläsning från katalogen' })).toHaveCount(0);
+    });
+    test('an overview that cannot be read says so once, and nothing about groups or catalogues it has not read (W3)', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      api.usersFails = true;
+      await open(page, '/admin/users');
+      // After the page's one retry, the server's words in place of the cards.
+      await expect(page.getByRole('alert').filter({ hasText: 'Något gick fel. Försök igen.' })).toBeVisible();
+      await expect(page.getByText('Läser användarna …')).toHaveCount(0);
+      await expect(page.getByRole('heading', { name: 'Behörigheter från grupper' })).toHaveCount(0);
+      await expect(page.getByRole('form', { name: 'Lägg till behörighet från grupp' })).toHaveCount(0);
+      await expect(page.getByText(/^Ingen grupp ger någon behörighet ännu/)).toHaveCount(0);
+      await expect(page.getByPlaceholder('Inga grupper provisionerade')).toHaveCount(0);
+      await expect(page.getByRole('heading', { name: 'Inläsning från katalogen' })).toHaveCount(0);
+      await expect(page.getByText('Ingen katalog har fått en nyckel till Clew ännu.')).toHaveCount(0);
+      // The people are a read of their own, and are listed.
+      await expect(readout(page)).toHaveText('4 personer');
+      await expectNoAxeViolations(page);
     });
   });
   test.describe('phone', () => {

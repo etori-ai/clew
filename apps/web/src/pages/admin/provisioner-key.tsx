@@ -36,8 +36,10 @@ import { instantText } from './labels';
  * and handed its key, the key is replaced, or it is taken back. Clew makes the key and keeps only its digest, so each
  * dialog that makes one shows it once, in a CodeBlock whose own button copies it, and says that it cannot be shown
  * again. A key never stops answering by itself: the time chosen when one is replaced is for the old key alone, and
- * the dialogs say so, since the product owner first read that choice as the new key's date of expiry. The two dialogs
- * that make a key are one (`KeyDialog`) with different first steps, and taking a key back is a confirmation.
+ * the dialogs say so, since the product owner first read that choice as the new key's date of expiry. Clew keeps one
+ * replaced key (D107 item 5): a key replaced while the one replaced before it still answers ends that one at once,
+ * whatever time is chosen, so the dialog says so before it is confirmed and after. The two dialogs that make a key are
+ * one (`KeyDialog`) with different first steps, and taking a key back is a confirmation.
  */
 const ID = new RegExp(PROVISIONER_ID_PATTERN);
 type Grace = (typeof PROVISIONER_GRACE_HOURS)[number];
@@ -100,8 +102,8 @@ function KeyDialog({
   /** Makes the key, or answers nothing when the first step is not ready to be sent. */
   submit: () => Promise<ProvisionerKeyIssued | undefined>;
   onClose: () => void;
-  /** What to say under the key about the catalogue as it is now. */
-  note?: (row: ProvisionerAdminRow | undefined) => ReactNode;
+  /** What to say under the key about the catalogue as it is now, and about what the answer says was ended. */
+  note?: (row: ProvisionerAdminRow | undefined, issued: ProvisionerKeyIssued) => ReactNode;
   /** The first step. */
   children: ReactNode;
 }) {
@@ -158,7 +160,7 @@ function KeyDialog({
           <Heading level={3} ref={top} tabIndex={-1}>
             {heading(issued !== null)}
           </Heading>
-          {issued ? <KeyShown issued={issued} note={note?.(rowOf(issued))} /> : children}
+          {issued ? <KeyShown issued={issued} note={note?.(rowOf(issued), issued)} /> : children}
         </VStack>
       </DialogFrame>
     </Dialog>
@@ -248,6 +250,9 @@ export function RotateProvisionerDialog({
   const shown = useShown(provisioner);
   const [grace, setGrace] = useState<Grace>(PROVISIONER_GRACE_HOURS[0]);
   const name = shown?.label ?? 'Katalogen';
+  // The key the row says still answers, which a new key ends at once whatever time is chosen (D107 item 5).
+  const ending =
+    shown?.previousValidUntil && Date.parse(shown.previousValidUntil) > Date.now() ? shown.previousValidUntil : null;
   return (
     <KeyDialog
       isOpen={provisioner !== null}
@@ -262,12 +267,24 @@ export function RotateProvisionerDialog({
         setGrace(PROVISIONER_GRACE_HOURS[0]);
         onClose();
       }}
-      note={row =>
-        row?.previousValidUntil
+      note={(row, issued) =>
+        (row?.previousValidUntil
           ? `${previousKeyUntil(row.previousValidUntil)}. Byt den i katalogen före dess.`
-          : 'Den förra nyckeln har slutat gälla. Inläsningen står stilla tills katalogen har fått den nya.'
+          : 'Den förra nyckeln har slutat gälla. Inläsningen står stilla tills katalogen har fått den nya.') +
+        (issued.endedEarlier
+          ? ` Den äldre nyckeln, som skulle ha gällt till ${instantText(issued.endedEarlier)}, har ${row?.previousValidUntil ? '' : 'också '}slutat gälla.`
+          : '')
       }
     >
+      {ending && (
+        <Banner
+          status="warning"
+          container="section"
+          collapsible={false}
+          title="Den förra nyckeln slutar gälla direkt"
+          description={`Den gäller annars till ${instantText(ending)}. Clew behåller bara en utbytt nyckel, så när du byter nu slutar den gälla direkt, vilken tid du än väljer nedan. Använder katalogen fortfarande den nyckeln misslyckas inläsningen tills katalogen har fått den nya.`}
+        />
+      )}
       <RadioList
         label="Hur länge ska den gamla nyckeln fortsätta gälla?"
         description="Den nya nyckeln gäller tills vidare och går inte ut av sig själv. Valet gäller bara den gamla: med en tid kvar hinner den bytas i katalogen utan att en inläsning misslyckas. Låt den sluta gälla direkt om den kan ha hamnat i fel händer."

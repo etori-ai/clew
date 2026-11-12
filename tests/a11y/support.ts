@@ -190,8 +190,18 @@ export class MockApi {
   peopleRefused = false;
   /** The users page for someone with `admin.connectors` but not `admin.users`: the server refuses. */
   usersForbidden = false;
+  /** Användare: the overview cannot be read (503, after the page's one retry), while the people list can. */
+  usersFails = false;
+  /**
+   * Användare (D85): groups the organisation holds beyond the first that the overview offers. Only the group picker's
+   * server search finds them, and every text it sent is kept.
+   */
+  groupsBeyond: Array<{ id: string; label: string }> = [];
+  groupSearches: string[] = [];
   /** Organisation (D99): the tree the organisation page shows; it shares `usersForbidden`, as the two share a capability. */
   organisation = organisationOverview();
+  /** Organisation: the tree and every unit's people fail to be read (503, after the page's one retry). */
+  organisationFails = false;
   /**
    * The installation's appearance (D98): Astryx Neutral with no logo until a test saves or sets one. The public read
    * every page makes and Administration › Utseende share it, as they share the one row on the server.
@@ -422,7 +432,22 @@ export class MockApi {
       if (path === '/admin/users' && method === 'GET')
         return this.usersForbidden
           ? route.fulfill({ status: 403, json: { error: 'Du saknar behörighet för åtgärden.', code: 'denied' } })
-          : json(this.users);
+          : this.usersFails
+            ? route.fulfill({ status: 503, json: { error: 'Något gick fel. Försök igen.' } })
+            : json(this.users);
+      // The group picker's search (D85): the organisation's groups whose name or external id holds every word, the
+      // first ten by name, as the server answers it.
+      if (path === '/admin/users/groups/search' && method === 'POST') {
+        const { text } = request.postDataJSON() as { text: string },
+          words = text.toLocaleLowerCase('sv').split(/\s+/).filter(Boolean);
+        this.groupSearches.push(text);
+        return json({
+          groups: [...this.users.groups, ...this.groupsBeyond]
+            .filter(g => words.every(w => [g.label, g.id].some(v => v.toLocaleLowerCase('sv').includes(w))))
+            .sort((a, b) => a.label.localeCompare(b.label, 'sv'))
+            .slice(0, 10),
+        });
+      }
       if (path === '/admin/users/search' && method === 'POST') {
         if (this.usersForbidden)
           return route.fulfill({ status: 403, json: { error: 'Du saknar behörighet för åtgärden.', code: 'denied' } });
@@ -458,8 +483,12 @@ export class MockApi {
       if (path === '/admin/organisation' && method === 'GET')
         return this.usersForbidden
           ? route.fulfill({ status: 403, json: { error: 'Du saknar behörighet för åtgärden.', code: 'denied' } })
-          : json(this.organisation);
+          : this.organisationFails
+            ? route.fulfill({ status: 503, json: { error: 'Något gick fel. Försök igen.' } })
+            : json(this.organisation);
       const unitPeople = /^\/admin\/organisation\/units\/([^/]+)$/.exec(path);
+      if (unitPeople && method === 'GET' && this.organisationFails)
+        return route.fulfill({ status: 503, json: { error: 'Något gick fel. Försök igen.' } });
       if (unitPeople && method === 'GET') {
         const unitId = decodeURIComponent(unitPeople[1]!),
           unit = this.organisation.units.find(u => u.unitId === unitId);
@@ -504,13 +533,16 @@ export class MockApi {
           this.users.provisioners = this.users.provisioners.filter(p => p !== provisioner);
           return json(this.users);
         }
-        const { graceHours } = request.postDataJSON() as { graceHours: number };
+        const { graceHours } = request.postDataJSON() as { graceHours: number },
+          // One replaced key is kept (D107 item 5): one still answering is ended, and the answer says until when.
+          before = provisioner.previousValidUntil;
         provisioner.previousValidUntil = graceHours ? '2026-11-12T05:00:00.000Z' : null;
         return json({
           id: provisioner.id,
           token: 'a11y-key-rotated',
           address: 'https://clew.test/scim/v2',
           overview: this.users,
+          ...(before && before > NOW ? { endedEarlier: before } : {}),
         });
       }
       if (path === '/admin/users/group-capabilities' && method === 'POST') {
@@ -525,7 +557,8 @@ export class MockApi {
         )
           this.users.groupCapabilities.push({
             groupExternalId: input.groupExternalId,
-            groupLabel: this.users.groups.find(g => g.id === input.groupExternalId)?.label ?? null,
+            groupLabel:
+              [...this.users.groups, ...this.groupsBeyond].find(g => g.id === input.groupExternalId)?.label ?? null,
             capability: input.capability,
           });
         return json(this.users);

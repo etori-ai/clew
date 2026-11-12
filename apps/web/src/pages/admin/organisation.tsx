@@ -31,6 +31,7 @@ import {
   useMediaQuery,
   type TreeListItemData,
 } from '@clew/ui';
+import { ApiError } from '../../api';
 import { PersonNameLink } from '../../components/person-name-link';
 import { adminQueries } from '../../queries';
 import { errorMessage } from '../../query-policy';
@@ -50,7 +51,9 @@ import { AdminShell } from './shell';
  * `/admin/organisation?unit=<unitId>`, composed as the talk on Personal is. The overlay says who leads the unit first,
  * then the others placed on it, then who reports to its managers from the units below, which is the reporting line an
  * administrator otherwise has to read out of the tree's indentation. Nothing here is edited: the tree is the
- * catalogue's, and the page shows what the last import made of it.
+ * catalogue's, and the page shows what the last import made of it. A unit the server says does not exist (400) is said
+ * so without a retry, which cannot help; while a unit is not known, by the tree or by its own read, the overlay is
+ * named for "Enheten", so a read that failed for another reason is never taken for a unit that is gone.
  */
 const PATH = '/admin/organisation';
 const UNIT_PARAM = 'unit';
@@ -305,7 +308,10 @@ function UnitPeople({
   if (unitId && unitId !== shownId) setShownId(unitId);
   const query = useQuery({ ...adminQueries.organisationUnit(shownId ?? ''), enabled: !!shownId });
   const unit = shownId ? units.get(shownId) : undefined;
-  const title = unit?.unitLabel ?? query.data?.unitLabel ?? 'Enheten finns inte';
+  const known = unit?.unitLabel ?? query.data?.unitLabel;
+  const title = known ?? 'Enheten';
+  // The server's answer for a unit that is not there; another failure may pass, and is offered again.
+  const gone = query.error instanceof ApiError && query.error.status === 400;
   // The units above, outermost first: where in the organisation the unit is.
   const path = ancestorsOf(units, shownId)
     .map(u => u.unitLabel)
@@ -360,13 +366,15 @@ function UnitPeople({
       collapsible={false}
       title={errorMessage(query.error, 'Personerna kunde inte hämtas.')}
       endContent={
-        <Button
-          label="Försök igen"
-          size="sm"
-          variant="secondary"
-          isLoading={query.isFetching}
-          onClick={() => void query.refetch()}
-        />
+        gone ? undefined : (
+          <Button
+            label="Försök igen"
+            size="sm"
+            variant="secondary"
+            isLoading={query.isFetching}
+            onClick={() => void query.refetch()}
+          />
+        )
       }
     />
   ) : (
@@ -399,7 +407,7 @@ function UnitPeople({
     <Layout height={short ? 'auto' : 'fill'} header={header} content={<LayoutContent>{content}</LayoutContent>} />
   ) : null;
   const isOpen = !!unitId && settled;
-  const label = `Personer på ${title}`;
+  const label = known ? `Personer på ${known}` : 'Personer på enheten';
   return mobile ? (
     <BottomSheet
       ref={sheetPanel}
