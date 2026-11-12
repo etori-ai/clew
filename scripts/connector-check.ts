@@ -1,8 +1,9 @@
 /**
  * Conformance check for a Clew connector service (D21, D23, D44). Uses the installation signing authority and
- * exercises the connector as a manager and an employee, handed to the registry as the server hands a person (the whole
- * context, provisioned groups included), so only the published actor reaches the service, as in production. The same
- * check runs behind "Testa anslutning" on the admin page (`packages/connectors/src/check.ts`).
+ * exercises the connector as a manager and an employee, handed to the registry with the whole context, provisioned
+ * groups included, as the refresh and a connector's callback hand a person (a request hands the published actor with
+ * the groups). Either way only the published actor reaches the service, as in production. The same check runs behind
+ * "Testa anslutning" on the admin page (`packages/connectors/src/check.ts`).
  *
  *   bun scripts/connector-check.ts http://127.0.0.1:4010 --secret <shared secret> [--id hello] [--keys anna,erik,maria]
  *   bun scripts/connector-check.ts <url> --secret <shared secret> --id <registered connector> --keys <keys> --as <user name>
@@ -102,8 +103,8 @@ const liveCheckAs: CheckAsDeps = {
   },
   audit: entry => database().transaction(tx => writeAudit(tx, entry)),
 };
-// The person `--as` names, as the server hands them to the registry: their whole context. The audit row is written
-// here, before the check signs its first request.
+// The person `--as` names, with their whole context, as the refresh and a connector's callback hand a person to the
+// registry. The audit row is written here, before the check signs its first request.
 let as: AuthenticatedContext | undefined;
 try {
   as = asUser

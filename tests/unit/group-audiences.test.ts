@@ -168,7 +168,8 @@ describe('what leaves the process is the published actor (A1)', () => {
     expect(report.findings.filter(f => f.level === 'fail')).toEqual([]);
     expect(posted.length).toBeGreaterThan(0);
     expect(posted.every(p => p.valid)).toBe(true);
-    // Every person the check signs for is handed to the registry as the server hands one: groups and session included.
+    // Every person the check signs for is handed to the registry with the whole context, as the refresh and a connector's
+    // callback hand one: groups and session included.
     expect(signed.length).toBeGreaterThan(0);
     for (const actor of signed) {
       expect(actor).toMatchObject({ organisationId: 'check', groups: ['check-group'] });

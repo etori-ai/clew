@@ -37,7 +37,7 @@ export interface CheckOptions {
    * For the reads about an entity (D97): `keys` are asked in one batch, signed as `as`, a person who may see them
    * (the check's manager when absent, for whom every real key is out of scope). Without keys the rows are not checked;
    * an unknown key and the keys asked from another unit are checked anyway. `as` is handed to the registry as given:
-   * the CLI passes the person's whole context, as the server does.
+   * the CLI passes the person's whole context, as the refresh and a connector's callback do.
    */
   about?: { keys?: string[]; as?: Actor };
 }
@@ -65,10 +65,11 @@ export const CHECK_EMPLOYEE: Actor = {
   userName: 'check-employee',
 };
 /**
- * One of the check's people as the server hands a person to the registry: the whole authenticated context, provisioned
- * groups and session fields included, as the refresh, a connector's callback and every request do. So the connector is
- * reached exactly as in production, where only the published actor leaves the process; a check with a bare actor would
- * pass a connector that then refuses every scan.
+ * One of the check's people in the fullest shape the server hands a person to the registry: the whole authenticated
+ * context, provisioned groups and session fields included, as the refresh and a connector's callback do (a request
+ * hands the published actor with the groups, `audiencedActorOf`). Either way only the published actor leaves the
+ * process, so a connector that refuses anything more is reached as in production; a check with a bare actor would pass
+ * a connector that then refuses every scan.
  */
 export const asInProduction = (actor: Actor): AuthenticatedContext => ({
   ...actor,
@@ -164,7 +165,8 @@ export async function checkConnector(
     },
   }).register(remoteConnector(manifest, { url, key: options.key, assert: options.assert, fetch: fetchImpl }));
   registry.govern(manifest.id, openGovernance());
-  // The check's two people as the server hands a person to the registry; only the published actor leaves the process.
+  // The check's two people with the whole context, as the refresh and a callback hand a person to the registry; only the
+  // published actor leaves the process.
   const manager = asInProduction(CHECK_MANAGER),
     employee = asInProduction(CHECK_EMPLOYEE),
     people = [manager, employee];
