@@ -162,12 +162,15 @@ for (const [path, endpoint, label] of [
     api.admin = true;
     api.menu = menuRows;
     const release = await hold(page, endpoint);
-    await page.goto(path);
-    await expect(page.getByText(label, { exact: true })).toBeAttached();
-    expect(await page.getByRole('main').locator('.astryx-skeleton').count()).toBeGreaterThan(3);
+    // The session shell can show the same label before the page starts its own request.
+    await Promise.all([page.waitForRequest(endpoint), page.goto(path)]);
+    const main = page.getByRole('main');
+    const status = main.getByRole('status').filter({ hasText: label });
+    await expect(status).toBeAttached();
+    await expect(main.locator('.astryx-skeleton').nth(3)).toBeVisible();
     release();
-    await expect(page.getByText(label, { exact: true })).toHaveCount(0);
-    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await expect(status).toHaveCount(0);
+    await expect(main.getByRole('heading', { level: 1 })).toBeVisible();
   });
 }
 
