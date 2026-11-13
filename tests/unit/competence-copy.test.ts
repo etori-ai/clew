@@ -871,7 +871,7 @@ describe('leaving', () => {
     platform();
     await competence.copySource(COPY_ACTOR, 'run-1', lms);
     const doc = await competence.exportDomain('operator:cli', ORG);
-    expect(doc.format).toBe('clew.competence/7');
+    expect(doc.format).toBe('clew.competence/8');
     expect(doc.holdings.map(h => [h.typeId, h.copy?.sourceId])).toEqual([
       [hlr, 'course:7:user:1'],
       [null, 'badge:4:user:1'],

@@ -566,6 +566,55 @@ describe('a skill that stops meeting its requirement brings its card back (D120 
   });
 });
 
+describe('a merge leaves no open card of the type merged away (D108 items 2 and 12, D47)', () => {
+  const open = (personId: string) =>
+    threads
+      .dump()
+      .filter(o => o.personId === personId && o.sourceState === 'open')
+      .map(o => o.sourceKey)
+      .sort();
+  test('the next scan resolves the cards of the type merged away and observes the other type’s in their place', async () => {
+    // Anna's HLR ran out, and Socionomexamen is required of her and missing: one card of each, on the types' ids.
+    const hlr = await competence.addType(admin, { name: 'HLR', area: 'Akut', kind: 'course', validityMonths: 24 });
+    const cpr = await competence.addType(admin, {
+      name: 'Hjärt-lungräddning',
+      area: 'Akut',
+      kind: 'course',
+      validityMonths: 24,
+    });
+    await competence.registerHolding(boss, 'anna', { typeId: hlr, issuedOn: '2024-01-10' }); // ran out 2026-01-10
+    const { typeId: degree } = await requiredOfAnna();
+    const examen = await competence.addType(admin, { name: 'Socionom', area: 'Examen', kind: 'degree' });
+    await scan(anna);
+    await scan(boss);
+    expect(open('anna')).toEqual([`competence:due:${hlr}`, `competence:missing:${degree}`]);
+    const [managerCard] = cards('boss');
+    await handle(managerCard!.id, 'handled');
+    await competence.mergeTypes(admin, hlr, { into: cpr });
+    await competence.mergeTypes(admin, degree, { into: examen });
+    await scan(anna);
+    await scan(boss);
+    // Nothing open names a type merged away: the cards of the other type stand in their place, with its name.
+    expect(open('anna')).toEqual([`competence:due:${cpr}`, `competence:missing:${examen}`]);
+    expect(states('anna')).toEqual([
+      ['HLR gick ut 10 januari', 'handled'],
+      ['Socionomexamen saknas', 'handled'],
+      ['Hjärt-lungräddning gick ut 10 januari', 'open'],
+      ['Socionom saknas', 'open'],
+    ]);
+    // The manager's one card counts the same things under their new identities: it is a new set, so a new card.
+    expect(states('boss')).toEqual([
+      ['Kompetenser att åtgärda bland dina medarbetare', 'handled'],
+      ['Kompetenser att åtgärda bland dina medarbetare', 'open'],
+    ]);
+    // Scanned again, everything stands as it is.
+    await scan(anna);
+    await scan(boss);
+    expect(cards('anna')).toHaveLength(4);
+    expect(cards('boss')).toHaveLength(2);
+  });
+});
+
 describe('a scan that cannot read says nothing', () => {
   test('a directory or a store that fails is a failed scan: open cards stay open, nothing is resolved', async () => {
     await requiredOfAnna();

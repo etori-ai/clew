@@ -1,6 +1,9 @@
 import {
+  COMPETENCE_CATALOGUE_MAX,
   COMPETENCE_STATUSES,
   ENTITY_KEY_MAX,
+  competenceImportRowProblem,
+  importText,
   isCompetenceLevel,
   type AuthenticatedContext,
   type Capability,
@@ -15,6 +18,10 @@ import {
   type CompetenceSkillRatingBody,
   type CompetenceSkillValidation,
   type CompetenceValidationBody,
+  type CompetenceImportBody,
+  type CompetenceImportOutcome,
+  type CompetenceMergeBody,
+  type CompetenceMergePreview,
   type CompetenceHoldingsInput,
   type CompetenceHoldingsOutput,
   type CompetenceMappingBody,
@@ -52,7 +59,9 @@ import {
   deciding,
   endOf,
   holdingRow,
+  importPlan,
   isCalendarDay,
+  mergePlan,
   leaseUntil,
   matrixCsv,
   decidingRevocation,
@@ -91,6 +100,7 @@ import {
   type PersonSummary,
   type ReadHolding,
   type CardIdentity,
+  type ImportRow,
   type Standing,
   type UnitCoverage,
 } from './domain';
@@ -100,6 +110,7 @@ import {
   ShareTargetTaken,
   SkillTaken,
   TypeNameTaken,
+  TypeUriTaken,
   type CompetenceDeps,
   type CompetenceExport,
   type CompetenceTx,
@@ -143,9 +154,10 @@ export const COMPETENCE_ADMIN: Capability = 'admin.competence';
  * `decidedAt`) and its approval's key (`threadId`). Version 6 (D120): a type may be of kind `skill`; a holding carries
  * its `level` (null on every kind but a skill), `interest`, and the confirmation of a skill's level (`validatedBy`,
  * `validatedAt`); a requirement of a skill carries its least level (`minLevel`). Version 7: a skill carries when its
- * level was last rated (`ratedAt`, null on every other kind).
+ * level was last rated (`ratedAt`, null on every other kind). Version 8 (D120 item 7, D108 item 2): a type carries the
+ * address it was imported with (`sourceUri`) and the type it was merged into (`mergedInto`), both null when none.
  */
-export const COMPETENCE_EXPORT_FORMAT = 'clew.competence/7';
+export const COMPETENCE_EXPORT_FORMAT = 'clew.competence/8';
 /** The actor of the scheduled copy (D108 item 9) in its audit rows. */
 export const COPY_ACTOR = 'system:competence-copy';
 /** The actor of the reconciliation of approvals' cards (D108 item 7) in its audit rows. */
@@ -197,6 +209,24 @@ const SKILL_TAKEN = 'Du har redan den färdigheten. Ändra nivån under Färdigh
 const NOT_REVOCABLE_SKILL = 'Färdigheten är medarbetarens egen bedömning, som bara medarbetaren kan ta bort.';
 const LEVEL_ON_SKILL_ONLY = 'Bara en färdighet kan krävas på en viss nivå.';
 const SKILL_UNMAPPABLE = 'En färdighet kan inte kopplas till en källa: det som läses in har ingen nivå.';
+const MERGE_SELF = 'En kompetens kan inte slås ihop med sig själv.';
+const MERGE_NO_TARGET = 'Kompetensen att slå ihop med finns inte i katalogen.';
+const MERGE_INTO_ARCHIVED = 'Kompetensen att slå ihop med är arkiverad. Välj en som används.';
+const MERGE_INTO_MERGED = 'Kompetensen att slå ihop med är redan sammanslagen med en annan.';
+const MERGED_ALREADY = 'Kompetensen är redan sammanslagen med en annan.';
+const MERGE_KINDS =
+  'En färdighet kan bara slås ihop med en annan färdighet, och en kompetens av annat slag inte med en färdighet.';
+const MERGED_FOR_GOOD =
+  'Kompetensen är sammanslagen med en annan och kan inte återställas: en sammanslagning går inte att ångra.';
+const MERGED_LOCKED = 'Kompetensen är sammanslagen med en annan och kan inte ändras.';
+const RESTORE_NAME_TAKEN = 'Det finns redan en kompetens med det namnet. Byt namn på den ena först.';
+const CATALOGUE_FULL = `Katalogen får ha högst ${COMPETENCE_CATALOGUE_MAX} kompetenser, arkiverade medräknade.`;
+const IMPORT_RACED =
+  'Katalogen ändrades medan filen lästes in, och ingenting sparades. Försök igen: det som redan finns hoppas över.';
+const ESCO_ROW = 'En rad ur ESCO är en färdighet med en adress.';
+/** A merge refused while people wait for a decision on both types (D108 items 2 and 7). */
+const waitingBoth = (people: number) =>
+  `${people === 1 ? 'En person har' : `${people} personer har`} en egen registrering av båda kompetenserna som väntar på godkännande. Slå ihop dem när registreringarna är granskade.`;
 /**
  * A unit's coverage (D108 items 6 and 8) as the read about a unit and its table answer it: counts only, each share
  * target set on the unit with its position's label.
@@ -679,6 +709,8 @@ export function competenceUsecases(deps: CompetenceDeps) {
           archivedAt: null,
           createdBy: actor,
           createdAt: at,
+          sourceUri: null,
+          mergedInto: null,
         });
         await tx.audit({
           actor,
@@ -1181,6 +1213,50 @@ export function competenceUsecases(deps: CompetenceDeps) {
   }
 
   /**
+   * Two types of the organisation that one may be merged into the other (D108 item 2), locked, with the merge's plan.
+   * The rows a merge re-points include those a source's copy writes, under its source's row lock, and a mapping takes
+   * that lock before the type's: so the sources whose types are mapped to `fromId` are locked first, in one order, and
+   * then the two types, in one order, so two merges or a merge and a mapping wait for each other and never deadlock.
+   */
+  async function mergeable(tx: CompetenceTx, organisationId: string, fromId: string, intoId: string) {
+    if (fromId === intoId) throw new CompetenceError(MERGE_SELF);
+    const mapped = (await tx.mappings(organisationId)).filter(m => m.typeId === fromId);
+    for (const connectorId of [...new Set(mapped.map(m => m.connectorId))].sort()) await tx.source(connectorId);
+    const locked = new Map<string, TypeRecord | undefined>();
+    for (const id of [fromId, intoId].sort()) locked.set(id, await tx.type(id));
+    const from = locked.get(fromId),
+      into = locked.get(intoId);
+    if (!from || from.organisationId !== organisationId) throw new CompetenceError(NO_TYPE);
+    if (from.mergedInto !== null) throw new CompetenceError(MERGED_ALREADY);
+    if (!into || into.organisationId !== organisationId) throw new CompetenceError(MERGE_NO_TARGET);
+    if (into.mergedInto !== null) throw new CompetenceError(MERGE_INTO_MERGED);
+    if (into.archivedAt !== null) throw new CompetenceError(MERGE_INTO_ARCHIVED);
+    if (isSkill(from) !== isSkill(into)) throw new CompetenceError(MERGE_KINDS);
+    const plan = mergePlan({
+      from,
+      into,
+      fromHoldings: await tx.holdingsOfType(from.id),
+      intoHoldings: await tx.holdingsOfType(into.id),
+      requirements: await tx.requirements(organisationId),
+      shareTargets: await tx.shareTargets(organisationId),
+      mappings: await tx.mappings(organisationId),
+    });
+    const preview: CompetenceMergePreview = {
+      holdings: plan.retype.length,
+      people: plan.people,
+      requirements: plan.requirements.retype.length + plan.requirements.fold.length,
+      requirementsFolded: plan.requirements.fold.length,
+      shareTargets: plan.shareTargets.retype.length + plan.shareTargets.fold.length,
+      shareTargetsFolded: plan.shareTargets.fold.length,
+      mappings: plan.mappings.length,
+      skillsSetAside: plan.revoke.length,
+      ruled: plan.ruled,
+      waiting: plan.waiting.length,
+    };
+    return { from, into, plan, preview };
+  }
+
+  /**
    * Map a source's type to a catalogue type for an organisation, or remove the mapping (D108 item 9), and re-type the
    * rows already copied with it in the same transaction. The administrator's and the operator's path share it.
    */
@@ -1304,6 +1380,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
         await deps.store.transaction(async tx => {
           const type = await tx.type(typeId);
           if (!type || type.organisationId !== persona.organisationId) throw new CompetenceError(NO_TYPE);
+          if (type.mergedInto !== null) throw new CompetenceError(MERGED_LOCKED);
           const changed = (Object.keys(patch) as Array<keyof typeof patch>).filter(key => patch[key] !== type[key]);
           if (!changed.length) return;
           const after = { ...type, ...patch };
@@ -1352,6 +1429,155 @@ export function competenceUsecases(deps: CompetenceDeps) {
           at,
         });
       });
+    },
+
+    /**
+     * An administrator brings an archived type back (D108 item 2): it takes holdings again. A type that was merged into
+     * another is refused, since a merge is not undone; one that is not archived is left as it is, and nothing is written.
+     * A name another type now has is refused.
+     */
+    async restoreType(persona: AuthenticatedContext, typeId: string): Promise<void> {
+      await admin(persona);
+      const at = now().toISOString();
+      try {
+        await deps.store.transaction(async tx => {
+          const type = await tx.type(typeId);
+          if (!type || type.organisationId !== persona.organisationId) throw new CompetenceError(NO_TYPE);
+          if (type.mergedInto !== null) throw new CompetenceError(MERGED_FOR_GOOD);
+          if (type.archivedAt === null) return;
+          await tx.updateType(typeId, { archivedAt: null });
+          await tx.audit({
+            actor: persona.principal.id,
+            action: 'competence.type_restored',
+            subject: 'competence-type:' + typeId,
+            at,
+          });
+        });
+      } catch (error) {
+        if (error instanceof TypeNameTaken) throw new CompetenceError(RESTORE_NAME_TAKEN);
+        throw error;
+      }
+    },
+
+    /**
+     * What merging one type into another would move (D108 item 2), in counts, for the administrator to confirm; nothing
+     * is written. Refused as the merge itself would be, except for registrations waiting for both, which it counts.
+     */
+    async mergePreview(persona: AuthenticatedContext, fromId: string, intoId: string): Promise<CompetenceMergePreview> {
+      await admin(persona);
+      return deps.store.transaction(async tx => (await mergeable(tx, persona.organisationId, fromId, intoId)).preview);
+    },
+
+    /**
+     * An administrator merges one type into another of the same organisation (D108 item 2), in one transaction with
+     * one audit row of counts: every holding of it, whatever its state, is re-pointed, so no history is lost; where a
+     * person holds a skill of both, the one that decides is kept and the other set aside (revoked), its interest mark
+     * carried over; requirements, share targets and the sources' mappings move, and a requirement or a share target the
+     * other type already has for the same target is folded into it, the stricter kept. The type is then archived with
+     * `mergedInto` set, and keeps its address, so an import never adds it again. Refused into itself, into an archived
+     * or a merged type, between a skill and any other kind, from a type already merged, and while a person has a
+     * registration of their own waiting for both (one waits per person and type). The cards of the type merged away
+     * (`competence:due:<type>`, `competence:missing:<type>`) are not touched here: the next scan no longer observes them
+     * and resolves them, and observes the other type's in their place (D47). Returns what moved.
+     */
+    async mergeTypes(
+      persona: AuthenticatedContext,
+      fromId: string,
+      body: CompetenceMergeBody,
+    ): Promise<CompetenceMergePreview> {
+      await admin(persona);
+      const at = now().toISOString();
+      return deps.store.transaction(async tx => {
+        const { from, into, plan, preview } = await mergeable(tx, persona.organisationId, fromId, body.into);
+        if (plan.waiting.length) throw new CompetenceError(waitingBoth(plan.waiting.length));
+        // A skill set aside first: one skill of a type counts per person, and the kept one may be the one re-pointed.
+        for (const id of plan.revoke) await tx.updateHolding(id, { state: 'revoked', revokedAt: at, revokedBy: null });
+        for (const id of plan.interest) await tx.updateHolding(id, { interest: true });
+        await tx.retypeHoldings(plan.retype, into.id);
+        for (const f of plan.requirements.fold) {
+          await tx.removeRequirement(f.remove);
+          await tx.updateRequirement(f.keep, { minLevel: f.minLevel });
+        }
+        for (const id of plan.requirements.retype) await tx.updateRequirement(id, { typeId: into.id });
+        for (const f of plan.shareTargets.fold) {
+          await tx.removeShareTarget(f.remove);
+          await tx.updateShareTarget(f.keep, { minShare: f.minShare });
+        }
+        for (const id of plan.shareTargets.retype) await tx.updateShareTarget(id, { typeId: into.id });
+        for (const m of plan.mappings) await tx.putMapping({ ...m, typeId: into.id });
+        await tx.updateType(from.id, { archivedAt: from.archivedAt ?? at, mergedInto: into.id });
+        const { waiting: _none, ...moved } = preview;
+        await tx.audit({
+          actor: persona.principal.id,
+          action: 'competence.type_merged',
+          subject: 'competence-type:' + from.id,
+          at,
+          details: { organisationId: persona.organisationId, into: into.id, ...moved },
+        });
+        return preview;
+      });
+    },
+
+    /**
+     * An administrator imports chosen rows of a file into the catalogue (D120 item 7), at most
+     * `COMPETENCE_IMPORT_REQUEST_MAX` a request. Every row is checked again with the rule the page read the file with
+     * (`competenceImportRowProblem`); one that fails refuses the request and names its row. A row the catalogue holds
+     * already, by its address or its name (`importPlan`), or one the request named before, is skipped, so a part sent
+     * again changes nothing. An area is a type's word, so a row's area that no type has yet comes into being with it.
+     * The catalogue keeps at most `COMPETENCE_CATALOGUE_MAX` types. One transaction, one audit row of counts with the
+     * file's format, never a name.
+     */
+    async importTypes(persona: AuthenticatedContext, body: CompetenceImportBody): Promise<CompetenceImportOutcome> {
+      await admin(persona);
+      const rows: ImportRow[] = body.rows.map(r => {
+        const problem = competenceImportRowProblem(r);
+        if (problem) throw new CompetenceError(`Rad ${r.row}: ${problem}`);
+        if (body.format === 'esco' && (r.kind !== 'skill' || r.uri === null))
+          throw new CompetenceError(`Rad ${r.row}: ${ESCO_ROW}`);
+        return {
+          name: importText(r.name),
+          area: importText(r.area),
+          kind: r.kind,
+          validityMonths: r.validityMonths,
+          uri: r.uri,
+        };
+      });
+      const at = now().toISOString(),
+        organisationId = persona.organisationId,
+        actor = persona.principal.id;
+      try {
+        return await deps.store.transaction(async tx => {
+          const existing = await tx.types(organisationId, { archived: true });
+          const { add, skipped } = importPlan(existing, rows);
+          if (existing.length + add.length > COMPETENCE_CATALOGUE_MAX) throw new CompetenceError(CATALOGUE_FULL);
+          await tx.insertTypes(
+            add.map(r => ({
+              id: deps.ids(),
+              organisationId,
+              name: r.name,
+              area: r.area,
+              kind: r.kind,
+              validityMonths: r.validityMonths,
+              archivedAt: null,
+              createdBy: actor,
+              createdAt: at,
+              sourceUri: r.uri,
+              mergedInto: null,
+            })),
+          );
+          await tx.audit({
+            actor,
+            action: 'competence.types_imported',
+            subject: 'organisation:' + organisationId,
+            at,
+            details: { organisationId, format: body.format, rows: rows.length, added: add.length, skipped },
+          });
+          return { added: add.length, skipped };
+        });
+      } catch (error) {
+        if (error instanceof TypeNameTaken || error instanceof TypeUriTaken) throw new CompetenceError(IMPORT_RACED);
+        throw error;
+      }
     },
 
     /**

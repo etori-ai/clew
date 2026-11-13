@@ -203,6 +203,16 @@ export const competenceCatalogueQuery = queryOptions({
   retry: false,
 });
 /**
+ * What merging one type into another would move (D108 item 2), read when the administrator has chosen the type to merge
+ * into. A refusal (a type of another kind, an archived one) is said in the dialog, so it is not retried.
+ */
+export const competenceMergePreviewQuery = (from: string, into: string) =>
+  queryOptions({
+    queryKey: keys.competenceMergePreview(from, into),
+    queryFn: () => api.competence.mergePreview(from, into),
+    retry: false,
+  });
+/**
  * Administration › Kompetens › Källor (D108 item 9): the systems whose holdings are copied in, with their last read and
  * their types. Refused the same way as the catalogue, and not retried for the same reason.
  */

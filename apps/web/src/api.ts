@@ -83,7 +83,10 @@ import type {
 } from '@clew/contracts';
 import type {
   CompetenceHoldingBody,
+  CompetenceImportBody,
+  CompetenceImportOutcome,
   CompetenceMappingBody,
+  CompetenceMergePreview,
   CompetenceMatrixInput,
   CompetenceMatrixOutput,
   CompetenceRequirementBody,
@@ -271,6 +274,18 @@ export const api = {
       patch<void>(`/api/competence/types/${encodeURIComponent(id)}`, body),
     /** Archives a type: it takes no new holdings and keeps the ones it has. */
     archiveType: (id: string) => post<void>(`/api/competence/types/${encodeURIComponent(id)}/archive`),
+    /** Brings an archived type back; a merged one is refused, since a merge is not undone. */
+    restoreType: (id: string) => post<void>(`/api/competence/types/${encodeURIComponent(id)}/restore`),
+    /** What merging the type into another would move, in counts; nothing is written. */
+    mergePreview: (id: string, into: string) =>
+      call<CompetenceMergePreview>(
+        `/api/competence/types/${encodeURIComponent(id)}/merge?into=${encodeURIComponent(into)}`,
+      ),
+    /** Merges the type into another: its holdings, requirements and mappings move, and it is archived as merged. */
+    mergeTypes: (id: string, into: string) =>
+      post<CompetenceMergePreview>(`/api/competence/types/${encodeURIComponent(id)}/merge`, { into }),
+    /** Imports chosen rows of a file (D120 item 7), a part at a time: what the catalogue holds already is skipped. */
+    importTypes: (body: CompetenceImportBody) => post<CompetenceImportOutcome>('/api/competence/types/import', body),
     /** What a new validity would do to the holdings counted from the type's rule, before it is saved. */
     validityImpact: (id: string, months: number | null) =>
       call<CompetenceValidityImpact>(

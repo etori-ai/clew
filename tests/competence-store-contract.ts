@@ -53,6 +53,8 @@ export const typeRow = (id: string, organisationId: string, extra: Partial<TypeR
   archivedAt: null,
   createdBy: 'operator:test',
   createdAt: T,
+  sourceUri: null,
+  mergedInto: null,
   ...extra,
 });
 export const holdingRow = (
@@ -188,6 +190,118 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
       expect((await w.store.transaction(tx => tx.type(w.p + '-t1')))?.validityMonths).toBeNull();
       // An unknown id changes nothing and is no error.
       await w.store.transaction(tx => tx.updateType(w.p + '-none', { name: 'X' }));
+    });
+
+    test('an import inserts types at once: an address once per organisation whatever its state, all or none (D120 item 7)', async () => {
+      const w = await world();
+      const uri = (n: number) => `http://data.europa.eu/esco/skill/${w.p}-${n}`;
+      const imported = [
+        typeRow(w.p + '-i1', w.org, { name: 'leda ett team', kind: 'skill', sourceUri: uri(1) }),
+        typeRow(w.p + '-i2', w.org, { name: 'använda kalkylprogram', kind: 'skill', sourceUri: uri(2) }),
+      ];
+      await w.store.transaction(tx => tx.insertTypes(imported));
+      expect(await w.store.transaction(tx => tx.typesById(imported.map(t => t.id)))).toEqual(
+        expect.arrayContaining(imported),
+      );
+      // An archived type keeps its address: a new type with it is refused, in a batch as alone.
+      await w.store.transaction(tx => tx.updateType(w.p + '-i1', { archivedAt: T2 }));
+      const again = await refused(() =>
+        w.store.transaction(tx =>
+          tx.insertTypes([
+            typeRow(w.p + '-i3', w.org, { name: 'Ny', sourceUri: uri(3) }),
+            typeRow(w.p + '-i4', w.org, { name: 'Teamledning', sourceUri: uri(1) }),
+          ]),
+        ),
+      );
+      expect(again?.name).toBe('TypeUriTaken');
+      // All or none: the first of the refused batch is not there.
+      expect(await w.store.transaction(tx => tx.type(w.p + '-i3'))).toBeUndefined();
+      // A name in use refuses a batch the same way.
+      const named = await refused(() =>
+        w.store.transaction(tx => tx.insertTypes([typeRow(w.p + '-i5', w.org, { name: 'ANVÄNDA KALKYLPROGRAM' })])),
+      );
+      expect(named?.name).toBe('TypeNameTaken');
+      // Another organisation keeps the same address; types without one are many.
+      await w.store.transaction(tx =>
+        tx.insertTypes([
+          typeRow(w.p + '-o1', w.p + '-org2', { name: 'leda ett team', sourceUri: uri(1) }),
+          typeRow(w.p + '-n1', w.org, { name: 'Utan adress 1' }),
+          typeRow(w.p + '-n2', w.org, { name: 'Utan adress 2' }),
+        ]),
+      );
+      await w.store.transaction(tx => tx.insertTypes([]));
+    });
+
+    test('a merged type is archived, refers to the type it went into, and is never merged into itself (D108 item 2)', async () => {
+      const w = await world();
+      await w.store.transaction(async tx => {
+        await tx.insertType(typeRow(w.p + '-t1', w.org, { name: 'Truckkort' }));
+        await tx.insertType(typeRow(w.p + '-t2', w.org, { name: 'Truckförarbevis' }));
+      });
+      for (const wrong of [
+        { mergedInto: w.p + '-t2' },
+        { mergedInto: w.p + '-t1', archivedAt: T2 },
+        { mergedInto: w.p + '-none', archivedAt: T2 },
+      ])
+        expect(await refused(() => w.store.transaction(tx => tx.updateType(w.p + '-t1', wrong)))).toBeDefined();
+      await w.store.transaction(tx => tx.updateType(w.p + '-t1', { archivedAt: T2, mergedInto: w.p + '-t2' }));
+      expect(await w.store.transaction(tx => tx.type(w.p + '-t1'))).toEqual(
+        typeRow(w.p + '-t1', w.org, { name: 'Truckkort', archivedAt: T2, mergedInto: w.p + '-t2' }),
+      );
+      const exported = await w.store.transaction(tx => tx.exportOrganisation(w.org));
+      expect(exported.types.map(t => [t.id, t.mergedInto, t.sourceUri])).toEqual([
+        [w.p + '-t1', w.p + '-t2', null],
+        [w.p + '-t2', null, null],
+      ]);
+    });
+
+    test('holdings are re-pointed to another type whatever their state; one pending and one skill per person and type still hold', async () => {
+      const w = await world();
+      await w.store.transaction(async tx => {
+        await tx.insertType(typeRow(w.p + '-t1', w.org));
+        await tx.insertType(typeRow(w.p + '-t2', w.org, { name: 'Typ två' }));
+        await tx.insertType(typeRow(w.p + '-s1', w.org, { name: 'Färdighet ett', kind: 'skill' }));
+        await tx.insertType(typeRow(w.p + '-s2', w.org, { name: 'Färdighet två', kind: 'skill' }));
+        await tx.insertHolding(holdingRow(w.p + '-h1', w.anna, w.p + '-t1'));
+        await tx.insertHolding(
+          holdingRow(w.p + '-h2', w.anna, w.p + '-t1', { state: 'revoked', revokedAt: T2, revokedBy: w.boss }),
+        );
+        await tx.insertHolding(
+          holdingRow(w.p + '-h3', w.bo, w.p + '-t1', {
+            evidence: 'self',
+            state: 'pending',
+            registeredBy: w.bo,
+            threadId: w.p + '-a1',
+          }),
+        );
+        await tx.insertHolding(
+          holdingRow(w.p + '-h4', w.bo, w.p + '-t2', {
+            evidence: 'self',
+            state: 'pending',
+            registeredBy: w.bo,
+            threadId: w.p + '-a2',
+          }),
+        );
+        await tx.insertHolding(holdingRow(w.p + '-k1', w.anna, w.p + '-s1', { level: 2, ratedAt: T }));
+        await tx.insertHolding(holdingRow(w.p + '-k2', w.anna, w.p + '-s2', { level: 1, ratedAt: T }));
+      });
+      expect(await w.store.transaction(tx => tx.retypeHoldings([w.p + '-h1', w.p + '-h2'], w.p + '-t2'))).toBe(2);
+      expect((await w.store.transaction(tx => tx.holdingsOfType(w.p + '-t2'))).map(h => h.id).sort()).toEqual(
+        [w.p + '-h1', w.p + '-h2', w.p + '-h4'].sort(),
+      );
+      // A second registration of a type waiting for the person, and a second skill that counts, are refused.
+      expect(
+        (await refused(() => w.store.transaction(tx => tx.retypeHoldings([w.p + '-h3'], w.p + '-t2'))))?.name,
+      ).toBe('PendingTaken');
+      expect(
+        (await refused(() => w.store.transaction(tx => tx.retypeHoldings([w.p + '-k1'], w.p + '-s2'))))?.name,
+      ).toBe('SkillTaken');
+      // Set aside first, the skill moves; an unknown id is no row.
+      await w.store.transaction(async tx => {
+        await tx.updateHolding(w.p + '-k2', { state: 'revoked', revokedAt: T2, revokedBy: null });
+        expect(await tx.retypeHoldings([w.p + '-k1', w.p + '-none'], w.p + '-s2')).toBe(1);
+      });
+      expect((await w.store.transaction(tx => tx.holding(w.p + '-k1')))?.typeId).toBe(w.p + '-s2');
     });
 
     test('holdings are read by person and by type, oldest first, whatever their state', async () => {
@@ -1139,6 +1253,54 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
           everywhere.id,
           w.p + '-s4',
         ]);
+      });
+
+      test('a merge re-points a requirement and a share target, or changes the stricter one kept (D108 item 2)', async () => {
+        const w = await organised();
+        const fromPosition = requirementRow(w.p + '-r1', w.org, w.p + '-t1', { positionCode: 'usk' });
+        const intoPosition = requirementRow(w.p + '-r2', w.org, w.p + '-t2', { positionCode: 'usk' });
+        const fromUnit = requirementRow(w.p + '-r3', w.org, w.p + '-t1', { unitId: w.a.id });
+        const fromTarget = targetRow(w.p + '-s1', w.org, w.p + '-t1', 'usk', { minShare: 80 });
+        const intoTarget = targetRow(w.p + '-s2', w.org, w.p + '-t2', 'usk', { minShare: 40 });
+        await w.store.transaction(async tx => {
+          for (const r of [fromPosition, intoPosition, fromUnit]) await tx.insertRequirement(r);
+          for (const t of [fromTarget, intoTarget]) await tx.insertShareTarget(t);
+        });
+        // Re-pointed onto a target the other type already has: refused as an insert would be.
+        expect(
+          (
+            await refused(() =>
+              w.store.transaction(tx => tx.updateRequirement(fromPosition.id, { typeId: w.p + '-t2' })),
+            )
+          )?.name,
+        ).toBe('RequirementTaken');
+        expect(
+          (await refused(() => w.store.transaction(tx => tx.updateShareTarget(fromTarget.id, { typeId: w.p + '-t2' }))))
+            ?.name,
+        ).toBe('ShareTargetTaken');
+        await w.store.transaction(async tx => {
+          await tx.updateRequirement(fromUnit.id, { typeId: w.p + '-t2' });
+          await tx.updateRequirement(intoPosition.id, { minLevel: 2 });
+          await tx.updateShareTarget(intoTarget.id, { minShare: 80 });
+          // An unknown id changes nothing.
+          await tx.updateRequirement(w.p + '-none', { typeId: w.p + '-t2' });
+          await tx.updateShareTarget(w.p + '-none', { minShare: 10 });
+        });
+        expect(await w.store.transaction(tx => tx.requirement(fromUnit.id))).toEqual({
+          ...fromUnit,
+          typeId: w.p + '-t2',
+        });
+        expect(await w.store.transaction(tx => tx.requirement(intoPosition.id))).toEqual({
+          ...intoPosition,
+          minLevel: 2,
+        });
+        expect(await w.store.transaction(tx => tx.shareTarget(intoTarget.id))).toEqual({ ...intoTarget, minShare: 80 });
+        for (const wrong of [
+          () => w.store.transaction(tx => tx.updateRequirement(fromUnit.id, { minLevel: 4 })),
+          () => w.store.transaction(tx => tx.updateRequirement(fromUnit.id, { typeId: w.p + '-none' })),
+          () => w.store.transaction(tx => tx.updateShareTarget(intoTarget.id, { minShare: 0 })),
+        ])
+          expect(await refused(wrong)).toBeDefined();
       });
 
       test('erasure takes the requirements set on the person alone and their name off what they set; the export lists both', async () => {

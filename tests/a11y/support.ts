@@ -65,6 +65,9 @@ import type {
   CompetenceApproval,
   CompetenceDecisionBody,
   CompetenceHoldingBody,
+  CompetenceImportBody,
+  CompetenceMergeBody,
+  CompetenceMergePreview,
   CompetenceOwnOutput,
   CompetenceSkillBody,
   CompetenceSkillChangeBody,
@@ -282,6 +285,25 @@ export class MockApi {
   catalogueFail: string | null = null;
   /** The catalogue cannot be read (a 503), while the rest of the module answers. */
   catalogueReadFails = false;
+  /**
+   * The catalogue at scale (D120 item 7, D108 item 2): every part of an import as it was sent, and what a merge would
+   * move as the server counts it. An import adds the rows the catalogue does not hold, by address or name, as the server
+   * does; the next part answers 400 with `importFail`, which resets itself after that one.
+   */
+  importWrites: CompetenceImportBody[] = [];
+  importFail: string | null = null;
+  mergePreview: CompetenceMergePreview = {
+    holdings: 12,
+    people: 9,
+    requirements: 2,
+    requirementsFolded: 1,
+    shareTargets: 0,
+    shareTargetsFolded: 0,
+    mappings: 1,
+    skillsSetAside: 0,
+    ruled: 0,
+    waiting: 0,
+  };
   /** What the registrations sent, in order. */
   registered: Array<{ personId: string; body: CompetenceHoldingBody }> = [];
   /** The next registration answers 400 with this sentence; it resets itself after that one. */
@@ -913,13 +935,49 @@ export class MockApi {
       return this.catalogueReadFails
         ? route.fulfill({ status: 503, json: { error: 'Något gick fel. Försök igen.' } })
         : json({ rows: this.competenceTypes });
-    const typePath = /^\/competence\/types(?:\/([^/]+))?(\/archive|\/validity)?$/.exec(path);
+    // An import's part (D120 item 7): what the catalogue holds already, by address or name, is skipped.
+    if (path === '/competence/types/import' && this.competenceTypes && route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as CompetenceImportBody;
+      if (this.importFail) {
+        const error = this.importFail;
+        this.importFail = null;
+        return route.fulfill({ status: 400, json: { error } });
+      }
+      this.importWrites.push(body);
+      const types = this.competenceTypes;
+      let added = 0,
+        skipped = 0;
+      for (const row of body.rows) {
+        const held = types.some(
+          t =>
+            (row.uri !== null && t.uri === row.uri) ||
+            ((!t.archived || !!t.mergedInto) && t.name.toLowerCase() === row.name.toLowerCase()),
+        );
+        if (held) {
+          skipped++;
+          continue;
+        }
+        added++;
+        types.push({
+          id: `t-imp-${types.length + 1}`,
+          name: row.name,
+          area: row.area,
+          kind: row.kind,
+          ...(row.validityMonths ? { validityMonths: row.validityMonths } : {}),
+          archived: false,
+          ...(row.uri ? { uri: row.uri } : {}),
+        });
+      }
+      return json({ added, skipped });
+    }
+    const typePath = /^\/competence\/types(?:\/([^/]+))?(\/archive|\/validity|\/merge|\/restore)?$/.exec(path);
     if (typePath && this.competenceTypes && path !== '/competence/types') {
       const id = decodeURIComponent(typePath[1]!),
         method = route.request().method();
       if (typePath[2] === '/validity') return json(this.validityImpact);
       const found = this.competenceTypes.find(t => t.id === id);
       if (!found) return route.fulfill({ status: 400, json: { error: 'Kompetensen finns inte i katalogen.' } });
+      if (typePath[2] === '/merge' && method === 'GET') return json(this.mergePreview);
       if (this.catalogueFail) {
         const error = this.catalogueFail;
         this.catalogueFail = null;
@@ -929,6 +987,17 @@ export class MockApi {
         found.archived = true;
         this.catalogueWrites.push({ method, path });
         return route.fulfill({ status: 204, body: '' });
+      }
+      if (typePath[2] === '/restore' && method === 'POST') {
+        found.archived = false;
+        this.catalogueWrites.push({ method, path });
+        return route.fulfill({ status: 204, body: '' });
+      }
+      if (typePath[2] === '/merge' && method === 'POST') {
+        const body = route.request().postDataJSON() as CompetenceMergeBody;
+        Object.assign(found, { archived: true, mergedInto: body.into });
+        this.catalogueWrites.push({ method, path, body });
+        return json(this.mergePreview);
       }
       if (method === 'PATCH') {
         const body = route.request().postDataJSON() as CompetenceTypePatch;

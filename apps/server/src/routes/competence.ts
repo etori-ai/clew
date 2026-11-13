@@ -4,7 +4,9 @@ import addFormats from 'ajv-formats';
 import {
   CompetenceDecisionBodySchema,
   CompetenceHoldingBodySchema,
+  CompetenceImportBodySchema,
   CompetenceMappingBodySchema,
+  CompetenceMergeBodySchema,
   CompetenceRequirementBodySchema,
   CompetenceShareTargetBodySchema,
   CompetenceSkillBodySchema,
@@ -16,7 +18,9 @@ import {
   type AuthenticatedContext,
   type CompetenceDecisionBody,
   type CompetenceHoldingBody,
+  type CompetenceImportBody,
   type CompetenceMappingBody,
+  type CompetenceMergeBody,
   type CompetenceMatrixInput,
   type CompetenceRequirementBody,
   type CompetenceShareTargetBody,
@@ -31,7 +35,8 @@ import { failure, InputError, privateHeaders, protectedRoute, type Env } from '.
 import type { CompetenceUsecases } from '../modules/competence/usecases';
 
 /**
- * The competence module's own routes (D108): the catalogue an administrator keeps, the sources whose holdings are
+ * The competence module's own routes (D108): the catalogue an administrator keeps, with its import from a file, a merge
+ * of two types and a restore (D120 item 7, D108 item 2), the sources whose holdings are
  * copied in and their mappings to the catalogue (item 9), the requirements and share targets (item 6), a manager's
  * registration of a certificate, the manager's matrix and its file (item 11), which is no declared view because its
  * columns are chosen and a cell writes, a person's own registration with the decision of the manager they report to
@@ -49,6 +54,10 @@ export interface CompetenceRouteDeps {
     | 'addType'
     | 'updateType'
     | 'archiveType'
+    | 'restoreType'
+    | 'mergePreview'
+    | 'mergeTypes'
+    | 'importTypes'
     | 'validityImpact'
     | 'registerHolding'
     | 'revokeHolding'
@@ -96,7 +105,14 @@ const validators = {
   change: ajv.compile<CompetenceSkillChangeBody>(CompetenceSkillChangeBodySchema),
   skill: ajv.compile<CompetenceSkillBody>(CompetenceSkillBodySchema),
   validation: ajv.compile<CompetenceValidationBody>(CompetenceValidationBodySchema),
+  import: ajv.compile<CompetenceImportBody>(CompetenceImportBodySchema),
+  merge: ajv.compile<CompetenceMergeBody>(CompetenceMergeBodySchema),
 };
+/**
+ * The longest import request (D120 item 7): `COMPETENCE_IMPORT_REQUEST_MAX` rows of at most 240 + 160 + 300 characters
+ * of name, area and address, with room for the rest of each row. The contract bounds every field again.
+ */
+const IMPORT_BODY_MAX = 1_000_000;
 async function body<T>(request: Request, validate: (value: unknown) => value is T, max = 2000): Promise<T> {
   const text = await request.text();
   if (text.length > max) throw new InputError('För stor förfrågan.');
@@ -174,6 +190,28 @@ export function competenceRoutes(deps: CompetenceRouteDeps) {
   routes.post('/types/:id/archive', async c => {
     await competence.archiveType(c.get('session').context, param(c.req.param('id')));
     return c.body(null, 204);
+  });
+  // The catalogue at scale (D120 item 7, D108 item 2): an archived type brought back, two types merged, and the chosen
+  // rows of an imported file, which the browser read with the parser the use case checks every row with again.
+  routes.post('/types/:id/restore', async c => {
+    await competence.restoreType(c.get('session').context, param(c.req.param('id')));
+    return c.body(null, 204);
+  });
+  routes.get('/types/:id/merge', async c =>
+    c.json(
+      await competence.mergePreview(c.get('session').context, param(c.req.param('id')), param(c.req.query('into'))),
+      200,
+      privateHeaders,
+    ),
+  );
+  routes.post('/types/:id/merge', async c => {
+    const id = param(c.req.param('id')),
+      input = await body(c.req.raw, validators.merge);
+    return c.json(await competence.mergeTypes(c.get('session').context, id, input), 200);
+  });
+  routes.post('/types/import', async c => {
+    const input = await body(c.req.raw, validators.import, IMPORT_BODY_MAX);
+    return c.json(await competence.importTypes(c.get('session').context, input), 200);
   });
   routes.post('/people/:personId/holdings', async c => {
     const personId = param(c.req.param('personId')),

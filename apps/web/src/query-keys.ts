@@ -55,6 +55,8 @@ export const keys = {
   /** Kompetens (D108): the catalogue a certificate is registered from, and the administrator's whole catalogue. */
   competenceTypes: ['competence', 'types'] as const,
   competenceCatalogue: ['competence', 'catalogue'] as const,
+  /** What merging one type into another would move (D108 item 2), per pair. */
+  competenceMergePreview: (from: string, into: string) => ['competence', 'merge', from, into] as const,
   /** Administration › Kompetens › Källor (D108 item 9). */
   competenceSources: ['competence', 'sources'] as const,
   /** Administration › Kompetens › Krav (D108 item 6): the requirements and the share targets. */

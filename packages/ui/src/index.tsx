@@ -101,6 +101,9 @@ export {
   proportional,
   resolveColumnWidths,
   useTableStickyColumns,
+  // Row selection with a page of checkboxes and its count (the catalogue's import, D120 item 7).
+  TableSelectionToolbar,
+  useTableSelection,
 } from '@astryxdesign/core/Table';
 export type { TablePlugin } from '@astryxdesign/core/Table';
 export { Switch } from '@astryxdesign/core/Switch';

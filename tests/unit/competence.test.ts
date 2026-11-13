@@ -190,6 +190,8 @@ describe('the dates', () => {
       archivedAt: null,
       createdBy: 'x',
       createdAt: now.toISOString(),
+      sourceUri: null,
+      mergedInto: null,
     };
     const h = (id: string, extra: Partial<HoldingRecord>): HoldingRecord => ({
       id,
@@ -623,7 +625,7 @@ describe('erasure and export', () => {
     await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2026-01-10' });
     await competence.seedType('operator:test', 'org-2', { name: 'Annan', area: 'X', kind: 'course' });
     const doc = await competence.exportDomain('operator:cli', ORG);
-    expect(doc).toMatchObject({ format: 'clew.competence/7', exportedAt: now.toISOString(), organisationId: ORG });
+    expect(doc).toMatchObject({ format: 'clew.competence/8', exportedAt: now.toISOString(), organisationId: ORG });
     expect(doc.types.map(t => t.name).sort()).toEqual(['HLR', 'Heta arbeten', 'Socionomexamen']);
     expect(doc.holdings).toHaveLength(1);
     expect(lastAudit()).toEqual({
@@ -1215,6 +1217,8 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
         archivedAt,
         createdBy: 'x',
         createdAt: now.toISOString(),
+        sourceUri: null,
+        mergedInto: null,
       });
       const types = new Map(
         ['held', 'old', 'pending', 'gone'].map(id => [id, type(id, id === 'gone' ? now.toISOString() : null)]),
@@ -1603,6 +1607,8 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
       archivedAt: null,
       createdBy: 'x',
       createdAt: now.toISOString(),
+      sourceUri: null,
+      mergedInto: null,
     };
     const target = (id: string, positionCode: string): ShareTargetRecord => ({
       id,
@@ -1671,7 +1677,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
     await competence.removeRequirement(boss, onBo);
     await competence.addRequirement(boss, { typeId: hot, personId: 'bo' });
     const doc = await competence.exportDomain('operator:cli', ORG);
-    expect(doc.format).toBe('clew.competence/7');
+    expect(doc.format).toBe('clew.competence/8');
     expect(doc.requirements.map(r => [r.typeId, r.positionCode, r.unitId, r.personId])).toEqual([
       [hlr, USK, null, null],
       [hlr, null, 'u1', null],
@@ -2818,7 +2824,7 @@ describe('a person registers their own certificate and the manager they report t
     const threads = [waiting, approved].map(id => store.state.holdings.get(id)!.threadId!).sort();
 
     const doc = await own.exportDomain('operator:cli', ORG);
-    expect(doc.format).toBe('clew.competence/7');
+    expect(doc.format).toBe('clew.competence/8');
     expect(doc.holdings.find(h => h.id === approved)).toMatchObject({
       evidence: 'self',
       state: 'valid',
@@ -3631,6 +3637,8 @@ describe('skills with levels and interest (D120)', () => {
         archivedAt: null,
         createdBy: 'x',
         createdAt: now.toISOString(),
+        sourceUri: null,
+        mergedInto: null,
       });
       const types = new Map([type('lang', 'skill'), type('cert', 'certificate')].map(t => [t.id, t]));
       const h = (id: string, typeId: string, extra: Partial<HoldingRecord> = {}): HoldingRecord => ({
@@ -3705,7 +3713,7 @@ describe('skills with levels and interest (D120)', () => {
       const id = await competence.rateOwnSkill(asAnna, { typeId: records, level: 3, interest: true });
       await competence.validateSkill(boss, id, { level: 2 });
       const doc = await competence.exportDomain('operator:test', ORG);
-      expect(doc.format).toBe('clew.competence/7');
+      expect(doc.format).toBe('clew.competence/8');
       expect(doc.types.find(t => t.id === records)).toMatchObject({ kind: 'skill', validityMonths: null });
       expect(doc.holdings.find(h => h.id === id)).toMatchObject({
         level: 2,

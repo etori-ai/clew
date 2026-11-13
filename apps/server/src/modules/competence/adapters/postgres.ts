@@ -8,6 +8,7 @@ import {
   ShareTargetTaken,
   SkillTaken,
   TypeNameTaken,
+  TypeUriTaken,
   type ApprovalWorkItemTx,
   type CompetenceStore,
   type CompetenceTx,
@@ -57,12 +58,16 @@ function nameTaken(error: unknown) {
     (e?.constraint_name ?? e?.cause?.constraint_name) === 'competence_type_name'
   );
 }
-/** Run a write of the catalogue, turning the name index's refusal into the port's `TypeNameTaken`. */
+/**
+ * Run a write of the catalogue, turning the name index's refusal into the port's `TypeNameTaken` and the address
+ * index's (D120 item 7) into `TypeUriTaken`.
+ */
 async function named(write: () => Promise<unknown>) {
   try {
     await write();
   } catch (error) {
     if (nameTaken(error)) throw new TypeNameTaken();
+    if (uniqueIndexOf(error) === 'competence_type_source_uri') throw new TypeUriTaken();
     throw error;
   }
 }
@@ -209,8 +214,17 @@ export function competenceTx(
       if ('kind' in patch && patch.kind !== undefined) set.kind = patch.kind;
       if ('validityMonths' in patch) set.validityMonths = patch.validityMonths ?? null;
       if ('archivedAt' in patch) set.archivedAt = date(patch.archivedAt ?? null);
+      if ('mergedInto' in patch) set.mergedInto = patch.mergedInto ?? null;
       if (!Object.keys(set).length) return;
       await named(() => tx.update(types).set(set).where(eq(types.id, id)));
+    },
+    async insertTypes(rows) {
+      for (const slice of slices(rows))
+        await named(() =>
+          tx
+            .insert(types)
+            .values(slice.map(t => ({ ...t, createdAt: new Date(t.createdAt), archivedAt: date(t.archivedAt) }))),
+        );
     },
     async holdingsOf(personIds) {
       if (!personIds.length) return [];
@@ -264,6 +278,16 @@ export function competenceTx(
     },
     async deleteHolding(id) {
       await tx.delete(holdings).where(and(eq(holdings.id, id), isNull(holdings.connectorId)));
+    },
+    async retypeHoldings(holdingIds, typeId) {
+      let n = 0;
+      for (const slice of slices([...new Set(holdingIds)]))
+        await taken(async () => {
+          n += (
+            await tx.update(holdings).set({ typeId }).where(inArray(holdings.id, slice)).returning({ id: holdings.id })
+          ).length;
+        });
+      return n;
     },
     async copiedFrom(connectorId) {
       const rows = await tx
@@ -577,6 +601,17 @@ export function competenceTx(
       const removed = await tx.delete(requirements).where(eq(requirements.id, id)).returning({ id: requirements.id });
       return removed.length > 0;
     },
+    async updateRequirement(id, patch) {
+      const set: Partial<typeof requirements.$inferInsert> = {};
+      if (patch.typeId !== undefined) set.typeId = patch.typeId;
+      if ('minLevel' in patch) set.minLevel = patch.minLevel ?? null;
+      if (!Object.keys(set).length) return;
+      await once(
+        () => tx.update(requirements).set(set).where(eq(requirements.id, id)),
+        REQUIREMENT_INDEXES,
+        () => new RequirementTaken(),
+      );
+    },
     async shareTargets(organisationId) {
       const rows = await tx
         .select()
@@ -599,6 +634,17 @@ export function competenceTx(
     async removeShareTarget(id) {
       const removed = await tx.delete(targets).where(eq(targets.id, id)).returning({ id: targets.id });
       return removed.length > 0;
+    },
+    async updateShareTarget(id, patch) {
+      const set: Partial<typeof targets.$inferInsert> = {};
+      if (patch.typeId !== undefined) set.typeId = patch.typeId;
+      if (patch.minShare !== undefined) set.minShare = patch.minShare;
+      if (!Object.keys(set).length) return;
+      await once(
+        () => tx.update(targets).set(set).where(eq(targets.id, id)),
+        TARGET_INDEXES,
+        () => new ShareTargetTaken(),
+      );
     },
     async erasePerson(personId) {
       // The row of every source the person has copied rows from, first and in one order, as the copy's write takes it:

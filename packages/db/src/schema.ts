@@ -13,6 +13,7 @@ import {
   index,
   uniqueIndex,
   foreignKey,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import type {
@@ -933,7 +934,10 @@ export const talkCommitments = pgTable(
 );
 /**
  * The catalogue of competence types (D108 item 2): rows per installation, never an enumeration in code. Archived, never
- * deleted; one name per organisation among the types that are not archived, without regard to case.
+ * deleted; one name per organisation among the types that are not archived, without regard to case. A type imported
+ * from a file keeps the address it came with (`source_uri`, D120 item 7), one per organisation, so an import is
+ * idempotent on it. A type merged into another (`merged_into`) is archived and stays, so the address and the history of
+ * what it was are kept; a merge is not undone.
  */
 export const competenceTypes = pgTable(
   'competence_type',
@@ -949,15 +953,27 @@ export const competenceTypes = pgTable(
     // An actor string (a person's principal id, `operator:cli`), not a person.
     createdBy: text('created_by').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    // The address an imported type came with, such as an ESCO concept's URI (D120 item 7). Null: added by hand.
+    sourceUri: text('source_uri'),
+    // The type this one was merged into (D108 item 2).
+    mergedInto: text('merged_into').references((): AnyPgColumn => competenceTypes.id),
   },
   t => [
     check('competence_type_kind', sql`${t.kind} IN ('certificate', 'degree', 'course', 'authorisation', 'skill')`),
     check('competence_type_validity', sql`${t.validityMonths} IS NULL OR ${t.validityMonths} BETWEEN 1 AND 600`),
     // A skill never ends (D120 item 1): no employer's rule.
     check('competence_type_skill', sql`${t.kind} <> 'skill' OR ${t.validityMonths} IS NULL`),
+    // A merged type is archived, and never merged into itself.
+    check(
+      'competence_type_merged',
+      sql`${t.mergedInto} IS NULL OR (${t.archivedAt} IS NOT NULL AND ${t.mergedInto} <> ${t.id})`,
+    ),
     uniqueIndex('competence_type_name')
       .on(t.organisationId, sql`lower(${t.name})`)
       .where(sql`${t.archivedAt} IS NULL`),
+    uniqueIndex('competence_type_source_uri')
+      .on(t.organisationId, t.sourceUri)
+      .where(sql`${t.sourceUri} IS NOT NULL`),
   ],
 );
 /**

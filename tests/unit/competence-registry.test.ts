@@ -576,6 +576,77 @@ describe('the competence wiring (D108 item 13)', () => {
     expect(w.store.audit().length).toBe(before + 1);
   });
 
+  test('the routes carry the catalogue at scale (D120 item 7, D108 item 2): an import, a merge with its preview, a restore', async () => {
+    const w = world();
+    await syncBundledRows(w.reconcile);
+    await w.admin.update(mikael, COMPETENCE_CONNECTOR, { state: 'enabled' });
+    const uri = 'http://data.europa.eu/esco/skill/0000-1';
+    const row = { row: 2, name: 'leda ett team', area: 'Ledarskap', kind: 'skill', validityMonths: null, uri };
+    const imported = await w.call(mikael, 'POST', '/types/import', { format: 'esco', rows: [row] });
+    expect(imported.status).toBe(200);
+    expect(await imported.json()).toEqual({ added: 1, skipped: 0 });
+    expect(await (await w.call(mikael, 'POST', '/types/import', { format: 'esco', rows: [row] })).json()).toEqual({
+      added: 0,
+      skipped: 1,
+    });
+    // The server checks every row again with the contract and the shared rule, whatever the browser sent.
+    for (const body of [
+      { format: 'csv', rows: [row] },
+      { format: 'esco', rows: [] },
+      { format: 'esco', rows: [{ ...row, extra: true }] },
+      { format: 'esco', rows: Array.from({ length: 1001 }, (_, i) => ({ ...row, row: i + 2 })) },
+    ])
+      expect((await w.call(mikael, 'POST', '/types/import', body)).status).toBe(400);
+    const wrong = await w.call(mikael, 'POST', '/types/import', {
+      format: 'clew',
+      rows: [{ ...row, row: 7, kind: 'course', validityMonths: 0, uri: null }],
+    });
+    expect(wrong.status).toBe(400);
+    expect(await wrong.json()).toMatchObject({ error: 'Ogiltig förfrågan.' });
+    const control = await w.call(mikael, 'POST', '/types/import', {
+      format: 'clew',
+      rows: [{ ...row, row: 7, name: 'Namn\u0007', kind: 'course', uri: null }],
+    });
+    expect(await control.json()).toMatchObject({ error: 'Rad 7: Namnet innehåller tecken som inte kan sparas.' });
+    expect((await w.call(hillevi, 'POST', '/types/import', { format: 'esco', rows: [row] })).status).toBe(403);
+
+    const [from, into] = [
+      (
+        (await (
+          await w.call(mikael, 'POST', '/types', { name: 'Truckkort', area: 'A', kind: 'certificate' })
+        ).json()) as { id: string }
+      ).id,
+      (
+        (await (
+          await w.call(mikael, 'POST', '/types', { name: 'Truckförarbevis', area: 'A', kind: 'certificate' })
+        ).json()) as { id: string }
+      ).id,
+    ];
+    await w.call(hillevi, 'POST', '/people/p-anna/holdings', { typeId: from, issuedOn: '2025-05-10' });
+    const preview = await w.call(mikael, 'GET', `/types/${from}/merge?into=${into}`);
+    expect(preview.headers.get('cache-control')).toContain('no-store');
+    expect(await preview.json()).toMatchObject({ holdings: 1, people: 1, waiting: 0 });
+    expect((await w.call(mikael, 'GET', `/types/${from}/merge`)).status).toBe(400);
+    expect((await w.call(mikael, 'POST', `/types/${from}/merge`, { into: 7 })).status).toBe(400);
+    expect((await w.call(hillevi, 'POST', `/types/${from}/merge`, { into })).status).toBe(403);
+    const self = await w.call(mikael, 'POST', `/types/${from}/merge`, { into: from });
+    expect(await self.json()).toMatchObject({ error: 'En kompetens kan inte slås ihop med sig själv.' });
+    const merged = await w.call(mikael, 'POST', `/types/${from}/merge`, { into });
+    expect(merged.status).toBe(200);
+    expect(await merged.json()).toMatchObject({ holdings: 1 });
+    const listed = (await (await w.call(mikael, 'GET', '/types')).json()) as { rows: Array<Record<string, unknown>> };
+    expect(listed.rows.find(t => t.id === from)).toMatchObject({ archived: true, mergedInto: into });
+    expect(listed.rows.find(t => t.name === 'leda ett team')).toMatchObject({ uri });
+
+    const restoredMerged = await w.call(mikael, 'POST', `/types/${from}/restore`);
+    expect(restoredMerged.status).toBe(400);
+    expect(((await restoredMerged.json()) as { error: string }).error).toStartWith('Kompetensen är sammanslagen');
+    expect((await w.call(mikael, 'POST', `/types/${into}/archive`)).status).toBe(204);
+    expect((await w.call(hillevi, 'POST', `/types/${into}/restore`)).status).toBe(403);
+    expect((await w.call(mikael, 'POST', `/types/${into}/restore`)).status).toBe(204);
+    expect(w.store.state.types.get(into)?.archivedAt).toBeNull();
+  });
+
   test('switched off, the requirements and share targets are refused like every other route', async () => {
     const w = world();
     await syncBundledRows(w.reconcile);
@@ -588,6 +659,10 @@ describe('the competence wiring (D108 item 13)', () => {
       ['DELETE', '/share-targets/s1'],
       ['GET', '/matrix'],
       ['GET', '/matrix.csv'],
+      ['POST', '/types/import'],
+      ['GET', '/types/t1/merge?into=t2'],
+      ['POST', '/types/t1/merge'],
+      ['POST', '/types/t1/restore'],
     ] as const) {
       const refused = await w.call(mikael, method, path, method === 'POST' ? {} : undefined);
       expect(refused.status).toBe(403);

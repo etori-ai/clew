@@ -1,5 +1,6 @@
 import { COMPETENCE_CONNECTOR } from '@clew/connectors';
 import {
+  catalogueMatcher,
   COMPETENCE_LEVEL_LABELS,
   COMPETENCE_MATRIX_COLUMNS,
   COMPETENCE_ROW_STATUSES,
@@ -30,6 +31,7 @@ import {
   type RequirementRecord,
   type ShareTargetRecord,
   type SourceHolding,
+  type SourceMapping,
   type SourceReadError,
   type TypeRecord,
   type UnitRecord,
@@ -733,7 +735,7 @@ export function personStatus(summary: PersonSummary): CompetenceStatus | 'none' 
   if (summary.expiring) return 'expiring';
   return summary.holdings ? 'valid' : 'none';
 }
-/** One type as the catalogue lists it. */
+/** One type as the catalogue lists it, with the address it was imported with and what it was merged into. */
 export function typeRow(type: TypeRecord): CompetenceType {
   return {
     id: type.id,
@@ -742,6 +744,155 @@ export function typeRow(type: TypeRecord): CompetenceType {
     kind: type.kind,
     ...(type.validityMonths ? { validityMonths: type.validityMonths } : {}),
     archived: type.archivedAt !== null,
+    ...(type.sourceUri !== null ? { uri: type.sourceUri } : {}),
+    ...(type.mergedInto !== null ? { mergedInto: type.mergedInto } : {}),
+  };
+}
+
+// The catalogue at scale (D120 item 7, D108 item 2): an import and a merge.
+
+/** A row of an import as the use case takes it in: checked, its name and area as `importText` leaves them. */
+export interface ImportRow {
+  name: string;
+  area: string;
+  kind: TypeRecord['kind'];
+  validityMonths: number | null;
+  uri: string | null;
+}
+/**
+ * Which rows of an import are new (D120 item 7): a row the catalogue holds already (`catalogueMatcher`, the rule the
+ * page marks rows with: its address kept by any type, or its name in use or merged) is skipped, and so is a row the
+ * request named before, by address or by name, so a part sent twice changes nothing. Returns the new rows in order.
+ */
+export function importPlan(
+  existing: readonly TypeRecord[],
+  rows: readonly ImportRow[],
+): { add: ImportRow[]; skipped: number } {
+  const held = catalogueMatcher(
+    existing.map(t => ({
+      name: t.name,
+      uri: t.sourceUri,
+      archived: t.archivedAt !== null,
+      merged: t.mergedInto !== null,
+    })),
+  );
+  const add: ImportRow[] = [];
+  const uris = new Set<string>(),
+    names = new Set<string>();
+  let skipped = 0;
+  for (const row of rows) {
+    const name = row.name.toLowerCase();
+    if (held(row) || (row.uri !== null && uris.has(row.uri)) || names.has(name)) {
+      skipped++;
+      continue;
+    }
+    if (row.uri !== null) uris.add(row.uri);
+    names.add(name);
+    add.push(row);
+  }
+  return { add, skipped };
+}
+/**
+ * Of two skills one person holds of what becomes one type (D120 item 1), the one that decides: one a manager confirmed
+ * before one the person only rated; then the higher level; then the one whose level was set last (its confirmation or
+ * its rating); then `a`, the merge's target. The other is set aside, revoked, and keeps its history.
+ */
+export function strongerSkill(a: HoldingRecord, b: HoldingRecord): HoldingRecord {
+  if (confirmed(a) !== confirmed(b)) return confirmed(a) ? a : b;
+  if ((a.level ?? 0) !== (b.level ?? 0)) return (a.level ?? 0) > (b.level ?? 0) ? a : b;
+  const setA = a.validatedAt ?? a.ratedAt ?? '',
+    setB = b.validatedAt ?? b.ratedAt ?? '';
+  return setB > setA ? b : a;
+}
+/** What merging one type into another does (D108 item 2), worked out before anything is written. */
+export interface MergePlan {
+  /** Every holding of the type merged away, re-pointed to the target. */
+  retype: string[];
+  /** Skills set aside: of a person who holds a counting skill of both, the one that does not decide. */
+  revoke: string[];
+  /** Skills kept that take over the interest mark of the one set aside (D120 item 3). */
+  interest: string[];
+  /** People with a registration of their own waiting for both types: one waits per person and type, so it is refused. */
+  waiting: string[];
+  /** Requirements of the type merged away, re-pointed; and those whose target the target type already has. */
+  requirements: { retype: string[]; fold: Array<{ remove: string; keep: string; minLevel: number | null }> };
+  /** Share targets likewise, the higher least share kept. */
+  shareTargets: { retype: string[]; fold: Array<{ remove: string; keep: string; minShare: number }> };
+  /** The sources' types mapped to the type merged away. */
+  mappings: SourceMapping[];
+  /** The people whose holdings move. */
+  people: number;
+  /** Holdings that end by the employer's rule and are counted from the target's rule from now on. */
+  ruled: number;
+}
+/**
+ * The plan of a merge of `from` into `into` (D108 item 2), from the rows as they are: every holding of `from` is
+ * re-pointed, whatever its state, so no history is lost. Where a person holds a counting skill of both, the one that
+ * decides is kept (`strongerSkill`) and the other set aside, its interest mark carried over. A registration of a
+ * person's own waiting for both is listed as `waiting`, which the use case refuses. A requirement or a share target of
+ * `from` whose target `into` already has is folded into that one, keeping the stricter: the higher least level, the
+ * higher least share. Every mapping to `from` is re-pointed.
+ */
+export function mergePlan(input: {
+  from: TypeRecord;
+  into: TypeRecord;
+  fromHoldings: readonly HoldingRecord[];
+  intoHoldings: readonly HoldingRecord[];
+  requirements: readonly RequirementRecord[];
+  shareTargets: readonly ShareTargetRecord[];
+  mappings: readonly SourceMapping[];
+}): MergePlan {
+  const { from, into, fromHoldings, intoHoldings } = input;
+  const liveSkillOf = (rows: readonly HoldingRecord[]) =>
+    new Map(rows.filter(h => h.level !== null && counts(h)).map(h => [h.personId, h]));
+  const theirs = liveSkillOf(intoHoldings);
+  const revoke: string[] = [],
+    interest: string[] = [];
+  for (const [personId, mine] of liveSkillOf(fromHoldings)) {
+    const other = theirs.get(personId);
+    if (!other) continue;
+    const kept = strongerSkill(other, mine);
+    const aside = kept === other ? mine : other;
+    revoke.push(aside.id);
+    if (aside.interest && !kept.interest) interest.push(kept.id);
+  }
+  const waitingFor = new Set(intoHoldings.filter(awaiting).map(h => h.personId));
+  const waiting = [
+    ...new Set(fromHoldings.filter(h => awaiting(h) && waitingFor.has(h.personId)).map(h => h.personId)),
+  ];
+  const target = (r: Pick<RequirementRecord, 'positionCode' | 'unitId' | 'personId'>) =>
+    `${r.positionCode ?? ''}\n${r.unitId ?? ''}\n${r.personId ?? ''}`;
+  const intoRequirements = new Map(input.requirements.filter(r => r.typeId === into.id).map(r => [target(r), r]));
+  const requirements: MergePlan['requirements'] = { retype: [], fold: [] };
+  for (const r of input.requirements.filter(r => r.typeId === from.id)) {
+    const same = intoRequirements.get(target(r));
+    if (!same) requirements.retype.push(r.id);
+    else {
+      const levels = [same.minLevel, r.minLevel].filter((l): l is number => l !== null);
+      requirements.fold.push({ remove: r.id, keep: same.id, minLevel: levels.length ? Math.max(...levels) : null });
+    }
+  }
+  const aim = (t: Pick<ShareTargetRecord, 'positionCode' | 'unitId'>) => `${t.positionCode}\n${t.unitId ?? ''}`;
+  const intoTargets = new Map(input.shareTargets.filter(t => t.typeId === into.id).map(t => [aim(t), t]));
+  const shareTargets: MergePlan['shareTargets'] = { retype: [], fold: [] };
+  for (const t of input.shareTargets.filter(t => t.typeId === from.id)) {
+    const same = intoTargets.get(aim(t));
+    if (!same) shareTargets.retype.push(t.id);
+    else shareTargets.fold.push({ remove: t.id, keep: same.id, minShare: Math.max(same.minShare, t.minShare) });
+  }
+  return {
+    retype: fromHoldings.map(h => h.id),
+    revoke,
+    interest,
+    waiting,
+    requirements,
+    shareTargets,
+    mappings: input.mappings.filter(m => m.typeId === from.id),
+    people: new Set(fromHoldings.map(h => h.personId)).size,
+    ruled:
+      (from.validityMonths ?? null) === (into.validityMonths ?? null)
+        ? 0
+        : fromHoldings.filter(h => counts(h) && h.level === null && h.expiresOn === null).length,
   };
 }
 

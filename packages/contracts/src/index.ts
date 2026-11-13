@@ -3,6 +3,14 @@ import { Format } from 'typebox/format';
 import { Settings } from 'typebox/system';
 import { Value } from 'typebox/value';
 import { DocumentReviewSchema, ReviewEvidenceSchema } from './presentation';
+import {
+  COMPETENCE_CATALOGUE_MAX,
+  COMPETENCE_IMPORT_FORMATS,
+  COMPETENCE_IMPORT_REQUEST_MAX,
+  COMPETENCE_IMPORT_ROWS_MAX,
+  COMPETENCE_URI_MAX,
+  type CompetenceImportKind,
+} from './competence-import';
 // Explicit exports keep these names visible to the Node ESM server through this package's CommonJS boundary.
 export {
   MAX_DOCUMENT_BYTES,
@@ -1660,11 +1668,26 @@ export const CompetenceTypeSchema = object(
       description: "The employer's rule: a holding ends this many months after it was issued. Absent: no rule.",
     }),
     archived: Type.Boolean({ description: 'An archived type takes no new holdings; the ones it has stay.' }),
+    uri: Type.Optional(
+      Type.String({
+        minLength: 1,
+        maxLength: COMPETENCE_URI_MAX,
+        description:
+          "The address the type came with from an imported file (D120 item 7), such as an ESCO concept's `conceptUri`. An import is idempotent on it. Absent: added by hand, or imported without one.",
+      }),
+    ),
+    mergedInto: Type.Optional({
+      ...id,
+      description:
+        'The type this one was merged into (D108 item 2): its holdings, requirements and mappings are there, and it is archived. Absent: not merged.',
+    }),
   },
   'A competence type in the catalogue (D108).',
 );
 export type CompetenceType = Static<typeof CompetenceTypeSchema>;
-export const CompetenceTypesOutputSchema = object({ rows: Type.Array(CompetenceTypeSchema, { maxItems: 2000 }) });
+export const CompetenceTypesOutputSchema = object({
+  rows: Type.Array(CompetenceTypeSchema, { maxItems: COMPETENCE_CATALOGUE_MAX }),
+});
 export type CompetenceTypesOutput = Static<typeof CompetenceTypesOutputSchema>;
 /** One holding as a read lists it (D108): who, what, since when, until when and where it stands today. */
 export const CompetenceHoldingRowSchema = object(
@@ -1771,6 +1794,64 @@ export const CompetenceTypePatchSchema = object({
   validityMonths: Type.Optional(Type.Union([validityMonths, Type.Null()])),
 });
 export type CompetenceTypePatch = Static<typeof CompetenceTypePatchSchema>;
+/**
+ * One type of a file an administrator imports (D120 item 7), as the page sends it once chosen: every column filled, an
+ * ESCO row with the area the administrator chose. The server checks it again with `competenceImportRowProblem`, the
+ * rule the page read the file with. `row` is the row's number in the file, for a refusal to name.
+ */
+export const CompetenceImportRowSchema = object({
+  row: Type.Integer({ minimum: 1, maximum: COMPETENCE_IMPORT_ROWS_MAX + 1 }),
+  // In UTF-16 units, twice the catalogue's limits in characters; the shared check counts the characters.
+  name: Type.String({ minLength: 1, maxLength: 240 }),
+  area: Type.String({ minLength: 1, maxLength: 160 }),
+  kind: CompetenceKind,
+  validityMonths: Type.Union([validityMonths, Type.Null()]),
+  uri: Type.Union([Type.String({ minLength: 1, maxLength: COMPETENCE_URI_MAX }), Type.Null()]),
+});
+export type CompetenceImportRowBody = Static<typeof CompetenceImportRowSchema>;
+/**
+ * `POST /api/competence/types/import`: the chosen rows of one file, at most `COMPETENCE_IMPORT_REQUEST_MAX` a request
+ * (the page sends more in parts), and the file's format, which the audit row records. A row the catalogue holds already
+ * is skipped, not refused, so a part sent again changes nothing.
+ */
+export const CompetenceImportBodySchema = object({
+  format: literals(COMPETENCE_IMPORT_FORMATS),
+  rows: Type.Array(CompetenceImportRowSchema, { minItems: 1, maxItems: COMPETENCE_IMPORT_REQUEST_MAX }),
+});
+export type CompetenceImportBody = Static<typeof CompetenceImportBodySchema>;
+/** What an import did: how many types it added and how many rows the catalogue held already. */
+export interface CompetenceImportOutcome {
+  added: number;
+  skipped: number;
+}
+/** `POST /api/competence/types/:id/merge`: the type the one in the path is merged into (D108 item 2). */
+export const CompetenceMergeBodySchema = object({ into: id });
+export type CompetenceMergeBody = Static<typeof CompetenceMergeBodySchema>;
+/**
+ * What merging one type into another would move (D108 item 2), counted before it is confirmed; nothing is written.
+ * Every row of the type moves: its holdings, whatever their state, the requirements and share targets set on it, and
+ * the sources' types mapped to it.
+ */
+export interface CompetenceMergePreview {
+  /** Holdings of the type, every state, re-pointed to the other. */
+  holdings: number;
+  /** The people those holdings are of. */
+  people: number;
+  /** Requirements moved, and of them those whose target the other type already had: one is kept, the stricter. */
+  requirements: number;
+  requirementsFolded: number;
+  /** Share targets moved, and of them those the other type already had for the position and unit: the higher kept. */
+  shareTargets: number;
+  shareTargetsFolded: number;
+  /** Sources' types mapped to the type, mapped to the other from now on. */
+  mappings: number;
+  /** Skills of people who held both: the one that does not decide is set aside (revoked), with its history kept. */
+  skillsSetAside: number;
+  /** Holdings that end by the employer's rule and are counted from the other type's rule from now on. */
+  ruled: number;
+  /** People with a registration of their own waiting for both types: while there are any, the merge is refused. */
+  waiting: number;
+}
 /** What a change of a type's validity would do to the holdings counted from it (D108 item 3), before it is confirmed. */
 export interface CompetenceValidityImpact {
   /** Holdings that end by the rule: the ones with no date of the issuer's. */
@@ -3738,6 +3819,43 @@ export {
   type HoldingsOutput,
   type HoldingsRow,
 } from './holdings';
+
+// The file of competence types an administrator imports (D120 item 7), in a file of its own. Named one by one, as below.
+export {
+  COMPETENCE_CATALOGUE_MAX,
+  COMPETENCE_IMPORT_AREA_MAX,
+  COMPETENCE_IMPORT_COLUMNS,
+  COMPETENCE_IMPORT_FORMATS,
+  COMPETENCE_IMPORT_KIND_WORDS,
+  COMPETENCE_IMPORT_KINDS,
+  COMPETENCE_IMPORT_MAX_CHARS,
+  COMPETENCE_IMPORT_NAME_MAX,
+  COMPETENCE_IMPORT_PROBLEMS_MAX,
+  COMPETENCE_IMPORT_REQUEST_MAX,
+  COMPETENCE_IMPORT_ROWS_MAX,
+  COMPETENCE_IMPORT_VALIDITY_MAX,
+  COMPETENCE_URI_MAX,
+  ESCO_RELEASED,
+  ESCO_SKILL_COLUMNS,
+  catalogueMatcher,
+  competenceImportRowProblem,
+  importKind,
+  importText,
+  parseCompetenceImport,
+  type CompetenceImportCandidate,
+  type CompetenceImportFormat,
+  type CompetenceImportKind,
+  type CompetenceImportProblem,
+  type CompetenceImportResult,
+  type CompetenceImportRow,
+} from './competence-import';
+/** The import file keeps its own copy of the kinds (it imports nothing of ours); the compiler holds it to this list. */
+type SameKinds = [CompetenceImportKind] extends [CompetenceKind]
+  ? [CompetenceKind] extends [CompetenceImportKind]
+    ? true
+    : false
+  : false;
+export const IMPORT_KINDS_MATCH: SameKinds = true;
 
 // Named one by one: the server runs under Node through tsx, where a star re-export's names are not visible to an importer.
 export {

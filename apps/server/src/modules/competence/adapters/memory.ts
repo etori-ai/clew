@@ -1,5 +1,5 @@
 import { foldEntityKey, type Subject } from '@clew/contracts';
-import { PendingTaken, RequirementTaken, ShareTargetTaken, SkillTaken, TypeNameTaken } from '../model';
+import { PendingTaken, RequirementTaken, ShareTargetTaken, SkillTaken, TypeNameTaken, TypeUriTaken } from '../model';
 import type {
   ApprovalOutcome,
   ApprovalWorkItemTx,
@@ -131,6 +131,25 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
         t.name.toLowerCase() === candidate.name.toLowerCase(),
     );
     if (taken) throw new TypeNameTaken();
+  };
+  /**
+   * The unique index `competence_type_source_uri`: one address per organisation, whatever the type's state; and the
+   * check `competence_type_merged` with the reference of `merged_into`.
+   */
+  const assertType = (candidate: TypeRecord) => {
+    if (
+      candidate.sourceUri !== null &&
+      [...state.types.values()].some(
+        t =>
+          t.id !== candidate.id && t.organisationId === candidate.organisationId && t.sourceUri === candidate.sourceUri,
+      )
+    )
+      throw new TypeUriTaken();
+    if (candidate.mergedInto !== null) {
+      if (candidate.archivedAt === null || candidate.mergedInto === candidate.id)
+        throw new Error('a merged type is archived and not merged into itself');
+      if (!state.types.has(candidate.mergedInto)) throw new Error('a merged type refers to the type it went into');
+    }
   };
   /** The foreign keys and checks Postgres holds a holding to. */
   const assertHolding = (holding: HoldingRecord) => {
@@ -297,6 +316,7 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     async insertType(type) {
       if (state.types.has(type.id)) throw new Error('duplicate type id');
       assertNameFree(type);
+      assertType(type);
       state.types.set(type.id, { ...type });
     },
     async updateType(id, patch) {
@@ -304,7 +324,13 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
       if (!t) return;
       const next = { ...t, ...patch };
       assertNameFree(next);
+      assertType(next);
       state.types.set(id, next);
+    },
+    async insertTypes(types) {
+      // One after the other, so a name or an address twice in the batch is refused as the index refuses it; the
+      // transaction's snapshot makes it all or none.
+      for (const type of types) await tx.insertType(type);
     },
     async holdingsOf(personIds) {
       return byCreated([...state.holdings.values()].filter(h => personIds.includes(h.personId))).map(h =>
@@ -346,6 +372,20 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     async deleteHolding(id) {
       // A copied row goes only with its source or its person.
       if (!state.holdings.get(id)?.copy) state.holdings.delete(id);
+    },
+    async retypeHoldings(holdingIds, typeId) {
+      if (!state.types.has(typeId)) throw new Error('holding references an unknown type');
+      let n = 0;
+      for (const id of new Set(holdingIds)) {
+        const h = state.holdings.get(id);
+        if (!h) continue;
+        const next = { ...h, typeId };
+        assertOnePending(next);
+        assertOneSkill(next);
+        state.holdings.set(id, next);
+        n++;
+      }
+      return n;
     },
     async copiedFrom(connectorId) {
       return byCreated(copied().filter(h => h.copy!.connectorId === connectorId)).map(h => structuredClone(h));
@@ -563,6 +603,24 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     async removeRequirement(id) {
       return state.requirements.delete(id);
     },
+    async updateRequirement(id, patch) {
+      const r = state.requirements.get(id);
+      if (!r) return;
+      const next = { ...r, ...patch };
+      if (!state.types.has(next.typeId)) throw new Error('requirement references an unknown type');
+      if (next.minLevel !== null && (next.minLevel < 1 || next.minLevel > 3))
+        throw new Error('a least level is 1 to 3');
+      const taken = [...state.requirements.values()].some(
+        o =>
+          o.id !== id &&
+          o.typeId === next.typeId &&
+          o.positionCode === next.positionCode &&
+          o.unitId === next.unitId &&
+          o.personId === next.personId,
+      );
+      if (taken) throw new RequirementTaken();
+      state.requirements.set(id, next);
+    },
     async shareTargets(organisationId) {
       return byCreated([...state.shareTargets.values()].filter(t => t.organisationId === organisationId)).map(t => ({
         ...t,
@@ -589,6 +647,24 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     },
     async removeShareTarget(id) {
       return state.shareTargets.delete(id);
+    },
+    async updateShareTarget(id, patch) {
+      const t = state.shareTargets.get(id);
+      if (!t) return;
+      const next = { ...t, ...patch };
+      if (!state.types.has(next.typeId)) throw new Error('share target references an unknown type');
+      if (!Number.isInteger(next.minShare) || next.minShare < 1 || next.minShare > 100)
+        throw new Error('a least share is 1 to 100');
+      const taken = [...state.shareTargets.values()].some(
+        o =>
+          o.id !== id &&
+          o.typeId === next.typeId &&
+          o.positionCode === next.positionCode &&
+          o.unitId === next.unitId &&
+          (o.unitId !== null || o.organisationId === next.organisationId),
+      );
+      if (taken) throw new ShareTargetTaken();
+      state.shareTargets.set(id, next);
     },
     async erasePerson(personId) {
       let holdings = 0,

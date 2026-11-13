@@ -41,8 +41,17 @@ export interface TypeRecord {
   /** The actor that added it: a person's principal id, or an operator's such as `operator:cli`. */
   createdBy: string;
   createdAt: string;
+  /**
+   * The address the type came with from an imported file (D120 item 7), such as an ESCO concept's URI; null for one
+   * added by hand. One per organisation, whatever the type's state, so an import is idempotent on it.
+   */
+  sourceUri: string | null;
+  /** The type this one was merged into (D108 item 2); a merged type is archived, and a merge is not undone. */
+  mergedInto: string | null;
 }
-export type TypePatch = Partial<Pick<TypeRecord, 'name' | 'area' | 'kind' | 'validityMonths' | 'archivedAt'>>;
+export type TypePatch = Partial<
+  Pick<TypeRecord, 'name' | 'area' | 'kind' | 'validityMonths' | 'archivedAt' | 'mergedInto'>
+>;
 /**
  * A holding's state as stored (D108 items 7 and 9). `pending` and `rejected` belong to a person's own registration
  * (evidence `self`): it waits for the manager they report to, who approves it (`valid`) or rejects it.
@@ -265,7 +274,7 @@ export interface Erased {
 }
 /**
  * The whole domain for one organisation (D108 item 14), copied rows, the mappings of sources, the requirements and the
- * share targets included; the use case turns it into `clew.competence/7`.
+ * share targets included; the use case turns it into `clew.competence/8`.
  */
 export interface CompetenceExport {
   types: TypeRecord[];
@@ -285,6 +294,14 @@ export class TypeNameTaken extends Error {
   constructor() {
     super('The organisation already has a competence type with this name.');
     this.name = 'TypeNameTaken';
+  }
+}
+
+/** The store's refusal of an address another type of the organisation keeps already (D120 item 7). */
+export class TypeUriTaken extends Error {
+  constructor() {
+    super('The organisation already has a competence type with this address.');
+    this.name = 'TypeUriTaken';
   }
 }
 
@@ -395,6 +412,11 @@ export interface CompetenceTx {
   insertType(type: TypeRecord): Promise<void>;
   /** Change a type; the same name rule as `insertType`. An unknown id changes nothing. */
   updateType(id: string, patch: TypePatch): Promise<void>;
+  /**
+   * Insert these types at once, as an import does (D120 item 7): the name rule of `insertType`, and an address another
+   * type of the organisation keeps, whatever its state, refused with `TypeUriTaken`. All or none.
+   */
+  insertTypes(types: readonly TypeRecord[]): Promise<void>;
   // Holdings.
   /** Every holding of these people, oldest first, whatever its state. */
   holdingsOf(personIds: readonly string[]): Promise<HoldingRecord[]>;
@@ -418,6 +440,11 @@ export interface CompetenceTx {
    * left alone: it goes only with its source or its person.
    */
   deleteHolding(id: string): Promise<void>;
+  /**
+   * Re-point these holdings, registered or copied and whatever their state, to another type, as a merge does (D108 item
+   * 2); the same rules as `insertHolding`. Returns how many there were.
+   */
+  retypeHoldings(holdingIds: readonly string[], typeId: string): Promise<number>;
   // Rows copied from a source (D108 item 9).
   /**
    * Every row copied from this connector, whatever its state. Not locked row by row: the copy's write and a mapping
@@ -498,6 +525,11 @@ export interface CompetenceTx {
   insertRequirement(requirement: RequirementRecord): Promise<void>;
   /** Remove a requirement; false when there was none. */
   removeRequirement(id: string): Promise<boolean>;
+  /**
+   * Re-point a requirement to another type, or change its least level, as a merge does (D108 item 2). One the type and
+   * its target already have is refused with `RequirementTaken`. An unknown id changes nothing.
+   */
+  updateRequirement(id: string, patch: Partial<Pick<RequirementRecord, 'typeId' | 'minLevel'>>): Promise<void>;
   /** Every share target of the organisation, oldest first. */
   shareTargets(organisationId: string): Promise<ShareTargetRecord[]>;
   /** One share target, locked. */
@@ -506,6 +538,11 @@ export interface CompetenceTx {
   insertShareTarget(target: ShareTargetRecord): Promise<void>;
   /** Remove a share target; false when there was none. */
   removeShareTarget(id: string): Promise<boolean>;
+  /**
+   * Re-point a share target to another type, or change its least share, as a merge does (D108 item 2). One the type,
+   * position and unit already have is refused with `ShareTargetTaken`. An unknown id changes nothing.
+   */
+  updateShareTarget(id: string, patch: Partial<Pick<ShareTargetRecord, 'typeId' | 'minShare'>>): Promise<void>;
   // Erasure and export (D108 item 14).
   /**
    * Remove the person's holdings, copied ones included, and the requirements set on them alone, and remove them from
