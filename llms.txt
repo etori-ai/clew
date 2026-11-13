@@ -31,7 +31,7 @@
 - [Actions and recovery](docs/guides/actions-and-receipts.md): source writes, receipts and execution limits.
 - [Validation and deployment](docs/guides/testing-and-deployment.md): checks, registration and operating notes.
 - [Writing a provisioner](docs/guides/writing-a-provisioner.md): how people, units and groups enter an installation through the SCIM 2.0 server at `/scim/v2` (D68, D85); a provisioner is not a connector.
-- [Provisioning: what operations deliver](docs/guides/provisioning-for-operations.md): what the teams that run the directory, the identity provider and the hosting deliver before anybody can sign in, and how to tell that it works.
+- [SCIM objects and delivery order](docs/guides/provisioning-for-operations.md): request bodies and identifiers for people, units and memberships, with links to the test walkthrough and operational procedures.
 
 ## Working rules for this documentation
 
