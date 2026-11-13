@@ -1,11 +1,20 @@
 import { and, eq, inArray, lte } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
+import { scheduleJob } from '@clew/db/jobs';
+import type { DurableQueue } from '@clew/db/durable';
 import { stockholmDate } from '@clew/contracts';
 import { admitAttention } from '../attention-domain';
 import type { ThreadTx } from '../model';
 const days = schema.attentionDays,
   deliveries = schema.deliveries;
-export const attentionTx = (tx: Transaction): Pick<ThreadTx, 'admitDelivery'> => ({
+/**
+ * A delivery is admitted in the transaction that brings its card (D47). One that quiet hours or the day's budget
+ * defers waits for its batch's `attention-release` job, which is scheduled in the same transaction and starts its
+ * `scheduledJob` workflow with it (D86); the workflow makes the batch ready at its due time. A batch whose job has
+ * already been claimed has been released without this row, so the row is written ready, and is shown from the same
+ * due time as the rest of its batch.
+ */
+export const attentionTx = (tx: Transaction, durable: DurableQueue): Pick<ThreadTx, 'admitDelivery'> => ({
   async admitDelivery(input) {
     if ((await tx.select({ id: deliveries.id }).from(deliveries).where(eq(deliveries.id, input.id))).length) return;
     let dueAt = input.at;
@@ -26,6 +35,22 @@ export const attentionTx = (tx: Transaction): Pick<ThreadTx, 'admitDelivery'> =>
         .where(eq(days.id, id));
     }
     const batch = input.kind === 'reminder' ? input.id : `automatic:${input.personId}:${dueAt}`;
+    let state: 'ready' | 'waiting' = 'ready';
+    if (dueAt > input.at) {
+      const job = `attention:${batch}`;
+      await scheduleJob(
+        { id: job, kind: 'attention-release', runAt: new Date(dueAt), payload: { batch } },
+        durable,
+        tx,
+      );
+      // Held until this commit: the job cannot be claimed before this row is there for it to release.
+      const [row] = await tx
+        .select({ status: schema.jobs.status })
+        .from(schema.jobs)
+        .where(eq(schema.jobs.id, job))
+        .for('share');
+      if (row?.status === 'temporal') state = 'waiting';
+    }
     await tx
       .insert(deliveries)
       .values({
@@ -35,15 +60,10 @@ export const attentionTx = (tx: Transaction): Pick<ThreadTx, 'admitDelivery'> =>
         kind: input.kind,
         batch,
         dueAt: new Date(dueAt),
-        state: dueAt <= input.at ? 'ready' : 'waiting',
+        state,
         createdAt: new Date(input.at),
       })
       .onConflictDoNothing();
-    if (dueAt > input.at)
-      await tx
-        .insert(schema.jobs)
-        .values({ id: `attention:${batch}`, kind: 'attention-release', runAt: new Date(dueAt), payload: { batch } })
-        .onConflictDoNothing();
   },
 });
 export function postgresAttention() {

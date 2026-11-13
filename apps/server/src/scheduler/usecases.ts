@@ -2,13 +2,13 @@ import { Temporal } from 'temporal-polyfill';
 import { timeZone } from '@clew/calendar/dates';
 import type { CalendarUsecases } from '../modules/calendar/usecases/samtal';
 import type { ThreadUsecases } from '../threads/usecases/cards';
-import type { Job, JobQueue, People, SignInData } from './model';
+import type { Job, JobExecutions, JobQueue, People, SignInData } from './model';
 
 /**
- * Postgres-backed scheduler for v1 (D15). One nightly scan per person with a grant, one nightly clean-up of expired
- * sign-in data (D117) and one timer per undo window. Jobs are claimed with a row lock by the queue adapter, so a second
- * server process is safe. The durable engine runs each job since D85 (`adapters/durable-postgres.ts`). Built over ports
- * (D25): the tests drive `tick()` with a queue in memory.
+ * The scheduled jobs (D15, D47): one nightly scan per person with a grant, one nightly clean-up of expired sign-in data
+ * (D117) and one timer per undo window. Each job row starts its `scheduledJob` workflow in the transaction that writes
+ * it (D86), and the durable engine runs the job through `scheduledJobRunner` at its run time (D85); nothing polls the
+ * table. Built over ports (D25).
  */
 export interface SchedulerDeps {
   jobs: JobQueue;
@@ -18,7 +18,6 @@ export interface SchedulerDeps {
   signIns: SignInData;
   clock: () => Date;
   log: (message: string, ...details: unknown[]) => void;
-  pollMs?: number;
 }
 export const NIGHTLY = 'scan-utvecklingssamtal';
 /**
@@ -28,7 +27,6 @@ export const NIGHTLY = 'scan-utvecklingssamtal';
 export const SIGN_IN_CLEANUP = 'sign-in-cleanup';
 export function createScheduler(deps: SchedulerDeps) {
   const { jobs, people, threads, calendar, signIns, clock, log } = deps;
-  let timer: ReturnType<typeof setInterval> | undefined;
   const threadIdOf = (job: Job) => (typeof job.payload.threadId === 'string' ? job.payload.threadId : undefined);
   async function run(job: Job) {
     if (job.kind === NIGHTLY) {
@@ -78,29 +76,29 @@ export function createScheduler(deps: SchedulerDeps) {
       runAt: new Date(next.epochMilliseconds).toISOString(),
     });
   }
-  /** Run up to ten due jobs; a failing job is finished with its error and never blocks the next. */
-  async function tick() {
-    for (let i = 0; i < 10; i++) {
-      const job = await jobs.claim(clock().toISOString());
-      if (!job) return;
-      try {
-        await run(job);
-        await jobs.finish(job.id);
-      } catch (error) {
-        await jobs.finish(job.id, error instanceof Error ? error.message : String(error));
-      }
-    }
-  }
-  function start() {
-    void scheduleNightly();
-    void scheduleCleanup();
-    void tick();
-    timer ??= setInterval(() => void tick().catch(error => log('scheduler', error)), deps.pollMs ?? 15_000);
-  }
-  function stop() {
-    if (timer) clearInterval(timer);
-    timer = undefined;
-  }
-  return { run, scheduleNightly, scheduleCleanup, tick, start, stop };
+  return { run, scheduleNightly, scheduleCleanup };
 }
 export type Scheduler = ReturnType<typeof createScheduler>;
+/**
+ * The step of a job's `scheduledJob` workflow (D47, D86), which waits until the job's run time first: the row's
+ * execution is claimed under its lease, the job is run by its kind and the execution completes with its audit row. An
+ * `attention-release` job makes its deferred attention batch ready (D47) through `release`; every other kind is the
+ * scheduler's `run`. `busy` asks the workflow to come back later; a job that is done, or not the engine's, is done.
+ */
+export function scheduledJobRunner(deps: {
+  executions: JobExecutions;
+  release: (batch: string) => Promise<void>;
+  run: (job: Job) => Promise<void>;
+  clock: () => Date;
+}) {
+  return async function runScheduledJob(id: string): Promise<'done' | 'busy'> {
+    const job = await deps.executions.claimExecution(id, deps.clock().toISOString());
+    if (!job) return 'done';
+    if (job === 'busy') return 'busy';
+    if (job.kind === 'attention-release' && typeof job.payload.batch === 'string')
+      await deps.release(job.payload.batch);
+    else await deps.run(job);
+    await deps.executions.completed(id, job.attempt, deps.clock().toISOString());
+    return 'done';
+  };
+}

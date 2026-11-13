@@ -185,7 +185,7 @@ test('a watch step that ends unseen leaves one card, one admitted delivery and i
     e = executionRecord(w.personId, w.personId + '-expired-step'),
     job = jobRecord(w.personId, w.personId + '-expired-job', [e]);
   const store = postgresExecutionStore(sealer, testDurable, {
-    pushCard: watchCardSink(() => ({ source: 'Lönesystemet', area: 'lon' })),
+    pushCard: watchCardSink(() => ({ source: 'Lönesystemet', area: 'lon' }), testDurable),
   });
   await store.transaction(async tx => {
     await tx.insert(e);

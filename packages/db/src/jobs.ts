@@ -1,13 +1,14 @@
-import { and, eq, lte, sql } from 'drizzle-orm';
 import { database, type Transaction } from './index';
 import { enqueueWorkflow, type DurableQueue } from './durable';
 import { audit, jobs } from './schema';
 
-export type JobRow = typeof jobs.$inferSelect;
 /**
- * Idempotent: a job id is a natural key such as `scan:hillevi:2026-11-04`, so repeated scheduling is harmless. The
- * row's `scheduledJob` workflow (`job:<id>`) is enqueued in the same transaction (D86); the row keeps the engine's
- * ownership status (`temporal`, the historical name) and remains the evidence of what was scheduled.
+ * Idempotent: a job id is a natural key such as `scan:2026-11-04`, so repeated scheduling is harmless. A job id never
+ * carries a person's name or user name, at most their id, as `attention:automatic:<personId>:<dueAt>` does, because it
+ * is written as `job:<id>` into the audit row's subject and the workflow id on the durable engine's spans. The row's
+ * `scheduledJob` workflow (`job:<id>`) is enqueued in the same transaction (D86); the row keeps the engine's ownership
+ * status (`temporal`, the historical name) and remains the evidence of what was scheduled. A job runs only through that
+ * workflow; nothing polls the table.
  */
 export async function scheduleJob(
   input: { id: string; kind: string; runAt: Date; payload?: Record<string, unknown> },
@@ -39,28 +40,3 @@ export const jobStart = (id: string, runAt: Date) => ({
   id: `job:${id}`,
   input: { id, dueAt: runAt.toISOString() },
 });
-/** Claim one due job with a row lock so several server processes never run the same job twice. */
-export async function claimJob(now = new Date()): Promise<JobRow | undefined> {
-  return database().transaction(async tx => {
-    const [row] = await tx
-      .select()
-      .from(jobs)
-      .where(and(eq(jobs.status, 'due'), lte(jobs.runAt, now)))
-      .orderBy(jobs.runAt)
-      .limit(1)
-      .for('update', { skipLocked: true });
-    if (!row) return undefined;
-    const [claimed] = await tx
-      .update(jobs)
-      .set({ status: 'running', startedAt: now, attempts: sql`${jobs.attempts} + 1` })
-      .where(eq(jobs.id, row.id))
-      .returning();
-    return claimed;
-  });
-}
-export async function finishJob(id: string, error?: string) {
-  await database()
-    .update(jobs)
-    .set({ status: error ? 'failed' : 'done', lastError: error ?? null, finishedAt: new Date() })
-    .where(eq(jobs.id, id));
-}

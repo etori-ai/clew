@@ -4,7 +4,7 @@ import { logger, logPort } from './logging';
 import { resolve } from 'node:path';
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
-import { httpInstrumentationMiddleware } from '@hono/otel';
+import { requestSpans } from './request-spans';
 import { authRoutes } from './routes/auth';
 import { healthRoutes } from './routes/health';
 import { checkDevLogin } from './auth';
@@ -52,9 +52,9 @@ for (const file of ['.env.local']) {
 checkDevLogin();
 
 const app = new Hono();
-// One server span per request when export is on (D91). The URL on the span is the path alone: the sign-in callback's
-// query carries the authorization code, and a view's input may name a person.
-if (telemetry.enabled) app.use(httpInstrumentationMiddleware({ getUrlFull: c => new URL(c.req.url).pathname }));
+// One server span per request when export is on (D91). The URL on the span is the path alone, with an entity's key
+// as `:key`: the sign-in callback's query carries the authorization code, and a person's key may be their user name.
+if (telemetry.enabled) app.use(requestSpans());
 const startup = startupReadiness({
   initialize: async () => {
     await signingAuthority();
