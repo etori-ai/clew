@@ -39,16 +39,11 @@ import {
   MetadataListItem,
   Selector,
   Switch,
-  Table,
   Text,
   Toolbar,
   VStack,
-  pixel,
-  proportional,
   resolveColumnWidths,
-  type TablePlugin,
   useMediaQuery,
-  useTableStickyColumns,
 } from '@clew/ui';
 import { api } from '../api';
 import {
@@ -101,6 +96,7 @@ import {
   managesFrom,
   reasonWords,
 } from './competence-parts';
+import { CELL_WIDTH, MatrixGrid, PERSON_WIDTH, useCellMenu, type MatrixGridHandle } from './competence-matrix-grid';
 
 /** The page's column at its widest: Astryx's comparison template caps the matrix at 1440 px, less the padding. */
 const COLUMN = 1440 - 2 * 32;
@@ -109,13 +105,6 @@ const PADDING = 32;
 const TITLE_ID = 'matris-rubrik';
 /** The table's name: the page is "Medarbetare", its first column too, so the table says what it holds. */
 const TABLE_NAME = 'Medarbetarnas kompetens';
-/**
- * The pinned column of names, and each competence's column: as wide as a cell's one control, its longest word a badge
- * ("Går ut snart") or a skill's level ("Grundläggande"): at 1280 px six columns are in view where a cell of a word, a day
- * and a menu of its own left four, a row is 37 px high where it was 59, and thirty columns scroll past the names.
- */
-const PERSON_WIDTH = pixel(200),
-  CELL_WIDTH = proportional(1, { minWidth: 124 });
 /** The least width the matrix needs as a table with this many columns, as Astryx's Table works it out. */
 const matrixMinWidth = (columns: number) =>
   resolveColumnWidths([
@@ -126,7 +115,7 @@ const cellKey = (personId: string, typeId: string) => personId + '\n' + typeId;
 /** The key of a registration's own way in, its name, in the list of what waits, among the page's controls. */
 const awaitingKey = (holdingId: string) => 'awaiting\n' + holdingId;
 const AWAITING_ID = 'matris-att-granska';
-type MenuItems = ComponentProps<typeof DropdownMenu>['items'];
+type MenuItems = NonNullable<ComponentProps<typeof DropdownMenu>['items']>;
 /** A write a cell's menu asks to confirm: revoking the holding that decides, or removing the requirement on the person. */
 interface Confirming {
   kind: 'revoke' | 'requirement';
@@ -161,6 +150,11 @@ interface CellContext {
  * nivå" ("Ändra nivå" once confirmed), which opens the confirmation over the page with the skill in the address
  * (`validate`), in place of a registration, since a person holds one skill of a type; where none is held,
  * "Registrera färdighet". The control takes the focus back when a dialog or a confirmation opened from it closes.
+ *
+ * In the table (the grid) the menu is mounted only when the cell is pressed (`useCellMenu`): until then the control is
+ * the same quiet button, saying it opens a menu, so six hundred cells hold one menu, not six hundred. Pressed, the menu
+ * is mounted under the button, which keeps the focus, and opens, its first row taking the focus as a menu opened by
+ * key does; it stays mounted, closed, until another cell is pressed. In the list every cell has its menu, as before.
  */
 function CellControl({
   row,
@@ -179,7 +173,24 @@ function CellControl({
   const phrases = cellPhrases(cell, skill);
   const reason = cell.required ? reasonWords(cell) : null;
   const name = `${row.name}, ${column.name}: ${cellSentence(phrases)}`;
-  const items: MenuItems = [
+  const menu = useCellMenu(cellKey(row.personId, column.typeId));
+  const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement | null>(null);
+  const register = ctx.control(row.personId, column.typeId);
+  const ref = (el: HTMLButtonElement | null) => {
+    trigger.current = el;
+    register(el);
+  };
+  // Pressed, the menu just mounted opens once, the button keeping the focus meanwhile; another cell pressed, it closes.
+  useEffect(() => {
+    if (!menu) return;
+    if (!menu.isMounted) setOpen(false);
+    else if (menu.takeOpen()) {
+      trigger.current?.focus({ preventScroll: true });
+      setOpen(true);
+    }
+  }, [menu?.isMounted]);
+  const items = (): MenuItems => [
     {
       type: 'section',
       id: 'cell',
@@ -228,35 +239,39 @@ function CellControl({
       ],
     },
   ];
-  const menu = (
-    <DropdownMenu
-      button={{
-        ref: ctx.control(row.personId, column.typeId),
-        label: name,
-        tooltip: name,
-        size: 'sm',
-        variant: 'ghost',
-        children: <CellMark cell={cell} skill={skill} />,
-      }}
-      hasChevron={false}
-      presentation="adaptive"
-      alignment="start"
-      menuWidth={280}
-      items={items}
-    />
-  );
+  const button = {
+    label: name,
+    tooltip: name,
+    size: 'sm',
+    variant: 'ghost',
+    children: <CellMark cell={cell} skill={skill} />,
+  } as const;
+  const control =
+    menu && !menu.isMounted ? (
+      <Button ref={ref} {...button} aria-haspopup="menu" aria-expanded={false} onClick={menu.open} />
+    ) : (
+      <DropdownMenu
+        button={{ ref, ...button }}
+        {...(menu ? { isMenuOpen: open, onOpenChange: setOpen } : {})}
+        hasChevron={false}
+        presentation="adaptive"
+        alignment="start"
+        menuWidth={280}
+        items={items()}
+      />
+    );
   // "Går ut snart" says when under the control, short, as the column's width allows: the day is in the control's name
   // and its menu too, so it is not read twice (the cell is the control, named with it).
   const due = ctx.withDue ? cellDue(cell) : null;
   return due ? (
     <VStack gap={0} hAlign="start">
-      {menu}
+      {control}
       <Text type="supporting" aria-hidden>
         {due}
       </Text>
     </VStack>
   ) : (
-    menu
+    control
   );
 }
 
@@ -276,63 +291,42 @@ const columnHeader = (c: CompetenceMatrixColumn) => (
     )}
   </VStack>
 );
-interface TableRow extends Record<string, unknown> {
-  id: string;
-  row: CompetenceMatrixRow;
-}
-
 /**
  * The matrix as Astryx's `table-comparison` template draws one: the people down the side in a column pinned while the
- * competences scroll past it (`useTableStickyColumns`), one narrow column per competence, a grid of dividers, and each
- * cell one control that says where the person stands in a word and opens its details and actions.
+ * competences scroll past it, one narrow column per competence, a grid of dividers, and each cell one control that says
+ * where the person stands in a word and opens its details and actions. A grid (`MatrixGrid`): one tab stop, the arrow
+ * keys between cells, the rows drawn as they come into view. The name is each row's header (1.3.1), so moving down a
+ * column a screen reader names the person with each status, and leads to the person's page; the grid has a name of its
+ * own, "Medarbetarnas kompetens" (the review of 2026-11-13).
  */
-function MatrixTable({ data, ctx }: { data: CompetenceMatrixOutput; ctx: CellContext }) {
+function MatrixTable({
+  read,
+  data,
+  ctx,
+  handle,
+}: {
+  read: CompetenceMatrixOutput;
+  data: CompetenceMatrixOutput;
+  ctx: CellContext;
+  handle: Ref<MatrixGridHandle>;
+}) {
   const location = useLocation();
-  const sticky = useTableStickyColumns<TableRow>({ startKeys: ['person'] });
-  // The name is each row's header (1.3.1), so moving down a column a screen reader names the person with each status.
-  // Astryx's Table draws every body cell as a `td` and has no row-header column; its documented plugin hook
-  // (`transformBodyCell`) gives the name's cell the role. The table has a name of its own (1.3.1, the review of
-  // 2026-11-13), "Medarbetarnas kompetens": Astryx's Table has no caption prop, and its documented hook for the
-  // `<table>` itself (`transformTable`) gives it `aria-label`.
-  const rowHeaders = useMemo<TablePlugin<TableRow>>(
-    () => ({
-      transformTable: props => ({ ...props, htmlProps: { ...props.htmlProps, 'aria-label': TABLE_NAME } }),
-      transformBodyCell: (props, column) =>
-        column.key === 'person' ? { ...props, htmlProps: { ...props.htmlProps, role: 'rowheader' } } : props,
-    }),
-    [],
-  );
   const cells = { ...ctx, withDue: true };
   return (
-    <Card padding={0}>
-      <Table<TableRow>
-        data={data.rows.map(row => ({ id: row.personId, row }))}
-        idKey="id"
-        columns={[
-          {
-            key: 'person',
-            header: 'Medarbetare',
-            width: PERSON_WIDTH,
-            renderCell: r => (
-              <Link href={personPageFrom(location.pathname, location.search, r.row.key)} weight="semibold" hasUnderline>
-                {r.row.name}
-              </Link>
-            ),
-          },
-          ...data.columns.map((c, i) => ({
-            key: `type:${c.typeId}`,
-            header: columnHeader(c),
-            width: CELL_WIDTH,
-            renderCell: (r: TableRow) => <CellControl row={r.row} column={c} cell={r.row.cells[i]!} ctx={cells} />,
-          })),
-        ]}
-        density="compact"
-        dividers="grid"
-        verticalAlign="top"
-        hasHover
-        plugins={{ sticky, rowHeaders }}
-      />
-    </Card>
+    <MatrixGrid
+      read={read}
+      shown={data}
+      name={TABLE_NAME}
+      personHeader="Medarbetare"
+      renderPerson={r => (
+        <Link href={personPageFrom(location.pathname, location.search, r.key)} weight="semibold" hasUnderline>
+          {r.name}
+        </Link>
+      )}
+      renderHeader={columnHeader}
+      renderCell={(r, c, cell) => <CellControl row={r} column={c} cell={cell} ctx={cells} />}
+      handle={handle}
+    />
   );
 }
 
@@ -746,7 +740,8 @@ function SkillDialog({
  * the page's heading where the cell has gone with what was removed or where no cell opened it (D83 rule 7). The table
  * gives way to a list where it does not fit, on a phone and beside the panel, as Personal does, so at 320 px nothing
  * scrolls sideways; on a wider window the table scrolls sideways inside its own region, the names pinned, as the
- * template's does.
+ * template's does, and is a grid of one tab stop whose rows and columns are drawn as they come into view
+ * (`MatrixGrid`).
  */
 export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin: boolean }) {
   usePageTitle(COMPETENCE_PAGE_TITLES.matrix);
@@ -788,12 +783,23 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
     },
     [],
   );
+  // The grid, which gives a cell the focus itself: its row may not be drawn until it is scrolled to.
+  const grid = useRef<MatrixGridHandle>(null);
+  /** Gives the cell's control the focus, in the grid or in the list; false where the page shows no such cell. */
+  const focusCell = useCallback((personId: string, typeId: string) => {
+    if (grid.current?.focusCell(personId, typeId)) return true;
+    const control = controls.current.get(cellKey(personId, typeId));
+    if (!control?.isConnected) return false;
+    control.focus();
+    return true;
+  }, []);
   // Where the focus goes when a registration closes: the cell's control, or, where no cell is (an address from before
-  // that names a competence not shown, or none), the page's heading (D83 rule 7).
+  // that names a competence not shown, or none), the page's heading (D83 rule 7). The cell is given the focus here, so
+  // nothing is returned for it.
   const opener = useCallback(
     (personId: string, typeId: string | null) =>
-      (typeId ? controls.current.get(cellKey(personId, typeId)) : undefined) ?? document.getElementById(TITLE_ID),
-    [],
+      typeId && focusCell(personId, typeId) ? null : document.getElementById(TITLE_ID),
+    [focusCell],
   );
   // The focus after a confirmation or the requirement's dialog, once the page has drawn what it changed: the cell's
   // control, or the header's button for the dialog, or the heading when the control has gone (with the column, or since
@@ -818,11 +824,16 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
     // found then, among what the page holds at that moment. A row of what waits goes with its decision: then the
     // list's heading, while the list is there, else the page's.
     requestAnimationFrame(() => {
+      const awaiting = focusAfter.startsWith(awaitingKey(''));
+      if (focusAfter !== REQUIREMENT_PARAM && !awaiting) {
+        const [personId, typeId] = focusAfter.split('\n');
+        if (personId && typeId && focusCell(personId, typeId)) return;
+      }
       const control = focusAfter === REQUIREMENT_PARAM ? addRequirement.current : controls.current.get(focusAfter);
-      const list = focusAfter.startsWith(awaitingKey('')) ? awaitingHeading.current : null;
+      const list = awaiting ? awaitingHeading.current : null;
       [control, list, document.getElementById(TITLE_ID)].find(t => t?.isConnected)?.focus();
     });
-  }, [focusAfter, data, matrixQ.isFetching, requiring, approving, validating]);
+  }, [focusAfter, data, matrixQ.isFetching, requiring, approving, validating, focusCell]);
 
   // The decision on a report's own registration (D108 item 7), from a cell's menu or from the approval's card. The
   // cell that opened it takes the focus back; opened by an address, nothing on the page did, so the heading does.
@@ -1080,7 +1091,7 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
                             {narrow ? (
                               <MatrixList data={data} ctx={ctx} narrowed={attention} />
                             ) : (
-                              <MatrixTable data={data} ctx={ctx} />
+                              <MatrixTable read={read} data={data} ctx={ctx} handle={grid} />
                             )}
                           </VStack>
                         )}

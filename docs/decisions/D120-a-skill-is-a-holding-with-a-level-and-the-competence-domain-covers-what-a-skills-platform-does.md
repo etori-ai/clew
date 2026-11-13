@@ -89,7 +89,19 @@ no CSS of its own, so nothing is worked around: the case stands as a `test.fixme
 case does not arise; where it does not fit beside the panel or on a phone the matrix is a list. Since 2026-11-13 the cells are
 narrow and a matrix holds up to thirty columns, so the table scrolls more often: tabbing backwards through twenty
 columns at 1280 px, 8 of 19 stops lie under the pinned column, some wholly. It has to be closed, in Astryx or by a
-decision that allows an exception, before the suite's gate returns (D59).
+decision that allows an exception, before the suite's gate returns (D59). Closed later on 2026-11-13, under the
+product owner's clarification of that day that a headless library managing state or behaviour may be used where Astryx
+draws (CLAUDE.md): the matrix is a WAI-ARIA grid on Astryx's `Table` and `useGridFocus` (one tab stop, the arrow keys
+between cells), TanStack Table holds its column model and TanStack Virtual windows its rows and columns, and a cell
+that takes the focus, by a key, by Tab or from the page, is scrolled sideways until it lies clear of the pinned
+column. The `test.fixme` is a passing case both ways. Measured at 1280 px with thirty competences and forty people:
+moving backwards along a row, 0 of 29 cells under the pinned column (14 of 29 by Shift+Tab before), and none when
+the grid is entered by Tab or Shift+Tab with its stop scrolled out of view; 1 tab stop where there were 1,241; no menu
+mounted until a cell is pressed, where there were 1,200; 2,482 elements in the page where there were 27,260; the
+matrix drawn about 135 ms after its data arrived where it took about 816 ms. Still open in Astryx: its `Table` has no
+header row that stays in view, so the column headings scroll away on a long matrix; and its own row windowing
+(`useTableRowsVirtualization`) admits no column with cells of the caller's, which is why the windowing is TanStack
+Virtual's, what is left out drawn as empty Astryx cells.
 
 **As built (2026-11-13).** Narrower or other than the items in these places. A person holds a skill once, and
 changing its level is an action of its own; removing it revokes the row (item 2). A manager cannot revoke a skill the

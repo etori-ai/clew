@@ -141,6 +141,8 @@ export {
   useAnimatedLayout,
   useAnnounce,
   useEntryAnimation,
+  // The WAI-ARIA grid's keys and its one tab stop (Medarbetarnas kompetens, the matrix).
+  useGridFocus,
   useMediaQuery,
   useStreamingText,
 } from '@astryxdesign/core/hooks';

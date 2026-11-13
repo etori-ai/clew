@@ -412,12 +412,13 @@ export function matrixAnswer(base: CompetenceMatrixOutput, beyond: boolean, by: 
   };
 }
 /**
- * A matrix at the size a manager of a large unit reads (D108 item 11): twenty required types in two areas, the last a
- * skill, against thirty reports, every state a cell can be in turning through the rows, and a long name or two among
- * the types, so the page can be judged at size.
+ * A matrix at the size a manager of a large unit reads (D108 item 11): twenty required types in two areas, the twentieth
+ * a skill, against thirty reports, every state a cell can be in turning through the rows, and a long name or two among
+ * the types, so the page can be judged at size; or as many types (at most `COMPETENCE_MATRIX_COLUMNS`) and people as
+ * asked, the skill still the twentieth type.
  */
-export function largeMatrix(): CompetenceMatrixOutput {
-  const columns = Array.from({ length: 20 }, (_, i) => ({
+export function largeMatrix(types = 20, people = 30): CompetenceMatrixOutput {
+  const columns = Array.from({ length: types }, (_, i) => ({
     typeId: `t-big-${i + 1}`,
     name: i % 7 === 3 ? `Hjärt- och lungräddning med hjärtstartare ${i + 1}` : `Kompetens ${i + 1}`,
     area: i < 10 ? 'Säkerhet' : 'Vård',
@@ -448,13 +449,13 @@ export function largeMatrix(): CompetenceMatrixOutput {
     groups: [],
     awaiting: [],
     columns,
-    rows: Array.from({ length: 30 }, (_, p) => ({
+    rows: Array.from({ length: people }, (_, p) => ({
       personId: `p-${p + 1}`,
       key: `person${p + 1}`,
       name: `Person ${String(p + 1).padStart(2, '0')}`,
       cells: columns.map((_, i) => state(p, i)),
     })),
-    required: 20,
+    required: types,
   };
 }
 
