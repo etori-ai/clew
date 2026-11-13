@@ -10,19 +10,23 @@ import { audiencedActorOf, type HeaderAnswer, type Registry } from '@clew/connec
  * answers; here the connector gets a short budget (`HEADER_TIMEOUT_MS`), and what it answered per person is kept and
  * served again, so a slow or down intranet costs one page load a moment, not every page load. A minute after the
  * connector was last asked (`HEADER_FRESH_MS`) the next read asks it again in the background and serves the kept answer
- * meanwhile. A connector that fails, does not answer in time or answers out of shape leaves the last good answer in
- * place for at most `HEADER_STALE_MS` after it was given, or the default when it has given none, and is asked again at
- * the next refresh, a minute later: a content system that is down is asked once a minute per person.
+ * meanwhile. A connector that refuses the person (the protocol's `denied`) has answered that it lists nothing for them:
+ * the default takes the place of what was kept and is kept like any answer, so a content system takes a person's places
+ * away as fast as it narrows them. A connector that fails, does not answer in time or answers out of shape leaves the
+ * last good answer in place for at most `HEADER_STALE_MS` after it was given, or the default when it has given none, and
+ * is asked again at the next refresh, a minute later: a content system that is down is asked once a minute per person.
+ * An answer is kept whatever was kept while it was asked, and a failure never takes anything's place, so of two reads at
+ * once the one that failed cannot undo the one that was answered.
  *
  * Who may have the header is never kept. Every read asks the registry which connector gives this person the header now
  * (`Registry.headerHolder`, without asking the connector), and a kept answer from another connector or from none is
  * dropped before anything is served: the holder switched off or another chosen, its audience narrowed, the connector or
- * its header capability switched off. A refusal while the holder is asked drops it too and is never kept, so a person
- * let in gets the header at the next read; a failure is kept only for the holder that failed. The cache is keyed by
- * the person, their authorization version and their provisioned groups (`headerScope`), so a changed grant or a
- * changed membership is a new read: the holder's audience may name a group (D68), and a change in a group that gives
- * no unit, role or capability moves neither the grant nor its version (D88 as amended 2026-11-12). It lives in this
- * process only.
+ * its header capability switched off. A refusal by the registry while the holder is asked drops it too and is never
+ * kept, so a person let in gets the header at the next read; a failure is kept only for the holder that failed. The
+ * cache is keyed by the person, their authorization version and their provisioned groups (`headerScope`), so a changed
+ * grant or a changed membership is a new read: the holder's audience may name a group (D68), and a change in a group
+ * that gives no unit, role or capability moves neither the grant nor its version (D88 as amended 2026-11-12). It lives
+ * in this process only.
  */
 export const DEFAULT_HEADER: SiteHeaderView = {
   menu: { version: 1, site: { name: 'Startsidan', href: '/' }, items: [{ id: 'start', label: 'Start', href: '/' }] },
@@ -49,8 +53,9 @@ export const headerScope = (persona: AuthenticatedContext) =>
   JSON.stringify([persona.id, persona.authorizationVersion, [...(persona.groups ?? [])].sort()]);
 
 /**
- * A header kept for one key: the last good answer and the connector that gave it, or the default for a connector that
- * failed before it gave one; when it was kept, which the bound counts from, and when the connector was last asked.
+ * A header kept for one key: the connector's last answer and the connector that gave it, which is the default when it
+ * refused the person or failed before it gave one; when it was kept, which the bound counts from, and when the
+ * connector was last asked.
  */
 interface Kept {
   view: SiteHeaderView;
@@ -72,28 +77,31 @@ export function siteHeaders({ registry, clock }: SiteHeaderDeps) {
       signal: AbortSignal.timeout(HEADER_TIMEOUT_MS),
       ...(persona.delegate ? { delegate: persona.delegate } : {}),
     });
-  const keep = (key: string, found: Extract<HeaderAnswer, { status: 'answered' }>, at: number) => {
-    const view = viewOf(found);
-    cache.set(key, { view, holder: found.connector.id, at, asked: at, refreshing: false });
+  const keep = (key: string, view: SiteHeaderView, holder: string) => {
+    const now = clock().getTime();
+    cache.set(key, { view, holder, at: now, asked: now, refreshing: false });
     return view;
   };
   /**
-   * The background read of a kept header, settled on the entry it was started for unless that has gone meanwhile: a new
-   * answer takes its place, a refusal or another connector's failure drops it, and a failure of the connector it was
-   * kept for leaves it as it was until the next refresh.
+   * What one call to the holder leaves kept for a key, and what the read that made it serves: `over` is the entry a
+   * background refresh was started for, none for a read that found nothing kept. The holder's answer, or the default for
+   * its refusal of the person, is kept whatever was kept meanwhile: the registry judged after the call that the person
+   * may have this holder's header, and every read judges it again before it serves anything. A refusal by the registry
+   * drops the entry the call refreshed and keeps nothing. A failure takes nothing's place: the entry it refreshed stays,
+   * asked again a minute later, and when nothing is kept at all the default is kept for the holder until then.
    */
-  function refresh(persona: AuthenticatedContext, key: string, kept: Kept) {
-    kept.refreshing = true;
-    const settle = (answer: HeaderAnswer | undefined) => {
-      if (cache.get(key) !== kept) return;
-      if (answer?.status === 'answered') keep(key, answer, clock().getTime());
-      else if (answer?.status === 'refused' || (answer && answer.connector.id !== kept.holder)) cache.delete(key);
+  function settle(key: string, answer: HeaderAnswer | undefined, over?: Kept): SiteHeaderView {
+    if (answer?.status === 'answered') return keep(key, viewOf(answer), answer.connector.id);
+    if (answer?.status === 'denied') return keep(key, DEFAULT_HEADER, answer.connector.id);
+    const kept = cache.get(key);
+    if (over && kept === over) {
+      if (answer?.status === 'refused') cache.delete(key);
       else {
-        kept.asked = clock().getTime();
-        kept.refreshing = false;
+        over.asked = clock().getTime();
+        over.refreshing = false;
       }
-    };
-    void ask(persona).then(settle, () => settle(undefined));
+    } else if (!kept && answer?.status === 'failed') keep(key, DEFAULT_HEADER, answer.connector.id);
+    return DEFAULT_HEADER;
   }
   let swept = 0;
   /** At most once a minute, every kept header past the bound leaves the process: none of them can be served again. */
@@ -117,16 +125,17 @@ export function siteHeaders({ registry, clock }: SiteHeaderDeps) {
     }
     if (!holder) return DEFAULT_HEADER;
     if (kept) {
-      if (!kept.refreshing && now - kept.asked >= HEADER_FRESH_MS) refresh(persona, key, kept);
+      if (!kept.refreshing && now - kept.asked >= HEADER_FRESH_MS) {
+        const over = kept;
+        over.refreshing = true;
+        void ask(persona).then(
+          answer => settle(key, answer, over),
+          () => settle(key, undefined, over),
+        );
+      }
       return kept.view;
     }
-    // The holder's answer is kept, and so is its failure, as the default until the next refresh, for this holder only.
-    // A refusal is never kept: a person let in is asked at the next read.
-    const answer = await ask(persona);
-    if (answer.status === 'answered') return keep(key, answer, now);
-    if (answer.status === 'failed')
-      cache.set(key, { view: DEFAULT_HEADER, holder: answer.connector.id, at: now, asked: now, refreshing: false });
-    return DEFAULT_HEADER;
+    return settle(key, await ask(persona));
   }
   /** How many headers the process keeps: for tests. */
   const kept = () => cache.size;

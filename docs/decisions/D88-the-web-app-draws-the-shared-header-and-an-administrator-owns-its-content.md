@@ -1,6 +1,6 @@
 # D88 · The web app draws the shared header above its rail, a connector gives Clew its content, and Clew has one front end
 
-**Status:** accepted, built 2026-11-09 on `main`; item 5 amended 2026-11-12 in the fixes of the review of users and the organisation (A2): the last good header is kept per person, authorization version and provisioned groups, so a changed group membership is a new read too; items 4 and 5 amended 2026-11-13 in the fixes of the gaps that review left: a holder that fails leaves the last good header in place for up to an hour, and who may have the header is decided at every read · **Date:** 2026-11-09 · **Area:** ui, product, integrations
+**Status:** accepted, built 2026-11-09 on `main`; item 5 amended 2026-11-12 in the fixes of the review of users and the organisation (A2): the last good header is kept per person, authorization version and provisioned groups, so a changed group membership is a new read too; items 4 and 5 amended 2026-11-13 in the fixes of the gaps that review left: a holder that fails leaves the last good header in place for up to an hour, a holder that refuses the person takes their places away at that answer, and who may have the header is decided at every read · **Date:** 2026-11-09 · **Area:** ui, product, integrations
 
 **Amended 2026-11-12.** Since A2 of the
 [review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md),
@@ -19,17 +19,25 @@ item 5 stands.
 left, a failure of the holder and a refusal are told apart, since item 5's cache keeps a header through the one and
 never past the other. Before this, a background read that failed or was refused put Clew's default in the kept
 answer's place for the next minute, so one failed refresh turned a person's band into the default. Item 4's
-`Registry.header` now answers `answered`; `failed`, when the holder the person may have throws, does not answer within
-the budget or answers out of shape, a delegated token the exchange cannot give (D26) included; or `refused`, when no
-connector gives the person the header, or the holder was switched off, replaced or narrowed while it answered.
-`Registry.headerHolder` names the connector that gives the person the header, without asking it. Item 5 now reads: a
-holder that fails leaves the last good header in place for up to an hour after it gave it (`HEADER_STALE_MS`), or the
-default when it has given none, and is asked again a minute later; after the hour the default stands until it answers.
-An hour, because a stale menu is harmless and an access change is not: in a large organisation an hour carries
-everyone's menu through a restart or an ordinary outage of the content system, which meanwhile is asked once a minute
-per person, and the bound never reaches who may have the header. That is decided at every read, before anything kept
-is served: the holder switched off as the holder or another chosen, its audience narrowed to leave the person out, the
-connector or its header capability switched off, and a refusal while it answers take effect at the next read, and a
+`Registry.header` now answers `answered`; `denied`, when the holder refuses the person with the protocol's `denied`,
+which is how a content system lists nothing for them, since a `SiteHeaderOutput` has at least one place; `failed`,
+when the holder the person may have throws otherwise, does not answer within the budget or answers out of shape, a
+delegated token the exchange cannot give (D26) included; or `refused`, when no connector gives the person the header,
+or the holder was switched off, replaced or narrowed while it was asked, judged on the governance read after the call
+whether the holder answered or not. A remote connector's error code reaches the registry (`CapabilityError.code`),
+which is how it tells a refusal of the person from a failure. `Registry.headerHolder` names the connector that gives the
+person the header, without asking it. Item 5 now reads: a holder that fails leaves the last good header in place for
+up to an hour after it gave it (`HEADER_STALE_MS`), or the default when it has given none, and is asked again a minute
+later; after the hour the default stands until it answers. An hour, because a stale menu is harmless and an access
+change is not: in a large organisation an hour carries everyone's menu through a restart or an ordinary outage of the
+content system, which meanwhile is asked once a minute per person, and the bound never reaches who may have the
+header. A holder's `denied` is its answer, not a failure: the default takes the place of what was kept at that answer
+and is kept until the next refresh like any answer, so a content system takes a person's places away as fast as it
+narrows its listing, and is not asked at every page load for a person it refuses. An answer is kept whatever was kept
+while it was asked, and a failure takes nothing's place, so of two reads at once the one that fails cannot undo the
+other's answer. Who may have the header is decided at every read, before anything kept is served: the holder switched
+off as the holder or another chosen, its audience narrowed to leave the person out, the connector or its header
+capability switched off, and a refusal by the registry while it is asked take effect at the next read, and such a
 refusal is never kept, so a person let in is asked at once. A kept header past the hour leaves the process.
 `forgetSiteHeaders`, which nothing called, is gone. The cache is in `apps/server/src/connectors/usecases/header.ts`
 and its tests in `tests/unit/intranet-connector.test.ts`. The rest of items 4 and 5 stands.

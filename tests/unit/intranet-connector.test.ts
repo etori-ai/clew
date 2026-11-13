@@ -256,6 +256,70 @@ describe('the intranet connector and the shared header (D88)', () => {
       connector: { id: 'intranet' },
     });
   });
+  test("the holder's own refusal of the person, the protocol's denied, is told from a failure", async () => {
+    // Over the protocol: the intranet answers 403 `denied` for the person while `denying` holds, as a content system
+    // that lists nothing for them does; anything else of the intranet's is its own answer.
+    let denying = false;
+    const service = createConnector({ jwks: testJwks, secret });
+    const registry = new Registry();
+    registry.register(
+      remoteConnector(parseManifest(intranetManifest, 'intranet'), {
+        url: 'http://intranet',
+        key: secret,
+        assert: assertionFor('intranet', secret),
+        fetch: async (input, init) =>
+          denying && new URL(input).pathname === '/clew/capabilities/intranet.header'
+            ? Response.json({ error: { code: 'denied', message: 'Du saknar behörighet.' } }, { status: 403 })
+            : service.handle(new Request(input, init)),
+      }),
+    );
+    registry.govern('intranet', { ...openGovernance(), header: true });
+    expect(await registry.header(hassan)).toMatchObject({ status: 'answered', connector: { id: 'intranet' } });
+    denying = true;
+    const denied = await registry.header(hassan);
+    expect(denied.status).toBe('denied');
+    expect(denied).toMatchObject({ connector: { id: 'intranet' } });
+  });
+  test('who may have the header is judged on the governance read after the call, also when the holder failed or refused', async () => {
+    // The rows as another instance writes them: the portal switched off while it fails or refuses.
+    const holder = { ...openGovernance(), header: true };
+    let rows: Governance = holder;
+    let mode: 'fail' | 'deny' = 'fail';
+    const registry = new Registry();
+    registry.setRefresh(async () => {
+      registry.govern('portal', rows);
+    });
+    const portal = answering('portal', 0, null);
+    registry.register({
+      ...portal,
+      capabilities: [
+        {
+          ...portal.capabilities[0]!,
+          run: async () => {
+            rows = { ...holder, state: 'disabled' };
+            if (mode === 'deny') throw new CapabilityError('Du saknar behörighet.', 'denied');
+            throw new CapabilityError('portal svarar inte just nu.', 'unavailable');
+          },
+        },
+      ],
+    });
+    for (const how of ['fail', 'deny'] as const) {
+      rows = holder;
+      registry.govern('portal', holder);
+      mode = how;
+      expect([how, await registry.header(hassan)]).toEqual([how, { status: 'refused' }]);
+    }
+    // Governance that cannot be read again after a failed call leaves it a failure.
+    rows = holder;
+    registry.govern('portal', holder);
+    mode = 'fail';
+    let reads = 0;
+    registry.setRefresh(async () => {
+      if (++reads > 1) throw new Error('database unavailable');
+      registry.govern('portal', rows);
+    });
+    expect(await registry.header(hassan)).toMatchObject({ status: 'failed', connector: { id: 'portal' } });
+  });
   test('the conformance check reports the header as a surface, without its words', async () => {
     const { connectorFetch } = stack();
     const report = await checkConnector({
@@ -325,15 +389,20 @@ describe('the header a person is served, kept for a minute (D88)', () => {
   });
 
   /**
-   * A registry whose holder, `portal`, answers what `state.answer` holds or fails as `state.fail` says, counting the
-   * times it is asked, and the header use case over it on a clock the test moves (`at`, from the first read).
+   * A registry whose holder, `portal`, answers what `state.answer` holds, fails as `state.fail` says or refuses the
+   * person as `state.deny` says, counting the times it is asked, and the header use case over it on a clock the test
+   * moves (`at`, from the first read). While `state.held` is a list, each call waits there until the test settles it:
+   * `true` fails it, `false` lets it answer.
    */
   function portal() {
-    const state: { asked: number; answer: unknown; fail: boolean; whileAsked?: () => void } = {
-      asked: 0,
-      answer: PORTAL,
-      fail: false,
-    };
+    const state: {
+      asked: number;
+      answer: unknown;
+      fail: boolean;
+      deny: boolean;
+      whileAsked?: () => void;
+      held?: Array<(fail: boolean) => void>;
+    } = { asked: 0, answer: PORTAL, fail: false, deny: false };
     const holder = answering('portal', 0, null);
     const registry = new Registry().register({
       ...holder,
@@ -343,8 +412,11 @@ describe('the header a person is served, kept for a minute (D88)', () => {
           run: async () => {
             state.asked++;
             state.whileAsked?.();
+            const fail = state.held ? await new Promise<boolean>(settle => state.held!.push(settle)) : state.fail;
             // A holder that does not answer in time reaches Clew as this same failure (`remote.ts`).
-            if (state.fail) throw new CapabilityError('portal svarar inte just nu.');
+            if (fail) throw new CapabilityError('portal svarar inte just nu.', 'unavailable');
+            // The protocol's own refusal of the person, as `remote.ts` passes it on.
+            if (state.deny) throw new CapabilityError('Du saknar behörighet.', 'denied');
             return state.answer;
           },
         },
@@ -509,8 +581,8 @@ describe('the header a person is served, kept for a minute (D88)', () => {
     state.whileAsked = () => registry.govern('portal', { ...openGovernance(), header: true, state: 'disabled' });
     expect(await headers.read(hassanIn)).toEqual(VIEW);
     await settled();
-    expect(await headers.read(hassanIn)).toEqual(DEFAULT_HEADER);
-    // Switched on again a second later, with new content: the portal is asked at once, nothing kept stands in for it.
+    // Switched on again with new content before he reads again: the refusal dropped what was kept, so the portal is
+    // asked at once and nothing kept stands in for it.
     state.whileAsked = undefined;
     const NEWS = { id: 'nyheter', label: 'Nyheter', href: '/nyheter' };
     state.answer = { ...PORTAL, items: [...PORTAL.items, NEWS] };
@@ -518,6 +590,146 @@ describe('the header a person is served, kept for a minute (D88)', () => {
     at(HEADER_FRESH_MS + 1000);
     expect((await headers.read(hassanIn)).menu.items).toEqual([...PORTAL.items, NEWS]);
     expect(state.asked).toBe(3);
+  });
+  test('two first reads at once: a failure that settles after the other read was answered leaves that answer kept', async () => {
+    const { state, headers, at } = portal();
+    const hassanIn = signedIn([]);
+    // Two tabs open as he signs in: the portal is asked twice, and both calls are out.
+    state.held = [];
+    const first = headers.read(hassanIn);
+    const second = headers.read(hassanIn);
+    await settled();
+    expect(state.asked).toBe(2);
+    // The later call answers; the earlier one then fails, as a timeout would.
+    state.held[1]!(false);
+    expect(await second).toEqual(VIEW);
+    state.held[0]!(true);
+    expect(await first).toEqual(DEFAULT_HEADER);
+    // A second on, the answer is what is kept, and nobody is asked.
+    state.held = undefined;
+    at(1000);
+    expect(await headers.read(hassanIn)).toEqual(VIEW);
+    expect(state.asked).toBe(2);
+  });
+  test('a read at the hour while a refresh is out: the refresh answers and is kept, though the read’s own call fails', async () => {
+    const { state, headers, at } = portal();
+    const hassanIn = signedIn([]);
+    expect(await headers.read(hassanIn)).toEqual(VIEW);
+    // A second before the hour the kept header is served, and the portal asked again, slowly.
+    state.held = [];
+    at(HEADER_STALE_MS - 1000);
+    expect(await headers.read(hassanIn)).toEqual(VIEW);
+    await settled();
+    // At the hour the kept header goes, and the portal is asked at once, slowly too.
+    at(HEADER_STALE_MS);
+    const read = headers.read(hassanIn);
+    await settled();
+    expect(state.asked).toBe(3);
+    // The refresh answers with the portal's news; the read's own call fails after it.
+    const NEWS = { id: 'nyheter', label: 'Nyheter', href: '/nyheter' };
+    state.answer = { ...PORTAL, items: [...PORTAL.items, NEWS] };
+    state.held[0]!(false);
+    await settled();
+    state.held[1]!(true);
+    expect(await read).toEqual(DEFAULT_HEADER);
+    // The answer the refresh brought is what is kept.
+    state.held = undefined;
+    at(HEADER_STALE_MS + 1000);
+    expect((await headers.read(hassanIn)).menu.items).toEqual([...PORTAL.items, NEWS]);
+    expect(state.asked).toBe(3);
+  });
+  test('the holder refusing the person is its answer: what was kept goes at that answer, and the default is kept until the next refresh', async () => {
+    const { state, headers, at } = portal();
+    const hassanIn = signedIn([]);
+    const annaIn = { ...signedIn([]), id: 'anna' };
+    // Refused from the start: the default, and the portal is not asked again inside the minute.
+    state.deny = true;
+    expect(await headers.read(annaIn)).toEqual(DEFAULT_HEADER);
+    at(1000);
+    expect(await headers.read(annaIn)).toEqual(DEFAULT_HEADER);
+    expect(state.asked).toBe(1);
+    state.deny = false;
+    at(2000);
+    expect(await headers.read(hassanIn)).toEqual(VIEW);
+    // A minute on the portal refuses him: the kept header is served while it is asked, and then the default.
+    at(2000 + HEADER_FRESH_MS);
+    state.deny = true;
+    expect(await headers.read(hassanIn)).toEqual(VIEW);
+    await settled();
+    expect(await headers.read(hassanIn)).toEqual(DEFAULT_HEADER);
+    // The default is the portal's answer now: not asked again inside the minute, and a failure after it leaves the
+    // default, not the header the portal gave before it refused him.
+    at(2000 + 2 * HEADER_FRESH_MS - 1);
+    expect(await headers.read(hassanIn)).toEqual(DEFAULT_HEADER);
+    expect(state.asked).toBe(3);
+    at(2000 + 2 * HEADER_FRESH_MS);
+    state.deny = false;
+    state.fail = true;
+    expect(await headers.read(hassanIn)).toEqual(DEFAULT_HEADER);
+    await settled();
+    expect(await headers.read(hassanIn)).toEqual(DEFAULT_HEADER);
+    // Let in again: the next refresh gives him the header.
+    at(2000 + 3 * HEADER_FRESH_MS);
+    state.fail = false;
+    expect(await headers.read(hassanIn)).toEqual(DEFAULT_HEADER);
+    await settled();
+    expect(await headers.read(hassanIn)).toEqual(VIEW);
+    expect(state.asked).toBe(5);
+  });
+  test('past the hour a kept header is never served, whether or not the sweep has run', async () => {
+    const { state, headers, at } = portal();
+    const hassanIn = signedIn([]);
+    expect(await headers.read(hassanIn)).toEqual(VIEW);
+    state.fail = true;
+    for (const minutes of [1, 30, 58]) {
+      at(minutes * 60_000);
+      expect(await headers.read(hassanIn)).toEqual(VIEW);
+      await settled();
+    }
+    // Half a minute before the hour another person's read sweeps; his kept header is not past the bound yet and stays.
+    at(HEADER_STALE_MS - 30_000);
+    await headers.read({ ...hassanIn, id: 'anna' });
+    expect(headers.kept()).toBe(2);
+    // At the hour no sweep runs, the last one half a minute old: his own read drops the kept header and asks.
+    const asked = state.asked;
+    at(HEADER_STALE_MS);
+    expect(await headers.read(hassanIn)).toEqual(DEFAULT_HEADER);
+    expect(state.asked).toBe(asked + 1);
+  });
+  test('a change another instance wrote is read before anything kept is served', async () => {
+    const { registry, headers, at } = portal();
+    // The rows as another instance writes them, read whenever the registry reads its governance again.
+    const holder = { ...openGovernance(), header: true };
+    let rows: Governance = holder;
+    registry.setRefresh(async () => {
+      registry.govern('portal', rows);
+    });
+    const hassanIn = signedIn([]);
+    const changes: Governance[] = [
+      { ...holder, header: false },
+      { ...holder, state: 'disabled' },
+      { ...holder, audience: { mode: 'selected', roles: ['manager'] } },
+      { ...holder, capabilities: { 'portal.header': { enabled: false } } },
+    ];
+    let second = 0;
+    for (const governance of changes) {
+      rows = holder;
+      expect(await headers.read(hassanIn)).toEqual(VIEW);
+      at(++second * 1000);
+      rows = governance;
+      expect(await headers.read(hassanIn)).toEqual(DEFAULT_HEADER);
+    }
+  });
+  test('a new authorization version is a new read inside the kept minute', async () => {
+    const { state, headers, at } = portal();
+    expect(await headers.read(signedIn([]))).toEqual(VIEW);
+    at(1000);
+    const regranted = { ...signedIn([]), authorizationVersion: 'v2' };
+    expect(await headers.read(regranted)).toEqual(VIEW);
+    expect(state.asked).toBe(2);
+    at(2000);
+    expect(await headers.read(regranted)).toEqual(VIEW);
+    expect(state.asked).toBe(2);
   });
   test('a kept header past the hour can never be served again, so it leaves the process at the next read of anyone', async () => {
     const { headers, at } = portal();

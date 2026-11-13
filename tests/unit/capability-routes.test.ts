@@ -307,6 +307,24 @@ describe('a capability the person may not know of answers as one nobody register
     });
     expect(ran).toEqual([]);
   });
+  test('the listing of connectors (GET /api/connectors) names no capability he may not know of; what the scope leaves out is listed as out of scope', () => {
+    const { registry } = world();
+    const listing = registry
+      .catalogueFor(audiencedActorOf(hassan))
+      .map(({ connector, capabilities }) => [connector.id, capabilities.map(c => [c.capability.name, c.inScope])]);
+    // A connector switched off or leaving him out of its audience is absent, and so is a capability switched off.
+    expect(listing).toEqual([
+      [
+        'open',
+        [
+          ['open.read', true],
+          ['open.offer', true],
+          ['open.flag', true],
+          ['open.managers', false],
+        ],
+      ],
+    ]);
+  });
   test('a capability hidden while it is asked, its connector switched off between the check and the call, answers as unknown too', async () => {
     const { registry, ran, answer } = world();
     // The registry reads the governance again as it runs, and finds the connector switched off.

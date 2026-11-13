@@ -404,6 +404,7 @@ export const ProtocolErrorSchema = object({
   ]),
   message: swedish('Swedish. Shown to the person.'),
 });
+export type ProtocolErrorCode = Static<typeof ProtocolErrorSchema>['code'];
 export const CallResponseSchema = Type.Union([
   object({ output: Type.Unknown() }),
   object({ error: ProtocolErrorSchema }),

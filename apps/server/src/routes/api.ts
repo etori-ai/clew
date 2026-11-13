@@ -281,21 +281,24 @@ api.get('/areas', async c => {
     systems: registry.systems(audiencedActorOf(context)),
   });
 });
-/** The registry as data: what the architecture derives everything from. Read-only, and only what the caller can see (D23). */
+/**
+ * The registry as data: what the architecture derives everything from. Read-only, and only what the caller may know of
+ * (D23): the connectors they can see, without a capability switched off (`Registry.catalogueFor`).
+ */
 api.get('/connectors', c => {
   const actor = audiencedActorOf(c.get('session').context);
   return c.json({
-    connectors: registry.listFor(actor).map(m => ({
+    connectors: registry.catalogueFor(actor).map(({ connector: m, capabilities }) => ({
       id: m.id,
       kind: m.kind,
       source: m.source,
       areas: m.areas.map(a => ({ id: a.id, title: a.title, roles: a.roles })),
-      capabilities: m.capabilities.map(x => ({
+      capabilities: capabilities.map(({ capability: x, inScope }) => ({
         name: x.name,
         kind: x.kind,
         title: x.title,
         model: x.model,
-        inScope: !!registry.allowed(actor, x.name),
+        inScope,
       })),
     })),
     tools: registry.tools(actor).map(t => t.name),

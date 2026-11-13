@@ -14,8 +14,9 @@ import { viewWithPeople } from '../threads/usecases/keys';
  *
  * A capability the person may not know of, its connector switched off or leaving them out of its audience, or the
  * capability switched off, answers exactly as a name nobody registered does (D23): the one 404, settled before the input
- * is read, and again when the registry refuses it while it runs. A capability of a connector the person can see that
- * its scope leaves out is the registry's own refusal, a 400: the person may know that it exists.
+ * is read, and again for any "Okänd förmåga." raised while it runs. A capability of a connector the person can see that
+ * its scope leaves out is the registry's own refusal, a 400: the person may know that it exists, as `GET
+ * /api/connectors` lists it.
  */
 export interface CapabilityRouteDeps {
   registry: Pick<Registry, 'findFor' | 'viewFor'>;
@@ -71,8 +72,8 @@ export function capabilityRoutes(deps: CapabilityRouteDeps) {
     }
     return c.json({ output: await run(persona, name, input) });
   });
-  // The registry refuses a capability hidden while it runs (its connector switched off between the check and the call)
-  // with the same sentence as an unknown one: it gets the same answer.
+  // "Okänd förmåga." raised while the capability runs gets the same answer as an unknown name: its connector switched
+  // off between the check and the call, a nested call to a capability hidden from the person, or the source's own.
   routes.onError((error, c) =>
     error instanceof InputError && error.message === UNKNOWN ? unknown(c) : failure(c, error),
   );

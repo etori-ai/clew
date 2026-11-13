@@ -10,6 +10,7 @@ import {
   PROTOCOL_RETIRED,
   ScanResponseSchema,
   type ConnectorManifest,
+  type ProtocolErrorCode,
 } from './protocol';
 
 /**
@@ -83,7 +84,7 @@ export async function fetchManifest(
 }
 
 function unavailable(source: string) {
-  return new CapabilityError(`${source} svarar inte just nu.`);
+  return new CapabilityError(`${source} svarar inte just nu.`, 'unavailable');
 }
 /** The person's own token for the connector's system (D26), beside the assertion that proves Clew. Only when the manifest asks and a session is behind the call. */
 export const DELEGATED_TOKEN_HEADER = 'x-clew-delegated-token';
@@ -96,7 +97,7 @@ async function delegated(
   try {
     return await clew.delegate(manifest.delegation.audience);
   } catch {
-    throw new CapabilityError(`${source} kunde inte få din behörighet just nu.`);
+    throw new CapabilityError(`${source} kunde inte få din behörighet just nu.`, 'unavailable');
   }
 }
 async function post(
@@ -137,11 +138,14 @@ async function post(
   }
   return { status: response.status, json };
 }
-/** A connector's error answer in the protocol's shape, mapped to what the person sees. */
+/**
+ * A connector's error answer in the protocol's shape, mapped to what the person sees, with its code kept: a caller
+ * tells the connector's refusal of the person (`denied`) from its failure by it.
+ */
 function failWith(json: unknown, source: string): never {
-  const error = (json as { error?: { code?: string; message?: string } } | null)?.error;
+  const error = (json as { error?: { code?: ProtocolErrorCode; message?: string } } | null)?.error;
   if (error?.code === 'unavailable' || !error?.message) throw unavailable(source);
-  throw new CapabilityError(error.message);
+  throw new CapabilityError(error.message, error.code);
 }
 
 /**
@@ -218,8 +222,10 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
             });
             if (!response.ok || !response.body) {
               await response.body?.cancel();
-              if (response.status === 409) throw new CapabilityError('Underlaget har ändrats. Läs in underlagen igen.');
-              if (response.status === 403) throw new CapabilityError('Du saknar behörighet att läsa underlaget.');
+              if (response.status === 409)
+                throw new CapabilityError('Underlaget har ändrats. Läs in underlagen igen.', 'invalid');
+              if (response.status === 403)
+                throw new CapabilityError('Du saknar behörighet att läsa underlaget.', 'denied');
               throw unavailable(source);
             }
             const declaredSize = Number(response.headers.get('content-length'));
