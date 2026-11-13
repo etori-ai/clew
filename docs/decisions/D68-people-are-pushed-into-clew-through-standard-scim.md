@@ -35,6 +35,8 @@ written; where they differ from this paragraph, this paragraph holds.
   a person id Clew does not hold, a subject another person holds (release that person first) and an option given twice.
   In one transaction it writes the binding and one `identity.rebound` audit row: actor `operator:cli`, about
   `person:<id>`, with the issuer, the old subject, the new subject (`null` for a release) and the operator's name. The
+  transaction locks the person before reading the binding, as erasure does: overlapping repairs observe each other's
+  committed binding, so the returned and audited old subject is the one actually replaced or released. The
   person's sessions under the old subject end at their next request. Running it again with the old subject undoes it. It
   is never automatic and never on a page.
 - **When a rebind is needed.** A source id that changed after the person signed in, when the source cannot map the

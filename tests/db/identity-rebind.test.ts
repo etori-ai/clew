@@ -1,7 +1,7 @@
 import { afterAll, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { and, eq, inArray, like } from 'drizzle-orm';
+import { and, eq, inArray, like, sql } from 'drizzle-orm';
 import { database, schema } from '../../packages/db/src/index';
 import { RebindRefused, rebindIdentity, resolveSubject, signIn } from '../../packages/db/src/auth';
 
@@ -207,6 +207,50 @@ test('a name that moved while someone signed in for the first time is settled by
   expect((await signIn(issuer, 'sub-tove', claim, prefix + ':shared')).access?.person.id).toBe(tove);
   expect((await signIn(issuer, 'sub-hanna', claim, prefix + ':hanna')).access?.person.id).toBe(hanna);
   expect((await resolveSubject(issuer, 'sub-tove'))?.person.id).toBe(tove);
+});
+test('a release overlapping a subject replacement reports and audits the subject it actually removes', async () => {
+  const personId = prefix + '-overlapping',
+    binding = and(eq(schema.identityBindings.issuer, issuer), eq(schema.identityBindings.personId, personId));
+  ids.push(personId);
+  await db.insert(schema.people).values({ id: personId, organisationId: 'test', name: personId, enabled: true });
+  await db.insert(schema.identityBindings).values({ issuer, personId, subject: 'old' });
+
+  // Hold a repair open just before commit. The release starts while other connections still see 'old'.
+  const replaced = Promise.withResolvers<void>();
+  const replacing = db.transaction(async tx => {
+    await tx
+      .select({ id: schema.people.id })
+      .from(schema.people)
+      .where(eq(schema.people.id, personId))
+      .for('no key update');
+    await tx.delete(schema.identityBindings).where(binding);
+    await tx.insert(schema.identityBindings).values({ issuer, personId, subject: 'replacement' });
+    replaced.resolve();
+    // Observe contention on this exact transaction before committing, regardless of which statement is waiting.
+    for (let n = 0; n < 150; n++) {
+      const [lock] = await tx.execute<{ waiting: boolean }>(sql`
+        select exists (select 1 from pg_locks where not granted and pg_backend_pid() = any(pg_blocking_pids(pid))) as waiting`);
+      if (lock?.waiting) return;
+      await Bun.sleep(10);
+    }
+    throw new Error('The release did not reach the held repair');
+  });
+  const releasing = replaced.promise.then(() =>
+    rebindIdentity('operator:cli', { issuer, personId, subject: null, operator }),
+  );
+  const [, result] = await Promise.all([replacing, releasing]);
+  expect(result).toEqual({ changed: true, oldSubject: 'replacement' });
+  expect(await db.select().from(schema.identityBindings).where(binding)).toEqual([]);
+  expect(await rebounds(personId)).toEqual([
+    {
+      actor: 'operator:cli',
+      about: 'person:' + personId,
+      issuer,
+      oldSubject: 'replacement',
+      newSubject: null,
+      operator,
+    },
+  ]);
 });
 test("a query that fails is answered by the script with the database's own message and that nothing was written", () => {
   // The same server's maintenance database holds none of Clew's tables, so the script's first query fails there and

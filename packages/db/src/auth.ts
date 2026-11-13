@@ -238,7 +238,12 @@ export async function rebindIdentity(
 ) {
   const { issuer, personId, subject, operator } = input;
   return database().transaction(async tx => {
-    const [person] = await tx.select({ id: people.id }).from(people).where(eq(people.id, personId));
+    // Repairs and erasure take the person before the binding, including when there is no binding yet.
+    const [person] = await tx
+      .select({ id: people.id })
+      .from(people)
+      .where(eq(people.id, personId))
+      .for('no key update');
     if (!person) throw new RebindRefused(`no person has the id "${personId}"`);
     if (subject !== null) {
       const [holder] = await tx
