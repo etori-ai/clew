@@ -71,12 +71,12 @@ export function merge(outcomes: SourceOutcome[], now: number, limit = ROW_LIMIT)
     }
   return out;
 }
-/** The user names the hits name people by (D116), each once: what is resolved to Clew's key before the list is answered. */
+/** The user names the hits name people by (D119), each once: what is resolved to Clew's key before the list is answered. */
 export const hitNames = (rows: readonly Pick<SearchHit, 'subject'>[]): string[] => [
   ...new Set(rows.flatMap(r => (r.subject?.entity === 'person' ? [r.subject.key] : []))),
 ];
 /**
- * The list as the person gets it (D116): a hit that names a person by the source's key, their user name, names them by
+ * The list as the person gets it (D119): a hit that names a person by the source's key, their user name, names them by
  * Clew's key, their id, from `held` (the name as asked, to the id of whoever holds it now), so it links to their page. A
  * hit whose name nobody of the reader's organisation holds names nobody, the rest of it kept. A unit's id is both keys.
  */

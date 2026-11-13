@@ -42,7 +42,7 @@ export interface Mark {
 
 /**
  * A source's row names its person by the source's key, the user name, compared without regard to case (D97); the page
- * finds a person's row by `EntityRef.sourceKey`, and everything Clew keeps by `EntityRef.key`, the person's id (D116).
+ * finds a person's row by `EntityRef.sourceKey`, and everything Clew keeps by `EntityRef.key`, the person's id (D119).
  */
 const keyOf = (key: unknown) => (typeof key === 'string' ? key.toLowerCase() : '');
 /** One source's answer as the page uses it; a request that failed is a source that did not answer. */

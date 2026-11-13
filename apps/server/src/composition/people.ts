@@ -43,7 +43,7 @@ export const provisionerKeys = provisionerKeyUsecases({
   token: randomToken,
   digest: tokenDigest,
 });
-/** D117: `scripts/person-erase.ts` erases a deactivated person through this, in one transaction with its audit row. */
+/** D120: `scripts/person-erase.ts` erases a deactivated person through this, in one transaction with its audit row. */
 export const personErasure = personErasureUsecases({ store: postgresProvisionStore(), clock });
 /** Administration › Organisation (D99): the organisation tree as the provisioner pushed it, read only. */
 export const organisation = organisationUsecases({ store: postgresProvisionStore() });

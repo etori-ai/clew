@@ -54,7 +54,7 @@ export interface HoldingRecord {
 export type HoldingPatch = Partial<Pick<HoldingRecord, 'state' | 'revokedAt' | 'revokedBy'>>;
 /**
  * A person as the domain needs them: to key a row on the user name, to name them to the reader, and to erase only a
- * person the source has deactivated (D117 item 3).
+ * person the source has deactivated (D120 item 3).
  */
 export interface PersonRef {
   id: string;

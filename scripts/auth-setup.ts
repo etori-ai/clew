@@ -339,7 +339,7 @@ try {
     AUTH_DEV_ACCOUNTS: devAccounts.join(','),
   });
   await writeSettings(testFile, { ...settings, ...testPasswords });
-  // The server's nightly clean-up (D117), run once now so a development database starts without expired sign-in data.
+  // The server's nightly clean-up (D120), run once now so a development database starts without expired sign-in data.
   await removeExpiredSignIns(new Date());
   console.log(
     'Keycloak realm, client and accounts are ready; each account binds to its person at first login. Secrets written to ignored, owner-only files.',

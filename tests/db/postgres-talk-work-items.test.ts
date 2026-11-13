@@ -129,7 +129,7 @@ async function rows(threadId: string) {
     .where(eq(schema.timerIntents.id, dueTimerId(threadId)));
   return { thread, messages, deliveries, audit, timer };
 }
-/** The employee of the talk, by Clew's key (D116); the cards here are about someone the store does not check. */
+/** The employee of the talk, by Clew's key (D119); the cards here are about someone the store does not check. */
 const employeeOf = (threadId: string) => ({ entity: 'person' as const, key: `employee-${threadId}` });
 const open = (threadId: string, personId: string, dueOn: string, at = now.toISOString()) =>
   run(items =>
@@ -320,7 +320,7 @@ describe('the action point card (D96 items 5 and 6)', () => {
     expect((await store.listThreads(owner, now.toISOString())).find(t => t.id === id)?.timers).toBeUndefined();
   });
 
-  test("the card is about the talk's employee by id on the thread, never on a row, and leaves the index with the card (D97, D116)", async () => {
+  test("the card is about the talk's employee by id on the thread, never on a row, and leaves the index with the card (D97, D119)", async () => {
     const { owner } = await people();
     const id = card();
     const employee = { entity: 'person' as const, key: `talks-employee-${id}` };

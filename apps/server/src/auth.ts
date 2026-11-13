@@ -476,7 +476,7 @@ export async function receiveLogout(token: string) {
   });
 }
 /**
- * OpenID Connect Front-Channel Logout 1.0 (D115): when the person signs out at the identity provider, the provider
+ * OpenID Connect Front-Channel Logout 1.0 (D118): when the person signs out at the identity provider, the provider
  * loads Clew's front-channel logout address in a frame with the `sid` of its session and, by the specification, its
  * `iss`; Microsoft Entra ID has no back-channel logout, so this is how a sign-out there reaches Clew. Every session of
  * that `sid` under the configured issuer ends as a back-channel logout ends it. An `iss` that is given must be the

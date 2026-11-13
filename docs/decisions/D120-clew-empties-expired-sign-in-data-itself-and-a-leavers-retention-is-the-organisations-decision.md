@@ -1,4 +1,4 @@
-# D117 · Clew empties expired sign-in data itself, and a leaver's retention is the organisation's decision
+# D120 · Clew empties expired sign-in data itself, and a leaver's retention is the organisation's decision
 
 **Status:** provisional (taken in the fixes of [the review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md), Q7, L3, P4 and R3, on the product owner's word of 2026-11-12 to fix every finding and take every open decision), the nightly clean-up built 2026-11-12 and `scripts/person-erase.ts` 2026-11-13; accepted once the clean-up has run in an installation outside the development stack and an organisation has erased a leaver's record with the scripts under its own retention rules · **Date:** 2026-11-12 · **Area:** identity, platform
 
@@ -43,7 +43,7 @@
      with `active: true` makes it active without a user name.
    - The procedure for one person runs `scripts/subject-erase.ts`, `scripts/talks-erase.ts` and
      `scripts/competence-erase.ts` first, each with the person's id
-     ([D116](D116-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) item 7), and
+     ([D119](D119-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) item 7), and
      `bun scripts/person-erase.ts --person <id> --confirm` last. The three still find the person by the id once the
      record is erased. Each of them refuses an id the people table does not hold and a person who is still active, as
      this script does (2026-11-13: until then the three erased an active person's cards, talks and competence). They
@@ -61,13 +61,13 @@
      so `GET /scim/v2/Users/<id>` answers the id as `userName`, an empty name, no address, no groups and
      `active: false`, and Administration › Användare shows the id where the user name stood. A filter on `userName` or
      `externalId` no longer finds it, and the source can push the same name and key again as a new person.
-   - No key resolves to the erased person: neither the id nor any name they held (`userName` and `holders`, D116). A
+   - No key resolves to the erased person: neither the id nor any name they held (`userName` and `holders`, D119). A
      card started from their menu with an `execute` keeps them by id, and its one action, the decision, can no longer
      be taken: the decision and its preview answer "Personen finns inte längre i katalogen. Inget har skickats." and
      nothing reaches the ledger. An execution approved from such a card before the erasure keeps its person
-     (`execution.subject`), and dispatch settles it with the reason `subject-changed` and sends nothing (D116 item 5).
+     (`execution.subject`), and dispatch settles it with the reason `subject-changed` and sends nothing (D119 item 5).
    - Every other card about the person keeps the actions its source wrote: a card a source pushed, and one started
-     from their menu with a `propose`, whose actions are the source's own (D116 item 4). Neither `subject-erase` nor
+     from their menu with a `propose`, whose actions are the source's own (D119 item 4). Neither `subject-erase` nor
      this script closes a card. Such an action can still be decided afterwards and is sent with the input the source
      wrote, and an execution approved from one, before the erasure or after, keeps no person and is dispatched as
      approved (see Limits).

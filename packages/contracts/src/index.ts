@@ -381,7 +381,7 @@ export type ViewRef = Static<typeof ViewRefSchema>;
 /**
  * The entities a source's rows can be about (D97): a closed list, as `CAPABILITIES` is. A new kind is a contract change
  * that comes with the core rule saying who may be asked about it. A source knows a person by their directory `userName`,
- * compared without regard to case (a person without one cannot be asked about), and Clew keeps the person's id (D116); a
+ * compared without regard to case (a person without one cannot be asked about), and Clew keeps the person's id (D119); a
  * unit's key is its unit id, on both sides.
  */
 export const ENTITY_KINDS = ['person', 'unit'] as const;
@@ -400,23 +400,23 @@ const entityKey = Type.String({
   minLength: 1,
   maxLength: ENTITY_KEY_MAX,
   description:
-    "The entity's key. A source sends a person's `userName` and a unit's id. Clew resolves a user name as it arrives to the person of the reader's organisation who holds it then, and keeps that person's id (D116); a name nobody there holds names nobody.",
+    "The entity's key. A source sends a person's `userName` and a unit's id. Clew resolves a user name as it arrives to the person of the reader's organisation who holds it then, and keeps that person's id (D119); a name nobody there holds names nobody.",
 });
 /** A row that names an entity (D97 item 6): a card row, a search hit or a view field may carry one, so it links to the entity. */
 export const SubjectSchema = object(
   { entity: EntityKind, key: entityKey },
-  "An entity a row names (D97): the web links the row to it. A source names a person by their `userName`, without regard to case, and a unit by its id. Clew resolves the user name as the row arrives, to whoever of the reader's organisation, active or not, holds it then, and keeps that person's id in its own records, so a later rename or reuse of the name moves nothing it kept (D116). A name nobody there holds names nobody: the row keeps its text and links nowhere. A reader only ever reaches an entity they may ask about.",
+  "An entity a row names (D97): the web links the row to it. A source names a person by their `userName`, without regard to case, and a unit by its id. Clew resolves the user name as the row arrives, to whoever of the reader's organisation, active or not, holds it then, and keeps that person's id in its own records, so a later rename or reuse of the name moves nothing it kept (D119). A name nobody there holds names nobody: the row keeps its text and links nowhere. A reader only ever reaches an entity they may ask about.",
 );
 export type Subject = Static<typeof SubjectSchema>;
 /**
  * A key as a source sends it, compared as Clew compares it there (D97): a person's user name without regard to case (RFC
  * 7643's default) and in its composed form (NFC, as a stored user name is), a unit's id exactly. Only for what arrives
- * from a source: Clew's own records key a person by the person's id (D116), compared exactly (`sameSubject`).
+ * from a source: Clew's own records key a person by the person's id (D119), compared exactly (`sameSubject`).
  */
 export const foldSourceKey = (entity: EntityKind, key: string) =>
   entity === 'person' ? key.normalize('NFC').toLowerCase() : key;
 /**
- * Whether two subjects of Clew's own records name the same entity (D116): a person by the person's id and a unit by its
+ * Whether two subjects of Clew's own records name the same entity (D119): a person by the person's id and a unit by its
  * id, both compared exactly. A source's key (a person's user name) is resolved to the id when it arrives.
  */
 export const sameSubject = (a: Subject, b: Subject) => a.entity === b.entity && a.key === b.key;
@@ -574,7 +574,7 @@ export const RecordSubjectSchema = object(
         "The record property holding the entity's key, a string: a person's provisioned `userName`, a unit's id.",
     },
   },
-  "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it, a person through the id of whoever of the reader's organisation holds the user name when the read is answered (D116); a record without the property, or whose user name nobody there holds, links nowhere.",
+  "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it, a person through the id of whoever of the reader's organisation holds the user name when the read is answered (D119); a record without the property, or whose user name nobody there holds, links nowhere.",
 );
 export type RecordSubject = Static<typeof RecordSubjectSchema>;
 /**
@@ -718,7 +718,7 @@ export function viewRows(view: View, output: unknown): Record<string, unknown>[]
 }
 /**
  * The keys a view's records name people by (`subject` on a person, D97 item 6), each once: a source's key, the user name,
- * which Clew resolves to the person's id before a name links to their page (D116, `PanelViewSpec.people`).
+ * which Clew resolves to the person's id before a name links to their page (D119, `PanelViewSpec.people`).
  */
 export function subjectKeys(view: View, output: unknown): string[] {
   const subject = view.kind === 'table' || view.kind === 'list' || view.kind === 'detail' ? view.subject : undefined;
@@ -765,7 +765,7 @@ export type PanelViewSpec = View & {
   rowViews?: boolean;
   /**
    * The people the output's records name (`subject` on a person, D97 item 6), from the key on the record (the source's,
-   * a user name) to Clew's key for the person, their id (D116), so a name links to `/people/<id>`. A key nobody of the
+   * a user name) to Clew's key for the person, their id (D119), so a name links to `/people/<id>`. A key nobody of the
    * reader's organisation holds when the read is answered is absent, and its record links nowhere.
    */
   people?: Record<string, string>;
@@ -1227,7 +1227,7 @@ export type EntityPage = Static<typeof EntityPageSchema>;
 /** How one source answered for a list or a section: it answered, it did not, or not in time. */
 const entityAnswer = Type.Union([Type.Literal('ok'), Type.Literal('unavailable'), Type.Literal('timeout')]);
 /**
- * An entity as the browser gets it (D97). `key` is Clew's key (D116): a person's id, a unit's id; it is the address
+ * An entity as the browser gets it (D97). `key` is Clew's key (D119): a person's id, a unit's id; it is the address
  * (`/people/<key>`, `/units/<key>`) and what "Just nu" and a card's row name. `sourceKey` is the key a source knows the
  * entity by and answers its rows with (`row.key`): a person's `userName`, a unit's id. `detail` is one line ("Lärare
  * 4–6 · Bergsåkers skola") when known; `id` is Clew's own id, never sent to a connector.
@@ -1762,7 +1762,7 @@ export const ThreadItemSchema = object({
   subject: Type.Optional({
     ...SubjectSchema,
     description:
-      "The person or unit the row is about (D97 item 6): the web links the row to it, and the card shows on that entity for its owner. A key, never a name: a person's `userName`, a unit's id; the row's text stays the source's. Clew resolves a user name as the row arrives to whoever of the reader's organisation holds it then and keeps that person's id, so a later rename or reuse of the name moves nothing on the card (D116); a name nobody there holds names nobody.",
+      "The person or unit the row is about (D97 item 6): the web links the row to it, and the card shows on that entity for its owner. A key, never a name: a person's `userName`, a unit's id; the row's text stays the source's. Clew resolves a user name as the row arrives to whoever of the reader's organisation holds it then and keeps that person's id, so a later rename or reuse of the name moves nothing on the card (D119); a name nobody there holds names nobody.",
   }),
 });
 export type ThreadItem = Static<typeof ThreadItemSchema>;
@@ -1864,7 +1864,7 @@ export type ReceiptRow = Static<typeof ReceiptRowSchema>;
 export const ThreadKind = Type.Union([Type.Literal('pushed'), Type.Literal('question')]);
 export const ThreadState = Type.Union([Type.Literal('open'), Type.Literal('handled'), Type.Literal('dismissed')]);
 /**
- * Why dispatch did not send a started action (D116): the user name it was decided with no longer names the person it is
+ * Why dispatch did not send a started action (D119): the user name it was decided with no longer names the person it is
  * about, renamed or given to someone else since, so the person decides again.
  */
 export const SUBJECT_CHANGED = 'subject-changed';

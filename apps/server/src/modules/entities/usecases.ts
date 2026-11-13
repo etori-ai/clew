@@ -117,7 +117,7 @@ export function entityUsecases(deps: EntityDeps) {
   }
 
   /**
-   * The entity behind Clew's key (D116: a person's id, a unit's id), and how the reader stands to it; undefined outside
+   * The entity behind Clew's key (D119: a person's id, a unit's id), and how the reader stands to it; undefined outside
    * the rule. A person: the reader (`self`), someone on a unit the reader manages (`managed`), also from below (D99), or
    * another active person of the directory (`colleague`). A unit: one the reader manages or belongs to (`member`). A key
    * that cannot name an entity of the kind (a NUL in it, or too long) names nobody, before anything is read.
@@ -171,7 +171,7 @@ export function entityUsecases(deps: EntityDeps) {
       deps.sources.reads(actor, kind),
       deps.sources.actions(actor, kind),
     ]);
-    // "Just nu" is by Clew's key (D116): a card's rows name a person by id.
+    // "Just nu" is by Clew's key (D119): a card's rows name a person by id.
     const keys = listedKeys(kind, reach).map(e => e.key);
     const cards =
       deps.cardsNaming && keys.length

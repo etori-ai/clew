@@ -68,7 +68,7 @@ const threadCore = threadUsecases({
   run: runCapability,
   clock,
   ids,
-  // A row names a person by user name; the card keeps their id (D116).
+  // A row names a person by user name; the card keeps their id (D119).
   people: personKeys,
   calendar: {
     ensureProposalThread: calendar.ensureProposalThread,
@@ -318,7 +318,7 @@ export const scheduler = createScheduler({
   people: postgresPeople(),
   threads,
   calendar,
-  // The nightly clean-up of sign-in machinery (D117).
+  // The nightly clean-up of sign-in machinery (D120).
   signIns: signInData,
   clock,
   log: logPort('scheduler', 'error'),

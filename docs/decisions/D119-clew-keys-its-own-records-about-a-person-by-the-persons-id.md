@@ -1,4 +1,4 @@
-# D116 · Clew keys its own records about a person by the person's id
+# D119 · Clew keys its own records about a person by the person's id
 
 **Status:** provisional (taken in the fixes of [the review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md), Q11, on the product owner's word of 2026-11-12 to fix every finding and take every open decision), built 2026-11-12; accepted once a directory outside the team has renamed a person and given a leaver's name to someone else, and the rows that a source not written for Clew sent under those names reached the right people · **Date:** 2026-11-12 · **Area:** identity, integrations
 
@@ -70,7 +70,7 @@ user name, so a rename separated a person from the cards about them and a reuse 
    `apps/server/src/modules/executions/usecases.ts`). A write approved from an action its source wrote on a card, a
    started propose's included, keeps no person and is not compared. When the name is no longer the person's, or the
    person holds none, as after an erasure
-   ([D117](D117-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md)
+   ([D120](D120-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md)
    item 3), nothing is sent. An execution never dispatched is settled `failed` with the reason `subject-changed`. One
    that was dispatched, and whose read-back found nothing, is settled `unknown` with that reason, since a replay would
    reach someone else. Each is audited (`execution.failed`, `execution.unknown`). The card says "Personen har inte
@@ -85,7 +85,7 @@ user name, so a rename separated a person from the cards about them and a reuse 
    exception D96 built (As built, item 8): a person without a user name is keyed on their id, so the rows of
    `<id>.talks` and `<id>.commitments` may name them by it, and `<id>.commitments` asked about them gets it as
    `person`. SCIM requires a user name, so such a person is rare: an erased record that a client makes active again is
-   one ([D117](D117-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md)
+   one ([D120](D120-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md)
    item 3). The signed actor a connector receives carries the id, and the user name when the person has one
    ([D97](D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)). Whether `Actor` should also carry a key
    that the source knows and that never changes, such as the directory's `externalId`, stays an
@@ -94,14 +94,14 @@ user name, so a rename separated a person from the cards about them and a reuse 
    `bun scripts/talks-erase.ts --person <person id> --confirm` and
    `bun scripts/competence-erase.ts --person <person id> --confirm` take the person's id, never a user name. An id the
    people table does not hold is refused, and so is a person who is still active, since a person is erased only once
-   the source has deactivated them (D117 item 3); nothing is erased or audited for either. `talks-erase` and
+   the source has deactivated them (D120 item 3); nothing is erased or audited for either. `talks-erase` and
    `competence-erase` refuse an option given twice or any other argument, as `person-erase` does, so a copied line
    cannot erase the wrong person (2026-11-13). One erasure reaches every card about the person, whatever user names
    they have held, and never the cards of someone who holds one of those names now. The rows' text stays as the source
    wrote it. `competence-erase` also removes the cards the competence scan put in the person's stream, each with one
    `thread.removed` row (`details.reason` `erasure`) written at the time of the erasure. When a person's own record is
    erased is
-   [D117](D117-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md)'s.
+   [D120](D120-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md)'s.
 8. **D97's two open items on keys are settled.** The key on the wire is the user name. The key on Clew's card rows is
    the person's id, so the key Clew keeps on a card is never one of the person's names, as [principle
    7](../vision.md#principles) of the vision asks, and one erasure reaches the whole person.

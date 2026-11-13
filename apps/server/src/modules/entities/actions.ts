@@ -18,7 +18,7 @@ import { InputError } from '../../context';
  * The action gets the entity in its `param`, and a propose that asks gets the person's answers (D112); an execute's asks
  * are answered when the person decides on its card. It becomes a card through the stream: a propose's draft, or an
  * execute behind its human decision. Nothing is written to a source here, and nothing is kept about the entity beyond
- * the card. A person is named by Clew's key in what Clew keeps (D116): the card's row and an execute's input hold the
+ * the card. A person is named by Clew's key in what Clew keeps (D119): the card's row and an execute's input hold the
  * person's id, and a source is sent the person's user name, resolved again when the person decides.
  */
 export interface EntityActionDeps {
@@ -42,7 +42,7 @@ export interface EntityActionDeps {
       items?: ThreadItem[];
       about?: Record<string, unknown>;
       asked?: Record<string, string>;
-      /** The person `input[param]` names by id (D116), with the user name a source is sent now. */
+      /** The person `input[param]` names by id (D119), with the user name a source is sent now. */
       person?: { param: string; personId: string; sourceKey: string };
     },
   ): Promise<EntityActionStarted>;
@@ -87,7 +87,7 @@ export function entityActionUsecases(deps: EntityActionDeps) {
     if (action.kind === 'execute' && values && Object.keys(values).length)
       throw new InputError('Svaren ges när du beslutar på ärendet.');
     const asked = action.kind === 'propose' ? answered(action, values, deps.clock().toISOString()) : {};
-    // Clew keeps a person by id (D116): the card's input names them by Clew's key, and the stream sends the source the
+    // Clew keeps a person by id (D119): the card's input names them by Clew's key, and the stream sends the source the
     // user name, now and when the person decides. A unit's id is both keys.
     return deps.start(
       persona,

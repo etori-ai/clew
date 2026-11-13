@@ -1,5 +1,5 @@
 /**
- * Erase a deactivated person's identity record (D117, Q7 of the 2026-11-12 users review), when the organisation's own
+ * Erase a deactivated person's identity record (D120, Q7 of the 2026-11-12 users review), when the organisation's own
  * retention decision says that the record goes. For one person it runs last: after `subject-erase.ts`, `talks-erase.ts`
  * and `competence-erase.ts`, which find the person by the same id, and only once the source has stopped sending the
  * person, or its next run creates them again. Runs inside the app container with the server's local settings

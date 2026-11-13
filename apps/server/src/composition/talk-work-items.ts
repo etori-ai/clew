@@ -109,7 +109,7 @@ export function talkWorkItems(tx: Transaction, thread: ThreadTx, options: TalkWo
         area: TALKS_CONNECTOR,
         summary,
         items: [],
-        // The employee of the talk, by Clew's key (D116), on the thread and never on a row (D96 item 6, D97 item 6).
+        // The employee of the talk, by Clew's key (D119), on the thread and never on a row (D96 item 6, D97 item 6).
         subjects: [subject],
         actions: [ACTION],
         waitingOn: null,

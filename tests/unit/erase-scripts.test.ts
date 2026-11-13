@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
 /**
- * The arguments of the operator's erasures of a leaver's talks and competence (D116 item 7, D117 item 3), held as
+ * The arguments of the operator's erasures of a leaver's talks and competence (D119 item 7, D120 item 3), held as
  * `tests/unit/person-erase.test.ts` holds person-erase's: every malformed call is refused with exit code 2 and the usage
  * line before the database is asked anything, an option given twice and a stray argument among them, so that a copied
  * line cannot erase the wrong person. The database each script is given cannot be reached, so a call that got that far

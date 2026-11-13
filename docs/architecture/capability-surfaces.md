@@ -8,7 +8,7 @@ The [architecture overview](overview.md) explains the whole request flow. The [c
 
 | Surface | Caller and authority | Allowed operations |
 |---|---|---|
-| `GET /api/cap/:name?input=<json>` | Signed-in browser/person | `read` only. The answer is `{ output, source, view? }`: the declared view when present, with `view.people` mapping the user name each record names a person by to that person's id in the reader's organisation, so the record links to `/people/<id>`; a name nobody there holds is left out ([D116](../decisions/D116-clew-keys-its-own-records-about-a-person-by-the-persons-id.md)). |
+| `GET /api/cap/:name?input=<json>` | Signed-in browser/person | `read` only. The answer is `{ output, source, view? }`: the declared view when present, with `view.people` mapping the user name each record names a person by to that person's id in the reader's organisation, so the record links to `/people/<id>`; a name nobody there holds is left out ([D119](../decisions/D119-clew-keys-its-own-records-about-a-person-by-the-persons-id.md)). |
 | `POST /api/cap/:name` | Signed-in person, with mutation origin/CSRF checks | `read` or `propose`; body is the capability input itself. Executes are refused. |
 | Model tools | Assistant inside the person's request | In-scope `read`/`propose` with `model: true`, narrowed by operator tool switches. |
 | `POST /api/connectors/call` | Connector with a separate signed callback grant | Declared `uses` targets of kind `read`/`propose`, under the same person's current access. |

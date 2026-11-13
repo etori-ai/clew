@@ -142,7 +142,7 @@ export function MyCommitments() {
  * The words under an action point: when it is due, whether it is from an earlier talk, and whom it concerns. A manager's
  * own point is about an employee, so it names them; one the other party owns says who answers for it; an employee's own
  * point is about themselves and names nobody. The employee's name, where it is said, leads to them (D97 item 6, artboard
- * M): by the person's id, which `clew.commitments` gives every row (D116).
+ * M): by the person's id, which `clew.commitments` gives every row (D119).
  */
 function Meta({ row }: { row: CommitmentEntry }) {
   const { pathname, search } = useLocation();

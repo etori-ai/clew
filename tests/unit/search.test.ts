@@ -138,7 +138,7 @@ describe("staleness is computed in code, from the source's dates", () => {
     expect(full).toHaveLength(10);
     expect(full[0]!.sources?.map(s => s.connector)).toEqual(['a', 'b']);
   });
-  test('a user name is the same person in its decomposed form and its composed one, as Clew stores it (D116, NFC)', () => {
+  test('a user name is the same person in its decomposed form and its composed one, as Clew stores it (D119, NFC)', () => {
     const person = (ref: string, key: string) => hit({ ref, kind: 'person', subject: { entity: 'person', key } });
     const rows = merge(
       [
@@ -245,7 +245,7 @@ describe('the composite search over the registry', () => {
     expect(w.registry.tools(hassan).map(t => t.name)).toEqual(['clew.search']);
     expect(w.registry.searchSources(hassan).map(s => s.name)).toEqual(['docs.search', 'intra.search']);
   });
-  test("a hit that names a person by user name names the one of the reader's organisation who holds it, by id (D116)", async () => {
+  test("a hit that names a person by user name names the one of the reader's organisation who holds it, by id (D119)", async () => {
     const user = (id: string, userName: string, organisationId = 'org'): UserRecord => ({
       id,
       organisationId,

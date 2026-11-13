@@ -20,7 +20,7 @@ export interface DirectoryPerson {
 export type Directory = (actor: Actor) => Promise<{ self: DirectoryPerson; staff: DirectoryPerson[] }>;
 /**
  * Whom these keys name now in the reader's organisation, active or not, by person id, keyed by the key as asked: the
- * holder of a user name, compared as Clew compares one (D116), or the person provisioned without one whose id the key
+ * holder of a user name, compared as Clew compares one (D119), or the person provisioned without one whose id the key
  * is (`personKey`). A key that names nobody there is absent. The seam asks only about the action points the reader owns
  * about someone they no longer manage, when Clew's own module answers (M2).
  */

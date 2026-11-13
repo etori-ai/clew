@@ -1,4 +1,4 @@
-# D115 · A sign-in follows the identity provider's session, and a sign-out there ends Clew's
+# D118 · A sign-in follows the identity provider's session, and a sign-out there ends Clew's
 
 **Status:** provisional (taken in the fixes of [the review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md), Q9, L5 and L9, on the product owner's word of 2026-11-12 to fix every finding and take every open decision), built 2026-11-12; accepted once an organisation's own identity provider, outside the development stack, has signed a person in to Clew by single sign-on and ended that Clew session with its own sign-out · **Date:** 2026-11-12 · **Area:** identity
 

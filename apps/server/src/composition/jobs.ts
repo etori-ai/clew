@@ -17,7 +17,7 @@ export const runScheduledJob = scheduledJobRunner({
   log: logPort('scheduler', 'error'),
 });
 /**
- * The nightly scan and the nightly clean-up of sign-in data (D117) are scheduled at boot (idempotent by date; each job
+ * The nightly scan and the nightly clean-up of sign-in data (D120) are scheduled at boot (idempotent by date; each job
  * reschedules the next one when it runs), once the durable engine has launched (`seedNightly`): its version is then the
  * latest, so this release takes each night from the queue, and the last and the next night that a deployment left
  * waiting under the replaced release are taken over (D85 item 2, as amended 2026-11-13). Every job row starts its

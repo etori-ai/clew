@@ -1,4 +1,4 @@
--- D116: who holds a user name a source sent (`holders` in the people store) compares the name in the composed form (NFC)
+-- D119: who holds a user name a source sent (`holders` in the people store) compares the name in the composed form (NFC)
 -- and without regard to case under ICU's root collation, on both sides, so that a name held by a row stored decomposed
 -- (NFD) beside a composed one names nobody. The unique index on user names (0054, L13) does not fold composition and
 -- cannot serve that comparison, so every lookup read every person in the installation, and a refresh whose rows name a

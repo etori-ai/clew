@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 import { journal, position, upgradeDatabase, type Entry, type UpgradeDatabase } from './upgrade';
 
 /**
- * An upgrade through the migration that keys a planning proposal by person (`person_keys_and_participants`: N3, D116,
+ * An upgrade through the migration that keys a planning proposal by person (`person_keys_and_participants`: N3, D119,
  * S4, L13) on a database with rows behind it. Drizzle runs every pending migration in one transaction, so the run here
  * has one migration before it that writes a person and one after it that alters every table it writes: neither may meet
  * deferred trigger events still queued ("pending trigger events", 55006). A decision on its way for a planning card is

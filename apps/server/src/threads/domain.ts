@@ -109,7 +109,7 @@ export function itemEvents(
 
 /**
  * What a thread is indexed under (D97 item 6): every entity its rows or the thread itself name, once each, by Clew's key
- * (D116: a person's id, a unit's id). The thread store writes these rows with the thread's items.
+ * (D119: a person's id, a unit's id). The thread store writes these rows with the thread's items.
  */
 export function namedSubjects(thread: Pick<Thread, 'items' | 'subjects'>): Subject[] {
   const out = new Map<string, Subject>();
@@ -118,13 +118,13 @@ export function namedSubjects(thread: Pick<Thread, 'items' | 'subjects'>): Subje
   return [...out.values()];
 }
 /**
- * The user names a source's rows name people by (D116), each once: what is resolved to Clew's key when the rows arrive.
+ * The user names a source's rows name people by (D119), each once: what is resolved to Clew's key when the rows arrive.
  */
 export const personNames = (items: readonly ThreadItem[]): string[] => [
   ...new Set(items.flatMap(i => (i.subject?.entity === 'person' ? [i.subject.key] : []))),
 ];
 /**
- * A source's rows as Clew keeps them (D116): a row that names a person by the source's key, their user name, names them by
+ * A source's rows as Clew keeps them (D119): a row that names a person by the source's key, their user name, names them by
  * Clew's key, their id, from `held` (the name as asked, to the id of whoever holds it now). A row whose name nobody holds
  * names nobody, the rest of it kept as the source wrote it. A unit's id is both keys.
  */
@@ -141,7 +141,7 @@ export function keyedItems(items: readonly ThreadItem[], held: ReadonlyMap<strin
 export const STARTED_ACTION = 'decide';
 /**
  * The topic of a card the person started with this capability (D97, D8): `started:<capability>:<digest>`. A started
- * execute about a person ends in `:person:<param>` (D116): the input property that names the person by Clew's key, so the
+ * execute about a person ends in `:person:<param>` (D119): the input property that names the person by Clew's key, so the
  * card itself says where its person is, whatever the capability declares by the time the person decides.
  */
 export const startedTopic = (capability: string, digest: string, personParam?: string) =>
@@ -149,7 +149,7 @@ export const startedTopic = (capability: string, digest: string, personParam?: s
 /** A started execute's person, as its topic ends (`startedTopic`); an input property is a letter and letters or digits. */
 const STARTED_PERSON = /:person:([A-Za-z][A-Za-z0-9]*)$/;
 /**
- * The decision on a card the person started from an entity's menu with an execute (D97, D116): undefined for every other
+ * The decision on a card the person started from an entity's menu with an execute (D97, D119): undefined for every other
  * card and action, a started propose's included, whose actions are the source's own. Otherwise `person`, when the card is
  * about a person: the input property its topic names and the id the card keeps there, which is resolved to the user name
  * when the person decides. A card about a unit keeps the unit's id, which is both keys.
@@ -167,7 +167,7 @@ export function startedDecision(
 }
 /**
  * Whether the capability, as declared when the person decides, still takes a started card's person where the card keeps
- * them (D116). One that no longer names a person, or names them in another property, would send the card's id as if it
+ * them (D119). One that no longer names a person, or names them in another property, would send the card's id as if it
  * were a user name; one that names a person where the card keeps a unit would send the unit's id as one.
  */
 export const takesStarted = (

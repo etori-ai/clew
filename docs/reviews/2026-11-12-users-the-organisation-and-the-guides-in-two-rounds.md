@@ -469,20 +469,20 @@ account, which Q8 settles. No fix needed new surface
 **The decisions.** Three are new records, `provisional` until something outside the repository has tested them
 ([D102](../decisions/D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)):
 
-- [D115](../decisions/D115-a-sign-in-follows-the-identity-providers-session.md) (Q9, L5): a sign-in follows the identity provider's session, and a sign-out there ends Clew's. Under
+- [D118](../decisions/D118-a-sign-in-follows-the-identity-providers-session.md) (Q9, L5): a sign-in follows the identity provider's session, and a sign-out there ends Clew's. Under
   OIDC the identity provider owns authentication policy, and forcing credentials at every sign-in defeats single
   sign-on and trains people to type their password more often. An organisation that wants a fresh prompt, on shared
   computers for example, sets it in its identity provider. Entra ID's only sign-out signal is front-channel, so Clew
   also answers OpenID Connect Front-Channel Logout 1.0; without it, signing out at Microsoft would leave the Clew
   session open for up to eight hours.
-- [D116](../decisions/D116-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) (Q11): Clew keys its own records about a person by the person's id. The id never changes and is never
+- [D119](../decisions/D119-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) (Q11): Clew keys its own records about a person by the person's id. The id never changes and is never
   reused, so a rename loses nothing and a reused name reaches nobody else's records. Moving the stored names at each
   rename would have fixed renames only, and only if every provisioner renamed a leaver first. The user name stays the
   key on the wire. An action started from a person's menu with an `execute` keeps its person, and once approved it is
   not sent when its user name has come to name someone else. An action a source wrote on a card, a started `propose`'s
   included, keeps no person and is not compared: it is sent as the source wrote it, and the source answers for whoever
-  holds a name it uses (D116 items 5 and 9).
-- [D117](../decisions/D117-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md) (Q7, L3, P4, R3): Clew empties expired sign-in data itself, and how long a leaver's record is kept is
+  holds a name it uses (D119 items 5 and 9).
+- [D120](../decisions/D120-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md) (Q7, L3, P4, R3): Clew empties expired sign-in data itself, and how long a leaver's record is kept is
   the organisation's decision. Here the decision goes further than the recommendation, which was to leave retention as
   an open question. A municipality's records can be official documents that only its own retention rules may cull, so
   Clew cannot choose a period; but that decision means nothing without a way to carry it out, so an operator now
@@ -496,7 +496,7 @@ what they say.
 
 **Built beyond what a row's Fix asked.**
 
-- Front-channel logout at `GET /api/auth/frontchannel-logout` (L5, under D115).
+- Front-channel logout at `GET /api/auth/frontchannel-logout` (L5, under D118).
 - `scripts/identity-rebind.ts` moves a person's binding to a new subject or, with `--release`, removes it so that the
   next sign-in binds the person again. A release rather than an erasure frees a subject that a changed source id or a
   moved account name left on another row, without tying anyone's sign-in to a retention decision.
@@ -509,7 +509,7 @@ what they say.
   `attention-release` job and that job's workflow, and the engine makes the batch ready at its time.
 - Migration 0054 carries the schema of the fixes (the partial index on source keys, S4; the user-name index under ICU,
   L13; the participant on a calendar proposal, N1, N3), and an upgrade test runs it on a database that holds data.
-  Migration 0056 indexes the comparison with which Clew finds who holds a user name (D116 item 2): every lookup, at a
+  Migration 0056 indexes the comparison with which Clew finds who holds a user name (D119 item 2): every lookup, at a
   refresh, a declared view, a search and a started propose among others, had read every person in the installation.
   Each name is looked up through it on its own, so a long list does not read every person either, and a test checks
   the plans for a few names and for many.
@@ -572,7 +572,7 @@ what they say.
 - The documents promised that nothing started about an erased person could be decided or sent. The code refuses a card
   started from the person's menu with an `execute` and an execution that keeps its person; a card whose actions a
   source wrote, pushed or started with a `propose`, keeps them. Decided in
-  [D117](../decisions/D117-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md):
+  [D120](../decisions/D120-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md):
   no script closes such a card, and an erasure does not wait for them. A pushed card is the source's work, which its
   next scan draws again; a started `propose` holds the source's own action under the source's own key, which the source
   still holds; and a card is also the record of what the person holding it did. The documents now claim no more than
@@ -580,7 +580,7 @@ what they say.
 - Of the four erasures of a leaver, only `person-erase` refused a person who was still active, and `talks-erase` and
   `competence-erase` read the first of an option given twice, so a copied line could erase the wrong person or someone
   who still works there. The three now refuse an active person, and those two a malformed call, as `person-erase` does
-  ([D117](../decisions/D117-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md)
+  ([D120](../decisions/D120-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md)
   item 3). When a card they removed had a timer waiting, both also printed an error from the durable engine before
   their answer: a script never starts the engine, so they no longer cancel through it, and the timer's workflow finds
   no timer when it wakes. And the three answered a failed query with the statement and its parameters, where
@@ -633,12 +633,15 @@ what they say.
   or a write of the group that does not hold the member, take their times before they commit. The one with the
   earlier time can commit second, and the group then changes under the time it already showed. Ordering them would
   put every rename behind every group the person is in, which a mass rename in a large organisation cannot afford.
-- Nothing removes rows of the audit trail or the authentication log by age. D117 leaves that to the organisation's
+- Nothing removes rows of the audit trail or the authentication log by age. D120 leaves that to the organisation's
   retention decision, which no installation has made yet.
 - No script reaches free text that may name an erased person: card text, the answers to text asks in `thread.started`
-  and `execution.approved` rows, approved payloads and the operator name in `identity.rebound` rows. D117 and the
+  and `execution.approved` rows, approved payloads and the operator name in `identity.rebound` rows. D120 and the
   runbook list them, for an operator or the organisation's retention to remove.
-- D115 is also taken on the branch `prototype-look`. Whichever reaches `main` second takes the next free number.
+- This branch's three decisions were numbered D115, D116 and D117 until `main` gave D116 and D117 to other records on
+  2026-11-13, while its own documents name D115 as the open branch `prototype-look`'s. They are D118, D119 and D120,
+  the next free numbers on `main`, and every reference moved with them. The open branch `competence-moodle` also holds
+  a D119; whichever reaches `main` second takes the next free number.
 - Two lines of the composition are reached by no test: the one that hands the scheduler `signInData`, and
   `startJobs`'s call of `seedNightly`. What they hand over is tested where it is defined. A test of the lines
   themselves would need the composition to take a clock and a ledger of the test's own

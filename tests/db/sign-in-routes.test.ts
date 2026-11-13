@@ -20,7 +20,7 @@ import { authRoutes } from '../../apps/server/src/routes/auth';
  * `login-denied` after the binding's own row, if it wrote one, naming the person when one is known: the bound person
  * without a grant, the person a changed subject's claim names, the person who holds a subject whose claim names someone
  * else, and a person who has left; nobody when the claim names nobody or the ID token carries none. A sign-out at the
- * provider ends the sessions of its `sid` by either channel (D115): front-channel logout from a cross-site frame
+ * provider ends the sessions of its `sid` by either channel (D118): front-channel logout from a cross-site frame
  * without a cookie, back-channel logout as before, with its receipt against a replayed token. The server's logger is
  * watched while the file runs. Run with `bun run test:db` inside the devcontainer.
  */

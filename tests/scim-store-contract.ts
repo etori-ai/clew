@@ -1020,7 +1020,7 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
       expect(await changed([g3])).toEqual(new Map());
       expect(await members(g3)).toEqual([{ id: c, name: 'Name ' + c, nameChangedAt: null }]);
     });
-    test('an erasure takes the person out of their groups, ends their bindings and sessions, and rewrites the audit rows and the claims it is given, in the transaction (D117)', async () => {
+    test('an erasure takes the person out of their groups, ends their bindings and sessions, and rewrites the audit rows and the claims it is given, in the transaction (D120)', async () => {
       const h = await make(),
         p = h.prefix,
         org = p + '-org',

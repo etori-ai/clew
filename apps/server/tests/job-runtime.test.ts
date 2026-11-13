@@ -19,7 +19,7 @@ import {
 import { testEngine } from './durable';
 
 // A scheduled job (D86) on PostgreSQL, the durable engine and production Node: the nightly clean-up of sign-in data
-// (D117), with the clean-up itself replaced by a record of the clock it ran on, which fails the first time. The engine
+// (D120), with the clean-up itself replaced by a record of the clock it ran on, which fails the first time. The engine
 // runs under its own application name, and the nights lie in 2001 and 2097, so no real night's job is touched.
 test(
   "a night's sign-in clean-up waits in the queue until an engine launches, runs once when due and completes in the ledger, also when it fails, and its run leaves the next night waiting in the engine",

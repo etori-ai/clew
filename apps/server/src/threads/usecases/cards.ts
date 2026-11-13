@@ -57,7 +57,7 @@ export interface ThreadDeps {
   /** The timers behind a snooze (D29, D49): the same reminder workflow as D17, and the same return. */
   clock: () => Date;
   ids: () => string;
-  /** Whose a source's key is (D116): a row that names a person by user name names them by id. Absent: by nobody. */
+  /** Whose a source's key is (D119): a row that names a person by user name names them by id. Absent: by nobody. */
   people?: PersonKeys;
 }
 const REOPEN_MS = 10 * 60_000;
@@ -70,7 +70,7 @@ const sameDraft = (t: Thread, d: ThreadDraft, items: Thread['items']) =>
   JSON.stringify(t.items) === JSON.stringify(items) &&
   JSON.stringify(t.actions) === JSON.stringify(d.actions);
 /**
- * Rows without the people they name, whom Clew resolves from its directory (D116): what the source wrote, as far as a
+ * Rows without the people they name, whom Clew resolves from its directory (D119): what the source wrote, as far as a
  * stored card can tell, since the card keeps the id and not the source's key.
  */
 const unnamed = (items: Thread['items']) =>
@@ -118,7 +118,7 @@ export function threadUsecases(deps: ThreadDeps) {
   async function scanInto(persona: AuthenticatedContext, source: string) {
     if (registry.visible(audiencedActorOf(persona), 'calendar')) await calendar.ensureProposalThread(persona, source);
     await wakeDue(persona);
-    // A person a row names by user name is kept by id (D116), resolved as the rows arrive.
+    // A person a row names by user name is kept by id (D119), resolved as the rows arrive.
     const drafts = await keyedDrafts(people, persona, await registry.scan(audiencedActorOf(persona)));
     const now = clock();
     for (const d of drafts) {
@@ -143,7 +143,7 @@ export function threadUsecases(deps: ThreadDeps) {
       }));
       if (sameDraft(existing, d, items)) continue;
       // A row that names another person, or nobody, because the directory changed (a rename, a leaver, a reused name) is
-      // rewritten, but only the source moving is activity that wakes a snoozed card (D116).
+      // rewritten, but only the source moving is activity that wakes a snoozed card (D119).
       const moved = !sameDraft({ ...existing, items: unnamed(existing.items) }, d, unnamed(items));
       await store.transaction(async tx => {
         const current = await tx.lockThread(persona.id, existing.id);

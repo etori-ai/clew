@@ -95,7 +95,7 @@ export const talkDirectory: Directory = async actor => {
 };
 /**
  * Who a talks row's key names in the reader's organisation now, asked by the seam for the action points a former manager
- * still owns (M2): the holder of a user name, as the people module compares one (D116), else the person provisioned
+ * still owns (M2): the holder of a user name, as the people module compares one (D119), else the person provisioned
  * without one whose id the key is (D96 item 8), read from the people table the talks store reads.
  */
 export const talkHolders: Holders = async (actor, keys) => {

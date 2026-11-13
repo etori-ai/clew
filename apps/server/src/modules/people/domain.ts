@@ -336,7 +336,7 @@ export interface GroupFields {
   members: string[];
 }
 
-// ---- Erasure (Q7 of the 2026-11-12 users review, D117): what an operator's erasure of a deactivated person clears.
+// ---- Erasure (Q7 of the 2026-11-12 users review, D120): what an operator's erasure of a deactivated person clears.
 
 /**
  * What an erased identifier reads as in an audit row that keeps its event: one marker everywhere, so that whoever reads
@@ -411,9 +411,9 @@ export function namesHeld(
  * D110 and D114 added among them), no user name and no source key, so that the name and the key are free for someone
  * else while the row, its id and every reference to it stay. The name column holds text, so an erased name is the empty
  * one. A record without a user name reads as its id wherever a user name is shown or written back (the SCIM resource,
- * `fieldsOf`, Administration › Användare): that is how the erasure replaces the user name with the id (D117). Stored as
+ * `fieldsOf`, Administration › Användare): that is how the erasure replaces the user name with the id (D120). Stored as
  * none, it is no key: neither the id nor a name the person held resolves to them (`UserReads.userName` and `holders`),
- * so a started action about them is refused (D116), and it cannot collide with a name someone else holds. Storing the
+ * so a started action about them is refused (D119), and it cannot collide with a name someone else holds. Storing the
  * id instead made the id resolve as their user name, and kept the name of a person whose id is their user name.
  */
 export const erasedProfile = () => ({

@@ -1244,7 +1244,7 @@ export class MockApi {
     if (key === 'rows') {
       const delay = this.entityRowsDelay[capability];
       if (delay) await new Promise(resolve => setTimeout(resolve, delay));
-      // A source is asked with each person's user name and answers with it (D116).
+      // A source is asked with each person's user name and answers with it (D119).
       const known = new Set(list.groups.flatMap(g => g.entities.map(e => e.sourceKey)));
       const rows = this.entityRows[capability];
       const answer: EntityRows = silent

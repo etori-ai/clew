@@ -16,7 +16,7 @@ import { memoryPersonKeys } from '../person-keys';
 /**
  * The capability routes (`/api/cap/:name`): a read answers its output, the source and its declared view (D38), and the
  * view carries the people its records name, from the user name a record holds to the id of whoever of the reader's
- * organisation holds it (D116), so the web links a record to `/people/<id>`. A name nobody there holds is absent. An
+ * organisation holds it (D119), so the web links a record to `/people/<id>`. A name nobody there holds is absent. An
  * execute is reached only through the human decision endpoint. The registry and the run are stubbed here; the people
  * are the memory directory's.
  */
@@ -123,7 +123,7 @@ function stack(options: { people?: boolean } = {}) {
 }
 
 describe('the capability routes', () => {
-  test("a read's view links the records whose user name someone of the reader's organisation holds, by id (D116)", async () => {
+  test("a read's view links the records whose user name someone of the reader's organisation holds, by id (D119)", async () => {
     const { request, asked, ran, rows } = stack();
     const input = encodeURIComponent(JSON.stringify({ round: '2026' }));
     const response = await request(`/talks.talks?input=${input}`);

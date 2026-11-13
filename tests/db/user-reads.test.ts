@@ -20,7 +20,7 @@ import { upgradeDatabase } from './upgrade';
  * where a plain lower() folds only A to Z, that the unique index folds under ICU and refuses Å and å as two people and
  * that who holds a user name matches across case and composition, a name held by a composed row and a decomposed (NFD)
  * one naming nobody (L13); and, on a database of a thousand people per organisation, that who holds a name is looked up
- * name by name through an index, for a few names or many, never by reading every person (D116).
+ * name by name through an index, for a few names or many, never by reading every person (D119).
  * Run with `bun run test:db` inside the devcontainer.
  */
 if (!process.env.DATABASE_URL)
@@ -136,7 +136,7 @@ interface PlanNode {
 }
 const planNodes = (node: PlanNode): PlanNode[] => [node, ...(node.Plans ?? []).flatMap(planNodes)];
 
-test('who holds a user name is looked up name by name through an index, for a few names or many, never by reading every person in the installation (D116)', async () => {
+test('who holds a user name is looked up name by name through an index, for a few names or many, never by reading every person in the installation (D119)', async () => {
   // The statements `holders` sends for a few names and for many, taken as they are sent. A refresh asks at once for every
   // name in the drafts of a manager's scan and a declared view for every subject in its output; a search, a started
   // propose and the talks ask for a few.

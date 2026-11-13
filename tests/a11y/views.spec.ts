@@ -412,7 +412,7 @@ test.describe('1.4.10: a declared view at 320 px', () => {
  * table (`talks.talks`) declares it; a row that also opens a read keeps that on its name and gets the person as a link
  * of its own at the row's end, since one cell cannot be two links. A detail's heading links the same way.
  *
- * D116: the row holds the source's key, a user name, and the link goes to the person's id, which the server answers in
+ * D119: the row holds the source's key, a user name, and the link goes to the person's id, which the server answers in
  * `view.people` for the user names someone of the reader's organisation holds. The ids here differ from the user names,
  * so a link built from the user name would fail, and a row whose user name nobody holds is text.
  */
@@ -432,7 +432,7 @@ test.describe('a view row that names a person', () => {
       { key: 'at', label: 'När' },
     ],
     subject: { entity: 'person' as const, key: 'userName' },
-    // The ids of the people the rows name, by the user name the source sent (D116); `bo.ek` is held by nobody.
+    // The ids of the people the rows name, by the user name the source sent (D119); `bo.ek` is held by nobody.
     people: { 'anna.lindqvist': 'anna', 'karin.lindqvist': 'karin' },
   };
   const rows = [

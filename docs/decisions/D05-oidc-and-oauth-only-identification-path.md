@@ -1,8 +1,8 @@
 # D5 · OIDC and OAuth 2.1 with JWT access tokens are the only identification path
 
-**Status:** accepted, refined by [D115](D115-a-sign-in-follows-the-identity-providers-session.md) (2026-11-12, provisional: a sign-in follows the identity provider's session, and a sign-out there ends Clew's) · **Date:** 2026-11-03 · **Area:** identity
+**Status:** accepted, refined by [D118](D118-a-sign-in-follows-the-identity-providers-session.md) (2026-11-12, provisional: a sign-in follows the identity provider's session, and a sign-out there ends Clew's) · **Date:** 2026-11-03 · **Area:** identity
 
-**Amended 2026-11-12.** [D115](D115-a-sign-in-follows-the-identity-providers-session.md) records how a sign-in
+**Amended 2026-11-12.** [D118](D118-a-sign-in-follows-the-identity-providers-session.md) records how a sign-in
 relates to the identity provider's session (Q9 and L5 of the
 [review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md)).
 Clew sends neither `prompt=login` nor `max_age` and redeems the code without a maximum age, so a sign-in follows the

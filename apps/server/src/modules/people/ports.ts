@@ -26,7 +26,7 @@ export interface UserReads {
    */
   userName(personId: string): Promise<string | null>;
   /**
-   * Who holds these user names now in the reader's organisation, active or not (D116: a source's key is resolved to the
+   * Who holds these user names now in the reader's organisation, active or not (D119: a source's key is resolved to the
    * person's id when a row or an action arrives), compared without regard to case and in the composed form (NFC) on
    * both sides; keyed by the name as asked. A name nobody of the reader's organisation holds is absent, and so is a name
    * more than one of them holds in spellings that compare alike, and every name for a reader the people table does not
@@ -35,7 +35,7 @@ export interface UserReads {
   holders(readerId: string, userNames: readonly string[]): Promise<Map<string, string>>;
   /**
    * Whether this person is active: false once the source has deactivated them, undefined for an id the people table
-   * does not hold. An erasure refuses an id it does not hold (D116) and a person who is still active (D117).
+   * does not hold. An erasure refuses an id it does not hold (D119) and a person who is still active (D120).
    */
   enabled(personId: string): Promise<boolean | undefined>;
 }
@@ -53,7 +53,7 @@ export interface Listed<T> {
   total: number;
   rows: T[];
 }
-/** A row of the audit table as an erasure reads it (D117): its id, what happened, about whom, and what it holds. */
+/** A row of the audit table as an erasure reads it (D120): its id, what happened, about whom, and what it holds. */
 export interface AuditRecord {
   id: number;
   action: string;
@@ -268,7 +268,7 @@ export interface ProvisionTx {
   placements(organisationId: string): Promise<Placement[]>;
   /** Whether an identity binding exists for the person, with any issuer. */
   bound(personId: string): Promise<boolean>;
-  // An operator's erasure of a deactivated person (D117): the row and its id stay, what names the person goes.
+  // An operator's erasure of a deactivated person (D120): the row and its id stay, what names the person goes.
   /**
    * Holds the rows of the groups the person is in, in id order, for the rest of the transaction. Taken before
    * `lockPerson`, as a group write holds its group before it locks a person: an erasure that takes the person out of

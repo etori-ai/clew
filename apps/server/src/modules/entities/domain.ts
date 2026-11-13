@@ -20,7 +20,7 @@ import type { DirectoryPerson, DirectoryUnit, NamedCard, Reach } from './model';
  * The pure part of the entities module (D97): who may be asked about, which keys a source is sent, and what of its
  * answer is kept. No I/O and no clock: everything depends on the directory and the answer handed in.
  *
- * An entity has two keys (D116). Clew's key names it in Clew's own records and addresses: a person's id, which never
+ * An entity has two keys (D119). Clew's key names it in Clew's own records and addresses: a person's id, which never
  * changes and is never reused, and a unit's id. The source's key is what a source is asked with and answers its rows
  * with: a person's user name (D96 talks item 8), compared without regard to case, and a unit's id.
  */

@@ -8,7 +8,7 @@ import { viewWithPeople } from '../threads/usecases/keys';
 /**
  * Standing actions and panel views: one capability run directly, as the person. GET answers a read, its input as JSON in
  * `input`, with how to draw it when the capability declares a view (D38), and with the people its records name by user
- * name, to their ids (D116), so a record links to `/people/<id>`. POST runs anything but an execute, which only the human
+ * name, to their ids (D119), so a record links to `/people/<id>`. POST runs anything but an execute, which only the human
  * decision endpoint reaches. Mounted under `/api/cap` inside the API, behind its session guard and its refresh of the
  * connectors; a test passes its own guard.
  *
@@ -22,7 +22,7 @@ export interface CapabilityRouteDeps {
   registry: Pick<Registry, 'findFor' | 'viewFor'>;
   /** Run a capability as the person, with input validation and scope: `runCapability` in the server. */
   run(persona: AuthenticatedContext, name: string, input: unknown): Promise<unknown>;
-  /** Whose a source's key is (D116): a record that names a person by user name links to them by id. Absent: nobody. */
+  /** Whose a source's key is (D119): a record that names a person by user name links to them by id. Absent: nobody. */
   people?: Pick<PersonKeys, 'holders'>;
   /** The session guard of a test; inside the API its own guard stands in front. */
   guard?: MiddlewareHandler<Env>;
@@ -50,7 +50,7 @@ export function capabilityRoutes(deps: CapabilityRouteDeps) {
     // The output and, when the capability declares one, how to draw it (D38): the browser never guesses a declared view.
     const output = await run(persona, name, input);
     const view = registry.viewFor(audiencedActorOf(persona), name);
-    // A record that names a person links to them by id (D116).
+    // A record that names a person links to them by id (D119).
     return c.json({
       output,
       source: found.connector.source,

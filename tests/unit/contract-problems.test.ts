@@ -267,7 +267,7 @@ describe('what the schemas say after they are built', () => {
     expect(isKey('unit', '😀'.repeat(256))).toBe(true);
     expect(isKey('unit', '😀'.repeat(257))).toBe(false);
     expect(isKey('unit', '')).toBe(false);
-    // A person's key is their id (D116): as long as an id may be.
+    // A person's key is their id (D119): as long as an id may be.
     expect(isKey('person', '😀'.repeat(80))).toBe(true);
     expect(isKey('person', '😀'.repeat(81))).toBe(false);
   });

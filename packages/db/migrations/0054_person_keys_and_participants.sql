@@ -15,7 +15,7 @@ DROP INDEX "auth_person_external_id";--> statement-breakpoint
 DROP INDEX "auth_person_user_name";--> statement-breakpoint
 CREATE UNIQUE INDEX "auth_person_external_id" ON "auth_person" USING btree ("external_id") WHERE "auth_person"."external_id" is not null;--> statement-breakpoint
 CREATE UNIQUE INDEX "auth_person_user_name" ON "auth_person" USING btree (lower("user_name" collate "und-x-icu"));--> statement-breakpoint
--- D116: the person a started action is about, checked at dispatch against the user name the payload carries.
+-- D119: the person a started action is about, checked at dispatch against the user name the payload carries.
 ALTER TABLE "execution" ADD COLUMN "subject" jsonb;--> statement-breakpoint
 -- N3: a proposal names whom it invites by Clew's key, the person's id, beside the address it was drawn with. Nothing is
 -- launched and no stored proposal can say which person its address meant, so the ones there are removed, and with them

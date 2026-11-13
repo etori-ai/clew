@@ -61,7 +61,7 @@ describe('a person is a page only (D111 rule 3)', () => {
   });
 });
 
-describe("the entity a record names, by Clew's key (D97 item 6, D116)", () => {
+describe("the entity a record names, by Clew's key (D97 item 6, D119)", () => {
   const view = (
     subject?: { entity: 'person' | 'unit'; key: string },
     people?: Record<string, string>,

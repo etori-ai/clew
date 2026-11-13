@@ -20,7 +20,7 @@ import { memoryPersonKeys } from '../person-keys';
  * "Behöver dig" on a person and "Just nu" on the list (D97 items 5 and 6) as the person meets them: a source's scan pushes
  * cards whose rows name people, through the real registry and the stream's own use cases on the memory store, and the
  * entities use cases read them back through the index from entity to cards, wired as composition wires them. A row names
- * a person by the source's key, their user name, and the card keeps the person's id (D116). Whose cards show, which
+ * a person by the source's key, their user name, and the card keeps the person's id (D119). Whose cards show, which
  * leave, who may be asked about at all, a renamed person and a reused user name, and erasing a person's key.
  */
 const T0 = '2026-11-10T07:00:00.000Z';
@@ -330,7 +330,7 @@ describe('the cards about a person', () => {
     // An employee has no list, so nothing is counted.
     expect((await w.entities.list(w.people.persona('hassan'), 'person')).attention).toEqual([]);
   });
-  test('a renamed person keeps the cards that named them; a reused user name reaches only rows that arrive after (D116)', async () => {
+  test('a renamed person keeps the cards that named them; a reused user name reaches only rows that arrive after (D119)', async () => {
     const w = world();
     await w.scan('hillevi');
     const hillevi = w.people.persona('hillevi');
@@ -348,7 +348,7 @@ describe('the cards about a person', () => {
     expect((await w.entities.detail(hillevi, 'person', 'erik'))?.cards).toEqual([]);
     expect((await w.entities.detail(hillevi, 'person', 'erik-2'))?.cards.map(c => c.threadId)).toEqual([sick]);
   });
-  test('a row whose user name nobody holds any more, after a rename the source has not made, names nobody (D116)', async () => {
+  test('a row whose user name nobody holds any more, after a rename the source has not made, names nobody (D119)', async () => {
     const w = world();
     await w.scan('hillevi');
     const hillevi = w.people.persona('hillevi');
@@ -359,7 +359,7 @@ describe('the cards about a person', () => {
     expect((await w.store.readThread('hillevi', sick))?.items).toEqual([row('sick:1', 'Erik Sund sjuk 10–11 nov')]);
     expect((await w.entities.detail(hillevi, 'person', 'erik'))?.cards).toEqual([]);
   });
-  test('a rename the source has not made is no activity on a card: its row is rewritten and its snooze holds, until the source moves (D116)', async () => {
+  test('a rename the source has not made is no activity on a card: its row is rewritten and its snooze holds, until the source moves (D119)', async () => {
     const scans = { ...SCANS, hillevi: [...SCANS.hillevi!] };
     const w = world(scans);
     await w.scan('hillevi');
@@ -439,7 +439,7 @@ describe('the cards about a person', () => {
 });
 
 describe("erasing a person's key from the cards", () => {
-  /** The source deactivates the person: only then does an operator erase them (D117 item 3). */
+  /** The source deactivates the person: only then does an operator erase them (D120 item 3). */
   const deactivate = (w: ReturnType<typeof world>, id: string) => void (w.people.state.users.get(id)!.enabled = false);
   test('every row and thread loses the subject, the text stays, and one audit row counts what was touched without the key', async () => {
     const w = world();
@@ -497,7 +497,7 @@ describe("erasing a person's key from the cards", () => {
     });
     expect(w.store.audit.filter(e => e.action === SUBJECT_ERASED).map(e => e.subject)).toEqual(['unit:unit-gone']);
   });
-  test('a person who is still active is refused: no card loses them and no audit row is written (D117 item 3)', async () => {
+  test('a person who is still active is refused: no card loses them and no audit row is written (D120 item 3)', async () => {
     const w = world();
     await w.scan('hillevi', 'petra');
     const named = async () =>

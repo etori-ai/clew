@@ -336,7 +336,7 @@ describe('the rules of a declared view', () => {
     });
     expect(openRef(open, { name: 'A' }, 'X')).toBeUndefined();
   });
-  test("the user names a view's records name people by are read once each, for Clew to resolve to ids (D97 item 6, D116)", () => {
+  test("the user names a view's records name people by are read once each, for Clew to resolve to ids (D97 item 6, D119)", () => {
     const person = { entity: 'person' as const, key: 'userName' };
     const named: View = { ...table, subject: person };
     // A table's rows: each user name once, in the order met; a record without a string in the property names nobody.

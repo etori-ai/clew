@@ -36,7 +36,7 @@ export const registry = new Registry({
 const search = searchUsecases({
   sources: actor => registry.searchSources(actor),
   clock,
-  // A hit names a person by user name; the list links them by id (D116).
+  // A hit names a person by user name; the list links them by id (D119).
   people: userReads,
 });
 /** The card an answer becomes is the stream's use case; the composition root fills this slot once the stream is built over the registry. */

@@ -11,7 +11,7 @@ const execution = (state: 'failed' | 'unknown', reason: string | null = null): E
   compensates: null,
 });
 
-describe('a started action whose person no longer has the user name it was decided for (D116)', () => {
+describe('a started action whose person no longer has the user name it was decided for (D119)', () => {
   test('refused before it was sent: nothing went, and the person decides again', () => {
     expect(executionStatus(execution('failed', SUBJECT_CHANGED))).toBe(
       'Personen har inte längre det användarnamn som beslutet gällde. Inget skickades. Fatta beslutet igen.',

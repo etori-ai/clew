@@ -13,7 +13,7 @@ import { forgetTestWorkflows, testDurable } from './durable';
  * on one thread-store transaction), with the test's own engine queue. The holdings, the cards the competence scan put in
  * the person's stream, a `thread.removed` row per card and the erasure's own audit row commit together or not at all;
  * another connector's card of theirs and someone else's competence card stay; an id the people table does not hold, such
- * as the person's user name, and a person who is still active erase nothing and write no audit row (D117 item 3). Run
+ * as the person's user name, and a person who is still active erase nothing and write no audit row (D120 item 3). Run
  * with `bun run test:db` inside the devcontainer.
  */
 if (!process.env.DATABASE_URL)
@@ -138,7 +138,7 @@ describe('erasing a person from the competence domain on Postgres (D108 item 14,
     expect((await threadsOf(person)).map(t => t.id)).toEqual([cards.otherConnector, cards.own].sort());
     expect(await auditOf([`person:${userName}`, `person:${person}`])).toEqual([]);
   });
-  test('a person who is still active is refused: nothing is erased and nothing is audited (D117 item 3)', async () => {
+  test('a person who is still active is refused: nothing is erased and nothing is audited (D120 item 3)', async () => {
     expect(await competence.erasePerson('operator:cli', person)).toEqual({ refused: 'active' });
     expect((await threadsOf(person)).map(t => t.id)).toEqual([cards.otherConnector, cards.own].sort());
     expect(

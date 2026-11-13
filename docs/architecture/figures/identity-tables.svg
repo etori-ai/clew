@@ -42,7 +42,7 @@
 <text x="52" y="400" font-size="10.5" fill="#6b7280">email, phone_numbers, employments: the person&#x27;s profile (D114)</text>
 <text x="52" y="416" font-size="10.5" fill="#6b7280">title: shown and searched, decides nothing (D110)</text>
 <text x="52" y="432" font-size="10.5" fill="#6b7280">name_changed_at: a group&#x27;s time follows its members&#x27; names</text>
-<text x="52" y="448" font-size="10.5" fill="#6b7280">DELETE deactivates and clears nothing; person-erase minimises (D117)</text>
+<text x="52" y="448" font-size="10.5" fill="#6b7280">DELETE deactivates and clears nothing; person-erase minimises (D120)</text>
 <rect x="420" y="56" width="360" height="234" rx="8" fill="#ffffff" stroke="#9ca3af"/>
 <path d="M 428 56 H 772 a 8 8 0 0 1 8 8 V 86 H 420 V 64 a 8 8 0 0 1 8 -8 Z" fill="#f3f4f6" stroke="#9ca3af"/>
 <text x="432" y="76" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-weight="600" font-size="13" fill="#111827">auth_group</text>
@@ -212,11 +212,11 @@
 <text x="832" y="958" font-size="10.5" fill="#6b7280">→ auth_person.id · one subject per issuer and person</text>
 <text x="832" y="974" font-size="10.5" fill="#6b7280">written at the first sign-in; the claim is checked at every sign-in</text>
 <text x="832" y="990" font-size="10.5" fill="#6b7280">moved or released by an operator with scripts/identity-rebind.ts,</text>
-<text x="832" y="1006" font-size="10.5" fill="#6b7280">audited as identity.rebound; removed by person-erase (D117)</text>
+<text x="832" y="1006" font-size="10.5" fill="#6b7280">audited as identity.rebound; removed by person-erase (D120)</text>
 <rect x="820" y="1032" width="380" height="82" rx="8" fill="#ffffff" stroke="#c7d7f5" stroke-dasharray="4 3"/>
 <text x="832" y="1052" font-size="11.5" fill="#374151">Not drawn: auth_session, auth_login_transaction,</text>
 <text x="832" y="1068" font-size="11.5" fill="#374151">auth_logout_receipt and the log auth_audit. The nightly</text>
 <text x="832" y="1084" font-size="11.5" fill="#374151">sign-in clean-up deletes what has expired and keeps</text>
-<text x="832" y="1100" font-size="11.5" fill="#374151">auth_audit (D117).</text>
+<text x="832" y="1100" font-size="11.5" fill="#374151">auth_audit (D120).</text>
 <text x="620" y="1202" text-anchor="middle" font-size="12" fill="#6b7280">PK primary key · FK foreign key · UNIQUE unique index · CHECK allowed values</text>
 </svg>

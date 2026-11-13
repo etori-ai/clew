@@ -265,7 +265,7 @@ export function executionStoreContract(name: string, create: () => Promise<Execu
       });
       expect(await w.auditCount()).toBe(0);
     });
-    test('the person a started action is about (D116) survives a round trip, the lock and an update; none stays none', async () => {
+    test('the person a started action is about (D119) survives a round trip, the lock and an update; none stays none', async () => {
       const w = await create(),
         e: Execution = {
           ...executionRecord(w.personId, w.personId + '-subject'),

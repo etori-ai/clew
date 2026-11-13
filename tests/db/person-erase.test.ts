@@ -16,7 +16,7 @@ import { subjectErasure } from '../../apps/server/src/threads/usecases/subjects'
 import { forgetTestWorkflows, testDurable } from './durable';
 
 /**
- * An operator's erasure of a deactivated person on PostgreSQL (D117, Q7 of the 2026-11-12 users review): the person is
+ * An operator's erasure of a deactivated person on PostgreSQL (D120, Q7 of the 2026-11-12 users review): the person is
  * pushed through the SCIM use cases and signs in through `@clew/db/auth`, so every table and audit row the erasure must
  * reach is written by the code that writes it in production; then every one of them is read back, the audit trail and
  * the authentication log searched for every value that named the person. The source can push the freed name and key

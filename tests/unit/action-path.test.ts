@@ -538,7 +538,7 @@ describe('an execute about a person that asks (D112)', () => {
       clock: () => T0,
       ids: () => 'card-1',
     });
-    // The person goes where the capability takes them, by id, as the entity's menu passes them (D116); without them the
+    // The person goes where the capability takes them, by id, as the entity's menu passes them (D119); without them the
     // decision could not resolve the person, and no card is made.
     await expect(
       started.startCard(persona(), 'talks2.book', { person: 'anna' }, { reason: 'Du valde' }),
@@ -574,7 +574,7 @@ describe('an execute about a person that asks (D112)', () => {
     });
     const card = (await threads.threadFor(persona(), threadId))!;
     expect(card.actions[0]!.path!.asks.map(a => a.property)).toEqual(['when']);
-    // The card keeps Anna by id; the source is sent the user name she has when the person decides (D116).
+    // The card keeps Anna by id; the source is sent the user name she has when the person decides (D119).
     const people = {
       holders: async () => new Map<string, string>(),
       userName: async (id: string) => (id === 'anna' ? 'anna.l' : null),
@@ -671,7 +671,7 @@ describe('an execute about a person that asks (D112)', () => {
       'Svaren ges när du beslutar på ärendet.',
     );
     await uc.start(p, 'person', 'anna', 'hr.report');
-    // The card's input names Anna by id; the stream is told which property that is and the user name to send (D116).
+    // The card's input names Anna by id; the stream is told which property that is and the user name to send (D119).
     expect(started.at(-1)).toEqual({ capability: 'hr.report', input: { person: 'anna' }, asked: undefined });
     expect(persons.at(-1)).toEqual({ param: 'person', personId: 'anna', sourceKey: 'anna.l' });
     expect(await uc.effect(p, 'person', 'anna', 'hr.report', { from: '2026-11-10' })).toEqual({

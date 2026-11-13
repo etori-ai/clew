@@ -25,7 +25,7 @@ const persona: AuthenticatedContext = {
 };
 function world(
   safety: WriteSafety = { strategy: 'deduplicated', retentionSeconds: 86400, lookup: 'test.lookup' },
-  /** Each person's user name now (D116); absent, the world has no people port. */
+  /** Each person's user name now (D119); absent, the world has no people port. */
   userNames?: Map<string, string | null>,
 ) {
   const store = memoryExecutionStore(),
@@ -81,7 +81,7 @@ function world(
       unavailable = value;
     },
     approve: () => uc.approve(persona, { decisionId: 'decision', operation: 'test.do', payload: { revision: 'r1' } }),
-    /** A started action about a person (D116): the payload names them by the user name they had as it was decided. */
+    /** A started action about a person (D119): the payload names them by the user name they had as it was decided. */
     approveAbout: (personId: string, userName: string, decisionId = 'decision') =>
       uc.approve(persona, {
         decisionId,
@@ -278,7 +278,7 @@ test('execution evidence cannot be read, replayed, reconciled or undone under a 
   expect((await w.uc.read(persona, approved.id))?.result).toMatchObject(result);
 });
 
-describe('an approved action about a person (D116)', () => {
+describe('an approved action about a person (D119)', () => {
   const failed = (attempt = 1) => ({
     action: 'execution.failed',
     details: { attempt, reason: SUBJECT_CHANGED, outcomes: [] },

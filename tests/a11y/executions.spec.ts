@@ -51,7 +51,7 @@ for (const [layout, viewport] of [
         await expectNoAxeViolations(page);
         expect(await reflowProblems(page)).toEqual([]);
       });
-    test('a started action not sent because the user name moved says so, and its own button decides again (D116)', async ({
+    test('a started action not sent because the user name moved says so, and its own button decides again (D119)', async ({
       page,
       api,
     }) => {

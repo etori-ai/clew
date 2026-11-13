@@ -73,7 +73,7 @@ test.describe('users administration', () => {
               }
             : undefined;
         await open(page, '/admin/users?role=manager');
-        // The address is her id, never her user name (D116).
+        // The address is her id, never her user name (D119).
         await expect(page.getByRole('link', { name: 'Hillevi Berg', exact: true })).toHaveAttribute(
           'href',
           '/people/hillevi?from=%2Fadmin%2Fusers%3Frole%3Dmanager',

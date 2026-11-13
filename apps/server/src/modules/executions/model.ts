@@ -36,7 +36,7 @@ export interface Execution {
   approvingSession: string | null;
   checkingSession: string | null;
   /**
-   * The person a started action is about (D116): `payload[param]` is the user name `personId` held when the person
+   * The person a started action is about (D119): `payload[param]` is the user name `personId` held when the person
    * decided. Dispatch sends it only while it still names that person. Null for every other execution.
    */
   subject: { param: string; personId: string } | null;
@@ -225,7 +225,7 @@ export interface ExecutionSessions {
    */
   ready(persona: AuthenticatedContext, execution: Execution): Promise<boolean>;
 }
-/** Whose a user name is now (D116, composition: the people module's user reads). */
+/** Whose a user name is now (D119, composition: the people module's user reads). */
 export interface ExecutionPeople {
   /** The person's user name now; null for nobody, or a person provisioned without one. */
   userName(personId: string): Promise<string | null>;

@@ -126,7 +126,7 @@ export const executions = executionUsecases({
     createHash('sha256')
       .update(JSON.stringify(canonical(input)))
       .digest('hex'),
-  // A started action is sent only while its user name still names its person (D116).
+  // A started action is sent only while its user name still names its person (D119).
   people: personKeys,
 });
 calendarApproval.approve = executions.approve;
