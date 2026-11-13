@@ -426,11 +426,14 @@ describe('the composite search over the registry', () => {
       ref: 'r1',
       label: 'Rutin r1',
     });
-    await expect(w.registry.run(hassan, 'clew.openSource', { ref: 'docs:nope' })).rejects.toThrow(
-      'Källan går inte att öppna härifrån.',
-    );
-    await expect(w.registry.run(hassan, 'clew.fetchSource', { ref: 'secret:z' })).rejects.toThrow(
-      'Avsnittet finns inte längre.',
-    );
+    // Not found, as a connector calling back is told (404 not-found), never a refusal of its input.
+    await expect(w.registry.run(hassan, 'clew.openSource', { ref: 'docs:nope' })).rejects.toMatchObject({
+      message: 'Källan går inte att öppna härifrån.',
+      code: 'not-found',
+    });
+    await expect(w.registry.run(hassan, 'clew.fetchSource', { ref: 'secret:z' })).rejects.toMatchObject({
+      message: 'Avsnittet finns inte längre.',
+      code: 'not-found',
+    });
   });
 });

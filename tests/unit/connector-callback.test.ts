@@ -89,7 +89,7 @@ function world() {
       capability('source.denies', 'read', async () => {
         throw new CapabilityError('Du saknar behörighet.', 'denied');
       }),
-      // A refusal of Clew's own modules carries no code: the person's to read, as on /api/cap.
+      // A refusal without a code, as the server's InputError has none: the person's to read, as on /api/cap.
       capability('source.refuses', 'read', async () => {
         throw new CapabilityError('Avsnittet finns inte längre.');
       }),

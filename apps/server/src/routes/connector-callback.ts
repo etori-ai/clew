@@ -76,8 +76,9 @@ export function connectorCallback(deps: ConnectorCallbackDeps) {
         .call(body.name, body.input ?? {});
       return c.json({ output }, 200, privateHeaders);
     } catch (e) {
-      // The registry's refusals and a target's own answer carry the protocol's code (`CapabilityError`); one of Clew's
-      // modules may refuse without one, or with the server's `InputError`, in Swedish for the person as on `/api/cap`.
+      // The registry's refusals, Clew's own modules and a target's answer carry the protocol's code (`CapabilityError`):
+      // a source that is down or answered out of shape is `unavailable`, never a refusal of the input. Anything without
+      // one, the server's `InputError` among them, is a refusal in Swedish for the person, as on `/api/cap`.
       if (e instanceof CapabilityError || e instanceof InputError) {
         const code = (e instanceof CapabilityError && e.code) || (e.message === UNKNOWN ? 'not-found' : 'invalid');
         return error(code, e.message, STATUS[code]);

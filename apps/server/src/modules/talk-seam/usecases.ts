@@ -35,7 +35,7 @@ export function talkSeamUsecases(deps: TalkSeamDeps) {
   };
   const sourceFor = (actor: Actor): TalkSource => {
     const source = deps.source(actor);
-    if (!source) throw new CapabilityError(NO_SOURCE);
+    if (!source) throw new CapabilityError(NO_SOURCE, 'unavailable');
     return source;
   };
   /** One read of the source under the budget; whatever goes wrong, the person reads the same sentence. */
@@ -46,7 +46,7 @@ export function talkSeamUsecases(deps: TalkSeamDeps) {
     } catch {
       // The source's own message stays out of what the person reads.
     }
-    throw new CapabilityError(unexpected(source.source));
+    throw new CapabilityError(unexpected(source.source), 'unavailable');
   }
   /**
    * The round and one row per person the reader manages now, as the source answers it. A source whose talks read the
@@ -56,7 +56,7 @@ export function talkSeamUsecases(deps: TalkSeamDeps) {
     const source = sourceFor(actor);
     if (!source.talks) return { round: null, rows: [], writable: source.builtIn, source: source.source };
     const [answer, directory] = await Promise.all([ask(source, source.talks, {}, call), deps.directory(actor)]);
-    if (!checkContract(TalksOutputSchema, answer)) throw new CapabilityError(unexpected(source.source));
+    if (!checkContract(TalksOutputSchema, answer)) throw new CapabilityError(unexpected(source.source), 'unavailable');
     const result: TalksResult = {
       round: answer.round,
       rows: mapTalkRows(answer.rows, directory.staff),
@@ -64,7 +64,7 @@ export function talkSeamUsecases(deps: TalkSeamDeps) {
       writable: source.builtIn,
       source: source.source,
     };
-    if (!checkContract(TalksResultSchema, result)) throw new CapabilityError(unexpected(source.source));
+    if (!checkContract(TalksResultSchema, result)) throw new CapabilityError(unexpected(source.source), 'unavailable');
     return result;
   }
   /**
@@ -81,7 +81,8 @@ export function talkSeamUsecases(deps: TalkSeamDeps) {
       ask(source, source.commitments, input, call),
       deps.directory(actor),
     ]);
-    if (!checkContract(CommitmentsOutputSchema, answer)) throw new CapabilityError(unexpected(source.source));
+    if (!checkContract(CommitmentsOutputSchema, answer))
+      throw new CapabilityError(unexpected(source.source), 'unavailable');
     const elsewhere = source.builtIn && input.person === undefined ? ownedElsewhere(answer.rows, directory) : [];
     const candidates =
       source.builtIn && input.person !== undefined ? takeoverCandidates(answer.rows, TALKS_CONNECTOR) : [];
@@ -101,7 +102,8 @@ export function talkSeamUsecases(deps: TalkSeamDeps) {
       writable: source.builtIn,
       source: source.source,
     };
-    if (!checkContract(CommitmentsResultSchema, result)) throw new CapabilityError(unexpected(source.source));
+    if (!checkContract(CommitmentsResultSchema, result))
+      throw new CapabilityError(unexpected(source.source), 'unavailable');
     return result;
   }
   return { talks, commitments };

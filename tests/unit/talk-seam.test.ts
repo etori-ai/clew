@@ -403,6 +403,8 @@ describe('clew.talks and clew.commitments', () => {
         );
         expect(error).toBeInstanceOf(CapabilityError);
         expect((error as Error).message).toBe('Samtalssystemet svarade inte som väntat.');
+        // The source's failure, as a connector calling back is told (503 unavailable), never a refusal of its input.
+        expect((error as CapabilityError).code).toBe('unavailable');
         expect((error as Error).message).not.toContain('Hemligt');
       }
     });
@@ -545,6 +547,8 @@ describe('clew.talks and clew.commitments', () => {
     const call = refusedCall;
     await expect(seam.talks(hillevi, {}, call)).rejects.toThrow(NO_SOURCE);
     await expect(seam.commitments(hillevi, {}, call)).rejects.toThrow(NO_SOURCE);
+    // No system to ask is a source that cannot be reached, as a connector calling back is told (503 unavailable).
+    await expect(seam.talks(hillevi, {}, call)).rejects.toMatchObject({ code: 'unavailable' });
   });
 
   test('two external systems and no built-in: none answers, and the registry reports both', async () => {

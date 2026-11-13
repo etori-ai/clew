@@ -51,6 +51,7 @@ export function errandUsecases(deps: ErrandDeps) {
     if (sources.length > 0 && outcomes.every(o => o.status !== 'ok'))
       throw new CapabilityError(
         sources.length === 1 ? `${sources[0]!.source} svarar inte just nu.` : 'Inget av ärendesystemen svarar just nu.',
+        'unavailable',
       );
     // A row opens in the system it came from: the view its connector declares for one errand (D38), drawn by Clew.
     const opens = new Map(sources.filter(s => s.open).map(s => [s.connectorId, s]));

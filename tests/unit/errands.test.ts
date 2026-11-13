@@ -228,6 +228,9 @@ describe('clew.errands', () => {
       caseSystem('permits', 'Bygglovssystemet', [], { delayMs: 200 }),
     ]);
     await expect(list(two, mikael)).rejects.toThrow('Inget av ärendesystemen svarar just nu.');
+    // The sources' failure, as a connector calling back is told (503 unavailable), never a refusal of its input.
+    await expect(list(one, mikael)).rejects.toMatchObject({ code: 'unavailable' });
+    await expect(list(two, mikael)).rejects.toMatchObject({ code: 'unavailable' });
     // A system that answers with no errands is an answer.
     const empty = world([caseSystem('support', 'Kundtjänsten', [])]);
     expect(await list(empty, mikael)).toEqual({
