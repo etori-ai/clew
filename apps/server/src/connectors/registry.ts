@@ -112,16 +112,11 @@ export async function runCapability<O = unknown>(
 ): Promise<O> {
   const found = registry.find(name);
   if (!found) throw new InputError('Okänd förmåga.');
-  await persona.authorize();
   try {
-    const result = await registry.run<O>(
-      audiencedActorOf(persona),
-      name,
-      input ?? {},
-      persona.delegate ? { delegate: persona.delegate } : {},
-    );
-    await persona.authorize();
-    return result;
+    return await registry.run<O>(audiencedActorOf(persona), name, input ?? {}, {
+      authorize: () => persona.authorize(),
+      delegate: persona.delegate,
+    });
   } catch (error) {
     if (error instanceof CapabilityError) throw new InputError(error.message);
     throw error;

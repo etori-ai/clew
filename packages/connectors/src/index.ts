@@ -147,6 +147,8 @@ export interface Clew {
 export interface RunContext {
   signal?: AbortSignal;
   delegate?: Clew['delegate'];
+  /** Revalidate the person's live authority before dispatch and before returning the result, including nested calls. */
+  authorize?: () => Promise<unknown>;
   chain?: string[];
   operationId?: string;
 }
@@ -629,7 +631,7 @@ export class Registry {
           actor,
           name,
           input,
-          { delegate: context.delegate, chain: context.chain, signal: context.signal },
+          { authorize: context.authorize, delegate: context.delegate, chain: context.chain, signal: context.signal },
           true,
         );
       },
@@ -656,6 +658,7 @@ export class Registry {
     nested: boolean,
   ): Promise<O> {
     await this.refresh();
+    if (context.authorize) await context.authorize();
     const found = this.findFor(actor, name);
     if (!found) throw unknownCapability();
     // On the capability this call would run, by the governance just read: an execute the person may not know of is
@@ -678,6 +681,7 @@ export class Registry {
     if (viewError) throw new CapabilityError(viewError, 'unavailable');
     // Permission can change while a source is answering. Do not release the result under the old policy.
     await this.refresh();
+    if (context.authorize) await context.authorize();
     if (!this.allowed(actor, name)) throw unknownCapability();
     return output as O;
   }

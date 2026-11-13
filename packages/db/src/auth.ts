@@ -68,6 +68,11 @@ export async function readGroups(personId: string, db: Reader = database()): Pro
     .orderBy(groups.externalId);
   return rows.map(r => r.externalId!);
 }
+/** Revalidate the same ordered audience keys the context received. A plain membership can change without a new grant. */
+export async function groupsStillMatch(personId: string, snapshot: readonly string[]) {
+  const current = await readGroups(personId);
+  return current.length === snapshot.length && current.every((key, i) => key === snapshot[i]);
+}
 export async function resolveSubject(issuer: string, subject: string) {
   const [row] = await database()
     .select()
@@ -277,14 +282,30 @@ export async function rebindIdentity(
 export async function auditAuth(action: string, actor?: string) {
   await database().insert(authenticationAudit).values({ action, actor });
 }
-export async function revokeSession(digest: string, action = 'logout') {
+export async function revokeSession(
+  digest: string,
+  action = 'logout',
+  expected?: { tokens: string; claim: string | null },
+) {
   return database().transaction(async tx => {
     const [row] = await tx
       .update(sessions)
-      .set({ revokedAt: new Date(), tokens: '' })
-      .where(and(eq(sessions.digest, digest), isNull(sessions.revokedAt)))
+      .set({ revokedAt: new Date(), tokens: '', refreshClaim: null, refreshClaimUntil: null })
+      .where(
+        and(
+          eq(sessions.digest, digest),
+          isNull(sessions.revokedAt),
+          expected ? eq(sessions.tokens, expected.tokens) : undefined,
+          expected
+            ? expected.claim === null
+              ? isNull(sessions.refreshClaim)
+              : eq(sessions.refreshClaim, expected.claim)
+            : undefined,
+        ),
+      )
       .returning();
     if (row) await tx.insert(authenticationAudit).values({ action, actor: 'person:' + row.personId });
+    return !!row;
   });
 }
 export async function touchSession(digest: string) {
@@ -297,19 +318,35 @@ export async function touchSession(digest: string) {
   return row;
 }
 /**
- * A session's refreshed IdP tokens, stored over the ones they were refreshed from (L1, L4): no connection is held while
- * the provider answers, so the row is compared instead of locked. Undefined when the session no longer holds those
- * tokens, because another request refreshed it meanwhile, or has ended.
+ * Exclusive ownership of one active token generation. Each statement releases its connection before the provider
+ * is called. An expired claim is never taken over: the token may already have been consumed by its former owner.
  */
+export async function claimSessionRefresh(digest: string, previous: string, claim: { id: string; until: Date }) {
+  const [row] = await database()
+    .update(sessions)
+    .set({ refreshClaim: claim.id, refreshClaimUntil: claim.until })
+    .where(and(activeSession(digest), eq(sessions.tokens, previous), isNull(sessions.refreshClaim)))
+    .returning();
+  return row;
+}
+/** A failed grant returned no tokens; only its owner may release this generation for a later request. */
+export async function releaseSessionRefresh(digest: string, previous: string, claim: string) {
+  await database()
+    .update(sessions)
+    .set({ refreshClaim: null, refreshClaimUntil: null })
+    .where(and(activeSession(digest), eq(sessions.tokens, previous), eq(sessions.refreshClaim, claim)));
+}
+/** Only the owner of the still-active token generation may commit a provider's answer, clearing its claim. */
 export async function storeRefreshedTokens(
   digest: string,
   previous: string,
+  claim: string,
   next: { tokens: string; tokenExpiresAt: Date },
 ) {
   const [row] = await database()
     .update(sessions)
-    .set(next)
-    .where(and(activeSession(digest), eq(sessions.tokens, previous)))
+    .set({ ...next, refreshClaim: null, refreshClaimUntil: null })
+    .where(and(activeSession(digest), eq(sessions.tokens, previous), eq(sessions.refreshClaim, claim)))
     .returning();
   return row;
 }
@@ -331,7 +368,7 @@ async function endProviderSessions(
   if (!input.sid && !input.subject) throw new Error('A provider logout must name a sid or a subject');
   const ended = await tx
     .update(sessions)
-    .set({ revokedAt: new Date(), tokens: '' })
+    .set({ revokedAt: new Date(), tokens: '', refreshClaim: null, refreshClaimUntil: null })
     .where(
       and(
         eq(sessions.issuer, input.issuer),

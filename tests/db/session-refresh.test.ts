@@ -2,7 +2,14 @@ import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { eq, inArray } from 'drizzle-orm';
 import { database, databaseAnswers, schema } from '../../packages/db/src/index';
-import { revokeSession, storeRefreshedTokens } from '../../packages/db/src/auth';
+import {
+  claimSessionRefresh,
+  readSession,
+  releaseSessionRefresh,
+  revokeSession,
+  storeRefreshedTokens,
+} from '../../packages/db/src/auth';
+import { REFRESH_CLAIM_MS, sessionRefresher } from '../../apps/server/src/auth-refresh';
 import { decryptTokens, encryptTokens, randomToken, tokenDigest } from '../../apps/server/src/auth-crypto';
 
 /**
@@ -80,18 +87,115 @@ const row = async (digest: string) =>
 test('refreshed tokens are stored only over the ones they were refreshed from, and only on an active session', async () => {
   const { digest } = await session();
   const soon = new Date(Date.now() + 300_000);
-  const stored = await storeRefreshedTokens(digest, 'sealed-before', { tokens: 'sealed-after', tokenExpiresAt: soon });
+  await claimSessionRefresh(digest, 'sealed-before', { id: 'owner', until: soon });
+  expect(
+    await storeRefreshedTokens(digest, 'sealed-before', 'somebody-else', { tokens: 'wrong', tokenExpiresAt: soon }),
+  ).toBe(undefined);
+  const stored = await storeRefreshedTokens(digest, 'sealed-before', 'owner', {
+    tokens: 'sealed-after',
+    tokenExpiresAt: soon,
+  });
   expect(stored?.tokens).toBe('sealed-after');
   expect(stored?.tokenExpiresAt.getTime()).toBe(soon.getTime());
   // Another refresh from the old tokens lost the race: nothing is stored, and the winner's tokens stand.
-  expect(await storeRefreshedTokens(digest, 'sealed-before', { tokens: 'sealed-late', tokenExpiresAt: soon })).toBe(
-    undefined,
-  );
+  expect(stored?.refreshClaim).toBeNull();
+  expect(stored?.refreshClaimUntil).toBeNull();
+  expect(
+    await storeRefreshedTokens(digest, 'sealed-before', 'owner', { tokens: 'sealed-late', tokenExpiresAt: soon }),
+  ).toBe(undefined);
   expect((await row(digest)).tokens).toBe('sealed-after');
   await revokeSession(digest);
-  expect(await storeRefreshedTokens(digest, '', { tokens: 'sealed-revoked', tokenExpiresAt: soon })).toBe(undefined);
+  expect(await storeRefreshedTokens(digest, '', 'owner', { tokens: 'sealed-revoked', tokenExpiresAt: soon })).toBe(
+    undefined,
+  );
   expect((await row(digest)).tokens).toBe('');
 });
+test('a token generation has one owner across concurrent connections, and only that owner can release or end it', async () => {
+  const { digest } = await session();
+  const until = new Date(Date.now() + REFRESH_CLAIM_MS);
+  const claims = await Promise.all(
+    ['first', 'second'].map(id => claimSessionRefresh(digest, 'sealed-before', { id, until })),
+  );
+  expect(claims.filter(Boolean)).toHaveLength(1);
+  const owner = claims.find(Boolean)!.refreshClaim!;
+  await releaseSessionRefresh(digest, 'sealed-before', 'not-the-owner');
+  expect((await row(digest)).refreshClaim).toBe(owner);
+  expect(await revokeSession(digest, 'refresh-failed', { tokens: 'sealed-before', claim: 'not-the-owner' })).toBe(
+    false,
+  );
+  expect((await row(digest)).revokedAt).toBeNull();
+  await releaseSessionRefresh(digest, 'sealed-before', owner);
+  expect((await row(digest)).refreshClaim).toBeNull();
+  expect(await claimSessionRefresh(digest, 'sealed-before', { id: 'next', until })).toBeDefined();
+  await storeRefreshedTokens(digest, 'sealed-before', 'next', { tokens: 'new-generation', tokenExpiresAt: until });
+  expect(await revokeSession(digest, 'refresh-failed', { tokens: 'sealed-before', claim: 'next' })).toBe(false);
+  expect((await row(digest)).tokens).toBe('new-generation');
+  await revokeSession(digest);
+  expect(await claimSessionRefresh(digest, '', { id: 'after-logout', until })).toBeUndefined();
+});
+test('an abandoned claim is not stolen and its fenced termination cannot revoke a newer generation', async () => {
+  const { digest } = await session();
+  await claimSessionRefresh(digest, 'sealed-before', { id: 'abandoned', until: new Date(Date.now() - 1) });
+  expect(
+    await claimSessionRefresh(digest, 'sealed-before', { id: 'retry', until: new Date(Date.now() + REFRESH_CLAIM_MS) }),
+  ).toBeUndefined();
+  expect(await revokeSession(digest, 'refresh-failed', { tokens: 'sealed-before', claim: 'abandoned' })).toBe(true);
+  expect((await row(digest)).tokens).toBe('');
+  expect((await row(digest)).refreshClaim).toBeNull();
+});
+test('two BFF instances use one real database claim and can renew again without reusing a rotating token', async () => {
+  const { digest } = await session('real');
+  let now = Date.now();
+  const entered = Promise.withResolvers<void>(),
+    answer = Promise.withResolvers<void>();
+  const used: string[] = [];
+  let first: Promise<unknown>;
+  const replica = () =>
+    sessionRefresher({
+      clock: () => now,
+      ids: randomToken,
+      read: readSession,
+      claim: claimSessionRefresh,
+      release: releaseSessionRefresh,
+      store: storeRefreshedTokens,
+      end: revokeSession,
+      open: decryptTokens,
+      seal: encryptTokens,
+      async grant(token) {
+        if (used.includes(token)) throw new Error('token family revoked by reuse');
+        used.push(token);
+        if (used.length === 1) {
+          entered.resolve();
+          await answer.promise;
+        }
+        return {
+          access_token: 'access-' + (used.length + 1),
+          refresh_token: 'refresh-' + (used.length + 1),
+          expires_in: 300,
+        };
+      },
+      ended: () => true,
+      failed: () => {
+        throw new Error('unexpected provider failure');
+      },
+      async sleep() {
+        answer.resolve();
+        await first;
+      },
+    });
+  const a = replica(),
+    b = replica(),
+    original = await row(digest);
+  first = a.refresh(original);
+  await entered.promise;
+  const results = await Promise.all([first, b.refresh(original)]);
+  expect(results).toMatchObject([{ state: 'fresh' }, { state: 'fresh' }]);
+  expect(used).toEqual(['refresh-1']);
+  expect((await row(digest)).refreshClaim).toBeNull();
+  now += 300_000;
+  expect((await b.refresh(await row(digest))).state).toBe('fresh');
+  expect(used).toEqual(['refresh-1', 'refresh-2']);
+}, 10_000);
 test('a provider that cannot be reached keeps the session and its tokens, and delegation answers 503', async () => {
   const { authenticate } = await import('../../apps/server/src/auth');
   const { raw, digest } = await session('real');

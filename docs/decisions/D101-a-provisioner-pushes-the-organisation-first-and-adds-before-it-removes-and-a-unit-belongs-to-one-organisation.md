@@ -28,8 +28,10 @@ Q4, Q10). The items below stay as written; where they differ from this paragraph
   5. The people. An account name given to someone new is first moved off the row that holds it.
   6. The memberships in two rounds, every addition before any removal.
   7. The groups that no longer follow from the source.
-  8. Those who return, last. Once their memberships are reconciled, each is sent with the full active profile. One
-     whom no unit that was written takes stays inactive and is reported.
+  8. Those who return, last. Before sending the full active profile, read the person's current memberships by SCIM id.
+     They must have a placement the source assigned and every group this source owns that still lists them must be
+     in their current assignments. A failed check leaves that person inactive and reports the reason. Memberships
+     managed by another source are outside this check.
 
   A fault in one row is that row's alone: a unit whose parent the export does not list, units that are each other's
   parents, a unit or group that an active person names and the export does not list, and anything Clew refuses for a
@@ -59,8 +61,9 @@ Q4, Q10). The items below stay as written; where they differ from this paragraph
 - **Item 9, a reused name (N2).** A rename or a reuse no longer moves Clew's own records: Clew keys its records
   about a person by the person's id
   ([D119](D119-clew-keys-its-own-records-about-a-person-by-the-persons-id.md)). A provisioner still frees a reused
-  name by renaming the leaver's row first, since a user name is unique in the installation; the example gives the old
-  row its own `externalId` as its name. Rows and actions that name a person by the user name are resolved to a person
+  name by renaming the leaver's row first, since a user name is unique in the installation. The example tries the
+  old row's `externalId` and otherwise allocates a temporary user name, checking both against held and planned names.
+  Rows and actions that name a person by the user name are resolved to a person
   when they arrive, so a reused name reaches only what arrives after the reuse. A connected system that keeps records
   under the name answers for the name's current holder and moves its records off a leaver as the provisioner moves
   the name. No leaver needs to be erased before their name is reused. "That nothing is ever erased stays an open item

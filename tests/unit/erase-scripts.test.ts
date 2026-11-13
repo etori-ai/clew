@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
 /**
@@ -13,7 +13,11 @@ import { join } from 'node:path';
 type Answer = { code: number; out: string; err: string };
 async function run(script: string, args: string[]): Promise<Answer> {
   const child = Bun.spawn([process.execPath, join(import.meta.dir, '../../scripts', script), ...args], {
-    env: { ...process.env, DATABASE_URL: 'postgres://nobody@127.0.0.1:1/nothing' },
+    env: {
+      ...process.env,
+      DATABASE_URL: 'postgres://nobody@127.0.0.1:1/nothing',
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://127.0.0.1:9',
+    },
     stdout: 'pipe',
     stderr: 'pipe',
   });
@@ -49,16 +53,10 @@ const SCRIPTS: Array<{ script: string; unconfirmed: string }> = [
 for (const { script, unconfirmed } of SCRIPTS)
   describe(`scripts/${script} refuses, asking the database nothing,`, () => {
     const usage = `Usage: bun scripts/${script} --person <person id> --confirm`;
-    // Every call starts at once and each test waits for its own: one process at a time would take seconds.
-    const answers = new Map<string, Promise<Answer>>();
-    beforeAll(() => {
-      for (const [name, args] of MALFORMED) answers.set(name, run(script, args));
-      answers.set('unconfirmed', run(script, ['--person', 'p1']));
-    });
-    for (const [name] of MALFORMED)
-      test(name, async () => expect(await answers.get(name)).toEqual({ code: 2, out: '', err: usage }));
+    for (const [name, args] of MALFORMED)
+      test(name, async () => expect(await run(script, args)).toEqual({ code: 2, out: '', err: usage }));
     test('a call without --confirm, saying what it would erase', async () =>
-      expect(await answers.get('unconfirmed')).toEqual({ code: 2, out: '', err: unconfirmed + '\n' + usage }));
+      expect(await run(script, ['--person', 'p1'])).toEqual({ code: 2, out: '', err: unconfirmed + '\n' + usage }));
   });
 
 /** Each erasure's confirmed call as the runbook writes it; the database fails before the id is checked. */
@@ -69,15 +67,11 @@ const CONFIRMED: Array<[string, string[]]> = [
   ['person-erase.ts', ['--person', 'p1', '--confirm']],
 ];
 describe('each erasure, when its database cannot be reached, says why in one line and that nothing was written:', () => {
-  const answers = new Map<string, Promise<Answer>>();
-  beforeAll(() => {
-    for (const [script, args] of CONFIRMED) answers.set(script, run(script, args));
-  });
   // subject-erase asks whether the person is active before its transaction, in a query that the ORM wraps in a message
   // of its own (the statement, then a line of its parameters); the others fail as their transaction begins.
-  for (const [script] of CONFIRMED)
+  for (const [script, args] of CONFIRMED)
     test(`scripts/${script}`, async () =>
-      expect(await answers.get(script)).toEqual({
+      expect(await run(script, args)).toEqual({
         code: 1,
         out: '',
         err: 'Could not erase: connect ECONNREFUSED 127.0.0.1:1. Nothing was written.',

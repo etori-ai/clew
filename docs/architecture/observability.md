@@ -66,9 +66,10 @@ process after an uncaught exception, once telemetry is flushed, so the container
 
 ## Traces and metrics
 
-`apps/server/src/telemetry.ts` is the first import of `main.ts`. With `OTEL_EXPORTER_OTLP_ENDPOINT` set it starts the
-OpenTelemetry Node SDK with OTLP/HTTP exporters for traces and metrics. Unset, it starts nothing and no data leaves the
-process: there is no default endpoint and no account.
+`main.ts` imports `apps/server/src/server-telemetry.ts` first so outgoing request instrumentation is in place before
+application modules load. When `OTEL_EXPORTER_OTLP_ENDPOINT` is set, the server starts the OpenTelemetry Node SDK
+with OTLP/HTTP exporters for traces and metrics. Shared modules and operator scripts can read telemetry settings
+and the active trace ID through `telemetry.ts` without starting an exporter.
 
 What is instrumented:
 

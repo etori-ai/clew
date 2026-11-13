@@ -93,8 +93,16 @@ export const johanProfile = (): PersonProfile => ({
     { unitId: 'unit-nedlagd', employmentType: 'Vikariat', employmentPercentage: 0.43 * 100 },
   ],
 });
-/** The unit Johan leads when he reports to the reader from below (D99): not one the reader manages or belongs to. */
+/**
+ * The unit Johan leads when he reports to the reader from below (D99): not one the reader manages or belongs to, but one
+ * below whose manager reports to them, which they follow up (D117), so its page opens for them.
+ */
 export const FRITIDS = { id: 'unit-fritidshem', label: 'Bergsåkers fritidshem' };
+/**
+ * The unit Johan is placed on when it has no manager of its own, so that he reports to the reader from below (D99 item
+ * 4): not one the reader follows up, since D117 follows the units the managers below lead, so its page does not open.
+ */
+export const MELLANSTADIET = { id: 'unit-mellanstadiet', label: 'Bergsåkers mellanstadium' };
 
 /**
  * The person routes for one test: the opened person with the extra sections, each section's answer (with a delay or
@@ -105,9 +113,15 @@ export class People {
   colleague = false;
   /**
    * Johan reports to the reader from below (D99): he leads a unit under one the reader manages, so the server names his
-   * own unit, which the reader may not open, and the reader is still his manager.
+   * own unit, which the reader follows up and may open (D117), and the reader is still his manager.
    */
   fromBelow = false;
+  /**
+   * Johan reports to the reader from below as someone placed on a unit under one the reader manages that has no manager
+   * of its own (D99 item 4): the server names that unit, which the reader does not follow up and may not open (D117),
+   * and the reader is his manager.
+   */
+  placedBelow = false;
   /** How long a source takes to answer, by capability. */
   delay: Record<string, number> = {};
   /** Sources that do not answer, by capability. */
@@ -161,15 +175,16 @@ export class People {
         competence,
       ],
     };
-    if (!this.fromBelow) return managed;
+    const below = this.fromBelow ? { ...FRITIDS, opens: true as const } : this.placedBelow ? MELLANSTADIET : undefined;
+    if (!below) return managed;
     const profile = managed.profile ?? johanProfile();
     return {
       ...managed,
-      entity: { ...managed.entity, detail: `Lärare 4–6 · ${FRITIDS.label}`, unit: FRITIDS },
+      entity: { ...managed.entity, detail: `Lärare 4–6 · ${below.label}`, unit: below },
       profile: {
         ...profile,
         employments: [
-          { unitId: FRITIDS.id, unitLabel: FRITIDS.label, employmentType: 'Tillsvidare', employmentPercentage: 100 },
+          { unitId: below.id, unitLabel: below.label, employmentType: 'Tillsvidare', employmentPercentage: 100 },
         ],
       },
     };

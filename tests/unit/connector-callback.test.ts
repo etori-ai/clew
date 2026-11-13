@@ -10,6 +10,7 @@ import {
 } from '../../packages/connectors/src/index';
 import { connectorCallback, type ConnectorCallbackDeps } from '../../apps/server/src/routes/connector-callback';
 import { AssertionError, type CallbackGrant } from '../../apps/server/src/connectors/authority';
+import { ForbiddenError } from '../../apps/server/src/context';
 
 /**
  * `POST /api/connectors/call`, a remote connector calling back into Clew as the person it serves (D21), answers in the
@@ -19,14 +20,21 @@ import { AssertionError, type CallbackGrant } from '../../apps/server/src/connec
  * logged, with the connector, and answered 503, Clew's own failure to read its key or the person included. Run over a
  * real registry; the grant and the person are the test's.
  */
-const persona = {
+const persona: AuthenticatedContext = {
   id: 'hassan',
   name: 'Hassan Ali',
   unitId: 'unit-skola',
   unitLabel: 'Bergsåkers skola',
   role: 'employee',
   groups: ['S-1-5-21-alla'],
-} as AuthenticatedContext;
+  capabilities: [],
+  organisationId: 'test',
+  principal: { kind: 'person', id: 'person:hassan' },
+  authorizationVersion: 'v1',
+  sessionBinding: 'connector:caller',
+  expiresAt: '2099-01-01T00:00:00.000Z',
+  authorize: async () => ({ version: 'v1' }),
+};
 const shape = { type: 'object', properties: {}, additionalProperties: false } as never;
 const capability = (name: string, kind: Capability['kind'], run: () => Promise<unknown>, roles?: ['manager']) =>
   ({
@@ -188,6 +196,54 @@ describe('a connector calling back into Clew (POST /api/connectors/call)', () =>
     expect(await call('source.denies')).toEqual(answer(403, 'denied', 'Du saknar behörighet.'));
     expect(await call('source.refuses')).toEqual(answer(400, 'invalid', 'Avsnittet finns inte längre.'));
     expect(failed).toEqual([]);
+  });
+  test('a callback rechecks group membership after governance refresh and before releasing source output', async () => {
+    for (const change of ['during governance refresh', 'during source read', 'database unavailable'] as const) {
+      let member = true,
+        reads = 0;
+      const databaseError = new Error('database unavailable');
+      const registry = new Registry();
+      registry.register(connector('caller', [], ['crm.read'])).govern('caller', openGovernance());
+      registry
+        .register(
+          connector('crm', [
+            capability('crm.read', 'read', async () => {
+              reads++;
+              if (change === 'during source read') member = false;
+              return { privateRecord: true };
+            }),
+          ]),
+        )
+        .govern('crm', { ...openGovernance(), audience: { mode: 'selected', groups: persona.groups } });
+      registry.setRefresh(async () => {
+        if (change === 'during governance refresh') member = false;
+      });
+      const failures: unknown[] = [];
+      const routes = connectorCallback({
+        started: () => true,
+        verify: async () => ({ connectorId: 'caller', actor: actorOf(persona), uses: ['crm.read'], chain: [] }),
+        person: async () => ({
+          ...persona,
+          async authorize() {
+            if (change === 'database unavailable') throw databaseError;
+            if (!member) throw new ForbiddenError();
+            return { version: persona.authorizationVersion };
+          },
+        }),
+        refresh: async () => {},
+        registry,
+        failed: error => failures.push(error),
+      });
+      const result = await post(routes, 'crm.read');
+      if (change === 'database unavailable') {
+        expect(result).toEqual(answer(503, 'unavailable', 'Tjänsten går inte att nå just nu.'));
+        expect(failures).toEqual([databaseError]);
+      } else {
+        expect(result).toEqual(answer(403, 'denied', 'Du saknar behörighet för åtgärden.'));
+        expect(failures).toEqual([]);
+      }
+      expect(reads).toBe(change === 'during source read' ? 1 : 0);
+    }
   });
   test('what is nobody’s to know is logged and answered 503; a read and a proposal answer their output', async () => {
     const { call, failed } = world();

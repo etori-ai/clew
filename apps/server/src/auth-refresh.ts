@@ -2,12 +2,13 @@
  * Refreshing a session's IdP tokens (D26), pure over its deps so each kind of failure is unit-tested without an
  * identity provider; the live deps are wired in `auth.ts`. Only these end the session: an answer that the grant is gone
  * or that only the person can go on (`grantEnded`), a refreshed ID token for another subject, and a session row that is
- * gone (and, as before, sealed tokens that can no longer be opened, which no refresh can use). A provider that cannot
+ * gone, an abandoned refresh claim, and sealed tokens that can no longer be opened. A provider that cannot
  * be reached, times out, refuses the client (`invalid_client` after a secret rotation), limits the rate or fails keeps
  * the session and its tokens, because Clew's own authorization never reads them; until a refresh succeeds delegation
  * has no fresh token and answers 503 (L4 of the 2026-11-12 users review). No database connection is held while the
- * provider answers (L1): the row is read, the provider is asked, and the new tokens are stored only over the ones they
- * were refreshed from, so a refresh that another process made meanwhile wins and its tokens are used. What a log line
+ * provider answers (L1): a short database write claims the token generation before the provider is asked. Only that
+ * claim may store its answer or end the session. Another process waits briefly, then uses the new tokens or withholds
+ * delegation. An abandoned claim ends the session instead of replaying a possibly consumed refresh token. What a log line
  * says about a failure is here too: `failureOf` for a refresh or a token exchange, `failureDetails` for a sign-in or a
  * logout (L11), which never carries a value a statement was given.
  */
@@ -24,6 +25,8 @@ export interface RefreshRow {
   subject: string;
   tokens: string;
   tokenExpiresAt: Date;
+  refreshClaim: string | null;
+  refreshClaimUntil: Date | null;
 }
 export interface RefreshedTokens {
   access_token: string;
@@ -42,14 +45,28 @@ export interface RefreshDeps<Row extends RefreshRow> {
   clock: () => number;
   /** The session's row while it is active, else undefined. */
   read: (digest: string) => Promise<Row | undefined>;
+  /** Atomically claims this active token generation, only while no other process owns it. */
+  claim: (digest: string, previous: string, claim: { id: string; until: Date }) => Promise<Row | undefined>;
+  /** Releases this exact claim after a provider failure that returned no new tokens. */
+  release: (digest: string, previous: string, claim: string) => Promise<void>;
+  ids: () => string;
   /** One refresh grant at the provider (`refreshGrant`); throws its error answer or the failure to reach it. */
   grant: (refreshToken: string) => Promise<RefreshedTokens>;
   /** Whether a thrown error is the provider's answer that ends the session (`grantEnded`). */
   ended: (error: unknown) => boolean;
   /** Stores new tokens over `previous`; the stored row, or undefined when the row no longer holds `previous`. */
-  store: (digest: string, previous: string, next: { tokens: string; tokenExpiresAt: Date }) => Promise<Row | undefined>;
+  store: (
+    digest: string,
+    previous: string,
+    claim: string,
+    next: { tokens: string; tokenExpiresAt: Date },
+  ) => Promise<Row | undefined>;
   /** Ends the session with its authentication-log action, and forgets its delegated tokens. */
-  end: (digest: string, action: 'refresh-failed' | 'expired') => Promise<void>;
+  end: (
+    digest: string,
+    action: 'refresh-failed' | 'expired',
+    expected?: { tokens: string; claim: string | null },
+  ) => Promise<boolean>;
   open: (sealed: string, digest: string) => SealedTokens;
   seal: (tokens: SealedTokens, digest: string) => string;
   /** Waits before the row is read once more (`setTimeout` in the server; a test decides what happens meanwhile). */
@@ -57,7 +74,7 @@ export interface RefreshDeps<Row extends RefreshRow> {
   /** A refresh the provider could not answer; the caller logs it (`failureOf`). */
   failed: (error: unknown) => void;
 }
-/** `fresh`: the row's tokens are current. `unavailable`: the provider could not answer; the row is unchanged. */
+/** `fresh`: the row's tokens are current. `unavailable`: no fresh token yet, after provider failure or another owner. */
 export type Refreshed<Row> = { state: 'fresh'; row: Row } | { state: 'unavailable'; row: Row } | { state: 'ended' };
 /**
  * The provider's answers that end a session: the refresh token, or the session behind it, is gone (`invalid_grant`), or
@@ -166,10 +183,12 @@ const WINDOW_MS = 15_000;
 /** After the provider could not answer, a session waits this long before asking again, so that an outage does not
  * hold every request for the provider's timeout. */
 const RETRY_MS = 30_000;
-/** How long an ending answer waits for another process's refresh to be stored before the session ends. */
-const REUSE_GRACE_MS = 2_000;
+/** The provider has a five-second deadline; an abandoned owner gets a bounded window to commit its answer. */
+export const REFRESH_CLAIM_MS = 30_000;
+/** A contending request waits once, then keeps local access and temporarily withholds delegation. */
+const CONTENDED_WAIT_MS = 2_000;
 export function sessionRefresher<Row extends RefreshRow>(deps: RefreshDeps<Row>) {
-  // Requests of one session at the same moment share one refresh, as the row lock serialized them before.
+  // Coalesce within this process; the database claim also serializes independent BFFs.
   const inflight = new Map<string, Promise<Refreshed<Row>>>();
   const waiting = new Map<string, number>();
   function refresh(row: Row): Promise<Refreshed<Row>> {
@@ -181,10 +200,23 @@ export function sessionRefresher<Row extends RefreshRow>(deps: RefreshDeps<Row>)
     }
     return pending;
   }
-  async function end(digest: string, action: 'refresh-failed' | 'expired'): Promise<Refreshed<Row>> {
+  async function latest(digest: string): Promise<Refreshed<Row>> {
+    const row = await deps.read(digest);
+    if (!row) {
+      waiting.delete(digest);
+      // An idle/absolute expiry filters an otherwise open row out of read; keep its terminal audit as logout does.
+      await deps.end(digest, 'expired');
+      return { state: 'ended' };
+    }
+    return { state: row.tokenExpiresAt.getTime() > deps.clock() + WINDOW_MS ? 'fresh' : 'unavailable', row };
+  }
+  async function end(
+    digest: string,
+    action: 'refresh-failed' | 'expired',
+    expected?: { tokens: string; claim: string | null },
+  ): Promise<Refreshed<Row>> {
     waiting.delete(digest);
-    await deps.end(digest, action);
-    return { state: 'ended' };
+    return (await deps.end(digest, action, expected)) ? { state: 'ended' } : latest(digest);
   }
   function wait(digest: string) {
     const now = deps.clock();
@@ -196,12 +228,31 @@ export function sessionRefresher<Row extends RefreshRow>(deps: RefreshDeps<Row>)
     if (!current) return end(digest, 'expired');
     if (current.tokenExpiresAt.getTime() > deps.clock() + WINDOW_MS) return { state: 'fresh', row: current };
     if ((waiting.get(digest) ?? 0) > deps.clock()) return { state: 'unavailable', row: current };
+    const claim = deps.ids();
+    const owned = await deps.claim(digest, current.tokens, {
+      id: claim,
+      until: new Date(deps.clock() + REFRESH_CLAIM_MS),
+    });
+    if (!owned) {
+      // A claim that outlived its owner may already have consumed the refresh token. Never take it over and replay.
+      for (const pause of [0, CONTENDED_WAIT_MS]) {
+        if (pause) await deps.sleep(pause);
+        const row = await deps.read(digest);
+        if (!row) return latest(digest);
+        if (row.refreshClaim !== null && row.refreshClaimUntil && row.refreshClaimUntil.getTime() <= deps.clock())
+          return end(digest, 'refresh-failed', { tokens: row.tokens, claim: row.refreshClaim });
+        if (row.tokens !== current.tokens || row.refreshClaim === null)
+          return { state: row.tokenExpiresAt.getTime() > deps.clock() + WINDOW_MS ? 'fresh' : 'unavailable', row };
+      }
+      return latest(digest);
+    }
+    const expected = { tokens: owned.tokens, claim };
     let previous: SealedTokens;
     try {
-      previous = deps.open(current.tokens, digest);
+      previous = deps.open(owned.tokens, digest);
     } catch {
       // Tokens that cannot be opened can never be refreshed.
-      return end(digest, 'refresh-failed');
+      return end(digest, 'refresh-failed', expected);
     }
     let tokens: RefreshedTokens;
     try {
@@ -210,23 +261,15 @@ export function sessionRefresher<Row extends RefreshRow>(deps: RefreshDeps<Row>)
       if (!deps.ended(error)) {
         wait(digest);
         deps.failed(error);
-        return { state: 'unavailable', row: current };
+        await deps.release(digest, owned.tokens, claim);
+        return latest(digest);
       }
-      // A provider that refuses a refresh token's reuse (Keycloak's "Revoke Refresh Token", rotation with reuse
-      // detection) answers so when another process refreshed with it first, and that process may still be storing what
-      // it got, waiting for a connection of its pool: the row is read at once and once more after a moment, and the
-      // session ends only when neither shows newer tokens.
-      for (const pause of [0, REUSE_GRACE_MS]) {
-        if (pause) await deps.sleep(pause);
-        const latest = await deps.read(digest);
-        if (!latest) return end(digest, 'expired');
-        if (latest.tokens !== current.tokens) return { state: 'fresh', row: latest };
-      }
-      return end(digest, 'refresh-failed');
+      return end(digest, 'refresh-failed', expected);
     }
     waiting.delete(digest);
-    if (tokens.subject !== undefined && tokens.subject !== current.subject) return end(digest, 'refresh-failed');
-    const stored = await deps.store(digest, current.tokens, {
+    if (tokens.subject !== undefined && tokens.subject !== owned.subject)
+      return end(digest, 'refresh-failed', expected);
+    const stored = await deps.store(digest, owned.tokens, claim, {
       tokens: deps.seal(
         {
           access_token: tokens.access_token,
@@ -238,9 +281,9 @@ export function sessionRefresher<Row extends RefreshRow>(deps: RefreshDeps<Row>)
       tokenExpiresAt: new Date(deps.clock() + Math.min(tokens.expires_in ?? 60, 300) * 1000),
     });
     if (stored) return { state: 'fresh', row: stored };
-    // Not stored: another process refreshed the row meanwhile, and its tokens stand, or the session ended.
-    const latest = await deps.read(digest);
-    return latest ? { state: 'fresh', row: latest } : end(digest, 'expired');
+    // Logout or another terminal update won. A database error above deliberately leaves the claim: a later request
+    // ends an abandoned generation rather than resending a token the provider may have consumed.
+    return latest(digest);
   }
   return { refresh };
 }

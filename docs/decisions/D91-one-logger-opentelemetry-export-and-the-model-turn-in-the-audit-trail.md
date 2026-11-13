@@ -12,7 +12,7 @@
    at `debug`. `LOG_LEVEL` sets the floor (`info`), `LOG_FORMAT=pretty` renders for a terminal in development, with
    `pino-pretty` as a development dependency. `console.*` is gone from `apps/server/src`, and a process-level handler
    records unhandled rejections and ends the process on an uncaught exception after flushing telemetry.
-2. **One tracer, OTLP out.** `apps/server/src/telemetry.ts` is the first import of `main.ts`. When
+2. **One tracer, OTLP out.** `apps/server/src/server-telemetry.ts` is the first import of `main.ts`. When
    `OTEL_EXPORTER_OTLP_ENDPOINT` is set it starts `@opentelemetry/sdk-node` with the OTLP/HTTP trace and metric
    exporters and the undici instrumentation (every outgoing `fetch`: connectors, CalDAV, OIDC, the model endpoint);
    `@hono/otel` adds one server span per request with the path alone as its URL (the sign-in callback's query carries

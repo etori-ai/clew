@@ -19,7 +19,8 @@
    - These end the Clew session with a `refresh-failed` row in the authentication log: the answers `invalid_grant`,
      `interaction_required`, `login_required` and `consent_required` (`grantEnded` in
      `apps/server/src/auth-refresh.ts`), a refreshed ID token for another subject, and sealed tokens that can no longer
-     be opened. A session row that is gone ends it with an `expired` row. The request is answered 401 with
+     be opened. An abandoned refresh claim whose 30-second window elapsed ends it the same way, since its owner may
+     already have consumed the refresh token. A session row that is gone ends it with an `expired` row. The request is answered 401 with
      "Din inloggning har gått ut. Logga in igen.".
    - Everything else keeps the session and its tokens: `invalid_client` after a secret rotation, 429, any 5xx, a refused
      connection, a name that does not resolve, a timeout and an answer that does not conform. Clew's own pages go on,
@@ -30,6 +31,11 @@
    - After such a failure the session waits 30 seconds before it asks again. Each server process logs the failure at
      most once a minute, as the warning "token refresh failed; sessions are kept and delegation waits", scope `auth`,
      with the error's code and the HTTP status.
+   - A short database write claims the session's current token generation before the provider is asked. A random
+     claim id fences token storage, release and terminal updates; no connection stays held during provider I/O. A
+     request in another process waits up to two seconds for the answer, then uses the new tokens or keeps local access
+     while delegation answers 503. An expired claim is ended, never taken over and retried: a process may have died
+     after the provider rotated the token. A provider answer that could not be stored leaves that claim in place.
 4. **A sign-out at the identity provider ends the Clew session**, by one of two OpenID Connect standards.
    - **Back-channel logout** (Back-Channel Logout 1.0), as before, for a provider that offers it, such as Keycloak. The
      provider posts a logout token to `POST /api/auth/backchannel-logout`. The token must be signed RS256 by the
@@ -109,21 +115,24 @@ channel needs no change to the schema.
   or the session expires.
 - A request that names a live `sid` ends that session whoever sent it, as the specification accepts. It can do nothing
   else.
-- Refreshes race. Requests of one session in one process share one refresh, and across processes the first refresh
-  stored wins. An ending answer is checked against the session's row at once and again after two seconds, so a provider
-  that refuses a refresh token used twice (Keycloak's "Revoke Refresh Token", rotation with reuse detection) does not
-  end a session that another process has just refreshed. The session still ends when the other process takes more than
-  two seconds to store its tokens, or when the provider revokes the whole family of tokens on reuse (L4). Entra does not
-  revoke a refresh token when it is used.
+- Token rotation and a lost reply remain ambiguous: a timeout or disconnect may occur after the provider consumed
+  the token. The nonterminal failure policy above keeps the session and allows a later attempt; a provider that
+  revoked the token may then require a new sign-in. The database claim prevents concurrent healthy BFFs from issuing
+  the same generation's grant, not loss of an external response. Claim deadlines use the BFFs' wall clocks, which
+  operators must keep synchronized. An owner stalled beyond 30 seconds can conservatively lose its session.
+- Migration `0057_session_refresh_claim` adds the claim fields. Stop all older BFF instances before starting the new
+  release: an old binary does not acquire the claim, so overlapping versions do not have the new concurrency guarantee.
 
 **As built.** `authorizationUrl` and `redeemCode` in `apps/server/src/auth-login.ts`; `grantEnded`, `sessionRefresher`
 and `failureDetails` in `apps/server/src/auth-refresh.ts`; `authenticate`, `logout`, `receiveLogout` and
 `receiveFrontChannelLogout` in `apps/server/src/auth.ts`; `POST /api/auth/logout`, `POST /api/auth/backchannel-logout`
 and `GET /api/auth/frontchannel-logout` in `apps/server/src/routes/auth.ts`; `endProviderSessions`, `backchannelRevoke`
-and `frontchannelRevoke` in `packages/db/src/auth.ts`. Tests: `tests/unit/auth-login.test.ts` (no `prompt` and no
+and `frontchannelRevoke`, `claimSessionRefresh`, `releaseSessionRefresh` and `storeRefreshedTokens` in
+`packages/db/src/auth.ts`. Tests: `tests/unit/auth-login.test.ts` (no `prompt` and no
 `max_age`, and an ID token without `auth_time` signs in), `tests/unit/auth-refresh.test.ts` and
 `tests/db/session-refresh.test.ts` (each kind of failure, and delegation's 503 against a provider that cannot be
-reached), `tests/unit/auth-routes.test.ts` and `tests/db/sign-in-routes.test.ts` (both channels, their answers and
+reached, two independent BFFs sharing one claim, a subsequent rotation, abandoned ownership, late logout and fenced
+terminal writes), `tests/unit/auth-routes.test.ts` and `tests/db/sign-in-routes.test.ts` (both channels, their answers and
 their log lines, and a cross-site frame without a cookie), and `tests/unit/auth-failure.test.ts` (what a log line about
 a failure may carry). The development sign-in ([D06](D06-dev-login-local-only.md)) uses the password grant and never
 the browser's session at the provider, so this record does not change it.

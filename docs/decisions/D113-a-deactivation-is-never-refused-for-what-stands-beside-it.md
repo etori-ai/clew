@@ -38,7 +38,8 @@ written; where they differ from this paragraph, this paragraph holds.
   empties the group. Rule 2's last sentence already said that `add` and `replace` on `members` need a value; rule 3's
   "in a patch takes it away" does not hold there.
 - **Rule 3, a group's key (S2).** A group's `PUT` that leaves out `externalId`, or sends it as `null` or empty, keeps
-  the stored key, as a user's does. A group's `POST` without a key is refused with 400 `invalidValue`.
+  the stored key, as a user's does. A group's `POST` without a key is refused with 400 `invalidValue`. The group
+  schema marks the key optional because an explicit `PATCH` can remove it from an existing group.
 
 **Why these choices.** They were taken in the work, as the product owner asked. A filter on another address type stays a
 200 that changes nothing because standard Microsoft Entra ID mappings send filtered operations for several address
@@ -50,8 +51,7 @@ those people. Both are named here so that rule 2's promise is exact. The missing
 Entra ID and Okta never send one, and a silent 200 that drops a unit's key or parent cuts people off from their
 managers. A group's `PUT` keeps its key as a user's does. Read as no key, an absent or empty `externalId` once dropped
 the key with a 200, and the group's people lost the unit, manager role or capability it gave them. A group's `POST`
-without a key is refused, as the provisioner guide already promised: a group without a key can never be mapped or
-found again, and the next `POST` of it would make another.
+without a key is refused so the provisioner can recover the group's Clew id by its source key after a lost response.
 
 **Decision.** Three rules for how `/scim/v2` reads what a provisioner sends. They are one decision because they have
 one reason: a directory will send things nobody here foresaw, and what Clew does then must never leave a person with

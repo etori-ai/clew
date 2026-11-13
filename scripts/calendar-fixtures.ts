@@ -21,6 +21,24 @@ export function unitCalendarPeople(manager = 'hillevi'): Array<{ user: string; n
     .filter(p => p.userName !== manager && [p.department, ...(p.alsoIn ?? [])].some(u => units.includes(u)))
     .map(p => ({ user: p.userName, name: fullName(p), email: p.email }));
 }
+/**
+ * The managers who report to a manager persona (D99's reporting line, D117): those who lead a unit directly under one the
+ * persona manages. Personal counts them as the persona's people, so the calendar plans for them too and refuses when
+ * one has no readable calendar; Ingrid's rektorer get accounts from this list.
+ */
+export function reportCalendarPeople(manager = 'ingrid'): Array<{ user: string; name: string; email: string }> {
+  const { people, units } = developmentDirectory;
+  const who = people.find(p => p.userName === manager);
+  const managed = who ? [...(who.manager ? [who.department] : []), ...(who.alsoManages ?? [])] : [];
+  const below = new Set(units.filter(u => u.parent && managed.includes(u.parent)).map(u => u.id));
+  return people
+    .filter(
+      p =>
+        p.userName !== manager &&
+        [...(p.manager ? [p.department] : []), ...(p.alsoManages ?? [])].some(u => below.has(u)),
+    )
+    .map(p => ({ user: p.userName, name: fullName(p), email: p.email }));
+}
 
 export type CalendarFixture = {
   user: string;

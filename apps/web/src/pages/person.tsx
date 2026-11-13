@@ -92,9 +92,9 @@ const TABLE_BESIDE_QUERY = panelBesideQuery(1280 - RAIL);
 /**
  * The details rail of a person's page (board Person): "Detaljer", what the directory (Katalogen) says of them that the
  * page has (their user name, and that the reader is their manager), and "Tillhör", their unit, a link to the unit's
- * page where the server says the reader may open it (a unit they manage or belong to) and its name otherwise. The
- * title is the header's (D121 item 6). The user name is itself the value here, so it is in code type (item 7). Nothing
- * the directory has not given is drawn.
+ * page where the server says the reader may open it (a unit they manage or belong to, or one below whose manager
+ * reports to them, D117) and its name otherwise. The title is the header's (D121 item 6). The user name is itself the
+ * value here, so it is in code type (item 7). Nothing the directory has not given is drawn.
  */
 function PersonDetails({ detail, from }: { detail: EntityDetail; from: string | null }) {
   const { entity, relation } = detail;

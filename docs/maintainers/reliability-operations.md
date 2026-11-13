@@ -39,6 +39,14 @@ A release that adds a job kind leans on the same discipline: an older process th
 
 ## Migrations that write rows
 
+Migration `0057_session_refresh_claim` adds nullable ownership fields to sessions; existing sessions need no rewrite.
+Stop every old BFF before applying it and starting the new release. Older binaries ignore those fields, so a mixed
+rollout can still submit the same rotating refresh token twice. Short statements claim and fence a token generation
+without keeping a database connection across the provider call. After an owner dies, or cannot commit its answer, a
+request finding the claim past its 30-second deadline ends that session and asks the person to sign in again; it never
+replays a possibly consumed token. Keep BFF clocks synchronized. A rollback must likewise stop all new BFFs first;
+the added nullable columns can stay while the former binary runs, with its former cross-process refresh limitation.
+
 `bun run db:init` runs Clew's migrations through Drizzle and then `DBOS.migrate`. A failure in Clew's migrations changes
 nothing in Clew's schema, because Drizzle runs every pending migration in one transaction; only Drizzle's own
 bookkeeping, the `drizzle` schema and its `__drizzle_migrations` table, is created outside it where it is missing.
@@ -81,6 +89,28 @@ DEFERRED`, and 0031's `DELETE` from `connector` has no guard; the events of both
 constraint is `INITIALLY DEFERRED`: `pg_constraint` lists exactly these 11 triggers as deferrable, in every schema
 including `dbos`. A migration that adds a `DEFERRABLE INITIALLY IMMEDIATE` constraint names the constraints it sets
 instead of using `ALL`.
+
+### Upgrading SCIM user names
+
+Migration 0058 composes existing `user_name` values into Unicode NFC. Each changed person keeps their Clew id,
+source id and sign-in binding, receives a new SCIM modification time and has one `person.user_name_normalized`
+audit row. The migration holds writes to `auth_person` while it checks names across the installation and updates them.
+
+Run this preflight before upgrading from a release that stored user names as sent. It also finds the case-only
+collisions that can stop the ICU unique index in migration 0054 on an older database created with locale C.
+
+```sql
+SELECT array_agg(id ORDER BY id) AS person_ids
+FROM auth_person
+WHERE user_name IS NOT NULL
+GROUP BY lower(normalize(user_name, NFC) COLLATE "und-x-icu")
+HAVING count(*) > 1;
+```
+
+For each result, ask the directory owner which distinct account name belongs to each person, including leavers.
+Correct the source and apply the approved name to the existing SCIM resource by its Clew id. Repeat the preflight,
+then run `bun run db:init`. Migration 0058 checks again under its lock. A collision raises SQLSTATE 23505 and rolls
+back the pending migrations. The same repair and retry apply after that refusal.
 
 ## The ledger queue
 

@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from 'bun:test';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { eq, like } from 'drizzle-orm';
 import { closeDatabase, database, schema } from '../../packages/db/src/index';
 
@@ -25,7 +25,7 @@ test('a run switches its model on for its own unit only and removes only the row
     .values({ actor: earlier, action: 'model.added', subject: 'model:stand-in-model', details: { title: 'Förr' } });
   const child = Bun.spawn(['bun', 'scripts/models-check.ts'], {
     cwd: new URL('../..', import.meta.url).pathname,
-    env: { ...process.env, CLEW_POC: 'true' },
+    env: { ...process.env, CLEW_POC: 'true', MASTER_KEY: randomBytes(32).toString('base64') },
     stdout: 'pipe',
     stderr: 'pipe',
   });

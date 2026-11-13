@@ -5,8 +5,8 @@ type Place = SiteHeaderView['menu']['items'][number];
 /**
  * Start and the row under it are Clew's (D116): the places at the top of the rail (D112 item 1), in its order and with
  * its words, Personal for a manager only (D94), and for a manager Dialogstöd, which Läget on Hem already calls the
- * dialogue support ("Öppna dialogstödet"): `/units`, which opens their own unit's page and is the address every unit page
- * shares, so the entry stays marked on each unit they follow up (D117). Pure, so the header read and its tests share it.
+ * dialogue support ("Öppna dialogstödet"): `/units`, the units they follow up side by side, whose address every unit
+ * page shares, so the entry stays marked on a unit's page too (D117). Pure, so the header read and its tests share it.
  */
 export function clewsStart(role: 'manager' | 'employee'): Place {
   return {

@@ -200,34 +200,53 @@ test('an invitation Clew’s own check refuses before sending was never sent: th
     expect(w.provider.events.filter(x => x.uid.startsWith('clew-exec-'))).toEqual([]);
   }
 });
-test('a proposal whose invitee changed address since the draw is authorized and checked by id, and sent to the address it was drawn with (N3)', async () => {
-  // The directory has Guest at a new address now; the approved command keeps the one the proposal was drawn with.
-  const w = world([{ ...guest, ref: 'guest-new', email: 'guest.new@clew.test' }]);
+test('an approved invitation is skipped if the address no longer identifies its invitee when sent', async () => {
+  const renamed = { ...guest, ref: 'guest-new', email: 'guest.new@clew.test' };
+  const replacement = { ...guest, personId: 'somebody-else' };
+  for (const current of [[renamed], [renamed, replacement], [guest, replacement]]) {
+    const team = [guest];
+    const w = world(team);
+    const e = await w.approve({ items: [{ ...command().items[0]!, personId: guest.personId }] });
+    team.splice(0, team.length, ...current);
+    await w.uc.progress(e.id);
+    expect(await w.uc.read(person, e.id)).toMatchObject({
+      state: 'failed',
+      result: {
+        rows: [
+          {
+            outcome: 'skipped',
+            detail: 'Inget skickades. Det går inte att bekräfta adressen för Guest i din enhet. Ta fram nya tider.',
+          },
+        ],
+      },
+    });
+    expect(w.provider.events).toEqual([]);
+  }
+});
+test('a member disappearing between dispatch authorization and send receives no invitation', async () => {
+  const team = [guest];
+  const w = world(team, async () => {
+    team.pop();
+    return new Set();
+  });
+  const e = await w.approve({ round, items: [{ ...command().items[0]!, personId: guest.personId }] });
+  await w.uc.progress(e.id);
+  expect(await w.store.read(e.id)).toMatchObject({ state: 'failed', result: { rows: [{ outcome: 'skipped' }] } });
+  expect(w.provider.events).toEqual([]);
+});
+test('a case-only address change keeps the approved address and checks the invitee’s current calendar', async () => {
+  const w = world([{ ...guest, ref: 'guest-new', email: guest.email.toUpperCase() }]);
   const asked: string[] = [];
   const freeBusy = w.provider.freeBusy.bind(w.provider);
   w.provider.freeBusy = async (start, end, targets) => {
     asked.push(...targets.map(t => t.ref));
     return freeBusy(start, end, targets);
   };
-  const confirm = (decisionId: string, item: Partial<CalendarCommand['items'][number]>) =>
-    w.uc.approve(person, {
-      decisionId,
-      operation: 'calendar.confirmProposals',
-      payload: { items: [{ ...command().items[0]!, ...item } as CalendarCommand['items'][number]] },
-    });
-  // By address alone the old address is nobody on the team now; by id it is Guest.
-  await expect(confirm('by-address', {})).rejects.toThrow('Deltagarna måste tillhöra din enhet.');
-  await expect(confirm('somebody-else', { personId: 'stranger' })).rejects.toThrow(
-    'Deltagarna måste tillhöra din enhet.',
-  );
-  const e = await confirm('by-id', { personId: 'guest' });
+  const e = await w.approve({ items: [{ ...command().items[0]!, personId: guest.personId }] });
   await w.uc.progress(e.id);
-  expect(await w.uc.read(person, e.id)).toMatchObject({
-    state: 'succeeded',
-    result: { rows: [{ ref: 'p1', outcome: 'done' }], undoInput: { items: [{ personId: 'guest' }] } },
-  });
+  expect((await w.uc.read(person, e.id))?.state).toBe('succeeded');
   expect(asked).toEqual(['guest-new']);
-  expect(w.provider.events[0]?.participants.map(p => p.email)).toEqual(['guest@clew.test']);
+  expect(w.provider.events[0]?.participants.map(p => p.email)).toEqual([guest.email]);
 });
 test('a declined invitation is retired only once the new one for the same person is established, not for a namesake (N3)', async () => {
   const w = world([guest, { ...guest, personId: 'namesake', ref: 'namesake', email: 'namesake@clew.test' }]);

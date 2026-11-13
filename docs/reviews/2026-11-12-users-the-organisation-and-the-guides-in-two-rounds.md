@@ -633,9 +633,19 @@ what they say.
   [D117](../decisions/D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md), under which a manager
   opens a unit below whose manager reports to them. The person page links a person's unit only when the reader may
   open it, and that test did not yet count such a unit, so the page left out a link that `/units/<id>` would have
-  answered. It counts it now. The test of someone who reports from below has a unit the reader follows up and one the
-  reader does not. [D116](../decisions/D116-start-and-the-row-under-it-are-clews.md) puts Clew's Start first in the
-  header, and the kept header serves it in every case, the last good answer kept through a failure included.
+  answered. It counts it now. The unit test and the browser test of someone who reports from below each have a unit
+  the reader follows up, linked, and one the reader does not, named.
+  [D116](../decisions/D116-start-and-the-row-under-it-are-clews.md) puts Clew's Start first in the header, and the kept
+  header serves it in every case, the last good answer kept through a failure included.
+- A review of the merge found the documents describing the actor, the header and the reads about a unit as they were
+  before D116 and D117: the connector guide's actor of six fields and a header Clew "edits nothing of", with a default
+  band for a refused person that is never drawn; the same six fields in the authorization guide, the protocol
+  reference and the identity page; three personas where `auth:setup` makes four; no `below` relation on the identity
+  page; "no page lists units" on the entities and people status pages, beside Dialogstöd; the Qlik connector's two new
+  reads about a unit missing from both; and a connector told one unit on the identity status page. They say now what
+  is sent and drawn, the browser fixture of the list of units carries the source key, and
+  [D117](../decisions/D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md) notes where its item 5
+  as built differs.
 
 **Left.**
 
@@ -682,6 +692,17 @@ what they say.
   calendar or the team reaches the card within the hour, and an unknown outcome holds other managers for the
   approval's 24 hours. The web planning card still offers no new decision after a failed one
   ([connectors status](../reference/status/connectors.md)).
+- A manager's followed units (`units`, D117) go with every read about a person or a unit and every view the manager
+  opens, more calls than D117's item 5 names, and nothing bounds them. Past about 115 units the signed assertion
+  outgrows a 16 KiB request header, which the connectors' Node servers answer with 431, so every remote read for that
+  manager fails; for a connector with callbacks, whose grant signs them a second time, past about 50; and past 200 the
+  body breaks the protocol's own limit and Clew refuses its own callback grant. It came with `main`'s D117, and changing
+  what that protocol signs is a decision on D117, not a fix of this review's. The follow-up is decided: leave `units`
+  out of the callback grant, which never reads them, and out of reads about a person, which item 5 never named; keep
+  them on reads about a unit and on views, since item 6's tables need every followed unit; and move them from the
+  bearer header into the request body as a token of their own, signed with the same keys and bound to the assertion's
+  `jti`, so the header no longer grows with the units; with a test past 200 followed units and one of the header's
+  size.
 - Every workflow other than the last and the next nights that a deployment leaves under the replaced application
   version, such as a reminder, an approved execution, a watch or a follow-up, still runs only once an operator moves it
   with `scripts/workflows-move.ts` ([D85](../decisions/D85-dbos-transact-replaces-temporal-as-the-durable-engine.md)
@@ -696,5 +717,45 @@ tests, with the 173 screenshot tests left to run on demand (`CLEW_SCREENS=1`). T
 eleven lenses: 26 problems reported and 21 confirmed and fixed, each fix in the code with a test that failed against
 the unfixed code. A second check of each fix found 34 more: 32 were fixed, and the other two were the migration that two lanes numbered
 0055, which the merge settled as 0055 and 0056. `person-erase` ran four times in half a second in the database test,
-so the ten-second wait before it exits, which one lane saw in its environment, did not recur. No pass with a screen
-reader, and none signed in on the development stack.
+so the ten-second wait before it exits, which one lane saw in its environment, did not recur. A review of the merge
+in three lenses confirmed 16 of 19 problems: fifteen are fixed, and the unbounded followed units are left above. After
+those fixes and a second merge of `main` (Dialogstöd's design critique and Ingrid's calendar, which touch no server
+or database code), `bun run check` passed again, as did the person, unit and Dialogstöd specs and the rebind
+script's database tests. No pass with a screen reader, and none signed in on the development stack.
+
+## Independent validation of PR 63 (2026-11-13)
+
+The product owner requested an independent Astra validation of five subsequent review findings against PR 63's
+immutable head `88194ac9f69c714b11790d9e2fe8aa8b5a507d3d`, fixes where both reviewers agreed, and an independent
+parallel review. Three Astra tasks separately checked recipient/refresh identity, group audiences/CLI/provisioning,
+and the PR without the first review's findings. All five warranted a correction, with these qualifications and owners:
+
+| Finding | Validation and resulting behavior | Canonical owner and evidence |
+|---|---|---|
+| An invitation can reach a reassigned address | Confirmed. A person id does not prove that a stored mailbox still belongs to that person. Confirmation and dispatch require one current recipient with both that id and address; a change refuses or visibly skips the unsent invitation and allows a fresh proposal. Historical reply matching and approved payloads stay intact. | Calendar decisions; `tests/unit/calendar-executions.test.ts`, `tests/unit/samtal.test.ts`, `tests/db/postgres-calendar-decisions.test.ts`. D119 amended. |
+| Independent BFFs can reuse a rotating refresh token | Confirmed, and already acknowledged as a tradeoff in D118. An independent review also found the losing request can revoke a successfully renewed session after its final read. A short database claim now fences the generation before provider I/O and fences result/terminal writes. An abandoned claim requires a new sign-in rather than replay. | Session mutations in `packages/db/src/auth.ts` and `sessionRefresher`; `tests/unit/auth-refresh.test.ts`, `tests/db/session-refresh.test.ts`. D118 amended; migration 0057. |
+| Group withdrawal does not invalidate an in-flight actor | Confirmed for the ongoing operation; a new request already reads fresh groups. Session and system contexts now compare current ordered audience groups as well as the existing authority version. The registry invokes the live guard before dispatch and before returning a result, including nested calls and callbacks. This leaves durable authority-version semantics unchanged. | Existing identity reads and the registry invocation boundary; `tests/db/standing-session.test.ts`, `tests/unit/connector-callback.test.ts`, `tests/unit/group-audiences.test.ts`. |
+| The current CI is red | Confirmed from Check run 43410336454 (21 unit failures) and Reliability run 43410336574 (6 database failures). Correction to the first diagnosis: exporter startup during CLI imports is an operator-visible output defect, not just a non-hermetic test. Only the server entrypoint now starts telemetry; exact erasure output remains tested with export configured. Model/connector test children receive their own encryption key, and connector registration/signing run in a disposable database. | Server telemetry bootstrap; `tests/unit/erase-scripts.test.ts`, `tests/db/erase-scripts.test.ts`, `tests/db/models-check.test.ts`, `tests/db/connector-check-as.test.ts`. D91 amended. |
+| Parking a reused account name can collide | Confirmed as an incomplete new feature, rather than a regression of an old working reuse path. Source ids and user names are separate namespaces. The allocator reserves visible held/requested names, and handles bounded uniqueness conflicts with names held by another organisation that its SCIM listing cannot show. Active requested-name conflicts remain normal refusals. | Existing example provisioner reconciliation; `tests/unit/provisioner.test.ts`. D101 and the provisioner guide amended. |
+
+The independent pass's suspected SCIM unknown-attribute problem was present unchanged on the base and was excluded.
+A same-subject rebind rollback concern was not established as contrary to the stated contract and was excluded.
+No new domain, UI, published actor field or connector wire contract was introduced by these corrections.
+
+Verification is deliberately separated by what ran. Focused calendar, refresh, callback/group/remote-connector,
+erasure CLI and provisioner unit scenarios ran under the global supervisor, one job at a time. The local runtime was
+Bun 1.3.4; the repository declares Bun 1.4.4, so these are not evidence of a run on that exact pinned runtime.
+In total, 201 unit tests passed across those eight files. Formatting, TypeScript, dependency boundaries, purity,
+documentation generation/link validation and the documentation smoke scenario passed. The provider in the refresh
+scenario was simulated, not a live identity provider.
+
+The product owner explicitly requested that database tests remain unrun. The PostgreSQL concurrency, projection,
+group withdrawal and CLI fixture scenarios are included for that lane but are not verified by this pass. The 0057
+migration was generated from the schema and statically reviewed; it was not applied to an installation. No full
+suite, development server or production build was run, and the original dirty checkout was left intact.
+
+Before deployment, stop all older BFFs, apply 0057 and start the new release. A mixed old/new rollout cannot provide
+the claim guarantee because an older binary ignores ownership. An external refresh response lost after provider
+rotation remains ambiguous under D118's transient-error policy. Claim deadlines assume synchronized BFF clocks.
+The operations runbook records deployment and rollback; the nullable columns can stay on rollback after all newer
+BFFs have stopped. The old binary then has its former refresh limitation.

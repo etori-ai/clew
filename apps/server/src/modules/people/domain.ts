@@ -892,8 +892,8 @@ const memberIds = (value: unknown): string[] =>
  * A full group representation (POST, PUT) to the fields Clew holds. `current` is the group a `PUT` replaces: an
  * `externalId` the body leaves out, sends as `null` or sends empty is the one Clew holds, for every group as for a user
  * (D113 rule 3). Read as no key, it once took a unit's key, and the grants and mappings it gave, away with a 200; only a
- * `PATCH` that removes the key or sets it to `null` takes it away. A `POST` needs a key: a group without one can never
- * be mapped or found again, and the next `POST` of it would make another.
+ * `PATCH` that removes the key or sets it to `null` takes it away. Clew requires the key at creation so the provisioner
+ * can recover the group's id by filtering on its source key if it loses the response.
  */
 export function groupFields(body: unknown, current?: Pick<GroupFields, 'externalId'>): GroupFields {
   const input = asResource(body, GROUP_NAMES, 'Group');
@@ -1682,10 +1682,15 @@ export const schemaDocuments = (base: string) => [
     id: SCIM.group,
     name: 'Group',
     description:
-      'A group. Requires an externalId and a displayName. A PUT that leaves the externalId out, or sends it null or empty, keeps the one Clew holds; only a PATCH that removes it or sets it to null takes it away. unit:, unit-manager: and capability: keys in externalId carry meaning in Clew. The key protected is refused (D93), and so is a key written wrong (D96). Members are users; a group as a member is refused. A unit: group may name the unit above it in the unit extension (D99).',
+      'A group of users. unit:, unit-manager: and capability: keys in externalId carry meaning in Clew. The key protected is refused (D93), and so is a key written wrong (D96). A group as a member is refused. A unit: group may name the unit above it in the unit extension (D99).',
     attributes: [
       attribute('displayName', 'string', { required: true }),
-      attribute('externalId', 'string', { required: true, caseExact: true, uniqueness: 'server' }),
+      attribute('externalId', 'string', {
+        caseExact: true,
+        uniqueness: 'server',
+        description:
+          'Clew requires this source key on POST. PUT preserves the stored key when the value is absent, null or empty. PATCH can remove the key or set it to null.',
+      }),
       attribute('members', 'complex', {
         multiValued: true,
         subAttributes: [

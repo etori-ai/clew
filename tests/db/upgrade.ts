@@ -33,6 +33,7 @@ export function position(entries: Entry[], name: string) {
 const connect = (url: string) => drizzle({ connection: { url, max: 2, onnotice: () => undefined } });
 /** A database of a test's own to upgrade, and the way to remove it. */
 export interface UpgradeDatabase {
+  url: string;
   db: ReturnType<typeof connect>;
   /**
    * Migrate it with the repository's folder, as `bun run db:init` does, or with a folder of `entries` copied from it in
@@ -55,6 +56,7 @@ export async function upgradeDatabase(): Promise<UpgradeDatabase> {
     folders: string[] = [];
   return {
     db,
+    url: url.toString(),
     async migrate(entries, extra = {}) {
       if (!entries) return apply(db, { migrationsFolder: MIGRATIONS });
       const dir = await mkdtemp(join(tmpdir(), 'clew-upgrade-'));

@@ -8,7 +8,7 @@ import type {
 import type { ExecuteResult } from '@clew/connectors';
 import { CalendarError, type EventOccurrence, type MeetingInput } from '@clew/calendar/model';
 import { InputError } from '../../../context';
-import type { CalendarBinder, People, ProposalStore, RoundReader, Team } from '../model';
+import type { CalendarBinder, People, ProposalStore, RoundReader, Team, UnitMember } from '../model';
 import { SAMTAL_TITLE } from './reads';
 import {
   bookedElsewhere,
@@ -21,8 +21,7 @@ import {
 
 /**
  * One change of an approved calendar command. A proposal's items name the invitee by Clew's key, `personId` (N3): the
- * person is found by it in the team when the command is authorized and run, while the invitation goes to the address
- * the proposal was drawn with, in `input.participants`.
+ * proposal's address in `input.participants` may receive the invitation only while it belongs to that person.
  */
 export type CalendarItem = { id: string; proposalId?: string; personId?: string; label: string } & (
   | { action: 'create'; input: MeetingInput }
@@ -87,6 +86,13 @@ const window = (start: string, end: string) => {
   if (b - a > 86_400_000) throw new InputError('Ett möte kan vara högst ett dygn.');
 };
 const active = (t: Thread) => t.execution && ['pending', 'running', 'unknown'].includes(t.execution.state);
+const recipientIsCurrent = (members: readonly UnitMember[], personId: string, address: string | undefined) => {
+  const email = address?.toLowerCase();
+  const holders = members.filter(m => m.email.toLowerCase() === email);
+  return holders.length === 1 && holders[0]?.personId === personId;
+};
+const recipientChanged = (name: string) =>
+  `Det går inte att bekräfta adressen för ${name} i din enhet. Ta fram nya tider.`;
 
 /** Human routes prepare immutable commands. No calendar write is reachable through a model tool. */
 export function calendarDecisions({
@@ -207,6 +213,11 @@ export function calendarDecisions({
       throw new InputError('Något förslag är inte längre aktuellt. Läs om sidan.');
     if (new Set(selected.map(x => x.participant.personId)).size !== selected.length)
       throw new InputError('Välj bara en tid per medarbetare.');
+    const members = await team(p);
+    for (const { participant } of selected) {
+      if (!recipientIsCurrent(members, participant.personId, participant.email))
+        throw new InputError(recipientChanged(participant.name));
+    }
     // One talk a round (M1, Q12): a card drawn before the person's talk was held, or booked by another of their current
     // managers, sends no second one. Named, never when or with whom; refused while the round cannot be read.
     let open: Awaited<ReturnType<typeof round>>;
@@ -313,13 +324,15 @@ export function calendarExecutionSource(bind: CalendarBinder, team: Team, elsewh
   ): Promise<string | undefined> {
     const { start, end, room: wanted } = item.input;
     try {
-      // The invitee's own calendar as the team has it now, found by id for a proposal (N3).
-      const targets = (await team(p))
-        .filter(m =>
-          item.personId !== undefined
-            ? m.personId === item.personId
-            : item.input.participants.some(email => email.toLowerCase() === m.email.toLowerCase()),
-        )
+      const members = await team(p);
+      if (
+        item.personId !== undefined &&
+        (item.input.participants.length !== 1 ||
+          !recipientIsCurrent(members, item.personId, item.input.participants[0]))
+      )
+        return `Inget skickades. ${recipientChanged(item.label)}`;
+      const targets = members
+        .filter(m => item.input.participants.some(email => email.toLowerCase() === m.email.toLowerCase()))
         .map(m => ({ ref: m.ref, email: m.email }));
       const [own, busy] = await Promise.all([b.provider.list(start, end), b.provider.freeBusy(start, end, targets)]);
       if (
@@ -354,7 +367,7 @@ export function calendarExecutionSource(bind: CalendarBinder, team: Team, elsewh
         throw new InputError('Ogiltigt kalenderbeslut.');
       if (item.action === 'create') {
         window(item.input.start, item.input.end);
-        // A proposal's invitee is the person by id, whatever their address is now (N3); anyone else by the address.
+        // This also gates access to past executions. The approved address is checked separately before a new invitation.
         const invited =
           item.personId !== undefined
             ? item.input.participants.length === 1 && members.some(m => m.personId === item.personId)

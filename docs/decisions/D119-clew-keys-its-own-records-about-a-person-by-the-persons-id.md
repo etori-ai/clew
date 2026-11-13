@@ -18,8 +18,11 @@ user name, so a rename separated a person from the cards about them and a reuse 
    A user name there names nobody, and the read is answered 404 "Okänd adress.". So is the id of a person who is
    deactivated or has no user name, since no read about a person
    ([D97](D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)) asks a source about them. A calendar
-   proposal keeps its participant's id beside the address the invitation goes to (`proposal.participant_id`, N3). A
-   unit's id is both of its keys, as before.
+   proposal keeps its participant's id beside the drawn address (`proposal.participant_id`, N3). Confirmation and
+   dispatch require that the person still uniquely holds that address on the manager's current team. If it changed,
+   Clew refuses the confirmation or leaves an approved invitation visibly unsent, and the manager draws a new proposal;
+   the approved payload is never rewritten. Already-sent invitations retain their address for reply matching. A unit's
+   id is both of its keys, as before.
 2. **A source's key is resolved when a row arrives.** A source names a person by their user name, and a talks source
    names a person without one by their id (item 6). When rows arrive (a scan's or a refresh's cards, a started
    propose's draft, a read's records and search hits), Clew resolves every user name in them with one read (`holders`
@@ -161,7 +164,10 @@ looks each name up through it on its own, in a lateral subquery that stops at tw
 nobody: as one join of every name asked, a list of a few hundred names, as a manager's refresh or a declared view asks,
 was planned as a read of every person. A resolution therefore reads the holders of the names asked, however many;
 until 2026-11-13 every resolution read every person in the installation. `tests/db/user-reads.test.ts` checks the
-plans for a few names and for 300 on a database of a thousand people per organisation.
+plans for a few names and for 300 on a database of a thousand people per organisation. Migration 0058 brings older
+stored user names into the NFC form SCIM and sign-in compare. Each person keeps their id. Two people whose names
+would become equal need distinct names from the source owner before the upgrade can proceed
+([upgrade and recovery](../maintainers/reliability-operations.md#upgrading-scim-user-names)).
 Tests: `tests/unit/entities-cards.test.ts` (a renamed person keeps the cards that named them, a reused user name
 reaches only rows that arrive after, and a rename the source has not made rewrites a row and keeps a card's snooze),
 `tests/unit/entities-actions.test.ts` (an execute about a person erased since cannot be decided),

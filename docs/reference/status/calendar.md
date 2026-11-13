@@ -20,7 +20,7 @@ One page of [implementation status](../status.md). Each entry says what works in
 
 ## Calendar follow-up
 
-**Works in this checkout.** Approved bounded policies, two reminders maximum per invitation, two working days apart, 30-day expiry, current assignment checks and transactional invitee cards/counters/audit. An invitee is found by the person's id, which a proposal stores beside the address it was drawn with (migration 0054), so a changed work address keeps the reminders, the booking and the round's count; the invitation still goes to the stored address and replies are matched on it, and an alternative after a decline goes to the address the team has now.
+**Works in this checkout.** Approved bounded policies, two reminders maximum per invitation, two working days apart, 30-day expiry, current assignment checks and transactional invitee cards/counters/audit. An invitee is found by the person's id, which a proposal stores beside the address it was drawn with (migration 0054), so a changed work address keeps the reminders, the booking and the round's count. Confirmation and dispatch each check that only the invitee holds the drawn address in the manager's current team. If that check fails, the manager can draw new times with the current address. Replies to a sent invitation are matched on the address it used.
 
 **Limits and pending work.** Legacy invitations are paused for review; no implicit authorization for new automatic policy.
 

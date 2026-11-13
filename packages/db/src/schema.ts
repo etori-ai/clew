@@ -218,11 +218,16 @@ export const sessions = pgTable(
     csrf: text('csrf').notNull(),
     tokens: text('tokens').notNull(),
     tokenExpiresAt: timestamp('token_expires_at', { withTimezone: true }).notNull(),
+    refreshClaim: text('refresh_claim'),
+    refreshClaimUntil: timestamp('refresh_claim_until', { withTimezone: true }),
     idleExpiresAt: timestamp('idle_expires_at', { withTimezone: true }).notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
   },
-  t => [index('auth_session_sid').on(t.issuer, t.clientId, t.sid)],
+  t => [
+    index('auth_session_sid').on(t.issuer, t.clientId, t.sid),
+    check('auth_session_refresh_claim_pair', sql`(${t.refreshClaim} is null) = (${t.refreshClaimUntil} is null)`),
+  ],
 );
 export const authenticationAudit = pgTable('auth_audit', {
   id: bigserial('id', { mode: 'number' }).primaryKey(),

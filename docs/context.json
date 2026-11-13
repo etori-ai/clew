@@ -1321,7 +1321,7 @@
       "number": 117,
       "path": "docs/decisions/D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md",
       "title": "D117 · A manager follows up the units of the managers who report to them, and a source is told those units",
-      "status": "provisional (Oliver Borgström, 2026-11-13; built on the branch `dialogue-reach`, tested by nothing outside the repository; item 3's overview is a new page, built as an exception to the freeze on new surface, D101, at Oliver Borgström's choice)",
+      "status": "provisional (Oliver Borgström, 2026-11-13; built on the branch `dialogue-reach`, tested by nothing outside the repository; item 3's overview is a new page, built as an exception to the freeze on new surface, D101, at Oliver Borgström's choice); item 5 as built differs, see the note of 2026-11-13 at the end",
       "date": "2026-11-13",
       "area": "product, integrations"
     },
@@ -4084,7 +4084,8 @@
         "Recommended order",
         "Found in passing, outside the area",
         "Left as it is",
-        "Outcome"
+        "Outcome",
+        "Independent validation of PR 63 (2026-11-13)"
       ]
     },
     {

@@ -3,6 +3,7 @@ import type {
   EntityAction,
   EntityCard,
   EntityDetail,
+  EntityRef,
   EntitySection,
   EntitySource,
   PanelViewSpec,
@@ -26,6 +27,8 @@ export const MEMBER_UNIT = { id: 'unit-ledning', label: 'Rektorernas ledningsgru
 export const BELOW_UNIT = { id: 'unit-skola-fritids', label: 'Bergsåkers fritidshem' };
 /** A second unit below, listed before the fritidshem; it has no page of its own in the suite. */
 const HAGA = 'unit-skola-haga';
+/** A unit as `GET /api/entities/unit` lists it: one key for Clew and the source alike, its id (`unitRef` on the server). */
+const unitEntity = (id: string, name: string): EntityRef => ({ kind: 'unit', key: id, sourceKey: id, name, id });
 
 /** The Qlik connector's read about a unit (`connectors/qlik/manifest.mjs`), under its own name. */
 export const sickSource: EntitySource = {
@@ -222,7 +225,7 @@ export class Units {
               {
                 id: 'units',
                 label: 'Mina enheter',
-                entities: [{ kind: 'unit', key: ENTITY_UNIT.id, name: ENTITY_UNIT.label }],
+                entities: [unitEntity(ENTITY_UNIT.id, ENTITY_UNIT.label)],
               },
               ...(this.withBelow
                 ? [
@@ -230,10 +233,7 @@ export class Units {
                       id: 'below',
                       label: 'Enheter under dig',
                       // Hagaskolan first, as the list gives them: Dialogstöd puts the fritidshem, which needs action, first.
-                      entities: [
-                        { kind: 'unit', key: HAGA, name: 'Hagaskolan' },
-                        { kind: 'unit', key: BELOW_UNIT.id, name: BELOW_UNIT.label },
-                      ],
+                      entities: [unitEntity(HAGA, 'Hagaskolan'), unitEntity(BELOW_UNIT.id, BELOW_UNIT.label)],
                     },
                   ]
                 : []),

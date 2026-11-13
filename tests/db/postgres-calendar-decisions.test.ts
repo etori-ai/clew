@@ -262,11 +262,9 @@ test('partial confirmation persists per-item evidence and policy; reconciliation
   await w.uc.progress(a.execution!.id);
   expect(w.provider.events).toHaveLength(1);
 });
-test('a proposal is confirmed for its invitee by id after their address changed; a command naming another person is refused (N3)', async () => {
+test('a proposal keeps its invitee and address through approval and skips a reassigned address at dispatch', async () => {
   const w = await world(),
     threadId = await seedThread(w);
-  // Guest 1's address changes after the draw: the team has the new one, the proposal the one it was drawn with.
-  w.members[0] = { ...w.members[0]!, ref: 'guest1-new', email: 'guest1.new@example.test' };
   const t = (await w.proposals.readThread(w.id, threadId))!.thread;
   // An approval whose invitee is not the proposal's, though on the team, is refused at the projection.
   const forged: CalendarCommand = {
@@ -296,15 +294,17 @@ test('a proposal is confirmed for its invitee by id after their address changed;
       presentation: { threadId, version: t.updatedAt, actionId: 'confirm' },
     }),
   ).rejects.toThrow('Förslaget har ändrats. Läs om sidan.');
-  const confirmed = await w.decisions.confirm(w.actor, threadId, [threadId + ':p1']);
-  await w.uc.progress(confirmed.execution!.id);
+  const approved = await w.decisions.confirm(w.actor, threadId, [threadId + ':p1']);
+  w.members[0] = { ...w.members[0]!, ref: 'guest1-new', email: 'guest1.new@example.test' };
+  w.members[1] = { ...w.members[1]!, ref: 'guest1-old', email: 'guest1@example.test' };
+  await w.uc.progress(approved.execution!.id);
   const after = (await w.proposals.readThread(w.id, threadId))!;
-  expect(after.thread.execution?.state).toBe('succeeded');
+  expect(after.thread).toMatchObject({ state: 'open', execution: { state: 'failed' } });
   expect(after.proposals.find(p => p.id === threadId + ':p1')).toMatchObject({
-    status: 'confirmed',
+    status: 'proposed',
     participant: { personId: 'guest1', email: 'guest1@example.test', name: 'Guest 1' },
   });
-  expect(w.provider.events.map(e => e.participants.map(p => p.email))).toEqual([['guest1@example.test']]);
+  expect(w.provider.events).toEqual([]);
 });
 test('uncertain calendar compensation retains the original receipt and remains discoverable', async () => {
   const w = await world(),
