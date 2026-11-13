@@ -547,12 +547,14 @@ what they say.
   `CLEW_RELEASE` nor `CLEW_EXECUTOR_ID`. A deployment that changes the engine's application version left the next
   night of the clean-up, and of the nightly scan, waiting under the replaced version, where no process of the new one
   recovers it. Only a night's run schedules the next one, so both jobs stopped for good, and nothing said so. A server's
-  start now takes such a night over: it cancels the wait and rewinds the workflow under its own id and the running
-  version ([D85](../decisions/D85-dbos-transact-replaces-temporal-as-the-durable-engine.md) item 2, amended
-  2026-11-13), and the next start finishes a take-over that a start was stopped in the middle of. The guide names both
-  settings and the step after each deployment for the rest of the waiting work, which the runbook now gives a section
-  of its own, and a test shows both nights taken over from a killed instance of the older release, one of them left
-  cancelled by a stopped start.
+  start now takes over the last and the next night of each: it cancels the night's workflow and rewinds it under its own
+  id and the running version ([D85](../decisions/D85-dbos-transact-replaces-temporal-as-the-durable-engine.md) item 2,
+  amended 2026-11-13), so a night whose time fell during the deployment runs late, and the next start finishes a
+  take-over that a start was stopped in the middle of. The rest of the waiting work, and a workflow that ended in
+  `ERROR`, an operator moves with `scripts/workflows-move.ts` once the older processes have stopped, from where its
+  records end. The guide names both settings and the step after each deployment, which the runbook now gives a section
+  of its own, and tests show both nights taken over from a killed instance of the older release, one of them past and
+  one left cancelled by a stopped start, and the script moving what such an instance left.
 
 **Left.**
 
@@ -562,9 +564,10 @@ what they say.
   and `execution.approved` rows, approved payloads and the operator name in `identity.rebound` rows. D117 and the
   runbook list them, for an operator or the organisation's retention to remove.
 - D115 is also taken on the branch `prototype-look`. Whichever reaches `main` second takes the next free number.
-- Every workflow other than the next nights that a deployment leaves under the replaced application version, such as a
-  reminder, an approved execution, a watch or a follow-up, still runs only once an operator moves it
-  ([D85](../decisions/D85-dbos-transact-replaces-temporal-as-the-durable-engine.md) item 2). Moving each at launch
-  needs it shown safe to start again from its first step, which nobody has done for all of them.
+- Every workflow other than the last and the next nights that a deployment leaves under the replaced application
+  version, such as a reminder, an approved execution, a watch or a follow-up, still runs only once an operator moves it
+  with `scripts/workflows-move.ts` ([D85](../decisions/D85-dbos-transact-replaces-temporal-as-the-durable-engine.md)
+  item 2). A start does not move them, since it cannot tell whether the processes of the older version have stopped, and
+  a workflow moved while one of them still runs it would run in both.
 
 **Verified.** VERIFIED-PLACEHOLDER

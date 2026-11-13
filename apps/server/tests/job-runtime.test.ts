@@ -8,7 +8,13 @@ import { postgresJobQueue } from '../src/scheduler/adapters/postgres';
 import { durableJobs } from '../src/scheduler/adapters/durable-postgres';
 import { createScheduler, scheduledJobRunner, SIGN_IN_CLEANUP } from '../src/scheduler/usecases';
 import { bindActivities } from '../src/dbos/workflows';
-import { cancelDurable, durableResult, moveToRunningVersion } from '../src/dbos/start';
+import {
+  cancelDurable,
+  durableResult,
+  engineControls,
+  moveToRunningVersion,
+  type WorkflowControls,
+} from '../src/dbos/start';
 import { testEngine } from './durable';
 
 // A scheduled job (D86) on PostgreSQL, the durable engine and production Node: the nightly clean-up of sign-in data
@@ -123,30 +129,44 @@ test(
 );
 
 // A deployment (D85 item 2): the instance that holds the nights' workflows is replaced by the next release, under a new
-// application version and the same executor id. The engine recovers only the workflows of its own version, so the
-// nights the older release took from the queue would wait under it for good, and with them every later night, which
-// only a night's run schedules. The start of the next release takes them over, and finishes a move that an earlier
-// start of it began.
+// application version and the same executor id, and its downtime spans the clean-up's night at 03:00. The engine
+// recovers only the workflows of its own version, so the nights the older release took from the queue would wait under
+// it for good, and with them every later night, which only a night's run schedules. The start of the next release, at
+// 04:00, takes over the clean-up's night, which has passed, and the scan's, which lies ahead; it finishes a move that an
+// earlier start of it began, and a start that loses a race for a night to another leaves the night to it.
 test(
-  "the nights a replaced release took from the queue are taken over by the next release's start, run once and leave the next nights waiting under the new release",
+  "the nights a replaced release took from the queue, one of them past, are taken over by the next release's start, run once and leave the next nights waiting under the new release",
   { timeout: 90_000 },
   async () => {
     const engine = testEngine('jobs-release');
     // Version names are unique across the applications of one system database, so the releases carry the test's.
     const releases = [engine.name + ':release-1', engine.name + ':release-2'] as const,
       instance = 'jobs-instance';
-    const nights = ['scan:2002-11-06', SIGN_IN_CLEANUP + ':2002-11-06'],
+    const [scan, cleanup] = ['scan:2002-11-06', SIGN_IN_CLEANUP + ':2002-11-06'],
+      nights = [scan, cleanup],
+      // The next release's start schedules the clean-up's next night, which lies in the real past too and runs at once.
+      cleanupNext = SIGN_IN_CLEANUP + ':2002-11-07',
       next = ['scan:2096-11-06', SIGN_IN_CLEANUP + ':2096-11-06'];
+    // The scan's run waits at this gate, so the scan's night stays in its step under the new release until it opens.
+    let open!: () => void;
+    const gate = new Promise<void>(resolve => (open = resolve));
     const doubles = {
-      people: { granted: async () => [], personaFor: async () => undefined },
+      people: {
+        granted: async () => {
+          await gate;
+          return [];
+        },
+        personaFor: async () => undefined,
+      },
       threads: { ensureThreads: async () => undefined, closeReceiptWindow: async () => undefined },
       calendar: { closeUndoWindow: async () => undefined },
     };
     const cleaned: string[] = [],
       logged: unknown[][] = [];
     const jobs = postgresJobQueue({ durable: engine.durable, move: moveToRunningVersion });
-    // A start schedules the nights on the day before them, which lies in the real past, so an engine that takes them
-    // from the queue runs them at once. A start never cleans.
+    // A start's clock. The older release starts the day before the nights, which lie in the real past, so an engine
+    // that takes them from the queue runs them at once. A start never cleans.
+    let startAt = Date.parse('2002-11-05T10:00:00.000Z');
     const starting = createScheduler({
       jobs,
       ...doubles,
@@ -155,7 +175,7 @@ test(
           throw new Error('a start does not clean');
         },
       },
-      clock: () => new Date('2002-11-05T10:00:00.000Z'),
+      clock: () => new Date(startAt),
       log: (...args) => logged.push(args),
     });
     // The runs stand on a later clock, so the nights they schedule lie ahead of the real clock and wait.
@@ -187,8 +207,9 @@ test(
           status: string;
           executor_id: string | null;
           application_version: string | null;
+          queue_name: string | null;
         }>(
-          sql`select status, executor_id, application_version from dbos.workflow_status where workflow_uuid = ${workflowID} and application_name = ${engine.name}`,
+          sql`select status, executor_id, application_version, queue_name from dbos.workflow_status where workflow_uuid = ${workflowID} and application_name = ${engine.name}`,
         )),
       ][0];
     const row = async (id: string) =>
@@ -242,20 +263,37 @@ test(
           status: 'PENDING',
           executor_id: instance,
           application_version: releases[0],
+          queue_name: engine.durable.queue,
         });
 
-      // The instance comes back as the next release. Its engine recovers nothing of the older version's, and its start,
-      // which runs once the engine has launched as `composition/jobs.ts` runs it, takes both nights over. A first start
-      // was stopped between the two calls of its move of the clean-up: it cancelled the night and did not rewind it.
+      // The instance comes back as the next release at 04:00 Stockholm, after the clean-up's night and before the
+      // scan's. Its engine recovers nothing of the older version's. A first start was stopped between the two calls of
+      // its move of the clean-up's night: it cancelled the night and did not rewind it.
+      startAt = Date.parse('2002-11-06T03:00:00.000Z');
       launched = await engine.launch({ executorID: instance, applicationVersion: releases[1] });
-      await cancelDurable('job:' + nights[1]);
-      assert.deepEqual(await version('job:' + nights[1]), {
-        status: 'CANCELLED',
-        executor_id: instance,
-        application_version: releases[0],
-      });
-      assert.deepEqual(await starting.startNightly(), nights);
-      for (const night of nights) {
+      await cancelDurable('job:' + cleanup);
+      assert.equal((await version('job:' + cleanup))?.status, 'CANCELLED');
+      // A second start moves the scan's night, and while it holds the night between its two calls, a third start, which
+      // runs once the engine has launched as `composition/jobs.ts` runs it, takes over both nights. The second finds
+      // the scan's night moved under the running version and leaves it to the third.
+      let third: string[] = [];
+      const holding: WorkflowControls = {
+        ...engineControls,
+        async cancel(workflowID) {
+          await engineControls.cancel(workflowID);
+          third = await starting.startNightly();
+        },
+      };
+      assert.deepEqual(await moveToRunningVersion(['job:' + scan], engine.durable.queue, holding), []);
+      assert.deepEqual(third, nights);
+      // The scan's night waits in its step under the new release, on the ledger's queue.
+      await until(
+        async () => (await version('job:' + scan))?.application_version === releases[1],
+        `${scan} was not taken over`,
+      );
+      assert.equal((await version('job:' + scan))?.queue_name, engine.durable.queue);
+      open();
+      for (const night of [...nights, cleanupNext]) {
         await until(
           async () => (await version('job:' + night))?.status === 'SUCCESS',
           `${night} did not run under the next release`,
@@ -264,7 +302,8 @@ test(
         assert.deepEqual(await row(night), { status: 'done', attempts: 1 });
         assert.deepEqual(await audited(night), ['job.scheduled', 'job.completed']);
       }
-      assert.deepEqual(cleaned, [later().toISOString()]);
+      // The clean-up's night, late, and its next night, at once.
+      assert.deepEqual(cleaned, [later().toISOString(), later().toISOString()]);
       assert.deepEqual(logged, []);
       // Each run scheduled its next night, which waits in the engine under the new release.
       for (const night of next) {
@@ -277,11 +316,12 @@ test(
       }
       // Another start of the same release, a second instance or a restart, finds nothing to take over.
       assert.deepEqual(await starting.startNightly(), []);
-      assert.deepEqual(cleaned, [later().toISOString()]);
+      assert.equal(cleaned.length, 2);
     } finally {
       if (child && child.exitCode === null) child.kill('SIGKILL');
+      open();
       await launched?.shutdown();
-      const ours = [...nights, ...next];
+      const ours = [...nights, cleanupNext, ...next];
       await database()
         .delete(schema.audit)
         .where(

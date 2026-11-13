@@ -15,8 +15,8 @@ export interface JobQueue {
   /**
    * The jobs among `ids` whose workflow a replaced release left waiting under its own version, which no process of the
    * running release recovers (D85 item 2), or a take-over stopped between its two calls left cancelled there, start
-   * again from their first step under the running release. For jobs that have not begun, whose second start the claim
-   * of the job's row fences. The ids taken over.
+   * again from their first step under the running release. For jobs whose workflow does nothing a restart repeats
+   * before it claims the job's row, and whose second run that claim fences. The ids taken over.
    */
   takeOver(ids: string[]): Promise<string[]>;
 }
