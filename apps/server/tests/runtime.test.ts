@@ -225,3 +225,105 @@ test('the talks routes (D96): thin writes over the use cases, Swedish refusals, 
   }
   assert.equal(n, 4, 'no write reached the use cases while the built-in module did not answer');
 });
+
+test('the dialogue routes (D118): one unit read and its writes over the use cases, Swedish refusals, and a 403 on all while the module is off', async () => {
+  const { memoryDialogueStore } = await import('../src/modules/dialogue/adapters/memory');
+  const { dialogueUsecases } = await import('../src/modules/dialogue/usecases');
+  const { NOT_WRITABLE, dialogueRoutes } = await import('../src/routes/dialogue');
+  const personaOf = (id: string, role: 'manager' | 'employee'): AuthenticatedContext => ({
+    id,
+    name: id,
+    unitId: 'u1',
+    unitLabel: 'Enheten',
+    role,
+    organisationId: 'org',
+    principal: { id: 'person:' + id, kind: 'person' },
+    capabilities: [],
+    authorizationVersion: 'v1',
+    sessionBinding: 'test',
+    expiresAt: '2099-01-01T00:00:00.000Z',
+    authorize: async () => ({ version: 'v1' }),
+  });
+  const personas = new Map([personaOf('boss', 'manager'), personaOf('anna', 'employee')].map(p => [p.id, p]));
+  let n = 0;
+  const dialogue = dialogueUsecases({
+    store: memoryDialogueStore({ persons: { boss: 'Chefen' } }),
+    followed: async p =>
+      p.id === 'boss' ? [{ unitId: 'u1', label: 'Enheten', relation: 'own', managerId: 'boss' }] : [],
+    clock: () => new Date('2026-11-13T09:00:00.000Z'),
+    ids: () => 'id-' + ++n,
+  });
+  await dialogue.replaceConfig('operator:cli', 'org', {
+    areas: [{ key: 'digital', title: 'Digital transformation', kind: 'assessed' }],
+  });
+  let writable = true;
+  const app = new Hono().route(
+    '/api/dialogue',
+    dialogueRoutes({
+      dialogue,
+      writable: async () => writable,
+      guard: async (c, next) => {
+        c.set('session', { context: personas.get(c.req.header('x-test-person') ?? '')! } as never);
+        await next();
+      },
+    }),
+  );
+  const call = (as: string, method: string, path: string, body?: unknown) =>
+    app.request('http://clew.test/api/dialogue' + path, {
+      method,
+      headers: { 'x-test-person': as, 'content-type': 'application/json' },
+      ...(body === undefined ? {} : { body: typeof body === 'string' ? body : JSON.stringify(body) }),
+    });
+
+  assert.equal((await call('boss', 'POST', '/units/u1/assessments', { area: 'digital', tone: 'warn' })).status, 201);
+  const added = await call('boss', 'POST', '/units/u1/activities', { area: 'digital', text: 'Pröva verktyget' });
+  assert.equal(added.status, 201);
+  const { id } = (await added.json()) as { id: string };
+  assert.equal(
+    (await call('boss', 'PATCH', `/activities/${id}`, { text: 'Pröva det', dueOn: '2026-12-01' })).status,
+    204,
+  );
+  assert.equal((await call('boss', 'POST', `/activities/${id}/done`, { note: 'Gick bra' })).status, 204);
+  const read = await call('boss', 'GET', '/units/u1');
+  assert.equal(read.status, 200);
+  assert.equal(read.headers.get('cache-control'), 'no-store, private');
+  const unit = (await read.json()) as { writable: boolean; areas: Array<{ tone: string; activities: unknown[] }> };
+  assert.equal(unit.writable, true);
+  assert.equal(unit.areas[0]!.tone, 'warn');
+  assert.deepEqual(unit.areas[0]!.activities, [
+    {
+      id,
+      text: 'Pröva det',
+      dueOn: '2026-12-01',
+      owner: 'Chefen',
+      mine: true,
+      doneAt: '2026-11-13T09:00:00.000Z',
+      doneNote: 'Gick bra',
+      createdAt: '2026-11-13T09:00:00.000Z',
+    },
+  ]);
+  assert.equal((await call('boss', 'DELETE', `/activities/${id}/done`)).status, 204);
+  const open = await call('boss', 'DELETE', `/activities/${id}`);
+  assert.equal(open.status, 400);
+  assert.deepEqual(await open.json(), { error: 'Markera aktiviteten som klar innan du tar bort den.' });
+
+  const refused = await call('anna', 'GET', '/units/u1');
+  assert.equal(refused.status, 403);
+  assert.deepEqual(await refused.json(), {
+    error: 'Dialogstödet är för den som är chef för en enhet.',
+    code: 'denied',
+  });
+  for (const bad of [{ area: 'digital' }, { area: 'digital', tone: 'red' }, 'not json'])
+    assert.equal((await call('boss', 'POST', '/units/u1/assessments', bad)).status, 400);
+
+  writable = false;
+  for (const [method, path] of [
+    ['GET', '/units/u1'],
+    ['POST', '/units/u1/activities'],
+    ['DELETE', `/activities/${id}`],
+  ] as const) {
+    const off = await call('boss', method, path, method === 'GET' ? undefined : {});
+    assert.equal(off.status, 403);
+    assert.deepEqual(await off.json(), { error: NOT_WRITABLE, code: 'denied' });
+  }
+});

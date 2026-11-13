@@ -201,6 +201,8 @@ export const isCommitmentSource = (c: Pick<Capability, 'name' | 'kind'>, connect
   c.kind === 'read' && c.name === connectorId + '.commitments' && connectorId !== SEARCH_CONNECTOR;
 /** The built-in connector of the competence domain (D108 item 13): Clew's own module, switched on by an administrator. */
 export const COMPETENCE_CONNECTOR = 'competence';
+/** The built-in connector of the follow-up dialogue (D118): Clew's own module, a manager's dialogue per unit. */
+export const DIALOGUE_CONNECTOR = 'dialogue';
 const TALK_COMPOSITE = SEARCH_CONNECTOR + '.talks';
 const COMMITMENT_COMPOSITE = SEARCH_CONNECTOR + '.commitments';
 /**

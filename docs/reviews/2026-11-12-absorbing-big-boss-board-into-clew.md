@@ -1,10 +1,12 @@
 # Plan: absorbing big-boss-board (Dialogstöd) into Clew · 2026-11-12
 
-Status: a plan, not a decision. Phase 1's first step is built on the branch `qlik-key-figures`: the Qlik connector
-answers economy and HME beside sick leave from made-up figures (see "Changed the same day"). The rest waits for the two
-decisions in phase 0, and phases 2 to 5 wait for the freeze on new surface
-([D101](../decisions/D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md)) to
-lift.
+Status: a plan, not a decision. Phase 1's first step is built: the Qlik connector answers economy and HME beside sick
+leave from made-up figures (see "Changed the same day"). Decision A is
+[D118](../decisions/D118-the-follow-up-dialogue-is-an-owned-domain.md) and phases 2 and 3 are built by it, as an
+exception to the freeze on new surface
+([D101](../decisions/D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md)).
+Decision B is [D119](../decisions/D119-key-figures-per-unit-come-through-one-vendor-neutral-profile.md), `proposed`
+and not built; it, the people's answers of phase 0, and phases 4 and 5 remain.
 
 ## What was asked
 
@@ -204,7 +206,9 @@ Supersedes [D82](../decisions/D82-sick-leave-statistics-come-through-an-absence-
 
 ### Phase 0 · Decide (allowed under the freeze)
 
-- [ ] Write decisions A and B as `proposed`, with the checklist answers and the choices above.
+- [x] Write decisions A and B as `proposed`, with the checklist answers and the choices above. A is D118
+      (`provisional`, built), B is [D119](../decisions/D119-key-figures-per-unit-come-through-one-vendor-neutral-profile.md)
+      (`proposed`, measures as a closed list of keys, nothing built).
 - [ ] Add the open items to `docs/maintainers/open-questions.md`; remove the Qlik review's question 6 as answered.
 - [ ] Ask the questions in the table above; record the answers in the decisions.
 - [ ] Take a read-only copy of bbb's production schema and row counts (no content) to size the migration.
@@ -243,50 +247,46 @@ and `series` views. The profile of decision B is a contract change and waits for
       of them side by side, big-boss-board's start page, built as an exception to the freeze.
 - [ ] Economy and HME in the engine adapter: HME's source is the employee survey, not Qlik.
 
-### Phase 2 · The dialogue module (after the freeze lifts)
+### Phase 2 · The dialogue module
 
-- [ ] Migration `00NN_followup.sql`: `followup_area` (configuration: key, title, kind measured or assessed, measure
-      key, dimensions, order), `followup_question`, `followup_assessment` (append-only), `followup_activity` (unit,
-      area, owner, sealed text, due date, done, done note sealed, author, thread id). A trigger bumping the unit's
-      change signal (D46).
-- [ ] `apps/server/src/modules/followup/`: contracts, pure domain (worst-of, the reach, the overview rows), ports in
-      `model.ts`, use cases: `overview`, `unit`, `addActivity`, `editActivity`, `setDone`, `reopen`, `removeActivity`,
-      `assess`, `activityDue`, `eraseActivitiesOf` (a person as author or owner), `exportDomain`. Each in one
-      transaction with its audit row, no text or name in it.
-- [ ] The shared card and timer helper out of `composition/talk-work-items.ts`; the timer kind `followup-due` in
-      `threads/model.ts` and the dispatch in `composition/index.ts`.
-- [ ] The `Staff` port filled in `apps/server/src/composition/`; the entities module's unit access widened from "a
-      unit the reader belongs to or manages" to the reporting line, so a manager can open the unit page of a unit
-      below (`readerUnits` in `modules/entities/domain.ts`).
-- [ ] The built-in connector (`kind: core`, id `followup`, source "Uppföljningsdialog"): the overview read with a
-      `table` view as a menu tool, `followup.unit` (`about: unit`, page to the drawer), an area with the figure "N
-      öppna aktiviteter". Not model tools.
-- [ ] The two profiles in `@clew/contracts` and the protocol's `$defs`, the registry's choice of answerer, the
-      composites, `PROFILES`, `bun run protocol:schema`; a fixture connector proving the profile, as
-      `connectors/appraisals` does for talks.
-- [ ] Routes `/api/followup/...`, thin, refusing unless the built-in module answers.
-- [ ] Operator scripts: `followup-areas.ts <file>` (areas, dimensions, questions from a JSON file; an example file
-      with synthetic questions in the repository, the municipality's own file outside it), `followup-erase.ts`,
-      `followup-export.ts`.
-- [ ] Tests: scenario tests asserting audit rows, a store contract run on memory and Postgres, the card and timer
-      in Postgres, the profile against the fixture.
+Built on 2026-11-13 by [D118](../decisions/D118-the-follow-up-dialogue-is-an-owned-domain.md), as an exception to the
+freeze at Oliver Borgström's choice. Where D118 differs from this plan it is said below.
+
+- [x] Migration `0054_dialogue.sql`: `dialogue_area`, `dialogue_question`, `dialogue_assessment` (append-only) and
+      `dialogue_activity`, with a change-signal trigger that bumps the people a row names (D46). The plan's name
+      `followup` was taken by the calendar's follow-ups (D30), so the module is `dialogue`.
+- [x] `apps/server/src/modules/dialogue/`: pure domain, ports in `model.ts`, the use cases `unit`, `aboutUnits`,
+      `mine`, `assess`, `addActivity`, `editActivity`, `completeActivity`, `reopenActivity`, `removeActivity`,
+      `activityDue`, `replaceConfig`, `erasePerson`, `exportDomain`, each in one transaction with its audit row.
+- [x] The card and timer port as `composition/dialogue-work-items.ts`, a copy of the talks one sharing its date
+      helpers rather than a generalised helper, so talks is untouched; the timer kind `dialogue-due` and its dispatch.
+- [x] The reach: `composition/dialogue.ts` reads Personal's reach (D117, already on `main`) into the units the reader
+      follows up, with the manager who owns what is added on each.
+- [x] The built-in connector `dialogue` (source "Dialog"): `dialogue.unit` about a unit, which the unit page, the
+      overview and "Att ta upp" draw with no change to those pages, and `dialogue.activities`, which the card opens. No
+      area figure on Hem.
+- [ ] The two profiles (`<id>.followup`, `<id>.followupActivities`) and a fixture connector answering them: left out
+      until a second system exists (D118 item 10).
+- [x] Routes `/api/dialogue/...`, thin, refusing while the module is switched off.
+- [x] Operator scripts `dialogue-areas.ts <file>` (with `dialogue-areas.example.json`, made-up questions, loaded by
+      `bun run dev:connectors`), `dialogue-erase.ts`, `dialogue-export.ts`.
+- [x] Tests: `tests/unit/dialogue.test.ts` (scenarios with their audit rows), the store contract on memory and
+      Postgres, and `tests/db/postgres-dialogue-work-items.test.ts` for the card and timer.
 
 ### Phase 3 · The pages
 
-- [ ] Read `bunx astryx docs layout`, `bunx astryx search` and the template list before any layout (CLAUDE.md).
-- [ ] The overview as a tool page: units as rows, one column per area with tone and word (colour never alone), open
-      activities.
-- [ ] The unit page: the dialogue's section first, the key figures' section beside it.
-- [ ] The dialogue drawer over the unit page (`/units/:id?dialog=<area>`, a sheet on a phone, D83): the areas as
-      tabs; for a measured area the connector's figure and series and the questions; for an assessed area the
-      questions, the assessment form and its history per dimension; the activities with add, edit, done with note,
-      reopen, remove.
-- [ ] Hem: the figures (phase 1) and the activity cards. No new section on Hem.
-- [ ] Specs in `tests/a11y` for the tool page, the drawer and every state (empty, no reach, source down, read-only
-      when another system answers); reflow at 320 px; a manual screen-reader pass.
-- [ ] Re-read against D111 (where something opens) and D112 (the interface on Astryx templates), which reached `main`
-      after this plan was written, and compared against the reference the interface decision in force names: D112's
-      canvas, or the prototype's Dialogstöd if D115 is accepted. Differences recorded as Astryx gaps.
+- [x] The overview: Dialogstöd at `/units` (D117) gains a column "Dialog" (open activities and the worst assessed
+      state) and its count under "Att ta upp". One column for the dialogue, not one per area.
+- [x] The unit page: the Dialog section first among the sections, with "Öppna dialogen".
+- [x] The dialogue drawer over the unit page at `?dialog=<unitId>` (a sheet on a phone): the areas as tabs; a measured
+      area's figure from its source and the questions; an assessed area's state per dimension with a form and the
+      history; the activities with add, change, done with a note, open again, and remove behind a confirmation.
+- [x] The activity's card in Att göra about the unit, so it also shows under "Behöver dig" on the unit's page.
+- [x] `tests/a11y/dialogue.spec.ts`: axe and focus marking on desktop and phone, the whole flow by keyboard, a blank
+      field, a unit outside the reach, reflow at 320 px.
+- [ ] A manual screen-reader pass.
+- [ ] Compared against the reference the interface decision in force names; a measured area's series (the chart) is
+      not in the drawer.
 
 ### Phase 4 · Migration and pilot
 

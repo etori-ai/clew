@@ -30,6 +30,8 @@ import { ContentSkeleton } from '../components/loading';
 import { usePagePanel, type OwnThing } from '../components/page-panel';
 import { AskClew } from '../components/thing-panel';
 import { TalkOverlay } from '../components/talk-overlay';
+import { DialogueOverlay } from '../components/dialogue-overlay';
+import { DIALOGUE_PARAM } from '../dialogue-address';
 import {
   EntityPage,
   PageSection,
@@ -234,7 +236,7 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
       }
     : null;
   const panel = usePagePanel({ overlayOnly: short, onChange: cardChanged, pageThing });
-  const hold = panel.ref !== null || search.has('talk') || search.has('review');
+  const hold = panel.ref !== null || search.has('talk') || search.has('review') || search.has(DIALOGUE_PARAM);
   const headingRef = useAddressedSection(section, id, hold);
 
   let body: ReactNode;
@@ -345,6 +347,10 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
       {panel.overlay}
       {/* A source's way in that is a talk lies over the page and its panel, as on a person's page (D111 rule 5). */}
       {user.role === 'manager' && <TalkOverlay back={detail ? `Tillbaka till ${detail.entity.name}` : 'Tillbaka'} />}
+      {/* The unit's follow-up dialogue (D118) lies over the page the same way; its way in is the Dialog section's. */}
+      {user.role === 'manager' && (
+        <DialogueOverlay unitId={id} back={detail ? `Tillbaka till ${detail.entity.name}` : 'Tillbaka'} />
+      )}
     </Shell>
   );
 }

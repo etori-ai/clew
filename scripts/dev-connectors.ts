@@ -1,7 +1,7 @@
 /**
  * The development chain (D61): registers the fixture connectors that `.devcontainer/compose.yaml` runs beside Clew,
  * enabling each except the ones `FIXTURES` marks `enable: false` (added as drafts), binds their followers of `hr:absence` (D55), and opens the
- * development organisation's round of talks when it has none (D96, `talk-round.ts`) and seeds its competence catalogue and holdings where they are missing (D108, `competence-seed.ts`), idempotently. Runs inside the app container, where the
+ * development organisation's round of talks when it has none (D96, `talk-round.ts`), seeds its competence catalogue and holdings where they are missing (D108, `competence-seed.ts`) and loads the follow-up dialogue's example areas when it has none (D118, `dialogue-areas.ts`), idempotently. Runs inside the app container, where the
  * services are reachable by name, after `bun run auth:setup`: that creates the key the secrets are sealed with and the
  * people the holdings are for. `bun run dev:connectors` again fills missing registrations. Existing configuration is preserved; refresh manifests explicitly in administration. The transport secret is the one compose gives the services, CLEW_DEV_CONNECTOR_SECRET.
  * Last it makes the administrator's choice for Personal (D97) that the canvas draws, while nobody has chosen any:
@@ -26,6 +26,7 @@ import { secretPurpose } from '../apps/server/src/connectors/remote';
 import { openSecret, sealSecret } from '../apps/server/src/auth-crypto';
 import { fetchManifest } from '../packages/connectors/src/remote';
 import { seedCompetence } from './competence-seed';
+import { EXAMPLE_AREAS, loadDialogueAreas } from './dialogue-areas';
 
 try {
   process.loadEnvFile(resolve(import.meta.dir, '../apps/server/.env.local'));
@@ -226,6 +227,13 @@ try {
   const seeded = await seedCompetence(DEVELOPMENT_ROUND.organisationId);
   console.log(
     `competence     seeded ${seeded.types} new types and ${seeded.holdings} holdings for ${seeded.people} people of organisation "${DEVELOPMENT_ROUND.organisationId}"`,
+  );
+  // The follow-up dialogue's areas and questions (D118 item 3): the example file, only when the organisation has none.
+  const areas = await loadDialogueAreas(EXAMPLE_AREAS, DEVELOPMENT_ROUND.organisationId, { ifNone: true });
+  console.log(
+    areas.kept
+      ? `dialogue       kept the dialogue areas of organisation "${DEVELOPMENT_ROUND.organisationId}"`
+      : `dialogue       loaded ${areas.areas} areas and ${areas.questions} questions for organisation "${DEVELOPMENT_ROUND.organisationId}"`,
   );
   await chooseForPersonal();
 } finally {

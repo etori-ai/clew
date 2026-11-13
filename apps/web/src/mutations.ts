@@ -274,6 +274,51 @@ export function useTalkAction({ fallback = 'Något gick fel.', toastId }: { fall
   };
 }
 
+/**
+ * A write in the follow-up dialogue (D118): an assessment, an activity added, changed, done, opened again or removed.
+ * The same shape as a talk write: it waits for the unit's dialogue to be read again before it lets go, so the control
+ * that replaces the one pressed is in the page when the focus moves; the card in the stream, Dialogstöd's columns and the
+ * unit's section are read again beside it.
+ */
+const DIALOGUE_KEYS: readonly QueryKey[] = [keys.dialogue.all];
+const DIALOGUE_SIDE_KEYS: readonly QueryKey[] = [keys.threads, keys.attention, keys.entities.all];
+export function useDialogueAction({ fallback = 'Något gick fel.' }: { fallback?: string } = {}) {
+  const client = useQueryClient();
+  const toast = useToast();
+  const mutation = useMutation<unknown, unknown, { fn: Action<unknown>; done: string }>({
+    mutationFn: vars => vars.fn(),
+    onSuccess: async (_answer, vars) => {
+      DIALOGUE_SIDE_KEYS.forEach(queryKey => void client.invalidateQueries({ queryKey }));
+      await Promise.all(DIALOGUE_KEYS.map(queryKey => client.invalidateQueries({ queryKey })));
+      toast({ body: createElement(CompletionFeedback, null, vars.done) });
+    },
+  });
+  const inFlight = useRef(false);
+  const { mutateAsync } = mutation;
+  const run = useCallback(
+    async (fn: Action<unknown>, done: string): Promise<boolean> => {
+      if (inFlight.current) return false;
+      inFlight.current = true;
+      try {
+        await mutateAsync({ fn, done });
+        return true;
+      } catch {
+        /* the error is in the mutation's state */
+        return false;
+      } finally {
+        inFlight.current = false;
+      }
+    },
+    [mutateAsync],
+  );
+  return {
+    run,
+    busy: mutation.isPending,
+    error: mutation.isError ? errorMessage(mutation.error, fallback) : null,
+    reset: mutation.reset,
+  };
+}
+
 /** The entity an action is started on (D97): its kind and its key, for the reads that follow the new card. */
 type EntityStart = { fn: Action<{ threadId: string }>; kind: string; key: string };
 /** What starting an action gave: the new card, the Swedish sentence of a refusal, or nothing for a start while one runs. */

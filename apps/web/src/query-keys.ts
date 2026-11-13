@@ -56,6 +56,11 @@ export const keys = {
   competenceTypes: ['competence', 'types'] as const,
   competenceCatalogue: ['competence', 'catalogue'] as const,
   competenceAll: ['competence'] as const,
+  /** The follow-up dialogue (D118): one unit's dialogue. */
+  dialogue: {
+    all: ['dialogue'] as const,
+    unit: (unitId: string) => ['dialogue', 'unit', unitId] as const,
+  },
   /** Utvecklingssamtal (D96): the round, and action points per reader (`null`) or per person (their user name, else id). */
   talks: {
     all: ['talks'] as const,
