@@ -19,12 +19,14 @@ import {
   lensesOf,
   listedKeys,
   belowUnit,
-  managedPerson,
   memberUnit,
   unitsBelow,
   personKey,
   personRef,
+  managedPerson,
+  personRelation,
   placed,
+  unitRelation,
   sectionsOf,
   unitRef,
   type Checked,
@@ -36,8 +38,9 @@ type Found = Pick<EntityDetail, 'entity' | 'relation' | 'profile' | 'below' | 'a
 
 /**
  * Entities (D97): a person or a unit, and what the sources that declare `about` say of it, placed by Clew. Who may be
- * asked about is the core rule here, checked before any source is called; a source is then sent only those keys, at
- * most what one of its calls takes, and narrows further as the person. A read runs as the figure batch does (D75): one
+ * asked about is the core rule here (`personRelation`), checked before any source is called, and the registry checks it
+ * again on every call against what the source admits (D117, `relations.ts`); a source is then sent only those keys, at
+ * most what one of its calls takes, and may narrow further as the person. A read runs as the figure batch does (D75): one
  * budget per source, a cap on calls at once, what still runs cancelled when the budget ends, the person's authority
  * checked again afterwards, nothing stored. A source that fails or does not answer in time gives its status and no
  * rows; it never fails the request. Every read answers undefined for what the reader may not reach (a key outside the
@@ -120,10 +123,11 @@ export function entityUsecases(deps: EntityDeps) {
 
   /**
    * The entity behind Clew's key (D122: a person's id, a unit's id), and how the reader stands to it; undefined outside
-   * the rule. A person: the reader (`self`), someone on a unit the reader manages (`managed`), also from below (D99), or
-   * another active person of the directory (`colleague`). A unit: one the reader manages or belongs to (`member`), or
-   * one whose manager reports to the reader (`below`, D117); with the units under it that the reader follows up. A key
-   * that cannot name an entity of the kind (a NUL in it, or too long) names nobody, before anything is read.
+   * the rule. A person: the reader (`self`), someone who reports to the reader on a unit they manage (`managed`, also
+   * from below, D99, `reportsTo`), or another active person of the directory (`colleague`). A unit: one the reader
+   * manages (`manages`), is placed on otherwise (`member`), or one whose manager reports to the reader (`below`, D117);
+   * with the units under it that the reader follows up, and for a unit below the way up. A key that cannot name an
+   * entity of the kind (a NUL in it, or too long) names nobody, before anything is read.
    */
   async function resolve(
     persona: AuthenticatedContext,
@@ -136,8 +140,9 @@ export function entityUsecases(deps: EntityDeps) {
       const reach = await deps.directory.reach(persona);
       const member = memberUnit(reach, key),
         below = member ? undefined : belowUnit(reach, key),
-        unit = member ?? below;
-      if (!unit) return undefined;
+        unit = member ?? below,
+        relation = unitRelation(reach, key);
+      if (!unit || !relation) return undefined;
       const under = unitsBelow(reach)
         .filter(u => u.under === unit.unitId)
         .map(u => ({ key: u.unitId, name: u.unitLabel }));
@@ -145,7 +150,7 @@ export function entityUsecases(deps: EntityDeps) {
       const up = below && memberUnit(reach, below.under);
       return {
         entity: { ...unitRef(unit) },
-        relation: member ? 'member' : 'below',
+        relation,
         ...(under.length ? { below: under } : {}),
         ...(up ? { above: { key: up.unitId, name: up.unitLabel } } : {}),
       };
@@ -154,6 +159,8 @@ export function entityUsecases(deps: EntityDeps) {
     if (!person || person.id !== key || !personKey(person) || !person.userName) return undefined;
     const self = person.id === persona.id;
     const reach = self ? undefined : await deps.directory.reach(persona);
+    // The rule the registry applies to every call (D117): this page and a source's answer never disagree on it.
+    const relation = personRelation(persona, reach ?? NOBODY, person);
     const managed = reach && managedPerson(reach, person.id);
     // Where the person is: the reader's own unit for the reader, the unit the reader manages that they are placed on,
     // else their own unit, also for someone who reports to the reader from below (D99), whom that card does not place.
@@ -173,7 +180,7 @@ export function entityUsecases(deps: EntityDeps) {
           ? { unit: { id: unit.unitId, label: unit.unitLabel, ...(opens ? { opens: true as const } : {}) } }
           : {}),
       },
-      relation: self ? 'self' : managed ? 'managed' : 'colleague',
+      relation,
       ...(person.profile ? { profile: person.profile } : {}),
     };
   }
@@ -203,7 +210,9 @@ export function entityUsecases(deps: EntityDeps) {
       groups: groupsOf(kind, reach),
       columns: columnsOf(reads),
       lenses: lensesOf(reads),
-      actions: actions.map(actionOf),
+      // A row's menu is on the reader's people or units (D117): a person's action that admits no report is not offered
+      // there; each row's own page says exactly which actions it offers.
+      actions: actions.filter(a => kind === 'unit' || a.admits.includes('managed')).map(actionOf),
       attention: attentionOf(keys, cards),
     };
   }
@@ -216,6 +225,9 @@ export function entityUsecases(deps: EntityDeps) {
   ): Promise<EntityRows | undefined> {
     const read = placed(await deps.sources.reads(audiencedActorOf(persona), kind), capability);
     if (!read) return undefined;
+    // The people on the list are the reader's, so a source that admits no report is not asked; the registry leaves out
+    // anyone on it who is not a report (a co-manager) and any unit the source does not admit (D117).
+    if (kind === 'person' && !read.admits.includes('managed')) return { capability, status: 'ok', rows: [] };
     // A source is asked with its own key (a person's user name, D96 talks item 8), and its rows answer with it.
     const answer = await ask(
       persona,
@@ -249,7 +261,9 @@ export function entityUsecases(deps: EntityDeps) {
       deps.sources.actions(actor, kind),
       deps.cards(persona, { entity: kind, key: found.entity.key }),
     ]);
-    return { ...found, actions: actions.map(actionOf), sections: sectionsOf(reads), cards };
+    // An action is offered only where the reader stands to the entity as it admits (D117); the registry refuses the rest.
+    const offered = actions.filter(a => a.admits.includes(found.relation));
+    return { ...found, actions: offered.map(actionOf), sections: sectionsOf(reads), cards };
   }
 
   /** One source's answer for one entity: any read about the kind the reader may call. */
@@ -264,6 +278,8 @@ export function entityUsecases(deps: EntityDeps) {
     if (!read) return undefined;
     const found = await resolve(persona, kind, key);
     if (!found) return undefined;
+    // A source that does not admit how the reader stands to the entity (D117) is not asked: it has no row for them.
+    if (!read.admits.includes(found.relation)) return { capability, status: 'ok' };
     const answer = await ask(persona, kind, read, [found.entity.sourceKey]);
     if (!(await stillAllowed(persona, kind, byName))) return undefined;
     if (answer.status !== 'ok') return { capability, status: answer.status };
@@ -275,4 +291,6 @@ export function entityUsecases(deps: EntityDeps) {
 }
 const TIMEOUT = Symbol('timeout');
 const FAILED = Symbol('failed');
+/** Where a reader stands who is asked about themself: their own record is enough, nobody else is read. */
+const NOBODY = { units: [], managed: [], above: [], lineReports: [] };
 export type EntityUsecases = ReturnType<typeof entityUsecases>;

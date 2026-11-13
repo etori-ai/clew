@@ -1,4 +1,4 @@
-import type { CompetenceType, PanelViewSpec } from '@clew/contracts';
+import type { CompetenceSource, CompetenceType, PanelViewSpec } from '@clew/contracts';
 
 /** Kompetens (D108) as the browser specs meet it: one person's holdings as the declared view, and the catalogue. */
 
@@ -13,6 +13,8 @@ export const holdingsSpec: PanelViewSpec = {
     { key: 'expiresOn', label: 'Giltigt till', format: 'date' },
     { key: 'issuedOn', label: 'Utfärdat', format: 'date' },
     { key: 'area', label: 'Område' },
+    { key: 'source', label: 'Källa' },
+    { key: 'readAt', label: 'Inläst', format: 'instant', beside: true },
   ],
   capability: 'competence.holdings',
   connector: 'competence',
@@ -31,11 +33,31 @@ const holding = (competence: string, area: string, status: string, issuedOn: str
   status,
   evidence: 'manager',
 });
+/** Copied from the learning platform (D108 item 9): one mapped to the catalogue, one whose type is not, which counts towards nothing. */
+const READ_AT = '2026-11-12T03:02:00.000Z';
 export const holdingsOutput = {
   rows: [
     holding('Heta arbeten', 'Säkerhet', 'expired', '2021-06-01', '2026-05-31'),
     holding('HLR', 'Akut omhändertagande', 'expiring', '2025-01-10', '2027-01-10'),
     holding('Socionomexamen', 'Examen', 'valid', '2015-06-05'),
+    {
+      ...holding('Brandskydd', 'Säkerhet', 'valid', '2025-11-01', '2028-11-01'),
+      kind: 'course',
+      evidence: 'system',
+      source: 'Lärplattformen',
+      readAt: READ_AT,
+    },
+    {
+      ref: 'holding:competence:copied-livsmedel',
+      userName: 'anna.lindqvist',
+      name: 'Anna Lindqvist',
+      competence: 'Livsmedelshygien',
+      issuedOn: '2026-02-03',
+      status: 'uncounted',
+      evidence: 'system',
+      source: 'Lärplattformen',
+      readAt: READ_AT,
+    },
   ],
 };
 /** The catalogue as the manager's registration form lists it: two areas, one type with the employer's rule. */
@@ -48,4 +70,42 @@ export const competenceTypes = (): CompetenceType[] => [
 export const competenceCatalogue = (): CompetenceType[] => [
   ...competenceTypes(),
   { id: 't-old', name: 'Äldre brandskydd', area: 'Säkerhet', kind: 'course', validityMonths: 36, archived: true },
+];
+/**
+ * Administration › Kompetens › Källor (D108 item 9): a learning platform read this morning, with one type mapped to the
+ * catalogue and two waiting, and a course register that no longer answers and whose last read failed.
+ */
+export const competenceSources = (): CompetenceSource[] => [
+  {
+    connectorId: 'lms',
+    source: 'Lärplattformen',
+    answering: true,
+    reading: false,
+    lastRead: {
+      startedAt: '2026-11-12T03:00:00.000Z',
+      finishedAt: READ_AT,
+      outcome: 'complete',
+      unmatched: 3,
+      counts: { read: 412, stored: 12, unchanged: 400, invalid: 0, unmapped: 2, revoked: 0, outside: 0, removed: 0 },
+    },
+    types: [
+      { sourceType: 'badge:4', label: 'HLR-instruktör', holdings: 3 },
+      { sourceType: 'clew-dev:hlr', label: 'Hjärt-lungräddning med hjärtstartare', holdings: 38, typeId: 't-hlr' },
+      { sourceType: 'clew-dev:livsmedelshygien', label: 'Livsmedelshygien', holdings: 21 },
+    ],
+  },
+  {
+    connectorId: 'kursregister',
+    source: 'Kursregistret',
+    answering: false,
+    reading: false,
+    lastRead: {
+      startedAt: '2026-11-11T03:00:00.000Z',
+      finishedAt: '2026-11-11T03:00:10.000Z',
+      outcome: 'failed',
+      unmatched: 0,
+      counts: { read: 0, stored: 0, unchanged: 0, invalid: 0, unmapped: 0, revoked: 0, outside: 0, removed: 0 },
+    },
+    types: [],
+  },
 ];

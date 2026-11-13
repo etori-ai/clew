@@ -1,5 +1,5 @@
 {
-  "protocol": 2,
+  "protocol": 3,
   "id": "hr",
   "kind": "passthrough",
   "source": "Personalsystemet",
@@ -1186,6 +1186,11 @@
         "entity": "person",
         "param": "person"
       },
+      "person": {
+        "admits": [
+          "managed"
+        ]
+      },
       "input": {
         "type": "object",
         "properties": {
@@ -1517,6 +1522,116 @@
       }
     },
     {
+      "name": "hr.rehabRoutine",
+      "kind": "read",
+      "title": "Rehabiliteringsrutinen",
+      "description": "Vad chefen gör när en medarbetare är sjuk, steg för steg: kort sjukfrånvaro, upprepad korttidsfrånvaro, lång sjukfrånvaro och återgång i arbete. Rutintext, inga uppgifter om någon medarbetare.",
+      "model": true,
+      "scope": {
+        "roles": [
+          "manager"
+        ]
+      },
+      "input": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "reviewedAt": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "string"
+                },
+                "section": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "ref",
+                "section",
+                "at",
+                "title",
+                "detail"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "name",
+          "owner",
+          "reviewedAt",
+          "rows"
+        ],
+        "additionalProperties": false
+      },
+      "view": {
+        "kind": "list",
+        "title": "title",
+        "ref": "ref",
+        "noun": {
+          "one": "steg",
+          "other": "steg"
+        },
+        "empty": "Rutinen har inga steg.",
+        "fields": [
+          {
+            "key": "title",
+            "label": "Steg"
+          },
+          {
+            "key": "at",
+            "label": "När"
+          },
+          {
+            "key": "section",
+            "label": "Del",
+            "format": "status",
+            "tones": {
+              "Kort sjukfrånvaro": "none",
+              "Upprepad korttidsfrånvaro": "none",
+              "Lång sjukfrånvaro": "none",
+              "Tillbaka i arbete": "none"
+            }
+          },
+          {
+            "key": "detail",
+            "label": "Vad du gör"
+          }
+        ]
+      },
+      "menu": {
+        "label": "Rehabrutinen",
+        "icon": "book"
+      }
+    },
+    {
       "name": "hr.renewDelegation",
       "kind": "execute",
       "title": "Boka förnyelse",
@@ -1703,6 +1818,11 @@
       },
       "about": {
         "entity": "person"
+      },
+      "person": {
+        "admits": [
+          "managed"
+        ]
       },
       "input": {
         "type": "object",

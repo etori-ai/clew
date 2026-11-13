@@ -36,6 +36,17 @@ import {
 import { modelAnswer, systemPrompt, type ToolCallRecord } from './model';
 import { DRAFT_TOOL, draftableActions, draftTool, type ActionDraft } from './drafts';
 import { listObjects } from './objects';
+import {
+  namedWork,
+  PERSON_TOOL,
+  peopleInTurn,
+  peopleLines,
+  personAnswer,
+  personSubject,
+  personTool,
+  type ManagedPerson,
+  type PeopleInTurn,
+} from './people';
 import type { AssistantDeps, ResolvedModel } from './ports';
 import { draftSelection, parseVerb, verbsFor } from './verbs';
 import { threadAccess } from '../threads/access';
@@ -59,6 +70,8 @@ type Produced = {
   model?: ModelRef;
   /** The model turn's cost and trace (D91). */
   modelCall?: ModelCall;
+  /** Work items about a person the model looked up in the turn (D115), drawn with the answer. */
+  cards?: string[];
 };
 /** The model path did not answer (D8): the router takes over and the reason is kept with the turn. */
 type ModelUnavailableOutcome = { unavailable: string };
@@ -209,14 +222,20 @@ export function assistantUsecases(deps: AssistantDeps) {
       }
     }
   }
-  /** The deterministic path (D8): the fixed questions, then the best matching read capability, then an honest "not yet". */
+  /**
+   * The deterministic path (D8): the asker's open work about a person the question names (D115), the fixed questions,
+   * then the best matching read capability, then an honest "not yet".
+   */
   async function routerPath(
     persona: AuthenticatedContext,
     text: string,
     assistant: 'router' | 'unavailable',
     turn: Turn,
+    people: PeopleInTurn,
   ): Promise<Produced> {
-    const fixed = await routeFixed(deps, persona, text);
+    const about = personAnswer(people);
+    if (about) return { ...about, shape: 'svar', assistant, clewActions: [], followUps: [] };
+    const fixed = await routeFixed(deps, persona, text, { namesPerson: people.named.length > 0 });
     if (fixed)
       return {
         body: fixed.body,
@@ -317,30 +336,39 @@ export function assistantUsecases(deps: AssistantDeps) {
     chips: ResolvedChips,
     model: ResolvedModel,
     turn: Turn,
+    people: PeopleInTurn,
   ): Promise<Produced | ModelUnavailableOutcome> {
     if (!models.health.available(model.providerId)) return { unavailable: 'provider marked down' };
     const tools = model.tools ? registry.tools(audiencedActorOf(persona)) : [];
     const now = clock();
     // The one work item the conversation is about may have its actions filled in as a draft (D112 item 8): only what
-    // the person may do, only with a model that uses tools, and nothing is sent.
-    const subject = chips.primaryThread;
+    // the person may do, only with a model that uses tools, and nothing is sent. Without one chipped, the one work item
+    // about the one person the question names is that item (D115).
+    const subject = chips.primaryThread ?? personSubject(people);
     const draftable = model.tools && subject ? draftableActions(registry, persona, subject) : [];
     const drafts: { last?: ActionDraft } = {};
-    const own = draftable.length
-      ? [
-          draftTool(draftable, now.toISOString(), d => {
-            drafts.last = d;
-          }),
-        ]
-      : [];
+    // A person the model looks up (D115) brings their work items into the turn's answer.
+    const lookedUp = new Map<string, ManagedPerson>();
+    const lookup = model.tools && people.people.length > 0;
+    const own = [
+      ...(draftable.length
+        ? [
+            draftTool(draftable, now.toISOString(), d => {
+              drafts.last = d;
+            }),
+          ]
+        : []),
+      ...(lookup ? [personTool(people, now.toISOString(), p => lookedUp.set(p.key, p))] : []),
+    ];
     const system = systemPrompt({
       name: persona.name,
       role: persona.role,
       unitLabel: persona.unitLabel,
       now,
       week: weekNumber(displayDate(now.toISOString())),
-      objects: serialiseContext(chips.objects, now.toISOString()),
+      objects: serialiseContext(chips.objects, now.toISOString(), people.guards),
       drafts: draftable.length > 0,
+      ...(people.people.length ? { people: { lines: peopleLines(people, now.toISOString()), lookup } } : {}),
     });
     let sent = '';
     const onText = (step: string) => {
@@ -381,8 +409,10 @@ export function assistantUsecases(deps: AssistantDeps) {
         ...(answer.usage?.finishReason ? { finishReason: answer.usage.finishReason.slice(0, 40) } : {}),
         ...(traceId ? { traceId } : {}),
       };
-      const source = reads.length
-        ? [...new Set(reads.map(c => tools.find(t => t.name === c.capability)?.source ?? 'Startsidan'))].join(', ')
+      // A lookup of a person is Clew's own (D115) and names no source; the sources are the systems that were read.
+      const sourced = reads.filter(c => c.capability !== PERSON_TOOL);
+      const source = sourced.length
+        ? [...new Set(sourced.map(c => tools.find(t => t.name === c.capability)?.source ?? 'Startsidan'))].join(', ')
         : 'Assistenten';
       const searched = reads.find(c => c.capability === SEARCH_TOOL && isSearchResult(c.output));
       const parsed = parseAnswer(answer.body);
@@ -396,6 +426,7 @@ export function assistantUsecases(deps: AssistantDeps) {
           ? headingFollowUps((searched.output as SearchResult).rows)
           : nearest(text, tools).map(t => t.title);
       const draft = drafts.last;
+      const found = [...lookedUp.values()].flatMap(p => people.work(p).map(t => t.id));
       const shape: Produced['shape'] = draft ? 'forslag' : (parsed.shape ?? (view ? 'vy' : 'svar'));
       return {
         body: parsed.body,
@@ -420,6 +451,7 @@ export function assistantUsecases(deps: AssistantDeps) {
           : {}),
         model: { id: model.id, title: model.title },
         modelCall,
+        ...(found.length ? { cards: found } : {}),
       };
     } catch (e) {
       if (turn.signal?.aborted) throw new TurnStopped();
@@ -447,6 +479,13 @@ export function assistantUsecases(deps: AssistantDeps) {
     if (input.conversationId && (!existing || existing.kind !== 'question'))
       throw new InputError('Samtalet finns inte.');
     const history = existing?.messages ?? [];
+    // The people the question names among those the asker manages, and the asker's open work about them (D115).
+    const people = await peopleInTurn(
+      deps,
+      persona,
+      input.text,
+      history.filter(m => m.role === 'user').map(m => m.body),
+    );
     // The cards this turn is about (H1): the chipped cards, else the open cards the question names. Asking for a card and
     // being told about it land on the same card. A card the conversation already shows is not drawn again: that one is live.
     const chippedCards = [...resolved.threads.values()].filter(t => t.kind === 'pushed');
@@ -457,10 +496,6 @@ export function assistantUsecases(deps: AssistantDeps) {
           (await access.list(persona, clock().toISOString())).filter(t => t.state === 'open' && t.kind === 'pushed'),
         );
     const shown = new Set(history.flatMap(m => m.meta?.cards ?? []));
-    const cards = [...chippedCards, ...named]
-      .map(t => t.id)
-      .filter(id => !shown.has(id))
-      .slice(0, 3);
     // The model reads a named card as if the person had pointed at it.
     const context: ResolvedChips = named.length
       ? {
@@ -478,13 +513,20 @@ export function assistantUsecases(deps: AssistantDeps) {
     const fallback = model ? 'unavailable' : 'router';
     let fallbackReason: string | undefined;
     if (!produced && model) {
-      const outcome = await modelPath(persona, input.text, history, context, model, turn);
+      const outcome = await modelPath(persona, input.text, history, context, model, turn, people);
       if ('unavailable' in outcome) fallbackReason = outcome.unavailable;
       else produced = outcome;
     }
     if (!produced && named.length) produced = cardPath(named, fallback);
-    if (!produced) produced = await routerPath(persona, input.text, fallback, turn);
+    if (!produced) produced = await routerPath(persona, input.text, fallback, turn, people);
     if (observer.signal?.aborted) throw new TurnStopped();
+    // Drawn in the turn: the chipped or named cards, then the asker's work about the people the question names or the
+    // model looked up (D115), each once, three at most.
+    const cards = [
+      ...new Set([...[...chippedCards, ...named, ...namedWork(people)].map(t => t.id), ...(produced.cards ?? [])]),
+    ]
+      .filter(id => !shown.has(id))
+      .slice(0, 3);
     const at = clock().toISOString();
     const conversationId = existing?.id ?? ids();
     const refs = chips.map(c => c.ref);

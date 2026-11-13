@@ -1,6 +1,6 @@
 # D108 · Competence is an owned domain: one holding for competences and certificates, typed against a catalogue
 
-**Status:** proposed, and built against the freeze on new surface: [D101](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) (the first real integration) item 4 allows no new owned domain, administration page or rail destination until its loop works, and this record is all three. It was begun on a branch cut before that freeze reached `main`, continued in the same working session after the freeze was pointed out, and brought into `main` on 2026-11-11 on that session's instruction, with the question whether it may pass the freeze asked and not answered by the product owner. The module is switched off until an administrator enables it. Whether it stays on `main` is an open question. The direction below was set in that working session on 2026-11-11 and is not yet confirmed by the product owner (decided in the session: a core module shipped with Clew and switched on per installation, competences and certificates in it, a position on the person, the catalogue with the main administrator, search for HR and staffing, a person's own registration approved by their manager, erasure a period after deactivation, the matrix as a page of its own, a review by an HR practitioner before real data); the items marked "proposed" are the author's and were not discussed, the items under "Open" are not decided; built 2026-11-11 on synthetic data: the catalogue with its page, a manager's registration, the computed status, the reads, the figure, the scan, erasure and export (see "As built"); positions, requirements, sources and a person's own registration not built; item 14 amended 2026-11-12 by [D123](D123-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md): no timer erases a leaver's holdings, and how long they are kept is the organisation's decision · **Date:** 2026-11-11 · **Area:** product, identity, integrations
+**Status:** proposed, and built against the freeze on new surface: [D101](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) (the first real integration) item 4 allows no new owned domain, administration page or rail destination until its loop works, and this record is all three. It was begun on a branch cut before that freeze reached `main`, continued in the same working session after the freeze was pointed out, and brought into `main` on 2026-11-11 on that session's instruction, with the question whether it may pass the freeze asked and not answered by the product owner. The module is switched off until an administrator enables it. The product owner lifted the freeze on 2026-11-12, so it stays on `main`. The direction below was set in that working session on 2026-11-11 and is not yet confirmed by the product owner (decided in the session: a core module shipped with Clew and switched on per installation, competences and certificates in it, a position on the person, the catalogue with the main administrator, search for HR and staffing, a person's own registration approved by their manager, erasure a period after deactivation, the matrix as a page of its own, a review by an HR practitioner before real data); the items marked "proposed" are the author's and were not discussed, the items under "Open" are not decided; built 2026-11-11 on synthetic data: the catalogue with its page, a manager's registration, the computed status, the reads, the figure, the scan, erasure and export (see "As built"); built 2026-11-12, provisional: item 9 from source to status, the installation's read of the holdings profile ([D119](D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md)), the copy of what a source holds, its daily read and the mapping of a source's types on Administration › Kompetens › Källor (see the three "As built, 2026-11-12" sections), read end to end in process against the development Moodle but not yet by the running server; positions, requirements, coverage, the matrix, a person's own registration, search and the read log not built; item 14 amended 2026-11-12 by [D123](D123-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md): no timer erases a leaver's holdings, and how long they are kept is the organisation's decision · **Date:** 2026-11-11 · **Area:** product, identity, integrations
 
 **Amended 2026-11-12.** [D123](D123-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md),
 taken in the fixes of the
@@ -66,7 +66,37 @@ requires and when it runs out, for the person and for the manager they report to
    the catalogue through a table an administrator keeps; a row with no mapping is kept under the source's own label
    and counts towards nothing until it is mapped. Where several holdings of one type exist for a person, the valid
    one that ends last decides the status. The time of the last read shows wherever copied rows are counted.
-   `connectors/` gets a fixture that proves the profile.
+   `connectors/` gets a fixture that proves the profile. Amended 2026-11-12 by
+   [D119](D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md): `<id>.holdings` is a read the
+   installation makes itself, declared under the manifest's `installation` and reachable by no person's path; it takes
+   a cursor, not a person's key, and answers a page of every account the source has, each row keyed by the value of
+   the source's match field, with `next` and `withdrawalsReported`. The shape is the protocol's (`HoldingsOutput`), and
+   the core reads it through the port `HoldingsReader`.
+   *Settled as built (2026-11-12, provisional):* every source
+   is read once a day at 04:00 Swedish time and when an administrator presses "Läs in nu", never two runs of one
+   source at once. A page the source does not answer is asked again twice after a pause, and a cursor the source no
+   longer knows starts the sweep again from the first page once; a source still silent, refusing or answering outside
+   the profile ends the read, which keeps what it read, and is read at the next run. So does a write the database
+   refuses: nothing changes, and the read is recorded as failed. One source's failure never keeps a run from the
+   others. A key is matched to an active person by user name without regard to case, and one that matches nobody is
+   counted and never stored. A string a database column cannot hold (a control character, half a surrogate pair) or a
+   day the calendar lacks costs that one holding: an id or a type with one is unusable, a label is cleaned. A source
+   that says it reports withdrawals has a row revoked for absence only after a complete read; one that does not, or
+   a read that failed or was marked partial, never revokes anything. The mapping is per organisation, since a
+   catalogue type is. "Wherever copied rows are counted" is read as wherever one is listed: every row of a copied
+   holding shows its source and when it was read, and the Källor page shows each source's last read and how it went;
+   the counts (a person's row on Personal, the figure, the cards) do not, and no row is hidden for its age.
+   *Audiences (working session, 2026-11-12, following D23; not confirmed by the product owner):* the session's
+   coordinator decided that a copied row is kept only for a person who is active, has access, and is inside both the
+   source connector's audience and the competence module's own, as they stand when the row is read. That the rows of
+   anyone else are deleted at each read, not hidden, was the implementer's choice in the same session: a copy is a
+   cache, the source keeps the holding, deletion is the simpler promise to the person outside, and a person who comes
+   back into both audiences is copied again at the next read. Applying it to a person the directory deactivates
+   followed from that choice, and departs from item 14 (see there); whether it stands is asked of the product owner
+   ([open questions](../maintainers/open-questions.md)). Källor shows a source, with
+   its counts for the administrator's own organisation, only to an organisation that has someone inside both; the
+   keys that matched nobody belong to no organisation and are shown to each. "Läs in nu" reads the whole source, for
+   every organisation, as the daily run does.
 10. **Identifying a person to a source.** Clew sends the public key D97 item 8 names and never a national identity
     number, which Clew does not hold. A source keyed on something else (ID06 on a personal identity number) resolves
     it inside its own connector, through a small published contract `resolve(people, scheme)` with the scheme as a
@@ -86,7 +116,13 @@ requires and when it runs out, for the person and for the manager they report to
 14. **Leaving.** When SCIM deactivates a person (D68: never erased) their holdings leave every view at once. They are
     erased after a period the operator sets, by a durable timer that a reactivation cancels, so a truncated export
     from the source cannot empty the register. Erasure of one person and export of the domain (`clew.competence/1`)
-    are use cases with scenario tests from the first slice (D95 item 7).
+    are use cases with scenario tests from the first slice (D95 item 7). *Exception, as built 2026-11-12 (working
+    session, not confirmed by the product owner):* rows copied from a source (item 9) are a cache, and go at the next
+    read after their person is deactivated or leaves an audience; the period applies to holdings registered in Clew
+    alone. The consequence: a provisioner fault that deactivates many people before the daily read deletes their
+    copied rows, and they come back at a later read only if the source still holds them, as new rows with new ids and
+    creation dates (the source's own row ids, days and labels, so the statuses come back as they were). A manager's
+    attestation is not touched.
 15. **A read is recorded (proposed).** Opening one person's competence, a search across the organisation and an
     export each write a row saying who read whom and when, with no name and no content. Unit coverage writes one row
     per unit.
@@ -104,8 +140,9 @@ not a course or a certificate.
 | `auth_position` | `organisation_id`, `code`, `label` | The SCIM use cases only |
 | `auth_person_position` | `person_id`, `position_id` | The SCIM use cases only |
 | `competence_type` | `name`, `area`, `kind`, `validity_months`, `archived_at`, `merged_into` | `admin.competence` |
-| `competence_source_mapping` | connector id, the source's type id, `type_id` | `admin.competence` |
-| `competence_holding` | `person_id`, `type_id` (empty while a source's type is unmapped), `issued_on`, `expires_on` (issuer's date only), `evidence` (`system`, `manager`, `self`), `state` (`pending`, `valid`, `rejected`, `revoked`), who registered and decided, the approval's thread; for a copied row the connector's id, the source's row id, type id and label, and when it was read | A manager; the person, pending; the scheduled read of a source |
+| `competence_source_mapping` | connector id, organisation, the source's type id, `type_id`, who mapped it and when (built 2026-11-12) | `admin.competence` |
+| `competence_source` | per connector: the read under way as a lease, and the last read's start, end, outcome and counts (built 2026-11-12) | The scheduled read of a source |
+| `competence_holding` | `person_id`, `type_id` (empty while a source's type is unmapped), `issued_on`, `expires_on` (issuer's date only), `evidence` (`system`, `manager`, `self`), `state` (`pending`, `valid`, `rejected`, `revoked`), who registered and decided, the approval's thread; for a copied row the connector's id, the source's row id, type id and label, and when it was read (the copy's columns built 2026-11-12) | A manager; the person, pending; the scheduled read of a source |
 | `competence_requirement` | `type_id` and one of `position_id`, `unit_id`, `person_id` | `admin.competence`; a manager for one person |
 | `competence_share_target` | `type_id`, `position_id`, `unit_id` or none, `min_share` | `admin.competence` |
 
@@ -120,10 +157,10 @@ apply. Part 2: the learning platform's courses, the issuing registers and profes
 | 3. Work between people who use Clew | In part. Registering, approving a person's own registration and renewing before an end date are work items. The holding itself is a fact about a person, which the [review of 2026-11-10](../reviews/2026-11-10-owned-domains-against-a-commercial-hr-system.md) placed with connectors; see "Replaces" |
 | 4. It is small | Not shown. It adds requirement and coverage, which no other candidate has asked for yet, and a combined read over sources |
 | 5. Works with the model off | Yes. Nothing in the domain uses the model |
-| 6. Clew can carry it | Partly: item 14. The length of the period, export to the archive, the secrecy rule and what a new manager may read of earlier holdings are not answered |
+| 6. Clew can carry it | Partly: item 14. A copied row goes with the person on erasure and with its connector when the connector is removed (2026-11-12). The length of the period, export to the archive, the secrecy rule and what a new manager may read of earlier holdings are not answered |
 | 7. Everything that reads it today still can | Not checked. No fact is declared until something follows one |
-| 8. A way in and a way out | The way out is item 14's export. The way in is empty or an import of the spreadsheets, which is not designed |
-| 9. Behind capabilities | Yes: reads as capabilities with declared views, the profile of item 9 |
+| 8. A way in and a way out | The way out is item 14's export, `clew.competence/2` since 2026-11-12 with copied rows and mappings. The ways in are a manager's registration and, since 2026-11-12, the copy from a system that answers the profile of item 9; an import of the spreadsheets is not designed |
+| 9. Behind capabilities | Yes: reads as capabilities with declared views, the profile of item 9; the mapping and "Läs in nu" behind `admin.competence` and its step-up (2026-11-12) |
 | 10. An installation can choose | Yes: item 13, and a system that already holds competences answers the profile |
 | 11. Reviewed by someone who knows the domain | No. An HR practitioner is to read it before real data (agreed in the session, 2026-11-11) |
 | 12. The team accepts being its vendor | Taken from the session's word that it ships with Clew; not asked in those terms, and not asked of the product owner |
@@ -155,9 +192,12 @@ The session chose the copy on 2026-11-11. Erasing with the SCIM delete: an expor
 and a manager's attestation exists nowhere else.
 
 **Open.**
-- Item 9's schedule and shape: how often a source is read, whether a source can answer everyone at once or only a
-  batch of people, and how old a copied row may be before it is shown as unknown. Neither the learning platform's
-  nor ID06's interface has been read.
+- Item 9's schedule and staleness, answered provisionally on 2026-11-12 (item 9, "Settled as built"): once a day and
+  by hand, every copied row listed with the time it was read, nothing hidden for age. Still open: whether a person's
+  row on Personal, the figure and the cards should say how old the copy behind their counts is, and whether a source
+  not read for days should be marked. The shape is settled by D119 (a page of every account at a time, read as the
+  installation); the learning platform answers it ("As built, 2026-11-12: the installation's read"); ID06's interface
+  has not been read.
 - The key on the wire for item 10, `externalId` or `userName` (D97, open), and which way ID06 is read; its interface
   has not been read.
 - How a deactivation reaches an owned domain to start item 14's timer. Talks has the same need and is erased by an
@@ -166,8 +206,9 @@ and a manager's attestation exists nowhere else.
   them: every holding, or those registered since.
 - Whether a position should follow a placement, for a person who is a machine operator on one unit and an
   administrator on another. Tied to the person, both units list them under both sets of requirements.
-- A scheduled read carries no delegated token ([status](../reference/status.md)), so a source that reads as the
-  person cannot be copied; whether such a source is left out or shown live in the person's section only.
+- A scheduled read carries no delegated token ([status](../reference/status.md)), and the installation's read (D119)
+  has no person at all, so a source that reads as the person cannot be copied; whether such a source is left out or
+  shown live in the person's section only.
 - Whether checklist question 3 is amended for a register a manager works from, or this stays a recorded exception.
 - The import of existing spreadsheets, and how such rows are attested afterwards.
 
@@ -233,9 +274,167 @@ their refusals), the store contract on memory and on Postgres, and two browser s
 phone and 320 px).
 
 **Not done.** Seen signed in on the development stack. A manual pass with a screen reader. The Kompetens section on
-an opened person has no browser spec of its own: the specs open the form by its address. Merging two types, bringing
-an archived type back, and revoking a holding from the product (the route exists). The erasure timer of item 14: an
-operator runs the script. The read log of item 15. Everything under "Order" after its first step.
+an opened person has no browser spec of its own: the specs open the form by its address. Merging two types (no
+`merged_into`), bringing an archived type back, and revoking a holding from the product (the route exists). The
+erasure timer of item 14: an operator runs the script. The read log of item 15. Positions, requirements, coverage,
+share targets, the matrix, a person's own registration and `competence.search`. Of the third step of "Order", the
+fixture item 9 asks for under `connectors/`, and a copy made by the running server against a real system.
+
+**As built, 2026-11-12: a first source for the holdings profile.** `connectors/moodle` answers `moodle.holdings` from
+Moodle LMS, the learning platform the development stack now runs, read through its web service API as one service
+account: for the keys asked (user names, at most 25), one row per person the platform knows, carrying the key and every
+holding of that person, each with the source's row id (`course:<id>:user:<id>`, `badge:<id>:user:<id>`), its type id
+(a course's `idnumber`, else `course:<id>`; `badge:<id>`), the type's label, its kind (`course` or `badge`), the day
+issued and, for a badge that has one, the day it ends. A person the platform does not know is no row and a person who
+holds nothing a row without holdings, so item 9's copy can tell "holds nothing" from "unknown", the concern under
+"Alternatives". It cannot tell "withdrawn" from "not seen": Moodle leaves out ended enrolments, courses the service
+account cannot enter, badges the holder keeps private and, when switched off, course badges, all without a word. So
+the answer says `withdrawalsReported: false`, and item 9's "a source that withdraws a row marks it revoked" cannot be
+applied to this source: a holding missing from a later read must not be revoked. A row marked `partial` says only that
+something of that person was refused or could not be dated in this answer; a row without it is not thereby complete.
+What reading Moodle showed for the open questions: it answers a batch of people, not everyone at once; a completion's
+day costs one call per person and course; and only a badge has an end date. On protocol 3
+([D117](D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md)) the connector
+answers only the keys Clew vouches for as `self` or `managed`, and the profile's `keys` list is something protocol 3
+cannot declare on a read that is not about a person, so through Clew `moodle.holdings` is sent no relation and answers
+no row. D117 places item 9's copy as a read the installation makes with no actor and no key in its input, which this
+read is not: the copy would need a read without keys that answers every holding, and a way for the connector to know
+the call is the installation's own, which protocol 3 does not give. The shape is the connector's own: the protocol does
+not list the profile, and nothing in Clew copies it yet. Item 9's schedule, store and type mapping, and the fixture item
+9 asks for, are still not built. (The installation's read, the schedule, the store and the mapping were built the
+same day: see the next two sections.)
+
+**As built, 2026-11-12: the installation's read.** [D119](D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md)
+settles what the paragraph above left open. A connector declares `<id>.holdings` under the manifest's `installation`;
+Clew posts it to `/clew/installation/{name}` with an assertion that carries no actor and is bound to the request, and
+no person's path reaches it. The profile is the protocol's: `{ cursor? }` in, a page of rows
+`{ key, holdings: [{ id, type, label, kind, issuedOn, expiresOn? }], partial? }` out, with `next` and
+`withdrawalsReported`, checked when a manifest is loaded and on every answer. The core reads it through
+`HoldingsReader` (`holdingsSources()`, `readHoldings(connectorId, cursor?)`), bound to the registry as
+`holdingsReader` in `apps/server/src/connectors/registry.ts`. `connectors/moodle` answers it: every account the
+service account can see, 25 to a page in Moodle's id order, listed through `core_enrol_get_enrolled_users` on the
+front page (which needs `moodle/site:viewparticipants`), each with its dated completed courses and its badges,
+suspended accounts included and Moodle's guest account left out, `withdrawalsReported: false`. Read in process
+against the development Moodle: 16 accounts, one page, 50 holdings, no partial row, 81 Moodle calls, 0.4 to 0.7 s. What reading Moodle showed for "Open": it can answer
+everyone, a page at a time, but a completion's day still costs one call per person and course. The copy into the
+register (its schedule, store and type mapping) is the next section; the fixture item 9 asks
+for is still not built (the Moodle stand-in answers the profile in the unit suite).
+
+**As built, 2026-11-12: the copy and the mapping (item 9, the register's side).** What a source holds is copied into
+`competence_holding` and an administrator maps the source's types to the catalogue. Built beside the installation's
+read and joined to it the same day; run end to end in process (below), not yet by the running server.
+
+*Server.* Migration `0055_competence_sources`: the copy's columns on `competence_holding` (`connector_id`,
+`source_id`, `source_type`, `source_label`, `read_at`; `type_id` may be empty only on a copied row, a copied row has
+evidence `system` and no `registered_by`, checked by the table), unique on the connector and the source's row id;
+`competence_source_mapping` (connector, organisation, source type, catalogue type, who and when; its primary key named
+`competence_source_mapping_pk`, since the name Postgres would make is longer than its 63 characters); and
+`competence_source`, a row per source with the read under way as a lease and the last read's outcome and counts, the
+whole read's and each organisation's (`{ unmatched, total, organisations }` in its `counts`). All
+three refer to the connector's row with `ON DELETE CASCADE`, so removing a connector on Anslutna system takes what it
+put in the register in the same transaction; `scripts/competence-forget-source.ts` does the same, audited, for a
+connector that stays. The module declares the source as a port (`HoldingsPort` in `model.ts`: whether the module is
+on, the sources that answer the profile, one page of one, in the profile's own types from `@clew/contracts`), which
+`composition/index.ts` binds to the registry's `holdingsReader` (D119); the module imports no connector code and
+reads a failure's kind from its `code`. The copy (`copySource` in `usecases.ts`, `planCopy` in `domain.ts`) takes a
+lease on the source and reads it page by page to the end, renewing the lease after each page. The lease is taken
+through `openSource`, which writes the source's row when it has none before locking it, so two first runs of a source
+wait for each other and only one reads (2026-11-13); whether the module is on
+is asked again for each source. Each page is taken in as it comes: its new keys are matched to active people by user
+name, and what a key that matches nobody holds is counted and dropped there, and so is what a person outside the
+audiences holds (`HoldingsPort.admitted`, which composition answers with the registry's own `inAudience` over
+`readAudienceFacts` in `@clew/db/auth`). The read holds only the usable holdings of people it may keep rows for and the
+source's row ids. A key, an id or a type with a control character or a lone surrogate, which Postgres would refuse or
+which names nothing reliably, is unusable; a label has them taken out. A person is one row of a read: a key a second
+row answers for, in any spelling and on any page, is nobody's, nothing of either row is kept, their holdings count as
+unusable (`ambiguous` in the audit row), and what the person already has from the source is left as it is (2026-11-13;
+a source cannot always tell that two of its accounts differ only in case, and Clew compares keys without it).
+A failure is handled by its kind: `unavailable` asks the same page again after 5 and 30 seconds, `invalid` (a cursor
+the source no longer knows) starts the sweep again from the first page once, and `not-found`, `denied`, `unknown`, a
+second `invalid`, a third `unavailable`, a cancelled run, a cursor that comes back, ten thousand pages or more than
+200 000 holdings end the read. A read that ends so keeps what it read, revokes nothing and is recorded as `failed`
+with the kind; the next run reads the source again. Then everything is written in one transaction with one audit row,
+`competence.source_read`, which carries the run, the outcome (`complete`, `partial`, `failed`), the failure's kind and
+the whole read's counts (read, stored, unchanged, keys that matched nobody, unusable, types not mapped, revoked, people
+outside an audience, rows removed), never a name, a key or a label. The transaction locks the source's row first, as a
+mapping, an erasure (`erasePerson`, the row of every source in one order, whether the person has rows from it yet or
+not, so an erasure also waits for the write of a person's very first copied row; 2026-11-13) and forgetting a
+source do, so two writers wait for each other and never deadlock; it checks again that each person it writes for is
+still active, and deletes the rows of anyone no longer admitted. Removing the connector takes the same order: a copied
+row refers to its source's row in `competence_source` (`competence_holding_source_fk`), not to the connector's, so the
+cascade from the connector's row deletes the source's row first, waiting for a write that holds it, and only then the
+copied rows; a write that comes after finds the row gone and writes nothing. (Built first with the copied rows
+referring to the connector, a removal held the connector's row and waited for the source's row, while the write held
+the source's row and, inserting a copied row, waited to check it against the connector's: Postgres broke the deadlock
+by aborting one of the two (40P01), and the administrator's removal, when it was the one, answered 503 "Något gick fel.
+Försök igen." from the routes' catch-all. A mapping still refers to the connector, so a removal and a mapping saved at
+the same moment can still meet that way, with the same answer.) A write that fails (a value the database refuses, the database itself) changes nothing, is recorded as
+`failed` with the kind `storage` and lets go of the source. Logs carry kinds, counts and the database's error code,
+never an error's text. Erasure is only for a person the directory has deactivated: the use case and
+`scripts/competence-erase.ts` refuse an active person (`PersonStillActive`), whose rows the next read would copy back. A source's `kind` (`badge` among them) is not
+kept: the catalogue type, and with it the kind, comes from a mapping. A repeated read changes nothing but `read_at`. The end date is the source's where it gives one; else the catalogue
+type's rule computes it when read, as for a registered holding. Mapping or unmapping (`competence.source_mapped`,
+`competence.source_unmapped`) re-types the copied rows of that organisation in the same transaction. A manager
+cannot revoke a copied row. Erasure takes a person's copied rows; the export is `clew.competence/2` (a holding may
+have no type and carries `copy`, and the document lists the mappings), a version because `typeId` may now be empty.
+
+*Scheduling.* `competenceCopy` in `dbos/workflows.ts`, started inside the transaction that asks for it (D86): the
+daily run `competence-copy:<day>` at 04:00 Swedish time, asked for at boot and by each daily run before it reads, and
+"Läs in nu" `competence-read:<run>` for one source, audited as `competence.read_requested`. One step per source,
+without the one-minute step timeout (the engine would start a second attempt beside a slow one); the lease keeps two
+runs off one source, and a run the engine recovers after a restart takes its own lease again and reads from the start.
+Each page has the read's own deadline and cancelling the workflow aborts the page under way through the step's signal,
+so a read always ends without a step timeout. A source whose step still fails after its retries is left for the next
+run and the others are read; a daily run whose step that asks for the next day fails still reads, and the server asks
+for the next daily run at boot and every hour after (`startCompetenceCopy`), so the chain heals within the hour, and
+also after a day on which no instance ran.
+`scripts/competence-read.ts` asks for a run and prints each source's counts.
+
+*The reads.* A mapped copied row counts exactly as a registered one in `competence.holdings`, `competence.attention`,
+`competence.person`, the figure and the scan. A row whose type is not mapped is listed in `competence.holdings` under
+the source's label with the status `uncounted` ("räknas inte") and no area or kind, and counts towards nothing. Both
+declared views gained the fields `source` ("Källa") and `readAt` ("Inläst", beside it), drawn with the catalogue's
+existing formats; no view kind or presentation field was added.
+
+*Källor* (`apps/web/src/pages/admin/competence-sources.tsx`): a page of its own at `/admin/competence/sources`, linked
+from the catalogue's page, because a list that can grow is a page with an address
+([D116](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md)) and the
+administration's tabs have none. One card per source: its last read and how it went, "Läs in nu", and its types with
+how many holdings carry each and the catalogue type it is mapped to or "Inte kopplad". A type is mapped in a dialog
+at `?source=<connector>&type=<the source's type id>`, where the mapping is also removed. Behind `admin.competence` and
+the module's switch, as the catalogue is. A source is listed, read by hand or mapped only for an organisation that
+has someone inside its audience and the module's (`HoldingsPort.reaches`, `organisationInAudiences` in
+`@clew/db/auth`); the counts are that organisation's, the outcome and the time the source's, and the keys that matched
+nobody every organisation's. A source no longer answering is "Läses inte in", since Anslutna system says "Svarar inte"
+of a system it cannot reach.
+
+*Development.* `competence-seed.ts` adds the catalogue types the development learning platform's courses and badge can
+be mapped to; `scripts/competence-map.ts --connector <id> --development` maps its seeded course ids, for whatever id
+the platform was registered under, and leaves the badge for the page.
+
+*End to end, in process.* `tests/unit/competence-moodle.test.ts` drives the copy on the memory store through Clew's
+registry and the installation's signed read against the Moodle connector over its stand-in: 10 accounts, 34 holdings
+read, 33 stored, 2 keys matching nobody (accounts with no person in Clew), 3 types not mapped (a course without an
+`idnumber` and two badges), and Johan's own list as the statuses follow from the catalogue's rules. The same, run from
+the worktree against the development Moodle with the development directory's 250 people and every audience open: first
+one page of 17 accounts, outcome `partial` because Moodle marked its guest account's row partial; after the connector
+began leaving the guest account out (the product owner's decision) and the review's fixes, run again: one page of 16 accounts, 50 holdings read and
+stored for 14 people, 2 keys matching nobody (the administrator and the service account), one type not mapped (the
+badge, 3 rows), outcome `complete`, about 0.46 s; read again, 50 unchanged. Johan: Delegering läkemedel expired
+2025-10-13, HLR expired 2025-11-08, Brandskydd valid until 2028-12-17, Livsmedelshygien valid with no end, and
+HLR-instruktör "räknas inte" until its badge is mapped, then expired 2026-10-08.
+
+Tests: `tests/unit/competence-copy.test.ts` (matching, the repeated read, withdrawals, each failure kind, a restarted
+sweep, a cancelled run, the bound of one read, a page in the profile's shape with the platform's own accounts, partial
+reads, what a column refuses, a write that fails, the audiences and a person who leaves one, each organisation's
+counts, the switch asked per source, the lease, status with copied rows, the mapping, the page's read, "Läs in nu", the
+daily schedule across summer time, leaving and the refusal to erase an active person, the routes; no audit row with a
+name, a key or a label), `tests/db/postgres-competence-copy.test.ts` (a NUL refused by Postgres and taken in its stride
+by the copy, two writers at once in both orders, the audience asked of the database), new cases of the store contract on memory and
+Postgres with the connector's removal on Postgres, `apps/server/tests/competence-runtime.test.ts` (a run committed
+before the engine launches, the daily run, a source whose step keeps failing beside one that is read and a next day
+that cannot be asked for, and an instance killed while it reads whose run is adopted and finishes once under its
+lease), and `tests/a11y/admin-competence-sources.spec.ts`.
 
 **Replaces.** Amends [D68](D68-people-are-pushed-into-clew-through-standard-scim.md) item 2 and
 [D96](D96-a-key-written-wrong-is-refused-at-the-scim-boundary.md) (a key written wrong): `position:` is a fourth

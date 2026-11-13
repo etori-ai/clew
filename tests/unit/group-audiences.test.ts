@@ -158,9 +158,10 @@ describe('what leaves the process is the published actor (A1)', () => {
       key: secret,
       url: 'http://hello',
       id: 'hello',
-      assert: actor => {
+      // Bound to each request's body and capability, as Clew's authority binds it (protocol 3, D117).
+      assert: (actor, chain, binding) => {
         signed.push(actor);
-        return assertionFor('hello', secret)(actor);
+        return assertionFor('hello', secret)(actor, chain, binding);
       },
       assertForeign: assertionFor('hello', 'another-secret-another'),
       fetch,

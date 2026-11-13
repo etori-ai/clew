@@ -12,6 +12,7 @@ import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapt
 import { personErasureUsecases, staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { entityUsecases } from '../../apps/server/src/modules/entities/usecases';
 import { entityActionUsecases } from '../../apps/server/src/modules/entities/actions';
+import { relationUsecases } from '../../apps/server/src/modules/entities/relations';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
 import { startedCards } from '../../apps/server/src/threads/usecases/started';
 import { cardDecisions } from '../../apps/server/src/threads/usecases/decisions';
@@ -226,7 +227,13 @@ function world(options: { fixture?: boolean } = {}) {
   const { asked, connectors: inTest } = sources();
   const fixtures = fixtureConnectors({ only: ['hr'], clock: () => new Date(T) });
   const connectors = options.fixture ? fixtures.connectors : inTest;
-  const registry = new Registry();
+  // Who may be asked about (D117) as the composition installs it: the entities module's rule over the same directory.
+  const relations = relationUsecases({
+    directory: people.staff,
+    reader: async actor => people.persona(actor.id),
+    holders: keys.holders,
+  });
+  const registry = new Registry({ relations: relations.relate });
   for (const c of connectors) registry.register(c).govern(c.id, openGovernance());
   const store = memoryThreadStore();
   let n = 0;
@@ -281,7 +288,20 @@ function world(options: { fixture?: boolean } = {}) {
     expect(asked.report).toEqual([]);
     expect(asked.flag).toEqual([]);
   };
-  return { people, registry, store, entities, actions, access, decisions, approvals, asked, fixtures, nothingWritten };
+  return {
+    people,
+    registry,
+    store,
+    entities,
+    actions,
+    started,
+    access,
+    decisions,
+    approvals,
+    asked,
+    fixtures,
+    nothingWritten,
+  };
 }
 
 describe('an action about a person, started from the menu', () => {
@@ -591,10 +611,19 @@ describe('an action about a person, started from the menu', () => {
   test('a source that refuses the person, or answers something that is not its own card, writes nothing', async () => {
     const w = world();
     const hillevi = w.people.persona('hillevi');
-    // Karin is a colleague the reader may ask about, but not one of the HR system's for this manager: it says so in Swedish.
-    await expect(w.actions.start(hillevi, 'person', 'karin', 'hr.prepare')).rejects.toThrow(
+    // Erik reports to the reader, but the HR system does not know him: it says so in Swedish.
+    await expect(w.actions.start(hillevi, 'person', 'erik', 'hr.prepare')).rejects.toThrow(
       'Medarbetaren finns inte i din enhet.',
     );
+    // Karin is a colleague the reader may open, but the action admits only the reader and their reports (D117): her
+    // page does not offer it, starting it anyway is what the reader may not reach, and the source never hears her name.
+    expect((await w.entities.detail(hillevi, 'person', 'karin'))?.actions).toEqual([]);
+    expect(await w.actions.start(hillevi, 'person', 'karin', 'hr.prepare')).toBeUndefined();
+    // Past the menu, the registry refuses the write itself before it is a card (D117).
+    await expect(w.started.startCard(hillevi, 'hr.prepare', { person: 'karin' }, { reason: 'x' })).rejects.toThrow(
+      'Okänd förmåga.',
+    );
+    expect(w.asked.prepare).toEqual([{ person: 'erik' }]);
     await expect(w.actions.start(hillevi, 'person', 'maria', 'hr.foreign')).rejects.toThrow(
       'Förslaget från Personalsystemet kunde inte läsas.',
     );
@@ -687,9 +716,12 @@ describe('the route', () => {
     const w = stack();
     for (const body of ['', 'nej', '[]', '{}', '{"capability":"Hr x"}', '{"capability":"hr.prepare","person":"anna"}'])
       expect([body, (await w.post('/person/maria/actions', body)).status]).toEqual([body, 400]);
-    const refused = await w.post('/person/karin/actions', JSON.stringify({ capability: 'hr.prepare' }));
+    const refused = await w.post('/person/erik/actions', JSON.stringify({ capability: 'hr.prepare' }));
     expect(refused.status).toBe(400);
     expect(await refused.json()).toEqual({ error: 'Medarbetaren finns inte i din enhet.' });
+    // A colleague outside what the action admits (D117): not offered on her, so the same 404 as anything not offered.
+    const colleague = await w.post('/person/karin/actions', JSON.stringify({ capability: 'hr.prepare' }));
+    expect(colleague.status).toBe(404);
     w.nothingWritten();
   });
 });

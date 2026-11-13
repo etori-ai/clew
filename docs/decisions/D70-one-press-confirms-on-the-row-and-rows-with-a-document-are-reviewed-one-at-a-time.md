@@ -1,6 +1,6 @@
 # D70 · One press confirms on the row, and rows with a document are reviewed one at a time
 
-**Status:** accepted, built 2026-11-06 on `main` · **Date:** 2026-11-06 · **Area:** ui
+**Status:** accepted, built 2026-11-06 on `main`; item 2's review is a page of its own since 2026-11-12 (see the amendment of that date) · **Date:** 2026-11-06 · **Area:** ui
 
 **Decision.** How a card becomes done, chosen by the product owner on 2026-11-06 ("A plus B to D") from the canvas
 **Clew · att bli klar: ett tryck, en i taget, och kvittot** (Claude Design, https://claude.ai/artifact/BZwgqCN9H9YGteA3XjNxfX;
@@ -76,3 +76,10 @@ state for a sent message or a time with a room (E, state six) and the Nyss strip
 is now the page `/cards/:threadId/review` in the shell, with the step in `?step=`; "Granska N" is a link to it, and
 `ReviewDialog` and the card's own state for it are gone. The phone's `BottomSheet` note is withdrawn. Items 1, 3 and 4
 stand.
+
+**Amended 2026-11-12.** Item 2's review moved from an overlay over the page it was opened on to a page of its own,
+`/items/<threadId>/review`, under the product owner's rule that a task a person works through is a page with its own
+address ([D116](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md), recorded the same day; [D73](D73-the-review-is-a-page-in-the-shell-with-an-address.md) as amended
+2026-11-12). The person's decisions are a draft kept in the browser tab for the session, so a reload or a way out and
+back keeps them, and the card then says "Fortsätt granska". Items 1, 3 and 4 stand; what is written, and when, does not
+change.

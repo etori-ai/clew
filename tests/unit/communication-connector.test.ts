@@ -62,7 +62,7 @@ describe('the communication fixture connector', () => {
     const { registry } = stack();
     const [draft] = await registry.scan(hassan);
     expect(draft).toMatchObject({ topic: 'communication:communication:notice:2026-44-1', area: 'important-now' });
-    expect(draft!.reason).toBe('Publicerat 2026-11-03 06:30 · läskvitto krävs');
+    expect(draft!.reason).toBe('Publicerat av Barn och utbildning 2026-11-03 06:30 · läskvitto krävs');
     const result = await registry.run<Result>(
       hassan,
       'communication.acknowledge',
@@ -85,6 +85,42 @@ describe('the communication fixture connector', () => {
       result,
     });
     expect(await registry.run(hillevi, 'communication.lookup', { operationId: 'op-1' })).toEqual({ found: false });
+  });
+  test('the work item is the notice: its text as paragraphs, its one row the notice itself, and a read that leads to the whole of it', async () => {
+    const { registry } = stack();
+    const [draft] = await registry.scan(hassan);
+    // The text the person is asked to read, a few paragraphs separated by a blank line (D112, amended 2026-11-12).
+    const paragraphs = draft!.summary.split('\n\n');
+    expect(paragraphs.length).toBeGreaterThanOrEqual(3);
+    expect(paragraphs[0]).toStartWith('Från den 1 december gäller en ny rutin vid hot och våld');
+    // The one row is the notice itself, with nothing to say beyond its title: the receipt names it.
+    expect(draft!.items).toEqual([
+      {
+        ref: 'communication:notice:2026-44-1',
+        label: 'Ny rutin vid hot och våld',
+        detail: '',
+        selectable: false,
+        selected: true,
+      },
+    ]);
+    // The whole notice is a read that leads out of Clew (D111 rule 8), answered with the system's own address.
+    const open = draft!.actions.find(a => a.id === 'open');
+    expect(open).toEqual({
+      id: 'open',
+      label: 'Läs hela nyheten',
+      capability: 'communication.open',
+      kind: 'read',
+      role: 'secondary',
+      target: 'link',
+      input: { ref: 'communication:notice:2026-44-1' },
+    });
+    expect(await registry.run(hassan, 'communication.open', { ref: 'communication:notice:2026-44-1' })).toEqual({
+      url: 'https://kommunikation.example.invalid/meddelanden/2026-44-1',
+    });
+    // A notice the system does not show in full has no such read.
+    await expect(registry.run(hassan, 'communication.open', { ref: 'communication:notice:2026-44-2' })).rejects.toThrow(
+      /finns inte i sin helhet/,
+    );
   });
   test('the person map decides whose receipt it is, and a crash after the commit is found by the lookup', async () => {
     const mapped = stack({ personMap: { karin: 'hassan' } });

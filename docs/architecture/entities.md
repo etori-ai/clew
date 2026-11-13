@@ -33,23 +33,38 @@ The code: the [entities module](../../apps/server/src/modules/entities/) and its
 
 ## Who may be asked about
 
-A core rule per kind, checked before any source is called (`resolve` and `listedKeys` in [usecases.ts](../../apps/server/src/modules/entities/usecases.ts) and [domain.ts](../../apps/server/src/modules/entities/domain.ts)).
+A core rule per kind, checked on every call that names a person or a unit, whatever path the call came by
+([D117](../decisions/D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md)).
+`personRelation` and `unitRelation` in [domain.ts](../../apps/server/src/modules/entities/domain.ts) say how the reader
+stands to a person or a unit; the opened entity uses them (`resolve` in
+[usecases.ts](../../apps/server/src/modules/entities/usecases.ts)), and the registry asks
+[relations.ts](../../apps/server/src/modules/entities/relations.ts) before it runs any capability whose input names
+someone. Both read where the reader stands from the people directory (`reach`): the units they are placed on, the people
+Personal lists on the units they manage, who manages them (`above`) and which co-managers report to them
+(`lineReports`), from one read of the tree.
 
 | Kind | Relation | Reached through |
 |---|---|---|
-| `person` | `self`: the reader | The opened person |
-| `person` | `managed`: an active person on a unit the reader manages | The list and the opened person |
-| `person` | `colleague`: another active person in the reader's organisation, opened by Clew's id | The opened person only |
-| `unit` | `member`: a unit the reader manages or is assigned to | The list and the opened unit |
-| `unit` | `below`: a unit whose manager reports to the reader, one level below a unit the reader manages ([D117](../decisions/D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md)) | The list and the opened unit |
+| `person` | `self`: the reader | The opened person, and any capability that admits it |
+| `person` | `managed`: a direct report under D99 item 4: placed without a manager's role on a unit the reader manages, reporting to it from below (the managers of the nearest led units below it and the people of units nobody leads in between), or leading it beside the reader while their line runs to a unit above it that the reader leads (`lineReports`). Never a co-manager whose line runs elsewhere, never someone who manages the reader (`reportsTo`) | The list's sources, the opened person, and any capability that admits it |
+| `person` | `colleague`: any other active person in the reader's organisation, opened by Clew's id and asked about by user name; a co-manager and the reader's own manager among them | The opened person; a source only when it admits `colleague` |
+| `unit` | `manages`: a unit the reader holds a manager's role on | The list, the opened unit, and every read about a unit that admits it (all do by default) |
+| `unit` | `member`: a unit the reader is placed on otherwise | The list, the opened unit, and a read about a unit that admits `member` |
+| `unit` | `below`: a unit whose manager reports to the reader, one level below a unit the reader manages ([D117](../decisions/D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md)) | The list, the opened unit, and a read about a unit that admits `below` |
 
-The list of people holds only `managed` people, one group per unit the reader manages; someone who manages nobody gets a list without groups. The list of units holds the reader's own units under "Mina enheter" and the units below under "Enheter under dig", and a read about units is asked about all of them, with the units the reader follows up in the signed actor (`units`). A key outside the rule, a source the reader may not call and a kind Clew does not have all answer the same 404 as an unknown address. Inside the rule the source narrows further as the person: a key it may not answer for is answered as no row, never as a refusal. A colleague's opened page therefore usually has few sections.
+The list of people holds everyone placed on the units the reader manages and those who report from below, one group per unit, as Personal always has; someone who manages nobody gets a list without groups. The sources behind its lenses, columns and marks are asked only about the reports among them, so a co-manager's row carries no source's value. The list of units holds the reader's own units under "Mina enheter" and the units below under "Enheter under dig", and a read about units is asked about all of them, with the units the reader follows up in the signed actor (`units`); the registry leaves out those the read does not admit. A key outside the rule, a source the reader may not call and a kind Clew does not have all answer the same 404 as an unknown address.
+
+**What a source admits.** A capability says in `person.admits` or `unit.admits` which relations it may be asked about under; without it, `self` and `managed`, or `manages`. The registry ([`Registry.run`](../../packages/connectors/src/index.ts), `Registry.validate` before a write is approved, and `Registry.document` for a document's bytes) leaves out of `keys` every key outside what the capability admits, a key the directory does not know and a second spelling of one person, and writes a key that stays as the directory spells it. A single key (`about.param`, `person.param` and the inputs that name a person without declaring it) outside it, or anything but a string there, refuses the call as an unknown capability is refused. The section of a source that does not admit the reader's relation to the opened entity is not asked and has no row, and an action that does not admit it is not offered; the list asks no source that admits no report, and offers on its rows no person's action that does not admit `managed`. Inside the rule a source may still narrow as the person and answer a key it may not show as no row.
+
+**Which inputs name someone.** A read about a person names one in `keys`, an action about one in `about.param`, any other capability in `person.param`. Three more name a person whether they declare it or not, so a forgotten declaration fails closed: the `person` of a `<id>.commitments` read, a property a row of a read about a person fills from its `key` when it opens another read, and an execute's effect read, which admits what its execute admits. The loader holds every one of them to a plain string property of the input (`named.ts`, the rule `named-input-is-a-string`). A core capability of Clew's own domains may add `person.ids`: a person without a user name may then be named by Clew's id, as the reader or a report.
+
+**What the source is told.** Each key sent and its relation: `clew.about` in process, `about` in the request body for a remote connector, which the assertion binds by its digest ([Authorization](../guides/authorization.md#reads-about-a-person-or-a-unit)). A directory that cannot be read is an error (`RelationsUnavailableError`): the call fails, and an approved write waits as `source-unavailable` rather than being revoked. A write's dispatch redeems the resolution its check made just before (`Resolution`), so the directory is never read after the dispatch is recorded. Telling the source, and the binding, are protocol 3; a connector on 2 is held to the rule but told nothing ([protocol reference](../reference/connector-protocol.md#contract-changes)).
 
 ## How a source is asked
 
 The rules a figure batch follows ([D75](../decisions/D75-source-snapshots-retain-the-authority-that-produced-them.md)), in `entityUsecases`:
 
-- Only keys inside the rule are sent, in calls of at most the read's own `maxItems`, never more than 200.
+- Only keys inside the rule, and of a relation the read admits, are sent, in calls of at most the read's own `maxItems`, never more than 200.
 - One source gets four seconds for all its calls on one request, with at most four calls at once. The first call that fails stops the rest; when the budget ends, what still runs is cancelled through the call's signal.
 - Rows are kept only when every call answered, so an absent row means "nothing about this one", never "not asked". A source that failed or ran out of time gives the status `unavailable` or `timeout` and no rows; it never fails the request, and the log line names the capability and the status, never a key or a row.
 - A row whose `key` was not asked, or a second row for a key, is dropped. A kept row holds only `key` and the properties its view draws or opens with; `heading` and `note` pass when they are strings.
@@ -74,6 +89,8 @@ The thread store keeps an index from entity to cards by Clew's key, the table `t
 
 - "Behöver dig" on the opened entity: the reader's own cards naming it that still ask for them (not waiting on someone else, not set aside under Inte nu, still visible under current authority), the cards that wait for the reader first, then proposals, then information.
 - "Just nu" on the list: per person, how many cards wait for the reader ("N att agera på") and how many are proposals ("N förslag"), with the card itself when there is only one, opened beside the list. Several lead to the person's page at "Behöver dig" ([D111](../decisions/D111-where-something-opens-is-decided-by-what-it-is.md), amended 2026-11-11); each card's `kind` (`act`, `proposal`, `fyi`) tells them apart.
+
+The assistant reads the same index when a question names one of the reader's people ([D115](../decisions/D115-the-assistant-resolves-a-person-the-asker-names-and-hands-the-model-the-work-about-them-not-health-rows.md), [people.ts](../../apps/server/src/assistant/people.ts)): the cards whose rows name them are listed to the model by title, last day and buttons and drawn with the answer, and every card about them, an action point's included, is handed to the model by its title alone wherever it appears in the conversation. An action point's card is never listed.
 
 ## Actions started as cards
 

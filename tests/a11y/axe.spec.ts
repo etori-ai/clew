@@ -63,9 +63,9 @@ for (const [layout, viewport] of [
       await expectNoAxeViolations(page);
     });
 
-    test('the sources view has no axe violations', async ({ page, api: _ }) => {
-      await open(page, '/?open=clew.search&open-title=K%C3%A4llor&open-input=%7B%22query%22%3A%22fall%22%7D');
-      await expect(page.getByRole('dialog').getByRole('list', { name: 'Källor' })).toBeVisible();
+    test('the sources view, its own page, has no axe violations', async ({ page, api: _ }) => {
+      await open(page, '/tools/clew.search?title=K%C3%A4llor&input=%7B%22query%22%3A%22fall%22%7D&from=%2F');
+      await expect(page.getByRole('main').getByRole('list', { name: 'Källor' })).toBeVisible();
       await expectNoAxeViolations(page);
     });
 

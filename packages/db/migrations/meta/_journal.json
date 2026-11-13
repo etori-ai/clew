@@ -428,6 +428,13 @@
       "when": 1794578526736,
       "tag": "0060_normalize_stored_user_names",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1794601744414,
+      "tag": "0061_competence_sources",
+      "breakpoints": true
     }
   ]
 }

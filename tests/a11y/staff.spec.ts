@@ -365,70 +365,62 @@ test.describe('Personal', () => {
       await expect(section).toHaveCount(0);
       await expect(button).toBeFocused();
     });
-    test('a row in a card’s read beside the list leads to its own view in the card’s place, and Tillbaka to the card with its read', async ({
+    test('a card’s read that turns out to answer with a list leads to the read’s page, and Back to the card beside Personal (D116)', async ({
       page,
       api,
     }) => {
-      // The read answers with a declared list whose rows each have a view of their own: the phone book's team, each
-      // person with a contact card.
+      // The read answers with a declared list though its kind was not known as one: the phone book's team. The read's
+      // own page asks the same read and gets the same list.
       const team = await phonebook('phonebook.team', {});
       if (!('output' in team.body)) throw new Error(team.body.error);
       api.cardReads.pattern = team.body;
-      await page.setViewportSize(WIDE);
-      await open(page, '/staff?card=omtanke&open-card=omtanke&open-action=pattern');
-      const card = page.getByRole('complementary', { name: 'Ärende' });
-      const name = card.locator('#read-card-omtanke').getByRole('list').getByRole('link').first();
-      // Personal's own address with the row's view in the panel, over the card, which keeps its read under it.
-      await expect(name).toHaveAttribute(
-        'href',
-        /^\/staff\?card=omtanke&open-card=omtanke&open-action=pattern&open=phonebook\.person&open-title=Kontaktkort&open-input=[^&]+&via=1$/,
-      );
-      await expectNoAxeViolations(page);
-      await name.focus();
-      await page.keyboard.press('Enter');
-      const contact = page.getByRole('complementary', { name: 'Kontaktkort' });
-      await expect(contact.getByRole('heading', { level: 2, name: 'Kontaktkort' })).toBeFocused();
-      await expect(page.getByRole('heading', { level: 1, name: 'Personal' })).toBeVisible();
-      await expect(page.getByRole('complementary')).toHaveCount(1);
-      // The way back is the view's own, and the focus lands on the row that led away, in the card's read.
-      await contact.getByRole('button', { name: 'Tillbaka' }).click();
-      await expect(page).toHaveURL('/staff?card=omtanke&open-card=omtanke&open-action=pattern');
-      await expect(name).toBeFocused();
-    });
-    test('a read that answers with a table opens in the card’s place, as every read did before, and ✕ folds it back into the card', async ({
-      page,
-      api,
-    }) => {
-      // The one kind of view a card's read declares that the panel's width does not hold yet (`unfoldsInCard`): the
-      // phone book's directory, a table, each person with a contact card.
-      const directory = await phonebook('phonebook.directory', { query: 'lärare' });
-      if (!('output' in directory.body)) throw new Error(directory.body.error);
-      api.cardReads.pattern = directory.body;
+      await page.route('**/api/cap/hr.absencePattern*', route => route.fulfill({ json: team.body }));
       await page.setViewportSize(WIDE);
       await open(page, '/staff?card=omtanke');
       await page.getByRole('complementary', { name: 'Ärende' }).locator('[data-read="pattern"]').click();
-      await expect(page).toHaveURL('/staff?card=omtanke&open-card=omtanke&open-action=pattern');
-      const read = page.getByRole('complementary', { name: 'Se mönstret' });
-      await expect(read.getByRole('heading', { level: 2, name: 'Se mönstret' })).toBeFocused();
-      await expect(page.getByRole('complementary')).toHaveCount(1);
-      const name = read.getByRole('link', { name: 'Anna Lindqvist' });
-      await expect(name).toHaveAttribute(
+      // Nothing with rows opens in the panel: the read's page, with Personal and its card as the way back.
+      await expect(page).toHaveURL('/tools/hr.absencePattern?from=%2Fstaff%3Fcard%3Domtanke');
+      await expect(page.getByRole('complementary')).toHaveCount(0);
+      const main = page.getByRole('main');
+      await expect(main.getByRole('heading', { level: 1, name: 'Se mönstret i personalsystemet' })).toBeVisible();
+      await expect(main.getByRole('listitem')).toHaveCount(5);
+      await expect(main.getByRole('link', { name: 'Personal', exact: true })).toHaveAttribute(
         'href',
-        /^\/staff\?card=omtanke&open-card=omtanke&open-action=pattern&open=phonebook\.person&open-title=Kontaktkort&open-input=[^&]+&via=1$/,
+        '/staff?card=omtanke',
       );
       await expectNoAxeViolations(page);
-      await name.focus();
-      await page.keyboard.press('Enter');
-      const contact = page.getByRole('complementary', { name: 'Kontaktkort' });
-      await expect(contact.getByRole('link', { name: '0980-319 203' })).toBeVisible();
-      await contact.getByRole('button', { name: 'Tillbaka' }).click();
-      await expect(page).toHaveURL('/staff?card=omtanke&open-card=omtanke&open-action=pattern');
-      await expect(name).toBeFocused();
-      await read.getByRole('button', { name: 'Stäng panelen' }).click();
+      // Back is the card beside Personal as it was before the read was asked for, with nothing unfolded in it.
+      await page.goBack();
       await expect(page).toHaveURL('/staff?card=omtanke');
       const card = page.getByRole('complementary', { name: 'Ärende' });
       await expect(card.getByRole('article', { name: 'Ärende: Omtankesamtal med Anna Lindqvist' })).toBeVisible();
       await expect(card.locator('#read-card-omtanke')).toHaveCount(0);
+    });
+    test('a card’s read whose view is a table is a link to the read’s page, and Back gives the focus to it again (D116)', async ({
+      page,
+      api,
+    }) => {
+      // The read declares a table, as "Se i personalsystemet" on a leave request does: no disclosure, a link.
+      api.views = api.views.map(v => (v.capability === 'hr.absencePattern' ? { ...v, kind: 'table' as const } : v));
+      const directory = await phonebook('phonebook.directory', { query: 'lärare' });
+      if (!('output' in directory.body)) throw new Error(directory.body.error);
+      await page.route('**/api/cap/hr.absencePattern*', route => route.fulfill({ json: directory.body }));
+      await page.setViewportSize(WIDE);
+      await open(page, '/staff?card=omtanke');
+      const card = page.getByRole('complementary', { name: 'Ärende' });
+      const link = card.getByRole('link', { name: 'Se mönstret' });
+      await expect(link).toHaveAttribute('href', '/tools/hr.absencePattern?from=%2Fstaff%3Fcard%3Domtanke');
+      await expect(link).not.toHaveAttribute('aria-expanded', /.*/);
+      await link.focus();
+      await page.keyboard.press('Enter');
+      await expect(page).toHaveURL('/tools/hr.absencePattern?from=%2Fstaff%3Fcard%3Domtanke');
+      await expect(page.getByRole('main').getByRole('table')).toBeVisible();
+      await expect(page.getByRole('complementary')).toHaveCount(0);
+      await page.goBack();
+      await expect(page).toHaveURL('/staff?card=omtanke');
+      await expect(
+        page.getByRole('complementary', { name: 'Ärende' }).getByRole('link', { name: 'Se mönstret' }),
+      ).toBeFocused();
     });
     test('the panel stands beside Personal from 1340 px on the window’s edge, and the list gives way to it', async ({
       page,

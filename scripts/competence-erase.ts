@@ -1,9 +1,10 @@
 /**
- * Erase one person from the competence domain (D108 item 14): their holdings, their id on the holdings they registered or
- * revoked for others, and the cards the competence scan put in their own stream ("HLR gick ut 1 juni"), each with a
- * `thread.removed` row. Runs inside the app container with the server's local settings (DATABASE_URL); no route and no
- * `package.json` entry. Audited (`competence.person_erased`, counts only) with the actor `operator:cli`. It cannot be
- * undone, so it needs `--confirm`.
+ * Erase one person from the competence domain (D108 item 14): their holdings, the rows copied from sources included,
+ * their id on the holdings they registered or revoked for others, and the cards the competence scan put in their own
+ * stream ("HLR gick ut 1 juni"), each with a `thread.removed` row. Only a person the directory has deactivated is
+ * erased, since the next read of a source would copy an active person's holdings back. Runs inside the app container
+ * with the server's local settings (DATABASE_URL); no route and no `package.json` entry. Audited
+ * (`competence.person_erased`, counts only) with the actor `operator:cli`. It cannot be undone, so it needs `--confirm`.
  *
  *   bun scripts/competence-erase.ts --person <person id> --confirm
  *

@@ -18,6 +18,7 @@ docker inspect keycloak --format '{{json .Config.Env}}' | docker exec -i -w /wor
 docker exec -w /workspace clew-app-1 bun run dev:connectors  # after auth:setup, which creates the key the connectors' secrets are sealed with and the people the seed is for: registers the fixture connectors and follower bindings (D61), adds the appraisals fixture as a draft, opens the development round of utvecklingssamtal when none is open (D96), seeds the competence catalogue and holdings, and chooses Personal's lenses and columns while none is chosen (D97)
 docker exec -w /workspace clew-app-1 bun run dev:provision  # optional: the same directory over HTTP against the running BFF, to exercise /scim/v2
 sh scripts/calendar.sh start                             # Nextcloud CalDAV provider + Mailpit, seeded with synthetic people and meetings (Hillevi's and Hassan's calendars)
+sh scripts/moodle.sh start                               # optional: Moodle LMS as a learning platform, seeded with the same people, courses, completions, competencies and a badge
 docker exec -it -w /workspace clew-app-1 bun run dev                 # BFF on :3000 and Vite on :5173, published as http://localhost:3020
 ```
 
@@ -78,11 +79,28 @@ sh scripts/a11y.sh menu.spec.ts --timeout 15000         # on the host: the WCAG 
 sh scripts/a11y.sh                                      # the whole WCAG 2.2 AA suite, as the workflow runs it: about eight minutes, not a per-edit check
 ```
 
-Ports on loopback: 3020 web, 3021 Nextcloud (`calendar-admin`), 3022 Mailpit, 4040 to 4046 the fixture connectors, 4047 the local fake of Microsoft Graph (`/v1.0`).
+Ports on loopback: 3020 web, 3021 Nextcloud (`calendar-admin`), 3022 Mailpit, 3024 Moodle (`moodle-admin`), 4040 to 4046 the fixture connectors, 4047 the local fake of Microsoft Graph (`/v1.0`).
 
 The durable engine (DBOS Transact, D85) runs inside the BFF and checkpoints to the `dbos` schema of the development database; there is no separate service or UI. Approved executions, reminder/snooze timers, bounded calendar follow-up and scheduled jobs use durable PostgreSQL intent before dispatch. A reminder keeps its absolute due time through an outage; queued/blocked states remain visible. Inspect workflows with SQL (`select workflow_uuid, name, status, executor_id, application_version from dbos.workflow_status order by created_at desc limit 50` through `docker exec clew-postgres-1 psql -U clew clew`) and aggregates with `docker exec -w /workspace clew-app-1 bun scripts/reliability-status.ts`. See [scheduled work](../architecture/scheduled-work.md) and the [operations runbook](reliability-operations.md).
 
 The older login/connector smoke scripts assume synchronous source decisions; they are not acceptance evidence for the new asynchronous paths. See [testing](../architecture/testing.md) for the maintained suites and remaining live-source checks.
+
+## The learning platform (Moodle)
+
+`sh scripts/moodle.sh start` adds Moodle LMS 5.3.1 to the stack under the compose profile `moodle`: a learning platform that was not written for Clew, there so that a connector can be built and tested against what such a system really answers. It creates the database `clew_moodle` in the stack's PostgreSQL (Moodle 5.3 needs PostgreSQL 17 or later), builds the image in `.devcontainer/moodle` from the official PHP image and the release archive pinned by checksum, installs Moodle on the first start (a minute or two) and runs `seed.php`. `seed`, `stop`, `status` and `reset` are the other commands; `reset` drops the database and the files.
+
+What the seed puts there, all synthetic: the three personas and the people of Hillevi's unit, with the Clew user name as the Moodle user name and `idnumber`; five courses under "Obligatoriska utbildningar", each finished by a teacher's word, with completions dated from forty days to three years back and every third enrolment unfinished; a competency framework with one competency per course, rated proficient when the course is completed; and the badge "HLR-instruktör", which Moodle lets run out a year after it is given. A person signs in at http://localhost:3024 as `moodle-admin` / `Moodle-admin-local-only-1`, or as a seeded person with `Moodle-<user>-local-1`.
+
+A connector reads through Moodle's web service API as the account `clew-connector`, which is no administrator: a role with read capabilities only, and an external service `clew` that lists the thirteen functions it may call and admits that one account. The token is fixed for development (`MOODLE_DEV_TOKEN` in the compose file). Moodle answers under the host's address and, on the compose network, under `http://moodle`:
+
+```sh
+curl -s http://localhost:3024/webservice/rest/server.php -d wstoken=c1e0de0000000000000000000000d0e5 -d moodlewsrestformat=json \
+  -d wsfunction=core_user_get_users_by_field -d field=username -d 'values[0]=hassan'
+```
+
+What reading it showed (2026-11-12), for whoever writes the connector: `core_enrol_get_users_courses` says whether a course is completed but not when; the date comes from `core_completion_get_course_completion_status`, per person and course, and that function refuses a course with no completion criteria. Moodle LMS keeps no end date for a course completion or a competency; only a badge has one (`dateexpire` in `core_badges_get_user_badges`). A competency's rating carries the time it was rated, not the time of the course. An error is HTTP 200 with `exception` and `errorcode` in the body. The seed also locks `idnumber` for manual accounts so a person cannot change it on their profile, gives each course a summary, and lets the service account see hidden courses. Who reports to whom is not in Moodle: Clew says it on every call (D117).
+
+`connectors/moodle` reads it: the compose service `moodle-connector` in the same profile, on `127.0.0.1:4053`, started with `sh scripts/compose.sh --profile moodle up -d --no-deps moodle-connector` and registered by hand ([its README](../../connectors/moodle/README.md)).
 
 The calendar image refreshes its pinned Calendar and RoomVox code in an existing data volume before Apache starts, then runs Nextcloud's app migrations. Unchanged versions do nothing; a failed upgrade stays pending and is retried on restart. App downgrades are refused. Back up the calendar volume before applying upgrades; restoring older image pins alone does not undo database migrations.
 

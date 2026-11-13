@@ -1,7 +1,16 @@
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
-import { ENTITY_KEYS_MAX, rowsKey, type Ask } from '@clew/contracts';
+import {
+  ENTITY_KEYS_MAX,
+  HOLDINGS_PER_ROW_MAX,
+  HOLDINGS_ROWS_MAX,
+  HOLDING_KINDS,
+  rowsKey,
+  type Ask,
+} from '@clew/contracts';
 import { menuProblem, viewProblem, type ViewSubject } from './views';
+import { namedInputs, plainStringProperty } from './named';
+import { INSTALLATION_PROFILES, PROTOCOL_VERSION, protocolTerms } from './protocol';
 
 /** Rules shared by manifest preview, remote loading and in-process registration. No installation state. */
 interface Descriptor {
@@ -15,15 +24,21 @@ interface Descriptor {
       creates?: string;
       kinds?: unknown[];
       about?: { entity: string; param?: string; page?: unknown };
+      person?: { param?: string; admits?: readonly string[]; ids?: boolean };
+      unit?: { admits?: readonly string[] };
       asks?: Ask[];
       effect?: string;
     }
   >;
+  /** The reads Clew makes as the installation (D119); never capabilities. */
+  installation?: Array<{ name: string; input: unknown; output: unknown }>;
   facts?: Array<{ kind: string; attributes: object }>;
   areas: Array<{ id: string; standing: string[] }>;
   documents?: unknown;
   /** The manifest names the capability in an object; a Connector carries its name. */
   header?: string | { capability: string };
+  /** The protocol a remote connector's manifest is written to (D60); absent for Clew's own, which follow the current one. */
+  protocol?: number;
 }
 function schemaCompiler() {
   const ajv = addFormats(new Ajv({ strict: false, addUsedSchema: false }));
@@ -86,6 +101,31 @@ function aboutProblem(c: Descriptor['capabilities'][number], connector: Descript
   const asked = new Set((c.asks ?? []).map(a => a.property));
   if (!required.includes(about.param) || required.some(r => r !== about.param && !asked.has(r as string)))
     return `Capability ${c.name}: an action about an entity requires ${about.param} and otherwise only what it asks, so the entity's menu can start it with the key and the person's answers; anything more is optional with a default the source chooses (D97, D112).`;
+  return undefined;
+}
+
+/**
+ * Why a capability's `person` or `unit` (D117) may not be used, or undefined when it may. A capability about a person
+ * has its key where `about` says and declares only `admits`; any other names in `param` a string property of its input
+ * that takes one person's key. `unit` belongs to a capability about a unit, and `person` never does. Only Clew's own
+ * connectors take a person by Clew's id (`ids`).
+ */
+function accessProblem(c: Descriptor['capabilities'][number], connector: Descriptor): string | undefined {
+  if (c.unit && c.about?.entity !== 'unit')
+    return `Capability ${c.name}: unit belongs to a capability about a unit; declare who it may be asked about in person (D117).`;
+  const person = c.person;
+  if (!person) return undefined;
+  if (c.about?.entity === 'unit')
+    return `Capability ${c.name}: person is about people; a capability about a unit declares who it may be asked about in unit (D117).`;
+  if (person.ids && connector.kind !== 'core')
+    return `Capability ${c.name}: only Clew's own connectors take a person by Clew's id (D117).`;
+  if (c.about?.entity === 'person') {
+    if (person.param !== undefined)
+      return `Capability ${c.name}: a capability about a person takes its key in keys or about.param and declares no person.param (D117).`;
+    return undefined;
+  }
+  if (person.param === undefined)
+    return `Capability ${c.name}: person names no input; a capability not about a person names in person.param the input that takes the key (D117).`;
   return undefined;
 }
 
@@ -179,6 +219,70 @@ function effectProblem(c: Descriptor['capabilities'][number], connector: Descrip
   return undefined;
 }
 
+/** The properties a schema lists. */
+const listed = (schema: Schema | undefined) => Object.keys(schema?.properties ?? {});
+/** Whether a schema's `enum` or `const`, where it has one, stays within `allowed`. */
+const within = (schema: (Schema & { enum?: unknown; const?: unknown }) | undefined, allowed: readonly unknown[]) =>
+  !schema ||
+  ((!Array.isArray(schema.enum) || schema.enum.every(v => allowed.includes(v))) &&
+    (schema.const === undefined || allowed.includes(schema.const)));
+/**
+ * Why an installation read named `<id>.holdings` does not fit the holdings profile (D108 item 9, D119), at load: its
+ * input takes `{ cursor? }` and nothing else, and its output is a HoldingsOutput with nothing more and bounds no wider.
+ * Clew also validates every answer against the profile itself; this catches a declaration that could never fit.
+ */
+function holdingsProblems(read: { name: string; input: unknown; output: unknown }): string[] {
+  const problems: string[] = [];
+  const input = asSchema(read.input);
+  if (
+    input?.type !== 'object' ||
+    listed(input).some(k => k !== 'cursor') ||
+    (Array.isArray(input.required) && input.required.length > 0) ||
+    (listed(input).includes('cursor') && !plainStringProperty(read.input, 'cursor'))
+  )
+    problems.push(
+      `Installation read ${read.name}: the holdings profile takes { cursor? }, an object whose only property is an optional string cursor and which requires nothing (D119).`,
+    );
+  const output = asSchema(read.output);
+  const rows = asSchema(output?.properties?.rows) as (Schema & { maxItems?: unknown }) | undefined;
+  const row = asSchema(rows?.items);
+  const held = asSchema(row?.properties?.holdings) as (Schema & { maxItems?: unknown }) | undefined;
+  const holding = asSchema(held?.items);
+  const reported = asSchema(output?.properties?.withdrawalsReported) as (Schema & { const?: unknown }) | undefined;
+  if (
+    output?.type !== 'object' ||
+    !requires(output, 'rows') ||
+    !requires(output, 'withdrawalsReported') ||
+    listed(output).some(k => !['rows', 'next', 'withdrawalsReported'].includes(k)) ||
+    !(reported?.type === 'boolean' || typeof reported?.const === 'boolean') ||
+    (listed(output).includes('next') && asSchema(output.properties?.next)?.type !== 'string') ||
+    rows?.type !== 'array' ||
+    row?.type !== 'object' ||
+    !requires(row, 'key') ||
+    !requires(row, 'holdings') ||
+    listed(row).some(k => !['key', 'holdings', 'partial'].includes(k)) ||
+    asSchema(row.properties?.key)?.type !== 'string' ||
+    held?.type !== 'array' ||
+    holding?.type !== 'object' ||
+    ['id', 'type', 'label', 'kind', 'issuedOn'].some(k => !requires(holding, k)) ||
+    listed(holding).some(k => !['id', 'type', 'label', 'kind', 'issuedOn', 'expiresOn'].includes(k)) ||
+    !within(asSchema(holding.properties?.kind), HOLDING_KINDS)
+  )
+    problems.push(
+      `Installation read ${read.name}: the holdings profile answers a HoldingsOutput: rows (each a required string key and holdings, optionally partial), withdrawalsReported (a boolean) and optionally next (a string), each holding requiring id, type, label, kind (one of ${HOLDING_KINDS.join(', ')}) and issuedOn, optionally expiresOn, and nothing else (D119).`,
+    );
+  else if (
+    typeof rows.maxItems !== 'number' ||
+    rows.maxItems > HOLDINGS_ROWS_MAX ||
+    typeof held.maxItems !== 'number' ||
+    held.maxItems > HOLDINGS_PER_ROW_MAX
+  )
+    problems.push(
+      `Installation read ${read.name}: a page of the holdings profile is bounded: rows declares maxItems at most ${HOLDINGS_ROWS_MAX} and holdings at most ${HOLDINGS_PER_ROW_MAX} (D119).`,
+    );
+  return problems;
+}
+
 export function connectorProblems(
   connector: Descriptor,
   compile: (schema: object) => unknown = schemaCompiler(),
@@ -226,6 +330,8 @@ export function connectorProblems(
       const about = aboutProblem(c, connector, header);
       if (about) problems.push(about);
     }
+    const access = accessProblem(c, connector);
+    if (access) problems.push(access);
     problems.push(...asksProblems(c));
     if (c.effect !== undefined) {
       const effect = effectProblem(c, connector);
@@ -233,6 +339,40 @@ export function connectorProblems(
     }
     schemaProblem(`Capability ${c.name} input`, c.input as object);
     schemaProblem(`Capability ${c.name} output`, c.output as object);
+  }
+  // Every input that names a person or a unit, declared or not, is a plain string property (D117), so what the loader
+  // let in is what the registry resolves: never an array, an object or a property the schema does not list.
+  // A connector on the previous protocol (D60) is held to it: the registry still refuses anything but a string at every call.
+  for (const [name, inputs] of protocolTerms(connector.protocol ?? PROTOCOL_VERSION).strictNamedInputs
+    ? namedInputs(connector)
+    : []) {
+    const c = connector.capabilities.find(x => x.name === name)!;
+    for (const param of inputs.params)
+      if (!plainStringProperty(c.input, param))
+        problems.push(
+          `Capability ${name}: ${param} names a ${inputs.entity}, so it must be a plain string property of the input: listed under properties with type string, in an object schema without allOf, anyOf, oneOf or patternProperties (D117).`,
+        );
+  }
+  // The reads Clew makes as the installation (D119): a profile Clew knows, named for this connector, unique across both
+  // lists, of the profile's shape. Added under protocol 3, so a manifest on 2 cannot declare one.
+  const installation = connector.installation ?? [];
+  if (installation.length && !protocolTerms(connector.protocol ?? PROTOCOL_VERSION).installation)
+    problems.push(
+      `Installation reads were added under protocol 3 (D119); a manifest on protocol ${connector.protocol} cannot declare installation.`,
+    );
+  for (const read of installation) {
+    if (names.has(read.name)) problems.push(`Capability ${read.name} is already registered.`);
+    names.add(read.name);
+    const profile = read.name.startsWith(connector.id + '.') ? read.name.slice(connector.id.length + 1) : undefined;
+    if (!profile || !(INSTALLATION_PROFILES as readonly string[]).includes(profile)) {
+      problems.push(
+        `Installation read ${read.name}: Clew reads only its profiles as the installation, named for this connector: ${INSTALLATION_PROFILES.map(p => `${connector.id}.${p}`).join(', ')} (D119).`,
+      );
+      continue;
+    }
+    schemaProblem(`Installation read ${read.name} input`, read.input as object);
+    schemaProblem(`Installation read ${read.name} output`, read.output as object);
+    if (profile === 'holdings') problems.push(...holdingsProblems(read));
   }
   for (const f of connector.facts ?? []) {
     if (!f.kind.startsWith(connector.id + ':'))

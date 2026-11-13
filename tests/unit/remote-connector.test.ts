@@ -705,6 +705,7 @@ describe('connector-check asks a read about an entity as Clew does (D97)', () =>
           model: false,
           scope: { roles: ['manager'] },
           about: { entity: 'person' },
+          person: { admits: ['managed'] },
           view: {
             kind: 'list',
             title: 'open',
@@ -777,9 +778,19 @@ describe('connector-check asks a read about an entity as Clew does (D97)', () =>
       'ok hello.remind about person, propose, input: takes person',
       'ok hello.remind about person, propose, model tool: not offered to the model',
     ]);
-    expect(report.items.find(i => i.capability === 'hello.remind')).toMatchObject({
+    // What each admits (D117): the read declares its reports; the action declares nothing, so the strictest holds.
+    expect(report.findings).toContainEqual({
       level: 'ok',
-      description: 'Medarbetare nekas som väntat. Tar emot en person i "person". Erbjuds inte till modellen.',
+      text: 'hello.person names a person in keys: Clew sends only managed (person.admits)',
+    });
+    expect(report.findings).toContainEqual({
+      level: 'warn',
+      text: 'hello.remind names a person in person and declares no person.admits, so Clew sends only self and managed; declare what it admits',
+    });
+    expect(report.items.find(i => i.capability === 'hello.remind')).toMatchObject({
+      level: 'warn',
+      description:
+        'Medarbetare nekas som väntat. Tar emot en person i "person". Erbjuds inte till modellen. Anger inte vilka personer den gäller, så Clew frågar bara om den inloggade själv och den inloggades medarbetare.',
     });
   });
 

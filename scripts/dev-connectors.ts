@@ -47,14 +47,14 @@ export const FIXTURES: Array<[id: string, port: number, options?: { enable: bool
   ['communication', 4043],
   ['timesheet', 4044],
   ['payroll', 4046],
+  // The Qlik connector on its made-up statistics (D82): sick leave, economy and HME per unit for every manager, the key
+  // figures of the follow-up dialogue (docs/reviews/2026-11-12-absorbing-big-boss-board-into-clew.md).
+  ['qlik', 4048],
   // The intranet (D88): the connector that gives Clew its shared header.
   ['intranet', 4049],
   // The appraisal system (D96 item 9): Clew's built-in talks module answers while it is enabled, so this one is
   // registered for an administrator to switch to on Anslutna system, never enabled here.
   ['appraisals', 4051, { enable: false }],
-  // The Qlik connector on its made-up statistics (D82): sick leave, economy and HME per unit for every manager, the key
-  // figures of the follow-up dialogue (docs/reviews/2026-11-12-absorbing-big-boss-board-into-clew.md).
-  ['qlik', 4048],
 ];
 /**
  * When the Qlik connector is first added, the figures it replaces on Hem are switched off, as an administrator would with

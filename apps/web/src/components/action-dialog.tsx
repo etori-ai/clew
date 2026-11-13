@@ -58,6 +58,7 @@ import { mobileQuery } from '../media';
 import { actionEffectQuery, meetingTimesQuery } from '../queries';
 import { errorMessage } from '../query-policy';
 import { DialogFrame } from './dialog-frame';
+import { QUEUED_LINE, silentLine, useSilentSources } from './silent-sources';
 
 /**
  * The action dialog (D112 item 10, the `form-wizard-dialog` template, boards ActBook and ActEffect): the one path a
@@ -191,6 +192,8 @@ export function ActionDialog({
   const sent = sentValues(path.asks, values);
 
   const item = target.kind === 'item' ? target : null;
+  // The item's system does not answer (D45, D47): what is sent is queued and read back, said before the last button.
+  const silent = useSilentSources().of(item?.thread.connector ?? '');
   // "Det här händer" is read for exactly the values on the step, and again whenever they change.
   const effect = useQuery({
     ...actionEffectQuery(item?.thread ?? { id: '', updatedAt: '' }, item?.action.id ?? '', item?.refs, sent),
@@ -411,6 +414,9 @@ export function ActionDialog({
                   )
                 ) : (
                   <EffectRows rows={[{ label: path.description }]} source={labels.source} />
+                )}
+                {silent && effectAnswered && (
+                  <Banner status="info" title={silentLine(silent)} description={QUEUED_LINE} collapsible={false} />
                 )}
                 {confirm && (
                   <Banner

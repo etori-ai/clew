@@ -329,11 +329,15 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
       />
       {unhealthy && (
         <Banner
-          status={c.health.status === 'unreachable' ? 'warning' : 'error'}
+          status={c.health.status === 'unreachable' || c.health.status === 'protocol-outdated' ? 'warning' : 'error'}
           container="section"
           collapsible={false}
           title={`${c.source}: ${healthLabel[c.health.status].toLowerCase()}${c.health.at ? ' sedan ' : ''}`}
-          description={`Ärenden och figurer visas från senast kända läge.${c.health.detail ? ` Teknisk orsak: ${c.health.detail}.` : ''}`}
+          description={
+            c.health.status === 'protocol-outdated'
+              ? `Anslutningen fungerar, men Clew läser dess protokoll bara under en övergångstid och den behöver uppdateras.${c.health.detail ? ` Teknisk orsak: ${c.health.detail}` : ''}`
+              : `Ärenden och figurer visas från senast kända läge.${c.health.detail ? ` Teknisk orsak: ${c.health.detail}.` : ''}`
+          }
           endContent={<Timestamp value={c.health.at} format="date_time" />}
         />
       )}

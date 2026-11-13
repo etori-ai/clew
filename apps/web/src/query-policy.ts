@@ -30,6 +30,17 @@ export function refused(error: unknown): boolean {
   if (error.status === 403 || error.status === 404) return true;
   return error.status === 400 && REFUSALS.has(error.message);
 }
+/**
+ * Why a calendar read failed when the person has no calendar, or null when it simply does not answer: `hidden`, the
+ * calendar is not the person's to see (the route's 404, D23), or `unbound`, their account has none bound (the calendar's
+ * own 400 sentence, which carries no code, so the text is the signal as for `refused`). The day and the page then say
+ * so without a warning.
+ */
+export function noCalendar(error: unknown): 'hidden' | 'unbound' | null {
+  if (!(error instanceof ApiError)) return null;
+  if (error.status === 404) return 'hidden';
+  return error.status === 400 && error.message === 'Ditt konto har ingen kalender kopplad.' ? 'unbound' : null;
+}
 /** A capability read whose refusal means "nothing to show" (D96: a person with no talks system): `null` instead of an error. */
 export const unlessRefused = <T>(read: Promise<T>): Promise<T | null> =>
   read.catch((error: unknown) => {

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { ApiError } from '../../apps/web/src/api-error';
-import { errorMessage, refused, retryPolicy } from '../../apps/web/src/query-policy';
+import { errorMessage, noCalendar, refused, retryPolicy } from '../../apps/web/src/query-policy';
+import { executionStatus } from '../../apps/web/src/execution-status';
 
 describe('the browser cache policy (D33)', () => {
   test('a 5xx is retried once, a 4xx never', () => {
@@ -33,5 +34,39 @@ describe('the browser cache policy (D33)', () => {
     );
     expect(errorMessage(new Error('boom'), 'Något gick fel.')).toBe('Något gick fel.');
     expect(errorMessage('boom', 'Sidan kunde inte läsas.')).toBe('Sidan kunde inte läsas.');
+  });
+  test('a person with no calendar is told so; a calendar that does not answer is not mistaken for none (D116, amended 2026-11-12)', () => {
+    expect(noCalendar(new ApiError(404, 'Okänd förmåga.'))).toBe('hidden');
+    expect(noCalendar(new ApiError(400, 'Ditt konto har ingen kalender kopplad.'))).toBe('unbound');
+    expect(noCalendar(new ApiError(400, 'Kalenderkontot är inte tillgängligt.'))).toBeNull();
+    expect(noCalendar(new ApiError(503, 'Något gick fel. Försök igen.'))).toBeNull();
+    expect(noCalendar(new Error('Session unavailable'))).toBeNull();
+  });
+});
+
+describe('a decision on its way while its system does not answer (D45, D47; D116, amended 2026-11-12)', () => {
+  const execution = (state: 'pending' | 'running' | 'succeeded', extra = {}) => ({
+    id: 'e1',
+    decisionId: 'd1',
+    operation: 'hr.bookTalk',
+    state,
+    reason: null,
+    compensates: null,
+    ...extra,
+  });
+  test('says that it is queued and read back', () => {
+    const queued = 'Ditt beslut är sparat. Det du skickar köas och läses tillbaka när systemet svarar.';
+    expect(executionStatus(execution('pending'), true)).toBe(queued);
+    expect(executionStatus(execution('running'), true)).toBe(queued);
+    expect(executionStatus(execution('pending'))).toBe('Ditt beslut är sparat och väntar på källan.');
+  });
+  test('keeps its own words for an undo, a reason and an answered decision', () => {
+    expect(executionStatus(execution('pending', { compensates: 'e0' }), true)).toBe(
+      'Din begäran att ångra är sparad och väntar på källan.',
+    );
+    expect(executionStatus(execution('pending', { reason: 'needs-session' }), true)).toBe(
+      'Källan kräver en aktiv inloggning. Åtgärden väntar.',
+    );
+    expect(executionStatus(execution('succeeded'), true)).toBeNull();
   });
 });

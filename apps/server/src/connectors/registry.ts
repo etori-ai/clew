@@ -1,7 +1,13 @@
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import type { AuthenticatedContext } from '@clew/contracts';
-import { audiencedActorOf, CapabilityError, COMPETENCE_CONNECTOR, Registry } from '@clew/connectors';
+import {
+  audiencedActorOf,
+  CapabilityError,
+  COMPETENCE_CONNECTOR,
+  Registry,
+  type HoldingsReader,
+} from '@clew/connectors';
 import { InputError } from '../context';
 import { calendarConnector } from '../modules/calendar/connector';
 import { calendar, events } from '../composition/calendar';
@@ -23,16 +29,19 @@ import { competence } from '../composition/competence';
 import { dialogueConnector } from '../modules/dialogue/capabilities';
 import { dialogue } from '../composition/dialogue';
 import { logger } from '../logging';
+import { relations } from '../composition/relations';
 
 /**
  * The registry the BFF runs with: the bundled connectors below plus every enabled connector row
  * (`remote.ts`, D21, D23). Every REST route, card action and tool definition is derived from here. Nothing in
  * `routes/`, `threads/` or `assistant/` knows a connector by name, and connectors reach each other only through
  * the registry (D20): in-process through the `clew.call` handle, remote through `POST /api/connectors/call`.
+ * Who may be asked about (D117) is installed with it, so no call that names a person runs without the rule.
  */
 export const registry = new Registry({
   onRefused: (id, topic, problem) =>
     logger.error({ scope: 'connectors', connector: id, topic, problem }, 'connector draft refused (D35)'),
+  relations: relations.relate,
 });
 /** The composite search (D26) lists its sources from the registry at call time, so a connector enabled by an administrator is searched from the next question on. */
 const search = searchUsecases({
@@ -94,6 +103,15 @@ export const bundledIds = bundled.map(m => m.id);
 /** The bundled connectors whose row is created disabled: an administrator switches them on (D108 item 13). */
 export const offAtFirstBoot: readonly string[] = [COMPETENCE_CONNECTOR];
 export { audiencedActorOf };
+/**
+ * The holdings port (D108 item 9, D119) over the live registry: the sources that answer the holdings profile for the
+ * installation, and one page of one of them read as the installation. For composition to hand the competence register's
+ * scheduled copy; no route, card, tool or connector is given it.
+ */
+export const holdingsReader: HoldingsReader = {
+  holdingsSources: () => registry.holdingsSources(),
+  readHoldings: (connectorId, cursor, options) => registry.readHoldings(connectorId, cursor, options),
+};
 
 const ajv = addFormats(new Ajv({ allErrors: false, strict: false }));
 /** Whether a capability's input schema accepts `{}`: the conformance check calls only the reads that do (the same rule as `scripts/connector-check.ts`). */

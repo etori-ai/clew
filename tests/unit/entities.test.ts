@@ -13,7 +13,9 @@ import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapt
 import { staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { checkRows, chunk, isKey, listedKeys, managedPerson } from '../../apps/server/src/modules/entities/domain';
 import { entityUsecases } from '../../apps/server/src/modules/entities/usecases';
+import { relationUsecases } from '../../apps/server/src/modules/entities/relations';
 import type { DirectoryPerson, EntityBudget } from '../../apps/server/src/modules/entities/model';
+import { memoryPersonKeys } from '../person-keys';
 
 /**
  * Entities (D97) as the person meets them: the real registry with small in-test sources that declare `about`, the
@@ -110,6 +112,10 @@ function directory(extra: { onSkola?: Person[] } = {}) {
 
 interface SourceOptions {
   entity?: 'person' | 'unit';
+  /** Who it may be asked about (D117); undeclared, the reader themself and their reports. */
+  admits?: Array<'self' | 'managed' | 'colleague'>;
+  /** For a read about a unit, which units it may be asked about (D117); undeclared, the units the reader manages. */
+  unitAdmits?: Array<'manages' | 'member' | 'below'>;
   /** The rows the source answers for the keys it is asked; default one row per key. */
   answer?: (keys: string[], actor: Actor) => Record<string, unknown>;
   roles?: Actor['role'][];
@@ -133,6 +139,8 @@ function aboutRead(name: string, title: string, options: SourceOptions = {}): Ca
     description: 'x',
     model: false,
     about: { entity: options.entity ?? 'person' },
+    ...(options.admits ? { person: { admits: options.admits } } : {}),
+    ...(options.unitAdmits ? { unit: { admits: options.unitAdmits } } : {}),
     input: {
       type: 'object',
       properties: { keys: { type: 'array', items: { type: 'string' }, maxItems: options.maxItems ?? 200 } },
@@ -215,7 +223,14 @@ function world(
   options: { budget?: Partial<EntityBudget>; directory?: ReturnType<typeof directory> } = {},
 ) {
   const people = options.directory ?? directory();
-  const registry = new Registry();
+  // Who may be asked about as composition installs it (D117): the entities module's rule over the same directory, so
+  // every scenario here runs with the real rule, not the test registry's trusting one.
+  const relations = relationUsecases({
+    directory: people.staff,
+    reader: async actor => people.persona(actor.id),
+    holders: memoryPersonKeys(people.state).holders,
+  });
+  const registry = new Registry({ relations: relations.relate });
   for (const c of sources) registry.register(c);
   const cardsAsked: Subject[] = [];
   const card: EntityCard = { threadId: 'thread-1', title: 'Sjukanmälan', source: 'Personalsystemet', kind: 'act' };
@@ -311,12 +326,21 @@ describe('the pure rules: keys, calls and what is kept of an answer', () => {
         },
         { unitId: 'b', unitLabel: 'B', people: [{ id: '1', name: 'Anna', userName: 'ANNA', enabled: true }] },
       ],
+      above: [],
+      lineReports: [],
     };
     expect(listedKeys('person', reach)).toEqual([{ key: '1', sourceKey: 'anna' }]);
-    expect(listedKeys('unit', { units: [{ unitId: 'a', unitLabel: 'A', role: 'employee' }], managed: [] })).toEqual([
-      { key: 'a', sourceKey: 'a' },
-    ]);
+    expect(
+      listedKeys('unit', {
+        units: [{ unitId: 'a', unitLabel: 'A', role: 'employee' }],
+        managed: [],
+        above: [],
+        lineReports: [],
+      }),
+    ).toEqual([{ key: 'a', sourceKey: 'a' }]);
   });
+  /** A reader who manages nobody else's line: no units, nobody above, no co-manager reporting to them. */
+  const NO_LINE = { units: [], managed: [], above: [], lineReports: [] };
   test("a person on the reader's cards is found on the first card that places them, else on the first they report to from below (D99, W1)", () => {
     const sara = { id: 'sara', name: 'Sara Ek', userName: 'sara', enabled: true };
     const fromBelow = { ...sara, below: [{ unitId: 'depa', unitLabel: 'Arkivdepån', role: 'employee' as const }] };
@@ -328,18 +352,23 @@ describe('the pure rules: keys, calls and what is kept of an answer', () => {
         {
           units: [],
           managed: [arkivet, card('skola', 'Bergsåkers skola', [sara]), card('omsorg', 'Hemtjänsten', [sara])],
+          above: [],
+          lineReports: [],
         },
         'sara',
       ),
     ).toEqual({ person: sara, unit: { unitId: 'skola', unitLabel: 'Bergsåkers skola' }, placed: true });
     // Only from below: the first such card, which does not say where the person works.
     expect(
-      managedPerson({ units: [], managed: [arkivet, card('bad', 'Badhuset', [{ ...fromBelow }])] }, 'sara'),
+      managedPerson({ ...NO_LINE, managed: [arkivet, card('bad', 'Badhuset', [{ ...fromBelow }])] }, 'sara'),
     ).toEqual({ person: fromBelow, unit: { unitId: 'arkiv', unitLabel: 'Arkivet' }, placed: false });
     // Not on the reader's cards, or not someone who can be asked about: nobody.
-    expect(managedPerson({ units: [], managed: [arkivet] }, 'anna')).toBeUndefined();
+    expect(managedPerson({ ...NO_LINE, managed: [arkivet] }, 'anna')).toBeUndefined();
     expect(
-      managedPerson({ units: [], managed: [card('skola', 'Bergsåkers skola', [{ ...sara, userName: null }])] }, 'sara'),
+      managedPerson(
+        { ...NO_LINE, managed: [card('skola', 'Bergsåkers skola', [{ ...sara, userName: null }])] },
+        'sara',
+      ),
     ).toBeUndefined();
   });
   test('a key with a NUL names no entity of either kind, and a person key is no longer than an id (D122)', () => {
@@ -854,11 +883,13 @@ describe('the opened person or unit', () => {
   });
   test('a unit the reader manages or belongs to, and no other', async () => {
     const { entities, people } = standard();
+    // Two relations to a unit (D117): the one she manages, and one an employee is placed on.
     expect(await entities.detail(people.persona('hillevi'), 'unit', 'unit-skola')).toMatchObject({
-      relation: 'member',
+      relation: 'manages',
       entity: { kind: 'unit', key: 'unit-skola', name: 'Bergsåkers skola' },
       sections: [],
     });
+    expect((await entities.detail(people.persona('anna'), 'unit', 'unit-skola'))?.relation).toBe('member');
     expect(await entities.detail(people.persona('hillevi'), 'unit', 'unit-omsorg')).toBeUndefined();
     expect(await entities.detail(people.persona('hillevi'), 'unit', 'UNIT-SKOLA')).toBeUndefined();
   });
@@ -882,11 +913,25 @@ describe("one source's section on the opened entity", () => {
       row: { key: 'anna', state: 'Bokat', count: 3 },
     });
     expect(await w.entities.section(hillevi, 'person', 'hillevi', 'hr.skills')).toMatchObject({ status: 'ok' });
-    expect(await w.entities.section(w.people.persona('hassan'), 'person', 'karin', 'hr.skills')).toMatchObject({
+    // A colleague the reader may open, but the read admits only the reader and their reports (D117): no row, no call.
+    expect(await w.entities.section(w.people.persona('hassan'), 'person', 'karin', 'hr.skills')).toEqual({
+      capability: 'hr.skills',
+      status: 'ok',
+    });
+    expect(calls).toEqual([['anna'], ['hillevi']]);
+  });
+  test('a read that admits colleagues answers for one (D117)', async () => {
+    const calls: string[][] = [];
+    const w = world([
+      connector('phonebook', 'Telefonkatalogen', [
+        aboutRead('phonebook.person', 'Kontakt', { calls, admits: ['self', 'managed', 'colleague'] }),
+      ]),
+    ]);
+    expect(await w.entities.section(w.people.persona('hassan'), 'person', 'karin', 'phonebook.person')).toMatchObject({
       status: 'ok',
       row: { key: 'karin' },
     });
-    expect(calls).toEqual([['anna'], ['hillevi'], ['karin']]);
+    expect(calls).toEqual([['karin']]);
   });
   test('no row is an answer; a key outside the rule or a source not about the kind calls nothing', async () => {
     const calls: string[][] = [];
@@ -1106,7 +1151,7 @@ describe('the units below the reader (D117)', () => {
     const w = standard();
     const ingrid = withIngrid(w);
     expect(await w.entities.detail(ingrid, 'unit', 'unit-grundskola')).toMatchObject({
-      relation: 'member',
+      relation: 'manages',
       below: [{ key: 'unit-skola', name: 'Bergsåkers skola' }],
     });
     const school = await w.entities.detail(ingrid, 'unit', 'unit-skola');
@@ -1119,12 +1164,17 @@ describe('the units below the reader (D117)', () => {
     // Nothing further than the reporting line, and nothing upward.
     expect(await w.entities.detail(ingrid, 'unit', 'unit-omsorg')).toBeUndefined();
     expect(await w.entities.detail(w.people.persona('hillevi'), 'unit', 'unit-grundskola')).toBeUndefined();
-    expect((await w.entities.detail(w.people.persona('hillevi'), 'unit', 'unit-skola'))?.relation).toBe('member');
+    expect((await w.entities.detail(w.people.persona('hillevi'), 'unit', 'unit-skola'))?.relation).toBe('manages');
   });
-  test('the list of units has her own and the ones below, and a source is asked about the unit below', async () => {
+  test('the list of units has her own and the ones below, and a source that admits it is asked about the unit below', async () => {
     const calls: string[][] = [];
+    const strict: string[][] = [];
     const w = world([
-      connector('hr', 'Personalsystemet', [aboutRead('hr.staffing', 'Bemanning', { calls, entity: 'unit' })]),
+      connector('hr', 'Personalsystemet', [
+        aboutRead('hr.staffing', 'Bemanning', { calls, entity: 'unit', unitAdmits: ['manages', 'below'] }),
+        // Undeclared, a read about a unit admits the units the reader manages only (D117): a unit below is not asked.
+        aboutRead('hr.units', 'Enheter', { calls: strict, entity: 'unit' }),
+      ]),
     ]);
     const ingrid = withIngrid(w as ReturnType<typeof standard>);
     expect((await w.entities.list(ingrid, 'unit')).groups).toEqual([
@@ -1154,6 +1204,11 @@ describe('the units below the reader (D117)', () => {
       row: { key: 'unit-skola' },
     });
     expect(calls).toContainEqual(['unit-skola']);
+    expect(await w.entities.section(ingrid, 'unit', 'unit-skola', 'hr.units')).toEqual({
+      capability: 'hr.units',
+      status: 'ok',
+    });
+    expect(strict).toEqual([]);
   });
   test('the units a person follows up travel with the actor when a call has them, and not otherwise', () => {
     const base = {

@@ -14,7 +14,7 @@ import {
   type ManifestIssue,
 } from '../../packages/connectors/src/protocol';
 import { previewManifest } from '../../packages/connectors/src/preview';
-import { RULES, manifestReference } from '../../packages/connectors/src/reference';
+import { HOLDINGS_EXAMPLE, RULES, manifestReference } from '../../packages/connectors/src/reference';
 import { ManifestError, manifestProblems, parseManifest } from '../../packages/connectors/src/remote';
 import { protocolRoutes } from '../../apps/server/src/routes/protocol';
 import { manifest as hello } from '../../connectors/hello/connector.mjs';
@@ -40,10 +40,13 @@ describe('the OpenAPI document', () => {
     expect(document.openapi).toBe('3.1.0');
     expect(document.info.version).toBe(String(PROTOCOL_VERSION));
     expect(document['x-clew-protocol']).toEqual({
-      current: PROTOCOL_VERSION,
-      accepted: [...PROTOCOL_ACCEPTED],
+      current: 3,
+      accepted: [3, 2],
+      // 2 is accepted for a window after the break of 3 (D60, D117), and says what a connector on it must change.
+      deprecated: { 2: expect.stringContaining('declare protocol 3') },
       retired: expect.objectContaining({ 1: expect.stringContaining('RS256') }),
     });
+    expect([PROTOCOL_VERSION, PROTOCOL_ACCEPTED]).toEqual([3, [3, 2]]);
     const names = Object.keys(document.components.schemas);
     for (const ref of refs(document.paths)) expect(names).toContain(ref.replace('#/components/schemas/', ''));
   });
@@ -109,7 +112,7 @@ describe('the manifest dry run', () => {
     const preview = previewManifest(hello, { id: 'hello' });
     expect(validPreview(preview)).toBe(true);
     expect(preview.ok).toBe(true);
-    expect(preview.protocol).toEqual({ current: 2, accepted: [2] });
+    expect(preview.protocol).toEqual({ current: 3, accepted: [3, 2] });
     const manifest = preview.manifest!;
     expect(manifest.id).toBe('hello');
     expect(manifest.capabilities.map(c => c.name)).toEqual((hello as any).capabilities.map((c: any) => c.name));
@@ -165,15 +168,19 @@ describe('the manifest dry run', () => {
         }),
       ),
     ).toEqual([
-      expect.stringMatching(/^\/protocol: 1 is not accepted by this Clew, which loads 2; retired 2026-11-05: .*RS256/),
+      expect.stringMatching(
+        /^\/protocol: 1 is not accepted by this Clew, which loads 3 and 2; retired 2026-11-05: .*RS256/,
+      ),
     ]);
     expect(
       manifestProblems(
         edited(hello, m => {
-          m.protocol = 3;
+          m.protocol = 4;
         }),
       ),
-    ).toEqual(['/protocol: 3 is not accepted by this Clew, which loads 2']);
+    ).toEqual(['/protocol: 4 is not accepted by this Clew, which loads 3 and 2']);
+    // 2 is still loaded for its window (D60, D117).
+    expect(manifestProblems(edited(hello, m => void (m.protocol = 2)))).toEqual([]);
     expect(manifestProblems({ protocol: '2' })).toEqual(
       expect.arrayContaining([expect.stringMatching(/^\/protocol: /), expect.stringMatching(/^\/id: /)]),
     );
@@ -290,7 +297,7 @@ describe('a capability about an entity (D97)', () => {
     required: ['key'],
   };
   const talks = {
-    protocol: 2,
+    protocol: 3,
     id: 'appraisals',
     kind: 'passthrough',
     source: 'Samtalssystemet',
@@ -689,6 +696,69 @@ describe('a capability about an entity (D97)', () => {
         'an effect on a propose',
         edited(talks, m => (m.capabilities[3].effect = 'appraisals.commitments')),
         { path: 'capabilities[3].effect', field: 'capabilities[].effect', anchor: 'rule-effect-is-a-read' },
+      ],
+      [
+        'a person param on a read about a person',
+        edited(talks, m => (m.capabilities[0].person = { param: 'keys', admits: ['managed'] })),
+        { path: 'capabilities[0].person.param', anchor: 'rule-person-param' },
+      ],
+      [
+        'a person declared on a read that names no input',
+        edited(talks, m => (m.capabilities[1].person = { admits: ['self', 'managed'] })),
+        { path: 'capabilities[1].person', anchor: 'rule-person-param' },
+      ],
+      [
+        'a person param that is not a string of the input',
+        edited(talks, m => (m.capabilities[1].person = { param: 'nobody' })),
+        { path: 'capabilities[1].input.properties.nobody', anchor: 'rule-named-input-is-a-string' },
+      ],
+      [
+        'a read a row opens whose person may be an array',
+        edited(talks, m => (m.capabilities[1].input.properties.person = { type: 'array', items: { type: 'string' } })),
+        { path: 'capabilities[1].input.properties.person', anchor: 'rule-named-input-is-a-string' },
+      ],
+      [
+        'unit declared on a read about a person',
+        edited(talks, m => (m.capabilities[0].unit = { admits: ['manages'] })),
+        { path: 'capabilities[0].unit', anchor: 'rule-unit-on-a-unit' },
+      ],
+      [
+        'a person declared on a read about a unit',
+        edited(talks, m => (m.capabilities[2].person = { admits: ['managed'] })),
+        { path: 'capabilities[2].person', anchor: 'rule-person-not-a-unit' },
+      ],
+      // The reads Clew makes as the installation (D119).
+      [
+        'an installation read on protocol 2',
+        edited(talks, m => {
+          m.protocol = 2;
+          m.installation = [{ ...structuredClone(HOLDINGS_EXAMPLE), name: 'appraisals.holdings' }];
+        }),
+        { path: 'installation', anchor: 'rule-installation-on-3' },
+      ],
+      [
+        'an installation read that is no profile',
+        edited(
+          talks,
+          m => (m.installation = [{ ...structuredClone(HOLDINGS_EXAMPLE), name: 'appraisals.everything' }]),
+        ),
+        { path: 'installation[0].name', anchor: 'rule-installation-profile' },
+      ],
+      [
+        'a holdings read that takes keys',
+        edited(talks, m => {
+          m.installation = [{ ...structuredClone(HOLDINGS_EXAMPLE), name: 'appraisals.holdings' }];
+          m.installation[0].input = { type: 'object', properties: { keys: { type: 'array' } } };
+        }),
+        { path: 'installation[0].input', anchor: 'rule-installation-holdings-input' },
+      ],
+      [
+        'a holdings read whose rows carry a name',
+        edited(talks, m => {
+          m.installation = [{ ...structuredClone(HOLDINGS_EXAMPLE), name: 'appraisals.holdings' }];
+          m.installation[0].output.properties.rows.items.properties.name = { type: 'string' };
+        }),
+        { path: 'installation[0].output', anchor: 'rule-installation-holdings-output' },
       ],
     ];
     const placed = new Set<string>();

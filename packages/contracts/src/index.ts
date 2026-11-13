@@ -826,6 +826,32 @@ export const MenuEntrySchema = object({
 });
 export type MenuEntry = Static<typeof MenuEntrySchema>;
 /**
+ * A read a person may open, as the browser gets it (D116): its title and, when it declares how it is drawn (D38), the
+ * kind of its view. Every one has a page of its own at `/tools/<capability>`; one that answers with rows (a `table` or a
+ * `list`) is opened there, anything else beside the page it was opened from. Only for a person who may call the read: a
+ * read the person may not call is missing from the list exactly as one that does not exist.
+ */
+export const ViewEntrySchema = object({
+  capability: Type.String(),
+  title: Type.String(),
+  kind: Type.Optional(
+    Type.Union([
+      Type.Literal('table'),
+      Type.Literal('list'),
+      Type.Literal('detail'),
+      Type.Literal('record'),
+      Type.Literal('text'),
+      Type.Literal('document'),
+      Type.Literal('metrics'),
+      Type.Literal('series'),
+      Type.Literal('activity'),
+    ]),
+  ),
+});
+export type ViewEntry = Static<typeof ViewEntrySchema>;
+/** Whether a view answers with rows (a `table` or a `list`): a list a person works through, which is a page (D116). */
+export const answersWithRows = (kind: string | undefined): boolean => kind === 'table' || kind === 'list';
+/**
  * A connected system as the browser gets it for its mark (D71): the source's word and its place in the order the
  * administrator registered the systems, which gives the mark its hue. `ordinal` is null for Clew's own (the house).
  */
@@ -1391,6 +1417,74 @@ export const AboutSchema = object(
 );
 export type About = Static<typeof AboutSchema>;
 /**
+ * How a caller stands to a person they ask a source about (D97 item 8, D117), from Clew's own directory (D99): the person
+ * themself (`self`), one of their direct reports (`managed`) or another active person of the organisation
+ * (`colleague`). A closed list, as `ENTITY_KINDS` is: a new relation is a contract change that comes with the rule that
+ * resolves it.
+ */
+export const PERSON_RELATIONS = ['self', 'managed', 'colleague'] as const;
+export type PersonRelation = (typeof PERSON_RELATIONS)[number];
+/**
+ * How a caller stands to a unit (D117, both records): they manage it (`manages`), are placed on it without managing it
+ * (`member`), or a manager who reports to them leads it (`below`, D99's reporting line one level down).
+ */
+export const UNIT_RELATIONS = ['manages', 'member', 'below'] as const;
+export type UnitRelation = (typeof UNIT_RELATIONS)[number];
+export type Relation = PersonRelation | UnitRelation;
+export const RELATIONS: readonly Relation[] = [...PERSON_RELATIONS, ...UNIT_RELATIONS];
+/** What a capability that names a person admits when it does not say (D117): the person themself and their reports. */
+export const STRICT_RELATIONS: readonly PersonRelation[] = ['self', 'managed'];
+/** What a capability about a unit admits when it does not say (D117): a unit the caller manages. */
+export const STRICT_UNIT_RELATIONS: readonly UnitRelation[] = ['manages'];
+export const PersonRelationSchema = literals(PERSON_RELATIONS, {
+  description:
+    "`self`: the caller is the person. `managed`: the person reports to the caller (D99): placed without a manager's role on a unit the caller manages, or reporting to it from below (the managers of the nearest led units below it, and the people of units nobody leads in between); a co-manager of the caller's unit only when their line runs to a unit above it that the caller leads, never someone who manages the caller. `colleague`: any other active person of the caller's organisation.",
+});
+export const UnitRelationSchema = literals(UNIT_RELATIONS, {
+  description:
+    "`manages`: the caller holds a manager's role on the unit. `member`: the caller is placed on it otherwise. `below`: the unit is one the caller follows up from above (D117): the nearest unit below one they manage that has a manager, led by a manager who reports to them (D99's reporting line, one level down, never the whole branch).",
+});
+/**
+ * Who may be asked about through a capability (D117). Clew resolves how the caller stands to every person the input
+ * names before the connector is called, and lets through only the relations `admits` lists. On a capability about a
+ * person the key is where `about` says (`keys`, or `about.param`); any other capability names the input property in
+ * `param`.
+ */
+export const PersonAccessSchema = object(
+  {
+    param: Type.Optional({
+      ...viewKey,
+      description:
+        "On a capability that is not `about` a person: the plain string property of the input that takes one person's key, a provisioned `userName`, such as the `person` of a read a row of a section opens. Absent on a capability about a person, whose key is in `keys` or `about.param`.",
+    }),
+    admits: Type.Optional(
+      Type.Array(PersonRelationSchema, {
+        minItems: 1,
+        uniqueItems: true,
+        description:
+          'The relations a caller may have to a person this capability is asked about. Omitted means `["self", "managed"]`, the strictest that still lets a person read their own and a manager their reports\'.',
+      }),
+    ),
+  },
+  "Who may be asked about (D117). Clew resolves the caller's relation to every person the input names from its own directory before the connector is called: a key in `keys` the caller may not ask about is left out of the call, and a call whose single key names such a person, or holds anything but a string there, is refused as an unknown capability is, so the answer never tells whether the person exists. The relation of each key sent travels in the request body's `about`, which the assertion binds. A capability about a person, a `<id>.commitments` read, a read a row of a section about a person opens with the row's `key` and an execute's effect read name a person whether or not they declare this, and each such input must be a plain string property of the input schema; without `admits` they admit `self` and `managed`.",
+);
+export type PersonAccess = Static<typeof PersonAccessSchema>;
+/** Who may be asked about through a capability about a unit (D117): the relations a caller may have to the unit. */
+export const UnitAccessSchema = object(
+  {
+    admits: Type.Optional(
+      Type.Array(UnitRelationSchema, {
+        minItems: 1,
+        uniqueItems: true,
+        description:
+          'The relations a caller may have to a unit this capability is asked about. Omitted means `["manages"]`.',
+      }),
+    ),
+  },
+  'Who may be asked about through a capability whose `about.entity` is `unit` (D117). A unit key outside `admits` is left out of `keys`, and a call whose `about.param` names such a unit is refused as an unknown capability is.',
+);
+export type UnitAccess = Static<typeof UnitAccessSchema>;
+/**
  * A page of an owned domain where the person writes about one entity (D95, D96): a core connector's in-process `about`
  * may name one, never a remote manifest. `href` may hold `{key}` and `{id}`, which the web fills in. A path (`/staff?…`)
  * is a page of its own, a destination; a query alone (`?talk={id}`) is something that lies over the page the way in is
@@ -1679,6 +1773,7 @@ export const EntityDetailSchema = object({
     Type.Literal('managed'),
     Type.Literal('self'),
     Type.Literal('colleague'),
+    Type.Literal('manages'),
     Type.Literal('member'),
     // A unit whose manager reports to the reader (D99's reporting line, D117).
     Type.Literal('below'),
@@ -1741,6 +1836,13 @@ export const CompetenceStatus = literals(COMPETENCE_STATUSES, {
     '`expired`: the end date has passed. `expiring`: it ends within 90 days. `valid`: it ends later, or never.',
 });
 export type CompetenceStatus = (typeof COMPETENCE_STATUSES)[number];
+/**
+ * Where a row of a read stands (D108 items 4 and 9): one of the statuses, or `uncounted` for a holding copied from a
+ * source whose type no administrator has mapped to the catalogue yet. It is listed under the source's own label and
+ * counts towards nothing. Last in the order a list is drawn in.
+ */
+export const COMPETENCE_ROW_STATUSES = [...COMPETENCE_STATUSES, 'uncounted'] as const;
+export type CompetenceRowStatus = (typeof COMPETENCE_ROW_STATUSES)[number];
 /** How a holding is attested (D108 items 7 and 9): read from a system, registered by a manager, or the person's own word. */
 export const COMPETENCE_EVIDENCE = ['system', 'manager', 'self'] as const;
 export type CompetenceEvidence = (typeof COMPETENCE_EVIDENCE)[number];
@@ -1776,16 +1878,33 @@ export const CompetenceHoldingRowSchema = object(
     }),
     userName: { ...userName, description: 'The person who holds it, by their provisioned user name.' },
     name: Type.String({ minLength: 1, maxLength: 512, description: "The person's name." }),
-    competence: { ...competenceName, description: "The type's name." },
-    area: competenceArea,
-    kind: CompetenceKind,
+    competence: {
+      ...competenceName,
+      description: "The type's name; for a copied holding whose type is not mapped, the source's own label.",
+    },
+    area: Type.Optional({ ...competenceArea, description: 'Absent for a copied holding whose type is not mapped.' }),
+    kind: Type.Optional(
+      literals(COMPETENCE_KINDS, { description: 'Absent for a copied holding whose type is not mapped.' }),
+    ),
     issuedOn: { ...calendarDay, description: 'The day it was issued.' },
     expiresOn: Type.Optional({
       ...calendarDay,
       description: "The last day it is valid: the issuer's date, else the employer's rule. Absent: it does not end.",
     }),
-    status: CompetenceStatus,
+    status: literals(COMPETENCE_ROW_STATUSES, {
+      description:
+        '`expired`, `expiring` or `valid` as computed today; `uncounted`: copied from a source whose type is not mapped to the catalogue, so it counts towards nothing.',
+    }),
     evidence: literals(COMPETENCE_EVIDENCE),
+    source: Type.Optional(
+      Type.String({
+        minLength: 1,
+        maxLength: 120,
+        description:
+          'Swedish. The system it was copied from, as a person reads it (D108 item 9). Absent: registered in Clew.',
+      }),
+    ),
+    readAt: Type.Optional({ ...instant, description: 'When it was last read from that system. Absent with `source`.' }),
   },
   'One holding of one person (D108).',
 );
@@ -1836,6 +1955,79 @@ export const CompetenceHoldingBodySchema = object({
   expiresOn: Type.Optional(calendarDay),
 });
 export type CompetenceHoldingBody = Static<typeof CompetenceHoldingBodySchema>;
+/**
+ * How one read of a source ended (D108 item 9). `complete`: read to the end with nothing marked partial. `partial`: read
+ * to the end, but the source marked some of it partial, so nothing was revoked. `failed`: a page could not be read; what
+ * was read before it is kept and nothing is revoked, and the source is read again at the next run.
+ */
+export const COMPETENCE_READ_OUTCOMES = ['complete', 'partial', 'failed'] as const;
+export type CompetenceReadOutcome = (typeof COMPETENCE_READ_OUTCOMES)[number];
+/**
+ * What one read of a source did for one organisation, in counts only (D108 item 9): never a name or a key. A source is
+ * the installation's, so its read is too; each organisation is told what the read did with its own people.
+ */
+export interface CompetenceReadCounts {
+  /** Holdings the source answered for people of the organisation it may keep rows for. */
+  read: number;
+  /** New or changed in Clew's copy. */
+  stored: number;
+  /** Already in the copy as read. */
+  unchanged: number;
+  /** Holdings that could not be used: an id, a type, a label or a date the copy cannot hold. */
+  invalid: number;
+  /** Types of the source with no mapping to the catalogue among what was read. */
+  unmapped: number;
+  /** Copied rows the source no longer has, revoked: only after a complete read of a source that reports withdrawals. */
+  revoked: number;
+  /**
+   * People of the organisation the source answered for who are outside the source's audience or the competence
+   * module's (D23): nothing of theirs is kept.
+   */
+  outside: number;
+  /** Copied rows deleted because their person has left an audience or is no longer active. */
+  removed: number;
+}
+/** One source's last read as the administration shows it. */
+export interface CompetenceSourceRead {
+  /** When the read began and ended. */
+  startedAt: string;
+  finishedAt: string;
+  outcome: CompetenceReadOutcome;
+  /** Keys that matched no active person: counted, never stored. They belong to no organisation, so every one is told. */
+  unmatched: number;
+  /** What the read did for the administrator's own organisation. */
+  counts: CompetenceReadCounts;
+}
+/** One type of a source (D108 item 9): its id and label in the source, how many copied holdings carry it, and its mapping. */
+export interface CompetenceSourceType {
+  sourceType: string;
+  label: string;
+  /** Holdings of active people of the organisation that carry it now, revoked ones not counted. */
+  holdings: number;
+  /** The catalogue type it is mapped to; absent while it is not mapped and its holdings count towards nothing. */
+  typeId?: string;
+}
+/** One system that answers, or answered, the holdings profile, as Administration › Kompetens › Källor lists it. */
+export interface CompetenceSource {
+  connectorId: string;
+  /** Swedish. The system's name as a person reads it. */
+  source: string;
+  /** Whether it answers the profile now: a source that does not is listed for its copied rows and mappings alone. */
+  answering: boolean;
+  /** A read is under way now. */
+  reading: boolean;
+  lastRead?: CompetenceSourceRead;
+  types: CompetenceSourceType[];
+}
+export interface CompetenceSourcesOutput {
+  rows: CompetenceSource[];
+}
+/** An administrator maps one type of a source to a catalogue type, or removes the mapping with `typeId: null`. */
+export const CompetenceMappingBodySchema = object({
+  sourceType: Type.String({ minLength: 1, maxLength: 200 }),
+  typeId: Type.Union([id, Type.Null()]),
+});
+export type CompetenceMappingBody = Static<typeof CompetenceMappingBodySchema>;
 /** A Clew-side action the conversation proposes; executed only after the person confirms, through the thread endpoints. */
 export const ClewActionSchema = object({
   n: Type.Integer(),
@@ -2723,6 +2915,8 @@ export const ConnectorHealthSchema = object({
     Type.Literal('manifest-invalid'),
     Type.Literal('secret-rejected'),
     Type.Literal('untested'),
+    // Loaded on the previous protocol for its window (D60): it works, and must move to the current one.
+    Type.Literal('protocol-outdated'),
   ]),
   at: Type.String(),
   detail: Type.Optional(Type.String()),
@@ -3292,6 +3486,8 @@ export interface ReferenceRule {
   /** The field paths the rule binds together. */
   fields: string[];
   decision?: string;
+  /** The decision record's file name, where `decision` is a number that names two records (D117, D119). */
+  record?: string;
   /** Where Clew applies it: when the manifest is loaded, when the connector is registered, in the conformance check, or on each call. */
   enforced: 'loader' | 'registry' | 'check' | 'call';
 }
@@ -3383,6 +3579,23 @@ export interface SiteHeaderView {
   /** The connector the header came from, or null for the default. */
   source: { id: string; label: string } | null;
 }
+
+// The holdings profile (D108 item 9, D119), in a file of its own. Named one by one, as below.
+export {
+  HOLDINGS_CURSOR_MAX,
+  HOLDINGS_PER_ROW_MAX,
+  HOLDINGS_ROWS_MAX,
+  HOLDING_KINDS,
+  HoldingSchema,
+  HoldingsInputSchema,
+  HoldingsOutputSchema,
+  HoldingsRowSchema,
+  type Holding,
+  type HoldingKind,
+  type HoldingsInput,
+  type HoldingsOutput,
+  type HoldingsRow,
+} from './holdings';
 
 // Named one by one: the server runs under Node through tsx, where a star re-export's names are not visible to an importer.
 export {

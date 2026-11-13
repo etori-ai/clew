@@ -2,6 +2,7 @@ import { useRef, type ReactNode } from 'react';
 import type { Thread } from '@clew/contracts';
 import { Badge, Link, List, ListItem, StatusDot, Text, VStack } from '@clew/ui';
 import { rowLine, type RowFacts } from '../work-items';
+import { staleWhy, useSilentSources } from './silent-sources';
 
 /**
  * A row that is one link (D112 items 2 and 3, boards Inbox and Main): the title is the row's one link and its one tab
@@ -78,7 +79,9 @@ export function LinkRow({
  * ("Att göra i dag · Ansökan kom 10 november kl. 16:40"), so two states never differ by the dot's colour alone (WCAG
  * 1.4.1; Astryx's StatusDot is always paired with a visible label). The dot beside those words is decoration, hidden
  * from assistive technology as an avatar beside a name is, so the state is heard once, where it is read. The line is
- * never cut: it holds the state and why the item is here, and takes the lines it needs at any width.
+ * never cut: it holds the state and why the item is here, and takes the lines it needs at any width. An open item whose
+ * system does not answer says at the end of its why line that it may be old (D116, amended 2026-11-12), in words, as a
+ * reminder's wait is said there.
  */
 export function WorkRow({
   thread,
@@ -94,6 +97,8 @@ export function WorkRow({
   href: string;
   isSelected?: boolean;
 }) {
+  const silent = useSilentSources().of(thread.connector);
+  const stale = thread.state === 'open' && !!silent;
   return (
     <LinkRow
       id={`work-${thread.id}`}
@@ -102,7 +107,7 @@ export function WorkRow({
       title={thread.title}
       isSelected={isSelected}
       startContent={<StatusDot variant={facts.state.variant} label={facts.state.label} aria-hidden />}
-      description={rowLine(facts)}
+      description={rowLine(stale ? { ...facts, why: staleWhy(facts.why) } : facts)}
       descriptionLines={0}
       endContent={
         <VStack gap={1} hAlign="end">

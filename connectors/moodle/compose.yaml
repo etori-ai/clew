@@ -1,0 +1,29 @@
+# The Moodle connector on its own, next to a Clew and a Moodle it can reach. An administrator registers it in Clew
+# (Administration › Anslutna system, or `bun scripts/connector-add.ts`), so nothing on Clew's container names it (D23).
+# In the development stack it is the `moodle-connector` service of .devcontainer/compose.yaml instead (README.md).
+#
+#   MOODLE_CONNECTOR_SECRET=<16+ characters> CLEW_URL=https://clew.example MOODLE_ADAPTER=moodle \
+#     MOODLE_URL=https://larplattform.example MOODLE_TOKEN=<web service token> \
+#     docker compose -f connectors/moodle/compose.yaml up moodle-connector
+#
+# MOODLE_ADAPTER has no default: the connector does not start without it, nor as `moodle` without the address and the
+# token. `MOODLE_ADAPTER=fixture` serves the in-memory stand-in in learning.mjs instead, whose people and holdings are
+# made up, for development only, and is refused beside MOODLE_URL or MOODLE_TOKEN. The token is the service account's: a
+# Moodle account with read capabilities only, admitted to an external service that lists the functions in README.md.
+services:
+  moodle-connector:
+    build: .
+    environment:
+      CLEW_CONNECTOR_SECRET: ${MOODLE_CONNECTOR_SECRET:?set MOODLE_CONNECTOR_SECRET to a shared secret of 16+ characters}
+      CLEW_URL: ${CLEW_URL:?set CLEW_URL to Clew's base URL, https outside local development}
+      MOODLE_ADAPTER: ${MOODLE_ADAPTER:?set MOODLE_ADAPTER to moodle (with MOODLE_URL and MOODLE_TOKEN), or to fixture for made-up development data}
+      MOODLE_URL: ${MOODLE_URL:-}
+      MOODLE_TOKEN: ${MOODLE_TOKEN:-}
+      MOODLE_ALLOW_HTTP: ${MOODLE_ALLOW_HTTP:-}
+      MOODLE_MATCH_FIELD: ${MOODLE_MATCH_FIELD:-}
+      MOODLE_SOURCE_LABEL: ${MOODLE_SOURCE_LABEL:-}
+      MOODLE_PUBLIC_URL: ${MOODLE_PUBLIC_URL:-}
+      MOODLE_TIMEZONE: ${MOODLE_TIMEZONE:-}
+      MOODLE_CONCURRENCY: ${MOODLE_CONCURRENCY:-}
+    ports:
+      - "127.0.0.1:4053:4053"

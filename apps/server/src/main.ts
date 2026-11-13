@@ -40,7 +40,7 @@ import { talks } from './composition/talks';
 import { dialogueRoutes } from './routes/dialogue';
 import { dialogue } from './composition/dialogue';
 import { competenceRoutes } from './routes/competence';
-import { competence } from './composition/competence';
+import { competence, startCompetenceCopy } from './composition/competence';
 
 // Local secrets written by `bun run auth:setup`. Never committed, never read by the browser bundle.
 for (const file of ['.env.local']) {
@@ -69,6 +69,7 @@ const startup = startupReadiness({
     const engine = startDurableRuntime({ tracingEnabled: telemetry.enabled });
     watchConnectors(connectorReconcile);
     startJobs(engine);
+    startCompetenceCopy();
     startAssistantProbe();
     startRefresh();
     void loadConnectors(registry)

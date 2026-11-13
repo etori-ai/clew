@@ -1,6 +1,7 @@
 import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import {
+  CommitmentsInputSchema,
   CommitmentsResultSchema,
   TalksResultSchema,
   checkContract,
@@ -102,7 +103,8 @@ function talkSystem(id: string, source: string, answers: Answers): Connector {
     kind: 'read' as const,
     title: name,
     description: 'x',
-    input: {} as never,
+    // The profile's input (D96 item 8): `person` is a plain string, so Clew can resolve it (D117).
+    input: (name.endsWith('.commitments') ? CommitmentsInputSchema : {}) as never,
     output: {} as never,
     // Even a source that asks to be a tool is not one (D96 item 6).
     model: true,

@@ -30,7 +30,10 @@ const read = (name: string, scope: Capability['scope'] = {}): Capability => ({
   kind: 'read',
   title: 'Läsning',
   description: 'x',
-  input: {} as never,
+  // A commitments read takes `{ person? }` as a plain string (D96 item 8, D117); the other reads take nothing.
+  input: (name.endsWith('.commitments')
+    ? { type: 'object', properties: { person: { type: 'string' } }, additionalProperties: false }
+    : {}) as never,
   output: {} as never,
   model: true,
   scope,

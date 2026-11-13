@@ -208,6 +208,11 @@ export const HANDWRITTEN_EXAMPLES: Record<string, unknown> = {
   'capabilities[].about': { entity: 'person' },
   'capabilities[].about.entity': 'person',
   'capabilities[].about.param': 'person',
+  'capabilities[].person': { param: 'person', admits: ['self', 'managed'] },
+  'capabilities[].person.param': 'person',
+  'capabilities[].person.admits': ['self', 'managed'],
+  'capabilities[].unit': { admits: ['manages'] },
+  'capabilities[].unit.admits': ['manages'],
   'capabilities[].asks': [{ kind: 'meeting', property: 'when', label: 'När', required: true, durationMinutes: 45 }],
   'capabilities[].asks[].kind': 'meeting',
   'capabilities[].asks[].property': 'when',
@@ -221,8 +226,70 @@ export const HANDWRITTEN_EXAMPLES: Record<string, unknown> = {
   'capabilities[].asks[].options[].value': 'approve',
   'capabilities[].asks[].options[].label': 'Godkänn',
   'capabilities[].effect': 'hr.bookTalkEffect',
+  'installation[].name': 'lms.holdings',
+  'installation[].title': 'Genomförda kurser och märken',
+  'installation[].description': 'Alla konton med genomförda kurser och märken, för kompetensregistret.',
+  'installation[].input': {
+    type: 'object',
+    properties: { cursor: { type: 'string', maxLength: 64 } },
+    additionalProperties: false,
+  },
 };
+/**
+ * The installation's read of the holdings profile (D119) as a manifest declares it: the example of `installation`,
+ * loaded by the reference's test, and its output's shape, the profile's own fields with the bounds of a page.
+ */
+export const HOLDINGS_EXAMPLE = {
+  name: 'lms.holdings',
+  title: 'Genomförda kurser och märken',
+  description: 'Alla konton med genomförda kurser och märken, för kompetensregistret.',
+  input: HANDWRITTEN_EXAMPLES['installation[].input'],
+  output: {
+    type: 'object',
+    properties: {
+      rows: {
+        type: 'array',
+        maxItems: 50,
+        items: {
+          type: 'object',
+          properties: {
+            key: { type: 'string' },
+            holdings: {
+              type: 'array',
+              maxItems: 200,
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                  type: { type: 'string' },
+                  label: { type: 'string' },
+                  kind: { enum: ['course'] },
+                  issuedOn: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+                  expiresOn: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+                },
+                required: ['id', 'type', 'label', 'kind', 'issuedOn'],
+                additionalProperties: false,
+              },
+            },
+            partial: { const: true },
+          },
+          required: ['key', 'holdings'],
+          additionalProperties: false,
+        },
+      },
+      next: { type: 'string', maxLength: 64 },
+      withdrawalsReported: { type: 'boolean' },
+    },
+    required: ['rows', 'withdrawalsReported'],
+    additionalProperties: false,
+  },
+};
+HANDWRITTEN_EXAMPLES['installation'] = [HOLDINGS_EXAMPLE];
+HANDWRITTEN_EXAMPLES['installation[].output'] = HOLDINGS_EXAMPLE.output;
 
+/** The records behind rules whose number names two records since 2026-11-13: the file name says which (`Rule.record`). */
+const D117_RELATIONS = 'D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md';
+const D119_INSTALLATION = 'D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md';
 /** The rules between fields, as Clew applies them. Each `loader` rule is proven by a test that breaks it and reads the problem. */
 export const RULES: Rule[] = [
   {
@@ -392,6 +459,47 @@ export const RULES: Rule[] = [
     text: "On a `propose` or `execute` that declares `about`, the input requires `param`, and every other property it requires is one the capability asks for (`asks`, D112). Anything else is optional, with a default the source chooses, so the entity's menu can start the action with the key and the person's answers, without the model (D8).",
   },
   {
+    id: 'person-param',
+    title: 'A capability that names a person says where',
+    fields: ['capabilities[].person', 'capabilities[].person.param', 'capabilities[].about', 'capabilities[].input'],
+    enforced: 'loader',
+    decision: 'D117',
+    record: D117_RELATIONS,
+    text: "A capability about a person has its key where `about` says (`keys`, or `about.param`) and declares only `person.admits`. Any other capability that declares `person` names in `person.param` the input property that takes one person's key.",
+  },
+  {
+    id: 'named-input-is-a-string',
+    title: 'An input that names a person or a unit is a plain string',
+    fields: [
+      'capabilities[].input',
+      'capabilities[].person.param',
+      'capabilities[].about.param',
+      'capabilities[].view.open.params',
+    ],
+    enforced: 'loader',
+    decision: 'D117',
+    record: D117_RELATIONS,
+    text: "Every input property that takes one person's or one unit's key, declared (`person.param`, `about.param`) or not (the `person` of a `<id>.commitments` read, a property a row of a read about a person fills from its `key` when it opens another read, an execute's effect read's), is listed under the input schema's `properties` with `type: \"string\"`, in an object schema without `allOf`, `anyOf`, `oneOf`, `not`, `if` or `patternProperties` that could give it another shape. Clew resolves the key in it before every call; anything but a string there is refused.",
+  },
+  {
+    id: 'person-not-a-unit',
+    title: 'A capability about a unit declares no person',
+    fields: ['capabilities[].person', 'capabilities[].about.entity'],
+    enforced: 'loader',
+    decision: 'D117',
+    record: D117_RELATIONS,
+    text: 'A capability whose `about.entity` is `unit` declares who it may be asked about in `unit`, never in `person`.',
+  },
+  {
+    id: 'unit-on-a-unit',
+    title: 'Only a capability about a unit declares unit',
+    fields: ['capabilities[].unit', 'capabilities[].about.entity'],
+    enforced: 'loader',
+    decision: 'D117',
+    record: D117_RELATIONS,
+    text: "`unit.admits` lists the relations a caller may have to a unit the capability is asked about: `manages` (the caller holds a manager's role on it) and `member` (placed on it otherwise); omitted, `manages`. Only a capability whose `about.entity` is `unit` declares it.",
+  },
+  {
     id: 'asks-on-an-action',
     title: 'Only a propose or an execute asks',
     fields: ['capabilities[].kind', 'capabilities[].asks', 'capabilities[].follows'],
@@ -445,12 +553,57 @@ export const RULES: Rule[] = [
     text: '`<id>.search`, `<id>.fetch`, `<id>.errands`, `<id>.talks`, `<id>.commitments`, `<id>.news`, a capability with `kinds` and the read the header names have shapes of their own and cannot declare `about`.',
   },
   {
+    id: 'installation-on-3',
+    title: 'Installation reads came with protocol 3',
+    fields: ['protocol', 'installation'],
+    enforced: 'loader',
+    decision: 'D119',
+    record: D119_INSTALLATION,
+    text: '`installation` was added under protocol 3 as an optional field: a manifest without it is read as before, and a manifest on 2 that declares it is refused. Declare protocol 3 and carry the verifier of 3.',
+  },
+  {
+    id: 'installation-profile',
+    title: 'An installation read is one of the profiles Clew reads as the installation',
+    fields: ['installation[].name', 'id', 'capabilities[].name'],
+    enforced: 'loader',
+    decision: 'D119',
+    record: D119_INSTALLATION,
+    text: 'Each entry of `installation` is named `<id>.<profile>` for a profile Clew reads with no person behind the call: today only `<id>.holdings`. No name is both a capability and an installation read, and neither list names one twice.',
+  },
+  {
+    id: 'installation-holdings-input',
+    title: 'The holdings read takes a cursor and nothing else',
+    fields: ['installation[].name', 'installation[].input'],
+    enforced: 'loader',
+    decision: 'D119',
+    record: D119_INSTALLATION,
+    text: '`<id>.holdings` takes `{}` for the first page and `{ cursor }` after: its input is an object whose only property is an optional plain string `cursor`, and it requires nothing. It never takes a key or a person: the read answers every account the source has.',
+  },
+  {
+    id: 'installation-holdings-output',
+    title: 'The holdings read answers the profile, a bounded page at a time',
+    fields: ['installation[].output'],
+    enforced: 'loader',
+    decision: 'D119',
+    record: D119_INSTALLATION,
+    text: '`<id>.holdings` answers a `HoldingsOutput`: `rows`, each with a string `key` (the value of your match field for the account, what Clew compares with a user name), `holdings` and optionally `partial: true`; `withdrawalsReported`, a boolean; and `next`, the cursor of the following page, absent on the last. Each holding has `id`, `type`, `label`, `kind` and `issuedOn`, and optionally `expiresOn`, and nothing else: no name, no free text. `rows` declares `maxItems` of at most 100 and `holdings` at most 500. Clew checks every answer against the profile too.',
+  },
+  {
+    id: 'installation-call',
+    title: 'Clew calls an installation read as itself, never as a person',
+    fields: ['installation', 'installation[].name', 'installation[].output'],
+    enforced: 'call',
+    decision: 'D119',
+    record: D119_INSTALLATION,
+    text: "Clew posts an installation read to `/clew/installation/{name}` with `{ input }` and an assertion whose subject is `clew:installation` and whose `caller` claim is `installation`, with no `actor`, bound to the body and the name. Answer it to that assertion only, and answer a person's assertion there with 401: the verifier of 3 tells them apart (`verify.installation`). The read is not a capability: no page, card, tool, job or other connector's callback can name it, whoever the person is. A page of `<id>.holdings` answers every account it reaches, a row without holdings for one that holds nothing; with `withdrawalsReported: false` Clew never reads a missing holding as revoked. Answer a cursor you no longer know as `invalid`; Clew then starts again from the first page.",
+  },
+  {
     id: 'scan-route',
     title: 'scan: true means you serve the scan route',
     fields: ['scan', 'areas[].id'],
     enforced: 'check',
     decision: 'D35',
-    text: "With `scan: true` Clew posts `/clew/scan` per person, nightly and on first visit. Each draft names an `area` of this manifest, its `topic` is the same for the same occurrence, and its actions name capabilities of this connector only. An execute action that is the person's read receipt for something published carries `acknowledgement: { publishedAt }` (D112), at most one per draft: Hem then lifts the open item above its blocks, with that action as its button, until it is pressed. The conformance check runs the scan twice and compares.",
+    text: "With `scan: true` Clew posts `/clew/scan` per person, nightly and on first visit. Each draft names an `area` of this manifest, its `topic` is the same for the same occurrence, and its actions name capabilities of this connector only. An execute action that is the person's read receipt for something published carries `acknowledgement: { publishedAt }` (D112), at most one per draft: Hem then lifts the open item above its blocks, with that action as its button, until it is pressed. Such an item is a notice: its `summary` is the text the person reads, first in the item (paragraphs separated by a blank line), its first `read` with `target: 'link'` is drawn after that text as the way to the whole of it, and its `reason` is the provenance line under \"Varför ser jag detta?\" (who published it, when). On any item, a single row that only repeats the title (no detail, no subject, not selectable) is not drawn. The conformance check runs the scan twice and compares.",
   },
   {
     id: 'figure-route',
@@ -497,7 +650,21 @@ export const RULES: Rule[] = [
     fields: ['capabilities[].about', 'capabilities[].about.entity'],
     enforced: 'call',
     decision: 'D97',
-    text: `Clew calls the read as the person with \`{ keys }\`: a person's provisioned \`userName\` (compare without regard to case; the caller's own is \`actor.userName\`) or a unit's id, only for entities the person may already see, at most ${ENTITY_KEYS_MAX} in one call. Answer one row per key you know, carrying \`key\` as it was asked; a key outside the person's scope is answered as no row, never as a refusal. Beside the rows you may answer \`heading\` and \`note\`, two short strings. Clew keeps nothing and decides where the rows show: a section on the opened entity, and a lens, a column or a mark on the row where an administrator chose the source.`,
+    text: `Clew calls the read as the person with \`{ keys }\`: a person's provisioned \`userName\` (compare without regard to case; the caller's own is \`actor.userName\`) or a unit's id, only for entities the person may already see and the read admits (\`person.admits\`, D117), at most ${ENTITY_KEYS_MAX} in one call. Answer one row per key you know, carrying \`key\` as it was asked; a key outside the person's scope is answered as no row, never as a refusal. Beside the rows you may answer \`heading\` and \`note\`, two short strings. Clew keeps nothing and decides where the rows show: a section on the opened entity, and a lens, a column or a mark on the row where an administrator chose the source.`,
+  },
+  {
+    id: 'person-call',
+    title: 'Clew sends only the people and units a capability admits, and says how the caller stands to each',
+    fields: [
+      'capabilities[].person',
+      'capabilities[].person.admits',
+      'capabilities[].unit.admits',
+      'capabilities[].about',
+    ],
+    enforced: 'call',
+    decision: 'D117',
+    record: D117_RELATIONS,
+    text: 'Before a call reaches you, Clew resolves how the caller stands to every person or unit the input names, from its own directory: a person `self`, `managed` (a direct report under D99, a co-manager of the caller\'s unit only when their line runs to the caller, never someone who manages the caller) or `colleague`; a unit `manages`, `member` or `below` (led by a manager who reports to the caller, one level down). A key in `keys` outside `person.admits` (`["self", "managed"]` when omitted) or `unit.admits` (`["manages"]`) is left out of the call; a call whose single key is outside it, or not a string, is refused as an unknown capability is, so the caller cannot tell whether that person exists. This holds on every path: a page, a card, a tool, another connector\'s callback, a document\'s bytes. The request body\'s `about` maps each key sent to its relation, and the assertion binds the body (its `body` claim is the SHA-256 of the exact bytes, base64url, and `capability` the capability of the route): verify both, then answer `self` differently from `managed` without a copy of the organisation, and answer a key `about` does not name as no row. A `<id>.commitments` read\'s `person`, a property a row of a read about a person fills from its `key` and an execute\'s effect read name a person whether or not you declare `person`.',
   },
   {
     id: 'about-action-start',
@@ -505,7 +672,7 @@ export const RULES: Rule[] = [
     fields: ['capabilities[].kind', 'capabilities[].about.param'],
     enforced: 'call',
     decision: 'D97',
-    text: "When the person chooses the action in an entity's menu, Clew starts it without the model, as the person, with `{ <param>: key }` and, for a propose that asks, the person's answers. A `propose` answers a `ThreadDraft`, the shape a scan pushes: its actions name capabilities of this connector, it prepares and writes nothing, and it becomes the person's card. Clew writes the card's reason itself (the person chose it), so your `reason` is not shown. Refuse a key outside the person's scope in Swedish, as any call is refused. An `execute` is not called: Clew makes a card whose button is the human decision, and the execute runs only after it, with its write safety and the answers to its asks. The same request while the card is open gives the same card.",
+    text: "When the person chooses the action in an entity's menu, Clew starts it without the model, as the person, with `{ <param>: key }` and, for a propose that asks, the person's answers. A `propose` answers a `ThreadDraft`, the shape a scan pushes: its actions name capabilities of this connector, it prepares and writes nothing, and it becomes the person's card. Clew writes the card's reason itself (the person chose it), so your `reason` is not shown. Clew starts it only on someone the action admits (`person.admits`, D117); refuse a key outside the person's scope in Swedish, as any call is refused. An `execute` is not called: Clew makes a card whose button is the human decision, and the execute runs only after it, with its write safety and the answers to its asks. The same request while the card is open gives the same card.",
   },
   {
     id: 'action-input-filled',
@@ -819,7 +986,8 @@ const SECTIONS: Array<{ id: string; title: string; holds: (path: string) => bool
   {
     id: 'document',
     title: 'The document',
-    holds: p => !p.includes('.') && !['areas', 'capabilities', 'facts', 'delegation', 'header'].includes(p),
+    holds: p =>
+      !p.includes('.') && !['areas', 'capabilities', 'installation', 'facts', 'delegation', 'header'].includes(p),
   },
   { id: 'areas', title: 'areas[]', holds: p => p.startsWith('areas') },
   {
@@ -828,6 +996,7 @@ const SECTIONS: Array<{ id: string; title: string; holds: (path: string) => bool
     holds: p => p.startsWith('capabilities') && !p.startsWith('capabilities[].view'),
   },
   { id: 'view', title: 'capabilities[].view', holds: p => p.startsWith('capabilities[].view') },
+  { id: 'installation', title: 'installation[]', holds: p => p.startsWith('installation') },
   { id: 'facts', title: 'facts[]', holds: p => p.startsWith('facts') },
   { id: 'delegation', title: 'delegation', holds: p => p.startsWith('delegation') },
   { id: 'header', title: 'header', holds: p => p.startsWith('header') },
@@ -869,12 +1038,15 @@ const requiredText = (f: FieldEntry) =>
   (f.required ? 'required' : 'optional') + (f.variants ? ` (${f.variants.join(', ')} only)` : '');
 
 export interface RenderOptions {
-  decisionLink?: (decision: string) => string | undefined;
+  /** Where a rule's decision links; `record` is its file name where the number names two records. */
+  decisionLink?: (decision: string, record?: string) => string | undefined;
 }
 
 export function referenceMarkdown(reference: ManifestReference, options: RenderOptions = {}): string {
-  const decision = (d?: string) =>
-    d ? (options.decisionLink?.(d) ? ` ([${d}](${options.decisionLink(d)}))` : ` (${d})`) : '';
+  const decision = (d?: string, record?: string) => {
+    const link = d ? options.decisionLink?.(d, record) : undefined;
+    return d ? (link ? ` ([${d}](${link}))` : ` (${d})`) : '';
+  };
   const lines: string[] = [
     '# Manifest field reference',
     '',
@@ -909,7 +1081,7 @@ export function referenceMarkdown(reference: ManifestReference, options: RenderO
       if (f.constraints.length) lines.push(`- Constraints: ${f.constraints.join('; ')}`);
       if (f.rules.length) {
         lines.push('- Pairs with:');
-        for (const r of f.rules) lines.push(`  - **${r.title}.** ${r.text}${decision(r.decision)}`);
+        for (const r of f.rules) lines.push(`  - **${r.title}.** ${r.text}${decision(r.decision, r.record)}`);
       }
       if (f.example !== undefined) lines.push('', 'Example:', '', '```json', code(f.example), '```');
       lines.push('');
@@ -923,7 +1095,7 @@ export function referenceMarkdown(reference: ManifestReference, options: RenderO
   );
   for (const r of reference.rules)
     lines.push(
-      `- **${r.title}** (${r.enforced}; ${r.fields.map(f => `\`${f}\``).join(', ')})${decision(r.decision)}: ${r.text}`,
+      `- **${r.title}** (${r.enforced}; ${r.fields.map(f => `\`${f}\``).join(', ')})${decision(r.decision, r.record)}: ${r.text}`,
     );
   return lines.join('\n') + '\n';
 }

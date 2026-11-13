@@ -12,9 +12,11 @@ import {
   type EntityList,
   type EntityRef,
   type EntitySource,
+  type PersonRelation,
+  type UnitRelation,
   type View,
 } from '@clew/contracts';
-import type { DirectoryPerson, DirectoryUnit, NamedCard, Reach } from './model';
+import type { DirectoryPerson, DirectoryUnit, NamedCard, Reach, ReachPerson } from './model';
 
 /**
  * The pure part of the entities module (D97): who may be asked about, which keys a source is sent, and what of its
@@ -154,10 +156,73 @@ export function managedPerson(reach: Reach, id: string): Managed | undefined {
       }
   return fromBelow;
 }
+/**
+ * Whether someone on a unit the reader manages reports to the reader (D99 item 4, D117): placed there without a
+ * manager's role, reporting to it from below (the managers of the nearest led units below, and the people of units
+ * nobody leads in between), or leading it beside the reader while their line runs to a unit above that the reader leads
+ * (`lineReports`). Never someone who manages the reader (`above`), never a co-manager whose line runs elsewhere, and
+ * never someone whose role there the directory did not say. Personal lists more than this; who may be asked about as a
+ * report is exactly this.
+ */
+export const reportsTo = (reach: Reach, person: ReachPerson) =>
+  !reach.above.includes(person.id) &&
+  (person.below !== undefined || person.role === 'employee' || reach.lineReports.includes(person.id));
+/** A source's key for a person that Clew can compare (`foldSourceKey`): one that fits on the wire, never a NUL. */
+export const isSourceKey = (value: string) => fitsWire(value) && !value.includes('\u0000');
+/**
+ * A report of the reader's (`reportsTo`) by the source's key, their user name compared as Clew compares a source's key
+ * (`foldSourceKey`), with the first unit they report on.
+ */
+export function reportOf(
+  reach: Reach,
+  key: string,
+): { person: ReachPerson & { userName: string }; unit: DirectoryUnit } | undefined {
+  const folded = foldSourceKey('person', key);
+  for (const unit of reach.managed)
+    for (const person of unit.people)
+      if (askable(person) && foldSourceKey('person', person.userName) === folded && reportsTo(reach, person))
+        return { person, unit: { unitId: unit.unitId, unitLabel: unit.unitLabel } };
+  return undefined;
+}
+/** Whether the person behind Clew's key (their id) is a report of the reader's (`reportsTo`) who can be asked about. */
+export const isReport = (reach: Reach, id: string) =>
+  reach.managed.some(unit => unit.people.some(p => p.id === id && askable(p) && reportsTo(reach, p)));
+/**
+ * A report of the reader's without a user name, named by Clew's own id (D117): for a core capability of Clew's own
+ * domains that takes a person by id, as the talks domain does. Someone with a user name is never named by id.
+ */
+export function reportById(reach: Reach, id: string): (ReachPerson & { userName: null }) | undefined {
+  for (const unit of reach.managed)
+    for (const person of unit.people)
+      if (person.id === id && person.userName === null && person.enabled && reportsTo(reach, person))
+        return person as ReachPerson & { userName: null };
+  return undefined;
+}
 /** A unit the reader manages or belongs to, by its id. */
 export const memberUnit = (reach: Reach, key: string) => readerUnits(reach).find(u => u.unitId === key);
 /** A unit below the reader whose manager reports to them (D117), by its id. */
 export const belowUnit = (reach: Reach, key: string) => unitsBelow(reach).find(u => u.unitId === key);
+/**
+ * How the reader stands to a unit (D117, both records): `manages` it, is placed on it otherwise (`member`), leads a unit
+ * whose manager reports to them (`below`, `belowUnit`), or undefined. The one rule: the opened unit and the registry's
+ * check of every call both ask it.
+ */
+export function unitRelation(reach: Reach, key: string): UnitRelation | undefined {
+  if (!memberUnit(reach, key)) return belowUnit(reach, key) ? 'below' : undefined;
+  return reach.managed.some(u => u.unitId === key) || reach.units.some(u => u.unitId === key && u.role === 'manager')
+    ? 'manages'
+    : 'member';
+}
+/**
+ * How the reader stands to a person of the directory (D97 item 8, D117), by Clew's key, the person's id (D122): the
+ * reader themself (`self`); a direct report on D99's line (`managed`, `reportsTo`); anyone else (`colleague`), a
+ * co-manager of the reader's unit and their own manager included. The one rule: the opened entity and the registry's
+ * check of every call both ask it.
+ */
+export function personRelation(reader: { id: string }, reach: Reach, person: { id: string }): PersonRelation {
+  if (person.id === reader.id) return 'self';
+  return isReport(reach, person.id) ? 'managed' : 'colleague';
+}
 
 /** Keys in calls of at most `size` (never more than `ENTITY_KEYS_MAX`), in order. */
 export function chunk(keys: string[], size: number): string[][] {

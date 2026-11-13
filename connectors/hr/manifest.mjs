@@ -381,6 +381,8 @@ const prepareAbsence = {
   model: false,
   scope: manager,
   about: { entity: 'person', param: 'person' },
+  // Clew starts it only on someone who reports to the manager (D117); the system still finds them on its own unit.
+  person: { admits: ['managed'] },
   input: object(
     {
       person: { type: 'string', minLength: 1, maxLength: 256, description: 'Medarbetarens användarnamn i katalogen.' },
@@ -429,6 +431,50 @@ const myBalance = {
   output: object({ vacationDaysLeft: integer, mustUseBy: string }),
 };
 
+// The rehabilitation routine (D115): what the manager does when someone is sick, as a list of steps. It is policy text
+// and holds nothing about any employee, so the model is handed the whole output and may say what the routine asks for.
+const rehabRoutine = {
+  name: 'hr.rehabRoutine',
+  kind: 'read',
+  title: 'Rehabiliteringsrutinen',
+  description:
+    'Vad chefen gör när en medarbetare är sjuk, steg för steg: kort sjukfrånvaro, upprepad korttidsfrånvaro, lång sjukfrånvaro och återgång i arbete. Rutintext, inga uppgifter om någon medarbetare.',
+  model: true,
+  scope: manager,
+  input: empty,
+  // `section` is the part of the routine a step belongs to, `at` when in the absence it is taken, `detail` what to do.
+  output: object({
+    name: string,
+    owner: string,
+    reviewedAt: { type: 'string', pattern: DATE },
+    rows: array(object({ ref: string, section: string, at: string, title: string, detail: string })),
+  }),
+  view: {
+    kind: 'list',
+    title: 'title',
+    ref: 'ref',
+    noun: { one: 'steg', other: 'steg' },
+    empty: 'Rutinen har inga steg.',
+    fields: [
+      { key: 'title', label: 'Steg' },
+      { key: 'at', label: 'När' },
+      {
+        key: 'section',
+        label: 'Del',
+        format: 'status',
+        tones: {
+          'Kort sjukfrånvaro': 'none',
+          'Upprepad korttidsfrånvaro': 'none',
+          'Lång sjukfrånvaro': 'none',
+          'Tillbaka i arbete': 'none',
+        },
+      },
+      { key: 'detail', label: 'Vad du gör' },
+    ],
+  },
+  menu: { label: 'Rehabrutinen', icon: 'book' },
+};
+
 const renewDelegation = {
   name: 'hr.renewDelegation',
   kind: 'execute',
@@ -460,6 +506,8 @@ const person = {
   model: false,
   scope: manager,
   about: { entity: 'person' },
+  // Clew sends only the keys of the manager's own reports (D117); the system still answers for its own unit alone.
+  person: { admits: ['managed'] },
   input: object({
     keys: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 256 }, maxItems: KEYS_MAX },
   }),
@@ -518,7 +566,7 @@ const lookup = {
 };
 
 export const manifest = {
-  protocol: 2,
+  protocol: 3,
   id: CONNECTOR,
   kind: 'passthrough',
   source: 'Personalsystemet',
@@ -564,6 +612,7 @@ export const manifest = {
     withdrawAbsence,
     myShift,
     myBalance,
+    rehabRoutine,
     renewDelegation,
     lookup,
     person,

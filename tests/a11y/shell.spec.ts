@@ -531,8 +531,10 @@ test.describe('the folded rail', () => {
     await expectNoAxeViolations(page);
     await field.fill('fakturor');
     await page.getByRole('option', { name: /Attestera 3 fakturor/ }).click();
-    await expect(page).toHaveURL(/\/todo\?item=fakturor$/);
+    // Picked on Hem, the work item opens over Hem in its panel (D111 rule 2; D112, amended 2026-11-12).
+    await expect(page).toHaveURL(/\/\?card=fakturor$/);
     await expect(palette).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: 'Ärende', exact: true }).locator('#card-fakturor')).toBeVisible();
   });
 
   test('Esc closes the search and gives the focus back to Sök', async ({ page, api: _ }) => {
@@ -546,5 +548,67 @@ test.describe('the folded rail', () => {
     await page.keyboard.press('Escape');
     await expect(palette).toHaveCount(0);
     await expect(sok).toBeFocused();
+  });
+});
+
+test('a long conversation title stays inside the rail on one line', async ({ page, api }) => {
+  const title = 'Anna har varit sjuk i två veckor, vad behöver jag göra nu och vem ska jag kontakta först?';
+  const first = api.threads.find(t => t.kind === 'question')!;
+  api.threads = api.threads.map(t => (t.id === first.id ? { ...t, title } : t));
+  await page.setViewportSize(desktop);
+  await open(page, '/');
+  const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
+  const row = rail.locator(`a[href="/conversations/${first.id}"]`);
+  await expect(row).toBeVisible();
+  // The whole title is the link's name; what is drawn ends inside the rail and on one row's height.
+  await expect(row).toHaveAccessibleName(new RegExp(title.replace(/[?]/g, '\\?')));
+  const [railBox, rowBox] = [await rail.boundingBox(), await row.boundingBox()];
+  expect(rowBox!.x + rowBox!.width).toBeLessThanOrEqual(railBox!.x + railBox!.width);
+  const other = rail.getByRole('link', { name: 'Kalender', exact: true });
+  expect(rowBox!.height).toBe((await other.boundingBox())!.height);
+  // Nothing inside the row is drawn past the row's own end.
+  const spill = await row.evaluate(element => {
+    const end = element.getBoundingClientRect().right;
+    return [...element.querySelectorAll('*')].some(child => child.getBoundingClientRect().right > end + 1);
+  });
+  expect(spill).toBe(false);
+});
+
+/**
+ * The rows under Administration are the ones the person may open (D85): each is drawn for a person holding the
+ * capability its page is behind on the server, and Kompetens only while the module is switched on (D108 item 13). With
+ * none of them there is no Administration in the rail.
+ */
+test.describe('Administration in the rail, by what the person may open', () => {
+  test.use({ viewport: desktop });
+  const rail = (page: Page) => page.getByRole('navigation', { name: 'Sidonavigering' });
+  const rows = (page: Page) => rail(page).getByRole('group', { name: 'Administration', exact: true }).getByRole('link');
+
+  test('every capability: every row but Kompetens while it is off', async ({ page, api }) => {
+    api.admin = true;
+    await open(page, '/admin/connectors');
+    await expect(rows(page)).toHaveText(['Anslutna system', 'Modeller', 'Användare', 'Organisation', 'Utseende']);
+  });
+
+  test('only admin.appearance: only Utseende', async ({ page, api }) => {
+    api.admin = true;
+    api.capabilities = ['admin.appearance'];
+    await open(page, '/admin/appearance');
+    await expect(rows(page)).toHaveText(['Utseende']);
+    await expectNoAxeViolations(page);
+  });
+
+  test('only admin.users: Användare and Organisation', async ({ page, api }) => {
+    api.admin = true;
+    api.capabilities = ['admin.users'];
+    await open(page, '/admin/users');
+    await expect(rows(page)).toHaveText(['Användare', 'Organisation']);
+  });
+
+  test('only admin.competence while the module is off: no Administration at all', async ({ page, api }) => {
+    api.admin = true;
+    api.capabilities = ['admin.competence'];
+    await open(page, '/');
+    await expect(rail(page).getByRole('button', { name: 'Administration', exact: true })).toHaveCount(0);
   });
 });

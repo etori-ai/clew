@@ -213,19 +213,23 @@ describe('the Eneo connector', () => {
           : new Response('', { status: 403 });
       },
     });
-    const call = async (actor: Actor, token: string) =>
-      service.handle(
+    const call = async (actor: Actor, token: string) => {
+      const body = JSON.stringify({ actor, input: { ref: 'blob-fall' } });
+      return service.handle(
         new Request('http://eneo/clew/capabilities/eneo.fetch', {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
-            authorization: 'Bearer ' + (await (await testAuthority()).assert('eneo', actor)),
+            authorization:
+              'Bearer ' +
+              (await (await testAuthority()).assert('eneo', actor, [], [], { body, capability: 'eneo.fetch' })),
             'x-clew-connector-key': secret,
             'x-clew-delegated-token': token,
           },
-          body: JSON.stringify({ actor, input: { ref: 'blob-fall' } }),
+          body,
         }),
       );
+    };
     expect((await call(hassan, 'allowed')).status).toBe(200);
     expect((await call({ ...hassan, id: 'other-user' }, 'denied')).status).toBe(403);
     revoked = true;
@@ -245,16 +249,19 @@ describe('the Eneo connector', () => {
           return data ? Response.json(data) : new Response('', { status: 404 });
         },
       });
+      const body = JSON.stringify({ input: { query: 'fall' } });
       const response = await service.handle(
         new Request('http://eneo/clew/capabilities/eneo.search', {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
-            authorization: 'Bearer ' + (await (await testAuthority()).assert('eneo', hassan)),
+            authorization:
+              'Bearer ' +
+              (await (await testAuthority()).assert('eneo', hassan, [], [], { body, capability: 'eneo.search' })),
             'x-clew-connector-key': secret,
             'x-clew-delegated-token': 'allowed',
           },
-          body: JSON.stringify({ input: { query: 'fall' } }),
+          body,
         }),
       );
       expect(response.status).toBe(503);

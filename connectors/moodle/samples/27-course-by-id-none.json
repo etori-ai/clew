@@ -1,0 +1,22 @@
+{
+  "description": "A course id that does not exist: an empty list, not an error.",
+  "request": {
+    "method": "POST",
+    "path": "/webservice/rest/server.php",
+    "headers": {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Accept": "application/json"
+    },
+    "body": "wstoken=%3Cthe+service+account+token%3E&moodlewsrestformat=json&moodlewssettingraw=true&wsfunction=core_course_get_courses_by_field&field=id&value=999999"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "courses": [],
+      "warnings": []
+    }
+  }
+}

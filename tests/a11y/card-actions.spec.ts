@@ -259,6 +259,84 @@ test.describe('a phone', () => {
   });
 });
 
+/**
+ * D116: a work item's read that answers with a table, "Se i personalsystemet" on a leave request (every open request in
+ * a table), is a link to the read's page, never the panel; the page names the place the item was on as its way back.
+ */
+test.describe('a read that answers with a table', () => {
+  test.use({ viewport: desktop });
+  const leaveRequests = {
+    kind: 'table' as const,
+    capability: 'hr.leaveRequests',
+    connector: 'hr',
+    source: 'Personalsystemet',
+    chip: false,
+    title: 'name',
+    noun: { one: 'ansökan', other: 'ansökningar' },
+    fields: [
+      { key: 'name', label: 'Medarbetare' },
+      { key: 'period', label: 'Period' },
+    ],
+  };
+  test('Se i personalsystemet leads to the read’s page with Hem and the item as the way back, and Back returns to the item', async ({
+    page,
+    api,
+  }) => {
+    api.threads = api.threads.map(t =>
+      t.id === 'ledighet'
+        ? {
+            ...t,
+            actions: [
+              ...t.actions,
+              {
+                id: 'open',
+                label: 'Se i personalsystemet',
+                capability: 'hr.leaveRequests',
+                kind: 'read' as const,
+                role: 'secondary' as const,
+                target: 'panel' as const,
+              },
+            ],
+          }
+        : t,
+    );
+    const asked: string[] = [];
+    await page.route('**/api/cap/hr.leaveRequests*', route => {
+      asked.push(route.request().url());
+      return route.fulfill({
+        json: {
+          source: 'Personalsystemet',
+          view: leaveRequests,
+          output: {
+            rows: [
+              { name: 'Johan Byström', period: '22–23 december' },
+              { name: 'Sara Nyström', period: '2–4 januari' },
+            ],
+          },
+        },
+      });
+    });
+    await open(page, '/?card=ledighet');
+    const item = page.getByRole('dialog').locator('#card-ledighet');
+    const link = item.getByRole('link', { name: 'Se i personalsystemet' });
+    await expect(link).toHaveAttribute('href', '/tools/hr.leaveRequests?from=%2F%3Fcard%3Dledighet');
+    // A link, not a disclosure: it unfolds nothing in the item.
+    await expect(link).not.toHaveAttribute('aria-expanded', /.*/);
+    await link.click();
+    await expect(page).toHaveURL('/tools/hr.leaveRequests?from=%2F%3Fcard%3Dledighet');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    const main = page.getByRole('main');
+    await expect(main.getByRole('heading', { level: 1, name: 'Ledighetsansökningar' })).toBeVisible();
+    await expect(main.getByRole('row')).toHaveCount(3);
+    await expect(main.getByRole('link', { name: 'Hem', exact: true })).toHaveAttribute('href', '/?card=ledighet');
+    expect(asked).toHaveLength(1);
+    await expectNoAxeViolations(page);
+    await page.goBack();
+    await expect(page).toHaveURL('/?card=ledighet');
+    await expect(page.getByRole('dialog').locator('#card-ledighet')).toBeVisible();
+  });
+});
+
 test.describe('the side panel', () => {
   test.use({ viewport: desktop });
 

@@ -16,6 +16,7 @@ import {
   DialogHeader,
   EmptyState,
   FormLayout,
+  HStack,
   List,
   ListItem,
   NumberInput,
@@ -41,6 +42,7 @@ import { DialogFrame } from '../../components/dialog-frame';
 import { PageHeader } from '../../components/page-header';
 import { mobileQuery } from '../../components/shell';
 import { AdminShell } from './shell';
+import { SOURCES_PATH } from './competence-sources';
 import { DOT } from '../../dot';
 
 /**
@@ -370,7 +372,10 @@ export function AdminCompetencePage({ user }: { user: SessionUser }) {
         }
         end={
           !refused && query.data ? (
-            <Button variant="primary" label="Lägg till kompetens" href={editHref(NEW)} />
+            <HStack gap={2} wrap="wrap">
+              <Button variant="secondary" label="Källor" href={SOURCES_PATH} />
+              <Button variant="primary" label="Lägg till kompetens" href={editHref(NEW)} />
+            </HStack>
           ) : undefined
         }
       />

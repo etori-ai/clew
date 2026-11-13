@@ -176,6 +176,7 @@ describe('the dates', () => {
       createdAt: now.toISOString(),
       revokedAt: null,
       revokedBy: null,
+      copy: null,
       ...extra,
     });
     const types = new Map([[t.id, t]]);
@@ -350,6 +351,7 @@ describe('a manager registers a certificate', () => {
       createdAt: now.toISOString(),
       revokedAt: null,
       revokedBy: null,
+      copy: null,
     });
     expect(lastAudit()).toEqual({
       actor: 'person:boss',
@@ -627,7 +629,7 @@ describe('erasure and export', () => {
     await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2026-01-10' });
     await competence.seedType('operator:test', 'org-2', { name: 'Annan', area: 'X', kind: 'course' });
     const doc = await competence.exportDomain('operator:cli', ORG);
-    expect(doc).toMatchObject({ format: 'clew.competence/1', exportedAt: now.toISOString(), organisationId: ORG });
+    expect(doc).toMatchObject({ format: 'clew.competence/2', exportedAt: now.toISOString(), organisationId: ORG });
     expect(doc.types.map(t => t.name).sort()).toEqual(['HLR', 'Heta arbeten', 'Socionomexamen']);
     expect(doc.holdings).toHaveLength(1);
     expect(lastAudit()).toEqual({
@@ -635,7 +637,7 @@ describe('erasure and export', () => {
       action: 'competence.exported',
       subject: 'organisation:' + ORG,
       at: now.toISOString(),
-      details: { types: 3, holdings: 1 },
+      details: { types: 3, holdings: 1, mappings: 0 },
     });
   });
 });

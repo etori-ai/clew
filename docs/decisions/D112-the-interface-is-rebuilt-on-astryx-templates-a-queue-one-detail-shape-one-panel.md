@@ -1,6 +1,6 @@
 # D112 · The interface is rebuilt on Astryx's templates: a queue, one detail shape, and one panel with the assistant in it
 
-**Status:** provisional (accepted when a manager has done a day's work in it and one connector author has declared an action that asks for input from the author's page alone); item 3's row gains the state's word by [D124](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) item 9 (2026-11-13, provisional, built), and item 5's person page is redrawn by its item 6 (not built) · **Date:** 2026-11-11 · **Area:** ui
+**Status:** provisional (accepted when a manager has done a day's work in it and one connector author has declared an action that asks for input from the author's page alone); items 6 and 7 refined by [D116](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md) (2026-11-12, provisional: a tool's page is every view's page, and the panel holds a view only when the view is one thing; a list or a table opened anywhere is its page); item 3's row gains the state's word by [D124](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) item 9 (2026-11-13, provisional, built), and item 5's person page is redrawn by its item 6 (not built) · **Date:** 2026-11-11 · **Area:** ui
 
 **Context.** Views, cards and navigation had grown by amendment (D50, D53, D63, D66, D72, D83, D97, D111) and were
 hard to hold together. The product owner asked for a fresh approach drawn only from what Astryx already ships, saw it
@@ -126,6 +126,37 @@ from here on; the board is the reference for order and words, never for its inli
    surface of its own: it is the box and Samtal. No suggestion chips under the box, no news authoring, no pictures and no
    carousel.
 
+**Amended 2026-11-12: a work item opened from Hem opens beside Hem, and a notice reads as a notice.** The product owner
+tried Fokusnyhet and found it strange that "Läs" on a notice threw them into the queue, and that the notice's own text
+had no path: the item showed its two sentences under "Varför ser jag detta?", a "Rader" section that only repeated the
+title, and no way to the whole text. They approved the change on 2026-11-12: "what you propose is what I as a user
+expect, beside Hem". Item 2 and the first amendment's item 1 ("Läs", which opens the item in Att göra) read as follows
+from here on.
+
+1. **Beside Hem.** "Läs" on Fokusnyhet, every row under "Behöver dig", the day's link to the item a meeting came from and
+   an item suggested under the box open the work item in the panel of item 7, beside Hem, by the address every page uses
+   (`/?card=<threadId>`), and the person stays on Hem. It is the work item Att göra's reading pane draws, with its
+   buttons, the action dialog, the receipt with Ångra, "Öppna som sida" and the box under it. The row is marked while its
+   item is open; ✕ or Esc gives the focus back to what opened it, and to "Behöver dig" when that is gone (the receipt
+   took the item off Hem). A decision made there changes Hem's blocks and the callout as one made on Hem does. Below the
+   panel's width it is the drawer over Hem, as on every page. Att göra is unchanged, and "Alla N i Att göra" still leads
+   there. What belongs to no page (the bell, a toast, the rail's search) opens over Hem the same way (D111 rule 2); only
+   Hem's old tabs and area (`/?tab=`, `/?area=`) lead to Att göra.
+2. **A notice reads as a notice.** A work item whose execute is the person's read receipt (`acknowledgement`) leads with
+   its text, the draft's `summary` paragraph by paragraph, first under the head and under no heading of its own; after
+   the text stands the item's first read that leads out of Clew (`target: 'link'`, marked as leaving, D111 rule 8) as the
+   way to the whole of it, there and not among the buttons. "Varför ser jag detta?" is then the provenance line alone: the
+   source's reason (who published it, when, that a receipt is required) and where and when the item came. The receipt's
+   button stays among the head's buttons and is reached from the text; nothing is added for it. After the receipt the
+   text stays under it, to be read again.
+3. **A row that only repeats the title is not drawn.** On every work item "Rader" is left out when its one row is the
+   item itself: the title as its label, no detail, no person or unit, nothing to choose. A row with any fact of its own
+   is drawn, and so are two rows or more.
+4. **The protocol is unchanged.** The way to the whole text is the existing read with `target: 'link'`, and the text is
+   the draft's `summary`. The communication fixture's notice "Ny rutin vid hot och våld" has a body of a few paragraphs
+   and a link to its full text, carried on its news row (`NewsRow.link`) and on its work item as the read
+   `communication.open`.
+
 **Consequences.** Astryx's templates are the implementation, not an inspiration: `bunx astryx template <id>` is read
 before a surface is written, and a surface that needs something a template lacks records the gap here before any
 custom composition. Every route, view and state above gets its scenario in `tests/a11y`. `asks` and `effect` are
@@ -184,3 +215,8 @@ enforce them and with the HR fixture's `hr.bookTalk` as the first use.
     while it holds the focus it is scrolled to again as each read lands and once Astryx's motion has ended; a fitting
     `ScrollableArea` clips until it has observed its content overflow, so the column keeps its containment with the
     documented `stickyContainment="always"` and can be scrolled from the first section that arrives.
+14. Rows nested in a collapsible `SideNavItem` are not held to the rail's width: the folded region is a grid whose item
+    keeps `min-width: auto`, so a row grows as wide as its text and a long label overflows the rail instead of being cut
+    with the label's ellipsis. Samtal is therefore a visible `SideNavSection` with the conversations as plain rows, not
+    a disclosure (2026-11-12). "Fler verktyg" and Administration still use the collapsible with sub-rows and have the
+    same latent overflow for a long label; that is known and not changed.

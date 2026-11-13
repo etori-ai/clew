@@ -223,14 +223,16 @@ describe('the qlik connector', () => {
     expect((await registry.areas(hassan)).map(a => a.id)).not.toContain('sick-leave');
     await expect(registry.run(hassan, 'qlik.sickLeaveByUnit', {})).rejects.toThrow();
     // Past Clew's scope check, the connector refuses on the verified role.
+    const body = JSON.stringify({ actor: hassan, input: {} });
     const response = await connectorFetch('http://qlik/clew/capabilities/qlik.sickLeaveByUnit', {
       method: 'POST',
       headers: {
-        authorization: 'Bearer ' + (await assertionFor('qlik', secret)(hassan)),
+        authorization:
+          'Bearer ' + (await assertionFor('qlik', secret)(hassan, [], { body, capability: 'qlik.sickLeaveByUnit' })),
         'x-clew-connector-key': secret,
         'content-type': 'application/json',
       },
-      body: JSON.stringify({ actor: hassan, input: {} }),
+      body,
     });
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({
@@ -284,14 +286,15 @@ describe('the qlik connector', () => {
     };
     const { registry, connectorFetch } = stack({ statistics });
     await expect(registry.run(hillevi, 'qlik.sickLeaveByUnit', {})).rejects.toThrow('Qlik svarar inte just nu.');
+    const body = JSON.stringify({ actor: hillevi, area: 'sick-leave' });
     const response = await connectorFetch('http://qlik/clew/figure', {
       method: 'POST',
       headers: {
-        authorization: 'Bearer ' + (await assertionFor('qlik', secret)(hillevi)),
+        authorization: 'Bearer ' + (await assertionFor('qlik', secret)(hillevi, [], { body })),
         'x-clew-connector-key': secret,
         'content-type': 'application/json',
       },
-      body: JSON.stringify({ actor: hillevi, area: 'sick-leave' }),
+      body,
     });
     expect(response.status).toBe(503);
     expect(await response.text()).not.toContain('qlikbot');

@@ -10,7 +10,10 @@
  *
  * A read about an entity (D97) is asked with keys: `--keys` are the user names (or unit ids) to ask in one batch. Without
  * `--as` the batch is signed as the check's own manager on a unit no installation has, for whom every real key is out of
- * scope; without `--keys` the rows are not checked, while an unknown key and another unit still are.
+ * scope, and the check vouches for no key, so nothing real is sent; without `--keys` the rows are not checked, while an
+ * unknown key and another unit, sent past the rule and without a relation, still are. A read the manifest declares for
+ * the installation (D119) is read as Clew reads it, its first two pages at most, and a person's assertion on its route
+ * must be refused.
  *
  * `--as <user name>` signs the batch, and the unknown key asked after it, as that person of this installation, someone
  * who may see the keys: Clew's installation key signs their identity as Clew signs it (id, name, unit, role and user name
@@ -19,9 +22,10 @@
  * cannot tell these reads from the person's own and record them as that person's, in whatever access log they keep. Use
  * a test installation or a test account, never a real colleague. `--as` requires `--id`, a remote connector registered in
  * this installation at the address checked, never one of Clew's own, so the service cannot choose the audience or the
- * connector a callback is for, and before the first signed request the script writes one audit row:
- * `connector.checked_as`, actor `operator:cli`, about `person:<their id>`, with the connector's id and counts only
- * (`scripts/connector-check-as.ts`).
+ * connector a callback is for. The batch passes this installation's rule of who may be asked about (D117): a key that
+ * person may not ask about is left out, as Clew leaves it out. Before the first signed request the script writes one
+ * audit row: `connector.checked_as`, actor `operator:cli`, about `person:<their id>`, with the connector's id and counts
+ * only (`scripts/connector-check-as.ts`).
  */
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
@@ -34,6 +38,7 @@ import { readConnector } from '@clew/db/connectors';
 import { writeAudit } from '@clew/db/threads';
 import { signingAuthority } from '../apps/server/src/connectors/signing';
 import { systemContext } from '../apps/server/src/system-context';
+import { relations } from '../apps/server/src/composition/relations';
 import type { Actor } from '../packages/connectors/src/index';
 import { checkConnector } from '../packages/connectors/src/check';
 import { asProblem, checkAs, type CheckAsDeps } from './connector-check-as';
@@ -129,14 +134,19 @@ try {
   process.exit(2);
 }
 const authority = await signingAuthority();
+// With `--as` the batch passes this installation's own rule of who may be asked about (D117), as every call does, and the
+// request body tells the connector how that person stands to each key sent; without `--as` the check vouches for nobody,
+// so no real key is sent. Every assertion is bound to its request's body and capability.
 const report = await checkConnector({
   url,
   id: audience,
   key: secret,
-  assert: actor => authority.assert(audience, actor, manifest.uses),
+  assert: (actor, chain, binding) => authority.assert(audience, actor, manifest.uses, chain, binding),
   assertForeign: signer('wrong-secret-wrong-secret'),
+  // The reads the manifest declares for the installation (D119): their first pages, read as Clew reads them.
+  assertInstallation: binding => authority.installation(audience, binding),
   acceptsEmptyInput: schema => !!ajv.compile(schema)({}),
-  about: { keys, ...(as ? { as } : {}) },
+  about: { keys, ...(as ? { as, relations: relations.relate } : {}) },
 });
 console.log(`Connector "${manifest.id}" (${manifest.source}), protocol ${manifest.protocol}`);
 for (const f of report.findings)

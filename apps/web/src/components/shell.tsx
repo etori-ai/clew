@@ -28,13 +28,14 @@ import { createHeaderBandTheme } from '@clew/ui/theme';
 import { SiteHeader, SiteHeaderPerson, selectedItem } from '@clew/site-header';
 import { useBranding } from '../branding';
 import { headerQuery, threadsQuery } from '../queries';
-import { useSourceBanner } from './source-banner';
+import { useAnnounceSilentSources } from './silent-sources';
 import { api } from '../api';
 import { ReminderBell } from './reminders';
 import { PanelOverPage } from './page-panel';
 import { mobileQuery } from '../media';
 import { cardOverPage } from '../panel-address';
 import { pageLocation, usePublishPageLocation } from '../page-location';
+import { useFocusOnTheWayBack } from '../way-back';
 
 export { mobileQuery, shortQuery } from '../media';
 /** The installation's name in the rail's heading until the default header has said it. */
@@ -129,6 +130,8 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
     navigate = useNavigate();
   // A toast is drawn outside the router and outlives the page that raised it: it reads where the person is from here.
   usePublishPageLocation();
+  // Back from a view's page (D116): the link that opened it takes the focus again once this page has drawn it.
+  useFocusOnTheWayBack();
   const deliveryAttempts = useRef(new Set<string>());
   // The same session-scoped cache as the start page carries reminder cards and pending delivery claims.
   const threadsQ = useQuery(threadsQuery);
@@ -142,8 +145,9 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
   const branding = useBranding();
   const bandTheme = useMemo(() => createHeaderBandTheme(branding), [branding]);
   const logo = headerLogo(shared?.logo, branding.logo, mobile);
-  // A system that does not answer is said at the top of every page (D8, D71 artboard 8), under the page's own banner.
-  const silent = useSourceBanner();
+  // A system that does not answer is said where its content is missing, never at the top of the page (D116, amended
+  // 2026-11-12); the first time it is seen silent in the session it is said once (4.1.3).
+  useAnnounceSilentSources();
   // The phone's drawer closes when a row in it is chosen. The person's row opens the settings over the drawer instead,
   // so the row is still there for Escape to give the focus back to (2.4.3).
   const [navigationOpen, setNavigationOpen] = useState(false);
@@ -237,14 +241,7 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
         variant="section"
         contentPadding={0}
         mobileNav={{ breakpoint: 'md', isOpen: navigationOpen, onOpenChange: changeNavigation }}
-        banner={
-          banner || silent ? (
-            <VStack gap={0}>
-              {banner}
-              {silent}
-            </VStack>
-          ) : undefined
-        }
+        banner={banner}
         topNav={
           shared ? (
             <SiteHeader

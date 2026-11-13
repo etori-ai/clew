@@ -152,6 +152,9 @@ describe('a read receipt in a draft', () => {
         capability: 'communication.acknowledge',
         acknowledgement: { publishedAt: '2026-11-03T06:30:00+01:00' },
       }),
+      // The way to the whole notice, a read that leads out of Clew: never the read receipt.
+      expect.objectContaining({ id: 'open', kind: 'read', target: 'link', capability: 'communication.open' }),
     ]);
+    expect(pushed!.actions[1]).not.toHaveProperty('acknowledgement');
   });
 });

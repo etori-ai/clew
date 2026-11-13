@@ -1,0 +1,23 @@
+{
+  "description": "A required parameter left out: HTTP 200 with invalidparameter.",
+  "request": {
+    "method": "POST",
+    "path": "/webservice/rest/server.php",
+    "headers": {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Accept": "application/json"
+    },
+    "body": "wstoken=%3Cthe+service+account+token%3E&moodlewsrestformat=json&moodlewssettingraw=true&wsfunction=core_enrol_get_users_courses"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "exception": "core\\exception\\invalid_parameter_exception",
+      "errorcode": "invalidparameter",
+      "message": "Invalid parameter value detected"
+    }
+  }
+}

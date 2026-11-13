@@ -191,6 +191,9 @@ export function talksConnector(
     output: CommitmentsOutputSchema,
     view: commitmentsView,
     scope: () => true,
+    // `person` is one of the reader's reports (D117); without it the reader reads their own. A report without a user name
+    // is named by Clew's id, as the talks domain names them.
+    person: { param: 'person', admits: ['managed'], ids: true },
     run: async (actor, input) => talks.commitments(await persona(actor), input),
   };
   const aboutPerson: Capability<Keys> = {
@@ -207,6 +210,8 @@ export function talksConnector(
     // The person's talk is written in the talk drawer (D96 item 7), the section's second way in. A query alone: the drawer
     // lies over whichever page the way in is drawn on, Personal or the person's own (D111 rule 5).
     about: { entity: 'person', page: { title: 'Öppna samtalet', href: '?talk={id}' } },
+    // The round lists a manager's reports (D99): nobody else is asked about (D117).
+    person: { admits: ['managed'] },
     run: async (actor, input) => {
       const { round, rows } = await talks.aboutPeople(await persona(actor), input.keys);
       return {
@@ -237,6 +242,8 @@ export function talksConnector(
     scope: { roles: ['manager'] },
     // Every person's place in the round is the lens on Personal (D97 item 3).
     about: { entity: 'unit', page: { title: 'Visa i Personal', href: '/staff?show=' + aboutPerson.name } },
+    // Only the units the reader manages are counted (D117).
+    unit: { admits: ['manages'] },
     run: async (actor, input) => {
       const { round, rows } = await talks.aboutUnits(await persona(actor), input.keys);
       return {

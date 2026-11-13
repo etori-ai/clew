@@ -1,6 +1,6 @@
 # D79 · Semantic views and versioned document review
 
-**Status:** accepted for implementation · **Date:** 2026-11-08 · **Area:** integrations, ui, authorization
+**Status:** accepted for implementation; amended 2026-11-12: a review's decisions outlive a reload, its evidence does not (see the amendment) · **Date:** 2026-11-08 · **Area:** integrations, ui, authorization
 
 **Decision.** Extend the connector catalogue with document, record, metrics, series and activity views. The product owner authorised the full catalogue after the [research](../reviews/2026-11-08-connector-view-catalogue-and-document-previews.md), excluding Markdown file previews for now. Existing text views remain supported. Connectors supply semantic data; Clew owns all rendering and actions.
 
@@ -16,3 +16,13 @@
 **Verification.** Contract/transport tests cover malformed metadata, bounded content and authority changes. Approval tests cover tampering, stale versions and committed retries. Browser tests exercise each view, document formats, keyboard operation and narrow layouts. Live source readiness and manual screen-reader conformance remain separate release checks.
 
 **Extended 2026-11-08.** [D80](D80-recover-rejected-rows-without-replaying-confirmed-writes.md) adds optional record recovery metadata for bounded correction fields and a source-system link. Corrections retain the human execution, authorization and source revision boundaries; a fresh invoice approval still requires new review evidence.
+
+**Amended 2026-11-12.** The review is a page of its own since 2026-11-12
+([D73](D73-the-review-is-a-page-in-the-shell-with-an-address.md) as amended that day, under the product owner's rule
+recorded the same day in [D116](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md) that a task a person works through is a page with its own address). "Closing the review retains
+card selections, not durable review evidence: reopening requires review again" now reads: the person's decisions are a
+draft kept in the browser tab for the session, with the record and document revisions each approval was taken on; the
+evidence is not kept. When the page no longer holds an approval's evidence (after a reload, or close to its expiry),
+Skicka reads that row's documents again and sends the fresh evidence only if the revisions are those the approval was
+taken on; otherwise the approval is taken back and the row must be reviewed again. A changed document still never
+renews a decision, and the server's checks are unchanged.

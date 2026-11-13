@@ -1,6 +1,6 @@
 import { test as base, expect, type Locator, type Page, type Route } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import type { ItemEvent, MenuEntry, PanelViewSpec, Thread, SiteHeaderView } from '@clew/contracts';
+import type { ItemEvent, MenuEntry, PanelViewSpec, Thread, SiteHeaderView, ViewEntry } from '@clew/contracts';
 import {
   NEXT_WEEK,
   NOW,
@@ -62,7 +62,10 @@ import {
 } from './data';
 import type {
   AppearanceAdminView,
+  Capability,
   CompetenceHoldingBody,
+  CompetenceMappingBody,
+  CompetenceSource,
   CompetenceType,
   CompetenceTypeBody,
   CompetenceTypePatch,
@@ -83,6 +86,7 @@ import type {
 import { THEME_BASE_COLORS, parseThemeFile, themeFileOf } from '../../packages/contracts/src/theme-file';
 import { personSearch, phonebook } from './phonebook';
 import { rooms, roomsSpec } from './rooms';
+import { fixtureViews } from './view-catalogue';
 import { holdingsOutput, holdingsSpec } from './competence';
 import { errandsOutput, errandsSpec, smErrandOutput, smErrandSpec } from './errands';
 import { manifestReference } from '../../packages/connectors/src/reference';
@@ -183,6 +187,17 @@ export class MockApi {
   /** The session says the person may administer connectors (D23). Off by default so the other suites see the ordinary page. */
   admin = false;
   /**
+   * The administration capabilities the session says the person holds (D85) while `admin` is on: which rows the rail
+   * draws under Administration. Every one by default; a test narrows it.
+   */
+  capabilities: Capability[] = ['admin.connectors', 'admin.users', 'admin.appearance', 'admin.competence'];
+  /**
+   * The person's calendar (D116, amended 2026-11-12): `ok` answers; `silent` does not (the calendar's own 400, as when its
+   * server fails); `unbound` is an account with no calendar bound to it; `hidden` is a calendar the registry does not
+   * show the person (D23), so it is not among their systems and its routes answer 404.
+   */
+  calendar: 'ok' | 'silent' | 'unbound' | 'hidden' = 'ok';
+  /**
    * "Vem ser det" on Anslutna system and Modeller (D23, D24, D68): the units and the provisioned groups the audience
    * editor offers (`GET /api/admin/units` and `/api/admin/groups`), and whether both reads fail (503, after the page's
    * one retry). `holdAudienceLists` keeps both reads on their way.
@@ -212,6 +227,9 @@ export class MockApi {
   groupSearchFails = false;
   /** Organisation (D99): the tree the organisation page shows; it shares `usersForbidden`, as the two share a capability. */
   organisation = organisationOverview();
+  /** The people of each unit and who reports to it from below, as the unit's page reads them; a test may add a unit. */
+  organisationPeople = { ...organisationPeople };
+  organisationReports = { ...organisationReports };
   /** Organisation: the tree and every unit's people fail to be read (503, after the page's one retry). */
   organisationFails = false;
   /**
@@ -272,6 +290,12 @@ export class MockApi {
   registered: Array<{ personId: string; body: CompetenceHoldingBody }> = [];
   /** The next registration answers 400 with this sentence; it resets itself after that one. */
   registerFail: string | null = null;
+  /** Kompetens › Källor (D108 item 9): the systems whose holdings are copied in, while the module is on. */
+  competenceSources: CompetenceSource[] = [];
+  /** Every write to the sources' mappings and every read started by hand, in order. */
+  sourceWrites: Array<{ method: string; path: string; body?: unknown }> = [];
+  /** The next write to a source answers 400 with this sentence; it resets itself after that one. */
+  sourceFail: string | null = null;
   /** Utvecklingssamtal (D96). False: the person has no talks system, so both reads are refused as the registry refuses them. */
   talksOffered = true;
   /** False: another system answers the profile; the reads are read-only (no `id`, a `link` on every row) and the writes refused. */
@@ -299,6 +323,8 @@ export class MockApi {
   connectors: ConnectorSummary[] = connectors();
   /** The rows under Verktyg in the menu (D40): none until a test puts one there, as none is shown until an administrator switches one on. */
   menu: MenuEntry[] = [];
+  /** Every read the person may open (D116), with the kind of its view: a table or a list opens on its own page. */
+  views: ViewEntry[] = fixtureViews();
   /** The views an administrator has put in the menu on the admin pages, by capability name. */
   menuOn: string[] = [];
   /** The areas whose figure an administrator switched off on the admin pages (D54), by area id. */
@@ -368,7 +394,12 @@ export class MockApi {
     if (path === '/auth/session') {
       if (this.sessionDelay) await new Promise(resolve => setTimeout(resolve, this.sessionDelay));
       return this.signedIn
-        ? json({ ...session, ...(this.employee ? { user: { ...user, role: 'employee' } } : {}), admin: this.admin })
+        ? json({
+            ...session,
+            ...(this.employee ? { user: { ...user, role: 'employee' } } : {}),
+            admin: this.admin && this.capabilities.length > 0,
+            capabilities: this.admin ? this.capabilities : [],
+          })
         : route.fulfill({ status: 401, json: { error: 'Ingen session' } });
     }
     if (path === '/auth/activity') return json({ expiresAt: session.expiresAt });
@@ -526,8 +557,8 @@ export class MockApi {
           ? json({
               unitId,
               unitLabel: unit.unitLabel,
-              people: organisationPeople[unitId] ?? [],
-              reports: organisationReports[unitId] ?? [],
+              people: this.organisationPeople[unitId] ?? [],
+              reports: this.organisationReports[unitId] ?? [],
             })
           : route.fulfill({ status: 400, json: { error: 'Enheten finns inte.', code: 'invalid' } });
       }
@@ -698,7 +729,26 @@ export class MockApi {
     }
     if (path === '/areas') {
       if (this.areasDelay) await new Promise(resolve => setTimeout(resolve, this.areasDelay));
-      return json({ areas: this.areas, menu: this.menu, systems: this.systems });
+      // The person sees the systems the registry shows them (D23): the calendar unless it is hidden from them, and
+      // Kompetens while the module is switched on (D108 item 13).
+      const systems = [
+        ...this.systems.filter(s => s.connector !== 'calendar' || this.calendar !== 'hidden'),
+        ...(this.competenceTypes ? [{ connector: 'competence', source: 'Kompetens', ordinal: null }] : []),
+      ];
+      return json({ areas: this.areas, menu: this.menu, systems, views: this.views });
+    }
+    // The calendar's own reads (D116, amended 2026-11-12): hidden is the route's 404, unbound and silent its 400s.
+    if (/^\/(today|calendar)(\/|$)/.test(path) && this.calendar !== 'ok') {
+      if (this.calendar === 'hidden') return route.fulfill({ status: 404, json: { error: 'Okänd förmåga.' } });
+      return route.fulfill({
+        status: 400,
+        json: {
+          error:
+            this.calendar === 'unbound'
+              ? 'Ditt konto har ingen kalender kopplad.'
+              : 'Kalenderkontot är inte tillgängligt.',
+        },
+      });
     }
     if (path === '/today') return json(today);
     // A meeting ask's free times and the person's own day (D112), as `GET /api/asks/times` answers them.
@@ -855,6 +905,35 @@ export class MockApi {
       });
       this.catalogueWrites.push({ method: 'POST', path, body });
       return route.fulfill({ status: 201, json: { id } });
+    }
+    // Kompetens › Källor (D108 item 9): the sources, a mapping and a read started by hand.
+    if (path === '/competence/sources' && route.request().method() === 'GET')
+      return json({ rows: this.competenceSources });
+    const sourcePath = /^\/competence\/sources\/([^/]+)\/(mapping|read)$/.exec(path);
+    if (sourcePath) {
+      const source = this.competenceSources.find(s => s.connectorId === decodeURIComponent(sourcePath[1]!)),
+        method = route.request().method();
+      if (this.sourceFail) {
+        const error = this.sourceFail;
+        this.sourceFail = null;
+        return route.fulfill({ status: 400, json: { error } });
+      }
+      if (!source) return route.fulfill({ status: 400, json: { error: 'Källan svarar inte om intyg just nu.' } });
+      if (sourcePath[2] === 'read' && method === 'POST') {
+        source.reading = true;
+        this.sourceWrites.push({ method, path });
+        return route.fulfill({ status: 202, body: '' });
+      }
+      if (sourcePath[2] === 'mapping' && method === 'PUT') {
+        const body = route.request().postDataJSON() as CompetenceMappingBody;
+        const type = source.types.find(t => t.sourceType === body.sourceType);
+        if (type) {
+          if (body.typeId === null) delete type.typeId;
+          else type.typeId = body.typeId;
+        }
+        this.sourceWrites.push({ method, path, body });
+        return json({ holdings: type?.holdings ?? 0 });
+      }
     }
     const registering = /^\/competence\/people\/([^/]+)\/holdings$/.exec(path);
     if (registering && route.request().method() === 'POST') {
@@ -1514,27 +1593,60 @@ export const composer = (page: Page) => page.getByRole('combobox', { name: /^(Va
 /** A heading by the level assistive technology gets: `aria-level` when Astryx separates it from the visual level. */
 /** "Inte nu" on the first work item, the way a person does it (D29): open the picker, choose "I morgon". */
 export async function snoozeFirst(page: Page) {
-  // A card keeps Inte nu in view; a row is one link to its work item (D112), so the first row's item is opened first,
-  // in Att göra's reading pane or alone where the pane does not fit, where Inte nu stands among the card's buttons.
+  // A card keeps Inte nu in view; a row is one link to its work item (D112), so the first row's item is opened first:
+  // from Hem in the panel beside Hem or the drawer over it (D112, amended 2026-11-12), from Att göra in the reading pane,
+  // each an article named by the item, or alone as its page where neither fits. Inte nu stands among its buttons there.
   const button = page.getByRole('main').getByRole('button', { name: 'Inte nu', exact: true }).first();
   if (await button.isVisible()) await button.click();
   else {
-    await page.getByRole('main').getByRole('listitem').getByRole('link').first().click();
-    const own = page.getByRole('button', { name: 'Inte nu', exact: true }).first();
-    // The item has its buttons once Fler val is there, in either layout.
-    await expect(page.getByRole('main').getByRole('button', { name: 'Fler val' }).first()).toBeVisible();
-    // On a phone the item is its page with the next step pinned to the foot and Inte nu under Fler val (D112 item 12).
+    const row = page.getByRole('main').getByRole('listitem').getByRole('link').first();
+    const title = ((await row.textContent()) ?? '').trim();
+    await row.click();
+    const article = page.getByRole('article', { name: `Ärende: ${title}`, exact: true });
+    const alone = page.getByRole('main').getByRole('heading', { level: 1, name: title, exact: true });
+    await expect(article.or(alone).first()).toBeVisible();
+    const item = (await article.isVisible()) ? article : page.getByRole('main');
+    const own = item.getByRole('button', { name: 'Inte nu', exact: true }).first();
+    // The item has its buttons once Fler val is there, in every layout.
+    await expect(item.getByRole('button', { name: 'Fler val' }).first()).toBeVisible();
+    // On a phone the item's page has the next step pinned to the foot and Inte nu under Fler val (D112 item 12).
     if (await own.isVisible()) await own.click();
     else {
-      await page.getByRole('main').getByRole('button', { name: 'Fler val' }).first().click();
+      await item.getByRole('button', { name: 'Fler val' }).first().click();
       await page.getByRole('menuitem', { name: 'Inte nu' }).click();
     }
   }
   await page.getByRole('menuitem', { name: /^I morgon/ }).click();
-  // The item leaves with its row (D112: the queue lets go of it), so the toast and the page are reachable again.
+  await expect(page.getByRole('region', { name: 'Aviseringar' }).getByText(/^Jag påminner dig/)).toBeVisible();
+  // Att göra lets go of the item with its row (D112). Beside Hem the panel keeps it, set aside, until the person closes
+  // it (D112, amended 2026-11-12), as they do here, so the toast and the page are reachable again.
+  const close = page.getByRole('button', { name: 'Stäng panelen' });
+  if (await close.isVisible()) await close.click();
   await expect(page.getByRole('dialog', { name: 'Ärende', exact: true })).toBeHidden();
-  await expect(page).not.toHaveURL(/[?&]item=/);
+  await expect(page).not.toHaveURL(/[?&](item|card)=/);
 }
+/**
+ * Where the page says that a system does not answer (D116, amended 2026-11-12): for each visible "… svarar inte", the
+ * name of the place it stands in (the section, region, article or dialog named by its label or heading), or
+ * "outside main" when it stands above or beside the page's content as a banner did. What a live region holds for a
+ * screen reader is not drawn and is left out.
+ */
+export const silentSaidIn = (page: Page) =>
+  page.getByText(/svarar inte/).evaluateAll(els =>
+    els
+      .filter(el => !el.closest('[aria-live]') && (el as HTMLElement).checkVisibility())
+      .map(el => {
+        if (!el.closest('main, [role="main"], [role="dialog"], [role="complementary"]')) return 'outside main';
+        const place = el.closest('section, article, [role="region"], [role="dialog"], [role="complementary"], header');
+        const by = place?.getAttribute('aria-labelledby');
+        return (
+          place?.getAttribute('aria-label') ??
+          (by ? document.getElementById(by)?.textContent?.trim() : undefined) ??
+          place?.tagName.toLowerCase() ??
+          'main'
+        );
+      }),
+  );
 export const heading = (page: Page, level: number, name: string) =>
   page.locator(`h${level}:not([aria-level]), [aria-level="${level}"]`).filter({ hasText: name });
 export const announcements = (page: Page) =>

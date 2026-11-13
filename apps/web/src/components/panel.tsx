@@ -1,6 +1,14 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useLocation } from 'react-router';
-import type { DayView, PanelViewSpec, SearchResult, TodayView, ViewRef, WeekView } from '@clew/contracts';
+import {
+  answersWithRows,
+  type DayView,
+  type PanelViewSpec,
+  type SearchResult,
+  type TodayView,
+  type ViewRef,
+  type WeekView,
+} from '@clew/contracts';
 import {
   AreaLine,
   ArrowsPointingOutIcon,
@@ -56,13 +64,12 @@ const linkTo = (address: string) =>
 type BodyProps = {
   output: unknown;
   onOpenItem?: (item: AgendaItem, dayItems: AgendaItem[]) => void;
-  /** The capability's declared view (D38) and what it needs to be used: its input and how to change it, where a row's own view lives, and the way back from one. */
+  /** The capability's declared view (D38) and what it needs to be used: its input and how to change it, and where a row's own view lives. */
   view?: PanelViewSpec | undefined;
   source?: string | undefined;
   input?: Record<string, unknown>;
   onInput?: ((next: Record<string, unknown>) => void) | undefined;
   hrefFor?: (view: ViewRef) => string;
-  onBack?: (() => void) | undefined;
   isLoading?: boolean;
   /** Beside the page, where the panel is as narrow as a phone: a table is drawn as its list. */
   inline?: boolean;
@@ -87,6 +94,17 @@ const isSearchResult = (v: unknown): v is SearchResult =>
     r => isRecord(r) && typeof r.ref === 'string' && typeof r.label === 'string' && typeof r.connector === 'string',
   );
 const scalar = (v: unknown) => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
+/**
+ * Whether a read answered with rows (D116): a declared table or list, the search's hits, or an undeclared answer with
+ * `rows`. Such an answer is a page of its own, never a thing in the panel; a day, a record or label/value pairs are not.
+ */
+export const answersWithRowsOf = (view: PanelViewSpec | undefined, output: unknown): boolean =>
+  view
+    ? answersWithRows(view.kind)
+    : !isDayView(output) &&
+      !isTodayView(output) &&
+      !isWeekView(output) &&
+      (isSearchResult(output) || (isRecord(output) && Array.isArray(output.rows)));
 const rowTitle = ['name', 'title', 'label', 'supplier'];
 /** A media query that never matches: a table beside the page is always its list. */
 const NEVER = 'not all';
@@ -200,8 +218,8 @@ function SearchRows({ result, hrefFor }: { result: SearchResult; hrefFor?: ((vie
   );
 }
 /**
- * A read capability's output as the panel draws it. A capability that declares its view (D38) is drawn as it says;
- * without a declaration rows become a list and anything else label/value pairs.
+ * A read capability's output as the panel and a view's page draw it. A capability that declares its view (D38) is drawn
+ * as it says; without a declaration rows become a list and anything else label/value pairs.
  */
 export function PanelBody({
   output,
@@ -211,7 +229,6 @@ export function PanelBody({
   input,
   onInput,
   hrefFor,
-  onBack,
   isLoading,
   inline = false,
 }: BodyProps) {
@@ -238,11 +255,6 @@ export function PanelBody({
       : [];
   return (
     <VStack gap={3}>
-      {onBack && (
-        <HStack>
-          <Button size="sm" variant="ghost" label="Tillbaka" onClick={onBack} />
-        </HStack>
-      )}
       {declared && (
         <DeclaredView
           view={declared}
@@ -352,8 +364,11 @@ export interface PanelFrame {
   subject?: ThingSubject;
   /** The address of what is on screen, so focus finds the link that led away when the person comes back to it. */
   address?: string | undefined;
-  /** A table: over the page it gets a wide drawer. */
-  wide?: boolean;
+  /**
+   * The thing's own page, for a thing too large to read in the panel alone (a record, a document, D116): "Öppna som
+   * sida" in the header, as a work item has it on its title's line. Never the only way to do anything.
+   */
+  page?: string | undefined;
   /** A card: its name is the small label over the card, as artboard E draws "KORT"; a view keeps its title as the heading. */
   kind?: 'card' | 'view';
   /** What is said aloud when this thing takes another's place in the panel: a card's own title, not "Kort"; a view says `title`. */
@@ -393,8 +408,9 @@ type Options = {
   /** Nothing is pinned on a short screen (1.4.10), nor beside a page that has no room for it: the panel is always a drawer there. */
   overlayOnly?: boolean;
   /**
-   * The drawer over the page has closed and Astryx has given the focus back to what opened it. Until then the page
-   * under it is inert; a page whose opener is gone (the row of a card that was sent away) sends the focus on from here.
+   * The drawer over the page has closed and Astryx has given the focus back to what opened it, or the panel beside the
+   * page has closed and nothing on the page leads back to what it held. Until then the page under the drawer is inert;
+   * a page whose opener is gone (the row of a card that was sent away) sends the focus on from here.
    */
   onClosed?: () => void;
   /**
@@ -511,15 +527,20 @@ export function usePanel(
   const returnTo = useRef<string | null>(null);
   /** The address the drawer showed when it was let go of, until it has slid away. */
   const drawerFrom = useRef<string | null>(null);
+  const closed = useRef(onClosed);
+  closed.current = onClosed;
   // Folded away after the last thing closed, the page draws its own layout again, the link that opened the panel with
-  // it: the focus follows that link into the layout, so it is never left on what the page took away (2.4.3).
+  // it: the focus follows that link into the layout, so it is never left on what the page took away (2.4.3). When no
+  // link leads back any more (the item left the page's rows with its own button), the page says where the focus goes.
   useEffect(() => {
     const address = returnTo.current;
     returnTo.current = null;
     if (!address || !collapsed) return;
     const active = document.activeElement;
     if (active instanceof HTMLElement && active !== document.body && active.isConnected) return;
-    linkTo(address)?.focus();
+    const link = linkTo(address);
+    if (link) link.focus();
+    else closed.current?.();
   }, [collapsed]);
   const id = panel?.id ?? null,
     address = panel?.address,
@@ -527,23 +548,32 @@ export function usePanel(
   // What the panel holds changed. Something opened shows the panel again, so it is seen; closing what it held folds the
   // panel away, and its button stays, saying the way back.
   const lastId = useRef<string | null>(null);
+  /** The panel was shown for something opened: its heading takes the focus as it is drawn. */
+  const focusShown = useRef(false);
   useEffect(() => {
     const was = lastId.current;
     lastId.current = id;
     if (id !== null && collapsed) {
       resizable.expand();
       setCollapsed(false);
-      // The heading mounts with the next paint, after the focus rule below has run. Never away from a field the
-      // person is typing in: the box keeps the focus when a conversation brings its panel along.
-      requestAnimationFrame(() => {
-        const active = document.activeElement;
-        if (!(active instanceof HTMLElement && active.matches(TYPING))) heading.current?.focus();
-      });
+      focusShown.current = true;
     } else if (id === null && was !== null) {
+      focusShown.current = false;
       resizable.collapse();
       setCollapsed(true);
     }
   }, [id]);
+  // The heading mounts with the panel shown (or, on a page that draws its panel only once its own content is there, with
+  // that content), after the focus rule below has run: it takes the focus in the commit that draws it, before anything
+  // is painted, so no key pressed once the thing is on screen reaches the page behind it (an Esc that would otherwise
+  // be lost while the focus waited a frame). Never away from a field the person is typing in: the box keeps the focus
+  // when a conversation brings its panel along.
+  useLayoutEffect(() => {
+    if (collapsed || !focusShown.current || !heading.current) return;
+    focusShown.current = false;
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement && active.matches(TYPING))) heading.current.focus();
+  });
   useEffect(() => {
     const from = shown.current;
     shown.current = id === null ? null : { id, address };
@@ -663,6 +693,7 @@ export function usePanel(
           </VStack>
         </StackItem>
         <HStack gap={1} vAlign="center">
+          {named.page && <Button size="sm" variant="secondary" label="Öppna som sida" href={named.page} />}
           {/* A long exchange continues in the conversation view (D112 item 7, board Assistant): the transcript as the
               page's column and the thing as its artifact beside it. */}
           {continueHref && (
@@ -765,8 +796,6 @@ export function usePanel(
   const occupied = inline && (panel !== null || !collapsed);
   // The drawer's dialog fires `close` when it has slid away and left the top layer, after Astryx's own focus return:
   // the moment the page under it takes focus again, and so the one a consumer's listener is given the last word at.
-  const closed = useRef(onClosed);
-  closed.current = onClosed;
   useEffect(() => {
     const dialog = drawer.current;
     if (!dialog) return;
@@ -790,7 +819,7 @@ export function usePanel(
       isOpen={panel !== null}
       onOpenChange={close}
       side="end"
-      width={panel?.wide ? 'min(1100px, 100vw)' : PANEL}
+      width={PANEL}
       label={named?.title ?? 'Vy'}
       padding={0}
     >

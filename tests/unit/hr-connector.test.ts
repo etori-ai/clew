@@ -134,7 +134,13 @@ describe('the HR fixture connector', () => {
       { level: 'ok', text: 'hr.prepareAbsence: employee refused by scope' },
       { level: 'ok', text: 'hr.prepareAbsence about person, propose, input: takes person' },
       { level: 'ok', text: 'hr.prepareAbsence about person, propose, model tool: not offered to the model' },
+      // What it admits (D117), from the declaration: Clew starts it only on the manager's own reports.
+      { level: 'ok', text: 'hr.prepareAbsence names a person in person: Clew sends only managed (person.admits)' },
     ]);
+    expect(about.findings).toContainEqual({
+      level: 'ok',
+      text: 'hr.person names a person in keys: Clew sends only managed (person.admits)',
+    });
   });
   test('the scan gives the manager the rehab talk and the leave requests, and the employee the delegation and the waiting leave', async () => {
     const { registry } = stack();
@@ -435,5 +441,45 @@ describe('the HR fixture connector', () => {
       fresh: true,
     });
     expect(state.get<{ seededOn: string }>('records').seededOn).toBe('2026-12-14');
+  });
+  test('the rehabilitation routine (D115) is policy text for the manager: a list with a menu row, handed whole to the model, about nobody', async () => {
+    const { registry } = stack();
+    const declared = parseManifest(hrManifest, 'hr').capabilities.find(c => c.name === 'hr.rehabRoutine')!;
+    expect([declared.kind, declared.model, declared.scope.roles, declared.about, declared.view?.kind]).toEqual([
+      'read',
+      true,
+      ['manager'],
+      undefined,
+      'list',
+    ]);
+    // The model reads the output itself, not a summary: the routine holds nothing about any employee.
+    expect(declared.view?.modelReads).toBeUndefined();
+    // Its row in the menu, which an administrator places (D40).
+    expect(declared.menu).toEqual({ label: 'Rehabrutinen', icon: 'book' });
+    expect(registry.tools(hillevi).map(t => t.name)).toContain('hr.rehabRoutine');
+    type Step = { ref: string; section: string; at: string; title: string; detail: string };
+    const routine = await registry.run<{ name: string; owner: string; reviewedAt: string; rows: Step[] }>(
+      hillevi,
+      'hr.rehabRoutine',
+      {},
+    );
+    expect([routine.name, routine.owner, routine.reviewedAt]).toEqual([
+      'Rehabiliteringsrutinen',
+      'HR-avdelningen',
+      '2026-03-02',
+    ]);
+    expect(routine.rows.map(r => [r.at, r.title])).toEqual([
+      ['Dag 1', 'Kontakta medarbetaren'],
+      ['Dag 8', 'Be om läkarintyg'],
+      ['Tredje perioden på sex månader', 'Boka ett omtankesamtal'],
+      ['Dag 15', 'Anmäl till Försäkringskassan'],
+      ['Senast dag 30', 'Gör en plan för återgång i arbete'],
+      ['Dag 90 och dag 180', 'Följ upp planen'],
+      ['Första veckan', 'Ha ett uppföljningssamtal'],
+    ]);
+    // The same text for every manager and no employee's name or ref in it.
+    expect(await registry.run(stranger, 'hr.rehabRoutine', {})).toEqual(routine);
+    expect(JSON.stringify(routine)).not.toMatch(/hr:emp:|Lindqvist|Sandström/);
+    await expect(registry.run(hassan, 'hr.rehabRoutine', {})).rejects.toThrow(/behörighet/);
   });
 });

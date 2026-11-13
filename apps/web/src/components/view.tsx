@@ -87,8 +87,12 @@ export interface DeclaredViewProps {
   tableQuery?: string;
   /** A tool page's title: the page's heading at level 1 with the system's badge on its line, the filter bar under it. */
   title?: string;
+  /** The id of that heading, so the page can send the focus to it (`PageHeader`'s `titleId`). */
+  titleId?: string;
   /** Under an answer (artboard 4): "Visa allt" at the end of the header opens the whole view. */
   onShowAll?: () => void;
+  /** Where "Visa allt" leads, as a link (a list's own page, D116); with it `onShowAll` is not needed. */
+  showAllHref?: string | undefined;
   /** A tool page's own control after the view's (D112 item 7: "Fråga Clew"), at the end of the title's line. */
   pageAction?: ReactNode;
   /**
@@ -687,7 +691,9 @@ export function DeclaredView({
   headingLevel = 3,
   tableQuery = '(min-width: 1010px)',
   title,
+  titleId,
   onShowAll,
+  showAllHref,
   pageAction,
   isOpen,
   section,
@@ -713,6 +719,8 @@ export function DeclaredView({
   }, [count, isLoading, controls, announce, view]);
   const end = controls ? (
     <Controls controls={controls} input={input} onInput={onInput!} isLoading={isLoading} />
+  ) : showAllHref ? (
+    <Button size="sm" variant="secondary" label="Visa allt" href={showAllHref} />
   ) : onShowAll ? (
     <Button size="sm" variant="secondary" label="Visa allt" onClick={onShowAll} />
   ) : undefined;
@@ -723,6 +731,7 @@ export function DeclaredView({
     <VStack gap={4}>
       <PageHeader
         title={title}
+        {...(titleId ? { titleId } : {})}
         end={
           <HStack gap={2} vAlign="center" wrap="wrap">
             <SourceChip view={view} />

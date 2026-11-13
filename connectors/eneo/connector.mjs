@@ -10,7 +10,7 @@ const SNIPPET_LIMIT = 1200;
 const FETCH_LIMIT = 1500;
 
 export const manifest = {
-  protocol: 2,
+  protocol: 3,
   id: CONNECTOR,
   kind: 'passthrough',
   source: 'Eneo',
@@ -219,7 +219,7 @@ export function createConnector({
     if (request.method !== 'POST' || !url.pathname.startsWith('/clew/'))
       return json({ error: { code: 'not-found', message: 'Okänd adress.' } }, 404);
     const assertion = (request.headers.get('authorization') ?? '').replace(/^Bearer /, '');
-    const actor = await verify(assertion, request.headers.get('x-clew-connector-key'));
+    const actor = await verify(assertion, request.headers.get('x-clew-connector-key'), request);
     if (!actor) return fail('denied', 'Ogiltigt behörighetsbevis.', 401);
     let body;
     try {

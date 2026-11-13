@@ -16,7 +16,10 @@ import type {
   MenuEntry,
   MenuHint,
   MenuIcon,
+  PersonAccess,
   Receipt,
+  Relation,
+  UnitAccess,
   ReceiptRow,
   SearchKind,
   SessionUser,
@@ -25,6 +28,7 @@ import type {
   ThreadAction,
   ThreadItem,
   View,
+  ViewEntry,
   ViewOpen,
 } from '@clew/contracts';
 import type { Figure, ProtocolErrorCode } from './protocol';
@@ -34,16 +38,21 @@ import {
   DocumentBundleSchema,
   ENTITY_KEY_MAX,
   ENTITY_KEYS_MAX,
+  HoldingsInputSchema,
+  HoldingsOutputSchema,
   MAX_DOCUMENT_BYTES,
   SiteHeaderOutputSchema,
   contractProblems,
+  foldSourceKey,
   isEntityKind,
   type DocumentRequest,
   type DocumentContent,
+  type HoldingsOutput,
   type SiteHeaderOutput,
 } from '@clew/contracts';
 import { Value } from 'typebox/value';
 import { connectorProblems } from './validation';
+import { namedInputs, type NamedInputs } from './named';
 import { pathOf, unfilledInput } from './asks';
 export {
   answersOf,
@@ -127,12 +136,57 @@ export type Scope = ScopeRule | ((actor: Actor) => boolean);
 export const inScope = (scope: Scope, actor: Actor) =>
   typeof scope === 'function' ? scope(actor) : !scope.roles || scope.roles.includes(actor.role);
 
+/**
+ * The people or the units a call names, and how the caller stands to each (D117), as the registry resolved them from
+ * Clew's own directory before the call: every key exactly as the input carries it, in the directory's spelling. A
+ * remote connector receives it as `about` in the request body, which the assertion binds.
+ */
+export interface AboutClaim {
+  entity: EntityKind;
+  relations: Record<string, Relation>;
+}
+/** How the caller stands to one key the input names (D117): `asked` as the input spelled it, `key` as the directory does. */
+export interface Related {
+  asked: string;
+  key: string;
+  relation: Relation;
+}
+/**
+ * The core rule of who may be asked about (D97 item 8, D117), as the registry asks it: how `actor` stands to each of
+ * these keys of `entity`, for the relations in `admits` only. A key the directory does not know, or that names someone
+ * outside `admits`, is absent. With `ids`, a person without a user name may be named by Clew's own id (a core
+ * capability of Clew's own domains only). Throws when the directory cannot be read: never an empty answer for an error.
+ * Composition binds it to the entities module over the people directory.
+ */
+export type RelationResolver = (
+  actor: Actor,
+  entity: EntityKind,
+  keys: readonly string[],
+  admits: readonly Relation[],
+  options?: { ids?: boolean },
+) => Promise<Related[]>;
+/**
+ * The directory could not say how the caller stands to someone (D117): a transient failure, never a refusal. A route
+ * answers it as an error, and an approved write is left unsent as `source-unavailable`, not revoked.
+ */
+export class RelationsUnavailableError extends Error {
+  constructor(cause?: unknown) {
+    super('Katalogen svarar inte just nu.', { cause });
+    this.name = 'RelationsUnavailableError';
+  }
+}
+export { namedInputs, plainStringProperty, type NamedInputs } from './named';
 /** What a capability gets besides the actor and the input: the rest of Clew, as capabilities, for that actor. */
 export interface Clew {
   signal?: AbortSignal;
   chain?: string[];
   /** Stable approved intent key for a direct source write; never propagated through nested calls. */
   operationId?: string;
+  /**
+   * The people or units this call's input names and how the caller stands to each (D117): set by the registry for the
+   * capability it runs, never carried into a nested call and never taken from a caller.
+   */
+  about?: AboutClaim;
   /** Run another connector's `read` or `propose` as the same actor. Scope applies; `execute` is refused. */
   call<O = unknown>(name: string, input?: unknown): Promise<O>;
   /**
@@ -151,6 +205,21 @@ export interface RunContext {
   authorize?: () => Promise<unknown>;
   chain?: string[];
   operationId?: string;
+  /**
+   * Whom the input names, as `validate` resolved it just before (D117): an approved write's dispatch hands it on so the
+   * directory is read once, and a failure to read it can only come before the dispatch is recorded. Used once, and only
+   * for the same actor, capability and input it was issued for; anything else, or something not issued by this
+   * registry, is ignored and the input resolved again. Never carried into a nested call.
+   */
+  resolution?: Resolution;
+}
+/** What `Registry.validate` resolved about whom an input names (D117): opaque, issued and redeemed by one registry. */
+export class Resolution {
+  private constructor() {}
+  /** @internal The registry's own constructor; a caller cannot make one the registry will accept. */
+  static issue() {
+    return new Resolution();
+  }
 }
 
 export type WriteSafety =
@@ -190,6 +259,15 @@ export interface Capability<I = unknown, O = unknown> {
    * cannot carry it, so a remote connector never claims a page inside Clew.
    */
   about?: About & { page?: EntityPage };
+  /**
+   * Who may be asked about through it (D117): the relations a caller may have to a person its input names, and on a
+   * capability not about a person the input property that takes the key. The registry enforces it on every path. Only
+   * Clew's own connectors may add `ids`: a person without a user name may then be named by Clew's own id, as the talks
+   * domain names them; a manifest cannot carry it, since Clew's id is never sent to a connector.
+   */
+  person?: PersonAccess & { ids?: true };
+  /** On a capability about a unit (D117): the relations a caller may have to the unit, `manages` when absent. */
+  unit?: UnitAccess;
   /** On a propose or execute (D112): what the person fills in before it runs, each naming one input property. */
   asks?: Ask[];
   /** On an execute (D112): a read of the same connector, same input, that says what the write will do where. */
@@ -258,6 +336,8 @@ export interface AboutRead {
   column?: string;
   /** The connector is one of Clew's own (`kind: 'core'`): the source is Clew's own domain (D97). */
   core?: true;
+  /** The relations it admits (D117): a key of anyone else is never sent, so the entities module does not ask. */
+  admits: readonly Relation[];
 }
 /** A propose or execute about an entity kind as `Registry.aboutActions` names it for one person (D97). */
 export interface AboutAction {
@@ -272,6 +352,8 @@ export interface AboutAction {
   path: ActionPath;
   /** The connector is one of Clew's own (`kind: 'core'`). */
   core?: true;
+  /** The relations it admits (D117): it is offered only on an entity the reader stands to so. */
+  admits: readonly Relation[];
 }
 /** Plain ordering of ids and names, the same in every locale. */
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
@@ -347,6 +429,28 @@ export interface Connector {
   scan?: (actor: Actor, clew: Clew) => Promise<ThreadDraft[] | ScanObservation>;
   /** The read capability that answers the shared header (D88), when this connector gives Clew one. */
   header?: string;
+  /** The protocol a remote connector's manifest is written to (D60); absent for Clew's own, which follow the current one. */
+  protocol?: number;
+  /**
+   * The reads Clew makes as the installation itself (D119), apart from `capabilities`: no person's path reaches them.
+   * Only `Registry.holdingsSources` and `Registry.readHoldings` call them.
+   */
+  installation?: InstallationRead<any, any>[];
+}
+/**
+ * A read Clew makes as the installation itself, with no person behind the call (D119): no actor, nobody resolved, no
+ * delegated token. Not a capability, so it is never in `capabilities`, never a tool, a view, a card's action or a
+ * callback's target. Today only the holdings profile, `<id>.holdings` (D108 item 9).
+ */
+export interface InstallationRead<I = unknown, O = unknown> {
+  /** `<connector id>.<profile>`, one of `INSTALLATION_PROFILES`. */
+  name: string;
+  /** Swedish, as an administrator reads it. */
+  title: string;
+  description: string;
+  input: TSchema;
+  output: TSchema;
+  run: (input: I, context: { signal?: AbortSignal }) => Promise<O>;
 }
 
 /**
@@ -364,6 +468,63 @@ export class CapabilityError extends Error {
     this.name = 'CapabilityError';
   }
 }
+/** The protocol's error kinds (`ProtocolError.code`). */
+export type SourceErrorCode = 'invalid' | 'denied' | 'not-found' | 'unavailable' | 'unknown';
+/**
+ * Why a read made as the installation gave no answer (D119), in the protocol's error kinds: `not-found` (no enabled
+ * connector declares it for the installation), `invalid` (the input was refused, Clew's or the source's: a cursor the
+ * source does not know), `denied` (the source refused Clew's assertion or its own credential: an operator's matter),
+ * `unavailable` (no answer in time, or a source that is down), `unknown` (anything else, an answer outside the declared
+ * shape or the profile among them). The message is Swedish and names no person.
+ */
+export class InstallationReadError extends CapabilityError {
+  constructor(
+    readonly code: SourceErrorCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'InstallationReadError';
+  }
+}
+/**
+ * What each kind of failure of a read made as the installation says (D119), in Clew's words: a connector's own message
+ * is never passed on, into a log, an audit row or an administrator's check, since nobody knows what it carries (D91).
+ * `source` is the connector's name as the administration shows it.
+ */
+export function installationReadText(code: SourceErrorCode, source: string): string {
+  switch (code) {
+    case 'invalid':
+      return `${source} godtog inte förfrågan.`;
+    case 'denied':
+      return `${source} godtar inte Clews intyg.`;
+    case 'not-found':
+      return UNKNOWN;
+    case 'unavailable':
+      return `${source} svarar inte just nu.`;
+    default:
+      return 'Källans svar kunde inte verifieras.';
+  }
+}
+/** An enabled connector that answers the holdings profile for the installation (D119). */
+export interface HoldingsSource {
+  connectorId: string;
+  /** The system as a person reads it: the connector's `source`. */
+  source: string;
+}
+/**
+ * The port Clew's competence register copies every source's holdings through (D108 item 9, D119). Only the core holds
+ * it: composition binds it to the registry, and nothing a person, the model or a connector reaches can call it.
+ * `readHoldings` reads one page as the installation, validated against the read's declaration and the profile, and
+ * throws `InstallationReadError` with the protocol's error kind.
+ */
+export interface HoldingsReader {
+  holdingsSources(): Promise<HoldingsSource[]>;
+  readHoldings(connectorId: string, cursor?: string, options?: { signal?: AbortSignal }): Promise<HoldingsOutput>;
+}
+/** The schemas of each profile Clew reads as the installation (D119), checked on every call besides the declaration. */
+const INSTALLATION_PROFILE_SCHEMAS: Record<string, { input: TSchema; output: TSchema }> = {
+  holdings: { input: HoldingsInputSchema, output: HoldingsOutputSchema },
+};
 
 /**
  * What an administrator decided about a connector (D23): on or off, who sees it, whether it pushes cards and offers
@@ -441,27 +602,116 @@ export interface RegistryOptions {
    * logs it, the connector check fails on it. The other drafts still become cards, the figure is drawn without its link.
    */
   onRefused?: (connectorId: string, topic: string, problem: string) => void;
+  /**
+   * Who may be asked about (D117): how the caller stands to the people or units an input names. Without it nobody may
+   * be asked about anyone: every key is left out and a call that names one is refused, so a registry built without the
+   * rule fails closed.
+   */
+  relations?: RelationResolver;
 }
 
-export class Registry {
+export class Registry implements HoldingsReader {
   private readonly ajv = addFormats(new Ajv({ allErrors: false, strict: false, addUsedSchema: false }));
   private validators = new WeakMap<object, ReturnType<Ajv['compile']>>();
   private refresh: () => Promise<void> = async () => {};
   private connectors = new Map<string, Connector>();
   private capabilities = new Map<string, { connector: Connector; capability: Capability<any, any> }>();
+  /**
+   * The reads Clew makes as the installation (D119), kept apart from `capabilities`: every person's path looks a name
+   * up there, so a name here is as unknown to it as a name nobody declared.
+   */
+  private installationReads = new Map<string, { connector: Connector; read: InstallationRead<any, any> }>();
   private governed = new Map<string, Governance>();
+  /** The inputs of each capability that name an entity (D117), drawn from the declarations at installation. */
+  private named = new Map<string, NamedInputs>();
+  /** What `validate` resolved, by the opaque handle it gave out (D117): redeemed once by `run`, for the same call only. */
+  private resolutions = new WeakMap<
+    Resolution,
+    { actor: string; name: string; input: string; narrowed: { input: unknown; about?: AboutClaim } }
+  >();
   constructor(private readonly options: RegistryOptions = {}) {}
+  /** The inputs of a capability that name a person or a unit, and what it admits (D117); undefined when none does. */
+  namedInputs(name: string): NamedInputs | undefined {
+    return this.named.get(name);
+  }
+  /**
+   * Who may be asked about, applied to one call (D97 item 8, D117). Every key the input names is resolved against the
+   * caller's place in Clew's own directory: a key in `keys` the caller may not ask about is left out, a second spelling of
+   * one person is left out, and a key that stays is written as the directory spells it. A single key (`about.param`,
+   * `person.param` and the inputs that name a person without declaring it) that the caller may not ask about, or that is
+   * not a string, refuses the call as an unknown capability is refused, so the answer never tells whether that person
+   * exists; it is checked whether or not the input schema lists it. `about` is what the connector is told: each key sent
+   * and its relation. A directory that cannot be read throws `RelationsUnavailableError`, never an empty answer.
+   */
+  private async narrow(actor: Actor, name: string, input: unknown): Promise<{ input: unknown; about?: AboutClaim }> {
+    const named = this.named.get(name);
+    if (!named) return { input };
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw unknownCapability();
+    const given = input as Record<string, unknown>;
+    if (
+      named.keys &&
+      given.keys !== undefined &&
+      (!Array.isArray(given.keys) || given.keys.some(k => typeof k !== 'string'))
+    )
+      throw unknownCapability();
+    const keys = named.keys ? ((given.keys as string[] | undefined) ?? []) : [];
+    const single = named.params.filter(p => given[p] !== undefined);
+    if (single.some(p => typeof given[p] !== 'string')) throw unknownCapability();
+    if (!named.keys && !single.length) return { input };
+    const asked = [...new Set([...keys, ...single.map(p => given[p] as string)])];
+    let related: Related[] = [];
+    if (asked.length && this.options.relations)
+      try {
+        related = await this.options.relations(actor, named.entity, asked, named.admits, { ids: named.ids });
+      } catch (cause) {
+        throw new RelationsUnavailableError(cause);
+      }
+    // The resolver answers for the relations admitted; anything else it says is not trusted.
+    const found = new Map(related.filter(r => named.admits.includes(r.relation)).map(r => [r.asked, r]));
+    const relations: Record<string, Relation> = {};
+    const out: Record<string, unknown> = { ...given };
+    if (named.keys) {
+      const seen = new Set<string>();
+      out.keys = keys.flatMap(k => {
+        const r = found.get(k);
+        const folded = r && foldSourceKey(named.entity, r.key);
+        if (!r || seen.has(folded!)) return [];
+        seen.add(folded!);
+        relations[r.key] = r.relation;
+        return [r.key];
+      });
+    }
+    for (const p of single) {
+      const r = found.get(given[p] as string);
+      if (!r) throw unknownCapability();
+      out[p] = r.key;
+      relations[r.key] = r.relation;
+    }
+    return { input: out, about: { entity: named.entity, relations } };
+  }
+  /** What `validate` resolved for exactly this call, once (D117); undefined for anything else, which is resolved again. */
+  private redeem(actor: Actor, name: string, input: unknown, resolution: Resolution | undefined) {
+    const kept = resolution && this.resolutions.get(resolution);
+    if (!kept) return undefined;
+    this.resolutions.delete(resolution!);
+    return kept.actor === actor.id && kept.name === name && kept.input === JSON.stringify(input)
+      ? kept.narrowed
+      : undefined;
+  }
   private check(connector: Connector) {
     const problems = connectorProblems(connector, schema => this.validator(schema));
     if (problems.length) throw new Error(problems[0]);
-    for (const c of connector.capabilities) {
-      const existing = this.capabilities.get(c.name);
+    // One name space for both: a person's name and the installation's never collide, whichever connector declares them.
+    for (const name of [...connector.capabilities, ...(connector.installation ?? [])].map(c => c.name)) {
+      const existing = this.capabilities.get(name) ?? this.installationReads.get(name);
       if (existing && existing.connector.id !== connector.id)
-        throw new Error(`Capability ${c.name} is already registered.`);
+        throw new Error(`Capability ${name} is already registered.`);
     }
   }
   private install(connector: Connector) {
     for (const c of connector.capabilities) this.capabilities.set(c.name, { connector, capability: c });
+    for (const r of connector.installation ?? []) this.installationReads.set(r.name, { connector, read: r });
+    for (const [name, inputs] of namedInputs(connector)) this.named.set(name, inputs);
     this.connectors.set(connector.id, connector);
     return this;
   }
@@ -475,7 +725,11 @@ export class Registry {
     const found = this.connectors.get(id);
     this.governed.delete(id);
     if (!found) return false;
-    for (const c of found.capabilities) this.capabilities.delete(c.name);
+    for (const c of found.capabilities) {
+      this.capabilities.delete(c.name);
+      this.named.delete(c.name);
+    }
+    for (const r of found.installation ?? []) this.installationReads.delete(r.name);
     this.connectors.delete(id);
     return true;
   }
@@ -507,8 +761,16 @@ export class Registry {
   /**
    * Validate an approval without performing its source effect. `pending` names asked properties (D112) the person
    * answers later, when they decide: the input may lack them though the schema requires them, and nothing else.
+   * `subjects: false` is for reading what was already decided (D117): who the input names is resolved for a new effect,
+   * an approval or a dispatch, not for showing a decision that someone has since moved away from.
    */
-  async validate(actor: Actor, name: string, input: unknown, pending: readonly string[] = []) {
+  async validate(
+    actor: Actor,
+    name: string,
+    input: unknown,
+    pending: readonly string[] = [],
+    options: { subjects?: boolean } = {},
+  ) {
     await this.refresh();
     const found = this.allowed(actor, name);
     if (!found) throw unknownCapability();
@@ -516,7 +778,12 @@ export class Registry {
     const waiting = pending.filter(p => asked.has(p));
     if (!this.validator(found.capability.input, waiting)(input))
       throw new CapabilityError('Ogiltig förfrågan till ' + name + '.', 'invalid');
-    return found;
+    // A write about someone the person may not ask about is refused before it is approved (D117), as it is when it runs.
+    if (options.subjects === false) return found;
+    const narrowed = await this.narrow(actor, name, input);
+    const resolution = Resolution.issue();
+    this.resolutions.set(resolution, { actor: actor.id, name, input: JSON.stringify(input), narrowed });
+    return { ...found, resolution };
   }
   private pendingValidators = new WeakMap<object, Map<string, ReturnType<Ajv['compile']>>>();
   private validator(schema: object, pending: readonly string[] = []) {
@@ -629,13 +896,14 @@ export class Registry {
           throw unknownCapability();
         if ((context.chain?.length ?? 0) >= 8 || context.chain?.includes(name))
           throw new CapabilityError('Anropet innehåller en cirkulär förfrågan.', 'invalid');
-        return this.invoke<O>(
+        const { output } = await this.invoke<O>(
           actor,
           name,
           input,
           { authorize: context.authorize, delegate: context.delegate, chain: context.chain, signal: context.signal },
           true,
         );
+        return output;
       },
       ...(context.delegate ? { delegate: context.delegate } : {}),
     };
@@ -643,14 +911,17 @@ export class Registry {
   /**
    * Run a capability for an actor. Visibility, the capability switch and scope are checked here, so every path (REST,
    * tool, card action, connector callback) is equal. A hidden connector answers exactly as an unknown capability does.
+   * Who may be asked about is checked here too (D117): an input that names a person or a unit reaches the connector
+   * with only the keys the caller may ask about, and the connector is told how the caller stands to each.
    * The context (the session's delegate) travels into every nested call the capability makes.
    */
   async run<O = unknown>(actor: Actor, name: string, input: unknown, context: RunContext = {}): Promise<O> {
-    return this.invoke<O>(actor, name, input, context, false);
+    return (await this.invoke<O>(actor, name, input, context, false)).output;
   }
   /**
-   * `run`, and with `nested` a connector's `clew.call`, which reaches another connector's reads and proposals only. Only
-   * `clewFor` passes `nested`, so the execution ledger, which runs an approved execute through `run`, never does.
+   * `run`, with what the call was narrowed to (D117): the input the connector got and what it was told. With `nested`
+   * it is a connector's `clew.call`, which reaches another connector's reads and proposals only. Only `clewFor` passes
+   * `nested`, so the execution ledger, which runs an approved execute through `run`, never does.
    */
   private async invoke<O>(
     actor: Actor,
@@ -658,7 +929,7 @@ export class Registry {
     input: unknown,
     context: RunContext,
     nested: boolean,
-  ): Promise<O> {
+  ): Promise<{ output: O; narrowed: { input: unknown; about?: AboutClaim } }> {
     await this.refresh();
     if (context.authorize) await context.authorize();
     const found = this.findFor(actor, name);
@@ -671,10 +942,13 @@ export class Registry {
       throw new CapabilityError('Du saknar behörighet för åtgärden.', 'denied');
     if (!this.validator(found.capability.input)(input))
       throw new CapabilityError('Ogiltig förfrågan till ' + name + '.', 'invalid');
+    const narrowed = this.redeem(actor, name, input, context.resolution) ?? (await this.narrow(actor, name, input));
+    const { resolution: _resolution, ...carried } = context;
+    const clew = this.clewFor(actor, { ...carried, chain: [...(context.chain ?? []), name] }, found.connector.id);
     const output = await found.capability.run(
       actor,
-      input,
-      this.clewFor(actor, { ...context, chain: [...(context.chain ?? []), name] }, found.connector.id),
+      narrowed.input,
+      narrowed.about ? { ...clew, about: narrowed.about } : clew,
     );
     // An answer Clew cannot verify is the source's failure, as if it had not answered.
     if (!this.validator(found.capability.output)(output))
@@ -685,14 +959,20 @@ export class Registry {
     await this.refresh();
     if (context.authorize) await context.authorize();
     if (!this.allowed(actor, name)) throw unknownCapability();
-    return output as O;
+    return { output: output as O, narrowed };
   }
   /** Metadata and binary bytes share the read's scope and source, with a final descriptor/policy check. */
   async document(actor: Actor, request: DocumentRequest, context: RunContext = {}): Promise<DocumentContent> {
     await this.refresh();
     const initial = this.allowed(actor, request.capability);
     if (initial?.capability.kind !== 'read' || !initial.connector.documents) throw unknownCapability();
-    const output = await this.run<Record<string, unknown>>(actor, request.capability, request.input, context);
+    const { output, narrowed } = await this.invoke<Record<string, unknown>>(
+      actor,
+      request.capability,
+      request.input,
+      context,
+      false,
+    );
     const found = this.allowed(actor, request.capability);
     if (found?.connector !== initial.connector) throw unknownCapability();
     const view = found?.capability.view;
@@ -708,7 +988,13 @@ export class Registry {
       document.revision !== request.documentRevision
     )
       throw new CapabilityError('Underlaget har ändrats. Öppna dokumentet igen.', 'invalid');
-    const content = await found.connector.documents(actor, request, this.clewFor(actor, context, found.connector.id));
+    // The bytes are asked for with the input the metadata read was narrowed to, and told the same relations (D117).
+    const clew = this.clewFor(actor, context, found.connector.id);
+    const content = await found.connector.documents(
+      actor,
+      { ...request, input: narrowed.input as DocumentRequest['input'] },
+      narrowed.about ? { ...clew, about: narrowed.about } : clew,
+    );
     if (
       content.bytes.length !== document.size ||
       content.bytes.length > MAX_DOCUMENT_BYTES ||
@@ -1017,6 +1303,7 @@ export class Registry {
           lens: choice?.lens === true,
           ...(column ? { column } : {}),
           ...(connector.kind === 'core' ? { core: true as const } : {}),
+          admits: this.named.get(capability.name)?.admits ?? [],
         },
       ];
     });
@@ -1035,6 +1322,7 @@ export class Registry {
               param: capability.about.param,
               path: pathOf(capability, [capability.about.param])!,
               ...(connector.kind === 'core' ? { core: true as const } : {}),
+              admits: this.named.get(capability.name)?.admits ?? [],
             },
           ]
         : [],
@@ -1113,6 +1401,70 @@ export class Registry {
     return [...this.connectors.values()].some(
       c => this.governance(c.id).state === 'enabled' && c.facts?.some(f => f.kind === kind),
     );
+  }
+  /**
+   * The connectors that answer the holdings profile for the installation (D108 item 9, D119): enabled, declaring
+   * `<id>.holdings` under `installation`, the read not switched off. By connector id. The call itself names nobody,
+   * so no audience narrows it; what it answers is about people, so the competence register keeps a row only for a
+   * person inside the connector's audience (D23, composition's `admitted`).
+   */
+  async holdingsSources(): Promise<HoldingsSource[]> {
+    await this.refresh();
+    return [...this.installationReads.values()]
+      .filter(
+        ({ connector, read }) => read.name === connector.id + '.holdings' && this.answers(connector.id, read.name),
+      )
+      .map(({ connector }) => ({ connectorId: connector.id, source: connector.source }))
+      .sort((a, b) => compare(a.connectorId, b.connectorId));
+  }
+  /**
+   * One page of every holding one source has, read as the installation (D119): `{}` for the first page, `{ cursor }`
+   * with the `next` of the page before. Validated against the read's declaration and the profile; refused with
+   * `InstallationReadError` in the protocol's error kinds. The core's alone: no person's path leads here.
+   */
+  async readHoldings(
+    connectorId: string,
+    cursor?: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<HoldingsOutput> {
+    return this.asInstallation<HoldingsOutput>(
+      connectorId + '.holdings',
+      cursor === undefined ? {} : { cursor },
+      options,
+    );
+  }
+  /** Whether a connector answers one of its installation reads now: enabled, and the read not switched off (D23, D119). */
+  private answers(connectorId: string, name: string) {
+    const governance = this.governance(connectorId);
+    return governance.state === 'enabled' && governance.capabilities[name]?.enabled !== false;
+  }
+  /**
+   * Run a read the installation makes itself (D119). The one way into `installationReads`, and private: a person's path
+   * (`run`, `validate`, `document`, `clewFor`, `scan`, `header`) never comes here, and this never takes an actor, so
+   * nothing a person, the model or a connector sends can name such a read. The input and the answer are checked against
+   * the declaration and the profile, and the governance again after the answer, as a person's call is.
+   */
+  private async asInstallation<O>(name: string, input: unknown, context: { signal?: AbortSignal }): Promise<O> {
+    await this.refresh();
+    const found = this.installationReads.get(name);
+    if (!found || !this.answers(found.connector.id, name)) throw new InstallationReadError('not-found', UNKNOWN);
+    const profile = INSTALLATION_PROFILE_SCHEMAS[name.slice(found.connector.id.length + 1)];
+    if (!this.validator(found.read.input)(input) || (profile && !this.validator(profile.input)(input)))
+      throw new InstallationReadError('invalid', 'Ogiltig förfrågan till ' + name + '.');
+    let output: unknown;
+    try {
+      output = await found.read.run(input, context.signal ? { signal: context.signal } : {});
+    } catch (error) {
+      if (error instanceof InstallationReadError) throw error;
+      throw new InstallationReadError('unavailable', `${found.connector.source} svarar inte just nu.`);
+    }
+    if (!this.validator(found.read.output)(output) || (profile && !this.validator(profile.output)(output)))
+      throw new InstallationReadError('unknown', 'Källans svar kunde inte verifieras.');
+    // An administrator can switch the connector off while it answers: nothing is released under the old decision.
+    await this.refresh();
+    if (this.installationReads.get(name)?.connector !== found.connector || !this.answers(found.connector.id, name))
+      throw new InstallationReadError('not-found', UNKNOWN);
+    return output as O;
   }
   /** The read a row of this capability's view opens (D38), when the person may call it. */
   private opens(actor: Actor, capability: Capability): ViewOpen | undefined {
@@ -1247,6 +1599,20 @@ export class Registry {
         });
     }
     return out.sort((a, b) => a.label.localeCompare(b.label, 'sv'));
+  }
+  /**
+   * The reads a person may open as a view (D116): every read capability they may call, with its title and the kind of
+   * view it declares (D38). Each has a page of its own; the browser opens one that answers with rows there and anything
+   * else beside the page it was opened from. A read the person may not call is missing, as one that does not exist is.
+   */
+  views(actor: Actor): ViewEntry[] {
+    return this.capabilitiesFor(actor)
+      .filter(({ capability }) => capability.kind === 'read')
+      .map(({ capability }) => ({
+        capability: capability.name,
+        title: capability.title,
+        ...(capability.view ? { kind: capability.view.kind } : {}),
+      }));
   }
   /**
    * Tool definitions for the model: `model: true` capabilities the person may call, from connectors whose tools are on (D8).

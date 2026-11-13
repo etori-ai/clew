@@ -1,0 +1,23 @@
+{
+  "description": "The site's accounts asked before the seed gave the service account moodle/site:viewparticipants (2026-11-12, the first try of this read): the front page's participants are refused with nopermissions. The connector answers it as the service refused (denied), an operator's matter.",
+  "request": {
+    "method": "POST",
+    "path": "/webservice/rest/server.php",
+    "headers": {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Accept": "application/json"
+    },
+    "body": "wstoken=%3Cthe+service+account+token%3E&moodlewsrestformat=json&moodlewssettingraw=true&wsfunction=core_enrol_get_enrolled_users&courseid=1&options%5B0%5D%5Bname%5D=userfields&options%5B0%5D%5Bvalue%5D=id%2Cusername%2Cidnumber%2Csuspended&options%5B1%5D%5Bname%5D=limitnumber&options%5B1%5D%5Bvalue%5D=5"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "exception": "core\\exception\\required_capability_exception",
+      "errorcode": "nopermissions",
+      "message": "Sorry, but you do not currently have permissions to do that (View participants)."
+    }
+  }
+}

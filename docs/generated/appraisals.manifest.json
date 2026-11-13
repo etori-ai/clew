@@ -1,5 +1,5 @@
 {
-  "protocol": 2,
+  "protocol": 3,
   "id": "appraisals",
   "kind": "passthrough",
   "source": "Samtalssystemet",
@@ -138,6 +138,13 @@
       "description": "Åtgärdspunkter från utvecklingssamtalen: en medarbetares, för medarbetarens chef, eller utan medarbetare de som är dina och de som gäller dig.",
       "model": false,
       "scope": {},
+      "person": {
+        "param": "person",
+        "admits": [
+          "self",
+          "managed"
+        ]
+      },
       "input": {
         "type": "object",
         "properties": {
@@ -410,6 +417,11 @@
       },
       "about": {
         "entity": "person"
+      },
+      "person": {
+        "admits": [
+          "managed"
+        ]
       },
       "input": {
         "type": "object",

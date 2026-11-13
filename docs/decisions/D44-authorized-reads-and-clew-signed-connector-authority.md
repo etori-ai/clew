@@ -4,7 +4,7 @@ Date: 2026-11-05
 
 Area: identity
 
-Status: accepted; phase 1 of the approved reliability and authorization plan
+Status: accepted; phase 1 of the approved reliability and authorization plan; the request assertion bound to its body and capability by [D117](D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md) (2026-11-12, provisional)
 
 ## Decision
 
@@ -21,3 +21,17 @@ The review found disclosure paths around the stream filter and shared-secret hol
 ## Replaces
 
 Narrows D21's identity and version-transition rules and D23's implicit governance behavior. D25's ports and functional use cases remain. This decision accepts the authorization slice of the [implementation plan](../architecture/reliability-and-authorization-plan.md); later durable execution, occurrence, timer and delivery increments remain to be implemented.
+
+## Amended 2026-11-12 (D117)
+
+Every request assertion is bound to the one request it is sent with: its `body` claim is the SHA-256 of the exact
+request body (base64url), and on `/clew/capabilities/{name}` its `capability` claim is that name
+([D117](D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md)). The verifier
+every connector in the repository carries recomputes both from the request it received and refuses any other, so the
+input cannot be changed and an assertion cannot be replayed on another capability within its two minutes. When the input
+names people or units, the body also carries `about`: each key sent and how the actor stands to it. It is in the bound
+body rather than the bearer, so the header stays one size however many keys a call names, and it is never in the
+callback grant. This is part of protocol 3, a break under D60: the verifier of 3 refuses an assertion without `body`,
+so a connector built from it answers 401 to a Clew that speaks only 2, and a connector that validates request bodies
+against the closed `CallRequest` of 2 refuses one that carries `about`. A connector on 2 is loaded for a window, is sent
+no `about`, and verifies the actor as before; to move to 3 it verifies `body` and `capability` against the request.

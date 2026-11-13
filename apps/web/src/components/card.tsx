@@ -49,12 +49,23 @@ import { dismissed, reopened, snoozed } from '../optimistic';
 import { invalidateStream } from '../thread-cache';
 import { useConversation } from './conversation-context';
 import { executionStatus } from '../execution-status';
+import { QUEUED_LINE, useSilentSources } from './silent-sources';
 import type { Marks } from '../marks';
-import { returnedReview, selectionAfterReview, withReview } from '../review-address';
+import { reviewHref } from '../review-address';
+import {
+  approvedOf,
+  begun,
+  leftOf,
+  nextStep,
+  reviewLeftFor,
+  reviewRows,
+  selectionAfterReview,
+  useReviewDraft,
+} from '../review-session';
 import { entityHref } from '../person-address';
 
 /**
- * What a work item can do (D112 item 4), shared by every place one is drawn (`work-item.tsx`) and by the review over it
+ * What a work item can do (D112 item 4), shared by every place one is drawn (`work-item.tsx`) and by its review's page
  * (D73): its actions, the confirm they ask, the time pickers, Avfärda and Återöppna, and the row of buttons. The item's
  * shape is `work-item.tsx`'s; this file holds no layout of its own beyond the buttons.
  */
@@ -437,6 +448,8 @@ export function useCardAction({
     />
   ) : null;
   const parts = question.current ? confirmParts(question.current) : null;
+  // The item's system does not answer: the question says that what is sent is queued and read back (D45, D47).
+  const silent = useSilentSources().of(thread.connector);
   const confirmation = (
     <AlertDialog
       isOpen={asked !== null}
@@ -444,7 +457,7 @@ export function useCardAction({
         if (!open) answer(false);
       }}
       title={parts?.title ?? ''}
-      description={parts?.description ?? ''}
+      description={parts ? (silent ? `${parts.description} ${QUEUED_LINE}` : parts.description) : ''}
       actionLabel={question.current?.label ?? ''}
       cancelLabel="Avbryt"
       onAction={() => answer(true)}
@@ -502,7 +515,7 @@ export function useCardAction({
     dialog: actionDialog,
   };
 }
-/** The execute a card reviews one row at a time before it sends (D70): its next step is then "Granska N", which opens the review over the page (D73, D111 rule 5). */
+/** The execute a card reviews one row at a time before it sends (D70): its next step is then "Granska N", which leads to the review's page (D73, amended 2026-11-12). */
 export const reviewedAction = (thread: Thread) =>
   thread.actions.find(a => a.role === 'primary' && a.kind === 'execute' && a.review === 'each');
 
@@ -526,38 +539,31 @@ export function useThreadActions({ thread, onChange, onRead }: ActionProps) {
     onRead,
   });
   const status = executionStatus(thread.execution);
+  // Said in the words the item shows, which say that it is queued while its system does not answer.
+  const said = executionStatus(thread.execution, !!useSilentSources().of(thread.connector));
   const lastStatus = useRef(status),
     announce = useAnnounce({ hasReplace: true });
   useEffect(() => {
     if (settling || status === lastStatus.current) return;
     lastStatus.current = status;
-    announce(status ?? thread.receipt?.headline ?? 'Åtgärden är kontrollerad.');
+    announce(said ?? thread.receipt?.headline ?? 'Åtgärden är kontrollerad.');
   }, [status, settling, announce, thread.receipt?.headline]);
-  // The card starts from the rows the connector marked. Back from the review with ✕, Esc or the scrim (D73), the
-  // review's decisions are laid over the selection: a row chosen for approval is ticked, a row left behind is not, and a
-  // row the review never judged keeps the tick it had, so a review opened and closed again changes nothing (it used to
-  // hand back the approved rows as the whole selection, which cleared the connector's marks; the product owner,
-  // 2026-11-11). A change to the thread starts it over from the connector's marks. The card stood under the review all
-  // along, wherever it is drawn (D111 rule 5), so the decisions are taken for each entry that hands them back, not only
-  // when the card is drawn.
-  const { state, key } = useLocation();
-  const returned = returnedReview(state, thread.id);
-  const returnedAt = returned ? key : null;
+  // The card starts from the rows the connector marked, with a review begun on its page laid over them
+  // (`review-session.ts`): a row chosen for approval is ticked, a row left behind is not, and a row the review has not
+  // judged keeps the tick it had, so a review opened and left again changes nothing (the product owner, 2026-11-11). A
+  // change to the thread starts it over. Back from the review, the item gives the focus to the control that led there
+  // (`reviewLeftFor`, read as the item is drawn).
+  const [draft] = useReviewDraft(reviewedAction(thread) ? thread : undefined);
   const marked = () => thread.items.filter(i => i.selected).map(i => i.ref);
-  const [selected, setSelected] = useState<string[]>(() =>
-    returned ? selectionAfterReview(marked(), returned) : marked(),
-  );
-  const seededReturn = useRef(returnedAt);
-  useEffect(() => {
-    if (!returned || seededReturn.current === returnedAt) return;
-    seededReturn.current = returnedAt;
-    setSelected(current => selectionAfterReview(current, returned));
-  }, [returnedAt]);
+  const withDraft = () =>
+    selectionAfterReview(marked(), { approved: approvedOf(draft, thread.items), left: leftOf(draft, thread.items) });
+  const [selected, setSelected] = useState<string[]>(withDraft);
+  const [returned] = useState(() => reviewLeftFor(thread.id));
   const seededAt = useRef(thread.updatedAt);
   useEffect(() => {
     if (seededAt.current === thread.updatedAt) return;
     seededAt.current = thread.updatedAt;
-    setSelected(marked());
+    setSelected(withDraft());
   }, [thread.updatedAt]);
   const client = useQueryClient();
   const leave = useLeaveWithUndo(apply);
@@ -583,7 +589,7 @@ export function useThreadActions({ thread, onChange, onRead }: ActionProps) {
       refocus: true,
     });
   }, [request]);
-  // A card whose next step is a review (D70): "Granska N" opens the review over the page, which sends once with the approved refs (D73).
+  // A card whose next step is a review (D70): "Granska N" leads to the review's page, which sends once with the approved refs (D73).
   const reviewed = reviewedAction(thread);
   // The card leaves at once (D64); the toast with Ångra confirms when the server has it.
   const dismiss = () =>
@@ -627,8 +633,10 @@ export function useThreadActions({ thread, onChange, onRead }: ActionProps) {
     dismiss,
     pickRemind,
     reviewed,
-    /** The history entry the review handed its decisions back on, or null: the card's "Granska N" takes the focus once per entry. */
-    returned: returnedAt,
+    /** The review begun on its page, if any: "Granska N" is then "Fortsätt granska". */
+    draft,
+    /** The address of this item's review the person has just left, or null: the control leading there takes the focus. */
+    returned,
     /** The alert dialog an action with `confirm` asks in; the card and the row render it. */
     confirmation,
     /** The action dialog (D112 item 10) of an action that asks or says what it writes; the item renders it. */
@@ -643,7 +651,7 @@ export type Actions = ReturnType<typeof useThreadActions>;
  * control's name is "Öppna i ekonomisystemet (öppnas i ny flik)" as a link out's is. A read into the panel unfolds in
  * the card instead and is not marked.
  */
-const leavingMark = (action: ThreadAction) =>
+export const leavingMark = (action: ThreadAction) =>
   action.kind === 'read' && action.target === 'link'
     ? { endContent: <Icon icon="externalLink" label="(öppnas i ny flik)" /> }
     : {};
@@ -655,28 +663,36 @@ const reopenable = (thread: Thread) =>
  * A work item's buttons (D112 item 4, boards WorkItem, Inbox and PhoneItem): the one next step from the connector,
  * filled only when the item is due today (D48), its secondary actions, the item's one time action (D49: Inte nu while
  * it is the person's, Påminn mig while it waits on someone else), "Lägg till i samtalet" where the page has a box (D111
- * rule 6), and ⋯ with the rest and Avfärda. A step reviewed one row at a time is "Granska N", a link that lays the review
- * over the page (D70, D73, D111 rule 5). A decision on its way says so with Kontrollera status; a decided item keeps
+ * rule 6), and ⋯ with the rest and Avfärda. A step reviewed one row at a time is "Granska N", a link to the review's own
+ * page ("Fortsätt granska" once begun; D70, D73 amended 2026-11-12). A decision on its way says so with Kontrollera status; a decided item keeps
  * "Visa granskning" and its reads; a dismissed one offers Återöppna. The receipt's Ångra is the receipt's own
  * (`work-item.tsx`). `pinned` is the phone's bar at the foot of the page (board PhoneItem): the next step and the first
- * secondary side by side the width of the screen, everything else under ⋯.
+ * secondary side by side the width of the screen, everything else under ⋯. An action the item draws elsewhere
+ * (`omit`: a notice's link out, after its text) is not drawn here too.
  */
 export function ActionRow({
   thread,
   actions,
   pinned = false,
   openRead = null,
+  readHref,
   readSection,
+  omit,
 }: {
   thread: Thread;
   actions: Actions;
   pinned?: boolean;
   /** The read unfolded in the item now (`CardRead`), whose button says so. */
   openRead?: string | null;
+  /** Where a read that answers with rows leads: its own page (D116). Such a read is a link, not a disclosure. */
+  readHref?: ((action: ThreadAction) => string | undefined) | undefined;
   /** The id of the section a read unfolds in. */
   readSection?: string;
+  /** The ids of the actions the item draws in another place. */
+  omit?: readonly string[] | undefined;
 }) {
   const conversation = useConversation();
+  const silent = useSilentSources().of(thread.connector);
   const chipRef = 'thread:' + thread.id;
   const inConversation = conversation.chipped.includes(chipRef);
   const open = thread.state === 'open';
@@ -688,47 +704,64 @@ export function ActionRow({
     demo: { label: 'Om 10 sekunder', seconds: 10 },
     onPick: pickRemind,
   });
-  const primary = thread.actions.find(a => a.role === 'primary');
-  const secondary = thread.actions.filter(a => a.role === 'secondary').slice(0, 2);
-  const overflow = thread.actions.filter(
-    a => a.role === 'overflow' || (a.role === 'secondary' && !secondary.includes(a)),
-  );
+  const here = omit?.length ? thread.actions.filter(a => !omit.includes(a.id)) : thread.actions;
+  const primary = here.find(a => a.role === 'primary');
+  const secondary = here.filter(a => a.role === 'secondary').slice(0, 2);
+  const overflow = here.filter(a => a.role === 'overflow' || (a.role === 'secondary' && !secondary.includes(a)));
   const count = selected.length;
   /**
    * A read that unfolds in the item says so on its button (a disclosure, 4.1.2): whether it is unfolded and, while it
    * is, the section it controls. The item finds the button again by `data-read` when the section's own toggle folds it.
    */
   const readState = (a: ThreadAction) =>
-    a.kind === 'read' && a.target !== 'link'
+    a.kind === 'read' && a.target !== 'link' && !readHref?.(a)
       ? {
           'aria-expanded': openRead === a.id,
           ...(openRead === a.id && readSection ? { 'aria-controls': readSection } : {}),
           'data-read': a.id,
         }
       : {};
+  /** A read that answers with rows leads to its page as a link (D116); every other action is pressed. */
+  const pressOrLink = (a: ThreadAction) => {
+    const href = readHref?.(a);
+    return href ? { href } : { clickAction: () => perform(a) };
+  };
   // "Attestera 2 valda" on an item whose rows are chosen (boards WorkItem and Inbox).
   const primaryLabel = primary && selectable ? `${primary.label} ${count} valda` : primary?.label;
   const due = streamGroup(thread, today()) === 'nu';
   const size = 'lg' as const;
   const width = pinned ? '100%' : undefined;
-  // Back from the review with ✕, Esc or the scrim (D73), the focus is on "Granska N" again, wherever the item is drawn.
-  // The review leads back only once it has slid away, so the page is no longer inert; the panel puts the focus on its
-  // heading when it opens with the page (usePanel's effect runs after the item's), so this waits a frame.
+  // Back from the review's page (by Back, its trail, or once it is sent), the focus is on the control that led there,
+  // wherever the item is drawn: a row under Dokument, else "Granska N" (now perhaps "Fortsätt granska" or "Visa
+  // granskning"). The page puts the focus on its heading or the item's as it is drawn, a frame after the item's own
+  // effects, so this waits two.
   const review = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!returned) return;
-    const frame = requestAnimationFrame(() => review.current?.focus());
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        const pressed = document.querySelector<HTMLElement>(`a[href="${CSS.escape(returned)}"]`);
+        (pressed ?? review.current)?.focus();
+      });
+    });
     return () => cancelAnimationFrame(frame);
   }, [returned]);
+  // "Granska N" leads to the review's page with this page as its way back; once begun, "Fortsätt granska" leads to the
+  // first row not yet judged (`review-session.ts`).
   const { pathname, search } = useLocation();
-  const reviewLink = withReview(pathname, search, thread.id);
+  const rows = reviewRows(thread);
+  const going = open && begun(actions.draft);
+  const reviewLink = reviewHref(thread.id, {
+    from: pathname + search,
+    ...(going ? { step: nextStep(actions.draft, rows) } : {}),
+  });
   const primaryButton = primary ? (
     reviewed ? (
       <Button
         ref={review}
         size={size}
         variant={due ? 'primary' : 'secondary'}
-        label={`Granska ${thread.items.filter(i => i.selectable).length}`}
+        label={going ? 'Fortsätt granska' : `Granska ${rows.length}`}
         width={width}
         href={reviewLink}
       />
@@ -740,7 +773,7 @@ export function ActionRow({
         isDisabled={selectable && count === 0}
         isLoading={settling && pressed === primary.id}
         width={width}
-        clickAction={() => perform(primary)}
+        {...pressOrLink(primary)}
         data-action={primary.id}
         data-thread={thread.id}
         {...readState(primary)}
@@ -779,7 +812,12 @@ export function ActionRow({
         menuMaxHeight={480}
       >
         {[...tucked, ...overflow].map(a => (
-          <DropdownMenuItem key={a.id} label={a.label} onClick={() => void perform(a)} {...leavingMark(a)} />
+          <DropdownMenuItem
+            key={a.id}
+            label={a.label}
+            {...(readHref?.(a) ? { href: readHref(a) } : { onClick: () => void perform(a) })}
+            {...leavingMark(a)}
+          />
         ))}
         {time && <TimeSubMenu label="Inte nu" rows={time.rows} own={time.own} />}
         {([...tucked, ...overflow].length > 0 || time) && <DropdownMenuDivider />}
@@ -789,10 +827,16 @@ export function ActionRow({
       {remindRows.dialog}
     </>
   );
-  const pending = executionStatus(thread.execution);
+  const pending = executionStatus(thread.execution, !!silent);
   const viewReview =
     reviewed && (thread.receipt || pending || !open) ? (
-      <Button ref={review} size={size} variant="secondary" label="Visa granskning" href={reviewLink} />
+      <Button
+        ref={review}
+        size={size}
+        variant="secondary"
+        label="Visa granskning"
+        href={reviewHref(thread.id, { from: pathname + search })}
+      />
     ) : null;
   // A started action that was not sent because its user name had moved to someone else, or away (D122): said so, and
   // decided again with the item's own button, on the user name the person has now. Nothing is left to check.
@@ -839,7 +883,7 @@ export function ActionRow({
         label={a.label}
         isLoading={settling && pressed === a.id}
         width={width}
-        clickAction={() => perform(a)}
+        {...pressOrLink(a)}
         data-action={a.id}
         data-thread={thread.id}
         {...readState(a)}
@@ -899,7 +943,7 @@ export function ActionRow({
           size={size}
           variant="secondary"
           label={a.label}
-          clickAction={() => perform(a)}
+          {...pressOrLink(a)}
           {...readState(a)}
           {...leavingMark(a)}
         />

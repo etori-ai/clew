@@ -280,6 +280,8 @@ api.get('/areas', async c => {
     areas: await listAreas(context),
     menu: registry.menu(audiencedActorOf(context)),
     systems: registry.systems(audiencedActorOf(context)),
+    // Every read the person may open as a view (D116): what decides whether something opened is a page or a peek beside one.
+    views: registry.views(audiencedActorOf(context)),
   });
 });
 /**

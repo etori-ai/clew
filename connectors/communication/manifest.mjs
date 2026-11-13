@@ -73,19 +73,30 @@ const acknowledge = {
   output: executeResult,
 };
 
-// The news profile (D112): every notice is news the person may read, newest first, each opening in Clew with its text.
-// Clew joins this with every other news source as `clew.news`, Hem's "Nyheter" and "Alla nyheter".
+// The news profile (D112): every notice is news the person may read, newest first. One the system shows in full has
+// its `link`, and leaves Clew there; the others open in Clew with their text. Clew joins this with every other news
+// source as `clew.news`, Hem's "Nyheter" and "Alla nyheter".
 const news = {
   name: 'communication.news',
   kind: 'read',
   title: 'Nyheter',
-  description: 'Kommunens nyheter som den inloggade får läsa: rubrik, avsändare och när de publicerades.',
+  description:
+    'Kommunens nyheter som den inloggade får läsa: rubrik, avsändare, när de publicerades och länk till hela texten.',
   model: false,
   scope: everyone,
   input: empty,
   output: object({
     rows: array(
-      object({ ref: string, title: string, sender: string, publishedAt: { type: 'string', format: 'date-time' } }),
+      object(
+        {
+          ref: string,
+          title: string,
+          sender: string,
+          publishedAt: { type: 'string', format: 'date-time' },
+          link: { type: 'string', pattern: '^https://' },
+        },
+        ['ref', 'title', 'sender', 'publishedAt'],
+      ),
     ),
   }),
   view: {
@@ -123,6 +134,19 @@ const newsItem = {
   },
 };
 
+// A notice in full (D111 rule 8): the address the system shows it at, for the work item's link out ("Läs hela
+// nyheten", `target: 'link'` on the draft's read). A notice without one has nothing more than its text.
+const open = {
+  name: 'communication.open',
+  kind: 'read',
+  title: 'Läs hela nyheten',
+  description: 'Länk till meddelandet i sin helhet i kommunikationssystemet.',
+  model: false,
+  scope: everyone,
+  input: object({ ref: { type: 'string', pattern: '^communication:notice:' } }),
+  output: object({ url: string }),
+};
+
 const lookup = {
   name: 'communication.lookup',
   kind: 'read',
@@ -135,7 +159,7 @@ const lookup = {
 };
 
 export const manifest = {
-  protocol: 2,
+  protocol: 3,
   id: CONNECTOR,
   kind: 'passthrough',
   source: 'Kommunikation',
@@ -152,5 +176,5 @@ export const manifest = {
       figure: true,
     },
   ],
-  capabilities: [notices, acknowledge, news, newsItem, lookup],
+  capabilities: [notices, acknowledge, news, newsItem, open, lookup],
 };

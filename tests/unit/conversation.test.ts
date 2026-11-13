@@ -16,6 +16,7 @@ import { assistantUsecases, TurnStopped } from '../../apps/server/src/assistant'
 import { memoryModelHealth, memoryModelStore, memoryModelWire } from '../../apps/server/src/assistant/adapters/memory';
 import { modelUsecases } from '../../apps/server/src/assistant/usecases/models';
 import type { ModelGenerate } from '../../apps/server/src/assistant/model';
+import type { ManagedPerson } from '../../apps/server/src/assistant/ports';
 import { DRAFT_TOOL, draftableActions, draftTool } from '../../apps/server/src/assistant/drafts';
 import { parseManifest, remoteConnector } from '../../packages/connectors/src/remote';
 import { assertionFor, testJwks, testAuthority } from '../connector-authority';
@@ -53,6 +54,16 @@ const members = ['Anna Lindqvist', 'Erik Sandström'].map(name => {
   const first = name.split(' ')[0]!.toLowerCase();
   return { personId: first, ref: 'memory:account:' + first, email: first + '@clew.test', name };
 });
+/** The people Hillevi manages (D115), by the user names the HR fixture knows them by; an employee manages nobody. */
+const directory: ManagedPerson[] = [
+  ['anna', 'Anna Lindqvist'],
+  ['erik', 'Erik Sandström'],
+  ['maria', 'Maria Källström'],
+  ['maria.eriksson', 'Maria Eriksson'],
+  ['per', 'Per Lindahl'],
+  ['karin', 'Karin Lindqvist'],
+  ['lena', 'Lena Öhman'],
+].map(([key, name]) => ({ key: key!, name: name!, unit: 'Skönsmons skola' }));
 function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) {
   const registry = new Registry();
   registry.register({ id: 'calendar', kind: 'core', source: 'Kalendern', areas: [], capabilities: [] });
@@ -87,6 +98,12 @@ function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) 
   const threads = threadUsecases({
     store,
     registry,
+    // Whose a source's user name is (D122): in this world every person's id is their user name.
+    people: {
+      holders: async (_reader: string, names: readonly string[]) =>
+        new Map(names.filter(n => directory.some(d => d.key === n)).map(n => [n, n])),
+      userName: async (id: string) => (directory.some(d => d.key === id) ? id : null),
+    },
     run,
     calendar: { ...calendar, todayEvents: async () => [] },
     clock,
@@ -144,6 +161,7 @@ function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) 
     log: (...args: unknown[]) => {
       logged.push(args);
     },
+    people: async (p: AuthenticatedContext) => (p.role === 'manager' ? directory : []),
   };
   const assistant = assistantUsecases(deps);
   const status = async (p: AuthenticatedContext) => {
@@ -1012,6 +1030,278 @@ describe('the assistant drafts, the person decides (D112 item 8)', () => {
       error: 'Varje värde ska vara text.',
     });
     expect(heard).toEqual([]);
+  });
+});
+
+describe('a question about a person the asker manages (D115)', () => {
+  const QUESTION = 'Anna har varit sjuk i två veckor, vad gör jag?';
+  type Callable = { execute: (input: unknown, options: unknown) => Promise<unknown> };
+  /** What a source holds about Anna's health, as the rehab card's summary and row say it: never handed to the model. */
+  const HEALTH = ['Namnet visas i personalsystemet', 'korta perioder sedan', 'Sjuk ·', '"periods"', 'hr:emp:1001'];
+  async function rehab(w: ReturnType<typeof world>) {
+    await w.threads.ensureThreads(hillevi);
+    return (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'hr:rehab:hr:emp:1001')!;
+  }
+  /** A tool-using model the test plays: it calls the tools named in `script` in order, and everything it is handed is kept. */
+  function scripted(script: Array<[tool: string, input: Record<string, unknown>]>, text: string) {
+    const handed: string[] = [];
+    const offered: string[][] = [];
+    const generate: ModelGenerate = async ({ system, messages, tools }) => {
+      handed.push(system, JSON.stringify(messages));
+      offered.push(Object.keys(tools));
+      const toolCalls = [];
+      for (const [name, input] of script) {
+        const output = await (tools[name] as Callable).execute(input, {});
+        handed.push(JSON.stringify(output));
+        toolCalls.push({ capability: name.replace('__', '.'), input, output });
+      }
+      return { text, toolCalls };
+    };
+    return { generate, handed, offered };
+  }
+
+  test('with a model: Anna is resolved, the routine is read, the work item about her is drawn, and no health row reaches the model', async () => {
+    const answer =
+      'Två veckor är gränsen till lång sjukfrånvaro: från dag 15 anmäler du sjukfallet till Försäkringskassan och håller kontakten. Under Behöver dig väntar också ärendet om att boka ett omtankesamtal med Anna senast 16 november; knappen Boka samtalet gör det.';
+    const model = scripted(
+      [
+        ['clew__findPerson', { name: 'Anna' }],
+        ['hr__rehabRoutine', {}],
+      ],
+      answer,
+    );
+    const w = world({ generate: model.generate });
+    const card = await rehab(w);
+    const turn = await w.assistant.converse(hillevi, { text: QUESTION });
+    const [system] = model.handed;
+    // The prompt names who "Anna" is and the work about her by title, last day and buttons; nothing a source holds.
+    expect(system).toContain('Medarbetare som personen nämnde (bland dem personen är chef för):');
+    expect(system).toContain(
+      '- "Anna" är Anna Lindqvist på Skönsmons skola. Öppna ärenden om medarbetaren under Behöver dig: Ärende "Boka ett omtankesamtal med en medarbetare" (Personalsystemet, senast måndag 16 november). Knappar i ärendet nu: Boka samtalet, Se mönstret i personalsystemet, Inte nu, Fler val (Lägg till i samtalet, Avfärda).',
+    );
+    expect(system).toContain('Uppgifter om medarbetarnas hälsa och frånvaro lämnas inte till dig.');
+    // The lookup is Clew's own and answers the same; the routine is policy text, handed whole.
+    expect(JSON.parse(model.handed[2]!)).toEqual({
+      found: 'one',
+      name: 'Anna Lindqvist',
+      unit: 'Skönsmons skola',
+      workItems: [
+        'Ärende "Boka ett omtankesamtal med en medarbetare" (Personalsystemet, senast måndag 16 november). Knappar i ärendet nu: Boka samtalet, Se mönstret i personalsystemet, Inte nu, Fler val (Lägg till i samtalet, Avfärda).',
+      ],
+      note: 'Ärendena visas för personen i samtalet. Uppgifter om medarbetarens hälsa och frånvaro lämnas inte till dig.',
+    });
+    expect(model.handed[3]).toContain('Gör en plan för återgång i arbete');
+    // Never a source's rows about anyone's health: not the card's summary or row, not an absence read.
+    for (const marker of HEALTH) expect(model.handed.join('\n')).not.toContain(marker);
+    expect(model.offered[0]).toEqual(
+      expect.arrayContaining(['clew__findPerson', 'hr__rehabRoutine', 'clew__draftAction']),
+    );
+    expect(model.offered[0]).not.toContain('hr__person');
+    expect(model.offered[0]).not.toContain('hr__absencePattern');
+    // The answer is the model's, read from the routine; the work item is drawn in the turn, the routine is its view.
+    expect(turn).toMatchObject({
+      assistant: 'model',
+      shape: 'vy',
+      answer: { body: answer, source: 'Personalsystemet' },
+      view: { capability: 'hr.rehabRoutine', title: 'Rehabiliteringsrutinen', declared: true },
+    });
+    expect(turn.thread.messages.at(-1)!.meta).toMatchObject({
+      cards: [card.id],
+      toolCalls: [
+        { capability: 'clew.findPerson', input: { name: 'Anna' } },
+        { capability: 'hr.rehabRoutine', input: {} },
+      ],
+    });
+    // One audit row for the turn with the tools it used and the card it drew; no name, no text.
+    const row = w.store.audit.at(-1)!;
+    expect(row).toMatchObject({
+      action: 'conversation.asked',
+      subject: 'thread:' + turn.conversationId,
+      details: {
+        assistant: 'model',
+        tools: ['clew.findPerson', 'hr.rehabRoutine'],
+        view: 'hr.rehabRoutine',
+        cards: [card.id],
+        model: 'open-model',
+      },
+    });
+    expect(JSON.stringify(row)).not.toContain('Anna');
+    // Nothing was done to the work item by asking.
+    expect(audit(w.store, card.id)).toEqual(['thread.pushed']);
+  });
+
+  test('with a model: the one work item about the one person named is the item the model may draft on, and nothing is sent', async () => {
+    const LATER = '2026-11-12T13:15:00.000Z';
+    const model = scripted(
+      [['clew__draftAction', { action: 'book', values: { when: LATER, place: 'Rum 12' } }]],
+      'Jag har fyllt i bokningen av omtankesamtalet; inget är skickat.',
+    );
+    const w = world({ generate: model.generate });
+    const card = await rehab(w);
+    const turn = await w.assistant.converse(hillevi, { text: 'Boka omtankesamtalet med Anna på torsdag' });
+    expect(model.handed[2]).toBe(
+      JSON.stringify({ drafted: true, note: 'Utkastet visas för personen. Inget är skickat.' }),
+    );
+    expect(turn).toMatchObject({
+      shape: 'forslag',
+      draft: { kind: 'action', threadId: card.id, actionId: 'book', values: { when: LATER, place: 'Rum 12' } },
+    });
+    expect(w.store.audit.at(-1)).toMatchObject({
+      details: { drafted: { thread: card.id, action: 'book', asks: ['when', 'place'] }, cards: [card.id] },
+    });
+    expect((await w.threads.threadFor(hillevi, card.id))!.execution ?? null).toBeNull();
+  });
+
+  test('several people by the name: the model and the router name them and ask which; nobody by the name: the lookup says so', async () => {
+    const model = scripted(
+      [
+        ['clew__findPerson', { name: 'Maria' }],
+        ['clew__findPerson', { name: 'Olle' }],
+      ],
+      'Två av dina medarbetare heter Maria: Maria Eriksson och Maria Källström. Vem menar du?',
+    );
+    const w = world({ generate: model.generate });
+    await rehab(w);
+    const turn = await w.assistant.converse(hillevi, { text: 'Maria har varit sjuk i två veckor, vad gör jag?' });
+    expect(model.handed[0]).toContain(
+      '- "Maria" kan vara flera medarbetare: Maria Eriksson och Maria Källström. Fråga vem personen menar.',
+    );
+    expect(JSON.parse(model.handed[2]!)).toEqual({
+      found: 'several',
+      names: ['Maria Eriksson', 'Maria Källström'],
+      note: 'Flera medarbetare heter så. Räkna upp namnen och fråga vem personen menar.',
+    });
+    // A name the asker never wrote is not looked up: "Olle" names nobody they mentioned.
+    expect(JSON.parse(model.handed[3]!)).toMatchObject({ found: 'none' });
+    expect(turn.thread.messages.at(-1)!.meta?.cards).toBeUndefined();
+    // Without a model the router asks the same question back.
+    const router = world();
+    await rehab(router);
+    const asked = await router.assistant.converse(hillevi, { text: 'Maria har varit sjuk i två veckor, vad gör jag?' });
+    expect(asked).toMatchObject({ assistant: 'router', shape: 'svar' });
+    expect(asked.answer.body).toBe(
+      'Flera av dina medarbetare heter Maria: Maria Eriksson och Maria Källström. Vem menar du?',
+    );
+    // A name that is nobody's falls through to the router's reads, here the routine, never the figures.
+    const nobody = await router.assistant.converse(hillevi, { text: 'Olle har varit sjuk i två veckor, vad gör jag?' });
+    expect(nobody.view?.capability).toBe('hr.rehabRoutine');
+    expect(nobody.answer.body).not.toContain('Sjukfrånvaro:');
+  });
+
+  test('without a model: the router answers with the open work item about the person, draws it, and never the figures', async () => {
+    const w = world();
+    const card = await rehab(w);
+    const turn = await w.assistant.converse(hillevi, { text: QUESTION });
+    expect(turn).toMatchObject({ assistant: 'router', shape: 'svar', answer: { source: 'Personalsystemet' } });
+    expect(turn.answer.body).toBe(
+      'Under Behöver dig finns ett öppet ärende om Anna Lindqvist: "Boka ett omtankesamtal med en medarbetare", senast måndag 16 november.',
+    );
+    expect(turn.thread.messages.at(-1)!.meta).toMatchObject({ cards: [card.id] });
+    expect(w.store.audit.at(-1)).toMatchObject({
+      action: 'conversation.asked',
+      details: { assistant: 'router', tools: [], cards: [card.id] },
+    });
+    // A person with no open work: not the figures either; the router goes on to the reads.
+    const erik = await w.assistant.converse(hillevi, { text: 'Erik har varit sjuk i två veckor, vad gör jag?' });
+    expect(erik.answer.body).not.toMatch(/Sjukfrånvaro:|Läget/);
+    expect(erik.thread.messages.at(-1)!.meta?.cards).toBeUndefined();
+    // A question about the figures still gets the figure.
+    const figure = await w.assistant.converse(hillevi, { text: 'hur ser sjukfrånvaron ut?' });
+    expect(figure.answer.body).toBe('Sjukfrånvaro: 4,2 %, mål ≤ 4,0 % · +0,3 sedan oktober.');
+    // An employee manages nobody: no name is resolved and no work is drawn.
+    const employee = await w.assistant.converse(hassan, { text: QUESTION });
+    expect(employee.thread.messages.at(-1)!.meta?.cards).toBeUndefined();
+  });
+
+  test('a work item about a person the conversation names is handed by title, last day and buttons alone, chipped or not, in this turn and the next', async () => {
+    const model = scripted([], 'Svar.');
+    const w = world({ generate: model.generate });
+    const card = await rehab(w);
+    const chip = { ref: 'thread:' + card.id, kind: 'thread' as const, label: card.title };
+    // Without a name the chipped card is read as before: its summary and rows.
+    await w.assistant.converse(hillevi, { text: 'Vad står det här?', chips: [chip] });
+    expect(model.handed[0]).toContain('Namnet visas i personalsystemet');
+    // With the person named, even in lower case, the same card is its title, last day and buttons.
+    const first = await w.assistant.converse(hillevi, { text: 'anna har varit sjuk, vad gör jag?', chips: [chip] });
+    const guarded = model.handed.at(-2)!;
+    expect(guarded).toContain(
+      '- Ärende "Boka ett omtankesamtal med en medarbetare" (Personalsystemet, senast måndag 16 november). Knappar i ärendet nu:',
+    );
+    for (const marker of HEALTH) expect(guarded).not.toContain(marker);
+    // The next turn of the same conversation names nobody, and the card stays guarded: the asker named her before.
+    await w.assistant.converse(hillevi, {
+      text: 'Vad står det här?',
+      chips: [chip],
+      conversationId: first.conversationId,
+    });
+    for (const marker of HEALTH) expect(model.handed.at(-2)!).not.toContain(marker);
+  });
+
+  // A card pointed at is not always under Behöver dig: the guard is read from the card itself, whatever state it is in.
+  for (const [state, patch, says] of [
+    ['set aside under Inte nu', { snoozedUntil: '2026-12-01T07:00:00.000Z' }, 'Ärendet ligger under Inte nu.'],
+    ['waiting on someone else', { waitingOn: 'HR' }, 'Ärendet väntar på HR.'],
+    ['handled', { state: 'handled', handledAt: T0 }, 'Ärendet är hanterat.'],
+  ] as const)
+    test(`a chipped work item about a named person that is ${state} is handed by title alone, in this turn and the next`, async () => {
+      const model = scripted([], 'Svar.');
+      const w = world({ generate: model.generate });
+      const card = await rehab(w);
+      await w.store.transaction(tx => tx.updateThread(card.id, { ...patch, updatedAt: T0 }));
+      const chip = { ref: 'thread:' + card.id, kind: 'thread' as const, label: card.title };
+      const first = await w.assistant.converse(hillevi, { text: QUESTION, chips: [chip] });
+      const system = model.handed.at(-2)!;
+      // The card is in the turn in the state the test put it in, by its title, and nothing a source holds is with it.
+      expect(system).toContain('- Ärende "Boka ett omtankesamtal med en medarbetare" (Personalsystemet');
+      expect(system).toContain(says);
+      for (const marker of HEALTH) expect(model.handed.join('\n')).not.toContain(marker);
+      // The follow-up names nobody; the asker named her before, so the same card stays its title.
+      await w.assistant.converse(hillevi, {
+        text: 'Vad står det här?',
+        chips: [chip],
+        conversationId: first.conversationId,
+      });
+      expect(model.handed.at(-2)!).toContain('- Ärende "Boka ett omtankesamtal med en medarbetare" (Personalsystemet');
+      for (const marker of HEALTH) expect(model.handed.join('\n')).not.toContain(marker);
+    });
+
+  test('a card that names the person on the thread alone, as an action point does (D96 item 6), is guarded and never listed', async () => {
+    const model = scripted([['clew__findPerson', { name: 'Anna' }]], 'Svar.');
+    const w = world({ generate: model.generate });
+    const card = await rehab(w);
+    await w.store.transaction(tx =>
+      tx.insertThread({
+        id: 'point-1',
+        personId: 'hillevi',
+        kind: 'pushed',
+        topic: 'talks:commitment:c1',
+        title: 'Åtgärdspunkt från utvecklingssamtal',
+        state: 'open',
+        week: null,
+        connector: 'calendar',
+        area: 'talks',
+        summary: 'Det ni kom överens om på samtalet.',
+        items: [],
+        subjects: [{ entity: 'person', key: 'anna' }],
+        actions: [],
+        waitingOn: null,
+        deadline: '2026-11-20',
+        trigger: { reason: 'Lades till efter ditt utvecklingssamtal', source: 'Utvecklingssamtal', at: T0 },
+        createdAt: T0,
+        updatedAt: T0,
+      }),
+    );
+    const turn = await w.assistant.converse(hillevi, { text: QUESTION });
+    expect(model.handed.join('\n')).not.toContain('Åtgärdspunkt');
+    expect(JSON.parse(model.handed[2]!).workItems).toHaveLength(1);
+    expect(turn.thread.messages.at(-1)!.meta?.cards).toEqual([card.id]);
+    // Pointed at, it is read in full while nobody is named, and by its title alone once Anna is.
+    const chip = { ref: 'thread:point-1', kind: 'thread' as const, label: 'Åtgärdspunkt från utvecklingssamtal' };
+    await w.assistant.converse(hillevi, { text: 'Vad står det här?', chips: [chip] });
+    expect(model.handed.at(-3)).toContain('Det ni kom överens om på samtalet.');
+    await w.assistant.converse(hillevi, { text: QUESTION, chips: [chip] });
+    expect(model.handed.at(-3)).toContain('- Ärende "Åtgärdspunkt från utvecklingssamtal" (Utvecklingssamtal');
+    expect(model.handed.at(-3)).not.toContain('Det ni kom överens om på samtalet.');
   });
 });
 

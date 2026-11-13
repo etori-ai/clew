@@ -48,8 +48,8 @@ An administrator issues, replaces and takes back a provisioner's key on Administ
 
 ## Protocol 2 authority
 
-**Works in this checkout.** RS256 installation assertions, pinned public keys, separate callback grants, transport key, current governance checks. Protocol 1 rejected.
+**Works in this checkout.** RS256 installation assertions, pinned public keys, separate callback grants, transport key, current governance checks. Protocol 1 rejected; protocol 3 current since D117, a break, with 2 still loaded for a window (shown as "Följer ett äldre protokoll", sent no `about`, held to the looser rules of 2). Every request assertion is bound to its request (D117): its `body` claim is the SHA-256 of the exact body and, on a capability's route, its `capability` claim that name; every connector in the repository verifies both. A call whose input names people or units carries `about` in that body, each key sent and how the actor stands to it, never in the callback grant. A read the installation makes itself (D119, additive to 3) goes to `/clew/installation/{name}` with an assertion that carries no actor (subject `clew:installation`, `caller: "installation"`), bound to its request; the registry keeps such reads apart from capabilities, so no person's path reaches them, and the verifier every connector carries tells the installation's assertion from a person's both ways.
 
 **Limits and pending work.** Installations and connectors must upgrade together; this tree contains ongoing reliability work.
 
-**Evidence.** [Authority](../../../apps/server/src/connectors/authority.ts), [authorization tests](../../../tests/unit/authorization-boundaries.test.ts), [D44](../../decisions/D44-authorized-reads-and-clew-signed-connector-authority.md)
+**Evidence.** [Authority](../../../apps/server/src/connectors/authority.ts), [authorization tests](../../../tests/unit/authorization-boundaries.test.ts), [D44](../../decisions/D44-authorized-reads-and-clew-signed-connector-authority.md), [the signed relation](../../../tests/unit/asked-about.test.ts)

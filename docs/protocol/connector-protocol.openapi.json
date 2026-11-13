@@ -2,23 +2,27 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Clew connector protocol",
-    "version": "2",
+    "version": "3",
     "summary": "How a connector service and a Clew installation talk to each other.",
     "description": "A connector is an HTTP service of your own. It serves the routes tagged **Connector**; Clew loads its manifest and calls it as the acting person, with an RS256 assertion it can verify against the keys at the route tagged **Clew**. Shapes are the same JSON Schemas the instance validates with, published under `components.schemas` and, as one bundle, as `connector-protocol.schema.json` under `/api/protocol/`. Generate server stubs from this document or implement the paths by hand; the examples under `connectors/` in the repository are complete. Try `POST /api/protocol/manifest` with a manifest before any service exists. The manifest field by field, with examples: [manifest reference](/protocol/manifest)."
   },
   "x-clew-protocol": {
-    "current": 2,
+    "current": 3,
     "accepted": [
+      3,
       2
     ],
+    "deprecated": {
+      "2": "deprecated 2026-11-12 (D117), accepted until a decision closes the window, no earlier than the first release after that day: declare protocol 3, accept `about` in the request body (CallRequest and DocumentReadRequest gained it), verify the assertion's `body` and `capability` claims against the request (connectors/hello/verification.mjs), and make every input that names a person a plain string property, the `person` of a `<id>.commitments` read included."
+    },
     "retired": {
-      "1": "retired 2026-11-05: shared-secret (HS256) identity signing was replaced by RS256 installation keys (D44). Move the verifier to the installation's public keys and declare protocol 2."
+      "1": "retired 2026-11-05: shared-secret (HS256) identity signing was replaced by RS256 installation keys (D44). Move the verifier to the installation's public keys and declare protocol 3 (2 for its window)."
     }
   },
   "tags": [
     {
       "name": "Connector",
-      "description": "Routes the connector serves and Clew calls. All JSON, all under the registered base URL. Every POST carries `Authorization: Bearer <assertion>` and `X-Clew-Connector-Key`; take the actor from the verified assertion, never from the body."
+      "description": "Routes the connector serves and Clew calls. All JSON, all under the registered base URL. Every POST carries `Authorization: Bearer <assertion>` and `X-Clew-Connector-Key`; take the actor from the verified assertion, never from the body, and check that the assertion's `body` claim is the SHA-256 of the body received (D117). On `/clew/installation/{name}` there is no actor: the assertion is the installation's own (D119)."
     },
     {
       "name": "Clew",
@@ -159,6 +163,100 @@
           },
           "404": {
             "description": "An unknown ref or capability: `error.code` is `not-found`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The source is unavailable: `error.code` is `unavailable`. For a write this does not say whether the effect happened.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/clew/installation/{name}": {
+      "servers": [
+        {
+          "url": "{connector}",
+          "description": "The base URL the connector is registered with in Clew. Every path below is relative to it.",
+          "variables": {
+            "connector": {
+              "default": "http://127.0.0.1:4020"
+            }
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Connector"
+        ],
+        "operationId": "readAsInstallation",
+        "summary": "A read Clew makes as the installation, with no person behind it",
+        "description": "Only for a read the manifest declares under `installation` (D119), today `<id>.holdings`. No actor: the assertion's subject is `clew:installation`, its `caller` claim `installation`, and it carries no `actor` and no `callback`; it is bound to the body and to `{name}` as every request is. Answer only that assertion here: a person's assertion, whoever they are, is refused with 401, and the installation's assertion is never valid on `/clew/capabilities/{name}`. Clew never reaches this route on a person's behalf: the read is not a capability, so neither a page, a card, the model nor another connector's callback can name it.",
+        "security": [
+          {
+            "installationAssertion": [],
+            "connectorKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$"
+            },
+            "description": "The full name from the manifest's `installation`, `<id>.<profile>`."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstallationCallRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The output, validated against the read's declared output and its profile (`HoldingsOutput` for `<id>.holdings`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, such as a cursor the source does not know: `error.code` is `invalid`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The transport key or the assertion was rejected, and a person's assertion on this route. Required: the conformance check probes both."
+          },
+          "404": {
+            "description": "A name the connector does not declare for the installation: `error.code` is `not-found`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -759,9 +857,17 @@
         ],
         "properties": {
           "protocol": {
-            "type": "number",
-            "const": 2,
-            "description": "The version of this contract the manifest is written to, not of the connector (D60). This instance loads 2; an additive change to the protocol keeps the number."
+            "anyOf": [
+              {
+                "type": "number",
+                "const": 3
+              },
+              {
+                "type": "number",
+                "const": 2
+              }
+            ],
+            "description": "The version of this contract the manifest is written to, not of the connector (D60). This instance loads 3, and 2 for a window: a connector on 2 is loaded, shown with a warning in administration and in the conformance check, sent no `about` in its request bodies and held to the looser rules of 2. An additive change keeps the number; a break is a new one. 3 (D117) binds the request assertion to its body and capability, sends `about` in the body of a call whose input names people or units, and refuses a manifest in which an input that names someone is not a plain string property. `installation` (D119) was added to 3 as an optional field: a manifest without it is read as before."
           },
           "id": {
             "type": "string",
@@ -2608,6 +2714,72 @@
                   "additionalProperties": false,
                   "description": "What the rows concern (D97). A `read` takes `{ keys }` (an array of at most 200 strings, required) and answers `rows` (or its view's rows), one per key it knows, each with a string `key` it was asked with; a key outside the caller's scope is answered as no row, never as a refusal. It declares a `table` or `list` view, is never a tool (`model: false`), and may answer `heading` and `note`, two strings beside the rows. A `propose` or `execute` names in `param` the input property that takes one key. Clew decides where it shows: an action in the entity's menu, a read as a section on the opened entity, a `warn` or `alert` tone as a mark on its row, a table or list as a lens an administrator may offer."
                 },
+                "person": {
+                  "type": "object",
+                  "properties": {
+                    "param": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9]*$",
+                      "maxLength": 40,
+                      "description": "On a capability that is not `about` a person: the plain string property of the input that takes one person's key, a provisioned `userName`, such as the `person` of a read a row of a section opens. Absent on a capability about a person, whose key is in `keys` or `about.param`."
+                    },
+                    "admits": {
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "const": "self"
+                          },
+                          {
+                            "type": "string",
+                            "const": "managed"
+                          },
+                          {
+                            "type": "string",
+                            "const": "colleague"
+                          }
+                        ],
+                        "description": "`self`: the caller is the person. `managed`: the person reports to the caller (D99): placed without a manager's role on a unit the caller manages, or reporting to it from below (the managers of the nearest led units below it, and the people of units nobody leads in between); a co-manager of the caller's unit only when their line runs to a unit above it that the caller leads, never someone who manages the caller. `colleague`: any other active person of the caller's organisation."
+                      },
+                      "minItems": 1,
+                      "uniqueItems": true,
+                      "description": "The relations a caller may have to a person this capability is asked about. Omitted means `[\"self\", \"managed\"]`, the strictest that still lets a person read their own and a manager their reports'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Who may be asked about (D117). Clew resolves the caller's relation to every person the input names from its own directory before the connector is called: a key in `keys` the caller may not ask about is left out of the call, and a call whose single key names such a person, or holds anything but a string there, is refused as an unknown capability is, so the answer never tells whether the person exists. The relation of each key sent travels in the request body's `about`, which the assertion binds. A capability about a person, a `<id>.commitments` read, a read a row of a section about a person opens with the row's `key` and an execute's effect read name a person whether or not they declare this, and each such input must be a plain string property of the input schema; without `admits` they admit `self` and `managed`."
+                },
+                "unit": {
+                  "type": "object",
+                  "properties": {
+                    "admits": {
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "const": "manages"
+                          },
+                          {
+                            "type": "string",
+                            "const": "member"
+                          },
+                          {
+                            "type": "string",
+                            "const": "below"
+                          }
+                        ],
+                        "description": "`manages`: the caller holds a manager's role on the unit. `member`: the caller is placed on it otherwise. `below`: the unit is one the caller follows up from above (D117): the nearest unit below one they manage that has a manager, led by a manager who reports to them (D99's reporting line, one level down, never the whole branch)."
+                      },
+                      "minItems": 1,
+                      "uniqueItems": true,
+                      "description": "The relations a caller may have to a unit this capability is asked about. Omitted means `[\"manages\"]`."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Who may be asked about through a capability whose `about.entity` is `unit` (D117). A unit key outside `admits` is left out of `keys`, and a call whose `about.param` names such a unit is refused as an unknown capability is."
+                },
                 "follows": {
                   "type": "array",
                   "items": {
@@ -2849,6 +3021,57 @@
             },
             "description": "What the connector can do, one entry per operation. The name is the contract (D37): a break is a new name, never a changed one."
           },
+          "installation": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "title",
+                "description",
+                "input",
+                "output"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
+                  "maxLength": 80,
+                  "description": "`<connector id>.<profile>`, one of the profiles Clew reads as the installation. Today only `<id>.holdings` (D108 item 9): a read that takes a HoldingsInput (`{}`, then `{ cursor }`) and answers a HoldingsOutput, one page of every account the source has with every holding it can see, the cursor of the next page in `next`, and whether a holding missing later means it was withdrawn (`withdrawalsReported`). Clew's competence register copies the pages. Unique across `capabilities` and `installation`."
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "Swedish. What Clew reads, as an administrator reads it: \"Genomförda kurser och märken\"."
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "Swedish. What the read answers, for the administrator."
+                },
+                "input": {
+                  "type": "object",
+                  "patternProperties": {
+                    "^.*$": {}
+                  },
+                  "description": "JSON Schema of the input, which must fit the profile's (for `<id>.holdings`: an object whose only property is an optional string `cursor`, requiring nothing). Clew validates every call against it."
+                },
+                "output": {
+                  "type": "object",
+                  "patternProperties": {
+                    "^.*$": {}
+                  },
+                  "description": "JSON Schema of the output, which must fit the profile's (for `<id>.holdings`: HoldingsOutput, the same fields or fewer of the optional ones, constraints as tight or tighter). Clew validates every answer against it and against the profile."
+                }
+              },
+              "additionalProperties": false,
+              "description": "A read Clew makes as the installation, with no person behind it (D119): posted to `/clew/installation/{name}` with an assertion whose subject is `clew:installation` and whose `caller` claim is `installation`, bound to the body and the name. Answer it to that assertion only. Never a model tool and never on a page: no person, administrator included, can call it by name, and it reaches no `capabilities` path. `model: false` and a read are implied."
+            },
+            "maxItems": 1,
+            "description": "The reads Clew makes as the installation itself, with no person behind the call (D119), one per profile: today `<id>.holdings`, every holding the source has, a page at a time, for Clew's competence register (D108 item 9). Added under protocol 3; a manifest without it is untouched, and one on 2 cannot declare it."
+          },
           "uses": {
             "type": "array",
             "items": {
@@ -3007,6 +3230,74 @@
         "additionalProperties": false,
         "description": "The acting person as Clew knows them. Never a token."
       },
+      "CallAbout": {
+        "type": "object",
+        "required": [
+          "entity",
+          "relations"
+        ],
+        "properties": {
+          "entity": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "person"
+              },
+              {
+                "type": "string",
+                "const": "unit"
+              }
+            ],
+            "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id."
+          },
+          "relations": {
+            "type": "object",
+            "patternProperties": {
+              "^.*$": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "const": "self"
+                      },
+                      {
+                        "type": "string",
+                        "const": "managed"
+                      },
+                      {
+                        "type": "string",
+                        "const": "colleague"
+                      }
+                    ],
+                    "description": "`self`: the caller is the person. `managed`: the person reports to the caller (D99): placed without a manager's role on a unit the caller manages, or reporting to it from below (the managers of the nearest led units below it, and the people of units nobody leads in between); a co-manager of the caller's unit only when their line runs to a unit above it that the caller leads, never someone who manages the caller. `colleague`: any other active person of the caller's organisation."
+                  },
+                  {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "const": "manages"
+                      },
+                      {
+                        "type": "string",
+                        "const": "member"
+                      },
+                      {
+                        "type": "string",
+                        "const": "below"
+                      }
+                    ],
+                    "description": "`manages`: the caller holds a manager's role on the unit. `member`: the caller is placed on it otherwise. `below`: the unit is one the caller follows up from above (D117): the nearest unit below one they manage that has a manager, led by a manager who reports to them (D99's reporting line, one level down, never the whole branch)."
+                  }
+                ]
+              }
+            },
+            "description": "Every key the input carries (each of `keys`, or the value of the property that takes one key), exactly as the input spells it, mapped to how the actor stands to it: a person's `self`, `managed` or `colleague`, a unit's `manages`, `member` or `below`. Clew sends no key the capability does not admit, so a key the input carries and this map does not name is one Clew did not vouch for: answer it as no row."
+          }
+        },
+        "additionalProperties": false,
+        "description": "How the actor stands to the people or units the input names (D117), present when the input names any. Trust it only from a body whose digest the verified assertion's `body` claim holds."
+      },
       "CallRequest": {
         "type": "object",
         "required": [
@@ -3083,9 +3374,134 @@
             "additionalProperties": false,
             "description": "The acting person as Clew knows them. Never a token."
           },
-          "input": {}
+          "input": {},
+          "about": {
+            "type": "object",
+            "required": [
+              "entity",
+              "relations"
+            ],
+            "properties": {
+              "entity": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "person"
+                  },
+                  {
+                    "type": "string",
+                    "const": "unit"
+                  }
+                ],
+                "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id."
+              },
+              "relations": {
+                "type": "object",
+                "patternProperties": {
+                  "^.*$": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "const": "self"
+                          },
+                          {
+                            "type": "string",
+                            "const": "managed"
+                          },
+                          {
+                            "type": "string",
+                            "const": "colleague"
+                          }
+                        ],
+                        "description": "`self`: the caller is the person. `managed`: the person reports to the caller (D99): placed without a manager's role on a unit the caller manages, or reporting to it from below (the managers of the nearest led units below it, and the people of units nobody leads in between); a co-manager of the caller's unit only when their line runs to a unit above it that the caller leads, never someone who manages the caller. `colleague`: any other active person of the caller's organisation."
+                      },
+                      {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "const": "manages"
+                          },
+                          {
+                            "type": "string",
+                            "const": "member"
+                          },
+                          {
+                            "type": "string",
+                            "const": "below"
+                          }
+                        ],
+                        "description": "`manages`: the caller holds a manager's role on the unit. `member`: the caller is placed on it otherwise. `below`: the unit is one the caller follows up from above (D117): the nearest unit below one they manage that has a manager, led by a manager who reports to them (D99's reporting line, one level down, never the whole branch)."
+                      }
+                    ]
+                  }
+                },
+                "description": "Every key the input carries (each of `keys`, or the value of the property that takes one key), exactly as the input spells it, mapped to how the actor stands to it: a person's `self`, `managed` or `colleague`, a unit's `manages`, `member` or `below`. Clew sends no key the capability does not admit, so a key the input carries and this map does not name is one Clew did not vouch for: answer it as no row."
+              }
+            },
+            "additionalProperties": false,
+            "description": "How the actor stands to the people or units the input names (D117), present when the input names any. Trust it only from a body whose digest the verified assertion's `body` claim holds."
+          }
         },
         "additionalProperties": false
+      },
+      "InstallationCallRequest": {
+        "type": "object",
+        "required": [
+          "input"
+        ],
+        "properties": {
+          "input": {}
+        },
+        "additionalProperties": false,
+        "description": "The body of a read Clew makes as the installation (D119): the input, validated against the read's declared input. There is no actor; the verified assertion's `caller` claim is `installation` and its subject `clew:installation`."
+      },
+      "ManifestInstallationRead": {
+        "type": "object",
+        "required": [
+          "name",
+          "title",
+          "description",
+          "input",
+          "output"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
+            "maxLength": 80,
+            "description": "`<connector id>.<profile>`, one of the profiles Clew reads as the installation. Today only `<id>.holdings` (D108 item 9): a read that takes a HoldingsInput (`{}`, then `{ cursor }`) and answers a HoldingsOutput, one page of every account the source has with every holding it can see, the cursor of the next page in `next`, and whether a holding missing later means it was withdrawn (`withdrawalsReported`). Clew's competence register copies the pages. Unique across `capabilities` and `installation`."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Swedish. What Clew reads, as an administrator reads it: \"Genomförda kurser och märken\"."
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Swedish. What the read answers, for the administrator."
+          },
+          "input": {
+            "type": "object",
+            "patternProperties": {
+              "^.*$": {}
+            },
+            "description": "JSON Schema of the input, which must fit the profile's (for `<id>.holdings`: an object whose only property is an optional string `cursor`, requiring nothing). Clew validates every call against it."
+          },
+          "output": {
+            "type": "object",
+            "patternProperties": {
+              "^.*$": {}
+            },
+            "description": "JSON Schema of the output, which must fit the profile's (for `<id>.holdings`: HoldingsOutput, the same fields or fewer of the optional ones, constraints as tight or tighter). Clew validates every answer against it and against the profile."
+          }
+        },
+        "additionalProperties": false,
+        "description": "A read Clew makes as the installation, with no person behind it (D119): posted to `/clew/installation/{name}` with an assertion whose subject is `clew:installation` and whose `caller` claim is `installation`, bound to the body and the name. Answer it to that assertion only. Never a model tool and never on a page: no person, administrator included, can call it by name, and it reaches no `capabilities` path. `model: false` and a read are implied."
       },
       "CallResponse": {
         "anyOf": [
@@ -3680,6 +4096,74 @@
               }
             },
             "additionalProperties": false
+          },
+          "about": {
+            "type": "object",
+            "required": [
+              "entity",
+              "relations"
+            ],
+            "properties": {
+              "entity": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "person"
+                  },
+                  {
+                    "type": "string",
+                    "const": "unit"
+                  }
+                ],
+                "description": "`person`: a person in the directory, keyed on their provisioned `userName`. `unit`: a unit, keyed on its id."
+              },
+              "relations": {
+                "type": "object",
+                "patternProperties": {
+                  "^.*$": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "const": "self"
+                          },
+                          {
+                            "type": "string",
+                            "const": "managed"
+                          },
+                          {
+                            "type": "string",
+                            "const": "colleague"
+                          }
+                        ],
+                        "description": "`self`: the caller is the person. `managed`: the person reports to the caller (D99): placed without a manager's role on a unit the caller manages, or reporting to it from below (the managers of the nearest led units below it, and the people of units nobody leads in between); a co-manager of the caller's unit only when their line runs to a unit above it that the caller leads, never someone who manages the caller. `colleague`: any other active person of the caller's organisation."
+                      },
+                      {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "const": "manages"
+                          },
+                          {
+                            "type": "string",
+                            "const": "member"
+                          },
+                          {
+                            "type": "string",
+                            "const": "below"
+                          }
+                        ],
+                        "description": "`manages`: the caller holds a manager's role on the unit. `member`: the caller is placed on it otherwise. `below`: the unit is one the caller follows up from above (D117): the nearest unit below one they manage that has a manager, led by a manager who reports to them (D99's reporting line, one level down, never the whole branch)."
+                      }
+                    ]
+                  }
+                },
+                "description": "Every key the input carries (each of `keys`, or the value of the property that takes one key), exactly as the input spells it, mapped to how the actor stands to it: a person's `self`, `managed` or `colleague`, a unit's `manages`, `member` or `below`. Clew sends no key the capability does not admit, so a key the input carries and this map does not name is one Clew did not vouch for: answer it as no row."
+              }
+            },
+            "additionalProperties": false,
+            "description": "How the actor stands to the people or units the input names (D117), present when the input names any. Trust it only from a body whose digest the verified assertion's `body` claim holds."
           }
         },
         "additionalProperties": false
@@ -5933,6 +6417,306 @@
         },
         "additionalProperties": false,
         "description": "What `<id>.commitments` returns: the action points the reader may see, as the system lets them see them."
+      },
+      "Holding": {
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "label",
+          "kind",
+          "issuedOn"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "The source's own id of this row, stable from one read to the next: a repeated read gives the same id, and two people never share one."
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "The source's own id of what is held (a course, a badge, a licence class), stable across reads. Clew maps it to its catalogue."
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400,
+            "description": "The type's name as the source writes it. Shown until the type is mapped to the catalogue."
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "certificate"
+              },
+              {
+                "type": "string",
+                "const": "degree"
+              },
+              {
+                "type": "string",
+                "const": "course"
+              },
+              {
+                "type": "string",
+                "const": "authorisation"
+              },
+              {
+                "type": "string",
+                "const": "badge"
+              }
+            ],
+            "description": "What the source says the holding is."
+          },
+          "issuedOn": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "maxLength": 10,
+            "description": "The day it was issued or completed, `YYYY-MM-DD`."
+          },
+          "expiresOn": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "maxLength": 10,
+            "description": "The day it ends, where the issuer set one. Absent when the source keeps no end."
+          }
+        },
+        "additionalProperties": false,
+        "description": "One holding of one person, as the source keeps it: no name, no free text, no document."
+      },
+      "HoldingsRow": {
+        "type": "object",
+        "required": [
+          "key",
+          "holdings"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "The value of the source's match field for this account: what Clew compares with a person's provisioned user name, without regard to case."
+          },
+          "holdings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "type",
+                "label",
+                "kind",
+                "issuedOn"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "The source's own id of this row, stable from one read to the next: a repeated read gives the same id, and two people never share one."
+                },
+                "type": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "The source's own id of what is held (a course, a badge, a licence class), stable across reads. Clew maps it to its catalogue."
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 400,
+                  "description": "The type's name as the source writes it. Shown until the type is mapped to the catalogue."
+                },
+                "kind": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "certificate"
+                    },
+                    {
+                      "type": "string",
+                      "const": "degree"
+                    },
+                    {
+                      "type": "string",
+                      "const": "course"
+                    },
+                    {
+                      "type": "string",
+                      "const": "authorisation"
+                    },
+                    {
+                      "type": "string",
+                      "const": "badge"
+                    }
+                  ],
+                  "description": "What the source says the holding is."
+                },
+                "issuedOn": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                  "maxLength": 10,
+                  "description": "The day it was issued or completed, `YYYY-MM-DD`."
+                },
+                "expiresOn": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                  "maxLength": 10,
+                  "description": "The day it ends, where the issuer set one. Absent when the source keeps no end."
+                }
+              },
+              "additionalProperties": false,
+              "description": "One holding of one person, as the source keeps it: no name, no free text, no document."
+            },
+            "maxItems": 500,
+            "description": "Every holding of this account the source can see; empty when it holds nothing."
+          },
+          "partial": {
+            "type": "boolean",
+            "const": true,
+            "description": "Something of this account was refused or could not be dated, and is left out of this answer. Its absence does not make the row complete."
+          }
+        },
+        "additionalProperties": false,
+        "description": "One account of the source: a row without holdings is an account that holds nothing, and an account with no row is one the source did not answer for."
+      },
+      "HoldingsInput": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "Where the next page starts, as the source wrote it in the previous page's `next`. Opaque to Clew, which sends it back unchanged."
+          }
+        },
+        "additionalProperties": false,
+        "description": "What `<id>.holdings` takes (D119): `{}` for the first page, then `{ cursor }` with the `next` of the page before."
+      },
+      "HoldingsOutput": {
+        "type": "object",
+        "required": [
+          "rows",
+          "withdrawalsReported"
+        ],
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "key",
+                "holdings"
+              ],
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "description": "The value of the source's match field for this account: what Clew compares with a person's provisioned user name, without regard to case."
+                },
+                "holdings": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "type",
+                      "label",
+                      "kind",
+                      "issuedOn"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "The source's own id of this row, stable from one read to the next: a repeated read gives the same id, and two people never share one."
+                      },
+                      "type": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "The source's own id of what is held (a course, a badge, a licence class), stable across reads. Clew maps it to its catalogue."
+                      },
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 400,
+                        "description": "The type's name as the source writes it. Shown until the type is mapped to the catalogue."
+                      },
+                      "kind": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "const": "certificate"
+                          },
+                          {
+                            "type": "string",
+                            "const": "degree"
+                          },
+                          {
+                            "type": "string",
+                            "const": "course"
+                          },
+                          {
+                            "type": "string",
+                            "const": "authorisation"
+                          },
+                          {
+                            "type": "string",
+                            "const": "badge"
+                          }
+                        ],
+                        "description": "What the source says the holding is."
+                      },
+                      "issuedOn": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                        "maxLength": 10,
+                        "description": "The day it was issued or completed, `YYYY-MM-DD`."
+                      },
+                      "expiresOn": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                        "maxLength": 10,
+                        "description": "The day it ends, where the issuer set one. Absent when the source keeps no end."
+                      }
+                    },
+                    "additionalProperties": false,
+                    "description": "One holding of one person, as the source keeps it: no name, no free text, no document."
+                  },
+                  "maxItems": 500,
+                  "description": "Every holding of this account the source can see; empty when it holds nothing."
+                },
+                "partial": {
+                  "type": "boolean",
+                  "const": true,
+                  "description": "Something of this account was refused or could not be dated, and is left out of this answer. Its absence does not make the row complete."
+                }
+              },
+              "additionalProperties": false,
+              "description": "One account of the source: a row without holdings is an account that holds nothing, and an account with no row is one the source did not answer for."
+            },
+            "maxItems": 100,
+            "description": "The accounts of this page, each once."
+          },
+          "next": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "The cursor of the following page. Absent on the last page."
+          },
+          "withdrawalsReported": {
+            "type": "boolean",
+            "description": "Whether a holding missing from a later read means it was withdrawn. When false, absence is never a revocation: the source leaves things out without saying so."
+          }
+        },
+        "additionalProperties": false,
+        "description": "What `<id>.holdings` answers (D119): one page of accounts and their holdings, with the cursor of the next."
       },
       "Delegation": {
         "type": "object",
@@ -8962,6 +9746,31 @@
                   "additionalProperties": false
                 },
                 "description": "The rows an administrator could put in the menu."
+              },
+              "installation": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "name",
+                    "title",
+                    "check"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "check": {
+                      "type": "string",
+                      "description": "What the conformance check does with it."
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "description": "The reads Clew would make as the installation itself (D119), present when the manifest declares any: never offered to a person, the model or another connector."
               }
             },
             "additionalProperties": false,
@@ -8977,7 +9786,13 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
-        "description": "RS256 assertion signed by the installation: who is acting, for which connector, for at most two minutes. Verify against `/api/connectors/jwks`."
+        "description": "RS256 assertion signed by the installation: who is acting (`actor`), for which connector, for at most two minutes, bound to one request (D117): `body` is the SHA-256 of the exact request body, base64url, and on `/clew/capabilities/{name}` `capability` is that name. Verify against `/api/connectors/jwks`, and recompute both from the request received; the body's `input` and `about` (`CallAbout`) are then Clew's."
+      },
+      "installationAssertion": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "RS256 assertion signed by the installation for a read it makes itself (D119): `sub` is `clew:installation`, `caller` is `installation`, there is no `actor` and no `callback`, for this connector only and for at most two minutes, and it is bound to one request as every assertion is: `body` is the SHA-256 of the exact request body, base64url, and `capability` the name on `/clew/installation/{name}`. Verify against `/api/connectors/jwks`. A person's assertion never verifies as this one, and this one never verifies as a person's."
       },
       "connectorKey": {
         "type": "apiKey",

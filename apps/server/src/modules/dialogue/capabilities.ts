@@ -130,6 +130,9 @@ export function dialogueConnector(
     scope: { roles: ['manager'] },
     // The dialogue itself is written in the dialogue drawer over the unit's page (D118 item 8, D111 rule 5).
     about: { entity: 'unit', page: { title: 'Öppna dialogen', href: '?dialog={key}' } },
+    // The units a manager follows up (D117, both records): those they manage and those below them; never one they are
+    // only placed on.
+    unit: { admits: ['manages', 'below'] },
     run: async (actor, input) => {
       const rows = await dialogue.aboutUnits(await persona(actor), input.keys);
       return {

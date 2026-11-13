@@ -1,0 +1,105 @@
+{
+  "description": "One course by id: its name, category and summary (HTML, as the teacher wrote it).",
+  "request": {
+    "method": "POST",
+    "path": "/webservice/rest/server.php",
+    "headers": {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Accept": "application/json"
+    },
+    "body": "wstoken=%3Cthe+service+account+token%3E&moodlewsrestformat=json&moodlewssettingraw=true&wsfunction=core_course_get_courses_by_field&field=id&value=4"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "courses": [
+        {
+          "id": 4,
+          "fullname": "Informationssäkerhet för medarbetare",
+          "displayname": "Informationssäkerhet för medarbetare",
+          "shortname": "informationssakerhet",
+          "courseimage": "http://localhost:3024/pluginfile.php/29/course/generated/course.svg",
+          "categoryid": 2,
+          "categoryname": "Obligatoriska utbildningar",
+          "sortorder": 20003,
+          "summary": "<p>Att hantera uppgifter om elever, brukare och kollegor säkert: lösenord, e-post &amp; utskrifter.</p>",
+          "summaryformat": 1,
+          "summaryfiles": [],
+          "overviewfiles": [],
+          "showactivitydates": true,
+          "showcompletionconditions": true,
+          "contacts": [],
+          "enrollmentmethods": [
+            "manual"
+          ],
+          "format": "topics",
+          "showgrades": 1,
+          "newsitems": 1,
+          "startdate": 0,
+          "enddate": 0,
+          "maxbytes": 0,
+          "showreports": 0,
+          "visible": 1,
+          "groupmode": 0,
+          "groupmodeforce": 0,
+          "defaultgroupingid": 0,
+          "enablecompletion": 1,
+          "completionnotify": 0,
+          "lang": "",
+          "theme": "",
+          "marker": 0,
+          "filters": [
+            {
+              "filter": "displayh5p",
+              "localstate": 0,
+              "inheritedstate": 1
+            },
+            {
+              "filter": "activitynames",
+              "localstate": 0,
+              "inheritedstate": 1
+            },
+            {
+              "filter": "mathjaxloader",
+              "localstate": 0,
+              "inheritedstate": 1
+            },
+            {
+              "filter": "emoticon",
+              "localstate": 0,
+              "inheritedstate": 1
+            },
+            {
+              "filter": "urltolink",
+              "localstate": 0,
+              "inheritedstate": 1
+            },
+            {
+              "filter": "mediaplugin",
+              "localstate": 0,
+              "inheritedstate": 1
+            }
+          ],
+          "courseformatoptions": [
+            {
+              "name": "hiddensections",
+              "value": 1
+            },
+            {
+              "name": "coursedisplay",
+              "value": 0
+            },
+            {
+              "name": "indentation",
+              "value": "1"
+            }
+          ]
+        }
+      ],
+      "warnings": []
+    }
+  }
+}

@@ -139,6 +139,9 @@ const unitAboutCapability = {
   model: false,
   scope: { roles: ['manager'] },
   about: { entity: 'unit' },
+  // Clew asks only about the units the manager manages and those below them that they follow up (D117, both records);
+  // the statistics answer for the units the signed actor carries in `units`, and refuse the rest.
+  unit: { admits: ['manages', 'below'] },
   description:
     'Sjukfrånvaro i procent den senaste månaden för enheter du är chef för, mot samma månad i fjol. Bara sammanställningar per enhet, aldrig personer.',
   input: {
@@ -312,6 +315,7 @@ const economyAboutCapability = {
   model: false,
   scope: { roles: ['manager'] },
   about: { entity: 'unit' },
+  unit: { admits: ['manages', 'below'] },
   description: 'Avvikelsen mellan nettokostnadens helårsbudget och helårsprognos för en enhet, den senaste månaden.',
   input: keysInput,
   output: aboutOutput({
@@ -417,6 +421,7 @@ const hmeAboutCapability = {
   model: false,
   scope: { roles: ['manager'] },
   about: { entity: 'unit' },
+  unit: { admits: ['manages', 'below'] },
   description: 'Hållbart medarbetarengagemang (HME) för en enhet vid den senaste mätningen, mot mätningen före.',
   input: keysInput,
   output: aboutOutput({
@@ -446,7 +451,7 @@ const hmeAboutCapability = {
 };
 
 export const manifest = {
-  protocol: 2,
+  protocol: 3,
   id: 'qlik',
   kind: 'passthrough',
   source: 'Qlik',

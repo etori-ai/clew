@@ -1,13 +1,13 @@
 # Authorize every connector request
 
-Protocol 2 separates the credential that identifies Clew's transport from the key that can assert a person. Use the complete [standalone verifier](../../connectors/hello/verification.mjs) and [executable exchange](../../scripts/docs-smoke.ts) as references. The [wire schema](../protocol/connector-protocol.schema.json) defines `Actor`; [authority.ts](../../apps/server/src/connectors/authority.ts) defines the signed claims.
+Protocol 3 (and 2, for its window: see the [protocol reference](../reference/connector-protocol.md#contract-changes)) separates the credential that identifies Clew's transport from the key that can assert a person. Use the complete [standalone verifier](../../connectors/hello/verification.mjs) and [executable exchange](../../scripts/docs-smoke.ts) as references. The [wire schema](../protocol/connector-protocol.schema.json) defines `Actor`; [authority.ts](../../apps/server/src/connectors/authority.ts) defines the signed claims.
 
 ## Inbound requests
 
 Every POST must pass both checks:
 
 1. Compare `X-Clew-Connector-Key` to your configured transport secret using a constant-time comparison. It is the same secret stored in the connector registration; use at least 16 characters. It cannot sign user identity.
-2. Verify the RS256 bearer assertion against public keys fetched from your configured `CLEW_URL/api/connectors/jwks`. Pin that URL in deployment configuration. Never follow a token-supplied key URL or trust an unverified claim.
+2. Verify the RS256 bearer assertion against public keys fetched from your configured `CLEW_URL/api/connectors/jwks`. Pin that URL in deployment configuration. Never follow a token-supplied key URL or trust an unverified claim. Check that it was issued for this request (its `body` and `capability` claims below); the sample verifier does both when you pass it the request.
 
 | Header or claim | Expected value |
 |---|---|
@@ -18,7 +18,11 @@ Every POST must pass both checks:
 | `actor` | `id`, `name`, `unitId`, `unitLabel`, `role` (`manager` or `employee`), `userName` when the person was provisioned with one: the directory user name ([D68](../decisions/D68-people-are-pushed-into-clew-through-standard-scim.md)) your system knows them by, and `units` for a manager ([D117](../decisions/D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md)): the units they follow up, their own, managed or placed on, and those of the managers who report to them, each `{ unitId, unitLabel }`, at most 200, on every read about a person or a unit and every view they open. These seven fields at most and nothing else, and the body's `actor` has the same; the person's groups, capabilities, organisation and session never leave Clew. A callback grant carries the same actor. |
 | `iat`, `exp` | Valid numeric times; expired tokens rejected; lifetime at most 120 seconds. The sample verifier allows five seconds of future clock skew. |
 | `jti` | An assertion identifier. It is not a source-operation idempotency key. |
+| `body` | The SHA-256 of the exact request body, base64url ([D117](../decisions/D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md)). Recompute it from the bytes you received; any other body was not sent by Clew. |
+| `capability` | On `/clew/capabilities/{name}`, that name; absent on every other route. An assertion for one capability is refused on another. |
 | `callback` | Optional separate signed grant, present when dependencies are declared. |
+
+On `/clew/installation/{name}` there is no person ([D119](../decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md)): the assertion is the installation's own. It has the same `alg`, `iss`, `aud`, lifetime, `jti`, `body` and `capability` (the name in the route), and `sub` is `clew:installation`, `caller` is `installation`, and there is no `actor` and no `callback`. Accept it there and nowhere else, and accept nothing else there: a person's assertion on that route is 401, however valid. The sample verifier's `verify.installation(token, key, request)` says whether a request is the installation's; its `verify(token, key, request)` refuses an assertion with a `caller` claim.
 
 The person behind `sub` is always one Clew resolved itself, never one a caller named. During a person's own request it is the person whose session it is. Each request checks that the session's account is still bound to that person and that the person is still active with a grant; otherwise the session ends. An identity provider account is bound to one person at its first sign-in, a later sign-in is refused when the account's name claim names another person, and only an operator moves a binding, with an audited script ([how a person signs in](authentication-overview.md#1-the-person-signs-in-to-clew)). For work that runs outside such a request, such as a scan, an approved write's dispatch or a connector's callback, it is the person the work belongs to, as their current grant reads at that moment. Outside Clew's server the installation key signs a real person in one place only: an operator's conformance check with `--as` signs that person's identity exactly as Clew does, so your source records those reads as theirs. It requires the id a service was registered under in that installation, never one of Clew's own connectors, checks that service only at the address it was registered at, and leaves an audit row about the person ([testing and deployment](testing-and-deployment.md#live-conformance)).
 
@@ -40,14 +44,29 @@ See [hello's callback implementation](../../connectors/hello/connector.mjs) and 
 
 ## Reads about a person or a unit
 
-A read that declares `about` ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)) is asked with `{ keys }`: other people's user names, or unit ids. Clew sends only keys the acting person may be asked about under its core rule, checked before your connector is called:
+A read that declares `about` ([D97](../decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)) is asked with `{ keys }`: other people's user names, or unit ids. A capability may also take one person's user name in a property it names in `person.param`. Clew sends only keys the acting person may be asked about under its core rule, checked on every call before your connector is called, whichever path the call came by ([D117](../decisions/D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md)):
 
-| Kind | The acting person may be asked about |
-|---|---|
-| Person | Themselves; anyone active on a unit they manage; any other active person in their organisation, when they open that person |
-| Unit | A unit they manage or are assigned to |
+| Kind | The acting person may be asked about | Relation |
+|---|---|---|
+| Person | Themselves | `self` |
+| Person | Their direct reports under D99: people placed on a unit they manage without a manager's role there, and those who report to it from below. A co-manager only when their line runs to a unit above it that they lead too; never their own manager | `managed` |
+| Person | Any other active person in their organisation, only where the capability admits it | `colleague` |
+| Unit | A unit they hold a manager's role on | `manages` |
+| Unit | A unit they are placed on otherwise, only where the capability admits it | `member` |
 
-That rule is Clew's floor, not your permission. A colleague's key reaches you because the person opened a colleague, not because they may read that colleague's records in your system. Narrow every key to what the verified actor may see in your source, and answer a key outside it as no row, never as an error, so a missing row stands for both "none" and "not allowed". The rule lives in [the entities module](../../apps/server/src/modules/entities/usecases.ts); [Entities](../architecture/entities.md#who-may-be-asked-about) explains it.
+Declare in `person.admits` (or `unit.admits`) which relations your capability answers; without it Clew sends only `self` and `managed` (or `manages`). A key outside them is left out of `keys`, and a call whose single key is outside them, or is not a string, is refused before it reaches you. Every input that names someone must be a plain string property of your input schema; the loader refuses anything else, including the `person` of a `<id>.commitments` read and a property a row of your read about a person fills from its `key`, which name a person whether you declare them or not.
+
+The request body maps each key in the input to its relation:
+
+```json
+{ "actor": { "id": "…", "role": "manager", "userName": "hillevi", "…": "…" },
+  "input": { "keys": ["anna", "hillevi"] },
+  "about": { "entity": "person", "relations": { "anna": "managed", "hillevi": "self" } } }
+```
+
+Trust `about` only from a body the verified assertion is bound to: its `body` claim is the SHA-256 of the exact body bytes (base64url), and on `/clew/capabilities/{name}` its `capability` claim is that name. The [verifier](../../connectors/hello/verification.mjs) checks both when it is handed the request (`verify(token, key, request)`; `bindingOf(request)` reads a clone, so the handler can still read the body), and refuses an assertion replayed with another body or on another capability. Then answer `self` differently from `managed` without a copy of the organisation. A key in the input that `about` does not name is one Clew did not vouch for: answer it as no row. The relations are never in the `callback` grant, and the bearer stays one size however many keys a call names.
+
+The rule is Clew's floor, not your permission. A relation says how the person stands to someone in Clew's directory, not that they may read that someone's records in your system. Narrow every key to what the verified actor may see in your source, and answer a key outside it as no row, never as an error, so a missing row stands for both "none" and "not allowed". The rule lives in [the entities module](../../apps/server/src/modules/entities/relations.ts); [Entities](../architecture/entities.md#who-may-be-asked-about) explains it.
 
 ## Authenticate to the source
 

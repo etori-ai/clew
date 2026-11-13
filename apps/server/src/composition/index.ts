@@ -2,12 +2,19 @@ import {
   acceptsEmptyInput,
   answerCards,
   bundledIds,
+  holdingsReader,
   internalIds,
   offAtFirstBoot,
   registry,
   runCapability,
 } from '../connectors/registry';
-import { assertionFor, registerConnector, secretPurpose, unregisterConnector } from '../connectors/remote';
+import {
+  assertionFor,
+  installationAssertionFor,
+  registerConnector,
+  secretPurpose,
+  unregisterConnector,
+} from '../connectors/remote';
 import { postgresConnectorStore, postgresUnits, postgresGroups } from '../connectors/adapters/postgres';
 import { connectorUsecases } from '../connectors/usecases/admin';
 import type { LiveRegistration, Secrets } from '../connectors/model';
@@ -23,19 +30,23 @@ import { memoryModelHealth } from '../assistant/adapters/memory';
 import { modelUsecases } from '../assistant/usecases/models';
 import type { KeySealer } from '../assistant/ports';
 import { assistantUsecases } from '../assistant';
+import { personKey } from '../modules/entities/domain';
+import { staff } from './people';
 import { postgresJobQueue, postgresPeople } from '../scheduler/adapters/postgres';
 import { createScheduler } from '../scheduler/usecases';
 import { signInData } from './sign-ins';
 import { postgresThreadStore } from '../threads/adapters/postgres';
 import { cancelDurable, moveToRunningVersion } from '../dbos/start';
 import { ledger } from './durable';
-import { audiencedActorOf, COMPETENCE_CONNECTOR, DIALOGUE_CONNECTOR } from '@clew/connectors';
+import { audiencedActorOf, COMPETENCE_CONNECTOR, DIALOGUE_CONNECTOR, inAudience } from '@clew/connectors';
+import { organisationInAudiences, readAudienceFacts } from '@clew/db/auth';
 import { reminderUsecases } from '../threads/usecases/reminders';
 import { threadUsecases } from '../threads/usecases/cards';
 import { clock, ids } from './ambient';
 import { calendar, events, notifier, calendarAuthority, followups, planningRound } from './calendar';
 import { talksRound } from '../modules/calendar/adapters/talks-round';
 import { talks } from './talks';
+import { holdingsPort } from './competence';
 import { dialogue } from './dialogue';
 import { TALKS_CAPABILITY } from '../modules/talk-seam/capabilities';
 import type { AuthenticatedContext, DayView, TalksResult } from '@clew/contracts';
@@ -222,6 +233,43 @@ export async function dialogueWritable(persona: AuthenticatedContext) {
   await refreshConnectors();
   return registry.visible(audiencedActorOf(persona), DIALOGUE_CONNECTOR);
 }
+/**
+ * The copy of what sources hold (D108 item 9) reads only while the module is switched on for the installation, the
+ * administrator's choice on Anslutna system, read fresh as above. Filled here because the registry is built over the
+ * competence module (`composition/competence.ts`).
+ */
+holdingsPort.switchedOn = async () => {
+  await refreshConnectors();
+  return registry.governance(COMPETENCE_CONNECTOR).state === 'enabled';
+};
+// The installation's own read of the holdings profile (D119): the enabled connectors that answer `<id>.holdings`, and
+// one page of one of them, read with no person behind the call.
+holdingsPort.holdingsSources = () => holdingsReader.holdingsSources();
+holdingsPort.readHoldings = (connectorId, cursor, options) => holdingsReader.readHoldings(connectorId, cursor, options);
+/**
+ * Who a source's rows may be kept for (D23): the installation's read has no person behind it, so the audiences are
+ * applied to the people its rows are about. A row is kept only for an active person with access who is inside both the
+ * source connector's audience and the competence module's own, by the registry's own rule (`inAudience`) over what the
+ * audience is decided on; and the sources page shows a source only to an organisation that has such a person.
+ */
+const copyAudiences = (connectorId: string) => [
+  registry.governance(connectorId).audience,
+  registry.governance(COMPETENCE_CONNECTOR).audience,
+];
+holdingsPort.admitted = async (connectorId, personIds) => {
+  const audiences = copyAudiences(connectorId);
+  const facts = await readAudienceFacts(personIds);
+  return new Set(
+    facts
+      .filter(f => {
+        const actor = { id: f.personId, name: '', unitId: f.unitId, unitLabel: '', role: f.role, groups: f.groups };
+        return audiences.every(audience => inAudience(audience, actor));
+      })
+      .map(f => f.personId),
+  );
+};
+holdingsPort.reaches = (connectorId, organisationId) =>
+  organisationInAudiences(organisationId, copyAudiences(connectorId));
 // A cited answer becomes a card (D26) through the search connector's propose; the stream owns the card, so the slot is filled here.
 answerCards.create = async (actorId, input) => {
   const persona = await systemContext(actorId, 'system:answer-card');
@@ -258,6 +306,12 @@ export const assistant = assistantUsecases({
   ids,
   log: logPort('assistant', 'error'),
   trace: currentTraceId,
+  // The people the asker manages (D115): Personal's list, read on every turn; only people who can be asked about (D97).
+  people: async persona =>
+    (await staff.reach(persona)).managed.flatMap(unit =>
+      // By Clew's key, the person's id (D122), as the cards about them name them; only someone who can be asked about.
+      unit.people.flatMap(p => (personKey(p) ? [{ key: p.id, name: p.name, unit: unit.unitLabel }] : [])),
+    ),
 });
 /** The models' health probe (D8), started by main.ts beside the server: once at boot, then every minute. */
 export const startAssistantProbe = (intervalMs = 60_000) => {
@@ -304,6 +358,9 @@ export const connectorAdmin = connectorUsecases({
         key: secret,
         assert: assertionFor(id, manifest.uses),
         assertForeign: sign('wrong-secret-wrong-secret-' + id, id),
+        // The reads the manifest declares for the installation (D119) are read as Clew reads them; the administrator's
+        // report counts what came back and shows none of it (D23).
+        assertInstallation: installationAssertionFor(id),
         acceptsEmptyInput,
       });
     },

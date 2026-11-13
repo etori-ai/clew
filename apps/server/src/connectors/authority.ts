@@ -1,8 +1,9 @@
-import { createPrivateKey, createPublicKey, randomUUID } from 'node:crypto';
+import { createHash, createPrivateKey, createPublicKey, randomUUID } from 'node:crypto';
 import { importPKCS8, SignJWT, jwtVerify, createLocalJWKSet, type JSONWebKeySet } from 'jose';
 import { Value } from 'typebox/value';
-import { ActorSchema } from '@clew/connectors/protocol';
+import { ActorSchema, INSTALLATION_CALLER, INSTALLATION_SUBJECT } from '@clew/connectors/protocol';
 import type { Actor } from '@clew/connectors';
+import type { AssertionBinding } from '@clew/connectors/remote';
 
 export class AssertionError extends Error {
   constructor(message: string) {
@@ -16,6 +17,8 @@ export interface CallbackGrant {
   uses: string[];
   chain: string[];
 }
+/** What a connector's verifier recomputes from the body it received (D117): SHA-256 of the exact bytes, base64url. */
+export const bodyDigest = (body: string) => createHash('sha256').update(body, 'utf8').digest('base64url');
 /** Only Clew holds the private key. Connectors verify requests with public keys and cannot mint callback grants. */
 export async function connectorAuthority(pem: string, kid: string, previous: JSONWebKeySet['keys'] = []) {
   const privateKey = await importPKCS8(pem, 'RS256');
@@ -51,11 +54,49 @@ export async function connectorAuthority(pem: string, kid: string, previous: JSO
       .sign(privateKey);
   return {
     jwks,
-    async assert(connectorId: string, actor: Actor, uses: string[] = [], chain: string[] = []) {
+    /**
+     * The request assertion for one call, bound to it (D117): `body` is the SHA-256 of the exact request body, base64url,
+     * and `capability` the capability's name on its route. The body carries the input and, when it names people or
+     * units, how the actor stands to each (`about`), so the binding covers both and the bearer stays the same size
+     * however many keys a call names. The callback grant is never bound and never carries `about`.
+     */
+    async assert(
+      connectorId: string,
+      actor: Actor,
+      uses: string[] = [],
+      chain: string[] = [],
+      binding?: AssertionBinding,
+    ) {
       const callback = uses.length
         ? await sign('clew:connector-callback', actor, { connectorId, uses, chain })
         : undefined;
-      return sign(connectorId, actor, { ...(callback ? { callback } : {}) });
+      return sign(connectorId, actor, {
+        ...(callback ? { callback } : {}),
+        ...(binding ? { body: bodyDigest(binding.body) } : {}),
+        ...(binding?.capability ? { capability: binding.capability } : {}),
+      });
+    },
+    /**
+     * The installation's own assertion, for a read Clew makes with no person behind it (D119): subject
+     * `clew:installation`, `caller: "installation"`, no `actor` and no `callback`, so it verifies as nobody's person
+     * and grants no callback. Bound to its one request as every assertion is (D117): the binding is required.
+     */
+    async installation(connectorId: string, binding: AssertionBinding & { capability: string }) {
+      if (typeof binding?.body !== 'string' || typeof binding.capability !== 'string' || !binding.capability)
+        throw new AssertionError('An installation assertion is bound to its request.');
+      return new SignJWT({
+        caller: INSTALLATION_CALLER,
+        body: bodyDigest(binding.body),
+        capability: binding.capability,
+      })
+        .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid })
+        .setIssuer('clew')
+        .setAudience(connectorId)
+        .setSubject(INSTALLATION_SUBJECT)
+        .setJti(randomUUID())
+        .setIssuedAt()
+        .setExpirationTime('2m')
+        .sign(privateKey);
     },
     async verify(token: string): Promise<CallbackGrant> {
       try {

@@ -1,0 +1,19 @@
+{
+  "description": "idnumber is compared with its case: \"HILLEVI\" finds nobody, although \"hillevi\" exists.",
+  "request": {
+    "method": "POST",
+    "path": "/webservice/rest/server.php",
+    "headers": {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Accept": "application/json"
+    },
+    "body": "wstoken=%3Cthe+service+account+token%3E&moodlewsrestformat=json&moodlewssettingraw=true&wsfunction=core_user_get_users_by_field&field=idnumber&values%5B0%5D=HILLEVI"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": []
+  }
+}

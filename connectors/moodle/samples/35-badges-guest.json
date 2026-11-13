@@ -1,0 +1,23 @@
+{
+  "description": "The guest account's badges: Moodle refuses them with guestsarenotallowed, an error about that one account. Found by the installation's first read of every holding (D119), which then answered the guest with a partial row; the read now leaves Moodle's guest account out, and the code stays one account's refusal should another such account be asked.",
+  "request": {
+    "method": "POST",
+    "path": "/webservice/rest/server.php",
+    "headers": {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Accept": "application/json"
+    },
+    "body": "wstoken=%3Cthe+service+account+token%3E&moodlewsrestformat=json&moodlewssettingraw=true&wsfunction=core_badges_get_user_badges&userid=1"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "exception": "core\\exception\\moodle_exception",
+      "errorcode": "guestsarenotallowed",
+      "message": "The guest user is not allowed to do this"
+    }
+  }
+}

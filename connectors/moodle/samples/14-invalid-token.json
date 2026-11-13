@@ -1,0 +1,23 @@
+{
+  "description": "A token Moodle does not know: HTTP 200 with invalidtoken.",
+  "request": {
+    "method": "POST",
+    "path": "/webservice/rest/server.php",
+    "headers": {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Accept": "application/json"
+    },
+    "body": "wstoken=00000000000000000000000000000000&moodlewsrestformat=json&moodlewssettingraw=true&wsfunction=core_user_get_users_by_field&field=idnumber&values%5B0%5D=hillevi"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "exception": "core\\exception\\moodle_exception",
+      "errorcode": "invalidtoken",
+      "message": "Invalid token - token not found"
+    }
+  }
+}

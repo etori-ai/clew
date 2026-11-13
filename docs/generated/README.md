@@ -2,7 +2,7 @@
 
 # Generated connector reference
 
-Protocol version: **2**. Generated from [protocol.ts](../../packages/connectors/src/protocol.ts), its imported contracts and the real connector manifest exports. The tables are field summaries; use the [JSON Schema bundle](../protocol/connector-protocol.schema.json) for nested fields, constraints, required properties and unions, and the [OpenAPI document](../protocol/connector-protocol.openapi.json) for the routes. A running Clew serves both, a viewer and a manifest dry run under `/api/protocol` (D60), generated from the same code as these files. Schema validation does not replace [behavioral validation](../guides/testing-and-deployment.md).
+Protocol version: **3**. Generated from [protocol.ts](../../packages/connectors/src/protocol.ts), its imported contracts and the real connector manifest exports. The tables are field summaries; use the [JSON Schema bundle](../protocol/connector-protocol.schema.json) for nested fields, constraints, required properties and unions, and the [OpenAPI document](../protocol/connector-protocol.openapi.json) for the routes. A running Clew serves both, a viewer and a manifest dry run under `/api/protocol` (D60), generated from the same code as these files. Schema validation does not replace [behavioral validation](../guides/testing-and-deployment.md).
 
 The manifest field by field, with examples and the rules between fields, is [manifest-reference.md](manifest-reference.md).
 
@@ -10,13 +10,14 @@ The manifest field by field, with examples and the rules between fields, is [man
 
 - [hello manifest](hello.manifest.json), from [connector.mjs](../../connectors/hello/connector.mjs): 5 capabilities; scan enabled.
 - [phonebook manifest](phonebook.manifest.json), from [connector.mjs](../../connectors/phonebook/connector.mjs): 5 capabilities; no scan.
-- [hr manifest](hr.manifest.json), from [connector.mjs](../../connectors/hr/connector.mjs): 18 capabilities; scan enabled.
+- [hr manifest](hr.manifest.json), from [connector.mjs](../../connectors/hr/connector.mjs): 19 capabilities; scan enabled.
 - [finance manifest](finance.manifest.json), from [connector.mjs](../../connectors/finance/connector.mjs): 14 capabilities; scan enabled.
 - [incidents manifest](incidents.manifest.json), from [connector.mjs](../../connectors/incidents/connector.mjs): 4 capabilities; scan enabled.
-- [communication manifest](communication.manifest.json), from [connector.mjs](../../connectors/communication/connector.mjs): 5 capabilities; scan enabled.
+- [communication manifest](communication.manifest.json), from [connector.mjs](../../connectors/communication/connector.mjs): 6 capabilities; scan enabled.
 - [timesheet manifest](timesheet.manifest.json), from [connector.mjs](../../connectors/timesheet/connector.mjs): 5 capabilities; no scan.
 - [payroll manifest](payroll.manifest.json), from [connector.mjs](../../connectors/payroll/connector.mjs): 3 capabilities; no scan.
 - [appraisals manifest](appraisals.manifest.json), from [connector.mjs](../../connectors/appraisals/connector.mjs): 4 capabilities; no scan.
+- [moodle manifest](moodle.manifest.json), from [connector.mjs](../../connectors/moodle/connector.mjs): 3 capabilities; no scan.
 
 These JSON files are complete, generated inputs, not abbreviated pseudocode. They contain no credentials. The [signed walkthrough](../../scripts/docs-smoke.ts) runs the phone book fixture; the [quickstart](../guides/creating-a-connector.md) explains how to adapt it.
 
@@ -24,12 +25,13 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 
 | Field | Required | Shape | Description |
 |---|---|---|---|
-| `protocol` | yes | 2 | The version of this contract the manifest is written to, not of the connector (D60). This instance loads 2; an additive change to the protocol keeps the number. |
+| `protocol` | yes | 3 / 2 | The version of this contract the manifest is written to, not of the connector (D60). This instance loads 3, and 2 for a window: a connector on 2 is loaded, shown with a warning in administration and in the conformance check, sent no `about` in its request bodies and held to the looser rules of 2. An additive change keeps the number; a break is a new one. 3 (D117) binds the request assertion to its body and capability, sends `about` in the body of a call whose input names people or units, and refuses a manifest in which an input that names someone is not a plain string property. `installation` (D119) was added to 3 as an optional field: a manifest without it is read as before. |
 | `id` | yes | string | Stable and lowercase. Must match the id Clew was configured with, and prefixes every capability name. |
 | `kind` | yes | "passthrough" / "derived" | Who owns the data (D3): `passthrough` when it lives in the connected system and Clew keeps refs and audit rows only; `derived` when the connector computes it from other sources. `core` is Clew's own and never a remote connector. |
 | `source` | yes | string | Swedish. The system as shown on cards: "Personalsystemet". |
 | `areas` | yes | array of object | The areas this connector gives a person: each names and marks the connector's cards, is a choice in Hem's area filter, and holds its standing capabilities, schedules and figure. Where each shows is in docs/guides/where-things-open.md. Empty is allowed for a connector that only answers questions. |
 | `capabilities` | yes | array of object | What the connector can do, one entry per operation. The name is the contract (D37): a break is a new name, never a changed one. |
+| `installation` | no | array of object | The reads Clew makes as the installation itself, with no person behind the call (D119), one per profile: today `<id>.holdings`, every holding the source has, a page at a time, for Clew's competence register (D108 item 9). Added under protocol 3; a manifest without it is untouched, and one on 2 cannot declare it. |
 | `uses` | no | array of string | The exact capability names of other connectors this one calls back through `POST /api/connectors/call` while serving a request (D37), such as `calendar.today`. A name not listed is refused; an `execute` can never be called back. |
 | `facts` | no | array of object | The fact kinds this connector creates (D55), each prefixed with its id. |
 | `scan` | yes | boolean | Whether Clew should POST /clew/scan for each person nightly and on first visit. |
@@ -55,6 +57,8 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 | `review` | no | string | On an execute: the same-connector document or record read taking {ref}, whose version-bound evidence is required on approval. |
 | `menu` | no | object | How this capability's view is named and marked when an administrator puts it in Clew's menu under Verktyg (D40). Only on a read that declares a view and needs no input. |
 | `about` | no | object | What the rows concern (D97). A `read` takes `{ keys }` (an array of at most 200 strings, required) and answers `rows` (or its view's rows), one per key it knows, each with a string `key` it was asked with; a key outside the caller's scope is answered as no row, never as a refusal. It declares a `table` or `list` view, is never a tool (`model: false`), and may answer `heading` and `note`, two strings beside the rows. A `propose` or `execute` names in `param` the input property that takes one key. Clew decides where it shows: an action in the entity's menu, a read as a section on the opened entity, a `warn` or `alert` tone as a mark on its row, a table or list as a lens an administrator may offer. |
+| `person` | no | object | Who may be asked about (D117). Clew resolves the caller's relation to every person the input names from its own directory before the connector is called: a key in `keys` the caller may not ask about is left out of the call, and a call whose single key names such a person, or holds anything but a string there, is refused as an unknown capability is, so the answer never tells whether the person exists. The relation of each key sent travels in the request body's `about`, which the assertion binds. A capability about a person, a `<id>.commitments` read, a read a row of a section about a person opens with the row's `key` and an execute's effect read name a person whether or not they declare this, and each such input must be a plain string property of the input schema; without `admits` they admit `self` and `managed`. |
+| `unit` | no | object | Who may be asked about through a capability whose `about.entity` is `unit` (D117). A unit key outside `admits` is left out of `keys`, and a call whose `about.param` names such a unit is refused as an unknown capability is. |
 | `follows` | no | array of string | For a `propose` (D55): the fact kinds it answers for. Input is a FactEnvelope, output a FollowResponse; steps name this connector only. |
 | `creates` | no | string | The fact kind this `propose` or `execute` brings about (D55); must be one of the manifest's `facts`. |
 | `asks` | no | array of object, one of `kind`: "meeting" / "text" / "long-text" / "date" / "choice" | On a `propose` or `execute` (D112): what the person fills in before it runs, each naming one property of the input. Clew draws the asks as the first step of the action's dialog, "Fyll i", from every place the action can be started, and merges the answers into the input; the rest comes from the selected rows (`refs`), the action's own `input` on a work item, or the entity (`about.param`). An answer for anything not asked is refused. |
@@ -90,6 +94,7 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 |---|---|---|---|
 | `actor` | yes | object | The acting person as Clew knows them. Never a token. |
 | `input` | yes | JSON value |  |
+| `about` | no | object | How the actor stands to the people or units the input names (D117), present when the input names any. Trust it only from a body whose digest the verified assertion's `body` claim holds. |
 
 ## ThreadDraft
 

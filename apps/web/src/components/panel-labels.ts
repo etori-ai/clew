@@ -165,6 +165,8 @@ const values: Record<string, string> = {
   expired: 'utgånget',
   expiring: 'går ut snart',
   valid: 'giltigt',
+  // A copied holding whose source type is not mapped to the catalogue (D108 item 9).
+  uncounted: 'räknas inte',
   done: 'klart',
   failed: 'misslyckades',
   long: 'sjukskriven',

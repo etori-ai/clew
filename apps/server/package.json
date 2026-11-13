@@ -7,7 +7,7 @@
     "dev": "tsx watch --clear-screen=false src/main.ts",
     "start": "tsx src/main.ts",
     "test:node": "node --import tsx --test --test-concurrency=1 tests/runtime.test.ts tests/fixture-runtime.test.ts tests/request-spans.test.ts tests/workflow-moves.test.ts",
-    "test:durability": "node --import tsx --test --test-concurrency=1 --test-force-exit tests/execution-runtime.test.ts tests/timer-runtime.test.ts tests/watch-runtime.test.ts tests/job-runtime.test.ts tests/job-lease-runtime.test.ts tests/move-runtime.test.ts tests/attention-runtime.test.ts tests/failed-step-runtime.test.ts"
+    "test:durability": "node --import tsx --test --test-concurrency=1 --test-force-exit tests/execution-runtime.test.ts tests/timer-runtime.test.ts tests/watch-runtime.test.ts tests/job-runtime.test.ts tests/job-lease-runtime.test.ts tests/move-runtime.test.ts tests/attention-runtime.test.ts tests/failed-step-runtime.test.ts tests/competence-runtime.test.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "3.0.90",

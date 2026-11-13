@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import type { Area, MenuEntry, Thread, ViewRef } from '@clew/contracts';
+import type { Area, Capability, MenuEntry, Thread } from '@clew/contracts';
 import {
   Badge,
   CommandPalette,
@@ -12,7 +12,6 @@ import {
   PlusIcon,
   SideNavItem,
   SideNavSection,
-  SparklesIcon,
   StatusDot,
   Text,
   VStack,
@@ -27,12 +26,39 @@ import { areasQuery, threadsQuery } from '../queries';
 import { groupThreads } from '../stream';
 import { clewIcon } from '../icons';
 import { cardOverPage } from '../panel-address';
+import { viewPageHref } from '../view-address';
 import { pageLocation } from '../page-location';
 import { conversationState, needsYouOf, todoHref } from '../work-items';
 import { SubRows, type ShellNav } from './shell';
+import { useHeldCapabilities } from '../capabilities';
 
 /** The administration's sections, rows under Administration (D45, administration keeps the rail). */
 export type AdminSection = 'anslutningar' | 'modeller' | 'anvandare' | 'organisation' | 'utseende' | 'kompetens';
+/**
+ * Each row under Administration with the capability its page is behind on the server (D85): a row is drawn only for a
+ * person who holds it, so no row leads to a refusal. Kompetens also needs the module switched on and visible to the
+ * person (D108 item 13), which `/api/areas` says by listing the system.
+ */
+const ADMIN_ROWS: ReadonlyArray<{
+  section: AdminSection;
+  label: string;
+  href: string;
+  capability: Capability;
+  system?: string;
+}> = [
+  { section: 'anslutningar', label: 'Anslutna system', href: '/admin/connectors', capability: 'admin.connectors' },
+  { section: 'modeller', label: 'Modeller', href: '/admin/models', capability: 'admin.connectors' },
+  { section: 'anvandare', label: 'Användare', href: '/admin/users', capability: 'admin.users' },
+  { section: 'organisation', label: 'Organisation', href: '/admin/organisation', capability: 'admin.users' },
+  { section: 'utseende', label: 'Utseende', href: '/admin/appearance', capability: 'admin.appearance' },
+  {
+    section: 'kompetens',
+    label: 'Kompetens',
+    href: '/admin/competence',
+    capability: 'admin.competence',
+    system: 'competence',
+  },
+];
 /** What the rail marks as current: the place, and within the start page the conversation. */
 export interface RailCurrent {
   surface: 'start' | 'todo' | 'calendar' | 'verktyg' | 'staff' | 'units' | 'admin';
@@ -47,29 +73,11 @@ const EMPTY_AREAS: Area[] = [];
 const EMPTY_MENU: MenuEntry[] = [];
 /** How many tools show at once; the rest sit under "Fler verktyg", so the foot of the menu keeps its height however many connectors offer a row. */
 const TOOLS_SHOWN = 4;
-const json = (value: Record<string, unknown> | undefined) =>
-  value && Object.keys(value).length ? encodeURIComponent(JSON.stringify(value)) : null;
 /**
- * The address of a tool (D42): its own page, `/tools/:capability`. `input` is what the view's own controls ask for;
- * `open` is a row's own view shown in the panel over the page (`open`, with `open-title` and `open-input`), and `via` marks one
- * opened from another opened view, which then offers the way back.
+ * The address of a tool (D42): its own page, `/tools/:capability`, as the rail and Verktygslådan lead to it. Every other
+ * read the person may open has the same page (D116, `view-address.ts`, which also names the way back to it).
  */
-export const toolHref = (
-  capability: string,
-  input?: Record<string, unknown>,
-  open?: Pick<ViewRef, 'capability' | 'title' | 'input'>,
-  via = false,
-) => {
-  const query = [
-    json(input) && `input=${json(input)}`,
-    open && `open=${encodeURIComponent(open.capability)}&open-title=${encodeURIComponent(open.title)}`,
-    open && json(open.input) && `open-input=${json(open.input)}`,
-    open && via && 'via=1',
-  ]
-    .filter(Boolean)
-    .join('&');
-  return `/tools/${capability}${query ? `?${query}` : ''}`;
-};
+export const toolHref = (capability: string) => viewPageHref({ capability });
 /**
  * A hit's address, or for a work item the item itself, which opens over the page the person is on when it is picked;
  * `group` is the heading the search lists it under (Astryx's `CommandPalette` groups by it).
@@ -84,7 +92,8 @@ type Found = ({ href: string } | { card: string }) & { detail: string; group: st
  * the header's Start has no row of its own, so Clew's places stand here once); Verktyg, the views an
  * administrator placed as tools (D40, each a page of its own, D42); then Samtal, the person's conversations, newest
  * first, in one disclosure, each with a dot only where the data says something about it (the answer being written, a
- * draft that waits for the person). At the foot Administration with its sections, collapsed until one of them is open.
+ * draft that waits for the person). At the foot Administration with the sections the person may open (`ADMIN_ROWS`),
+ * collapsed until one of them is open. Kalender is drawn while the calendar is the person's to see (D23).
  * Every row is a link to a route, so the back button and a reload land in the same place. Returned as the shell's
  * slots so the shell keeps the heading, the person and the way out.
  */
@@ -104,6 +113,13 @@ export function useRail({
   const areasData = useQuery(areasQuery).data;
   const areas = areasData?.areas ?? EMPTY_AREAS;
   const menu = areasData?.menu ?? EMPTY_MENU;
+  // A place whose system the person cannot see is not drawn (D23); until `/api/areas` answers, the rail draws it.
+  const systems = areasData?.systems;
+  const sees = (connector: string) => !systems || systems.some(s => s.connector === connector);
+  const held = useHeldCapabilities();
+  const adminRows = admin
+    ? ADMIN_ROWS.filter(r => held.includes(r.capability) && (!r.system || (!!systems && sees(r.system))))
+    : [];
   const todayDate = today();
   const g = groupThreads(threads, new Date().toISOString(), todayDate);
   const needsYou = needsYouOf(g).length;
@@ -207,7 +223,14 @@ export function useRail({
               ) : undefined
             }
           />
-          <SideNavItem label="Kalender" icon="calendar" href="/calendar" isSelected={current.surface === 'calendar'} />
+          {sees('calendar') && (
+            <SideNavItem
+              label="Kalender"
+              icon="calendar"
+              href="/calendar"
+              isSelected={current.surface === 'calendar'}
+            />
+          )}
           {/* Personal (D94): a manager's people, a destination of its own; the server checks the assignments on every read. */}
           {manager && (
             <SideNavItem
@@ -242,51 +265,39 @@ export function useRail({
           </SideNavSection>
         )}
         {g.questions.length > 0 && (
-          <SideNavSection title="Samtal" isHeaderHidden>
-            {/* The conversation history as the template draws it: one disclosure, open until the person folds it. */}
-            <SideNavItem label="Samtal" icon={SparklesIcon} collapsible={{ defaultIsCollapsed: false }}>
-              <SubRows>
-                {g.questions.map(t => {
-                  const state = conversationState(t, threads, answering);
-                  return (
-                    <SideNavItem
-                      key={t.id}
-                      label={titled(t.title)}
-                      href={`/conversations/${t.id}`}
-                      isSelected={current.conversationId === t.id}
-                      endContent={state ? <StatusDot variant={state.variant} label={state.label} /> : undefined}
-                    />
-                  );
-                })}
-              </SubRows>
-            </SideNavItem>
+          <SideNavSection title="Samtal">
+            {/* The conversation history (board Sidebar): rows of the section itself, so Astryx cuts a long title with an
+                ellipsis on one line. Not a row that folds: the region Astryx folds lets its rows grow as wide as their
+                text (D112, Astryx gaps). */}
+            {g.questions.map(t => {
+              const state = conversationState(t, threads, answering);
+              return (
+                <SideNavItem
+                  key={t.id}
+                  label={titled(t.title)}
+                  href={`/conversations/${t.id}`}
+                  isSelected={current.conversationId === t.id}
+                  endContent={state ? <StatusDot variant={state.variant} label={state.label} /> : undefined}
+                />
+              );
+            })}
           </SideNavSection>
         )}
       </>
     ),
-    footer: admin ? (
-      <SideNavItem
-        label="Administration"
-        icon="wrench"
-        collapsible={{ defaultIsCollapsed: current.surface !== 'admin' }}
-      >
-        <SubRows>
-          <SideNavItem
-            label="Anslutna system"
-            href="/admin/connectors"
-            isSelected={current.section === 'anslutningar'}
-          />
-          <SideNavItem label="Modeller" href="/admin/models" isSelected={current.section === 'modeller'} />
-          <SideNavItem label="Användare" href="/admin/users" isSelected={current.section === 'anvandare'} />
-          <SideNavItem
-            label="Organisation"
-            href="/admin/organisation"
-            isSelected={current.section === 'organisation'}
-          />
-          <SideNavItem label="Utseende" href="/admin/appearance" isSelected={current.section === 'utseende'} />
-          <SideNavItem label="Kompetens" href="/admin/competence" isSelected={current.section === 'kompetens'} />
-        </SubRows>
-      </SideNavItem>
-    ) : undefined,
+    footer:
+      adminRows.length > 0 ? (
+        <SideNavItem
+          label="Administration"
+          icon="wrench"
+          collapsible={{ defaultIsCollapsed: current.surface !== 'admin' }}
+        >
+          <SubRows>
+            {adminRows.map(r => (
+              <SideNavItem key={r.section} label={r.label} href={r.href} isSelected={current.section === r.section} />
+            ))}
+          </SubRows>
+        </SideNavItem>
+      ) : undefined,
   };
 }

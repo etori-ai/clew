@@ -1,5 +1,5 @@
 import type { Connector } from '@clew/connectors';
-import type { ConnectorManifest } from '@clew/connectors/protocol';
+import { PROTOCOL_VERSION, type ConnectorManifest } from '@clew/connectors/protocol';
 
 /**
  * A bundled connector (people, the calendar, search) described in the manifest's shape, so the administration page
@@ -8,7 +8,7 @@ import type { ConnectorManifest } from '@clew/connectors/protocol';
  */
 export function describeBundled(connector: Connector): ConnectorManifest {
   return {
-    protocol: 2,
+    protocol: PROTOCOL_VERSION,
     id: connector.id,
     kind: connector.kind === 'core' ? 'passthrough' : connector.kind,
     source: connector.source,

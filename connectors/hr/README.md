@@ -26,6 +26,10 @@ user names (`{ keys }`, at most 200), it gives one row per employee of the manag
 today, upcoming }`, the key as it was asked: "I tjänst", or the absence ("Sjuk · dag 1", "Sjukskriven", "VAB",
 "Semester") as the column Närvaro on Personal, today in a few words, and the next known absence, a leave request not yet
 decided saying so. Anyone else, an unknown key and a key asked twice are no row; an employee is refused by the scope.
+It declares `person: { admits: ['managed'] }`, so Clew sends it only the manager's own reports and tells it each key's
+relation in the request body the assertion is bound to
+([D117](../../docs/decisions/D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md));
+the system still narrows to its own unit as well.
 A row opens the person's absence pattern. An employee's `personId` is their user name; the people on Bergsåkers skola in
 the development directory carry the names it gives them, so every person on the manager's Personal has an answer. An employee the HR system knows (by person id
 after `FIXTURE_PERSON_MAP`) gets `my-shift`: today's shift, the balance, a delegation about to expire, the own leave
@@ -39,7 +43,8 @@ does not exist yet, none when it does. A follower cannot also be an action about
 takes the HR system's own employee ref (`hr:emp:N`), so the person's menu gets its own propose.
 
 `hr.prepareAbsence` is "Registrera frånvaro" in a manager's menu on a person (D97): `about: { entity: 'person', param:
-'person' }`, and `person`, the user name, is the only input it requires (`from`, the first day, is optional and today
+'person' }` with `person: { admits: ['managed'] }` (D117: Clew offers and starts it only on the manager's reports), and
+`person`, the user name, is the only input it requires (`from`, the first day, is optional and today
 when absent). It finds the employee as `hr.person` does, on the manager's own unit only, and refuses anyone else in
 Swedish ("Medarbetaren finns inte i din enhet."), as it refuses a day the employee is already away. It writes nothing:
 it answers a `ThreadDraft`, the card the manager reads before deciding, whose row names the employee (with the key as
@@ -56,6 +61,19 @@ employee; the decision itself is the card button's own input.
 
 The scan's rows about one employee (the rehab talk, a leave request) carry `subject: { entity: 'person', key }`, the
 employee's user name (D97 item 6), so the card shows on that person for the manager; their text still names nobody.
+The same key is how Clew's assistant finds the rehab talk when a manager asks about the employee by name
+([D115](../../docs/decisions/D115-the-assistant-resolves-a-person-the-asker-names-and-hands-the-model-the-work-about-them-not-health-rows.md)):
+the model is handed the card's title, last day and buttons, never its summary or row.
+
+`hr.rehabRoutine` ("Rehabiliteringsrutinen", D115) answers the municipality's rehabilitation routine as the HR system
+holds it, the same for every manager and about nobody: `{ name, owner, reviewedAt, rows }`, one row per step with its
+part of the routine (`section`: kort, upprepad korttidsfrånvaro, lång, tillbaka i arbete), when it is taken (`at`:
+"Dag 1", "Dag 8", "Senast dag 30" …), its `title` and what the manager does (`detail`): contact on day 1 without asking
+about a diagnosis, a doctor's certificate from day 8, an omtankesamtal within two weeks after the third short absence
+in six months (rule 4.2, the one the scan's card follows), Försäkringskassan from day 15, a plan for the return to work
+by day 30, follow-up on days 90 and 180, and a talk the first week back. The text is synthetic, written for the
+fixture. It is a `list` view with a menu row ("Rehabrutinen") and `model: true` with the whole output handed to the
+model: policy text is not health data, so the assistant can say what the routine asks for. Managers only.
 
 ## Running it
 

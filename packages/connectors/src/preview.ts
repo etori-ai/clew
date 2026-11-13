@@ -98,6 +98,17 @@ export function previewManifest(document: unknown, options: PreviewOptions = {})
         icon: a.icon ?? null,
       })),
       menu: capabilities.flatMap(c => (c.menu ? [{ capability: c.name, label: c.menu.label, icon: c.menu.icon }] : [])),
+      // The reads Clew makes as the installation (D119): no person reaches them, and the check reads their first pages.
+      ...(manifest.installation?.length
+        ? {
+            installation: manifest.installation.map(r => ({
+              name: r.name,
+              title: r.title,
+              check:
+                'Read as the installation, with no person behind it: its first two pages, counted and not shown. A person signed on its route must be refused (401).',
+            })),
+          }
+        : {}),
     },
   };
 }
@@ -287,6 +298,7 @@ type Manifestish = {
     view?: { fields?: Array<{ key?: string }> };
     asks?: Array<{ property?: string }>;
   }>;
+  installation?: Array<{ name?: string }>;
   facts?: Array<{ kind?: string }>;
   areas?: Array<{ id?: string; standing?: string[] }>;
 };
@@ -339,6 +351,16 @@ const CAPABILITY_PROBLEMS: Array<[RegExp, string | undefined, string | ((match: 
   [/^: a read about an entity is never a tool/, 'about-never-a-tool', '.model'],
   [/^: an action about an entity names in param/, 'about-action-param', '.about.param'],
   [/^: an action about an entity requires /, 'about-action-key-alone', '.input.required'],
+  [/^: person is about people/, 'person-not-a-unit', '.person'],
+  [/^: unit belongs to a capability about a unit/, 'unit-on-a-unit', '.unit'],
+  [/^: only Clew's own connectors take a person by Clew's id/, undefined, '.person'],
+  [/^: a capability about a person takes its key in keys or about\.param/, 'person-param', '.person.param'],
+  [/^: person names no input/, 'person-param', '.person'],
+  [
+    /^: (\S+) names a (person|unit), so it must be a plain string property/,
+    'named-input-is-a-string',
+    m => `.input.properties.${m[1]}`,
+  ],
   [/^: (asks belong to a propose or an execute|a follower is asked with a fact)/, 'asks-on-an-action', '.asks'],
   [/^: ask "([^"]*)" (is asked twice|names no property|names the input that takes)/, 'ask-names-input', 'ask:property'],
   [/^: ask "([^"]*)" is optional, but the input requires/, 'ask-fits-input', 'ask:required'],
@@ -387,6 +409,22 @@ function locate(problem: string, document: Manifestish): Located {
       return { ...(rule ? { rule } : {}), path };
     }
     return { path: base };
+  }
+  // The reads Clew makes as the installation (D119).
+  if (problem.startsWith('Installation reads were added under protocol 3'))
+    return { rule: 'installation-on-3', path: 'installation' };
+  const installation = /^Installation read ([^\s:]+)(?: (input|output))?: (.*)$/s.exec(problem);
+  if (installation) {
+    const [, name, schema, rest] = installation;
+    const base = at(
+      'installation',
+      indexOf(document.installation, r => r.name === name),
+    );
+    if (schema) return { path: `${base}.${schema}` };
+    if (/^Clew reads only its profiles/.test(rest!)) return { rule: 'installation-profile', path: `${base}.name` };
+    if (/^the holdings profile takes/.test(rest!))
+      return { rule: 'installation-holdings-input', path: `${base}.input` };
+    return { rule: 'installation-holdings-output', path: `${base}.output` };
   }
   const fact = /^Fact (\S+) (must be prefixed|is declared twice|attributes:)/.exec(problem);
   if (fact) {

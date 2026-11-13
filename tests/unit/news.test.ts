@@ -302,7 +302,7 @@ describe('clew.news', () => {
     expect(registry.viewFor(mikael, 'intranet.news')).not.toHaveProperty('rowViews');
   });
 
-  test('the communication fixture is a news source over the protocol: its notices, newest first, each opening its text', async () => {
+  test('the communication fixture is a news source over the protocol: its notices, newest first, leading out or opening their text', async () => {
     const secret = 'test-secret-test-secret';
     const service = createConnector({
       jwks: testJwks,
@@ -329,9 +329,13 @@ describe('clew.news', () => {
       ['Ny rutin vid hot och våld', 'Barn och utbildning', 'Kommunikation'],
       ['Enkät om matsalen', 'Kostenheten', 'Kommunikation'],
     ]);
-    expect(result.rows[1]!.view).toEqual({
+    // The notice the system shows in full leaves Clew by its link; the one without opens its text in Clew.
+    expect(result.rows[1]!.link).toBe('https://kommunikation.example.invalid/meddelanden/2026-44-1');
+    expect(result.rows[1]).not.toHaveProperty('view');
+    expect(result.rows[2]).not.toHaveProperty('link');
+    expect(result.rows[2]!.view).toEqual({
       capability: 'communication.newsItem',
-      input: { ref: 'communication:notice:2026-44-1' },
+      input: { ref: 'communication:notice:2026-44-2' },
       title: 'Nyhet',
       source: 'Kommunikation',
     });

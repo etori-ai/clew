@@ -1,5 +1,5 @@
 import { isSnoozed, type CalendarEvent, type ReceiptRow, type SearchHit, type Thread } from '@clew/contracts';
-import { shortDayLabel, timeLabel, timeRange } from '@clew/calendar/dates';
+import { dayLabel, shortDayLabel, timeLabel, timeRange } from '@clew/calendar/dates';
 
 /** A chip resolved against what the person may actually see. Labels from the browser are never trusted. */
 export type ResolvedObject =
@@ -64,13 +64,33 @@ function cardState(t: Thread, now: string): string {
   if (t.waitingOn) return ` Ärendet väntar på ${t.waitingOn}.` + buttons(['Påminn mig', more()]);
   return buttons([...(primary ? [primary.label] : []), ...secondary.map(a => a.label), 'Inte nu', more()]);
 }
+/** A work item's last day as a person reads it ("måndag 16 november"); anything that is not a date as it came. */
+export const dueLabel = (date: string) => (/^\d{4}-\d{2}-\d{2}$/.test(date) ? dayLabel(date) : date);
+/**
+ * A work item about a person the conversation names (D115), as the model is handed it: its title, its source, its last
+ * day and the buttons it shows now. Never its summary, its rows or its receipt: a source's text about a person may say
+ * something about their health, and with the person named the model could tie it to them.
+ */
+export function workItemLine(t: Thread, now: string): string {
+  return (
+    `Ärende "${t.title}" (${t.trigger.source}${t.deadline ? ', senast ' + dueLabel(t.deadline) : ''}).` +
+    (t.state === 'handled' ? ' Ärendet är hanterat.' : cardState(t, now))
+  );
+}
 /**
  * Swedish lines for the system prompt's "Du tittar på" block. Names appear here only because the person pointed at the
  * object. `now` (an instant) decides whether a card's undo window is still open; chips are resolved again every turn, so
- * the state is the card's as it is now, not as it was when it was added.
+ * the state is the card's as it is now, not as it was when it was added. A card `guards` answers for is about a person
+ * the conversation names (D115) and is handed by its title, last day and buttons alone, whichever of its parts was
+ * pointed at and whatever state it is in.
  */
-export function serialiseContext(objects: ResolvedObject[], now: string): string[] {
+export function serialiseContext(
+  objects: ResolvedObject[],
+  now: string,
+  guards: (thread: Thread) => boolean = () => false,
+): string[] {
   return objects.map(o => {
+    if ('thread' in o && guards(o.thread)) return workItemLine(o.thread, now);
     switch (o.kind) {
       case 'thread': {
         const t = o.thread;

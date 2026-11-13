@@ -1,0 +1,49 @@
+{
+  "description": "Johan's badge, given 400 days ago and run out 35 days ago: Moodle still lists it, with its dateexpire in the past.",
+  "request": {
+    "method": "POST",
+    "path": "/webservice/rest/server.php",
+    "headers": {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Accept": "application/json"
+    },
+    "body": "wstoken=%3Cthe+service+account+token%3E&moodlewsrestformat=json&moodlewssettingraw=true&wsfunction=core_badges_get_user_badges&userid=9"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "badges": [
+        {
+          "id": 1,
+          "name": "HLR-instruktör",
+          "description": "Får leda arbetsplatsens utbildning i hjärt-lungräddning.",
+          "timecreated": 0,
+          "timemodified": 0,
+          "issuername": "Lärplattformen (utveckling)",
+          "issuerurl": "http://localhost:3024",
+          "issuercontact": "moodle-admin@clew.test",
+          "type": 1,
+          "attachment": 1,
+          "notification": 1,
+          "status": 0,
+          "uniquehash": "54639903eb84553b606811be47a196006aa35924",
+          "dateissued": 1759936941,
+          "dateexpire": 1791472941,
+          "visible": 0,
+          "recipientid": 9,
+          "recipientfullname": "Johan Byström",
+          "version": "1",
+          "language": "sv",
+          "imagecaption": "",
+          "badgeurl": "http://localhost:3024/webservice/pluginfile.php/1/badges/badgeimage/1/f3",
+          "alignment": [],
+          "relatedbadges": []
+        }
+      ],
+      "warnings": []
+    }
+  }
+}

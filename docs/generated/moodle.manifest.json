@@ -1,0 +1,488 @@
+{
+  "protocol": 3,
+  "id": "moodle",
+  "kind": "passthrough",
+  "source": "Lärplattformen",
+  "areas": [],
+  "uses": [],
+  "capabilities": [
+    {
+      "name": "moodle.person",
+      "kind": "read",
+      "title": "Utbildningar",
+      "description": "Hur många kurser medarbetaren har genomfört i Lärplattformen och hur många som pågår.",
+      "model": false,
+      "scope": {},
+      "about": {
+        "entity": "person"
+      },
+      "person": {
+        "admits": [
+          "self",
+          "managed"
+        ]
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "maxItems": 50
+          }
+        },
+        "required": [
+          "keys"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "completed": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "ongoing": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "key",
+                "completed",
+                "ongoing"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "additionalProperties": false
+      },
+      "view": {
+        "kind": "list",
+        "title": "completed",
+        "empty": "Lärplattformen har inga uppgifter om dem.",
+        "fields": [
+          {
+            "key": "completed",
+            "label": "Genomförda",
+            "format": "number",
+            "unit": {
+              "one": "kurs",
+              "other": "kurser"
+            }
+          },
+          {
+            "key": "ongoing",
+            "label": "Pågår",
+            "format": "number",
+            "unit": {
+              "one": "kurs",
+              "other": "kurser"
+            }
+          }
+        ],
+        "open": {
+          "capability": "moodle.courses",
+          "title": "Kurser och märken",
+          "params": {
+            "person": "key"
+          }
+        }
+      }
+    },
+    {
+      "name": "moodle.courses",
+      "kind": "read",
+      "title": "Kurser och märken",
+      "description": "En medarbetares kurser i Lärplattformen, genomförda med datum och pågående, och märken med när de går ut.",
+      "model": false,
+      "scope": {},
+      "person": {
+        "param": "person",
+        "admits": [
+          "self",
+          "managed"
+        ]
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "person": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "required": [
+          "person"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "maxItems": 500,
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 400
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "Kurs",
+                    "Märke"
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "Genomförd",
+                    "Pågår",
+                    "Giltigt",
+                    "Utgånget"
+                  ]
+                },
+                "date": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                  "maxLength": 10
+                },
+                "expiresOn": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                  "maxLength": 10
+                },
+                "person": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "course": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,9}$",
+                  "maxLength": 10
+                },
+                "link": {
+                  "type": "string",
+                  "pattern": "^https?://",
+                  "maxLength": 2000
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "additionalProperties": false
+      },
+      "view": {
+        "kind": "list",
+        "title": "name",
+        "empty": "Inga kurser eller märken i Lärplattformen.",
+        "fields": [
+          {
+            "key": "name",
+            "label": "Utbildning"
+          },
+          {
+            "key": "kind",
+            "label": "Typ"
+          },
+          {
+            "key": "status",
+            "label": "Status",
+            "format": "status",
+            "tones": {
+              "Utgånget": "warn"
+            }
+          },
+          {
+            "key": "date",
+            "label": "Datum",
+            "format": "date"
+          },
+          {
+            "key": "expiresOn",
+            "label": "Gäller till",
+            "format": "date"
+          },
+          {
+            "key": "link",
+            "label": "Öppna i Lärplattformen",
+            "format": "link"
+          }
+        ],
+        "open": {
+          "capability": "moodle.course",
+          "title": "Kurs",
+          "params": {
+            "person": "person",
+            "course": "course"
+          }
+        }
+      }
+    },
+    {
+      "name": "moodle.course",
+      "kind": "read",
+      "title": "Kurs",
+      "description": "En medarbetares kurs i Lärplattformen: kategori, beskrivning, status, när den genomfördes och villkoren för att bli klar.",
+      "model": false,
+      "scope": {},
+      "person": {
+        "param": "person",
+        "admits": [
+          "self",
+          "managed"
+        ]
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "person": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "course": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,9}$",
+            "maxLength": 10
+          }
+        },
+        "required": [
+          "person",
+          "course"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400
+          },
+          "category": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Pågår",
+              "Genomförd"
+            ]
+          },
+          "completedOn": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "maxLength": 10
+          },
+          "criteria": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            },
+            "maxItems": 12
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 600
+          },
+          "link": {
+            "type": "string",
+            "pattern": "^https?://",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "name",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "view": {
+        "kind": "detail",
+        "title": "name",
+        "fields": [
+          {
+            "key": "category",
+            "label": "Kategori"
+          },
+          {
+            "key": "status",
+            "label": "Status",
+            "format": "status"
+          },
+          {
+            "key": "completedOn",
+            "label": "Genomförd",
+            "format": "date"
+          },
+          {
+            "key": "criteria",
+            "label": "Villkor"
+          },
+          {
+            "key": "summary",
+            "label": "Om kursen"
+          },
+          {
+            "key": "link",
+            "label": "Öppna i Lärplattformen",
+            "format": "link"
+          }
+        ]
+      }
+    }
+  ],
+  "installation": [
+    {
+      "name": "moodle.holdings",
+      "title": "Genomförda kurser och märken",
+      "description": "Alla konton i Lärplattformen med genomförda kurser och märken, dag för utfärdande och slutdag, för kompetensregistret.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "string",
+            "pattern": "^[0-9]{1,10}:[0-9]{1,9}$",
+            "maxLength": 21
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "withdrawalsReported": {
+            "const": false,
+            "description": "Whether a holding missing from a later answer means it was withdrawn. Always false here: the source leaves things out without saying so, so absence is never a revocation."
+          },
+          "rows": {
+            "type": "array",
+            "maxItems": 25,
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "holdings": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^(course|badge):[1-9][0-9]*:user:[1-9][0-9]*$",
+                        "maxLength": 80
+                      },
+                      "type": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 400
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "course",
+                          "badge"
+                        ]
+                      },
+                      "issuedOn": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                        "maxLength": 10
+                      },
+                      "expiresOn": {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                        "maxLength": 10
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "type",
+                      "label",
+                      "kind",
+                      "issuedOn"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 500
+                },
+                "partial": {
+                  "const": true,
+                  "description": "Something of this person was refused or could not be dated, and is left out of this answer."
+                }
+              },
+              "required": [
+                "key",
+                "holdings"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "next": {
+            "type": "string",
+            "pattern": "^[0-9]{1,10}:[0-9]{1,9}$",
+            "maxLength": 21,
+            "description": "The cursor of the following page; absent on the last."
+          }
+        },
+        "required": [
+          "withdrawalsReported",
+          "rows"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "scan": false
+}
