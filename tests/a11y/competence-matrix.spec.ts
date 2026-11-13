@@ -419,6 +419,88 @@ test.describe('Kompetens › Medarbetare', () => {
       await expect(control).toBeFocused();
     });
 
+    test('every registration that waits is listed above the matrix, a type with no column included: decided from the list, the focus goes to the list, and Back does not come to the decision again', async ({
+      page,
+      api,
+    }) => {
+      switchedOn(api);
+      lenaWaits(api);
+      // Erik's own degree: nothing requires one of anybody, so no column holds it.
+      api.competenceMatrix = {
+        ...api.competenceMatrix,
+        awaiting: [
+          ...api.competenceMatrix.awaiting,
+          {
+            holdingId: 'own-erik',
+            personId: 'erik',
+            key: 'erik.sandstrom',
+            name: 'Erik Sandström',
+            typeId: 't-socio',
+            competence: 'Socionomexamen',
+            issuedOn: '2015-06-05',
+          },
+        ],
+      };
+      api.competenceApprovals['own-erik'] = {
+        holdingId: 'own-erik',
+        personId: 'erik',
+        key: 'erik.sandstrom',
+        name: 'Erik Sandström',
+        typeId: 't-socio',
+        competence: 'Socionomexamen',
+        area: 'Examen',
+        issuedOn: '2015-06-05',
+        registeredAt: '2026-11-02T08:00:00.000Z',
+      };
+      await open(page, MATRIX);
+      const list = page.getByRole('list', { name: 'Att granska' });
+      await expect(page.getByRole('heading', { level: 2, name: 'Att granska' })).toBeVisible();
+      await expect(page.getByRole('status').filter({ hasText: '2 registreringar' })).toBeVisible();
+      await expect(list.getByRole('listitem')).toHaveCount(2);
+      await expect(list.getByRole('listitem').filter({ hasText: 'Erik Sandström' })).toContainText('Socionomexamen');
+      await expect(list.getByRole('listitem').filter({ hasText: 'Erik Sandström' })).toContainText(
+        'Utfärdat 5 juni 2015 · Inget slutdatum',
+      );
+      await expectNoAxeViolations(page);
+      const review = list.getByRole('link', { name: 'Granska Socionomexamen för Erik Sandström' });
+      await tabTo(page, review);
+      await page.keyboard.press('Enter');
+      await expect(page).toHaveURL(`${MATRIX}?approve=own-erik`);
+      const dialog = approvalDialog(page);
+      await expect(dialog.getByText('Registrerat av Erik Sandström')).toBeVisible();
+      await tabTo(page, dialog.getByRole('button', { name: 'Godkänn' }), { max: 12 });
+      await page.keyboard.press('Enter');
+      await expect(dialog).toBeHidden();
+      await expect(page).toHaveURL(MATRIX);
+      await expect(notices(page).getByText('Socionomexamen är godkänt för Erik Sandström.')).toBeAttached();
+      await expect(list.getByRole('listitem')).toHaveCount(1);
+      await expect(page.getByRole('status').filter({ hasText: '1 registrering' })).toBeVisible();
+      // Its row went with the decision, so the list's heading has the focus.
+      await expect(page.getByRole('heading', { level: 2, name: 'Att granska' })).toBeFocused();
+      // The decision replaced its address: Back leaves it behind and opens nothing.
+      await page.goBack();
+      await expect(page).toHaveURL(MATRIX);
+      await expect(approvalDialog(page)).toHaveCount(0);
+      await expect(page.getByText('Registreringen är redan granskad.')).toHaveCount(0);
+      expect(api.approvalWrites).toEqual([{ path: '/competence/approvals/own-erik', body: { decision: 'approve' } }]);
+    });
+
+    test('with nothing required of anybody the matrix says so, and what waits is still listed above it', async ({
+      page,
+      api,
+    }) => {
+      switchedOn(api);
+      lenaWaits(api);
+      const m = api.competenceMatrix;
+      api.competenceMatrix = { ...m, columns: [], rows: m.rows.map(r => ({ ...r, cells: [] })), required: 0 };
+      await open(page, MATRIX);
+      await expect(page.getByRole('heading', { level: 2, name: 'Inget krävs av dina medarbetare' })).toBeVisible();
+      await expect(
+        page.getByRole('list', { name: 'Att granska' }).getByRole('link', { name: 'Granska HLR för Lena Berg' }),
+      ).toBeVisible();
+      await expectNoAxeViolations(page);
+    });
+
     test('from a cold address it is rejected after the confirmation, Esc in which closes back into the dialog, and the focus goes to the heading', async ({
       page,
       api,

@@ -24,8 +24,9 @@ const tag = Math.random().toString(36).slice(2, 8);
 const ORG = `competence-approval-${tag}`;
 const anna = `${ORG}-anna`,
   boss = `${ORG}-boss`,
-  other = `${ORG}-other`;
-const people = [anna, boss, other];
+  other = `${ORG}-other`,
+  bert = `${ORG}-bert`;
+const people = [anna, boss, other, bert];
 const NAMES = ['Synthetic Anställd', 'Synthetic Chef', 'Synthetic Kollega', 'Synthetic Brandskydd'];
 const options = { durable: testDurable, cancel: async () => undefined };
 let now = new Date('2026-03-02T09:00:00.000Z');
@@ -53,7 +54,10 @@ const overview: StaffOverview = {
     {
       unitId: `unit-${tag}`,
       unitLabel: 'Enheten',
-      people: [{ id: anna, name: NAMES[0]!, userName: `e2e.${tag}`, email: null, role: 'employee', enabled: true }],
+      people: [
+        { id: anna, name: NAMES[0]!, userName: `e2e.${tag}`, email: null, role: 'employee', enabled: true },
+        { id: bert, name: 'Synthetic Bert', userName: `e2e.bert.${tag}`, email: null, role: 'employee', enabled: true },
+      ],
     },
   ],
 };
@@ -62,7 +66,7 @@ const usecases = (s: CompetenceStore) =>
   competenceUsecases({
     store: s,
     staff: async p => (p.id === boss || p.id === other ? overview : { units: [] }),
-    above: async p => (p.id === anna ? [boss, other] : []),
+    above: async p => (p.id === anna || p.id === bert ? [boss, other] : []),
     clock,
     ids,
   });
@@ -77,11 +81,13 @@ const failing: CompetenceStore = {
 };
 const holdingIds: string[] = [];
 const threadIds: string[] = [];
+/** Bert's approvals, which erasing Anna leaves as they are. */
+const bertThreads: string[] = [];
 let typeIds: string[] = [];
 
 afterAll(async () => {
   const db = database();
-  const cards = threadIds.flatMap(t => people.map(p => approvalCardId(t, p)));
+  const cards = [...threadIds, ...bertThreads].flatMap(t => people.map(p => approvalCardId(t, p)));
   await db
     .delete(schema.audit)
     .where(
@@ -146,6 +152,7 @@ describe("a person's own registration on Postgres through the composition store 
         { id: anna, organisationId: ORG, name: NAMES[0]!, userName: `e2e.${tag}` },
         { id: boss, organisationId: ORG, name: NAMES[1]! },
         { id: other, organisationId: ORG, name: NAMES[2]! },
+        { id: bert, organisationId: ORG, name: 'Synthetic Bert', userName: `e2e.bert.${tag}` },
       ]);
     typeIds = [
       await competence.seedType('operator:test', ORG, { name: NAMES[3]!, area: 'Säkerhet', kind: 'certificate' }),
@@ -155,6 +162,7 @@ describe("a person's own registration on Postgres through the composition store 
         kind: 'course',
         validityMonths: 24,
       }),
+      await competence.seedType('operator:test', ORG, { name: 'Fallskydd', area: 'Säkerhet', kind: 'certificate' }),
     ];
   });
 
@@ -278,6 +286,117 @@ describe("a person's own registration on Postgres through the composition store 
     const refusedThread = `${ORG}-${before + 2}`;
     threadIds.push(refusedThread);
     expect((await cardsOf(refusedThread)).threads).toEqual([]);
+  });
+
+  test('two managers deciding at once: one decision stands, the other is told it is decided, and every card closes once', async () => {
+    const asBert = persona(bert, 'employee'),
+      asOther = persona(other, 'manager');
+    const id = await competence.registerOwn(asBert, { typeId: typeIds[0]!, issuedOn: '2026-02-01' });
+    holdingIds.push(id);
+    const threadId = (await holdingRow(id))!.threadId!;
+    bertThreads.push(threadId);
+    const results = await Promise.allSettled([
+      competence.decideHolding(asBoss, id, 'approve'),
+      competence.decideHolding(asOther, id, 'reject'),
+    ]);
+    expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+    const [refusal] = results.flatMap(r => (r.status === 'rejected' ? [r.reason as Error] : []));
+    expect(refusal?.message).toBe('Registreringen är redan granskad.');
+    const row = (await holdingRow(id))!;
+    expect(['valid', 'rejected']).toContain(row.state);
+    expect(row.decidedBy).toBe(row.state === 'valid' ? boss : other);
+    const c = await cardsOf(threadId);
+    expect(c.threads.map(t => t.state)).toEqual(['handled', 'handled']);
+    // One decision, one message per card.
+    expect(
+      c.messages.filter(
+        m => m.body !== 'En medarbetare har registrerat ett eget intyg. Det räknas när du har godkänt det.',
+      ),
+    ).toHaveLength(2);
+    expect(
+      (await auditOf([`holding:${id}`])).filter(
+        a => a.action === 'competence.holding_approved' || a.action === 'competence.holding_rejected',
+      ),
+    ).toHaveLength(1);
+  });
+
+  test('a withdrawal against a decision: one of them stands, and the row and the cards agree with it', async () => {
+    const asBert = persona(bert, 'employee');
+    const id = await competence.registerOwn(asBert, { typeId: typeIds[1]!, issuedOn: '2026-02-01' });
+    holdingIds.push(id);
+    const threadId = (await holdingRow(id))!.threadId!;
+    bertThreads.push(threadId);
+    const [withdrawn, decided] = await Promise.allSettled([
+      competence.withdrawOwn(asBert, id),
+      competence.decideHolding(asBoss, id, 'approve'),
+    ]);
+    expect([withdrawn.status, decided.status].filter(s => s === 'fulfilled')).toHaveLength(1);
+    const row = await holdingRow(id);
+    if (withdrawn.status === 'fulfilled') {
+      expect(row).toBeUndefined();
+      expect((decided as PromiseRejectedResult).reason.message).toBe(
+        'Registreringen finns inte bland dem du kan granska.',
+      );
+    } else {
+      expect(row).toMatchObject({ state: 'valid', decidedBy: boss });
+      expect(withdrawn.reason.message).toBe('Registreringen är redan granskad och kan inte tas tillbaka.');
+    }
+    expect((await cardsOf(threadId)).threads.map(t => t.state)).toEqual(['handled', 'handled']);
+  });
+
+  test('reconciled with who can decide: a card set aside for one who no longer can, opened again when they can, one put away by its owner left alone', async () => {
+    const asBert = persona(bert, 'employee'),
+      asOther = persona(other, 'manager');
+    let line = [boss, other];
+    const reconciling = competenceUsecases({
+      store,
+      staff: async p => (p.id === boss || p.id === other ? overview : { units: [] }),
+      above: async p => (p.id === bert ? line : []),
+      personaOf: async id => [asBoss, asOther, asBert].find(p => p.id === id),
+      clock,
+      ids,
+    });
+    const id = await reconciling.registerOwn(asBert, { typeId: typeIds[2]!, issuedOn: '2026-02-01' });
+    holdingIds.push(id);
+    const threadId = (await holdingRow(id))!.threadId!;
+    bertThreads.push(threadId);
+    const state = async () =>
+      (await cardsOf(threadId)).threads.map(t => [t.personId, t.state, (t.trigger as { reason: string }).reason]);
+    // In step: nothing written.
+    expect(await reconciling.reconcileApproval(id)).toEqual({ opened: 0, closed: 0, reopened: 0 });
+    expect((await auditOf([`holding:${id}`])).map(a => a.action)).toEqual(['competence.holding_submitted']);
+    // Bert no longer reports to the boss.
+    line = [other];
+    expect(await reconciling.reconcileApproval(id)).toEqual({ opened: 0, closed: 1, reopened: 0 });
+    expect(await state()).toEqual([
+      [boss, 'handled', 'Granskas inte längre av dig'],
+      [other, 'open', 'Väntar på ditt godkännande'],
+    ]);
+    // The other manager puts hers away herself; Bert reports to the boss again: his card opens again, hers stays put.
+    await database()
+      .update(schema.threads)
+      .set({ state: 'dismissed' })
+      .where(eq(schema.threads.id, approvalCardId(threadId, other)));
+    line = [boss, other];
+    expect(await reconciling.reconcileApproval(id)).toEqual({ opened: 0, closed: 0, reopened: 1 });
+    expect(await state()).toEqual([
+      [boss, 'open', 'Väntar på ditt godkännande'],
+      [other, 'dismissed', 'Väntar på ditt godkännande'],
+    ]);
+    expect((await auditOf([`holding:${id}`, ...cardSubjects(threadId)])).map(a => a.action)).toEqual([
+      'thread.pushed',
+      'thread.pushed',
+      'competence.holding_submitted',
+      'thread.handled',
+      'competence.approval_reconciled',
+      'thread.reopened',
+      'competence.approval_reconciled',
+    ]);
+    await reconciling.decideHolding(asBoss, id, 'approve');
+    expect(await state()).toEqual([
+      [boss, 'handled', 'Väntar på ditt godkännande'],
+      [other, 'dismissed', 'Väntar på ditt godkännande'],
+    ]);
   });
 
   test('erasing her leaves no registration of hers and no card of their approvals in any stream', async () => {

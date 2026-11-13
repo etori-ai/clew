@@ -260,15 +260,43 @@ export function requirementsOn(person: Placed, requirements: readonly Requiremen
   );
 }
 /**
- * The last time any of a person's holdings of a type was revoked, by a manager or by its source withdrawing it; null
- * when none was. A card's identity carries it, so a cause that comes back after a revocation is new work.
+ * The last revocation of a person's holding of a type that changed where they stand on it (D108 item 12), by a manager
+ * or by its source withdrawing it; null when none did. A card's identity carries it, so a cause that comes back after a
+ * revocation is new work. Only a revoked holding that would decide if it still counted is one: it ends later than every
+ * holding of the type that counts (never ending is latest), or none counts. A duplicate that never decided changes
+ * nothing, and it is worked out from the rows as they are now, so a copied row its source withdrew and answers again
+ * (valid once more) gives the identity back as it was.
  */
-export function lastRevoked(holdings: readonly HoldingRecord[], personId: string, typeId: string): string | null {
+export function decidingRevocation(
+  holdings: readonly HoldingRecord[],
+  personId: string,
+  type: Pick<TypeRecord, 'id' | 'validityMonths'>,
+): string | null {
+  const mine = holdings.filter(h => h.personId === personId && h.typeId === type.id);
+  // How far what counts reaches: undefined when nothing counts, null when one never ends.
+  let reach: string | null | undefined;
+  for (const h of mine.filter(counts)) {
+    const end = endOf(h, type);
+    reach = reach === undefined ? end : reach === null || end === null ? null : end > reach ? end : reach;
+  }
   let last: string | null = null;
-  for (const h of holdings)
-    if (h.personId === personId && h.typeId === typeId && h.revokedAt && (!last || h.revokedAt > last))
-      last = h.revokedAt;
+  for (const h of mine) {
+    if (h.state !== 'revoked' || !h.revokedAt) continue;
+    const end = endOf(h, type);
+    const decides = reach === undefined || (reach !== null && (end === null || end > reach));
+    if (decides && (!last || h.revokedAt > last)) last = h.revokedAt;
+  }
   return last;
+}
+/**
+ * When a type began to be required of a person, as far as the store knows (D108 items 6 and 12): the earliest creation
+ * of the requirements of it that apply to them; null when none does. A second requirement changes nothing; a
+ * requirement removed and set again is a new moment.
+ */
+export function requiredSince(applying: readonly RequirementRecord[], typeId: string): string | null {
+  let first: string | null = null;
+  for (const r of applying) if (r.typeId === typeId && (!first || r.createdAt < first)) first = r.createdAt;
+  return first;
 }
 /** A card's work as the refresh keys it (D47): the draft's topic, and its one occurrence's key, period and revision. */
 export interface CardIdentity {
@@ -281,40 +309,62 @@ export interface CardIdentity {
  * What a person's own card is (D108 item 12, D47), keyed on the person and the competence type, never a holding's row,
  * so a row copied again under a new id (item 9) is the same card, its dismissal kept. The period says which cause it
  * is: the refresh never reopens a resolved occurrence whose identity comes back, so a cause that returns must be a new
- * period. A holding that has run out or soon will is `due:<type>`, its period the status, the end date and the last
- * revocation of the type: one that runs out after its "går ut snart" card was handled, a new end date (a renewal, or an
- * administrator's change of the type's validity) and a renewal revoked so that the older holding decides again are each
- * a new card. A missing type is `missing:<type>`, its period the requirements that ask for it and the last revocation:
- * a requirement removed and set again (a new id), or a holding revoked, is a new card. The one known limit: a requirement
- * that stops applying to the person and applies again unchanged, such as a position or a unit that disappears and comes
- * back under the same code or id, brings back the same identity, so that card does not open again.
+ * period, and a cause that stands must keep it. A holding that has run out or soon will is `due:<type>`, its period the
+ * status, the end date and the last revocation that changed where the person stands (`decidingRevocation`): one that
+ * runs out after its "går ut snart" card was handled, a new end date (a renewal, or an administrator's change of the
+ * type's validity) and a renewal revoked so that the older holding decides again are each a new card; a duplicate
+ * revoked, or a copied row its source drops for a while, is not. A missing type is `missing:<type>`, its period when the
+ * type began to be required of the person (`requiredSince`) and that last revocation: a requirement removed and set
+ * again, or a holding revoked, is a new card; a second requirement of the type, or a change of the requirements that
+ * leaves the earliest in place, is not. The known limits: a requirement that stops applying to the person and applies
+ * again unchanged (a position or a unit gone and back under the same key) brings back the same identity, so that card
+ * does not open again; and moving from one requirement to another of the same type (a new position, or the earliest of
+ * two removed) is a new moment, so the card comes again.
  */
 export function ownCard(
   standing: Standing,
-  cause: { requirementIds: readonly string[]; lastRevoked: string | null },
+  cause: { requiredSince: string | null; revoked: string | null },
 ): CardIdentity {
-  const revoked = cause.lastRevoked ?? 'none';
+  const revoked = cause.revoked ?? 'none';
   if (standing.holding === null) {
     const topic = `${COMPETENCE_CONNECTOR}:missing:${standing.type.id}`;
-    return {
-      topic,
-      key: topic,
-      period: `${[...cause.requirementIds].sort().join(',')}|${revoked}`,
-      revision: 'missing',
-    };
+    return { topic, key: topic, period: `${cause.requiredSince ?? 'none'}|${revoked}`, revision: 'missing' };
   }
   const topic = `${COMPETENCE_CONNECTOR}:due:${standing.type.id}`;
   return { topic, key: topic, period: `${standing.status}|${standing.end}|${revoked}`, revision: standing.status };
 }
 /**
- * The manager's one card (D108 item 12): one occurrence on its topic, its revision the counts it shows (what is to act
- * on, expired and missing together, and what soon runs out), so it names nobody and does not grow with the reports. A
- * refresh reopens a handled card whenever the revision differs, and a scan that keeps nothing cannot tell counts that
- * rise from counts that fall: either brings the card back, counts that stand do not.
+ * A one-way digest for tests and for any caller composition gives none (64-bit FNV-1a, hexadecimal). Composition hands
+ * the use cases SHA-256 (`CompetenceDeps.digest`).
  */
-export function teamCard(counts: { toActOn: number; expiring: number }): CardIdentity {
+export function fnv1a64(text: string): string {
+  let hash = 0xcbf29ce484222325n;
+  for (const byte of new TextEncoder().encode(text)) {
+    hash ^= BigInt(byte);
+    hash = (hash * 0x100000001b3n) & 0xffffffffffffffffn;
+  }
+  return hash.toString(16).padStart(16, '0');
+}
+/**
+ * The manager's one card (D108 item 12): one occurrence on its topic, so it names nobody and does not grow with the
+ * reports. Its period is a digest of the person-level identities of everything due among the reports (`dueAll`, each a
+ * person's id with their own card's key and period), so it is new exactly when the set of things due is new: something
+ * that comes back at the same counts (a requirement missing, met, then revoked) is a new card, and a set that stands is
+ * the same card, never reopened. The digest is one-way, so the stored identity says nothing of whom or what it counts.
+ * Its revision is the counts it shows: what is to act on, expired and missing together, and what soon runs out.
+ */
+export function teamCard(
+  counts: { toActOn: number; expiring: number },
+  dueAll: readonly string[],
+  digest: (text: string) => string = fnv1a64,
+): CardIdentity {
   const topic = `${COMPETENCE_CONNECTOR}:attention`;
-  return { topic, key: topic, period: 'once', revision: `${counts.toActOn}|${counts.expiring}` };
+  return {
+    topic,
+    key: topic,
+    period: digest(JSON.stringify([...dueAll].sort())),
+    revision: `${counts.toActOn}|${counts.expiring}`,
+  };
 }
 /**
  * The types required of one person (D108 item 6), each once: those set on a position they hold, on a unit they are
@@ -860,12 +910,37 @@ export function matrixOf(input: {
   const rows = [...input.people]
     .sort((a, b) => sv(a.name, b.name) || a.id.localeCompare(b.id))
     .map(p => ({ personId: p.id, key: personKey(p), name: p.name, cells: shown.map(t => cell(p.id, t)) }));
+  // Every registration of the reports' own that waits for a decision (D108 item 7), whatever its type: a type nobody
+  // requires has no column, and the decision must still be within reach. Oldest first, as a queue is worked through.
+  const people = new Map(input.people.map(p => [p.id, p]));
+  const waiting = input.holdings
+    .filter(h => awaiting(h) && people.has(h.personId))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+    .flatMap(h => {
+      const type = h.typeId === null ? undefined : input.types.get(h.typeId);
+      if (!type) return [];
+      const p = people.get(h.personId)!,
+        end = endOf(h, type);
+      return [
+        {
+          holdingId: h.id,
+          personId: p.id,
+          key: personKey(p),
+          name: p.name,
+          typeId: type.id,
+          competence: type.name,
+          issuedOn: h.issuedOn,
+          ...(end ? { expiresOn: end } : {}),
+        },
+      ];
+    });
   return {
     ...(chosen ? { by: chosen.by, part: chosen.part } : {}),
     groups: sets.map(({ typeIds: _typeIds, ...group }) => group),
     columns: shown.map(t => ({ typeId: t.id, name: t.name, area: t.area, kind: t.kind, ...levelsOf(t) })),
     rows,
     required: all.length,
+    awaiting: waiting,
   };
 }
 

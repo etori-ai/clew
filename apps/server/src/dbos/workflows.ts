@@ -37,6 +37,7 @@ export interface Activities {
   scheduleCompetenceCopy(): Promise<unknown>;
   competenceSources(only: string | null): Promise<CopySourceRef[]>;
   copyHoldings(run: string, source: CopySourceRef, signal?: AbortSignal): Promise<string>;
+  reconcileApprovals(): Promise<unknown>;
 }
 let bound: Partial<Activities> = {};
 /** Composition binds the live use cases; a runtime test binds what it measures. Later bindings replace earlier ones by name. */
@@ -142,18 +143,28 @@ export const jobWatch = DBOS.registerWorkflow(
  * not answer is recorded by the use case and read again at the next run, never retried here: the step's own retries
  * cover the database, and a source whose step still fails is left for the next run while the others are read. Two runs
  * never read one source at once, because the use case holds a lease on it; the engine's recovery of a run after a
- * restart re-enters the same step, and the same run may take its own lease again. Started from inside a transaction
+ * restart re-enters the same step, and the same run may take its own lease again. A daily run also reconciles the cards
+ * of the registrations that wait for approval (D108 item 7) with who can decide each now, before it reads: whether there
+ * are sources or not, and a failure of either never keeps the other from running. Started from inside a transaction
  * (D86) by the store, so it is registered with portable serialization and its name is the contract with the store.
  */
 export const competenceCopy = DBOS.registerWorkflow(
   async (input: { run: string; dueAt: string; connectorId?: string; daily?: true }): Promise<void> => {
     await sleepUntil(input.dueAt);
-    if (input.daily)
+    if (input.daily) {
       try {
         await step('scheduleCompetenceCopy', () => activity('scheduleCompetenceCopy')(), 3);
       } catch {
         // Recorded as the step's error; the hourly guard asks for the next day's run again.
       }
+      // No step timeout, as for a read: each registration is a transaction of its own, and a second attempt beside a
+      // slow first would only find less to do.
+      try {
+        await step('reconcileApprovals', () => activity('reconcileApprovals')(), 3, null);
+      } catch {
+        // Recorded as the step's error; the next day's run reconciles again, and the copy goes on.
+      }
+    }
     const sources = await step('competenceSources', () => activity('competenceSources')(input.connectorId ?? null));
     // No step timeout: a timed-out attempt would run on beside the next. Each page has the read's own deadline, and
     // cancelling the workflow aborts the page under way through the step's signal, so a read always ends.

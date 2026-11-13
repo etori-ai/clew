@@ -53,7 +53,8 @@ import {
   isCalendarDay,
   leaseUntil,
   matrixCsv,
-  lastRevoked,
+  decidingRevocation,
+  requiredSince,
   matrixOf,
   meets,
   needsAttention,
@@ -144,6 +145,8 @@ export const COMPETENCE_ADMIN: Capability = 'admin.competence';
 export const COMPETENCE_EXPORT_FORMAT = 'clew.competence/6';
 /** The actor of the scheduled copy (D108 item 9) in its audit rows. */
 export const COPY_ACTOR = 'system:competence-copy';
+/** The actor of the reconciliation of approvals' cards (D108 item 7) in its audit rows. */
+export const RECONCILE_ACTOR = 'system:competence-approvals';
 const NOT_A_MANAGER = 'Intyg registreras av den som är chef för en enhet.';
 const NOT_YOURS = 'Personen finns inte bland dem du är chef för.';
 const NO_TYPE = 'Kompetensen finns inte i katalogen.';
@@ -176,6 +179,7 @@ const NOT_YOURS_TO_DECIDE = 'Registreringen finns inte bland dem du kan granska.
 const DECIDED = 'Registreringen är redan granskad.';
 const NOT_YOUR_OWN = 'Du har ingen sådan registrering.';
 const DECIDED_OWN = 'Registreringen är redan granskad och kan inte tas tillbaka.';
+const NOT_REJECTED = 'Bara en registrering som din chef har avvisat kan tas bort.';
 const SKILL_ONLY = 'Bara en färdighet bedöms med en nivå.';
 const SKILL_NOT_DATED = 'En färdighet registreras med en nivå, inte med datum.';
 const BAD_LEVEL = 'Välj en nivå: Grundläggande, Självständig eller Expert.';
@@ -310,6 +314,68 @@ export function competenceUsecases(deps: CompetenceDeps) {
   const managersOf = async (persona: AuthenticatedContext) =>
     [...new Set(deps.above ? await deps.above(persona) : [])].filter(id => id !== persona.id).sort();
   /**
+   * Who can decide a registration of `holder`'s own now (D108 item 7): of the people above them (`above`), those whose
+   * reports include them, as `reports` counts a manager's reports and so as `decideHolding` checks it. The line upwards
+   * and the reports downwards disagree where two people lead both a unit and the unit above it: each is above the other,
+   * and neither is the other's report. Without `personaOf` it is `above` alone.
+   */
+  async function decidersOf(holder: AuthenticatedContext): Promise<string[]> {
+    const candidates = await managersOf(holder);
+    if (!deps.personaOf) return candidates;
+    const deciders: string[] = [];
+    for (const id of candidates) {
+      const manager = await deps.personaOf(id);
+      if (manager && (await reports(manager)).people.has(holder.id)) deciders.push(id);
+    }
+    return deciders;
+  }
+  /** The card's subject: the person who registered, by the key another system knows them by; nobody without one. */
+  const subjectOf = (userName: string | null | undefined) =>
+    userName && [...userName].length <= ENTITY_KEY_MAX ? { subject: { entity: 'person' as const, key: userName } } : {};
+  /**
+   * Make the open cards of one registration that waits (D108 item 7) match exactly the people who can decide it now
+   * (`decidersOf`), in one transaction with one audit row of counts, `competence.approval_reconciled`. A card of
+   * someone who can no longer decide (they no longer lead the person's line, or they left) is set aside; a decider
+   * with no card gets one; a card Clew set aside opens again once its owner can decide. A card its owner put away
+   * themselves, handled or dismissed, stays as they left it while they can still decide: the matrix lists what waits.
+   * While the person who registered is not active, every card is set aside, and they open again when the person is
+   * back and the registration still waits. Nothing to change writes nothing. Without `personaOf` nothing is done.
+   */
+  async function reconcileOne(actor: string, holdingId: string) {
+    if (!deps.personaOf) return null;
+    const found = await deps.store.transaction(tx => tx.holding(holdingId));
+    const threadId = found?.threadId;
+    if (!found || !awaiting(found) || !threadId) return null;
+    const holder = await deps.personaOf(found.personId);
+    const deciders = new Set(holder ? await decidersOf(holder) : []);
+    const at = now().toISOString();
+    return deps.store.transaction(async tx => {
+      const holding = await tx.holding(holdingId);
+      if (!holding || !awaiting(holding) || holding.threadId !== threadId) return null;
+      const cards = await tx.workItems.cards(threadId);
+      const owners = new Set(cards.map(c => c.personId));
+      const close = cards.filter(c => c.open && !deciders.has(c.personId)).map(c => c.personId);
+      const reopen = cards.filter(c => !c.open && c.setAside && deciders.has(c.personId)).map(c => c.personId);
+      const open = [...deciders].filter(id => !owners.has(id)).sort();
+      const changed = { opened: open.length, closed: close.length, reopened: reopen.length };
+      if (!close.length && !reopen.length && !open.length) return changed;
+      if (close.length) await tx.workItems.close(threadId, at, holder ? 'reassigned' : 'paused', close);
+      if (reopen.length) await tx.workItems.reopen(threadId, reopen, at);
+      if (open.length) {
+        const [person] = await tx.persons([holding.personId]);
+        await tx.workItems.open({ threadId, holdingId, managers: open, at, ...subjectOf(person?.userName) });
+      }
+      await tx.audit({
+        actor,
+        action: 'competence.approval_reconciled',
+        subject: 'holding:' + holdingId,
+        at,
+        details: { personId: holding.personId, active: !!holder, ...changed },
+      });
+      return changed;
+    });
+  }
+  /**
    * Where these people stand today: one standing per person and type held, mapped copied rows counted exactly like
    * registered ones (D108 items 4 and 9), and one `missing` standing per type required of them that they hold nothing of
    * that counts (item 6). `waiting` are the copied rows whose type is not mapped; `own` the people's own registrations
@@ -341,6 +407,37 @@ export function competenceUsecases(deps: CompetenceDeps) {
   }
   const standings = async (tx: CompetenceTx, organisationId: string, personIds: readonly string[], today: string) =>
     (await standingsWith(tx, organisationId, personIds, today)).standings;
+  /**
+   * What needs these people today (D108 item 12, D47), each standing that has run out, is missing or soon runs out, the
+   * expired first, with the identity of the person's own card of it (`ownCard`): when the type began to be required of
+   * them (`requiredSince`) and the last revocation that changed where they stand (`decidingRevocation`). The person's
+   * card and the manager's alike are derived from it, so the two never disagree on what is due.
+   */
+  async function dueCards(tx: CompetenceTx, organisationId: string, personIds: readonly string[], today: string) {
+    if (!personIds.length) return [];
+    const holdings = await tx.holdingsOf(personIds);
+    const requirements = await tx.requirements(organisationId);
+    const placed = new Map((await tx.placesOf(organisationId, personIds)).map(p => [p.personId, p]));
+    const placeOf = (id: string) => placed.get(id) ?? { personId: id, unitIds: [], positionCodes: [] };
+    const applying = new Map(personIds.map(id => [id, requirementsOn(placeOf(id), requirements)]));
+    const typeIds = new Set([
+      ...holdings.flatMap(h => (h.typeId ? [h.typeId] : [])),
+      ...[...applying.values()].flat().map(r => r.typeId),
+    ]);
+    const types = new Map((await tx.typesById([...typeIds])).map(t => [t.id, t]));
+    const required = new Map([...applying].map(([id, rs]) => [id, [...new Set(rs.map(r => r.typeId))]]));
+    const least = new Map(personIds.map(id => [id, leastLevels(placeOf(id), requirements)]));
+    return deciding(holdings, types, today, required, least)
+      .filter(needsAttention)
+      .sort(byUrgency)
+      .map(standing => ({
+        standing,
+        card: ownCard(standing, {
+          requiredSince: requiredSince(applying.get(standing.personId) ?? [], standing.type.id),
+          revoked: decidingRevocation(holdings, standing.personId, standing.type),
+        }),
+      }));
+  }
   /**
    * How a unit's branch is covered today (D108 items 6 and 8, D99 item 5), for its manager: the active people assigned
    * to the unit or a unit below it, against the requirements that apply to each of them, and the share targets set on
@@ -1451,15 +1548,17 @@ export function competenceUsecases(deps: CompetenceDeps) {
      * A person registers a holding of their own (D108 item 7): a type of the catalogue, the day it was issued and, where
      * the issuer set one, the day it ends, checked as a manager's registration is. It is stored `pending` with evidence
      * `self` and counts towards nothing until the manager the person reports to approves it. Its approval is a card in
-     * the stream of each manager the person reports to now (D99 item 4), opened in the same transaction; any one of them
-     * deciding closes every card. Someone who reports to nobody is refused: nobody could decide it (who approves then is
-     * open in D108). A second registration of the same type waiting for the same person is refused. Returns its id.
+     * the stream of each manager who can decide it now (`decidersOf`: the people whose reports include the person, D99
+     * item 4), opened in the same transaction; any one of them deciding closes every card, and the daily reconciliation
+     * keeps the cards with whoever can decide it as the line changes. Someone nobody can decide for is refused (who
+     * approves then is open in D108). A second registration of the same type waiting for the same person is refused.
+     * Returns its id.
      */
     async registerOwn(persona: AuthenticatedContext, body: CompetenceHoldingBody): Promise<string> {
       const at = now(),
         iso = at.toISOString();
       checkDates(body, swedishDay(at));
-      const managers = await managersOf(persona);
+      const managers = await decidersOf(persona);
       if (!managers.length) throw new CompetenceError(NO_APPROVER);
       const id = deps.ids(),
         threadId = deps.ids();
@@ -1483,16 +1582,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
           });
           // The cards are about the person (D97 item 6), by the key another system knows them by; nobody without one.
           const [self] = await tx.persons([persona.id]);
-          const userName = self?.userName;
-          await tx.workItems.open({
-            threadId,
-            holdingId: id,
-            managers,
-            at: iso,
-            ...(userName && [...userName].length <= ENTITY_KEY_MAX
-              ? { subject: { entity: 'person' as const, key: userName } }
-              : {}),
-          });
+          await tx.workItems.open({ threadId, holdingId: id, managers, at: iso, ...subjectOf(self?.userName) });
           await tx.audit({
             actor: persona.principal.id,
             action: 'competence.holding_submitted',
@@ -1520,31 +1610,36 @@ export function competenceUsecases(deps: CompetenceDeps) {
      * manager confirmed it, the interest mark and, where a requirement asks for more than it meets, the least level asked.
      */
     async ownRegistrations(persona: AuthenticatedContext): Promise<CompetenceOwnOutput> {
-      const approver = (await managersOf(persona)).length > 0;
+      const approver = (await decidersOf(persona)).length > 0;
       return deps.store.transaction(async tx => {
         const holdings = await tx.holdingsOf([persona.id]);
         const own = holdings.filter(awaiting);
+        const turnedDown = holdings.filter(h => h.evidence === 'self' && h.state === 'rejected');
         const skills = holdings.filter(h => h.level !== null && counts(h));
         const types = new Map(
-          (await tx.typesById([...new Set([...own, ...skills].flatMap(h => (h.typeId ? [h.typeId] : [])))])).map(t => [
-            t.id,
-            t,
-          ]),
+          (
+            await tx.typesById([
+              ...new Set([...own, ...turnedDown, ...skills].flatMap(h => (h.typeId ? [h.typeId] : []))),
+            ])
+          ).map(t => [t.id, t]),
         );
-        const pending = own.flatMap(h => {
-          const type = h.typeId ? types.get(h.typeId) : undefined;
-          if (!type) return [];
-          const end = endOf(h, type);
-          return [
-            {
-              holdingId: h.id,
-              typeId: type.id,
-              competence: type.name,
-              issuedOn: h.issuedOn,
-              ...(end ? { expiresOn: end } : {}),
-            },
-          ];
-        });
+        const listed = (rows: HoldingRecord[]) =>
+          rows.flatMap(h => {
+            const type = h.typeId ? types.get(h.typeId) : undefined;
+            if (!type) return [];
+            const end = endOf(h, type);
+            return [
+              {
+                holdingId: h.id,
+                typeId: type.id,
+                competence: type.name,
+                issuedOn: h.issuedOn,
+                ...(end ? { expiresOn: end } : {}),
+              },
+            ];
+          });
+        const pending = listed(own);
+        const rejected = listed(turnedDown);
         // The reader's skills (D120), each with the least level a requirement asks where it does not reach it.
         const { required, least } = skills.length
           ? await requiredFor(tx, persona.organisationId, [persona.id])
@@ -1575,7 +1670,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
             },
           ];
         });
-        return { approver, pending, skills: rated.sort(bySkillName) };
+        return { approver, pending, rejected, skills: rated.sort(bySkillName) };
       });
     },
 
@@ -1608,10 +1703,20 @@ export function competenceUsecases(deps: CompetenceDeps) {
      * evidence still `self` and the manager's attestation in `decidedBy` and `decidedAt`, and from then it counts like any
      * holding; `reject` makes it `rejected`, which counts towards nothing and is listed to the person alone. Either closes
      * every card of the approval in the same transaction. Only while it waits: deciding twice, or one taken back, is
-     * refused. A former manager decides nothing; a manager the person reports to since may decide it from the matrix.
+     * refused. A former manager decides nothing; a manager the person reports to since decides it from the matrix's
+     * list of what waits. Before the decision the cards are reconciled with who can decide now (`reconcileOne`), so a
+     * former manager's card says it went elsewhere rather than how it was decided; that write failing never keeps the
+     * decision from being made.
      */
     async decideHolding(persona: AuthenticatedContext, holdingId: string, decision: CompetenceDecision): Promise<void> {
       const { found, refused } = await decidable(persona, holdingId);
+      try {
+        await reconcileOne(RECONCILE_ACTOR, holdingId);
+      } catch (error) {
+        deps.log?.('competence: the cards of an approval could not be reconciled before its decision', {
+          code: (error as { code?: unknown } | null)?.code ?? null,
+        });
+      }
       const at = now().toISOString();
       await deps.store.transaction(async tx => {
         const holding = await tx.holding(holdingId);
@@ -1657,6 +1762,62 @@ export function competenceUsecases(deps: CompetenceDeps) {
         });
       });
     },
+
+    /**
+     * A person removes their own registration that their manager rejected (D108 item 7): it was never attested, counts
+     * towards nothing and is theirs alone to see, so the row goes; the audit row keeps that it was. Nobody else may, and
+     * one that waits or was approved is refused.
+     */
+    async removeRejected(persona: AuthenticatedContext, holdingId: string): Promise<void> {
+      const at = now().toISOString();
+      await deps.store.transaction(async tx => {
+        const holding = await tx.holding(holdingId);
+        if (!holding || holding.personId !== persona.id || holding.evidence !== 'self')
+          throw new ForbiddenError(NOT_YOUR_OWN);
+        if (holding.state !== 'rejected') throw new CompetenceError(NOT_REJECTED);
+        await tx.deleteHolding(holdingId);
+        await tx.audit({
+          actor: persona.principal.id,
+          action: 'competence.holding_removed',
+          subject: 'holding:' + holdingId,
+          at,
+          details: { personId: holding.personId, typeId: holding.typeId },
+        });
+      });
+    },
+
+    /**
+     * Make the cards of every registration that waits match the people who can decide it now (D108 item 7,
+     * `reconcileOne`), each registration in a transaction of its own. Run each day by the competence module's workflow;
+     * one registration that fails is logged and left for the next run while the others are reconciled. Nothing is done
+     * while the module is switched off for the installation. Returns counts.
+     */
+    async reconcileApprovals(actor: string = RECONCILE_ACTOR) {
+      const total = { registrations: 0, changed: 0, opened: 0, closed: 0, reopened: 0, failed: 0 };
+      if (!deps.personaOf) return total;
+      if (deps.holdings && !(await deps.holdings.switchedOn())) return total;
+      const waiting = await deps.store.transaction(tx => tx.waitingRegistrations());
+      for (const h of waiting) {
+        total.registrations++;
+        try {
+          const changed = await reconcileOne(actor, h.id);
+          if (changed && changed.opened + changed.closed + changed.reopened > 0) {
+            total.changed++;
+            total.opened += changed.opened;
+            total.closed += changed.closed;
+            total.reopened += changed.reopened;
+          }
+        } catch (error) {
+          total.failed++;
+          deps.log?.('competence: the cards of an approval could not be reconciled; the next run tries again', {
+            code: (error as { code?: unknown } | null)?.code ?? null,
+          });
+        }
+      }
+      return total;
+    },
+    /** The reconciliation of one registration's cards (D108 item 7), as the daily run and a decision make it. */
+    reconcileApproval: (holdingId: string, actor: string = RECONCILE_ACTOR) => reconcileOne(actor, holdingId),
 
     /**
      * `competence.holdings`. With `person` (a user name, or the id of a person provisioned without one): what that
@@ -1806,46 +1967,26 @@ export function competenceUsecases(deps: CompetenceDeps) {
         org = persona.organisationId;
       // Everything is read before anything is said: a store or a staff port that fails throws, and the scan is then
       // no observation at all, never a complete one with nothing in it.
-      const own = await deps.store.transaction(async tx => {
-        const holdings = await tx.holdingsOf([persona.id]);
-        const [placed] = await tx.placesOf(org, [persona.id]);
-        const place = placed ?? { personId: persona.id, unitIds: [], positionCodes: [] };
-        const requirements = await tx.requirements(org);
-        const applying = requirementsOn(place, requirements);
-        const typeIds = new Set([
-          ...holdings.flatMap(h => (h.typeId ? [h.typeId] : [])),
-          ...applying.map(r => r.typeId),
-        ]);
-        const types = new Map((await tx.typesById([...typeIds])).map(t => [t.id, t]));
-        const required = new Map([[persona.id, [...new Set(applying.map(r => r.typeId))]]]);
-        const least = new Map([[persona.id, leastLevels(place, requirements)]]);
-        return deciding(holdings, types, today, required, least)
-          .filter(needsAttention)
-          .sort(byUrgency)
-          .map(standing => ({
-            standing,
-            card: ownCard(standing, {
-              requirementIds: applying.filter(r => r.typeId === standing.type.id).map(r => r.id),
-              lastRevoked: lastRevoked(holdings, persona.id, standing.type.id),
-            }),
-          }));
-      });
+      const own = await deps.store.transaction(tx => dueCards(tx, org, [persona.id], today));
       let team: { expired: number; missing: number; expiring: number; people: number; card: CardIdentity } | null =
         null;
       if (manager) {
         const { manages, people } = await reports(persona);
         if (manages) {
-          const due = (await deps.store.transaction(tx => standings(tx, org, [...people.keys()], today))).filter(
-            needsAttention,
-          );
-          const count = (status: Standing['status']) => due.filter(d => d.status === status).length;
+          const due = await deps.store.transaction(tx => dueCards(tx, org, [...people.keys()], today));
+          const count = (status: Standing['status']) => due.filter(d => d.standing.status === status).length;
           const [expired, missing, expiring] = [count('expired'), count('missing'), count('expiring')];
           team = {
             expired,
             missing,
             expiring,
-            people: new Set(due.map(d => d.personId)).size,
-            card: teamCard({ toActOn: expired + missing, expiring }),
+            people: new Set(due.map(d => d.standing.personId)).size,
+            // The set of things due, each by its person's own identity of it, never stored as it is (D108 item 12).
+            card: teamCard(
+              { toActOn: expired + missing, expiring },
+              due.map(d => [d.standing.personId, d.card.key, d.card.period].join('\n')),
+              deps.digest,
+            ),
           };
         }
       }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type Ref } from 'react';
 import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -6,6 +6,7 @@ import {
   type CompetenceApproval,
   type CompetenceDecision,
   type CompetenceLevel,
+  type CompetenceMatrixAwaiting,
   type CompetenceMatrixCell,
   type CompetenceMatrixColumn,
   type CompetenceMatrixGroup,
@@ -23,6 +24,7 @@ import {
   DialogHeader,
   EmptyState,
   HStack,
+  Heading,
   Icon,
   Layout,
   LayoutContent,
@@ -35,13 +37,14 @@ import {
   Selector,
   Table,
   Text,
+  Toolbar,
   VStack,
   pixel,
   proportional,
   resolveColumnWidths,
+  type TablePlugin,
   useMediaQuery,
   useTableStickyColumns,
-  type TablePlugin,
 } from '@clew/ui';
 import { api } from '../api';
 import {
@@ -100,6 +103,9 @@ const matrixMinWidth = (columns: number) =>
     ...Array.from({ length: columns }, (_, i) => ({ key: `type-${i}`, width: CELL_WIDTH })),
   ]).tableMinWidth;
 const cellKey = (personId: string, typeId: string) => personId + '\n' + typeId;
+/** The key of a registration's own "Granska" in the list of what waits, among the page's controls. */
+const awaitingKey = (holdingId: string) => 'awaiting\n' + holdingId;
+const AWAITING_ID = 'matris-att-granska';
 type MenuItems = ComponentProps<typeof MoreMenu>['items'];
 /** A write a cell's menu asks to confirm: revoking the holding that decides, or removing the requirement on the person. */
 interface Confirming {
@@ -372,6 +378,76 @@ function SetChoice({ data, onChoose }: { data: CompetenceMatrixOutput; onChoose:
   );
 }
 
+/** A registration's days as a row says them: "Utfärdat 1 okt. 2026 · Giltigt till 1 okt. 2028". */
+const awaitingDays = (a: CompetenceMatrixAwaiting) =>
+  [`Utfärdat ${cellDay(a.issuedOn)}`, a.expiresOn ? `Giltigt till ${cellDay(a.expiresOn)}` : 'Inget slutdatum'].join(
+    ' · ',
+  );
+/**
+ * Every registration of the reader's reports' own that waits for their decision (D108 item 7), above the matrix: a type
+ * nobody requires has no column, so this list is where each is within reach whatever its type. Astryx's card with a
+ * toolbar and a list, as the person's own page draws what waits, the count in the toolbar told as it changes; each row
+ * the person, the competence and its dates, and "Granska", which opens the decision over the page (`approve`).
+ */
+function Awaiting({
+  rows,
+  search,
+  headingRef,
+  control,
+  onReview,
+}: {
+  rows: CompetenceMatrixAwaiting[];
+  search: URLSearchParams;
+  headingRef: Ref<HTMLHeadingElement>;
+  control: (key: string) => (el: HTMLButtonElement | null) => void;
+  onReview: (row: CompetenceMatrixAwaiting) => void;
+}) {
+  return (
+    <Card padding={0}>
+      <Toolbar
+        label="Att granska"
+        size="sm"
+        dividers={['bottom']}
+        startContent={
+          <VStack gap={0} hAlign="start">
+            <Heading ref={headingRef} id={AWAITING_ID} tabIndex={-1} level={2}>
+              Att granska
+            </Heading>
+            <Text type="supporting" role="status">
+              {rows.length === 1 ? '1 registrering' : `${rows.length} registreringar`}
+            </Text>
+          </VStack>
+        }
+      />
+      <List aria-labelledby={AWAITING_ID} hasDividers>
+        {rows.map(row => (
+          <ListItem
+            key={row.holdingId}
+            label={<Text weight="semibold">{row.name}</Text>}
+            description={
+              <VStack gap={0} hAlign="start">
+                <Text>{row.competence}</Text>
+                <Text type="supporting">{awaitingDays(row)}</Text>
+              </VStack>
+            }
+            endContent={
+              <Button
+                ref={control(awaitingKey(row.holdingId))}
+                size="sm"
+                variant="secondary"
+                label="Granska"
+                aria-label={`Granska ${row.competence} för ${row.name}`}
+                href={approveHref(row.holdingId, search)}
+                onClick={() => onReview(row)}
+              />
+            }
+          />
+        ))}
+      </List>
+    </Card>
+  );
+}
+
 /**
  * The decision on a report's own registration (D108 item 7), a dialog over the matrix named in the address
  * (`approve=<holding id>`): who registered it, the competence and its dates, and the two decisions. "Godkänn" decides at
@@ -555,10 +631,11 @@ function SkillDialog({
  * registers a certificate with the competence chosen (`register`, `competence`), revokes a holding registered in Clew
  * and removes the manager's own requirement on the person, each removal asked for in Astryx's confirmation first. The
  * header adds a requirement for one person in a dialog named in the address (`requirement=new`) and downloads the
- * matrix as shown as a file. A report's own registration that waits for the reader's decision (D108 item 7) is noted in
- * its cell, whose menu opens the decision in a dialog named in the address (`approve`), as the approval's card in the
- * reader's stream does; an address for a registration the reader may not decide, or one decided already, opens nothing
- * and the page says why. A skill's cell (D120) says the level held in words and its menu confirms it in a dialog named
+ * matrix as shown as a file. Every registration of the reports' own that waits for the reader's decision (D108 item 7)
+ * is listed above the matrix, whatever its type, and one of a required type is noted in its cell too; either opens the
+ * decision in a dialog named in the address (`approve`), as the approval's card in the reader's stream does, and a
+ * decision replaces the address so Back does not come to it again; an address for a registration the reader may not
+ * decide, or one decided already, opens nothing and the page says why. A skill's cell (D120) says the level held in words and its menu confirms it in a dialog named
  * in the address (`validate`), which an address the reader may not confirm opens nothing of, as for an approval. Closing a dialog or a confirmation gives the focus back to the cell's control, or to the
  * page's heading where the cell has gone with what was removed or where no cell opened it (D83 rule 7). The table gives way to a list where it does
  * not fit, on a phone and beside the panel, as Personal does, so at 320 px nothing scrolls sideways; on a wider window the
@@ -591,6 +668,14 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
     },
     [],
   );
+  // Each "Granska" in the list of what waits, so the decision it opened can give it the focus back.
+  const awaitingControl = useCallback(
+    (key: string) => (el: HTMLButtonElement | null) => {
+      if (el) controls.current.set(key, el);
+      else controls.current.delete(key);
+    },
+    [],
+  );
   // Where the focus goes when a registration closes: the cell's control, or, where no cell is (an address from before
   // that names a competence not shown, or none), the page's heading (D83 rule 7).
   const opener = useCallback(
@@ -604,6 +689,7 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
   // It waits for the dialog to have closed: the address changes after the press that closed it, and nothing under a
   // modal dialog can take the focus.
   const addRequirement = useRef<HTMLButtonElement>(null);
+  const awaitingHeading = useRef<HTMLHeadingElement>(null);
   const [focusAfter, setFocusAfter] = useState<string | null>(null);
   const requiring = search.get(REQUIREMENT_PARAM) === NEW;
   const approving = approveOf(search);
@@ -611,7 +697,12 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
   useEffect(() => {
     if (focusAfter === null || requiring || approving || validating) return;
     setFocusAfter(null);
-    const target = focusAfter === REQUIREMENT_PARAM ? addRequirement.current : controls.current.get(focusAfter);
+    // A row of what waits goes with its decision: then the list's heading, while the list is there.
+    const target =
+      focusAfter === REQUIREMENT_PARAM
+        ? addRequirement.current
+        : (controls.current.get(focusAfter) ??
+          (focusAfter.startsWith(awaitingKey('')) ? awaitingHeading.current : undefined));
     // A frame later, once the dialogs that closed have given the focus back where they took it from.
     requestAnimationFrame(() => (target?.isConnected ? target : document.getElementById(TITLE_ID))?.focus());
   }, [focusAfter, data, requiring, approving, validating]);
@@ -636,10 +727,14 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
     invalidate: [['competence', 'matrix'], keys.viewAll, keys.entities.all, keys.threads, keys.attention, keys.areas],
     toastId: 'competence:approval',
   });
-  const closeApproval = () => {
+  /**
+   * Closed after a decision the address is replaced, so Back never comes to a decision already made; closed without one
+   * it is a step of its own, as opening it was.
+   */
+  const closeApproval = (decided = false) => {
     if (approving) client.removeQueries({ queryKey: keys.competenceApproval(approving) });
     decision.reset();
-    navigate(withoutApprove(search));
+    navigate(withoutApprove(search), decided ? { replace: true } : undefined);
     setFocusAfter(reviewedFrom.current ?? TITLE_ID);
     reviewedFrom.current = null;
   };
@@ -648,7 +743,7 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
     if (!a) return;
     await decision.run(async () => {
       await api.competence.decide(a.holdingId, choice);
-      closeApproval();
+      closeApproval(true);
       return choice === 'approve'
         ? `${a.competence} är godkänt för ${a.name}.`
         : `${a.competence} är avvisat för ${a.name}.`;
@@ -801,6 +896,17 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
                   </VStack>
                 ) : (
                   <AsyncContent pending={matrixQ.isPending} fallback={<ContentSkeleton heading={false} />} gap={5}>
+                    {data && data.awaiting.length > 0 && (
+                      <Awaiting
+                        rows={data.awaiting}
+                        search={search}
+                        headingRef={awaitingHeading}
+                        control={awaitingControl}
+                        onReview={row => {
+                          reviewedFrom.current = awaitingKey(row.holdingId);
+                        }}
+                      />
+                    )}
                     {data && data.rows.length === 0 ? (
                       <Card>
                         <EmptyState
@@ -849,7 +955,7 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
         error={decision.error}
         busy={decision.busy}
         onDecide={decide}
-        onClose={closeApproval}
+        onClose={() => closeApproval()}
       />
       <SkillDialog
         skill={validating && !off && !skillQ.isError ? skillQ.data : undefined}

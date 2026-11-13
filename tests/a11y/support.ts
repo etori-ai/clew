@@ -319,7 +319,7 @@ export class MockApi {
    * The reader's own registration (D108 item 7): whether anyone would decide it, and the ones that wait, as the writes
    * from the page change them. Every write to them in order; the next registration answers 400 with `ownFail`.
    */
-  competenceOwn: CompetenceOwnOutput = { approver: true, pending: [], skills: [] };
+  competenceOwn: CompetenceOwnOutput = { approver: true, pending: [], rejected: [], skills: [] };
   ownWrites: Array<{ method: string; path: string; body?: unknown }> = [];
   ownFail: string | null = null;
   /**
@@ -1190,6 +1190,17 @@ export class MockApi {
       };
       return route.fulfill({ status: 204, body: '' });
     }
+    // One the manager rejected, removed by the person.
+    const removingRejected = /^\/competence\/own\/rejected\/([^/]+)$/.exec(path);
+    if (removingRejected && route.request().method() === 'DELETE') {
+      const id = decodeURIComponent(removingRejected[1]!);
+      this.ownWrites.push({ method: 'DELETE', path });
+      this.competenceOwn = {
+        ...this.competenceOwn,
+        rejected: this.competenceOwn.rejected.filter(p => p.holdingId !== id),
+      };
+      return route.fulfill({ status: 204, body: '' });
+    }
     // Its decision by the manager the person reports to: the registration read, and approved or rejected.
     const approvalPath = /^\/competence\/approvals\/([^/]+)$/.exec(path);
     if (approvalPath) {
@@ -1201,6 +1212,10 @@ export class MockApi {
       const body = route.request().postDataJSON() as CompetenceDecisionBody;
       this.approvalWrites.push({ path, body });
       delete this.competenceApprovals[id];
+      this.competenceMatrix = {
+        ...this.competenceMatrix,
+        awaiting: this.competenceMatrix.awaiting.filter(a => a.holdingId !== id),
+      };
       // Approved, the registration decides the cell; rejected, the cell is as it was without it.
       this.changeMatrix(c => {
         if (c.pending !== id) return c;

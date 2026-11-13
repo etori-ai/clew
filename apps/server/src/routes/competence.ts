@@ -65,6 +65,7 @@ export interface CompetenceRouteDeps {
     | 'ownTypes'
     | 'registerOwn'
     | 'withdrawOwn'
+    | 'removeRejected'
     | 'approval'
     | 'decideHolding'
     | 'rateOwnSkill'
@@ -191,6 +192,11 @@ export function competenceRoutes(deps: CompetenceRouteDeps) {
   });
   routes.delete('/own/holdings/:id', async c => {
     await competence.withdrawOwn(c.get('session').context, param(c.req.param('id')));
+    return c.body(null, 204);
+  });
+  // One the manager rejected, removed by the person whose it is.
+  routes.delete('/own/rejected/:id', async c => {
+    await competence.removeRejected(c.get('session').context, param(c.req.param('id')));
     return c.body(null, 204);
   });
   // A skill (D120): the person's own rating, stored at once and changed by rating again, and removed by them.

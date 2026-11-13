@@ -2,7 +2,7 @@ import { calendar, fireTimer } from '../composition';
 import { competence } from '../composition/competence';
 import { executions } from '../composition/executions';
 import { runScheduledJob } from '../composition/jobs';
-import { COPY_ACTOR } from '../modules/competence/usecases';
+import { COPY_ACTOR, RECONCILE_ACTOR } from '../modules/competence/usecases';
 import { bindActivities } from './workflows';
 
 /**
@@ -25,5 +25,7 @@ export function bindLiveActivities() {
     competenceSources: only => competence.copySources(only),
     copyHoldings: async (run, source, signal) =>
       (await competence.copySource(COPY_ACTOR, run, source, signal ? { signal } : {})).outcome,
+    /** The daily reconciliation of the approvals' cards (D108 item 7) with who can decide each now. */
+    reconcileApprovals: () => competence.reconcileApprovals(RECONCILE_ACTOR),
   });
 }

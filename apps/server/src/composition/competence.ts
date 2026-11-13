@@ -3,7 +3,9 @@ import { competenceTx } from '../modules/competence/adapters/postgres';
 import { competenceUsecases } from '../modules/competence/usecases';
 import { reportsByUnit } from '../modules/entities/domain';
 import type { Above, CompetenceStore, HoldingsPort, Staff } from '../modules/competence/model';
+import { createHash } from 'node:crypto';
 import { cancelDurable } from '../dbos/start';
+import { systemContext } from '../system-context';
 import { logPort, logger } from '../logging';
 import { competenceWorkItems } from './competence-work-items';
 import { staff as staffUsecases } from './people';
@@ -44,6 +46,11 @@ const staff: Staff = async persona => ({ units: reportsByUnit(await staffUsecase
  */
 const above: Above = async persona => (await staffUsecases.reach(persona)).above.filter(id => id !== persona.id);
 /**
+ * A person as the use cases take one, from their current grant (D108 item 7): to count a manager's reports as the
+ * manager does, and to tell whether a person who registered is active. Undefined for someone deactivated or without access.
+ */
+const personaOf = (personId: string) => systemContext(personId, 'system:competence');
+/**
  * What the copy of D108 item 9 reads: the module's switch and the installation's read of the holdings profile (D119,
  * `holdingsReader`). The registry is built over the module this file builds, so the slot is filled in
  * `composition/index.ts` once the registry exists, as `answerCards` and `planningRound` are; until then the module is
@@ -60,6 +67,8 @@ export const competence = competenceUsecases({
   store: competenceStore,
   staff,
   above,
+  personaOf,
+  digest: text => createHash('sha256').update(text).digest('hex'),
   clock,
   ids,
   holdings: {

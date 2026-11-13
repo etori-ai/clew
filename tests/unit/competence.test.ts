@@ -2046,6 +2046,95 @@ describe("a manager's reports are D99's, not everyone Personal lists (D117 `mana
     return { staff, store: directoryStore, competence, hillevi: personaOf('hillevi', 'manager', 'Hillevi Holm') };
   }
 
+  test('a card goes to exactly those who may decide: two who lead a unit and the unit above it are not each other’s managers', async () => {
+    // Ada and Bea lead both Förvaltningen and the school under it; Eva works at the school. By the line upwards each of
+    // the two is above the other, and by the reports downwards neither is the other's report.
+    const T = '2026-11-10T08:00:00.000Z';
+    const people = memoryProvisionStore(),
+      s = people.state;
+    const directoryStore = memoryCompetenceStore();
+    for (const [id, label, parent] of [
+      ['top', 'Förvaltningen', null],
+      ['skola', 'Bergsåkers skola', 'top'],
+    ] as const) {
+      s.units.set(id, { organisationId: ORG, label });
+      s.groups.set('g-' + id, {
+        id: 'g-' + id,
+        organisationId: ORG,
+        externalId: 'unit:' + id,
+        label,
+        parentUnitId: parent,
+        createdAt: T,
+        updatedAt: T,
+      });
+      directoryStore.addUnit({ id, organisationId: ORG, label, parentId: parent });
+    }
+    const placed = (id: string, name: string, placements: Array<{ unitId: string; role: 'manager' | 'employee' }>) => {
+      s.users.set(id, {
+        id,
+        organisationId: ORG,
+        externalId: 'dev:' + id,
+        userName: id,
+        name,
+        email: null,
+        phoneNumbers: [],
+        employments: [],
+        title: null,
+        enabled: true,
+        createdAt: T,
+        updatedAt: T,
+      });
+      s.assignments.set(id, placements);
+      s.grants.set(id, {
+        unitId: placements[0]!.unitId,
+        unitLabel: s.units.get(placements[0]!.unitId)!.label,
+        role: placements[0]!.role,
+        capabilities: [],
+      });
+      directoryStore.addPerson({ id, organisationId: ORG, name, userName: id });
+      for (const p of placements) directoryStore.assign(id, p.unitId);
+      return personaOf(id, placements[0]!.role, name);
+    };
+    const both = [
+      { unitId: 'top', role: 'manager' as const },
+      { unitId: 'skola', role: 'manager' as const },
+    ];
+    const ada = placed('ada', 'Ada Ledare', both),
+      bea = placed('bea', 'Bea Ledare', both),
+      eva = placed('eva', 'Eva Ek', [{ unitId: 'skola', role: 'employee' }]);
+    const personas = new Map([ada, bea, eva].map(p => [p.id, p]));
+    const staffOf = staffUsecases({ store: people });
+    const c = competenceUsecases({
+      store: directoryStore,
+      // As composition binds them: the reports downwards, the line upwards, and a person from their grant.
+      staff: async persona => ({ units: reportsByUnit(await staffOf.reach(persona)) }),
+      above: async persona => (await staffOf.reach(persona)).above.filter(id => id !== persona.id),
+      personaOf: async id => personas.get(id),
+      clock: () => now,
+      ids: () => 'co-' + ++n,
+    });
+    const typeId = await c.seedType('operator:test', ORG, {
+      name: 'Heta arbeten',
+      area: 'Säkerhet',
+      kind: 'certificate',
+    });
+    // The line says Ada is above Bea; Ada's reports do not hold Bea. Bea's registration would go to someone who is
+    // refused its decision, so nobody gets it, and the form says so.
+    expect((await staffOf.reach(bea)).above).toContain('ada');
+    expect((await c.ownRegistrations(bea)).approver).toBe(false);
+    await expect(c.registerOwn(bea, { typeId, issuedOn: '2026-01-10' })).rejects.toThrow(
+      'Registreringen kan inte skickas: ingen chef är registrerad för dig.',
+    );
+    expect(directoryStore.calls()).toEqual([]);
+    // Eva's goes to both, and either decides it.
+    const id = await c.registerOwn(eva, { typeId, issuedOn: '2026-01-10' });
+    expect(directoryStore.calls()).toEqual([
+      expect.objectContaining({ op: 'open', holdingId: id, managers: ['ada', 'bea'] }),
+    ]);
+    await c.decideHolding(bea, id, 'approve');
+    expect(directoryStore.state.holdings.get(id)).toMatchObject({ state: 'valid', decidedBy: 'bea' });
+  });
+
   test('a co-manager and the reader’s own manager, though placed on the unit, are in no read and take no write', async () => {
     const w = world();
     // Personal lists them: the fixture is shaped like the real directory.
@@ -2103,8 +2192,11 @@ describe("a manager's reports are D99's, not everyone Personal lists (D117 `mana
  */
 describe('a person registers their own certificate and the manager they report to decides it (D108 item 7)', () => {
   const asDan = personaOf('dan', 'employee', 'Dan Dahl');
+  const third = personaOf('third', 'manager', 'Tredje Chef');
   let above: Map<string, string[]>;
   let own: CompetenceUsecases;
+  /** Each person as the use cases take one from their grant: nobody while the directory has them deactivated. */
+  const granted = new Map([boss, other, third, asAnna, asBo, asDan].map(p => [p.id, p as AuthenticatedContext]));
   beforeEach(() => {
     above = new Map([
       ['anna', ['other', 'boss']],
@@ -2112,15 +2204,24 @@ describe('a person registers their own certificate and the manager they report t
     ]);
     staff.set('other', { units: [{ unitId: 'u1', unitLabel: 'Enhet 1', people: [anna, dan] }] });
     store.addPerson({ id: 'other', organisationId: ORG, name: 'Olle Chef', userName: 'other' });
+    store.addPerson({ id: 'third', organisationId: ORG, name: 'Tredje Chef', userName: 'third' });
     own = competenceUsecases({
       store,
       staff: async persona => staff.get(persona.id) ?? { units: [] },
       above: async persona => above.get(persona.id) ?? [],
+      personaOf: async id => (store.state.inactive.has(id) ? undefined : granted.get(id)),
       clock: () => now,
       ids: () => 'id-' + ++n,
     });
   });
   const calls = () => store.calls();
+  /** Each manager's card of one approval, by owner: whether it is open and how Clew last closed it. */
+  const cardsOf = (threadId: string) =>
+    [...store.state.cards.values()]
+      .filter(c => c.threadId === threadId)
+      .sort((a, b) => a.personId.localeCompare(b.personId))
+      .map(c => [c.personId, c.state, c.outcome]);
+  const reconciled = () => audits().filter(a => a.action === 'competence.approval_reconciled');
   const actions = () => audits().map(a => a.action);
   /** HLR (24 months by the employer's rule), Heta arbeten and Socionomexamen; HLR required of Anna by Karin. */
   async function setup() {
@@ -2400,17 +2501,223 @@ describe('a person registers their own certificate and the manager they report t
     const { hlr } = await setup();
     above.set('anna', ['boss']);
     const id = await own.registerOwn(asAnna, { typeId: hlr, issuedOn: '2026-01-10' });
-    // She moves to Olle alone: no new card is opened for him, Karin's stays until the registration is decided.
+    const threadId = store.state.holdings.get(id)!.threadId!;
+    // She moves to Olle alone. Karin decides nothing; Olle finds it in the matrix and decides it, and the cards are
+    // reconciled first: Karin's is set aside as no longer hers, then his, opened for him, closes with the decision.
     staff.set('boss', { units: [{ unitId: 'u1', unitLabel: 'Enhet 1', people: [bo] }] });
     above.set('anna', ['other']);
     await expect(own.decideHolding(boss, id, 'approve')).rejects.toThrow(
       'Registreringen finns inte bland dem du kan granska.',
     );
     expect((await own.matrix(other)).rows.find(r => r.personId === 'anna')!.cells[0]!.pending).toBe(id);
+    expect((await own.matrix(other)).awaiting.map(a => a.holdingId)).toEqual([id]);
+    expect((await own.matrix(boss)).awaiting).toEqual([]);
     await own.decideHolding(other, id, 'approve');
-    expect(calls().map(c => c.op)).toEqual(['open', 'close']);
-    expect([...store.state.cards.values()].map(c => [c.personId, c.state])).toEqual([['boss', 'handled']]);
+    expect(calls().map(c => [c.op, 'outcome' in c ? c.outcome : null])).toEqual([
+      ['open', null],
+      ['close', 'reassigned'],
+      ['open', null],
+      ['close', 'approved'],
+    ]);
+    expect(cardsOf(threadId)).toEqual([
+      ['boss', 'handled', 'reassigned'],
+      ['other', 'handled', 'approved'],
+    ]);
+    expect(actions().slice(-2)).toEqual(['competence.approval_reconciled', 'competence.holding_approved']);
     expect(lastAudit()).toMatchObject({ actor: 'person:other', action: 'competence.holding_approved' });
+  });
+
+  test('a type nobody requires, after a change of manager, is within the new manager’s reach from the list of what waits', async () => {
+    const { degree } = await setup();
+    above.set('anna', ['boss']);
+    const id = await own.registerOwn(asAnna, { typeId: degree, issuedOn: '2015-06-05' });
+    staff.set('boss', { units: [{ unitId: 'u1', unitLabel: 'Enhet 1', people: [bo] }] });
+    above.set('anna', ['other']);
+    // No column holds it (nothing requires a degree of anyone), and the list does.
+    const matrix = await own.matrix(other);
+    expect(matrix.columns.map(c => c.typeId)).not.toContain(degree);
+    expect(matrix.awaiting).toEqual([
+      {
+        holdingId: id,
+        personId: 'anna',
+        key: 'anna.a',
+        name: 'Anna Andersson',
+        typeId: degree,
+        competence: 'Socionomexamen',
+        issuedOn: '2015-06-05',
+      },
+    ]);
+    expect(checkContract(CompetenceMatrixOutputSchema, matrix)).toBe(true);
+    await own.decideHolding(other, id, 'approve');
+    expect(store.state.holdings.get(id)).toMatchObject({ state: 'valid', decidedBy: 'other' });
+  });
+
+  test('reconciled each day: a change of manager sets the former one’s card aside and opens one for the new; nothing to change writes nothing', async () => {
+    const { hlr } = await setup();
+    above.set('anna', ['boss']);
+    const id = await own.registerOwn(asAnna, { typeId: hlr, issuedOn: '2026-01-10' });
+    const threadId = store.state.holdings.get(id)!.threadId!;
+    // In step: nothing written, no card touched.
+    const before = audits().length,
+      called = calls().length;
+    expect(await own.reconcileApprovals()).toEqual({
+      registrations: 1,
+      changed: 0,
+      opened: 0,
+      closed: 0,
+      reopened: 0,
+      failed: 0,
+    });
+    expect(audits()).toHaveLength(before);
+    expect(calls()).toHaveLength(called);
+    // She moves to Tredje.
+    staff.set('boss', { units: [{ unitId: 'u1', unitLabel: 'Enhet 1', people: [bo] }] });
+    staff.set('third', { units: [{ unitId: 'u4', unitLabel: 'Enhet 4', people: [anna] }] });
+    above.set('anna', ['third']);
+    now = new Date('2026-11-11T02:00:00.000Z');
+    expect(await own.reconcileApprovals()).toMatchObject({ registrations: 1, changed: 1, opened: 1, closed: 1 });
+    expect(cardsOf(threadId)).toEqual([
+      ['boss', 'handled', 'reassigned'],
+      ['third', 'open', null],
+    ]);
+    expect(reconciled()).toEqual([
+      {
+        actor: 'system:competence-approvals',
+        action: 'competence.approval_reconciled',
+        subject: 'holding:' + id,
+        at: now.toISOString(),
+        details: { personId: 'anna', active: true, opened: 1, closed: 1, reopened: 0 },
+      },
+    ]);
+    // And back to Karin: her card, set aside by Clew, opens again; Tredje's is set aside.
+    staff.set('boss', { units: [{ unitId: 'u1', unitLabel: 'Enhet 1', people: [anna, bo] }] });
+    above.set('anna', ['boss']);
+    await own.reconcileApprovals();
+    expect(cardsOf(threadId)).toEqual([
+      ['boss', 'open', null],
+      ['third', 'handled', 'reassigned'],
+    ]);
+    expect(reconciled().at(-1)!.details).toEqual({ personId: 'anna', active: true, opened: 0, closed: 1, reopened: 1 });
+  });
+
+  test('a card its owner put away while they can still decide stays as they left it; the list of what waits still has it', async () => {
+    const { hlr } = await setup();
+    const id = await own.registerOwn(asAnna, { typeId: hlr, issuedOn: '2026-01-10' });
+    const threadId = store.state.holdings.get(id)!.threadId!;
+    store.setOwn(threadId + ':boss', 'handled');
+    store.setOwn(threadId + ':other', 'dismissed');
+    expect((await own.reconcileApprovals()).changed).toBe(0);
+    expect(cardsOf(threadId)).toEqual([
+      ['boss', 'handled', null],
+      ['other', 'dismissed', null],
+    ]);
+    expect((await own.matrix(boss)).awaiting.map(a => a.holdingId)).toEqual([id]);
+  });
+
+  test('a manager deactivated loses the card; one erased loses it too, and whoever decides now gets one', async () => {
+    const { hlr } = await setup();
+    const id = await own.registerOwn(asAnna, { typeId: hlr, issuedOn: '2026-01-10' });
+    const threadId = store.state.holdings.get(id)!.threadId!;
+    // Olle is deactivated: the directory no longer has him above her, and he can decide nothing.
+    store.deactivate('other');
+    staff.delete('other');
+    above.set('anna', ['boss']);
+    await own.reconcileApprovals();
+    expect(cardsOf(threadId)).toEqual([
+      ['boss', 'open', null],
+      ['other', 'handled', 'reassigned'],
+    ]);
+    // Karin is deactivated and erased: her card goes with her, and Tredje, who leads Anna now, gets one.
+    store.deactivate('boss');
+    await own.erasePerson('operator:cli', 'boss');
+    expect(cardsOf(threadId)).toEqual([['other', 'handled', 'reassigned']]);
+    staff.set('third', { units: [{ unitId: 'u4', unitLabel: 'Enhet 4', people: [anna] }] });
+    above.set('anna', ['third']);
+    await own.reconcileApprovals();
+    expect(cardsOf(threadId)).toEqual([
+      ['other', 'handled', 'reassigned'],
+      ['third', 'open', null],
+    ]);
+    await own.decideHolding(third, id, 'approve');
+    expect(store.state.holdings.get(id)).toMatchObject({ state: 'valid', decidedBy: 'third' });
+  });
+
+  test('while she is deactivated with a registration waiting, nobody decides it, no list shows it and every card is set aside; back, they open again', async () => {
+    const { hlr } = await setup();
+    const id = await own.registerOwn(asAnna, { typeId: hlr, issuedOn: '2026-01-10' });
+    const threadId = store.state.holdings.get(id)!.threadId!;
+    store.deactivate('anna');
+    const away = { ...anna, enabled: false };
+    staff.set('boss', { units: [{ unitId: 'u1', unitLabel: 'Enhet 1', people: [away, bo] }] });
+    staff.set('other', { units: [{ unitId: 'u1', unitLabel: 'Enhet 1', people: [away, dan] }] });
+    expect((await own.matrix(boss)).awaiting).toEqual([]);
+    await expect(own.decideHolding(boss, id, 'approve')).rejects.toThrow(
+      'Registreringen finns inte bland dem du kan granska.',
+    );
+    await own.reconcileApprovals();
+    expect(cardsOf(threadId)).toEqual([
+      ['boss', 'handled', 'paused'],
+      ['other', 'handled', 'paused'],
+    ]);
+    expect(reconciled().at(-1)!.details).toEqual({
+      personId: 'anna',
+      active: false,
+      opened: 0,
+      closed: 2,
+      reopened: 0,
+    });
+    // Reactivated, and still waiting: both cards open again, and the registration is decided as before.
+    store.reactivate('anna');
+    staff.set('boss', { units: [{ unitId: 'u1', unitLabel: 'Enhet 1', people: [anna, bo] }] });
+    staff.set('other', { units: [{ unitId: 'u1', unitLabel: 'Enhet 1', people: [anna, dan] }] });
+    await own.reconcileApprovals();
+    expect(cardsOf(threadId)).toEqual([
+      ['boss', 'open', null],
+      ['other', 'open', null],
+    ]);
+    expect(reconciled().at(-1)!.details).toEqual({ personId: 'anna', active: true, opened: 0, closed: 0, reopened: 2 });
+    await own.decideHolding(boss, id, 'reject');
+    expect(cardsOf(threadId)).toEqual([
+      ['boss', 'handled', 'rejected'],
+      ['other', 'handled', 'rejected'],
+    ]);
+  });
+
+  test('one registration that cannot be reconciled is counted and the rest are', async () => {
+    const { hlr, hot } = await setup();
+    above.set('anna', ['boss']);
+    await own.registerOwn(asAnna, { typeId: hlr, issuedOn: '2026-01-10' });
+    await own.registerOwn(asAnna, { typeId: hot, issuedOn: '2026-01-10' });
+    above.set('anna', ['other']);
+    store.sink.throwOn = 'open';
+    expect(await own.reconcileApprovals()).toMatchObject({ registrations: 2, changed: 0, failed: 2 });
+    store.sink.throwOn = undefined;
+    expect(await own.reconcileApprovals()).toMatchObject({ registrations: 2, changed: 2, opened: 2, closed: 2 });
+    // Without the port that builds a person from their grant, nothing is reconciled.
+    expect(await competence.reconcileApprovals()).toMatchObject({ registrations: 0 });
+  });
+
+  test('a rejected registration is the person’s alone to remove, with its audit row; one that waits or was approved is not', async () => {
+    const { hlr, hot } = await setup();
+    const rejected = await own.registerOwn(asAnna, { typeId: hlr, issuedOn: '2026-01-10' });
+    await own.decideHolding(boss, rejected, 'reject');
+    const waiting = await own.registerOwn(asAnna, { typeId: hot, issuedOn: '2026-01-10' });
+    for (const persona of [boss, asBo])
+      await expect(own.removeRejected(persona, rejected)).rejects.toThrow('Du har ingen sådan registrering.');
+    await expect(own.removeRejected(asAnna, waiting)).rejects.toThrow(
+      'Bara en registrering som din chef har avvisat kan tas bort.',
+    );
+    await own.removeRejected(asAnna, rejected);
+    expect(store.state.holdings.has(rejected)).toBe(false);
+    expect(lastAudit()).toEqual({
+      actor: 'person:anna',
+      action: 'competence.holding_removed',
+      subject: 'holding:' + rejected,
+      at: now.toISOString(),
+      details: { personId: 'anna', typeId: hlr },
+    });
+    expect((await own.ownRegistrations(asAnna)).rejected).toEqual([]);
+    await expect(own.removeRejected(asAnna, rejected)).rejects.toThrow('Du har ingen sådan registrering.');
   });
 
   test('she takes it back while it waits: the row is removed and every card closes; nobody else can, and a decided one cannot', async () => {
@@ -2452,14 +2759,17 @@ describe('a person registers their own certificate and the manager they report t
 
   test('what her own registration needs: whether anyone decides it, and the ones that wait', async () => {
     const { hlr, hot } = await setup();
-    expect(await own.ownRegistrations(asAnna)).toEqual({ approver: true, pending: [], skills: [] });
-    expect(await own.ownRegistrations(asDan)).toEqual({ approver: false, pending: [], skills: [] });
+    expect(await own.ownRegistrations(asAnna)).toEqual({ approver: true, pending: [], rejected: [], skills: [] });
+    expect(await own.ownRegistrations(asDan)).toEqual({ approver: false, pending: [], rejected: [], skills: [] });
     const first = await own.registerOwn(asAnna, { typeId: hlr, issuedOn: '2026-01-10' });
     const second = await own.registerOwn(asAnna, { typeId: hot, issuedOn: '2026-02-01', expiresOn: '2031-01-31' });
     await own.decideHolding(boss, second, 'reject');
     expect(await own.ownRegistrations(asAnna)).toEqual({
       approver: true,
       pending: [{ holdingId: first, typeId: hlr, competence: 'HLR', issuedOn: '2026-01-10', expiresOn: '2028-01-10' }],
+      rejected: [
+        { holdingId: second, typeId: hot, competence: 'Heta arbeten', issuedOn: '2026-02-01', expiresOn: '2031-01-31' },
+      ],
       skills: [],
     });
   });

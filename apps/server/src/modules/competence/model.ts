@@ -298,7 +298,23 @@ export class SkillTaken extends Error {
 }
 
 /** How a person's own registration left the managers' streams (D108 item 7). */
-export type ApprovalOutcome = 'approved' | 'rejected' | 'withdrawn';
+/**
+ * How a person's own registration left a manager's stream (D108 item 7): decided, taken back, or set aside by Clew,
+ * `reassigned` when that manager can no longer decide it (the person reports to someone else, or the manager left)
+ * and `paused` while the person who registered it is not active.
+ */
+export type ApprovalOutcome = 'approved' | 'rejected' | 'withdrawn' | 'reassigned' | 'paused';
+/** One manager's card of one approval, as the reconciliation reads it. */
+export interface ApprovalCard {
+  /** Whose stream it is in. */
+  personId: string;
+  open: boolean;
+  /**
+   * Put away by Clew (`reassigned` or `paused`), not by its owner or a decision: the one kind of closed card Clew opens
+   * again when its owner can decide once more.
+   */
+  setAside: boolean;
+}
 /**
  * The approval of a person's own registration as work (D108 item 7): one card in the stream of each manager the person
  * reports to when they register it, every card on one topic so that one decision, by any of them or by a manager the
@@ -322,10 +338,14 @@ export interface ApprovalWorkItemTx {
     subject?: Subject;
   }): Promise<void>;
   /**
-   * Mark every card of the approval handled, with a message that says how it ended, and end the reminders the owners
-   * set on them. A card that is gone or already handled is no error.
+   * Mark every open card of the approval handled (or, with `only`, those of these owners), with a message that says how
+   * it ended, and end the reminders the owners set on them. A card that is gone or already put away is no error.
    */
-  close(threadId: string, at: string, outcome: ApprovalOutcome): Promise<void>;
+  close(threadId: string, at: string, outcome: ApprovalOutcome, only?: readonly string[]): Promise<void>;
+  /** Every card of the approval, whichever stream it is in, locked, by owner. */
+  cards(threadId: string): Promise<ApprovalCard[]>;
+  /** Open again the cards of these owners that Clew set aside, with a message that says it waits for them again. */
+  reopen(threadId: string, personIds: readonly string[], at: string): Promise<void>;
   /** Erasure of the person who registered: every card of these approvals goes, from whichever stream it is in. */
   remove(threadIds: readonly string[]): Promise<void>;
   /**
@@ -373,6 +393,8 @@ export interface CompetenceTx {
   holdingsOf(personIds: readonly string[]): Promise<HoldingRecord[]>;
   /** Every holding of this type, oldest first, whatever its state. */
   holdingsOfType(typeId: string): Promise<HoldingRecord[]>;
+  /** Every person's own registration that waits for a decision (D108 item 7), of every organisation, oldest first. */
+  waitingRegistrations(): Promise<HoldingRecord[]>;
   /** One holding, locked. */
   holding(id: string): Promise<HoldingRecord | undefined>;
   /**
@@ -561,6 +583,18 @@ export interface CompetenceDeps {
   staff: Staff;
   /** Whom the reader reports to (D108 item 7). Absent: everyone reports to nobody, as in the tests of earlier slices. */
   above?: Above;
+  /**
+   * A person as the use cases take one, built from their current grant (D108 item 7): to count whom a manager reports
+   * to as they themselves count their reports, and to tell whether the person who registered is active. Undefined for
+   * someone deactivated or without access. Absent: who reports to whom is `above` alone, and approvals are never
+   * reconciled, as in the tests of earlier slices.
+   */
+  personaOf?: (personId: string) => Promise<AuthenticatedContext | undefined>;
+  /**
+   * A one-way digest of a text (D108 item 12): the manager's card names its cause by one, so its stored identity says
+   * nothing of whom or what it counts. Composition hands in SHA-256; absent, a 64-bit FNV-1a, for tests.
+   */
+  digest?: (text: string) => string;
   clock: () => Date;
   ids: () => string;
   /** The sources the copy reads (item 9). Absent: there are none, as in the tests of the first slice. */

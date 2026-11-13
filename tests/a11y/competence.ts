@@ -208,6 +208,7 @@ const cell = (typeId: string, c: Partial<CompetenceMatrixCell> & Pick<Competence
 const onPosition = { on: 'position' as const, label: 'Undersköterska' };
 export const competenceMatrix = (): CompetenceMatrixOutput => ({
   groups: [],
+  awaiting: [],
   columns: [
     { typeId: 't-hlr', name: 'HLR', area: 'Akut omhändertagande', kind: 'course' },
     { typeId: 't-fall', name: 'Fallskydd', area: 'Säkerhet', kind: 'certificate' },
@@ -306,6 +307,7 @@ export function matrixAnswer(base: CompetenceMatrixOutput, sets: boolean, by: st
     columns: keep.map(i => base.columns[i]!),
     rows: base.rows.map(r => ({ ...r, cells: keep.map(i => r.cells[i]!) })),
     required: 12,
+    awaiting: base.awaiting,
   };
 }
 
@@ -327,6 +329,18 @@ export const lenaApproval = (): CompetenceApproval => ({
 });
 export const withLenaWaiting = (m: CompetenceMatrixOutput): CompetenceMatrixOutput => ({
   ...m,
+  awaiting: [
+    {
+      holdingId: 'own-lena',
+      personId: 'lena',
+      key: 'lena.berg',
+      name: 'Lena Berg',
+      typeId: 't-hlr',
+      competence: 'HLR',
+      issuedOn: '2026-10-01',
+      expiresOn: '2028-10-01',
+    },
+  ],
   rows: m.rows.map(r =>
     r.personId === 'lena'
       ? { ...r, cells: r.cells.map(c => (c.typeId === 't-hlr' ? { ...c, pending: 'own-lena' } : c)) }

@@ -467,7 +467,9 @@ export function competenceConnector(
     input: ApprovalInputSchema,
     output: ApprovalOutputSchema,
     view: approvalView,
-    scope: { roles: ['manager'] },
+    // Whoever the server counts as having reports, as the matrix is read: not the session's role, since a person whose
+    // grant says employee may lead someone (D99). The use case refuses anyone the person does not report to.
+    scope: () => true,
     // Only a registration of someone who reports to the reader now (D99 item 4); the use case checks it, as Clew's own
     // domains do (D117), since a holding named in a plain input is no person the registry resolves.
     run: async (actor, input) => {

@@ -31,7 +31,8 @@ import type {
  */
 export type ApprovalWorkItemCall =
   | ({ op: 'open' } & Omit<Parameters<ApprovalWorkItemTx['open']>[0], 'managers'> & { managers: string[] })
-  | { op: 'close'; threadId: string; at: string; outcome: ApprovalOutcome }
+  | { op: 'close'; threadId: string; at: string; outcome: ApprovalOutcome; only?: string[] }
+  | { op: 'reopen'; threadId: string; personIds: string[]; at: string }
   | { op: 'remove'; threadIds: string[] }
   | { op: 'removeAbout'; subject: Subject }
   | { op: 'removeOwned'; personId: string };
@@ -42,7 +43,8 @@ export interface MemoryApprovalCard {
   holdingId: string;
   /** The person the card is about, by key, when they have one. */
   subject: Subject | null;
-  state: 'open' | 'handled';
+  /** `dismissed` and a `handled` with no outcome are its owner's own doing (`setOwn`). */
+  state: 'open' | 'handled' | 'dismissed';
   outcome: ApprovalOutcome | null;
 }
 export interface MemoryApprovalSink {
@@ -205,7 +207,9 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     async open(input) {
       fail('open');
       state.calls.push(structuredClone({ op: 'open' as const, ...input, managers: [...input.managers] }));
-      for (const personId of input.managers)
+      for (const personId of input.managers) {
+        // The card's id is its key, as the thread's primary key is in Postgres.
+        if (state.cards.has(input.threadId + ':' + personId)) throw new Error('the approval card exists already');
         state.cards.set(input.threadId + ':' + personId, {
           personId,
           threadId: input.threadId,
@@ -214,12 +218,36 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
           state: 'open',
           outcome: null,
         });
+      }
     },
-    async close(threadId, at, outcome) {
+    async close(threadId, at, outcome, only) {
       fail('close');
-      state.calls.push({ op: 'close', threadId, at, outcome });
+      state.calls.push({ op: 'close', threadId, at, outcome, ...(only ? { only: [...only] } : {}) });
       for (const card of state.cards.values())
-        if (card.threadId === threadId && card.state === 'open') Object.assign(card, { state: 'handled', outcome });
+        if (card.threadId === threadId && card.state === 'open' && (!only || only.includes(card.personId)))
+          Object.assign(card, { state: 'handled', outcome });
+    },
+    async cards(threadId) {
+      return [...state.cards.values()]
+        .filter(c => c.threadId === threadId)
+        .sort((a, b) => a.personId.localeCompare(b.personId))
+        .map(c => ({
+          personId: c.personId,
+          open: c.state === 'open',
+          setAside: c.state === 'handled' && (c.outcome === 'reassigned' || c.outcome === 'paused'),
+        }));
+    },
+    async reopen(threadId, personIds, at) {
+      fail('reopen');
+      state.calls.push({ op: 'reopen', threadId, personIds: [...personIds], at });
+      for (const card of state.cards.values())
+        if (
+          card.threadId === threadId &&
+          personIds.includes(card.personId) &&
+          card.state === 'handled' &&
+          (card.outcome === 'reassigned' || card.outcome === 'paused')
+        )
+          Object.assign(card, { state: 'open', outcome: null });
     },
     async remove(threadIds) {
       fail('remove');
@@ -279,6 +307,11 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     async holdingsOf(personIds) {
       return byCreated([...state.holdings.values()].filter(h => personIds.includes(h.personId))).map(h =>
         structuredClone(h),
+      );
+    },
+    async waitingRegistrations() {
+      return byCreated([...state.holdings.values()].filter(h => h.evidence === 'self' && h.state === 'pending')).map(
+        h => structuredClone(h),
       );
     },
     async holdingsOfType(typeId) {
@@ -645,9 +678,18 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     addPerson(person: PersonRef) {
       state.persons.set(person.id, { ...person });
     },
+    /** A manager puts a card of an approval away themselves (handled or dismissed), as the stream lets them. */
+    setOwn(cardId: string, next: 'handled' | 'dismissed') {
+      const card = state.cards.get(cardId);
+      if (card) Object.assign(card, { state: next, outcome: null });
+    },
     /** SCIM deactivates a person (D68): they stay, and leave every list. */
     deactivate(personId: string) {
       state.inactive.add(personId);
+    },
+    /** SCIM activates a person again. */
+    reactivate(personId: string) {
+      state.inactive.delete(personId);
     },
     /** A position of an organisation, as a `position:` group would have written it (D108 item 5). */
     addPosition(position: PositionRecord) {

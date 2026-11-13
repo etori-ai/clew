@@ -50,7 +50,8 @@ test(
     };
     const source = { connectorId, source: 'Testkällan' };
     let read = 0,
-      scheduled = 0;
+      scheduled = 0,
+      reconciled = 0;
     const competence = competenceUsecases({
       store,
       staff: async () => ({ units: [] }),
@@ -71,6 +72,7 @@ test(
       scheduleCompetenceCopy: async () => void scheduled++,
       competenceSources: only => competence.copySources(only),
       copyHoldings: async (run, s) => (await competence.copySource('system:test', run, s)).outcome,
+      reconcileApprovals: async () => void reconciled++,
     });
     const copied = () => store.transaction(tx => tx.copiedFrom(connectorId));
     const reads = (run: string) =>
@@ -114,6 +116,7 @@ test(
       ]);
       assert.equal((await reads('read-' + tag)).length, 1);
       assert.equal(scheduled, 0, 'a run started by hand asks for no daily run');
+      assert.equal(reconciled, 0, 'a run started by hand reconciles no approvals');
       const record = await store.transaction(tx => tx.source(connectorId));
       assert.equal(record?.outcome, 'complete');
       assert.equal(record?.run, null);
@@ -123,19 +126,33 @@ test(
       await store.transaction(tx => tx.enqueue({ ...daily, id: daily.id + ':' + tag }));
       await durableResult(daily.id + ':' + tag);
       assert.equal(scheduled, 1);
+      assert.equal(reconciled, 1, 'the daily run reconciles the approvals’ cards');
       assert.equal(read, 2);
       assert.equal((await copied()).length, 2);
 
+      // With no source to read the daily run still reconciles (D108 item 7).
+      bindActivities({ competenceSources: async () => [] });
+      const quiet = dailyCopyStart('2098-01-03', now);
+      await store.transaction(tx => tx.enqueue({ ...quiet, id: quiet.id + ':' + tag }));
+      await durableResult(quiet.id + ':' + tag);
+      assert.deepEqual([reconciled, read], [2, 2]);
+
       // One source's failure is that source's own: a source whose step fails after its retries is left for the next
-      // run while the others are read, and a daily run that cannot ask for the next day's still reads (the server's
-      // hourly guard asks again). The workflow ends well.
+      // run while the others are read, and a daily run that cannot ask for the next day's, or reconcile, still reads
+      // (the server's hourly guard asks again, the next day reconciles again). The workflow ends well.
       const broken = { connectorId: 'broken-' + tag, source: 'Trasig' };
       let attempts = 0,
-        asked = 0;
+        asked = 0,
+        tried = 0;
       bindActivities({
         scheduleCompetenceCopy: async () => {
           asked++;
           throw new Error('the database is gone');
+        },
+        // A reconciliation that keeps failing keeps the copy from nothing, nor the copy's failure it.
+        reconcileApprovals: async () => {
+          tried++;
+          throw new Error('the directory is gone');
         },
         competenceSources: async () => [broken, source],
         copyHoldings: async (run, s) => {
@@ -148,11 +165,12 @@ test(
       await store.transaction(tx => tx.enqueue({ ...isolated, id: isolated.id + ':' + tag }));
       await durableResult(isolated.id + ':' + tag);
       assert.equal((await DBOS.getWorkflowStatus(isolated.id + ':' + tag))?.status, 'SUCCESS');
-      assert.deepEqual([asked, attempts, read], [3, 3, 3]);
+      assert.deepEqual([asked, tried, attempts, read], [3, 3, 3, 3]);
       bindActivities({
         scheduleCompetenceCopy: async () => void scheduled++,
         competenceSources: only => competence.copySources(only),
         copyHoldings: async (run, s) => (await competence.copySource('system:test', run, s)).outcome,
+        reconcileApprovals: async () => void reconciled++,
       });
 
       // Process death: a second instance starts a run, takes the source's lease and is SIGKILLed while it reads. Its

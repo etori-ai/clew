@@ -288,6 +288,8 @@ export const api = {
     registerOwn: (body: CompetenceHoldingBody) => post<{ id: string }>('/api/competence/own/holdings', body),
     /** The reader takes back their own registration while it waits. */
     withdrawOwn: (id: string) => del<void>(`/api/competence/own/holdings/${encodeURIComponent(id)}`),
+    /** The reader removes their own registration that their manager rejected. */
+    removeRejected: (id: string) => del<void>(`/api/competence/own/rejected/${encodeURIComponent(id)}`),
     /** The reader rates a skill of their own (D120): stored at once; rating one they hold again changes it. */
     rateOwnSkill: (body: CompetenceSkillRatingBody) => post<{ id: string }>('/api/competence/own/skills', body),
     /** The reader removes a skill of their own. */

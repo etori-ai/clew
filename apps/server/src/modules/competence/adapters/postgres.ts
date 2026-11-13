@@ -154,6 +154,12 @@ const noCards: ApprovalWorkItemTx = {
   async close() {
     throw new Error('This competence store has no approval cards: build it with competenceStoreWithCards.');
   },
+  async cards() {
+    return [];
+  },
+  async reopen() {
+    throw new Error('This competence store has no approval cards: build it with competenceStoreWithCards.');
+  },
   async remove() {},
   async removeAbout() {},
   async removeOwned() {},
@@ -218,6 +224,14 @@ export function competenceTx(
         .select()
         .from(holdings)
         .where(eq(holdings.typeId, typeId))
+        .orderBy(asc(holdings.createdAt), asc(holdings.id));
+      return rows.map(holdingOf);
+    },
+    async waitingRegistrations() {
+      const rows = await tx
+        .select()
+        .from(holdings)
+        .where(and(eq(holdings.evidence, 'self'), eq(holdings.state, 'pending')))
         .orderBy(asc(holdings.createdAt), asc(holdings.id));
       return rows.map(holdingOf);
     },

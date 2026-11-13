@@ -38,6 +38,8 @@ const persona = (
 const hillevi = persona('hillevi', 'Hillevi Berg', 'manager');
 const anna = persona('p-anna', 'Anna Lindqvist', 'employee');
 const mikael = persona('mikael', 'Mikael Lund', 'employee', ['admin.connectors', 'admin.competence']);
+/** Acting head: her grant says employee, and Anna reports to her (D99), as the matrix counts it. */
+const acting = persona('acting', 'Agneta Tf', 'employee');
 const staffAnna: StaffPerson = {
   id: 'p-anna',
   name: 'Anna Lindqvist',
@@ -48,8 +50,9 @@ const staffAnna: StaffPerson = {
 };
 const overviews = new Map<string, StaffOverview>([
   ['hillevi', { units: [{ unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', people: [staffAnna] }] }],
+  ['acting', { units: [{ unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', people: [staffAnna] }] }],
 ]);
-const personas = new Map([hillevi, anna, mikael].map(p => [p.id, p]));
+const personas = new Map([hillevi, anna, mikael, acting].map(p => [p.id, p]));
 
 function world() {
   let now = Date.parse(T0);
@@ -242,8 +245,13 @@ describe('the competence wiring (D108 item 13)', () => {
     // Anna reports to Hillevi; Hillevi reports to nobody, so hers cannot be sent.
     const mine = await w.call(anna, 'GET', '/own');
     expect(mine.headers.get('cache-control')).toContain('no-store');
-    expect(await mine.json()).toEqual({ approver: true, pending: [], skills: [] });
-    expect(await (await w.call(hillevi, 'GET', '/own')).json()).toEqual({ approver: false, pending: [], skills: [] });
+    expect(await mine.json()).toEqual({ approver: true, pending: [], rejected: [], skills: [] });
+    expect(await (await w.call(hillevi, 'GET', '/own')).json()).toEqual({
+      approver: false,
+      pending: [],
+      rejected: [],
+      skills: [],
+    });
     const nobody = await w.call(hillevi, 'POST', '/own/holdings', { typeId, issuedOn: '2025-05-10' });
     expect(nobody.status).toBe(400);
     expect(await nobody.json()).toMatchObject({
@@ -256,6 +264,7 @@ describe('the competence wiring (D108 item 13)', () => {
     const { id: holdingId } = (await sent.json()) as { id: string };
     expect(await (await w.call(anna, 'GET', '/own')).json()).toEqual({
       approver: true,
+      rejected: [],
       pending: [{ holdingId, typeId, competence: 'HLR', issuedOn: '2025-05-10' }],
       skills: [],
     });
@@ -279,6 +288,11 @@ describe('the competence wiring (D108 item 13)', () => {
       rows: [{ name: 'Anna Lindqvist', competence: 'HLR', issuedOn: '2025-05-10' }],
     });
     await expect(w.registry.run(actorOf(mikael), 'competence.approval', { holding: holdingId })).rejects.toThrow();
+    // Scoped as the matrix is, by whom the server counts as reports, not by the session's role.
+    expect(await w.registry.run(actorOf(acting), 'competence.approval', { holding: holdingId })).toEqual({
+      rows: [{ name: 'Anna Lindqvist', competence: 'HLR', issuedOn: '2025-05-10' }],
+    });
+    expect(w.registry.views(actorOf(acting)).map(v => v.capability)).toContain('competence.approval');
 
     expect((await w.call(hillevi, 'POST', `/approvals/${holdingId}`, { decision: 'approve' })).status).toBe(204);
     expect(w.store.state.holdings.get(holdingId)).toMatchObject({ state: 'valid', decidedBy: 'hillevi' });
@@ -294,6 +308,14 @@ describe('the competence wiring (D108 item 13)', () => {
     expect((await w.call(hillevi, 'DELETE', `/own/holdings/${second}`)).status).toBe(403);
     expect((await w.call(anna, 'DELETE', `/own/holdings/${second}`)).status).toBe(204);
     expect(w.store.state.holdings.has(second)).toBe(false);
+
+    // One rejected is hers alone to remove.
+    const third = await w.call(anna, 'POST', '/own/holdings', { typeId, issuedOn: '2026-02-10' });
+    const { id: turnedDown } = (await third.json()) as { id: string };
+    expect((await w.call(hillevi, 'POST', `/approvals/${turnedDown}`, { decision: 'reject' })).status).toBe(204);
+    expect((await w.call(hillevi, 'DELETE', `/own/rejected/${turnedDown}`)).status).toBe(403);
+    expect((await w.call(anna, 'DELETE', `/own/rejected/${turnedDown}`)).status).toBe(204);
+    expect(w.store.state.holdings.has(turnedDown)).toBe(false);
   });
 
   test('the routes carry a skill (D120): her own rating, its removal, and her manager’s registration and confirmation', async () => {
@@ -320,6 +342,7 @@ describe('the competence wiring (D108 item 13)', () => {
     const { id: holdingId } = (await rated.json()) as { id: string };
     expect(await (await w.call(anna, 'GET', '/own')).json()).toEqual({
       approver: true,
+      rejected: [],
       pending: [],
       skills: [
         {
@@ -489,6 +512,7 @@ describe('the competence wiring (D108 item 13)', () => {
     expect(read.headers.get('cache-control')).toContain('no-store');
     expect(await read.json()).toEqual({
       groups: [],
+      awaiting: [],
       columns: [{ typeId, name: 'HLR', area: 'Akut', kind: 'course' }],
       rows: [
         {

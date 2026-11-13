@@ -1856,6 +1856,8 @@ export interface CompetenceOwnPending {
 export interface CompetenceOwnOutput {
   approver: boolean;
   pending: CompetenceOwnPending[];
+  /** The reader's own registrations their manager rejected (D108 item 7), oldest first: theirs alone to see and remove. */
+  rejected: CompetenceOwnPending[];
   /** The skills the reader holds (D120), by area and name. */
   skills: CompetenceOwnSkill[];
 }
@@ -2159,6 +2161,24 @@ export const CompetenceMatrixRowSchema = object({
   cells: Type.Array(CompetenceMatrixCellSchema, { maxItems: COMPETENCE_MATRIX_COLUMNS }),
 });
 export type CompetenceMatrixRow = Static<typeof CompetenceMatrixRowSchema>;
+/**
+ * A registration of a report's own that waits for the reader's decision (D108 item 7), as the matrix lists it above its
+ * columns: whatever its type, since a type nobody requires has no column.
+ */
+export const CompetenceMatrixAwaitingSchema = object({
+  holdingId: id,
+  personId: id,
+  key: { ...userName, description: "The user name, or Clew's id for a person provisioned without one." },
+  name: Type.String({ minLength: 1, maxLength: 512 }),
+  typeId: id,
+  competence: competenceName,
+  issuedOn: calendarDay,
+  expiresOn: Type.Optional({
+    ...calendarDay,
+    description: "The last day it would be valid: the issuer's date, else the employer's rule.",
+  }),
+});
+export type CompetenceMatrixAwaiting = Static<typeof CompetenceMatrixAwaitingSchema>;
 export const CompetenceMatrixOutputSchema = object(
   {
     by: Type.Optional({ ...matrixBy, description: 'The set shown; absent when every required type fits.' }),
@@ -2170,6 +2190,10 @@ export const CompetenceMatrixOutputSchema = object(
     columns: Type.Array(CompetenceMatrixColumnSchema, { maxItems: COMPETENCE_MATRIX_COLUMNS }),
     rows: Type.Array(CompetenceMatrixRowSchema, { maxItems: 5000 }),
     required: Type.Integer({ minimum: 0, description: 'How many types are required of anyone, over every set.' }),
+    awaiting: Type.Array(CompetenceMatrixAwaitingSchema, {
+      maxItems: 5000,
+      description: "Every registration of the reports' own that waits for the reader's decision, oldest first.",
+    }),
   },
   "The reader's reports against what is required of them (D108 item 11).",
 );

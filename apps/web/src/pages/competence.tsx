@@ -39,10 +39,13 @@ import { CompetenceHeader, cellDay } from './competence-parts';
 const HOLDINGS = 'competence.holdings';
 /** A row of the reader's own registration that waits for a decision: drawn in its own card, with "Ta tillbaka". */
 const AWAITING = 'awaiting-approval';
+/** A row of the reader's own registration their manager rejected: drawn in its own card, with "Ta bort". */
+const REJECTED = 'rejected';
 /** The page's column at its widest: the width every page has (1216 px) less its padding on each side. */
 const COLUMN = 1216 - 2 * 32;
 const TITLE_ID = 'kompetens-rubrik';
 const PENDING_ID = 'kompetens-vantar';
+const REJECTED_ID = 'kompetens-avvisade';
 const SKILLS_ID = 'kompetens-fardigheter';
 /** A row of the declared view that is a skill the reader holds (D120): drawn in its own card, with its actions. */
 const heldSkill = (row: unknown) => {
@@ -65,25 +68,31 @@ function Pending({
   busy,
   headingRef,
   onWithdraw,
+  title = 'Väntar på godkännande',
+  id = PENDING_ID,
+  action = 'Ta tillbaka',
 }: {
   rows: CompetenceOwnPending[];
   busy: string | null;
   headingRef: Ref<HTMLHeadingElement>;
   onWithdraw: (row: CompetenceOwnPending) => void;
+  title?: string;
+  id?: string;
+  action?: string;
 }) {
   return (
     <Card padding={0}>
       <Toolbar
-        label="Väntar på godkännande"
+        label={title}
         size="sm"
         dividers={['bottom']}
         startContent={
-          <Heading ref={headingRef} id={PENDING_ID} tabIndex={-1} level={2}>
-            Väntar på godkännande
+          <Heading ref={headingRef} id={id} tabIndex={-1} level={2}>
+            {title}
           </Heading>
         }
       />
-      <List aria-labelledby={PENDING_ID} hasDividers>
+      <List aria-labelledby={id} hasDividers>
         {rows.map(row => (
           <ListItem
             key={row.holdingId}
@@ -93,8 +102,8 @@ function Pending({
               <Button
                 size="sm"
                 variant="secondary"
-                label="Ta tillbaka"
-                aria-label={`Ta tillbaka ${row.competence}`}
+                label={action}
+                aria-label={`${action} ${row.competence}`}
                 isLoading={busy === row.holdingId}
                 onClick={() => onWithdraw(row)}
               />
@@ -190,8 +199,8 @@ function Skills({
  * header holds the place's pages as tabs for someone the server lets read the matrix (anyone with a report, D99), so
  * the matrix is one link away, and "Lägg till" as the page's primary action: the reader registers a certificate of their
  * own in a dialog named in the address (`add=new`, D108 item 7), which the manager they report to approves before it
- * counts. What waits for that decision is a card of its own above the list, each row with "Ta tillbaka"; a rejected one
- * stays in the list as "avvisat". The skills the reader holds (D120) are a card of their own, each with its level and
+ * counts. What waits for that decision is a card of its own above the list, each row with "Ta tillbaka"; what the manager
+ * rejected is another, each row with "Ta bort", seen by the reader alone. The skills the reader holds (D120) are a card of their own, each with its level and
  * marks and a menu that changes it (`skill=<holding id>`, a dialog over the page) or removes it, asked first in Astryx's
  * confirmation; a skill required of the reader that they hold nothing of stays in the list as "Saknas". With nothing
  * held and nothing required the page says so; with the module off for the reader the read is refused and the page says
@@ -218,13 +227,20 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
   const manages = matrix.isSuccess || (matrix.isError && !refused(matrix.error));
   const own = useQuery(competenceOwnQuery);
   const pending = own.data?.pending ?? [];
+  const rejected = own.data?.rejected ?? [];
   const skills = own.data?.skills ?? [];
   const view = read.data?.view;
   // What waits for a decision and the skills held are the cards' above, with their actions; the list draws the rest.
   const output = (() => {
     const o = read.data?.output as { rows?: unknown } | undefined;
     return o && Array.isArray(o.rows)
-      ? { ...o, rows: o.rows.filter(r => (r as { status?: unknown })?.status !== AWAITING && !heldSkill(r)) }
+      ? {
+          ...o,
+          rows: o.rows.filter(r => {
+            const status = (r as { status?: unknown })?.status;
+            return status !== AWAITING && status !== REJECTED && !heldSkill(r);
+          }),
+        }
       : o;
   })();
   const rows = view ? (viewRows(view, output) ?? []) : [];
@@ -233,6 +249,7 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
   // dialog to have closed: the address changes after the press that closed it, and nothing under a modal can take it.
   const addButton = useRef<HTMLButtonElement>(null);
   const pendingHeading = useRef<HTMLHeadingElement>(null);
+  const rejectedHeading = useRef<HTMLHeadingElement>(null);
   const skillsHeading = useRef<HTMLHeadingElement>(null);
   // Each skill's menu, so its dialog or its removal can give the focus back to it.
   const controls = useRef(new Map<string, HTMLElement>());
@@ -247,7 +264,7 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
   const changing = skillOf(search);
   const changed = off ? undefined : skills.find(s => s.holdingId === changing);
   const [removing, setRemoving] = useState<CompetenceOwnSkill | null>(null);
-  const [focusAfter, setFocusAfter] = useState<'add' | 'pending' | { skill: string } | null>(null);
+  const [focusAfter, setFocusAfter] = useState<'add' | 'pending' | 'rejected' | { skill: string } | null>(null);
   useEffect(() => {
     if (focusAfter === null || open || changed || removing) return;
     setFocusAfter(null);
@@ -257,10 +274,12 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
         ? [addButton.current]
         : focusAfter === 'pending'
           ? [pendingHeading.current]
-          : [controls.current.get(focusAfter.skill), skillsHeading.current];
+          : focusAfter === 'rejected'
+            ? [rejectedHeading.current]
+            : [controls.current.get(focusAfter.skill), skillsHeading.current];
     // A frame later, once a dialog that closed has given the focus back where it took it from.
     requestAnimationFrame(() => (targets.find(t => t?.isConnected) ?? document.getElementById(TITLE_ID))?.focus());
-  }, [focusAfter, open, changed, removing, pending.length, skills.length]);
+  }, [focusAfter, open, changed, removing, pending.length, rejected.length, skills.length]);
 
   const withdraw = useAdminAction({
     invalidate: [keys.competenceAll, keys.viewAll, keys.entities.all],
@@ -276,6 +295,20 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
     });
     setWithdrawing(null);
     setFocusAfter('pending');
+  };
+
+  // A registration the manager rejected is removed by the person at once (D108 item 7): it counted towards nothing, and
+  // nobody else sees it. Its button goes with its row, so the focus goes to the card's heading, or the page's.
+  const [removingRejected, setRemovingRejected] = useState<string | null>(null);
+  const dropRejected = async (row: CompetenceOwnPending) => {
+    if (withdraw.busy) return;
+    setRemovingRejected(row.holdingId);
+    await withdraw.run(async () => {
+      await api.competence.removeRejected(row.holdingId);
+      return `${row.competence} är borttagen.`;
+    });
+    setRemovingRejected(null);
+    setFocusAfter('rejected');
   };
 
   // A skill removed (D120 item 2), asked first in Astryx's confirmation. Removed, it takes its menu with it, so the
@@ -355,6 +388,17 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
                         onWithdraw={row => void takeBack(row)}
                       />
                     )}
+                    {rejected.length > 0 && (
+                      <Pending
+                        rows={rejected}
+                        busy={removingRejected}
+                        headingRef={rejectedHeading}
+                        onWithdraw={row => void dropRejected(row)}
+                        title="Avvisade av din chef"
+                        id={REJECTED_ID}
+                        action="Ta bort"
+                      />
+                    )}
                     {skills.length > 0 && (
                       <Skills
                         rows={skills}
@@ -369,7 +413,7 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
                     )}
                     {view && rows.length > 0 ? (
                       <DeclaredView view={view} output={output} headingLevel={2} />
-                    ) : pending.length === 0 && skills.length === 0 ? (
+                    ) : pending.length === 0 && rejected.length === 0 && skills.length === 0 ? (
                       <Card>
                         <EmptyState
                           headingLevel={2}

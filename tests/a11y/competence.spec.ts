@@ -55,7 +55,7 @@ const skillDialog = (page: Page, name: string) => page.getByRole('dialog', { nam
 /** The reader's list with her Engelska, which the page draws in its own card, and a skill required of her she lacks. */
 const withEnglish = (api: MockApi) => {
   api.competenceTypes = withSkills();
-  api.competenceOwn = { approver: true, pending: [], skills: [ownEnglish()] };
+  api.competenceOwn = { approver: true, pending: [], rejected: [], skills: [ownEnglish()] };
   api.competenceHoldings = {
     rows: [
       ...holdingsOutput.rows,
@@ -98,6 +98,7 @@ const twoWaiting = (api: MockApi) => {
       },
       { holdingId: 'own-3', typeId: 't-hlr', competence: 'HLR', issuedOn: '2026-09-15' },
     ],
+    rejected: [{ holdingId: 'own-2', typeId: 't-fall', competence: 'Fallskydd', issuedOn: '2026-09-01' }],
     skills: [],
   };
   api.competenceHoldings = holdingsWithOwn;
@@ -242,14 +243,12 @@ test.describe('Kompetens › Mina kompetenser', () => {
       await open(page, OWN);
       const main = page.getByRole('main');
       await expect(main.getByRole('heading', { level: 2, name: 'Väntar på godkännande' })).toBeVisible();
-      // What waits is in the card, not twice in the list; a rejected one stays in the list in words.
+      // What waits is in the card, not twice in the list; what was rejected is in a card of its own, not in the list.
       await expect(main.getByText('Heta arbeten')).toHaveCount(2);
       await expect(
-        main
-          .getByRole('listitem')
-          .filter({ hasText: 'Fallskydd' })
-          .filter({ hasText: /avvisat/i }),
+        main.getByRole('list', { name: 'Avvisade av din chef' }).getByRole('listitem').filter({ hasText: 'Fallskydd' }),
       ).toHaveCount(1);
+      await expect(main.getByText(/avvisat/i)).toHaveCount(0);
       await expectNoAxeViolations(page);
       const first = main.getByRole('button', { name: 'Ta tillbaka Heta arbeten' });
       await tabTo(page, first);
@@ -264,12 +263,31 @@ test.describe('Kompetens › Mina kompetenser', () => {
       await expect(page.getByRole('heading', { level: 1, name: 'Mina kompetenser' })).toBeFocused();
     });
 
+    test('a rejected registration is the person’s to remove, by keyboard, the focus going to the page’s heading once its card is gone', async ({
+      page,
+      api,
+    }) => {
+      switchedOn(api);
+      twoWaiting(api);
+      api.competenceOwn = { ...api.competenceOwn, pending: [] };
+      await open(page, OWN);
+      const main = page.getByRole('main');
+      const remove = main.getByRole('button', { name: 'Ta bort Fallskydd' });
+      await tabTo(page, remove);
+      await page.keyboard.press('Enter');
+      await expect(remove).toHaveCount(0);
+      expect(api.ownWrites).toEqual([{ method: 'DELETE', path: '/competence/own/rejected/own-2' }]);
+      await expect(notices(page).getByText('Fallskydd är borttagen.')).toBeAttached();
+      await expect(main.getByRole('heading', { level: 2, name: 'Avvisade av din chef' })).toHaveCount(0);
+      await expect(page.getByRole('heading', { level: 1, name: 'Mina kompetenser' })).toBeFocused();
+    });
+
     test('someone who reports to nobody is told it cannot be sent before anything is filled in, and Esc closes to Lägg till', async ({
       page,
       api,
     }) => {
       switchedOn(api);
-      api.competenceOwn = { approver: false, pending: [], skills: [] };
+      api.competenceOwn = { approver: false, pending: [], rejected: [], skills: [] };
       await open(page, `${OWN}?add=new`);
       const dialog = addDialog(page);
       await expect(
@@ -445,7 +463,7 @@ test.describe('Kompetens › Mina kompetenser', () => {
 
     test('someone who reports to nobody is offered the skills alone, which need no approval', async ({ page, api }) => {
       api.competenceTypes = withSkills();
-      api.competenceOwn = { approver: false, pending: [], skills: [] };
+      api.competenceOwn = { approver: false, pending: [], rejected: [], skills: [] };
       await open(page, `${OWN}?add=new`);
       const dialog = addDialog(page);
       await expect(
