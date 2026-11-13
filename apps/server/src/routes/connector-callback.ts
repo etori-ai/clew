@@ -3,7 +3,7 @@ import { Value } from 'typebox/value';
 import { CapabilityError, UNKNOWN, type Registry } from '@clew/connectors';
 import { CallbackRequestSchema, type ProtocolErrorCode } from '@clew/connectors/protocol';
 import type { AuthenticatedContext } from '@clew/contracts';
-import { InputError, privateHeaders } from '../context';
+import { ForbiddenError, InputError, privateHeaders } from '../context';
 import { AssertionError, type CallbackGrant } from '../connectors/authority';
 import { STARTING } from '../startup';
 
@@ -90,10 +90,11 @@ export function connectorCallback(deps: ConnectorCallbackDeps) {
       )
         return error('denied', 'Ogiltigt behörighetsbevis.', 403);
       const output = await registry
-        .clewFor(persona, { chain: assertion.chain }, assertion.connectorId)
+        .clewFor(persona, { chain: assertion.chain, authorize: () => persona.authorize() }, assertion.connectorId)
         .call(body.name, body.input ?? {});
       return c.json({ output }, 200, privateHeaders);
     } catch (e) {
+      if (e instanceof ForbiddenError) return error('denied', e.message, 403);
       // The registry's refusals, Clew's own modules and a target's answer carry the protocol's code (`CapabilityError`):
       // a source that is down or answered out of shape is `unavailable`, never a refusal of the input. Anything without
       // one, the server's `InputError` among them, is a refusal in Swedish for the person, as on `/api/cap`.

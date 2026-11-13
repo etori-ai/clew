@@ -39,6 +39,14 @@ A release that adds a job kind leans on the same discipline: an older process th
 
 ## Migrations that write rows
 
+Migration `0057_session_refresh_claim` adds nullable ownership fields to sessions; existing sessions need no rewrite.
+Stop every old BFF before applying it and starting the new release. Older binaries ignore those fields, so a mixed
+rollout can still submit the same rotating refresh token twice. Short statements claim and fence a token generation
+without keeping a database connection across the provider call. After an owner dies, or cannot commit its answer, a
+request finding the claim past its 30-second deadline ends that session and asks the person to sign in again; it never
+replays a possibly consumed token. Keep BFF clocks synchronized. A rollback must likewise stop all new BFFs first;
+the added nullable columns can stay while the former binary runs, with its former cross-process refresh limitation.
+
 `bun run db:init` runs Clew's migrations through Drizzle and then `DBOS.migrate`. A failure in Clew's migrations changes
 nothing in Clew's schema, because Drizzle runs every pending migration in one transaction; only Drizzle's own
 bookkeeping, the `drizzle` schema and its `__drizzle_migrations` table, is created outside it where it is missing.

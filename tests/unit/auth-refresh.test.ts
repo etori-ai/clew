@@ -5,6 +5,7 @@ import {
   failureOf,
   grantEnded,
   refreshGrant,
+  REFRESH_CLAIM_MS,
   sessionRefresher,
   type RefreshRow,
 } from '../../apps/server/src/auth-refresh';
@@ -14,7 +15,8 @@ import {
  * runs the real openid-client against a token endpoint and a key set that answer what each test says over a fake
  * fetch, with the ID token's signature checked as the server checks it, so every class of failure is the error the
  * library throws for it; the session rows live in a map. Only an ending answer, a changed subject and a row that is
- * gone end the session; everything else keeps it and its tokens, and the refresh says `unavailable`, which delegation
+ * gone, unreadable tokens and abandoned ownership end the session; transient provider failures keep it and its tokens,
+ * and the refresh says `unavailable`, which delegation
  * answers with 503.
  */
 type Row = RefreshRow & { personId: string };
@@ -37,7 +39,10 @@ function world() {
   let now = 1_000_000;
   let answer: (request: Request) => Response | Promise<Response> = () =>
     Response.json({ access_token: 'access-2', token_type: 'Bearer', expires_in: 120, refresh_token: 'refresh-2' });
-  let meanwhile: () => void = () => undefined;
+  let meanwhile: () => void | Promise<void> = () => undefined;
+  let beforeEnd: () => void = () => undefined;
+  let claimId = 0;
+  let storeFailure = false;
   const calls: string[] = [];
   const pauses: number[] = [];
   const config = new oidc.Configuration(
@@ -55,32 +60,53 @@ function world() {
     return answer(request);
   };
   const rows = new Map<string, Row>();
+  const inactive = new Set<string>();
   const ended: string[] = [];
   const failures: unknown[] = [];
-  const refresher = sessionRefresher<Row>({
-    clock: () => now,
-    read: async digest => rows.get(digest),
-    grant: refreshGrant(async () => config),
-    ended: grantEnded,
-    async store(digest, previous, next) {
-      const row = rows.get(digest);
-      if (!row || row.tokens !== previous) return undefined;
-      const stored = { ...row, ...next };
-      rows.set(digest, stored);
-      return stored;
-    },
-    async end(digest, action) {
-      ended.push(digest + ' ' + action);
-      rows.delete(digest);
-    },
-    open: value => JSON.parse(value),
-    seal: tokens => JSON.stringify(tokens),
-    async sleep(ms) {
-      pauses.push(ms);
-      meanwhile();
-    },
-    failed: error => failures.push(error),
-  });
+  const replica = () =>
+    sessionRefresher<Row>({
+      clock: () => now,
+      read: async digest => (inactive.has(digest) ? undefined : rows.get(digest)),
+      ids: () => 'claim-' + ++claimId,
+      async claim(digest, previous, claim) {
+        const row = rows.get(digest);
+        if (!row || inactive.has(digest) || row.tokens !== previous || row.refreshClaim !== null) return undefined;
+        const owned = { ...row, refreshClaim: claim.id, refreshClaimUntil: claim.until };
+        rows.set(digest, owned);
+        return owned;
+      },
+      async release(digest, previous, claim) {
+        const row = rows.get(digest);
+        if (row?.tokens === previous && row.refreshClaim === claim)
+          rows.set(digest, { ...row, refreshClaim: null, refreshClaimUntil: null });
+      },
+      grant: refreshGrant(async () => config),
+      ended: grantEnded,
+      async store(digest, previous, claim, next) {
+        if (storeFailure) throw new Error('database unavailable after the grant');
+        const row = rows.get(digest);
+        if (!row || inactive.has(digest) || row.tokens !== previous || row.refreshClaim !== claim) return undefined;
+        const stored = { ...row, ...next, refreshClaim: null, refreshClaimUntil: null };
+        rows.set(digest, stored);
+        return stored;
+      },
+      async end(digest, action, expected) {
+        beforeEnd();
+        const row = rows.get(digest);
+        if (expected && (!row || row.tokens !== expected.tokens || row.refreshClaim !== expected.claim)) return false;
+        ended.push(digest + ' ' + action);
+        rows.delete(digest);
+        return true;
+      },
+      open: value => JSON.parse(value),
+      seal: tokens => JSON.stringify(tokens),
+      async sleep(ms) {
+        pauses.push(ms);
+        await meanwhile();
+      },
+      failed: error => failures.push(error),
+    });
+  const refresher = replica();
   /** A session whose access token expires in ten seconds, inside the fifteen-second refresh window. */
   const session = (digest = 's1'): Row => {
     const row = {
@@ -89,12 +115,15 @@ function world() {
       subject: 'sub-anna',
       tokens: sealed('access-1', 'refresh-1'),
       tokenExpiresAt: new Date(now + 10_000),
+      refreshClaim: null,
+      refreshClaimUntil: null,
     };
     rows.set(digest, row);
     return row;
   };
   return {
     refresher,
+    replica,
     rows,
     ended,
     failures,
@@ -108,6 +137,13 @@ function world() {
     meanwhile: (next: () => void) => {
       meanwhile = next;
     },
+    beforeEnd: (next: () => void) => {
+      beforeEnd = next;
+    },
+    failStore: () => {
+      storeFailure = true;
+    },
+    expire: (digest: string) => inactive.add(digest),
     advance: (ms: number) => {
       now += ms;
     },
@@ -120,6 +156,8 @@ const refreshedElsewhere = (w: ReturnType<typeof world>, row: Row) =>
     ...row,
     tokens: sealed('access-other', 'refresh-other'),
     tokenExpiresAt: new Date(w.now() + 60_000),
+    refreshClaim: null,
+    refreshClaimUntil: null,
   });
 describe('a session refresh', () => {
   test('stores the new tokens over the ones they were refreshed from', async () => {
@@ -164,8 +202,7 @@ describe('a session refresh', () => {
         expect(await w.refresher.refresh(w.session())).toEqual({ state: 'ended' });
         expect(w.ended).toEqual(['s1 refresh-failed']);
         expect(w.failures).toEqual([]);
-        // The row was read again after a moment, in case another process was still storing a refresh.
-        expect(w.pauses).toEqual([2_000]);
+        expect(w.pauses).toEqual([]);
       });
     test('when the refreshed ID token names another subject', async () => {
       const w = world();
@@ -291,17 +328,109 @@ describe('a session refresh', () => {
     expect(w.ended).toEqual([]);
     expect(w.pauses).toEqual([]);
   });
-  test('an invalid_grant while another process is still storing its refresh waits a moment and uses it', async () => {
+  test('two independent BFFs share a token generation and never trigger reuse revocation', async () => {
     const w = world();
     const row = w.session();
-    // The provider already refused the reuse, but the other process has not stored its tokens yet: it does so while
-    // this one pauses.
-    w.answer(() => Response.json({ error: 'invalid_grant' }, { status: 400 }));
-    w.meanwhile(() => refreshedElsewhere(w, row));
-    const refreshed = await w.refresher.refresh(row);
-    expect(refreshed.state === 'fresh' && JSON.parse(refreshed.row.tokens).access_token).toBe('access-other');
+    const answer = Promise.withResolvers<Response>();
+    const entered = Promise.withResolvers<void>();
+    const consumed = new Set<string>();
+    let revoked = false;
+    w.answer(async request => {
+      const token = new URLSearchParams(await request.text()).get('refresh_token')!;
+      if (revoked || consumed.has(token)) {
+        revoked = true;
+        return Response.json({ error: 'invalid_grant' }, { status: 400 });
+      }
+      consumed.add(token);
+      entered.resolve();
+      return consumed.size === 1
+        ? answer.promise
+        : Response.json({
+            access_token: 'access-3',
+            token_type: 'Bearer',
+            expires_in: 120,
+            refresh_token: 'refresh-3',
+          });
+    });
+    const first = w.refresher.refresh(row);
+    await entered.promise;
+    w.meanwhile(async () => {
+      answer.resolve(
+        Response.json({ access_token: 'access-2', token_type: 'Bearer', expires_in: 120, refresh_token: 'refresh-2' }),
+      );
+      await first;
+    });
+    const second = w.replica().refresh(row);
+    expect((await Promise.all([first, second])).map(r => r.state)).toEqual(['fresh', 'fresh']);
+    expect(w.calls).toEqual(['refresh-1']);
+    expect(revoked).toBe(false);
     expect(w.pauses).toEqual([2_000]);
     expect(w.ended).toEqual([]);
+    w.advance(120_000);
+    expect((await w.refresher.refresh(w.rows.get('s1')!)).state).toBe('fresh');
+    expect(w.calls).toEqual(['refresh-1', 'refresh-2']);
+    expect(revoked).toBe(false);
+  });
+  test('a live owner keeps the session available locally while delegation waits, without another grant', async () => {
+    const w = world(),
+      row = w.session();
+    w.rows.set(row.digest, { ...row, refreshClaim: 'other', refreshClaimUntil: new Date(w.now() + REFRESH_CLAIM_MS) });
+    expect((await w.refresher.refresh(row)).state).toBe('unavailable');
+    expect(w.calls).toEqual([]);
+    expect(w.ended).toEqual([]);
+  });
+  test('an abandoned generation ends rather than reusing a refresh token it may have consumed', async () => {
+    const w = world(),
+      row = w.session();
+    w.rows.set(row.digest, { ...row, refreshClaim: 'abandoned', refreshClaimUntil: new Date(w.now() - 1) });
+    expect((await w.refresher.refresh(row)).state).toBe('ended');
+    expect(w.calls).toEqual([]);
+    expect(w.ended).toEqual(['s1 refresh-failed']);
+  });
+  test('a newer committed generation wins a race with ending an abandoned or refused refresh', async () => {
+    for (const abandoned of [false, true]) {
+      const w = world(),
+        row = w.session();
+      if (abandoned)
+        w.rows.set(row.digest, { ...row, refreshClaim: 'abandoned', refreshClaimUntil: new Date(w.now() - 1) });
+      else w.answer(() => Response.json({ error: 'invalid_grant' }, { status: 400 }));
+      w.beforeEnd(() => refreshedElsewhere(w, row));
+      const result = await w.refresher.refresh(row);
+      expect(result.state).toBe('fresh');
+      expect(result.state === 'fresh' && JSON.parse(result.row.tokens).access_token).toBe('access-other');
+      expect(w.ended).toEqual([]);
+    }
+  });
+  test('a grant whose answer could not be committed keeps its claim and is never submitted again', async () => {
+    const w = world(),
+      row = w.session();
+    w.failStore();
+    await expect(w.refresher.refresh(row)).rejects.toThrow('database unavailable after the grant');
+    expect(w.rows.get(row.digest)?.refreshClaim).not.toBeNull();
+    w.advance(REFRESH_CLAIM_MS + 1);
+    expect((await w.replica().refresh(row)).state).toBe('ended');
+    expect(w.calls).toEqual(['refresh-1']);
+  });
+  test('logout during an owned grant cannot be undone by its late response', async () => {
+    const w = world(),
+      row = w.session();
+    w.answer(() => {
+      w.rows.delete(row.digest);
+      return Response.json({ access_token: 'late', token_type: 'Bearer', expires_in: 120 });
+    });
+    expect((await w.refresher.refresh(row)).state).toBe('ended');
+    expect(w.rows.has(row.digest)).toBe(false);
+  });
+  test('expiry during an owned grant is ended with its expiry audit even when the provider answers', async () => {
+    const w = world(),
+      row = w.session();
+    w.answer(() => {
+      w.expire(row.digest);
+      return Response.json({ access_token: 'late', token_type: 'Bearer', expires_in: 120 });
+    });
+    expect((await w.refresher.refresh(row)).state).toBe('ended');
+    expect(w.ended).toEqual(['s1 expired']);
+    expect(w.rows.has(row.digest)).toBe(false);
   });
   test('tokens another process stored while the provider answered stand', async () => {
     const w = world();

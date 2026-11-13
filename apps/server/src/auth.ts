@@ -9,13 +9,16 @@ import {
   LOGIN_TRANSACTION_MS,
   auditAuth,
   backchannelRevoke,
+  claimSessionRefresh,
   consumeLogin,
   frontchannelRevoke,
   loginTransactions,
   readSession,
+  releaseSessionRefresh,
   resolveSubject,
   signIn,
   readGroups,
+  groupsStillMatch,
   revokeSession,
   sessions,
   storeRefreshedTokens,
@@ -266,19 +269,23 @@ export async function devLogin(userName: string, returnTo: string | null) {
 }
 /**
  * The session's IdP tokens, refreshed in their last seconds (`auth-refresh.ts`): only an ending answer from the
- * provider (`grantEnded`), a changed subject, a row that is gone or tokens that can no longer be opened end the
+ * provider (`grantEnded`), a changed subject, a row that is gone, an abandoned claim or unreadable tokens end the
  * session; a provider that cannot answer keeps it, and is logged at most once a minute with its code (`failureOf`).
  */
 let refreshFailedAt = 0;
 const refresher = sessionRefresher<SessionRecord>({
   clock: Date.now,
   read: readSession,
+  claim: claimSessionRefresh,
+  release: releaseSessionRefresh,
+  ids: randomToken,
   grant: refreshGrant(oidcConfiguration),
   ended: grantEnded,
   store: storeRefreshedTokens,
-  async end(digest, action) {
-    delegation.forget(digest);
-    await revokeSession(digest, action);
+  async end(digest, action, expected) {
+    const ended = await revokeSession(digest, action, expected);
+    if (ended) delegation.forget(digest);
+    return ended;
   },
   open: decryptTokens,
   seal: encryptTokens,
@@ -386,7 +393,8 @@ export async function authenticate(raw: string | undefined) {
     await revokeSession(digest, 'access-revoked');
     throw new AuthError(403, 'denied');
   }
-  const version = authorizationVersion(access);
+  const version = authorizationVersion(access),
+    groups = await readGroups(access.person.id);
   const context: AuthenticatedContext = {
     id: access.person.id,
     name: access.person.name,
@@ -397,7 +405,7 @@ export async function authenticate(raw: string | undefined) {
     organisationId: access.person.organisationId,
     principal: { id: 'person:' + access.person.id, kind: 'person' },
     capabilities: access.grant.capabilities,
-    groups: await readGroups(access.person.id),
+    groups,
     authorizationVersion: version,
     sessionBinding: digest,
     expiresAt: new Date(Math.min(row.idleExpiresAt.getTime(), row.expiresAt.getTime())).toISOString(),
@@ -405,7 +413,12 @@ export async function authenticate(raw: string | undefined) {
       const current = await readSession(digest),
         latest = await resolveSubject(row.issuer, row.subject);
       if (!current) throw new AuthError(401, 'expired');
-      if (!latest || latest.person.id !== row.personId || authorizationVersion(latest) !== version)
+      if (
+        !latest ||
+        latest.person.id !== row.personId ||
+        authorizationVersion(latest) !== version ||
+        !(await groupsStillMatch(row.personId, groups))
+      )
         throw new AuthError(403, 'denied');
       return { version };
     },

@@ -39,7 +39,7 @@ For comparison, the browser's POST body is the raw capability input. The server-
 
 ## What the registry does
 
-[Registry.run](../../packages/connectors/src/index.ts) enforces capability scope, current connector governance and input/output validation. The [server wrapper](../../apps/server/src/connectors/registry.ts) also checks the person's current authorization around the call.
+[Registry.run](../../packages/connectors/src/index.ts) enforces capability scope, current connector governance and input/output validation. The [server wrapper](../../apps/server/src/connectors/registry.ts) and the [connector callback](../../apps/server/src/routes/connector-callback.ts) pass the person's reauthorization check into the registry. After refreshing governance, the registry checks current authority before dispatch and again before releasing the result, including for nested calls. Removing an audience group during a read therefore withholds its result even when the person's grant version stays the same.
 
 Inside the process the actor carries the person's provisioned groups, which an audience's `groups` match. A request and the execution ledger hand the registry `audiencedActorOf(persona)`, the published actor with the groups; the refresh and a connector's callback hand it the whole authenticated context, which carries them too. A nested `clew.call` keeps the actor it was given, so Clew's own composites ask with the groups too. The groups never leave the process.
 
