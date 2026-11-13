@@ -12,7 +12,8 @@ out. On 2026-11-13 the owner handed the canvas's open choices to the session tha
 
 The decision is
 [D121](../decisions/D121-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md).
-This note is its evidence. The redesign itself is not built in `apps/web` yet; "Fixed in the product" lists what is.
+This note is its evidence. When it was written the redesign itself was not built in `apps/web`, and "Fixed in the
+product" lists what was; items 1 to 8 were built later the same day, and D121's "As built" says how and what was left.
 
 Canvas: [Organisation, Användare och personkortet](https://claude.ai/artifact/1HgEBc2v9nVkz6QKrK2aoN), published as
 artifact version 17 on 2026-11-13. It has 29 boards on five pages: Organisation, Användare, Personkortet, Mönster and
