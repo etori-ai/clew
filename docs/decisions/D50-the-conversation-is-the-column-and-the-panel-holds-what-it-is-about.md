@@ -109,4 +109,4 @@ unchanged: the placeholder names the tool ("Fråga om Telefonbok …") and its v
 **Amended 2026-11-11 (D111 amended): a card's read unfolds in the card.** Item 4's `open-card` and `open-action` no
 longer put a card's read in the panel over the card: they name the read unfolded inside the card, wherever it is drawn.
 A read that answers with a table still opens in the card's place. Item 3's widths give way to one: the panel stands
-beside every page from 1336 px.
+beside every page from 1340 px (1336 until 2026-11-13, when `RAIL` took the 260 px Astryx's `SideNav` draws).

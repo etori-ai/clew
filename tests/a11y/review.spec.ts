@@ -166,8 +166,7 @@ test.describe('rows with a document are reviewed one at a time in a drawer over 
     await expect(page).toHaveURL('/todo?item=fakturor');
     await expect(review).toHaveCount(0);
     const hemRow = page.getByRole('list', { name: 'Behöver dig' }).locator('#work-fakturor');
-    await expect(hemRow).toContainText('2 fakturor attesterade');
-    await expect(hemRow.getByRole('img', { name: 'Klart' })).toBeVisible();
+    await expect(hemRow).toContainText('Klart · 2 fakturor attesterade');
     const card = page.getByRole('complementary', { name: 'Valt ärende' });
     // The receipt is on the item, row by row, with its Ångra and the time left (D112 item 4, board ActReceipt).
     await expect(card.getByRole('button', { name: /^Ångra · \d+ min kvar$/ })).toBeVisible();

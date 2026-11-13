@@ -124,6 +124,10 @@ export function dueOf(thread: Thread, today: string): RowFacts['due'] {
   return { variant: 'neutral', label: `Vecka ${weekNumber(date)}` };
 }
 
+/** The words of an item that waits on someone: its state's, and the start of its reason, which names whom. */
+const WAITS_ON = 'Väntar på';
+const WAITING_ON_OTHERS = `${WAITS_ON} andra`;
+
 /** Where the item stands: an action on its way or in doubt first, then the pile, then what kind of thing it is (D34). */
 export function stateOf(thread: Thread, now: string, today: string): RowFacts['state'] {
   const execution = thread.execution;
@@ -136,7 +140,7 @@ export function stateOf(thread: Thread, now: string, today: string): RowFacts['s
   // A reminder that was stopped needs a hand (reliability roadmap, phase 5A): said on the row, as the card says it.
   if (thread.timers?.some(t => t.state === 'blocked')) return { variant: 'error', label: 'Påminnelsen stoppad' };
   if (isSnoozed(thread, now)) return { variant: 'neutral', label: 'Inte nu' };
-  if (thread.waitingOn) return { variant: 'neutral', label: 'Väntar på andra' };
+  if (thread.waitingOn) return { variant: 'neutral', label: WAITING_ON_OTHERS };
   if (thread.remindedAt && stockholmDate(thread.remindedAt) === today)
     return { variant: 'warning', label: 'Påminnelse' };
   const kind = cardKind(thread);
@@ -158,7 +162,7 @@ export function whyOf(thread: Thread, now: string): string {
     : thread.state === 'open' && thread.snoozedUntil && isSnoozed(thread, now)
       ? `Tillbaka ${snoozeWhen(thread.snoozedUntil, now)}`
       : thread.waitingOn
-        ? `Väntar på ${thread.waitingOn}`
+        ? `${WAITS_ON} ${thread.waitingOn}`
         : thread.trigger.reason.replace(/\.$/, '');
   const queued =
     !thread.timers?.some(t => t.state === 'blocked') &&
@@ -183,6 +187,18 @@ export const rowFacts = (thread: Thread, now: string, today: string): RowFacts =
   due: dueOf(thread, today),
   why: whyOf(thread, now),
 });
+/**
+ * A row's supporting line: the state in words, then why the item is here ("Att göra i dag · Ansökan kom 10 november kl.
+ * 16:40"), so two states never differ by the dot's colour alone (WCAG 1.4.1). The no-break space keeps the separator
+ * with the state when the line wraps; without a reason the state stands alone. An item that waits on someone already
+ * says its state in its reason, with whom it waits on ("Väntar på skyddsombudet"), so that line stands as it is.
+ */
+export const rowLine = (facts: RowFacts): string =>
+  !facts.why
+    ? facts.state.label
+    : facts.state.label === WAITING_ON_OTHERS && facts.why.startsWith(`${WAITS_ON} `)
+      ? facts.why
+      : `${facts.state.label}\u00a0· ${facts.why}`;
 
 /**
  * What the rail's dot says about a conversation (D112 item 1), only where the data holds it: the answer being written

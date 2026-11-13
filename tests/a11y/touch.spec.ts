@@ -74,6 +74,19 @@ test.describe('a finger reaches every control at 44 px (docs/history/handover.md
       expect(await shortTargets(page)).toEqual([]);
     }
   });
+
+  // An option is an Astryx Item inside its row, so the theme's 44 px for `item` under a coarse pointer reaches it and
+  // the row needs no rule of its own (52 px with the row's padding, measured 2026-11-13 on Astryx 0.7.13).
+  test("a selector's options are 44 px rows", async ({ page, api }) => {
+    api.admin = true;
+    await open(page, '/admin/users');
+    await page.getByRole('combobox', { name: 'Roll' }).click();
+    const options = page.getByRole('option');
+    await expect(options.first()).toBeVisible();
+    const heights = await options.evaluateAll(els => els.map(el => Math.round(el.getBoundingClientRect().height)));
+    expect(heights.length).toBeGreaterThan(1);
+    expect(heights.filter(height => height < 44)).toEqual([]);
+  });
 });
 
 test.describe('a mouse', () => {

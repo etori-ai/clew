@@ -73,8 +73,9 @@ fit, about 1780 px), and "2 att agera på" listed cards in the drawer, where a c
 the one before with only ✕ leading back. Their five answers:
 
 1. **One panel, one width, every page.** The panel stands beside the page from one window width on every page that
-   holds it: Hem's, the rail, 640 px of column and the panel, 256 + 640 + 440 = 1336 px (`BESIDE_FROM` in
-   `apps/web/src/components/panel.tsx`). The page gives way, the panel does not: where the page's wide layout no longer
+   holds it: Hem's, the rail, 640 px of column and the panel, 260 + 640 + 440 = 1340 px (`BESIDE_FROM` in
+   `apps/web/src/components/panel.tsx`; 256 and 1336 until 2026-11-13, when `RAIL` took the 260 px Astryx's `SideNav`
+   draws). The page gives way, the panel does not: where the page's wide layout no longer
    fits beside the panel it draws the narrow layout it already has (Personal its rows instead of the table, a person's
    page its drill-in, a tool's page its list), its own breakpoint shifted by the panel's width while the panel is open.
    The modal drawer remains only below that width, on a short screen (1.4.10) and on a phone. Kalender, whose end slot

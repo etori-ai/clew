@@ -345,6 +345,26 @@ test.describe('Hem with the parts of version 1.0, narrow', () => {
     await expect(callout(page)).toBeVisible();
     await expect(news(page)).toBeVisible();
     expect(await reflowProblems(page)).toEqual([]);
+    // `reflowProblems` sees what is cut sideways, not what a line clamp cuts downwards. A work item's supporting line
+    // begins with its state in words (1.4.1), which took room from the reason: every row under Behöver dig says its
+    // state, and the whole line is drawn, none of it behind an ellipsis.
+    const lines = await page
+      .getByRole('region', { name: 'Behöver dig' })
+      .locator('[id^="work-"]')
+      .evaluateAll(rows =>
+        rows.map(row => {
+          // The clamped line that is not the title: the one with the separator.
+          const line = [...row.querySelectorAll<HTMLElement>('*')].find(
+            el => getComputedStyle(el).webkitLineClamp !== 'none' && /\u00a0· /.test(el.textContent ?? ''),
+          );
+          return { text: line?.textContent ?? '', cut: !line || line.scrollHeight > line.clientHeight };
+        }),
+      );
+    expect(lines.length).toBeGreaterThan(1);
+    for (const line of lines) {
+      expect(line.text).toMatch(/^(Att göra i dag|Att göra)\u00a0· \S/);
+      expect(line, line.text).toMatchObject({ cut: false });
+    }
   });
 });
 

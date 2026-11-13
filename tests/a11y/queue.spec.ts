@@ -48,7 +48,13 @@ test.describe('Att göra: the piles', () => {
     await expect(rows).toHaveCount(6);
     await expect(rows.first()).toContainText('Attestera 3 fakturor, 48 200 kr');
     await expect(rows.first()).toContainText('I dag');
-    await expect(rows.first().getByRole('img', { name: 'Att göra i dag' })).toBeVisible();
+    // The state is said in words at the start of the supporting line, held to its separator by a no-break space, so
+    // "Att göra i dag" and "Att göra" never differ by the dot's colour alone (1.4.1). The dot beside the words is
+    // decoration: nothing in the row is an image to assistive technology, and the state is heard once.
+    await expect(rows.first()).toHaveText(/Att göra i dag\u00a0· Fakturorna förfaller i veckan/);
+    await expect(rows.first().locator('.astryx-status-dot')).toHaveAttribute('aria-hidden', 'true');
+    await expect(rows.first().getByRole('img')).toHaveCount(0);
+    await expect(rows.filter({ hasText: /Att göra\u00a0· / }).first()).toBeVisible();
     await expectNoAxeViolations(page);
     // Väntar på andra holds what waits on others and what the person set aside, which says when it comes back.
     await tabs.getByRole('link', { name: 'Väntar på andra · 3' }).focus();
@@ -58,8 +64,7 @@ test.describe('Att göra: the piles', () => {
     await expect(waiting.getByRole('listitem')).toHaveCount(3);
     await expect(row(page, 'Tillbud 2026-1182, halkolycka i duschen')).toBeVisible();
     const snoozed = waiting.getByRole('listitem').filter({ hasText: 'Brandskyddsrond i oktober saknar protokoll' });
-    await expect(snoozed.getByRole('img', { name: 'Inte nu' })).toBeVisible();
-    await expect(snoozed).toContainText('Tillbaka i morgon 06:00');
+    await expect(snoozed).toContainText('Inte nu · Tillbaka i morgon 06:00');
     await tabs.getByRole('link', { name: 'Klart', exact: true }).click();
     await expect(page).toHaveURL(/\/todo\?tab=done$/);
     await expect(queue(page, 'Klart').getByRole('listitem')).toHaveCount(2);

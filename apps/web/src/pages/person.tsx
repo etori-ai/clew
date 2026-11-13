@@ -73,7 +73,7 @@ const shownTitle = (detail: EntityDetail): string | null =>
     ? null
     : (detail.profile?.title ?? personTitle(detail.entity) ?? null);
 /**
- * A section's fuller read is drawn as a table where the column has the 1024 px a tool's page gives it beside the rail:
+ * A section's fuller read is drawn as a table where the column has the 1020 px a tool's page gives it beside the rail:
  * a window of 1280 px plus the details rail.
  */
 const TABLE_QUERY = panelBesideQuery(1280 - RAIL, DETAILS);

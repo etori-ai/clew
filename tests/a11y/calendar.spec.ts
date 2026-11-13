@@ -14,7 +14,7 @@ import {
 import type { Page } from '@playwright/test';
 import { NEXT_WEEK, events } from './data';
 
-/** Wide enough for the panel to stand beside the grid (1336 px, D111 amended): an entry opens in the end slot. */
+/** Wide enough for the panel to stand beside the grid (1340 px, D111 amended): an entry opens in the end slot. */
 const WIDE = { width: 1440, height: 900 };
 
 /**
