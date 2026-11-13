@@ -1,8 +1,9 @@
-import type { BoardingEvent } from '@clew/contracts';
+import type { BoardingEvent, BoardingPlansOutput } from '@clew/contracts';
 import { wayBack } from './person-address';
 
 /**
- * Where introduction and leaving are (D124, D116, D43): `/boarding/<personId>` is one person's plans as a page, by the
+ * Where introduction and leaving are (D124, D116, D43): `/boarding` is the reader's list, the place in the rail (item
+ * 12), which names the plan's page it opens as `from`; `/boarding/<personId>` is one person's plans as a page, by the
  * person's Clew id, the way in that `boarding.person` declares (`/boarding/{id}`) on a person's page and Personal's lens.
  * `plan=<id>` chooses one of their plans when they have several (left out, the page shows the open one, else the latest),
  * `from` is the page it was opened from, the way back, and `start=introduction` or `start=leaving` is the start dialog
@@ -41,6 +42,18 @@ export function boardingHref(
   const from = wayBack(options.from);
   if (from) q.set('from', from);
   return address(`${BOARDING_PATH}/${encodeURIComponent(personId)}`, q);
+}
+/**
+ * Where the rail's row Introduktion och avslut leads (D124 item 12), from what the server answered the reader: the list
+ * for someone who manages a unit or has a plan to manage, there with their own plan above it; their own plan's page for
+ * someone with an open plan about themself and nothing to manage; nowhere, so no row, for anyone else and while the
+ * module is off (`null`) or the answer is not in yet (`undefined`).
+ */
+export function boardingPlaceHref(plans: Pick<BoardingPlansOutput, 'rows' | 'own' | 'manages'> | null | undefined) {
+  if (!plans) return null;
+  if (plans.manages || plans.rows.length > 0) return BOARDING_PATH;
+  const own = plans.own[0];
+  return own ? boardingHref(own.personId) : null;
 }
 /** The person whose page `pathname` is (`/boarding/<personId>`), or null on any other page. */
 export function boardingPersonOf(pathname: string): string | null {

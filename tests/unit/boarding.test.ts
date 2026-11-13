@@ -825,6 +825,55 @@ describe('reading plans', () => {
     expect(own.plans.map(p => p.id)).toEqual([first.id]);
     await forbidden(boarding.personPlans(olle, 'anna'), 'Personen finns inte bland dem du är chef för.');
   });
+
+  test('one read says whom the place applies to: the reports’ plans, the reader’s own apart from them, and whether they manage (D124 item 12)', async () => {
+    // Gun leads home care with Karin on it, so Karin reports to her: Karin is both a manager and someone with a plan.
+    reaches.set('gun', {
+      units: [{ unitId: 'u-hemtjanst', unitLabel: 'Hemtjänst', role: 'manager' }],
+      managed: [{ unitId: 'u-hemtjanst', unitLabel: 'Hemtjänst', people: [reach('karin', 'Karin Chef', 'karin.c')] }],
+      above: [],
+      lineReports: [],
+    });
+    const anna = await start();
+    const karins = await start(gun, { personId: 'karin', event: 'leaving', anchorOn: '2026-12-31', buddyId: null });
+    const listed = async (persona: AuthenticatedContext) => {
+      const out = await boarding.plans(persona);
+      return {
+        rows: out.rows.map(r => [r.id, r.personId, r.event, r.done, r.total, r.waiting]),
+        own: out.own.map(r => [r.id, r.personId, r.event, r.done, r.total, r.waiting]),
+        manages: out.manages,
+      };
+    };
+    // Karin: her report's plan to manage, her own leaving apart from it and never among the rows.
+    expect(await listed(karin)).toEqual({
+      rows: [[anna.id, 'anna', 'introduction', 0, 6, 2]],
+      own: [[karins.id, 'karin', 'leaving', 0, 2, 1]],
+      manages: true,
+    });
+    // Anna: her own introduction, counting what she owns, and nothing to manage.
+    expect(await listed(asAnna)).toEqual({
+      rows: [],
+      own: [[anna.id, 'anna', 'introduction', 0, 6, 3]],
+      manages: false,
+    });
+    // Gun manages Karin's leaving and has no plan of her own; Olle manages the school and reaches nothing of either.
+    expect(await listed(gun)).toEqual({ rows: [[karins.id, 'karin', 'leaving', 0, 2, 1]], own: [], manages: true });
+    expect(await listed(olle)).toEqual({ rows: [], own: [], manages: true });
+    // Bo owns an item of Anna's plan as her buddy: an owner reads it from the card, it is no plan of his to list.
+    expect(await listed(asBo)).toEqual({ rows: [], own: [], manages: false });
+    // Another organisation's manager reaches nothing here, and a closed plan is on no list.
+    expect(await listed(zed)).toEqual({ rows: [], own: [], manages: true });
+    await boarding.closePlan(karin, anna.id);
+    expect((await listed(asAnna)).own).toEqual([]);
+    expect((await listed(karin)).rows).toEqual([]);
+    // Reading writes nothing.
+    expect(
+      store
+        .audit()
+        .filter(a => a.action !== 'boarding.layers_imported')
+        .map(a => a.action),
+    ).toEqual(['boarding.plan_started', 'boarding.plan_started', 'boarding.plan_closed']);
+  });
 });
 
 describe('suggestions', () => {

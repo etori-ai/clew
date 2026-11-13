@@ -427,7 +427,10 @@ export const api = {
    * cases decide who may do what: a manager starts, adds and closes; an item's owner or the manager ticks it.
    */
   boarding: {
-    /** The open plans of the reader's reports, and those the reader started for someone since deactivated. */
+    /**
+     * The open plans of the reader's reports and those the reader holds for someone since deactivated, the reader's own
+     * open plans apart from them, and whether the reader manages a unit (D124 item 12).
+     */
     plans: () => call<BoardingPlansOutput>('/api/boarding/plans'),
     /** The reports whose employment starts soon with no introduction. */
     suggestions: () => call<BoardingSuggestionsOutput>('/api/boarding/suggestions'),

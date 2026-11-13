@@ -1459,7 +1459,7 @@
       "number": 124,
       "path": "docs/decisions/D124-introduction-and-leaving-are-an-owned-domain-a-plan-the-manager-starts-assembled-from-flat-layers.md",
       "title": "D124 · Introduction and leaving are an owned domain: a plan the manager starts, assembled from flat layers, each item a work item",
-      "status": "provisional (two statements by the product owner on 2026-11-13, paraphrased below; everything else is this build's choice; the server side and its pages built 2026-11-13 on synthetic data, and amended the same day after an independent review; nothing outside the repository has tested it)",
+      "status": "provisional (two statements by the product owner on 2026-11-13, paraphrased below, and their request the same day for a row in the rail, item 12; everything else is this build's choice; the server side and its pages built 2026-11-13 on synthetic data, and amended the same day after an independent review; nothing outside the repository has tested it)",
       "date": "2026-11-13",
       "area": "product, people"
     }

@@ -55,6 +55,7 @@ import { dateLabel, displayDate, today } from '@clew/calendar/dates';
 import { ApiError, api } from '../api';
 import {
   BOARDING_LENS_HREF,
+  BOARDING_PATH,
   boardingHref,
   personReadOf,
   planOf,
@@ -72,6 +73,7 @@ import {
   itemLine,
   longDay,
   needsPersonPage,
+  overdueWords,
   phaseWhen,
   planCounts,
   planTitle,
@@ -167,8 +169,9 @@ export function BoardingPage({ user, admin }: { user: SessionUser; admin: boolea
   const title = detail ? planTitle(detail.plan.event, name) : person ? `Introduktion och avslut för ${name}` : null;
   usePageTitle(missing ? 'Planen finns inte' : title);
 
-  // The way back (D116 rule 11): the page in `from` when Clew can name it (the person's own page by their name), else
-  // where the reader works from: Personal for the manager, Att göra for an item's owner, Hem for the person.
+  // The way back (D116 rule 11): the page in `from` when Clew can name it (the person's own page by their name, the list
+  // Introduktion och avslut), else where the reader works from: Personal for the manager, Att göra for an item's owner,
+  // Hem for the person.
   const fromSubject = from ? pageSubject(from.split('?')[0]!) : null;
   const back =
     fromSubject?.entity === 'person' && userName && fromSubject.key.toLowerCase() === userName.toLowerCase()
@@ -185,21 +188,28 @@ export function BoardingPage({ user, admin }: { user: SessionUser; admin: boolea
                 : null));
   const tool = toolOf(from);
   const fromPath = from?.split('?')[0];
-  const current: RailCurrent = fromPath?.startsWith('/staff')
-    ? { surface: 'staff' }
-    : fromPath === '/'
-      ? { surface: 'start' }
-      : fromPath === '/todo'
-        ? { surface: 'todo' }
-        : fromPath === '/calendar'
-          ? { surface: 'calendar' }
-          : tool
-            ? { surface: 'verktyg', view: tool }
-            : access === 'manager' || person?.canStart
-              ? { surface: 'staff' }
-              : access === 'owner'
-                ? { surface: 'todo' }
-                : { surface: 'verktyg', view: null };
+  // The rail marks the place the plan was opened from; opened from nothing Clew names, the manager's Personal, an item
+  // owner's Att göra, and for the person themself Introduktion och avslut, where the rail's row leads them (D124 item 12).
+  const current: RailCurrent =
+    fromPath === BOARDING_PATH
+      ? { surface: 'boarding' }
+      : fromPath?.startsWith('/staff')
+        ? { surface: 'staff' }
+        : fromPath === '/'
+          ? { surface: 'start' }
+          : fromPath === '/todo'
+            ? { surface: 'todo' }
+            : fromPath === '/calendar'
+              ? { surface: 'calendar' }
+              : tool
+                ? { surface: 'verktyg', view: tool }
+                : access === 'manager' || person?.canStart
+                  ? { surface: 'staff' }
+                  : access === 'owner'
+                    ? { surface: 'todo' }
+                    : access === 'person'
+                      ? { surface: 'boarding' }
+                      : { surface: 'verktyg', view: null };
   const nav = useRail({ current, admin, manager: user.role === 'manager' });
 
   // The start dialog over the page (`?start=`): only for a manager, and not for an event that already has an open plan,
@@ -360,9 +370,7 @@ export function BoardingPage({ user, admin }: { user: SessionUser; admin: boolea
               <Badge variant="neutral" label="Avslutad" />
             )}
             {open && c.waiting > 0 && <Text>{`${c.waiting} väntar på dig`}</Text>}
-            {open && c.overdue > 0 && (
-              <Badge variant="warning" label={c.overdue === 1 ? '1 försenad' : `${c.overdue} försenade`} />
-            )}
+            {open && c.overdue > 0 && <Badge variant="warning" label={overdueWords(c.overdue)} />}
           </HStack>
           {c.total > 0 && (
             <HStack gap={3} vAlign="center">

@@ -1652,9 +1652,17 @@ export interface BoardingPlanSummary {
   overdue: number;
   state: BoardingPlanState;
 }
-/** `GET /api/boarding/plans`: the open plans of the reader's reports, and those the reader started for someone since deactivated. */
+/**
+ * `GET /api/boarding/plans` (D124 item 12): the list a manager works from and whom the place in the rail applies to, in
+ * one read. Every list is open plans only, the nearest day first.
+ */
 export interface BoardingPlansOutput {
+  /** The open plans of the reader's reports, and those the reader holds for someone since deactivated. */
   rows: BoardingPlanSummary[];
+  /** The open plans about the reader themself, never among `rows`; `waiting` counts the items they own. */
+  own: BoardingPlanSummary[];
+  /** The reader manages a unit now (D99): the list is theirs even while no plan is on it. */
+  manages: boolean;
 }
 /** `GET /api/boarding/people/:personId`: one person's plans, as the plan page opens on them. */
 export interface BoardingPersonOutput {

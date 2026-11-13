@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import type { BoardingPlanOutput, BoardingPreview, EntitySource } from '@clew/contracts';
+import type { BoardingPlanOutput, BoardingPlanSummary, BoardingPreview, EntitySource } from '@clew/contracts';
 import {
   BOARDING_LENS_HREF,
+  BOARDING_PATH,
   boardingHref,
   boardingPersonOf,
+  boardingPlaceHref,
   personReadOf,
   planOf,
   planReadOf,
@@ -13,7 +15,12 @@ import {
   withoutStart,
 } from '../src/boarding-address';
 import {
+  anchorDay,
   conditionWords,
+  overdueWords,
+  planLine,
+  plansWords,
+  progressWords,
   unitLabelOf,
   counts,
   daysBetween,
@@ -114,6 +121,63 @@ describe("one person's introduction and leaving is a page with an address (D124,
   });
   test("the person's page opened from the plan's Tillhör names the plan's page as its way back", () => {
     expect(originLabel('/boarding/p-sara?plan=plan-1')).toBe('Introduktion och avslut');
+  });
+});
+
+describe("the place in the rail leads where the server's answer says (D124 item 12)", () => {
+  /** One plan in a list, as `GET /api/boarding/plans` answers it. */
+  const summary = (values: Partial<BoardingPlanSummary> = {}): BoardingPlanSummary => ({
+    id: 'plan-1',
+    personId: 'p1',
+    name: 'Sara Holm',
+    userName: 'sara.holm',
+    event: 'introduction',
+    anchorOn: '2026-12-01',
+    startedAt: '2026-11-01T08:00:00.000Z',
+    closedAt: null,
+    done: 1,
+    total: 3,
+    waiting: 0,
+    overdue: 0,
+    state: 'open',
+    ...values,
+  });
+  const plan = (personId: string) => summary({ id: `plan-${personId}`, personId });
+  test('the list for someone who manages a unit or holds a plan to manage, their own plan or not', () => {
+    expect(boardingPlaceHref({ rows: [], own: [], manages: true })).toBe('/boarding');
+    expect(boardingPlaceHref({ rows: [plan('anna')], own: [], manages: false })).toBe('/boarding');
+    expect(boardingPlaceHref({ rows: [plan('anna')], own: [plan('me')], manages: true })).toBe('/boarding');
+  });
+  test('their own plan’s page for someone with one and nothing to manage', () => {
+    expect(boardingPlaceHref({ rows: [], own: [plan('me')], manages: false })).toBe('/boarding/me');
+    expect(boardingPlaceHref({ rows: [], own: [plan('a b')], manages: false })).toBe('/boarding/a%20b');
+  });
+  test('no row for anyone else, while the module is off, or before the server has answered', () => {
+    expect(boardingPlaceHref({ rows: [], own: [], manages: false })).toBeNull();
+    expect(boardingPlaceHref(null)).toBeNull();
+    expect(boardingPlaceHref(undefined)).toBeNull();
+  });
+  test('the list is the way back from a plan opened from it', () => {
+    expect(boardingHref('anna', { plan: 'plan-anna', from: BOARDING_PATH })).toBe(
+      '/boarding/anna?plan=plan-anna&from=%2Fboarding',
+    );
+    expect(boardingHref('maria', { start: 'introduction', from: BOARDING_PATH })).toBe(
+      '/boarding/maria?start=introduction&from=%2Fboarding',
+    );
+    expect(originLabel('/boarding')).toBe('Introduktion och avslut');
+    expect(boardingPersonOf('/boarding')).toBeNull();
+  });
+  test('a row of the list says the event, its day, its progress and what is late, in facts', () => {
+    expect(anchorDay('introduction', '2026-11-16')).toBe('Första dagen mån 16 nov.');
+    expect(anchorDay('leaving', '2026-12-31')).toBe('Sista dagen tors 31 dec.');
+    expect(progressWords(1, 6)).toBe('1 av 6');
+    expect(planLine(summary({ event: 'leaving', anchorOn: '2026-12-31', done: 0, total: 2 }))).toBe(
+      'Avslut · Sista dagen tors 31 dec. · 0 av 2 klara',
+    );
+    expect(overdueWords(1)).toBe('1 försenad');
+    expect(overdueWords(3)).toBe('3 försenade');
+    expect(plansWords(1)).toBe('1 plan');
+    expect(plansWords(30)).toBe('30 planer');
   });
 });
 

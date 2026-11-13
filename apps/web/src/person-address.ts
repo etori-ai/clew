@@ -121,8 +121,8 @@ export function originLabel(path: string | null): string | null {
   if (pathname === '/calendar') return 'Kalender';
   // D121: a person's holdings opened from a hit of the registrar's search.
   if (pathname === '/competence/search') return 'Kompetenssökning';
-  // D124: a person opened from their plan's "Tillhör".
-  if (pathname.startsWith('/boarding/')) return 'Introduktion och avslut';
+  // D124: a plan opened from the list (item 12), and a person opened from their plan's "Tillhör".
+  if (pathname === '/boarding' || pathname.startsWith('/boarding/')) return 'Introduktion och avslut';
   return null;
 }
 /** The tool a page was opened from (`/tools/<capability>`), or null. */

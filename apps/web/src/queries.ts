@@ -324,6 +324,22 @@ export const competenceSkillQuery = (holdingId: string) =>
     retry: false,
   });
 /**
+ * Introduktion och avslut (D124 item 12): the reader's list, the plans they manage or hold and their own, and whether
+ * they manage, from which the rail draws the place's row too. `null` while the module is off for the person: no row,
+ * and the list's page says so. Not retried.
+ */
+export const boardingPlansQuery = queryOptions({
+  queryKey: keys.boarding.plans,
+  queryFn: () => unlessRefused(api.boarding.plans()),
+  retry: false,
+});
+/** The reports Clew suggests an introduction for (D124 item 8), on the list's page; `null` while the module is off. */
+export const boardingSuggestionsQuery = queryOptions({
+  queryKey: keys.boarding.suggestions,
+  queryFn: () => unlessRefused(api.boarding.suggestions()),
+  retry: false,
+});
+/**
  * Introduktion och avslut (D124): one person's plans and one plan. A refusal (the module is off, a person or a plan the
  * reader may not see) is the page's own "finns inte", so neither is retried.
  */

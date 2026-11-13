@@ -46,6 +46,7 @@ import { AdminCompetenceSourcesPage } from './pages/admin/competence-sources';
 import { AdminCompetenceRequirementsPage } from './pages/admin/competence-requirements';
 import { AdminCompetenceImportPage } from './pages/admin/competence-import';
 import { BoardingPage, BoardingPersonReadPage, BoardingPlanReadPage } from './pages/boarding';
+import { BoardingListPage } from './pages/boarding-list';
 import { AdminBoardingPage } from './pages/admin/boarding';
 import { AdminBoardingImportPage } from './pages/admin/boarding-import';
 import { loadBranding, useBranding } from './branding';
@@ -293,7 +294,13 @@ function App() {
         path="/people/:key"
         element={<Protected>{shell => <PersonPage user={shell.user} admin={shell.admin} />}</Protected>}
       />
-      {/* One person's introduction or leaving (D124): `/boarding/{id}` is the way in `boarding.person` declares; no rail entry. */}
+      {/* Introduktion och avslut (D124 item 12): the reader's list, where the rail's row leads a manager. */}
+      <Route
+        path="/boarding"
+        element={<Protected>{shell => <BoardingListPage user={shell.user} admin={shell.admin} />}</Protected>}
+      />
+      {/* One person's introduction or leaving (D124): `/boarding/{id}` is the way in `boarding.person` declares, and where
+        the rail's row leads someone whose own plan is the only one they have. */}
       <Route
         path="/boarding/:personId"
         element={<Protected>{shell => <BoardingPage user={shell.user} admin={shell.admin} />}</Protected>}

@@ -100,6 +100,20 @@ export function phaseWhen(phase: BoardingPhase, anchorOn: string): string {
 }
 /** "1 punkt", "7 punkter". */
 export const itemsWords = (n: number) => (n === 1 ? '1 punkt' : `${n} punkter`);
+/** "1 plan", "30 planer": how many a card of the list holds. */
+export const plansWords = (n: number) => (n === 1 ? '1 plan' : `${n} planer`);
+/** "1 försenad", "3 försenade": a plan's items past their day, as its badge says it. */
+export const overdueWords = (n: number) => (n === 1 ? '1 försenad' : `${n} försenade`);
+/** A plan's day in a row: "Första dagen mån 16 nov.", "Sista dagen tors 31 dec.". */
+export const anchorDay = (event: BoardingEvent, anchorOn: string) => `${anchorWord[event]} ${shortDay(anchorOn)}`;
+/** A plan's progress in a row: "1 av 6", under the heading "Klara" as the lens on Personal says it. */
+export const progressWords = (done: number, total: number) => `${done} av ${total}`;
+/**
+ * One plan as the list's row says it where there are no columns (a phone, a narrow window, the reader's own plan): the
+ * event, its day and its progress, "Introduktion · Första dagen mån 16 nov. · 1 av 6 klara". Facts only.
+ */
+export const planLine = (plan: Pick<BoardingPlanSummary, 'event' | 'anchorOn' | 'done' | 'total'>) =>
+  `${BOARDING_EVENT_WORDS[plan.event]} · ${anchorDay(plan.event, plan.anchorOn)} · ${progressWords(plan.done, plan.total)} klara`;
 /** Who does an item, as its row says it: "Du", or the role with the owner's name ("Fadder, Erik Nyström"). */
 export const ownerWords = (row: Pick<BoardingItemRow, 'mine' | 'owner' | 'ownerLabel'>) =>
   row.mine ? 'Du' : row.owner ? `${row.ownerLabel}, ${row.owner}` : row.ownerLabel;

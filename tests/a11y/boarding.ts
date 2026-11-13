@@ -7,8 +7,10 @@ import type {
   BoardingPersonOutput,
   BoardingPlanOutput,
   BoardingPlanSummary,
+  BoardingPlansOutput,
   BoardingPreview,
   BoardingStartBody,
+  BoardingSuggestionsOutput,
   EntityAction,
   EntityRows,
   EntitySource,
@@ -21,7 +23,8 @@ import { NOW, TODAY, user } from './data';
 import { CATALOGUE, manifest as desk } from '../../connectors/servicedesk/manifest.mjs';
 
 /**
- * Introduktion och avslut (D124) as the browser sees it, answered over the mock's own state as the server would: one
+ * Introduktion och avslut (D124) as the browser sees it, answered over the mock's own state as the server would: the
+ * reader's list and the suggestions (which the rail's row is drawn from too, item 12), one
  * person's plans, one plan for the manager, the person or an item's owner, the preview and the start, an item added,
  * ticked off or opened again, a plan closed, the layers and their import. The people are the suite's own (`data.ts`,
  * Clew's id is the key there): Anna Lindqvist has an introduction that starts 16 November and Erik Sandström is her
@@ -474,6 +477,100 @@ export class BoardingMock {
             : 'open',
     };
   }
+  /**
+   * `GET /api/boarding/plans` (D124 item 12) as the server answers the reader, nearest day first: the open plans of the
+   * manager's reports, the open plans about the reader themself apart from them, and whether the reader manages a unit
+   * (the test person as the manager; Anna and the buddy manage nobody).
+   */
+  plansOutput(): BoardingPlansOutput {
+    const me = this.readerId();
+    const open = this.plans
+      .filter(p => p.closedAt === null)
+      .sort((a, b) => a.anchorOn.localeCompare(b.anchorOn) || a.id.localeCompare(b.id));
+    return {
+      rows: this.reader === 'manager' ? open.filter(p => p.person.id !== me).map(p => this.summary(p)) : [],
+      own: open.filter(p => p.person.id === me).map(p => this.summary(p)),
+      manages: this.reader === 'manager',
+    };
+  }
+  /** `GET /api/boarding/suggestions`: the manager's reports whose employment starts soon with no introduction. */
+  suggestionsOutput(): BoardingSuggestionsOutput {
+    if (this.reader !== 'manager') return { rows: [] };
+    return {
+      rows: this.reports.flatMap(r =>
+        r.startOn && !this.plans.some(p => p.person.id === r.id && p.event === 'introduction')
+          ? [{ personId: r.id, name: r.name, userName: r.userName, startOn: r.startOn }]
+          : [],
+      ),
+    };
+  }
+  /** A plan about the test person themself, started by their own manager: what the list shows apart from the rest. */
+  ownPlan(event: Plan['event'] = 'leaving', anchorOn = '2026-12-31') {
+    const id = `plan-${MANAGER.id}`;
+    this.plans.push({
+      id,
+      person: { ...MANAGER, userName: MANAGER.id },
+      event,
+      anchorOn,
+      buddy: null,
+      startedAt: '2026-11-02T08:00:00.000Z',
+      closedAt: null,
+    });
+    this.items.push({
+      id: `${id}-1`,
+      planId: id,
+      title: 'Avslutningssamtal',
+      kind: 'meeting',
+      ownerRole: 'person',
+      owner: MANAGER,
+      dueOn: '2026-12-21',
+      done: false,
+      added: false,
+      tiedTo: null,
+    });
+    return id;
+  }
+  /**
+   * `n` more reports with an open plan each, for a list of realistic size: synthetic names, every fourth a leaving, the
+   * days a few apart, each with three items, one done, and every fifth with one past its day.
+   */
+  addPlans(n: number) {
+    const first = ['Amir', 'Britt', 'Cecilia', 'David', 'Elin', 'Fredrik', 'Greta', 'Hampus', 'Ida', 'Johan'];
+    const last = ['Berg', 'Ek', 'Holm', 'Lind', 'Nyberg', 'Sjöberg', 'Strand', 'Wall'];
+    for (let i = 1; i <= n; i++) {
+      const id = `rapport-${i}`;
+      const person = { id, name: `${first[i % first.length]} ${last[i % last.length]} ${i}`, userName: id };
+      const anchorOn = new Date(Date.parse('2026-11-05') + i * 3 * 86_400_000).toISOString().slice(0, 10);
+      const planId = `plan-${id}`;
+      this.reports.push(person);
+      this.plans.push({
+        id: planId,
+        person,
+        event: i % 4 === 0 ? 'leaving' : 'introduction',
+        anchorOn,
+        buddy: null,
+        startedAt: '2026-10-20T08:00:00.000Z',
+        closedAt: null,
+      });
+      const item = (n: number, dueOn: string, done: boolean): Item => ({
+        id: `${planId}-${n}`,
+        planId,
+        title: `Punkt ${n}`,
+        kind: 'todo',
+        ownerRole: 'manager',
+        owner: MANAGER,
+        dueOn,
+        done,
+        added: false,
+        tiedTo: null,
+      });
+      this.items.push(
+        item(1, '2026-10-30', true),
+        item(2, i % 5 === 0 ? '2026-11-02' : anchorOn, false),
+        item(3, anchorOn, false),
+      );
+    }
+  }
   /** `GET /api/boarding/people/:id`: refused unless the reader manages the person or is them. */
   personOutput(personId: string): BoardingPersonOutput | null {
     const report = this.reports.find(r => r.id === personId);
@@ -589,6 +686,8 @@ export class BoardingMock {
       item.done = method === 'POST';
       return empty();
     }
+    if (path === '/boarding/plans' && method === 'GET') return json(this.plansOutput());
+    if (path === '/boarding/suggestions' && method === 'GET') return json(this.suggestionsOutput());
     if (path === '/boarding/preview' && method === 'POST') {
       const asked = body() as BoardingStartBody;
       this.previews.push(asked);

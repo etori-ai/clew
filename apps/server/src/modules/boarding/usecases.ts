@@ -671,34 +671,44 @@ export function boardingUsecases(deps: BoardingDeps) {
     },
 
     /**
-     * The persona's open plans (the list a manager works from): every open plan of their reports, and the open plans they
-     * started for someone since deactivated. Reads, so no audit row.
+     * The persona's open plans (D124 items 7 and 12, the list a manager works from and what the rail's row leads to):
+     * `rows`, every open plan of their reports and the open plans they hold for someone since deactivated; `own`, the
+     * open plans about the persona themself, never among `rows`; and whether they manage a unit now, so the list is theirs
+     * with no plan on it. One read answers whom the place applies to. Reads, so no audit row.
      */
     async plans(persona: AuthenticatedContext): Promise<BoardingPlansOutput> {
-      const { reports } = await staffing(persona);
+      const { manages, reports } = await staffing(persona);
       const day = currentDay();
       return deps.store.transaction(async tx => {
         const plans = await listedPlans(tx, persona, reports);
-        const items = await tx.items(plans.map(p => p.id));
-        const persons = new Map((await tx.persons(plans.map(p => p.personId))).map(p => [p.id, p]));
+        const own = (await tx.plansAbout([persona.id])).filter(
+          p => p.closedAt === null && p.organisationId === persona.organisationId,
+        );
+        const items = await tx.items([...plans, ...own].map(p => p.id));
+        const persons = new Map(
+          (await tx.persons([...new Set([...plans, ...own].map(p => p.personId))])).map(p => [p.id, p]),
+        );
+        const summary = (p: PlanRecord, person: Pick<PersonRef, 'name' | 'userName'>, managerReads: boolean) =>
+          planSummary(
+            p,
+            person,
+            items.filter(i => i.planId === p.id),
+            persona.id,
+            day,
+            managerReads,
+          );
         return {
           rows: orderPlans(
             plans.flatMap(p => {
               const person = persons.get(p.personId);
-              return person
-                ? [
-                    planSummary(
-                      p,
-                      person,
-                      items.filter(i => i.planId === p.id),
-                      persona.id,
-                      day,
-                      true,
-                    ),
-                  ]
-                : [];
+              return person ? [summary(p, person, true)] : [];
             }),
           ),
+          // The persona reads their own plan as its person: what waits for them is what they own.
+          own: orderPlans(
+            own.map(p => summary(p, persons.get(p.personId) ?? { name: persona.name, userName: null }, false)),
+          ),
+          manages,
         };
       });
     },

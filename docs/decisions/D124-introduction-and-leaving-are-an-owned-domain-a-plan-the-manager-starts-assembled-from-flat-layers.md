@@ -1,6 +1,6 @@
 # D124 · Introduction and leaving are an owned domain: a plan the manager starts, assembled from flat layers, each item a work item
 
-**Status:** provisional (two statements by the product owner on 2026-11-13, paraphrased below; everything else is this build's choice; the server side and its pages built 2026-11-13 on synthetic data, and amended the same day after an independent review; nothing outside the repository has tested it) · **Date:** 2026-11-13 · **Area:** product, people
+**Status:** provisional (two statements by the product owner on 2026-11-13, paraphrased below, and their request the same day for a row in the rail, item 12; everything else is this build's choice; the server side and its pages built 2026-11-13 on synthetic data, and amended the same day after an independent review; nothing outside the repository has tested it) · **Date:** 2026-11-13 · **Area:** product, people
 
 **Decision.** Introduction and leaving (Swedish in the product: **Introduktion och avslut**; in code `boarding`) is a
 domain Clew owns under [D95](D95-clew-may-own-a-domain-by-choice-decided-with-the-core-or-connector-checklist.md): a
@@ -11,7 +11,8 @@ module `apps/server/src/modules/boarding/` with its own tables (migrations 0071 
 The product owner decided on 2026-11-13, in substance (paraphrased, not quoted): onboarding and offboarding should be a
 core feature of Clew, built as core if possible; and a plan is started by the manager, nothing starts from directory
 dates, and the manager enters a leaver's last day. They chose "the manager starts it" from an option whose description
-said that Clew suggests it with a work item and the manager confirms. Every other item below is this build's choice.
+said that Clew suggests it with a work item and the manager confirms. Later the same day they asked for an item in the
+sidebar (item 12). Every other item below, and whom that row is for and what its page holds, is this build's choice.
 
 1. **A plan.** A checklist about one person for one event: `introduction`, anchored on a first day, or `leaving`,
    anchored on a last day. The day is the plan's own data, entered or confirmed by the manager; Clew holds no validity
@@ -113,6 +114,21 @@ said that Clew suggests it with a work item and the manager confirms. Every othe
     (`scripts/boarding-erase.ts --confirm`, `scripts/boarding-export.ts`): erasing a person removes every plan about them
     with its items and cards, the cards of the items they own in other plans, and their id on other people's plans; the
     export is one versioned JSON document, `clew.boarding/1`, typed titles opened.
+12. **A row in the rail, and a list that is a page.** The product owner asked on 2026-11-13 for an item in the sidebar;
+    the rest of this item is this build's choice. The rail draws "Introduktion och avslut" among the places, after
+    Kompetens, while the module is switched on and visible to the reader (the signal of item 9 and of its row under
+    Administration) and only where it applies to them, which the server says in one read: `GET /api/boarding/plans`
+    answers the open plans the reader manages or holds (item 7), the open plans about the reader themself apart from
+    them (`own`), and whether the reader manages a unit now (`manages`, D99's line). For a manager, or someone holding a
+    plan to manage, the row leads to the list `/boarding`; for someone with an open plan about themself and nothing to
+    manage, a new hire or a leaver, straight to their own plan's page; for anyone else there is no row. No capability
+    is added: the read is behind the module's switch and its use case's own reach. The list is a page of its own
+    ([D116](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md)): the reader's own
+    open plans apart and above; while any wait, the reports item 8 suggests an introduction for, each with
+    "Starta introduktion", the start dialog over that person's page; and the open plans the reader manages, nearest day
+    first, each row the person's name as the link to the plan, the event, its day, how many items are done and a badge
+    where any is late, facts only. A plan opened from it has the list as its way back. Closed plans are on no list; the
+    person's page still lists them.
 
 **The checklist's Part 3.** [Core or connector](../maintainers/core-or-connector.md):
 
@@ -170,9 +186,8 @@ steps over `POST /api/boarding/preview`. Administration › Introduktion och avs
 page, which reads a file with the server's parser and sends only a whole file without problems. The browser specs on a
 mock (`tests/a11y/boarding.spec.ts`, `boarding-start.spec.ts`, `admin-boarding.spec.ts`), and `boarding.person` among the
 development stack's lenses with the seed run by `bun run dev:connectors`. Not built: editing a layer in the product, the canvas's order dialog and one layer's page, the groups the canvas draws for a
-leaving (return, access, handover), "Planen är byggd av" (the plan's output does not name an item's layer), "Fråga Clew"
-on the plan's page (nothing of a plan reaches a model), and a way in for the new hire beyond the cards in Att göra and
-Hem.
+leaving (return, access, handover), "Planen är byggd av" (the plan's output does not name an item's layer), and "Fråga Clew"
+on the plan's page (nothing of a plan reaches a model).
 
 **Amended 2026-11-13 after an independent review.** Item 7's deactivation rule (above), the counts an item owner is
 told, an item whose owner is gone, and the leavers binding for two domains; item 5's past due days and switched-off
@@ -193,8 +208,16 @@ the IT service desk's `servicedesk.order` with the catalogue's item, the return 
 and one reading to a made-up page on `example.org`. Not built: a booking from a `meeting` item, a check of a `course`
 item against competence, and an item that closes when what it was done with is done.
 
+**Built 2026-11-13, the place in the rail.** Item 12: `GET /api/boarding/plans` answers `own` and `manages` beside
+`rows`, with a scenario test of whom each reader is answered; the rail's row (`useRail`, drawn from that read once it
+has answered, so it never leads somewhere and then moves); the list `/boarding` (`apps/web/src/pages/boarding-list.tsx`,
+Astryx's card with a toolbar over a `Table` where its columns fit beside the rail, else a `List`, as Personal and
+Kompetens draw theirs); the plan's way back to it and the rail's mark on a plan opened from it, and on the reader's own
+plan; the browser spec `tests/a11y/boarding-list.spec.ts`.
+
 **Not established.** The answers to questions 6 and 11. Whether matching on the free-text employment type is
-acceptable (the directory has no concept of a consultant). Where a new hire finds their plan besides Hem and Att göra.
+acceptable (the directory has no concept of a consultant). Whether the row of item 12 is drawn for the right people and
+leads where they expect: the product owner asked for the row, not for its conditions or the list's contents.
 Whether an `order` item should close by itself when a service desk closes the request
 ([D123](D123-requests-are-a-profile-of-their-own-apart-from-the-errands-a-person-handles.md)). [D122](D122-the-assistant-may-read-and-propose-whatever-the-person-who-asks-may-and-adding-a-model-is-answering-for-it.md)
 item 3 opens Clew's own domains to the assistant; this build keeps both reads closed (`model: false`), since a title
