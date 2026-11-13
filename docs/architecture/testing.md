@@ -26,9 +26,9 @@ or the network, and CI (`.github/workflows/check.yml`) runs it without the stack
 | A view, route or state in the web app | An accessibility test (axe, keyboard, reflow, announcements) | `tests/a11y/` | `sh scripts/a11y.sh`, CI `a11y.yml` |
 | A browser cache helper (`apps/web/src/thread-cache.ts`, `query-policy.ts`, D33) | Example tests against a real `QueryClient` from `@tanstack/query-core`: what is written, what is invalidated, what is retried. No DOM, no React | `tests/unit/web-*.test.ts` | `bun run check` |
 | The installation's theme file and appearance (D98) | Example tests of the format, the contrast pairs and the base table against Astryx's resolved tokens; scenario tests of the use cases with their audit rows on the memory store; the store contract on both adapters; the public routes over the memory store | `tests/unit/theme-file.test.ts`, `appearance-admin.test.ts`, `appearance-routes.test.ts`, `tests/appearance-store-contract.ts` | `bun run check`, `bun run test:db` |
-| Durable state across the database and worker/source boundary | Real PostgreSQL contracts and Node/DBOS workflows against an independent synthetic fault source; timer cancellation and a killed instance's takeover; workflow starts committed with their intents before the engine launches (D86); a job's watch steps through real `jobWatch` workflows; a night's `scheduledJob`, a failing one included; deferred attention released by its job's workflow; a live step whose statement fails, retried without its values; `scripts/jobs-check.ts` runs a job on the independent fixture connectors against the dev stack | `tests/db/`, `apps/server/tests/execution-runtime.test.ts`, `apps/server/tests/timer-runtime.test.ts`, `apps/server/tests/watch-runtime.test.ts`, `apps/server/tests/job-runtime.test.ts`, `apps/server/tests/attention-runtime.test.ts`, `apps/server/tests/failed-step-runtime.test.ts` | `bun run test:db`, `bun run test:durability`, CI `reliability.yml` |
+| Durable state across the database and worker/source boundary | Real PostgreSQL contracts and Node/DBOS workflows against an independent synthetic fault source; timer cancellation and a killed instance's takeover; workflow starts committed with their intents before the engine launches (D86); a job's watch steps through real `jobWatch` workflows; a night's `scheduledJob`, a failing one included, run through the live `scheduledJobRunner` as `composition/jobs.ts` binds it; deferred attention released by its job's workflow; a live step whose statement fails, retried without its values; `scripts/jobs-check.ts` runs a job on the independent fixture connectors against the dev stack | `tests/db/`, `apps/server/tests/execution-runtime.test.ts`, `apps/server/tests/timer-runtime.test.ts`, `apps/server/tests/watch-runtime.test.ts`, `apps/server/tests/job-runtime.test.ts`, `apps/server/tests/attention-runtime.test.ts`, `apps/server/tests/failed-step-runtime.test.ts` | `bun run test:db`, `bun run test:durability`, CI `reliability.yml` |
 | What a failure leaves in a log line, a span or the durable engine's warning (D91) | Example tests of the logger's serializer with a statement built as drizzle builds it; real failing statements on PostgreSQL; a mounted app with a recording tracer; a live step on the engine | `tests/unit/logging.test.ts`, `tests/db/postgres-error-logging.test.ts`, `apps/server/tests/request-spans.test.ts`, `apps/server/tests/failed-step-runtime.test.ts` | `bun run check` (the unit suite and `bun run test:node`), `bun run test:db`, `bun run test:durability` |
-| Upgrade and restore | Isolated databases starting at migration 0019, conservative upgrade, repeated migration and evidence comparison after pg_dump/pg_restore | `scripts/recovery-rehearsal.ts` | [operations runbook](../maintainers/reliability-operations.md), CI `reliability.yml` |
+| Upgrade and restore | Isolated databases starting at migration 0019, conservative upgrade, repeated migration and evidence comparison after pg_dump/pg_restore; an upgrade through 0054 on a database of its own, created beside the suite's and dropped afterwards: rows seeded at the migration before it, then a probe migration that writes, 0054 and a probe that alters the tables 0054 writes, in the one transaction Drizzle runs them in | `scripts/recovery-rehearsal.ts`, `tests/db/person-keys-upgrade.test.ts` | [operations runbook](../maintainers/reliability-operations.md), CI `reliability.yml`, `bun run test:db` |
 
 ## Microsoft 365 without Microsoft
 
@@ -89,9 +89,20 @@ Some comparisons pass on the suite's database and fail on another. The suite's d
 ICU collation folds them. `cLocaleDatabase()` in `tests/db/c-locale.ts` creates such a database from `template0` beside
 the suite's, checks that it does not fold `Å` by itself, migrates it, and drops it when the test ends. The SCIM store
 contract (`tests/scim-store-contract.ts`) runs on it as a third store, after memory (`tests/unit/scim.test.ts`) and
-the suite's database (`tests/db/postgres-provisioning.test.ts`). `tests/db/user-name-form.test.ts` and
-`tests/db/user-reads.test.ts` use it too, and `tests/db/identity-binding.test.ts` creates its own. So the role in
+the suite's database (`tests/db/postgres-provisioning.test.ts`); its case for a word and a value composed or
+decomposed (NFC and NFD), in the people list and the group picker, runs on all three.
+`tests/db/user-name-form.test.ts` and `tests/db/user-reads.test.ts` use it too, and `tests/db/identity-binding.test.ts`
+creates its own; `tests/db/person-keys-upgrade.test.ts` creates a database of its own to upgrade. So the role in
 `DATABASE_URL` needs `CREATEDB` for `bun run test:db`; the devcontainer's `clew` is the image's superuser and has it.
+
+A race between two writes is tested twice. In the unit suite the other write runs at the moment the use case takes its
+lock, through a store wrapped to run it there, as the K4 cases in `tests/unit/users-admin.test.ts` do for a mapping
+change and a SCIM write of its group. On PostgreSQL one transaction is held open while the other runs
+(`tests/db/postgres-scim-concurrency.test.ts`). A change to how a card's rows are keyed is tested on every path that
+writes them: the refresh worker in `tests/unit/refresh.test.ts`, the in-process scan in
+`tests/unit/entities-cards.test.ts` and a propose started from an entity's menu in
+`tests/unit/entities-actions.test.ts`. The cases for a change in the directory alone run on the first two, the paths
+that write a card's rows again.
 
 **Adapter fixtures.** `tests/unit/nextcloud.test.ts` parses recorded CalDAV responses. The same for any adapter:
 record the real answer once, test the translation to the port. Live runs against the system stay in the smoke

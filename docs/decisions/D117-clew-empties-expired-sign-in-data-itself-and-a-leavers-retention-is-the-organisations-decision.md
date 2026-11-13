@@ -30,20 +30,39 @@
    erases them. The audit trail and the authentication log keep their rows: an erasure takes the person's identifiers
    out of them and keeps every event (item 3). At the identity provider, a leaver's account is disabled, not deleted,
    for as long as the person may come back, and is deleted only under the same decision.
-3. **An operator erases a deactivated person's record with `scripts/person-erase.ts`.**
-   - Only after the source has stopped sending the person; otherwise the provisioner's next run creates the person
-     again, as a new record.
+3. **An operator erases a deactivated person's record with `scripts/person-erase.ts`.** It runs in the app container
+   and has no route and no page: a page for it would be new surface, which
+   [D101](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) item 4 freezes.
+   - Only after the source has stopped sending the person and SCIM has deactivated them. A push that looks the person
+     up by user name or source key afterwards finds nobody and creates a new person with a new id, and a client that
+     still writes to the old id fills the row again: a `PUT /Users/<id>` gives it a user name and fields, and a `PATCH`
+     with `active: true` makes it active without a user name.
    - The procedure for one person runs `scripts/subject-erase.ts`, `scripts/talks-erase.ts` and
      `scripts/competence-erase.ts` first, each with the person's id
      ([D116](D116-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) item 7), and
-     `bun scripts/person-erase.ts --person <id> --confirm` last.
-   - It refuses an id the people table does not hold, and a person who is still active, and writes no audit row for
-     either.
-   - In one transaction it removes the person's memberships, placements, grant, sign-in bindings and sessions. It clears
-     every personal attribute: the name, the e-mail address, the phone numbers, the employments and the title. It
-     replaces the user name with the person's id and drops the source key (`externalId`). The row keeps nothing
-     personal: its id, which other records point at, stays with its organisation and its deactivation, and a later push
-     of the same person creates a new record.
+     `bun scripts/person-erase.ts --person <id> --confirm` last. The three still find the person by the id once the
+     record is erased.
+   - A person is named by their id, never by a user name. It refuses an id the people table does not hold and a person
+     who is still active, and writes nothing and no audit row for either.
+   - In one transaction it takes the person out of their groups, moving each group's time of change, and removes their
+     placements, grant, sign-in bindings under every issuer and sessions with their sealed tokens. It clears every
+     personal attribute: the name, the e-mail address, the phone numbers, the employments and the title. It stores no
+     user name and no source key (`externalId`). The row keeps its id, which other records point at, its organisation,
+     its deactivation and its time of creation, and nothing personal.
+   - The record then reads as its id. Clew answers a record without a user name with its id in the user name's place,
+     so `GET /scim/v2/Users/<id>` answers the id as `userName`, an empty name, no address, no groups and
+     `active: false`, and Administration › Användare shows the id where the user name stood. A filter on `userName` or
+     `externalId` no longer finds it, and the source can push the same name and key again as a new person.
+   - No key resolves to the erased person: neither the id nor any name they held (`userName` and `holders`, D116). A
+     card started from their menu with an `execute` keeps them by id, and its one action, the decision, can no longer
+     be taken: the decision and its preview answer "Personen finns inte längre i katalogen. Inget har skickats." and
+     nothing reaches the ledger. An execution approved from such a card before the erasure keeps its person
+     (`execution.subject`), and dispatch settles it with the reason `subject-changed` and sends nothing (D116 item 5).
+   - Every other card about the person keeps the actions its source wrote: a card a source pushed, and one started
+     from their menu with a `propose`, whose actions are the source's own (D116 item 4). Neither `subject-erase` nor
+     this script closes a card. Such an action can still be decided afterwards and is sent with the input the source
+     wrote, and an execution approved from one, before the erasure or after, keeps no person and is dispatched as
+     approved (see Limits).
    - It replaces the person's identifiers in the audit trail and the authentication log with `[erased]` and keeps every
      event: `userName` and `externalId` in the details of `scim.user.created`, `scim.user.replaced`,
      `scim.user.patched`, `scim.user.deactivated` and `scim.user.reactivated`; `value` and `subject` in the
@@ -51,8 +70,14 @@
      `newSubject` in the person's `identity.rebound` rows; and the claim value in the authentication log's
      `identity-unmatched` rows whose actor `claim:<value>` names one of the user names the person has held or their
      e-mail address, compared as a sign-in compares a claim with a user name. A claim holds the e-mail address when the
-     identity provider is set to send it.
-   - It writes one `person.erased` audit row, actor `operator:cli`, with counts only.
+     identity provider is set to send it. A value that is `null` or empty held nothing and stays as it is: a first
+     binding still reads `oldSubject: null`, and a release `newSubject: null`.
+   - It writes one `person.erased` audit row, actor `operator:cli`, about `person:<id>`, with counts only: the
+     personal fields cleared, the memberships, placements, grants, sign-in bindings and sessions removed, and the audit
+     rows and authentication-log rows whose identifiers it replaced.
+   - It can be run again. A group push that the source sent before it stopped sending the person, and that put them
+     back in a group, is undone by a second run, which removes the membership and moves the record's time of change.
+     With nothing left, a run changes nothing and still writes its row, with zero counts.
    - A person pushed by mistake is deactivated by the source and then erased the same way. Until then, the source can
      clear the title, the phone numbers and the employments with one `PUT` with `active: false`, as the operations guide
      describes.
@@ -90,6 +115,14 @@ retention means nothing without one.
   for good.
 - Deleting the person's row: cards, audit rows, talks and executions point at the id, so the row is minimised in place
   and every reference stays valid.
+- The person's id as the erased record's user name. A stored id would be a user name like any other. It would resolve
+  to the erased person, so a card started from their menu with an `execute` could still be decided, and sent with
+  Clew's id where the source expects a user name. A person whose id is their user name, as the development stack's
+  sign-in personas written by `scripts/auth-setup.ts` are, would keep the name, and the source's next push of it would
+  be refused with 409. And the id could equal another person's user name in another case, which the unique index
+  refuses, so the erasure would fail.
+- Reading a user name that equals the person's id as none: it would take the user name from active people whose id is
+  their user name, such as those personas.
 
 The clean-up runs at 03:00 Stockholm time because that hour exists on both days the clocks change. A failed night
 completes rather than throws: a job that throws is claimed again by its workflow every few minutes for as long as the
@@ -102,12 +135,33 @@ longer leads to a name. For an organisation of several thousand employees, leave
 come back. Keeping the record until the organisation decides lets a returner be reactivated with their history, and the
 erase lets the organisation keep its own rules for each person who does not come back.
 
+The erased record stores no user name, so no key leads to the person any more: an action started from their menu with
+an `execute`, which Clew resolves to a user name when it is decided and checks again before it is sent, cannot reach a
+source under a name once they are erased, and the name is free for the source to give again. Where a user name is
+shown, Clew reads the record as its id, as it reads any record without one. The identifiers in the audit trail become
+`[erased]` rather than `null`: the trail still shows that a value was there, a `null` keeps its own meaning (no binding
+before a first one, none after a release), and in the authentication log a row without an actor already means one that
+names nobody.
+
 **Limits.**
 
 - Clew has no tool that removes rows of the authentication log or of the audit trail by age, so both grow for as long
   as the installation runs. An organisation whose rules say that older rows must go can remove them only in the
   database itself, outside Clew. The erase of item 3 takes one person's identifiers out of these rows and keeps every
   row.
+- No script reaches what other records hold about an erased person as text, or what other systems hold: a calendar
+  proposal's `participant_name` and `participant_email`; an approved execution's payload, where a started action's
+  `payload[subject.param]` holds the user name the person had when it was decided (`subject.param` names the input
+  property, such as `person`, and `subject.personId` is the id); the text of card messages and rows and a source's own
+  card topics; the answers typed for an action's asks (`asked`) in `thread.started` and `execution.approved` rows,
+  which can name the person; the operator's name typed into `identity.rebound` rows when the erased person ran
+  rebinds; the source systems and the identity provider's account; and backups, server logs and traces. An operator
+  removes these by hand, or the organisation's retention does.
+- No script closes a card whose actions a source wrote about an erased person: a card the source pushed, or one
+  started from their menu with a `propose`. It keeps the source's own actions with the input the source wrote, which
+  can name the person by the source's own key or by the user name the source was sent. Those actions can still be
+  decided after the erasure and are sent as written, and an execution approved from one is dispatched as approved.
+  Only a card started with an `execute`, and what was approved from it, is refused (item 3).
 
 **As built.** `removeExpiredSignIns` in `packages/db/src/auth.ts`; the job kind `sign-in-cleanup` and `scheduleCleanup`
 in `apps/server/src/scheduler/usecases.ts`; `startJobs` in `apps/server/src/composition/jobs.ts` and the binding in
@@ -119,12 +173,17 @@ still schedules the next night and completes), and `apps/server/tests/job-runtim
 `apps/server/src/modules/people/usecases.ts`, bound as `personErasure` in `apps/server/src/composition/people.ts`; what
 it replaces in the audit trail and the authentication log is named by `IDENTIFIERS_ABOUT`, `IDENTIFIERS_AS_HOLDER` and
 `namesHeld` in `apps/server/src/modules/people/domain.ts`, and its store ports are held to
-`tests/scim-store-contract.ts` on both adapters. Tests: `tests/unit/person-erase.test.ts` (the two refusals, what is
-cleared and what is kept, all or nothing, that every SCIM row about a person holds its identifiers where the erase
-looks, and the script's answers before it asks the database) and `tests/db/person-erase.test.ts` (on PostgreSQL, a
-person pushed through SCIM and signed in, then erased, with every table and the audit trail searched for each value that
-named them; the freed name and key pushed again as a new person, and the other three erasures still finding the person
-by id).
+`tests/scim-store-contract.ts` on both adapters. Tests: `tests/unit/person-erase.test.ts` (the two refusals; what is
+cleared and what is kept, the SCIM resource that reads the id as `userName`, no key that resolves to the person, `null`
+and empty values kept, a second run with zero counts, and the freed name and key; a second erasure after a stale group
+push; someone else holding the id as a user name in another case; a person whose id is their user name; all or nothing;
+that every SCIM row about a person holds its identifiers where the erase looks; and the script's answers before it asks
+the database), `tests/db/person-erase.test.ts` (on PostgreSQL, a person pushed through SCIM and signed in, found by the
+SCIM filters on the source key and the user name once deactivated, then erased, with every table and the audit trail
+searched for each value that named them; the stale group push undone by a second erasure; the freed name and key pushed
+again as a new person; the other three erasures still finding the person by id; and the script's exit codes and answers,
+with someone else holding the person's id as a user name in another case) and `tests/unit/entities-actions.test.ts` (an
+execute about a person erased since cannot be decided, and nothing is approved).
 
 **Replaces.** `pruneAuthentication`, which only the development setup ran. Its revocation and removal of expired
 sessions is now done every night in the server, from the first night after either expiry rather than a day after the
