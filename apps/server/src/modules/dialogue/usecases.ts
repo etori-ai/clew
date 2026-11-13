@@ -38,6 +38,7 @@ const NOT_YOUR_NOTE = 'Du kan inte ändra den här anteckningen.';
 const TIMER_ACTOR = 'system:scheduler';
 /** The version of the export document; a breaking change is a new version. */
 export const DIALOGUE_EXPORT_FORMAT = 'clew.dialogue/1';
+type DialogueErasure = { refused: 'unknown' | 'active' } | { cleared: number; cards: number };
 /** One unit's dialogue in short (`dialogue.unit`, D97): its state over the assessed areas and its open activities. */
 export interface UnitStanding {
   key: string;
@@ -498,13 +499,13 @@ export function dialogueUsecases(deps: DialogueDeps) {
     /** Whether the organisation has any areas configured: the development seed loads its example only when not. */
     hasAreas: (organisationId: string) =>
       deps.store.transaction(async tx => (await tx.areas(organisationId)).length > 0),
-    /**
-     * An operator removes a person from every dialogue row, the cards of what they owned and their own notes. Counts
-     * only in the audit.
-     */
+    /** Erase a deactivated person's participation, owned cards and private notes. Unknown and active people leave no audit row. */
     async erasePerson(actor: string, personId: string) {
       const at = now().toISOString();
-      return deps.store.transaction(async tx => {
+      return deps.store.transaction(async (tx): Promise<DialogueErasure> => {
+        const enabled = await tx.lockPersonForErasure(personId);
+        if (enabled === undefined) return { refused: 'unknown' };
+        if (enabled) return { refused: 'active' };
         const erased = await tx.erasePerson(personId);
         await tx.workItems.remove(erased.threadIds);
         await tx.audit({

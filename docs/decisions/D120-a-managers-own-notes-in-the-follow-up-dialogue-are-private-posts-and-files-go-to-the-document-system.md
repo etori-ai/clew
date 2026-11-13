@@ -32,7 +32,7 @@ same notes.
 6. **Drawn last in an area's panel**, under the activities, as "Mina anteckningar" with the line "Bara du ser dem. De
    följer enheten mellan samtalen.": the list, the newest first, each with when it was written and changed, and the
    form behind "Ny anteckning", as the drawer's other forms are (D118 item 11). No new page, drawer or address.
-7. **Erasure and export.** Erasing a person (`scripts/dialogue-erase.ts`) removes their notes whole, since a note
+7. **Erasure and export.** Erasing a deactivated person (`scripts/dialogue-erase.ts`) removes their notes whole, since a note
    without its author is nobody's; the table's foreign key does the same if the person's row goes. The operator's
    export holds every note with its author, text opened; `clew.dialogue/1` gains the list `notes` and keeps its
    version, since nothing that read it before breaks.

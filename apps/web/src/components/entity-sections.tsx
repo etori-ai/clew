@@ -67,6 +67,11 @@ export const rowOf = (a: SectionAnswer): Row | undefined =>
 export const drawnSections = (answers: SectionAnswer[]) => answers.filter(a => !rowless(a));
 /** Whose a source is, as a section names it (D97, artboards B and C): Clew's own domain as Clew, any other by its name. */
 export const sourceCaption = (source: Pick<EntitySource, 'source' | 'own'>) => (source.own ? 'Clew' : source.source);
+/**
+ * The label column of a section's facts: 140 px at the start, a longer label wrapping inside it. The person's profile
+ * (D114) takes the same one, so on a page its values start where the sources' values do.
+ */
+export const SECTION_LABELS = { position: 'start', width: 140 } as const;
 
 /**
  * Every source's answer for the person, each its own read (artboard C: "Kompetenssystemet svarade inte" while the
@@ -133,7 +138,7 @@ export function SectionRow({ source, row }: { source: EntitySource; row: Row }) 
         </HStack>
       )}
       {facts.length > 0 && (
-        <MetadataList label={{ position: 'start', width: 140 }}>
+        <MetadataList label={SECTION_LABELS}>
           {facts.map(g => (
             <MetadataListItem key={g.lead.key} label={g.lead.label}>
               <SectionCell group={g} row={row} />

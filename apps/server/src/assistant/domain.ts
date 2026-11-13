@@ -1,4 +1,4 @@
-import { inAudience, type Actor } from '@clew/connectors';
+import { inAudience, type AudiencedActor } from '@clew/connectors';
 import type { ModelRecord } from './ports';
 
 /**
@@ -21,11 +21,14 @@ export function slugFor(model: string, taken: ReadonlySet<string>): string {
   if (!taken.has(base)) return base;
   for (let n = 2; ; n++) if (!taken.has(`${base}-${n}`)) return `${base}-${n}`;
 }
-/** The models a person may pick: switched on, on a provider that exists, with the person in the audience. The default first, then in the order they were added. */
+/**
+ * The models a person may pick: switched on, on a provider that exists, with the person in the audience by role, unit or
+ * provisioned group (so the actor carries the groups). The default first, then in the order they were added.
+ */
 export function choicesFor(
   models: readonly ModelRecord[],
   providers: ReadonlySet<string>,
-  actor: Actor,
+  actor: AudiencedActor,
 ): ModelRecord[] {
   const open = models.filter(
     m => m.state === 'enabled' && providers.has(m.providerId) && inAudience(m.audience, actor),

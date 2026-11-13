@@ -608,9 +608,16 @@ describe('erasure and export', () => {
     const id = await dialogue.addActivity(ingrid, 'u-skola', { area: 'operations', text: 'Plan' });
     await dialogue.assess(hillevi, 'u-skola', { area: 'digital', tone: 'warn' });
     // Her own note goes whole with her; Ingrid's stays.
-    await dialogue.addNote(hillevi, 'u-skola', { area: 'digital', text: 'Min tanke' });
+    const own = await dialogue.addNote(hillevi, 'u-skola', { area: 'digital', text: 'Min tanke' });
     const kept = await dialogue.addNote(ingrid, 'u-skola', { area: 'digital', text: 'Ingrids tanke' });
     const threadId = store.state.activities.get(id)!.threadId!;
+    const auditBefore = store.audit();
+    expect(await dialogue.erasePerson('operator:cli', 'Hillevi Berg')).toEqual({ refused: 'unknown' });
+    expect(await dialogue.erasePerson('operator:cli', 'hillevi')).toEqual({ refused: 'active' });
+    expect(store.audit()).toEqual(auditBefore);
+    expect(store.state.cards.has(threadId)).toBe(true);
+    expect(store.state.notes.has(own)).toBe(true);
+    store.addPerson('hillevi', 'Hillevi Berg', false);
     expect(await dialogue.erasePerson('operator:cli', 'hillevi')).toEqual({ cleared: 3, cards: 1 });
     expect([...store.state.notes.keys()]).toEqual([kept]);
     expect(store.state.activities.get(id)).toMatchObject({ ownerId: null, threadId: null, createdBy: 'ingrid' });

@@ -1,19 +1,21 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import { schema, type Transaction } from '@clew/db';
 import { enqueueWorkflow, type DurableQueue } from '@clew/db/durable';
 import { jobStart } from '@clew/db/jobs';
 import { receipt } from '@clew/connectors';
 import { ExecutionError, type Execution } from '../modules/executions/model';
 import type { CalendarCommand } from '../modules/calendar/usecases/decisions';
+import { invitingSentence, mayStillBeSent } from '../modules/calendar/usecases/booked';
 import { timerTx } from '../threads/adapters/timer-postgres';
 import { reminderStart } from '../threads/domain';
 import { nextCheck } from '../modules/calendar/usecases/obligation';
 
 type Stage = 'approval' | 'update';
 /**
- * The execution, visible card and audit commit through this same physical transaction. Never source I/O here. The
- * obligation timer and the receipt jobs it writes start their workflows in the same transaction (D86), in the engine's
- * application and queue named by `durable`; the composition root binds it, a Postgres test binds its own.
+ * The execution, visible card and audit commit through this same physical transaction. Never source I/O here, and no
+ * read through another connection. The obligation timer and the receipt jobs it writes start their workflows in the
+ * same transaction (D86), in the engine's application and queue named by `durable`; the composition root binds it, a
+ * Postgres test binds its own.
  */
 export const projectExecution = (durable: DurableQueue) => (tx: Transaction, e: Execution, stage: Stage) =>
   project(tx, e, stage, durable);
@@ -87,10 +89,12 @@ async function project(tx: Transaction, e: Execution, stage: Stage, durable: Dur
         item.action !== 'create' ||
         p.start.toISOString() !== item.input.start ||
         p.end.toISOString() !== item.input.end ||
+        p.participantId !== item.personId ||
         p.participantEmail.toLowerCase() !== item.input.participants[0]?.toLowerCase()
       )
         throw new ExecutionError('Förslaget har ändrats. Läs om sidan.');
     }
+    await refuseInvitedElsewhere(tx, e, command);
     if (!command.followup || command.followup.maxReminders !== 2 || command.followup.afterWorkdays !== 2)
       throw new ExecutionError('Ogiltig uppföljningsplan.');
     const [previousPolicy] = await tx
@@ -208,4 +212,53 @@ async function project(tx: Transaction, e: Execution, stage: Stage, durable: Dur
       details: { executionId: e.id, operation: e.operation, compensates: e.compensates },
     });
   }
+}
+/**
+ * One talk a round, held at the approval (M1, Q12): two managers of one person who confirm at the same moment both pass
+ * the check in `confirm`, which sees only settled bookings. Here, under a transaction lock per invitee taken in one
+ * order, a confirmation is refused while another manager's approved invitation to the same person may still be sent
+ * (`mayStillBeSent`: being sent, waiting to be sent, or sent with its result unknown, inside its approval's 24 hours and
+ * the period of this confirmation's round). Team membership can change again before retry, so a temporary loss of
+ * membership cannot release a live approval. The proposals are marked with the execution in this transaction. A
+ * booking that settled in the meantime is checked again at dispatch.
+ */
+async function refuseInvitedElsewhere(tx: Transaction, e: Execution, command: CalendarCommand) {
+  const selected = command.items.filter(i => i.action === 'create');
+  const invitees = [...new Set(selected.flatMap(i => (i.personId === undefined ? [] : [i.personId])))].sort();
+  for (const id of invitees)
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${'clew.invitee:' + id}, 0))`);
+  const found = invitees.length
+    ? await tx
+        .select({
+          personId: schema.proposals.participantId,
+          start: schema.proposals.start,
+          state: schema.executions.state,
+          reason: schema.executions.reason,
+          expiresAt: schema.executions.expiresAt,
+        })
+        .from(schema.proposals)
+        .innerJoin(schema.executions, eq(schema.executions.id, schema.proposals.executionId))
+        .where(
+          and(
+            inArray(schema.proposals.participantId, invitees),
+            ne(schema.proposals.personId, e.personId),
+            eq(schema.proposals.status, 'proposed'),
+            inArray(schema.executions.state, ['pending', 'running', 'unknown']),
+          ),
+        )
+    : [];
+  const onItsWay = found.filter(r =>
+    mayStillBeSent(
+      { start: r.start.toISOString(), state: r.state, reason: r.reason, expiresAt: r.expiresAt.toISOString() },
+      e.createdAt,
+      command.round,
+    ),
+  );
+  const taken = new Set(onItsWay.map(r => r.personId));
+  if (taken.size)
+    throw new ExecutionError(
+      invitingSentence(selected.filter(i => i.personId !== undefined && taken.has(i.personId)).map(i => i.label)),
+    );
+  const ids = selected.flatMap(i => (i.proposalId ? [i.proposalId] : []));
+  if (ids.length) await tx.update(schema.proposals).set({ executionId: e.id }).where(inArray(schema.proposals.id, ids));
 }

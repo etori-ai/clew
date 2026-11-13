@@ -11,14 +11,22 @@ import {
   devLogin,
   listDevAccounts,
   logout,
+  receiveFrontChannelLogout,
   receiveLogout,
   verifyMutation,
   LOGIN_COOKIE,
   SESSION_COOKIE,
 } from '../auth';
 import { tokenDigest } from '../auth-crypto';
+import { failureDetails } from '../auth-refresh';
 import { protectedRoute, privateHeaders, type Env } from '../context';
+import { logger } from '../logging';
 
+/**
+ * Sign-in and logout. A sign-in or logout that fails is answered as the person or the provider needs it, and said in
+ * one log line with scope `auth` (L11 of the 2026-11-12 users review): what failed, never the error itself, whose cause
+ * can carry the ID token's claims, nor the values of a statement that failed (`failureDetails`).
+ */
 export const authRoutes = new Hono<Env>();
 authRoutes.get('/login', async c => {
   try {
@@ -26,7 +34,9 @@ authRoutes.get('/login', async c => {
     const login = await beginLogin(c.req.query('returnTo') ?? null);
     setCookie(c, LOGIN_COOKIE, login.cookie, { ...cookieOptions(), maxAge: LOGIN_TRANSACTION_MS / 1000 });
     return c.redirect(login.url.href, 303);
-  } catch {
+  } catch (error) {
+    // The provider or the database cannot be reached, or sign-in is not configured: nobody can sign in.
+    logger.error({ scope: 'auth', failure: failureDetails(error) }, 'sign-in could not start');
     return c.redirect('/login?reason=unavailable', 303);
   }
 });
@@ -42,6 +52,7 @@ authRoutes.get('/callback', async c => {
     setCookie(c, SESSION_COOKIE, result.cookie, { ...cookieOptions(), maxAge: 8 * 3600 });
     return c.redirect(result.returnTo, 303);
   } catch (error) {
+    logger.warn({ scope: 'auth', failure: failureDetails(error) }, 'sign-in failed at the callback');
     return c.redirect('/login?reason=' + (error instanceof AuthError ? error.code : 'invalid'), 303);
   }
 });
@@ -110,7 +121,23 @@ authRoutes.post('/backchannel-logout', async c => {
     if (!token) throw new Error('Missing');
     await receiveLogout(token);
     return c.body(null, 200, { 'Cache-Control': 'no-store' });
-  } catch {
+  } catch (error) {
+    logger.warn({ scope: 'auth', failure: failureDetails(error) }, 'back-channel logout refused');
     return c.json({ error: 'Ogiltig utloggning.' }, 400, { 'Cache-Control': 'no-store' });
+  }
+});
+/**
+ * OpenID Connect Front-Channel Logout 1.0 (D121): the identity provider loads this address in a cross-site frame when
+ * the person signs out there, with `iss` and `sid` in the query (`receiveFrontChannelLogout`). No cookie reaches the
+ * frame and the request changes nothing the person asked for, so nothing here asks for a session, an origin or a CSRF
+ * token. The answer is empty and never cached; another issuer is refused with 400.
+ */
+authRoutes.get('/frontchannel-logout', async c => {
+  try {
+    await receiveFrontChannelLogout(c.req.query('iss'), c.req.query('sid'));
+    return c.body(null, 200, { 'Cache-Control': 'no-store' });
+  } catch (error) {
+    logger.warn({ scope: 'auth', failure: failureDetails(error) }, 'front-channel logout refused');
+    return c.body(null, 400, { 'Cache-Control': 'no-store' });
   }
 });

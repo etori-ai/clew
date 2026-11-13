@@ -86,6 +86,21 @@ describe('the OpenAPI document', () => {
     ).json();
     expect(committed).toEqual(JSON.parse(JSON.stringify(document)));
   });
+  test('tells a connector author what Clew does: an administrator chooses the header, and a 503 may be Clew’s own', () => {
+    // D88: declaring a header makes a connector a candidate; the one an administrator chose answers, whatever the order.
+    const header = (document.components.schemas.ConnectorManifest as any).properties.header.description as string;
+    expect(header).toContain('only the one connector an administrator chose to give the header answers');
+    expect(header).not.toContain('earliest');
+    // The callback answers 503 for a target that cannot answer and for Clew itself, while it starts included; so does
+    // the key set, whose body is not the contract's to give.
+    expect((document.paths as any)['/api/connectors/call'].post.responses['503']).toEqual({
+      description: 'Unavailable: the target or Clew cannot answer now, Clew still starting included; retry later.',
+      content: { 'application/json': { schema: { $ref: '#/components/schemas/CallResponse' } } },
+    });
+    expect((document.paths as any)['/api/connectors/jwks'].get.responses['503']).toEqual({
+      description: 'Clew is starting or cannot read its keys now; keep the keys you have and retry later.',
+    });
+  });
 });
 
 describe('the manifest dry run', () => {

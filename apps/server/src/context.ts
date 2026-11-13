@@ -1,10 +1,11 @@
 import type { Context, MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
+import { routePath } from 'hono/route';
 import { AuthError, authenticate, verifyMutation, SESSION_COOKIE, type Session } from './auth';
 import { CalendarError } from '@clew/calendar/model';
 import { ExecutionError } from './modules/executions/model';
 import { JobError } from './modules/jobs/contracts';
-import { logger } from './logging';
+import { logger, withoutValues } from './logging';
 
 export type Env = { Variables: { session: Session } };
 export const privateHeaders = { 'Cache-Control': 'no-store, private', 'X-Content-Type-Options': 'nosniff' };
@@ -54,6 +55,9 @@ export function failure(c: Context, error: unknown) {
     error instanceof JobError
   )
     return c.json({ error: error.message }, 400, privateHeaders);
-  logger.error({ scope: 'http', error, method: c.req.method, path: c.req.path }, 'request failed');
+  // The route template, not the path, which may carry a person's user name; the logger drops a failed statement's
+  // values, and so does the error the request's span records when export is on (D91).
+  logger.error({ scope: 'http', error, method: c.req.method, route: routePath(c) }, 'request failed');
+  if (c.error) c.error = withoutValues(c.error);
   return c.json({ error: 'Något gick fel. Försök igen.' }, 503, privateHeaders);
 }

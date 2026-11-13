@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { AuthenticatedContext } from '../../packages/contracts/src/index';
+import { SUBJECT_CHANGED, type AuthenticatedContext } from '../../packages/contracts/src/index';
 import type { ExecuteResult } from '../../packages/connectors/src/index';
 import { executionUsecases } from '../../apps/server/src/modules/executions/usecases';
 import { memoryExecutionStore } from '../../apps/server/src/modules/executions/adapters/memory';
@@ -23,7 +23,11 @@ const persona: AuthenticatedContext = {
   expiresAt: '2099-01-01',
   authorize: async () => ({ version: 'v1' }),
 };
-function world(safety: WriteSafety = { strategy: 'deduplicated', retentionSeconds: 86400, lookup: 'test.lookup' }) {
+function world(
+  safety: WriteSafety = { strategy: 'deduplicated', retentionSeconds: 86400, lookup: 'test.lookup' },
+  /** Each person's user name now (D122); absent, the world has no people port. */
+  userNames?: Map<string, string | null>,
+) {
   const store = memoryExecutionStore(),
     committed = new Map<string, ExecuteResult>();
   let now = Date.parse('2026-11-05T10:00:00Z'),
@@ -50,7 +54,14 @@ function world(safety: WriteSafety = { strategy: 'deduplicated', retentionSecond
       return committed.get(e.id);
     },
   };
-  const uc = executionUsecases({ store, source, clock, ids: () => 'e' + ++id, digest: input => JSON.stringify(input) });
+  const uc = executionUsecases({
+    store,
+    source,
+    clock,
+    ids: () => 'e' + ++id,
+    digest: input => JSON.stringify(input),
+    ...(userNames ? { people: { userName: async (personId: string) => userNames.get(personId) ?? null } } : {}),
+  });
   return {
     store,
     source,
@@ -70,6 +81,14 @@ function world(safety: WriteSafety = { strategy: 'deduplicated', retentionSecond
       unavailable = value;
     },
     approve: () => uc.approve(persona, { decisionId: 'decision', operation: 'test.do', payload: { revision: 'r1' } }),
+    /** A started action about a person (D122): the payload names them by the user name they had as it was decided. */
+    approveAbout: (personId: string, userName: string, decisionId = 'decision') =>
+      uc.approve(persona, {
+        decisionId,
+        operation: 'test.do',
+        payload: { person: userName, revision: 'r1' },
+        subject: { param: 'person', personId },
+      }),
   };
 }
 
@@ -257,4 +276,106 @@ test('execution evidence cannot be read, replayed, reconciled or undone under a 
   expect(w.store.dump()).toHaveLength(1);
   expect(w.store.audit()).toEqual(before);
   expect((await w.uc.read(persona, approved.id))?.result).toMatchObject(result);
+});
+
+describe('an approved action about a person (D122)', () => {
+  const failed = (attempt = 1) => ({
+    action: 'execution.failed',
+    details: { attempt, reason: SUBJECT_CHANGED, outcomes: [] },
+  });
+  test("is sent while the user name it was decided with is still the person's, compared without case", async () => {
+    const w = world(undefined, new Map([['p-anna', 'Anna.L']]));
+    const e = await w.approveAbout('p-anna', 'anna.l');
+    expect(await w.store.read(e.id)).toMatchObject({ subject: { param: 'person', personId: 'p-anna' } });
+    await w.uc.progress(e.id);
+    expect(await w.uc.read(persona, e.id)).toMatchObject({ state: 'succeeded', reason: null });
+    expect(w.writes()).toBe(1);
+  });
+  test('a rename, a reused user name or a person gone before dispatch fails it unsent, with the reason audited', async () => {
+    for (const [now, holder] of [
+      ['anna.lindqvist', undefined],
+      ['anna.lindqvist', 'p-annika'],
+      [null, undefined],
+    ] as const) {
+      const names = new Map<string, string | null>([['p-anna', 'anna.l']]);
+      const w = world(undefined, names);
+      const e = await w.approveAbout('p-anna', 'anna.l');
+      // Renamed, or gone; and in the second case someone else now holds the name the decision was made with.
+      names.set('p-anna', now);
+      if (holder) names.set(holder, 'anna.l');
+      expect(await w.uc.progress(e.id)).toBe('done');
+      expect(await w.store.read(e.id)).toMatchObject({ state: 'failed', reason: SUBJECT_CHANGED, dispatchedAt: null });
+      expect(w.writes()).toBe(0);
+      expect(w.store.audit().map(a => a.action)).toEqual([
+        'execution.approved',
+        'execution.claimed',
+        'execution.failed',
+      ]);
+      expect(w.store.audit().at(-1)).toMatchObject(failed());
+      // Settled: a later worker finds nothing to do and still sends nothing.
+      expect(await w.uc.progress(e.id)).toBe('done');
+      expect(w.writes()).toBe(0);
+    }
+  });
+  test('a write already dispatched is read back, never replayed, once the name has moved', async () => {
+    const names = new Map<string, string | null>([['p-anna', 'anna.l']]);
+    const w = world(undefined, names);
+    const e = await w.approveAbout('p-anna', 'anna.l');
+    // A worker persisted the dispatch and died before the source answered; nothing reached the source.
+    await w.store.transaction(async tx => {
+      const row = (await tx.lock(e.id))!;
+      await tx.update({ ...row, state: 'running', dispatchedAt: row.createdAt, leaseUntil: row.createdAt, attempt: 1 });
+    });
+    names.set('p-anna', 'anna.lindqvist');
+    await w.uc.progress(e.id);
+    // The source has no record of it and replay would be safe, but the name would reach someone else: unknown, unsent.
+    expect(await w.store.read(e.id)).toMatchObject({ state: 'unknown', reason: SUBJECT_CHANGED });
+    expect(w.writes()).toBe(0);
+    expect(w.store.audit().at(-1)).toMatchObject({ action: 'execution.unknown', details: { reason: SUBJECT_CHANGED } });
+    // A write the source did take is read back as it was, though Bo's name moved after it reached the source: the lookup
+    // is no write, and it comes before the check of the name.
+    const boNames = new Map<string, string | null>([['p-bo', 'bo.e']]);
+    const sent = world(undefined, boNames);
+    const done = await sent.approveAbout('p-bo', 'bo.e');
+    await sent.store.transaction(async tx => {
+      const row = (await tx.lock(done.id))!;
+      await tx.update({ ...row, state: 'running', dispatchedAt: row.createdAt, leaseUntil: row.createdAt, attempt: 1 });
+    });
+    await sent.source.execute(persona, (await sent.store.read(done.id))!);
+    boNames.set('p-bo', 'bo.ek');
+    await sent.uc.progress(done.id);
+    expect(await sent.uc.read(persona, done.id)).toMatchObject({ state: 'succeeded', reason: null });
+    expect(sent.writes()).toBe(1);
+  });
+  test('without a people port nothing about a person is ever sent', async () => {
+    const w = world();
+    const e = await w.approveAbout('p-anna', 'anna.l');
+    await w.uc.progress(e.id);
+    expect(await w.store.read(e.id)).toMatchObject({ state: 'failed', reason: SUBJECT_CHANGED });
+    expect(w.writes()).toBe(0);
+  });
+  test('the person decided for is part of the approved content, and an execution about nobody keeps none', async () => {
+    const w = world(undefined, new Map([['p-anna', 'anna.l']]));
+    await w.approveAbout('p-anna', 'anna.l');
+    await expect(w.approveAbout('p-other', 'anna.l')).rejects.toThrow('annat innehåll');
+    const other = world();
+    expect(await other.store.read((await other.approve()).id)).toMatchObject({ subject: null });
+  });
+  test('an action its source wrote keeps no person and is sent as written, whoever holds a user name in it now (item 5)', async () => {
+    const names = new Map<string, string | null>([['p-anna', 'anna.l']]);
+    const w = world(undefined, names);
+    // A pushed card's action, or a started propose's: the source wrote its input, so the decision keeps no person.
+    const e = await w.uc.approve(persona, {
+      decisionId: 'decision',
+      operation: 'test.do',
+      payload: { person: 'anna.l', revision: 'r1' },
+    });
+    expect(await w.store.read(e.id)).toMatchObject({ subject: null });
+    // The name moves to someone else before dispatch. Nothing compares it: the source answers for whoever holds it.
+    names.set('p-anna', 'anna.lindqvist');
+    names.set('p-annika', 'anna.l');
+    await w.uc.progress(e.id);
+    expect(await w.uc.read(persona, e.id)).toMatchObject({ state: 'succeeded', reason: null });
+    expect(w.writes()).toBe(1);
+  });
 });

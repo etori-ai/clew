@@ -13,6 +13,7 @@ import type {
   TalkHeldBody,
   TalksResult,
   GroupCapabilityInputType,
+  GroupSearchResult,
   ProvisionerIssueInputType,
   ProvisionerKeyIssued,
   ProvisionerRotateInputType,
@@ -406,6 +407,14 @@ export const api = {
     users: () => call<UsersAdminOverview>('/api/admin/users'),
     // One page of the people (D100). A read sent as a body, so a searched name is in no address.
     usersPage: (query: UsersAdminQueryType) => post<UsersAdminPage>('/api/admin/users/search', query),
+    // The group picker searches every group of the organisation (D85), in a body as the people list asks; a search a
+    // newer one replaced is stopped with `signal`.
+    searchGroups: (text: string, signal?: AbortSignal) =>
+      call<GroupSearchResult>('/api/admin/users/groups/search', {
+        method: 'POST',
+        body: JSON.stringify({ text }),
+        ...(signal ? { signal } : {}),
+      }),
     addGroupCapability: (input: GroupCapabilityInputType) =>
       post<UsersAdminOverview>('/api/admin/users/group-capabilities', input),
     removeGroupCapability: (input: GroupCapabilityInputType) =>

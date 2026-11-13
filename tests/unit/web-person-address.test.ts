@@ -34,7 +34,10 @@ describe('a row that names the entity whose page it is on', () => {
   test('leads nowhere on that page, and to the entity from any other page', () => {
     const johan = { entity: 'person' as const, key: 'johan' };
     expect(entityHref(johan, '/people/johan?section=needs-you&from=%2Fstaff&card=c1')).toBeNull();
-    expect(entityHref({ entity: 'person', key: 'Johan' }, '/people/johan')).toBeNull();
+    // A person's key is their id, compared exactly (D122): another spelling is another person, with a page of their own.
+    expect(entityHref({ entity: 'person', key: 'Johan' }, '/people/johan')).toBe(
+      '/people/Johan?from=%2Fpeople%2Fjohan',
+    );
     expect(entityHref({ entity: 'unit', key: 'unit-skola' }, '/units/unit-skola?card=c1')).toBeNull();
     expect(entityHref(johan, '/people/anna?card=c1')).toBe('/people/johan?from=%2Fpeople%2Fanna%3Fcard%3Dc1');
     expect(entityHref(johan, '/units/johan')).toBe('/people/johan?from=%2Funits%2Fjohan');

@@ -242,6 +242,10 @@ test.describe('Personal', () => {
       await page.keyboard.press('Enter');
       const card = page.getByRole('complementary', { name: 'Ärende' });
       await expect(card.getByRole('article', { name: 'Ärende: Planera utvecklingssamtal vecka 45' })).toBeVisible();
+      // The panel's heading takes the focus the frame after the card is drawn, and Esc is pressed there, once a person
+      // has heard it. Pressed before, Esc went to the title on the page and closed nothing, which failed this test in
+      // about half the runs.
+      await expect(card.locator('[aria-level="2"]').filter({ hasText: 'Ärende' })).toBeFocused();
       await page.keyboard.press('Escape');
       await expect(page).toHaveURL('/people/johan?section=needs-you&from=%2Fstaff');
       await expect(title).toBeFocused();
@@ -577,8 +581,20 @@ test.describe('Personal', () => {
       await expect(page).toHaveURL('/staff');
       await expect(showMenu(page)).toHaveText('Visa: Alla');
     });
+    test('a talk another of the person’s managers booked is Bokat with no time beside it (Q12)', async ({
+      page,
+      api,
+    }) => {
+      api.entityRows[TALK_LENS]!.rows = api.entityRows[TALK_LENS]!.rows.map(r =>
+        r.key === 'erik.sandstrom' ? { key: r.key, state: 'Bokat', next: 'Bokat', open: r.open } : r,
+      );
+      await open(page, LENS);
+      const erik = row(page, 'Erik Sandström').getByRole('cell');
+      await expect(erik.nth(1)).toHaveText('Bokat');
+      await expectNoAxeViolations(page);
+    });
     test('a person the lens has no row for comes last with nothing in its columns', async ({ page, api }) => {
-      api.entityRows[TALK_LENS]!.rows = api.entityRows[TALK_LENS]!.rows.filter(r => r.key !== 'anna');
+      api.entityRows[TALK_LENS]!.rows = api.entityRows[TALK_LENS]!.rows.filter(r => r.key !== 'anna.lindqvist');
       await open(page, LENS);
       const names = page.getByRole('table').getByRole('row').locator('a');
       await expect(names.last()).toHaveText('Anna Lindqvist');

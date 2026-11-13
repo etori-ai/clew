@@ -22,7 +22,16 @@ export async function enqueuedWorkflows(prefix: string): Promise<Array<WorkflowS
     input: r.inputs ? (JSON.parse(r.inputs) as { positionalArgs: unknown[] }).positionalArgs[0] : undefined,
   }));
 }
-/** Remove everything the test application enqueued; the engine's foreign keys take the inputs with the status rows. */
+/**
+ * Remove everything the test application enqueued. The engine's inputs, outputs and step records have no foreign key
+ * to the status row, so they go with it here: a workflow id that a later run enqueues again, such as a night's job,
+ * would otherwise keep the input it was first enqueued with.
+ */
 export async function forgetTestWorkflows() {
-  await database().execute(sql`delete from dbos.workflow_status where application_name = ${testDurable.application}`);
+  await database().execute(sql`
+    with ours as (select workflow_uuid from dbos.workflow_status where application_name = ${testDurable.application}),
+         inputs as (delete from dbos.workflow_input where workflow_uuid in (select workflow_uuid from ours)),
+         outputs as (delete from dbos.workflow_output where workflow_uuid in (select workflow_uuid from ours)),
+         steps as (delete from dbos.operation_outputs where workflow_uuid in (select workflow_uuid from ours))
+    delete from dbos.workflow_status where application_name = ${testDurable.application}`);
 }

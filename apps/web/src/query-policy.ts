@@ -8,14 +8,16 @@ export function retryPolicy(failureCount: number, error: unknown): boolean {
   if (!(error instanceof ApiError)) return false;
   return error.status >= 500 && failureCount < 1;
 }
+/** How long a read waits before it asks again (D33). */
+export const RETRY_DELAY_MS = 1_000;
 
 /**
- * The sentences the server answers with when a capability is not the person's to read: the registry's own for a hidden
- * or unknown one and for one outside the person's scope (`@clew/connectors`), and the talks seam's when no system
- * answers the talks profile (D96 item 9). The route maps all three to a 400 with no code, so the text is the signal.
+ * The sentences the server answers with when a capability the person may know of is not theirs to read: the registry's
+ * own for one outside the person's scope (`@clew/connectors`), and the talks seam's when no system answers the talks
+ * profile (D96 item 9). The route answers both as a 400 with no code, so the text is the signal. A hidden or unknown
+ * capability is the route's 404 (D23).
  */
 const REFUSALS = new Set([
-  'Okänd förmåga.',
   'Du saknar behörighet för åtgärden.',
   'Inget system för utvecklingssamtal är anslutet just nu.',
 ]);

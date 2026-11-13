@@ -1,4 +1,4 @@
-import { actorOf } from '@clew/connectors';
+import { audiencedActorOf } from '@clew/connectors';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import Ajv from 'ajv';
@@ -53,6 +53,8 @@ import { withFollowedUnits } from '../composition/people';
 import { jobs } from '../composition/jobs-across-systems';
 import { FactEnvelopeSchema, StepDraftSchema, type FactEnvelope } from '@clew/connectors/protocol';
 import { changesFor } from '../composition/changes';
+import { personKeys } from '../composition/person-keys';
+import { capabilityRoutes } from './capabilities';
 import { authenticate, AuthError, SESSION_COOKIE } from '../auth';
 import { getCookie } from 'hono/cookie';
 import { readDocument, reviewDocuments } from '../composition/documents';
@@ -232,7 +234,9 @@ api.post('/executions/:id/reconcile', async c =>
 api.post('/jobs/assemble', async c => {
   const { fact } = await body(c.req.raw, validators.fact as unknown as (value: unknown) => value is FactEnvelope),
     persona = c.get('session').context;
-  return c.json(await jobs.assemble(actorOf(persona), fact, (name, input) => runCapability(persona, name, input)));
+  return c.json(
+    await jobs.assemble(audiencedActorOf(persona), fact, (name, input) => runCapability(persona, name, input)),
+  );
 });
 api.post('/jobs', async c => {
   const input = await body(
@@ -274,65 +278,35 @@ api.get('/areas', async c => {
   const context = c.get('session').context;
   return c.json({
     areas: await listAreas(context),
-    menu: registry.menu(actorOf(context)),
-    systems: registry.systems(actorOf(context)),
+    menu: registry.menu(audiencedActorOf(context)),
+    systems: registry.systems(audiencedActorOf(context)),
   });
 });
-/** The registry as data: what the architecture derives everything from. Read-only, and only what the caller can see (D23). */
+/**
+ * The registry as data: what the architecture derives everything from. Read-only, and only what the caller may know of
+ * (D23): the connectors they can see, without a capability switched off (`Registry.catalogueFor`).
+ */
 api.get('/connectors', c => {
-  const actor = actorOf(c.get('session').context);
+  const actor = audiencedActorOf(c.get('session').context);
   return c.json({
-    connectors: registry.listFor(actor).map(m => ({
+    connectors: registry.catalogueFor(actor).map(({ connector: m, capabilities }) => ({
       id: m.id,
       kind: m.kind,
       source: m.source,
       areas: m.areas.map(a => ({ id: a.id, title: a.title, roles: a.roles })),
-      capabilities: m.capabilities.map(x => ({
+      capabilities: capabilities.map(({ capability: x, inScope }) => ({
         name: x.name,
         kind: x.kind,
         title: x.title,
         model: x.model,
-        inScope: !!registry.allowed(actor, x.name),
+        inScope,
       })),
     })),
     tools: registry.tools(actor).map(t => t.name),
   });
 });
 /** Standing actions and panel views: run one capability directly. GET for reads (input as JSON in `input`), POST for the rest. */
-api.get('/cap/:name', async c => {
-  const name = c.req.param('name');
-  const found = registry.find(name);
-  if (!found || found.capability.kind !== 'read') return c.json({ error: 'Okänd förmåga.' }, 404);
-  let input: unknown = {};
-  const raw = c.req.query('input');
-  if (raw) {
-    try {
-      input = JSON.parse(raw);
-    } catch {
-      throw new InputError('Ogiltig förfrågan.');
-    }
-  }
-  // The output and, when the capability declares one, how to draw it (D38): the browser never guesses a declared view.
-  // As the person with the units they follow up (D117), so a view opened for a unit below them can be answered.
-  const persona = await withFollowedUnits(c.get('session').context);
-  const output = await runCapability(persona, name, input);
-  const view = registry.viewFor(actorOf(persona), name);
-  return c.json({ output, source: found.connector.source, ...(view ? { view } : {}) });
-});
-api.post('/cap/:name', async c => {
-  const name = c.req.param('name');
-  const found = registry.find(name);
-  if (!found || found.capability.kind === 'execute') return c.json({ error: 'Okänd förmåga.' }, 404);
-  const text = await c.req.raw.text();
-  if (text.length > 8000) throw new InputError('För stor förfrågan.');
-  let input: unknown = {};
-  try {
-    input = text ? JSON.parse(text) : {};
-  } catch {
-    throw new InputError('Ogiltig förfrågan.');
-  }
-  return c.json({ output: await runCapability(c.get('session').context, name, input) });
-});
+api.route('/cap', capabilityRoutes({ registry, run: runCapability, people: personKeys, follow: withFollowedUnits }));
 api.post('/threads/:id/act', async c => {
   const input = await body(c.req.raw, validators.act as unknown as (value: unknown) => value is ActInputType, 64_000);
   return c.json(

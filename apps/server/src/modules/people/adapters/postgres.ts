@@ -1,35 +1,70 @@
-import { and, eq, gt, inArray, isNotNull, isNull, like, not, or, sql, type SQL } from 'drizzle-orm';
-import { database, schema, type Transaction } from '@clew/db';
+import { and, eq, gt, inArray, isNotNull, isNull, like, not, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
+import { database, schema, type Database, type Transaction } from '@clew/db';
 import { writeAudit } from '@clew/db/threads';
 import { UNIT_KEY } from '@clew/contracts/scim-group-key';
-import { unitGroupOf, type GroupRecord, type UserRecord, type UserSearch } from '../domain';
+import { ERASED, unitGroupOf, type GroupRecord, type UserRecord, type UserSearch } from '../domain';
 import type { ProvisionStore, ProvisionTx, UserReads } from '../ports';
 
-/** Read the local user/grant tables; directory access is restricted to the actor's unit. */
-export const postgresUserReads = (): UserReads => ({
+/**
+ * Read the local user and grant tables. The directory is not read here: it is `directoryUsecases` over the provisioning
+ * store, one read for either adapter. `db` is the server's pool unless a test names another database.
+ */
+export const postgresUserReads = (db: () => Database = database): Omit<UserReads, 'directory'> => ({
   async capabilities(personId) {
-    const [row] = await database()
+    const [row] = await db()
       .select({ capabilities: schema.accessGrants.capabilities })
       .from(schema.accessGrants)
       .where(eq(schema.accessGrants.personId, personId));
     return row?.capabilities ?? [];
   },
-  async directory(unitId) {
-    return (
-      database()
-        .select({ id: schema.people.id, name: schema.people.name, role: schema.accessGrants.role })
-        .from(schema.people)
-        .innerJoin(schema.accessGrants, eq(schema.accessGrants.personId, schema.people.id))
-        // A deactivated person keeps their grant row and is nobody's colleague to ask about.
-        .where(and(eq(schema.accessGrants.unitId, unitId), eq(schema.people.enabled, true)))
-    );
-  },
   async userName(personId) {
-    const [row] = await database()
+    // A NUL is nobody's id, and PostgreSQL refuses to compare one.
+    if (personId.includes('\u0000')) return null;
+    const [row] = await db()
       .select({ userName: schema.people.userName })
       .from(schema.people)
       .where(eq(schema.people.id, personId));
     return row?.userName ?? null;
+  },
+  async holders(readerId, userNames) {
+    // A NUL names nobody, and PostgreSQL refuses to compare one.
+    const names = [...new Set(userNames)].filter(name => name && !name.includes('\u0000'));
+    if (!names.length || readerId.includes('\u0000')) return new Map();
+    // Each name as asked beside the people of the reader's organisation it names: the same expression on both sides, in
+    // the composed form (NFC) and without regard to case under ICU's root collation, so that a decomposed å is å and Å
+    // and å are one letter on a database created with the C locale too (L12, L13). The holder's side is the expression
+    // of the index `auth_person_user_name_nfc`; keep the two alike. Each name is looked up on its own, in a lateral
+    // subquery that stops at two holders, which are enough to name nobody: as a join, a list of a few hundred names (a
+    // manager's refresh, a declared view) was planned as one read of every person in the installation
+    // (`tests/db/user-reads.test.ts`).
+    const asked = sql.join(
+      names.map(name => sql`(${name}::text)`),
+      sql`, `,
+    );
+    const rows = await db().execute<{ asked: string; id: string }>(sql`
+      select asked.name as asked, holder.id as id
+      from auth_person reader
+      cross join (values ${asked}) as asked(name)
+      cross join lateral (
+        select person.id from auth_person person
+        where lower(normalize(person.user_name, NFC) collate "und-x-icu")
+            = lower(normalize(asked.name, NFC) collate "und-x-icu")
+          and person.organisation_id = reader.organisation_id
+        limit 2) as holder
+      where reader.id = ${readerId}`);
+    const found = new Map<string, Set<string>>();
+    for (const r of rows) found.set(r.asked, (found.get(r.asked) ?? new Set<string>()).add(r.id));
+    // The unique index folds case under ICU on any database, so two people whose spellings compare alike here can only
+    // be a row stored decomposed (NFD) beside a composed one; such a name names nobody rather than either of them.
+    return new Map([...found].flatMap(([name, ids]) => (ids.size === 1 ? [[name, [...ids][0]!] as const] : [])));
+  },
+  async enabled(personId) {
+    if (personId.includes('\u0000')) return undefined;
+    const [row] = await db()
+      .select({ enabled: schema.people.enabled })
+      .from(schema.people)
+      .where(eq(schema.people.id, personId));
+    return row?.enabled;
   },
 });
 const userColumns = {
@@ -55,8 +90,16 @@ const groupColumns = {
   createdAt: schema.groups.createdAt,
   updatedAt: schema.groups.updatedAt,
 };
-/** D99: a node of the tree is a `unit:` group; the unit id is what follows the key (`unitGroupOf`). */
+/**
+ * D99: a node of the tree is a `unit:` group; the unit id is what follows the key (`unitGroupOf`). The rows this
+ * selects are read with `nodesOf`: a unit key written wrong, which a group stored before D96 may carry, names no unit.
+ */
 const isUnitGroup = like(schema.groups.externalId, UNIT_KEY + '%');
+const nodesOf = <R extends { externalId: string | null }>(rows: readonly R[]) =>
+  rows.flatMap(row => {
+    const id = unitGroupOf(row.externalId);
+    return id === undefined ? [] : [{ ...row, id }];
+  });
 type UserRow = Omit<UserRecord, 'createdAt' | 'updatedAt'> & { createdAt: Date; updatedAt: Date };
 type GroupRow = Omit<GroupRecord, 'createdAt' | 'updatedAt'> & { createdAt: Date; updatedAt: Date };
 const userRecord = (r: UserRow): UserRecord => ({
@@ -69,9 +112,19 @@ const groupRecord = (r: GroupRow): GroupRecord => ({
   createdAt: r.createdAt.toISOString(),
   updatedAt: r.updatedAt.toISOString(),
 });
-/** `userName` is compared without regard to case (RFC 7643: `caseExact: false`), `externalId` exactly; as the unique indexes do. */
+/**
+ * A user name or a group's name as it is compared without regard to case (RFC 7643: `caseExact: false`): folded by
+ * ICU's root locale, whatever collation the database was created with, which is the expression of the unique index on
+ * user names. A plain `lower` folds only A to Z under the locale C, where `Åsa` and `åsa` were two people (L13). Every
+ * comparison in this store that folds case uses it on both sides, the people list's search included, so the two sides
+ * fold alike and the index serves a lookup by user name.
+ */
+const caseless = (value: SQLWrapper | string) => sql`lower(${value} collate "und-x-icu")`;
+/** `userName` is compared without regard to case, `externalId` exactly; as the unique indexes do. */
 const userMatch = (by: 'userName' | 'externalId', value: string) =>
-  by === 'userName' ? sql`lower(${schema.people.userName}) = lower(${value})` : eq(schema.people.externalId, value);
+  by === 'userName'
+    ? sql`${caseless(schema.people.userName)} = ${caseless(value)}`
+    : eq(schema.people.externalId, value);
 /**
  * The lock a derivation takes on a person and a write takes on a group. `NO KEY UPDATE`, not `UPDATE`: a membership or
  * assignment row inserted by another transaction holds a key-share lock on the person through its foreign key, and
@@ -83,12 +136,14 @@ const groupColumn = { externalId: schema.groups.externalId, label: schema.groups
 /** How many membership rows one statement writes or removes. */
 const MEMBER_BATCH = 5000;
 /**
- * D100: the people list's search as conditions on `auth_person`. A word is matched as written, so `%` and `_` in it
- * are escaped. `ilike` folds case by the collation of what it reads, and a database created with the locale C folds
- * only a to z there, so each column is read under the ICU collation the order already asks for: å, ä and ö fold the
- * same in every installation, however its database was created.
+ * D100: the people list's search as conditions on `auth_person`, and the group picker's (D85) on `auth_group`. A word is
+ * matched as written, so `%` and `_` in it are escaped; in the composed form (NFC) on both sides, so a word or a value
+ * stored decomposed is the same letters as a composed one (L12); and without regard to case as a user name is compared
+ * (`caseless`): a database created with the locale C folds only a to z by itself, so å, ä and ö fold the same in every
+ * installation, however its database was created.
  */
-const folded = (column: SQL, pattern: string) => sql`${column} collate "sv-x-icu" ilike ${pattern}`;
+const folded = (column: SQL, pattern: string) =>
+  sql`${caseless(sql`normalize(${column}, NFC)`)} like ${caseless(sql`normalize(${pattern}::text, NFC)`)}`;
 const personHas = (table: SQL, ...conditions: Array<SQL | undefined>) =>
   sql`exists (select 1 from ${table} where ${and(...conditions)})`;
 function userSearchConditions(search: UserSearch): Array<SQL | undefined> {
@@ -149,8 +204,21 @@ const provisionerRecord = (r: { id: string; organisationId: string; label: strin
   ...r,
   lastSeenAt: r.lastSeenAt?.toISOString() ?? null,
 });
-/** The provisioning tables and the grant projection (D68, D85) inside one Postgres transaction. */
-export function postgresProvisionStore(): ProvisionStore {
+/**
+ * What a store's transactions run on: the pool, or a transaction the caller holds. A transaction's own `transaction`
+ * takes no options, since a savepoint keeps the isolation of the transaction it is in.
+ */
+type Runner = {
+  transaction<T>(fn: (tx: Transaction) => Promise<T>, config?: Parameters<Database['transaction']>[1]): Promise<T>;
+};
+/**
+ * The provisioning tables and the grant projection (D68, D85) inside one Postgres transaction. `db` is the server's
+ * pool unless a test names another database, as the store contract does with one created with the locale C (L13), or
+ * a transaction the caller holds and that may not wait for a second connection (L1): each transaction of the store is
+ * then a savepoint in it, asked one at a time, and reads at that transaction's isolation, so such a store is not asked
+ * for a snapshot.
+ */
+export function postgresProvisionStore(db: () => Runner = database): ProvisionStore {
   const txOf = (tx: Transaction): ProvisionTx => ({
     async lockPerson(id) {
       const [row] = await tx
@@ -160,6 +228,18 @@ export function postgresProvisionStore(): ProvisionStore {
         .for(ROW_LOCK);
       return row;
     },
+    async lockPeople(ids) {
+      // In id order byte by byte, as `touchUsers` takes them and a derivation takes one at a time: the rows are locked
+      // in the order the statement sorts them, before any of them is written.
+      const sorted = [...new Set(ids)].sort();
+      for (let at = 0; at < sorted.length; at += MEMBER_BATCH)
+        await tx
+          .select({ id: schema.people.id })
+          .from(schema.people)
+          .where(inArray(schema.people.id, sorted.slice(at, at + MEMBER_BATCH)))
+          .orderBy(sql`${schema.people.id} collate "C"`)
+          .for(ROW_LOCK);
+    },
     async lockUnits(unitIds) {
       // An advisory lock, since a new unit has no row to lock yet; in id order, as people are locked.
       for (const id of [...new Set(unitIds)].sort())
@@ -167,6 +247,15 @@ export function postgresProvisionStore(): ProvisionStore {
     },
     async lockTree(organisationId) {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${'clew.unit-tree:' + organisationId}, 0))`);
+    },
+    async lockGroupCapabilities(organisationId, mode) {
+      // An advisory lock, as the tree's: shared by the writes that read the rows, exclusive for one that changes them.
+      const key = sql`hashtextextended(${'clew.group-capabilities:' + organisationId}, 0)`;
+      await tx.execute(
+        mode === 'change'
+          ? sql`select pg_advisory_xact_lock(${key})`
+          : sql`select pg_advisory_xact_lock_shared(${key})`,
+      );
     },
     async memberships(personId) {
       const rows = await tx
@@ -416,8 +505,37 @@ export function postgresProvisionStore(): ProvisionStore {
     async updateUser(id, { updatedAt, ...fields }) {
       await tx
         .update(schema.people)
-        .set({ ...fields, updatedAt: new Date(updatedAt) })
+        .set({
+          ...fields,
+          updatedAt: new Date(updatedAt),
+          // Compared with the name as it was (the columns on the right are the row before the write): only a new name
+          // is a change of the groups that list the person.
+          ...(fields.name === undefined
+            ? {}
+            : {
+                nameChangedAt: sql`case when ${schema.people.name} is distinct from ${fields.name}::text
+                  then ${updatedAt}::timestamptz else ${schema.people.nameChangedAt} end`,
+              }),
+        })
         .where(eq(schema.people.id, id));
+    },
+    async touchUsers(ids, updatedAt) {
+      // Held in id order before they are written, the order in which a derivation locks people one at a time: two
+      // writes that share people queue behind each other instead of waiting on each other. Byte by byte (`collate
+      // "C"`), the order JavaScript's sort gives the ids Clew makes, whatever the database collates.
+      const sorted = [...new Set(ids)].sort();
+      for (let at = 0; at < sorted.length; at += MEMBER_BATCH) {
+        const held = tx
+          .select({ id: schema.people.id })
+          .from(schema.people)
+          .where(inArray(schema.people.id, sorted.slice(at, at + MEMBER_BATCH)))
+          .orderBy(sql`${schema.people.id} collate "C"`)
+          .for(ROW_LOCK);
+        await tx
+          .update(schema.people)
+          .set({ updatedAt: new Date(updatedAt) })
+          .where(inArray(schema.people.id, held));
+      }
     },
     async userGroups(personId) {
       return tx
@@ -445,7 +563,7 @@ export function postgresProvisionStore(): ProvisionStore {
         ? and(
             eq(schema.groups.organisationId, organisationId),
             filter.attribute === 'label'
-              ? sql`lower(${schema.groups.label}) = lower(${filter.value})`
+              ? sql`${caseless(schema.groups.label)} = ${caseless(filter.value)}`
               : eq(groupColumn[filter.attribute], filter.value),
           )
         : eq(schema.groups.organisationId, organisationId);
@@ -481,12 +599,35 @@ export function postgresProvisionStore(): ProvisionStore {
       await tx.delete(schema.groups).where(eq(schema.groups.id, id));
     },
     async groupMembers(groupId) {
-      return tx
-        .select({ id: schema.people.id, name: schema.people.name })
+      const rows = await tx
+        .select({ id: schema.people.id, name: schema.people.name, nameChangedAt: schema.people.nameChangedAt })
         .from(schema.groupMembers)
         .innerJoin(schema.people, eq(schema.people.id, schema.groupMembers.personId))
         .where(eq(schema.groupMembers.groupId, groupId))
         .orderBy(schema.people.id);
+      return rows.map(row => ({ ...row, nameChangedAt: row.nameChangedAt?.toISOString() ?? null }));
+    },
+    async memberNamesChanged(groupIds) {
+      const changed = new Map<string, string>();
+      // In pieces a statement takes, as `groupLabels` reads them; only the members whose name has changed are counted.
+      for (let at = 0; at < groupIds.length; at += 1000) {
+        const rows = await tx
+          .select({
+            groupId: schema.groupMembers.groupId,
+            at: sql`max(${schema.people.nameChangedAt})`.mapWith(schema.people.nameChangedAt),
+          })
+          .from(schema.groupMembers)
+          .innerJoin(schema.people, eq(schema.people.id, schema.groupMembers.personId))
+          .where(
+            and(
+              inArray(schema.groupMembers.groupId, groupIds.slice(at, at + 1000)),
+              isNotNull(schema.people.nameChangedAt),
+            ),
+          )
+          .groupBy(schema.groupMembers.groupId);
+        for (const row of rows) changed.set(row.groupId, row.at.toISOString());
+      }
+      return changed;
     },
     async setGroupMembers(groupId, personIds) {
       // Only who came and who went is written, a few thousand rows a statement: a group of ten thousand that gains one
@@ -573,7 +714,7 @@ export function postgresProvisionStore(): ProvisionStore {
         .from(schema.groups)
         .where(and(eq(schema.groups.parentUnitId, unitId), isUnitGroup))
         .orderBy(schema.groups.externalId);
-      return rows.map(r => ({ id: unitGroupOf(r.externalId)!, label: r.label }));
+      return nodesOf(rows).map(r => ({ id: r.id, label: r.label }));
     },
     async unitTree(organisationId, ids) {
       const rows = await tx
@@ -595,7 +736,7 @@ export function postgresProvisionStore(): ProvisionStore {
           ),
         )
         .orderBy(schema.groups.externalId);
-      return rows.map(r => ({ id: unitGroupOf(r.externalId)!, label: r.label, parentId: r.parentUnitId }));
+      return nodesOf(rows).map(r => ({ id: r.id, label: r.label, parentId: r.parentUnitId }));
     },
     async placements(organisationId) {
       return tx
@@ -619,6 +760,109 @@ export function postgresProvisionStore(): ProvisionStore {
         .limit(1);
       return !!row;
     },
+    async lockGroupsOf(personId) {
+      // In id order byte by byte, as `touchUsers` takes people: an erasure is the one caller that holds several groups.
+      await tx
+        .select({ id: schema.groups.id })
+        .from(schema.groups)
+        .where(
+          inArray(
+            schema.groups.id,
+            tx
+              .select({ id: schema.groupMembers.groupId })
+              .from(schema.groupMembers)
+              .where(eq(schema.groupMembers.personId, personId)),
+          ),
+        )
+        .orderBy(sql`${schema.groups.id} collate "C"`)
+        .for(ROW_LOCK);
+    },
+    async removeMemberships(personId, at) {
+      const gone = await tx
+        .delete(schema.groupMembers)
+        .where(eq(schema.groupMembers.personId, personId))
+        .returning({ groupId: schema.groupMembers.groupId });
+      const groupIds = [...new Set(gone.map(row => row.groupId))];
+      for (let i = 0; i < groupIds.length; i += MEMBER_BATCH)
+        await tx
+          .update(schema.groups)
+          .set({ updatedAt: new Date(at) })
+          .where(inArray(schema.groups.id, groupIds.slice(i, i + MEMBER_BATCH)));
+      return gone.length;
+    },
+    async removeBindings(personId) {
+      const gone = await tx
+        .delete(schema.identityBindings)
+        .where(eq(schema.identityBindings.personId, personId))
+        .returning({ issuer: schema.identityBindings.issuer });
+      return gone.length;
+    },
+    async removeSessions(personId) {
+      const gone = await tx
+        .delete(schema.sessions)
+        .where(eq(schema.sessions.personId, personId))
+        .returning({ digest: schema.sessions.digest });
+      return gone.length;
+    },
+    async auditRows(actions, where) {
+      if (!actions.length) return [];
+      return tx
+        .select({
+          id: schema.audit.id,
+          action: schema.audit.action,
+          subject: schema.audit.subject,
+          details: schema.audit.details,
+        })
+        .from(schema.audit)
+        .where(
+          and(
+            inArray(schema.audit.action, [...actions]),
+            'subject' in where
+              ? eq(schema.audit.subject, where.subject)
+              : sql`${schema.audit.details} ->> ${where.key}::text = ${where.value}::text`,
+          ),
+        )
+        .orderBy(schema.audit.id);
+    },
+    async redactAudit(keysByRow) {
+      let changed = 0;
+      // Two erasures can share several conflict rows in opposite roles. Acquire the rows in the same order and
+      // merge only this person's redactions into the version held when the UPDATE takes its lock.
+      for (const [id, keys] of [...keysByRow].sort(([a], [b]) => a - b)) {
+        const patch = JSON.stringify(Object.fromEntries(keys.map(key => [key, ERASED])));
+        const rows = await tx
+          .update(schema.audit)
+          .set({ details: sql`${schema.audit.details} || ${patch}::jsonb` })
+          .where(and(eq(schema.audit.id, id), sql`not (${schema.audit.details} @> ${patch}::jsonb)`))
+          .returning({ id: schema.audit.id });
+        changed += rows.length;
+      }
+      return changed;
+    },
+    async eraseClaims(names, marker) {
+      // A NUL is no name a sign-in could carry, and PostgreSQL refuses to compare one.
+      const held = [...new Set(names)].filter(name => name && !name.includes('\u0000'));
+      if (!held.length) return 0;
+      const erased = 'claim:' + marker,
+        asked = sql.join(
+          held.map(name => sql`(${name}::text)`),
+          sql`, `,
+        );
+      // The value after `claim:` and each name in one expression, as the sign-in compares a claim with a user name.
+      const changed = await tx
+        .update(schema.authenticationAudit)
+        .set({ actor: erased })
+        .where(
+          and(
+            like(schema.authenticationAudit.actor, 'claim:%'),
+            sql`${schema.authenticationAudit.actor} <> ${erased}`,
+            sql`lower(normalize(substr(${schema.authenticationAudit.actor}, 7), NFC) collate "und-x-icu") in (
+              select lower(normalize(asked.name, NFC) collate "und-x-icu") from (values ${asked}) as asked(name))`,
+          ),
+        )
+        .returning({ id: schema.authenticationAudit.id });
+      return changed.length;
+    },
     async setGroupCapability(organisationId, groupExternalId, capability, present) {
       if (present) {
         const inserted = await tx
@@ -640,6 +884,54 @@ export function postgresProvisionStore(): ProvisionStore {
         .returning({ capability: schema.groupCapabilities.capability });
       return removed.length > 0;
     },
+    async groupLabels(organisationId, externalIds) {
+      const labels = new Map<string, string>();
+      // In pieces a statement takes, as `usersAmong` reads them.
+      for (let at = 0; at < externalIds.length; at += 1000) {
+        const rows = await tx
+          .select({ externalId: schema.groups.externalId, label: schema.groups.label })
+          .from(schema.groups)
+          .where(
+            and(
+              eq(schema.groups.organisationId, organisationId),
+              inArray(schema.groups.externalId, externalIds.slice(at, at + 1000)),
+            ),
+          );
+        for (const row of rows) if (row.externalId !== null) labels.set(row.externalId, row.label);
+      }
+      return labels;
+    },
+    async searchGroups(organisationId, words, limit) {
+      const rows = await tx
+        .select({ externalId: schema.groups.externalId, label: schema.groups.label })
+        .from(schema.groups)
+        .where(
+          and(
+            eq(schema.groups.organisationId, organisationId),
+            isNotNull(schema.groups.externalId),
+            // As the people list matches a word (D100): as written, in the composed form, without regard to case under
+            // the ICU collation (`folded`).
+            ...words.map(word => {
+              const pattern = '%' + word.replace(/[\\%_]/g, '\\$&') + '%';
+              return or(
+                folded(sql`${schema.groups.label}`, pattern),
+                folded(sql`${schema.groups.externalId}`, pattern),
+              );
+            }),
+          ),
+        )
+        .orderBy(sql`${schema.groups.label} collate "sv-x-icu"`, sql`${schema.groups.externalId} collate "C"`)
+        .limit(limit);
+      return rows.map(row => ({ externalId: row.externalId!, label: row.label }));
+    },
   });
-  return { transaction: fn => database().transaction(tx => fn(txOf(tx))) };
+  return {
+    // A snapshot is PostgreSQL's REPEATABLE READ: every statement reads what had committed when the first one began.
+    // Read only, it never waits for a writer and is never refused for one, and a write in it fails.
+    transaction: (fn, options) =>
+      db().transaction(
+        tx => fn(txOf(tx)),
+        options?.snapshot ? { isolationLevel: 'repeatable read', accessMode: 'read only' } : undefined,
+      ),
+  };
 }

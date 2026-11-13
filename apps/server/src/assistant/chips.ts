@@ -1,4 +1,4 @@
-import { actorOf, SEARCH_CONNECTOR } from '@clew/connectors';
+import { audiencedActorOf, SEARCH_CONNECTOR } from '@clew/connectors';
 import type { AuthenticatedContext, CalendarEvent, Chip, SearchHit, Thread } from '@clew/contracts';
 import { displayDate, weekStart } from '@clew/calendar/dates';
 import { InputError } from '../context';
@@ -71,7 +71,7 @@ export async function resolveChips(
       objects.push({ kind: 'document', ref: chip.ref, hit });
     } else {
       const name = chip.ref.replace(/^capability:/, '');
-      const found = deps.registry.allowed(actorOf(persona), name);
+      const found = deps.registry.allowed(audiencedActorOf(persona), name);
       if (!found) throw gone();
       objects.push({
         kind: 'capability',

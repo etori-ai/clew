@@ -51,6 +51,61 @@ for (const [layout, viewport] of [
         await expectNoAxeViolations(page);
         expect(await reflowProblems(page)).toEqual([]);
       });
+    test('a started action not sent because the user name moved says so, and its own button decides again (D122)', async ({
+      page,
+      api,
+    }) => {
+      // A card started from a person's menu (D97): its row names Anna by her id, and its button is the decision.
+      const card = api.threads.find(t => t.id === 'fakturor')!;
+      Object.assign(card, {
+        title: 'Markera för uppföljning',
+        topic: 'started:hr.flag:fixture:person:person',
+        items: [
+          {
+            ref: 'person:anna',
+            label: 'Anna Lindqvist',
+            detail: 'Bergsåkers skola',
+            selectable: false,
+            subject: { entity: 'person', key: 'anna' },
+          },
+        ],
+        actions: [
+          {
+            id: 'decide',
+            label: 'Markera för uppföljning',
+            capability: 'hr.flag',
+            kind: 'execute',
+            role: 'primary',
+            input: { person: 'anna' },
+          },
+        ],
+        execution: {
+          id: 'execution-fixture',
+          decisionId: 'decision-fixture',
+          operation: 'hr.flag',
+          state: 'failed',
+          reason: 'subject-changed',
+          compensates: null,
+        },
+      });
+      api.threads = [card];
+      await open(page, '/todo?item=fakturor');
+      await expect(
+        page.getByText(
+          'Personen har inte längre det användarnamn som beslutet gällde. Inget skickades. Fatta beslutet igen.',
+        ),
+      ).toBeVisible();
+      // Nothing was sent, so there is nothing to check: the way on is the decision, on the name Anna has now.
+      await expect(page.getByRole('button', { name: 'Kontrollera status' })).toHaveCount(0);
+      const decide = page.getByRole('button', { name: 'Markera för uppföljning', exact: true });
+      await expect(decide).toBeVisible();
+      await expectNoAxeViolations(page);
+      expect(await reflowProblems(page)).toEqual([]);
+      await decide.focus();
+      await expect(decide).toBeFocused();
+      await decide.press('Enter');
+      await expect.poll(() => api.acted.map(a => [a.threadId, a.body.actionId])).toEqual([['fakturor', 'decide']]);
+    });
   });
 
 test('a policy update removes retained source content without a page reload', async ({ page, api }) => {

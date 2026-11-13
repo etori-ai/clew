@@ -1081,7 +1081,7 @@
                           }
                         },
                         "additionalProperties": false,
-                        "description": "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it; a record without the property links nowhere."
+                        "description": "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it, a person through the id of whoever of the reader's organisation holds the user name when the read is answered (D122); a record without the property, or whose user name nobody there holds, links nowhere."
                       },
                       "input": {
                         "type": "object",
@@ -1433,7 +1433,7 @@
                           }
                         },
                         "additionalProperties": false,
-                        "description": "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it; a record without the property links nowhere."
+                        "description": "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it, a person through the id of whoever of the reader's organisation holds the user name when the read is answered (D122); a record without the property, or whose user name nobody there holds, links nowhere."
                       },
                       "input": {
                         "type": "object",
@@ -1715,7 +1715,7 @@
                           }
                         },
                         "additionalProperties": false,
-                        "description": "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it; a record without the property links nowhere."
+                        "description": "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it, a person through the id of whoever of the reader's organisation holds the user name when the read is answered (D122); a record without the property, or whose user name nobody there holds, links nowhere."
                       },
                       "modelReads": {
                         "anyOf": [
@@ -2190,7 +2190,7 @@
             }
           },
           "additionalProperties": false,
-          "description": "The shared header (D88): this connector gives Clew the header it draws above every page, for the people in the connector's audience, as the content system (Sitevision, SharePoint, WordPress) lists its sections for them. When several enabled connectors declare one, the earliest registered answers. Clew keeps no header of its own beyond its default (the site's name and Start)."
+          "description": "The shared header (D88): this connector can give Clew the header it draws above every page, for the people in the connector's audience, as the content system (Sitevision, SharePoint, WordPress) lists its sections for them. Declaring it makes the connector a candidate, not the holder: only the one connector an administrator chose to give the header answers, whatever the order connectors were registered in. Clew keeps no header of its own beyond its default (the site's name and Start)."
         }
       },
       "additionalProperties": false,
@@ -2260,7 +2260,7 @@
             "additionalProperties": false
           },
           "maxItems": 200,
-          "description": "The units the person follows up (D117): those they manage and those of the managers who report to them (D99). Present on the calls where Clew knows them (a read about units, a view opened on a page); a source may answer for these units and must refuse every other. Absent means `unitId` alone."
+          "description": "The units a manager follows up (D117): their own, managed or placed on, and those of the managers who report to them (D99). Present on a manager's reads about a person or a unit and on the views they open; a read about a unit may answer for these units and must refuse every other. Absent means `unitId` alone."
         }
       },
       "additionalProperties": false,
@@ -2336,7 +2336,7 @@
                 "additionalProperties": false
               },
               "maxItems": 200,
-              "description": "The units the person follows up (D117): those they manage and those of the managers who report to them (D99). Present on the calls where Clew knows them (a read about units, a view opened on a page); a source may answer for these units and must refuse every other. Absent means `unitId` alone."
+              "description": "The units a manager follows up (D117): their own, managed or placed on, and those of the managers who report to them (D99). Present on a manager's reads about a person or a unit and on the views they open; a read about a unit may answer for these units and must refuse every other. Absent means `unitId` alone."
             }
           },
           "additionalProperties": false,
@@ -2889,7 +2889,7 @@
                 "additionalProperties": false
               },
               "maxItems": 200,
-              "description": "The units the person follows up (D117): those they manage and those of the managers who report to them (D99). Present on the calls where Clew knows them (a read about units, a view opened on a page); a source may answer for these units and must refuse every other. Absent means `unitId` alone."
+              "description": "The units a manager follows up (D117): their own, managed or placed on, and those of the managers who report to them (D99). Present on a manager's reads about a person or a unit and on the views they open; a read about a unit may answer for these units and must refuse every other. Absent means `unitId` alone."
             }
           },
           "additionalProperties": false,
@@ -3407,7 +3407,7 @@
                 "additionalProperties": false
               },
               "maxItems": 200,
-              "description": "The units the person follows up (D117): those they manage and those of the managers who report to them (D99). Present on the calls where Clew knows them (a read about units, a view opened on a page); a source may answer for these units and must refuse every other. Absent means `unitId` alone."
+              "description": "The units a manager follows up (D117): their own, managed or placed on, and those of the managers who report to them (D99). Present on a manager's reads about a person or a unit and on the views they open; a read about a unit may answer for these units and must refuse every other. Absent means `unitId` alone."
             }
           },
           "additionalProperties": false,
@@ -3543,11 +3543,11 @@
                           "type": "string",
                           "minLength": 1,
                           "maxLength": 256,
-                          "description": "The entity's key: a person's `userName`, a unit's id."
+                          "description": "The entity's key. A source sends a person's `userName` and a unit's id. Clew resolves a user name as it arrives to the person of the reader's organisation who holds it then, and keeps that person's id (D122); a name nobody there holds names nobody."
                         }
                       },
                       "additionalProperties": false,
-                      "description": "The person or unit the row is about (D97 item 6): the web links the row to it, and the card shows on that entity for its owner. A key, never a name; the row's text stays the source's. Clew does not check that the key exists."
+                      "description": "The person or unit the row is about (D97 item 6): the web links the row to it, and the card shows on that entity for its owner. A key, never a name: a person's `userName`, a unit's id; the row's text stays the source's. Clew resolves a user name as the row arrives to whoever of the reader's organisation holds it then and keeps that person's id, so a later rename or reuse of the name moves nothing on the card (D122); a name nobody there holds names nobody."
                     }
                   },
                   "additionalProperties": false
@@ -3876,11 +3876,11 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 256,
-                    "description": "The entity's key: a person's `userName`, a unit's id."
+                    "description": "The entity's key. A source sends a person's `userName` and a unit's id. Clew resolves a user name as it arrives to the person of the reader's organisation who holds it then, and keeps that person's id (D122); a name nobody there holds names nobody."
                   }
                 },
                 "additionalProperties": false,
-                "description": "The person or unit the row is about (D97 item 6): the web links the row to it, and the card shows on that entity for its owner. A key, never a name; the row's text stays the source's. Clew does not check that the key exists."
+                "description": "The person or unit the row is about (D97 item 6): the web links the row to it, and the card shows on that entity for its owner. A key, never a name: a person's `userName`, a unit's id; the row's text stays the source's. Clew resolves a user name as the row arrives to whoever of the reader's organisation holds it then and keeps that person's id, so a later rename or reuse of the name moves nothing on the card (D122); a name nobody there holds names nobody."
               }
             },
             "additionalProperties": false
@@ -4087,7 +4087,7 @@
                 "additionalProperties": false
               },
               "maxItems": 200,
-              "description": "The units the person follows up (D117): those they manage and those of the managers who report to them (D99). Present on the calls where Clew knows them (a read about units, a view opened on a page); a source may answer for these units and must refuse every other. Absent means `unitId` alone."
+              "description": "The units a manager follows up (D117): their own, managed or placed on, and those of the managers who report to them (D99). Present on a manager's reads about a person or a unit and on the views they open; a read about a unit may answer for these units and must refuse every other. Absent means `unitId` alone."
             }
           },
           "additionalProperties": false,
@@ -4375,11 +4375,11 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 256,
-              "description": "The entity's key: a person's `userName`, a unit's id."
+              "description": "The entity's key. A source sends a person's `userName` and a unit's id. Clew resolves a user name as it arrives to the person of the reader's organisation who holds it then, and keeps that person's id (D122); a name nobody there holds names nobody."
             }
           },
           "additionalProperties": false,
-          "description": "An entity a row names (D97): the web links the row to it. Clew never checks that the key exists; a reader only ever reaches an entity they may ask about."
+          "description": "An entity a row names (D97): the web links the row to it. A source names a person by their `userName`, without regard to case, and a unit by its id. Clew resolves the user name as the row arrives, to whoever of the reader's organisation, active or not, holds it then, and keeps that person's id in its own records, so a later rename or reuse of the name moves nothing it kept (D122). A name nobody there holds names nobody: the row keeps its text and links nowhere. A reader only ever reaches an entity they may ask about."
         }
       },
       "additionalProperties": false
@@ -4496,11 +4496,11 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 256,
-                    "description": "The entity's key: a person's `userName`, a unit's id."
+                    "description": "The entity's key. A source sends a person's `userName` and a unit's id. Clew resolves a user name as it arrives to the person of the reader's organisation who holds it then, and keeps that person's id (D122); a name nobody there holds names nobody."
                   }
                 },
                 "additionalProperties": false,
-                "description": "An entity a row names (D97): the web links the row to it. Clew never checks that the key exists; a reader only ever reaches an entity they may ask about."
+                "description": "An entity a row names (D97): the web links the row to it. A source names a person by their `userName`, without regard to case, and a unit by its id. Clew resolves the user name as the row arrives, to whoever of the reader's organisation, active or not, holds it then, and keeps that person's id in its own records, so a later rename or reuse of the name moves nothing it kept (D122). A name nobody there holds names nobody: the row keeps its text and links nowhere. A reader only ever reaches an entity they may ask about."
               }
             },
             "additionalProperties": false
@@ -4861,7 +4861,7 @@
               "maxLength": 40
             }
           ],
-          "description": "When the talk is booked (an instant), or the day it was held (a date). Absent when missing."
+          "description": "When the talk is booked (an instant), or the day it was held (a date). Absent when missing, and for a booked talk whose time the reader may not see, such as one another of the person's managers booked."
         },
         "openCommitments": {
           "type": "integer",
@@ -4984,7 +4984,7 @@
                     "maxLength": 40
                   }
                 ],
-                "description": "When the talk is booked (an instant), or the day it was held (a date). Absent when missing."
+                "description": "When the talk is booked (an instant), or the day it was held (a date). Absent when missing, and for a booked talk whose time the reader may not see, such as one another of the person's managers booked."
               },
               "openCommitments": {
                 "type": "integer",
@@ -5938,7 +5938,7 @@
                 }
               },
               "additionalProperties": false,
-              "description": "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it; a record without the property links nowhere."
+              "description": "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it, a person through the id of whoever of the reader's organisation holds the user name when the read is answered (D122); a record without the property, or whose user name nobody there holds, links nowhere."
             },
             "input": {
               "type": "object",
@@ -6290,7 +6290,7 @@
                 }
               },
               "additionalProperties": false,
-              "description": "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it; a record without the property links nowhere."
+              "description": "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it, a person through the id of whoever of the reader's organisation holds the user name when the read is answered (D122); a record without the property, or whose user name nobody there holds, links nowhere."
             },
             "input": {
               "type": "object",
@@ -6572,7 +6572,7 @@
                 }
               },
               "additionalProperties": false,
-              "description": "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it; a record without the property links nowhere."
+              "description": "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it, a person through the id of whoever of the reader's organisation holds the user name when the read is answered (D122); a record without the property, or whose user name nobody there holds, links nowhere."
             },
             "modelReads": {
               "anyOf": [

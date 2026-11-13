@@ -1,5 +1,6 @@
 import {
   bySwedish,
+  ERASED,
   unitGroupOf,
   type Assignment,
   type Grant,
@@ -13,10 +14,13 @@ import type { Provisioner, ProvisionStore, ProvisionTx } from '../ports';
 /**
  * The provisioning store in memory: the unit tests' adapter (D25), held to Postgres by
  * `tests/provisioning-store-contract.ts` and `tests/scim-store-contract.ts`. State is plain and seedable; a transaction
- * is a snapshot that a throw rolls back, the audit rows included.
+ * is a snapshot that a throw rolls back, the audit rows included. Nothing locks: a unit test runs one request at a time,
+ * so every transaction, a read's `snapshot` included, reads the state as one moment left it.
  */
 export interface MemoryProvisionState {
   users: Map<string, UserRecord>;
+  /** `auth_person.name_changed_at`: when a person's name last changed after they were written, by person id. */
+  namesChanged: Map<string, string>;
   groups: Map<string, GroupRecord>;
   /** `memberKey(groupId, personId)`. */
   members: Set<string>;
@@ -29,15 +33,21 @@ export interface MemoryProvisionState {
     string,
     Provisioner & { revoked?: boolean; lastSeenAt?: string | null; previous?: { digest: string; until: string } }
   >;
-  /** Person ids with an identity binding. */
-  bindings: Set<string>;
+  /** `auth_identity_binding`: a sign-in subject under its issuer, bound to a person. */
+  bindings: Array<{ issuer: string; subject: string; personId: string }>;
+  /** `auth_session`, as far as an erasure reads it: whose session it is. */
+  sessions: Array<{ digest: string; personId: string }>;
+  /** A row's id is its place in the list. */
   audit: Array<{ actor: string; action: string; subject: string; details: Record<string, unknown> }>;
+  /** `auth_audit`, the authentication log. */
+  authenticationAudit: Array<{ actor: string | null; action: string }>;
 }
 export const memberKey = (groupId: string, personId: string) => groupId + '\u0000' + personId;
 const splitKey = (key: string) => key.split('\u0000') as [string, string];
 export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisionState } {
   const state: MemoryProvisionState = {
     users: new Map(),
+    namesChanged: new Map(),
     groups: new Map(),
     members: new Set(),
     groupCapabilities: [],
@@ -45,8 +55,10 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
     assignments: new Map(),
     grants: new Map(),
     provisioners: new Map(),
-    bindings: new Set(),
+    bindings: [],
+    sessions: [],
     audit: [],
+    authenticationAudit: [],
   };
   const snapshot = () => structuredClone(state),
     restore = (s: MemoryProvisionState) => Object.assign(state, s);
@@ -60,18 +72,28 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
     by === 'userName'
       ? u.userName !== null && u.userName.toLowerCase() === value.toLowerCase()
       : u.externalId === value;
+  const duplicateKey = (constraint: string) =>
+    Object.assign(new Error('duplicate key value violates unique constraint'), {
+      code: '23505',
+      constraint_name: constraint,
+    });
   /** The unique indexes of `auth_person`, so a race the use case did not catch fails here as it does on Postgres. */
   const assertUnique = (record: Pick<UserRecord, 'userName' | 'externalId'>, selfId: string) => {
     for (const u of state.users.values()) {
       if (u.id === selfId) continue;
       const byName = record.userName !== null && userMatches(u, 'userName', record.userName),
         byExternal = record.externalId !== null && u.externalId === record.externalId;
-      if (byName || byExternal)
-        throw Object.assign(new Error('duplicate key value violates unique constraint'), {
-          code: '23505',
-          constraint_name: byName ? 'auth_person_user_name' : 'auth_person_external_id',
-        });
+      if (byName || byExternal) throw duplicateKey(byName ? 'auth_person_user_name' : 'auth_person_external_id');
     }
+  };
+  /**
+   * The unique index of `auth_group` (B2): a key is one group's across the installation, any number of groups hold
+   * none. A change to group handling that lets a second group take a key fails here as it does on Postgres.
+   */
+  const assertUniqueGroup = (record: Pick<GroupRecord, 'externalId'>, selfId: string) => {
+    if (record.externalId === null) return;
+    for (const g of state.groups.values())
+      if (g.id !== selfId && g.externalId === record.externalId) throw duplicateKey('auth_group_external_id');
   };
   const groupsOf = (personId: string) =>
     [...state.members]
@@ -90,8 +112,10 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
       const p = state.users.get(id);
       return p && { id: p.id, organisationId: p.organisationId };
     },
+    async lockPeople() {},
     async lockUnits() {},
     async lockTree() {},
+    async lockGroupCapabilities() {},
     async memberships(personId) {
       return groupsOf(personId)
         .filter(g => g.externalId !== null)
@@ -222,6 +246,13 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
       const next = { ...u, ...fields };
       assertUnique(next, id);
       state.users.set(id, next);
+      if (fields.name !== undefined && fields.name !== u.name) state.namesChanged.set(id, fields.updatedAt);
+    },
+    async touchUsers(ids, updatedAt) {
+      for (const id of ids) {
+        const u = state.users.get(id);
+        if (u) state.users.set(id, { ...u, updatedAt });
+      }
     },
     async userGroups(personId) {
       return byId(groupsOf(personId).map(g => ({ id: g.id, externalId: g.externalId, label: g.label })));
@@ -251,11 +282,15 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
     },
     async insertGroup(record) {
       if (state.groups.has(record.id)) throw new Error('duplicate group id');
+      assertUniqueGroup(record, record.id);
       state.groups.set(record.id, { ...record });
     },
     async updateGroup(id, fields) {
       const g = state.groups.get(id);
-      if (g) state.groups.set(id, { ...g, ...fields });
+      if (!g) return;
+      const next = { ...g, ...fields };
+      assertUniqueGroup(next, id);
+      state.groups.set(id, next);
     },
     async deleteGroup(id) {
       state.groups.delete(id);
@@ -268,20 +303,32 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
           .filter(([g]) => g === groupId)
           .map(([, p]) => state.users.get(p))
           .filter((u): u is UserRecord => !!u)
-          .map(u => ({ id: u.id, name: u.name })),
+          .map(u => ({ id: u.id, name: u.name, nameChangedAt: state.namesChanged.get(u.id) ?? null })),
       );
+    },
+    async memberNamesChanged(groupIds) {
+      const wanted = new Set(groupIds),
+        changed = new Map<string, string>();
+      for (const [groupId, personId] of [...state.members].map(splitKey)) {
+        const at = state.namesChanged.get(personId),
+          held = changed.get(groupId);
+        if (wanted.has(groupId) && at !== undefined && (held === undefined || at > held)) changed.set(groupId, at);
+      }
+      return changed;
     },
     async setGroupMembers(groupId, personIds) {
       for (const key of [...state.members]) if (splitKey(key)[0] === groupId) state.members.delete(key);
       for (const p of personIds) state.members.add(memberKey(groupId, p));
     },
     async searchUsers(organisationId, search, p) {
-      const folded = (value: string | null | undefined) => (value ?? '').toLocaleLowerCase('sv');
+      // In the composed form and Unicode's own lower case, as PostgreSQL folds the search under ICU's root locale
+      // (`folded`), so a word or a value written decomposed is the same letters (L12).
+      const folded = (value: string | null | undefined) => (value ?? '').normalize('NFC').toLowerCase();
       const matching = [...state.users.values()]
         .filter(u => {
           if (u.organisationId !== organisationId) return false;
           const granted = state.grants.has(u.id),
-            bound = state.bindings.has(u.id),
+            bound = state.bindings.some(b => b.personId === u.id),
             status = !u.enabled ? 'disabled' : !granted ? 'no-access' : bound ? 'signed-in' : 'not-signed-in';
           return (
             (search.words ?? []).every(word =>
@@ -346,7 +393,58 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
         });
     },
     async bound(personId) {
-      return state.bindings.has(personId);
+      return state.bindings.some(b => b.personId === personId);
+    },
+    async lockGroupsOf() {},
+    async removeMemberships(personId, at) {
+      const gone = [...state.members].filter(key => splitKey(key)[1] === personId);
+      for (const key of gone) {
+        state.members.delete(key);
+        const group = state.groups.get(splitKey(key)[0]);
+        if (group) state.groups.set(group.id, { ...group, updatedAt: at });
+      }
+      return gone.length;
+    },
+    async removeBindings(personId) {
+      const before = state.bindings.length;
+      state.bindings = state.bindings.filter(b => b.personId !== personId);
+      return before - state.bindings.length;
+    },
+    async removeSessions(personId) {
+      const before = state.sessions.length;
+      state.sessions = state.sessions.filter(s => s.personId !== personId);
+      return before - state.sessions.length;
+    },
+    async auditRows(actions, where) {
+      return state.audit.flatMap((row, id) =>
+        actions.includes(row.action) &&
+        ('subject' in where ? row.subject === where.subject : row.details[where.key] === where.value)
+          ? [{ id, action: row.action, subject: row.subject, details: structuredClone(row.details) }]
+          : [],
+      );
+    },
+    async redactAudit(keysByRow) {
+      let changed = 0;
+      for (const [id, keys] of keysByRow) {
+        const row = state.audit[id];
+        if (!row || !keys.some(key => row.details[key] !== ERASED)) continue;
+        for (const key of keys) row.details[key] = ERASED;
+        changed++;
+      }
+      return changed;
+    },
+    async eraseClaims(names, marker) {
+      // Unicode's own lower case of the composed form, as PostgreSQL folds both sides under ICU's root locale.
+      const fold = (value: string) => value.normalize('NFC').toLowerCase(),
+        held = new Set(names.filter(name => name).map(fold)),
+        erased = 'claim:' + marker;
+      let changed = 0;
+      for (const row of state.authenticationAudit)
+        if (row.actor?.startsWith('claim:') && row.actor !== erased && held.has(fold(row.actor.slice(6)))) {
+          row.actor = erased;
+          changed++;
+        }
+      return changed;
     },
     async setGroupCapability(organisationId, groupExternalId, capability, present) {
       const index = state.groupCapabilities.findIndex(
@@ -362,6 +460,31 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
         return true;
       }
       return false;
+    },
+    async groupLabels(organisationId, externalIds) {
+      const wanted = new Set(externalIds);
+      return new Map(
+        [...state.groups.values()]
+          .filter(g => g.organisationId === organisationId && g.externalId !== null && wanted.has(g.externalId))
+          .map(g => [g.externalId!, g.label]),
+      );
+    },
+    async searchGroups(organisationId, words, limit) {
+      // As the people's search folds a word and a value: composed, and in lower case.
+      const folded = (value: string) => value.normalize('NFC').toLocaleLowerCase('sv');
+      return [...state.groups.values()]
+        .filter(
+          (g): g is GroupRecord & { externalId: string } =>
+            g.organisationId === organisationId &&
+            g.externalId !== null &&
+            words.every(word => [g.label, g.externalId].some(value => folded(value!).includes(folded(word)))),
+        )
+        .sort(
+          (a, b) =>
+            bySwedish(a.label, b.label) || (a.externalId < b.externalId ? -1 : a.externalId > b.externalId ? 1 : 0),
+        )
+        .slice(0, limit)
+        .map(g => ({ externalId: g.externalId, label: g.label }));
     },
   };
   return {

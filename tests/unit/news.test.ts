@@ -1,7 +1,15 @@
 import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import type { NewsResult, NewsRow } from '../../packages/contracts/src/index';
-import { CapabilityError, SEARCH_CONNECTOR, type Actor, type Connector } from '../../packages/connectors/src/index';
+import {
+  audiencedActorOf,
+  CapabilityError,
+  openGovernance,
+  SEARCH_CONNECTOR,
+  type Actor,
+  type AudiencedActor,
+  type Connector,
+} from '../../packages/connectors/src/index';
 import { parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import { merge } from '../../apps/server/src/modules/news/domain';
 import { newsCapabilities } from '../../apps/server/src/modules/news/capabilities';
@@ -134,7 +142,7 @@ function world(connectors: Connector[], budget = { perSourceMs: 40, totalMs: 80 
   });
   return registry;
 }
-const list = (registry: Registry, actor: Actor, context = {}) =>
+const list = (registry: Registry, actor: AudiencedActor, context = {}) =>
   registry.run<NewsResult>(actor, 'clew.news', {}, context);
 
 describe('clew.news', () => {
@@ -256,6 +264,28 @@ describe('clew.news', () => {
     expect(registry.menu(mikael)).toEqual([]);
   });
 
+  test('a news source for one provisioned group is asked for its members only; when it is the only source, nobody else has the list (D68)', async () => {
+    const calls: unknown[] = [];
+    const registry = world([newsSource('newsroom', 'Nyhetsrummet', [row('newsroom', 1)], { calls })]);
+    registry.govern('newsroom', { ...openGovernance(), audience: { mode: 'selected', groups: ['S-1-5-21-hr'] } });
+    registry.govern(SEARCH_CONNECTOR, { ...openGovernance(), capabilities: { 'clew.news': { menu: true } } });
+    // The server hands the registry the person with their groups (audiencedActorOf), and the list's call into each
+    // source keeps them.
+    const member = audiencedActorOf({ ...mikael, groups: ['S-1-5-21-annan', 'S-1-5-21-hr'] }),
+      outsider = audiencedActorOf({ ...mikael, groups: ['S-1-5-21-annan'] });
+    expect((await list(registry, member)).rows.map(r => r.ref)).toEqual(['newsroom:1']);
+    expect(registry.menu(member).map(e => e.capability)).toEqual(['clew.news']);
+    expect(registry.allowed(outsider, 'clew.news')).toBeUndefined();
+    await expect(list(registry, outsider)).rejects.toThrow('Du saknar behörighet för åtgärden.');
+    expect(registry.menu(outsider)).toEqual([]);
+    expect(registry.tools(outsider).map(t => t.name)).not.toContain('clew.news');
+    expect(calls).toHaveLength(1);
+    // With a source for everyone beside it, the person outside the group gets that one, and the group's is not asked.
+    registry.register(newsSource('intranet', 'Intranätet', [row('intranet', 2)], { calls }));
+    expect((await list(registry, outsider)).rows.map(r => r.ref)).toEqual(['intranet:2']);
+    expect((await list(registry, member)).rows.map(r => r.ref)).toEqual(['newsroom:1', 'intranet:2']);
+    expect(calls).toHaveLength(4);
+  });
   test('the model is offered the one combined list, never a source, reads a summary, and is never offered a write', async () => {
     const registry = world([
       newsSource('intranet', 'Intranätet', [row('intranet', 1)]),

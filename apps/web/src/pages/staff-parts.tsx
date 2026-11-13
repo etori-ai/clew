@@ -208,7 +208,7 @@ const columnHeader = (column: EntityColumn) => (
 /** "Just nu" (artboard A2): the person's cards as links, then the marks of every chosen source with the source's words. */
 function Marks({ entity, ctx }: { entity: EntityRef; ctx: Context }) {
   const location = useLocation();
-  const marks = marksFor(ctx.list, ctx.answers, entity.key);
+  const marks = marksFor(ctx.list, ctx.answers, entity.sourceKey);
   const links = cardLinks(ctx.list, entity, location);
   if (!marks.length && !links.length) return null;
   return (
@@ -399,7 +399,7 @@ export function AllUnit({
         <List aria-label={group.label} hasDividers animatedLayout={animatedLayout}>
           {group.entities.map(e => {
             const values = ctx.list.columns
-              .map(c => ({ c, value: columnValue(c, ctx.answers, e.key) }))
+              .map(c => ({ c, value: columnValue(c, ctx.answers, e.sourceKey) }))
               .filter(({ value }) => present(value));
             const toned = values.filter(({ c, value }) => c.field.format === 'status' && isBadged(c.field, value));
             return (
@@ -412,7 +412,7 @@ export function AllUnit({
                   ...toned.map(({ c, value }) => (
                     <FieldValue key={`${c.capability}:${c.field.key}`} field={c.field} value={value} />
                   )),
-                  ...marksFor(ctx.list, ctx.answers, e.key).map(m => (
+                  ...marksFor(ctx.list, ctx.answers, e.sourceKey).map(m => (
                     <Badge key={m.id} variant={badgeVariant(m.tone)} label={m.text} />
                   )),
                 ]}
@@ -434,7 +434,7 @@ export function AllUnit({
               width: VALUE_WIDTH,
               // A value without a tone is ordinary text, as the artboard draws "I tjänst" and "mån 16 nov".
               renderCell: (r: TableRow) => {
-                const row = rowOf(ctx.answers.get(c.capability), r.entity.key);
+                const row = rowOf(ctx.answers.get(c.capability), r.entity.sourceKey);
                 return row ? <FieldValue field={c.field} value={row[c.field.key]} text="ordinary" /> : null;
               },
             })),
@@ -497,7 +497,7 @@ export function LensUnit({
       {narrow ? (
         <List aria-label={group.label} hasDividers animatedLayout={animatedLayout}>
           {people.map(e => {
-            const row = rowOf(answer, e.key);
+            const row = rowOf(answer, e.sourceKey);
             const parts = row ? phoneParts(groups, row) : { badges: [], words: [] };
             return (
               <PhoneRow
@@ -525,7 +525,7 @@ export function LensUnit({
               width: cellWidth(g),
               ...(g.lead.format === 'number' && !g.beside.length ? { align: 'end' as const } : {}),
               renderCell: (r: TableRow) => {
-                const row = rowOf(answer, r.entity.key);
+                const row = rowOf(answer, r.entity.sourceKey);
                 return row ? <LensCell group={g} row={row} /> : null;
               },
             })),

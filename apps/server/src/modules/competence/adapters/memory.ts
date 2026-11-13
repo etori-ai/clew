@@ -1,3 +1,4 @@
+import { COMPETENCE_CONNECTOR } from '@clew/connectors';
 import { TypeNameTaken } from '../model';
 import type {
   CompetenceAudit,
@@ -12,23 +13,35 @@ import type {
 /**
  * The competence store in memory: the unit tests' adapter (D25), held to Postgres by
  * `tests/competence-store-contract.ts`. State is plain and seedable; a transaction is a snapshot that a throw restores,
- * the audit rows included. Transactions run one at a time, as row locks would make them.
+ * the audit rows and the cards included. Transactions run one at a time, as row locks would make them.
+ *
+ * The cards of the people's streams (`CompetenceCardsTx`) stand in `state.cards` instead of a thread store, as much of
+ * each as an erasure reads: whose stream it is in and which connector pushed it. An erasure removes the person's own
+ * competence cards there and writes their `thread.removed` rows among the audit rows, as composition does over the
+ * thread store's transaction.
  */
+export interface MemoryCard {
+  personId: string;
+  connector: string;
+}
 export interface MemoryCompetenceState {
   types: Map<string, TypeRecord>;
   holdings: Map<string, HoldingRecord>;
   persons: Map<string, PersonRef>;
+  /** The cards in the people's own streams (D108 item 12), by card id. */
+  cards: Map<string, MemoryCard>;
   audit: CompetenceAudit[];
 }
 const byCreated = <T extends { createdAt: string; id: string }>(rows: T[]) =>
   rows.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
 const sv = (a: string, b: string) => a.localeCompare(b, 'sv');
 
-export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
+export function memoryCompetenceStore(seed: { persons?: PersonRef[]; cards?: Record<string, MemoryCard> } = {}) {
   let state: MemoryCompetenceState = {
     types: new Map(),
     holdings: new Map(),
     persons: new Map((seed.persons ?? []).map(p => [p.id, { ...p }])),
+    cards: new Map(Object.entries(seed.cards ?? {}).map(([id, card]) => [id, { ...card }])),
     audit: [],
   };
   let tail = Promise.resolve();
@@ -136,6 +149,26 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
         holdings: byCreated([...state.holdings.values()].filter(h => ids.has(h.typeId))),
       });
     },
+    cards: {
+      async removeOwn(personId, actor, at) {
+        // In card id order, as the thread store locks and removes them.
+        const own = [...state.cards]
+          .filter(([, card]) => card.personId === personId && card.connector === COMPETENCE_CONNECTOR)
+          .map(([id]) => id)
+          .sort();
+        for (const id of own) {
+          state.cards.delete(id);
+          state.audit.push({
+            actor,
+            action: 'thread.removed',
+            subject: `thread:${id}`,
+            at,
+            details: { reason: 'erasure' },
+          });
+        }
+        return own.length;
+      },
+    },
     async audit(entry) {
       state.audit.push(structuredClone(entry));
     },
@@ -159,6 +192,10 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     /** A person the domain can name, as provisioning would have written them. */
     addPerson(person: PersonRef) {
       state.persons.set(person.id, { ...person });
+    },
+    /** A card in a person's own stream, as a scan would have pushed it. */
+    addCard(id: string, card: MemoryCard) {
+      state.cards.set(id, { ...card });
     },
     audit: () => structuredClone(state.audit),
   };

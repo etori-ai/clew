@@ -179,11 +179,33 @@ test.describe('organisation', () => {
           .filter({ has: page.locator(':focus') })
           .or(tree.locator(':focus')),
       ).not.toHaveCount(0);
-      // A unit that is not in the tree is answered in words, not with an empty overlay.
+      // A unit the server does not know is answered in its words, not with an empty overlay, under a name that claims
+      // nothing, and without a retry, which cannot help (W7).
       await open(page, '/admin/organisation?unit=finns-inte');
-      await expect(page.getByRole('dialog', { name: 'Personer på Enheten finns inte' })).toContainText(
-        'Enheten finns inte.',
-      );
+      const gone = page.getByRole('dialog', { name: 'Personer på enheten' });
+      await expect(gone).toContainText('Enheten finns inte.');
+      await expect(gone.getByRole('heading', { name: 'Enheten', exact: true })).toBeVisible();
+      await expect(gone.getByRole('button', { name: 'Försök igen' })).toHaveCount(0);
+      await expectNoAxeViolations(page, { without: TREE_LABEL_RULE });
+    });
+    test('a unit that could not be read for another reason is not said to be gone, and is asked for again (W7)', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      api.organisationFails = true;
+      await open(page, '/admin/organisation?unit=unit-skola');
+      // Neither the tree nor the unit's own read names it, so the overlay is named for a unit, and says what failed.
+      const people = page.getByRole('dialog', { name: 'Personer på enheten' });
+      await expect(people).toContainText('Något gick fel. Försök igen.');
+      await expect(people.getByRole('heading', { name: 'Enheten', exact: true })).toBeVisible();
+      await expect(people).not.toContainText('finns inte');
+      await expectNoAxeViolations(page, { without: TREE_LABEL_RULE });
+      api.organisationFails = false;
+      await people.getByRole('button', { name: 'Försök igen' }).click();
+      const named = page.getByRole('dialog', { name: 'Personer på Bergsåkers skola' });
+      await expect(named.getByText('Anna Lindqvist')).toBeVisible();
+      await expect(named.getByRole('heading', { name: 'Bergsåkers skola' })).toBeVisible();
     });
     test('a unit says who reports to its manager from the units below, after the manager and before nothing else', async ({
       page,

@@ -109,6 +109,7 @@ test('approval, card state and outcome are atomic; an uncertain undo preserves t
       createdAt: new Date(at),
       updatedAt: new Date(at),
     });
+  // A reference card has no invitation on its way to anyone (M1): nobody is asked whom they manage.
   const store = postgresExecutionStore(sealer, testDurable, projectExecution(testDurable));
   const persona: AuthenticatedContext = {
     id: w.personId,
@@ -185,7 +186,7 @@ test('a watch step that ends unseen leaves one card, one admitted delivery and i
     e = executionRecord(w.personId, w.personId + '-expired-step'),
     job = jobRecord(w.personId, w.personId + '-expired-job', [e]);
   const store = postgresExecutionStore(sealer, testDurable, {
-    pushCard: watchCardSink(() => ({ source: 'Lönesystemet', area: 'lon' })),
+    pushCard: watchCardSink(() => ({ source: 'Lönesystemet', area: 'lon' }), testDurable),
   });
   await store.transaction(async tx => {
     await tx.insert(e);

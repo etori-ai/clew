@@ -6,9 +6,14 @@
  *   bun scripts/provisioner-check.ts <url> --roots 1   # warn when the root count differs from the source
  *
  * The environment variable keeps the token out of the shell history. The check authenticates as the provisioner, so
- * it counts as a call from it and moves its last-seen time: to leave that alone, issue the check a token under an id
- * of its own (`bun scripts/provisioner-token.ts add check --organisation <organisationId>`). Exit 0 when nothing failed
- * (warnings included), 1 on a failure, 2 on a usage error.
+ * it counts as a call from it and moves its last-seen time: to leave that alone, issue the check a key under an id of
+ * its own right before it runs ("Lägg till katalog" on Administration › Användare, or
+ * `bun scripts/provisioner-token.ts add check --organisation <organisationId>`), and take it back as soon as it has
+ * run ("Återkalla nyckeln" on Administration › Användare, or `bun scripts/provisioner-token.ts revoke check`). There is
+ * one kind of key (D68 item 5, D107 item 3): though the check only reads, its key can create, change and deactivate
+ * users and groups as much as the provisioner's own. Until it is taken back, its row under "Inläsning från katalogen"
+ * stays on the page and shows "Tyst i över två dygn" from two days after the check last ran. Exit 0 when nothing
+ * failed (warnings included), 1 on a failure, 2 on a usage error.
  */
 import { scimClient } from './provisioner/client';
 import { checkProvisioning } from './provisioner/check';

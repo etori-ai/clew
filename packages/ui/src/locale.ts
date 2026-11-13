@@ -28,4 +28,5 @@ export const swedish = {
   '@astryx.kbd.key.tab': { defaultMessage: 'Tabb' },
   '@astryx.kbd.key.up': { defaultMessage: 'Uppåtpil' },
   '@astryx.kbd.shortcut': { defaultMessage: '{shortcut} + {key}' },
+  '@astryx.typeahead.selectionCleared': { defaultMessage: 'Rensat: {label}' },
 };

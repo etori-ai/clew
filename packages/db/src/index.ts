@@ -13,6 +13,20 @@ export function database() {
 }
 export type Database = ReturnType<typeof database>;
 export type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
+/**
+ * Whether the database answers a trivial query within `ms` milliseconds, for `/api/ready` (L1 of the 2026-11-12 users
+ * review): when every connection of the pool is held, the query waits for one as every request would, and it is
+ * cancelled, never sent, when the time is up.
+ */
+export async function databaseAnswers(ms: number) {
+  try {
+    database();
+    await client!`select 1`.signal(AbortSignal.timeout(ms));
+    return true;
+  } catch {
+    return false;
+  }
+}
 export async function closeDatabase() {
   await client?.end();
   client = undefined;

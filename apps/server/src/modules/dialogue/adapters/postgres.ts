@@ -244,6 +244,14 @@ export function dialogueTx(tx: Transaction, options: { sealer: Sealer; workItems
         .where(inArray(units.id, [...ids]));
       return new Map(rows.map(r => [r.id, r.label]));
     },
+    async lockPersonForErasure(personId) {
+      const [person] = await tx
+        .select({ enabled: people.enabled })
+        .from(people)
+        .where(eq(people.id, personId))
+        .for('share');
+      return person?.enabled;
+    },
     async erasePerson(personId) {
       const cleared = new Set<string>(),
         threadIds = new Set<string>();

@@ -68,6 +68,26 @@ test('the live API and its composition load in Node without external services', 
   assert.equal(typeof api.fetch, 'function');
 });
 
+test('the repeating timer that renews a scheduled job’s claim ticks until it is stopped and never holds the process open', async () => {
+  const { every } = await import('../src/composition/ambient');
+  const timers = () => process.getActiveResourcesInfo().filter(resource => resource === 'Timeout').length;
+  let ticks = 0;
+  const before = timers();
+  const stop = every(10, () => ticks++);
+  // Stopped whatever the assertions find, so a timer that holds the process cannot keep the suite from ending.
+  try {
+    assert.equal(timers(), before, 'the timer does not keep the event loop alive');
+    for (let waited = 0; ticks < 3 && waited < 5000; waited += 10)
+      await new Promise(resolve => setTimeout(resolve, 10));
+  } finally {
+    stop();
+  }
+  const seen = ticks;
+  assert.ok(seen >= 3, `it ticked ${seen} times`);
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(ticks, seen, 'no tick after it was stopped');
+});
+
 test('Node accepts a freshly issued document review and distinguishes invalid evidence from actual expiry', async () => {
   let now = Date.parse('2026-11-08T20:00:00.000Z');
   const clock = () => new Date(now);
@@ -140,9 +160,12 @@ test('the talks routes (D96): thin writes over the use cases, Swedish refusals, 
   const anna = { id: 'anna', name: 'Anna', userName: 'anna.a', email: null, role: 'employee' as const, enabled: true };
   let n = 0;
   const talks = talkUsecases({
-    store: memoryTalkStore({ persons: [{ id: 'anna', organisationId: 'org', name: 'Anna', userName: 'anna.a' }] }),
+    store: memoryTalkStore({
+      persons: [{ id: 'anna', organisationId: 'org', name: 'Anna', userName: 'anna.a', enabled: true }],
+    }),
     staff: async p =>
       p.id === 'boss' ? { units: [{ unitId: 'u1', unitLabel: 'Enheten', people: [anna] }] } : { units: [] },
+    manages: async (managerId, employeeId) => managerId === 'boss' && employeeId === 'anna',
     bookings: async () => new Map(),
     clock: () => new Date('2026-11-10T09:00:00.000Z'),
     ids: () => 'id-' + ++n,
@@ -186,7 +209,11 @@ test('the talks routes (D96): thin writes over the use cases, Swedish refusals, 
   assert.deepEqual(await held.json(), { id: 'id-4', heldOn: '2026-11-03' });
   assert.equal((await call('boss', 'DELETE', '/anna/held')).status, 204);
   assert.equal((await call('anna', 'POST', `/commitments/${id}/done`)).status, 204);
-  assert.equal((await call('boss', 'DELETE', `/commitments/${id}/done`)).status, 204);
+  // The employee's own point is hers: her manager may not open it again (Q12).
+  const notTheirs = await call('boss', 'DELETE', `/commitments/${id}/done`);
+  assert.equal(notTheirs.status, 403);
+  assert.deepEqual(await notTheirs.json(), { error: 'Du kan inte ändra den här åtgärdspunkten.', code: 'denied' });
+  assert.equal((await call('anna', 'DELETE', `/commitments/${id}/done`)).status, 204);
 
   const refused = await call('anna', 'POST', '/anna/held', {});
   assert.equal(refused.status, 403);

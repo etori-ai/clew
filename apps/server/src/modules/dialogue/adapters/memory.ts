@@ -37,7 +37,7 @@ export interface MemoryDialogueState {
   assessments: Map<string, AssessmentRecord>;
   activities: Map<string, ActivityRecord>;
   notes: Map<string, NoteRecord>;
-  persons: Map<string, string>;
+  persons: Map<string, { name: string; enabled: boolean }>;
   units: Map<string, string>;
   audit: DialogueAudit[];
   cards: Map<string, MemoryDialogueCard>;
@@ -59,7 +59,7 @@ export function memoryDialogueStore(seed: { persons?: Record<string, string>; un
     assessments: new Map(),
     activities: new Map(),
     notes: new Map(),
-    persons: new Map(Object.entries(seed.persons ?? {})),
+    persons: new Map(Object.entries(seed.persons ?? {}).map(([id, name]) => [id, { name, enabled: true }])),
     units: new Map(Object.entries(seed.units ?? {})),
     audit: [],
     cards: new Map(),
@@ -218,10 +218,18 @@ export function memoryDialogueStore(seed: { persons?: Record<string, string>; un
       state.notes.delete(id);
     },
     async names(ids) {
-      return new Map(ids.flatMap(id => (state.persons.has(id) ? [[id, state.persons.get(id)!] as const] : [])));
+      return new Map(
+        ids.flatMap(id => {
+          const person = state.persons.get(id);
+          return person ? [[id, person.name] as const] : [];
+        }),
+      );
     },
     async unitLabels(ids) {
       return new Map(ids.flatMap(id => (state.units.has(id) ? [[id, state.units.get(id)!] as const] : [])));
+    },
+    async lockPersonForErasure(personId) {
+      return state.persons.get(personId)?.enabled;
     },
     async erasePerson(personId) {
       const cleared = new Set<string>(),
@@ -291,8 +299,8 @@ export function memoryDialogueStore(seed: { persons?: Record<string, string>; un
     get state() {
       return state;
     },
-    addPerson(id: string, name: string) {
-      state.persons.set(id, name);
+    addPerson(id: string, name: string, enabled = true) {
+      state.persons.set(id, { name, enabled });
     },
     addUnit(id: string, label: string) {
       state.units.set(id, label);

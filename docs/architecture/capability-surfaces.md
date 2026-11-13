@@ -8,12 +8,23 @@ The [architecture overview](overview.md) explains the whole request flow. The [c
 
 | Surface | Caller and authority | Allowed operations |
 |---|---|---|
-| `GET /api/cap/:name?input=<json>` | Signed-in browser/person | `read` only; result includes the declared view when present. |
+| `GET /api/cap/:name?input=<json>` | Signed-in browser/person | `read` only. The answer is `{ output, source, view? }`: the declared view when present, with `view.people` mapping the user name each record names a person by to that person's id in the reader's organisation, so the record links to `/people/<id>`; a name nobody there holds is left out ([D122](../decisions/D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md)). |
 | `POST /api/cap/:name` | Signed-in person, with mutation origin/CSRF checks | `read` or `propose`; body is the capability input itself. Executes are refused. |
 | Model tools | Assistant inside the person's request | In-scope `read`/`propose` with `model: true`, narrowed by operator tool switches. |
 | `POST /api/connectors/call` | Connector with a separate signed callback grant | Declared `uses` targets of kind `read`/`propose`, under the same person's current access. |
 | Human decision routes | Person reviewing an action | Record approved intent; the execution worker later calls `execute` under current authority. |
 | Connector HTTP routes | Clew, with signed actor assertion and transport key | The connector's declared reads/proposals, scans/figures, and approved executes. |
+
+The two `/api/cap` routes are [capabilityRoutes](../../apps/server/src/routes/capabilities.ts), mounted inside the API with `api.route('/cap', …)` behind its session guard and its refresh of the connectors. Before it reads the input, each route asks the registry whether the capability exists for the person (`Registry.findFor`). `GET` answers 404 "Okänd förmåga." for a name that is unknown or not a read, and `POST` for one that is unknown or an execute. A capability hidden from the person gets the same 404, with the same body and headers, whatever the input: its connector switched off or leaving the person out of its audience, or the capability switched off ([D23](../decisions/D23-connectors-are-managed-in-the-database.md)). So does any "Okänd förmåga." raised while the capability runs: its connector switched off between the check and the call, a nested call to a capability hidden from the person, or a source's own refusal in those words. Input that is not JSON answers 400 "Ogiltig förfrågan.", and a `POST` body over 8,000 characters 400 "För stor förfrågan.". Input that its schema refuses answers 400 "Ogiltig förfrågan till <name>.".
+
+A capability of a connector the person can see, whose scope leaves the person out, answers 400 "Du saknar behörighet för åtgärden.". D23 hides a connector by its audience and leaves finer rules to the manifest's scope, and `GET /api/connectors` lists the capabilities that exist for the person, each with `inScope` (`Registry.catalogueFor`), so the person may learn that such a capability exists. A capability switched off is left out of that listing, as it is left out of the model's tools, the menu and `/api/cap`.
+
+The other surfaces answer the same cases in their own way:
+
+- A model tool call (through `runCapability`) and a nested `clew.call` reach `Registry.run`, which refuses a hidden or unknown capability with "Okänd förmåga." and the scope with "Du saknar behörighet för åtgärden.". `clew.call` runs as a nested call, which refuses an execute with "En anslutning kan inte utföra åtgärder i en annan anslutning." on the capability it would run, looked up after its own read of the governance: one that exists for the person then is refused, one hidden from them is unknown, and one switched on, let in or registered between the call's read and the run's is refused too, so nothing runs. `Registry.run` itself never refuses an execute, since the execution ledger runs an approved one through it.
+- The model's tool list holds only what the person may call, so it leaves out a hidden capability and one outside the scope alike.
+- A card action (the decision, "Det här händer" and the review's preview) and `POST /api/executions` ask `Registry.allowed` first, which holds the scope, and answer a hidden capability, an unknown one and one outside the scope alike: 400 "Okänd förmåga.". A card names its own capabilities; an execution names the one the person approves.
+- `POST /api/connectors/call` ([connector-callback.ts](../../apps/server/src/routes/connector-callback.ts)) answers as the published contract gives it (`/api/connectors/call` in the connector OpenAPI document): 404 `not-found` for a target that is hidden or unknown, the same answer for both; 403 `denied` for the scope, an execute, the target's own refusal of the person (its 403) and a grant for one of Clew's own connectors, whose `uses` is the unbounded `'*'` and which calls in process, never back through this route; 400 `invalid` for input, a circular call and a refusal of one of Clew's modules that carries no code; 503 `unavailable` for a target that is down, rejects Clew's key or assertion (its 401) or answers what Clew cannot verify. The registry's refusals and what a remote connector answers carry the protocol's code (`CapabilityError.code`), which is how the route tells a refusal from a failure; a remote connector's `denied` counts as a refusal only with its 403 (`remote.ts`). Anything else, Clew failing to read its own keys or the person among it, is logged through the route's `failed` and answered 503 `unavailable`. While Clew starts, the callback and the key set at `GET /api/connectors/jwks` answer 503 `unavailable` in the same shape and read nothing: [main.ts](../../apps/server/src/main.ts) mounts them ahead of the startup gate, which answers the rest of `/api` with a bare line for Clew's own pages.
 
 The generic capability API is not an execution shortcut. Human decision routes include card actions, calendar decisions and `POST /api/executions`; cross-system jobs use `POST /api/jobs`. Their contracts are owned by the [business routes](../../apps/server/src/routes/api.ts) and use cases, not by the connector OpenAPI document.
 
@@ -28,9 +39,13 @@ For comparison, the browser's POST body is the raw capability input. The server-
 
 ## What the registry does
 
-[Registry.run](../../packages/connectors/src/index.ts) enforces capability scope, current connector governance and input/output validation. The [server wrapper](../../apps/server/src/connectors/registry.ts) also checks the person's current authorization around the call.
+[Registry.run](../../packages/connectors/src/index.ts) enforces capability scope, current connector governance and input/output validation. The [server wrapper](../../apps/server/src/connectors/registry.ts) and the [connector callback](../../apps/server/src/routes/connector-callback.ts) pass the person's reauthorization check into the registry. After refreshing governance, the registry checks current authority before dispatch and again before releasing the result, including for nested calls. Removing an audience group during a read therefore withholds its result even when the person's grant version stays the same.
 
-For a remote connector, [remote.ts](../../packages/connectors/src/remote.ts) makes the HTTP exchange. The connector independently verifies identity and source access. For core functionality, the descriptor runs the local use case. UI visibility and model tool selection do not replace these checks.
+Inside the process the actor carries the person's provisioned groups, which an audience's `groups` match. A request and the execution ledger hand the registry `audiencedActorOf(persona)`, the published actor with the groups; the refresh and a connector's callback hand it the whole authenticated context, which carries them too. A nested `clew.call` keeps the actor it was given, so Clew's own composites ask with the groups too. The groups never leave the process.
+
+For a remote connector, [remote.ts](../../packages/connectors/src/remote.ts) makes the HTTP exchange, and every body it posts (a capability, a document, a figure, a scan) carries `actorOf(actor)`, the published actor and nothing more. The connector independently verifies identity and source access. For core functionality, the descriptor runs the local use case. UI visibility and model tool selection do not replace these checks.
+
+The conformance check (`scripts/connector-check.ts` and "Testa anslutning" on the administration page, both [check.ts](../../packages/connectors/src/check.ts)) hands the registry its two people as the refresh does, with the whole authenticated context and a group (`asInProduction`). The check's requests therefore go through the same cut in `remote.ts` as production's, and its result holds for a connector that refuses anything beyond the published actor.
 
 ## Models and declared views
 
@@ -48,8 +63,9 @@ A connector can separately wrap a source that speaks MCP, translating it into Cl
 
 ## Trace the behavior
 
-- [Business routes](../../apps/server/src/routes/api.ts): generic read/propose calls and separate decision routes.
-- [Connector callbacks](../../apps/server/src/routes/connectors.ts): callback authority and dependency enforcement.
+- [Capability routes](../../apps/server/src/routes/capabilities.ts): generic read/propose calls.
+- [Business routes](../../apps/server/src/routes/api.ts): where the capability routes are mounted, and the separate decision routes.
+- [Connector callbacks](../../apps/server/src/routes/connector-callback.ts), served by [the connector routes](../../apps/server/src/routes/connectors.ts): callback authority, dependency enforcement and the contract's answers.
 - [Registry](../../packages/connectors/src/index.ts): scope, governance, validation and tool derivation.
 - [Card decisions](../../apps/server/src/threads/usecases/decisions.ts) and [execution ledger](../../apps/server/src/modules/executions/usecases.ts): approval through receipt.
-- [Authorization boundary tests](../../tests/unit/authorization-boundaries.test.ts): regression evidence.
+- [Authorization boundary tests](../../tests/unit/authorization-boundaries.test.ts), [capability route tests](../../tests/unit/capability-routes.test.ts) and [callback tests](../../tests/unit/connector-callback.test.ts): regression evidence.

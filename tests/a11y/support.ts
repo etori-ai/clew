@@ -49,6 +49,7 @@ import {
   TODAY,
   USER_NAME,
   allCommitments,
+  changeable,
   commitmentsFor,
   myCommitments,
   readOnlyCommitments,
@@ -181,6 +182,15 @@ export class MockApi {
   devAccounts: { userName: string; name: string }[] | undefined = undefined;
   /** The session says the person may administer connectors (D23). Off by default so the other suites see the ordinary page. */
   admin = false;
+  /**
+   * "Vem ser det" on Anslutna system and Modeller (D23, D24, D68): the units and the provisioned groups the audience
+   * editor offers (`GET /api/admin/units` and `/api/admin/groups`), and whether both reads fail (503, after the page's
+   * one retry). `holdAudienceLists` keeps both reads on their way.
+   */
+  audienceUnits = [...units];
+  audienceGroups = [...groups];
+  audienceListsFail = false;
+  private audienceListsHeld?: Promise<void>;
   /** Användare (D85): the people and the group-capability rows the users page shows; the rows change with the page's actions. */
   users = usersOverview();
   /** Användare (D100): the people the list is read from, a page at a time, and every question the page has asked. */
@@ -190,8 +200,20 @@ export class MockApi {
   peopleRefused = false;
   /** The users page for someone with `admin.connectors` but not `admin.users`: the server refuses. */
   usersForbidden = false;
+  /** Användare: the overview cannot be read (503, after the page's one retry), while the people list can. */
+  usersFails = false;
+  /**
+   * Användare (D85): groups the organisation holds beyond the first that the overview offers. Only the group picker's
+   * server search finds them, and every text it sent is kept.
+   */
+  groupsBeyond: Array<{ id: string; label: string }> = [];
+  groupSearches: string[] = [];
+  /** Användare: the group picker's server search cannot be answered (503, every time it is asked). */
+  groupSearchFails = false;
   /** Organisation (D99): the tree the organisation page shows; it shares `usersForbidden`, as the two share a capability. */
   organisation = organisationOverview();
+  /** Organisation: the tree and every unit's people fail to be read (503, after the page's one retry). */
+  organisationFails = false;
   /**
    * The installation's appearance (D98): Astryx Neutral with no logo until a test saves or sets one. The public read
    * every page makes and Administration › Utseende share it, as they share the one row on the server.
@@ -310,6 +332,14 @@ export class MockApi {
     });
     return release;
   }
+  /** Keeps the audience editor's reads of the units and the groups pending until the returned function is called. */
+  holdAudienceLists() {
+    let release = () => {};
+    this.audienceListsHeld = new Promise<void>(resolve => {
+      release = resolve;
+    });
+    return release;
+  }
   private update(id: string, change: Partial<Thread>) {
     this.threads = this.threads.map(t => (t.id === id ? { ...t, ...change, updatedAt: NOW } : t));
     return this.threads.find(t => t.id === id)!;
@@ -417,18 +447,41 @@ export class MockApi {
           return saved({ logo: null });
         }
       }
-      if (path === '/admin/units') return json({ units });
-      if (path === '/admin/groups') return json({ groups });
+      if (path === '/admin/units' || path === '/admin/groups') {
+        await this.audienceListsHeld;
+        if (this.audienceListsFail)
+          return route.fulfill({ status: 503, json: { error: 'Något gick fel. Försök igen.' } });
+        return path === '/admin/units' ? json({ units: this.audienceUnits }) : json({ groups: this.audienceGroups });
+      }
       if (path === '/admin/users' && method === 'GET')
         return this.usersForbidden
           ? route.fulfill({ status: 403, json: { error: 'Du saknar behörighet för åtgärden.', code: 'denied' } })
-          : json(this.users);
+          : this.usersFails
+            ? route.fulfill({ status: 503, json: { error: 'Något gick fel. Försök igen.' } })
+            : json(this.users);
+      // The group picker's search (D85): the organisation's groups whose name or external id holds every word, the
+      // first ten by name, as the server answers it.
+      if (path === '/admin/users/groups/search' && method === 'POST') {
+        const { text } = request.postDataJSON() as { text: string },
+          words = text.normalize('NFC').toLocaleLowerCase('sv').split(/\s+/).filter(Boolean);
+        this.groupSearches.push(text);
+        if (this.groupSearchFails)
+          return route.fulfill({ status: 503, json: { error: 'Något gick fel. Försök igen.' } });
+        return json({
+          groups: [...this.users.groups, ...this.groupsBeyond]
+            .filter(g =>
+              words.every(w => [g.label, g.id].some(v => v.normalize('NFC').toLocaleLowerCase('sv').includes(w))),
+            )
+            .sort((a, b) => a.label.localeCompare(b.label, 'sv'))
+            .slice(0, 10),
+        });
+      }
       if (path === '/admin/users/search' && method === 'POST') {
         if (this.usersForbidden)
           return route.fulfill({ status: 403, json: { error: 'Du saknar behörighet för åtgärden.', code: 'denied' } });
         // The server's reading of a question (D100), on the suite's people: every part narrows, then one page.
         const asked = request.postDataJSON() as UsersAdminQueryType,
-          words = (asked.text ?? '').toLocaleLowerCase('sv').split(/\s+/).filter(Boolean),
+          words = (asked.text ?? '').normalize('NFC').toLocaleLowerCase('sv').split(/\s+/).filter(Boolean),
           status = (u: (typeof this.people)[number]) =>
             !u.enabled ? 'disabled' : !u.active ? 'no-access' : u.bound ? 'signed-in' : 'not-signed-in';
         this.peopleQueries.push(asked);
@@ -436,7 +489,9 @@ export class MockApi {
         const matching = this.people.filter(
           u =>
             words.every(w =>
-              [u.name, u.title, u.userName, u.email].some(v => (v ?? '').toLocaleLowerCase('sv').includes(w)),
+              [u.name, u.title, u.userName, u.email].some(v =>
+                (v ?? '').normalize('NFC').toLocaleLowerCase('sv').includes(w),
+              ),
             ) &&
             (!(asked.unitId || asked.role) ||
               u.assignments.some(
@@ -458,8 +513,12 @@ export class MockApi {
       if (path === '/admin/organisation' && method === 'GET')
         return this.usersForbidden
           ? route.fulfill({ status: 403, json: { error: 'Du saknar behörighet för åtgärden.', code: 'denied' } })
-          : json(this.organisation);
+          : this.organisationFails
+            ? route.fulfill({ status: 503, json: { error: 'Något gick fel. Försök igen.' } })
+            : json(this.organisation);
       const unitPeople = /^\/admin\/organisation\/units\/([^/]+)$/.exec(path);
+      if (unitPeople && method === 'GET' && this.organisationFails)
+        return route.fulfill({ status: 503, json: { error: 'Något gick fel. Försök igen.' } });
       if (unitPeople && method === 'GET') {
         const unitId = decodeURIComponent(unitPeople[1]!),
           unit = this.organisation.units.find(u => u.unitId === unitId);
@@ -475,6 +534,8 @@ export class MockApi {
       // The catalogues' keys (D107): the answer that issues or rotates one carries the key, once.
       if (path === '/admin/users/provisioners' && method === 'POST') {
         const input = request.postDataJSON() as { id: string; label: string };
+        // The contract's label is one line without a control character (PROVISIONER_LABEL_PATTERN).
+        if (/\p{Cc}/u.test(input.label)) return route.fulfill({ status: 400, json: { error: 'Ogiltig förfrågan.' } });
         if (this.users.provisioners.some(p => p.id === input.id))
           return route.fulfill({
             status: 400,
@@ -504,13 +565,16 @@ export class MockApi {
           this.users.provisioners = this.users.provisioners.filter(p => p !== provisioner);
           return json(this.users);
         }
-        const { graceHours } = request.postDataJSON() as { graceHours: number };
+        const { graceHours } = request.postDataJSON() as { graceHours: number },
+          // One replaced key is kept (D107 item 5): one still answering is ended, and the answer says until when.
+          before = provisioner.previousValidUntil;
         provisioner.previousValidUntil = graceHours ? '2026-11-12T05:00:00.000Z' : null;
         return json({
           id: provisioner.id,
           token: 'a11y-key-rotated',
           address: 'https://clew.test/scim/v2',
           overview: this.users,
+          ...(before && before > NOW ? { endedEarlier: before } : {}),
         });
       }
       if (path === '/admin/users/group-capabilities' && method === 'POST') {
@@ -525,7 +589,8 @@ export class MockApi {
         )
           this.users.groupCapabilities.push({
             groupExternalId: input.groupExternalId,
-            groupLabel: this.users.groups.find(g => g.id === input.groupExternalId)?.label ?? null,
+            groupLabel:
+              [...this.users.groups, ...this.groupsBeyond].find(g => g.id === input.groupExternalId)?.label ?? null,
             capability: input.capability,
           });
         return json(this.users);
@@ -735,7 +800,7 @@ export class MockApi {
     if (path === '/cap/clew.news')
       return this.news
         ? json({ output: this.news, source: 'Startsidan', view: newsSpec })
-        : route.fulfill({ status: 400, json: { error: 'Okänd förmåga.' } });
+        : route.fulfill({ status: 400, json: { error: 'Du saknar behörighet för åtgärden.' } });
     if (path === '/cap/communication.newsItem')
       return json({ output: newsItemOutput, source: 'Kommunikation', view: newsItemSpec });
     // Kompetens (D108): the catalogue and a manager's registration.
@@ -1179,7 +1244,8 @@ export class MockApi {
     if (key === 'rows') {
       const delay = this.entityRowsDelay[capability];
       if (delay) await new Promise(resolve => setTimeout(resolve, delay));
-      const known = new Set(list.groups.flatMap(g => g.entities.map(e => e.key)));
+      // A source is asked with each person's user name and answers with it (D122).
+      const known = new Set(list.groups.flatMap(g => g.entities.map(e => e.sourceKey)));
       const rows = this.entityRows[capability];
       const answer: EntityRows = silent
         ? { capability, status: silent, rows: [] }
@@ -1192,7 +1258,7 @@ export class MockApi {
     if (!detail) return missing();
     if (sub === undefined) return json(detail);
     if (sub !== 'section' || !detail.sections.some(s => s.capability === capability)) return missing();
-    const row = this.entityRows[capability]?.rows.find(r => r.key === detail.entity.key);
+    const row = this.entityRows[capability]?.rows.find(r => r.key === detail.entity.sourceKey);
     const section: EntitySection = silent
       ? { capability, status: silent }
       : { capability, status: 'ok', ...(row ? { row } : {}) };
@@ -1247,7 +1313,7 @@ export class MockApi {
       const id = decodeURIComponent(done[1]!);
       const row = this.commitments.find(c => c.id === id);
       if (!row) return fail(400, 'Åtgärdspunkten finns inte.');
-      if (!row.mine) return fail(403, 'Bara den som äger åtgärdspunkten kan markera den som klar.');
+      if (!changeable(row)) return fail(403, 'Bara den som äger åtgärdspunkten kan markera den som klar.');
       this.commitments = this.commitments.map(c => {
         if (c.id !== id) return c;
         if (method === 'POST') return { ...c, done: true, doneAt: NOW };

@@ -189,6 +189,8 @@ export interface DialogueTx {
   /** These units' names; an unknown id is absent. */
   unitLabels(ids: readonly string[]): Promise<ReadonlyMap<string, string>>;
   // Erasure and export.
+  /** Hold the person's current active state until the erasure commits. An unknown id has no state. */
+  lockPersonForErasure(personId: string): Promise<boolean | undefined>;
   /**
    * Remove the person from every row (owner, author, added by, done by) and remove their own notes; the cards of what
    * they owned are returned.

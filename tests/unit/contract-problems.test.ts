@@ -1,10 +1,15 @@
 import { describe, expect, test } from 'bun:test';
+import { randomUUID } from 'node:crypto';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import {
   ConnectorPatchInput,
+  GroupCapabilityInput,
   ModelPatchInput,
+  PROVISIONED_KEY_LENGTH,
+  PreviewQuery,
   ProviderPatchInput,
+  UsersAdminQuery,
   SiteHeaderOutputSchema,
   SnoozeInput,
   WeekEventsSchema,
@@ -15,6 +20,8 @@ import {
 } from '../../packages/contracts/src/index';
 import { ConnectorManifestSchema, ExecuteResultSchema, FigureSchema } from '../../packages/connectors/src/protocol';
 import { isKey } from '../../apps/server/src/modules/entities/domain';
+import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
+import { scimUsecases } from '../../apps/server/src/modules/people/usecases';
 import { manifest as hello } from '../../connectors/hello/connector.mjs';
 import { manifest as phonebook } from '../../connectors/phonebook/connector.mjs';
 
@@ -257,9 +264,51 @@ describe('what the schemas say after they are built', () => {
     expect(checkContract(SnoozeInput, { preset: long })).toBe(false);
     expect(ajv.compile(SnoozeInput)({ preset: fits })).toBe(true);
     expect(ajv.compile(SnoozeInput)({ preset: long })).toBe(false);
-    expect(isKey('😀'.repeat(256))).toBe(true);
-    expect(isKey('😀'.repeat(257))).toBe(false);
-    expect(isKey('')).toBe(false);
+    expect(isKey('unit', '😀'.repeat(256))).toBe(true);
+    expect(isKey('unit', '😀'.repeat(257))).toBe(false);
+    expect(isKey('unit', '')).toBe(false);
+    // A person's key is their id (D122): as long as an id may be.
+    expect(isKey('person', '😀'.repeat(80))).toBe(true);
+    expect(isKey('person', '😀'.repeat(81))).toBe(false);
+  });
+  test('a key SCIM stores fits wherever an administrator names it, an audience of a connector or a model among them, and a longer one fits nowhere (A6)', async () => {
+    // A group key in distinguished-name form runs past the 80 characters an audience once took.
+    const key = 'CN=' + 'x'.repeat(PROVISIONED_KEY_LENGTH - 3),
+      longer = key + 'x';
+    expect(PROVISIONED_KEY_LENGTH).toBe(512);
+    const scim = scimUsecases({
+        store: memoryProvisionStore(),
+        clock: () => new Date('2026-11-12T06:00:00Z'),
+        ids: () => randomUUID(),
+        digest: token => token,
+      }),
+      p = { id: 'mk', organisationId: 'org', label: 'Metakatalogen' };
+    expect(
+      (await scim.createGroup(p, { externalId: key, displayName: 'Lång' }, 'https://clew.test/scim/v2')).externalId,
+    ).toBe(key);
+    await expect(
+      scim.createGroup(p, { externalId: longer, displayName: 'Längre' }, 'https://clew.test/scim/v2'),
+    ).rejects.toMatchObject({
+      status: 400,
+      scimType: 'invalidValue',
+      detail: "Attribute 'externalId' needs a non-empty string of at most 512 characters.",
+    });
+    const audience = (k: string) => ({ mode: 'selected', units: [k], groups: [k] });
+    const named: Array<[string, Parameters<typeof ajv.compile>[0], (k: string) => unknown]> = [
+      ['a connector audience', ConnectorPatchInput, k => ({ audience: audience(k) })],
+      ['a model audience', ModelPatchInput, k => ({ audience: audience(k) })],
+      ['a group-capability row', GroupCapabilityInput, k => ({ groupExternalId: k, capability: 'admin.users' })],
+      ["the people list's unit", UsersAdminQuery, k => ({ unitId: k })],
+      ["a preview's unit", PreviewQuery, k => ({ role: 'employee', unitId: k })],
+    ];
+    for (const [what, schema, value] of named) {
+      const valid = ajv.compile(schema);
+      expect({ what, key: valid(value(key)), longer: valid(value(longer)) }).toEqual({
+        what,
+        key: true,
+        longer: false,
+      });
+    }
   });
   test('a union of literals from a list is one branch per value, in the list’s order', () => {
     expect(JSON.parse(JSON.stringify(literals(['a', 'b', 3], { description: 'x' })))).toEqual({

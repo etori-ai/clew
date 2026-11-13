@@ -3,6 +3,7 @@ import {
   ENTITY_COLUMNS_MAX,
   ENTITY_KEY_MAX,
   ENTITY_KEYS_MAX,
+  foldSourceKey,
   viewRows,
   type EntityAction,
   type EntityAttention,
@@ -18,19 +19,38 @@ import type { DirectoryPerson, DirectoryUnit, NamedCard, Reach } from './model';
 /**
  * The pure part of the entities module (D97): who may be asked about, which keys a source is sent, and what of its
  * answer is kept. No I/O and no clock: everything depends on the directory and the answer handed in.
+ *
+ * An entity has two keys (D122). Clew's key names it in Clew's own records and addresses: a person's id, which never
+ * changes and is never reused, and a unit's id. The source's key is what a source is asked with and answers its rows
+ * with: a person's user name (D96 talks item 8), compared without regard to case, and a unit's id.
  */
 
-/** A key that fits on the wire (`SubjectSchema` in `@clew/contracts`), its length counted as the schema counts it. */
-export const isKey = (value: string) => value.length >= 1 && [...value].length <= ENTITY_KEY_MAX;
-/** A person's key is their user name, compared without regard to case (RFC 7643's default); a unit's is its id, exactly. */
-export const foldKey = (kind: EntityKind, key: string) => (kind === 'person' ? key.toLowerCase() : key);
+/** The longest person key: Clew's ids (`id` in `@clew/contracts`). */
+const PERSON_KEY_MAX = 80;
+/**
+ * A key that can name an entity of this kind in Clew: never a NUL, which names nothing anywhere in Clew (PostgreSQL
+ * refuses to compare one), and no longer than the kind's key, counted as the schema counts it: a person's id, a unit's
+ * id that fits a key on the wire (`SubjectSchema` in `@clew/contracts`).
+ */
+export const isKey = (kind: EntityKind, value: string) =>
+  value.length >= 1 &&
+  !value.includes('\u0000') &&
+  [...value].length <= (kind === 'person' ? PERSON_KEY_MAX : ENTITY_KEY_MAX);
+/** A source's key that fits on the wire (`SubjectSchema`), its length counted as the schema counts it. */
+const fitsWire = (value: string) => value.length >= 1 && [...value].length <= ENTITY_KEY_MAX;
 
-/** The key a person is asked about by, or undefined: a person without a user name, or a deactivated one, is never asked about. */
-export const personKey = (person: Pick<DirectoryPerson, 'userName' | 'enabled'>) =>
-  person.enabled && person.userName !== null && isKey(person.userName) ? person.userName : undefined;
+/**
+ * The key a source is asked about a person by, their user name, or undefined: a person without one that fits a key, or a
+ * deactivated one, is never asked about.
+ */
+export const personKey = (person: Pick<DirectoryPerson, 'id' | 'userName' | 'enabled'>) =>
+  person.enabled && isKey('person', person.id) && person.userName !== null && fitsWire(person.userName)
+    ? person.userName
+    : undefined;
 export const personRef = (person: DirectoryPerson & { userName: string }, unit: DirectoryUnit | null): EntityRef => ({
   kind: 'person',
-  key: person.userName,
+  key: person.id,
+  sourceKey: person.userName,
   name: person.name,
   ...(unit ? { detail: unit.unitLabel } : {}),
   id: person.id,
@@ -38,18 +58,20 @@ export const personRef = (person: DirectoryPerson & { userName: string }, unit: 
 export const unitRef = (unit: DirectoryUnit): EntityRef => ({
   kind: 'unit',
   key: unit.unitId,
+  sourceKey: unit.unitId,
   name: unit.unitLabel,
   ...([...unit.unitId].length <= 80 ? { id: unit.unitId } : {}),
 });
 /** A person who can be asked about: active, with a user name that fits a key. */
-export const askable = (person: DirectoryPerson): person is DirectoryPerson & { userName: string } =>
+export const askable = <P extends DirectoryPerson>(person: P): person is P & { userName: string } =>
   !!personKey(person);
 
 /** The units the reader manages or belongs to, each once, by label in Swedish order. */
 export function readerUnits(reach: Reach): DirectoryUnit[] {
   const units = new Map<string, DirectoryUnit>();
   for (const u of [...reach.units, ...reach.managed])
-    if (isKey(u.unitId) && !units.has(u.unitId)) units.set(u.unitId, { unitId: u.unitId, unitLabel: u.unitLabel });
+    if (isKey('unit', u.unitId) && !units.has(u.unitId))
+      units.set(u.unitId, { unitId: u.unitId, unitLabel: u.unitLabel });
   return [...units.values()].sort(
     (a, b) => a.unitLabel.localeCompare(b.unitLabel, 'sv') || a.unitId.localeCompare(b.unitId),
   );
@@ -64,7 +86,7 @@ export function unitsBelow(reach: Reach): Array<DirectoryUnit & { under: string 
   for (const unit of reach.managed)
     for (const person of unit.people)
       for (const b of person.below ?? [])
-        if (b.role === 'manager' && isKey(b.unitId) && !own.has(b.unitId) && !found.has(b.unitId))
+        if (b.role === 'manager' && isKey('unit', b.unitId) && !own.has(b.unitId) && !found.has(b.unitId))
           found.set(b.unitId, { unitId: b.unitId, unitLabel: b.unitLabel, under: unit.unitId });
   return [...found.values()].sort(
     (a, b) => a.unitLabel.localeCompare(b.unitLabel, 'sv') || a.unitId.localeCompare(b.unitId),
@@ -91,27 +113,46 @@ export function groupsOf(kind: EntityKind, reach: Reach): EntityList['groups'] {
     entities: unit.people.filter(askable).map(p => personRef(p, unit)),
   }));
 }
-/** Every key the reader may ask a source about over the whole list, each once in the directory's spelling. */
-export function listedKeys(kind: EntityKind, reach: Reach): string[] {
-  const keys = new Map<string, string>();
-  const add = (key: string) => {
-    if (!keys.has(foldKey(kind, key))) keys.set(foldKey(kind, key), key);
-  };
-  if (kind === 'unit') followedUnits(reach).forEach(u => add(u.unitId));
-  else for (const unit of reach.managed) for (const p of unit.people) if (askable(p)) add(p.userName);
-  return [...keys.values()];
+/** An entity of the list by both its keys: Clew's (`key`) and the source's (`sourceKey`). */
+export interface Listed {
+  key: string;
+  sourceKey: string;
 }
-/** A person on a unit the reader manages, by key without regard to case, with the first such unit in the list's order. */
-export function managedPerson(
-  reach: Reach,
-  key: string,
-): { person: DirectoryPerson & { userName: string }; unit: DirectoryUnit } | undefined {
-  const folded = foldKey('person', key);
+/**
+ * Every entity the reader may ask a source about over the whole list, each once, in the list's order: for a unit every
+ * one the reader follows up (D117).
+ */
+export function listedKeys(kind: EntityKind, reach: Reach): Listed[] {
+  const listed = new Map<string, Listed>();
+  if (kind === 'unit')
+    for (const u of followedUnits(reach)) listed.set(u.unitId, { key: u.unitId, sourceKey: u.unitId });
+  else
+    for (const unit of reach.managed)
+      for (const p of unit.people)
+        if (askable(p) && !listed.has(p.id)) listed.set(p.id, { key: p.id, sourceKey: p.userName });
+  return [...listed.values()];
+}
+/** A person found on a unit the reader manages, with that unit; `placed` is false for someone who reports from below. */
+export interface Managed {
+  person: DirectoryPerson & { userName: string };
+  unit: DirectoryUnit;
+  placed: boolean;
+}
+/**
+ * A person on a unit the reader manages, by Clew's key (their id), with the unit of the first card in the list's order
+ * that they are placed on, else of the first they report to from below (D99 item 4). Someone who reports from below is
+ * not on that unit, so it does not say where they work.
+ */
+export function managedPerson(reach: Reach, id: string): Managed | undefined {
+  let fromBelow: Managed | undefined;
   for (const unit of reach.managed)
     for (const person of unit.people)
-      if (askable(person) && foldKey('person', person.userName) === folded)
-        return { person, unit: { unitId: unit.unitId, unitLabel: unit.unitLabel } };
-  return undefined;
+      if (askable(person) && person.id === id) {
+        const found = { person, unit: { unitId: unit.unitId, unitLabel: unit.unitLabel }, placed: !person.below };
+        if (found.placed) return found;
+        fromBelow ??= found;
+      }
+  return fromBelow;
 }
 /** A unit the reader manages or belongs to, by its id. */
 export const memberUnit = (reach: Reach, key: string) => readerUnits(reach).find(u => u.unitId === key);
@@ -158,13 +199,13 @@ export function checkRows(
 ): Checked | undefined {
   const rows = viewRows(view, output);
   if (!rows) return undefined;
-  const spelling = new Map(asked.map(k => [foldKey(kind, k), k]));
+  const spelling = new Map(asked.map(k => [foldSourceKey(kind, k), k]));
   const keep = drawn(view);
   const seen = new Set<string>();
   const kept: Record<string, unknown>[] = [];
   for (const row of rows) {
     if (typeof row.key !== 'string') continue;
-    const folded = foldKey(kind, row.key);
+    const folded = foldSourceKey(kind, row.key);
     const key = spelling.get(folded);
     if (key === undefined || seen.has(folded)) continue;
     seen.add(folded);
@@ -241,9 +282,9 @@ export function columnsOf(reads: AboutRead[]): EntityColumn[] {
     .slice(0, ENTITY_COLUMNS_MAX);
 }
 /**
- * "Just nu" (D97 item 5): per entity of the list, in its order, how many of the reader's cards name it that wait for the
- * reader's decision and how many are Clew's proposals, with the card when there is exactly one of those. A card only for
- * information counts for neither, and an entity that no such card names is absent.
+ * "Just nu" (D97 item 5): per entity of the list, in its order and by Clew's key, how many of the reader's cards name it
+ * that wait for the reader's decision and how many are Clew's proposals, with the card when there is exactly one of
+ * those. A card only for information counts for neither, and an entity that no such card names is absent.
  */
 export function attentionOf(keys: readonly string[], cards: readonly NamedCard[]): EntityAttention[] {
   const counted = new Map<string, { act: number; proposals: number; threads: string[] }>();

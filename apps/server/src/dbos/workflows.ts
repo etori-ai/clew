@@ -41,15 +41,21 @@ function activity<K extends keyof Activities>(name: K): Activities[K] {
     return fn(...args);
   }) as Activities[K];
 }
-/** One checkpointed call of a use case. Retries are the step's; a step that still fails ends the workflow in ERROR, where an operator resumes it. */
-const step = <T>(name: keyof Activities, run: () => Promise<T>, maxAttempts = 5) =>
+/**
+ * One checkpointed call of a use case. Retries are the step's; a step that still fails ends the workflow in ERROR, where
+ * it stays until an operator starts it again from that step once the cause is fixed (`scripts/workflows-move.ts`):
+ * `resumeWorkflow` changes nothing for a workflow that has ended. An attempt that runs past `timeoutMS` is given up and
+ * retried, but the engine does not stop it: it goes on beside the retry. A step with no timeout (`null`) runs for as
+ * long as its use case does.
+ */
+const step = <T>(name: keyof Activities, run: () => Promise<T>, maxAttempts = 5, timeoutMS: number | null = 60_000) =>
   DBOS.runStep(run, {
     name,
     retriesAllowed: maxAttempts > 1,
     maxAttempts,
     intervalSeconds: 1,
     backoffRate: 2,
-    timeoutMS: 60_000,
+    ...(timeoutMS === null ? {} : { timeoutMS }),
   });
 /** Absolute time: a delayed start never restarts the requested duration (D47). */
 async function sleepUntil(at: string) {
@@ -57,11 +63,15 @@ async function sleepUntil(at: string) {
   if (wait > 0) await DBOS.sleep(wait);
 }
 
-/** A scheduled job (D15, D47): wait for its run time, then run it once the ledger lets go of it. */
+/**
+ * A scheduled job (D15, D47): wait for its run time, then run it once the ledger lets go of it. Its step has no timeout:
+ * the run keeps its claim on the job for as long as it lasts (`scheduledJobRunner`), and an attempt given up at a
+ * timeout would go on beside its retry, which would run the job a second time once the claim's lease had passed.
+ */
 export const scheduledJob = DBOS.registerWorkflow(
   async (input: { id: string; dueAt: string }): Promise<void> => {
     await sleepUntil(input.dueAt);
-    while ((await step('runScheduledJob', () => activity('runScheduledJob')(input.id), 10)) === 'busy')
+    while ((await step('runScheduledJob', () => activity('runScheduledJob')(input.id), 10, null)) === 'busy')
       await DBOS.sleep(30_000);
   },
   { name: 'scheduledJob', serialization: 'portable' },

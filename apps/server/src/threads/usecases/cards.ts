@@ -22,7 +22,7 @@ import {
 } from '@clew/contracts';
 import { HISTORY_LIMIT, historySubjects, itemEvents, reminderStart, rhythmFor } from '../domain';
 import {
-  actorOf,
+  audiencedActorOf,
   givenBy,
   pathOf,
   receipt,
@@ -32,8 +32,9 @@ import {
   type ThreadDraft,
 } from '@clew/connectors';
 import { InputError } from '../../context';
-import type { ThreadStore, ThreadTx } from '../model';
+import type { PersonKeys, ThreadStore, ThreadTx } from '../model';
 import { threadAccess } from '../access';
+import { keyedDrafts } from './keys';
 
 /**
  * The stream's use cases (D20, D25): one function per user action, the actor first, built over ports. Nothing in here
@@ -56,6 +57,8 @@ export interface ThreadDeps {
   /** The timers behind a snooze (D29, D49): the same reminder workflow as D17, and the same return. */
   clock: () => Date;
   ids: () => string;
+  /** Whose a source's key is (D122): a row that names a person by user name names them by id. Absent: by nobody. */
+  people?: PersonKeys;
 }
 const REOPEN_MS = 10 * 60_000;
 /** Attention budget: pushed threads today against a fixed daily budget. The rest is bundled to lunch or the next morning. */
@@ -66,9 +69,19 @@ const sameDraft = (t: Thread, d: ThreadDraft, items: Thread['items']) =>
   (t.deadline ?? null) === (d.deadline ?? null) &&
   JSON.stringify(t.items) === JSON.stringify(items) &&
   JSON.stringify(t.actions) === JSON.stringify(d.actions);
+/**
+ * Rows without the people they name, whom Clew resolves from its directory (D122): what the source wrote, as far as a
+ * stored card can tell, since the card keeps the id and not the source's key.
+ */
+const unnamed = (items: Thread['items']) =>
+  items.map(item => {
+    if (item.subject?.entity !== 'person') return item;
+    const { subject: _, ...rest } = item;
+    return rest;
+  });
 
 export function threadUsecases(deps: ThreadDeps) {
-  const { store, registry, run, calendar, clock, ids } = deps;
+  const { store, registry, run, calendar, clock, ids, people } = deps;
   const access = threadAccess(store, registry);
   const inFlight = new Map<string, Promise<void>>();
   /**
@@ -103,9 +116,10 @@ export function threadUsecases(deps: ThreadDeps) {
     return task;
   }
   async function scanInto(persona: AuthenticatedContext, source: string) {
-    if (registry.visible(actorOf(persona), 'calendar')) await calendar.ensureProposalThread(persona, source);
+    if (registry.visible(audiencedActorOf(persona), 'calendar')) await calendar.ensureProposalThread(persona, source);
     await wakeDue(persona);
-    const drafts = await registry.scan(actorOf(persona));
+    // A person a row names by user name is kept by id (D122), resolved as the rows arrive.
+    const drafts = await keyedDrafts(people, persona, await registry.scan(audiencedActorOf(persona)));
     const now = clock();
     for (const d of drafts) {
       const scopedTopic = `${d.topic}:authority:${persona.authorizationVersion}`;
@@ -128,6 +142,9 @@ export function threadUsecases(deps: ThreadDeps) {
         selected: existing.items.find(x => x.ref === i.ref)?.selected ?? i.selected,
       }));
       if (sameDraft(existing, d, items)) continue;
+      // A row that names another person, or nobody, because the directory changed (a rename, a leaver, a reused name) is
+      // rewritten, but only the source moving is activity that wakes a snoozed card (D122).
+      const moved = !sameDraft({ ...existing, items: unnamed(existing.items) }, d, unnamed(items));
       await store.transaction(async tx => {
         const current = await tx.lockThread(persona.id, existing.id);
         if (
@@ -154,7 +171,7 @@ export function threadUsecases(deps: ThreadDeps) {
           details: { connector: d.connector, topic: d.topic, owner: persona.id },
         });
         // A snoozed card whose source moved comes back early (D28, D29): the snooze breaks on activity.
-        if (existing.snoozedUntil) {
+        if (existing.snoozedUntil && moved) {
           await wake(tx, existing, 'changed', now.toISOString());
           // The timer ends here, so the word the person was promised goes out now (D49), as it does on the refresh path.
           await tx.admitDelivery({
@@ -245,7 +262,7 @@ export function threadUsecases(deps: ThreadDeps) {
     if (!execution || execution.compensates || !['failed', 'partial'].includes(execution.state))
       throw new InputError('Kontrollera källans besked innan ett nytt försök görs.');
     const action = original.actions.find(a => a.kind === 'execute' && a.role === 'primary' && a.review === 'each');
-    if (!action || !registry.allowed(actorOf(persona), action.capability))
+    if (!action || !registry.allowed(audiencedActorOf(persona), action.capability))
       throw new InputError('Åtgärden är inte tillgänglig.');
     const rejected = new Set(original.receipt?.rows.filter(r => r.outcome === 'failed').map(r => r.ref));
     const items = original.items
@@ -294,7 +311,7 @@ export function threadUsecases(deps: ThreadDeps) {
     await persona.authorize();
     const now = clock();
     const threads = await access.list(persona, now.toISOString());
-    const areas = await registry.areas(actorOf(persona), { authorize: () => persona.authorize() });
+    const areas = await registry.areas(audiencedActorOf(persona), { authorize: () => persona.authorize() });
     const open = threads.filter(t => (t.state === 'open' || unresolvedExecution(t)) && t.kind === 'pushed');
     const today = stockholmDate(now.toISOString());
     return areas.map(a => {
@@ -357,7 +374,7 @@ export function threadUsecases(deps: ThreadDeps) {
   async function snoozeOptions(persona: AuthenticatedContext): Promise<SnoozePreset[]> {
     return snoozePresets(
       clock().toISOString(),
-      registry.visible(actorOf(persona), 'calendar') ? await calendar.todayEvents(persona) : [],
+      registry.visible(audiencedActorOf(persona), 'calendar') ? await calendar.todayEvents(persona) : [],
     );
   }
   /**

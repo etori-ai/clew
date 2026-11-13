@@ -5,6 +5,7 @@ import {
   parseSwedishTime,
   snoozeWhen,
   streamGroup,
+  SUBJECT_CHANGED,
   type AskValues,
   type CardAction,
   type SnoozeInput,
@@ -793,15 +794,24 @@ export function ActionRow({
     reviewed && (thread.receipt || pending || !open) ? (
       <Button ref={review} size={size} variant="secondary" label="Visa granskning" href={reviewLink} />
     ) : null;
+  // A started action that was not sent because its user name had moved to someone else, or away (D122): said so, and
+  // decided again with the item's own button, on the user name the person has now. Nothing is left to check.
+  const decideAgain = open && thread.execution?.state === 'failed' && thread.execution.reason === SUBJECT_CHANGED;
   // A decision the source has not confirmed is said so, unless it is the person's own and still on its way (D64).
   if (pending && (!settling || pressed === null))
     return (
       <HStack gap={2} vAlign="center" wrap="wrap">
-        {(!thread.execution ||
-          ['pending', 'running', 'unknown'].includes(thread.execution.state) ||
-          thread.execution.reason) && (
-          <Button size={size} label="Kontrollera status" clickAction={() => run(() => api.checkExecution(thread.id))} />
-        )}
+        {decideAgain
+          ? primaryButton
+          : (!thread.execution ||
+              ['pending', 'running', 'unknown'].includes(thread.execution.state) ||
+              thread.execution.reason) && (
+              <Button
+                size={size}
+                label="Kontrollera status"
+                clickAction={() => run(() => api.checkExecution(thread.id))}
+              />
+            )}
         {viewReview}
         <Text type="supporting">{pending}</Text>
         {addToConversation}

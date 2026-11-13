@@ -4,22 +4,30 @@ export interface Interval {
   start: string;
   end: string;
 }
-export interface Candidate {
-  participant: { email: string; name: string };
+/**
+ * Whom a slot is for: an address and a name, and whatever else the caller keeps with them, such as the person's id,
+ * which the planner hands back on the slot untouched.
+ */
+export interface Participant {
+  email: string;
+  name: string;
+}
+export interface Candidate<P extends Participant = Participant> {
+  participant: P;
   busy: Interval[];
 }
-export interface PlanInput {
+export interface PlanInput<P extends Participant = Participant> {
   /** Monday of the target week (YYYY-MM-DD). */
   week: string;
   /** Instants the manager is already busy, including proposals already drawn for other threads. */
   managerBusy: Interval[];
-  candidates: Candidate[];
+  candidates: Candidate<P>[];
   /** Earliest acceptable start, so a plan never proposes a slot in the past. */
   notBefore: string;
   durationMinutes?: number;
 }
-export interface PlannedSlot {
-  participant: { email: string; name: string };
+export interface PlannedSlot<P extends Participant = Participant> {
+  participant: P;
   start: string;
   end: string;
 }
@@ -33,7 +41,7 @@ export const collides = (slot: Interval, busy: Interval[]) => busy.some(b => ove
  * one conversation per day where possible, earliest first. No model involved; the server validates the
  * same collision rules again before anything is written.
  */
-export function planWeek(input: PlanInput): PlannedSlot[] {
+export function planWeek<P extends Participant>(input: PlanInput<P>): PlannedSlot<P>[] {
   const duration = input.durationMinutes ?? 60;
   const days = Array.from({ length: 5 }, (_, i) => addDays(input.week, i));
   const slots: Interval[] = [];
@@ -52,7 +60,7 @@ export function planWeek(input: PlanInput): PlannedSlot[] {
     }
   const taken: Interval[] = [...input.managerBusy];
   const usedDays = new Map<string, number>();
-  const planned: PlannedSlot[] = [];
+  const planned: PlannedSlot<P>[] = [];
   for (const candidate of input.candidates) {
     const free = slots.filter(slot => !collides(slot, taken) && !collides(slot, candidate.busy));
     // Prefer days with no conversation yet, then earliest.
@@ -70,10 +78,10 @@ export function planWeek(input: PlanInput): PlannedSlot[] {
 }
 
 /** Why a candidate got no slot (D30), for the judgement calls on the card: nothing free for them, or nothing free for both. */
-export function unplacedReasons(
-  input: PlanInput,
-  planned: PlannedSlot[],
-): Array<{ participant: PlannedSlot['participant']; reason: string }> {
+export function unplacedReasons<P extends Participant>(
+  input: PlanInput<P>,
+  planned: PlannedSlot<P>[],
+): Array<{ participant: P; reason: string }> {
   const duration = input.durationMinutes ?? 60;
   const days = Array.from({ length: 5 }, (_, i) => addDays(input.week, i));
   const dayFree = (busy: Interval[]) =>

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext, StaffOverview, StaffPerson } from '../../packages/contracts/src/index';
-import { COMPETENCE_CONNECTOR, Registry, actorOf } from '../../packages/connectors/src/index';
+import { COMPETENCE_CONNECTOR, Registry, audiencedActorOf } from '../../packages/connectors/src/index';
 import { memoryConnectorStore } from '../../apps/server/src/connectors/adapters/memory';
 import { connectorUsecases, type AdminDeps } from '../../apps/server/src/connectors/usecases/admin';
 import { applyAllRows, syncBundledRows, type ReconcileDeps } from '../../apps/server/src/connectors/reconcile';
@@ -56,7 +56,7 @@ function world() {
   const clock = () => new Date(now);
   let n = 0;
   const store = memoryCompetenceStore({
-    persons: [{ id: 'p-anna', organisationId: ORG, name: 'Anna Lindqvist', userName: 'anna.lindqvist' }],
+    persons: [{ id: 'p-anna', organisationId: ORG, name: 'Anna Lindqvist', userName: 'anna.lindqvist', enabled: true }],
   });
   const competence = competenceUsecases({
     store,
@@ -107,7 +107,7 @@ function world() {
   };
   const writable = async (p: AuthenticatedContext) => {
     await applyAllRows(reconcile);
-    return registry.visible(actorOf(p), COMPETENCE_CONNECTOR);
+    return registry.visible(audiencedActorOf(p), COMPETENCE_CONNECTOR);
   };
   /** The routes behind a guard that signs the request in as the persona named in `x-test-person`. */
   const app = competenceRoutes({
@@ -143,10 +143,10 @@ describe('the competence wiring (D108 item 13)', () => {
     await applyAllRows(w.reconcile);
     expect((await w.connectors.read(COMPETENCE_CONNECTOR))!).toMatchObject({ bundled: true, state: 'disabled' });
     for (const p of [hillevi, anna]) {
-      expect(w.registry.visible(actorOf(p), COMPETENCE_CONNECTOR)).toBe(false);
-      expect((await w.registry.areas(actorOf(p))).map(a => a.id)).toEqual([]);
-      expect(await w.registry.scan(actorOf(p))).toEqual([]);
-      await expect(w.registry.run(actorOf(p), 'competence.holdings', {})).rejects.toThrow();
+      expect(w.registry.visible(audiencedActorOf(p), COMPETENCE_CONNECTOR)).toBe(false);
+      expect((await w.registry.areas(audiencedActorOf(p))).map(a => a.id)).toEqual([]);
+      expect(await w.registry.scan(audiencedActorOf(p))).toEqual([]);
+      await expect(w.registry.run(audiencedActorOf(p), 'competence.holdings', {})).rejects.toThrow();
     }
     const refused = await w.call(mikael, 'GET', '/types');
     expect(refused.status).toBe(403);
@@ -156,9 +156,9 @@ describe('the competence wiring (D108 item 13)', () => {
 
     w.advance(60_000);
     await w.admin.update(mikael, COMPETENCE_CONNECTOR, { state: 'enabled' });
-    expect(w.registry.visible(actorOf(hillevi), COMPETENCE_CONNECTOR)).toBe(true);
-    expect((await w.registry.areas(actorOf(hillevi))).map(a => a.id)).toEqual(['competence']);
-    expect(await w.registry.run(actorOf(anna), 'competence.holdings', {})).toEqual({ rows: [] });
+    expect(w.registry.visible(audiencedActorOf(hillevi), COMPETENCE_CONNECTOR)).toBe(true);
+    expect((await w.registry.areas(audiencedActorOf(hillevi))).map(a => a.id)).toEqual(['competence']);
+    expect(await w.registry.run(audiencedActorOf(anna), 'competence.holdings', {})).toEqual({ rows: [] });
     // A later boot leaves the administrator's choice alone, on as well as off.
     await syncBundledRows(w.reconcile);
     expect((await w.connectors.read(COMPETENCE_CONNECTOR))!.state).toBe('enabled');

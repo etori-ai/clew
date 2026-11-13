@@ -133,8 +133,8 @@ describe('action points (D96 item 4)', () => {
 describe('a refused read is nothing to show (D96 item 9)', () => {
   test('the registry refusing the capability is a refusal; a source that failed is not', () => {
     expect(refused(new ApiError(400, 'Du saknar behörighet för åtgärden.'))).toBe(true);
-    expect(refused(new ApiError(400, 'Okänd förmåga.'))).toBe(true);
     expect(refused(new ApiError(400, 'Inget system för utvecklingssamtal är anslutet just nu.'))).toBe(true);
+    // A talks read switched off, or of a connector that leaves the person out, answers as an unknown one (D23).
     expect(refused(new ApiError(404, 'Okänd förmåga.'))).toBe(true);
     expect(refused(new ApiError(403, 'Sidan Personal är för den som är chef för en enhet.'))).toBe(true);
     expect(refused(new ApiError(400, 'Utvecklingssamtal svarade inte som väntat.'))).toBe(false);
