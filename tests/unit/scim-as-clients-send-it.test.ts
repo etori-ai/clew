@@ -1098,13 +1098,11 @@ describe('filters, pages and what a write answers', () => {
       attribute(GROUP, 'members').subAttributes.find((a: { name: string }) => a.name === '$ref').referenceTypes,
     ).toEqual(['User']);
     expect(attribute(GROUP, 'displayName').caseExact).toBe(false);
-    // A group's key is required as a user's is (S2): a POST without one is refused, a PUT without one keeps it.
-    for (const schema of [USER, GROUP])
-      expect(attribute(schema, 'externalId')).toMatchObject({ required: true, caseExact: true, uniqueness: 'server' });
-    expect(schemas.find(s => s.id === GROUP)).toMatchObject({
-      description: expect.stringContaining(
-        'Requires an externalId and a displayName. A PUT that leaves the externalId out, or sends it null or empty, keeps the one Clew holds; only a PATCH that removes it or sets it to null takes it away.',
-      ),
+    expect(attribute(USER, 'externalId')).toMatchObject({ required: true, caseExact: true, uniqueness: 'server' });
+    expect(attribute(GROUP, 'externalId')).toMatchObject({
+      required: false,
+      caseExact: true,
+      uniqueness: 'server',
     });
   });
 });
@@ -1554,7 +1552,7 @@ describe('what the review of users, the organisation and the guides found (2026-
         detail: "Attribute 'externalId' needs a non-empty string of at most 512 characters.",
       },
     });
-    // A POST without a key would make a group nobody can map or find again, and the next one another.
+    // Clew requires a stable source key on creation so the provisioner can retry by that key.
     const groups = store.state.groups.size,
       rows = store.state.audit.length;
     for (const sent of [{}, { externalId: null }, { externalId: '' }])
@@ -1580,6 +1578,7 @@ describe('what the review of users, the organisation and the guides found (2026-
     const removed = await patch(audience, { op: 'remove', path: 'externalId' });
     expect(removed.status).toBe(200);
     expect(removed.body).not.toHaveProperty('externalId');
+    expect(await json('GET', audience)).toEqual(removed);
     // A group that has no key keeps none through a PUT that sends none.
     const kept = await json('PUT', audience, { displayName: 'ad:audience', members: [{ value: person }] });
     expect(kept.status).toBe(200);
