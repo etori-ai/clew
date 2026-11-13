@@ -27,7 +27,7 @@ import { usePageTitle } from '../page-title';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { useRail } from '../components/nav';
 import { PageHeader } from '../components/page-header';
-import { ContentSkeleton } from '../components/loading';
+import { AttentionSkeleton, UnitsSkeleton } from '../components/loading';
 import { Summary, measureOf, summaryOf, toneWeight } from '../components/unit-figures';
 import { unitPageHref } from '../person-address';
 import { sourcePageHref } from '../talk-address';
@@ -163,9 +163,7 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
 
   // Until every source has answered, the line on top keeps its place, so the tables do not jump down when it arrives.
   const summaryLine = !settled ? (
-    <Card padding={4}>
-      <ContentSkeleton label="Hämtar det som ska tas upp …" rows={2} />
-    </Card>
+    <AttentionSkeleton />
   ) : attention.length ? (
     <Card padding={4}>
       <VStack gap={2} as="section" aria-labelledby="units-attention">
@@ -221,7 +219,7 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
       {errorMessage(list.error, 'Enheterna kunde inte hämtas just nu.')}
     </Text>
   ) : list.isPending || (first && detail.isPending) ? (
-    <ContentSkeleton heading={false} />
+    <UnitsSkeleton />
   ) : !units.length ? (
     <EmptyState headingLevel={2} title="Du följer inte upp någon enhet" description="Dialogstödet är för chefer." />
   ) : (

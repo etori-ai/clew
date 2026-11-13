@@ -6,8 +6,9 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import '@clew/ui/styles.css';
 import { createQueryClient } from './query-client';
 import { changeNotices } from './thread-cache';
-import { Center, LinkProvider, Providers, SessionBoundary, Spinner, type BrowserSession } from '@clew/ui';
-import type { SessionUser } from '@clew/contracts';
+import { LinkProvider, Providers, SessionBoundary, VisuallyHidden, type BrowserSession } from '@clew/ui';
+import type { SessionUser, SiteHeaderView } from '@clew/contracts';
+import { FirstLoad } from './components/first-load';
 import { StartPage } from './pages/start';
 import { TodoPage } from './pages/todo';
 import { ItemPage } from './pages/item';
@@ -49,11 +50,23 @@ const Devtools = import.meta.env.DEV
  */
 function Protected({ children }: { children: (shell: Shell) => React.ReactNode }) {
   const [shell, setShell] = useState<Shell | 'loading' | 'anonymous'>('loading');
+  const [header, setHeader] = useState<SiteHeaderView | null | undefined>(undefined);
   const [client] = useState(createQueryClient);
   const policy = useRef<string | undefined>(undefined);
   const location = useLocation();
   useEffect(() => {
     let cancelled = false;
+    // The shared header is public: it is read beside the session, so the first frame is the shell in its final shape
+    // (`FirstLoad`), with the band when a header connector answers and without it when none does, never first one and
+    // then the other (app critique, 2026-11-13). A failed read is no band, and the shell asks for it again.
+    const header = fetch('/api/header', { cache: 'no-store' })
+      .then(async response => (response.ok ? ((await response.json()) as SiteHeaderView) : null))
+      .catch(() => null)
+      .then(view => {
+        if (!cancelled) setHeader(view);
+        if (view) client.setQueryData(keys.header, view);
+        return view;
+      });
     fetch('/api/auth/session', { cache: 'no-store' })
       .then(async response => {
         if (cancelled) return;
@@ -62,12 +75,7 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
           return;
         }
         const data = await response.json();
-        // The shared header is read in the same wait as the session, so the shell is drawn once in its final shape: with
-        // the band when a header connector answers, without it when none does, never first one and then the other
-        // (app critique, 2026-11-13). A failed read leaves the shell to ask for it as before.
-        await fetch('/api/header', { cache: 'no-store' })
-          .then(async header => (header.ok ? client.setQueryData(keys.header, await header.json()) : undefined))
-          .catch(() => undefined);
+        await header;
         if (cancelled) return;
         setShell({
           session: { csrfToken: data.csrfToken, sessionKey: data.sessionKey, expiresAt: data.expiresAt },
@@ -143,11 +151,13 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
       window.removeEventListener('online', connect);
     };
   }, [client, shell]);
+  // Until the header has answered nothing is drawn, so the shell does not change shape when it does; then the shell's
+  // shape stands until the session is known.
   if (shell === 'loading')
-    return (
-      <Center height="100%" role="main">
-        <Spinner label="Hämtar sidan …" />
-      </Center>
+    return header === undefined ? (
+      <VisuallyHidden role="status">Hämtar sidan …</VisuallyHidden>
+    ) : (
+      <FirstLoad header={header} />
     );
   if (shell === 'anonymous') return <LoginPage returnTo={location.pathname} />;
   return (

@@ -38,7 +38,7 @@ import { pageLocation, usePublishPageLocation } from '../page-location';
 
 export { mobileQuery, shortQuery } from '../media';
 /** The installation's name in the rail's heading until the default header has said it. */
-const SITE_NAME = 'Startsidan';
+export const SITE_NAME = 'Startsidan';
 
 /**
  * The rows under a rail row that opens (D56). Astryx indents them only as far as the parent's label, so they read as its
@@ -53,6 +53,43 @@ export const SubRows = ({ children }: { children: ReactNode }) => (
     <StackItem size="fill">{children}</StackItem>
   </HStack>
 );
+
+type Logo = Readonly<{ src: string; alt: string; darkSrc?: string }>;
+/**
+ * The logo the shared header draws: the connector's when it gives one, else the installation's own (D98). The
+ * connector's is its own band's logo (D88, Sundsvall's white dragon), so on the band it is drawn as given, never on the
+ * light plate a logo without a dark variant gets; off the band (the phone's bar) the installation's own, which has a
+ * variant for each ground.
+ */
+export function headerLogo(shared: Logo | null | undefined, own: Logo | null, mobile: boolean): Logo | null {
+  if (!shared) return own;
+  return mobile ? (own ?? shared) : { ...shared, darkSrc: shared.src };
+}
+
+/** The installation's logo in the rail's heading, as D37 to D39 allow a native image there: an asset, not an icon. */
+export function InstallationLogo({ logo }: { logo: Logo | null }) {
+  const { mode } = useAppearance();
+  const [failed, setFailed] = useState<string | null>(null);
+  const src = logo ? (mode === 'dark' && logo.darkSrc ? logo.darkSrc : logo.src) : undefined;
+  if (!logo || !src || src === failed) return undefined;
+  return (
+    // Its height is the row's measure and its width follows the mark, as the shared header draws it.
+    <img
+      src={src}
+      alt={logo.alt}
+      height={28}
+      style={{
+        height: 28,
+        width: 'auto',
+        maxWidth: 160,
+        objectFit: 'contain',
+        // A logo with no dark variant keeps its own light ground in the dark appearance (D39).
+        backgroundColor: mode === 'dark' && !logo.darkSrc ? 'var(--color-on-dark)' : undefined,
+      }}
+      onError={() => setFailed(src)}
+    />
+  );
+}
 
 export type Surface = 'start' | 'todo' | 'calendar' | 'staff' | 'admin';
 /** What a surface puts in the rail: a create button on top, its sections (the places, then the conversations, D50) and the rows that stay at the foot. */
@@ -104,17 +141,7 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
   // The band's theme (D88) is the installation's (D98), built once per saved theme.
   const branding = useBranding();
   const bandTheme = useMemo(() => createHeaderBandTheme(branding), [branding]);
-  // The connector's logo when it gives one, else the installation's own (D98). The connector's is its own band's logo
-  // (D88, Sundsvall's white dragon), so on the band it is drawn as given, never on the light plate a logo without a
-  // dark variant gets; off the band (the phone's bar) the installation's own, which has a variant for each ground.
-  const logo = shared?.logo
-    ? mobile
-      ? (branding.logo ?? shared.logo)
-      : { ...shared.logo, darkSrc: shared.logo.src }
-    : branding.logo;
-  const ownLogo = branding.logo;
-  const logoSrc = ownLogo ? (mode === 'dark' && ownLogo.darkSrc ? ownLogo.darkSrc : ownLogo.src) : undefined;
-  const [failedLogo, setFailedLogo] = useState<string | null>(null);
+  const logo = headerLogo(shared?.logo, branding.logo, mobile);
   // A system that does not answer is said at the top of every page (D8, D71 artboard 8), under the page's own banner.
   const silent = useSourceBanner();
   // The phone's drawer closes when a row in it is chosen. The person's row opens the settings over the drawer instead,
@@ -187,26 +214,7 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
       heading={siteName}
       headingHref="/"
       headerEndContent={<ReminderBell />}
-      icon={
-        ownLogo && logoSrc && logoSrc !== failedLogo ? (
-          // The installation's logo as a native image, as D37 to D39 allow in a navigation heading: an asset, not an
-          // icon. Its height is the row's measure and its width follows the mark, as the shared header draws it.
-          <img
-            src={logoSrc}
-            alt={ownLogo.alt}
-            height={28}
-            style={{
-              height: 28,
-              width: 'auto',
-              maxWidth: 160,
-              objectFit: 'contain',
-              // A logo with no dark variant keeps its own light ground in the dark appearance (D39).
-              backgroundColor: mode === 'dark' && !ownLogo.darkSrc ? 'var(--color-on-dark)' : undefined,
-            }}
-            onError={() => setFailedLogo(logoSrc)}
-          />
-        ) : undefined
-      }
+      icon={<InstallationLogo logo={branding.logo} />}
     />
   );
   /** The person (board Sidebar): the last row at the rail's foot, opening the settings (D39); on the band where there is one. */
