@@ -1,16 +1,23 @@
+import type { Locator, Page } from '@playwright/test';
 import { expect, expectNoAxeViolations, heading, open, reflowProblems, test } from './support';
 import { ENTITY_UNIT } from './data';
-import { BELOW_UNIT, Units } from './unit-data';
+import { BELOW_UNIT, SICK_UNIT, Units } from './unit-data';
 
 /**
  * Dialogstöd (D117): the units the reader follows up side by side at `/units`, their own and those of the managers who
- * report to them, one row per unit and one column per source about a unit, each cell that source's row in short. A
- * unit's name opens its page, whose trail leads back here. `unit-data.ts` answers the list, the units and their sections.
+ * report to them. What needs a conversation first: "Att ta upp" counts the units by the states that need action or
+ * watching, and within a group the unit with the most of them stands first. On a wide screen one row per unit and one
+ * column per source with something for the group, each cell that source's row in short; on a phone a card per unit. A
+ * unit's name opens its page, whose trail leads back here. `unit-data.ts` answers the list, the units and their sections:
+ * the school watches its sick leave and misses a talk, the fritidshem below it needs action, Hagaskolan has nothing.
  */
+const column = (scope: Locator, title: string) => scope.getByRole('columnheader', { name: new RegExp(`^${title}`) });
+const tableOf = (page: Page, group: string) =>
+  page.getByRole('region', { name: group, exact: true }).getByRole('table');
 test.describe('Dialogstöd, the units side by side', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test('the reader’s units and those below, every source in short, and a name opens the unit with Dialogstöd in its trail', async ({
+  test('what to take up on top, the units with most of it first, a column per source with something, and a name opens the unit', async ({
     page,
     api: _,
   }) => {
@@ -21,9 +28,26 @@ test.describe('Dialogstöd, the units side by side', () => {
     await expect(heading(page, 1, 'Dialogstöd')).toBeVisible();
     await expect(heading(page, 2, 'Mina enheter')).toBeVisible();
     await expect(heading(page, 2, 'Enheter under dig')).toBeVisible();
-    // One column per source about a unit, in each group's table.
-    for (const title of ['Sjukfrånvaro', 'Utvecklingssamtal'])
-      await expect(page.getByRole('columnheader', { name: title, exact: true })).toHaveCount(2);
+    // On top, per source and state, how many units it holds: what needs action before what to watch.
+    const attention = page.getByRole('region', { name: 'Att ta upp', exact: true });
+    await expect(attention).toContainText('1 enhet · Sjukfrånvaro · Åtgärd krävs');
+    await expect(attention).toContainText('1 enhet · Sjukfrånvaro · Bevaka');
+    await expect(attention).toContainText('1 enhet · Utvecklingssamtal · 1 saknas');
+    const lines = await attention.getByText(/^1 enhet · /).allTextContents();
+    expect(lines[0]).toContain('Åtgärd krävs');
+    // Each heading says what the figure is and where it comes from; the round of talks has no column where no unit has one.
+    const mine = tableOf(page, 'Mina enheter');
+    await expect(column(mine, 'Sjukfrånvaro')).toContainText('Qlik');
+    await expect(column(mine, 'Utvecklingssamtal')).toContainText('Hållna · Clew');
+    const below = tableOf(page, 'Enheter under dig');
+    await expect(column(below, 'Sjukfrånvaro')).toHaveCount(1);
+    await expect(column(below, 'Utvecklingssamtal')).toHaveCount(0);
+    // The fritidshem, which needs action, before Hagaskolan, which the list gives first; each cell the figure and its state.
+    await expect(below.getByRole('row').nth(1)).toContainText(BELOW_UNIT.label);
+    await expect(below.getByRole('row').nth(1)).toContainText('8,1 %');
+    await expect(below.getByRole('row').nth(1)).toContainText('Åtgärd krävs');
+    await expect(below.getByRole('row').nth(2)).toContainText('Hagaskolan');
+    await expect(mine.getByRole('row').nth(1)).toContainText('4,2 %');
     const school = page.getByRole('link', { name: ENTITY_UNIT.label, exact: true });
     await expect(school).toHaveAttribute('href', `/units/${ENTITY_UNIT.id}?from=%2Funits`);
     await expect(page.getByRole('link', { name: BELOW_UNIT.label, exact: true })).toBeVisible();
@@ -46,12 +70,58 @@ test.describe('Dialogstöd, the units side by side', () => {
     await expectNoAxeViolations(page);
   });
 
-  test('1.4.10: at 320 px the page reflows and the table scrolls within itself', async ({ page, api: _ }) => {
+  test('nothing to take up is said in a line, not an empty list', async ({ page, api: _ }) => {
     await new Units().route(page);
+    // Over the suite's sections: the school's sick leave within the target and every talk held.
+    await page.route(
+      url => url.pathname.endsWith('/section'),
+      route => {
+        const capability = new URL(route.request().url()).searchParams.get('capability');
+        const row =
+          capability === SICK_UNIT
+            ? { key: ENTITY_UNIT.id, total: 2.9, watch: 'Inom målet', month: 'oktober 2026' }
+            : { key: ENTITY_UNIT.id, held: '5 av 5 hållna', booked: '0 bokade' };
+        return route.fulfill({ json: { capability, status: 'ok', row } });
+      },
+    );
+    await open(page, '/units');
+    await expect(page.getByRole('status').filter({ hasText: 'Inget av nyckeltalen behöver åtgärd' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Att ta upp', exact: true })).toHaveCount(0);
+  });
+
+  test('a source that does not answer says so in its own cells, and the rest stand', async ({ page, api: _ }) => {
+    const units = new Units();
+    units.silent[SICK_UNIT] = 'unavailable';
+    await units.route(page);
+    await open(page, '/units');
+    const mine = tableOf(page, 'Mina enheter');
+    await expect(mine.getByRole('row').nth(1)).toContainText('Svarade inte');
+    await expect(mine.getByRole('row').nth(1)).toContainText('1 av 5 hållna');
+    await expectNoAxeViolations(page);
+  });
+
+  test('on a phone a card per unit, the figures one under the other with their names; 1.4.10 holds at 320 px', async ({
+    page,
+    api: _,
+  }) => {
+    const units = new Units();
+    units.withBelow = true;
+    await units.route(page);
     await page.setViewportSize({ width: 320, height: 640 });
     await open(page, '/units');
     await expect(heading(page, 1, 'Dialogstöd')).toBeVisible();
-    await expect(page.getByRole('link', { name: ENTITY_UNIT.label, exact: true })).toBeVisible();
-    expect(await reflowProblems(page, undefined, { table: page.getByRole('table').first() })).toEqual([]);
+    await expect(page.getByRole('table')).toHaveCount(0);
+    const school = page.getByRole('link', { name: ENTITY_UNIT.label, exact: true });
+    await expect(school).toBeVisible();
+    const mine = page.getByRole('region', { name: 'Mina enheter', exact: true });
+    for (const text of ['Sjukfrånvaro', '4,2 %', 'Bevaka', 'Utvecklingssamtal', '1 av 5 hållna'])
+      await expect(mine).toContainText(text);
+    // The fritidshem's card before Hagaskolan's, its round of talks left out.
+    const below = page.getByRole('region', { name: 'Enheter under dig', exact: true });
+    const names = await below.getByRole('link').allTextContents();
+    expect(names).toEqual([BELOW_UNIT.label, 'Hagaskolan']);
+    await expect(below).not.toContainText('Utvecklingssamtal');
+    expect(await reflowProblems(page)).toEqual([]);
+    await expectNoAxeViolations(page);
   });
 });

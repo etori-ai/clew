@@ -849,7 +849,9 @@ test.describe('users administration', () => {
       await open(page, '/admin/users?role=manager');
       const people = page.getByRole('list', { name: 'Personer' }).getByRole('listitem');
       // The title first, as the catalogue words it (D110), then where the person is placed and what they are there.
-      await expect(people).toHaveText([/Hillevi Berg.*Rektor.*Bergsåkers skola · chef/]);
+      // The role is written as the filter and the table write it, and a no-break space holds the separator to the unit,
+      // so a wrapped line never starts with it.
+      await expect(people).toHaveText([/Hillevi Berg.*Rektor.*Bergsåkers skola\u00a0· Chef/]);
       await page.getByRole('button', { name: 'Rensa filter' }).click();
       await expect(readout(page)).toHaveText('64 personer');
       await expect(people).toHaveCount(25);

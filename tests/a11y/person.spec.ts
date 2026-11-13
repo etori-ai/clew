@@ -331,7 +331,7 @@ test.describe('the person as a page', () => {
     api,
   }) => {
     await new People().route(page, api);
-    // The panel stands beside every page from 1336 px; the page under it keeps its header as it was.
+    // The panel stands beside every page from 1340 px; the page under it keeps its header as it was.
     await page.setViewportSize({ width: 1400, height: 900 });
     const here = '/people/johan?from=%2Fstaff';
     await open(page, here);

@@ -164,7 +164,7 @@ const unitAboutCapability = {
             total: number,
             watch: string,
             lastYear: number,
-            change: number,
+            change: string,
             headcount: integer,
             note: string,
           },
@@ -183,14 +183,15 @@ const unitAboutCapability = {
     open: { capability: 'qlik.sickLeaveChart', title: 'Visa utvecklingen', params: { unit: 'ref' } },
     fields: [
       { key: 'total', label: 'Sjukfrånvaro', format: 'number', unit: { one: '%', other: '%' } },
-      { key: 'watch', label: 'Läge', format: 'status', tones: { Bevaka: 'warn', 'Åtgärd krävs': 'alert' } },
-      { key: 'month', label: 'Avser' },
       {
-        key: 'change',
-        label: 'Mot samma månad i fjol',
-        format: 'number',
-        unit: { one: 'procentenhet', other: 'procentenheter' },
+        key: 'watch',
+        label: 'Läge',
+        format: 'status',
+        tones: { 'Inom målet': 'ok', Bevaka: 'warn', 'Åtgärd krävs': 'alert' },
       },
+      { key: 'month', label: 'Avser' },
+      // With its sign, as words ("+0,4 procentenheter"): a number field draws no plus.
+      { key: 'change', label: 'Mot samma månad i fjol' },
       { key: 'note', label: 'Anmärkning' },
     ],
   },
@@ -317,7 +318,7 @@ const economyAboutCapability = {
     ref: string,
     unit: string,
     month: string,
-    deviation: number,
+    deviation: string,
     assessment: string,
     forecast: number,
     budget: number,
@@ -328,7 +329,8 @@ const economyAboutCapability = {
     empty: 'Statistiken har ingen ekonomi för enheten.',
     open: { capability: 'qlik.economyChart', title: 'Visa utvecklingen', params: { unit: 'ref' } },
     fields: [
-      { key: 'deviation', label: 'Avvikelse mot budget', format: 'number', unit: { one: 'mnkr', other: 'mnkr' } },
+      // With its sign and unit, as words ("+10,6 mnkr"): a number field draws no plus, and a surplus must read as one.
+      { key: 'deviation', label: 'Avvikelse mot budget' },
       economyAssessment,
       { key: 'month', label: 'Avser' },
       { key: 'forecast', label: 'Helårsprognos', format: 'number', unit: { one: 'mnkr', other: 'mnkr' } },
@@ -423,7 +425,7 @@ const hmeAboutCapability = {
     year: string,
     total: integer,
     assessment: string,
-    change: integer,
+    change: string,
     note: string,
   }),
   view: {
@@ -432,10 +434,11 @@ const hmeAboutCapability = {
     empty: 'Statistiken har ingen mätning för enheten.',
     open: { capability: 'qlik.hmeChart', title: 'Visa utvecklingen', params: { unit: 'ref' } },
     fields: [
-      { key: 'total', label: 'HME totalt', format: 'number' },
+      // The index is out of a hundred, so it reads "74 av 100", not a bare number.
+      { key: 'total', label: 'HME totalt', format: 'number', unit: { one: 'av 100', other: 'av 100' } },
       hmeAssessment,
       { key: 'year', label: 'Mätår' },
-      { key: 'change', label: 'Mot mätningen före', format: 'number' },
+      { key: 'change', label: 'Mot mätningen före' },
       { key: 'note', label: 'Anmärkning' },
     ],
   },

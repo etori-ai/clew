@@ -534,4 +534,55 @@ test.describe('an action about a person or a unit that asks', () => {
     ]);
     await expect(page).toHaveURL('/staff?card=entity-hr-registerAbsence-karin');
   });
+
+  test('a choice left out is said on its selector, which shows its focus over the error (2.4.7)', async ({
+    page,
+    api,
+  }) => {
+    // Six options: more than a radio list holds, so the choice is drawn as a selector.
+    const options = ['Sjukdom', 'Vård av barn', 'Semester', 'Tjänstledighet', 'Föräldraledighet', 'Annat'];
+    api.entityList.actions = api.entityList.actions.map(a =>
+      a.capability === 'hr.registerAbsence'
+        ? {
+            ...a,
+            path: {
+              asks: [
+                {
+                  kind: 'choice',
+                  property: 'reason',
+                  label: 'Orsak',
+                  required: true,
+                  options: options.map((label, i) => ({ value: `reason-${i}`, label })),
+                },
+              ],
+              effect: false,
+              description: 'Förbereder en sjukanmälan för en medarbetare i chefens enhet.',
+            },
+          }
+        : a,
+    );
+    await page.setViewportSize(desktop);
+    await open(page, '/staff');
+    await page.getByRole('button', { name: 'Åtgärder för Karin Lindqvist' }).click();
+    await page.getByRole('menuitem', { name: 'Registrera frånvaro' }).click();
+    const dialog = dialogOf(page, 'Registrera frånvaro');
+    await dialog.getByRole('button', { name: 'Nästa' }).click();
+    const choice = dialog.getByRole('combobox', { name: /^Orsak/ });
+    await expect(choice).toBeFocused();
+    await expect(dialog.getByText('Orsak behöver fyllas i.').first()).toBeVisible();
+    // Astryx draws a selector's status on its trigger's container and drops the focus inset there; Clew's theme draws
+    // one in the error colour while the focus is inside (`packages/ui/src/theme.ts`), and nothing once it has left.
+    const box = dialog.locator('.astryx-selector[data-status="error"]');
+    await expect(box).toHaveCount(1);
+    const shadow = () =>
+      box.evaluate(async el => {
+        await Promise.all(el.getAnimations().map(a => a.finished.catch(() => undefined)));
+        return getComputedStyle(el).boxShadow;
+      });
+    expect(await shadow()).toMatch(/ 0px 0px 0px 2px inset$/);
+    await choice.evaluate(el => el.blur());
+    await expect(choice).not.toBeFocused();
+    expect(await shadow()).toBe('none');
+    await expectNoAxeViolations(page);
+  });
 });

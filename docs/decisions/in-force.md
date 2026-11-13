@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**114 in force**: 96 accepted and 18 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 10 proposed and not decided. 6 no longer in force.
+**115 in force**: 96 accepted and 19 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 10 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -65,7 +65,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D85 · Capabilities are mapped from provisioned groups in Clew; units and manager roles keep D68's keys](D85-capabilities-are-mapped-from-provisioned-groups-in-clew.md) | 2026-11-09 | accepted |  |
 | [D93 · The `protected` key is refused at the SCIM boundary until Clew decides whether it may hold the fact](D93-the-protected-key-is-refused-at-the-scim-boundary.md) | 2026-11-09 | accepted | [D96](README.md) |
 | [D96 · A key written wrong is refused at the SCIM boundary, not stored as a plain group](D96-a-key-written-wrong-is-refused-at-the-scim-boundary.md) | 2026-11-10 | accepted |  |
-| [D99 · Units form a tree pushed over SCIM, and a manager works with their direct reports](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md) | 2026-11-10 | accepted | [D101](README.md) |
+| [D99 · Units form a tree pushed over SCIM, and a manager works with their direct reports](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md) | 2026-11-10 | accepted | [D101](README.md), [D121](D121-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) |
 | [D101 · A provisioner pushes the organisation first and adds before it removes, and a unit belongs to one organisation](D101-a-provisioner-pushes-the-organisation-first-and-adds-before-it-removes-and-a-unit-belongs-to-one-organisation.md) | 2026-11-11 | provisional | [D119](D119-clew-keys-its-own-records-about-a-person-by-the-persons-id.md), [D120](D120-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md) |
 | [D103 · The session that asked stands behind delegated work: an approved write, and a scan while the person is present](D103-the-session-that-asked-stands-behind-delegated-work.md) | 2026-11-10 | provisional |  |
 | [D107 · An administrator issues, replaces and takes back a provisioner's key on the users page](D107-an-administrator-issues-replaces-and-takes-back-a-provisioners-key-on-the-users-page.md) | 2026-11-11 | provisional |  |
@@ -146,6 +146,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D111 · Where something opens is decided by what it is, never by the page it was clicked on](D111-where-something-opens-is-decided-by-what-it-is.md) | 2026-11-11 | provisional | [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) |
 | [D112 · The interface is rebuilt on Astryx's templates: a queue, one detail shape, and one panel with the assistant in it](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) | 2026-11-11 | provisional |  |
 | [D116 · Start and the row under it are Clew's; the intranet keeps the other places](D116-start-and-the-row-under-it-are-clews.md) | 2026-11-13 | provisional |  |
+| [D121 · A unit is walked one step up and one step down, and Organisation, Användare and the person card follow their canvas](D121-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) | 2026-11-13 | provisional |  |
 
 ## Proposed, not decided
 

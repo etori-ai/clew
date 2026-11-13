@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { themeFromAccent } from '@clew/contracts';
+import { contrastRatio, themeFromAccent } from '@clew/contracts';
 import { NEUTRAL_BRANDING, readBranding, type Branding } from '../../packages/ui/src/branding';
-import { createClewTheme, createHeaderBandTheme } from '../../packages/ui/src/theme';
+import { createClewTheme, createHeaderBandTheme, resolveClewTokens } from '../../packages/ui/src/theme';
 
 const custom: Branding = { revision: 3, theme: themeFromAccent('#5b1f78', '#d7dbf2', 'Exempelkommunen'), logo: null };
 
@@ -78,6 +78,47 @@ describe('the appearance the browser draws (D98)', () => {
     expect(theme.tokens['--color-warning']).toBe(neutral.tokens['--color-warning']);
     expect(neutral.components?.['chat-layout']).toEqual({ base: { scrollPaddingBottom: '240px' } });
     expect(theme.components?.['chat-layout']).toEqual(neutral.components?.['chat-layout']);
+  });
+
+  test('a focused field that has a status draws an inset of its own, in a colour that stands out on the field (WCAG 2.4.7)', () => {
+    const fields = [
+      'text-input',
+      'text-area',
+      'number-input',
+      'date-input',
+      'time-input',
+      'date-time-input-date-segment',
+      'date-time-input-time-segment',
+      'date-range-input',
+      'typeahead',
+      'tokenizer',
+      'file-input',
+    ];
+    const inset = (type: string) => ({
+      ':focus-within': { boxShadow: `inset 0 0 0 2px var(--color-text-${type})` },
+    });
+    for (const theme of [createClewTheme(NEUTRAL_BRANDING), createClewTheme(custom)]) {
+      for (const type of ['error', 'warning', 'success']) {
+        for (const field of fields) expect(theme.components?.[field]?.[`status:${type}`]).toEqual(inset(type));
+        // A selector draws its status only as a field: the ghost and secondary variants take no inset.
+        for (const field of ['selector', 'multi-selector']) {
+          expect(theme.components?.[field]?.[`variant:input+status:${type}`]).toEqual(inset(type));
+          expect(theme.components?.[field]?.[`status:${type}`]).toBeUndefined();
+        }
+      }
+      // A FileInput's focus is a border colour alone: the transparent outline is what forced colours paint.
+      expect(theme.components?.['file-input']?.base).toEqual({
+        ':focus-within': { outline: '2px solid transparent', outlineOffset: '-2px' },
+      });
+    }
+    // The inset is the indicator, so it holds 3:1 against the field's surface in both appearances (1.4.11).
+    for (const mode of ['light', 'dark'] as const) {
+      const tokens = resolveClewTokens(NEUTRAL_BRANDING, mode);
+      for (const type of ['error', 'warning', 'success'])
+        expect(
+          contrastRatio(tokens[`--color-text-${type}`]!, tokens['--color-background-surface']!),
+        ).toBeGreaterThanOrEqual(3);
+    }
   });
 
   test('the same colours are the same theme, built once, whatever the revision or the name', () => {

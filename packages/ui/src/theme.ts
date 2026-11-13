@@ -7,6 +7,40 @@ import type { Branding } from './branding';
 const { red, green, white, neutral } = neutralPalettes;
 
 /**
+ * A focused field that has a status shows its focus (WCAG 2.4.7). Astryx 0.7.13 draws a field's focus as an accent
+ * border with an inset shadow, and a status replaces both: the border keeps the status colour while focused and the
+ * status style sets the shadow to none, so a focused invalid field looks the same as an unfocused one. The focused
+ * field gets a 2 px inset, the width of Astryx's own focus inset, in the status text colour inside its 1 px status
+ * border (5.9:1 on the field in the light appearance and 8.6:1 in the dark one for an error; the canvas drew 1 px,
+ * which told the two apart by a single pixel). Under forced colours the shadow is not painted and Astryx's own
+ * Highlight border on the focused field stands. The keys are the bordered wrappers of Astryx's fields, each of which
+ * reflects `data-status`; a pseudo-class key inside a `prop:value` key is Astryx's documented way to style a state
+ * from the theme. `PowerSearch` has the same defect and is left out: its field reflects no status to the theme, and
+ * Clew does not use it.
+ */
+const STATUS_FIELDS = [
+  'text-input',
+  'text-area',
+  'number-input',
+  'date-input',
+  'time-input',
+  'date-time-input-date-segment',
+  'date-time-input-time-segment',
+  'date-range-input',
+  'typeahead',
+  'tokenizer',
+];
+/** A selector reflects its status in every variant and draws it only as a field, `variant="input"`. */
+const STATUS_SELECTORS = ['selector', 'multi-selector'];
+const focusedStatusField = (when = '') =>
+  Object.fromEntries(
+    ['error', 'warning', 'success'].map(type => [
+      `${when}status:${type}`,
+      { ':focus-within': { boxShadow: `inset 0 0 0 2px var(--color-text-${type})` } },
+    ]),
+  );
+
+/**
  * Every brand inherits Astryx Neutral with shared component overrides (D31 item 8, D39): ChatLayout docks the composer on a sticky
  * surface and sets no scroll padding, so a control the browser scrolls to the bottom edge would land under the dock
  * (WCAG 2.4.11). The padding is the height of the tallest dock the start page draws (the piles row and the compact
@@ -55,6 +89,15 @@ const clewBaseTheme = defineTheme({
     ],
   },
   components: {
+    ...Object.fromEntries(STATUS_FIELDS.map(field => [field, focusedStatusField()])),
+    ...Object.fromEntries(STATUS_SELECTORS.map(field => [field, focusedStatusField('variant:input+')])),
+    // A FileInput takes the same inset. Its focus is otherwise its container's border colour alone, with or without a
+    // status, and forced colours paint every border the same: a transparent outline is invisible until forced colours
+    // give it a system colour.
+    'file-input': {
+      ...focusedStatusField(),
+      base: { ':focus-within': { outline: '2px solid transparent', outlineOffset: '-2px' } },
+    },
     'chat-layout': { base: { scrollPaddingBottom: '240px' } },
     // The area mark (D71, `mark.tsx`): gray, the sixth system hue, on Astryx's own gray tokens, which its Badge has no
     // variant for; and the house, Clew's own systems, outlined with no hue. New `variant:value` keys are Astryx's

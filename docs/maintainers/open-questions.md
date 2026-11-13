@@ -72,3 +72,11 @@ repeated here.
 No manual screen-reader pass has been made on any flow (stated in the project review of 2026-11-10 and on the status
 page). The calendar's time grid is not a WAI-ARIA grid; the list in the panel and the dialogs are the accessible path
 (2026-11-04, [D32](../decisions/D32-one-calendar-family-and-the-persons-own-bookings.md)).
+
+Should a theme file be held to Clew's error and warning colours? A saved theme
+([D98](../decisions/D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md)) may set
+`background-surface`, and `THEME_CONTRAST_PAIRS` in `packages/contracts/src/theme-file.ts` holds the success text
+colour against it but neither the error nor the warning one, which stay Clew's own. A field's error border, its
+message and the focus inset of a field with a status (`packages/ui/src/theme.ts`) are drawn in those colours on that
+surface, so a mid-tone surface that passes for text could take them under 3:1. Adding the two pairs is a contract
+change that may refuse a file accepted today (2026-11-13, the review of the people design fixes).

@@ -734,7 +734,7 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
                       {u.assignments.length ? (
                         placements(u).map(a => (
                           <Text key={a.unitId} type="supporting">
-                            {a.unitLabel} · {roleOfOne[a.role].toLowerCase()}
+                            {`${a.unitLabel}\u00a0· ${roleOfOne[a.role]}`}
                           </Text>
                         ))
                       ) : (

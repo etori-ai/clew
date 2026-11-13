@@ -167,7 +167,11 @@ describe('the qlik connector', () => {
     expect([declared.model, declared.about]).toEqual([false, { entity: 'unit' }]);
     expect(placesOf(declared)).toEqual(['lens', 'mark', 'section']);
     const watch = declared.view?.kind === 'list' ? declared.view.fields.find(f => f.key === 'watch')! : undefined;
-    expect([fieldTone(watch!, 'Bevaka'), fieldTone(watch!, undefined)]).toEqual(['warn', 'none']);
+    expect([fieldTone(watch!, 'Inom målet'), fieldTone(watch!, 'Bevaka'), fieldTone(watch!, undefined)]).toEqual([
+      'ok',
+      'warn',
+      'none',
+    ]);
     const { registry } = stack();
     expect(registry.tools(hillevi).map(t => t.name)).not.toContain('qlik.unit');
     const unit = (actor: Actor, keys: string[]) =>
@@ -182,7 +186,8 @@ describe('the qlik connector', () => {
       month: 'oktober 2026',
       total: 5.3,
       lastYear: 5.5,
-      change: -0.2,
+      // With its sign, as words: a number field would draw no plus.
+      change: '−0,2 procentenheter',
       headcount: 46,
     });
     // The row opens the unit's trend by its ref.
@@ -199,6 +204,11 @@ describe('the qlik connector', () => {
       { keys: ['unit-skola'] },
     );
     expect(watched.rows[0]!.watch).toBe('Bevaka');
+    // Below the rate the row says so too, so a unit within the target reads as one and not as a blank.
+    const calm = await stack({ warnAbove: 6 }).registry.run<{ rows: Array<{ watch?: string }> }>(hillevi, 'qlik.unit', {
+      keys: ['unit-skola'],
+    });
+    expect(calm.rows[0]!.watch).toBe('Inom målet');
   });
 
   test('a manager whose unit is not in the statistics gets no rows and no figure', async () => {

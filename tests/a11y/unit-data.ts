@@ -24,6 +24,8 @@ export const TALK_UNITS = 'clew.talkUnits';
 export const MEMBER_UNIT = { id: 'unit-ledning', label: 'Rektorernas ledningsgrupp' };
 /** A unit under the school whose manager reports to the reader (D117): its page says so, and the school lists it. */
 export const BELOW_UNIT = { id: 'unit-skola-fritids', label: 'Bergsåkers fritidshem' };
+/** A second unit below, listed before the fritidshem; it has no page of its own in the suite. */
+const HAGA = 'unit-skola-haga';
 
 /** The Qlik connector's read about a unit (`connectors/qlik/manifest.mjs`), under its own name. */
 export const sickSource: EntitySource = {
@@ -38,14 +40,15 @@ export const sickSource: EntitySource = {
     open: { capability: TREND, title: 'Visa utvecklingen', params: { unit: 'ref' } },
     fields: [
       { key: 'total', label: 'Sjukfrånvaro', format: 'number', unit: { one: '%', other: '%' } },
-      { key: 'watch', label: 'Läge', format: 'status', tones: { Bevaka: 'warn' } },
-      { key: 'month', label: 'Avser' },
       {
-        key: 'change',
-        label: 'Mot samma månad i fjol',
-        format: 'number',
-        unit: { one: 'procentenhet', other: 'procentenheter' },
+        key: 'watch',
+        label: 'Läge',
+        format: 'status',
+        tones: { 'Inom målet': 'ok', Bevaka: 'warn', 'Åtgärd krävs': 'alert' },
       },
+      { key: 'month', label: 'Avser' },
+      // Signed as text by the connector, so a rise reads "+0,3 procentenheter" and not a bare 0,3.
+      { key: 'change', label: 'Mot samma månad i fjol' },
     ],
   },
 };
@@ -97,7 +100,17 @@ const rows: Record<string, Record<string, Record<string, unknown>>> = {
       month: 'oktober 2026',
       total: 4.2,
       watch: 'Bevaka',
-      change: 0.3,
+      change: '+0,3 procentenheter',
+    },
+    // The fritidshem under the school needs action; Hagaskolan has no figure in the statistics.
+    [BELOW_UNIT.id]: {
+      key: BELOW_UNIT.id,
+      ref: 'u2',
+      unit: BELOW_UNIT.label,
+      month: 'oktober 2026',
+      total: 8.1,
+      watch: 'Åtgärd krävs',
+      change: '+1,4 procentenheter',
     },
   },
   [TALK_UNITS]: {
@@ -167,7 +180,7 @@ export class Units {
         relation: 'below',
         above: { key: ENTITY_UNIT.id, name: ENTITY_UNIT.label },
         actions: [],
-        sections: [talkUnitSource],
+        sections: [sickSource, talkUnitSource],
         cards: [],
       };
     if (id === MEMBER_UNIT.id)
@@ -216,9 +229,10 @@ export class Units {
                     {
                       id: 'below',
                       label: 'Enheter under dig',
+                      // Hagaskolan first, as the list gives them: Dialogstöd puts the fritidshem, which needs action, first.
                       entities: [
+                        { kind: 'unit', key: HAGA, name: 'Hagaskolan' },
                         { kind: 'unit', key: BELOW_UNIT.id, name: BELOW_UNIT.label },
-                        { kind: 'unit', key: 'unit-skola-haga', name: 'Hagaskolan' },
                       ],
                     },
                   ]
@@ -236,13 +250,15 @@ export class Units {
       async route => {
         const url = new URL(route.request().url());
         const [, , , , id, sub] = url.pathname.split('/');
-        const detail = this.detail(decodeURIComponent(id ?? ''));
-        if (!detail) return missing(route);
-        if (!sub) return route.fulfill({ json: detail });
+        const key = decodeURIComponent(id ?? '');
+        const detail = this.detail(key);
+        if (!sub) return detail ? route.fulfill({ json: detail }) : missing(route);
+        // Hagaskolan has no page in the suite, but its sources answer it on Dialogstöd: nothing about it.
+        const sections = detail?.sections ?? (this.withBelow && key === HAGA ? [sickSource, talkUnitSource] : null);
         const capability = url.searchParams.get('capability') ?? '';
-        if (!detail.sections.some(s => s.capability === capability)) return missing(route);
+        if (!sections?.some(s => s.capability === capability)) return missing(route);
         this.reads.push(capability);
-        return route.fulfill({ json: this.section(detail.entity.key, capability) });
+        return route.fulfill({ json: this.section(key, capability) });
       },
     );
     await page.route(

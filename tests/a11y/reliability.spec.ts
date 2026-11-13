@@ -75,11 +75,11 @@ for (const state of ['queued', 'blocked'] as const)
     api.threads = [card];
     await page.setViewportSize(narrow);
     await open(page, '/todo');
-    // Att göra draws rows (D112): the row says the state, words on the line for a reminder that waits and its dot for
-    // one that was stopped, and never that it will remind.
+    // Att göra draws rows (D112): the row says the state, words on the line for a reminder that waits and the state's
+    // own words for one that was stopped, and never that it will remind.
     const row = page.getByRole('main').locator('#work-ledighet');
     if (state === 'queued') await expect(row).toContainText('påminnelsen väntar på schemaläggning');
-    else await expect(row.getByRole('img', { name: 'Påminnelsen stoppad' })).toBeVisible();
+    else await expect(row).toContainText('Påminnelsen stoppad · ');
     await expect(row).not.toContainText('påminner dig');
     await expectNoAxeViolations(page);
     expect(await reflowProblems(page)).toEqual([]);

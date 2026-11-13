@@ -224,8 +224,8 @@ source's `about.page` may be a query alone, which lies over the page its way in 
 **Amended 2026-11-11 (D111 amended): several cards lead to the person's page.** The list of a person's cards beside
 Personal is gone: "Just nu" counting several cards leads to the person's page at Behöver dig
 (`/people/<key>?section=needs-you&from=<the list>`), and an old `/staff?cards=<key>` address leads there in its place.
-Personal's panel stands beside the list from the one width every page has, 1336 px, and the list gives way, drawn as
-its rows where the table does not fit beside the panel.
+Personal's panel stands beside the list from the one width every page has, 1340 px (1336 until 2026-11-13), and the
+list gives way, drawn as its rows where the table does not fit beside the panel.
 
 **Amended 2026-11-11, later the same day: an action is drawn in its source's section.** On seeing the amendment
 "actions are drawn once, beside the name" built, the product owner reversed it: "Registrera frånvaro" beside the name
