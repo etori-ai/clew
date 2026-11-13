@@ -94,7 +94,7 @@ test.describe('a tool as a page', () => {
     await page.getByRole('option', { name: 'Min enhet' }).click();
     await expect(page.getByRole('row')).toHaveCount(6);
     await field.fill('xyzzy');
-    await expect(page.getByRole('heading', { level: 2, name: 'Inga träffar i telefonboken.' })).toBeVisible();
+    await expect(page.getByRole('paragraph').filter({ hasText: 'Inga träffar i telefonboken.' })).toBeVisible();
     await expectNoAxeViolations(page);
     await page.goBack();
     await expect(page).toHaveURL(/\/$/);

@@ -14,6 +14,7 @@ import { BELOW_UNIT, SICK_UNIT, Units } from './unit-data';
 const column = (scope: Locator, title: string) => scope.getByRole('columnheader', { name: new RegExp(`^${title}`) });
 const tableOf = (page: Page, group: string) =>
   page.getByRole('region', { name: group, exact: true }).getByRole('table');
+const rowOf = (table: Locator, unit: string) => table.getByRole('row').filter({ hasText: unit });
 test.describe('Dialogstöd, the units side by side', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
@@ -44,15 +45,20 @@ test.describe('Dialogstöd, the units side by side', () => {
       'href',
       `/units/${BELOW_UNIT.id}?from=%2Funits`,
     );
-    // The dot names the level, so a screen reader does not hear the state twice.
-    await expect(attention.getByRole('img', { name: 'Kräver åtgärd' })).toHaveCount(1);
-    // Each heading says what the figure is and where it comes from; the round of talks has no column where no unit has one.
+    // The dot names the level in Clew's words (D54), so a screen reader does not hear the source's word twice.
+    await expect(attention.getByRole('img', { name: 'Behöver dig' })).toHaveCount(1);
+    // Each heading says what the figure is and where it comes from.
     const mine = tableOf(page, 'Mina enheter');
+    const below = tableOf(page, 'Enheter under dig');
     await expect(column(mine, 'Sjukfrånvaro')).toContainText('Qlik');
     await expect(column(mine, 'Utvecklingssamtal')).toContainText('Hållna · Clew');
-    const below = tableOf(page, 'Enheter under dig');
-    await expect(column(below, 'Sjukfrånvaro')).toHaveCount(1);
-    await expect(column(below, 'Utvecklingssamtal')).toHaveCount(0);
+    // Both groups have the same columns at the same places, so a figure stands under the same figure in the other
+    // group; nothing folds away.
+    const lefts = (table: Locator) =>
+      table.getByRole('columnheader').evaluateAll(cells => cells.map(c => Math.round(c.getBoundingClientRect().x)));
+    expect(await lefts(below)).toEqual(await lefts(mine));
+    await expect(column(below, 'Utvecklingssamtal')).toHaveCount(1);
+    await expect(page.getByRole('main').getByRole('button', { expanded: true })).toHaveCount(0);
     // The fritidshem, which needs action, before Hagaskolan, which the list gives first; each cell the figure and its state.
     await expect(below.getByRole('row').nth(1)).toContainText(BELOW_UNIT.label);
     await expect(below.getByRole('row').nth(1)).toContainText('8,1 %');
@@ -107,7 +113,7 @@ test.describe('Dialogstöd, the units side by side', () => {
     await units.route(page);
     await page.setViewportSize({ width: 900, height: 900 });
     await open(page, '/units');
-    const cell = tableOf(page, 'Mina enheter').getByRole('row').nth(1).getByRole('cell').first();
+    const cell = rowOf(tableOf(page, 'Mina enheter'), ENTITY_UNIT.label).getByRole('cell').first();
     await expect(cell).toContainText(ENTITY_UNIT.label);
     const before = (await cell.boundingBox())!.x;
     await tableOf(page, 'Mina enheter').evaluate(table => {
@@ -122,9 +128,9 @@ test.describe('Dialogstöd, the units side by side', () => {
     units.silent[SICK_UNIT] = 'unavailable';
     await units.route(page);
     await open(page, '/units');
-    const mine = tableOf(page, 'Mina enheter');
-    await expect(mine.getByRole('row').nth(1)).toContainText('Svarade inte');
-    await expect(mine.getByRole('row').nth(1)).toContainText('1 av 5 hållna');
+    const school = rowOf(tableOf(page, 'Mina enheter'), ENTITY_UNIT.label);
+    await expect(school).toContainText('Svarade inte');
+    await expect(school).toContainText('1 av 5 hållna');
     await expectNoAxeViolations(page);
   });
 

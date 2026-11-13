@@ -18,6 +18,7 @@ import {
   createStaticSource,
   worstWord,
   type SearchableItem,
+  VisuallyHidden,
 } from '@clew/ui';
 import { today } from '@clew/calendar/dates';
 import { titled, useConversation } from './conversation-context';
@@ -124,7 +125,7 @@ export function useRail({
   const needsYou = needsYouOf(g).length;
   /** The conversation whose answer is being written now: the one on screen while a turn is on its way. */
   const answering = talk.pending ? (talk.conversation?.id ?? null) : null;
-  // The word (D54, artboard 3): the worst tone among the person's figures on Hem, "lugnt", "bevaka" or "behöver dig".
+  // The word (D54, artboard 3): the worst tone among the person's figures on Hem, "Lugnt", "Bevaka" or "Behöver dig", written as everywhere else.
   const word = useMemo(() => worstWord(areas.map(a => a.figure)), [areas]);
   // The search finds conversations, open work items, the areas and the tools from what the page already has: the same things the box's router finds without the model.
   const { source, byId } = useMemo(() => {
@@ -212,7 +213,15 @@ export function useRail({
             icon={InboxIcon}
             href="/todo"
             isSelected={current.surface === 'todo'}
-            endContent={needsYou ? <Badge variant="neutral" label={String(needsYou)} /> : undefined}
+            endContent={
+              needsYou ? (
+                <>
+                  <Badge variant="neutral" label={String(needsYou)} />
+                  {/* What the number counts, for a screen reader: the row reads "Att göra 2 behöver dig". */}
+                  <VisuallyHidden>behöver dig</VisuallyHidden>
+                </>
+              ) : undefined
+            }
           />
           {sees('calendar') && (
             <SideNavItem

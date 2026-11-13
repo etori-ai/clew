@@ -72,7 +72,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     // The places (D112 item 1): Hem says the worst tone among the person's figures in one word (D54), Att göra how much
     // needs the person, then Kalender; the piles and the areas are Att göra's tabs and filter, not rows here.
     await expect(rail.getByRole('link', { name: /^Hem/ })).toHaveAttribute('href', '/');
-    await expect(rail.getByRole('link', { name: /^Hem/ })).toContainText('behöver dig');
+    await expect(rail.getByRole('link', { name: /^Hem/ })).toContainText('Behöver dig');
     await expect(rail.getByRole('link', { name: /^Att göra/ })).toHaveAttribute('href', '/todo');
     await expect(rail.getByRole('link', { name: /^Att göra/ })).toContainText('6');
     await expect(rail.getByRole('link', { name: 'Kalender' })).toHaveAttribute('href', '/calendar');
@@ -482,7 +482,7 @@ test.describe('D54 Läget: the areas’ figures from their connectors', () => {
     await card.getByText('4,2 %', { exact: true }).click();
     await expect(page).toHaveURL(/^[^?]*\/tools\/hr\.absenceOverview\?/);
   });
-  test('a source that does not answer is the warning tile, never an empty one; Sedan i går lists the figures to watch', async ({
+  test('a source that does not answer is the warning tile, never an empty one; Sedan i går does not repeat Läget', async ({
     page,
     api,
   }) => {
@@ -497,18 +497,15 @@ test.describe('D54 Läget: the areas’ figures from their connectors', () => {
     await expect(silent.getByText('Ekonomisystemet svarar inte.')).toBeVisible();
     await expect(silent.getByText(/försöker igen 12:00$/i)).toBeVisible();
     await expect(silent.getByRole('link')).toHaveCount(0);
-    // The line (artboard 3): glyph, label, the value at body size, the dot with its word, the comparison and the source with its time.
+    // The figures to watch are Läget's alone: Sedan i går says what changed, not the figures again (app critique,
+    // 2026-11-13). The line's own form is `figureItems`' and has its unit test.
     const since = page.getByRole('region', { name: 'Sedan i går' });
-    await expect(since.getByText('Sjukfrånvaro', { exact: true })).toBeVisible();
-    // The rest of the line never starts with a separator, so a wrapped line does not either.
-    await expect(
-      since.getByText('mål ≤ 4,0 % · +0,3 sedan oktober · Personalsystemet 09:00', { exact: true }),
-    ).toBeVisible();
-    await expect(since.getByText('1 äldre än 14 dagar · Avvikelsesystemet 09:00', { exact: true })).toBeVisible();
-    await expect(since.getByText('Öppna tillbud', { exact: true })).toBeVisible();
+    await expect(since).toBeVisible();
+    await expect(since.getByText('Sjukfrånvaro', { exact: true })).toHaveCount(0);
+    await expect(since.getByText('Öppna tillbud', { exact: true })).toHaveCount(0);
     await expectNoAxeViolations(page);
   });
-  test('an area is one tile and one line however often the page reads again, though it has cards, standing reads and a menu row', async ({
+  test('an area is one tile however often the page reads again, though it has cards, standing reads and a menu row', async ({
     page,
     api,
   }) => {
@@ -537,11 +534,7 @@ test.describe('D54 Läget: the areas’ figures from their connectors', () => {
     ];
     await open(page, '/');
     await expect.poll(() => notices, { timeout: 10_000 }).toBeGreaterThan(5);
-    const since = page.getByRole('region', { name: 'Sedan i går' });
     await expect(lage(page).getByText('Prognosen ligger under budget.')).toHaveCount(1);
-    await expect(since.getByText('Prognosen ligger under budget.')).toHaveCount(1);
-    await expect(since.getByText('Sjukfrånvaro', { exact: true })).toHaveCount(1);
-    await expect(since.getByText('Öppna tillbud', { exact: true })).toHaveCount(1);
     await expect(lage(page).locator(TILES)).toHaveCount(5);
   });
   test('while the areas are read the tiles keep their shape', async ({ page, api }) => {

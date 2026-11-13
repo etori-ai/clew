@@ -1,4 +1,5 @@
 import { StrictMode, Suspense, forwardRef, lazy, useEffect, useRef, useState, type AnchorHTMLAttributes } from 'react';
+import { keys } from './query-keys';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Link, Navigate, Routes, Route, useLocation, useParams, useSearchParams } from 'react-router';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -65,6 +66,13 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
           return;
         }
         const data = await response.json();
+        // The shared header is read in the same wait as the session, so the shell is drawn once in its final shape: with
+        // the band when a header connector answers, without it when none does, never first one and then the other
+        // (app critique, 2026-11-13). A failed read leaves the shell to ask for it as before.
+        await fetch('/api/header', { cache: 'no-store' })
+          .then(async header => (header.ok ? client.setQueryData(keys.header, await header.json()) : undefined))
+          .catch(() => undefined);
+        if (cancelled) return;
         setShell({
           session: { csrfToken: data.csrfToken, sessionKey: data.sessionKey, expiresAt: data.expiresAt },
           user: data.user,
@@ -78,7 +86,7 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [client]);
   useEffect(() => {
     if (shell === 'loading' || shell === 'anonymous') return;
     let source: EventSource | undefined,

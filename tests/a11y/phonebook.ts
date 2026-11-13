@@ -16,15 +16,17 @@ export async function phonebook(
   name: string,
   input: unknown,
 ): Promise<{ status: number; body: { output: unknown; view?: PanelViewSpec } | { error: string } }> {
+  // Protocol 3 (D117): the assertion is bound to the exact body and the capability it is sent for.
+  const body = JSON.stringify({ actor: user, input });
   const response = await service.handle(
     new Request(`http://phonebook/clew/capabilities/${name}`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         'X-Clew-Connector-Key': secret,
-        authorization: 'Bearer ' + (await assertion(user)),
+        authorization: 'Bearer ' + (await assertion(user, [], { body, capability: name })),
       },
-      body: JSON.stringify({ actor: user, input }),
+      body,
     }),
   );
   const answer = (await response.json()) as { output?: unknown; error?: { message: string } };

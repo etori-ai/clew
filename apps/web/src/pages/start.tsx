@@ -50,7 +50,7 @@ function Entering({ children }: { children: (entry: EntryStyle) => ReactNode }) 
   const entry = useEntryAnimation('fadeIn');
   return <>{children(entry ?? undefined)}</>;
 }
-import { useRail, type RailCurrent } from '../components/nav';
+import { toolHref, useRail, type RailCurrent } from '../components/nav';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { ReceiptNotice, receiptMessage } from '../components/receipt-notice';
 import { BriefSkeleton } from '../components/brief';
@@ -380,7 +380,14 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
         now={now}
         unitLabel={user.unitLabel}
         unitId={user.unitId || undefined}
-        viewHref={(capability, title) => viewHref({ capability, title })}
+        // A tile leads where every other way to a tool leads, the tool's page (D42), when the view is a tool in the
+        // person's menu; any other view opens as a view opened from a page does (D116): a table or a list to its own
+        // page with Hem as the way back, anything else beside Hem in the panel.
+        viewHref={(capability, title) =>
+          areasQ.data?.menu?.some(e => e.capability === capability)
+            ? toolHref(capability)
+            : viewHref({ capability, title })
+        }
         twoAcross={mobile}
       />
       <Toolbox />
@@ -611,14 +618,15 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
  * open: the box here takes the focus the page's own box had (D50).
  */
 function KeepFocus({ open, focus }: { open: boolean; focus: () => void }) {
-  const first = useRef(true);
+  // Only a change of `open` moves the focus. `focus` is a new function on every render of the conversation's context,
+  // so following it as well took the focus into the box on Hem's second render, past the skip link and the header.
+  const last = useRef<boolean | null>(null);
+  const focusRef = useRef(focus);
+  focusRef.current = focus;
   useEffect(() => {
-    if (first.current) {
-      first.current = false;
-      if (open) focus();
-      return;
-    }
-    focus();
-  }, [open, focus]);
+    const before = last.current;
+    last.current = open;
+    if (before === null ? open : before !== open) focusRef.current();
+  }, [open]);
   return null;
 }
