@@ -3,7 +3,6 @@ import { DBOS } from '@dbos-inc/dbos-sdk';
 import './workflows';
 import { startHeartbeat } from './heartbeat';
 import { dbosLogger, logger } from '../logging';
-import { telemetry } from '../telemetry';
 
 /**
  * The durable engine (D85): DBOS Transact in the BFF process, checkpointing to Clew's own PostgreSQL database (the
@@ -33,6 +32,8 @@ export interface DurableOptions {
   executorID?: string;
   applicationVersion?: string;
   databaseUrl?: string;
+  /** Join the tracer provider installed by the process that launches the engine. */
+  tracingEnabled?: boolean;
   /** The heartbeat and takeover sweep (heartbeat.ts); a test of one executor turns it off. */
   heartbeat?: boolean;
 }
@@ -50,7 +51,7 @@ export async function launchDurable(options: DurableOptions = {}) {
     executorID,
     ...(applicationVersion ? { applicationVersion } : {}),
     logger: dbosLogger,
-    tracingEnabled: telemetry.enabled,
+    tracingEnabled: options.tracingEnabled ?? false,
     otelAttributeFormat: 'semconv',
     systemDatabasePoolSize: 5,
   });
@@ -84,10 +85,10 @@ const RETRY_MS = 30_000;
  * Launch beside the server; if the database is unreachable the page still works (D8) and the launch retries. Resolves
  * once the engine has launched, which may be after several attempts, and never rejects.
  */
-export function startDurableRuntime() {
+export function startDurableRuntime(options: Pick<DurableOptions, 'tracingEnabled'>) {
   return new Promise<Awaited<ReturnType<typeof launchDurable>>>(resolve => {
     const attempt = () =>
-      launchDurable()
+      launchDurable(options)
         .then(info => {
           logger.info(
             { scope: 'dbos', executor: info.executorID, version: info.applicationVersion },

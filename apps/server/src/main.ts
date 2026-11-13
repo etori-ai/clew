@@ -66,7 +66,7 @@ const startup = startupReadiness({
   },
   onReady: () => {
     bindLiveActivities();
-    const engine = startDurableRuntime();
+    const engine = startDurableRuntime({ tracingEnabled: telemetry.enabled });
     watchConnectors(connectorReconcile);
     startJobs(engine);
     startAssistantProbe();
