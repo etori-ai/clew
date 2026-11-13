@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { eq, inArray, or } from 'drizzle-orm';
 import { closeDatabase, database, schema } from '../../packages/db/src/index';
 import type { AuthenticatedContext, StaffOverview } from '../../packages/contracts/src/index';
-import { talkStoreWithCards } from '../../apps/server/src/composition/talks';
+import { talkHolders, talkStoreWithCards } from '../../apps/server/src/composition/talks';
 import { dueTimerId } from '../../apps/server/src/composition/talk-work-items';
 import { talkUsecases } from '../../apps/server/src/modules/talks/usecases';
 import type { TalkStore } from '../../apps/server/src/modules/talks/model';
@@ -27,6 +27,10 @@ const ORG = `talks-e2e-${tag}`;
 const manager = `talks-e2e-${tag}-manager`,
   employee = `talks-e2e-${tag}-employee`,
   unitId = `unit-e2e-${tag}`;
+// The people the seam's lookup is asked about (M2): one with a user name, one provisioned without, one elsewhere.
+const named = `talks-e2e-${tag}-named`,
+  nameless = `talks-e2e-${tag}-nameless`,
+  foreign = `talks-e2e-${tag}-foreign`;
 const cancelled: string[] = [];
 const options = { durable: testDurable, cancel: async (id: string) => void cancelled.push(id) };
 let now = new Date('2026-03-02T09:00:00.000Z');
@@ -114,7 +118,7 @@ afterAll(async () => {
   await db.delete(schema.workOccurrences).where(inArray(schema.workOccurrences.personId, [manager, employee]));
   await db.delete(schema.threads).where(inArray(schema.threads.personId, [manager, employee]));
   await db.delete(schema.accessGrants).where(inArray(schema.accessGrants.personId, [manager, employee]));
-  await db.delete(schema.people).where(inArray(schema.people.id, [manager, employee]));
+  await db.delete(schema.people).where(inArray(schema.people.id, [manager, employee, named, nameless, foreign]));
   await forgetTestWorkflows();
   await closeDatabase();
 });
@@ -279,5 +283,20 @@ describe('the talks module on Postgres through the composition store (D96)', () 
       action: 'talks.person_erased',
       details: { talks: 1, commitments: 1, cleared: 0, cards: 1 },
     });
+  });
+
+  test('the seam finds the employee of a former manager’s point by user name in any case, or by id for a person provisioned without one, in the reader’s organisation only (M2)', async () => {
+    await database()
+      .insert(schema.people)
+      .values([
+        { id: named, organisationId: ORG, name: 'Synthetic Namngiven', userName: `e2e.named.${tag}` },
+        { id: nameless, organisationId: ORG, name: 'Synthetic Utan användarnamn' },
+        { id: foreign, organisationId: `${ORG}-other`, name: 'Synthetic Annan organisation' },
+      ]);
+    const reader = { id: manager, name: 'Synthetic Chef', unitId, unitLabel: 'Enheten', role: 'manager' as const };
+    const found = await talkHolders(reader, [`E2E.Named.${tag}`, nameless, foreign, `nobody-${tag}`]);
+    expect(Object.fromEntries(found)).toEqual({ [`E2E.Named.${tag}`]: named, [nameless]: nameless });
+    // A reader the people table does not hold finds nobody.
+    expect((await talkHolders({ ...reader, id: `missing-${tag}` }, [`e2e.named.${tag}`, nameless])).size).toBe(0);
   });
 });

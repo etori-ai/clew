@@ -70,7 +70,7 @@ export function talkSeamUsecases(deps: TalkSeamDeps) {
   /**
    * Action points about the reader or the people they manage now; `person` narrows to one of them. With Clew's own
    * module, the reader's list keeps the points they own about someone they no longer manage too, until they are done
-   * (M2): the employee's id comes from the directory.
+   * (M2): the employee's id comes from `holders`.
    */
   async function commitments(actor: Actor, input: CommitmentsInput, call: TalkCall): Promise<CommitmentsResult> {
     const source = sourceFor(actor);

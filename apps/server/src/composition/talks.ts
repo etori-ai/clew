@@ -85,7 +85,18 @@ export const talkDirectory: Directory = async actor => {
   return { self: { id: actor.id, userName }, staff: [...people.values()] };
 };
 /**
- * Who holds a talks row's user name in the reader's organisation now (D116): the people module's user reads, asked by the
- * seam for the action points a former manager still owns (M2).
+ * Who a talks row's key names in the reader's organisation now, asked by the seam for the action points a former manager
+ * still owns (M2): the holder of a user name, as the people module compares one (D116), else the person provisioned
+ * without one whose id the key is (D96 item 8), read from the people table the talks store reads.
  */
-export const talkHolders: Holders = (actor, userNames) => userReads.holders(actor.id, userNames);
+export const talkHolders: Holders = async (actor, keys) => {
+  const found = await userReads.holders(actor.id, keys);
+  const rest = keys.filter(key => !found.has(key));
+  if (!rest.length) return found;
+  const persons = await talkStore.transaction(tx => tx.persons([actor.id, ...rest]));
+  const organisation = persons.find(p => p.id === actor.id)?.organisationId;
+  for (const p of persons)
+    if (p.id !== actor.id && p.userName === null && organisation !== undefined && p.organisationId === organisation)
+      found.set(p.id, p.id);
+  return found;
+};

@@ -65,9 +65,9 @@ export interface CommitmentMapping {
   /** Set when the built-in module answered: each row gets its own id from the ref, and a row without one is dropped. */
   builtIn?: string;
   /**
-   * Who holds the keys of the rows `ownedElsewhere` names, by the key as the row has it (M2): a point the reader owns
-   * about someone they no longer manage stays theirs until it is done (D96 As built item 5), so it keeps its row on the
-   * reader's Hem with the employee's id from the directory. Read only for the built-in module, whose `mine` is Clew's own.
+   * The person ids of the keys `ownedElsewhere` returns, by the key as the row has it (M2): a point the reader
+   * owns about someone they no longer manage stays theirs until it is done (D96 As built item 5), so it keeps its row on
+   * the reader's Hem with the employee's id from `Holders`. Read only for the built-in module, whose `mine` is Clew's own.
    */
   owned?: ReadonlyMap<string, string>;
 }

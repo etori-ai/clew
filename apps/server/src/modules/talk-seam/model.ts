@@ -19,11 +19,12 @@ export interface DirectoryPerson {
  */
 export type Directory = (actor: Actor) => Promise<{ self: DirectoryPerson; staff: DirectoryPerson[] }>;
 /**
- * Who holds these user names now in the reader's organisation, active or not, compared as Clew compares a user name
- * (D116), keyed by the name as asked; a name nobody there holds is absent. The seam asks only about the action points
- * the reader owns about someone they no longer manage, when Clew's own module answers (M2).
+ * Whom these keys name now in the reader's organisation, active or not, by person id, keyed by the key as asked: the
+ * holder of a user name, compared as Clew compares one (D116), or the person provisioned without one whose id the key
+ * is (`personKey`). A key that names nobody there is absent. The seam asks only about the action points the reader owns
+ * about someone they no longer manage, when Clew's own module answers (M2).
  */
-export type Holders = (actor: Actor, userNames: readonly string[]) => Promise<ReadonlyMap<string, string>>;
+export type Holders = (actor: Actor, keys: readonly string[]) => Promise<ReadonlyMap<string, string>>;
 export type TalkCall = <O = unknown>(name: string, input?: unknown) => Promise<O>;
 export interface TalkSeamBudget {
   /** Milliseconds the source gets before it counts as not answering. */
