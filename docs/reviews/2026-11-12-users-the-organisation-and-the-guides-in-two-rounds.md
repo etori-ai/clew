@@ -759,3 +759,204 @@ the claim guarantee because an older binary ignores ownership. An external refre
 rotation remains ambiguous under D118's transient-error policy. Claim deadlines assume synchronized BFF clocks.
 The operations runbook records deployment and rollback; the nullable columns can stay on rollback after all newer
 BFFs have stopped. The old binary then has its former refresh limitation.
+
+## Second independent review of PR 63 (2026-11-13)
+
+**Reviewed head:** `99860c08b5381343c643a7251f51a8f25a477dd8`, against base
+`d41f40d8c49f0946f6947798276b52ee2dce12da`. This includes the five repair commits through `97acbde` and the
+subsequent stored-name migration, SCIM discovery and returning-person membership verification changes. Three fresh
+Astra reviews covered authentication/connector authority, SCIM/provisioning/identity lifecycle, and durable
+execution/calendar/recovery. The parent traced and cross-checked the findings. This is a new review, not an
+assertion that the earlier repairs or test results establish correctness on this head.
+
+**Conclusion:** request changes. Six actionable findings remain; no code was changed by this pass.
+
+### R1 · P1 · Concurrent erasures can restore an identifier in the audit trail
+
+`apps/server/src/modules/people/adapters/postgres.ts:807-829` reads audit details without locking and replaces the
+whole JSON object later. An ordinary `identity.conflict` row can be about person A and name person B as its holder.
+A's erasure masks both `value` and `subject`; B's masks only `subject`. With no shared groups, the erasures lock
+different people and both can read the original row. If A commits first and B writes its stale object last, B
+restores A's original claim value while both erasures report success. Default READ COMMITTED isolation does not
+make a supplied stale JSON replacement merge with the current value.
+
+The audit producer, the two redaction rules and the person/group lock boundaries were independently checked by two
+Astra reviewers and the parent. Correct the current database JSON per redacted key atomically, or lock affected
+audit rows in a stable order before deriving replacements. Protect the behavior with a concurrent two-person
+erasure scenario; that database scenario was not run here.
+
+### R2 · P1 · Some source calls still omit the live authorization guard
+
+`apps/server/src/composition/executions.ts:70-73` passes the person's captured groups into `registry.run` but omits
+the new `RunContext.authorize`. The worker's earlier guard precedes asynchronous session preflight, readback and
+the dispatch transaction. Removing a plain group used only for the connector audience during that interval leaves
+the authority version unchanged, and the registry then admits the write using the old group snapshot. Lookup and
+watch calls have the same omission. The direct API and callback fixes therefore do not cover durable execution.
+
+`apps/server/src/connectors/usecases/header.ts:82-86` also passes signal/delegate only. A cold header read can return
+a group-only holder's private menu when membership was withdrawn while that holder answered; a subsequent request
+is correctly denied. Carry the live guard through these existing invocation paths and test withdrawal while the
+source or preflight is blocked. These are static findings, confirmed independently against the call sites and
+registry lifecycle; no remote source was invoked.
+
+### R3 · P2 · Reconciliation can bypass the one-talk-per-person reservation
+
+**Origin relative to main:** duplicate invitations were already possible at base `d41f40d8`, which had no
+cross-manager reservation. The PR fixes the ordinary approval path but leaves the reconciliation path open. This is
+an incomplete repair of a pre-existing problem, not a demonstrated behavioral regression introduced by the PR.
+
+`apps/server/src/modules/calendar/usecases/booked.ts:79-84` stops reserving a participant when an approval is
+`pending` with a reason. A temporary team read failure can put manager A's approved invitation in precisely that
+state (`modules/executions/usecases.ts:571-584`). Manager B can then approve a different slot for the same employee.
+When A requests reconciliation after recovery, `usecases.ts:675-681` requeues the original approval without
+reacquiring the participant reservation. Its advisory lock is only taken for a fresh approval in
+`composition/execution-projection.ts:79-104`.
+
+If both workers dispatch before either proposal is recorded as booked, each sees no confirmed booking; distinct
+slots can both pass free/busy, and both send their distinct approved UIDs. Keep the reservation while an approval
+can retry, or acquire it again before resumed dispatch. Two Astra reviewers independently traced the public
+reconciliation route, reservation predicate, projection and dispatch checks. This interleaving was not executed
+against PostgreSQL.
+
+### R4 · P2 · Overlapping starts can strand a current-version nightly workflow
+
+`apps/server/src/dbos/start.ts:65` cancels by workflow id using an earlier status. Two starts can both see an
+old-version pending workflow. A moves it to the new version, then B cancels A's new queued workflow using its stale
+observation. If B stops or rewind fails, the workflow remains CANCELLED under the new version. Automatic startup
+skips that version at line 92, the named operator move refuses its cancellation at lines 133-134, and the existing
+job row prevents ordinary scheduling from enqueuing it again. A later different release or lower-level engine
+intervention may recover it; the current supported recovery paths do not.
+
+Two Astra reviewers checked the pinned DBOS 5.5.0 cancellation predicate and both recovery paths. A supervised,
+database-free simulation using the real `moveCandidate` and `moveWorkflow` functions reproduced the final
+current-version CANCELLED state and the operator refusal, with controlled workflow operations. Serialize the move
+or recover current-version cancellations specifically for the automatically managed nightly jobs.
+
+### R5 · P2 · A warmed delegation cache bypasses refresh unavailability
+
+`apps/server/src/auth.ts:388-390` keeps local access when refresh returns `unavailable`, while the 503 gate lives in
+the `subjectToken` callback at lines 310-318. `auth-exchange.ts:32-39` returns an unexpired exchanged token before
+calling that callback. An audience warmed shortly before refresh becomes necessary can therefore keep receiving
+its token while another audience waits, contrary to D118's stated delegation policy. The same applies while
+another BFF owns the refresh claim. The base revoked the session on this refresh failure, so preserving the session
+makes the stale gate reachable in the new behavior.
+
+A supervised simulation imported the actual head's `sessionRefresher` and `delegationFor`: after a simulated provider
+failure, local refresh reported `unavailable`, a warmed audience received its cached token, and a cold audience
+reached the simulated live callback's 503 gate. No external provider, HTTP or database was used. Apply the current
+session/delegation availability policy before releasing cached tokens and cover both warmed and cold audiences.
+
+### R6 · P2 · Concurrent identity repairs can record the wrong previous subject
+
+`packages/db/src/auth.ts:254-263` reads a binding without locking and later deletes solely by issuer/person. A
+release can read S, another operator can replace S with T and commit, and the release can then delete T while
+auditing S-to-null. Even two concurrent releases can both report a change although only one removes a row. The
+person lookup at line 241 is not locked either, so it does not serialize these operations. The audit and the old
+subject printed for recovery can describe a different account from the one actually removed.
+
+Two Astra reviewers and the parent independently checked the transaction and direct CLI caller. Serialize binding
+repairs for the person, or condition the deletion on the observed subject and retry with its new state. No
+database concurrency test was run here.
+
+### Scope and verification boundaries
+
+The latest stored-name normalization, discovery description and returning-person membership verification changes
+produced no additional substantiated finding under their documented source-ordering and group-ownership rules.
+The audit/rebind/booking/workflow issues above were already in the original PR; they are not attributed to those
+three subsequent commits. The shared authorization repair is incomplete at the durable/header call sites.
+
+The broader HTTP mapping of capability outages to 400 predates this PR. The new refresh-unavailability path also
+exposes it, but it was not counted here as a separate newly introduced finding. A nonlocking eligibility check in
+the other erasure scripts was not counted separately: their procedure requires the source to have stopped sending
+the person, and the base allowed active erasure outright.
+
+Two small function-level simulations ran sequentially under the global supervisor. The concurrency schedules for
+PostgreSQL were reviewed statically, not executed. No database tests, full suites, browser/E2E runs, development
+servers, builds or dependency installations were performed. Earlier unit-test results belong to the earlier
+reviewed head, not to a complete test run of this one. At review time GitHub exposed only a neutral Documentation
+review for this head; no successful Check or Reliability run could be verified. The PR head was checked again and
+remained `99860c0`.
+
+## Repairs after the second independent review (2026-11-13)
+
+The product owner asked for the six findings to be repaired carefully, keeping changes justified and avoiding
+unnecessary refactoring. Work started at `99860c0`; the documentation-only commit `0ca4db7` was then fast-forwarded
+before integration. It changes none of the six affected runtime paths. Three Astra agents implemented the identity,
+authority and durable-work lanes in parallel; the parent reviewed their designs and patches, with peer review of
+the repairs as well. The original dirty checkout was not used for edits.
+
+The existing owners remain canonical: `personErasureUsecases` selects audit identifiers and the provision store
+redacts them; `rebindIdentity` owns binding repair; the registry owns invocation admission and result release;
+`delegationFor` owns exchanged-token caching; `mayStillBeSent` owns invitation reservations; and `dbos/start.ts`
+owns workflow moves. No migration, UI, source protocol or approved payload change is needed. Acceptance is the
+reported interleavings remaining safe, with focused behavior tests and static checks, while database scenarios
+remain explicitly unverified at the product owner's request.
+
+- **R1:** the store receives identifier keys instead of a replacement details object. PostgreSQL merges those
+  redactions into the current JSON row in audit-id order and returns the count of rows actually changed. An erasure
+  cannot restore another person's masked fields. The original audit snapshot is retained for finding old claim
+  names in the authentication log. The shared store contract covers preservation and idempotence; a PostgreSQL
+  scenario interleaves the two public erasure use cases on a shared conflict row.
+- **R2:** durable execution, lookup, watch and header calls pass the existing live authorization guard into the
+  registry. A cached header is guarded after asynchronous holder selection. Local authorization errors propagate
+  separately from holder outages, preventing last-good-header fallback on withdrawn local access. These checks
+  govern invocation admission and result release; they cannot atomically revoke a remote effect already in flight.
+- **R3:** pending approvals retain the existing reservation even with a reason, since reconciliation can retry
+  them. `source-reset`, terminal state and expiry release it. The peer review found that releasing it on team loss
+  was also unsafe: the former manager can regain the employee and retry after another manager has approved. A live
+  approval therefore holds the reservation through its original 24-hour expiry despite team changes. This can delay
+  a new manager, but avoids another reservation owner or a second acquisition path at dispatch. The now-unused
+  directory-read projection port and its composition wiring are removed. Confirmed bookings keep their existing
+  current-manager rule.
+  This completes an incomplete remedy for a problem already present on the earlier main; it is not presented as
+  a new regression caused by the PR.
+- **R4:** startup and operator moves serialize on a transaction-scoped advisory lock per application queue and
+  workflow, using one app-pool connection and the engine's separate pool for controls. Both read state under that
+  lock; a cancel is followed by a status read, so completion before cancellation is left intact. A scheduler-selected
+  nightly workflow already cancelled under the running version is resumed with its recorded steps intact. Generic
+  intentional cancellations keep their operator refusal. The transaction releases the lock on failure or death.
+- **R5:** every delegation request checks the live session/refresh gate before considering the audience cache.
+  A warmed audience therefore waits just as a cold one does during refresh unavailability. This adds a live session
+  read per warm request, preserves the existing cache and exchange policy, and introduces no availability cache.
+- **R6:** binding repair takes the existing person row's `FOR NO KEY UPDATE` lock before reading the current
+  subject. Concurrent repairs and erasure serialize there; the old subject reported and audited is the one actually
+  replaced or released. A PostgreSQL regression holds a replacement open while a release starts.
+
+The sparse audit updates remove the stale full-object overwrite path; the authority guards close omitted uses of
+the existing invocation contract. Reservation ownership stays in one predicate rather than a second retry path.
+The added behavior checks concern retained identifiers, released private output, token availability, booking
+exclusivity, and truthful repair evidence. No compatibility layer or new domain abstraction was introduced.
+
+The invitation reservation ends at the original approval's expiry. It does not cancel a source call already in
+flight or establish remote exclusion after that cutoff; an unknown outcome still needs source reconciliation as
+D45 and D96 document. Workflow target selection likewise keeps D85's deployment discipline: concurrent starts of
+different releases, or promoting another release while an operator uses the previously selected latest version,
+are not serialized as a deployment policy by this per-workflow lock.
+
+### Repair validation
+
+All local runners used the global supervisor sequentially. The following focused checks passed:
+
+- `bun test --max-concurrency 1 tests/unit/person-erase.test.ts tests/unit/scim.test.ts`: 70 tests, 644 assertions.
+- `bun test --max-concurrency 1 tests/unit/intranet-connector.test.ts tests/unit/auth-exchange.test.ts
+  tests/unit/auth-refresh.test.ts tests/unit/delegated-executions.test.ts`: 72 tests, 426 assertions. The durable
+  execution case uses the in-memory ledger fixture; the production composition bindings were independently read,
+  not exercised by that fixture.
+- `bun test --max-concurrency 1 tests/unit/calendar-executions.test.ts tests/unit/samtal.test.ts`: 55 tests,
+  316 assertions.
+- `node --import tsx --test --test-concurrency=1 apps/server/tests/workflow-moves.test.ts`: five database-free
+  control-flow tests. These are also included in the explicit `test:node` file list for future checks.
+- TypeScript, purity, dependency rules, documentation generation/check and the documentation smoke test passed
+  together under the supervisor, with a measured peak of 1,398.7 MiB. The dependency check read 729 modules and
+  2,596 dependencies. Documentation checked 18 generated files, 130 decisions and 284 documents.
+
+That is 197 focused Bun tests and five Node tests, not a full suite. Host Bun is 1.3.4, while the repository pins
+1.4.4; the recorded unit results are for that host runtime. Scoped formatting and `git diff --check` passed.
+No database test, live DBOS runtime test, external identity-provider call, dependency installation, development
+server, browser/E2E run or production build was performed. The PostgreSQL overlap and reservation regressions, and
+the live engine overlap/step-preservation scenario, remain unrun at the product owner's explicit request.
+
+No schema changes are part of these six repairs. A code rollback restores the former behavior and its reviewed
+limitations; it cannot restore identifiers an operator has already intentionally erased. Stop older moving
+processes when deploying the workflow fix: older binaries do not participate in the new move lock. The existing
+0057 refresh-claim deployment/rollback procedure above still applies to the PR as a whole.
