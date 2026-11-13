@@ -32,7 +32,7 @@ A connector is your independently deployed HTTP service. It translates a source 
 | Coordinate reads, changes and follow-up across systems | [Working across connectors](architecture/working-across-connectors.md) | [Job scenario](../tests/unit/fixture-job.test.ts), [read callback](../connectors/hello/connector.mjs) |
 | Show what your system knows about a person or a unit | [Say what your rows are about](guides/creating-a-connector.md#8-say-what-your-rows-are-about) | [Appraisals fixture](../connectors/appraisals/connector.mjs) |
 | Check, register and operate the service | [Testing and deployment](guides/testing-and-deployment.md) | [Conformance checker](../packages/connectors/src/check.ts) |
-| Push people, units and groups into an installation | [Writing a provisioner](guides/writing-a-provisioner.md) | [Synthetic provisioner](../scripts/provisioner/push.ts) |
+| Push people, units and groups into an installation | [Writing a provisioner](guides/writing-a-provisioner.md) | [Example reconciliation code](../scripts/provisioner/push.ts) |
 | Send people, units and memberships to Clew | [SCIM objects and delivery order](guides/provisioning-for-operations.md) | [Provisioner check](../scripts/provisioner-check.ts) |
 
 The [guide index](guides/README.md) separates the minimum read integration from optional search, scan, write and composition features.

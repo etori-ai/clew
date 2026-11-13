@@ -15,7 +15,7 @@ When two provisioners send to one organisation, give them prefixes and keys that
 
 `SourceScope` is enforced by the example client. Clew's token grants provisioning access to the organisation; the server does not restrict each writer to those prefixes or keys. Writers in one organisation must therefore be mutually trusted. Name the writer responsible for a person's activation and agree how every other group owner confirms a return before it enables the person ([return-to-work procedure](writing-a-provisioner.md#reactivating-a-returning-person)).
 
-It does two things ([D109](../decisions/D109-a-provisioner-sends-a-change-when-it-happens-and-reconciles-the-whole-source-daily.md)). It sends each change to Clew when it happens, which is the rule. And it compares the whole source with what Clew holds at least once a day, which is the net under the rule: a change that was lost on the way is found by nothing else. The example does only the second, because its source is a file that has no events; sending a change when it happens is yours to add. This page calls the second the **comparison**; [Writing a provisioner](writing-a-provisioner.md) calls the same thing a reconciliation.
+The directory team sends each change when it takes effect. At least once a day, it compares the full source with Clew and applies any missed changes. The example provisioner implements this daily **comparison**, called [reconciliation in the protocol guide](writing-a-provisioner.md#what-a-provisioner-does-on-every-reconciliation). If you adapt it, add change delivery from your source. [Provisioning schedule](../decisions/D109-a-provisioner-sends-a-change-when-it-happens-and-reconciles-the-whole-source-daily.md)
 
 ### What it reads from the source
 

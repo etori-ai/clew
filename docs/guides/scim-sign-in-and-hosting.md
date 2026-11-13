@@ -8,8 +8,6 @@ The **source** is the directory, HR system or metadata catalogue that holds the 
 
 *Figure 1. At first sign-in, Clew links the account to the active person whose `userName` matches the configured claim, provided that person is free to bind under the issuer. Later sign-ins use the stored issuer and subject (`iss` and `sub`). A claim naming a different person causes Clew to refuse the sign-in.*
 
-The server side is built and tested with a synthetic directory of two hundred and fifty people. No provisioner has yet run against a real source, and no identity provider other than the development one has signed anybody in ([implementation status](../reference/status/identity.md)). The first installation that does both will find things this page does not say; tell the Clew team what they were.
-
 ## Who delivers what
 
 | Team | Delivers | Section |
@@ -157,7 +155,7 @@ Never change account names to make a refusal go away. While T's subject is bound
 | Instance and release | `CLEW_EXECUTOR_ID`: a name for each server process that it keeps across restarts and deployments, such as `clew-1`. Unset, it is the host name, which changes whenever a container is made again. `CLEW_RELEASE`: a new name for each release. The durable engine marks every piece of waiting work with the release that started it and resumes it only in a process of that release ([D85](../decisions/D85-dbos-transact-replaces-temporal-as-the-durable-engine.md)), so each deployment ends with a step, below the example. |
 | Master key | `MASTER_KEY`: 32 random bytes in base64, made once with `openssl rand -base64 32`. Keep it in the secret store and back it up with the database. Never make a new one on a redeploy. At its first start Clew seals its own signing key for connected systems with this key. Under another key Clew cannot open that signing key, so it does not start at all. A new key also cannot open the secrets and sessions sealed with the old one, and changes every stored authorization value at once ([runbook](../maintainers/reliability-operations.md#changing-the-authorization-fingerprint)). |
 | Request size | Let 4 MB through. Clew refuses a larger body itself. The largest request is a unit group with all its members. |
-| Request time | The first write of a group with ten thousand members took about five seconds on the development stack. Do not cut a request off before that with room to spare. |
+| Request time | Measure how long it takes to write your largest group in the test installation. Set the proxy timeout above that duration, with room for slower writes. |
 | While Clew starts | It answers 503 with `Retry-After`. A provisioner waits and tries again. `GET /api/ready` answers 200 once Clew has started and its database answers within a second, and 503 until then; `GET /api/health` answers 200 whenever the process runs. |
 | Sign-in settings | `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REQUEST_OFFLINE_ACCESS` when required and, when the claim is not `preferred_username`, `OIDC_BINDING_CLAIM`, from the identity provider team |
 
