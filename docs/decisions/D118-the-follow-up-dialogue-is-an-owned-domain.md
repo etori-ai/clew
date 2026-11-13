@@ -54,8 +54,9 @@ below. The key figures stay with connectors (decision B of the plan, not taken h
     activity says so. Every area's panel stays mounted, so text being written survives a change of tab. It is the one
     new page surface of this record.
 12. **Erasure and export** use operator scripts. After deactivation, `scripts/dialogue-erase.ts` clears the person's
-    identity references and removes the cards of activities they owned. The unit's assessments, activities and free
-    text remain. Run it as part of [erasing one person](../maintainers/reliability-operations.md#erasing-one-person).
+    identity references and removes owned activity cards and the person's private notes
+    ([private notes](D120-a-managers-own-notes-in-the-follow-up-dialogue-are-private-posts-and-files-go-to-the-document-system.md)).
+    The unit's assessments and activities keep their free text. Run it as part of [erasing one person](../maintainers/reliability-operations.md#erasing-one-person).
     `scripts/dialogue-export.ts` exports one organisation's dialogue as `clew.dialogue/1`.
 
 **Why.** Oliver Borgström, 2026-11-13: big-boss-board is to be retired once Clew is in production, and the dialogue is

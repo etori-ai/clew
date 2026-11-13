@@ -155,7 +155,7 @@ export function userReadsContract(
   );
   test(
     label +
-      ': whether a person is active, with or without a user name, and nothing for an id the people table does not hold (D122, D120)',
+      ': whether a person is active, with or without a user name, and nothing for an id the people table does not hold (D122, D123)',
     async () => {
       const { reads, actors, others } = await prepare();
       expect(await reads.enabled(actors[0].id)).toBe(true);

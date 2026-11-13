@@ -253,7 +253,7 @@ test('the talks routes (D96): thin writes over the use cases, Swedish refusals, 
   assert.equal(n, 4, 'no write reached the use cases while the built-in module did not answer');
 });
 
-test('the dialogue routes (D118): one unit read and its writes over the use cases, Swedish refusals, and a 403 on all while the module is off', async () => {
+test('the dialogue routes (D118, D120): one unit read and its writes over the use cases, Swedish refusals, and a 403 on all while the module is off', async () => {
   const { memoryDialogueStore } = await import('../src/modules/dialogue/adapters/memory');
   const { dialogueUsecases } = await import('../src/modules/dialogue/usecases');
   const { NOT_WRITABLE, dialogueRoutes } = await import('../src/routes/dialogue');
@@ -343,10 +343,28 @@ test('the dialogue routes (D118): one unit read and its writes over the use case
   for (const bad of [{ area: 'digital' }, { area: 'digital', tone: 'red' }, 'not json'])
     assert.equal((await call('boss', 'POST', '/units/u1/assessments', bad)).status, 400);
 
+  // A manager's own note (D120): written, changed, read back in its area, and removed.
+  const noted = await call('boss', 'POST', '/units/u1/notes', { area: 'digital', text: 'En tanke' });
+  assert.equal(noted.status, 201);
+  const note = ((await noted.json()) as { id: string }).id;
+  assert.equal((await call('boss', 'PATCH', `/notes/${note}`, { text: 'En tanke' })).status, 204);
+  const withNote = (await (await call('boss', 'GET', '/units/u1')).json()) as { areas: Array<{ notes: unknown[] }> };
+  assert.deepEqual(withNote.areas[0]!.notes, [{ id: note, text: 'En tanke', createdAt: '2026-11-13T09:00:00.000Z' }]);
+  for (const bad of [{ area: 'digital' }, { area: 'digital', text: '' }, { text: 'Utan område' }])
+    assert.equal((await call('boss', 'POST', '/units/u1/notes', bad)).status, 400);
+  assert.equal((await call('boss', 'PATCH', `/notes/${note}`, {})).status, 400);
+  const notMine = await call('anna', 'DELETE', `/notes/${note}`);
+  assert.equal(notMine.status, 403);
+  assert.deepEqual(await notMine.json(), { error: 'Du kan inte ändra den här anteckningen.', code: 'denied' });
+  assert.equal((await call('boss', 'DELETE', `/notes/${note}`)).status, 204);
+  assert.equal((await call('boss', 'DELETE', `/notes/${note}`)).status, 403);
+
   writable = false;
   for (const [method, path] of [
     ['GET', '/units/u1'],
     ['POST', '/units/u1/activities'],
+    ['POST', '/units/u1/notes'],
+    ['DELETE', `/notes/${note}`],
     ['DELETE', `/activities/${id}`],
   ] as const) {
     const off = await call('boss', method, path, method === 'GET' ? undefined : {});

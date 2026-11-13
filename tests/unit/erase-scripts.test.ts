@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
 /**
- * The arguments of the operator's erasures of a leaver's talks, competence and follow-up dialogue (D122 item 7, D120 item 3), held as
+ * The arguments of the operator's erasures of a leaver's talks, competence and follow-up dialogue (D122 item 7, D123 item 3), held as
  * `tests/unit/person-erase.test.ts` holds person-erase's: every malformed call is refused with exit code 2 and the usage
  * line before the database is asked anything, an option given twice and a stray argument among them, so that a copied
  * line cannot erase the wrong person. The database each script is given cannot be reached, so a call that got that far
@@ -47,7 +47,7 @@ const SCRIPTS: Array<{ script: string; unconfirmed: string }> = [
   {
     script: 'dialogue-erase.ts',
     unconfirmed:
-      'Erasing person "p1" from the follow-up dialogue removes them from every assessment and activity and removes the cards of the activities they own, and cannot be undone. Run again with --confirm to erase.',
+      'Erasing person "p1" from the follow-up dialogue clears their id from assessments and activities and removes their private notes and owned activity cards. It cannot be undone. Run again with --confirm to erase.',
   },
   {
     script: 'competence-erase.ts',

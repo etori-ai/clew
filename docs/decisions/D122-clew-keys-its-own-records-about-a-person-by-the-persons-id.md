@@ -73,7 +73,7 @@ user name, so a rename separated a person from the cards about them and a reuse 
    `apps/server/src/modules/executions/usecases.ts`). A write approved from an action its source wrote on a card, a
    started propose's included, keeps no person and is not compared. When the name is no longer the person's, or the
    person holds none, as after an erasure
-   ([D120](D120-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md)
+   ([D123](D123-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md)
    item 3), nothing is sent. An execution never dispatched is settled `failed` with the reason `subject-changed`. One
    that was dispatched, and whose read-back found nothing, is settled `unknown` with that reason, since a replay would
    reach someone else. Each is audited (`execution.failed`, `execution.unknown`). The card says "Personen har inte
@@ -88,7 +88,7 @@ user name, so a rename separated a person from the cards about them and a reuse 
    exception D96 built (As built, item 8): a person without a user name is keyed on their id, so the rows of
    `<id>.talks` and `<id>.commitments` may name them by it, and `<id>.commitments` asked about them gets it as
    `person`. SCIM requires a user name, so such a person is rare: an erased record that a client makes active again is
-   one ([D120](D120-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md)
+   one ([D123](D123-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md)
    item 3). The signed actor a connector receives carries the id, and the user name when the person has one
    ([D97](D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)). Whether `Actor` should also carry a key
    that the source knows and that never changes, such as the directory's `externalId`, stays an
@@ -98,14 +98,14 @@ user name, so a rename separated a person from the cards about them and a reuse 
    `bun scripts/competence-erase.ts --person <person id> --confirm` and
    `bun scripts/dialogue-erase.ts --person <person id> --confirm` take the person's id, never a user name. An id the
    people table does not hold is refused, and so is a person who is still active, since a person is erased only once
-   the source has deactivated them (D120 item 3); nothing is erased or audited for either. `talks-erase`,
+   the source has deactivated them (D123 item 3); nothing is erased or audited for either. `talks-erase`,
    `competence-erase` and `dialogue-erase` refuse an option given twice or any other argument, as `person-erase` does, so a copied line
    cannot erase the wrong person (2026-11-13). One erasure reaches every card about the person, whatever user names
    they have held, and never the cards of someone who holds one of those names now. The rows' text stays as the source
    wrote it. `competence-erase` also removes the cards the competence scan put in the person's stream, each with one
    `thread.removed` row (`details.reason` `erasure`) written at the time of the erasure. When a person's own record is
    erased is
-   [D120](D120-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md)'s.
+   [D123](D123-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md)'s.
 8. **D97's two open items on keys are settled.** The key on the wire is the user name. The key on Clew's card rows is
    the person's id, so the key Clew keeps on a card is never one of the person's names, as [principle
    7](../vision.md#principles) of the vision asks, and one erasure reaches the whole person.
@@ -158,14 +158,14 @@ in-memory double to the same; `tests/db/postgres-entity-keys.test.ts` opens a pe
 `keyedDrafts` and `viewWithPeople` in `apps/server/src/threads/usecases/keys.ts`; `keyedItems`, `startedTopic`,
 `startedDecision` and `takesStarted` in `apps/server/src/threads/domain.ts`; `started.ts` and `decisions.ts` in
 `apps/server/src/threads/usecases/`; `stillNamed` in the executions module; search's `keyedHits`; the talks seam's
-`keyIndex`. Migration `0055_person_keys_and_participants.sql` adds `execution.subject` and `proposal.participant_id`.
-Migration `0057_person_user_name_nfc.sql` adds the index `auth_person_user_name_nfc` on the expression `holders`
+`keyIndex`. Migration `0056_person_keys_and_participants.sql` adds `execution.subject` and `proposal.participant_id`.
+Migration `0058_person_user_name_nfc.sql` adds the index `auth_person_user_name_nfc` on the expression `holders`
 compares (item 2), which the unique index on user names cannot serve, since it does not fold composition. `holders`
 looks each name up through it on its own, in a lateral subquery that stops at two holders, which are enough to name
 nobody: as one join of every name asked, a list of a few hundred names, as a manager's refresh or a declared view asks,
 was planned as a read of every person. A resolution therefore reads the holders of the names asked, however many;
 until 2026-11-13 every resolution read every person in the installation. `tests/db/user-reads.test.ts` checks the
-plans for a few names and for 300 on a database of a thousand people per organisation. Migration 0059 brings older
+plans for a few names and for 300 on a database of a thousand people per organisation. Migration 0060 brings older
 stored user names into the NFC form SCIM and sign-in compare. Each person keeps their id. Two people whose names
 would become equal need distinct names from the source owner before the upgrade can proceed
 ([upgrade and recovery](../maintainers/reliability-operations.md#upgrading-scim-user-names)).

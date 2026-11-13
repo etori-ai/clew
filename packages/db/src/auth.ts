@@ -410,7 +410,7 @@ export async function frontchannelRevoke(input: { issuer: string; clientId: stri
   await database().transaction(tx => endProviderSessions(tx, input, 'frontchannel-logout'));
 }
 /**
- * The nightly clean-up of sign-in machinery (D120; L3 of the 2026-11-12 users review), in one transaction: every
+ * The nightly clean-up of sign-in machinery (D123; L3 of the 2026-11-12 users review), in one transaction: every
  * session past either expiry is removed with its sealed tokens, and one that was still open is ended with an `expired`
  * row in the authentication log; login transactions and logout receipts past their expiry are removed. The
  * authentication log itself is kept, since how long sign-in history is kept is the organisation's decision (Q7). One

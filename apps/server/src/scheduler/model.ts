@@ -55,7 +55,7 @@ export interface People {
   /** A system identity for one of them (`system-context.ts`), or undefined when the grant is gone. */
   personaFor(id: string): Promise<AuthenticatedContext | undefined>;
 }
-/** Clew's own sign-in machinery, which the nightly clean-up empties (D120). */
+/** Clew's own sign-in machinery, which the nightly clean-up empties (D123). */
 export interface SignInData {
   /**
    * Removes every session past either expiry at `now`, ending one still open with an `expired` row in the

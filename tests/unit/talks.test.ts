@@ -137,7 +137,7 @@ beforeEach(() => {
   });
 });
 const at = () => now.toISOString();
-/** The source deactivates the person: only then does an operator erase them (D120 item 3). */
+/** The source deactivates the person: only then does an operator erase them (D123 item 3). */
 const deactivate = (id: string) => store.addPerson({ ...store.state.persons.get(id)!, enabled: false });
 const open = () =>
   talks.openRound('operator:cli', {
@@ -827,7 +827,7 @@ describe('erasure and export', () => {
     expect(store.state.commitments.get(id)).toMatchObject({ employeeId: 'anna' });
   });
 
-  test('a person who is still active is refused: nothing is erased and no audit row is written (D120 item 3)', async () => {
+  test('a person who is still active is refused: nothing is erased and no audit row is written (D123 item 3)', async () => {
     await open();
     await talks.markHeld(boss, 'anna', { heldOn: '2026-11-03' });
     const id = await talks.addCommitment(boss, 'anna', { owner: 'employee', text: 'Läsa boken', dueOn: '2026-12-15' });

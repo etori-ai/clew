@@ -446,7 +446,7 @@ describe('an action about a person, started from the menu', () => {
     expect(w.asked.flag).toEqual([]);
   });
 
-  test('an execute about someone an operator has since erased cannot be decided, and nothing is approved (D122, D120)', async () => {
+  test('an execute about someone an operator has since erased cannot be decided, and nothing is approved (D122, D123)', async () => {
     const w = world();
     const hillevi = w.people.persona('hillevi');
     const { threadId } = (await w.actions.start(hillevi, 'person', 'anna', 'hr.flag'))!;

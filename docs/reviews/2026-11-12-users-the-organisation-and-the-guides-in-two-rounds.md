@@ -9,8 +9,8 @@ decided as the product owner asked, see Outcome
 
 The findings below use the decision and migration numbers of the reviewed branch. When merged with the
 follow-up dialogue, the sign-in and person-key decisions became [D121](../decisions/D121-a-sign-in-follows-the-identity-providers-session.md)
-and [D122](../decisions/D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md). The PR’s migrations
-0054–0058 became 0055–0059. Use the [operations runbook](../maintainers/reliability-operations.md) for current
+and [D122](../decisions/D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md). The retention decision became [D123](../decisions/D123-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md). The PR’s migrations
+0054–0058 follow the dialogue and its notes as 0056–0060 in the released sequence. Use the [operations runbook](../maintainers/reliability-operations.md) for current
 migration and deployment instructions.
 
 ## Question
@@ -488,7 +488,7 @@ account, which Q8 settles. No fix needed new surface
   not sent when its user name has come to name someone else. An action a source wrote on a card, a started `propose`'s
   included, keeps no person and is not compared: it is sent as the source wrote it, and the source answers for whoever
   holds a name it uses (D119 items 5 and 9).
-- [D120](../decisions/D120-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md) (Q7, L3, P4, R3): Clew empties expired sign-in data itself, and how long a leaver's record is kept is
+- [D120](../decisions/D123-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md) (Q7, L3, P4, R3): Clew empties expired sign-in data itself, and how long a leaver's record is kept is
   the organisation's decision. Here the decision goes further than the recommendation, which was to leave retention as
   an open question. A municipality's records can be official documents that only its own retention rules may cull, so
   Clew cannot choose a period; but that decision means nothing without a way to carry it out, so an operator now
@@ -578,7 +578,7 @@ what they say.
 - The documents promised that nothing started about an erased person could be decided or sent. The code refuses a card
   started from the person's menu with an `execute` and an execution that keeps its person; a card whose actions a
   source wrote, pushed or started with a `propose`, keeps them. Decided in
-  [D120](../decisions/D120-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md):
+  [D123](../decisions/D123-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md):
   no script closes such a card, and an erasure does not wait for them. A pushed card is the source's work, which its
   next scan draws again; a started `propose` holds the source's own action under the source's own key, which the source
   still holds; and a card is also the record of what the person holding it did. The documents now claim no more than
@@ -586,7 +586,7 @@ what they say.
 - Of the four erasures of a leaver, only `person-erase` refused a person who was still active, and `talks-erase` and
   `competence-erase` read the first of an option given twice, so a copied line could erase the wrong person or someone
   who still works there. The three now refuse an active person, and those two a malformed call, as `person-erase` does
-  ([D120](../decisions/D120-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md)
+  ([D123](../decisions/D123-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md)
   item 3). When a card they removed had a timer waiting, both also printed an error from the durable engine before
   their answer: a script never starts the engine, so they no longer cancel through it, and the timer's workflow finds
   no timer when it wakes. And the three answered a failed query with the statement and its parameters, where

@@ -46,7 +46,7 @@ export const COMPETENCE_ADMIN: Capability = 'admin.competence';
 export const COMPETENCE_EXPORT_FORMAT = 'clew.competence/1';
 /**
  * What erasing one person from the domain did, counts only (D108 item 14), or why it erased nothing: an id the people
- * table does not hold, or a person the source has not deactivated (D122 item 7, D120 item 3).
+ * table does not hold, or a person the source has not deactivated (D122 item 7, D123 item 3).
  */
 export type CompetenceErasure =
   { refused: 'unknown' | 'active' } | { holdings: number; cleared: number; cards: number };
@@ -434,7 +434,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
      * Erase one person from the domain (D108 item 14): their holdings, their id on the holdings they registered or
      * revoked for others, and the cards the competence scan put in their own stream. `actor` is the operator's. An id
      * the people table does not hold (a user name, a typo) and a person who is still active erase nothing and write no
-     * audit row: only a person the source has deactivated is erased (D120 item 3).
+     * audit row: only a person the source has deactivated is erased (D123 item 3).
      */
     async erasePerson(actor: string, personId: string): Promise<CompetenceErasure> {
       const at = now().toISOString();

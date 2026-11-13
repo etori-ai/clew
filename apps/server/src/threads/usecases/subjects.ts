@@ -75,7 +75,7 @@ export function subjectErasure({ store, clock, people }: SubjectErasureDeps) {
    * never another person's; a unit by its id. The rows' text stays as the source wrote it, and a source that still names
    * the entity names it again on its next scan. A person id the people table does not hold (a user name, a typo) and a
    * person who is still active erase nothing and write no audit row: only a person the source has deactivated is erased
-   * (D120 item 3). A unit is erased by any id, since a removed unit may still be named. `actor` is the operator's.
+   * (D123 item 3). A unit is erased by any id, since a removed unit may still be named. `actor` is the operator's.
    */
   async function eraseSubject(
     actor: string,

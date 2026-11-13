@@ -8,7 +8,7 @@ import { signInData } from '../../apps/server/src/composition/sign-ins';
 import { enqueuedWorkflows, forgetTestWorkflows, testDurable } from './durable';
 
 /**
- * The nightly clean-up of sign-in machinery on PostgreSQL (D120; L3 of the 2026-11-12 users review), through the
+ * The nightly clean-up of sign-in machinery on PostgreSQL (D123; L3 of the 2026-11-12 users review), through the
  * binding the composition gives the scheduler. Every session past either expiry goes with its sealed tokens, one that
  * was still open with an `expired` row in the authentication log; login transactions and logout receipts past theirs go
  * too. Live sessions, sessions ended earlier that have not yet expired and the authentication log itself stay: how long

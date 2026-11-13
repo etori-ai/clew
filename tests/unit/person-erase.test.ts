@@ -8,7 +8,7 @@ import { PERSON_ERASED, personErasureUsecases, scimUsecases } from '../../apps/s
 import { memoryPersonKeys } from '../person-keys';
 
 /**
- * An operator's erasure of a deactivated person (D120, Q7 of the 2026-11-12 users review) on the memory adapter: the
+ * An operator's erasure of a deactivated person (D123, Q7 of the 2026-11-12 users review) on the memory adapter: the
  * person pushed through the SCIM use cases as a source pushes them, the sign-in's rows written as `@clew/db/auth`
  * writes them (a unit test cannot run it), and the erasure's refusals, its one transaction and its audit row. The same
  * on PostgreSQL, the sign-in's own writes included, is `tests/db/person-erase.test.ts`.
@@ -160,7 +160,7 @@ const HER_VALUES = [
   'sub-anna',
 ];
 
-describe('erasing a person (D120)', () => {
+describe('erasing a person (D123)', () => {
   test('refuses a person who is still active and an id the people table does not hold, writing nothing', async () => {
     const { store, erasure, id } = await anna();
     const before = structuredClone(store.state);

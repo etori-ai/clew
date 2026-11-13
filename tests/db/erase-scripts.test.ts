@@ -11,7 +11,7 @@ import { talkUsecases } from '../../apps/server/src/modules/talks/usecases';
 import { enqueuedWorkflows, forgetTestWorkflows, testDurable } from './durable';
 
 /**
- * The operator's erasures of a leaver's cards, talks, competence and follow-up dialogue (D122 item 7, D120 item 3), each run as a script as
+ * The operator's erasures of a leaver's cards, talks, competence and follow-up dialogue (D122 item 7, D123 item 3), each run as a script as
  * the runbook runs it, against the database the test is given. Each refuses an id the people table does not hold and a
  * person who is still active, with exit code 1, writing nothing and no audit row. A deactivated person is erased with
  * the script's own answer alone on standard output, also when a removed card has a timer still waiting: the timer goes
@@ -148,7 +148,7 @@ afterAll(async () => {
   await closeDatabase();
 });
 
-describe('the erase scripts on PostgreSQL (D122 item 7, D120 item 3)', () => {
+describe('the erase scripts on PostgreSQL (D122 item 7, D123 item 3)', () => {
   test('setup: a leaver still active, with an action point and a competence card that each have a timer waiting', async () => {
     const db = database();
     await db.insert(schema.people).values([

@@ -71,7 +71,7 @@ export interface UnitStanding {
 }
 /**
  * What erasing one person from the domain did, counts only (D96 item 10), or why it erased nothing: an id the people
- * table does not hold, or a person the source has not deactivated (D122 item 7, D120 item 3).
+ * table does not hold, or a person the source has not deactivated (D122 item 7, D123 item 3).
  */
 export type TalkErasure =
   { refused: 'unknown' | 'active' } | { talks: number; commitments: number; cleared: number; cards: number };
@@ -568,7 +568,7 @@ export function talkUsecases(deps: TalkDeps) {
      * Erase one person from the domain (D96 item 10): their talks and every action point about them, the cards of
      * those and of the ones they owned, and their name on other people's records. `actor` is the operator's. An id the
      * people table does not hold (a user name, a typo) and a person who is still active erase nothing and write no
-     * audit row: only a person the source has deactivated is erased (D120 item 3).
+     * audit row: only a person the source has deactivated is erased (D123 item 3).
      */
     async erasePerson(actor: string, personId: string): Promise<TalkErasure> {
       const at = now().toISOString();

@@ -328,7 +328,7 @@ export const scheduler = createScheduler({
   people: postgresPeople(),
   threads,
   calendar,
-  // The nightly clean-up of sign-in machinery (D120).
+  // The nightly clean-up of sign-in machinery (D123).
   signIns: signInData,
   clock,
   log: logPort('scheduler', 'error'),

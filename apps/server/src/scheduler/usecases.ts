@@ -14,7 +14,7 @@ import {
 
 /**
  * The scheduled jobs (D15, D47): the nightly scan of everyone with a grant, a page at a time, one nightly clean-up of
- * expired sign-in data (D120) and one timer per undo window. Each job row starts its `scheduledJob` workflow in the
+ * expired sign-in data (D123) and one timer per undo window. Each job row starts its `scheduledJob` workflow in the
  * transaction that writes it (D86), and the durable engine runs the job through `scheduledJobRunner` at its run time
  * (D85); nothing polls the table. Built over ports (D25).
  */
@@ -35,7 +35,7 @@ export const NIGHTLY = 'scan-utvecklingssamtal';
  */
 export const SCAN_PAGE = 500;
 /**
- * The nightly clean-up of sign-in machinery (D120): sessions, login transactions and logout receipts past expiry. A
+ * The nightly clean-up of sign-in machinery (D123): sessions, login transactions and logout receipts past expiry. A
  * night whose clean-up fails says so in one line and completes; the next night cleans what it left.
  */
 export const SIGN_IN_CLEANUP = 'sign-in-cleanup';
@@ -138,7 +138,7 @@ export function createScheduler(deps: SchedulerDeps) {
 }
 export type Scheduler = ReturnType<typeof createScheduler>;
 /**
- * The nightly work at a server's start (D120; D85 item 2, as amended 2026-11-13). It waits for the durable engine to
+ * The nightly work at a server's start (D123; D85 item 2, as amended 2026-11-13). It waits for the durable engine to
  * launch, which says itself while it cannot, so that this release is the latest, which alone takes work from the
  * queue, and then schedules the nights and takes them over (`startNightly`), saying which it took over. When that
  * fails, because the database stopped answering after the engine launched or a take-over failed, it says so and tries

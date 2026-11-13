@@ -1415,7 +1415,7 @@ export function organisationUsecases(deps: { store: ProvisionStore }) {
 export type OrganisationUsecases = ReturnType<typeof organisationUsecases>;
 
 /**
- * An operator's erasure of a person (Q7 of the 2026-11-12 users review, D120): `scripts/person-erase.ts` is its one
+ * An operator's erasure of a person (Q7 of the 2026-11-12 users review, D123): `scripts/person-erase.ts` is its one
  * caller, run when the organisation's own retention decision says a leaver's record goes, after the source has stopped
  * sending the person and after the erasures of the person's cards, talks and competence, which find the person by this
  * same id. Refused, writing nothing and no audit row, for an id the people table does not hold and for a person who is

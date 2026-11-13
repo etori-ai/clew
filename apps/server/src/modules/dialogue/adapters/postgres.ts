@@ -1,18 +1,28 @@
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { database, schema, type Transaction } from '@clew/db';
-import type { ActivityRecord, AssessmentRecord, DialogueStore, DialogueTx, DialogueWorkItems, Sealer } from '../model';
+import type {
+  ActivityRecord,
+  AssessmentRecord,
+  DialogueStore,
+  DialogueTx,
+  DialogueWorkItems,
+  NoteRecord,
+  Sealer,
+} from '../model';
 
 const {
   dialogueAreas: areas,
   dialogueQuestions: questions,
   dialogueAssessments: assessments,
   dialogueActivities: activities,
+  dialogueNotes: notes,
   people,
   units,
   audit,
 } = schema;
 type AssessmentRow = typeof assessments.$inferSelect;
 type ActivityRow = typeof activities.$inferSelect;
+type NoteRow = typeof notes.$inferSelect;
 const iso = (at: Date | null) => (at === null ? null : at.toISOString());
 const date = (at: string | null) => (at === null ? null : new Date(at));
 /** The purposes free text is sealed under (D118 item 9): bound to the row, so a sealed text cannot be moved. */
@@ -20,6 +30,7 @@ const purpose = {
   activity: (id: string) => 'dialogue:activity:' + id,
   note: (id: string) => 'dialogue:note:' + id,
   comment: (id: string) => 'dialogue:assessment:' + id,
+  ownNote: (id: string) => 'dialogue:own-note:' + id,
 };
 
 /**
@@ -56,6 +67,16 @@ export function dialogueTx(tx: Transaction, options: { sealer: Sealer; workItems
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
     threadId: r.threadId,
+  });
+  const noteOf = (r: NoteRow): NoteRecord => ({
+    id: r.id,
+    organisationId: r.organisationId,
+    unitId: r.unitId,
+    areaKey: r.areaKey,
+    authorId: r.authorId,
+    text: sealer.open(r.textSealed, purpose.ownNote(r.id)),
+    createdAt: r.createdAt.toISOString(),
+    updatedAt: r.updatedAt.toISOString(),
   });
   const self: DialogueTx = {
     async areas(organisationId) {
@@ -167,6 +188,46 @@ export function dialogueTx(tx: Transaction, options: { sealer: Sealer; workItems
     async deleteActivity(id) {
       await tx.delete(activities).where(eq(activities.id, id));
     },
+    async notes(organisationId, unitIds, authorId) {
+      if (!unitIds.length) return [];
+      const rows = await tx
+        .select()
+        .from(notes)
+        .where(
+          and(
+            eq(notes.organisationId, organisationId),
+            eq(notes.authorId, authorId),
+            inArray(notes.unitId, [...unitIds]),
+          ),
+        )
+        .orderBy(desc(notes.createdAt), desc(notes.id));
+      return rows.map(noteOf);
+    },
+    async note(id) {
+      const [r] = await tx.select().from(notes).where(eq(notes.id, id)).for('update');
+      return r ? noteOf(r) : undefined;
+    },
+    async insertNote(n) {
+      await tx.insert(notes).values({
+        id: n.id,
+        organisationId: n.organisationId,
+        unitId: n.unitId,
+        areaKey: n.areaKey,
+        authorId: n.authorId,
+        textSealed: sealer.seal(n.text, purpose.ownNote(n.id)),
+        createdAt: new Date(n.createdAt),
+        updatedAt: new Date(n.updatedAt),
+      });
+    },
+    async updateNote(id, patch) {
+      await tx
+        .update(notes)
+        .set({ textSealed: sealer.seal(patch.text, purpose.ownNote(id)), updatedAt: new Date(patch.updatedAt) })
+        .where(eq(notes.id, id));
+    },
+    async deleteNote(id) {
+      await tx.delete(notes).where(eq(notes.id, id));
+    },
     async names(ids) {
       if (!ids.length) return new Map();
       const rows = await tx
@@ -221,10 +282,13 @@ export function dialogueTx(tx: Transaction, options: { sealer: Sealer; workItems
         .where(eq(assessments.authorId, personId))
         .returning({ id: assessments.id }))
         cleared.add('assessment:' + r.id);
+      // Their own notes are nobody else's: removed whole (D120).
+      for (const r of await tx.delete(notes).where(eq(notes.authorId, personId)).returning({ id: notes.id }))
+        cleared.add('note:' + r.id);
       return { cleared: cleared.size, threadIds: [...threadIds].sort() };
     },
     async exportOrganisation(organisationId) {
-      const [areaRows, questionRows, assessmentRows, activityRows] = [
+      const [areaRows, questionRows, assessmentRows, activityRows, noteRows] = [
         await self.areas(organisationId),
         await self.questions(organisationId),
         await tx
@@ -237,12 +301,18 @@ export function dialogueTx(tx: Transaction, options: { sealer: Sealer; workItems
           .from(activities)
           .where(eq(activities.organisationId, organisationId))
           .orderBy(asc(activities.createdAt), asc(activities.id)),
+        await tx
+          .select()
+          .from(notes)
+          .where(eq(notes.organisationId, organisationId))
+          .orderBy(asc(notes.createdAt), asc(notes.id)),
       ];
       return {
         areas: areaRows,
         questions: questionRows,
         assessments: assessmentRows.map(assessmentOf),
         activities: activityRows.map(activityOf),
+        notes: noteRows.map(noteOf),
       };
     },
     async audit(e) {

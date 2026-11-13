@@ -498,18 +498,128 @@ describe('activities', () => {
   });
 });
 
+describe('a manager’s own notes (D120)', () => {
+  const SECRET = 'Hillevi verkar pressad, ta upp det varsamt.';
+  test('a note is written on a unit the author follows up and read by nobody else, audited without its text', async () => {
+    const id = await dialogue.addNote(ingrid, 'u-skola', { area: 'operations', text: `  ${SECRET}\r\n ` });
+    expect(store.state.notes.get(id)).toEqual({
+      id,
+      organisationId: ORG,
+      unitId: 'u-skola',
+      areaKey: 'operations',
+      authorId: 'ingrid',
+      text: SECRET,
+      createdAt: at(),
+      updatedAt: at(),
+    });
+    expect(store.audit().at(-1)).toEqual({
+      actor: 'person:ingrid',
+      action: 'dialogue.note_added',
+      subject: 'dialogue-note:' + id,
+      at: at(),
+      details: { unitId: 'u-skola', area: 'operations' },
+    });
+    expect(JSON.stringify(store.audit())).not.toContain('pressad');
+    // No card: a note is nothing to do.
+    expect(store.calls()).toEqual([]);
+    const mine = await dialogue.unit(ingrid, 'u-skola');
+    expect(checkContract(DialogueUnitSchema, { ...mine, writable: true })).toBe(true);
+    expect(mine.areas.find(a => a.key === 'operations')!.notes).toEqual([{ id, text: SECRET, createdAt: at() }]);
+    expect(mine.areas.find(a => a.key === 'economy')!.notes).toEqual([]);
+    // Hillevi follows up the same unit, as its manager, and sees none of it.
+    const hers = await dialogue.unit(hillevi, 'u-skola');
+    expect(hers.areas.flatMap(a => a.notes)).toEqual([]);
+    expect(JSON.stringify(hers)).not.toContain('pressad');
+  });
+
+  test('the newest note stands first, and a changed one says when it was changed', async () => {
+    const first = await dialogue.addNote(ingrid, 'u-skola', { area: 'economy', text: 'Först' });
+    const written = at();
+    later(5);
+    const second = await dialogue.addNote(ingrid, 'u-skola', { area: 'economy', text: 'Sedan' });
+    later(5);
+    await dialogue.editNote(ingrid, first, { text: 'Först, ändrad' });
+    expect(store.audit().at(-1)).toEqual({
+      actor: 'person:ingrid',
+      action: 'dialogue.note_edited',
+      subject: 'dialogue-note:' + first,
+      at: at(),
+      details: { unitId: 'u-skola', area: 'economy' },
+    });
+    const notes = (await dialogue.unit(ingrid, 'u-skola')).areas.find(a => a.key === 'economy')!.notes;
+    expect(notes.map(n => n.id)).toEqual([second, first]);
+    expect(notes[1]).toEqual({ id: first, text: 'Först, ändrad', createdAt: written, editedAt: at() });
+    // The same text again changes nothing and writes no row.
+    const rows = store.audit().length;
+    await dialogue.editNote(ingrid, first, { text: ' Först, ändrad ' });
+    expect(store.audit().length).toBe(rows);
+  });
+
+  test('only the author changes or removes a note; removal is for good and audited', async () => {
+    const id = await dialogue.addNote(ingrid, 'u-skola', { area: 'economy', text: SECRET });
+    // Hillevi manages the unit and Olle another one: neither may touch Ingrid's note, and a missing id reads the same.
+    for (const other of [hillevi, olle, anna]) {
+      await expect(dialogue.editNote(other, id, { text: 'Min nu' })).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(dialogue.removeNote(other, id)).rejects.toBeInstanceOf(ForbiddenError);
+    }
+    await expect(dialogue.removeNote(ingrid, 'missing')).rejects.toBeInstanceOf(ForbiddenError);
+    expect(store.state.notes.get(id)!.text).toBe(SECRET);
+    await dialogue.removeNote(ingrid, id);
+    expect(store.state.notes.size).toBe(0);
+    expect(store.audit().at(-1)).toEqual({
+      actor: 'person:ingrid',
+      action: 'dialogue.note_removed',
+      subject: 'dialogue-note:' + id,
+      at: at(),
+      details: { unitId: 'u-skola', area: 'economy' },
+    });
+    expect(JSON.stringify(store.audit())).not.toContain('pressad');
+  });
+
+  test('blank or too long text, an unknown area, another manager’s unit and a person who manages nothing are refused', async () => {
+    await expect(dialogue.addNote(ingrid, 'u-skola', { area: 'economy', text: ' \n ' })).rejects.toThrow(
+      'Skriv din anteckning.',
+    );
+    await expect(dialogue.addNote(ingrid, 'u-skola', { area: 'economy', text: 'x'.repeat(4001) })).rejects.toThrow(
+      'Högst 4000 tecken.',
+    );
+    await expect(dialogue.addNote(ingrid, 'u-skola', { area: 'nowhere', text: 'Text' })).rejects.toThrow(
+      'Området finns inte i dialogen.',
+    );
+    await expect(dialogue.addNote(ingrid, 'u-other', { area: 'economy', text: 'Text' })).rejects.toBeInstanceOf(
+      ForbiddenError,
+    );
+    await expect(dialogue.addNote(anna, 'u-skola', { area: 'economy', text: 'Text' })).rejects.toBeInstanceOf(
+      ForbiddenError,
+    );
+    expect(store.state.notes.size).toBe(0);
+    expect(store.audit().filter(a => a.action.startsWith('dialogue.note'))).toEqual([]);
+  });
+
+  test('a manager who no longer follows up the unit reads none of its dialogue, their own notes included', async () => {
+    await dialogue.addNote(ingrid, 'u-skola', { area: 'economy', text: SECRET });
+    followed.set('ingrid', [{ unitId: 'u-top', label: 'Grundskola', relation: 'own', managerId: 'ingrid' }]);
+    await expect(dialogue.unit(ingrid, 'u-skola')).rejects.toBeInstanceOf(ForbiddenError);
+  });
+});
+
 describe('erasure and export', () => {
   test('erasing a person clears them from every row and removes the cards they owned; counts only in the audit', async () => {
     const id = await dialogue.addActivity(ingrid, 'u-skola', { area: 'operations', text: 'Plan' });
     await dialogue.assess(hillevi, 'u-skola', { area: 'digital', tone: 'warn' });
+    // Her own note goes whole with her; Ingrid's stays.
+    const own = await dialogue.addNote(hillevi, 'u-skola', { area: 'digital', text: 'Min tanke' });
+    const kept = await dialogue.addNote(ingrid, 'u-skola', { area: 'digital', text: 'Ingrids tanke' });
     const threadId = store.state.activities.get(id)!.threadId!;
     const auditBefore = store.audit();
     expect(await dialogue.erasePerson('operator:cli', 'Hillevi Berg')).toEqual({ refused: 'unknown' });
     expect(await dialogue.erasePerson('operator:cli', 'hillevi')).toEqual({ refused: 'active' });
     expect(store.audit()).toEqual(auditBefore);
     expect(store.state.cards.has(threadId)).toBe(true);
+    expect(store.state.notes.has(own)).toBe(true);
     store.addPerson('hillevi', 'Hillevi Berg', false);
-    expect(await dialogue.erasePerson('operator:cli', 'hillevi')).toEqual({ cleared: 2, cards: 1 });
+    expect(await dialogue.erasePerson('operator:cli', 'hillevi')).toEqual({ cleared: 3, cards: 1 });
+    expect([...store.state.notes.keys()]).toEqual([kept]);
     expect(store.state.activities.get(id)).toMatchObject({ ownerId: null, threadId: null, createdBy: 'ingrid' });
     expect(store.state.cards.has(threadId)).toBe(false);
     expect([...store.state.assessments.values()].map(a => a.authorId)).toEqual([null]);
@@ -518,22 +628,24 @@ describe('erasure and export', () => {
       action: 'dialogue.person_erased',
       subject: 'person:hillevi',
       at: at(),
-      details: { cleared: 2, cards: 1 },
+      details: { cleared: 3, cards: 1 },
     });
   });
 
   test('the export holds the whole dialogue as clew.dialogue/1, audited with counts', async () => {
     await dialogue.addActivity(ingrid, 'u-skola', { area: 'operations', text: 'Plan' });
     await dialogue.assess(hillevi, 'u-skola', { area: 'digital', tone: 'warn', comment: 'Text' });
+    await dialogue.addNote(ingrid, 'u-skola', { area: 'digital', text: 'En tanke' });
     const doc = await dialogue.exportDomain('operator:cli', ORG);
     expect(doc).toMatchObject({ format: 'clew.dialogue/1', organisationId: ORG, exportedAt: at() });
     expect([doc.areas.length, doc.questions.length, doc.assessments.length, doc.activities.length]).toEqual([
       3, 3, 1, 1,
     ]);
     expect(doc.activities[0]!.text).toBe('Plan');
+    expect(doc.notes.map(n => [n.authorId, n.text])).toEqual([['ingrid', 'En tanke']]);
     expect(store.audit().at(-1)).toMatchObject({
       action: 'dialogue.exported',
-      details: { areas: 3, assessments: 1, activities: 1 },
+      details: { areas: 3, assessments: 1, activities: 1, notes: 1 },
     });
   });
 });

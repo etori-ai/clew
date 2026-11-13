@@ -439,7 +439,7 @@ describe('the cards about a person', () => {
 });
 
 describe("erasing a person's key from the cards", () => {
-  /** The source deactivates the person: only then does an operator erase them (D120 item 3). */
+  /** The source deactivates the person: only then does an operator erase them (D123 item 3). */
   const deactivate = (w: ReturnType<typeof world>, id: string) => void (w.people.state.users.get(id)!.enabled = false);
   test('every row and thread loses the subject, the text stays, and one audit row counts what was touched without the key', async () => {
     const w = world();
@@ -497,7 +497,7 @@ describe("erasing a person's key from the cards", () => {
     });
     expect(w.store.audit.filter(e => e.action === SUBJECT_ERASED).map(e => e.subject)).toEqual(['unit:unit-gone']);
   });
-  test('a person who is still active is refused: no card loses them and no audit row is written (D120 item 3)', async () => {
+  test('a person who is still active is refused: no card loses them and no audit row is written (D123 item 3)', async () => {
     const w = world();
     await w.scan('hillevi', 'petra');
     const named = async () =>

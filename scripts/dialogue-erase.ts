@@ -1,8 +1,9 @@
 /**
  * Erase one person from the follow-up dialogue (D118): their id on every assessment and activity (author, owner, added
- * by, done by) and the cards of the activities they owned. The records about the units stay. Runs inside the app
- * container with the server's local settings (DATABASE_URL); no route and no `package.json` entry. Audited
- * (`dialogue.person_erased`, counts only) with the actor `operator:cli`. It cannot be undone, so it needs `--confirm`.
+ * by, done by), the cards of the activities they owned, and their own notes, removed whole (D120). The records about
+ * the units stay. Runs inside the app container with the server's local settings (DATABASE_URL); no route and no
+ * `package.json` entry. Audited (`dialogue.person_erased`, counts only) with the actor `operator:cli`. It cannot be
+ * undone, so it needs `--confirm`.
  *
  *   bun scripts/dialogue-erase.ts --person <person id> --confirm
  */
@@ -27,7 +28,7 @@ if (!args) {
 const { personId, confirmed } = args;
 if (!confirmed) {
   console.error(
-    `Erasing person "${personId}" from the follow-up dialogue removes them from every assessment and activity and removes the cards of the activities they own, and cannot be undone. Run again with --confirm to erase.`,
+    `Erasing person "${personId}" from the follow-up dialogue clears their id from assessments and activities and removes their private notes and owned activity cards. It cannot be undone. Run again with --confirm to erase.`,
   );
   console.error(USAGE);
   process.exit(2);

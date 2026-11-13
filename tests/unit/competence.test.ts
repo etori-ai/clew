@@ -122,7 +122,7 @@ beforeEach(() => {
 });
 const audits = () => store.audit();
 const lastAudit = () => audits().at(-1)!;
-/** The source deactivates the person: only then does an operator erase them (D120 item 3). */
+/** The source deactivates the person: only then does an operator erase them (D123 item 3). */
 const deactivate = (id: string) => store.addPerson({ ...store.state.persons.get(id)!, enabled: false });
 /** A catalogue of three types: one with the employer's rule, two without. */
 async function catalogue() {
@@ -606,7 +606,7 @@ describe('erasure and export', () => {
     expect(audits()).toHaveLength(before);
     expect([...store.state.holdings.values()].map(h => h.personId)).toEqual(['anna']);
   });
-  test('a person who is still active is refused: nothing is erased and no audit row is written (D120 item 3)', async () => {
+  test('a person who is still active is refused: nothing is erased and no audit row is written (D123 item 3)', async () => {
     const { hot } = await catalogue();
     await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2026-01-10' });
     store.addCard('card-anna', { personId: 'anna', connector: 'competence' });

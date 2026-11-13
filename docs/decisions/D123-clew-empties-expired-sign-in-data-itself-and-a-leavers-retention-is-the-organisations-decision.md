@@ -1,4 +1,4 @@
-# D120 · Clew empties expired sign-in data itself, and a leaver's retention is the organisation's decision
+# D123 · Clew empties expired sign-in data itself, and a leaver's retention is the organisation's decision
 
 **Status:** provisional (taken in the fixes of [the review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md), Q7, L3, P4 and R3, on the product owner's word of 2026-11-12 to fix every finding and take every open decision), the nightly clean-up built 2026-11-12 and `scripts/person-erase.ts` 2026-11-13; accepted once the clean-up has run in an installation outside the development stack and an organisation has erased a leaver's record with the scripts under its own retention rules · **Date:** 2026-11-12 · **Area:** identity, platform
 

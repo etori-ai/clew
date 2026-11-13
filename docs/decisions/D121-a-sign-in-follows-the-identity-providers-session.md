@@ -122,7 +122,7 @@ channel needs no change to the schema.
   revoked the token may then require a new sign-in. The database claim prevents concurrent healthy BFFs from issuing
   the same generation's grant, not loss of an external response. Claim deadlines use the BFFs' wall clocks, which
   operators must keep synchronized. An owner stalled beyond 30 seconds can conservatively lose its session.
-- Migration `0058_session_refresh_claim` adds the claim fields. Stop all older BFF instances before starting the new
+- Migration `0059_session_refresh_claim` adds the claim fields. Stop all older BFF instances before starting the new
   release: an old binary does not acquire the claim, so overlapping versions do not have the new concurrency guarantee.
 
 **As built.** `authorizationUrl` and `redeemCode` in `apps/server/src/auth-login.ts`; `grantEnded`, `sessionRefresher`

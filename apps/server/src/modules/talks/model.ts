@@ -63,7 +63,7 @@ export interface CommitmentRecord {
 export type CommitmentPatch = Partial<Pick<CommitmentRecord, 'doneAt' | 'doneBy'>>;
 /**
  * A person as the domain needs them: to key a row on the user name (D96 item 8), to name the employee to the reader, and
- * to erase only a person the source has deactivated (D120 item 3).
+ * to erase only a person the source has deactivated (D123 item 3).
  */
 export interface PersonRef {
   id: string;

@@ -148,7 +148,7 @@ export interface ThreadTx {
 export interface PersonKeys {
   /** Who holds these user names now in the reader's organisation, by the name as asked; a name nobody holds is absent. */
   holders(readerId: string, userNames: readonly string[]): Promise<Map<string, string>>;
-  /** The person's user name now; null for nobody, a person provisioned without one, or one an operator erased (D120). */
+  /** The person's user name now; null for nobody, a person provisioned without one, or one an operator erased (D123). */
   userName(personId: string): Promise<string | null>;
 }
 /** What `eraseSubject` touched: the threads, the rows that named the entity and the threads' own subjects. Counts only. */

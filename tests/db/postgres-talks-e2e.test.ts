@@ -273,7 +273,7 @@ describe('the talks module on Postgres through the composition store (D96)', () 
     expect(row!.details).toEqual({ rounds: 1, talks: 1, commitments: 1 });
   });
 
-  test('an employee who is still active is refused, and nothing is erased or audited (D120 item 3)', async () => {
+  test('an employee who is still active is refused, and nothing is erased or audited (D123 item 3)', async () => {
     expect(await talks.erasePerson('operator:cli', employee)).toEqual({ refused: 'active' });
     expect(await commitmentRow(id)).toMatchObject({ employeeId: employee, threadId });
     expect((await card(threadId)).thread).toMatchObject({ personId: employee });

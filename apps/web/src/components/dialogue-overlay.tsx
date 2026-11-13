@@ -7,6 +7,7 @@ import {
   type DialogueArea,
   type DialogueAssessment,
   type DialogueDimension,
+  type DialogueNote,
   type DialogueTone,
   type DialogueUnit,
 } from '@clew/contracts';
@@ -84,7 +85,7 @@ const instantText = (at: string) => instant.format(new Date(at)).replace(/\./g, 
  * dialogen". Nothing is read until an address names a dialogue.
  *
  * The areas are tabs; each shows its figure or its assessment per dimension with the history, the questions to talk
- * about, and the activities with a form to add one. A refusal (the module switched off, a unit the reader does not follow
+ * about, the activities with a form to add one, and the reader's own notes (D120), which nobody else sees. A refusal (the module switched off, a unit the reader does not follow
  * up) is the dialogue that is not there, with the way back.
  */
 export function DialogueOverlay({ unitId, back }: { unitId: string; back: string }) {
@@ -375,6 +376,7 @@ function AreaPanel({ area, data }: { area: DialogueArea; data: DialogueUnit }) {
         </VStack>
       )}
       <Activities area={area} data={data} adding={adding} setAdding={setAdding} />
+      {data.writable && <Notes area={area} unitId={data.unit.id} />}
     </VStack>
   );
 }
@@ -975,6 +977,232 @@ function AddActivity({
       <HStack gap={2}>
         <Button type="submit" variant="primary" label="Lägg till" isLoading={add.busy} />
         <Button variant="secondary" label="Stäng" onClick={onClose} />
+      </HStack>
+    </VStack>
+  );
+}
+
+/**
+ * The reader's own notes on the area (D120): thoughts and observations in free text that follow the unit between the
+ * conversations. Nobody else sees them, and the section says so. Looser than an activity: nothing to mark done, and a
+ * note is removed for good behind a confirmation. The newest first; the form opens from its button, as the others do.
+ */
+function Notes({ area, unitId }: { area: DialogueArea; unitId: string }) {
+  const ids = useId();
+  const action = useDialogueAction();
+  const addButton = useRef<HTMLButtonElement>(null);
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<DialogueNote | null>(null);
+  // A removed note takes the control that opened the confirmation with it: the focus goes to the section's heading (2.4.3).
+  const heading = useRef<HTMLHeadingElement>(null);
+  const [removed, setRemoved] = useState(false);
+  useEffect(() => {
+    if (!removed || removing) return;
+    const frame = requestAnimationFrame(() => {
+      heading.current?.focus();
+      setRemoved(false);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [removed, removing]);
+  // The control that should hold the focus once it is drawn again: the one that opened the form.
+  const want = useRef<string | null>(null);
+  const claim = (key: string) => (el: HTMLElement | null) => {
+    if (el && want.current === key) {
+      want.current = null;
+      el.focus();
+    }
+  };
+  const current = editing ? area.notes.find(n => n.id === editing) : undefined;
+  const when = (n: DialogueNote) =>
+    n.editedAt ? `${instantText(n.createdAt)} · ändrad ${instantText(n.editedAt)}` : instantText(n.createdAt);
+  return (
+    <VStack gap={3} as="section" aria-labelledby={`${ids}-notes`}>
+      <VStack gap={1}>
+        <Heading ref={heading} tabIndex={-1} level={3} id={`${ids}-notes`}>
+          Mina anteckningar
+        </Heading>
+        <Text type="supporting">Bara du ser dem. De följer enheten mellan samtalen.</Text>
+      </VStack>
+      {area.notes.length === 0 ? (
+        <Text type="supporting">Inga anteckningar än.</Text>
+      ) : (
+        <List aria-label="Mina anteckningar" hasDividers density="compact">
+          {area.notes.map(n => (
+            <ListItem
+              key={n.id}
+              align="start"
+              label={<Text>{n.text}</Text>}
+              description={<Text type="supporting">{when(n)}</Text>}
+              endContent={
+                <HStack gap={1} wrap="wrap">
+                  <Button
+                    ref={claim(`edit:${n.id}`)}
+                    size="sm"
+                    variant="secondary"
+                    label="Ändra"
+                    aria-label={`Ändra anteckningen från ${instantText(n.createdAt)}`}
+                    aria-expanded={editing === n.id}
+                    onClick={() => setEditing(n.id)}
+                  />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    label="Ta bort"
+                    aria-label={`Ta bort anteckningen från ${instantText(n.createdAt)}`}
+                    onClick={() => setRemoving(n)}
+                  />
+                </HStack>
+              }
+            />
+          ))}
+        </List>
+      )}
+      {action.error && (
+        <Text as="p" role="alert" color="accent">
+          {action.error}
+        </Text>
+      )}
+      {current && (
+        <NoteForm
+          key={current.id}
+          unitId={unitId}
+          area={area}
+          note={current}
+          onClose={() => {
+            setEditing(null);
+            want.current = `edit:${current.id}`;
+          }}
+        />
+      )}
+      {adding ? (
+        <NoteForm
+          unitId={unitId}
+          area={area}
+          onClose={() => {
+            setAdding(false);
+            requestAnimationFrame(() => addButton.current?.focus());
+          }}
+        />
+      ) : (
+        <HStack>
+          <Button
+            ref={addButton}
+            variant="secondary"
+            label="Ny anteckning"
+            aria-label={`Ny anteckning om ${area.title}`}
+            onClick={() => setAdding(true)}
+          />
+        </HStack>
+      )}
+      <AlertDialog
+        isOpen={removing !== null}
+        onOpenChange={isOpen => {
+          if (!isOpen) setRemoving(null);
+        }}
+        title="Ta bort anteckningen"
+        description="Anteckningen tas bort för gott. Det går inte att ångra."
+        actionLabel="Ta bort"
+        cancelLabel="Avbryt"
+        isActionLoading={action.busy}
+        onAction={() => {
+          const n = removing;
+          if (!n) return;
+          void action
+            .run(() => api.dialogue.removeNote(n.id), 'Anteckningen är borttagen.')
+            .then(ok => {
+              if (!ok) return;
+              if (editing === n.id) setEditing(null);
+              setRemoved(true);
+              setRemoving(null);
+            });
+        }}
+      />
+    </VStack>
+  );
+}
+
+/**
+ * Writing a note or changing one. The text takes the focus when the form opens. A new note saved empties the field and
+ * keeps the focus there, ready for the next thought; a changed one closes the form and gives the focus back to "Ändra".
+ */
+function NoteForm({
+  unitId,
+  area,
+  note,
+  onClose,
+}: {
+  unitId: string;
+  area: DialogueArea;
+  note?: DialogueNote;
+  onClose: () => void;
+}) {
+  const ids = useId();
+  const action = useDialogueAction();
+  const [text, setText] = useState(note?.text ?? '');
+  const [tried, setTried] = useState(false);
+  const field = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => field.current?.focus(), []);
+  const trimmed = text.trim();
+  const problem = !trimmed
+    ? 'Skriv din anteckning.'
+    : trimmed.length > DIALOGUE_TEXT_MAX.ownNote
+      ? `Högst ${DIALOGUE_TEXT_MAX.ownNote} tecken.`
+      : null;
+  const submit = async () => {
+    if (action.busy) return;
+    if (problem) {
+      setTried(true);
+      field.current?.focus();
+      return;
+    }
+    if (note) {
+      if (await action.run(() => api.dialogue.editNote(note.id, { text: trimmed }), 'Anteckningen är ändrad.'))
+        onClose();
+      return;
+    }
+    const ok = await action.run(
+      () => api.dialogue.addNote(unitId, { area: area.key, text: trimmed }),
+      'Anteckningen är sparad.',
+    );
+    if (!ok) return;
+    setText('');
+    setTried(false);
+    field.current?.focus();
+  };
+  return (
+    <VStack
+      gap={3}
+      as="form"
+      aria-labelledby={`${ids}-note`}
+      onSubmit={e => {
+        e.preventDefault();
+        void submit();
+      }}
+    >
+      <Heading level={4} id={`${ids}-note`}>
+        {note ? 'Ändra anteckningen' : 'Ny anteckning'}
+      </Heading>
+      <FormLayout defaultOptionality="required">
+        <TextArea
+          ref={field}
+          label="Anteckning"
+          description="Tankar, iakttagelser och underlag i fri form."
+          value={text}
+          onChange={setText}
+          rows={4}
+          maxLength={DIALOGUE_TEXT_MAX.ownNote}
+          {...(tried && problem ? { status: { type: 'error' as const, message: problem } } : {})}
+        />
+      </FormLayout>
+      {action.error && (
+        <Text as="p" role="alert" color="accent">
+          {action.error}
+        </Text>
+      )}
+      <HStack gap={2}>
+        <Button type="submit" variant="primary" label="Spara" isLoading={action.busy} />
+        <Button variant="secondary" label={note ? 'Avbryt' : 'Stäng'} onClick={onClose} />
       </HStack>
     </VStack>
   );

@@ -7,6 +7,8 @@ import {
   type DialogueActivityEditBody,
   type DialogueAssessBody,
   type DialogueConfig,
+  type DialogueNoteAddBody,
+  type DialogueNoteEditBody,
   type DialogueTone,
   type DialogueUnit,
 } from '@clew/contracts';
@@ -30,6 +32,8 @@ const BAD_DIMENSION = 'Välj vilken del av området bedömningen gäller.';
 const BAD_DAY = 'Ange ett giltigt datum.';
 const BLANK = 'Skriv vad som ska göras.';
 const NOT_DONE = 'Markera aktiviteten som klar innan du tar bort den.';
+const BLANK_NOTE = 'Skriv din anteckning.';
+const NOT_YOUR_NOTE = 'Du kan inte ändra den här anteckningen.';
 /** The actor of a row written because a timer fired; the convention of the other timer-driven rows. */
 const TIMER_ACTOR = 'system:scheduler';
 /** The version of the export document; a breaking change is a new version. */
@@ -53,6 +57,9 @@ export interface UnitStanding {
  * stored, so a manager whose reporting line changes reads and writes nothing of the old units the same day. Every change
  * is one `deps.store` transaction with its audit row and, for an activity, its owner's card. Audit rows carry ids, keys,
  * dates, counts and tones: never a text, a note, a comment or a name.
+ *
+ * A manager's own notes (D120) are written on a unit they follow up and read, changed and removed by their author only;
+ * a note has no card and no state, and its audit rows say which unit and area, never what it says.
  */
 export function dialogueUsecases(deps: DialogueDeps) {
   const now = () => deps.clock();
@@ -103,6 +110,16 @@ export function dialogueUsecases(deps: DialogueDeps) {
       throw new ForbiddenError(NOT_ALLOWED);
     return a;
   }
+  /**
+   * A note the persona wrote, locked for the transaction. Refused alike when it does not exist or is another person's,
+   * so an id tells nobody anything.
+   */
+  async function noteFor(tx: DialogueTx, persona: AuthenticatedContext, id: string) {
+    const n = await tx.note(id);
+    if (!n || n.organisationId !== persona.organisationId || n.authorId !== persona.id)
+      throw new ForbiddenError(NOT_YOUR_NOTE);
+    return n;
+  }
   const by = (persona: AuthenticatedContext, a: ActivityRecord) => (a.ownerId === persona.id ? 'owner' : 'manager');
   async function setDone(persona: AuthenticatedContext, id: string, done: boolean, note?: string) {
     const units = await followed(persona);
@@ -131,7 +148,8 @@ export function dialogueUsecases(deps: DialogueDeps) {
   return {
     /**
      * One unit's dialogue (D118 items 3 to 6): every configured area in order, its questions for this unit, the history
-     * of its assessments per dimension and its activities, text opened. Only for a unit the persona follows up.
+     * of its assessments per dimension, its activities and the reader's own notes (D120), text opened. Only for a unit
+     * the persona follows up.
      */
     async unit(persona: AuthenticatedContext, unitId: string): Promise<Omit<DialogueUnit, 'writable'>> {
       const unit = await unitOf(persona, unitId);
@@ -140,7 +158,8 @@ export function dialogueUsecases(deps: DialogueDeps) {
         const areas = await tx.areas(persona.organisationId),
           questions = await tx.questions(persona.organisationId),
           assessments = await tx.assessments(persona.organisationId, [unitId]),
-          activities = await tx.activities(persona.organisationId, [unitId]);
+          activities = await tx.activities(persona.organisationId, [unitId]),
+          notes = await tx.notes(persona.organisationId, [unitId], persona.id);
         const people = new Set<string>();
         for (const a of assessments) if (a.authorId) people.add(a.authorId);
         for (const a of activities) if (a.ownerId) people.add(a.ownerId);
@@ -148,7 +167,7 @@ export function dialogueUsecases(deps: DialogueDeps) {
         return {
           unit: { id: unit.unitId, label: unit.label, relation: unit.relation },
           areas: areas.map(area =>
-            areaFor({ area, unitId, questions, assessments, activities, names, reader: persona.id }),
+            areaFor({ area, unitId, questions, assessments, activities, notes, names, reader: persona.id }),
           ),
         };
       });
@@ -336,6 +355,69 @@ export function dialogueUsecases(deps: DialogueDeps) {
       });
     },
     /**
+     * A manager writes a note of their own on an area of a unit they follow up (D120). Nobody else reads it; it has no
+     * card and nothing to mark done.
+     */
+    async addNote(persona: AuthenticatedContext, unitId: string, body: DialogueNoteAddBody) {
+      await unitOf(persona, unitId);
+      const value = text(body.text, DIALOGUE_TEXT_MAX.ownNote, BLANK_NOTE);
+      const at = now().toISOString(),
+        id = deps.ids();
+      await deps.store.transaction(async tx => {
+        const area = await areaOf(tx, persona.organisationId, body.area);
+        await tx.insertNote({
+          id,
+          organisationId: persona.organisationId,
+          unitId,
+          areaKey: area.key,
+          authorId: persona.id,
+          text: value,
+          createdAt: at,
+          updatedAt: at,
+        });
+        await tx.audit({
+          actor: persona.principal.id,
+          action: 'dialogue.note_added',
+          subject: 'dialogue-note:' + id,
+          at,
+          details: { unitId, area: area.key },
+        });
+      });
+      return id;
+    },
+    /** The author changes a note's text. */
+    async editNote(persona: AuthenticatedContext, id: string, body: DialogueNoteEditBody) {
+      const value = text(body.text, DIALOGUE_TEXT_MAX.ownNote, BLANK_NOTE);
+      const at = now().toISOString();
+      await deps.store.transaction(async tx => {
+        const n = await noteFor(tx, persona, id);
+        if (n.text === value) return;
+        await tx.updateNote(id, { text: value, updatedAt: at });
+        await tx.audit({
+          actor: persona.principal.id,
+          action: 'dialogue.note_edited',
+          subject: 'dialogue-note:' + id,
+          at,
+          details: { unitId: n.unitId, area: n.areaKey },
+        });
+      });
+    },
+    /** The author removes a note for good: unlike an activity, a note is not kept once it is not wanted. */
+    async removeNote(persona: AuthenticatedContext, id: string) {
+      const at = now().toISOString();
+      await deps.store.transaction(async tx => {
+        const n = await noteFor(tx, persona, id);
+        await tx.deleteNote(id);
+        await tx.audit({
+          actor: persona.principal.id,
+          action: 'dialogue.note_removed',
+          subject: 'dialogue-note:' + id,
+          at,
+          details: { unitId: n.unitId, area: n.areaKey },
+        });
+      });
+    },
+    /**
      * A dated activity's timer fired: when the activity is still open, its card comes back to the top of the owner's
      * stream. Returns whether it did; a done or removed activity, or a replaced timer, changes nothing.
      */
@@ -417,7 +499,7 @@ export function dialogueUsecases(deps: DialogueDeps) {
     /** Whether the organisation has any areas configured: the development seed loads its example only when not. */
     hasAreas: (organisationId: string) =>
       deps.store.transaction(async tx => (await tx.areas(organisationId)).length > 0),
-    /** Erase a deactivated person's participation and owned cards. Unknown and active people leave no audit row. */
+    /** Erase a deactivated person's participation, owned cards and private notes. Unknown and active people leave no audit row. */
     async erasePerson(actor: string, personId: string) {
       const at = now().toISOString();
       return deps.store.transaction(async (tx): Promise<DialogueErasure> => {
@@ -450,6 +532,7 @@ export function dialogueUsecases(deps: DialogueDeps) {
             areas: data.areas.length,
             assessments: data.assessments.length,
             activities: data.activities.length,
+            notes: data.notes.length,
           },
         });
         return { format: DIALOGUE_EXPORT_FORMAT, exportedAt: at, organisationId, ...data };
