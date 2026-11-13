@@ -506,6 +506,9 @@ what they say.
   `attention-release` job and that job's workflow, and the engine makes the batch ready at its time.
 - Migration 0054 carries the schema of the fixes (the partial index on source keys, S4; the user-name index under ICU,
   L13; the participant on a calendar proposal, N1, N3), and an upgrade test runs it on a database that holds data.
+  Migration 0055 indexes the comparison with which Clew finds who holds a user name (D116 item 2): every lookup, at a
+  refresh, a declared view, a search and a started propose among others, had read every person in the installation.
+  A test checks that an index serves it.
 
 **Found while fixing, and fixed.**
 

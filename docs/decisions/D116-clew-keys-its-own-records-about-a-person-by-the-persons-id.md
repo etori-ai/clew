@@ -144,6 +144,10 @@ in-memory double to the same; `tests/db/postgres-entity-keys.test.ts` opens a pe
 `startedDecision` and `takesStarted` in `apps/server/src/threads/domain.ts`; `started.ts` and `decisions.ts` in
 `apps/server/src/threads/usecases/`; `stillNamed` in the executions module; search's `keyedHits`; the talks seam's
 `keyIndex`. Migration `0054_person_keys_and_participants.sql` adds `execution.subject` and `proposal.participant_id`.
+Migration `0055_person_user_name_nfc.sql` adds the index `auth_person_user_name_nfc` on the expression `holders`
+compares (item 2), which the unique index on user names cannot serve, since it does not fold composition. A resolution
+therefore reads the holders of the names asked; until 2026-11-13 every resolution read every person in the
+installation. `tests/db/user-reads.test.ts` checks that an index serves it.
 Tests: `tests/unit/entities-cards.test.ts` (a renamed person keeps the cards that named them, a reused user name
 reaches only rows that arrive after, and a rename the source has not made rewrites a row and keeps a card's snooze),
 `tests/unit/entities-actions.test.ts` (an execute about a person erased since cannot be decided),

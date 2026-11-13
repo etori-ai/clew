@@ -32,7 +32,9 @@ export const postgresUserReads = (db: () => Database = database): Omit<UserReads
     if (!names.length || readerId.includes('\u0000')) return new Map();
     // Each name as asked beside the people of the reader's organisation it names: the same expression on both sides, in
     // the composed form (NFC) and without regard to case under ICU's root collation, so that a decomposed å is å and Å
-    // and å are one letter on a database created with the C locale too (L12, L13).
+    // and å are one letter on a database created with the C locale too (L12, L13). The holder's side is the expression
+    // of the index `auth_person_user_name_nfc`, which finds each name's holders without reading every person; keep the
+    // two alike (`tests/db/user-reads.test.ts`).
     const asked = sql.join(
       names.map(name => sql`(${name}::text)`),
       sql`, `,

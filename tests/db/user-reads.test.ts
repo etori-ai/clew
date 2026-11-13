@@ -1,7 +1,7 @@
 import { afterAll, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { inArray } from 'drizzle-orm';
-import { database, schema } from '../../packages/db/src/index';
+import { inArray, sql, type SQL } from 'drizzle-orm';
+import { database, schema, type Database } from '../../packages/db/src/index';
 import { postgresProvisionStore, postgresUserReads } from '../../apps/server/src/modules/people/adapters/postgres';
 import { directoryUsecases } from '../../apps/server/src/modules/people/usecases';
 import {
@@ -18,7 +18,8 @@ import { cLocaleDatabase } from './c-locale';
  * The user reads on PostgreSQL: the contract on the suite's database, and, on a database created with the C locale,
  * where a plain lower() folds only A to Z, that the unique index folds under ICU and refuses Å and å as two people and
  * that who holds a user name matches across case and composition, a name held by a composed row and a decomposed (NFD)
- * one naming nobody (L13). Run with `bun run test:db` inside the devcontainer.
+ * one naming nobody (L13); and that who holds a name is looked up through an index, not by reading every person (D116).
+ * Run with `bun run test:db` inside the devcontainer.
  */
 if (!process.env.DATABASE_URL)
   throw new Error('DATABASE_URL is not set. Run `bun run test:db` inside the devcontainer.');
@@ -122,3 +123,38 @@ test('Å and å are one letter to the user name index and to who holds a name, o
     await drop();
   }
 }, 30_000);
+
+/** A node of PostgreSQL's plan as `explain (format json)` gives it, with the fields read here. */
+interface PlanNode {
+  'Node Type': string;
+  'Relation Name'?: string;
+  'Index Cond'?: string;
+  Plans?: PlanNode[];
+}
+const planNodes = (node: PlanNode): PlanNode[] => [node, ...(node.Plans ?? []).flatMap(planNodes)];
+
+test('who holds a user name is looked up through an index, not by reading every person in the installation (D116)', async () => {
+  // The statement `holders` sends, taken as it is sent. A refresh, a declared view, a search and a started propose each
+  // send it, so a lookup that read every person would cost more with every person the installation holds.
+  const sent: SQL[] = [];
+  const recording = {
+    execute: async (query: SQL) => {
+      sent.push(query);
+      return [];
+    },
+  } as unknown as Database;
+  await postgresUserReads(() => recording).holders(actors[0].id, ['åsa.öberg', 'ÅSA.ÖBERG'.normalize('NFD'), 'bo.ek']);
+  expect(sent).toHaveLength(1);
+  // A table of a few rows is read faster in full than through an index, so the planner is asked whether an index can
+  // serve the lookup at all: with sequential scans switched off, it still reads auth_person in full when none can.
+  const plan = await database().transaction(async tx => {
+    await tx.execute(sql`set local enable_seqscan = off`);
+    const [row] = await tx.execute<{ 'QUERY PLAN': unknown }>(sql`explain (format json) ${sent[0]}`);
+    const explained = row!['QUERY PLAN'];
+    return (typeof explained === 'string' ? JSON.parse(explained) : explained)[0].Plan as PlanNode;
+  });
+  const nodes = planNodes(plan);
+  expect(nodes.filter(n => n['Node Type'] === 'Seq Scan' && n['Relation Name'] === 'auth_person')).toEqual([]);
+  // The holders are found by the names asked, through a condition on the user name.
+  expect(nodes.some(n => n['Index Cond']?.includes('user_name'))).toBe(true);
+});
