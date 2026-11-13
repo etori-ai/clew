@@ -85,7 +85,7 @@ function stack() {
   s.assignments.set('mikael', [{ unitId: 'unit-it', role: 'employee' }]);
   s.grants.set('hillevi', { unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager', capabilities: [] });
   s.grants.set('mikael', { unitId: 'unit-it', unitLabel: 'IT', role: 'employee', capabilities: [] });
-  s.bindings.add('hillevi');
+  s.bindings.push({ issuer: 'https://idp.test/', subject: 'hillevi', personId: 'hillevi' });
   let tokens = 0;
   const persona = (capabilities: string[]): AuthenticatedContext => ({
     id: 'mikael',

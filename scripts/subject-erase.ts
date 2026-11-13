@@ -7,7 +7,8 @@
  * settings (DATABASE_URL); no route and no `package.json` entry. Audited (`thread.subject_erased`, counts only) with the
  * actor `operator:cli`, about `person:<person id>` or `unit:<unit id>`. The erasure writes no user name, but it does not
  * reach the rest of the audit trail: every `scim.user.*` row about the person still holds the `userName` and
- * `externalId` it was written with. It cannot be undone, so it needs `--confirm`.
+ * `externalId` it was written with, until `scripts/person-erase.ts` erases the person last (D117). It cannot be undone,
+ * so it needs `--confirm`.
  *
  *   bun scripts/subject-erase.ts person <person id> --confirm
  *   bun scripts/subject-erase.ts unit <unit id> --confirm

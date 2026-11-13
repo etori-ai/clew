@@ -50,6 +50,13 @@ export interface Listed<T> {
   total: number;
   rows: T[];
 }
+/** A row of the audit table as an erasure reads it (D117): its id, what happened, about whom, and what it holds. */
+export interface AuditRecord {
+  id: number;
+  action: string;
+  subject: string;
+  details: Record<string, unknown>;
+}
 /**
  * The ports of provisioning (D68, D85, D25): what the SCIM use cases and the derivation read and write inside one
  * transaction. The grant is the projection `auth_access_grant`; the capabilities it carries are strings there and the
@@ -235,6 +242,38 @@ export interface ProvisionTx {
   placements(organisationId: string): Promise<Placement[]>;
   /** Whether an identity binding exists for the person, with any issuer. */
   bound(personId: string): Promise<boolean>;
+  // An operator's erasure of a deactivated person (D117): the row and its id stay, what names the person goes.
+  /**
+   * Holds the rows of the groups the person is in, in id order, for the rest of the transaction. Taken before
+   * `lockPerson`, as a group write holds its group before it locks a person: an erasure that takes the person out of
+   * their groups and a write of one of those groups then run one after the other instead of waiting on each other.
+   */
+  lockGroupsOf(personId: string): Promise<void>;
+  /**
+   * Takes the person out of every group they are in and moves the time of change of those groups to `at`, as a group
+   * write that takes a member out does (S13); how many memberships there were.
+   */
+  removeMemberships(personId: string, at: string): Promise<number>;
+  /** Removes the person's identity bindings under every issuer; how many there were. */
+  removeBindings(personId: string): Promise<number>;
+  /** Removes the person's sessions, ended or not, with the tokens they hold; how many there were. */
+  removeSessions(personId: string): Promise<number>;
+  /**
+   * The audit rows with one of these actions about a subject, or whose details hold a value under a key, in the order
+   * they were written. No action is no row.
+   */
+  auditRows(
+    actions: readonly string[],
+    where: { subject: string } | { key: string; value: string },
+  ): Promise<AuditRecord[]>;
+  /** Replaces the details of these audit rows, by id, and nothing else of them. */
+  rewriteAudit(rows: ReadonlyArray<Pick<AuditRecord, 'id' | 'details'>>): Promise<void>;
+  /**
+   * Rewrites the actor `claim:<value>` of the authentication log's rows (a sign-in whose claim named nobody it could
+   * bind) to `claim:<marker>` where the value is one of `names`, compared as user names are, without regard to case
+   * and in the composed form (NFC) on both sides; how many rows changed. The rest of each row stays.
+   */
+  eraseClaims(names: readonly string[], marker: string): Promise<number>;
   /** Add or remove one group-capability row of an organisation; true when the row changed. */
   setGroupCapability(
     organisationId: string,

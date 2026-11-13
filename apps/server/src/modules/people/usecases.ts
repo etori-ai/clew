@@ -37,12 +37,19 @@ import {
   bySwedish,
   closesCycle,
   deriveAuthority,
+  ERASED,
+  erasedDetails,
+  erasedProfile,
   givesAuthority,
   groupFields,
   patchOperations,
   groupResource,
+  heldFields,
+  IDENTIFIERS_ABOUT,
+  IDENTIFIERS_AS_HOLDER,
   leadsUnit,
   leavesOut,
+  namesHeld,
   organisationOf,
   pageOf,
   parseFilter,
@@ -1352,3 +1359,88 @@ export function organisationUsecases(deps: { store: ProvisionStore }) {
   };
 }
 export type OrganisationUsecases = ReturnType<typeof organisationUsecases>;
+
+/**
+ * An operator's erasure of a person (Q7 of the 2026-11-12 users review, D117): `scripts/person-erase.ts` is its one
+ * caller, run when the organisation's own retention decision says a leaver's record goes, after the source has stopped
+ * sending the person and after the erasures of the person's cards, talks and competence, which find the person by this
+ * same id. Refused, writing nothing and no audit row, for an id the people table does not hold and for a person who is
+ * still active: only a person the source has deactivated is erased (D68 item 1). In one transaction it takes the person
+ * out of their groups, removes their placements, grant, sign-in bindings under every issuer and sessions, clears the
+ * personal fields, replaces the user name with the id and drops the source key, so that a later push of the same name or
+ * key creates a new person. It replaces the person's identifiers in the audit trail with `ERASED` and keeps every event:
+ * the user names, source keys, claims and sign-in subjects the rows about them hold (`IDENTIFIERS_ABOUT`), the subject a
+ * refused sign-in brought when the person held it (`IDENTIFIERS_AS_HOLDER`), and the claims of the authentication log
+ * that named one of their user names or their e-mail address. The row, its id and every reference to it stay, so the
+ * person's id keeps naming them in the records that point at it. One `person.erased` row, counts only, says what went.
+ */
+export const PERSON_ERASED = 'person.erased';
+export interface PersonErased {
+  /** The personal fields that held something: name, e-mail, phone numbers, employments, title, source key, user name. */
+  fields: number;
+  memberships: number;
+  assignments: number;
+  /** The derived grant, one at most. */
+  grants: number;
+  bindings: number;
+  sessions: number;
+  /** Rows of the audit table whose identifiers were replaced. */
+  auditRows: number;
+  /** Rows of the authentication log whose claim was replaced. */
+  signInRows: number;
+}
+export type PersonErasure = { refused: 'unknown' | 'active' } | { erased: PersonErased };
+export function personErasureUsecases(deps: { store: ProvisionStore; clock: () => Date }) {
+  return {
+    async erasePerson(actor: string, personId: string): Promise<PersonErasure> {
+      if (holdsNul(personId)) return { refused: 'unknown' };
+      return deps.store.transaction(async (tx): Promise<PersonErasure> => {
+        // The person's groups before the person, as a group write takes its group before it locks a member.
+        await tx.lockGroupsOf(personId);
+        const locked = await tx.lockPerson(personId),
+          person = locked && (await tx.readUser(locked.organisationId, personId, true));
+        if (!person) return { refused: 'unknown' };
+        if (person.enabled) return { refused: 'active' };
+        const subject = 'person:' + personId,
+          about = await tx.auditRows(Object.keys(IDENTIFIERS_ABOUT), { subject }),
+          asHolder = await tx.auditRows(Object.keys(IDENTIFIERS_AS_HOLDER), { key: 'holder', value: subject });
+        // One rewrite a row: a refused sign-in about the person whose subject they held is both.
+        const rewritten = new Map<number, Record<string, unknown>>();
+        for (const [rows, keys] of [
+          [about, IDENTIFIERS_ABOUT],
+          [asHolder, IDENTIFIERS_AS_HOLDER],
+        ] as const)
+          for (const row of rows) {
+            const next = erasedDetails(rewritten.get(row.id) ?? row.details, keys[row.action] ?? []);
+            if (next) rewritten.set(row.id, next);
+          }
+        const at = deps.clock().toISOString(),
+          fields = heldFields(person),
+          memberships = await tx.removeMemberships(personId, at),
+          assignments = (await tx.assignmentsOf(personId)).length,
+          grants = (await tx.grant(personId)) ? 1 : 0;
+        if (assignments) await tx.replaceAssignments(personId, []);
+        if (grants) await tx.writeGrant(personId, undefined);
+        const bindings = await tx.removeBindings(personId),
+          sessions = await tx.removeSessions(personId);
+        await tx.rewriteAudit([...rewritten].map(([id, details]) => ({ id, details })));
+        const signInRows = await tx.eraseClaims(namesHeld(person, about), ERASED);
+        // The resource a provisioner reads changes when a field is cleared or a group is no longer listed (S13).
+        if (fields || memberships) await tx.updateUser(personId, { ...erasedProfile(personId), updatedAt: at });
+        const erased: PersonErased = {
+          fields,
+          memberships,
+          assignments,
+          grants,
+          bindings,
+          sessions,
+          auditRows: rewritten.size,
+          signInRows,
+        };
+        await tx.audit({ actor, action: PERSON_ERASED, subject, details: { ...erased } });
+        return { erased };
+      });
+    },
+  };
+}
+export type PersonErasureUsecases = ReturnType<typeof personErasureUsecases>;

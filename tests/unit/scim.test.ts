@@ -1068,8 +1068,20 @@ scimStoreContract('memory', async () => {
     async seedProvisioner(p, digest, revoked, previous) {
       store.state.provisioners.set(digest, { ...p, revoked, previous });
     },
-    async bind(personId) {
-      store.state.bindings.add(personId);
+    async bind(personId, issuer = 'https://idp.test/', subject = personId) {
+      store.state.bindings.push({ issuer, subject, personId });
+    },
+    async openSession(personId, digest) {
+      store.state.sessions.push({ digest, personId });
+    },
+    async sessions(personId) {
+      return store.state.sessions.filter(s => s.personId === personId).length;
+    },
+    async logSignIn(actor, action) {
+      return store.state.authenticationAudit.push({ actor, action }) - 1;
+    },
+    async signInActor(id) {
+      return store.state.authenticationAudit[id]?.actor;
     },
   };
 });

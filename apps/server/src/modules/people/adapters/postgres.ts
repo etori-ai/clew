@@ -683,6 +683,98 @@ export function postgresProvisionStore(db: () => Database = database): Provision
         .limit(1);
       return !!row;
     },
+    async lockGroupsOf(personId) {
+      // In id order byte by byte, as `touchUsers` takes people: an erasure is the one caller that holds several groups.
+      await tx
+        .select({ id: schema.groups.id })
+        .from(schema.groups)
+        .where(
+          inArray(
+            schema.groups.id,
+            tx
+              .select({ id: schema.groupMembers.groupId })
+              .from(schema.groupMembers)
+              .where(eq(schema.groupMembers.personId, personId)),
+          ),
+        )
+        .orderBy(sql`${schema.groups.id} collate "C"`)
+        .for(ROW_LOCK);
+    },
+    async removeMemberships(personId, at) {
+      const gone = await tx
+        .delete(schema.groupMembers)
+        .where(eq(schema.groupMembers.personId, personId))
+        .returning({ groupId: schema.groupMembers.groupId });
+      const groupIds = [...new Set(gone.map(row => row.groupId))];
+      for (let i = 0; i < groupIds.length; i += MEMBER_BATCH)
+        await tx
+          .update(schema.groups)
+          .set({ updatedAt: new Date(at) })
+          .where(inArray(schema.groups.id, groupIds.slice(i, i + MEMBER_BATCH)));
+      return gone.length;
+    },
+    async removeBindings(personId) {
+      const gone = await tx
+        .delete(schema.identityBindings)
+        .where(eq(schema.identityBindings.personId, personId))
+        .returning({ issuer: schema.identityBindings.issuer });
+      return gone.length;
+    },
+    async removeSessions(personId) {
+      const gone = await tx
+        .delete(schema.sessions)
+        .where(eq(schema.sessions.personId, personId))
+        .returning({ digest: schema.sessions.digest });
+      return gone.length;
+    },
+    async auditRows(actions, where) {
+      if (!actions.length) return [];
+      return tx
+        .select({
+          id: schema.audit.id,
+          action: schema.audit.action,
+          subject: schema.audit.subject,
+          details: schema.audit.details,
+        })
+        .from(schema.audit)
+        .where(
+          and(
+            inArray(schema.audit.action, [...actions]),
+            'subject' in where
+              ? eq(schema.audit.subject, where.subject)
+              : sql`${schema.audit.details} ->> ${where.key}::text = ${where.value}::text`,
+          ),
+        )
+        .orderBy(schema.audit.id);
+    },
+    async rewriteAudit(rows) {
+      for (const row of rows)
+        await tx.update(schema.audit).set({ details: row.details }).where(eq(schema.audit.id, row.id));
+    },
+    async eraseClaims(names, marker) {
+      // A NUL is no name a sign-in could carry, and PostgreSQL refuses to compare one.
+      const held = [...new Set(names)].filter(name => name && !name.includes('\u0000'));
+      if (!held.length) return 0;
+      const erased = 'claim:' + marker,
+        asked = sql.join(
+          held.map(name => sql`(${name}::text)`),
+          sql`, `,
+        );
+      // The value after `claim:` and each name in one expression, as the sign-in compares a claim with a user name.
+      const changed = await tx
+        .update(schema.authenticationAudit)
+        .set({ actor: erased })
+        .where(
+          and(
+            like(schema.authenticationAudit.actor, 'claim:%'),
+            sql`${schema.authenticationAudit.actor} <> ${erased}`,
+            sql`lower(normalize(substr(${schema.authenticationAudit.actor}, 7), NFC) collate "und-x-icu") in (
+              select lower(normalize(asked.name, NFC) collate "und-x-icu") from (values ${asked}) as asked(name))`,
+          ),
+        )
+        .returning({ id: schema.authenticationAudit.id });
+      return changed.length;
+    },
     async setGroupCapability(organisationId, groupExternalId, capability, present) {
       if (present) {
         const inserted = await tx
