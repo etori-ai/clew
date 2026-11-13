@@ -12,7 +12,8 @@ export async function reliabilityCounts(): Promise<ReliabilityCounts> {
       (select count(*)::int from timer_intent where state = 'blocked') as "blockedTimers",
       (select count(*)::int from refresh_request where state <> 'blocked' and (last_success is null or last_success < now() - interval '5 minutes')) as "staleSources",
       (select count(*)::int from followup_policy where state = 'blocked') as "blockedFollowups",
-      (select count(*)::int from job where status = 'legacy-running') as "legacyJobsAwaitingDrain"
+      (select count(*)::int from job where status = 'legacy-running') as "legacyJobsAwaitingDrain",
+      (select count(*)::int from job where status = 'executing' and lease_until < now() - interval '5 minutes') as "stalledJobs"
   `);
   return { ...(rows[0] as unknown as Omit<ReliabilityCounts, keyof EnqueuedCounts>), ...(await enqueuedCounts()) };
 }

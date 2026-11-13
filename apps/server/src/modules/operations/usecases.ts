@@ -12,6 +12,11 @@ export interface ReliabilityCounts {
   staleSources: number;
   blockedFollowups: number;
   legacyJobsAwaitingDrain: number;
+  /**
+   * Scheduled jobs whose claim's lease ended more than five minutes ago without a completion: a run renews its lease
+   * while it lasts, so such a job's run stopped, and no workflow has claimed it again.
+   */
+  stalledJobs: number;
 }
 export function operationsUsecases(read: () => Promise<ReliabilityCounts>) {
   return {

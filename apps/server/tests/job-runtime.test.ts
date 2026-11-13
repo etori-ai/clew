@@ -5,6 +5,7 @@ import { database, schema, closeDatabase } from '@clew/db';
 import { postgresJobQueue } from '../src/scheduler/adapters/postgres';
 import { durableJobs } from '../src/scheduler/adapters/durable-postgres';
 import { createScheduler, scheduledJobRunner, SIGN_IN_CLEANUP } from '../src/scheduler/usecases';
+import { every } from '../src/composition/ambient';
 import { bindActivities } from '../src/dbos/workflows';
 import { durableResult } from '../src/dbos/start';
 import { testEngine } from './durable';
@@ -47,6 +48,8 @@ test(
         },
         run: job => scheduler.run(job),
         clock,
+        every,
+        log: (...args) => logged.push(args),
       }),
     });
     const nights: Array<[id: string, runAt: string]> = [
