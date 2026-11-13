@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { Registry, openGovernance, type Actor, type Connector, actorOf } from '../../packages/connectors/src/index';
+import {
+  CapabilityError,
+  Registry,
+  openGovernance,
+  type Actor,
+  type Connector,
+  actorOf,
+} from '../../packages/connectors/src/index';
 import { threadAccess } from '../../apps/server/src/threads/access';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
 import { testAuthority } from '../connector-authority';
@@ -74,6 +81,50 @@ describe('authorization and invocation boundaries', () => {
     await expect(call('caller.count', {})).rejects.toThrow('Okänd förmåga.');
     registry.govern('caller', { ...openGovernance(), state: 'disabled' });
     await expect(call('source.count', {})).rejects.toThrow('Okänd förmåga.');
+  });
+  test('a nested call to an execute the person may not know of answers as a name nobody registered (D23)', async () => {
+    const withExecute = (id: string): Connector => ({
+      ...connector(id),
+      capabilities: [
+        {
+          name: id + '.close',
+          kind: 'execute',
+          title: 'Stäng',
+          description: 'Stäng',
+          model: false,
+          scope: {},
+          execution: { strategy: 'manual' },
+          input: shape({}),
+          output: shape({}),
+          run: async () => ({ headline: 'Stängt', rows: [] }),
+        },
+      ],
+    });
+    const registry = new Registry()
+      .register({ ...connector('caller'), uses: ['hidden.close', 'open.close', 'nobody.close'] })
+      .register(withExecute('hidden'))
+      .register(withExecute('open'));
+    registry.govern('caller', openGovernance());
+    registry.govern('open', openGovernance());
+    // Its audience leaves the person, a manager, out.
+    registry.govern('hidden', { ...openGovernance(), audience: { mode: 'selected', roles: ['employee'] } });
+    const call = registry.clewFor(actor, {}, 'caller').call;
+    const refusal = (name: string) =>
+      call(name, {}).then(
+        () => undefined,
+        (error: CapabilityError) => ({ name: error.name, message: error.message, code: error.code }),
+      );
+    const unknown = await refusal('nobody.close');
+    expect(unknown).toEqual({ name: 'CapabilityError', message: 'Okänd förmåga.', code: 'not-found' });
+    expect(await refusal('hidden.close')).toEqual(unknown);
+    // An execute of a connector the person can see is refused as an execute; switched off, it is unknown too.
+    expect(await refusal('open.close')).toEqual({
+      name: 'CapabilityError',
+      message: 'En anslutning kan inte utföra åtgärder i en annan anslutning.',
+      code: 'denied',
+    });
+    registry.govern('open', { ...openGovernance(), capabilities: { 'open.close': { enabled: false } } });
+    expect(await refusal('open.close')).toEqual(unknown);
   });
   test('output validation rejects bad data, and replacement replaces compiled input schemas', async () => {
     const registry = new Registry()

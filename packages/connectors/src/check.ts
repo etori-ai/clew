@@ -572,7 +572,7 @@ export async function checkConnector(
     registry.govern(manifest.id, { ...registry.governance(manifest.id), header: true });
     for (const actor of people) {
       const answer = await registry.header(actor);
-      if (answer) {
+      if (answer.status === 'answered') {
         const n = answer.output.items.length;
         ok(`header as ${actor.role}: ${n} places${answer.output.logo ? ', a logo' : ''}`);
         item(

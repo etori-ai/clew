@@ -101,8 +101,9 @@ export const acceptsEmptyInput = (schema: object) => {
   }
 };
 /**
- * Run a capability through the registry with input validation. The single path for REST, cards, tools and connector
- * callbacks. It runs as the person with their provisioned groups, so an audience that names a group admits its members.
+ * Run a capability through the registry with input validation: the path for REST, cards and tools. A connector's
+ * callback goes through the registry's `clewFor` instead (`routes/connector-callback.ts`), which keeps the protocol's
+ * codes. It runs as the person with their provisioned groups, so an audience that names a group admits its members.
  */
 export async function runCapability<O = unknown>(
   persona: AuthenticatedContext,
@@ -125,16 +126,4 @@ export async function runCapability<O = unknown>(
     if (error instanceof CapabilityError) throw new InputError(error.message);
     throw error;
   }
-}
-/** A connector's call into another connector (D20, D21): reads and proposals only, scope re-checked for the same actor, never execute. */
-export async function callFromConnector<O = unknown>(
-  persona: AuthenticatedContext,
-  name: string,
-  input: unknown,
-): Promise<O> {
-  const found = registry.find(name);
-  if (!found) throw new InputError('Okänd förmåga.');
-  if (found.capability.kind === 'execute')
-    throw new InputError('En anslutning kan inte utföra åtgärder i en annan anslutning.');
-  return runCapability<O>(persona, name, input);
 }

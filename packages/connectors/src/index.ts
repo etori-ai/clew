@@ -27,7 +27,7 @@ import type {
   View,
   ViewOpen,
 } from '@clew/contracts';
-import type { Figure } from './protocol';
+import type { Figure, ProtocolErrorCode } from './protocol';
 import { menuEligible, menuRowOf } from './views';
 import { viewOutputProblem } from './views';
 import {
@@ -340,8 +340,17 @@ export interface Connector {
   header?: string;
 }
 
+/**
+ * A refusal or a failure of a capability, its message Swedish for the person. The code, when there is one, is the
+ * protocol's (`ProtocolErrorSchema`): the registry's own refusals carry one, and so does what a remote connector answers
+ * (`remote.ts`), so a caller can tell a refusal from a source that is down (`POST /api/connectors/call`) and a holder's
+ * refusal of the person from its failure (`Registry.header`).
+ */
 export class CapabilityError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly code?: ProtocolErrorCode,
+  ) {
     super(message);
     this.name = 'CapabilityError';
   }
@@ -401,6 +410,18 @@ export const inAudience = (audience: ConnectorAudience, actor: AudiencedActor) =
   !!audience.groups?.some(g => actor.groups?.includes(g));
 /** Everything the person may not reach reads like "unknown", so a hidden connector cannot be probed (D23). */
 export const UNKNOWN = 'Okänd förmåga.';
+/** The refusal of a capability the person may not know of, the same as of one nobody registered: `not-found`. */
+const unknownCapability = () => new CapabilityError(UNKNOWN, 'not-found');
+/**
+ * What `Registry.header` answers (D88): the holder's header; that the holder refused the person (the protocol's
+ * `denied`: the content system lists nothing for them); that the holder the person may have did not give one (it threw
+ * otherwise, did not answer in time or answered out of shape); or that no connector gives this person the header.
+ */
+export type HeaderAnswer =
+  | { status: 'answered'; connector: Connector; output: SiteHeaderOutput }
+  | { status: 'denied'; connector: Connector }
+  | { status: 'failed'; connector: Connector }
+  | { status: 'refused' };
 
 export interface RegistryOptions {
   /** Bounded figure fan-out. One total budget includes queued sources; order remains the manifest order. */
@@ -480,11 +501,11 @@ export class Registry {
   async validate(actor: Actor, name: string, input: unknown, pending: readonly string[] = []) {
     await this.refresh();
     const found = this.allowed(actor, name);
-    if (!found) throw new CapabilityError(UNKNOWN);
+    if (!found) throw unknownCapability();
     const asked = new Set((found.capability.asks ?? []).map(a => a.property));
     const waiting = pending.filter(p => asked.has(p));
     if (!this.validator(found.capability.input, waiting)(input))
-      throw new CapabilityError('Ogiltig förfrågan till ' + name + '.');
+      throw new CapabilityError('Ogiltig förfrågan till ' + name + '.', 'invalid');
     return found;
   }
   private pendingValidators = new WeakMap<object, Map<string, ReturnType<Ajv['compile']>>>();
@@ -518,7 +539,7 @@ export class Registry {
   connector(id: string) {
     return this.connectors.get(id);
   }
-  /** Lookup by name without any check: for validation and routing. Use `allowed` before acting for a person. */
+  /** Lookup by name without any check, for validation and routing; `findFor` and `allowed` check it for a person. */
   find(name: string) {
     return this.capabilities.get(name);
   }
@@ -528,12 +549,21 @@ export class Registry {
     const g = this.governance(connectorId);
     return g.state === 'enabled' && inAudience(g.audience, actor);
   }
-  /** A capability the person may call: visible connector, capability not switched off, and the connector's own scope. */
-  allowed(actor: Actor, name: string) {
+  /**
+   * Lookup by name for one person: the capability when it exists for them, its connector visible to them and the
+   * capability not switched off. Anything else is undefined, as a name nobody registered is, so a hidden capability
+   * answers exactly as an unknown one does (D23). The scope is not asked: a person in a connector's audience may learn
+   * that its capabilities exist (`catalogueFor` lists them with `inScope`), and `run` answers the scope itself.
+   */
+  findFor(actor: AudiencedActor, name: string) {
     const found = this.capabilities.get(name);
     if (!found || !this.visible(actor, found.connector.id)) return undefined;
-    if (this.governance(found.connector.id).capabilities[name]?.enabled === false) return undefined;
-    return inScope(found.capability.scope, actor) ? found : undefined;
+    return this.governance(found.connector.id).capabilities[name]?.enabled === false ? undefined : found;
+  }
+  /** A capability the person may call: visible connector, capability not switched off, and the connector's own scope. */
+  allowed(actor: Actor, name: string) {
+    const found = this.findFor(actor, name);
+    return found && inScope(found.capability.scope, actor) ? found : undefined;
   }
   /**
    * A system's place in the registration order (D71), which gives its mark the hue; null for Clew's own: a core
@@ -550,14 +580,31 @@ export class Registry {
       .map(c => ({ connector: c.id, source: c.source, ordinal: this.ordinal(c.id) }))
       .sort((a, b) => (a.ordinal ?? Infinity) - (b.ordinal ?? Infinity) || a.connector.localeCompare(b.connector));
   }
-  /** The connectors a person can see, and the capabilities they may call: what `/api/connectors`, search and the typeahead list. */
+  /** The connectors a person can see: what `catalogueFor`, search and the typeahead list. */
   listFor(actor: Actor) {
     return this.list().filter(c => this.visible(actor, c.id));
+  }
+  /**
+   * The registry as a person may know it (`GET /api/connectors`, D23): every connector they can see, with the
+   * capabilities that exist for them (`findFor`, so one switched off is left out, as from the tools, the menu and
+   * `/api/cap`), each marked with whether its scope lets them call it.
+   */
+  catalogueFor(actor: AudiencedActor) {
+    return this.listFor(actor).map(connector => ({
+      connector,
+      capabilities: connector.capabilities
+        .filter(c => this.findFor(actor, c.name))
+        .map(capability => ({ capability, inScope: !!this.allowed(actor, capability.name) })),
+    }));
   }
   capabilitiesFor(actor: Actor) {
     return [...this.capabilities.values()].filter(c => this.allowed(actor, c.capability.name));
   }
-  /** The handle a connector gets to reach the rest of Clew as one actor: reads and proposals only, scope re-checked. */
+  /**
+   * The handle a connector gets to reach the rest of Clew as one actor: reads and proposals only, scope re-checked. An
+   * execute is refused as one only when it exists for the person (`findFor`); one they may not know of goes on to `run`,
+   * which answers it as a name nobody registered (D23).
+   */
   clewFor(actor: Actor, context: RunContext = {}, origin?: string): Clew {
     return {
       chain: context.chain ?? [],
@@ -565,14 +612,13 @@ export class Registry {
       ...(context.operationId ? { operationId: context.operationId } : {}),
       call: async <O>(name: string, input: unknown = {}) => {
         await this.refresh();
-        const found = this.capabilities.get(name);
         const owner = origin ? this.connectors.get(origin) : undefined;
         if (origin && (!this.visible(actor, origin) || !(owner?.uses?.includes(name) || owner?.uses?.includes('*'))))
-          throw new CapabilityError(UNKNOWN);
+          throw unknownCapability();
         if ((context.chain?.length ?? 0) >= 8 || context.chain?.includes(name))
-          throw new CapabilityError('Anropet innehåller en cirkulär förfrågan.');
-        if (found?.capability.kind === 'execute')
-          throw new CapabilityError('En anslutning kan inte utföra åtgärder i en annan anslutning.');
+          throw new CapabilityError('Anropet innehåller en cirkulär förfrågan.', 'invalid');
+        if (this.findFor(actor, name)?.capability.kind === 'execute')
+          throw new CapabilityError('En anslutning kan inte utföra åtgärder i en annan anslutning.', 'denied');
         return this.run<O>(actor, name, input, {
           delegate: context.delegate,
           chain: context.chain,
@@ -589,43 +635,40 @@ export class Registry {
    */
   async run<O = unknown>(actor: Actor, name: string, input: unknown, context: RunContext = {}): Promise<O> {
     await this.refresh();
-    const found = this.capabilities.get(name);
-    if (
-      !found ||
-      !this.visible(actor, found.connector.id) ||
-      this.governance(found.connector.id).capabilities[name]?.enabled === false
-    )
-      throw new CapabilityError(UNKNOWN);
-    if (!inScope(found.capability.scope, actor)) throw new CapabilityError('Du saknar behörighet för åtgärden.');
+    const found = this.findFor(actor, name);
+    if (!found) throw unknownCapability();
+    if (!inScope(found.capability.scope, actor))
+      throw new CapabilityError('Du saknar behörighet för åtgärden.', 'denied');
     if (!this.validator(found.capability.input)(input))
-      throw new CapabilityError('Ogiltig förfrågan till ' + name + '.');
+      throw new CapabilityError('Ogiltig förfrågan till ' + name + '.', 'invalid');
     const output = await found.capability.run(
       actor,
       input,
       this.clewFor(actor, { ...context, chain: [...(context.chain ?? []), name] }, found.connector.id),
     );
+    // An answer Clew cannot verify is the source's failure, as if it had not answered.
     if (!this.validator(found.capability.output)(output))
-      throw new CapabilityError('Källans svar kunde inte verifieras.');
+      throw new CapabilityError('Källans svar kunde inte verifieras.', 'unavailable');
     const viewError = viewOutputProblem(found.capability.view, output);
-    if (viewError) throw new CapabilityError(viewError);
+    if (viewError) throw new CapabilityError(viewError, 'unavailable');
     // Permission can change while a source is answering. Do not release the result under the old policy.
     await this.refresh();
-    if (!this.allowed(actor, name)) throw new CapabilityError(UNKNOWN);
+    if (!this.allowed(actor, name)) throw unknownCapability();
     return output as O;
   }
   /** Metadata and binary bytes share the read's scope and source, with a final descriptor/policy check. */
   async document(actor: Actor, request: DocumentRequest, context: RunContext = {}): Promise<DocumentContent> {
     await this.refresh();
     const initial = this.allowed(actor, request.capability);
-    if (initial?.capability.kind !== 'read' || !initial.connector.documents) throw new CapabilityError(UNKNOWN);
+    if (initial?.capability.kind !== 'read' || !initial.connector.documents) throw unknownCapability();
     const output = await this.run<Record<string, unknown>>(actor, request.capability, request.input, context);
     const found = this.allowed(actor, request.capability);
-    if (found?.connector !== initial.connector) throw new CapabilityError(UNKNOWN);
+    if (found?.connector !== initial.connector) throw unknownCapability();
     const view = found?.capability.view;
     const key = view?.kind === 'document' ? view.body : view?.kind === 'record' ? view.document : undefined;
     const bundle = key ? output[key] : null;
     if (!found?.connector.documents || found.capability.kind !== 'read' || !Value.Check(DocumentBundleSchema, bundle))
-      throw new CapabilityError('Dokumentet finns inte.');
+      throw new CapabilityError('Dokumentet finns inte.', 'not-found');
     const document = bundle.documents.find(d => d.id === request.document);
     if (
       !document ||
@@ -633,7 +676,7 @@ export class Registry {
       bundle.revision !== request.revision ||
       document.revision !== request.documentRevision
     )
-      throw new CapabilityError('Underlaget har ändrats. Öppna dokumentet igen.');
+      throw new CapabilityError('Underlaget har ändrats. Öppna dokumentet igen.', 'invalid');
     const content = await found.connector.documents(actor, request, this.clewFor(actor, context, found.connector.id));
     if (
       content.bytes.length !== document.size ||
@@ -641,12 +684,12 @@ export class Registry {
       content.mediaType !== document.mediaType ||
       content.revision !== document.revision
     )
-      throw new CapabilityError('Dokumentet kunde inte verifieras.');
+      throw new CapabilityError('Dokumentet kunde inte verifieras.', 'unavailable');
     const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(content.bytes)));
     if (Array.from(hash, b => b.toString(16).padStart(2, '0')).join('') !== document.sha256)
-      throw new CapabilityError('Dokumentet kunde inte verifieras.');
+      throw new CapabilityError('Dokumentet kunde inte verifieras.', 'unavailable');
     await this.refresh();
-    if (this.allowed(actor, request.capability)?.connector !== found.connector) throw new CapabilityError(UNKNOWN);
+    if (this.allowed(actor, request.capability)?.connector !== found.connector) throw unknownCapability();
     return { ...content, filename: document.filename };
   }
   /**
@@ -846,7 +889,7 @@ export class Registry {
     await this.refresh();
     const m = this.connectors.get(connectorId);
     if (!m?.scan || !this.visible(actor, connectorId) || !this.governance(connectorId).scanEnabled)
-      throw new CapabilityError(UNKNOWN);
+      throw unknownCapability();
     if (m.delegation && !(context.delegate && (await context.delegate(m.delegation.audience))))
       return {
         drafts: [],
@@ -1072,33 +1115,64 @@ export class Registry {
       ...(rows && found.connector.kind === 'core' ? { rowViews: true } : {}),
     } as PanelViewSpec;
   }
+  /** The connector that gives this person the shared header (D88), by the governance as it stands, without asking it. */
+  private holderFor(actor: AudiencedActor) {
+    const holder = this.list().find(c => c.header && this.governance(c.id).header === true);
+    return holder && this.visible(actor, holder.id) && this.allowed(actor, holder.header!) ? holder : undefined;
+  }
+  /**
+   * The connector that gives this person the shared header now (D88), with the governance read again first, and
+   * without asking the connector: undefined when no holder is chosen, when the holder is switched off or leaves the
+   * person out of its audience, and when its header capability is switched off or outside the person's scope. A caller
+   * that keeps a header asks this before it serves one, so a change of who may have the header takes effect at once.
+   */
+  async headerHolder(actor: AudiencedActor): Promise<Connector | undefined> {
+    await this.refresh();
+    return this.holderFor(actor);
+  }
   /**
    * The shared header a person gets (D88): the answer of the one connector an administrator chose to give it
    * (`Governance.header`), when it is enabled, the person is in its audience and may call its header capability, checked
-   * against the protocol's shape. Exclusive, never merged and never inferred: no holder, a person outside the holder's
-   * audience, an answer out of shape or a connector that does not answer all give null, and the page draws Clew's
-   * default; a refusal is reported through `onRefused`. The call is a read as the person: the content system lists what
-   * they may see.
+   * against the protocol's shape. Exclusive, never merged and never inferred. A refusal and a failure are told apart,
+   * since a caller keeps a last good header through the one and never past the other: no holder for this person
+   * (`headerHolder`), or a holder the person may no longer have once it was asked, is `refused`; the holder's own
+   * refusal of the person (the protocol's `denied`) is `denied`, its answer that it lists nothing for them; a holder
+   * that throws otherwise, does not answer in time or answers out of shape is `failed`, and is reported through
+   * `onRefused`. The call is a read as the person: the content system lists what they may see.
    */
-  async header(
-    actor: Actor,
-    context: RunContext = {},
-  ): Promise<{ connector: Connector; output: SiteHeaderOutput } | null> {
-    const holder = this.list().find(c => c.header && this.governance(c.id).header === true);
-    if (!holder || !this.visible(actor, holder.id) || !this.allowed(actor, holder.header!)) return null;
+  async header(actor: AudiencedActor, context: RunContext = {}): Promise<HeaderAnswer> {
+    const holder = this.holderFor(actor);
+    if (!holder) return { status: 'refused' };
+    let output: SiteHeaderOutput | undefined;
+    let denied = false;
     try {
-      const output = await this.run<unknown>(actor, holder.header!, {}, context);
-      if (Value.Check(SiteHeaderOutputSchema, output)) return { connector: holder, output };
-      const problem = contractProblems(SiteHeaderOutputSchema, output, 1)[0];
-      this.options.onRefused?.(
-        holder.id,
-        'header',
-        `answer is not a SiteHeaderOutput: ${problem?.path ?? '/'} ${problem?.message ?? ''}`.trim(),
-      );
+      const answer = await this.run<unknown>(actor, holder.header!, {}, context);
+      if (Value.Check(SiteHeaderOutputSchema, answer)) output = answer;
+      else {
+        const problem = contractProblems(SiteHeaderOutputSchema, answer, 1)[0];
+        this.options.onRefused?.(
+          holder.id,
+          'header',
+          `answer is not a SiteHeaderOutput: ${problem?.path ?? '/'} ${problem?.message ?? ''}`.trim(),
+        );
+      }
     } catch (error) {
-      this.options.onRefused?.(holder.id, 'header', error instanceof Error ? error.message : String(error));
+      denied = error instanceof CapabilityError && error.code === 'denied';
+      if (!denied)
+        this.options.onRefused?.(holder.id, 'header', error instanceof Error ? error.message : String(error));
+      // `run` reads the governance again after a call that answered; after one that threw, it is read here, so who may
+      // have the header is judged on the governance as it stands after the call either way. Unreadable, the call failed.
+      try {
+        await this.refresh();
+      } catch {
+        return { status: 'failed', connector: holder };
+      }
     }
-    return null;
+    // A holder this person may no longer have, switched off, narrowed or replaced by another while it was asked, is a
+    // refusal whatever it answered; only the holder they still may have has answered, denied them or failed.
+    if (this.holderFor(actor)?.id !== holder.id) return { status: 'refused' };
+    if (output) return { status: 'answered', connector: holder, output };
+    return { status: denied ? 'denied' : 'failed', connector: holder };
   }
   /**
    * The menu rows a person gets (D40): every view an administrator put in the menu, of a capability the person may call
