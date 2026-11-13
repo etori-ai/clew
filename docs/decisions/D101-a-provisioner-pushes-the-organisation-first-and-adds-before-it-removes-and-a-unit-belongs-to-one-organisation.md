@@ -1,6 +1,75 @@
 # D101 · A provisioner pushes the organisation first and adds before it removes, and a unit belongs to one organisation
 
-**Status:** accepted (product owner, 2026-11-11: the source can deliver the organisation as a list of its own, the organisation goes in before the people, and every finding of the review is fixed, small and large), built 2026-11-11; items 5 and 6 are choices made in the build and stand until he says otherwise; no provisioner has run against a real source yet · **Date:** 2026-11-11 · **Area:** identity
+**Status:** provisional (product owner, 2026-11-11: the source can deliver the organisation as a list of its own, the organisation goes in before the people, and every finding of the review is fixed, small and large), built 2026-11-11; items 5 and 6 are choices made in the build and stand until the product owner says otherwise; no provisioner has run against a real source yet; recorded as accepted until 2026-11-12, when the fixes of the review of users and the organisation made it provisional (Q10): accepted once a provisioner outside the team has pushed a run in this order from a real source; items 2 and 3 amended 2026-11-11 after the [review of the operations guide and the source's lifecycle](../reviews/2026-11-11-provisioning-operations-guide-and-source-lifecycle.md) and the [full review of the SCIM server](../reviews/2026-11-11-scim-full-review.md), and 2026-11-12 after the [outside review of the merged SCIM server](../reviews/2026-11-12-outside-review-of-the-merged-scim-server.md) and the [review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md): leavers are deactivated straight after the people rows are checked, returners are activated last, a fault in one row is that row's alone, and the guard covers people, units, role groups and directory groups; item 4 amended 2026-11-12 (G6): the exact key another organisation holds answers 409 `uniqueness`, and the other key of that unit 400 `invalidValue`; item 8 amended 2026-11-12 (Q4): unit ids are compared by UTF-16 code unit, with no locale; item 9 amended by [D116](D116-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) (2026-11-12, provisional): a reused name reaches only what arrives after the reuse, and by [D117](D117-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md) (2026-11-12, provisional): an operator erases a deactivated person's record when the organisation decides · **Date:** 2026-11-11 · **Area:** identity
+
+**Amended 2026-11-12.** In the fixes of the
+[review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md),
+which the product owner asked for on 2026-11-12, with every open decision taken in the work (O2, O6, G6, N2, Q4,
+Q10). The items below stay as written; where they differ from this paragraph, this paragraph holds.
+
+- **Provisional (Q10).**
+  [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md) makes `provisional`
+  the standing of a choice that nothing outside the repository has tested. This record was chosen after D102 and
+  recorded as accepted, though it says itself that no provisioner has run against a real source. Its reasons stand.
+  It becomes accepted once a provisioner outside the team has pushed a run in this order from a real source.
+- **Items 2 and 3, the order of a run and the guard (O2).** Changed on 2026-11-11 (leavers before the people, a
+  refused person that person's alone, returners after the memberships, and a guard over four populations) and on
+  2026-11-12 (leavers straight after the people rows are checked, returners sent with their full profile, and a fault
+  in one unit or group that row's alone). `scripts/provisioner/push.ts` now runs in this order, and both guides
+  describe it:
+  1. The people rows are checked whole, before anything is written: a complete export, every row inside the writer's
+     prefix with a boolean `active`, each person id once and each active account name once. The people guard runs
+     here.
+  2. Who has left, and who the source now marks inactive, is deactivated.
+  3. The organisation is checked whole: each unit id and group id once, no reserved key on a plain group, every unit
+     and plain group the export lists inside the writer's keys, and the guard over the groups. A fault here stops the
+     rest of the run after the deactivations, and the message says that the leavers have gone already.
+  4. The units from the root down, as nodes without people.
+  5. The people. An account name given to someone new is first moved off the row that holds it.
+  6. The memberships in two rounds, every addition before any removal.
+  7. The groups that no longer follow from the source.
+  8. Those who return, last. Once their memberships are reconciled, each is sent with the full active profile. One
+     whom no unit that was written takes stays inactive and is reported.
+
+  A fault in one row is that row's alone: a unit whose parent the export does not list, units that are each other's
+  parents, a unit or group that an active person names and the export does not list, and anything Clew refuses for a
+  unit or a group are reported (`groupsRefused` in the run's summary) and skipped with what depends on them, and the
+  run carries on. Only a person whose units were not written keeps the units Clew holds them on until one is. The
+  guard covers four populations: the people, the units, the role groups (managers' groups and capabilities) and the
+  directory groups. A run that would withdraw all of a population, or more than one row and more than a fifth of it,
+  is refused unless `force` is given. Item 3's "and more than ten" is gone.
+- **Item 4, two answers (G6).** The check for a taken key runs before the check for another organisation's unit. So
+  the exact key another organisation holds, `unit:<id>` or `unit-manager:<id>`, answers 409 `uniqueness` ("A group
+  with this externalId already exists."), and the other key of that unit answers 400 `invalidValue` ("The unit '<id>'
+  is not a unit of this organisation (D101). The group was not stored."). Either way nothing is stored.
+- **Item 8, the order of unit ids (Q4).** The order that picks the active assignment compares unit ids by UTF-16 code
+  unit, with no locale (`byUnitId` in `modules/people/domain.ts`), in place of the ICU locale `en`. A managed unit
+  still comes first. `Skola` comes before `förskola`, `Z-skola` before `a-skola`, `skola-2` before `skola_2`, and `10`
+  before `9`. It is JavaScript's default sort and, for ids without characters outside the Basic Multilingual Plane,
+  Python's `sorted()` and PostgreSQL's C collation. Both adapters reach it through the one derivation.
+- **Item 9, a reused name (N2).** A rename or a reuse no longer moves Clew's own records: Clew keys its records
+  about a person by the person's id
+  ([D116](D116-clew-keys-its-own-records-about-a-person-by-the-persons-id.md)). A provisioner still frees a reused
+  name by renaming the leaver's row first, since a user name is unique in the installation; the example gives the old
+  row its own `externalId` as its name. Rows and actions that name a person by the user name are resolved to a person
+  when they arrive, so a reused name reaches only what arrives after the reuse. A connected system that keeps records
+  under the name answers for the name's current holder and moves its records off a leaver as the provisioner moves
+  the name. No leaver needs to be erased before their name is reused. "That nothing is ever erased stays an open item
+  of D68" is answered by
+  [D117](D117-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md): how
+  long a deactivated person's record is kept is the organisation's decision, and an operator erases it with
+  `scripts/person-erase.ts --person <id> --confirm` once the source has stopped sending the person.
+
+**Why these choices.** Leavers go first because a fault anywhere else in the export must never keep a person who has
+left active, and in an export of thousands of rows a wrong row is to be expected. Returners go last, with their full
+profile, because a returner made active before their memberships are reconciled would act on old units, and one
+activated by `active` alone keeps old attributes (D113). One wrong row is that row's alone because a reorganisation
+touches hundreds of rows, and one wrong unit must not hold back every other change; the run reports it so that a person
+can correct the source. The guard covers every population because an empty or cut export of units or groups takes access
+from as many people as one of people does. Q4 was taken in the work, as the product owner asked. Code-unit order was
+chosen over keeping `en` and documenting it: a unit id is an opaque key, code-unit order is what the tools a directory
+team already has give, and no upgrade of ICU or Node can change it, so no upgrade moves anyone's active unit. An English
+collation can change between ICU versions and cannot be reproduced without ICU. Q10 follows D102 as written.
 
 **Decision.** The [review of the SCIM flow](../reviews/2026-11-11-scim-flow-people-and-organisation.md) followed a
 push from the source to what a person sees and found seven things. This settles them.

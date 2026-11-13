@@ -1,6 +1,18 @@
 # D88 · The web app draws the shared header above its rail, a connector gives Clew its content, and Clew has one front end
 
-**Status:** accepted, built 2026-11-09 on `main` · **Date:** 2026-11-09 · **Area:** ui, product, integrations
+**Status:** accepted, built 2026-11-09 on `main`; item 5 amended 2026-11-12 in the fixes of the review of users and the organisation (A2): the last good header is kept per person, authorization version and provisioned groups, so a changed group membership is a new read too · **Date:** 2026-11-09 · **Area:** ui, product, integrations
+
+**Amended 2026-11-12.** Since A2 of the
+[review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md),
+the registry is handed the person's provisioned groups with the published actor on every path in the process, the
+header included, so a header holder whose audience names a group
+([D68](D68-people-are-pushed-into-clew-through-standard-scim.md), D23) answers its members and nobody else. Item 5's
+cache therefore keeps the last good header per person, authorization version and provisioned groups (`headerScope`):
+a changed grant or a changed group membership is a new read. The groups are in the key because a membership change
+need not move the grant or its version. A change in a group that gives no unit, role or capability never does, and
+an audience may name any group. The cache logic is in `apps/server/src/connectors/usecases/header.ts` (`siteHeaders`,
+`headerScope`), which `apps/server/src/connectors/header.ts` binds to the live registry and the clock. The rest of
+item 5 stands.
 
 **Decision.** The product owner showed the header of the proof of concept at https://start.sundsvall.dev/portal/start
 on 2026-11-09 and asked for it in Clew. Asked where, the product owner chose the web app on 3020 ("that is where we
