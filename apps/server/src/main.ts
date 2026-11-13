@@ -63,9 +63,9 @@ const startup = startupReadiness({
   },
   onReady: () => {
     bindLiveActivities();
-    startDurableRuntime();
+    const engine = startDurableRuntime();
     watchConnectors(connectorReconcile);
-    startJobs();
+    startJobs(engine);
     startAssistantProbe();
     startRefresh();
     void loadConnectors(registry)

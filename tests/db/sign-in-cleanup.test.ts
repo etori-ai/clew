@@ -136,9 +136,18 @@ test('sessions past either expiry go, an open one with an expired row; live data
 
 test('every process schedules the next scan and clean-up when it starts, one job and workflow a night each, and a run schedules the next night', async () => {
   let time = Date.parse('2098-11-05T10:00:00.000Z');
-  const cleaned: string[] = [];
+  const cleaned: string[] = [],
+    asked: string[][] = [];
   const scheduler = createScheduler({
-    jobs: postgresJobQueue(testDurable),
+    // No engine runs here, so no workflow waits under another release: the take-over is asked about the nights and
+    // moves none.
+    jobs: postgresJobQueue({
+      durable: testDurable,
+      move: async workflowIDs => {
+        asked.push(workflowIDs);
+        return [];
+      },
+    }),
     people: { granted: async () => [], personaFor: async () => undefined },
     threads: { ensureThreads: async () => undefined, closeReceiptWindow: async () => undefined },
     calendar: { closeUndoWindow: async () => undefined },
@@ -152,8 +161,16 @@ test('every process schedules the next scan and clean-up when it starts, one job
     log: () => undefined,
   });
   // Every process schedules both nights when it starts, as `startJobs` does; one row and one workflow each come of it.
-  await scheduler.scheduleNights();
-  await scheduler.scheduleNights();
+  expect(await scheduler.startNightly()).toEqual([]);
+  expect(await scheduler.startNightly()).toEqual([]);
+  // Each start looks at the last and the next night of each job, to take over one a deployment left behind.
+  const looked = [
+    'job:scan:2098-11-05',
+    'job:scan:2098-11-06',
+    'job:' + SIGN_IN_CLEANUP + ':2098-11-05',
+    'job:' + SIGN_IN_CLEANUP + ':2098-11-06',
+  ];
+  expect(asked).toEqual([looked, looked]);
   const rows = await database()
     .select({ id: schema.jobs.id, kind: schema.jobs.kind, runAt: schema.jobs.runAt, status: schema.jobs.status })
     .from(schema.jobs)

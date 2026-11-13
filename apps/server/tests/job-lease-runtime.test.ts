@@ -10,7 +10,7 @@ import { JOB_LEASE_MS } from '../src/scheduler/model';
 import { scheduledJobRunner } from '../src/scheduler/usecases';
 import { every } from '../src/composition/ambient';
 import { bindActivities } from '../src/dbos/workflows';
-import { durableResult } from '../src/dbos/start';
+import { durableResult, moveToRunningVersion } from '../src/dbos/start';
 import { testEngine } from './durable';
 
 // A scheduled job whose run outlasts its claim's lease (D47, D85), on PostgreSQL, the durable engine and production
@@ -79,7 +79,7 @@ test(
     let launched: Awaited<ReturnType<typeof engine.launch>> | undefined;
     try {
       // Due long ago, so the engine runs it as soon as it launches.
-      await postgresJobQueue(engine.durable).schedule({ id, kind: 'receipt-final', runAt: '2001-11-05T10:00:00.000Z' });
+      await postgresJobQueue({ durable: engine.durable, move: moveToRunningVersion }).schedule({ id, kind: 'receipt-final', runAt: '2001-11-05T10:00:00.000Z' });
       launched = await engine.launch();
       const [, seen] = await Promise.race([
         Promise.all([durableResult('job:' + id), probe]),

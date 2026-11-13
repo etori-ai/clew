@@ -88,38 +88,78 @@ export function createScheduler(deps: SchedulerDeps) {
     const today = now.with({ hour, minute: 0, second: 0, millisecond: 0 });
     return today.epochMilliseconds > now.epochMilliseconds ? today : today.add({ days: 1 });
   }
-  /** The next 06:00 Stockholm after now. Idempotent by date, so every process may schedule it. */
+  /**
+   * A nightly job's next night after now, at `hour` o'clock Stockholm, under the id `<prefix>:<date>`, and the id of
+   * the night before it: the last one, at or before now.
+   */
+  function nextNight(prefix: string, hour: number) {
+    const at = nextAt(hour),
+      date = at.toPlainDate();
+    return {
+      id: `${prefix}:${date}`,
+      last: `${prefix}:${date.subtract({ days: 1 })}`,
+      runAt: new Date(at.epochMilliseconds).toISOString(),
+    };
+  }
+  /** The next 06:00 Stockholm after now. Idempotent by date, so every process may schedule it. The night. */
   async function scheduleNightly() {
-    const next = nextAt(6);
-    await jobs.schedule({
-      id: `scan:${next.toPlainDate().toString()}`,
-      kind: NIGHTLY,
-      runAt: new Date(next.epochMilliseconds).toISOString(),
-    });
+    const night = nextNight('scan', 6);
+    await jobs.schedule({ id: night.id, kind: NIGHTLY, runAt: night.runAt });
+    return night;
   }
   /**
    * The sign-in clean-up at the next 03:00 Stockholm after now, a quiet hour that exists on both days the clocks
-   * change. Idempotent by date, so every process may schedule it, and one job runs it however many processes do.
+   * change. Idempotent by date, so every process may schedule it, and one job runs it however many processes do. The
+   * night.
    */
   async function scheduleCleanup() {
-    const next = nextAt(3);
-    await jobs.schedule({
-      id: `${SIGN_IN_CLEANUP}:${next.toPlainDate().toString()}`,
-      kind: SIGN_IN_CLEANUP,
-      runAt: new Date(next.epochMilliseconds).toISOString(),
-    });
+    const night = nextNight(SIGN_IN_CLEANUP, 3);
+    await jobs.schedule({ id: night.id, kind: SIGN_IN_CLEANUP, runAt: night.runAt });
+    return night;
   }
   /**
-   * What every server process schedules when it starts (D117): the next nightly scan and the next sign-in clean-up.
-   * Each night then schedules the next one when it runs; this only starts the two chains, and it is idempotent by date.
+   * A server's start, once its durable engine runs: the next night of the scan and of the sign-in clean-up, scheduled
+   * when no earlier start or night has, and the last and the next night of each taken over when a deployment left it
+   * waiting under the replaced release, or an earlier start was stopped while taking it over. Only a night's run
+   * schedules the night after it, so a night left there would stop its job for good (D85 item 2, as amended
+   * 2026-11-13). The last night is there when the deployment's downtime spanned its time: the older release held it
+   * and stopped first, and no process of this one recovers it. Taken over, it runs at once, late; a last night that
+   * ran is left as it is. The ids of the nights taken over.
    */
-  async function scheduleNights() {
-    await scheduleNightly();
-    await scheduleCleanup();
+  async function startNightly() {
+    const scan = await scheduleNightly(),
+      cleanup = await scheduleCleanup();
+    return jobs.takeOver([scan.last, scan.id, cleanup.last, cleanup.id]);
   }
-  return { run, scheduleNightly, scheduleCleanup, scheduleNights };
+  return { run, scheduleNightly, scheduleCleanup, startNightly };
 }
 export type Scheduler = ReturnType<typeof createScheduler>;
+/**
+ * The nightly work at a server's start (D117; D85 item 2, as amended 2026-11-13). It waits for the durable engine to
+ * launch, which says itself while it cannot, so that this release is the latest, which alone takes work from the
+ * queue, and then schedules the nights and takes them over (`startNightly`), saying which it took over. When that
+ * fails, because the database stopped answering after the engine launched or a take-over failed, it says so and tries
+ * again after `retry`'s wait, until it succeeds. Resolves when the first attempt has ended.
+ */
+export function seedNightly(deps: {
+  engine: Promise<unknown>;
+  startNightly: () => Promise<string[]>;
+  log: (message: string, ...details: unknown[]) => void;
+  fail: (message: string, ...details: unknown[]) => void;
+  retry: (run: () => Promise<void>) => void;
+}) {
+  const seed = async (): Promise<void> => {
+    try {
+      await deps.engine;
+      const taken = await deps.startNightly();
+      if (taken.length) deps.log('nightly work taken over from the replaced release', taken);
+    } catch (error) {
+      deps.fail('nightly work could not be scheduled, retrying', error);
+      deps.retry(seed);
+    }
+  };
+  return seed();
+}
 /**
  * The step of a job's `scheduledJob` workflow (D47, D86), which waits until the job's run time first: the row's
  * execution is claimed under its lease, the job is run by its kind and the execution completes with its audit row. An

@@ -12,6 +12,7 @@ import {
   NIGHTLY,
   SCAN_PAGE,
   scheduledJobRunner,
+  seedNightly,
   SIGN_IN_CLEANUP,
 } from '../../apps/server/src/scheduler/usecases';
 
@@ -34,23 +35,43 @@ const persona = (id: string): AuthenticatedContext => ({
   },
 });
 type Row = Job & { runAt: string; status: 'temporal' | 'executing' | 'done'; attempts: number; leaseUntil?: string };
-/** The job table as the engine sees it: a row is claimed once its run time has come, under the lease, which its run renews. */
+/**
+ * The job table as the engine sees it: a row is claimed once its run time has come, under the lease, which its run
+ * renews. The jobs in `stranded` wait under a replaced release until they are taken over; `asked` is what each take-over
+ * looked at.
+ */
 function memoryJobs() {
   const rows: Row[] = [];
   const finished: Array<[string, number]> = [];
+  const stranded = new Set<string>();
+  const asked: string[][] = [];
   let renewFails = false;
   const holds = (row: Row | undefined, attempt: number): row is Row =>
     !!row && row.status === 'executing' && row.attempts === attempt;
   const queue: JobQueue &
-    JobExecutions & { rows: Row[]; finished: typeof finished; failRenewal: (fails: boolean) => void } = {
+    JobExecutions & {
+      rows: Row[];
+      finished: typeof finished;
+      stranded: Set<string>;
+      asked: string[][];
+      failRenewal: (fails: boolean) => void;
+    } = {
     rows,
     finished,
+    stranded,
+    asked,
     failRenewal: fails => {
       renewFails = fails;
     },
     async schedule(job) {
       if (!rows.some(r => r.id === job.id))
         rows.push({ ...job, payload: job.payload ?? {}, status: 'temporal', attempts: 0 });
+    },
+    async takeOver(ids) {
+      asked.push(ids);
+      const taken = ids.filter(id => stranded.has(id));
+      taken.forEach(id => stranded.delete(id));
+      return taken;
     },
     async claimExecution(id, at) {
       const row = rows.find(r => r.id === id);
@@ -207,6 +228,100 @@ describe('the scheduled jobs', () => {
       },
     ]);
   });
+  test('a start schedules the next night of the scan and of the clean-up, and takes over a night a deployment left under the replaced release', async () => {
+    const w = world();
+    // The night of the scan was scheduled by an earlier start or night, and its workflow waits under the release that
+    // a deployment replaced: only a night's run schedules the night after it, so it must be taken over.
+    await w.jobs.schedule({ id: 'scan:2026-11-05', kind: NIGHTLY, runAt: '2026-11-05T05:00:00.000Z' });
+    w.jobs.stranded.add('scan:2026-11-05');
+    expect(await w.scheduler.startNightly()).toEqual(['scan:2026-11-05']);
+    expect(w.jobs.rows.map(r => [r.id, r.status])).toEqual([
+      ['scan:2026-11-05', 'temporal'],
+      ['sign-in-cleanup:2026-11-05', 'temporal'],
+    ]);
+    // It looks at the last night of each job too: at 08:00 Stockholm, this morning's.
+    expect(w.jobs.asked).toEqual([
+      ['scan:2026-11-04', 'scan:2026-11-05', 'sign-in-cleanup:2026-11-04', 'sign-in-cleanup:2026-11-05'],
+    ]);
+    // A second start of the same release finds nothing to take over and schedules nothing more.
+    expect(await w.scheduler.startNightly()).toEqual([]);
+    expect(w.jobs.rows).toHaveLength(2);
+  });
+  test('a start after the nights a deployment’s downtime spanned takes those nights over too, and the next ones are new', async () => {
+    const w = world();
+    // The older release scheduled this morning's nights the day before and stopped before 03:00; this release starts
+    // at 08:00. Their workflows wait under the replaced release, which no process runs any more.
+    await w.jobs.schedule({
+      id: 'sign-in-cleanup:2026-11-04',
+      kind: SIGN_IN_CLEANUP,
+      runAt: '2026-11-04T02:00:00.000Z',
+    });
+    await w.jobs.schedule({ id: 'scan:2026-11-04', kind: NIGHTLY, runAt: '2026-11-04T05:00:00.000Z' });
+    w.jobs.stranded.add('sign-in-cleanup:2026-11-04').add('scan:2026-11-04');
+    expect(await w.scheduler.startNightly()).toEqual(['scan:2026-11-04', 'sign-in-cleanup:2026-11-04']);
+    // Taken over, each runs at once, late, and schedules its next night, which this start scheduled already.
+    expect(await w.runJob('scan:2026-11-04')).toBe('done');
+    expect(await w.runJob('sign-in-cleanup:2026-11-04')).toBe('done');
+    expect(w.jobs.rows.map(r => [r.id, r.status])).toEqual([
+      ['sign-in-cleanup:2026-11-04', 'done'],
+      ['scan:2026-11-04', 'done'],
+      ['scan:2026-11-05', 'temporal'],
+      ['sign-in-cleanup:2026-11-05', 'temporal'],
+    ]);
+    expect(w.calls).toEqual(['scan:hassan', 'scan:hillevi', 'clean:' + T0]);
+  });
+  test('a server’s start waits for its durable engine, then schedules and takes over the nights and says which it took over', async () => {
+    const w = world();
+    w.jobs.stranded.add('sign-in-cleanup:2026-11-04');
+    const said: unknown[][] = [],
+      failed: unknown[][] = [],
+      retries: Array<() => Promise<void>> = [];
+    let launch!: () => void;
+    const engine = new Promise<void>(resolve => (launch = resolve));
+    const seeded = seedNightly({
+      engine,
+      startNightly: w.scheduler.startNightly,
+      log: (...args) => said.push(args),
+      fail: (...args) => failed.push(args),
+      retry: run => retries.push(run),
+    });
+    // Until the engine has launched, this release is not the latest, and a night it scheduled would wait in the queue
+    // for the older one: nothing is scheduled or taken over.
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(w.jobs.rows).toEqual([]);
+    expect(w.jobs.asked).toEqual([]);
+    launch();
+    await seeded;
+    expect(w.jobs.rows.map(r => r.id)).toEqual(['scan:2026-11-05', 'sign-in-cleanup:2026-11-05']);
+    expect(said).toEqual([['nightly work taken over from the replaced release', ['sign-in-cleanup:2026-11-04']]]);
+    expect(failed).toEqual([]);
+    expect(retries).toEqual([]);
+  });
+  test('a start whose scheduling fails says so and tries again until it succeeds, and says nothing of a take-over when it took nothing over', async () => {
+    const w = world();
+    let answering = false;
+    const said: unknown[][] = [],
+      failed: unknown[][] = [],
+      retries: Array<() => Promise<void>> = [];
+    await seedNightly({
+      engine: Promise.resolve(),
+      startNightly: async () => {
+        if (!answering) throw new Error('database unavailable');
+        return w.scheduler.startNightly();
+      },
+      log: (...args) => said.push(args),
+      fail: (...args) => failed.push(args),
+      retry: run => retries.push(run),
+    });
+    expect(failed).toEqual([['nightly work could not be scheduled, retrying', new Error('database unavailable')]]);
+    expect(retries).toHaveLength(1);
+    answering = true;
+    await retries[0]!();
+    expect(retries).toHaveLength(1);
+    expect(w.jobs.rows.map(r => r.id)).toEqual(['scan:2026-11-05', 'sign-in-cleanup:2026-11-05']);
+    expect(said).toEqual([]);
+    expect(failed).toHaveLength(1);
+  });
   test('the sign-in clean-up removes what expired by its clock and schedules the next night', async () => {
     const w = world();
     await w.jobs.schedule({
@@ -272,8 +387,8 @@ describe('the scheduled jobs', () => {
   });
   test('every process schedules both nights when it starts, the scan at 06:00 and the clean-up at 03:00 Stockholm, once per date', async () => {
     const w = world();
-    await w.scheduler.scheduleNights();
-    await w.scheduler.scheduleNights();
+    expect(await w.scheduler.startNightly()).toEqual([]);
+    expect(await w.scheduler.startNightly()).toEqual([]);
     expect(w.jobs.rows).toEqual([
       {
         id: 'scan:2026-11-05',

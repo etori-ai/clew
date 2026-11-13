@@ -43,8 +43,10 @@ function activity<K extends keyof Activities>(name: K): Activities[K] {
 }
 /**
  * One checkpointed call of a use case. Retries are the step's; a step that still fails ends the workflow in ERROR, where
- * an operator resumes it. An attempt that runs past `timeoutMS` is given up and retried, but the engine does not stop
- * it: it goes on beside the retry. A step with no timeout (`null`) runs for as long as its use case does.
+ * it stays until an operator starts it again from that step once the cause is fixed (`scripts/workflows-move.ts`):
+ * `resumeWorkflow` changes nothing for a workflow that has ended. An attempt that runs past `timeoutMS` is given up and
+ * retried, but the engine does not stop it: it goes on beside the retry. A step with no timeout (`null`) runs for as
+ * long as its use case does.
  */
 const step = <T>(name: keyof Activities, run: () => Promise<T>, maxAttempts = 5, timeoutMS: number | null = 60_000) =>
   DBOS.runStep(run, {

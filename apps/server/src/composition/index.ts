@@ -27,7 +27,7 @@ import { postgresJobQueue, postgresPeople } from '../scheduler/adapters/postgres
 import { createScheduler } from '../scheduler/usecases';
 import { signInData } from './sign-ins';
 import { postgresThreadStore } from '../threads/adapters/postgres';
-import { cancelDurable } from '../dbos/start';
+import { cancelDurable, moveToRunningVersion } from '../dbos/start';
 import { ledger } from './durable';
 import { audiencedActorOf, COMPETENCE_CONNECTOR } from '@clew/connectors';
 import { reminderUsecases } from '../threads/usecases/reminders';
@@ -323,7 +323,7 @@ export const connectorReconcile: ConnectorReconcileDeps = {
 export const refreshConnectors = () => applyAllRows(connectorReconcile);
 registry.setRefresh(refreshConnectors);
 export const scheduler = createScheduler({
-  jobs: postgresJobQueue(ledger),
+  jobs: postgresJobQueue({ durable: ledger, move: moveToRunningVersion }),
   people: postgresPeople(),
   threads,
   calendar,

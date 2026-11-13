@@ -571,8 +571,20 @@ what they say.
   ([scheduled work](../architecture/scheduled-work.md)).
 - No test reached the two pieces that make the server run the nightly clean-up: scheduling the first night when a
   process starts, and the binding that hands the scheduler the clean-up the tests ran. Both nights are now scheduled by
-  one use case, `scheduleNights`, tested in memory and on PostgreSQL, and the PostgreSQL clean-up test runs through the
+  one use case, `startNightly`, tested in memory and on PostgreSQL, and the PostgreSQL clean-up test runs through the
   binding the composition gives the scheduler. The two lines of the composition that hand them over are left (below).
+- The operations guide said that the nightly clean-up runs by itself, with no setting, and named neither
+  `CLEW_RELEASE` nor `CLEW_EXECUTOR_ID`. A deployment that changes the engine's application version left the next
+  night of the clean-up, and of the nightly scan, waiting under the replaced version, where no process of the new one
+  recovers it. Only a night's run schedules the next one, so both jobs stopped for good, and nothing said so. A server's
+  start now takes over the last and the next night of each: it cancels the night's workflow and rewinds it under its own
+  id and the running version ([D85](../decisions/D85-dbos-transact-replaces-temporal-as-the-durable-engine.md) item 2,
+  amended 2026-11-13), so a night whose time fell during the deployment runs late, and the next start finishes a
+  take-over that a start was stopped in the middle of. The rest of the waiting work, and a workflow that ended in
+  `ERROR`, an operator moves with `scripts/workflows-move.ts` once the older processes have stopped, from where its
+  records end. The guide names both settings and the step after each deployment, which the runbook now gives a section
+  of its own, and tests show both nights taken over from a killed instance of the older release, one of them past and
+  one left cancelled by a stopped start, and the script moving what such an instance left.
 
 **Left.**
 
@@ -583,8 +595,13 @@ what they say.
   runbook list them, for an operator or the organisation's retention to remove.
 - D115 is also taken on the branch `prototype-look`. Whichever reaches `main` second takes the next free number.
 - Two lines of the composition are reached by no test: the one that hands the scheduler `signInData`, and
-  `startJobs`'s call of `scheduleNights`. What they hand over is tested where it is defined. A test of the lines
+  `startJobs`'s call of `seedNightly`. What they hand over is tested where it is defined. A test of the lines
   themselves would need the composition to take a clock and a ledger of the test's own
   ([testing](../architecture/testing.md)).
+- Every workflow other than the last and the next nights that a deployment leaves under the replaced application
+  version, such as a reminder, an approved execution, a watch or a follow-up, still runs only once an operator moves it
+  with `scripts/workflows-move.ts` ([D85](../decisions/D85-dbos-transact-replaces-temporal-as-the-durable-engine.md)
+  item 2). A start does not move them, since it cannot tell whether the processes of the older version have stopped, and
+  a workflow moved while one of them still runs it would run in both.
 
 **Verified.** VERIFIED-PLACEHOLDER

@@ -34,9 +34,11 @@ export async function scheduleJob(
   if (tx) await write(tx);
   else await database().transaction(write);
 }
+/** The id of a job row's `scheduledJob` workflow on the durable engine. */
+export const jobWorkflowId = (id: string) => `job:${id}`;
 /** The `scheduledJob` workflow of a job row: idempotent by the job's natural id, waiting until its run time. */
 export const jobStart = (id: string, runAt: Date) => ({
   workflow: 'scheduledJob',
-  id: `job:${id}`,
+  id: jobWorkflowId(id),
   input: { id, dueAt: runAt.toISOString() },
 });
