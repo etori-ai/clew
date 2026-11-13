@@ -15,6 +15,7 @@
  * time, finds no timer and ends without a write (D86).
  */
 import { resolve } from 'node:path';
+import { parsePersonErasureArgs } from './person-erasure-args';
 import { closeDatabase } from '@clew/db';
 import { competenceForScripts } from '../apps/server/src/composition/competence';
 import { OPERATOR } from './competence-seed';
@@ -26,24 +27,13 @@ try {
 } catch {
   /* settings may come from the environment */
 }
-const args = process.argv.slice(2);
-const given = new Map<string, string>();
-let wellFormed = true;
-for (let i = 0; i < args.length && wellFormed; i++) {
-  const arg = args[i]!,
-    value = args[i + 1];
-  // An option given twice is refused, never read once: a copied line could otherwise erase the wrong person.
-  if (given.has(arg)) wellFormed = false;
-  else if (arg === '--confirm') given.set(arg, '');
-  else if (arg === '--person' && value !== undefined && !value.startsWith('--')) given.set(arg, args[++i]!);
-  else wellFormed = false;
-}
-const personId = given.get('--person');
-if (!wellFormed || !personId) {
+const args = parsePersonErasureArgs(process.argv.slice(2));
+if (!args) {
   console.error(USAGE);
   process.exit(2);
 }
-if (!given.has('--confirm')) {
+const { personId, confirmed } = args;
+if (!confirmed) {
   console.error(
     `Erasing person "${personId}" from the competence domain removes every holding they have and their competence cards, and cannot be undone. Run again with --confirm to erase.`,
   );

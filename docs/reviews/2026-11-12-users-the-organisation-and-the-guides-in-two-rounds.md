@@ -7,6 +7,12 @@ cited lines and each finding's state are on `0126fa9`, see Method
 Status: review; every finding was fixed on the product owner's word of 2026-11-12, and the thirteen questions were
 decided as the product owner asked, see Outcome
 
+The findings below use the decision and migration numbers of the reviewed branch. When merged with the
+follow-up dialogue, the sign-in and person-key decisions became [D121](../decisions/D121-a-sign-in-follows-the-identity-providers-session.md)
+and [D122](../decisions/D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md). The PR’s migrations
+0054–0058 became 0055–0059. Use the [operations runbook](../maintainers/reliability-operations.md) for current
+migration and deployment instructions.
+
 ## Question
 
 The product owner asked for a full and careful review of the whole flow: how users are handled, how the organisation
@@ -469,13 +475,13 @@ account, which Q8 settles. No fix needed new surface
 **The decisions.** Three are new records, `provisional` until something outside the repository has tested them
 ([D102](../decisions/D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)):
 
-- [D118](../decisions/D118-a-sign-in-follows-the-identity-providers-session.md) (Q9, L5): a sign-in follows the identity provider's session, and a sign-out there ends Clew's. Under
+- [D118](../decisions/D121-a-sign-in-follows-the-identity-providers-session.md) (Q9, L5): a sign-in follows the identity provider's session, and a sign-out there ends Clew's. Under
   OIDC the identity provider owns authentication policy, and forcing credentials at every sign-in defeats single
   sign-on and trains people to type their password more often. An organisation that wants a fresh prompt, on shared
   computers for example, sets it in its identity provider. Entra ID's only sign-out signal is front-channel, so Clew
   also answers OpenID Connect Front-Channel Logout 1.0; without it, signing out at Microsoft would leave the Clew
   session open for up to eight hours.
-- [D119](../decisions/D119-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) (Q11): Clew keys its own records about a person by the person's id. The id never changes and is never
+- [D119](../decisions/D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) (Q11): Clew keys its own records about a person by the person's id. The id never changes and is never
   reused, so a rename loses nothing and a reused name reaches nobody else's records. Moving the stored names at each
   rename would have fixed renames only, and only if every provisioner renamed a leaver first. The user name stays the
   key on the wire. An action started from a person's menu with an `execute` keeps its person, and once approved it is

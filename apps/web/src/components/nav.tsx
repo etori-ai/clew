@@ -6,6 +6,7 @@ import {
   Badge,
   CommandPalette,
   CommandPaletteInput,
+  ChatBubbleLeftRightIcon,
   HomeIcon,
   InboxIcon,
   PlusIcon,
@@ -18,6 +19,7 @@ import {
   createStaticSource,
   worstWord,
   type SearchableItem,
+  VisuallyHidden,
 } from '@clew/ui';
 import { today } from '@clew/calendar/dates';
 import { titled, useConversation } from './conversation-context';
@@ -33,7 +35,7 @@ import { SubRows, type ShellNav } from './shell';
 export type AdminSection = 'anslutningar' | 'modeller' | 'anvandare' | 'organisation' | 'utseende' | 'kompetens';
 /** What the rail marks as current: the place, and within the start page the conversation. */
 export interface RailCurrent {
-  surface: 'start' | 'todo' | 'calendar' | 'verktyg' | 'staff' | 'admin';
+  surface: 'start' | 'todo' | 'calendar' | 'verktyg' | 'staff' | 'units' | 'admin';
   conversationId?: string | null;
   /** The capability whose tool page is open (D42), so its row under Verktyg is marked. */
   view?: string | null;
@@ -78,7 +80,8 @@ type Found = ({ href: string } | { card: string }) & { detail: string; group: st
  * The rail (D112 item 1, board Sidebar, the `shell-side-nav` template): Ny fråga and Sök as its first rows, each with
  * its icon, so the rail's own collapse draws them as icons named by their labels as it does every row; Sök opens
  * Astryx's `CommandPalette` over the page, which finds conversations, work items, areas and tools. Then the places,
- * Hem, Att göra with how much needs the person, Kalender and a manager's Personal (D94); Verktyg, the views an
+ * Hem, Att göra with how much needs the person, Kalender and a manager's Personal (D94) and Dialogstöd (D116, amended:
+ * the header's Start has no row of its own, so Clew's places stand here once); Verktyg, the views an
  * administrator placed as tools (D40, each a page of its own, D42); then Samtal, the person's conversations, newest
  * first, in one disclosure, each with a dot only where the data says something about it (the answer being written, a
  * draft that waits for the person). At the foot Administration with its sections, collapsed until one of them is open.
@@ -106,7 +109,7 @@ export function useRail({
   const needsYou = needsYouOf(g).length;
   /** The conversation whose answer is being written now: the one on screen while a turn is on its way. */
   const answering = talk.pending ? (talk.conversation?.id ?? null) : null;
-  // The word (D54, artboard 3): the worst tone among the person's figures on Hem, "lugnt", "bevaka" or "behöver dig".
+  // The word (D54, artboard 3): the worst tone among the person's figures on Hem, "Lugnt", "Bevaka" or "Behöver dig", written as everywhere else.
   const word = useMemo(() => worstWord(areas.map(a => a.figure)), [areas]);
   // The search finds conversations, open work items, the areas and the tools from what the page already has: the same things the box's router finds without the model.
   const { source, byId } = useMemo(() => {
@@ -194,7 +197,15 @@ export function useRail({
             icon={InboxIcon}
             href="/todo"
             isSelected={current.surface === 'todo'}
-            endContent={needsYou ? <Badge variant="neutral" label={String(needsYou)} /> : undefined}
+            endContent={
+              needsYou ? (
+                <>
+                  <Badge variant="neutral" label={String(needsYou)} />
+                  {/* What the number counts, for a screen reader: the row reads "Att göra 2 behöver dig". */}
+                  <VisuallyHidden>behöver dig</VisuallyHidden>
+                </>
+              ) : undefined
+            }
           />
           <SideNavItem label="Kalender" icon="calendar" href="/calendar" isSelected={current.surface === 'calendar'} />
           {/* Personal (D94): a manager's people, a destination of its own; the server checks the assignments on every read. */}
@@ -204,6 +215,15 @@ export function useRail({
               icon={clewIcon.people}
               href="/staff"
               isSelected={current.surface === 'staff'}
+            />
+          )}
+          {/* Dialogstöd (D117, D118): the units a manager follows up and their dialogue; marked on every unit's page. */}
+          {manager && (
+            <SideNavItem
+              label="Dialogstöd"
+              icon={ChatBubbleLeftRightIcon}
+              href="/units"
+              isSelected={current.surface === 'units'}
             />
           )}
         </SideNavSection>

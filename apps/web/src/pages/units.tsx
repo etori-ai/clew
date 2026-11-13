@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import type { EntityList, EntitySection, EntitySource, SessionUser } from '@clew/contracts';
 import {
@@ -13,25 +14,30 @@ import {
   Skeleton,
   StatusDot,
   Table,
+  type TableColumn,
   Text,
   VStack,
   proportional,
   useMediaQuery,
+  useTableStickyColumns,
+  TONE_WORDS,
 } from '@clew/ui';
 import { entityDetailQuery, entityListQuery, entitySectionQuery } from '../queries';
 import { usePageTitle } from '../page-title';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { useRail } from '../components/nav';
 import { PageHeader } from '../components/page-header';
-import { ContentSkeleton } from '../components/loading';
+import { AttentionSkeleton, UnitsSkeleton } from '../components/loading';
 import { Summary, measureOf, summaryOf, toneWeight } from '../components/unit-figures';
 import { unitPageHref } from '../person-address';
+import { sourcePageHref } from '../talk-address';
 import { errorMessage } from '../query-policy';
 import { fieldText } from '../components/view';
 
 type Unit = EntityList['groups'][number]['entities'][number];
 type Answer = { data?: EntitySection; isPending: boolean; isError: boolean };
 type TableRow = { id: string; unit: Unit };
+type UnitColumn = TableColumn<TableRow>;
 const UNITS = '/units';
 // Each column keeps the width its heading and a figure with its word need, so a narrow window scrolls the table sideways
 // within itself (1.4.10's exception for a data table) instead of clipping the headings.
@@ -49,6 +55,14 @@ function Cell({ answer, source }: { answer: Answer; source: EntitySource }) {
   return row ? <Summary source={source} row={row} /> : <Text type="supporting">–</Text>;
 }
 
+/** A card's label on a phone, the column heading in one line: "Ekonomi · Avvikelse mot budget · Qlik". */
+const cardLabel = (source: EntitySource) => {
+  const measure = measureOf(source);
+  return [source.title, measure === source.title ? null : measure, source.own ? 'Clew' : source.source]
+    .filter(Boolean)
+    .join(' · ');
+};
+
 /** A column's heading: what the figure is ("Avvikelse mot budget") under the source's title, and where it comes from. */
 function SourceHeader({ source }: { source: EntitySource }) {
   const measure = measureOf(source);
@@ -64,6 +78,15 @@ function SourceHeader({ source }: { source: EntitySource }) {
 }
 
 /**
+ * One group's units as a table. The unit's name stays in view when a narrow window scrolls the figures sideways: a figure
+ * is never read without knowing which unit it is (the responsive-table pattern; Astryx's own pinned column).
+ */
+function UnitTable({ rows, columns }: { rows: TableRow[]; columns: UnitColumn[] }) {
+  const pinned = useTableStickyColumns<TableRow>({ startKeys: ['unit'] });
+  return <Table<TableRow> data={rows} idKey="id" density="balanced" plugins={{ pinned }} columns={columns} />;
+}
+
+/**
  * Dialogstöd (D117): the units the reader follows up side by side, their own and those of the managers who report to
  * them, in the groups the list of units gives ("Mina enheter", "Enheter under dig"). What needs a conversation comes
  * first: a line on top counts the units by the states that need action or watching, and within each group the units
@@ -75,7 +98,7 @@ function SourceHeader({ source }: { source: EntitySource }) {
 export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }) {
   const mobile = useMediaQuery(mobileQuery);
   const short = useMediaQuery(shortQuery);
-  const nav = useRail({ current: { surface: 'verktyg', view: null }, admin, manager: user.role === 'manager' });
+  const nav = useRail({ current: { surface: 'units' }, admin, manager: user.role === 'manager' });
   usePageTitle('Dialogstöd');
   const list = useQuery(entityListQuery('unit'));
   const groups = list.data?.groups.filter(g => g.entities.length) ?? [];
@@ -108,22 +131,29 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
   const ordered = (entities: Unit[]) =>
     settled ? [...entities].sort((a, b) => weightOf(b.key) - weightOf(a.key)) : entities;
 
-  // The line on top: per source and state, how many units it holds ("2 enheter · Ekonomi · Mot underskott").
-  const counts = new Map<string, { source: string; word: string; tone: 'alert' | 'warn'; units: number }>();
+  // The line on top: per source and state, the units it holds ("Ekonomi · Mot underskott – Bergsåkers skola, Hagaskolan").
+  const counts = new Map<string, { source: EntitySource; word: string; tone: 'alert' | 'warn'; units: Unit[] }>();
   if (settled)
     for (const u of units)
       for (const s of statesOf(u.key)) {
         const id = `${s.source.capability}:${s.word}`;
-        const c = counts.get(id) ?? {
-          source: s.source.title,
-          word: s.word,
-          tone: s.tone as 'alert' | 'warn',
-          units: 0,
-        };
-        c.units++;
+        const c = counts.get(id) ?? { source: s.source, word: s.word, tone: s.tone as 'alert' | 'warn', units: [] };
+        c.units.push(u);
         counts.set(id, c);
       }
-  const attention = [...counts.values()].sort((a, b) => toneWeight(b.tone) - toneWeight(a.tone) || b.units - a.units);
+  const attention = [...counts.values()].sort(
+    (a, b) => toneWeight(b.tone) - toneWeight(a.tone) || b.units.length - a.units.length,
+  );
+  /**
+   * Where a line's unit leads: into the source's own way in when that lies over the unit's page (the dialogue's
+   * `?dialog=`), else the unit's page; either way with Dialogstöd as the way back.
+   */
+  const wayInto = (unit: Unit, source: EntitySource) => {
+    const page = unitPageHref(unit.key, { from: UNITS });
+    if (!source.page?.href.startsWith('?')) return page;
+    const [pathname, search = ''] = page.split('?');
+    return sourcePageHref(source.page, { key: unit.key }, { pathname: pathname!, search }) ?? page;
+  };
 
   const unitLink = (unit: Unit) => (
     <Link href={unitPageHref(unit.key, { from: UNITS })} weight="semibold">
@@ -131,7 +161,10 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
     </Link>
   );
 
-  const summaryLine = !settled ? null : attention.length ? (
+  // Until every source has answered, the line on top keeps its place, so the tables do not jump down when it arrives.
+  const summaryLine = !settled ? (
+    <AttentionSkeleton />
+  ) : attention.length ? (
     <Card padding={4}>
       <VStack gap={2} as="section" aria-labelledby="units-attention">
         <Heading level={2} id="units-attention">
@@ -139,10 +172,20 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
         </Heading>
         <VStack gap={1}>
           {attention.map(a => (
-            <HStack key={`${a.source}:${a.word}`} gap={2} vAlign="center">
-              <StatusDot variant={a.tone === 'alert' ? 'error' : 'warning'} label={a.word} />
+            <HStack key={`${a.source.capability}:${a.word}`} gap={2} vAlign="start" wrap="wrap">
+              {/* The dot names the level in Clew's words (D54), the line the source's own word: a screen reader hears each once. */}
+              <StatusDot
+                variant={a.tone === 'alert' ? 'error' : 'warning'}
+                label={a.tone === 'alert' ? TONE_WORDS.alert.word : TONE_WORDS.warn.word}
+              />
               <Text>
-                {a.units} {a.units === 1 ? 'enhet' : 'enheter'} · {a.source} · {a.word}
+                {a.source.title} · {a.word} –{' '}
+                {a.units.map((u, i) => (
+                  <Fragment key={u.key}>
+                    {i > 0 && ', '}
+                    <Link href={wayInto(u, a.source)}>{u.name}</Link>
+                  </Fragment>
+                ))}
               </Text>
             </HStack>
           ))}
@@ -155,25 +198,40 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
     </Text>
   );
 
+  // Every group's table has the same columns at the same widths, so a figure stands under the same figure in "Mina
+  // enheter" and "Enheter under dig" whatever each group has: a column is there when any unit has something in it, and
+  // a unit without is "–".
+  const columns: UnitColumn[] = [
+    { key: 'unit', header: 'Enhet', width: UNIT_WIDTH, renderCell: r => unitLink(r.unit) },
+    ...sources
+      .map((s, si) => ({ s, si }))
+      .filter(({ si }) => !settled || units.some(u => !!rowIn(answerOf(u.key, si)) || silent(answerOf(u.key, si))))
+      .map(({ s, si }) => ({
+        key: `source:${s.capability}`,
+        header: <SourceHeader source={s} />,
+        width: SOURCE_WIDTH,
+        renderCell: (r: TableRow) => <Cell answer={answerOf(r.unit.key, si)} source={s} />,
+      })),
+  ];
+
   const body = list.isError ? (
     <Text as="p" role="alert">
       {errorMessage(list.error, 'Enheterna kunde inte hämtas just nu.')}
     </Text>
   ) : list.isPending || (first && detail.isPending) ? (
-    <ContentSkeleton heading={false} />
+    <UnitsSkeleton />
   ) : !units.length ? (
     <EmptyState headingLevel={2} title="Du följer inte upp någon enhet" description="Dialogstödet är för chefer." />
   ) : (
     <>
       {summaryLine}
       {groups.map(g => {
-        // A source with nothing for any unit of the group (the round of talks for the units below) has no column there.
+        // A source with nothing for any unit of the group (the round of talks for the units below) has no row on its card.
         const shown = sources
           .map((s, si) => ({ s, si }))
           .filter(
             ({ si }) => !settled || g.entities.some(u => !!rowIn(answerOf(u.key, si)) || silent(answerOf(u.key, si))),
           );
-        const entities = ordered(g.entities);
         return (
           <VStack key={g.id} gap={3} as="section" aria-labelledby={`units-${g.id}`}>
             <Heading level={2} id={`units-${g.id}`}>
@@ -182,13 +240,14 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
             {mobile ? (
               // On a phone a card per unit, the figures one under the other: a table would put them off the screen.
               <VStack gap={3}>
-                {entities.map(unit => (
+                {ordered(g.entities).map(unit => (
                   <Card key={unit.key} padding={4}>
                     <VStack gap={3}>
                       {unitLink(unit)}
                       <MetadataList label={{ position: 'top' }}>
                         {shown.map(({ s, si }) => (
-                          <MetadataListItem key={s.capability} label={s.title}>
+                          // The measure and its source as the table's heading names them: a figure is never bare.
+                          <MetadataListItem key={s.capability} label={cardLabel(s)}>
                             <Cell answer={answerOf(unit.key, si)} source={s} />
                           </MetadataListItem>
                         ))}
@@ -198,20 +257,7 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
                 ))}
               </VStack>
             ) : (
-              <Table<TableRow>
-                data={entities.map(unit => ({ id: unit.key, unit }))}
-                idKey="id"
-                density="balanced"
-                columns={[
-                  { key: 'unit', header: 'Enhet', width: UNIT_WIDTH, renderCell: (r: TableRow) => unitLink(r.unit) },
-                  ...shown.map(({ s, si }) => ({
-                    key: `source:${s.capability}`,
-                    header: <SourceHeader source={s} />,
-                    width: SOURCE_WIDTH,
-                    renderCell: (r: TableRow) => <Cell answer={answerOf(r.unit.key, si)} source={s} />,
-                  })),
-                ]}
-              />
+              <UnitTable rows={ordered(g.entities).map(unit => ({ id: unit.key, unit }))} columns={columns} />
             )}
           </VStack>
         );

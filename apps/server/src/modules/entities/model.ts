@@ -32,7 +32,7 @@ export interface Reach {
 }
 /**
  * The directory (composition: the people module's `staffUsecases`). `person` finds an active person of the reader's
- * organisation by Clew's key, their id (D119), with the unit they act in; undefined when there is no such active person.
+ * organisation by Clew's key, their id (D122), with the unit they act in; undefined when there is no such active person.
  */
 export interface Directory {
   reach(persona: AuthenticatedContext): Promise<Reach>;
@@ -57,7 +57,7 @@ export type SourceRead = (
   input: { keys: string[] },
   signal: AbortSignal,
 ) => Promise<unknown>;
-/** "Behöver dig" (D97 item 5): the reader's cards whose rows name this entity, by Clew's key (D119). */
+/** "Behöver dig" (D97 item 5): the reader's cards whose rows name this entity, by Clew's key (D122). */
 export type Cards = (persona: AuthenticatedContext, subject: Subject) => Promise<EntityCard[]>;
 /** A card of the reader's with the entities it names among those asked, by Clew's key. */
 export type NamedCard = EntityCard & { subjects: Subject[] };

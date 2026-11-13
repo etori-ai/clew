@@ -1,12 +1,12 @@
 import type { AuthenticatedContext, SiteHeaderView } from '@clew/contracts';
 import { audiencedActorOf, type HeaderAnswer, type Registry } from '@clew/connectors';
-import { clewsStart, withClewsStart } from '../header-start';
+import { CLEWS_START, withClewsStart } from '../header-start';
 
 /**
  * The shared header for a signed-in person (D88): the answer of the connector an administrator chose to give it
  * (`Registry.header`), or Clew's default, the site's name and Start, when no connector gives the person one. Platform
- * code beside the registry, like the menu and the tools: no module owns the header, a connector does, except Start and
- * the row under it, which are Clew's own pages for the person (D116, `header-start.ts`).
+ * code beside the registry, like the menu and the tools. The connector gives the shared places. Clew adds its own
+ * Start link first (D116, `header-start.ts`).
  *
  * The header never blocks a page. The browser draws the default band at once and fills the places in when this
  * answers; here the connector gets a short budget (`HEADER_TIMEOUT_MS`), and what it answered per person is kept and
@@ -32,7 +32,7 @@ import { clewsStart, withClewsStart } from '../header-start';
  * in this process only.
  */
 export const DEFAULT_HEADER: SiteHeaderView = {
-  menu: { version: 1, site: { name: 'Startsidan', href: '/' }, items: [{ id: 'start', label: 'Start', href: '/' }] },
+  menu: { version: 1, site: { name: 'Startsidan', href: '/' }, items: [CLEWS_START] },
   logo: null,
   source: null,
 };
@@ -67,12 +67,9 @@ interface Kept {
   asked: number;
   refreshing: boolean;
 }
-/** The holder's answer as the band draws it, with Clew's Start and the row under it first, for the person's role. */
-const viewOf = (
-  found: Extract<HeaderAnswer, { status: 'answered' }>,
-  role: AuthenticatedContext['role'],
-): SiteHeaderView => ({
-  menu: { version: 1, site: found.output.site, items: withClewsStart(found.output.items, clewsStart(role)) },
+/** The holder's answer as the band draws it, with Clew's Start first. */
+const viewOf = (found: Extract<HeaderAnswer, { status: 'answered' }>): SiteHeaderView => ({
+  menu: { version: 1, site: found.output.site, items: withClewsStart(found.output.items) },
   logo: found.output.logo ?? null,
   source: { id: found.connector.id, label: found.connector.source },
 });
@@ -98,8 +95,8 @@ export function siteHeaders({ registry, clock }: SiteHeaderDeps) {
    * drops the entry the call refreshed and keeps nothing. A failure takes nothing's place: the entry it refreshed stays,
    * asked again a minute later, and when nothing is kept at all the default is kept for the holder until then.
    */
-  function settle(key: string, role: AuthenticatedContext['role'], answer: HeaderAnswer, over?: Kept): SiteHeaderView {
-    if (answer.status === 'answered') return keep(key, viewOf(answer, role), answer.connector.id);
+  function settle(key: string, answer: HeaderAnswer, over?: Kept): SiteHeaderView {
+    if (answer.status === 'answered') return keep(key, viewOf(answer), answer.connector.id);
     if (answer.status === 'denied') return keep(key, DEFAULT_HEADER, answer.connector.id);
     const kept = cache.get(key);
     if (over && kept === over) {
@@ -137,7 +134,7 @@ export function siteHeaders({ registry, clock }: SiteHeaderDeps) {
         const over = kept;
         over.refreshing = true;
         void ask(persona).then(
-          answer => settle(key, persona.role, answer, over),
+          answer => settle(key, answer, over),
           () => {
             if (cache.get(key) === over) cache.delete(key);
           },
@@ -145,7 +142,7 @@ export function siteHeaders({ registry, clock }: SiteHeaderDeps) {
       }
       return kept.view;
     }
-    return settle(key, persona.role, await ask(persona));
+    return settle(key, await ask(persona));
   }
   /** How many headers the process keeps: for tests. */
   const kept = () => cache.size;

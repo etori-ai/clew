@@ -1,6 +1,6 @@
 /**
  * Erase one person or unit from every card (D97): the `subject` of each card row that names it and the card's own, with
- * the index from entity to cards, in every person's stream. Clew names a person on its cards by the person's id (D119),
+ * the index from entity to cards, in every person's stream. Clew names a person on its cards by the person's id (D122),
  * so one erasure reaches every card about them, whatever user names they have held, and never the cards of someone who
  * holds one of those names now. The rows' text stays as the source wrote it, and a source that still names the entity
  * names it again on its next scan, so erase it in the source too. Runs inside the app container with the server's local

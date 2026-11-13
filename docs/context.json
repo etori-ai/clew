@@ -223,7 +223,7 @@
       "number": 5,
       "path": "docs/decisions/D05-oidc-and-oauth-only-identification-path.md",
       "title": "D5 · OIDC and OAuth 2.1 with JWT access tokens are the only identification path",
-      "status": "accepted, refined by [D118](D118-a-sign-in-follows-the-identity-providers-session.md) (2026-11-12, provisional: a sign-in follows the identity provider's session, and a sign-out there ends Clew's)",
+      "status": "accepted, refined by [D121](D121-a-sign-in-follows-the-identity-providers-session.md) (2026-11-12, provisional: a sign-in follows the identity provider's session, and a sign-out there ends Clew's)",
       "date": "2026-11-03",
       "area": "identity"
     },
@@ -1114,7 +1114,7 @@
       "number": 96,
       "path": "docs/decisions/D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md",
       "title": "D96 · Talks is Clew's first owned domain: the round and action points, behind a profile a connector can answer",
-      "status": "accepted, built 2026-11-10 (the round, action points, the profile and its fixture; see \"As built\"); synthetic data only until questions 6 and 11 below are answered; item 1 amended by [D99](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md) (2026-11-10): a person is due a talk with the manager they report to in the organisation tree; item 7 amended by [D111](D111-where-something-opens-is-decided-by-what-it-is.md) (2026-11-11, provisional, rule 5): the talk lies over the page it was opened on; items 2 and 4 and As built item 4 amended 2026-11-12 in the fixes of the review of users and the organisation (Q12): a person has one talk a round however many current managers they have, a booking any of them made through Clew counts as booked for all of them, any of them marks, moves or undoes the held mark, and a manager ticks off only their own action points and a manager's point whose owner no longer manages the person; question 6 of the checklist amended the same day (M2): every current manager reads the record, and a former manager reads nothing about the person but the action points they own, which stay on their Hem until done; item 8 amended by [D119](D119-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) (2026-11-12, provisional): rows stay keyed on the user name on the wire, a user name can be renamed and reused, and Clew keys its own records about a person by the person's id",
+      "status": "accepted, built 2026-11-10 (the round, action points, the profile and its fixture; see \"As built\"); synthetic data only until questions 6 and 11 below are answered; item 1 amended by [D99](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md) (2026-11-10): a person is due a talk with the manager they report to in the organisation tree; item 7 amended by [D111](D111-where-something-opens-is-decided-by-what-it-is.md) (2026-11-11, provisional, rule 5): the talk lies over the page it was opened on; items 2 and 4 and As built item 4 amended 2026-11-12 in the fixes of the review of users and the organisation (Q12): a person has one talk a round however many current managers they have, a booking any of them made through Clew counts as booked for all of them, any of them marks, moves or undoes the held mark, and a manager ticks off only their own action points and a manager's point whose owner no longer manages the person; question 6 of the checklist amended the same day (M2): every current manager reads the record, and a former manager reads nothing about the person but the action points they own, which stay on their Hem until done; item 8 amended by [D122](D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) (2026-11-12, provisional): rows stay keyed on the user name on the wire, a user name can be renamed and reused, and Clew keys its own records about a person by the person's id",
       "date": "2026-11-10",
       "area": "product, integrations"
     },
@@ -1123,7 +1123,7 @@
       "number": 97,
       "path": "docs/decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md",
       "title": "D97 · A source says what its rows are about, and Clew places them",
-      "status": "accepted as the direction (product owner, 2026-11-10), built 2026-11-10 (see \"As built\"); the items under \"Open\" were taken provisionally for the build and are not decided; the placement of a person's action in its source's section (amended 2026-11-11) replaced by [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) item 5 (2026-11-11: every action in the page's header); item 9 amended by [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md) (2026-11-11, provisional: a person's title is one line Clew holds, pushed as SCIM's `title`; phone and employment facts are still read from their source); item 5 and its amendments of 2026-11-11 amended by [D111](D111-where-something-opens-is-decided-by-what-it-is.md) (2026-11-11, provisional): a card opens beside the page it is on, a person is a page only, and a card's review and a person's talk lie over the page they were opened on; item 9 and the build's choice that employment facts are not shown amended by [D114](D114-person-profiles-show-employments-and-categorised-phone-numbers.md) (2026-11-12, provisional): Clew holds a person's phone numbers and current employments, pushed over SCIM, and the person's page shows them; the two open items on keys settled by [D119](D119-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) (2026-11-12, provisional): the key on the wire is the user name, and a person's key on card rows is Clew's person id",
+      "status": "accepted as the direction (product owner, 2026-11-10), built 2026-11-10 (see \"As built\"); the items under \"Open\" were taken provisionally for the build and are not decided; the placement of a person's action in its source's section (amended 2026-11-11) replaced by [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) item 5 (2026-11-11: every action in the page's header); item 9 amended by [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md) (2026-11-11, provisional: a person's title is one line Clew holds, pushed as SCIM's `title`; phone and employment facts are still read from their source); item 5 and its amendments of 2026-11-11 amended by [D111](D111-where-something-opens-is-decided-by-what-it-is.md) (2026-11-11, provisional): a card opens beside the page it is on, a person is a page only, and a card's review and a person's talk lie over the page they were opened on; item 9 and the build's choice that employment facts are not shown amended by [D114](D114-person-profiles-show-employments-and-categorised-phone-numbers.md) (2026-11-12, provisional): Clew holds a person's phone numbers and current employments, pushed over SCIM, and the person's page shows them; the two open items on keys settled by [D122](D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) (2026-11-12, provisional): the key on the wire is the user name, and a person's key on card rows is Clew's person id",
       "date": "2026-11-10",
       "area": "integrations, ui"
     },
@@ -1177,7 +1177,7 @@
       "number": 101,
       "path": "docs/decisions/D101-a-provisioner-pushes-the-organisation-first-and-adds-before-it-removes-and-a-unit-belongs-to-one-organisation.md",
       "title": "D101 · A provisioner pushes the organisation first and adds before it removes, and a unit belongs to one organisation",
-      "status": "provisional (product owner, 2026-11-11: the source can deliver the organisation as a list of its own, the organisation goes in before the people, and every finding of the review is fixed, small and large), built 2026-11-11; items 5 and 6 are choices made in the build and stand until the product owner says otherwise; no provisioner has run against a real source yet; recorded as accepted until 2026-11-12, when the fixes of the review of users and the organisation made it provisional (Q10): accepted once a provisioner outside the team has pushed a run in this order from a real source; items 2 and 3 amended 2026-11-11 after the [review of the operations guide and the source's lifecycle](../reviews/2026-11-11-provisioning-operations-guide-and-source-lifecycle.md) and the [full review of the SCIM server](../reviews/2026-11-11-scim-full-review.md), and 2026-11-12 after the [outside review of the merged SCIM server](../reviews/2026-11-12-outside-review-of-the-merged-scim-server.md) and the [review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md): leavers are deactivated straight after the people rows are checked, returners are activated last, a fault in one row is that row's alone, and the guard covers people, units, role groups and directory groups; item 4 amended 2026-11-12 (G6): the exact key another organisation holds answers 409 `uniqueness`, and the other key of that unit 400 `invalidValue`; and (K4): a mapping change holds the row of the group it found and then the organisation's mappings, and is decided on the organisation's group that holds its key once both are held, and a row is removed whatever holds its key; item 8 amended 2026-11-12 (Q4): unit ids are compared by UTF-16 code unit, with no locale; item 9 amended by [D119](D119-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) (2026-11-12, provisional): a reused name reaches only what arrives after the reuse, and by [D120](D120-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md) (2026-11-12, provisional): an operator erases a deactivated person's record when the organisation decides",
+      "status": "provisional (product owner, 2026-11-11: the source can deliver the organisation as a list of its own, the organisation goes in before the people, and every finding of the review is fixed, small and large), built 2026-11-11; items 5 and 6 are choices made in the build and stand until the product owner says otherwise; no provisioner has run against a real source yet; recorded as accepted until 2026-11-12, when the fixes of the review of users and the organisation made it provisional (Q10): accepted once a provisioner outside the team has pushed a run in this order from a real source; items 2 and 3 amended 2026-11-11 after the [review of the operations guide and the source's lifecycle](../reviews/2026-11-11-provisioning-operations-guide-and-source-lifecycle.md) and the [full review of the SCIM server](../reviews/2026-11-11-scim-full-review.md), and 2026-11-12 after the [outside review of the merged SCIM server](../reviews/2026-11-12-outside-review-of-the-merged-scim-server.md) and the [review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md): leavers are deactivated straight after the people rows are checked, returners are activated last, a fault in one row is that row's alone, and the guard covers people, units, role groups and directory groups; item 4 amended 2026-11-12 (G6): the exact key another organisation holds answers 409 `uniqueness`, and the other key of that unit 400 `invalidValue`; and (K4): a mapping change holds the row of the group it found and then the organisation's mappings, and is decided on the organisation's group that holds its key once both are held, and a row is removed whatever holds its key; item 8 amended 2026-11-12 (Q4): unit ids are compared by UTF-16 code unit, with no locale; item 9 amended by [D122](D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) (2026-11-12, provisional): a reused name reaches only what arrives after the reuse, and by [D120](D120-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md) (2026-11-12, provisional): an operator erases a deactivated person's record when the organisation decides",
       "date": "2026-11-11",
       "area": "identity"
     },
@@ -1312,7 +1312,7 @@
       "number": 116,
       "path": "docs/decisions/D116-start-and-the-row-under-it-are-clews.md",
       "title": "D116 · Start and the row under it are Clew's; the intranet keeps the other places",
-      "status": "provisional (Oliver Borgström, 2026-11-13; built on the branch `start-is-clews`, tested by nothing outside the repository)",
+      "status": "provisional (Oliver Borgström, 2026-11-13; built on the branch `start-is-clews`, tested by nothing outside the repository; amended the same day: Start has no row of pages, the rail holds Clew's places once, Dialogstöd joins the rail as an exception to the freeze, D101, at Oliver Borgström's choice)",
       "date": "2026-11-13",
       "area": "ui, integrations"
     },
@@ -1326,22 +1326,22 @@
       "area": "product, integrations"
     },
     {
-      "key": "D118-a-sign-in-follows-the-identity-providers-session",
+      "key": "D118-the-follow-up-dialogue-is-an-owned-domain",
       "number": 118,
-      "path": "docs/decisions/D118-a-sign-in-follows-the-identity-providers-session.md",
-      "title": "D118 · A sign-in follows the identity provider's session, and a sign-out there ends Clew's",
-      "status": "provisional (taken in the fixes of [the review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md), Q9, L5 and L9, on the product owner's word of 2026-11-12 to fix every finding and take every open decision), built 2026-11-12; accepted once an organisation's own identity provider, outside the development stack, has signed a person in to Clew by single sign-on and ended that Clew session with its own sign-out",
-      "date": "2026-11-12",
-      "area": "identity"
+      "path": "docs/decisions/D118-the-follow-up-dialogue-is-an-owned-domain.md",
+      "title": "D118 · The follow-up dialogue is an owned domain: assessments and activities per unit, areas and questions as configuration",
+      "status": "provisional (Oliver Borgström, 2026-11-13; built on the branch `followup-dialogue`, tested by nothing outside the repository; a new owned domain and a new drawer, built as an exception to the freeze on new surface, D101, at Oliver Borgström's choice; checklist questions 6, 11 and 12 are open)",
+      "date": "2026-11-13",
+      "area": "product"
     },
     {
-      "key": "D119-clew-keys-its-own-records-about-a-person-by-the-persons-id",
+      "key": "D119-key-figures-per-unit-come-through-one-vendor-neutral-profile",
       "number": 119,
-      "path": "docs/decisions/D119-clew-keys-its-own-records-about-a-person-by-the-persons-id.md",
-      "title": "D119 · Clew keys its own records about a person by the person's id",
-      "status": "provisional (taken in the fixes of [the review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md), Q11, on the product owner's word of 2026-11-12 to fix every finding and take every open decision), built 2026-11-12; accepted once a directory outside the team has renamed a person and given a leaver's name to someone else, and the rows that a source not written for Clew sent under those names reached the right people",
-      "date": "2026-11-12",
-      "area": "identity, integrations"
+      "path": "docs/decisions/D119-key-figures-per-unit-come-through-one-vendor-neutral-profile.md",
+      "title": "D119 · Key figures per unit come through one vendor-neutral profile",
+      "status": "proposed (Oliver Borgström asked for it on 2026-11-13; nothing built; the source, the history and the class of the data are open, and building it needs the product owner's word on the freeze, D101)",
+      "date": "2026-11-13",
+      "area": "integrations"
     },
     {
       "key": "D120-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision",
@@ -1351,6 +1351,24 @@
       "status": "provisional (taken in the fixes of [the review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md), Q7, L3, P4 and R3, on the product owner's word of 2026-11-12 to fix every finding and take every open decision), the nightly clean-up built 2026-11-12 and `scripts/person-erase.ts` 2026-11-13; accepted once the clean-up has run in an installation outside the development stack and an organisation has erased a leaver's record with the scripts under its own retention rules",
       "date": "2026-11-12",
       "area": "identity, platform"
+    },
+    {
+      "key": "D121-a-sign-in-follows-the-identity-providers-session",
+      "number": 121,
+      "path": "docs/decisions/D121-a-sign-in-follows-the-identity-providers-session.md",
+      "title": "D121 · A sign-in follows the identity provider's session, and a sign-out there ends Clew's",
+      "status": "provisional (taken in the fixes of [the review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md), Q9, L5 and L9, on the product owner's word of 2026-11-12 to fix every finding and take every open decision), built 2026-11-12; accepted once an organisation's own identity provider, outside the development stack, has signed a person in to Clew by single sign-on and ended that Clew session with its own sign-out",
+      "date": "2026-11-12",
+      "area": "identity"
+    },
+    {
+      "key": "D122-clew-keys-its-own-records-about-a-person-by-the-persons-id",
+      "number": 122,
+      "path": "docs/decisions/D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md",
+      "title": "D122 · Clew keys its own records about a person by the person's id",
+      "status": "provisional (taken in the fixes of [the review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md), Q11, on the product owner's word of 2026-11-12 to fix every finding and take every open decision), built 2026-11-12; accepted once a directory outside the team has renamed a person and given a leaver's name to someone else, and the rows that a source not written for Clew sent under those names reached the right people",
+      "date": "2026-11-12",
+      "area": "identity, integrations"
     }
   ],
   "documents": [
@@ -1943,14 +1961,14 @@
       "headings": []
     },
     {
-      "path": "docs/decisions/D118-a-sign-in-follows-the-identity-providers-session.md",
-      "title": "D118 · A sign-in follows the identity provider's session, and a sign-out there ends Clew's",
+      "path": "docs/decisions/D118-the-follow-up-dialogue-is-an-owned-domain.md",
+      "title": "D118 · The follow-up dialogue is an owned domain: assessments and activities per unit, areas and questions as configuration",
       "category": "decision-history",
       "headings": []
     },
     {
-      "path": "docs/decisions/D119-clew-keys-its-own-records-about-a-person-by-the-persons-id.md",
-      "title": "D119 · Clew keys its own records about a person by the person's id",
+      "path": "docs/decisions/D119-key-figures-per-unit-come-through-one-vendor-neutral-profile.md",
+      "title": "D119 · Key figures per unit come through one vendor-neutral profile",
       "category": "decision-history",
       "headings": []
     },
@@ -1963,6 +1981,18 @@
     {
       "path": "docs/decisions/D120-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md",
       "title": "D120 · Clew empties expired sign-in data itself, and a leaver's retention is the organisation's decision",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D121-a-sign-in-follows-the-identity-providers-session.md",
+      "title": "D121 · A sign-in follows the identity provider's session, and a sign-out there ends Clew's",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md",
+      "title": "D122 · Clew keys its own records about a person by the person's id",
       "category": "decision-history",
       "headings": []
     },

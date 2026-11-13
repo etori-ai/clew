@@ -27,7 +27,7 @@ export interface SearchDeps {
   clock: () => Date;
   budget?: Partial<SearchBudget>;
   /**
-   * Who holds these user names now in the reader's organisation (D119, composition: the people module's user reads): a
+   * Who holds these user names now in the reader's organisation (D122, composition: the people module's user reads): a
    * hit names a person by the source's key, and the list by Clew's. Absent: a hit names no person.
    */
   people?: { holders(readerId: string, userNames: readonly string[]): Promise<Map<string, string>> };

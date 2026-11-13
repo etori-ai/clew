@@ -2433,7 +2433,7 @@ Example:
 
 #### `capabilities[].view.subject`
 
-The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it, a person through the id of whoever of the reader's organisation holds the user name when the read is answered (D119); a record without the property, or whose user name nobody there holds, links nowhere.
+The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it, a person through the id of whoever of the reader's organisation holds the user name when the read is answered (D122); a record without the property, or whose user name nobody there holds, links nowhere.
 
 - Type: object
 - optional (table, list, detail only)

@@ -4,7 +4,7 @@ import type { PersonKeys } from '../apps/server/src/threads/model';
 /** A user name as Clew compares it: without regard to case, in its composed form (NFC), as a stored one is. */
 const folded = (name: string) => name.normalize('NFC').toLowerCase();
 /**
- * Whose a source's key is (D119), over the memory directory of the unit tests: what `composition/person-keys.ts` reads
+ * Whose a source's key is (D122), over the memory directory of the unit tests: what `composition/person-keys.ts` reads
  * from the people table. A user name names whoever of the reader's organisation holds it now, active or not, compared
  * without regard to case and in its composed form; two holders of spellings that compare alike leave it naming nobody,
  * and a reader the directory does not hold is answered nothing. `enabled` is the erasure's check: undefined for an id

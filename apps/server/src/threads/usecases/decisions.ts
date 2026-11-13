@@ -33,7 +33,7 @@ export interface CardDecisionsDeps {
       /** The person's answers to the asks (D112), already in `payload`; the audit row names them. */
       asked?: Record<string, string>;
       /**
-       * The person a started action is about (D119): `payload[param]` is the user name `personId` held when the person
+       * The person a started action is about (D122): `payload[param]` is the user name `personId` held when the person
        * decided, and dispatch checks that it still is.
        */
       subject?: { param: string; personId: string };
@@ -41,7 +41,7 @@ export interface CardDecisionsDeps {
   ): Promise<unknown>;
   clock: () => Date;
   /**
-   * Whose a source's key is (D119): a started action's person from Clew's key to the user name now, and the people a
+   * Whose a source's key is (D122): a started action's person from Clew's key to the user name now, and the people a
    * read's records name to their ids. Absent: a started action about a person cannot be decided, and a record names nobody.
    */
   people?: PersonKeys;
@@ -79,7 +79,7 @@ export function cardDecisions({ read, registry, run, approve, clock, documentPre
     const asks = found.capability.kind === 'read' ? [] : asksFor(found.capability, givenBy(found.capability, action));
     const answered = answersOf(asks, values, clock().toISOString(), found.capability.input);
     if ('problem' in answered) throw new InputError(answered.problem);
-    // A card started from an entity's menu keeps its person by id, in the input property its topic names (D119). The
+    // A card started from an entity's menu keeps its person by id, in the input property its topic names (D122). The
     // capability must still take the person there, or the card's id would reach the source as if it were a user name;
     // the source is sent the user name the person has as this is decided.
     const started = startedDecision(t.topic, action);
@@ -116,14 +116,14 @@ export function cardDecisions({ read, registry, run, approve, clock, documentPre
     if (found.capability.kind !== 'execute') {
       const output = await run(persona, action.capability, payload),
         view = registry.viewFor(persona, action.capability);
-      // A record that names a person links to them by id (D119).
+      // A record that names a person links to them by id (D122).
       return {
         kind: found.capability.kind,
         output,
         ...(view ? { view: await viewWithPeople(people, persona, view, output) } : {}),
       };
     }
-    // A started action that dispatch refused because its user name had moved to someone else (D119) is decided again,
+    // A started action that dispatch refused because its user name had moved to someone else (D122) is decided again,
     // as a new decision: the person decides on the user name the person has now.
     const refused = t.execution?.state === 'failed' && t.execution.reason === SUBJECT_CHANGED;
     const previous = t.execution && !t.execution.compensates && !refused ? t.execution : undefined;

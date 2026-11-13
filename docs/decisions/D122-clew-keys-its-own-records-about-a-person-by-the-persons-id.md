@@ -1,4 +1,4 @@
-# D119 · Clew keys its own records about a person by the person's id
+# D122 · Clew keys its own records about a person by the person's id
 
 **Status:** provisional (taken in the fixes of [the review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md), Q11, on the product owner's word of 2026-11-12 to fix every finding and take every open decision), built 2026-11-12; accepted once a directory outside the team has renamed a person and given a leaver's name to someone else, and the rows that a source not written for Clew sent under those names reached the right people · **Date:** 2026-11-12 · **Area:** identity, integrations
 
@@ -94,11 +94,12 @@ user name, so a rename separated a person from the cards about them and a reuse 
    that the source knows and that never changes, such as the directory's `externalId`, stays an
    [open question](../maintainers/open-questions.md#waiting-for-the-product-owner), in its row on `Actor`.
 7. **Erasure is by the id.** `bun scripts/subject-erase.ts person <person id> --confirm`,
-   `bun scripts/talks-erase.ts --person <person id> --confirm` and
-   `bun scripts/competence-erase.ts --person <person id> --confirm` take the person's id, never a user name. An id the
+   `bun scripts/talks-erase.ts --person <person id> --confirm`,
+   `bun scripts/competence-erase.ts --person <person id> --confirm` and
+   `bun scripts/dialogue-erase.ts --person <person id> --confirm` take the person's id, never a user name. An id the
    people table does not hold is refused, and so is a person who is still active, since a person is erased only once
-   the source has deactivated them (D120 item 3); nothing is erased or audited for either. `talks-erase` and
-   `competence-erase` refuse an option given twice or any other argument, as `person-erase` does, so a copied line
+   the source has deactivated them (D120 item 3); nothing is erased or audited for either. `talks-erase`,
+   `competence-erase` and `dialogue-erase` refuse an option given twice or any other argument, as `person-erase` does, so a copied line
    cannot erase the wrong person (2026-11-13). One erasure reaches every card about the person, whatever user names
    they have held, and never the cards of someone who holds one of those names now. The rows' text stays as the source
    wrote it. `competence-erase` also removes the cards the competence scan put in the person's stream, each with one
@@ -157,14 +158,14 @@ in-memory double to the same; `tests/db/postgres-entity-keys.test.ts` opens a pe
 `keyedDrafts` and `viewWithPeople` in `apps/server/src/threads/usecases/keys.ts`; `keyedItems`, `startedTopic`,
 `startedDecision` and `takesStarted` in `apps/server/src/threads/domain.ts`; `started.ts` and `decisions.ts` in
 `apps/server/src/threads/usecases/`; `stillNamed` in the executions module; search's `keyedHits`; the talks seam's
-`keyIndex`. Migration `0054_person_keys_and_participants.sql` adds `execution.subject` and `proposal.participant_id`.
-Migration `0056_person_user_name_nfc.sql` adds the index `auth_person_user_name_nfc` on the expression `holders`
+`keyIndex`. Migration `0055_person_keys_and_participants.sql` adds `execution.subject` and `proposal.participant_id`.
+Migration `0057_person_user_name_nfc.sql` adds the index `auth_person_user_name_nfc` on the expression `holders`
 compares (item 2), which the unique index on user names cannot serve, since it does not fold composition. `holders`
 looks each name up through it on its own, in a lateral subquery that stops at two holders, which are enough to name
 nobody: as one join of every name asked, a list of a few hundred names, as a manager's refresh or a declared view asks,
 was planned as a read of every person. A resolution therefore reads the holders of the names asked, however many;
 until 2026-11-13 every resolution read every person in the installation. `tests/db/user-reads.test.ts` checks the
-plans for a few names and for 300 on a database of a thousand people per organisation. Migration 0058 brings older
+plans for a few names and for 300 on a database of a thousand people per organisation. Migration 0059 brings older
 stored user names into the NFC form SCIM and sign-in compare. Each person keeps their id. Two people whose names
 would become equal need distinct names from the source owner before the upgrade can proceed
 ([upgrade and recovery](../maintainers/reliability-operations.md#upgrading-scim-user-names)).

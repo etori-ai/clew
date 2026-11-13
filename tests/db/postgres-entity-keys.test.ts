@@ -11,7 +11,7 @@ import { entityActionUsecases } from '../../apps/server/src/modules/entities/act
 import { entityRoutes } from '../../apps/server/src/routes/entities';
 
 /**
- * A person's address on PostgreSQL (D97, D119, K3 of the 2026-11-12 review): the entities routes over the people module's
+ * A person's address on PostgreSQL (D97, D122, K3 of the 2026-11-12 review): the entities routes over the people module's
  * real directory. A person is opened by their id; a user name is no address; and a key with a NUL names nobody, so every
  * person route answers its 404 instead of the 503 PostgreSQL's refusal to compare a NUL used to give. Run with
  * `bun run test:db` inside the devcontainer.
@@ -94,7 +94,7 @@ function stack() {
   return { request };
 }
 
-describe("a person's address on PostgreSQL (D119, K3)", () => {
+describe("a person's address on PostgreSQL (D122, K3)", () => {
   test('the id opens the person, who is asked about by their user name; the user name is no address', async () => {
     const { request } = stack();
     const opened = await request('/person/' + colleague);

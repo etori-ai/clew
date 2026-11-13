@@ -92,7 +92,7 @@ The [dependency rules](../../.dependency-cruiser.cjs) enforce these boundaries. 
 
 | Behavior | Start here | Then follow |
 |---|---|---|
-| Read a declared view | [Capability routes](../../apps/server/src/routes/capabilities.ts) | [Server registry](../../apps/server/src/connectors/registry.ts) → [capability registry](../../packages/connectors/src/index.ts) → [remote transport](../../packages/connectors/src/remote.ts); the people a view's records name resolved to their ids by `viewWithPeople` in [keys.ts](../../apps/server/src/threads/usecases/keys.ts) (D119) |
+| Read a declared view | [Capability routes](../../apps/server/src/routes/capabilities.ts) | [Server registry](../../apps/server/src/connectors/registry.ts) → [capability registry](../../packages/connectors/src/index.ts) → [remote transport](../../packages/connectors/src/remote.ts); the people a view's records name resolved to their ids by `viewWithPeople` in [keys.ts](../../apps/server/src/threads/usecases/keys.ts) (D122) |
 | Discover source work | [Refresh composition](../../apps/server/src/composition/refresh.ts) | [Refresh use cases](../../apps/server/src/threads/usecases/refresh.ts) → store/registry ports |
 | Approve a card action | [Card decisions](../../apps/server/src/threads/usecases/decisions.ts) | [Execution composition](../../apps/server/src/composition/executions.ts) → [execution use cases](../../apps/server/src/modules/executions/usecases.ts) → workflow start in the same transaction |
 | Configure a connector | [Administration routes](../../apps/server/src/routes/admin.ts) | [Connector use cases](../../apps/server/src/connectors/usecases/admin.ts) → store and [reconciliation](../../apps/server/src/connectors/reconcile.ts) |

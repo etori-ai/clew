@@ -1,4 +1,4 @@
--- As in 0030, 0032 and 0054: Drizzle runs every pending migration in one transaction, and the change-signal trigger
+-- As in 0030 and 0032: Drizzle runs every pending migration in one transaction, and the change-signal trigger
 -- of 0019 on auth_person is deferred, so the events the UPDATE below queues for every person who holds a number would
 -- make the DROP COLUMN after it fail with "pending trigger events" (55006). Fire queued events now and keep them
 -- immediate through the UPDATE; the signals are notifications and lose nothing by going out earlier. A database that

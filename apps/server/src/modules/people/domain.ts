@@ -409,7 +409,7 @@ export function namesHeld(
  * one. A record without a user name reads as its id wherever a user name is shown or written back (the SCIM resource,
  * `fieldsOf`, Administration › Användare): that is how the erasure replaces the user name with the id (D120). Stored as
  * none, it is no key: neither the id nor a name the person held resolves to them (`UserReads.userName` and `holders`),
- * so a started action about them is refused (D119), and it cannot collide with a name someone else holds. Storing the
+ * so a started action about them is refused (D122), and it cannot collide with a name someone else holds. Storing the
  * id instead made the id resolve as their user name, and kept the name of a person whose id is their user name.
  */
 export const erasedProfile = () => ({

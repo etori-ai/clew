@@ -86,7 +86,7 @@ export interface RefreshDeps {
    * answers `authorization-required`, as it did before.
    */
   session?: (binding: string) => Promise<StandingSession | undefined>;
-  /** Whose a source's key is (D119): a row that names a person by user name names them by id. Absent: by nobody. */
+  /** Whose a source's key is (D122): a row that names a person by user name names them by id. Absent: by nobody. */
   people?: PersonKeys;
 }
 /** Local presentation state is an optimistic fence, independent of source versions. */

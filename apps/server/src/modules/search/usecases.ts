@@ -54,7 +54,7 @@ export function searchUsecases(deps: SearchDeps) {
       const view = source?.open && openRef(source.open, row, source.source);
       return view ? { ...row, view } : row;
     });
-    // A hit names a person by the source's key; the list names them by Clew's key, their id, or nobody (D119).
+    // A hit names a person by the source's key; the list names them by Clew's key, their id, or nobody (D122).
     const names = hitNames(rows);
     const held = names.length && deps.people ? await deps.people.holders(actor.id, names) : new Map<string, string>();
     return { rows: keyedHits(rows, held), sources: sourceReport(outcomes) };

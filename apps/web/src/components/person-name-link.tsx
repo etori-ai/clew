@@ -5,7 +5,7 @@ import { personPageFrom } from '../person-address';
 
 /**
  * Only active directory accounts that a source can be asked about have a profile page, and its address is the person's id
- * (D119). Keep the list's filters in the return link.
+ * (D122). Keep the list's filters in the return link.
  */
 export function PersonNameLink({
   person,

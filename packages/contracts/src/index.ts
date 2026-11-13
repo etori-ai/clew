@@ -387,7 +387,7 @@ export type ViewRef = Static<typeof ViewRefSchema>;
 /**
  * The entities a source's rows can be about (D97): a closed list, as `CAPABILITIES` is. A new kind is a contract change
  * that comes with the core rule saying who may be asked about it. A source knows a person by their directory `userName`,
- * compared without regard to case (a person without one cannot be asked about), and Clew keeps the person's id (D119); a
+ * compared without regard to case (a person without one cannot be asked about), and Clew keeps the person's id (D122); a
  * unit's key is its unit id, on both sides.
  */
 export const ENTITY_KINDS = ['person', 'unit'] as const;
@@ -406,23 +406,23 @@ const entityKey = Type.String({
   minLength: 1,
   maxLength: ENTITY_KEY_MAX,
   description:
-    "The entity's key. A source sends a person's `userName` and a unit's id. Clew resolves a user name as it arrives to the person of the reader's organisation who holds it then, and keeps that person's id (D119); a name nobody there holds names nobody.",
+    "The entity's key. A source sends a person's `userName` and a unit's id. Clew resolves a user name as it arrives to the person of the reader's organisation who holds it then, and keeps that person's id (D122); a name nobody there holds names nobody.",
 });
 /** A row that names an entity (D97 item 6): a card row, a search hit or a view field may carry one, so it links to the entity. */
 export const SubjectSchema = object(
   { entity: EntityKind, key: entityKey },
-  "An entity a row names (D97): the web links the row to it. A source names a person by their `userName`, without regard to case, and a unit by its id. Clew resolves the user name as the row arrives, to whoever of the reader's organisation, active or not, holds it then, and keeps that person's id in its own records, so a later rename or reuse of the name moves nothing it kept (D119). A name nobody there holds names nobody: the row keeps its text and links nowhere. A reader only ever reaches an entity they may ask about.",
+  "An entity a row names (D97): the web links the row to it. A source names a person by their `userName`, without regard to case, and a unit by its id. Clew resolves the user name as the row arrives, to whoever of the reader's organisation, active or not, holds it then, and keeps that person's id in its own records, so a later rename or reuse of the name moves nothing it kept (D122). A name nobody there holds names nobody: the row keeps its text and links nowhere. A reader only ever reaches an entity they may ask about.",
 );
 export type Subject = Static<typeof SubjectSchema>;
 /**
  * A key as a source sends it, compared as Clew compares it there (D97): a person's user name without regard to case (RFC
  * 7643's default) and in its composed form (NFC, as a stored user name is), a unit's id exactly. Only for what arrives
- * from a source: Clew's own records key a person by the person's id (D119), compared exactly (`sameSubject`).
+ * from a source: Clew's own records key a person by the person's id (D122), compared exactly (`sameSubject`).
  */
 export const foldSourceKey = (entity: EntityKind, key: string) =>
   entity === 'person' ? key.normalize('NFC').toLowerCase() : key;
 /**
- * Whether two subjects of Clew's own records name the same entity (D119): a person by the person's id and a unit by its
+ * Whether two subjects of Clew's own records name the same entity (D122): a person by the person's id and a unit by its
  * id, both compared exactly. A source's key (a person's user name) is resolved to the id when it arrives.
  */
 export const sameSubject = (a: Subject, b: Subject) => a.entity === b.entity && a.key === b.key;
@@ -580,7 +580,7 @@ export const RecordSubjectSchema = object(
         "The record property holding the entity's key, a string: a person's provisioned `userName`, a unit's id.",
     },
   },
-  "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it, a person through the id of whoever of the reader's organisation holds the user name when the read is answered (D119); a record without the property, or whose user name nobody there holds, links nowhere.",
+  "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it, a person through the id of whoever of the reader's organisation holds the user name when the read is answered (D122); a record without the property, or whose user name nobody there holds, links nowhere.",
 );
 export type RecordSubject = Static<typeof RecordSubjectSchema>;
 /**
@@ -724,7 +724,7 @@ export function viewRows(view: View, output: unknown): Record<string, unknown>[]
 }
 /**
  * The keys a view's records name people by (`subject` on a person, D97 item 6), each once: a source's key, the user name,
- * which Clew resolves to the person's id before a name links to their page (D119, `PanelViewSpec.people`).
+ * which Clew resolves to the person's id before a name links to their page (D122, `PanelViewSpec.people`).
  */
 export function subjectKeys(view: View, output: unknown): string[] {
   const subject = view.kind === 'table' || view.kind === 'list' || view.kind === 'detail' ? view.subject : undefined;
@@ -771,7 +771,7 @@ export type PanelViewSpec = View & {
   rowViews?: boolean;
   /**
    * The people the output's records name (`subject` on a person, D97 item 6), from the key on the record (the source's,
-   * a user name) to Clew's key for the person, their id (D119), so a name links to `/people/<id>`. A key nobody of the
+   * a user name) to Clew's key for the person, their id (D122), so a name links to `/people/<id>`. A key nobody of the
    * reader's organisation holds when the read is answered is absent, and its record links nowhere.
    */
   people?: Record<string, string>;
@@ -1145,6 +1145,149 @@ export const CommitmentAddBodySchema = object({
 export type CommitmentAddBody = Static<typeof CommitmentAddBodySchema>;
 
 /**
+ * The follow-up dialogue (D118): a manager's dialogue about one unit, area by area, with the managers who follow it up.
+ * An area is measured (its figure comes from the key-figure source the area names) or assessed (a manager sets its
+ * state, per dimension where it has them). Areas, dimensions and questions are configuration an operator loads; the
+ * assessments and activities are Clew's own records. A tone is Clew's: `ok`, `warn`, `alert`.
+ */
+export const DIALOGUE_TONES = ['ok', 'warn', 'alert'] as const;
+export type DialogueTone = (typeof DIALOGUE_TONES)[number];
+export const DialogueToneSchema = literals(DIALOGUE_TONES);
+export const DIALOGUE_AREA_KINDS = ['measured', 'assessed'] as const;
+export type DialogueAreaKind = (typeof DIALOGUE_AREA_KINDS)[number];
+/** The limits of the free text (D118 item 9), as big-boss-board had them. */
+export const DIALOGUE_TEXT_MAX = { activity: 4000, note: 1000, comment: 2000 } as const;
+const areaKey = Type.String({ pattern: '^[a-z][a-z0-9-]{0,39}$', maxLength: 40 });
+const dimensionKey = Type.String({ pattern: '^[a-z][a-z0-9-]{0,39}$', maxLength: 40 });
+/** An assessment as the dialogue shows it: the state, its comment, who set it and when. */
+export const DialogueAssessmentSchema = object({
+  tone: DialogueToneSchema,
+  comment: Type.Optional(Type.String({ maxLength: DIALOGUE_TEXT_MAX.comment })),
+  /** The author's name; absent once they were erased. */
+  by: Type.Optional(Type.String({ maxLength: 200 })),
+  at: Type.String({ maxLength: 40 }),
+});
+export type DialogueAssessment = Static<typeof DialogueAssessmentSchema>;
+export const DialogueDimensionSchema = object({
+  /** Empty for an area assessed as a whole. */
+  key: Type.String({ maxLength: 40 }),
+  /** Empty for an area assessed as a whole. */
+  title: Type.String({ maxLength: 120 }),
+  /** The newest first; the first is the state that counts. */
+  history: Type.Array(DialogueAssessmentSchema, { maxItems: 200 }),
+});
+export type DialogueDimension = Static<typeof DialogueDimensionSchema>;
+export const DialogueQuestionSchema = object({
+  heading: Type.Optional(Type.String({ maxLength: 120 })),
+  text: Type.String({ maxLength: 2000 }),
+  /** The statement from the employee survey the question is drawn from. */
+  basedOn: Type.Optional(Type.String({ maxLength: 2000 })),
+});
+export type DialogueQuestion = Static<typeof DialogueQuestionSchema>;
+export const DialogueActivitySchema = object({
+  id,
+  text: Type.String({ maxLength: DIALOGUE_TEXT_MAX.activity }),
+  dueOn: Type.Optional(calendarDay),
+  /** Who answers for it: its owner's name, absent once they were erased. */
+  owner: Type.Optional(Type.String({ maxLength: 200 })),
+  /** The reader owns it. */
+  mine: Type.Boolean(),
+  doneAt: Type.Optional(Type.String({ maxLength: 40 })),
+  doneNote: Type.Optional(Type.String({ maxLength: DIALOGUE_TEXT_MAX.note })),
+  createdAt: Type.String({ maxLength: 40 }),
+});
+export type DialogueActivity = Static<typeof DialogueActivitySchema>;
+export const DialogueAreaSchema = object({
+  key: areaKey,
+  title: Type.String({ maxLength: 120 }),
+  kind: literals(DIALOGUE_AREA_KINDS),
+  /** For a measured area, the read about a unit that answers its figure (`<connector>.<read>`). */
+  measure: Type.Optional(Type.String({ maxLength: 120 })),
+  /** A fact about the area: how to read it, what the data says and does not. */
+  info: Type.Optional(Type.String({ maxLength: 2000 })),
+  /** The state that counts: the worst of the dimensions' newest assessments; absent while nothing is assessed. */
+  tone: Type.Optional(DialogueToneSchema),
+  dimensions: Type.Array(DialogueDimensionSchema, { maxItems: 10 }),
+  questions: Type.Array(DialogueQuestionSchema, { maxItems: 50 }),
+  activities: Type.Array(DialogueActivitySchema, { maxItems: 500 }),
+});
+export type DialogueArea = Static<typeof DialogueAreaSchema>;
+/** One unit's dialogue (`GET /api/dialogue/units/:unitId`): every configured area in order. */
+export const DialogueUnitSchema = object({
+  unit: object({
+    id: Type.String({ minLength: 1, maxLength: ENTITY_KEY_MAX }),
+    label: Type.String({ maxLength: 200 }),
+    relation: literals(['own', 'below'] as const),
+  }),
+  areas: Type.Array(DialogueAreaSchema, { maxItems: 30 }),
+  /** Clew's own module answers for the reader, so the dialogue can be written. */
+  writable: Type.Boolean(),
+});
+export type DialogueUnit = Static<typeof DialogueUnitSchema>;
+/** A manager sets an assessed area's state for a unit (D118 item 6); `dimension` only for an area that has them. */
+export const DialogueAssessBodySchema = object({
+  area: areaKey,
+  dimension: Type.Optional(dimensionKey),
+  tone: DialogueToneSchema,
+  comment: Type.Optional(Type.String({ maxLength: DIALOGUE_TEXT_MAX.comment })),
+});
+export type DialogueAssessBody = Static<typeof DialogueAssessBodySchema>;
+/** A manager adds an activity to a unit's area (D118 item 4); the due date is optional (item 5). */
+export const DialogueActivityAddBodySchema = object({
+  area: areaKey,
+  text: Type.String({ minLength: 1, maxLength: DIALOGUE_TEXT_MAX.activity }),
+  dueOn: Type.Optional(calendarDay),
+});
+export type DialogueActivityAddBody = Static<typeof DialogueActivityAddBodySchema>;
+/** An activity's text and due date changed; `dueOn` null takes the date away. */
+export const DialogueActivityEditBodySchema = object({
+  text: Type.String({ minLength: 1, maxLength: DIALOGUE_TEXT_MAX.activity }),
+  dueOn: Type.Union([calendarDay, Type.Null()]),
+});
+export type DialogueActivityEditBody = Static<typeof DialogueActivityEditBodySchema>;
+/** An activity marked done, with an optional note on how it went. */
+export const DialogueActivityDoneBodySchema = object({
+  note: Type.Optional(Type.String({ maxLength: DIALOGUE_TEXT_MAX.note })),
+});
+export type DialogueActivityDoneBody = Static<typeof DialogueActivityDoneBodySchema>;
+/**
+ * The areas, dimensions and questions of an organisation's dialogue (D118 item 3), as an operator loads them from a
+ * file (`scripts/dialogue-areas.ts`). A question with `units` is shown only on those units and replaces the area's
+ * general questions there, as big-boss-board's organisation-specific questions did.
+ */
+export const DialogueConfigSchema = object({
+  areas: Type.Array(
+    object({
+      key: areaKey,
+      title: Type.String({ minLength: 1, maxLength: 120 }),
+      kind: literals(DIALOGUE_AREA_KINDS),
+      measure: Type.Optional(Type.String({ minLength: 1, maxLength: 120 })),
+      info: Type.Optional(Type.String({ minLength: 1, maxLength: 2000 })),
+      dimensions: Type.Optional(
+        Type.Array(object({ key: dimensionKey, title: Type.String({ minLength: 1, maxLength: 120 }) }), {
+          maxItems: 10,
+        }),
+      ),
+      questions: Type.Optional(
+        Type.Array(
+          object({
+            heading: Type.Optional(Type.String({ minLength: 1, maxLength: 120 })),
+            text: Type.String({ minLength: 1, maxLength: 2000 }),
+            basedOn: Type.Optional(Type.String({ minLength: 1, maxLength: 2000 })),
+            units: Type.Optional(
+              Type.Array(Type.String({ minLength: 1, maxLength: ENTITY_KEY_MAX }), { minItems: 1, maxItems: 500 }),
+            ),
+          }),
+          { maxItems: 200 },
+        ),
+      ),
+    }),
+    { minItems: 1, maxItems: 30 },
+  ),
+});
+export type DialogueConfig = Static<typeof DialogueConfigSchema>;
+
+/**
  * One piece of news as a news source's connector lists it (D112, amended 2026-11-11): what Hem's "Nyheter" and the
  * list "Alla nyheter" draw, and nothing else. A row either leaves Clew by its `link` or opens in Clew by the read its
  * view's `open` names (by convention `<id>.newsItem`). No body, no image, no author: Clew is not a news site (vision).
@@ -1233,7 +1376,7 @@ export type EntityPage = Static<typeof EntityPageSchema>;
 /** How one source answered for a list or a section: it answered, it did not, or not in time. */
 const entityAnswer = Type.Union([Type.Literal('ok'), Type.Literal('unavailable'), Type.Literal('timeout')]);
 /**
- * An entity as the browser gets it (D97). `key` is Clew's key (D119): a person's id, a unit's id; it is the address
+ * An entity as the browser gets it (D97). `key` is Clew's key (D122): a person's id, a unit's id; it is the address
  * (`/people/<key>`, `/units/<key>`) and what "Just nu" and a card's row name. `sourceKey` is the key a source knows the
  * entity by and answers its rows with (`row.key`): a person's `userName`, a unit's id. `detail` is one line ("Lärare
  * 4–6 · Bergsåkers skola") when known; `id` is Clew's own id, never sent to a connector.
@@ -1774,7 +1917,7 @@ export const ThreadItemSchema = object({
   subject: Type.Optional({
     ...SubjectSchema,
     description:
-      "The person or unit the row is about (D97 item 6): the web links the row to it, and the card shows on that entity for its owner. A key, never a name: a person's `userName`, a unit's id; the row's text stays the source's. Clew resolves a user name as the row arrives to whoever of the reader's organisation holds it then and keeps that person's id, so a later rename or reuse of the name moves nothing on the card (D119); a name nobody there holds names nobody.",
+      "The person or unit the row is about (D97 item 6): the web links the row to it, and the card shows on that entity for its owner. A key, never a name: a person's `userName`, a unit's id; the row's text stays the source's. Clew resolves a user name as the row arrives to whoever of the reader's organisation holds it then and keeps that person's id, so a later rename or reuse of the name moves nothing on the card (D122); a name nobody there holds names nobody.",
   }),
 });
 export type ThreadItem = Static<typeof ThreadItemSchema>;
@@ -1876,7 +2019,7 @@ export type ReceiptRow = Static<typeof ReceiptRowSchema>;
 export const ThreadKind = Type.Union([Type.Literal('pushed'), Type.Literal('question')]);
 export const ThreadState = Type.Union([Type.Literal('open'), Type.Literal('handled'), Type.Literal('dismissed')]);
 /**
- * Why dispatch did not send a started action (D119): the user name it was decided with no longer names the person it is
+ * Why dispatch did not send a started action (D122): the user name it was decided with no longer names the person it is
  * about, renamed or given to someone else since, so the person decides again.
  */
 export const SUBJECT_CHANGED = 'subject-changed';

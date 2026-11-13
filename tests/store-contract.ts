@@ -433,7 +433,7 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       });
       expect(listed.filter(row => row.kind === 'question')).toHaveLength(50);
     });
-    test('the index from entity to cards follows the rows it is written with: owner only, exact keys, open work only (D97, D119)', async () => {
+    test('the index from entity to cards follows the rows it is written with: owner only, exact keys, open work only (D97, D122)', async () => {
       const {
         store,
         people: [a, b],
@@ -461,7 +461,7 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
       });
       const ids = async (person: string, subjects: Subject[]) =>
         (await store.threadsNaming(person, subjects)).map(n => [n.thread.id, n.subjects]);
-      // Clew's keys exactly (D119): a person's id, and a key in another case is another person; a unit's id; the thread's
+      // Clew's keys exactly (D122): a person's id, and a key in another case is another person; a unit's id; the thread's
       // own subject too.
       expect(await ids(a, [{ ...anna, key: anna.key.toLowerCase() }])).toEqual([]);
       expect(await ids(a, [anna])).toEqual([[rows.id, [anna]]]);
@@ -509,7 +509,7 @@ export function storeContract(name: string, make: () => Promise<StoreHarness>) {
         selected: true,
         subject,
       });
-      // Another person whose id differs from the erased one's only in case (D119: ids are compared exactly).
+      // Another person whose id differs from the erased one's only in case (D122: ids are compared exactly).
       const other = { ...gone, key: gone.key.toLowerCase() };
       const mine = draft(a, { items: [row('r:1', gone), row('r:2', kept)], subjects: [gone, kept] });
       const theirs = draft(b, { items: [row('r:3', gone), row('r:4', other)] });

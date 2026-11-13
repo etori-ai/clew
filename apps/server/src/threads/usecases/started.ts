@@ -25,7 +25,7 @@ export interface StartedDeps {
   digest: (value: unknown) => string;
   clock: () => Date;
   ids: () => string;
-  /** Whose a source's key is (D119): a propose's rows that name a person by user name name them by id. Absent: by nobody. */
+  /** Whose a source's key is (D122): a propose's rows that name a person by user name name them by id. Absent: by nobody. */
   people?: PersonKeys;
 }
 /** What the caller knows that the action does not. */
@@ -39,7 +39,7 @@ export interface StartContext {
   /** The person's answers to a propose's asks (D112), already in the input: the audit row names them. */
   asked?: Record<string, string>;
   /**
-   * The person the action is about (D119): `input[param]` names them by Clew's key, their id, which is what the card
+   * The person the action is about (D122): `input[param]` names them by Clew's key, their id, which is what the card
    * keeps and its topic is made from, and `sourceKey` is their user name now, what the source is sent. An execute's topic
    * names `param`, and the id is resolved to the user name again when the person decides (`decisions.ts`).
    */
@@ -59,7 +59,7 @@ export function startedCards({ store, registry, run, digest, clock, ids, people 
     // An execute's asks are answered when the person decides on its card (D112): until then the input may lack them.
     const declared = registry.find(capability)?.capability;
     const pending = declared?.kind === 'execute' ? pendingAsks(declared, Object.keys(input)) : [];
-    // What the source is sent: a person by their user name (D119), where the card keeps their id.
+    // What the source is sent: a person by their user name (D122), where the card keeps their id.
     const { person } = context;
     if (person && input[person.param] !== person.personId) throw new InputError('Åtgärden kan inte startas härifrån.');
     const sent = person ? { ...input, [person.param]: person.sourceKey } : input;
@@ -70,7 +70,7 @@ export function startedCards({ store, registry, run, digest, clock, ids, people 
     }
     const { connector, capability: chosen } = found;
     // A follower answers a fact with steps, and a reviewed execute needs rows the person picks: neither starts from a key.
-    // A person goes where the capability takes them (D119), and only there, so the decision can resolve them again: a
+    // A person goes where the capability takes them (D122), and only there, so the decision can resolve them again: a
     // card it would refuse is never made.
     if (
       (chosen.kind !== 'propose' && chosen.kind !== 'execute') ||
@@ -85,7 +85,7 @@ export function startedCards({ store, registry, run, digest, clock, ids, people 
       const output = await run(persona, capability, sent);
       if (!Value.Check(ThreadDraftSchema, output) || registry.draftProblem(connector.id, output))
         throw new InputError(`Förslaget från ${connector.source} kunde inte läsas.`);
-      // A person the draft's rows name by user name is kept by id (D119), resolved as the rows arrive.
+      // A person the draft's rows name by user name is kept by id (D122), resolved as the rows arrive.
       draft = (await keyedDrafts(people, persona, [output]))[0]!;
       identity = output.topic;
     } else {
@@ -106,7 +106,7 @@ export function startedCards({ store, registry, run, digest, clock, ids, people 
       };
     }
     // The same action with the same input (for a propose, the same occurrence) under the same authority is one card. The
-    // input names a person by id (D119), so a rename leaves the topic as it was and a reused name gives another card. An
+    // input names a person by id (D122), so a rename leaves the topic as it was and a reused name gives another card. An
     // execute's topic also says which property of its input keeps the person, for the decision to resolve.
     const topic = startedTopic(
       capability,

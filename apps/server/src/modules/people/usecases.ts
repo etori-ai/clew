@@ -1293,7 +1293,7 @@ export function staffUsecases(deps: { store: ProvisionStore }) {
       }),
     /**
      * An active person in the reader's organisation, found by Clew's key, their id (D97: a colleague is anyone active in
-     * the directory; D119: an address names a person by id), with the unit they act in; undefined for nobody, someone in
+     * the directory; D122: an address names a person by id), with the unit they act in; undefined for nobody, someone in
      * another organisation or a deactivated person. Read on every call, never cached.
      */
     person: (persona: AuthenticatedContext, id: string, includeProfile: boolean) =>
@@ -1423,7 +1423,7 @@ export type OrganisationUsecases = ReturnType<typeof organisationUsecases>;
  * out of their groups, removes their placements, grant, sign-in bindings under every issuer and sessions, clears the
  * personal fields and takes the user name and the source key away (`erasedProfile`: the record then reads as its id),
  * so that a later push of the same name or key creates a new person and no key resolves to this one, which refuses a
- * started action about them (D119). It replaces the person's identifiers in the audit trail with `ERASED` and keeps
+ * started action about them (D122). It replaces the person's identifiers in the audit trail with `ERASED` and keeps
  * every event: the user names, source keys, claims and sign-in subjects the rows about them hold (`IDENTIFIERS_ABOUT`),
  * the subject a refused sign-in brought when the person held it (`IDENTIFIERS_AS_HOLDER`), and the claims of the
  * authentication log that named one of their user names or their e-mail address. The row, its id and every reference to

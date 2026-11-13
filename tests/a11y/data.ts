@@ -1459,7 +1459,7 @@ export const usersPeople = (): UserAdminRow[] => [
   {
     id: 'hillevi',
     name: 'Hillevi Berg',
-    // Her user name differs from her id: her page is at her id (D119).
+    // Her user name differs from her id: her page is at her id (D122).
     userName: 'hillevi.berg',
     externalId: 'dev:hillevi',
     email: 'hillevi@clew.test',
@@ -1645,7 +1645,7 @@ export const entityActions = (): EntityAction[] => [
     param: 'person',
   },
 ];
-/** A person of the list (D119): Clew's key is their id, the address; a source's rows name them by their user name. */
+/** A person of the list (D122): Clew's key is their id, the address; a source's rows name them by their user name. */
 const entityPerson = (key: string, userName: string, name: string, detail: string): EntityRef => ({
   kind: 'person',
   key,
@@ -1686,7 +1686,7 @@ export const entityList = (): EntityList => ({
 });
 /**
  * `GET /api/entities/person/rows?capability=`: each source's rows, one per person it knows, in its own order, each by
- * the person's user name, the key the source was asked with (D119).
+ * the person's user name, the key the source was asked with (D122).
  */
 export const entityRows = (): Record<string, EntityRows> => ({
   [TALK_LENS]: {

@@ -9,7 +9,7 @@ import { MIGRATIONS, journal, position, upgradeDatabase, type Entry, type Upgrad
  * An upgrade through the migration that moves a person's work and mobile numbers into `phone_numbers`
  * (`person_directory_profile`, D114) on a database whose people hold numbers. Its UPDATE of `auth_person` queues the
  * deferred change signals of 0019, and an ALTER of a table with signals still pending fails ("pending trigger events",
- * 55006), so the migration fires them as it writes, as 0032 and 0054 do. Drizzle runs every pending migration in one
+ * 55006), so the migration fires them as it writes, as 0032 and 0055 do. Drizzle runs every pending migration in one
  * transaction, so the run here has one migration after it that alters `auth_person`, which must find no signal left
  * pending, and stops there: a later migration of the repository may write a person too and change what this test
  * counts. A database that applied the migration before that fix is left alone, since Drizzle compares no file's hash.

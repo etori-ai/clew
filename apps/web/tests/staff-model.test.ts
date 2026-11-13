@@ -50,7 +50,7 @@ const presence: EntitySource = {
   title: 'Frånvaro',
   view: { kind: 'list', title: 'presence', fields: [presenceField] },
 };
-/** A person as the list gives them (D119): Clew's key is their id, and a source's rows name them by user name. */
+/** A person as the list gives them (D122): Clew's key is their id, and a source's rows name them by user name. */
 const person = (userName: string): EntityRef => ({
   kind: 'person',
   key: 'p-' + userName,
@@ -190,7 +190,7 @@ describe('Personal (D97)', () => {
   test('"Just nu" links the cards that wait for the reader and the proposals, to the one card when there is one', () => {
     const withCards: EntityList = {
       ...list,
-      // By Clew's key, the person's id (D119), compared exactly.
+      // By Clew's key, the person's id (D122), compared exactly.
       attention: [
         { key: 'p-erik', act: 1, proposals: 0, threadId: 't-erik' },
         { key: 'p-johan', act: 2, proposals: 1 },

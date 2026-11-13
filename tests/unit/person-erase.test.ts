@@ -217,7 +217,7 @@ describe('erasing a person (D120)', () => {
       groups: [],
       meta: { resourceType: 'User', created: held.createdAt, lastModified: at, location: `${BASE}/Users/${id}` },
     });
-    // No key names her now: neither her id nor a name she held resolves to her (D119), so that nothing started about
+    // No key names her now: neither her id nor a name she held resolves to her (D122), so that nothing started about
     // her can be decided or sent with her id in a user name's place.
     const keys = memoryPersonKeys(store.state);
     expect(await keys.userName(id)).toBeNull();

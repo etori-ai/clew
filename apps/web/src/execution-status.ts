@@ -1,7 +1,7 @@
 import { SUBJECT_CHANGED, type ExecutionSummary } from '@clew/contracts';
 export function executionStatus(execution: ExecutionSummary | null | undefined): string | null {
   if (!execution) return null;
-  // A started action whose user name moved to someone else, or away, before it was sent (D119).
+  // A started action whose user name moved to someone else, or away, before it was sent (D122).
   if (execution.reason === SUBJECT_CHANGED)
     return execution.state === 'unknown'
       ? 'Personen har inte längre det användarnamn som beslutet gällde, så åtgärden skickas inte igen. Utfallet behöver kontrolleras i källsystemet.'

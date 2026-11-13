@@ -71,7 +71,7 @@ export interface UnitStanding {
 }
 /**
  * What erasing one person from the domain did, counts only (D96 item 10), or why it erased nothing: an id the people
- * table does not hold, or a person the source has not deactivated (D119 item 7, D120 item 3).
+ * table does not hold, or a person the source has not deactivated (D122 item 7, D120 item 3).
  */
 export type TalkErasure =
   { refused: 'unknown' | 'active' } | { talks: number; commitments: number; cleared: number; cards: number };
@@ -477,7 +477,7 @@ export function talkUsecases(deps: TalkDeps) {
         threadId = deps.ids();
       return deps.store.transaction(async tx => {
         const round = await openRoundOf(tx, persona.organisationId);
-        // The card is about the employee (D97 item 6), by Clew's key, their id (D119): a rename or a reused user name
+        // The card is about the employee (D97 item 6), by Clew's key, their id (D122): a rename or a reused user name
         // moves nothing.
         await tx.workItems.open({
           threadId,

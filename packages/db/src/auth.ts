@@ -359,7 +359,7 @@ export async function consumeLogin(digest: string) {
 /**
  * Ends the open sessions an identity provider's logout names, by the provider's session id (`sid`), the subject or
  * both, under this installation's issuer and client, each with a row in the authentication log whose action says which
- * logout ended it. Both logout channels end sessions here (D118). A logout that names neither is refused, since it
+ * logout ended it. Both logout channels end sessions here (D121). A logout that names neither is refused, since it
  * would end every session of the client.
  */
 async function endProviderSessions(
@@ -402,7 +402,7 @@ export async function backchannelRevoke(input: {
   });
 }
 /**
- * OpenID Connect Front-Channel Logout 1.0 (D118): the open sessions of the provider's `sid` end as a back-channel
+ * OpenID Connect Front-Channel Logout 1.0 (D121): the open sessions of the provider's `sid` end as a back-channel
  * logout ends them, each with a `frontchannel-logout` row. No receipt is kept: the request carries no token that could
  * be replayed, and a second request for sessions that have ended ends nothing.
  */

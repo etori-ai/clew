@@ -139,7 +139,7 @@ function world() {
     self: { id: actor.id, userName: userNames.get(actor.id) ?? null },
     staff: (managers.get(actor.id)?.units ?? []).flatMap(u => u.people.map(p => ({ id: p.id, userName: p.userName }))),
   });
-  // As composition/talks.ts asks the people module (D119): who holds these user names, active or not.
+  // As composition/talks.ts asks the people module (D122): who holds these user names, active or not.
   const holders: Holders = async (_actor, names) =>
     new Map(
       names.flatMap(name => {

@@ -794,7 +794,7 @@ export function ActionRow({
     reviewed && (thread.receipt || pending || !open) ? (
       <Button ref={review} size={size} variant="secondary" label="Visa granskning" href={reviewLink} />
     ) : null;
-  // A started action that was not sent because its user name had moved to someone else, or away (D119): said so, and
+  // A started action that was not sent because its user name had moved to someone else, or away (D122): said so, and
   // decided again with the item's own button, on the user name the person has now. Nothing is left to check.
   const decideAgain = open && thread.execution?.state === 'failed' && thread.execution.reason === SUBJECT_CHANGED;
   // A decision the source has not confirmed is said so, unless it is the person's own and still on its way (D64).

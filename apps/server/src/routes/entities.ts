@@ -75,7 +75,7 @@ export function entityRoutes(deps: EntityRouteDeps) {
     const kind = kindOf(c);
     if (!kind) return notFound(c);
     const capability = c.req.query('capability');
-    // A person's key is their id (D119), which may be "rows": asked for without a source, this address opens that person.
+    // A person's key is their id (D122), which may be "rows": asked for without a source, this address opens that person.
     if (capability === undefined) return answer(c, await entities.detail(c.get('session').context, kind, 'rows'));
     return answer(c, await entities.rows(c.get('session').context, kind, capabilityOf(capability)));
   });

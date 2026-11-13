@@ -46,7 +46,7 @@ type ApproveInput = {
    * there, and the approval's audit row names them, in the same transaction.
    */
   asked?: Record<string, string>;
-  /** The person a started action is about (D119): `payload[param]` is the user name they held when it was decided. */
+  /** The person a started action is about (D122): `payload[param]` is the user name they held when it was decided. */
   subject?: { param: string; personId: string };
 };
 /** Which of the person's kept sessions stood behind a call to a connector that acts as them (D26); what the audit records instead of a binding. */
@@ -100,7 +100,7 @@ export function executionUsecases({
         compensates: input.compensates ?? null,
         threadId: input.presentation?.threadId ?? null,
         actionId: input.presentation?.actionId ?? null,
-        // The person the payload's user name was decided for is part of what was approved (D119).
+        // The person the payload's user name was decided for is part of what was approved (D122).
         ...(input.subject ? { subject: input.subject } : {}),
       }),
       safety: access.safety,
@@ -532,7 +532,7 @@ export function executionUsecases({
     }
     return undefined;
   }
-  /** Whether the user name in a started action's payload still names the person it was decided for (D119). */
+  /** Whether the user name in a started action's payload still names the person it was decided for (D122). */
   async function stillNamed(e: Execution): Promise<boolean> {
     if (!e.subject || !people) return false;
     const sent = (e.payload as Record<string, unknown> | null)?.[e.subject.param];
@@ -632,7 +632,7 @@ export function executionUsecases({
         return 'done';
       }
     }
-    // A started action names a person by the user name they held when it was decided (D119). Sent only while that name
+    // A started action names a person by the user name they held when it was decided (D122). Sent only while that name
     // is still theirs: after a rename it would reach nobody, after a reuse someone else, so the person decides again.
     if (e.subject && !(await stillNamed(e))) {
       await settle(e, e.dispatchedAt ? 'unknown' : 'failed', SUBJECT_CHANGED, undefined, backing);

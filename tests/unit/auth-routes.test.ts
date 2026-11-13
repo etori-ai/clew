@@ -6,7 +6,7 @@ import { logger } from '../../apps/server/src/logging';
 /**
  * The sign-in and logout routes where they answer before the database is read (L5 and L11 of the 2026-11-12 users
  * review): each refusal is answered as before and said in one line with scope `auth`, carrying what failed and never
- * the token's claims, and front-channel logout (D118) refuses another issuer and ends nothing without a `sid`. The
+ * the token's claims, and front-channel logout (D121) refuses another issuer and ends nothing without a `sid`. The
  * identity provider answers over a fake fetch, and a provider at another address answers 500. The server's logger is
  * watched while the file runs. What needs the database, a sign-in that reached the provider and the sessions a logout
  * ends, is in `tests/db/sign-in-routes.test.ts`.
@@ -145,7 +145,7 @@ describe('a refused sign-in or logout is said in one line', () => {
     ]);
   });
 });
-describe('front-channel logout (D118) where it ends nothing', () => {
+describe('front-channel logout (D121) where it ends nothing', () => {
   test('another issuer is refused with 400 and said, whatever the sid', async () => {
     for (const query of [
       '?iss=https://other.example.test/realms/routes&sid=sid-anna',

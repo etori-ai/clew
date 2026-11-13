@@ -11,7 +11,7 @@ import { talkUsecases } from '../../apps/server/src/modules/talks/usecases';
 import { enqueuedWorkflows, forgetTestWorkflows, testDurable } from './durable';
 
 /**
- * The operator's erasures of a leaver's cards, talks and competence (D119 item 7, D120 item 3), each run as a script as
+ * The operator's erasures of a leaver's cards, talks, competence and follow-up dialogue (D122 item 7, D120 item 3), each run as a script as
  * the runbook runs it, against the database the test is given. Each refuses an id the people table does not hold and a
  * person who is still active, with exit code 1, writing nothing and no audit row. A deactivated person is erased with
  * the script's own answer alone on standard output, also when a removed card has a timer still waiting: the timer goes
@@ -142,12 +142,13 @@ afterAll(async () => {
   await db.delete(schema.threads).where(inArray(schema.threads.personId, [manager, leaver, active]));
   await db.delete(schema.competenceHoldings).where(eq(schema.competenceHoldings.typeId, typeId));
   await db.delete(schema.competenceTypes).where(eq(schema.competenceTypes.id, typeId));
+  await db.delete(schema.dialogueAssessments).where(eq(schema.dialogueAssessments.organisationId, ORG));
   await db.delete(schema.people).where(inArray(schema.people.id, [manager, leaver, active]));
   await forgetTestWorkflows();
   await closeDatabase();
 });
 
-describe('the erase scripts on PostgreSQL (D119 item 7, D120 item 3)', () => {
+describe('the erase scripts on PostgreSQL (D122 item 7, D120 item 3)', () => {
   test('setup: a leaver still active, with an action point and a competence card that each have a timer waiting', async () => {
     const db = database();
     await db.insert(schema.people).values([
@@ -155,6 +156,16 @@ describe('the erase scripts on PostgreSQL (D119 item 7, D120 item 3)', () => {
       { id: leaver, organisationId: ORG, name: 'Synthetic Leaver', userName: leaverName },
       { id: active, organisationId: ORG, name: 'Synthetic Active', userName: `Active.${tag}` },
     ]);
+    await db.insert(schema.dialogueAssessments).values({
+      id: ORG + '-assessment',
+      organisationId: ORG,
+      unitId,
+      areaKey: 'ops',
+      dimension: '',
+      tone: 'ok',
+      authorId: leaver,
+      at,
+    });
     await talks.openRound('operator:cli', {
       organisationId: ORG,
       label: 'Omgång',
@@ -234,7 +245,7 @@ describe('the erase scripts on PostgreSQL (D119 item 7, D120 item 3)', () => {
       out: '',
       err: unknown(leaverName),
     });
-    for (const script of ['talks-erase.ts', 'competence-erase.ts'])
+    for (const script of ['talks-erase.ts', 'competence-erase.ts', 'dialogue-erase.ts'])
       expect([script, run(script, '--person', leaverName, '--confirm')]).toEqual([
         script,
         { code: 1, out: '', err: unknown(leaverName) },
@@ -247,7 +258,7 @@ describe('the erase scripts on PostgreSQL (D119 item 7, D120 item 3)', () => {
       out: '',
       err: stillActive(leaver),
     });
-    for (const script of ['talks-erase.ts', 'competence-erase.ts'])
+    for (const script of ['talks-erase.ts', 'competence-erase.ts', 'dialogue-erase.ts'])
       expect([script, run(script, '--person', leaver, '--confirm')]).toEqual([
         script,
         { code: 1, out: '', err: stillActive(leaver) },
@@ -283,6 +294,7 @@ describe('the erase scripts on PostgreSQL (D119 item 7, D120 item 3)', () => {
       ['subject-erase.ts', ['person', leaver, '--confirm']],
       ['talks-erase.ts', ['--person', leaver, '--confirm']],
       ['competence-erase.ts', ['--person', leaver, '--confirm']],
+      ['dialogue-erase.ts', ['--person', leaver, '--confirm']],
       ['person-erase.ts', ['--person', leaver, '--confirm']],
     ];
     expect(calls.map(([script, args]) => [script, runOn(elsewhere.href, script, ...args)])).toEqual(
@@ -300,7 +312,7 @@ describe('the erase scripts on PostgreSQL (D119 item 7, D120 item 3)', () => {
   test('once the source has deactivated the person, each erases them and prints its answer alone, with no line from the engine', async () => {
     const db = database();
     await db.update(schema.people).set({ enabled: false }).where(eq(schema.people.id, leaver));
-    // The leaver's own action point card names them as its subject (D119 item 1).
+    // The leaver's own action point card names them as its subject (D122 item 1).
     expect(run('subject-erase.ts', 'person', leaver, '--confirm')).toEqual({
       code: 0,
       out: `Erased person "${leaver}" from 1 cards: 0 rows and 1 card subjects no longer name it. Audited as person:${leaver}.`,
@@ -316,6 +328,16 @@ describe('the erase scripts on PostgreSQL (D119 item 7, D120 item 3)', () => {
       out: `Erased person "${leaver}" from the competence domain: 1 holdings removed, 0 other holdings cleared of their id, 1 cards removed. Audited as person:${leaver}.`,
       err: '',
     });
+    expect(run('dialogue-erase.ts', '--person', leaver, '--confirm')).toEqual({
+      code: 0,
+      out: `Erased person "${leaver}" from the follow-up dialogue: 1 records cleared, 0 cards removed. Audited as person:${leaver}.`,
+      err: '',
+    });
+    const [assessment] = await db
+      .select({ authorId: schema.dialogueAssessments.authorId })
+      .from(schema.dialogueAssessments)
+      .where(eq(schema.dialogueAssessments.id, ORG + '-assessment'));
+    expect(assessment?.authorId).toBeNull();
     // The cards went with their timers; the action point's workflow is left queued, and the fence covers it.
     const [leaversCard, activesCard] = threadIds;
     expect(await db.select().from(schema.threads).where(eq(schema.threads.personId, leaver))).toEqual([]);
@@ -330,6 +352,7 @@ describe('the erase scripts on PostgreSQL (D119 item 7, D120 item 3)', () => {
       ['operator:cli', 'thread.subject_erased'],
       ['operator:cli', 'talks.person_erased'],
       ['operator:cli', 'competence.person_erased'],
+      ['operator:cli', 'dialogue.person_erased'],
     ]);
     // The colleague who is still active keeps their action point, its card and its timer.
     expect(

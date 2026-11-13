@@ -32,7 +32,7 @@ export const contactSource: EntitySource = {
     ],
   },
 };
-/** Each source's row by the person's user name, the key it was asked with (D119). */
+/** Each source's row by the person's user name, the key it was asked with (D122). */
 const contactRows: Record<string, Record<string, unknown>> = {
   'johan.bystrom': { key: 'johan.bystrom', email: 'johan@clew.test', phone: '060-00 00 00', place: 'Hus B, plan 2' },
   'anna.lindqvist': { key: 'anna.lindqvist', email: 'anna@clew.test', phone: '060-00 00 01' },
@@ -220,7 +220,7 @@ export class People {
       this.reads.push(capability);
       const wait = this.delay[capability];
       if (wait) await new Promise(resolve => setTimeout(resolve, wait));
-      // A section asks the source with the person's user name (D119).
+      // A section asks the source with the person's user name (D122).
       return route.fulfill({ json: this.section(detail.entity.sourceKey, capability) });
     };
     await page.route(

@@ -20,6 +20,8 @@ import { talkSeamUsecases } from '../modules/talk-seam/usecases';
 import { talkDirectory, talkHolders, talkTakeovers, talks } from '../composition/talks';
 import { competenceConnector } from '../modules/competence/capabilities';
 import { competence } from '../composition/competence';
+import { dialogueConnector } from '../modules/dialogue/capabilities';
+import { dialogue } from '../composition/dialogue';
 import { logger } from '../logging';
 
 /**
@@ -36,7 +38,7 @@ export const registry = new Registry({
 const search = searchUsecases({
   sources: actor => registry.searchSources(actor),
   clock,
-  // A hit names a person by user name; the list links them by id (D119).
+  // A hit names a person by user name; the list links them by id (D122).
   people: userReads,
 });
 /** The card an answer becomes is the stream's use case; the composition root fills this slot once the stream is built over the registry. */
@@ -77,11 +79,13 @@ const clewConnector = {
 // and an administrator can switch it off so that another system answers the profile.
 // The competence module (D108 item 13) is bundled too, and is the one bundled connector an installation switches on
 // itself: its row is created disabled (`offAtFirstBoot`), so nothing of the domain shows until an administrator enables it.
+// The follow-up dialogue (D118) is bundled and enabled by default, as talks is: an administrator can switch it off.
 const bundled = [
   calendarConnector(calendar, events),
   clewConnector,
   talksConnector(talks),
   competenceConnector(competence),
+  dialogueConnector(dialogue),
 ];
 for (const m of [...internal, ...bundled]) registry.register({ ...m, uses: ['*'] });
 export const internalIds = internal.map(m => m.id);

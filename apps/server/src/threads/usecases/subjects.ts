@@ -20,7 +20,7 @@ export interface SubjectCardsDeps {
   registry: Pick<Registry, 'visible' | 'allowed' | 'connector'>;
   clock: () => Date;
 }
-/** A card of the reader's that names some of the entities asked about, with those it names, by Clew's key (D119). */
+/** A card of the reader's that names some of the entities asked about, with those it names, by Clew's key (D122). */
 export type NamedCard = EntityCard & { subjects: Subject[] };
 /** How Hem files a card (D34) in the words of the entity's page: a requirement waits for the reader's decision, a proposal is Clew's, an event is for information. */
 const KIND: Record<CardKind, EntityCard['kind']> = { krav: 'act', forslag: 'proposal', handelse: 'fyi' };
@@ -71,7 +71,7 @@ export function subjectErasure({ store, clock, people }: SubjectErasureDeps) {
   /**
    * Erase one entity from every card (D97): the `subject` of each row that names it and the card's own, with the index,
    * in one transaction with one audit row about it (`person:<id>`, `unit:<id>`), counts only. An entity is named by
-   * Clew's key (D119): a person by their id, which reaches every card about them whatever user names they have held, and
+   * Clew's key (D122): a person by their id, which reaches every card about them whatever user names they have held, and
    * never another person's; a unit by its id. The rows' text stays as the source wrote it, and a source that still names
    * the entity names it again on its next scan. A person id the people table does not hold (a user name, a typo) and a
    * person who is still active erase nothing and write no audit row: only a person the source has deactivated is erased

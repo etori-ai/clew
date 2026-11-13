@@ -342,7 +342,7 @@ describe('the pure rules: keys, calls and what is kept of an answer', () => {
       managedPerson({ units: [], managed: [card('skola', 'Bergsåkers skola', [{ ...sara, userName: null }])] }, 'sara'),
     ).toBeUndefined();
   });
-  test('a key with a NUL names no entity of either kind, and a person key is no longer than an id (D119)', () => {
+  test('a key with a NUL names no entity of either kind, and a person key is no longer than an id (D122)', () => {
     for (const kind of ['person', 'unit'] as const) {
       expect(isKey(kind, 'anna')).toBe(true);
       expect(isKey(kind, '')).toBe(false);
@@ -364,7 +364,7 @@ describe('the list of people or units', () => {
         id: 'unit-skola',
         label: 'Bergsåkers skola',
         entities: [
-          // Clew's key is the id (D119); the source's key is the user name, in the directory's spelling.
+          // Clew's key is the id (D122); the source's key is the user name, in the directory's spelling.
           {
             kind: 'person',
             key: 'anna',
@@ -800,7 +800,7 @@ describe('the opened person or unit', () => {
       label: 'Arkivdepån',
     });
   });
-  test('a person is opened by their id only: a user name, in any spelling, names nobody (D119)', async () => {
+  test('a person is opened by their id only: a user name, in any spelling, names nobody (D122)', async () => {
     const { entities, people, cardsAsked } = standard();
     const hillevi = people.persona('hillevi');
     for (const key of ['Erik.S', 'erik.s', 'ANNA', 'Hassan'])
@@ -808,7 +808,7 @@ describe('the opened person or unit', () => {
     expect(await entities.section(hillevi, 'person', 'Erik.S', 'hr.skills')).toBeUndefined();
     expect(cardsAsked).toEqual([]);
   });
-  test('a renamed person keeps their address and the cards about them; a reused user name opens its new holder alone (D119)', async () => {
+  test('a renamed person keeps their address and the cards about them; a reused user name opens its new holder alone (D122)', async () => {
     const w = world([connector('hr', 'Personalsystemet', [aboutRead('hr.absence', 'Frånvaro'), bookTalk])], {
       directory: directory({ onSkola: [{ id: 'anna-2', name: 'Anna Nygren', userName: 'anna' }] }),
     });

@@ -1,6 +1,6 @@
 # D116 · Start and the row under it are Clew's; the intranet keeps the other places
 
-**Status:** provisional (Oliver Borgström, 2026-11-13; built on the branch `start-is-clews`, tested by nothing outside the repository) · **Date:** 2026-11-13 · **Area:** ui, integrations
+**Status:** provisional (Oliver Borgström, 2026-11-13; built on the branch `start-is-clews`, tested by nothing outside the repository; amended the same day: Start has no row of pages, the rail holds Clew's places once, Dialogstöd joins the rail as an exception to the freeze, D101, at Oliver Borgström's choice) · **Date:** 2026-11-13 · **Area:** ui, integrations
 
 **Decision.** In the shared header, the place Start and the row of pages under it belong to Clew. The header connector
 (D88) still gives the band its name, its logo and every other place, which are the intranet's.
@@ -36,6 +36,26 @@ answers were Clew's main pages, keep the rail, and a branch of its own.
 Weighed and left: the prototype's row (Mina aktiviteter, Min AI, Personal, Dialogstöd), since Clew's places have other
 names since D112; the rail's tools in the row too, since the row would then grow with every administrator's choice;
 removing the rail, which D112 keeps and the prototype decision withdrew on 2026-11-11.
+
+**Amended 2026-11-13: Clew's places stand once, in the rail.** Oliver Borgström chose, after a design review by the
+open-source `impeccable` skill, to remove the row under Start: the same four places stood in the row and at the top of
+the rail, two navigations side by side that both marked where the person was. Items 1, 2 and 4 change as follows; items
+3 and 5 hold.
+
+- Start is one place, first in the band, leading to `/`, with no pages under it (`CLEWS_START` in
+  `apps/server/src/connectors/header-start.ts`). The header is the site's way between places, the rail Clew's way within
+  its own.
+- The rail holds Hem, Att göra, Kalender and, for a manager, Personal and **Dialogstöd** (`/units`), in that order. The
+  rail marks Dialogstöd on `/units` and on every unit's page a manager opens, unless the page was opened from another
+  place the rail marks (Personal, a tool, Hem). Dialogstöd is a new destination in the rail, built as an exception to
+  the freeze on new surface ([D101](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md))
+  at Oliver Borgström's choice; it amends [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md)
+  item 1's list of places.
+- A page Clew gains that every person of a role should reach joins the rail's places, not a row under Start.
+
+Weighed and left: removing the places from the rail and keeping the row, which would leave the rail with tools and
+conversations alone and give the header's Start a row no other place has inside Clew; keeping both and letting only one
+mark the current place, which lessens the confusion and not the repetition.
 
 **Amends** [D88](D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md): the connector an
 administrator chooses still gives the header its content, except Start and its row.

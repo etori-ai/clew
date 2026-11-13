@@ -29,13 +29,14 @@ import { signInData } from './sign-ins';
 import { postgresThreadStore } from '../threads/adapters/postgres';
 import { cancelDurable, moveToRunningVersion } from '../dbos/start';
 import { ledger } from './durable';
-import { audiencedActorOf, COMPETENCE_CONNECTOR } from '@clew/connectors';
+import { audiencedActorOf, COMPETENCE_CONNECTOR, DIALOGUE_CONNECTOR } from '@clew/connectors';
 import { reminderUsecases } from '../threads/usecases/reminders';
 import { threadUsecases } from '../threads/usecases/cards';
 import { clock, ids } from './ambient';
 import { calendar, events, notifier, calendarAuthority, followups, planningRound } from './calendar';
 import { talksRound } from '../modules/calendar/adapters/talks-round';
 import { talks } from './talks';
+import { dialogue } from './dialogue';
 import { TALKS_CAPABILITY } from '../modules/talk-seam/capabilities';
 import type { AuthenticatedContext, DayView, TalksResult } from '@clew/contracts';
 import { systemContext } from '../system-context';
@@ -68,7 +69,7 @@ const threadCore = threadUsecases({
   run: runCapability,
   clock,
   ids,
-  // A row names a person by user name; the card keeps their id (D119).
+  // A row names a person by user name; the card keeps their id (D122).
   people: personKeys,
   calendar: {
     ensureProposalThread: calendar.ensureProposalThread,
@@ -176,13 +177,14 @@ calendarAuthority.current = async id => {
 /**
  * A fired timer goes to the module that owns its kind (D47, D85): the obligation to the calendar's follow-ups (D30), an
  * action point's `due` to the talks module, which brings the card back while the action point is open and checks no
- * authority on the owner's version (D96: the card stays with its owner), and the person's own reminder and snooze to
- * the reminders, which do.
+ * authority on the owner's version (D96: the card stays with its owner), a dated activity's `dialogue-due` to the
+ * follow-up dialogue on the same terms (D118), and the person's own reminder and snooze to the reminders, which do.
  */
 export async function fireTimer(id: string, generation: number) {
   const timer = await store.readTimer(id);
   if (timer?.kind === 'obligation') return followups.fire(timer.threadId, generation);
   if (timer?.kind === 'due') return talks.commitmentDue(timer.threadId, generation);
+  if (timer?.kind === 'dialogue-due') return dialogue.activityDue(timer.threadId, generation);
   return reminders.fire(id, generation);
 }
 /**
@@ -211,6 +213,14 @@ export async function talksWritable(persona: AuthenticatedContext) {
 export async function competenceWritable(persona: AuthenticatedContext) {
   await refreshConnectors();
   return registry.visible(audiencedActorOf(persona), COMPETENCE_CONNECTOR);
+}
+/**
+ * Clew writes the follow-up dialogue only while its built-in module is switched on and visible to this person (D118).
+ * The rows are read first, as every API request does, so a change made on another instance counts at once.
+ */
+export async function dialogueWritable(persona: AuthenticatedContext) {
+  await refreshConnectors();
+  return registry.visible(audiencedActorOf(persona), DIALOGUE_CONNECTOR);
 }
 // A cited answer becomes a card (D26) through the search connector's propose; the stream owns the card, so the slot is filled here.
 answerCards.create = async (actorId, input) => {

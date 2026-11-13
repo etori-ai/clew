@@ -68,7 +68,7 @@ export function refreshUsecases({
    * `session`: how the person's own session took part in the scan (D26), which the audit row says, never the binding:
    * `true` when it was asked for a token, `'idle'` when it stood but its person had not been active within `PRESENCE_MS`.
    * `sourced`: the drafts as the source wrote them, in the order of `result.drafts`, whose rows name people by id
-   * (D119). A draft without occurrences of its own is revised by Clew's digest of what the source wrote, so a change in
+   * (D122). A draft without occurrences of its own is revised by Clew's digest of what the source wrote, so a change in
    * the directory alone (a rename, a leaver, a reused name) rewrites the card's rows and never counts as the source
    * changing the work: it reopens nothing, cancels no snooze and delivers nothing again.
    */
@@ -405,7 +405,7 @@ export function refreshUsecases({
             : persona,
           job.connector,
         );
-        // A person a row names by user name is kept by id (D119), resolved as the rows arrive; whether the source changed
+        // A person a row names by user name is kept by id (D122), resolved as the rows arrive; whether the source changed
         // the work is judged on the drafts as it wrote them (`finish`).
         sourced = result.drafts;
         result = { ...result, drafts: await keyedDrafts(people, persona, result.drafts) };

@@ -69,7 +69,7 @@ export const people = pgTable(
     // both sides, as the people store does (`caseless` in its adapter), so that it folds as the index does and the
     // index serves the lookup.
     uniqueIndex('auth_person_user_name').on(sql`lower(${t.userName} collate "und-x-icu")`),
-    // Who holds a user name a source sent (`holders` in the people store, D119 item 2) compares the composed form (NFC)
+    // Who holds a user name a source sent (`holders` in the people store, D122 item 2) compares the composed form (NFC)
     // on both sides too, so that a name held by a row stored decomposed beside a composed one names nobody; the unique
     // index above does not fold composition and cannot serve that comparison. This index has its expression, so each
     // lookup finds the holders of the names it asks without reading every person in the installation. It is not
@@ -599,7 +599,7 @@ export const executions = pgTable(
     // the one that approved it (dispatch, replay, read-back) and the one that last asked to check it (read-back only).
     approvingSession: text('approving_session'),
     checkingSession: text('checking_session'),
-    // The person a started action is about (D119): the payload's `param` holds the user name they had when it was
+    // The person a started action is about (D122): the payload's `param` holds the user name they had when it was
     // decided, and dispatch checks that it still names them. Null for every other execution.
     subject: jsonb('subject').$type<{ param: string; personId: string } | null>(),
   },
@@ -927,6 +927,94 @@ export const talkCommitments = pgTable(
     // The `due` timer knows only the card; erasing a card nulls its pointer.
     index('talk_commitment_thread').on(t.threadId),
     index('talk_commitment_owner_open')
+      .on(t.ownerId)
+      .where(sql`${t.doneAt} IS NULL`),
+  ],
+);
+// The follow-up dialogue (D118): a manager's dialogue per unit. Areas, dimensions and questions are an organisation's
+// configuration, replaced whole by an operator; assessments and activities are Clew's own records, kept when the
+// configuration or the unit tree changes, so a unit is a key here, not a reference (a reorganisation drops no record).
+export const dialogueAreas = pgTable(
+  'dialogue_area',
+  {
+    organisationId: text('organisation_id').notNull(),
+    key: text('key').notNull(),
+    title: text('title').notNull(),
+    kind: text('kind').$type<'measured' | 'assessed'>().notNull(),
+    measure: text('measure'),
+    info: text('info'),
+    dimensions: jsonb('dimensions').$type<Array<{ key: string; title: string }>>().notNull().default([]),
+    ordinal: integer('ordinal').notNull(),
+  },
+  t => [
+    primaryKey({ columns: [t.organisationId, t.key] }),
+    check('dialogue_area_kind', sql`${t.kind} IN ('measured', 'assessed')`),
+  ],
+);
+/** A question of an area; `unit_id` set shows it on that unit only, in place of the area's general questions. */
+export const dialogueQuestions = pgTable(
+  'dialogue_question',
+  {
+    id: text('id').primaryKey(),
+    organisationId: text('organisation_id').notNull(),
+    areaKey: text('area_key').notNull(),
+    unitId: text('unit_id'),
+    heading: text('heading'),
+    text: text('text').notNull(),
+    basedOn: text('based_on'),
+    ordinal: integer('ordinal').notNull(),
+  },
+  t => [index('dialogue_question_area').on(t.organisationId, t.areaKey)],
+);
+/**
+ * An assessment (D118 item 6): append-only, the newest per unit, area and dimension counts. `dimension` is '' for an
+ * area assessed as a whole. The comment is a sealed envelope (purpose `dialogue:assessment:<id>`) or null.
+ */
+export const dialogueAssessments = pgTable(
+  'dialogue_assessment',
+  {
+    id: text('id').primaryKey(),
+    organisationId: text('organisation_id').notNull(),
+    unitId: text('unit_id').notNull(),
+    areaKey: text('area_key').notNull(),
+    dimension: text('dimension').notNull().default(''),
+    tone: text('tone').$type<'ok' | 'warn' | 'alert'>().notNull(),
+    commentSealed: text('comment_sealed'),
+    authorId: text('author_id').references(() => people.id, { onDelete: 'set null' }),
+    at: timestamp('at', { withTimezone: true }).notNull(),
+  },
+  t => [
+    check('dialogue_assessment_tone', sql`${t.tone} IN ('ok', 'warn', 'alert')`),
+    index('dialogue_assessment_unit').on(t.unitId, t.areaKey, t.dimension, t.at),
+  ],
+);
+/**
+ * An activity (D118 items 4, 5, 7, 9): a line of work in a unit's area, owned by a person whose card it is. The text and
+ * the done note are sealed envelopes (purposes `dialogue:activity:<id>` and `dialogue:note:<id>`). The due date is
+ * optional; only a dated activity has a timer.
+ */
+export const dialogueActivities = pgTable(
+  'dialogue_activity',
+  {
+    id: text('id').primaryKey(),
+    organisationId: text('organisation_id').notNull(),
+    unitId: text('unit_id').notNull(),
+    areaKey: text('area_key').notNull(),
+    ownerId: text('owner_id').references(() => people.id, { onDelete: 'set null' }),
+    textSealed: text('text_sealed').notNull(),
+    dueOn: date('due_on', { mode: 'string' }),
+    doneAt: timestamp('done_at', { withTimezone: true }),
+    doneBy: text('done_by').references(() => people.id, { onDelete: 'set null' }),
+    doneNoteSealed: text('done_note_sealed'),
+    createdBy: text('created_by').references(() => people.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    threadId: text('thread_id').references(() => threads.id, { onDelete: 'set null' }),
+  },
+  t => [
+    index('dialogue_activity_unit').on(t.unitId),
+    index('dialogue_activity_thread').on(t.threadId),
+    index('dialogue_activity_owner_open')
       .on(t.ownerId)
       .where(sql`${t.doneAt} IS NULL`),
   ],

@@ -113,7 +113,7 @@ export interface WorkItemTx {
    * schedule its `due` timer for 06:00 Europe/Stockholm on the day after `dueOn` (with this commit, D86). The timer
    * carries the owner's current unit and authorisation version, read in the same transaction. Call it before the action
    * point that names `threadId` is inserted, since that row refers to the card. `subject` is the employee the talk is
-   * with, by Clew's key, their id (D97 item 6, D119): the card is about them, so it shows under "Behöver dig" on that
+   * with, by Clew's key, their id (D97 item 6, D122): the card is about them, so it shows under "Behöver dig" on that
    * person for its owner, while nothing drawn on the card or read by the assistant names them (item 6).
    */
   open(input: {

@@ -56,10 +56,11 @@ export interface JobInput {
 /**
  * What a timer is for. `reminder` and `snooze` are the person's own (D17, D29): the only kinds a thread lists in
  * `Thread.timers`, the only kinds the reminder path fires, and the person may cancel them. `obligation` keeps a calendar
- * follow-up's time (D30) and `due` brings an action point's card back the morning after its due date (D96 item 5); both
- * are the system's, never shown as the person's timers, and each is fired by its own module.
+ * follow-up's time (D30), `due` brings an action point's card back the morning after its due date (D96 item 5) and
+ * `dialogue-due` does the same for a dated activity of the follow-up dialogue (D118); they are the system's, never shown
+ * as the person's timers, and each is fired by its own module.
  */
-export type TimerKind = 'reminder' | 'snooze' | 'obligation' | 'due';
+export type TimerKind = 'reminder' | 'snooze' | 'obligation' | 'due' | 'dialogue-due';
 /** One current desired timer per purpose and thread. Generation fences every old workflow. The delivery columns (`deliveredGeneration`, `deliveredState`, `attempt`, `nextAt`, `leaseUntil`) are the retired outbox's and stay as evidence (D86). */
 export interface TimerIntent {
   id: string;
@@ -135,12 +136,12 @@ export interface ThreadTx {
   /**
    * Remove one entity from every thread of every person (D97): the `subject` of each row that names it and the thread's
    * own subject, with the index rows, the rows' text left as the source wrote it. A person is named by Clew's key, their
-   * id, compared exactly (D119). Neither `updatedAt` nor anything the person decided on moves.
+   * id, compared exactly (D122). Neither `updatedAt` nor anything the person decided on moves.
    */
   eraseSubject(subject: Subject): Promise<SubjectErasure>;
 }
 /**
- * Whose a source's key is (D119, composition: the people module's user reads). A row or an action arrives naming a person
+ * Whose a source's key is (D122, composition: the people module's user reads). A row or an action arrives naming a person
  * by the source's key, their user name (D96 talks item 8), and Clew keeps the person's id; a started action's id is
  * resolved back to the user name when the person decides.
  */
@@ -174,7 +175,7 @@ export interface ThreadStore {
   /**
    * The index from entity to cards (D97 item 6): the person's unresolved work threads (a pushed card that is open, or
    * whose execution has not settled, as `listThreads` lists work) whose rows, or which themselves, name one of these
-   * entities, newest first. A key is Clew's (D119: a person's id, a unit's id), compared exactly; one read for the whole
+   * entities, newest first. A key is Clew's (D122: a person's id, a unit's id), compared exactly; one read for the whole
    * list.
    */
   threadsNaming(personId: string, subjects: readonly Subject[]): Promise<NamingThread[]>;

@@ -647,7 +647,7 @@ describe('current employments on a SCIM user', () => {
       userName: 'user2',
       name: 'User 2',
     } as Parameters<ReturnType<typeof staffUsecases>['person']>[0];
-    // A person is read by their id (D119).
+    // A person is read by their id (D122).
     const seen = await staffUsecases({ store }).person(reader, id, true);
     // The employments carry the titles, so the core one is not shown beside them.
     expect(seen?.profile).toMatchObject({

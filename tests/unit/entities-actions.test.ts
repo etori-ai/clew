@@ -29,7 +29,7 @@ import { startedDecision, startedTopic, takesStarted } from '../../apps/server/s
  * card on the memory thread store, wired as the composition wires them. A propose's draft becomes the card; an execute
  * becomes a card whose button is the human decision and reaches nothing before it; whatever the reader may not reach
  * answers undefined (the route's 404) and writes nothing. A person is started on by their id and the source is asked by
- * their user name (D119); in the in-test world the two differ, as they do in an installation.
+ * their user name (D122); in the in-test world the two differ, as they do in an installation.
  */
 const T = '2026-11-10T08:00:00.000Z';
 
@@ -344,7 +344,7 @@ describe('an action about a person, started from the menu', () => {
     const { threadId } = (await w.actions.start(hillevi, 'person', 'anna', 'hr.flag'))!;
     expect(w.asked.flag).toEqual([]);
     const card = (await w.access.read(hillevi, threadId))!;
-    // The card keeps the person by id (D119): a rename before the decision leaves it as it is.
+    // The card keeps the person by id (D122): a rename before the decision leaves it as it is.
     expect(card).toMatchObject({
       connector: 'hr',
       area: 'employees',
@@ -377,7 +377,7 @@ describe('an action about a person, started from the menu', () => {
     ]);
     // The button is the human decision: it hands the approved intent to the ledger (D45), still without the source. The
     // payload names Anna by the user name she has as the decision is made, and the person it is about goes with it, so
-    // that dispatch can check the name is still hers (D119).
+    // that dispatch can check the name is still hers (D122).
     w.people.state.users.get('anna')!.userName = 'anna.lindqvist';
     expect(await w.decisions.act(hillevi, threadId, 'decide')).toMatchObject({ kind: 'execute' });
     expect(w.approvals).toEqual([
@@ -391,13 +391,13 @@ describe('an action about a person, started from the menu', () => {
     expect(w.asked.flag).toEqual([]);
   });
 
-  test('a decision whose dispatch was refused because the user name moved is decided again, on the name the person has now (D119)', async () => {
+  test('a decision whose dispatch was refused because the user name moved is decided again, on the name the person has now (D122)', async () => {
     const w = world();
     const hillevi = w.people.persona('hillevi');
     const { threadId } = (await w.actions.start(hillevi, 'person', 'anna', 'hr.flag'))!;
     await w.decisions.act(hillevi, threadId, 'decide');
     const first = w.approvals[0] as { decisionId: string };
-    // Dispatch found 'anna.l' no longer Anna's and failed the execution without sending it (D119); the card shows that.
+    // Dispatch found 'anna.l' no longer Anna's and failed the execution without sending it (D122); the card shows that.
     w.people.state.users.get('anna')!.userName = 'anna.lindqvist';
     // The ledger's projection writes the settled execution onto the card (composition/execution-projection.ts).
     const settled = (reason: string, at: string) =>
@@ -430,7 +430,7 @@ describe('an action about a person, started from the menu', () => {
     expect(w.asked.flag).toEqual([]);
   });
 
-  test('an execute about someone no longer in the directory cannot be decided, and nothing is approved (D119)', async () => {
+  test('an execute about someone no longer in the directory cannot be decided, and nothing is approved (D122)', async () => {
     const w = world();
     const hillevi = w.people.persona('hillevi');
     const { threadId } = (await w.actions.start(hillevi, 'person', 'anna', 'hr.flag'))!;
@@ -446,7 +446,7 @@ describe('an action about a person, started from the menu', () => {
     expect(w.asked.flag).toEqual([]);
   });
 
-  test('an execute about someone an operator has since erased cannot be decided, and nothing is approved (D119, D120)', async () => {
+  test('an execute about someone an operator has since erased cannot be decided, and nothing is approved (D122, D120)', async () => {
     const w = world();
     const hillevi = w.people.persona('hillevi');
     const { threadId } = (await w.actions.start(hillevi, 'person', 'anna', 'hr.flag'))!;
@@ -473,7 +473,7 @@ describe('an action about a person, started from the menu', () => {
     expect(w.asked.flag).toEqual([]);
   });
 
-  test('an execute whose capability no longer takes the person where the card keeps them cannot be decided, and nothing is approved (D119)', async () => {
+  test('an execute whose capability no longer takes the person where the card keeps them cannot be decided, and nothing is approved (D122)', async () => {
     const w = world();
     const hillevi = w.people.persona('hillevi');
     const { threadId } = (await w.actions.start(hillevi, 'person', 'anna', 'hr.flag'))!;
@@ -517,7 +517,7 @@ describe('an action about a person, started from the menu', () => {
     ]);
   });
 
-  test("a started card's topic says where its person is, and only a started execute's decision reads it (D119)", () => {
+  test("a started card's topic says where its person is, and only a started execute's decision reads it (D122)", () => {
     const decide = { id: 'decide', kind: 'execute' as const, capability: 'hr.flag', input: { person: 'anna' } };
     const topic = startedTopic('hr.flag', 'abc', 'person');
     expect(topic).toBe('started:hr.flag:abc:person:person');
@@ -571,7 +571,7 @@ describe('an action about a person, started from the menu', () => {
     expect(await w.actions.start(hillevi, 'person', 'maria', 'hr.prepare')).toEqual(first);
     const flagged = (await w.actions.start(hillevi, 'person', 'anna', 'hr.flag'))!;
     expect(await w.actions.start(hillevi, 'person', 'anna', 'hr.flag')).toEqual(flagged);
-    // A rename leaves the request as it was: the card names Anna by id (D119), so it is the same card.
+    // A rename leaves the request as it was: the card names Anna by id (D122), so it is the same card.
     w.people.state.users.get('anna')!.userName = 'anna.lindqvist';
     expect(await w.actions.start(hillevi, 'person', 'anna', 'hr.flag')).toEqual(flagged);
     expect(w.store.dump()).toHaveLength(2);

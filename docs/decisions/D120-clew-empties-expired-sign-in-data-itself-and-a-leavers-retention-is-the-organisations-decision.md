@@ -30,7 +30,7 @@
 2. **How long a leaver's record is kept is the organisation's decision**, under its own archive and data-protection
    rules, not Clew's. A deactivation clears nothing ([D68](D68-people-are-pushed-into-clew-through-standard-scim.md)
    item 1). The person's record, with every phone number and employment, their memberships and placements as the last
-   push left them, their sign-in binding, and the cards, talks and competences about them stay until an operator
+   push left them, their sign-in binding, and the cards, talks and competences about them and the dialogue rows that name them stay until an operator
    erases them. The audit trail and the authentication log keep their rows: an erasure takes the person's identifiers
    out of them and keeps every event (item 3). At the identity provider, a leaver's account is disabled, not deleted,
    for as long as the person may come back, and is deleted only under the same decision.
@@ -41,10 +41,10 @@
      up by user name or source key afterwards finds nobody and creates a new person with a new id, and a client that
      still writes to the old id fills the row again: a `PUT /Users/<id>` gives it a user name and fields, and a `PATCH`
      with `active: true` makes it active without a user name.
-   - The procedure for one person runs `scripts/subject-erase.ts`, `scripts/talks-erase.ts` and
-     `scripts/competence-erase.ts` first, each with the person's id
-     ([D119](D119-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) item 7), and
-     `bun scripts/person-erase.ts --person <id> --confirm` last. The three still find the person by the id once the
+   - The procedure for one person runs `scripts/subject-erase.ts`, `scripts/talks-erase.ts`,
+     `scripts/competence-erase.ts` and `scripts/dialogue-erase.ts` first, each with the person's id
+     ([D122](D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) item 7), and
+     `bun scripts/person-erase.ts --person <id> --confirm` last. The domain erasures still find the person by the id once the
      record is erased. Each of them refuses an id the people table does not hold and a person who is still active, as
      this script does (2026-11-13: until then the three erased an active person's cards, talks and competence). They
      cancel no durable workflow, since a script never starts the engine: a removed card's timer goes with the card, and
@@ -63,13 +63,13 @@
      so `GET /scim/v2/Users/<id>` answers the id as `userName`, an empty name, no address, no groups and
      `active: false`, and Administration › Användare shows the id where the user name stood. A filter on `userName` or
      `externalId` no longer finds it, and the source can push the same name and key again as a new person.
-   - No key resolves to the erased person: neither the id nor any name they held (`userName` and `holders`, D119). A
+   - No key resolves to the erased person: neither the id nor any name they held (`userName` and `holders`, D122). A
      card started from their menu with an `execute` keeps them by id, and its one action, the decision, can no longer
      be taken: the decision and its preview answer "Personen finns inte längre i katalogen. Inget har skickats." and
      nothing reaches the ledger. An execution approved from such a card before the erasure keeps its person
-     (`execution.subject`), and dispatch settles it with the reason `subject-changed` and sends nothing (D119 item 5).
+     (`execution.subject`), and dispatch settles it with the reason `subject-changed` and sends nothing (D122 item 5).
    - Every other card about the person keeps the actions its source wrote: a card a source pushed, and one started
-     from their menu with a `propose`, whose actions are the source's own (D119 item 4). Neither `subject-erase` nor
+     from their menu with a `propose`, whose actions are the source's own (D122 item 4). Neither `subject-erase` nor
      this script closes a card. Such an action can still be decided afterwards and is sent with the input the source
      wrote, and an execution approved from one, before the erasure or after, keeps no person and is dispatched as
      approved (see Limits).
@@ -148,7 +148,7 @@ completes rather than throws: a job that throws is claimed again by its workflow
 failure lasts, one more such workflow each night, while the next night repeats the clean-up anyway.
 
 The erase takes one person at a time, and the organisation runs it from its own list when its rules say that a record's
-time has come. Refusing an active person, in this script and in the three that come before it, avoids cutting off
+time has come. Refusing an active person, in this script and in the erasures that come before it, avoids cutting off
 someone who still works there from their record, their cards, their talks and their competence, and erasing what the
 next push and the next scan would create again. The audit trail keeps every event, and names the person there only by
 an id that no longer leads to a name. For an organisation of several thousand employees, leavers come every week and
@@ -212,8 +212,7 @@ SCIM filters on the source key and the user name once deactivated, then erased, 
 searched for each value that named them; the stale group push undone by a second erasure; the freed name and key pushed
 again as a new person; the other three erasures still finding the person by id; and the script's exit codes and answers,
 with someone else holding the person's id as a user name in another case), `tests/unit/entities-actions.test.ts` (an
-execute about a person erased since cannot be decided, and nothing is approved), and, for the three erasures that come
-first, `tests/unit/erase-scripts.test.ts` (the arguments refused before the database is asked, and the answer of all
+execute about a person erased since cannot be decided, and nothing is approved), and, for the card, talks and competence erasures, `tests/unit/erase-scripts.test.ts` (the arguments refused before the database is asked, and the answer of all
 four to a database they cannot reach) and `tests/db/erase-scripts.test.ts` (as scripts on PostgreSQL: an unknown id and
 an active person refused; a failed query answered by all four with the database's own message and that nothing was
 written; and a deactivated person erased with the script's own answer alone, a card with a waiting timer included).

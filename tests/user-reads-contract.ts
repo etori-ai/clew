@@ -36,7 +36,7 @@ export interface UserReadPerson {
   enabled: boolean;
 }
 /**
- * The people the contract expects beside the actors (D119): a person of another organisation; a deactivated person of
+ * The people the contract expects beside the actors (D122): a person of another organisation; a deactivated person of
  * the actors' organisation whose user name has letters outside A to Z; and two people of that organisation whose user
  * names differ only in how they are composed, one stored decomposed (NFD), as a row written before user names were
  * normalised may be, which the unique index lets in since it compares bytes.
@@ -114,7 +114,7 @@ export function userReadsContract(
   });
   test(
     label +
-      ": who holds a user name in the reader's organisation, active or not, by the name as asked, without regard to case or composition (D119)",
+      ": who holds a user name in the reader's organisation, active or not, by the name as asked, without regard to case or composition (D122)",
     async () => {
       const { reads, actors, others } = await prepare();
       const [outsider, leaver, twin] = others;
@@ -155,7 +155,7 @@ export function userReadsContract(
   );
   test(
     label +
-      ': whether a person is active, with or without a user name, and nothing for an id the people table does not hold (D119, D120)',
+      ': whether a person is active, with or without a user name, and nothing for an id the people table does not hold (D122, D120)',
     async () => {
       const { reads, actors, others } = await prepare();
       expect(await reads.enabled(actors[0].id)).toBe(true);

@@ -82,6 +82,16 @@ export const commitmentsQuery = (person?: string) =>
     retry: false,
   });
 /**
+ * One unit's follow-up dialogue (D118). `null` when the module is switched off for the person or the unit is not one
+ * they follow up: the drawer then says the dialogue is not there. Any other failure is an error with Försök igen.
+ */
+export const dialogueQuery = (unitId: string) =>
+  queryOptions({
+    queryKey: keys.dialogue.unit(unitId),
+    queryFn: () => unlessRefused(api.dialogue.unit(unitId)),
+    retry: false,
+  });
+/**
  * Kompetens (D108): the types a certificate can be registered for. `null` when the module is switched off for the
  * person or they may not register: nothing is offered then, and it is no error. Not retried.
  */

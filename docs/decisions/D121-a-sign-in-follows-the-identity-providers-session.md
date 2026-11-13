@@ -1,4 +1,4 @@
-# D118 · A sign-in follows the identity provider's session, and a sign-out there ends Clew's
+# D121 · A sign-in follows the identity provider's session, and a sign-out there ends Clew's
 
 **Status:** provisional (taken in the fixes of [the review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md), Q9, L5 and L9, on the product owner's word of 2026-11-12 to fix every finding and take every open decision), built 2026-11-12; accepted once an organisation's own identity provider, outside the development stack, has signed a person in to Clew by single sign-on and ended that Clew session with its own sign-out · **Date:** 2026-11-12 · **Area:** identity
 
@@ -122,7 +122,7 @@ channel needs no change to the schema.
   revoked the token may then require a new sign-in. The database claim prevents concurrent healthy BFFs from issuing
   the same generation's grant, not loss of an external response. Claim deadlines use the BFFs' wall clocks, which
   operators must keep synchronized. An owner stalled beyond 30 seconds can conservatively lose its session.
-- Migration `0057_session_refresh_claim` adds the claim fields. Stop all older BFF instances before starting the new
+- Migration `0058_session_refresh_claim` adds the claim fields. Stop all older BFF instances before starting the new
   release: an old binary does not acquire the claim, so overlapping versions do not have the new concurrency guarantee.
 
 **As built.** `authorizationUrl` and `redeemCode` in `apps/server/src/auth-login.ts`; `grantEnded`, `sessionRefresher`

@@ -1,0 +1,83 @@
+{
+  "areas": [
+    {
+      "key": "economy",
+      "title": "Ekonomi",
+      "kind": "measured",
+      "measure": "qlik.economyUnit",
+      "info": "Avvikelsen är helårsprognosen mot helårsbudgeten för nettokostnaden. Siffrorna i utvecklingsmiljön är påhittade.",
+      "questions": [
+        { "heading": "Läget", "text": "Vad ligger bakom avvikelsen mot budget just nu?" },
+        { "heading": "Framåt", "text": "Vilka åtgärder behövs för att hålla budgeten resten av året, och vad kostar de att avstå?" },
+        { "heading": "Risker", "text": "Finns det kostnader eller intäkter som ännu inte syns i prognosen?" }
+      ]
+    },
+    {
+      "key": "hme",
+      "title": "Medarbetarengagemang",
+      "kind": "measured",
+      "measure": "qlik.hmeUnit",
+      "questions": [
+        {
+          "heading": "Motivation",
+          "text": "Vad gör att medarbetarna känner att arbetet är meningsfullt, och vad tar ifrån dem den känslan?",
+          "basedOn": "Jag upplever att mitt arbete känns meningsfullt."
+        },
+        {
+          "heading": "Ledarskap",
+          "text": "Hur får medarbetarna veta vad som förväntas av dem, och när blir det otydligt?",
+          "basedOn": "Jag är insatt i min arbetsplats mål."
+        },
+        {
+          "heading": "Styrning",
+          "text": "Vilka mål följer enheten upp tillsammans, och hur märks det i vardagen?",
+          "basedOn": "Jag vet vad som förväntas av mig i mitt arbete."
+        }
+      ]
+    },
+    {
+      "key": "sick-leave",
+      "title": "Sjukfrånvaro",
+      "kind": "measured",
+      "measure": "qlik.unit",
+      "info": "Sjukfrånvaron är andelen av den planerade arbetstiden. Siffrorna i utvecklingsmiljön är påhittade.",
+      "questions": [
+        { "heading": "Mönster", "text": "Syns ett mönster i frånvaron: en period, en arbetsgrupp, en typ av uppgift?" },
+        { "heading": "Tidiga signaler", "text": "Hur fångar enheten upp upprepad korttidsfrånvaro innan den blir lång?" },
+        { "heading": "Arbetsmiljö", "text": "Vad i arbetsmiljön kan bidra till frånvaron, och vad kan enheten själv ändra på?" }
+      ]
+    },
+    {
+      "key": "operations",
+      "title": "Verksamhet",
+      "kind": "assessed",
+      "dimensions": [
+        { "key": "mission", "title": "Grunduppdrag" },
+        { "key": "council-goals", "title": "Fullmäktigemål" }
+      ],
+      "questions": [
+        { "heading": "Uppdraget", "text": "Klarar enheten sitt grunduppdrag med den kvalitet som förväntas?" },
+        { "heading": "Målen", "text": "Hur bidrar enheten till fullmäktiges mål, och var går det trögt?" },
+        { "heading": "Risker och avvikelser", "text": "Vilka avvikelser har enheten haft sedan förra dialogen, och vad lärde ni er av dem?" }
+      ]
+    },
+    {
+      "key": "digital",
+      "title": "Digital transformation",
+      "kind": "assessed",
+      "questions": [
+        { "heading": "Nuläget", "text": "Vilka arbetssätt har enheten gjort digitala det senaste året, och vad gav det?" },
+        { "heading": "Hinder", "text": "Vad hindrar enheten från att använda de verktyg som redan finns?" }
+      ]
+    },
+    {
+      "key": "communication",
+      "title": "Kommunikativt ledarskap",
+      "kind": "assessed",
+      "questions": [
+        { "heading": "Information", "text": "Hur får medarbetarna veta det som rör dem, och hur vet du att det nått fram?" },
+        { "heading": "Delaktighet", "text": "När fick medarbetarna senast vara med och påverka ett beslut som rör dem?" }
+      ]
+    }
+  ]
+}

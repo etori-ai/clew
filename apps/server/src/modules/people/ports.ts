@@ -26,7 +26,7 @@ export interface UserReads {
    */
   userName(personId: string): Promise<string | null>;
   /**
-   * Who holds these user names now in the reader's organisation, active or not (D119: a source's key is resolved to the
+   * Who holds these user names now in the reader's organisation, active or not (D122: a source's key is resolved to the
    * person's id when a row or an action arrives), compared without regard to case and in the composed form (NFC) on
    * both sides; keyed by the name as asked. A name nobody of the reader's organisation holds is absent, and so is a name
    * more than one of them holds in spellings that compare alike, and every name for a reader the people table does not
@@ -35,7 +35,7 @@ export interface UserReads {
   holders(readerId: string, userNames: readonly string[]): Promise<Map<string, string>>;
   /**
    * Whether this person is active: false once the source has deactivated them, undefined for an id the people table
-   * does not hold. An erasure refuses an id it does not hold (D119) and a person who is still active (D120).
+   * does not hold. An erasure refuses an id it does not hold (D122) and a person who is still active (D120).
    */
   enabled(personId: string): Promise<boolean | undefined>;
 }

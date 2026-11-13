@@ -135,7 +135,7 @@ function world(
   takenOver: ReadonlySet<string> = new Set(),
 ) {
   const registry = new Registry(onRefused ? { onRefused } : {});
-  // As the people module answers it (D119): who holds each user name in the organisation, active or not, by the name
+  // As the people module answers it (D122): who holds each user name in the organisation, active or not, by the name
   // as asked, compared without regard to case.
   const asked: Array<readonly string[]> = [];
   const holders: Holders = async (_actor, names) => {
@@ -541,7 +541,7 @@ describe('clew.talks and clew.commitments', () => {
     expect(calls).toEqual([{ name: 'appraisals.commitments', input: { person: 'mikael' } }]);
   });
 
-  test('a person without a user name is asked about by their Clew id, the talks profile’s one exception to the user name on the wire (D96 As built item 8, D119 item 6)', async () => {
+  test('a person without a user name is asked about by their Clew id, the talks profile’s one exception to the user name on the wire (D96 As built item 8, D122 item 6)', async () => {
     const calls: Array<{ name: string; input: unknown }> = [];
     const { registry } = world([
       talkSystem('appraisals', 'Samtalssystemet', {

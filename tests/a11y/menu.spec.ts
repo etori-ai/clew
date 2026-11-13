@@ -46,16 +46,27 @@ test.describe('Verktyg in the menu', () => {
     await expectNoAxeViolations(page);
   });
 
-  test("without a tool there is no Verktyg, and the places hold Hem, Att göra, the calendar and a manager's Personal", async ({
+  test("without a tool there is no Verktyg, and the places hold Hem, Att göra, the calendar and a manager's Personal and Dialogstöd", async ({
     page,
     api: _,
   }) => {
     await open(page, '/');
     await expect(rail(page).getByRole('group', { name: 'Verktyg' })).toHaveCount(0);
     const order = await rail(page).getByRole('link').allTextContents();
-    const places = ['Hem', 'Att göra', 'Kalender', 'Personal'].map(p => order.findIndex(o => o.startsWith(p)));
+    const places = ['Hem', 'Att göra', 'Kalender', 'Personal', 'Dialogstöd'].map(p =>
+      order.findIndex(o => o.startsWith(p)),
+    );
     expect(places.every(i => i >= 0)).toBe(true);
     expect([...places].sort((a, b) => a - b)).toEqual(places);
+    await expect(rail(page).getByRole('link', { name: 'Dialogstöd', exact: true })).toHaveAttribute('href', '/units');
+  });
+
+  test('an employee has neither Personal nor Dialogstöd among the places', async ({ page, api }) => {
+    api.employee = true;
+    await open(page, '/');
+    await expect(rail(page).getByRole('link', { name: /^Hem/ })).toBeVisible();
+    await expect(rail(page).getByRole('link', { name: 'Personal', exact: true })).toHaveCount(0);
+    await expect(rail(page).getByRole('link', { name: 'Dialogstöd', exact: true })).toHaveCount(0);
   });
 
   test('the row opens the tool as a page by keyboard, not in the side panel, and is marked as current', async ({

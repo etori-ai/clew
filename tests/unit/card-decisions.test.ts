@@ -112,7 +112,7 @@ test('a read action runs directly and an undo preserves the original receipt whi
   await expect(w.uc.undoReceipt(persona, w.t.id)).rejects.toThrow('äldre kvittot');
   expect((await w.store.readThread(persona.id, w.t.id))?.receipt).toEqual(receipt);
 });
-test("a read action's view links the records whose user name someone of the reader's organisation holds, by id (D119)", async () => {
+test("a read action's view links the records whose user name someone of the reader's organisation holds, by id (D122)", async () => {
   const view: PanelViewSpec = {
     kind: 'table',
     title: 'name',

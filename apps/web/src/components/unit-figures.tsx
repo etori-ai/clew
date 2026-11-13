@@ -1,5 +1,5 @@
 import { fieldTone, type EntitySource, type View, type ViewField, type ViewTone } from '@clew/contracts';
-import { Card, Grid, HStack, Text, VStack } from '@clew/ui';
+import { Badge, Card, Grid, HStack, TONE_WORDS, Text, VStack } from '@clew/ui';
 import { present } from '../view-fields';
 import { FieldValue, fieldText } from './view';
 import { rowOf, type SectionAnswer } from './entity-sections';
@@ -37,13 +37,32 @@ export const measureOf = (source: EntitySource) => {
 /** How much a tone weighs when the units are ordered: what needs action first, then what to watch. */
 export const toneWeight = (tone: ViewTone) => (tone === 'alert' ? 2 : tone === 'warn' ? 1 : 0);
 
-/** The row in short on one line: the value, then its state's badge. */
+/**
+ * A state in Clew's words (D54): the badge says Lugnt, Bevaka or Behöver dig, as every figure on Hem does, whichever
+ * system sent it, and the source's own word ("Mot underskott", "Åtgärd krävs: Verksamhet") follows as supporting text
+ * where it says more. A state the view gives no tone is the source's word alone, plain.
+ */
+export function StateWords({ field, value, tone }: { field: ViewField; value: unknown; tone: ViewTone }) {
+  const words = fieldText(field, value);
+  if (tone === 'none') return <Text type="supporting">{words}</Text>;
+  const clew = TONE_WORDS[tone];
+  // "Bevaka: Verksamhet" beside the badge "Bevaka" says only what the badge does not: "Verksamhet".
+  const rest = words.startsWith(clew.word + ': ') ? words.slice(clew.word.length + 2) : words;
+  return (
+    <HStack gap={2} vAlign="center" wrap="wrap">
+      <Badge variant={clew.variant} label={clew.word} />
+      {rest !== clew.word && <Text type="supporting">{rest}</Text>}
+    </HStack>
+  );
+}
+
+/** The row in short on one line: the value, then its state in Clew's words. */
 export function Summary({ source, row }: { source: EntitySource; row: Row }) {
-  const { title, state } = summaryOf(source, row);
+  const { title, state, tone } = summaryOf(source, row);
   return (
     <HStack gap={2} vAlign="center" wrap="wrap">
       {title && <FieldValue field={title} value={row[title.key]} text="ordinary" />}
-      {state && <FieldValue field={state} value={row[state.key]} />}
+      {state && <StateWords field={state} value={row[state.key]} tone={tone} />}
     </HStack>
   );
 }
@@ -70,11 +89,7 @@ export function KeyFigureTiles({ answers }: { answers: SectionAnswer[] }) {
             <Text type="display-3" hasTabularNumbers>
               {fieldText(title, row[title.key])}
             </Text>
-            {summary.state && (
-              <HStack>
-                <FieldValue field={summary.state} value={row[summary.state.key]} />
-              </HStack>
-            )}
+            {summary.state && <StateWords field={summary.state} value={row[summary.state.key]} tone={summary.tone} />}
           </VStack>
         </Card>
       ))}

@@ -27,7 +27,7 @@ const draft = (revision = '1', period = '2026'): ThreadDraft => ({
   actions: [],
   occurrences: [{ key: 'case:1', revision, period }],
 });
-/** `people`: whose a source's key is (D119); without it a row names nobody. */
+/** `people`: whose a source's key is (D122); without it a row names nobody. */
 function world(people?: PersonKeys) {
   let now = Date.parse('2026-11-05T12:00:00.000Z'),
     n = 0,
@@ -112,7 +112,7 @@ const row = (ref: string, key: string, entity: 'person' | 'unit' = 'person') => 
   selected: false,
   subject: { entity, key },
 });
-test("a scanned row that names a person by user name is kept by the id of whoever of the reader's organisation holds it (D119)", async () => {
+test("a scanned row that names a person by user name is kept by the id of whoever of the reader's organisation holds it (D122)", async () => {
   const users = new Map(
     [
       user('a', 'chef'),
@@ -155,7 +155,7 @@ test("a scanned row that names a person by user name is kept by the id of whoeve
   expect(await naming('erik.sandstrom')).toEqual([]);
   expect(await naming('p-outside')).toEqual([]);
 });
-test('without whose a key is, a scanned row names nobody (D119)', async () => {
+test('without whose a key is, a scanned row names nobody (D122)', async () => {
   const w = world();
   w.set([{ ...draft(), items: [row('erik', 'erik.sandstrom'), row('unit', 'unit-1', 'unit')] }]);
   await w.uc.request(actor);
@@ -170,7 +170,7 @@ const legacy = (topic: string, ...items: ThreadItem[]): ThreadDraft => {
   const { occurrences: _, ...rest } = draft();
   return { ...rest, topic, items };
 };
-test("a person renamed in Clew's directory alone is no change of the work: the rows are rewritten, and nothing reopens, wakes or is delivered again (D119)", async () => {
+test("a person renamed in Clew's directory alone is no change of the work: the rows are rewritten, and nothing reopens, wakes or is delivered again (D122)", async () => {
   const users = new Map([user('a', 'chef'), user('p-erik', 'erik.sandstrom')].map(u => [u.id, u] as const));
   const w = world(memoryPersonKeys({ users }));
   const drafts = ['open', 'snoozed', 'dismissed', 'receipted'].map(topic => legacy(topic, row('r1', 'erik.sandstrom')));
@@ -219,7 +219,7 @@ test("a person renamed in Clew's directory alone is no change of the work: the r
   // One word per card when it was pushed, and none since.
   expect(w.store.threads.deliveries).toHaveLength(4);
 });
-test('a source that names another person in a row has changed the work, and the card comes back (D119)', async () => {
+test('a source that names another person in a row has changed the work, and the card comes back (D122)', async () => {
   const users = new Map(
     [user('a', 'chef'), user('p-erik', 'erik.sandstrom'), user('p-anna', 'anna')].map(u => [u.id, u] as const),
   );
