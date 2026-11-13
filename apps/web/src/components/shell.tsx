@@ -107,8 +107,14 @@ export function Shell({ user, nav, banner, height = 'fill', children }: Props) {
   // The band's theme (D88) is the installation's (D98), built once per saved theme.
   const branding = useBranding();
   const bandTheme = useMemo(() => createHeaderBandTheme(branding), [branding]);
-  // The connector's logo when it gives one, else the installation's own (D98).
-  const logo = shared?.logo ?? branding.logo;
+  // The connector's logo when it gives one, else the installation's own (D98). The connector's is its own band's logo
+  // (D88, Sundsvall's white dragon), so on the band it is drawn as given, never on the light plate a logo without a
+  // dark variant gets; off the band (the phone's bar) the installation's own, which has a variant for each ground.
+  const logo = shared?.logo
+    ? mobile
+      ? (branding.logo ?? shared.logo)
+      : { ...shared.logo, darkSrc: shared.logo.src }
+    : branding.logo;
   const ownLogo = branding.logo;
   const logoSrc = ownLogo ? (mode === 'dark' && ownLogo.darkSrc ? ownLogo.darkSrc : ownLogo.src) : undefined;
   const [failedLogo, setFailedLogo] = useState<string | null>(null);

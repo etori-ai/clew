@@ -49,8 +49,8 @@ import { useDialogueAction } from '../mutations';
 import { useOverlayTitle } from '../page-title';
 import { dialogueOf, withDialogue, withoutDialogue } from '../dialogue-address';
 import { ContentSkeleton } from './loading';
-import { measureOf, summaryOf } from './unit-figures';
-import { FieldValue, fieldText } from './view';
+import { StateWords, measureOf, summaryOf } from './unit-figures';
+import { fieldText } from './view';
 import { mobileQuery, shortQuery } from './shell';
 
 /** The drawer's desktop width: a unit's dialogue, area by area, with its forms. */
@@ -392,7 +392,7 @@ function MeasuredFigure({ unitId, capability }: { unitId: string; capability: st
     return <ContentSkeleton label="Hämtar nyckeltalet …" rows={1} heading={false} />;
   const row = section.data?.status === 'ok' ? section.data.row : undefined;
   if (!source || !row) return <Text type="supporting">Nyckeltalet finns inte för enheten just nu.</Text>;
-  const { title, state } = summaryOf(source, row);
+  const { title, state, tone } = summaryOf(source, row);
   return (
     <VStack gap={2}>
       <Text type="supporting">
@@ -403,11 +403,7 @@ function MeasuredFigure({ unitId, capability }: { unitId: string; capability: st
           {fieldText(title, row[title.key])}
         </Text>
       )}
-      {state && (
-        <HStack>
-          <FieldValue field={state} value={row[state.key]} />
-        </HStack>
-      )}
+      {state && <StateWords field={state} value={row[state.key]} tone={tone} />}
     </VStack>
   );
 }

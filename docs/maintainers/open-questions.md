@@ -84,3 +84,8 @@ changes: [D18](../decisions/D18-errands-are-a-clew-owned-passthrough-domain.md),
 No manual screen-reader pass has been made on any flow (stated in the project review of 2026-11-10 and on the status
 page). The calendar's time grid is not a WAI-ARIA grid; the list in the panel and the dialogs are the accessible path
 (2026-11-04, [D32](../decisions/D32-one-calendar-family-and-the-persons-own-bookings.md)).
+
+Att göra's reading pane opens past the item's title on a wide screen: the pane is Astryx's `ChatLayout`, which scrolls
+to its latest message and has no setting to open at the top, so the title and "Jag har läst" sit above the fold until
+the person scrolls up (app critique, 2026-11-13). Whether Astryx gains such a setting, or the pane stops being a
+`ChatLayout`, is undecided; nothing custom is built against it.

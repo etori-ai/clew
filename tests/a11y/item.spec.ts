@@ -48,7 +48,7 @@ test.describe('the work item as a page', () => {
     for (const name of ['Varför ser jag detta?', 'Rader', 'Händelser'])
       await expect(page.getByRole('heading', { level: 2, name })).toBeVisible();
     // The status as the queue's dot says it, with its word; the badges: when it is due and its area.
-    await expect(page.getByRole('img', { name: 'Att göra i dag' }).first()).toBeVisible();
+    await expect(page.getByRole('img', { name: 'Ska göras i dag' }).first()).toBeVisible();
     await expect(page.getByText('Förfaller i dag', { exact: true })).toBeVisible();
     // The rows are a checklist with how many are chosen, the action's label counting them.
     await expect(page.getByText('2 av 3 valda', { exact: true })).toBeVisible();

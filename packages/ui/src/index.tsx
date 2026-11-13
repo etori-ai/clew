@@ -106,7 +106,7 @@ export {
   TableSelectionToolbar,
   useTableSelection,
 } from '@astryxdesign/core/Table';
-export type { TablePlugin } from '@astryxdesign/core/Table';
+export type { TableColumn, TablePlugin } from '@astryxdesign/core/Table';
 export { Switch } from '@astryxdesign/core/Switch';
 export { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 export { AlertDialog } from '@astryxdesign/core/AlertDialog';

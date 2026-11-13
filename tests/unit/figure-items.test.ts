@@ -96,7 +96,7 @@ describe('figureItems (D54, artboard 3)', () => {
   });
   test('the rail’s word is the worst tone among the figures, lower case; none or no figure is no word', () => {
     expect(worstWord([null, { label: 'a', tone: 'none' }])).toBeNull();
-    expect(worstWord([{ label: 'a', value: '1', tone: 'ok' }, null])).toEqual({ variant: 'success', word: 'lugnt' });
+    expect(worstWord([{ label: 'a', value: '1', tone: 'ok' }, null])).toEqual({ variant: 'success', word: 'Lugnt' });
     expect(
       worstWord([
         { label: 'a', tone: 'ok' },
@@ -104,7 +104,7 @@ describe('figureItems (D54, artboard 3)', () => {
       ]),
     ).toEqual({
       variant: 'warning',
-      word: 'bevaka',
+      word: 'Bevaka',
     });
     expect(
       worstWord([
@@ -113,7 +113,7 @@ describe('figureItems (D54, artboard 3)', () => {
       ]),
     ).toEqual({
       variant: 'error',
-      word: 'behöver dig',
+      word: 'Behöver dig',
     });
   });
 });
