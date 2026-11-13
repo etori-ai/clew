@@ -1,10 +1,11 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import { schema, type Transaction } from '@clew/db';
 import { enqueueWorkflow, type DurableQueue } from '@clew/db/durable';
 import { jobStart } from '@clew/db/jobs';
 import { receipt } from '@clew/connectors';
 import { ExecutionError, type Execution } from '../modules/executions/model';
 import type { CalendarCommand } from '../modules/calendar/usecases/decisions';
+import { invitingSentence } from '../modules/calendar/usecases/booked';
 import { timerTx } from '../threads/adapters/timer-postgres';
 import { reminderStart } from '../threads/domain';
 import { nextCheck } from '../modules/calendar/usecases/obligation';
@@ -92,6 +93,7 @@ async function project(tx: Transaction, e: Execution, stage: Stage, durable: Dur
       )
         throw new ExecutionError('Förslaget har ändrats. Läs om sidan.');
     }
+    await refuseInvitedElsewhere(tx, e, selected);
     if (!command.followup || command.followup.maxReminders !== 2 || command.followup.afterWorkdays !== 2)
       throw new ExecutionError('Ogiltig uppföljningsplan.');
     const [previousPolicy] = await tx
@@ -209,4 +211,37 @@ async function project(tx: Transaction, e: Execution, stage: Stage, durable: Dur
       details: { executionId: e.id, operation: e.operation, compensates: e.compensates },
     });
   }
+}
+/**
+ * One talk a round, held at the approval (M1, Q12): two managers of one person who confirm at the same moment both pass
+ * the check in `confirm`, which sees only settled bookings. Here, under a transaction lock per invitee taken in one
+ * order, a confirmation is refused while another manager's approved invitation to the same person may be on its way
+ * (its execution pending, running or unknown), and the proposals it takes are marked with its execution, so that the
+ * confirmation after it sees it. A booking that settled in the meantime is caught when the invitation is sent.
+ */
+async function refuseInvitedElsewhere(tx: Transaction, e: Execution, selected: CalendarCommand['items']) {
+  const invitees = [...new Set(selected.flatMap(i => (i.personId === undefined ? [] : [i.personId])))].sort();
+  for (const id of invitees)
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${'clew.invitee:' + id}, 0))`);
+  const rivals = invitees.length
+    ? await tx
+        .select({ personId: schema.proposals.participantId })
+        .from(schema.proposals)
+        .innerJoin(schema.executions, eq(schema.executions.id, schema.proposals.executionId))
+        .where(
+          and(
+            inArray(schema.proposals.participantId, invitees),
+            ne(schema.proposals.personId, e.personId),
+            eq(schema.proposals.status, 'proposed'),
+            inArray(schema.executions.state, ['pending', 'running', 'unknown']),
+          ),
+        )
+    : [];
+  const taken = new Set(rivals.map(r => r.personId));
+  if (taken.size)
+    throw new ExecutionError(
+      invitingSentence(selected.filter(i => i.personId !== undefined && taken.has(i.personId)).map(i => i.label)),
+    );
+  const ids = selected.flatMap(i => (i.proposalId ? [i.proposalId] : []));
+  if (ids.length) await tx.update(schema.proposals).set({ executionId: e.id }).where(inArray(schema.proposals.id, ids));
 }

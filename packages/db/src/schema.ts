@@ -344,6 +344,10 @@ export const proposals = pgTable(
     eventRevision: text('event_revision'),
     confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
     undoUntil: timestamp('undo_until', { withTimezone: true }),
+    // The approved decision that last took this proposal (M1): while that execution is pending, running or unknown, the
+    // invitation may be on its way, and another manager's confirmation of the same person is refused. Only that
+    // execution's state is read; no foreign key, as `participant_id` has none.
+    executionId: text('execution_id'),
     // Follow-ups to the invitee (D30): how many were sent and when the last one went.
     reminders: integer('reminders').notNull().default(0),
     remindedAt: timestamp('reminded_at', { withTimezone: true }),

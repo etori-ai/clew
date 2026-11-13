@@ -67,8 +67,12 @@ export interface NewProposalThread {
   createdAt: string;
   updatedAt: string;
 }
+/** A thread's patch; `trigger` is counted again when drawn times leave an open card (M1). */
 export type ProposalThreadPatch = Partial<
-  Pick<Thread, 'title' | 'week' | 'state' | 'handledAt' | 'updatedAt' | 'summary' | 'deadline' | 'waitingOn'>
+  Pick<
+    Thread,
+    'title' | 'week' | 'state' | 'handledAt' | 'updatedAt' | 'summary' | 'deadline' | 'waitingOn' | 'trigger'
+  >
 > & { items?: ThreadItem[] };
 export interface AuditEntry {
   actor: string;

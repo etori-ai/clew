@@ -393,6 +393,13 @@
       "when": 1794528730684,
       "tag": "0055_proposal_participant",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1794532970348,
+      "tag": "0056_proposal_execution",
+      "breakpoints": true
     }
   ]
 }

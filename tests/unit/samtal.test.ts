@@ -3,7 +3,12 @@ import type { AuthenticatedContext } from '../../packages/contracts/src/index';
 import { memoryCalendar, occurrence } from '../../packages/calendar/src/memory';
 import { localInstant } from '../../packages/calendar/src/dates';
 import { memoryObligations, memoryProposalStore } from '../../apps/server/src/modules/calendar/adapters/memory';
-import type { NotifyDraft, PlanningRound, UnitMember } from '../../apps/server/src/modules/calendar/model';
+import type {
+  NotifyDraft,
+  PlanningRound,
+  ProposalThreadPatch,
+  UnitMember,
+} from '../../apps/server/src/modules/calendar/model';
 import {
   FOLLOW_UP,
   nextCheck,
@@ -14,6 +19,7 @@ import {
 import { dayLoad, unplacedReasons, planWeek } from '../../packages/calendar/src/proposals';
 import { obligationStep, replySummary } from '../../packages/contracts/src/index';
 import { calendarUsecases, TOPIC } from '../../apps/server/src/modules/calendar/usecases/samtal';
+import { calendarDecisions, type CalendarApproval } from '../../apps/server/src/modules/calendar/usecases/decisions';
 import { chunks, dueLabel, teamFromStaff } from '../../apps/server/src/modules/calendar/domain';
 
 /**
@@ -607,6 +613,94 @@ describe('a person with two managers (M1, Q12)', () => {
     w.setting.team = members;
     w.setting.personas.delete('hillevi');
     expect((await w.samtalBookings(gunnar, period))!.size).toBe(0);
+  });
+  /** The human decision over the same store and team as the planner; approvals are recorded, never sent. */
+  function deciding(w: ReturnType<typeof twoManagers>) {
+    const approved: CalendarApproval[] = [];
+    const decisions = calendarDecisions({
+      ...w.deps,
+      approve: async (_p, input) => {
+        approved.push(input);
+      },
+      previous: async () => undefined,
+    });
+    return { approved, confirm: decisions.confirm };
+  }
+  test('both cards drawn before one manager books: the other’s confirmation is refused by name with nothing approved or written, and the scan takes the time off his card', async () => {
+    const w = twoManagers(),
+      d = deciding(w);
+    const hers = (await w.ensureProposalThread(hillevi))!;
+    const his = (await w.ensureProposalThread(gunnar))!;
+    // Both cards were drawn before either manager booked: each holds a time for Anna.
+    const hisAnna = his.proposals.find(p => p.participant.name === anna.name)!;
+    expect(his.proposals.map(p => p.participant.name).sort()).toEqual(['Anna Lindqvist', 'Sara Ek']);
+    expect(his.trigger.reason).toBe('2 samtal saknar tid före 28 november');
+    await seedConfirmed(w, hers.id, [hers.proposals.find(p => p.participant.name === anna.name)!.id]);
+    const audited = w.store.audit.length;
+    await expect(d.confirm(gunnar, his.id, [hisAnna.id])).rejects.toThrow(
+      'Anna Lindqvist har redan ett utvecklingssamtal bokat med en annan chef.',
+    );
+    // Nothing approved, so nothing dispatched; no row written, and his card is as it was drawn.
+    expect(d.approved).toEqual([]);
+    expect(w.setting.calendars.get('gunnar')!.events).toEqual([]);
+    expect(w.store.audit).toHaveLength(audited);
+    expect((await w.store.readThread('gunnar', his.id))!.thread).toEqual(his);
+    // The next scan takes Anna's time off his card as a row with the reason, and counts again who lacks a time.
+    const settled = (await w.ensureProposalThread(gunnar))!;
+    expect(settled.id).toBe(his.id);
+    expect(settled.proposals.map(p => p.participant.name)).toEqual(['Sara Ek']);
+    expect(settled.items.map(i => i.ref)).not.toContain('proposal:' + hisAnna.id);
+    expect(settled.items).toContainEqual({
+      ref: 'unplaced:anna',
+      label: 'Anna Lindqvist',
+      detail: 'bokad av en annan chef',
+      selectable: false,
+      selected: false,
+    });
+    expect(settled.trigger.reason).toBe('1 samtal saknar tid före 28 november');
+    expect((await w.store.readThread('gunnar', his.id))!.proposals.find(p => p.id === hisAnna.id)?.status).toBe(
+      'superseded',
+    );
+    expect(actions(w.store, his.id)).toEqual(['thread.pushed', 'proposals.settled_elsewhere']);
+    expect(w.store.audit.at(-1)).toMatchObject({
+      actor: 'assistant:scan',
+      details: { proposals: [hisAnna.id], owner: 'gunnar' },
+    });
+    // The scan again changes nothing, and Sara's time is confirmed alone.
+    expect((await w.ensureProposalThread(gunnar))!.updatedAt).toBe(settled.updatedAt);
+    expect(actions(w.store, his.id)).toHaveLength(2);
+    await d.confirm(gunnar, his.id, [settled.proposals[0]!.id]);
+    expect(d.approved.map(a => a.payload.items.map(i => i.personId))).toEqual([['sara']]);
+  });
+  test('a time drawn before the round recorded the talk as held is refused and leaves the card the same way; a card with a decision on its way is left as it is', async () => {
+    const w = twoManagers(),
+      d = deciding(w);
+    const his = (await w.ensureProposalThread(gunnar))!;
+    const hisSara = his.proposals.find(p => p.participant.name === sara.name)!;
+    w.setting.round = { ...ROUND, held: ['sara'] };
+    await expect(d.confirm(gunnar, his.id, [hisSara.id])).rejects.toThrow(
+      'Sara Ek har redan haft sitt utvecklingssamtal i den här omgången.',
+    );
+    expect(d.approved).toEqual([]);
+    // While a decision on the card is on its way, the scan leaves it alone.
+    await w.store.transaction(tx =>
+      tx.updateThread(his.id, { execution: { id: 'x', state: 'pending' } } as unknown as ProposalThreadPatch),
+    );
+    const waiting = (await w.store.readThread('gunnar', his.id))!.thread;
+    expect((await w.ensureProposalThread(gunnar))!).toEqual(waiting);
+    await w.store.transaction(tx =>
+      tx.updateThread(his.id, { execution: { id: 'x', state: 'failed' } } as unknown as ProposalThreadPatch),
+    );
+    const settled = (await w.ensureProposalThread(gunnar))!;
+    expect(settled.items).toContainEqual({
+      ref: 'unplaced:sara',
+      label: 'Sara Ek',
+      detail: 'har redan haft sitt samtal',
+      selectable: false,
+      selected: false,
+    });
+    expect(settled.proposals.map(p => p.participant.name)).toEqual(['Anna Lindqvist']);
+    expect(settled.trigger.reason).toBe('1 samtal saknar tid före 28 november');
   });
   test('the reader’s own booking keeps its time when another manager booked the person too', async () => {
     const w = twoManagers();

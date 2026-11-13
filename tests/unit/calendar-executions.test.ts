@@ -6,6 +6,7 @@ import {
   type CalendarCommand,
 } from '../../apps/server/src/modules/calendar/usecases/decisions';
 import type { UnitMember } from '../../apps/server/src/modules/calendar/model';
+import type { BookedInRound } from '../../apps/server/src/modules/calendar/usecases/booked';
 import { memoryExecutionStore } from '../../apps/server/src/modules/executions/adapters/memory';
 import { executionUsecases } from '../../apps/server/src/modules/executions/usecases';
 import { createHash } from 'node:crypto';
@@ -37,7 +38,7 @@ const command = (): CalendarCommand => ({
   items: [{ id: 'p1', proposalId: 'p1', label: 'Guest', action: 'create', input }],
 });
 const guest: UnitMember = { ref: 'guest', personId: 'guest', email: 'guest@clew.test', name: 'Guest' };
-function world(team: UnitMember[] = [guest]) {
+function world(team: UnitMember[] = [guest], booked: BookedInRound = async () => new Set()) {
   let n = 0,
     now = Date.parse(at);
   const provider = memoryCalendar({ ref: 'a', email: 'a@clew.test', name: 'A' });
@@ -45,6 +46,7 @@ function world(team: UnitMember[] = [guest]) {
     ...calendarExecutionSource(
       () => ({ provider }),
       async () => team,
+      booked,
     ),
     current: async () => person,
   };
@@ -202,6 +204,86 @@ test('a declined invitation is retired only once the new one for the same person
     ['replace:p0', 'skipped'],
   ]);
   expect(w.provider.events.map(x => x.uid).sort()).toEqual(['clew-exec-e1-p2', 'old']);
+});
+test('an invitation to a person another manager booked after the approval is not sent, and a later check keeps it unsent (M1, Q12)', async () => {
+  const other: UnitMember = { personId: 'other', ref: 'other', email: 'other@clew.test', name: 'Other' };
+  const asked: string[][] = [];
+  const w = world([guest, other], async (_p, ids) => {
+    asked.push([...ids]);
+    return new Set(['guest']);
+  });
+  const create = w.provider.create.bind(w.provider);
+  w.provider.create = async (uid, value) => {
+    if (uid.endsWith('p2')) throw new Error('away');
+    return create(uid, value);
+  };
+  const e = await w.approve({
+    items: [
+      { ...command().items[0]!, personId: 'guest' },
+      {
+        id: 'p2',
+        proposalId: 'p2',
+        personId: 'other',
+        label: 'Other',
+        action: 'create',
+        input: {
+          ...input,
+          start: '2026-11-10T13:00:00.000Z',
+          end: '2026-11-10T14:00:00.000Z',
+          participants: ['other@clew.test'],
+        },
+      },
+    ],
+  });
+  await w.uc.progress(e.id);
+  // Asked once, for everyone the command invites, right before sending; Guest's invitation is never sent.
+  expect(asked).toEqual([['guest', 'other']]);
+  expect(w.provider.events).toEqual([]);
+  expect(await w.uc.read(person, e.id)).toMatchObject({
+    state: 'unknown',
+    result: {
+      rows: [
+        { ref: 'p1', outcome: 'skipped', detail: 'Guest har redan ett utvecklingssamtal bokat med en annan chef.' },
+        { ref: 'p2', outcome: 'unknown' },
+      ],
+    },
+  });
+  // Checking the unknown one again reads back and keeps Guest's row as it was: it neither sends it nor calls it unknown.
+  await w.uc.progress(e.id);
+  expect(w.provider.events).toEqual([]);
+  expect((await w.uc.read(person, e.id))?.result?.rows.map(r => [r.ref, r.outcome])).toEqual([
+    ['p1', 'skipped'],
+    ['p2', 'unknown'],
+  ]);
+  expect(asked).toHaveLength(1);
+  // A booking that invites nobody by id, an ordinary meeting, is never asked about.
+  const plain = await w.uc.approve(person, {
+    decisionId: 'plain',
+    operation: 'calendar.createEvent',
+    payload: command(),
+  });
+  await w.uc.progress(plain.id);
+  expect(asked).toHaveLength(1);
+  expect(w.provider.events).toHaveLength(1);
+});
+test('an invitation is not sent when it cannot be told whether another manager booked the person (M1)', async () => {
+  const w = world([guest], async () => {
+    throw new Error('round unavailable');
+  });
+  const e = await w.approve({ items: [{ ...command().items[0]!, personId: 'guest' }] });
+  await w.uc.progress(e.id);
+  expect(w.provider.events).toEqual([]);
+  expect(await w.uc.read(person, e.id)).toMatchObject({
+    state: 'failed',
+    result: {
+      rows: [
+        {
+          outcome: 'skipped',
+          detail: 'Inbjudan skickades inte: det gick inte att se om Guest redan har ett utvecklingssamtal bokat.',
+        },
+      ],
+    },
+  });
 });
 test('a process crash after sending is recovered with reads only, even if some approved items never reached the source', async () => {
   const w = world(),

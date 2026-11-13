@@ -230,6 +230,24 @@ export function proposalStoreContract(name: string, make: () => Promise<Proposal
         end: '2026-11-11T14:00:00.000Z',
       });
     });
+    test('a thread patch writes the trigger counted again, its source and time kept (M1)', async () => {
+      const {
+        store,
+        people: [a],
+      } = await make();
+      const t = draft(a);
+      await store.transaction(async tx => {
+        await tx.insertThread(t);
+      });
+      await store.transaction(tx =>
+        tx.updateThread(t.id, { trigger: { ...t.trigger, reason: '3 samtal saknar tid' }, updatedAt: plus(T0, 1000) }),
+      );
+      expect((await store.readThread(a, t.id))!.thread).toMatchObject({
+        trigger: { reason: '3 samtal saknar tid', source: 'Nattlig genomgång 06:00', at: T0 },
+        updatedAt: plus(T0, 1000),
+        summary: t.summary,
+      });
+    });
     test('messages, the thread patch, the audit row and the job commit together and roll back together', async () => {
       const {
         store,

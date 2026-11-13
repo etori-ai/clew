@@ -2,7 +2,7 @@ import type { AuthenticatedContext } from '@clew/contracts';
 import { bindCalendar, type CalendarBinding } from '@clew/calendar/accounts';
 import { postgresProposalStore } from '../modules/calendar/adapters/postgres';
 import { durableObligations } from '../dbos/obligations';
-import type { Notifier, RoundReader, Team } from '../modules/calendar/model';
+import type { Notifier, People, RoundReader, Team } from '../modules/calendar/model';
 import { teamFromStaff } from '../modules/calendar/domain';
 import { ForbiddenError } from '../context';
 import { staff } from './people';
@@ -16,6 +16,7 @@ import {
   calendarExecutionSource,
   type CalendarDecisionDeps,
 } from '../modules/calendar/usecases/decisions';
+import { bookedInRound } from '../modules/calendar/usecases/booked';
 import { followupUsecases } from '../modules/calendar/usecases/followups';
 import { postgresFollowupStore } from './followup-store';
 import { ledger } from './durable';
@@ -58,6 +59,8 @@ const round: RoundReader = persona => planningRound.read(persona);
 /** The follow-up card goes into an invitee's stream through the threads module, which is built after this file: `index.ts` fills the slot. */
 export const notifier: { push: Notifier } = { push: async () => undefined };
 const store = postgresProposalStore(ledger);
+/** Who owns a thread, or booked a person, as a system identity with the grant they have now. */
+const people: People = { personaFor: id => systemContext(id, 'system:obligation') };
 export const calendarApproval: Pick<CalendarDecisionDeps, 'approve' | 'previous'> = {
   approve: async () => {
     throw new Error('Calendar execution boundary not initialized');
@@ -68,12 +71,18 @@ const decisions = calendarDecisions({
   store,
   bind,
   team,
+  round,
+  people,
   clock,
   ids,
   approve: (p, input) => calendarApproval.approve(p, input),
   previous: (p, id) => calendarApproval.previous(p, id),
 });
-export const calendarSource = calendarExecutionSource(bind, team);
+/**
+ * An approved invitation is checked once more just before it is sent (M1, Q12): a person another of their current
+ * managers booked after the confirmation was checked gets no second talk.
+ */
+export const calendarSource = calendarExecutionSource(bind, team, bookedInRound({ store, team, people, round }));
 const core = calendarUsecases({
   store,
   bind,
@@ -81,7 +90,7 @@ const core = calendarUsecases({
   round,
   clock,
   ids,
-  people: { personaFor: id => systemContext(id, 'system:obligation') },
+  people,
   notify: (personId, draft) => notifier.push(personId, draft),
   obligations: durableObligations(),
 });
