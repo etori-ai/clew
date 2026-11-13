@@ -15,6 +15,7 @@ import {
   FRITIDS,
   JOHAN_EMAIL,
   LONG_PHONE_CATEGORY,
+  MELLANSTADIET,
   POINTS,
   People,
   pointsOutput,
@@ -263,7 +264,7 @@ test.describe('the person as a page', () => {
     await expectNoAxeViolations(page);
   });
 
-  test('someone who reports to the reader from below is placed on their own unit, in the header, under Tillhör and in Anställningar alike, named and not linked, with the reader as their manager (D99)', async ({
+  test('someone who reports to the reader from below is placed on the unit they lead, in the header, under Tillhör and in Anställningar alike, with the reader as their manager, and under Tillhör the unit is a link to its page, which the reader follows up (D99, D117)', async ({
     page,
     api: _,
   }) => {
@@ -279,12 +280,36 @@ test.describe('the person as a page', () => {
     await expect(page.getByText('Bergsåkers skola', { exact: true })).toHaveCount(0);
     const jobs = region(page, 'Anställningar').getByRole('list', { name: 'Anställningar' });
     await expect(jobs.getByRole('listitem')).toHaveText([new RegExp(`^${FRITIDS.label}`)]);
-    // The rail: the reader is his manager, and his unit is named, not linked, since the reader may not open it.
+    // The rail: the reader is his manager, and his unit is a link to its page, which opens for a unit below whose manager
+    // reports to the reader (D117), with this page as the way back.
     const details = page.getByRole('complementary', { name: 'Detaljer' });
     await expect(details).toContainText('Chef');
     await expect(details.locator('[aria-level="2"]').filter({ hasText: /^Tillhör$/ })).toBeVisible();
-    await expect(details.getByText(FRITIDS.label, { exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: new RegExp(FRITIDS.label) })).toHaveCount(0);
+    await expect(details.getByRole('link', { name: `Enhet: ${FRITIDS.label}` })).toHaveAttribute(
+      'href',
+      `/units/${FRITIDS.id}?from=%2Fpeople%2Fjohan`,
+    );
+    await expect(page.getByRole('link', { name: /^Enhet:/ })).toHaveCount(1);
+    await expectNoAxeViolations(page);
+  });
+
+  test('someone placed on a unit below the reader that has no manager of its own reports to the reader, and that unit is named under Tillhör, not linked, since the reader does not follow it up (D99, D117)', async ({
+    page,
+    api: _,
+  }) => {
+    const people = new People();
+    people.placedBelow = true;
+    await people.route(page);
+    await open(page, '/people/johan?from=%2Fstaff');
+    await expect(page.getByRole('heading', { level: 1, name: 'Johan Byström' })).toBeVisible();
+    await expect(page.getByRole('main').getByText(MELLANSTADIET.label, { exact: true }).first()).toBeVisible();
+    const jobs = region(page, 'Anställningar').getByRole('list', { name: 'Anställningar' });
+    await expect(jobs.getByRole('listitem')).toHaveText([new RegExp(`^${MELLANSTADIET.label}`)]);
+    // The rail: the reader is his manager, and his unit is named, not linked, since its page does not open for them.
+    const details = page.getByRole('complementary', { name: 'Detaljer' });
+    await expect(details).toContainText('Chef');
+    await expect(details.getByText(MELLANSTADIET.label, { exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: new RegExp(MELLANSTADIET.label) })).toHaveCount(0);
     await expect(page.getByRole('link', { name: /^Enhet:/ })).toHaveCount(0);
     await expectNoAxeViolations(page);
   });

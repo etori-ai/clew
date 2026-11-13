@@ -17,7 +17,7 @@ describe("Clew's Start in the shared header", () => {
         { id: 'kalender', label: 'Kalender', href: '/calendar' },
       ],
     });
-    // Dialogstöd is the units' address, which opens the manager's own unit; an employee has none.
+    // Dialogstöd is `/units`, the units a manager follows up side by side (D117); an employee has none.
     expect(clewsStart('manager').children?.map(c => [c.label, c.href])).toEqual([
       ['Hem', '/'],
       ['Att göra', '/todo'],

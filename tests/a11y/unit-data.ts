@@ -3,6 +3,7 @@ import type {
   EntityAction,
   EntityCard,
   EntityDetail,
+  EntityRef,
   EntitySection,
   EntitySource,
   PanelViewSpec,
@@ -24,6 +25,8 @@ export const TALK_UNITS = 'clew.talkUnits';
 export const MEMBER_UNIT = { id: 'unit-ledning', label: 'Rektorernas ledningsgrupp' };
 /** A unit under the school whose manager reports to the reader (D117): its page says so, and the school lists it. */
 export const BELOW_UNIT = { id: 'unit-skola-fritids', label: 'Bergsåkers fritidshem' };
+/** A unit as `GET /api/entities/unit` lists it: one key for Clew and the source alike, its id (`unitRef` on the server). */
+const unitEntity = (id: string, name: string): EntityRef => ({ kind: 'unit', key: id, sourceKey: id, name, id });
 
 /** The Qlik connector's read about a unit (`connectors/qlik/manifest.mjs`), under its own name. */
 export const sickSource: EntitySource = {
@@ -209,7 +212,7 @@ export class Units {
               {
                 id: 'units',
                 label: 'Mina enheter',
-                entities: [{ kind: 'unit', key: ENTITY_UNIT.id, name: ENTITY_UNIT.label }],
+                entities: [unitEntity(ENTITY_UNIT.id, ENTITY_UNIT.label)],
               },
               ...(this.withBelow
                 ? [
@@ -217,8 +220,8 @@ export class Units {
                       id: 'below',
                       label: 'Enheter under dig',
                       entities: [
-                        { kind: 'unit', key: BELOW_UNIT.id, name: BELOW_UNIT.label },
-                        { kind: 'unit', key: 'unit-skola-haga', name: 'Hagaskolan' },
+                        unitEntity(BELOW_UNIT.id, BELOW_UNIT.label),
+                        unitEntity('unit-skola-haga', 'Hagaskolan'),
                       ],
                     },
                   ]

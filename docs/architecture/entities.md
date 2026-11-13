@@ -99,14 +99,17 @@ A started execute about a person keeps the person's id in its input, and its top
 | Capability | Source | About | Places it can take |
 |---|---|---|---|
 | `talks.person` | Clew's talks module ([capabilities.ts](../../apps/server/src/modules/talks/capabilities.ts)) | person | Section, lens, column, marks; the section's way in is the talk, `?talk={id}`, laid over the page it is drawn on (D111 rule 5) |
-| `talks.unit` | Clew's talks module | unit | Section on the unit page; its way in is the lens on Personal |
+| `talks.unit` | Clew's talks module | unit | Section on the unit page and column on Dialogstöd; its way in is the lens on Personal |
 | `competence.person` | Clew's competence module ([capabilities.ts](../../apps/server/src/modules/competence/capabilities.ts)), proposed in D108 and switched off until an administrator enables it | person | Section, lens, column, a mark for "Utgånget" and "Går ut snart"; the section's way in is the registration form at `/staff?register={id}` |
 | `hr.person` | The HR fixture ([manifest](../../connectors/hr/manifest.mjs)) | person | Section, lens, column; no field warns, so no mark |
 | `hr.prepareAbsence` | The HR fixture | person | Menu: "Registrera frånvaro", a propose |
 | `appraisals.person` | The talks-system fixture ([connector](../../connectors/appraisals/connector.mjs)), registered as a draft | person | Section, lens, column, a mark for "Saknas" |
-| `qlik.unit` | The sick-leave statistics connector ([manifest](../../connectors/qlik/manifest.mjs)) | unit | Section on the unit page |
+| `qlik.unit` | The Qlik connector's sick leave ([manifest](../../connectors/qlik/manifest.mjs)) | unit | Section on the unit page and column on Dialogstöd |
+| `qlik.economyUnit` | The Qlik connector's economy | unit | Section on the unit page and column on Dialogstöd |
+| `qlik.hmeUnit` | The Qlik connector's employee engagement (HME) | unit | Section on the unit page and column on Dialogstöd |
 
-No page lists units, so a read about a unit shows only as a section on the unit page.
+A read about a unit is a section on the unit's page and a column on Dialogstöd (`/units`), which asks it about every unit
+the reader follows up ([D117](../decisions/D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md)).
 
 ## Not built
 

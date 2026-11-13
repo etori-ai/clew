@@ -633,9 +633,19 @@ what they say.
   [D117](../decisions/D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md), under which a manager
   opens a unit below whose manager reports to them. The person page links a person's unit only when the reader may
   open it, and that test did not yet count such a unit, so the page left out a link that `/units/<id>` would have
-  answered. It counts it now. The test of someone who reports from below has a unit the reader follows up and one the
-  reader does not. [D116](../decisions/D116-start-and-the-row-under-it-are-clews.md) puts Clew's Start first in the
-  header, and the kept header serves it in every case, the last good answer kept through a failure included.
+  answered. It counts it now. The unit test and the browser test of someone who reports from below each have a unit
+  the reader follows up, linked, and one the reader does not, named.
+  [D116](../decisions/D116-start-and-the-row-under-it-are-clews.md) puts Clew's Start first in the header, and the kept
+  header serves it in every case, the last good answer kept through a failure included.
+- A review of the merge found the documents describing the actor, the header and the reads about a unit as they were
+  before D116 and D117: the connector guide's actor of six fields and a header Clew "edits nothing of", with a default
+  band for a refused person that is never drawn; the same six fields in the authorization guide, the protocol
+  reference and the identity page; three personas where `auth:setup` makes four; no `below` relation on the identity
+  page; "no page lists units" on the entities and people status pages, beside Dialogstöd; the Qlik connector's two new
+  reads about a unit missing from both; and a connector told one unit on the identity status page. They say now what
+  is sent and drawn, the browser fixture of the list of units carries the source key, and
+  [D117](../decisions/D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md) notes where its item 5
+  as built differs.
 
 **Left.**
 
@@ -682,6 +692,17 @@ what they say.
   calendar or the team reaches the card within the hour, and an unknown outcome holds other managers for the
   approval's 24 hours. The web planning card still offers no new decision after a failed one
   ([connectors status](../reference/status/connectors.md)).
+- A manager's followed units (`units`, D117) go with every read about a person or a unit and every view the manager
+  opens, more calls than D117's item 5 names, and nothing bounds them. Past about 115 units the signed assertion
+  outgrows a 16 KiB request header, which the connectors' Node servers answer with 431, so every remote read for that
+  manager fails; for a connector with callbacks, whose grant signs them a second time, past about 50; and past 200 the
+  body breaks the protocol's own limit and Clew refuses its own callback grant. It came with `main`'s D117, and changing
+  what that protocol signs is a decision on D117, not a fix of this review's. The follow-up is decided: leave `units`
+  out of the callback grant, which never reads them, and out of reads about a person, which item 5 never named; keep
+  them on reads about a unit and on views, since item 6's tables need every followed unit; and move them from the
+  bearer header into the request body as a token of their own, signed with the same keys and bound to the assertion's
+  `jti`, so the header no longer grows with the units; with a test past 200 followed units and one of the header's
+  size.
 - Every workflow other than the last and the next nights that a deployment leaves under the replaced application
   version, such as a reminder, an approved execution, a watch or a follow-up, still runs only once an operator moves it
   with `scripts/workflows-move.ts` ([D85](../decisions/D85-dbos-transact-replaces-temporal-as-the-durable-engine.md)
@@ -696,5 +717,7 @@ tests, with the 173 screenshot tests left to run on demand (`CLEW_SCREENS=1`). T
 eleven lenses: 26 problems reported and 21 confirmed and fixed, each fix in the code with a test that failed against
 the unfixed code. A second check of each fix found 34 more: 32 were fixed, and the other two were the migration that two lanes numbered
 0055, which the merge settled as 0055 and 0056. `person-erase` ran four times in half a second in the database test,
-so the ten-second wait before it exits, which one lane saw in its environment, did not recur. No pass with a screen
-reader, and none signed in on the development stack.
+so the ten-second wait before it exits, which one lane saw in its environment, did not recur. A review of the merge
+in three lenses confirmed 16 of 19 problems: fifteen are fixed, with `bun run check` run again and the person, unit
+and Dialogstöd specs (38 tests) passed after them, and the unbounded followed units are left above. No pass with a
+screen reader, and none signed in on the development stack.

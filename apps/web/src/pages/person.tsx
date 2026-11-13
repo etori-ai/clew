@@ -88,8 +88,8 @@ const TABLE_BESIDE_QUERY = panelBesideQuery(1280 - RAIL);
 /**
  * The details rail of a person's page (board Person): "Detaljer", what the directory (Katalogen) says of them that the
  * page has (their title, their user name, and that the reader is their manager), and "Tillhör", their unit, a link to
- * the unit's page where the server says the reader may open it (a unit they manage or belong to) and its name
- * otherwise. Nothing the directory has not given is drawn.
+ * the unit's page where the server says the reader may open it (a unit they manage or belong to, or one below whose
+ * manager reports to them, D117) and its name otherwise. Nothing the directory has not given is drawn.
  */
 function PersonDetails({ detail, from }: { detail: EntityDetail; from: string | null }) {
   const { entity, relation } = detail;
