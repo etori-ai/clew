@@ -40,10 +40,10 @@ test.describe('the shared header on every page', () => {
     const banner = page.getByRole('banner');
     const heading = banner.getByRole('navigation', { name: 'Intranätet', exact: true });
     await expect(heading.getByRole('link', { name: /Intranätet/ })).toHaveAttribute('href', '/');
-    await expect(heading.getByRole('img', { name: 'Exempelkommunen', exact: true })).toHaveAttribute(
-      'src',
-      'https://intranat.example.se/logo.svg',
-    );
+    const logo = heading.getByRole('img', { name: 'Exempelkommunen', exact: true });
+    await expect(logo).toHaveAttribute('src', 'https://intranat.example.se/logo.svg');
+    // The connector's logo is its own band's (D88): drawn as given, not on the light plate that hid a white mark.
+    expect(await logo.evaluate(img => getComputedStyle(img).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
     const places = banner.getByRole('navigation', { name: 'Huvudmeny', exact: true });
     await expect(places.getByRole('link', { name: 'Start', exact: true })).toHaveAttribute('aria-current', 'page');
     await expect(places.getByRole('link', { name: 'Organisation' })).toHaveAttribute(
