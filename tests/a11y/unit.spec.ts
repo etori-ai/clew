@@ -51,6 +51,10 @@ test.describe('the unit as a page', () => {
     await expect(talks.getByText('1 av 5 hållna')).toBeVisible();
     const [a, b] = await Promise.all([sick.boundingBox(), talks.boundingBox()]);
     expect(b!.y).toBeGreaterThanOrEqual(a!.y + a!.height);
+    // The key figures on top (D117): each source's figure with its state, above the sections that give the details.
+    const tile = page.getByRole('main').getByText('1 av 5 hållna').first();
+    await expect(page.getByRole('main').getByText('1 av 5 hållna')).toHaveCount(2);
+    expect((await tile.boundingBox())!.y).toBeLessThan(a!.y);
     // A source's row as its view declares it, its fuller read under it, its source's badge on its heading's line.
     await expect(sick.getByText('Qlik', { exact: true }).first()).toBeVisible();
     await expect(sick.getByText('4,2 %').first()).toBeVisible();

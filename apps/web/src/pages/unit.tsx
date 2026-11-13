@@ -44,8 +44,10 @@ import {
   SourceWay,
   UnitSourceBody,
   drawnSections,
+  rowOf,
   useSectionAnswers,
 } from '../components/entity-sections';
+import { KeyFigureTiles } from '../components/unit-figures';
 
 /**
  * Whether the reader manages the unit and how many people it has: the people the reader may ask about come in one group
@@ -274,7 +276,11 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
     );
   else {
     const { name } = detail.entity;
+    // The unit's key figures first (D117), each source's value large with its state, so what a follow-up is about is
+    // what the page opens on; the sections under them hold the details.
+    const tiles = <KeyFigureTiles answers={answers} />;
     const sections: PageSectionEntry[] = [
+      ...(answers.some(a => !!rowOf(a)) ? [{ key: 'key-figures', node: tiles }] : []),
       ...(detail.cards.length > 0
         ? [
             {
