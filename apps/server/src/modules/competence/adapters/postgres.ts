@@ -1,6 +1,12 @@
 import { and, asc, eq, inArray, isNull, or } from 'drizzle-orm';
-import { database, schema, type Transaction } from '@clew/db';
-import { TypeNameTaken, type CompetenceStore, type CompetenceTx, type HoldingRecord, type TypeRecord } from '../model';
+import { schema, type Transaction } from '@clew/db';
+import {
+  TypeNameTaken,
+  type CompetenceCardsTx,
+  type CompetenceTx,
+  type HoldingRecord,
+  type TypeRecord,
+} from '../model';
 
 const { competenceTypes: types, competenceHoldings: holdings, people, audit } = schema;
 type TypeRow = typeof types.$inferSelect;
@@ -39,10 +45,12 @@ const holdingOf = (r: HoldingRow): HoldingRecord => ({
 
 /**
  * The competence tables (D108) on one Postgres transaction. Reads that a write follows take a row lock. The catalogue's
- * order is Swedish and is sorted here, since the database's collation is not Clew's to choose.
+ * order is Swedish and is sorted here, since the database's collation is not Clew's to choose. `cards` is the person's
+ * own cards on the same transaction, which composition shares with the thread store (`composition/competence.ts`).
  */
-export function competenceTx(tx: Transaction): CompetenceTx {
+export function competenceTx(tx: Transaction, cards: CompetenceCardsTx): CompetenceTx {
   return {
+    cards,
     async types(organisationId, options = {}) {
       const rows = await tx
         .select()
@@ -153,7 +161,4 @@ export function competenceTx(tx: Transaction): CompetenceTx {
       });
     },
   };
-}
-export function postgresCompetenceStore(): CompetenceStore {
-  return { transaction: fn => database().transaction(tx => fn(competenceTx(tx))) };
 }

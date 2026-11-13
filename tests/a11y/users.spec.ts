@@ -45,7 +45,7 @@ test.describe('users administration', () => {
         api.entityDetailOf = key =>
           key === 'hillevi'
             ? {
-                entity: { kind: 'person', key, name: 'Hillevi Berg' },
+                entity: { kind: 'person', key, sourceKey: 'hillevi.berg', name: 'Hillevi Berg' },
                 profile: {
                   email: 'hillevi@clew.test',
                   title: null,
@@ -73,11 +73,17 @@ test.describe('users administration', () => {
               }
             : undefined;
         await open(page, '/admin/users?role=manager');
+        // The address is her id, never her user name (D116).
+        await expect(page.getByRole('link', { name: 'Hillevi Berg', exact: true })).toHaveAttribute(
+          'href',
+          '/people/hillevi?from=%2Fadmin%2Fusers%3Frole%3Dmanager',
+        );
         await page.getByRole('link', { name: 'Hillevi Berg', exact: true }).click();
         const main = page.getByRole('main');
         await expect(main.getByRole('heading', { name: 'Hillevi Berg' })).toBeVisible();
         const jobs = main.getByRole('region', { name: 'Anställningar' });
-        await expect(jobs.getByRole('listitem')).toHaveCount(2);
+        // Astryx's List, named for its section, so VoiceOver on Safari keeps the list and its count (W6).
+        await expect(jobs.getByRole('list', { name: 'Anställningar' }).getByRole('listitem')).toHaveCount(2);
         await expect(jobs.getByRole('listitem').nth(0)).toContainText('Rektor');
         await expect(jobs.getByRole('listitem').nth(0)).toContainText('Tillsvidare');
         await expect(jobs.getByRole('listitem').nth(0).locator('time')).toHaveText('1 februari 2019');
@@ -94,6 +100,7 @@ test.describe('users administration', () => {
           'href',
           'mailto:hillevi@clew.test',
         );
+        await expectNoAxeViolations(page);
         await main.getByRole('link', { name: 'Användare', exact: true }).click();
         await expect(page).toHaveURL(/\/admin\/users\?role=manager$/);
       });

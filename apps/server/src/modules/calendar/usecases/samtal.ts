@@ -30,14 +30,17 @@ import type {
   ObligationTimers,
   People,
   PlanningRound,
+  ProposalParticipant,
   ProposalRecord,
   ProposalStore,
+  ProposalThread,
   RoundReader,
   Team,
   UnitMember,
 } from '../model';
 import { chunks, dueLabel } from '../domain';
 import { heldAddresses, SAMTAL_TITLE, toEvent } from './reads';
+import { ALREADY_HELD, BOOKED, BOOKED_ELSEWHERE, bookedElsewhere, within } from './booked';
 
 /**
  * The calendar's use cases (D20, D25): the person's day and week, and the utvecklingssamtal proposal thread from
@@ -89,15 +92,18 @@ async function freeBusyOf(provider: CalendarProvider, start: string, end: string
   );
   return answers.flat();
 }
-const BOOKED = ['confirmed', 'final', 'accepted'];
 const interval = (p: { start: string; end: string }): Interval => ({ start: p.start, end: p.end });
+/** Whom a member is invited as (N3): their id beside the address and name the team has for them now. */
+const participantOf = (m: UnitMember): ProposalParticipant => ({ personId: m.personId, email: m.email, name: m.name });
+/** A decision on its way: the card waits for its answer and nothing else changes it meanwhile. */
+const deciding = (t: Thread) => !!t.execution && ['pending', 'running', 'unknown'].includes(t.execution.state);
 const toProposal = (p: ProposalRecord): Proposal => ({
   id: p.id,
   threadId: p.threadId,
   status: p.status,
   start: p.start,
   end: p.end,
-  participant: { ...p.participant },
+  participant: { email: p.participant.email, name: p.participant.name },
   eventRef: p.eventRef,
   undoUntil: p.undoUntil,
   reminders: p.reminders,
@@ -112,12 +118,13 @@ const proposalItems = (rows: ProposalRecord[], selected?: (id: string) => boolea
     selectable: true,
     selected: selected ? selected(p.id) : true,
   }));
-/** The people the planner could not place (D30): rows without a ref to select, one reason each, for the judgement calls on the card. */
-const unplacedItems = (
-  unplaced: Array<{ participant: { email: string; name: string }; reason: string }>,
-): ThreadItem[] =>
+/**
+ * The people the planner could not place (D30): rows without a ref to select, one reason each, for the judgement calls
+ * on the card, each named by the person's id (N3).
+ */
+const unplacedItems = (unplaced: Array<{ participant: ProposalParticipant; reason: string }>): ThreadItem[] =>
   unplaced.map(u => ({
-    ref: 'unplaced:' + u.participant.email.toLowerCase(),
+    ref: 'unplaced:' + u.participant.personId,
     label: u.participant.name,
     detail: u.reason,
     selectable: false,
@@ -176,46 +183,67 @@ export function calendarUsecases(deps: CalendarDeps) {
     const events = await listSpan(binding.provider, weekStart(todayDate()), addDays(current.dueOn, 1));
     return { binding, done: heldAddresses(events) };
   }
+  /** Who among these people another of their current managers booked through Clew inside a period (M1, Q12). */
+  const elsewhereOf = bookedElsewhere({ store, team, people });
   /**
    * What the nightly scan knows: the team, who still lacks a samtal, and which proposals already exist. Held is the
-   * round's record (person ids) or a samtal in the calendar.
+   * round's record (person ids) or a samtal in the calendar, to the person's address now or to the address a confirmed
+   * proposal invited them at. Booked is a confirmed proposal of the manager's, or one another of the person's current
+   * managers made (M1); proposals are matched on the person's id, never on an address that may have changed (N3).
    */
   async function remaining(persona: AuthenticatedContext, current: PlanningRound) {
     const { binding, done } = await heldSamtal(persona, current);
     const [everyone, booked] = await Promise.all([team(persona), store.activeProposals(persona.id)]);
-    const recorded = new Set(current.held);
-    const isHeld = (m: UnitMember) => recorded.has(m.personId) || done.has(m.email.toLowerCase());
-    const bookedEmails = new Set(
-      booked.filter(p => p.status !== 'proposed').map(p => p.participant.email.toLowerCase()),
+    const elsewhere = await elsewhereOf(
+      persona.id,
+      everyone.map(m => m.personId),
+      current,
     );
-    const members = everyone.filter(m => !isHeld(m) && !bookedEmails.has(m.email.toLowerCase()));
-    return { binding, everyone, members, done, booked, isHeld };
+    const recorded = new Set(current.held);
+    const sent = new Set(
+      booked
+        .filter(p => BOOKED.includes(p.status) && done.has(p.participant.email.toLowerCase()))
+        .map(p => p.participant.personId),
+    );
+    const isHeld = (m: UnitMember) =>
+      recorded.has(m.personId) || done.has(m.email.toLowerCase()) || sent.has(m.personId);
+    const bookedIds = new Set([
+      ...booked.filter(p => p.status !== 'proposed').map(p => p.participant.personId),
+      ...elsewhere,
+    ]);
+    const members = everyone.filter(m => !isHeld(m) && !bookedIds.has(m.personId));
+    return { binding, everyone, members, booked, isHeld, elsewhere };
   }
-  /** Held and booked out of the team before the round's due date; nothing to plan (`members: 0`) without a round. */
+  /**
+   * Held and booked out of the team before the round's due date, each person once; nothing to plan (`members: 0`)
+   * without a round.
+   */
   async function samtalStatus(persona: AuthenticatedContext) {
     const current = await round(persona);
     if (!current) return { held: 0, booked: 0, members: 0, deadline: '' };
-    const { everyone, done, booked, isHeld } = await remaining(persona, current);
-    const heldEmails = new Set(everyone.filter(isHeld).map(m => m.email.toLowerCase()));
-    const pending = booked
-      .filter(p => BOOKED.includes(p.status))
-      .filter(
-        p => !done.has(p.participant.email.toLowerCase()) && !heldEmails.has(p.participant.email.toLowerCase()),
-      ).length;
-    return { held: heldEmails.size, booked: pending, members: everyone.length, deadline: dueLabel(current.dueOn) };
+    const { everyone, booked, isHeld, elsewhere } = await remaining(persona, current);
+    const inTeam = new Set(everyone.map(m => m.personId));
+    const held = new Set(everyone.filter(isHeld).map(m => m.personId));
+    const pending = new Set(
+      [...booked.filter(p => BOOKED.includes(p.status)).map(p => p.participant.personId), ...elsewhere].filter(
+        id => inTeam.has(id) && !held.has(id),
+      ),
+    );
+    return { held: held.size, booked: pending.size, members: everyone.length, deadline: dueLabel(current.dueOn) };
   }
   /**
    * The booked talks of the manager's team inside a period (D96 item 2): per person id, the start of a samtal in the
-   * manager's calendar or of a confirmed proposal, the next one to come when there are several, else the latest.
-   * Undefined when the calendar cannot be read; whether a talk was held is the round's record, not this read's.
+   * manager's calendar or of a confirmed proposal, the next one to come when there are several, else the latest. A
+   * person another of their current managers booked through Clew is booked without a time (M1, Q12). Undefined when the
+   * calendar cannot be read; whether a talk was held is the round's record, not this read's.
    */
   async function samtalBookings(
     persona: AuthenticatedContext,
     period: { opensOn: string; dueOn: string },
-  ): Promise<Map<string, { at: string }> | undefined> {
+  ): Promise<Map<string, { at?: string }> | undefined> {
     if (!isoDate.test(period.opensOn) || !isoDate.test(period.dueOn)) throw new InputError('Ogiltig period.');
     const everyone = await team(persona);
-    const bookings = new Map<string, { at: string }>();
+    const bookings = new Map<string, { at?: string }>();
     if (!everyone.length || period.opensOn > period.dueOn) return bookings;
     let events: EventOccurrence[];
     try {
@@ -224,23 +252,30 @@ export function calendarUsecases(deps: CalendarDeps) {
       return undefined;
     }
     const byEmail = new Map(everyone.map(m => [m.email.toLowerCase(), m]));
+    const byId = new Map(everyone.map(m => [m.personId, m]));
     const starts = new Map<string, string[]>();
-    const add = (email: string, start: string) => {
-      const member = byEmail.get(email.toLowerCase()),
-        day = displayDate(start);
-      if (!member || day < period.opensOn || day > period.dueOn) return;
+    const add = (member: UnitMember | undefined, start: string) => {
+      if (!member || !within(start, period)) return;
       starts.set(member.personId, [...(starts.get(member.personId) ?? []), start]);
     };
     for (const e of events)
       if (!e.allDay && e.title.startsWith(SAMTAL_TITLE))
-        for (const p of e.participants) if (!p.resource && p.response !== 'declined') add(p.email, e.start);
+        for (const p of e.participants)
+          if (!p.resource && p.response !== 'declined') add(byEmail.get(p.email.toLowerCase()), e.start);
+    // A proposal names the person by id (N3), so a talk stays booked when their address changes.
     for (const p of await store.activeProposals(persona.id))
-      if (BOOKED.includes(p.status)) add(p.participant.email, p.start);
+      if (BOOKED.includes(p.status)) add(byId.get(p.participant.personId), p.start);
     const now = clock().getTime();
     for (const [personId, list] of starts) {
       const sorted = list.sort((a, b) => Date.parse(a) - Date.parse(b));
       bookings.set(personId, { at: sorted.find(s => Date.parse(s) >= now) ?? sorted.at(-1)! });
     }
+    for (const personId of await elsewhereOf(
+      persona.id,
+      everyone.map(m => m.personId),
+      period,
+    ))
+      if (!bookings.has(personId)) bookings.set(personId, {});
     return bookings;
   }
   /** Draw proposals for one week. Reads the manager's calendar and the unit's free-busy, nothing is written to any source. */
@@ -249,8 +284,8 @@ export function calendarUsecases(deps: CalendarDeps) {
     if (!members.length)
       return {
         members,
-        planned: [] as ReturnType<typeof planWeek>,
-        unplaced: [] as ReturnType<typeof unplacedReasons>,
+        planned: [] as ReturnType<typeof planWeek<ProposalParticipant>>,
+        unplaced: [] as ReturnType<typeof unplacedReasons<ProposalParticipant>>,
       };
     const start = dayStart(week),
       end = dayStart(addDays(week, 5));
@@ -267,10 +302,16 @@ export function calendarUsecases(deps: CalendarDeps) {
       const periods = busy.find(b => b.ref === m.ref);
       if (!periods || periods.state === 'unknown')
         throw new CalendarError('Medarbetarnas kalendrar kunde inte läsas just nu.');
-      return { participant: { email: m.email, name: m.name }, busy: periods.busy };
+      return { participant: participantOf(m), busy: periods.busy };
     });
     const notBefore = new Date(clock().getTime() + 3600_000).toISOString();
-    const input: PlanInput = { week, managerBusy, candidates, notBefore, durationMinutes: SAMTAL_MINUTES };
+    const input: PlanInput<ProposalParticipant> = {
+      week,
+      managerBusy,
+      candidates,
+      notBefore,
+      durationMinutes: SAMTAL_MINUTES,
+    };
     const planned = planWeek(input);
     return { members, planned, unplaced: unplacedReasons(input, planned) };
   }
@@ -288,14 +329,18 @@ export function calendarUsecases(deps: CalendarDeps) {
   const records = (
     persona: AuthenticatedContext,
     threadId: string,
-    planned: ReturnType<typeof planWeek>,
+    planned: ReturnType<typeof planWeek<ProposalParticipant>>,
   ): ProposalRecord[] =>
     planned.map(p => ({
       id: ids(),
       threadId,
       personId: persona.id,
       status: 'proposed',
-      participant: { email: p.participant.email, name: p.participant.name },
+      participant: {
+        personId: p.participant.personId,
+        email: p.participant.email,
+        name: p.participant.name,
+      },
       start: p.start,
       end: p.end,
       eventUid: null,
@@ -317,8 +362,71 @@ export function calendarUsecases(deps: CalendarDeps) {
     return store.openThread(persona.id, TOPIC);
   }
   /**
-   * The nightly scan (and the first visit): one open thread per topic and round. Re-running refreshes the proposals of
-   * an untouched thread; it never silently changes confirmed ones. Without an open round nothing is planned.
+   * An open card drawn before someone's talk was settled elsewhere (M1, Q12): the drawn times of a person whose talk the
+   * round records as held, or whom another of their current managers has booked through Clew since, leave the card as
+   * rows with the reason (D30's judgement calls), and the trigger counts again who still lacks a time. So of two cards
+   * drawn for one person's two managers, the second never sends a second talk. A card with a decision on its way is left
+   * as it is, and a time already sent is never touched. Whether anything changed.
+   */
+  async function settleCard(persona: AuthenticatedContext, current: PlanningRound, card: ProposalThread) {
+    if (card.thread.state !== 'open' || deciding(card.thread)) return false;
+    const proposed = card.proposals.filter(p => p.status === 'proposed');
+    if (!proposed.length) return false;
+    const held = new Set(current.held);
+    const invitees = [...new Set(proposed.map(p => p.participant.personId))];
+    const elsewhere = await elsewhereOf(
+      persona.id,
+      invitees.filter(id => !held.has(id)),
+      current,
+    );
+    const reasonOf = (id: string) => (held.has(id) ? ALREADY_HELD : elsewhere.has(id) ? BOOKED_ELSEWHERE : undefined);
+    const gone = proposed.filter(p => reasonOf(p.participant.personId));
+    if (!gone.length) return false;
+    const { members } = await remaining(persona, current);
+    const at = clock().toISOString();
+    await persona.authorize();
+    return store.transaction(async tx => {
+      const locked = await tx.lockThread(persona.id, card.thread.id);
+      if (
+        !locked ||
+        locked.thread.updatedAt !== card.thread.updatedAt ||
+        locked.thread.state !== 'open' ||
+        deciding(locked.thread)
+      )
+        return false;
+      const left = new Set(gone.map(p => 'proposal:' + p.id));
+      const rows = unplacedItems(
+        [...new Map(gone.map(p => [p.participant.personId, p.participant])).values()].map(participant => ({
+          participant,
+          reason: reasonOf(participant.personId)!,
+        })),
+      );
+      await tx.updateProposals(
+        gone.map(p => p.id),
+        { status: 'superseded' },
+      );
+      await tx.updateThread(card.thread.id, {
+        items: [...locked.thread.items.filter(i => !left.has(i.ref) && !rows.some(r => r.ref === i.ref)), ...rows],
+        trigger: {
+          ...locked.thread.trigger,
+          reason: `${members.length} samtal saknar tid före ${dueLabel(current.dueOn)}`,
+        },
+        updatedAt: at,
+      });
+      await tx.writeAudit({
+        actor: 'assistant:scan',
+        action: 'proposals.settled_elsewhere',
+        subject: 'thread:' + card.thread.id,
+        at,
+        details: { proposals: gone.map(p => p.id), owner: persona.id },
+      });
+      return true;
+    });
+  }
+  /**
+   * The nightly scan (and the first visit): one open thread per topic and round. Re-running takes the drawn times of
+   * people whose talk was settled elsewhere off an open thread (`settleCard`); it never silently changes confirmed ones.
+   * Without an open round nothing is planned.
    */
   async function ensureProposalThread(
     persona: AuthenticatedContext,
@@ -349,7 +457,7 @@ export function calendarUsecases(deps: CalendarDeps) {
         });
         return thread(persona, existing.thread.id);
       }
-      return existing.thread;
+      return (await settleCard(persona, current, existing)) ? thread(persona, existing.thread.id) : existing.thread;
     }
     const week = nextWeekStart(todayDate());
     const { members, planned, unplaced } = await draw(persona, current, week);
@@ -475,7 +583,8 @@ export function calendarUsecases(deps: CalendarDeps) {
     // Two alternatives per no, drawn like any proposal: the person's own busy time and the manager's, this week or the next.
     const alternatives: ProposalRecord[] = [];
     for (const p of declined) {
-      const member = everyone.find(m => m.email.toLowerCase() === p.participant.email.toLowerCase());
+      // The person by id (N3); a new invitation goes to the address the team has for them now.
+      const member = everyone.find(m => m.personId === p.participant.personId);
       const week =
         Date.parse(dayStart(current.thread.week ?? todayDate())) > now.getTime()
           ? current.thread.week!
@@ -495,7 +604,7 @@ export function calendarUsecases(deps: CalendarDeps) {
         ...existing.filter(x => x.id !== p.id).map(interval),
       ];
       const candidate = {
-        participant: { ...p.participant },
+        participant: member ? participantOf(member) : { ...p.participant },
         busy: periods && periods.state === 'known' ? periods.busy : [],
       };
       const notBefore = new Date(now.getTime() + 3600_000).toISOString();
@@ -558,7 +667,7 @@ export function calendarUsecases(deps: CalendarDeps) {
           ? `${names}. Jag har ritat ${alternatives.length === 1 ? 'en annan tid' : 'två andra tider'} som är ${alternatives.length === 1 ? 'ledig' : 'lediga'} för er båda; välj en så skickar jag en ny inbjudan och tar bort den gamla.`
           : `${names}. Jag hittade ingen annan tid den här veckan; prova en annan vecka.`;
         const firstAlternative = new Set(
-          declined.map(d => alternatives.find(a => a.participant.email === d.participant.email)?.id),
+          declined.map(d => alternatives.find(a => a.participant.personId === d.participant.personId)?.id),
         );
         await tx.updateThread(threadId, {
           state: 'open',

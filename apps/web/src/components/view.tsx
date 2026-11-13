@@ -55,7 +55,7 @@ import { AddToConversation } from './add-to-conversation';
 import { PageHeader } from './page-header';
 import { DocumentReader } from './document-reader';
 import { useLocation } from 'react-router';
-import { entityHref } from '../person-address';
+import { entityHref, recordSubject } from '../person-address';
 
 /**
  * A declared view (D38): the connector says what the output holds (a table, a list, one record, a text, and which
@@ -454,10 +454,8 @@ function Rows({
   // on that entity's own page it leads nowhere (`entityHref`).
   const { pathname, search } = useLocation();
   const entityOf = (row: Row) => {
-    const key = view.subject ? row[view.subject.key] : undefined;
-    return view.subject && typeof key === 'string' && key
-      ? (entityHref({ entity: view.subject.entity, key }, pathname + search) ?? undefined)
-      : undefined;
+    const named = view.subject ? recordSubject(view, row[view.subject.key]) : undefined;
+    return named ? (entityHref(named, pathname + search) ?? undefined) : undefined;
   };
   // A row that opens a read keeps that on its name; the entity is then a link of its own at the row's end, named for it.
   const entityLink = (row: Row) => {
@@ -752,12 +750,8 @@ export function DeclaredView({
       out = shown.filter(f => f.format === 'link');
     const factLines = rowGroups(view.fields).filter(g => groupFields(g).some(f => facts.includes(f)));
     // The person or unit the record names (D97 item 6): its heading leads to the entity, except on that entity's own page.
-    const subject = view.kind === 'detail' ? view.subject : undefined;
-    const named = subject ? record[subject.key] : undefined;
-    const entity =
-      subject && typeof named === 'string' && named
-        ? entityHref({ entity: subject.entity, key: named }, pathname + search)
-        : undefined;
+    const named = view.kind === 'detail' && view.subject ? recordSubject(view, record[view.subject.key]) : undefined;
+    const entity = named ? entityHref(named, pathname + search) : undefined;
     return (
       <VStack gap={3}>
         {header}

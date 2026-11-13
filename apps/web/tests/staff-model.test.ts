@@ -50,8 +50,15 @@ const presence: EntitySource = {
   title: 'Frånvaro',
   view: { kind: 'list', title: 'presence', fields: [presenceField] },
 };
-const person = (key: string, id?: string): EntityRef => ({ kind: 'person', key, name: key, ...(id ? { id } : {}) });
-const people = ['anna', 'erik', 'johan', 'karin', 'maria', 'omar'].map(k => person(k, k));
+/** A person as the list gives them (D116): Clew's key is their id, and a source's rows name them by user name. */
+const person = (userName: string): EntityRef => ({
+  kind: 'person',
+  key: 'p-' + userName,
+  sourceKey: userName,
+  name: userName,
+  id: 'p-' + userName,
+});
+const people = ['anna', 'erik', 'johan', 'karin', 'maria', 'omar'].map(person);
 const rows: EntityRows = {
   capability: lens.capability,
   status: 'ok',
@@ -95,7 +102,8 @@ describe('Personal (D97)', () => {
   });
   test('under a lens a state that needs the reader comes first, then another field that does, then the rest, then nobody the source knows', () => {
     // Karin's talk is missing; Erik's risk and Johan's late points need the reader in another field; directory order within.
-    expect(byNeed(people, lens, answerOf(rows, false)).map(p => p.key)).toEqual([
+    // A source's row is found by the person's user name, whatever their id.
+    expect(byNeed(people, lens, answerOf(rows, false)).map(p => p.sourceKey)).toEqual([
       'karin',
       'erik',
       'johan',
@@ -111,7 +119,7 @@ describe('Personal (D97)', () => {
     const akut = { ...rows, rows: [...rows.rows.filter(r => r.key !== 'maria'), { key: 'maria', state: 'Akut' }] };
     expect(
       byNeed(people, { ...lens, view: alarmed }, answerOf(akut, false))
-        .map(p => p.key)
+        .map(p => p.sourceKey)
         .slice(0, 2),
     ).toEqual(['maria', 'karin']);
     // The compact field is not drawn under the lens, so it does not sort a row up by itself.
@@ -122,7 +130,7 @@ describe('Personal (D97)', () => {
         { key: 'erik', state: 'Bokat' },
       ],
     };
-    expect(byNeed(people.slice(0, 2), lens, answerOf(onlyNext, false)).map(p => p.key)).toEqual(['anna', 'erik']);
+    expect(byNeed(people.slice(0, 2), lens, answerOf(onlyNext, false)).map(p => p.sourceKey)).toEqual(['anna', 'erik']);
   });
   test('the Visa menu counts the rows that need the reader, in the strongest tone, and nothing when none do', () => {
     expect(lensNeed(lens, answerOf(rows, false))).toEqual({ count: 3, tone: 'alert' });
@@ -182,19 +190,22 @@ describe('Personal (D97)', () => {
   test('"Just nu" links the cards that wait for the reader and the proposals, to the one card when there is one', () => {
     const withCards: EntityList = {
       ...list,
+      // By Clew's key, the person's id (D116), compared exactly.
       attention: [
-        { key: 'erik', act: 1, proposals: 0, threadId: 't-erik' },
-        { key: 'johan', act: 2, proposals: 1 },
-        { key: 'karin', act: 0, proposals: 1, threadId: 't-karin' },
+        { key: 'p-erik', act: 1, proposals: 0, threadId: 't-erik' },
+        { key: 'p-johan', act: 2, proposals: 1 },
+        { key: 'p-karin', act: 0, proposals: 1, threadId: 't-karin' },
       ],
     };
-    expect(cardLinkTexts(withCards, 'ERIK')).toEqual([{ kind: 'act', text: '1 att agera på', threadId: 't-erik' }]);
-    expect(cardLinkTexts(withCards, 'johan')).toEqual([
+    expect(cardLinkTexts(withCards, 'p-erik')).toEqual([{ kind: 'act', text: '1 att agera på', threadId: 't-erik' }]);
+    expect(cardLinkTexts(withCards, 'P-ERIK')).toEqual([]);
+    expect(cardLinkTexts(withCards, 'erik')).toEqual([]);
+    expect(cardLinkTexts(withCards, 'p-johan')).toEqual([
       { kind: 'act', text: '2 att agera på' },
       { kind: 'proposal', text: '1 förslag' },
     ]);
-    expect(cardLinkTexts(withCards, 'karin')).toEqual([{ kind: 'proposal', text: '1 förslag', threadId: 't-karin' }]);
-    expect(cardLinkTexts(withCards, 'anna')).toEqual([]);
+    expect(cardLinkTexts(withCards, 'p-karin')).toEqual([{ kind: 'proposal', text: '1 förslag', threadId: 't-karin' }]);
+    expect(cardLinkTexts(withCards, 'p-anna')).toEqual([]);
   });
   test('the count line names the unit, or how many units there are', () => {
     expect(peopleLine(list.groups)).toBe('6 medarbetare på Bergsåkers skola');

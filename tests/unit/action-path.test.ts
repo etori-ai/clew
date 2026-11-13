@@ -519,7 +519,7 @@ describe('an execute about a person that asks (D112)', () => {
       },
     ],
   };
-  test('its card starts with the key alone and waits for the answer, which the decision takes', async () => {
+  test('its card starts with the key alone and waits for the answer, which the decision takes with the user name', async () => {
     const registry = new Registry();
     registry.register(talks);
     expect(registry.aboutActions(actorOf(persona()), 'person')[0]!.path).toEqual({
@@ -538,7 +538,18 @@ describe('an execute about a person that asks (D112)', () => {
       clock: () => T0,
       ids: () => 'card-1',
     });
-    const { threadId } = await started.startCard(persona(), 'talks2.book', { person: 'anna' }, { reason: 'Du valde' });
+    // The person goes where the capability takes them, by id, as the entity's menu passes them (D116); without them the
+    // decision could not resolve the person, and no card is made.
+    await expect(
+      started.startCard(persona(), 'talks2.book', { person: 'anna' }, { reason: 'Du valde' }),
+    ).rejects.toThrow('Åtgärden kan inte startas härifrån.');
+    expect(store.dump()).toEqual([]);
+    const { threadId } = await started.startCard(
+      persona(),
+      'talks2.book',
+      { person: 'anna' },
+      { reason: 'Du valde', person: { param: 'person', personId: 'anna', sourceKey: 'anna.l' } },
+    );
     // Without the answer the input is not yet whole: the card asks for it, and the decision supplies it.
     await expect(registry.validate(actorOf(persona()), 'talks2.book', { person: 'anna' })).rejects.toThrow(
       'Ogiltig förfrågan',
@@ -563,6 +574,11 @@ describe('an execute about a person that asks (D112)', () => {
     });
     const card = (await threads.threadFor(persona(), threadId))!;
     expect(card.actions[0]!.path!.asks.map(a => a.property)).toEqual(['when']);
+    // The card keeps Anna by id; the source is sent the user name she has when the person decides (D116).
+    const people = {
+      holders: async () => new Map<string, string>(),
+      userName: async (id: string) => (id === 'anna' ? 'anna.l' : null),
+    };
     const decisions = cardDecisions({
       read: threads.threadFor,
       registry,
@@ -571,14 +587,16 @@ describe('an execute about a person that asks (D112)', () => {
         approvals.push(input);
       },
       clock: () => T0,
+      people,
     });
     await expect(decisions.act(persona(), threadId, 'decide')).rejects.toThrow('När behöver fyllas i.');
     await decisions.act(persona(), threadId, 'decide', undefined, undefined, { when: LATER });
     expect(approvals).toEqual([
       expect.objectContaining({
         operation: 'talks2.book',
-        payload: { person: 'anna', when: LATER },
+        payload: { person: 'anna.l', when: LATER },
         asked: { when: LATER },
+        subject: { param: 'person', personId: 'anna' },
       }),
     ]);
     // The ledger refusing the merged input against the schema is the person's to correct: a Swedish answer, not a failure.
@@ -590,6 +608,7 @@ describe('an execute about a person that asks (D112)', () => {
         throw new CapabilityError('Ogiltig förfrågan till talks2.book.');
       },
       clock: () => T0,
+      people,
     });
     const refused = await refusing
       .act(persona(), threadId, 'decide', undefined, undefined, { when: LATER })
@@ -597,7 +616,7 @@ describe('an execute about a person that asks (D112)', () => {
     expect(refused).toBeInstanceOf(InputError);
     expect((refused as Error).message).toBe('Ogiltig förfrågan till talks2.book.');
   });
-  test('from the person page: a propose drafts with the answers, an execute takes them only on its card, the effect gets the key', async () => {
+  test("from the person page: a propose drafts with the answers, an execute takes them only on its card, the effect gets the source's key", async () => {
     const path = (asks: Ask[], effect = false) => ({ asks, effect, description: 'x' });
     const from: Ask = { kind: 'date', property: 'from', label: 'Från', required: true };
     const actions: EntityAction[] = [
@@ -621,12 +640,16 @@ describe('an execute about a person that asks (D112)', () => {
       },
     ];
     const started: unknown[] = [],
-      effects: unknown[] = [];
+      effects: unknown[] = [],
+      persons: unknown[] = [];
     const uc = entityActionUsecases({
       open: async (_p, kind, key) =>
-        key === 'anna' ? { entity: { kind, key: 'anna', name: 'Anna', id: 'u-anna' }, actions } : undefined,
+        key === 'anna'
+          ? { entity: { kind, key: 'anna', sourceKey: 'anna.l', name: 'Anna', id: 'anna' }, actions }
+          : undefined,
       start: async (_p, capability, input, context) => {
         started.push({ capability, input, asked: context.asked });
+        persons.push(context.person);
         return { threadId: 't' };
       },
       effect: async (_p, capability, input, connector) => {
@@ -648,13 +671,16 @@ describe('an execute about a person that asks (D112)', () => {
       'Svaren ges när du beslutar på ärendet.',
     );
     await uc.start(p, 'person', 'anna', 'hr.report');
+    // The card's input names Anna by id; the stream is told which property that is and the user name to send (D116).
     expect(started.at(-1)).toEqual({ capability: 'hr.report', input: { person: 'anna' }, asked: undefined });
+    expect(persons.at(-1)).toEqual({ param: 'person', personId: 'anna', sourceKey: 'anna.l' });
     expect(await uc.effect(p, 'person', 'anna', 'hr.report', { from: '2026-11-10' })).toEqual({
       source: 'Personalsystemet',
       rows: [{ label: 'Registreras' }],
     });
+    // The effect is the source's read, so it is sent the source's key.
     expect(effects).toEqual([
-      { capability: 'hr.report', input: { from: '2026-11-10', person: 'anna' }, connector: 'hr' },
+      { capability: 'hr.report', input: { from: '2026-11-10', person: 'anna.l' }, connector: 'hr' },
     ]);
     expect(await uc.effect(p, 'person', 'bo', 'hr.report', { from: '2026-11-10' })).toBeUndefined();
   });

@@ -1,11 +1,15 @@
 import { expect, test } from 'bun:test';
-import type { AuthenticatedContext, Thread } from '../../packages/contracts/src';
+import type { AuthenticatedContext, PanelViewSpec, Thread } from '../../packages/contracts/src';
 import { cardDecisions } from '../../apps/server/src/threads/usecases/decisions';
+import type { PersonKeys } from '../../apps/server/src/threads/model';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
 import { draft } from '../store-contract';
 
 const persona = { id: 'person' } as AuthenticatedContext;
-async function world(answer: (name: string) => unknown = () => ({ url: 'https://example.invalid' })) {
+async function world(
+  answer: (name: string) => unknown = () => ({ url: 'https://example.invalid' }),
+  options: { view?: PanelViewSpec; people?: PersonKeys } = {},
+) {
   const store = memoryThreadStore(),
     t = draft(persona.id),
     approvals: Array<unknown> = [],
@@ -17,7 +21,7 @@ async function world(answer: (name: string) => unknown = () => ({ url: 'https://
       name.startsWith('finance.')
         ? { connector: { id: 'finance' }, capability: { kind: reads.includes(name) ? 'read' : 'execute' } }
         : undefined,
-    viewFor: () => undefined,
+    viewFor: (_p: unknown, name: string) => (name === options.view?.capability ? options.view : undefined),
   };
   const uc = cardDecisions({
     read: (p, id) => store.readThread(p.id, id),
@@ -30,6 +34,7 @@ async function world(answer: (name: string) => unknown = () => ({ url: 'https://
       approvals.push(input);
     },
     clock: () => new Date('2026-11-04T06:00:00.000Z'),
+    ...(options.people ? { people: options.people } : {}),
   });
   return { store, t, uc, approvals, calls };
 }
@@ -106,4 +111,59 @@ test('a read action runs directly and an undo preserves the original receipt whi
   // Legacy evidence cannot authorize a blind compensation.
   await expect(w.uc.undoReceipt(persona, w.t.id)).rejects.toThrow('äldre kvittot');
   expect((await w.store.readThread(persona.id, w.t.id))?.receipt).toEqual(receipt);
+});
+test("a read action's view links the records whose user name someone of the reader's organisation holds, by id (D116)", async () => {
+  const view: PanelViewSpec = {
+    kind: 'table',
+    title: 'name',
+    fields: [{ key: 'name', label: 'Namn' }],
+    subject: { entity: 'person', key: 'userName' },
+    capability: 'finance.open',
+    connector: 'finance',
+    source: 'Ekonomisystemet',
+    chip: false,
+  };
+  const rows = [
+    { name: 'Anna', userName: 'Anna.L' },
+    { name: 'Bo', userName: 'bo.ek' },
+    { name: 'Anna igen', userName: 'Anna.L' },
+  ];
+  const asked: Array<[string, readonly string[]]> = [];
+  const people: PersonKeys = {
+    // The reader's organisation holds Anna's user name, in its own spelling; nobody there holds Bo's.
+    holders: async (readerId, names) => {
+      asked.push([readerId, names]);
+      return new Map(names.filter(n => n.toLowerCase() === 'anna.l').map(n => [n, 'p-anna'] as const));
+    },
+    userName: async () => null,
+  };
+  const w = await world(() => ({ rows }), { view, people });
+  await w.store.transaction(tx =>
+    tx.updateThread(w.t.id, { actions: [{ ...w.t.actions[0]!, capability: 'finance.open', kind: 'read' }] }),
+  );
+  expect(await w.uc.act(persona, w.t.id, 'approve')).toEqual({
+    kind: 'read',
+    output: { rows },
+    view: { ...view, people: { 'Anna.L': 'p-anna' } },
+  });
+  // One question for the answer, as the reader, each name once.
+  expect(asked).toEqual([['person', ['Anna.L', 'bo.ek']]]);
+  // Nobody held: the view as the registry gave it. Without the people wired, the same.
+  const none = await world(() => ({ rows: [{ name: 'Bo', userName: 'bo.ek' }] }), { view, people });
+  await none.store.transaction(tx =>
+    tx.updateThread(none.t.id, { actions: [{ ...none.t.actions[0]!, capability: 'finance.open', kind: 'read' }] }),
+  );
+  expect(await none.uc.act(persona, none.t.id, 'approve')).toEqual({
+    kind: 'read',
+    output: { rows: [{ name: 'Bo', userName: 'bo.ek' }] },
+    view,
+  });
+  const unwired = await world(() => ({ rows }), { view });
+  await unwired.store.transaction(tx =>
+    tx.updateThread(unwired.t.id, {
+      actions: [{ ...unwired.t.actions[0]!, capability: 'finance.open', kind: 'read' }],
+    }),
+  );
+  expect(await unwired.uc.act(persona, unwired.t.id, 'approve')).toEqual({ kind: 'read', output: { rows }, view });
+  expect([w.approvals, none.approvals, unwired.approvals]).toEqual([[], [], []]);
 });

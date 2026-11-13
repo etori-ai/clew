@@ -10,9 +10,12 @@ import {
   HStack,
   Layout,
   LayoutContent,
+  List,
+  ListItem,
   MetadataList,
   MetadataListItem,
   Text,
+  Timestamp,
   VStack,
   useMediaQuery,
 } from '@clew/ui';
@@ -25,7 +28,6 @@ import { NEEDS_YOU, insideClew, originOf, personPageHref, toolOf, unitPageHref }
 import { useRail, type RailCurrent } from '../components/nav';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { FieldValue } from '../components/view';
-import { fieldValue } from '../components/panel-labels';
 import { ContentSkeleton } from '../components/loading';
 import { RAIL, panelBesideQuery } from '../components/panel';
 import { usePagePanel, type OwnThing } from '../components/page-panel';
@@ -42,20 +44,23 @@ import {
   EntityActions,
   NeedsYouRows,
   PersonSourceBody,
+  SECTION_LABELS,
   SourceBadge,
   SourceWay,
   drawnSections,
   personTitle,
   useSectionAnswers,
 } from '../components/entity-sections';
+import { employmentLabel, employmentPercent } from './person-model';
 
 /** The details rail's width beside the column (`EntityPage`). */
 const DETAILS = 340;
-const employmentPercent = new Intl.NumberFormat('sv-SE', {
-  style: 'unit',
-  unit: 'percent',
-  maximumSignificantDigits: 21,
-});
+/**
+ * Kontaktuppgifter on a phone and at 400 % zoom: each label above its value, as Astryx advises for long values, so an
+ * e-mail address and every number take the column's whole width and a long category the directory sent wraps on a
+ * line of its own. A 140 px label column would leave them 132 px at 320 px and break an ordinary address over lines.
+ */
+const LABELS_ABOVE = { position: 'top' } as const;
 const phoneLabel = new Map([
   ['work', 'Arbete'],
   ['mobile', 'Mobil'],
@@ -83,14 +88,14 @@ const TABLE_BESIDE_QUERY = panelBesideQuery(1280 - RAIL);
 /**
  * The details rail of a person's page (board Person): "Detaljer", what the directory (Katalogen) says of them that the
  * page has (their title, their user name, and that the reader is their manager), and "Tillhör", their unit, a link to
- * the unit's page for a unit the reader may open (one they manage, or their own) and its name otherwise. Nothing the
- * directory has not given is drawn.
+ * the unit's page where the server says the reader may open it (a unit they manage or belong to) and its name
+ * otherwise. Nothing the directory has not given is drawn.
  */
 function PersonDetails({ detail, from }: { detail: EntityDetail; from: string | null }) {
   const { entity, relation } = detail;
   const title = shownTitle(detail);
   const unit = entity.unit;
-  const opens = !!unit && (relation === 'managed' || relation === 'self');
+  const opens = !!unit?.opens;
   const body = unit && (
     <VStack gap={0}>
       <Text type="supporting" color="secondary">
@@ -109,7 +114,7 @@ function PersonDetails({ detail, from }: { detail: EntityDetail; from: string | 
             </MetadataListItem>
           )}
           <MetadataListItem label="Användarnamn">
-            <Text>{entity.key}</Text>
+            <Text>{entity.sourceKey}</Text>
           </MetadataListItem>
           {relation === 'managed' && (
             <MetadataListItem label="Chef">
@@ -266,37 +271,52 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
               key: 'employments',
               node: (
                 <PageSection title="Anställningar" headingRef={headingRef('employments')}>
-                  <VStack as="ul" gap={2}>
+                  {/* Astryx's List keeps the list and its count for VoiceOver on Safari (role="list"). */}
+                  <List aria-label="Anställningar" hasDividers edge="flush">
                     {detail.profile.employments.map((employment, index) => (
-                      <VStack as="li" key={index} gap={0}>
-                        {(employment.title || employment.unitLabel) && (
-                          <Text weight="semibold">{employment.title ?? employment.unitLabel}</Text>
-                        )}
-                        {employment.title && employment.unitLabel && (
-                          <Text color="secondary">{employment.unitLabel}</Text>
-                        )}
-                        {(employment.employmentType ||
-                          employment.startDate ||
-                          employment.employmentPercentage !== undefined) && (
-                          <MetadataList>
-                            {employment.employmentType && (
-                              <MetadataListItem label="Anställningsform">{employment.employmentType}</MetadataListItem>
+                      <ListItem
+                        key={index}
+                        // Text that wraps, never cut short at 320 px.
+                        label={<Text weight="semibold">{employmentLabel(employment)}</Text>}
+                        description={
+                          <VStack gap={1}>
+                            {employment.title && employment.unitLabel && (
+                              <Text color="secondary">{employment.unitLabel}</Text>
                             )}
-                            {employment.startDate && (
-                              <MetadataListItem label="Startdatum">
-                                <time dateTime={employment.startDate}>{fieldValue(employment.startDate)}</time>
-                              </MetadataListItem>
+                            {(employment.employmentType ||
+                              employment.startDate ||
+                              employment.employmentPercentage !== undefined) && (
+                              // Short labels and short values: beside each other at every width.
+                              <MetadataList label={SECTION_LABELS}>
+                                {employment.employmentType && (
+                                  <MetadataListItem label="Anställningsform">
+                                    {employment.employmentType}
+                                  </MetadataListItem>
+                                )}
+                                {employment.startDate && (
+                                  <MetadataListItem label="Startdatum">
+                                    {/* A day, not an instant: written as the same day in every time zone. */}
+                                    <Timestamp
+                                      value={employment.startDate}
+                                      format="date_long"
+                                      timezoneID="UTC"
+                                      type="inherit"
+                                      color="inherit"
+                                    />
+                                  </MetadataListItem>
+                                )}
+                                {employment.employmentPercentage !== undefined && (
+                                  <MetadataListItem label="Sysselsättningsgrad">
+                                    {employmentPercent(employment.employmentPercentage)}
+                                  </MetadataListItem>
+                                )}
+                              </MetadataList>
                             )}
-                            {employment.employmentPercentage !== undefined && (
-                              <MetadataListItem label="Sysselsättningsgrad">
-                                {employmentPercent.format(employment.employmentPercentage)}
-                              </MetadataListItem>
-                            )}
-                          </MetadataList>
-                        )}
-                      </VStack>
+                          </VStack>
+                        }
+                      />
                     ))}
-                  </VStack>
+                  </List>
                 </PageSection>
               ),
             },
@@ -308,7 +328,8 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
               key: 'contact',
               node: (
                 <PageSection title="Kontaktuppgifter" headingRef={headingRef('contact')}>
-                  <MetadataList>
+                  {/* Beside the sources' values where the column is wide, above on a phone (W2). */}
+                  <MetadataList label={mobile ? LABELS_ABOVE : SECTION_LABELS}>
                     {detail.profile.email && (
                       <MetadataListItem label="E-post">
                         <FieldValue

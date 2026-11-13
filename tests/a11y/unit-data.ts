@@ -138,7 +138,13 @@ export class Units {
   detail(id: string): EntityDetail | undefined {
     if (id === ENTITY_UNIT.id)
       return {
-        entity: { kind: 'unit', key: ENTITY_UNIT.id, name: ENTITY_UNIT.label, id: ENTITY_UNIT.id },
+        entity: {
+          kind: 'unit',
+          key: ENTITY_UNIT.id,
+          sourceKey: ENTITY_UNIT.id,
+          name: ENTITY_UNIT.label,
+          id: ENTITY_UNIT.id,
+        },
         relation: 'member',
         actions: this.actions,
         sections: [sickSource, talkUnitSource],
@@ -146,7 +152,13 @@ export class Units {
       };
     if (id === MEMBER_UNIT.id)
       return {
-        entity: { kind: 'unit', key: MEMBER_UNIT.id, name: MEMBER_UNIT.label, id: MEMBER_UNIT.id },
+        entity: {
+          kind: 'unit',
+          key: MEMBER_UNIT.id,
+          sourceKey: MEMBER_UNIT.id,
+          name: MEMBER_UNIT.label,
+          id: MEMBER_UNIT.id,
+        },
         relation: 'member',
         actions: [],
         // A source about a unit that has no row for this one says nothing; the page then has nothing more to show.

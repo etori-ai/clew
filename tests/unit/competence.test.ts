@@ -543,17 +543,63 @@ describe('erasure and export', () => {
     const { hot } = await catalogue();
     await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2026-01-10' });
     await competence.registerHolding(boss, 'bo', { typeId: hot, issuedOn: '2026-01-10' });
-    expect(await competence.erasePerson('operator:cli', 'anna')).toEqual({ holdings: 1, cleared: 0 });
+    expect(await competence.erasePerson('operator:cli', 'anna')).toEqual({ holdings: 1, cleared: 0, cards: 0 });
     expect(lastAudit()).toEqual({
       actor: 'operator:cli',
       action: 'competence.person_erased',
       subject: 'person:anna',
       at: now.toISOString(),
-      details: { holdings: 1, cleared: 0 },
+      details: { holdings: 1, cleared: 0, cards: 0 },
     });
     // The manager who registered is erased: the holdings stay, without her id.
-    expect(await competence.erasePerson('operator:cli', 'boss')).toEqual({ holdings: 0, cleared: 1 });
+    expect(await competence.erasePerson('operator:cli', 'boss')).toEqual({ holdings: 0, cleared: 1, cards: 0 });
     expect([...store.state.holdings.values()].map(h => [h.personId, h.registeredBy])).toEqual([['bo', null]]);
+  });
+  test("the cards the competence scan put in the person's own stream go with the holdings, and are counted (R1)", async () => {
+    const seeded = memoryCompetenceStore({
+      persons: [{ id: 'anna', organisationId: ORG, name: 'Anna', userName: 'anna.a' }],
+      cards: {
+        'card-heta': { personId: 'anna', connector: 'competence' },
+        'card-hlr': { personId: 'anna', connector: 'competence' },
+        'card-hr': { personId: 'anna', connector: 'hr' },
+        'card-bo': { personId: 'bo', connector: 'competence' },
+      },
+    });
+    const erasing = competenceUsecases({
+      store: seeded,
+      staff: async () => ({ units: [] }),
+      clock: () => now,
+      ids: () => 'x',
+    });
+    expect(await erasing.erasePerson('operator:cli', 'anna')).toEqual({ holdings: 0, cleared: 0, cards: 2 });
+    // Another connector's card of hers and a colleague's competence card stay.
+    expect([...seeded.state.cards.keys()].sort()).toEqual(['card-bo', 'card-hr']);
+    // A thread.removed row for each card, then the erasure's own, all at the erasure's time.
+    expect(seeded.audit()).toEqual([
+      ...['card-heta', 'card-hlr'].map(id => ({
+        actor: 'operator:cli',
+        action: 'thread.removed',
+        subject: `thread:${id}`,
+        at: now.toISOString(),
+        details: { reason: 'erasure' },
+      })),
+      {
+        actor: 'operator:cli',
+        action: 'competence.person_erased',
+        subject: 'person:anna',
+        at: now.toISOString(),
+        details: { holdings: 0, cleared: 0, cards: 2 },
+      },
+    ]);
+  });
+  test('an id the people table does not hold, a user name among them, erases nothing and writes no audit row (R1)', async () => {
+    const { hot } = await catalogue();
+    await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2026-01-10' });
+    const before = audits().length;
+    for (const id of ['nobody', 'Anna.A', 'anna.a'])
+      expect(await competence.erasePerson('operator:cli', id)).toBeUndefined();
+    expect(audits()).toHaveLength(before);
+    expect([...store.state.holdings.values()].map(h => h.personId)).toEqual(['anna']);
   });
   test('the export is one versioned document of the organisation, audited with counts', async () => {
     const { hot } = await catalogue();

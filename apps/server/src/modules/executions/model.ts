@@ -35,6 +35,11 @@ export interface Execution {
   leaseUntil: string | null;
   approvingSession: string | null;
   checkingSession: string | null;
+  /**
+   * The person a started action is about (D116): `payload[param]` is the user name `personId` held when the person
+   * decided. Dispatch sends it only while it still names that person. Null for every other execution.
+   */
+  subject: { param: string; personId: string } | null;
 }
 export interface ExecutionAudit {
   actor: string;
@@ -220,8 +225,15 @@ export interface ExecutionSessions {
    */
   ready(persona: AuthenticatedContext, execution: Execution): Promise<boolean>;
 }
+/** Whose a user name is now (D116, composition: the people module's user reads). */
+export interface ExecutionPeople {
+  /** The person's user name now; null for nobody, or a person provisioned without one. */
+  userName(personId: string): Promise<string | null>;
+}
 export interface ExecutionDeps {
   review?: (persona: AuthenticatedContext, operation: string, payload: unknown) => Promise<void>;
+  /** Absent: an execution that names a person (`subject`) is never dispatched. */
+  people?: ExecutionPeople;
   store: ExecutionStore;
   source: ExecutionSource;
   /** Absent: no session can stand behind delegated work, which then stays pending with `needs-session`. */

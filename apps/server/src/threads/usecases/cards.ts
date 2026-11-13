@@ -32,8 +32,9 @@ import {
   type ThreadDraft,
 } from '@clew/connectors';
 import { InputError } from '../../context';
-import type { ThreadStore, ThreadTx } from '../model';
+import type { PersonKeys, ThreadStore, ThreadTx } from '../model';
 import { threadAccess } from '../access';
+import { keyedDrafts } from './keys';
 
 /**
  * The stream's use cases (D20, D25): one function per user action, the actor first, built over ports. Nothing in here
@@ -56,6 +57,8 @@ export interface ThreadDeps {
   /** The timers behind a snooze (D29, D49): the same reminder workflow as D17, and the same return. */
   clock: () => Date;
   ids: () => string;
+  /** Whose a source's key is (D116): a row that names a person by user name names them by id. Absent: by nobody. */
+  people?: PersonKeys;
 }
 const REOPEN_MS = 10 * 60_000;
 /** Attention budget: pushed threads today against a fixed daily budget. The rest is bundled to lunch or the next morning. */
@@ -68,7 +71,7 @@ const sameDraft = (t: Thread, d: ThreadDraft, items: Thread['items']) =>
   JSON.stringify(t.actions) === JSON.stringify(d.actions);
 
 export function threadUsecases(deps: ThreadDeps) {
-  const { store, registry, run, calendar, clock, ids } = deps;
+  const { store, registry, run, calendar, clock, ids, people } = deps;
   const access = threadAccess(store, registry);
   const inFlight = new Map<string, Promise<void>>();
   /**
@@ -105,7 +108,8 @@ export function threadUsecases(deps: ThreadDeps) {
   async function scanInto(persona: AuthenticatedContext, source: string) {
     if (registry.visible(actorOf(persona), 'calendar')) await calendar.ensureProposalThread(persona, source);
     await wakeDue(persona);
-    const drafts = await registry.scan(actorOf(persona));
+    // A person a row names by user name is kept by id (D116), resolved as the rows arrive.
+    const drafts = await keyedDrafts(people, persona, await registry.scan(actorOf(persona)));
     const now = clock();
     for (const d of drafts) {
       const scopedTopic = `${d.topic}:authority:${persona.authorizationVersion}`;

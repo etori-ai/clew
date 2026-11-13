@@ -1,6 +1,11 @@
-import type { ExecutionSummary } from '@clew/contracts';
+import { SUBJECT_CHANGED, type ExecutionSummary } from '@clew/contracts';
 export function executionStatus(execution: ExecutionSummary | null | undefined): string | null {
   if (!execution) return null;
+  // A started action whose user name moved to someone else, or away, before it was sent (D116).
+  if (execution.reason === SUBJECT_CHANGED)
+    return execution.state === 'unknown'
+      ? 'Personen har inte längre det användarnamn som beslutet gällde, så åtgärden skickas inte igen. Utfallet behöver kontrolleras i källsystemet.'
+      : 'Personen har inte längre det användarnamn som beslutet gällde. Inget skickades. Fatta beslutet igen.';
   if (execution.reason === 'needs-session') return 'Källan kräver en aktiv inloggning. Åtgärden väntar.';
   if (execution.reason === 'authority-revoked') return 'Behörigheten har ändrats. Åtgärden väntar på kontroll.';
   if (execution.reason === 'source-contract-changed')

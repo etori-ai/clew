@@ -1,6 +1,6 @@
 import type { Page, Route } from '@playwright/test';
 import type { MockApi } from './support';
-import type { EntityDetail, EntitySection, EntitySource, PanelViewSpec, View } from '@clew/contracts';
+import type { EntityDetail, EntitySection, EntitySource, PanelViewSpec, PersonProfile, View } from '@clew/contracts';
 import { PRESENCE_LENS, SILENT_SECTION, TALK_LENS, entityDetail, entityList, entityRows, talkSource } from './data';
 
 /**
@@ -32,13 +32,14 @@ export const contactSource: EntitySource = {
     ],
   },
 };
+/** Each source's row by the person's user name, the key it was asked with (D116). */
 const contactRows: Record<string, Record<string, unknown>> = {
-  johan: { key: 'johan', email: 'johan@clew.test', phone: '060-00 00 00', place: 'Hus B, plan 2' },
-  anna: { key: 'anna', email: 'anna@clew.test', phone: '060-00 00 01' },
+  'johan.bystrom': { key: 'johan.bystrom', email: 'johan@clew.test', phone: '060-00 00 00', place: 'Hus B, plan 2' },
+  'anna.lindqvist': { key: 'anna.lindqvist', email: 'anna@clew.test', phone: '060-00 00 01' },
 };
 /** What the competence system answers once it answers again. */
 const competenceRows: Record<string, Record<string, unknown>> = {
-  johan: { key: 'johan', name: 'HLR vuxen', validTo: '2026-09-15' },
+  'johan.bystrom': { key: 'johan.bystrom', name: 'HLR vuxen', validTo: '2026-09-15' },
 };
 export const pointsSpec: PanelViewSpec = {
   kind: 'list',
@@ -63,6 +64,38 @@ export const pointsOutput = {
   ],
 };
 
+/** A long category the directory may send for a number (D114 item 3): it wraps and narrows no value (W2). */
+export const LONG_PHONE_CATEGORY = 'Beredskapstelefon för elevhälsan och fritidshemmet';
+/** An address of an ordinary length, 33 characters: on one line at 320 px (W2). */
+export const JOHAN_EMAIL = 'johan.bystrom@bergsaker.clew.test';
+/**
+ * Johan's profile as the directory sent it (D114): a core title and two employments without titles of their own, the
+ * second on a unit since removed, and his e-mail and three numbers, the third under a long category, so that every run
+ * of the page (axe, keyboard, reflow) draws both sections. The percentage is a 0–1 fraction multiplied by 100, as a
+ * provisioner sends it: 0.57 × 100 is 56.99999999999999 in binary floating point.
+ */
+export const johanProfile = (): PersonProfile => ({
+  email: JOHAN_EMAIL,
+  title: 'Lärare 4–6',
+  phoneNumbers: [
+    { type: 'work', value: '060-19 20 00' },
+    { type: 'mobile', value: '070-000 00 00' },
+    { type: LONG_PHONE_CATEGORY, value: '070-000 00 03' },
+  ],
+  employments: [
+    {
+      unitId: 'unit-skola',
+      unitLabel: 'Bergsåkers skola',
+      employmentType: 'Tillsvidare',
+      startDate: '2018-08-15',
+      employmentPercentage: 0.57 * 100,
+    },
+    { unitId: 'unit-nedlagd', employmentType: 'Vikariat', employmentPercentage: 0.43 * 100 },
+  ],
+});
+/** The unit Johan leads when he reports to the reader from below (D99): not one the reader manages or belongs to. */
+export const FRITIDS = { id: 'unit-fritidshem', label: 'Bergsåkers fritidshem' };
+
 /**
  * The person routes for one test: the opened person with the extra sections, each section's answer (with a delay or
  * a silence per source, and a count of the reads), the talk's action points, and a colleague's reading (artboard G).
@@ -70,6 +103,11 @@ export const pointsOutput = {
 export class People {
   /** The reader is a colleague (artboard G): one action, the directory's section, no cards. */
   colleague = false;
+  /**
+   * Johan reports to the reader from below (D99): he leads a unit under one the reader manages, so the server names his
+   * own unit, which the reader may not open, and the reader is still his manager.
+   */
+  fromBelow = false;
   /** How long a source takes to answer, by capability. */
   delay: Record<string, number> = {};
   /** Sources that do not answer, by capability. */
@@ -85,6 +123,8 @@ export class People {
     if (this.colleague)
       return {
         ...base,
+        // The colleague's unit is not one the reader manages or belongs to, so its page does not open for them.
+        entity: { ...base.entity, unit: { id: base.entity.unit!.id, label: base.entity.unit!.label } },
         relation: 'colleague',
         actions: [
           {
@@ -99,8 +139,9 @@ export class People {
         sections: [contactSource],
         cards: [],
       };
-    return {
+    const managed: EntityDetail = {
       ...base,
+      ...(key === 'johan' ? { profile: johanProfile() } : {}),
       actions: [
         {
           capability: 'calendar.bookMeeting',
@@ -119,6 +160,18 @@ export class People {
         contactSource,
         competence,
       ],
+    };
+    if (!this.fromBelow) return managed;
+    const profile = managed.profile ?? johanProfile();
+    return {
+      ...managed,
+      entity: { ...managed.entity, detail: `Lärare 4–6 · ${FRITIDS.label}`, unit: FRITIDS },
+      profile: {
+        ...profile,
+        employments: [
+          { unitId: FRITIDS.id, unitLabel: FRITIDS.label, employmentType: 'Tillsvidare', employmentPercentage: 100 },
+        ],
+      },
     };
   }
   private section(key: string, capability: string): EntitySection {
@@ -152,7 +205,8 @@ export class People {
       this.reads.push(capability);
       const wait = this.delay[capability];
       if (wait) await new Promise(resolve => setTimeout(resolve, wait));
-      return route.fulfill({ json: this.section(detail.entity.key, capability) });
+      // A section asks the source with the person's user name (D116).
+      return route.fulfill({ json: this.section(detail.entity.sourceKey, capability) });
     };
     await page.route(
       url => /^\/api\/entities\/person\/[^/]+(\/section)?$/.test(url.pathname) && !url.pathname.endsWith('/rows'),

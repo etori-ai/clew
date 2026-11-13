@@ -117,9 +117,10 @@ export function entityUsecases(deps: EntityDeps) {
   }
 
   /**
-   * The entity behind a key, and how the reader stands to it; undefined outside the rule. A person: the reader
-   * (`self`), someone on a unit the reader manages (`managed`) or another active person of the directory (`colleague`).
-   * A unit: one the reader manages or belongs to (`member`).
+   * The entity behind Clew's key (D116: a person's id, a unit's id), and how the reader stands to it; undefined outside
+   * the rule. A person: the reader (`self`), someone on a unit the reader manages (`managed`), also from below (D99), or
+   * another active person of the directory (`colleague`). A unit: one the reader manages or belongs to (`member`). A key
+   * that cannot name an entity of the kind (a NUL in it, or too long) names nobody, before anything is read.
    */
   async function resolve(
     persona: AuthenticatedContext,
@@ -127,24 +128,32 @@ export function entityUsecases(deps: EntityDeps) {
     key: string,
     includeProfile = false,
   ): Promise<Found | undefined> {
-    if (!isKey(key)) return undefined;
+    if (!isKey(kind, key)) return undefined;
     if (kind === 'unit') {
       const unit = memberUnit(await deps.directory.reach(persona), key);
       return unit && { entity: { ...unitRef(unit) }, relation: 'member' };
     }
     const person = await deps.directory.person(persona, key, includeProfile);
-    if (!person || !personKey(person) || !person.userName) return undefined;
+    if (!person || person.id !== key || !personKey(person) || !person.userName) return undefined;
     const self = person.id === persona.id;
-    if (self && persona.userName?.toLowerCase() !== person.userName.toLowerCase()) return undefined;
-    const managed = self ? undefined : managedPerson(await deps.directory.reach(persona), key);
+    const reach = self ? undefined : await deps.directory.reach(persona);
+    const managed = reach && managedPerson(reach, person.id);
+    // Where the person is: the reader's own unit for the reader, the unit the reader manages that they are placed on,
+    // else their own unit, also for someone who reports to the reader from below (D99), whom that card does not place.
     const unit =
       self && persona.unitId
         ? { unitId: persona.unitId, unitLabel: persona.unitLabel }
-        : (managed?.unit ?? person.unit);
+        : managed?.placed
+          ? managed.unit
+          : person.unit;
+    // Its page opens, as `/units/<id>` answers, only for a unit the reader manages or belongs to: the reader's own always.
+    const opens = !!unit && (!reach || !!memberUnit(reach, unit.unitId));
     return {
       entity: {
         ...personRef({ ...person, userName: person.userName }, unit),
-        ...(unit ? { unit: { id: unit.unitId, label: unit.unitLabel } } : {}),
+        ...(unit
+          ? { unit: { id: unit.unitId, label: unit.unitLabel, ...(opens ? { opens: true as const } : {}) } }
+          : {}),
       },
       relation: self ? 'self' : managed ? 'managed' : 'colleague',
       ...(person.profile ? { profile: person.profile } : {}),
@@ -162,7 +171,8 @@ export function entityUsecases(deps: EntityDeps) {
       deps.sources.reads(actor, kind),
       deps.sources.actions(actor, kind),
     ]);
-    const keys = listedKeys(kind, reach);
+    // "Just nu" is by Clew's key (D116): a card's rows name a person by id.
+    const keys = listedKeys(kind, reach).map(e => e.key);
     const cards =
       deps.cardsNaming && keys.length
         ? await deps.cardsNaming(
@@ -188,7 +198,13 @@ export function entityUsecases(deps: EntityDeps) {
   ): Promise<EntityRows | undefined> {
     const read = placed(await deps.sources.reads(actorOf(persona), kind), capability);
     if (!read) return undefined;
-    const answer = await ask(persona, kind, read, listedKeys(kind, await deps.directory.reach(persona)));
+    // A source is asked with its own key (a person's user name, D96 talks item 8), and its rows answer with it.
+    const answer = await ask(
+      persona,
+      kind,
+      read,
+      listedKeys(kind, await deps.directory.reach(persona)).map(e => e.sourceKey),
+    );
     if (!(await stillAllowed(persona, kind, reads => placed(reads, capability)))) return undefined;
     return answer.status === 'ok'
       ? {
@@ -230,7 +246,7 @@ export function entityUsecases(deps: EntityDeps) {
     if (!read) return undefined;
     const found = await resolve(persona, kind, key);
     if (!found) return undefined;
-    const answer = await ask(persona, kind, read, [found.entity.key]);
+    const answer = await ask(persona, kind, read, [found.entity.sourceKey]);
     if (!(await stillAllowed(persona, kind, byName))) return undefined;
     if (answer.status !== 'ok') return { capability, status: answer.status };
     const row = answer.rows[0];

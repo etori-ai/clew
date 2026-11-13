@@ -5,6 +5,8 @@ import {
   calendarExecutionSource,
   type CalendarCommand,
 } from '../../apps/server/src/modules/calendar/usecases/decisions';
+import type { UnitMember } from '../../apps/server/src/modules/calendar/model';
+import type { BookedInRound } from '../../apps/server/src/modules/calendar/usecases/booked';
 import { memoryExecutionStore } from '../../apps/server/src/modules/executions/adapters/memory';
 import { executionUsecases } from '../../apps/server/src/modules/executions/usecases';
 import { createHash } from 'node:crypto';
@@ -35,14 +37,16 @@ const input = {
 const command = (): CalendarCommand => ({
   items: [{ id: 'p1', proposalId: 'p1', label: 'Guest', action: 'create', input }],
 });
-function world() {
+const guest: UnitMember = { ref: 'guest', personId: 'guest', email: 'guest@clew.test', name: 'Guest' };
+function world(team: UnitMember[] = [guest], booked: BookedInRound = async () => new Set()) {
   let n = 0,
     now = Date.parse(at);
   const provider = memoryCalendar({ ref: 'a', email: 'a@clew.test', name: 'A' });
   const source = {
     ...calendarExecutionSource(
       () => ({ provider }),
-      async () => [{ ref: 'guest', personId: 'guest', email: 'guest@clew.test', name: 'Guest' }],
+      async () => team,
+      booked,
     ),
     current: async () => person,
   };
@@ -129,6 +133,157 @@ test('missing availability evidence does not authorize an invitation', async () 
   expect(w.provider.events).toEqual([]);
   expect(await w.uc.read(person, e.id)).toMatchObject({ state: 'unknown' });
   expect(w.store.audit().some(a => a.action === 'execution.approved')).toBe(true);
+});
+test('a proposal whose invitee changed address since the draw is authorized and checked by id, and sent to the address it was drawn with (N3)', async () => {
+  // The directory has Guest at a new address now; the approved command keeps the one the proposal was drawn with.
+  const w = world([{ ...guest, ref: 'guest-new', email: 'guest.new@clew.test' }]);
+  const asked: string[] = [];
+  const freeBusy = w.provider.freeBusy.bind(w.provider);
+  w.provider.freeBusy = async (start, end, targets) => {
+    asked.push(...targets.map(t => t.ref));
+    return freeBusy(start, end, targets);
+  };
+  const confirm = (decisionId: string, item: Partial<CalendarCommand['items'][number]>) =>
+    w.uc.approve(person, {
+      decisionId,
+      operation: 'calendar.confirmProposals',
+      payload: { items: [{ ...command().items[0]!, ...item } as CalendarCommand['items'][number]] },
+    });
+  // By address alone the old address is nobody on the team now; by id it is Guest.
+  await expect(confirm('by-address', {})).rejects.toThrow('Deltagarna måste tillhöra din enhet.');
+  await expect(confirm('somebody-else', { personId: 'stranger' })).rejects.toThrow(
+    'Deltagarna måste tillhöra din enhet.',
+  );
+  const e = await confirm('by-id', { personId: 'guest' });
+  await w.uc.progress(e.id);
+  expect(await w.uc.read(person, e.id)).toMatchObject({
+    state: 'succeeded',
+    result: { rows: [{ ref: 'p1', outcome: 'done' }], undoInput: { items: [{ personId: 'guest' }] } },
+  });
+  expect(asked).toEqual(['guest-new']);
+  expect(w.provider.events[0]?.participants.map(p => p.email)).toEqual(['guest@clew.test']);
+});
+test('a declined invitation is retired only once the new one for the same person is established, not for a namesake (N3)', async () => {
+  const w = world([guest, { ...guest, personId: 'namesake', ref: 'namesake', email: 'namesake@clew.test' }]);
+  const old = occurrence(
+    { uid: 'old', title: 'Utvecklingssamtal · Guest', start: input.start, end: input.end },
+    w.provider.account,
+  );
+  w.provider.events.push(old);
+  // Two people share a name: the namesake's invitation is established, and Guest's old one stays until Guest's is.
+  const payload: CalendarCommand = {
+    items: [
+      {
+        id: 'p2',
+        proposalId: 'p2',
+        personId: 'namesake',
+        label: 'Guest',
+        action: 'create',
+        input: {
+          ...input,
+          start: '2026-11-11T10:00:00.000Z',
+          end: '2026-11-11T11:00:00.000Z',
+          participants: ['namesake@clew.test'],
+        },
+      },
+      {
+        id: 'replace:p0',
+        proposalId: 'p0',
+        personId: 'guest',
+        label: 'Guest',
+        action: 'cancel',
+        ref: old.ref,
+        revision: old.revision,
+      },
+    ],
+  };
+  const e = await w.approve(payload);
+  await w.uc.progress(e.id);
+  expect((await w.uc.read(person, e.id))?.result?.rows.map(r => [r.ref, r.outcome])).toEqual([
+    ['p2', 'done'],
+    ['replace:p0', 'skipped'],
+  ]);
+  expect(w.provider.events.map(x => x.uid).sort()).toEqual(['clew-exec-e1-p2', 'old']);
+});
+test('an invitation to a person another manager booked after the approval is not sent, and a later check keeps it unsent (M1, Q12)', async () => {
+  const other: UnitMember = { personId: 'other', ref: 'other', email: 'other@clew.test', name: 'Other' };
+  const asked: string[][] = [];
+  const w = world([guest, other], async (_p, ids) => {
+    asked.push([...ids]);
+    return new Set(['guest']);
+  });
+  const create = w.provider.create.bind(w.provider);
+  w.provider.create = async (uid, value) => {
+    if (uid.endsWith('p2')) throw new Error('away');
+    return create(uid, value);
+  };
+  const e = await w.approve({
+    items: [
+      { ...command().items[0]!, personId: 'guest' },
+      {
+        id: 'p2',
+        proposalId: 'p2',
+        personId: 'other',
+        label: 'Other',
+        action: 'create',
+        input: {
+          ...input,
+          start: '2026-11-10T13:00:00.000Z',
+          end: '2026-11-10T14:00:00.000Z',
+          participants: ['other@clew.test'],
+        },
+      },
+    ],
+  });
+  await w.uc.progress(e.id);
+  // Asked once, for everyone the command invites, right before sending; Guest's invitation is never sent.
+  expect(asked).toEqual([['guest', 'other']]);
+  expect(w.provider.events).toEqual([]);
+  expect(await w.uc.read(person, e.id)).toMatchObject({
+    state: 'unknown',
+    result: {
+      rows: [
+        { ref: 'p1', outcome: 'skipped', detail: 'Guest har redan ett utvecklingssamtal bokat med en annan chef.' },
+        { ref: 'p2', outcome: 'unknown' },
+      ],
+    },
+  });
+  // Checking the unknown one again reads back and keeps Guest's row as it was: it neither sends it nor calls it unknown.
+  await w.uc.progress(e.id);
+  expect(w.provider.events).toEqual([]);
+  expect((await w.uc.read(person, e.id))?.result?.rows.map(r => [r.ref, r.outcome])).toEqual([
+    ['p1', 'skipped'],
+    ['p2', 'unknown'],
+  ]);
+  expect(asked).toHaveLength(1);
+  // A booking that invites nobody by id, an ordinary meeting, is never asked about.
+  const plain = await w.uc.approve(person, {
+    decisionId: 'plain',
+    operation: 'calendar.createEvent',
+    payload: command(),
+  });
+  await w.uc.progress(plain.id);
+  expect(asked).toHaveLength(1);
+  expect(w.provider.events).toHaveLength(1);
+});
+test('an invitation is not sent when it cannot be told whether another manager booked the person (M1)', async () => {
+  const w = world([guest], async () => {
+    throw new Error('round unavailable');
+  });
+  const e = await w.approve({ items: [{ ...command().items[0]!, personId: 'guest' }] });
+  await w.uc.progress(e.id);
+  expect(w.provider.events).toEqual([]);
+  expect(await w.uc.read(person, e.id)).toMatchObject({
+    state: 'failed',
+    result: {
+      rows: [
+        {
+          outcome: 'skipped',
+          detail: 'Inbjudan skickades inte: det gick inte att se om Guest redan har ett utvecklingssamtal bokat.',
+        },
+      ],
+    },
+  });
 });
 test('a process crash after sending is recovered with reads only, even if some approved items never reached the source', async () => {
   const w = world(),

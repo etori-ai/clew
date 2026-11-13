@@ -31,6 +31,7 @@ export const executionRecord = (personId: string, id: string): Execution => ({
   leaseUntil: null,
   approvingSession: null,
   checkingSession: null,
+  subject: null,
 });
 /** A job (D55) over two step executions; the watch step carries the read input a Postgres adapter must seal. */
 export const jobRecord = (personId: string, id: string, steps: Execution[]): Job => ({
@@ -263,6 +264,30 @@ export function executionStoreContract(name: string, create: () => Promise<Execu
         checkingSession: 'synthetic-checking-session',
       });
       expect(await w.auditCount()).toBe(0);
+    });
+    test('the person a started action is about (D116) survives a round trip, the lock and an update; none stays none', async () => {
+      const w = await create(),
+        e: Execution = {
+          ...executionRecord(w.personId, w.personId + '-subject'),
+          payload: { person: 'anna.l', revision: 1 },
+          subject: { param: 'person', personId: 'p-anna' },
+        };
+      await w.store.transaction(async tx => {
+        expect((await tx.insert(e)).execution).toEqual(e);
+      });
+      expect(await w.store.read(e.id)).toEqual(e);
+      expect(await w.store.readDecision(w.personId, e.decisionId)).toEqual(e);
+      await w.store.transaction(async tx => {
+        const row = (await tx.lock(e.id))!;
+        expect(row.subject).toEqual({ param: 'person', personId: 'p-anna' });
+        await tx.update({ ...row, state: 'failed', reason: 'subject-changed' });
+      });
+      expect(await w.store.read(e.id)).toEqual({ ...e, state: 'failed', reason: 'subject-changed' });
+      const plain = executionRecord(w.personId, w.personId + '-no-subject');
+      await w.store.transaction(async tx => {
+        await tx.insert({ ...plain, decisionId: 'decision:' + w.personId + ':plain' });
+      });
+      expect((await w.store.read(plain.id))?.subject).toBeNull();
     });
     test('a workflow start is idempotent by its id: a reconciliation under a new id is a second start, a repeat is none', async () => {
       const w = await create(),

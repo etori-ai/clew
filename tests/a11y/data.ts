@@ -260,7 +260,7 @@ export const threads = (): Thread[] => [
     ],
     items: [
       {
-        ref: 'unplaced:sara@clew.test',
+        ref: 'unplaced:sara',
         label: 'Sara Holm',
         detail: 'upptagen hela veckan',
         selectable: false,
@@ -1279,7 +1279,7 @@ const commitment = (
   carried: false,
   ...row,
 });
-/** Every action point the mock holds, writable (with `id`), in the order the server lists them. */
+/** Every action point the mock holds, each with its `id`, in the order the server lists them. */
 export const allCommitments = (): CommitmentEntry[] => [
   commitment('c-anna-1', 'anna', {
     owner: 'employee',
@@ -1381,8 +1381,35 @@ export function talksResult({
     source: TALKS_SOURCE,
   };
 }
-/** An action point as answered: `carried` means from an earlier round and still open, so a done one is never carried. */
-const answered = (row: CommitmentEntry): CommitmentEntry => ({ ...row, carried: row.carried && !row.done });
+/**
+ * A point Anna's former manager owns, which the reader, her manager now, may take over (Q12). Not among
+ * `allCommitments()`, so the lists and counts of the other specs stand; a spec adds it to the mock's.
+ */
+export const formerManagersPoint = (): CommitmentEntry =>
+  commitment('c-anna-5', 'anna', {
+    owner: 'manager',
+    mine: false,
+    text: 'Ordna en mentor för det första året',
+    dueOn: '2026-11-25',
+  });
+/** A point Anna's other manager owns, who manages her still: theirs to tick off, not the reader's (Q12). */
+export const coManagersPoint = (): CommitmentEntry =>
+  commitment('c-anna-6', 'anna', {
+    owner: 'manager',
+    mine: false,
+    text: 'Boka en kurs i ledarskap',
+    dueOn: '2026-11-26',
+  });
+/** Whether the reader may mark a point done or open it again: their own, or a former manager's they take over (Q12). */
+export const changeable = (row: CommitmentEntry): boolean => row.mine || row.id === 'c-anna-5';
+/**
+ * An action point as answered: `carried` means from an earlier round and still open, so a done one is never carried,
+ * and `id`, which the write routes take, comes only on a point the reader may change.
+ */
+const answered = (row: CommitmentEntry): CommitmentEntry => {
+  const { id, ...rest } = row;
+  return { ...rest, carried: row.carried && !row.done, ...(id && changeable(row) ? { id } : {}) };
+};
 /** `clew.commitments` with `person`: one employee's action points, as their manager reads them. */
 export const commitmentsFor = (personId: string, commitments = allCommitments()): CommitmentsResult => ({
   rows: commitments.filter(c => c.personId === personId).map(answered),
@@ -1432,7 +1459,8 @@ export const usersPeople = (): UserAdminRow[] => [
   {
     id: 'hillevi',
     name: 'Hillevi Berg',
-    userName: 'hillevi',
+    // Her user name differs from her id: her page is at her id (D116).
+    userName: 'hillevi.berg',
     externalId: 'dev:hillevi',
     email: 'hillevi@clew.test',
     title: 'Rektor',
@@ -1617,9 +1645,11 @@ export const entityActions = (): EntityAction[] => [
     param: 'person',
   },
 ];
-const entityPerson = (key: string, name: string, detail: string): EntityRef => ({
+/** A person of the list (D116): Clew's key is their id, the address; a source's rows name them by their user name. */
+const entityPerson = (key: string, userName: string, name: string, detail: string): EntityRef => ({
   kind: 'person',
   key,
+  sourceKey: userName,
   name,
   detail: `${detail} · ${ENTITY_UNIT.label}`,
   id: key,
@@ -1639,11 +1669,11 @@ export const entityList = (): EntityList => ({
     {
       ...ENTITY_UNIT,
       entities: [
-        entityPerson('anna', 'Anna Lindqvist', 'Lärare F–3'),
-        entityPerson('erik', 'Erik Sandström', 'Fritidspedagog'),
-        entityPerson('johan', 'Johan Byström', 'Lärare 4–6'),
-        entityPerson('karin', 'Karin Lindqvist', 'Speciallärare'),
-        entityPerson('maria', 'Maria Källström', 'Lärare 4–6'),
+        entityPerson('anna', 'anna.lindqvist', 'Anna Lindqvist', 'Lärare F–3'),
+        entityPerson('erik', 'erik.sandstrom', 'Erik Sandström', 'Fritidspedagog'),
+        entityPerson('johan', 'johan.bystrom', 'Johan Byström', 'Lärare 4–6'),
+        entityPerson('karin', 'karin.lindqvist', 'Karin Lindqvist', 'Speciallärare'),
+        entityPerson('maria', 'maria.kallstrom', 'Maria Källström', 'Lärare 4–6'),
       ],
     },
   ],
@@ -1654,7 +1684,10 @@ export const entityList = (): EntityList => ({
   lenses: [talkSource, presenceSource],
   actions: entityActions(),
 });
-/** `GET /api/entities/person/rows?capability=`: each source's rows, one per person it knows, in its own order. */
+/**
+ * `GET /api/entities/person/rows?capability=`: each source's rows, one per person it knows, in its own order, each by
+ * the person's user name, the key the source was asked with (D116).
+ */
 export const entityRows = (): Record<string, EntityRows> => ({
   [TALK_LENS]: {
     capability: TALK_LENS,
@@ -1662,29 +1695,29 @@ export const entityRows = (): Record<string, EntityRows> => ({
     heading: 'Utvecklingssamtal 2026',
     note: 'Senast lör 28 nov',
     rows: [
-      { key: 'anna', state: 'Bokat', at: '2026-11-16T10:00:00.000Z', next: 'mån 16 nov', open: 'Inga' },
-      { key: 'erik', state: 'Bokat', at: '2026-11-17T08:00:00.000Z', next: 'tis 17 nov', open: '1 öppen' },
+      { key: 'anna.lindqvist', state: 'Bokat', at: '2026-11-16T10:00:00.000Z', next: 'mån 16 nov', open: 'Inga' },
+      { key: 'erik.sandstrom', state: 'Bokat', at: '2026-11-17T08:00:00.000Z', next: 'tis 17 nov', open: '1 öppen' },
       {
-        key: 'johan',
+        key: 'johan.bystrom',
         state: 'Bokat',
         at: '2026-11-12T08:00:00.000Z',
         next: 'tors 12 nov',
         open: '3 öppna',
         overdue: '2 försenade',
       },
-      { key: 'karin', state: 'Saknas', next: 'Inte bokat', open: 'Inga' },
-      { key: 'maria', state: 'Hållet', at: '2026-11-04', next: 'Hållet 4 nov', open: '2 öppna' },
+      { key: 'karin.lindqvist', state: 'Saknas', next: 'Inte bokat', open: 'Inga' },
+      { key: 'maria.kallstrom', state: 'Hållet', at: '2026-11-04', next: 'Hållet 4 nov', open: '2 öppna' },
     ],
   },
   [PRESENCE_LENS]: {
     capability: PRESENCE_LENS,
     status: 'ok',
     rows: [
-      { key: 'anna', presence: 'I tjänst', today: 'På plats 07:30–16:00' },
-      { key: 'erik', presence: 'Sjuk · dag 1', today: 'Sjuk · dag 1, till fre 6 nov' },
-      { key: 'johan', presence: 'I tjänst', today: 'På plats', upcoming: 'Semester 21–23 dec' },
-      { key: 'karin', presence: 'I tjänst', today: 'På plats 08:00–16:30' },
-      { key: 'maria', presence: 'I tjänst', today: 'På plats 07:00–15:30' },
+      { key: 'anna.lindqvist', presence: 'I tjänst', today: 'På plats 07:30–16:00' },
+      { key: 'erik.sandstrom', presence: 'Sjuk · dag 1', today: 'Sjuk · dag 1, till fre 6 nov' },
+      { key: 'johan.bystrom', presence: 'I tjänst', today: 'På plats', upcoming: 'Semester 21–23 dec' },
+      { key: 'karin.lindqvist', presence: 'I tjänst', today: 'På plats 08:00–16:30' },
+      { key: 'maria.kallstrom', presence: 'I tjänst', today: 'På plats 07:00–15:30' },
     ],
   },
 });
@@ -1694,7 +1727,8 @@ export function entityDetail(list: EntityList, key: string): EntityDetail | unde
   const entity = group?.entities.find(e => e.key === key);
   if (!group || !entity) return undefined;
   return {
-    entity: { ...entity, unit: { id: group.id, label: group.label } },
+    // A unit the reader manages: its page opens for them.
+    entity: { ...entity, unit: { id: group.id, label: group.label, opens: true } },
     relation: 'managed',
     actions: list.actions,
     sections: [talkSource, presenceSource, competenceSource],

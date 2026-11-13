@@ -339,6 +339,11 @@ export const proposals = pgTable(
       >()
       .notNull()
       .default('proposed'),
+    // Whom the proposal invites, by Clew's key (N3): found by it in the team, the round and the reminders whatever their
+    // address is now, and by it a co-manager learns the person is booked (M1). No foreign key, as `thread_subject`
+    // names a person. The address and the name are what the proposal was drawn with: the invitation goes there and the
+    // replies are matched on it.
+    participantId: text('participant_id').notNull(),
     participantEmail: text('participant_email').notNull(),
     participantName: text('participant_name').notNull(),
     start: timestamp('start', { withTimezone: true }).notNull(),
@@ -348,6 +353,10 @@ export const proposals = pgTable(
     eventRevision: text('event_revision'),
     confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
     undoUntil: timestamp('undo_until', { withTimezone: true }),
+    // The approved decision that last took this proposal (M1): while that execution is pending, running or unknown, the
+    // invitation may be on its way, and another manager's confirmation of the same person is refused. Only that
+    // execution's state is read; no foreign key, as `participant_id` has none.
+    executionId: text('execution_id'),
     // Follow-ups to the invitee (D30): how many were sent and when the last one went.
     reminders: integer('reminders').notNull().default(0),
     remindedAt: timestamp('reminded_at', { withTimezone: true }),
@@ -356,6 +365,7 @@ export const proposals = pgTable(
   t => [
     index('proposal_thread').on(t.threadId),
     index('proposal_person_status').on(t.personId, t.status),
+    index('proposal_participant_status').on(t.participantId, t.status),
     check(
       'proposal_status',
       sql`${t.status} IN ('proposed', 'confirmed', 'final', 'accepted', 'declined-by-invitee', 'counter', 'undone', 'declined', 'superseded')`,
@@ -573,6 +583,9 @@ export const executions = pgTable(
     // the one that approved it (dispatch, replay, read-back) and the one that last asked to check it (read-back only).
     approvingSession: text('approving_session'),
     checkingSession: text('checking_session'),
+    // The person a started action is about (D116): the payload's `param` holds the user name they had when it was
+    // decided, and dispatch checks that it still names them. Null for every other execution.
+    subject: jsonb('subject').$type<{ param: string; personId: string } | null>(),
   },
   t => [
     uniqueIndex('execution_decision').on(t.personId, t.decisionId),

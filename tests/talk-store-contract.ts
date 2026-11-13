@@ -101,6 +101,7 @@ export function talkStoreContract(name: string, make: () => Promise<TalkStoreHar
           commitmentId: c.id,
           dueOn: c.dueOn,
           at: c.createdAt,
+          subject: { entity: 'person', key: c.employeeId },
         });
         await tx.insertCommitment({ ...c, threadId });
       });
@@ -340,6 +341,7 @@ export function talkStoreContract(name: string, make: () => Promise<TalkStoreHar
             commitmentId: w.p + '-c1',
             dueOn: '2026-12-15',
             at: T,
+            subject: { entity: 'person', key: w.anna },
           });
           await tx.insertCommitment(commitmentRow(w.p + '-c1', w.round, w.anna, { threadId: w.p + '-th1' }));
           await tx.closeRound(w.round, T);

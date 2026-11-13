@@ -380,8 +380,9 @@ export type ViewRef = Static<typeof ViewRefSchema>;
 
 /**
  * The entities a source's rows can be about (D97): a closed list, as `CAPABILITIES` is. A new kind is a contract change
- * that comes with the core rule saying who may be asked about it. A person's key is their directory `userName`, compared
- * without regard to case (a person without one cannot be asked about); a unit's key is its unit id.
+ * that comes with the core rule saying who may be asked about it. A source knows a person by their directory `userName`,
+ * compared without regard to case (a person without one cannot be asked about), and Clew keeps the person's id (D116); a
+ * unit's key is its unit id, on both sides.
  */
 export const ENTITY_KINDS = ['person', 'unit'] as const;
 export const EntityKind = literals(ENTITY_KINDS, {
@@ -398,19 +399,27 @@ export const ENTITY_KEY_MAX = 256;
 const entityKey = Type.String({
   minLength: 1,
   maxLength: ENTITY_KEY_MAX,
-  description: "The entity's key: a person's `userName`, a unit's id.",
+  description:
+    "The entity's key. A source sends a person's `userName` and a unit's id. Clew resolves a user name as it arrives to the person of the reader's organisation who holds it then, and keeps that person's id (D116); a name nobody there holds names nobody.",
 });
 /** A row that names an entity (D97 item 6): a card row, a search hit or a view field may carry one, so it links to the entity. */
 export const SubjectSchema = object(
   { entity: EntityKind, key: entityKey },
-  'An entity a row names (D97): the web links the row to it. Clew never checks that the key exists; a reader only ever reaches an entity they may ask about.',
+  "An entity a row names (D97): the web links the row to it. A source names a person by their `userName`, without regard to case, and a unit by its id. Clew resolves the user name as the row arrives, to whoever of the reader's organisation, active or not, holds it then, and keeps that person's id in its own records, so a later rename or reuse of the name moves nothing it kept (D116). A name nobody there holds names nobody: the row keeps its text and links nowhere. A reader only ever reaches an entity they may ask about.",
 );
 export type Subject = Static<typeof SubjectSchema>;
-/** A key as Clew compares it (D97): a person's user name without regard to case (RFC 7643's default), a unit's id exactly. */
-export const foldEntityKey = (entity: EntityKind, key: string) => (entity === 'person' ? key.toLowerCase() : key);
-/** Whether two subjects name the same entity. */
-export const sameSubject = (a: Subject, b: Subject) =>
-  a.entity === b.entity && foldEntityKey(a.entity, a.key) === foldEntityKey(b.entity, b.key);
+/**
+ * A key as a source sends it, compared as Clew compares it there (D97): a person's user name without regard to case (RFC
+ * 7643's default) and in its composed form (NFC, as a stored user name is), a unit's id exactly. Only for what arrives
+ * from a source: Clew's own records key a person by the person's id (D116), compared exactly (`sameSubject`).
+ */
+export const foldSourceKey = (entity: EntityKind, key: string) =>
+  entity === 'person' ? key.normalize('NFC').toLowerCase() : key;
+/**
+ * Whether two subjects of Clew's own records name the same entity (D116): a person by the person's id and a unit by its
+ * id, both compared exactly. A source's key (a person's user name) is resolved to the id when it arrives.
+ */
+export const sameSubject = (a: Subject, b: Subject) => a.entity === b.entity && a.key === b.key;
 
 /**
  * A declared view (D38): how a read capability's output is shown, said by the connector as data and drawn by Clew with
@@ -565,7 +574,7 @@ export const RecordSubjectSchema = object(
         "The record property holding the entity's key, a string: a person's provisioned `userName`, a unit's id.",
     },
   },
-  "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it; a record without the property links nowhere.",
+  "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it, a person through the id of whoever of the reader's organisation holds the user name when the read is answered (D116); a record without the property, or whose user name nobody there holds, links nowhere.",
 );
 export type RecordSubject = Static<typeof RecordSubjectSchema>;
 /**
@@ -708,6 +717,23 @@ export function viewRows(view: View, output: unknown): Record<string, unknown>[]
   return (output[key] as unknown[]).filter(isViewRecord);
 }
 /**
+ * The keys a view's records name people by (`subject` on a person, D97 item 6), each once: a source's key, the user name,
+ * which Clew resolves to the person's id before a name links to their page (D116, `PanelViewSpec.people`).
+ */
+export function subjectKeys(view: View, output: unknown): string[] {
+  const subject = view.kind === 'table' || view.kind === 'list' || view.kind === 'detail' ? view.subject : undefined;
+  if (subject?.entity !== 'person') return [];
+  const records = view.kind === 'detail' ? (isViewRecord(output) ? [output] : []) : (viewRows(view, output) ?? []);
+  return [
+    ...new Set(
+      records.flatMap(r => {
+        const key = r[subject.key];
+        return typeof key === 'string' && key ? [key] : [];
+      }),
+    ),
+  ];
+}
+/**
  * The fields of a table or list that can mark a row (D97 item 2): those giving some value a `warn` or `alert` tone. A
  * read about an entity with one of them can mark the entity's row where an administrator chose the source.
  */
@@ -737,6 +763,12 @@ export type PanelViewSpec = View & {
   source: string;
   chip: boolean;
   rowViews?: boolean;
+  /**
+   * The people the output's records name (`subject` on a person, D97 item 6), from the key on the record (the source's,
+   * a user name) to Clew's key for the person, their id (D116), so a name links to `/people/<id>`. A key nobody of the
+   * reader's organisation holds when the read is answered is absent, and its record links nowhere.
+   */
+  people?: Record<string, string>;
 };
 
 /**
@@ -993,7 +1025,8 @@ export const TalkRowSchema = object(
     state: TalkState,
     at: Type.Optional(
       Type.Union([calendarDay, instant], {
-        description: 'When the talk is booked (an instant), or the day it was held (a date). Absent when missing.',
+        description:
+          "When the talk is booked (an instant), or the day it was held (a date). Absent when missing, and for a booked talk whose time the reader may not see, such as one another of the person's managers booked.",
       }),
     ),
     openCommitments: Type.Integer({
@@ -1082,7 +1115,9 @@ export const TalksResultSchema = object({
 export type TalksResult = Static<typeof TalksResultSchema>;
 /**
  * What the composite `clew.commitments` returns (D96 item 8): as `clew.talks`, each row with `personId` (the employee)
- * and, only when `writable`, `id`: the built-in module's own id of the action point, which its write routes take.
+ * and, only when `writable` and the reader may mark it done or open it again, `id`: the built-in module's own id of the
+ * action point, which its write routes take. The reader may change their own, and a manager's point about someone they
+ * manage now whose owner no longer manages that person (Q12).
  */
 export const CommitmentsResultSchema = object({
   rows: Type.Array(object({ ...CommitmentRowSchema.properties, personId: id, id: Type.Optional(id) }), {
@@ -1191,10 +1226,16 @@ export const EntityPageSchema = object({
 export type EntityPage = Static<typeof EntityPageSchema>;
 /** How one source answered for a list or a section: it answered, it did not, or not in time. */
 const entityAnswer = Type.Union([Type.Literal('ok'), Type.Literal('unavailable'), Type.Literal('timeout')]);
-/** An entity as the browser gets it (D97). `detail` is one line ("Lärare 4–6 · Bergsåkers skola") when known; `id` is Clew's own id, never sent to a connector. */
+/**
+ * An entity as the browser gets it (D97). `key` is Clew's key (D116): a person's id, a unit's id; it is the address
+ * (`/people/<key>`, `/units/<key>`) and what "Just nu" and a card's row name. `sourceKey` is the key a source knows the
+ * entity by and answers its rows with (`row.key`): a person's `userName`, a unit's id. `detail` is one line ("Lärare
+ * 4–6 · Bergsåkers skola") when known; `id` is Clew's own id, never sent to a connector.
+ */
 export const EntityRefSchema = object({
   kind: EntityKind,
-  key: entityKey,
+  key: Type.String({ minLength: 1, maxLength: ENTITY_KEY_MAX }),
+  sourceKey: entityKey,
   name: Type.String(),
   detail: Type.Optional(Type.String()),
   id: Type.Optional(id),
@@ -1389,7 +1430,8 @@ export type EntityAction = Static<typeof EntityActionSchema>;
  * på" opens it. An entity without such a card is absent.
  */
 export const EntityAttentionSchema = object({
-  key: entityKey,
+  /** Clew's key of the entity (`EntityRef.key`): a person's id, a unit's id. */
+  key: Type.String({ minLength: 1, maxLength: ENTITY_KEY_MAX }),
   act: Type.Integer({ minimum: 0 }),
   proposals: Type.Integer({ minimum: 0 }),
   threadId: Type.Optional(id),
@@ -1404,7 +1446,10 @@ export const EntityListSchema = object({
   attention: Type.Array(EntityAttentionSchema),
 });
 export type EntityList = Static<typeof EntityListSchema>;
-/** `GET /api/entities/:kind/rows?capability=`: one source over every entity the reader may ask about. Each row carries `key`; an entity without a row is absent. */
+/**
+ * `GET /api/entities/:kind/rows?capability=`: one source over every entity the reader may ask about. Each row carries
+ * `key`, the source's key of its entity (`EntityRef.sourceKey`); an entity without a row is absent.
+ */
 export const EntityRowsSchema = object({
   capability: Type.String(),
   status: entityAnswer,
@@ -1446,7 +1491,12 @@ export const EntityDetailSchema = object({
   profile: Type.Optional(PersonProfileSchema),
   entity: object({
     ...EntityRefSchema.properties,
-    unit: Type.Optional(object({ id: Type.String(), label: Type.String() })),
+    /**
+     * A person's unit: the reader's own for the reader, the unit the reader manages that the person is placed on, else
+     * the person's own, also for someone who reports to the reader from below (D99). `opens` when the reader may open
+     * the unit's page (`/units/<id>`): a unit they manage or belong to.
+     */
+    unit: Type.Optional(object({ id: Type.String(), label: Type.String(), opens: Type.Optional(Type.Literal(true)) })),
   }),
   relation: Type.Union([
     Type.Literal('managed'),
@@ -1712,7 +1762,7 @@ export const ThreadItemSchema = object({
   subject: Type.Optional({
     ...SubjectSchema,
     description:
-      "The person or unit the row is about (D97 item 6): the web links the row to it, and the card shows on that entity for its owner. A key, never a name; the row's text stays the source's. Clew does not check that the key exists.",
+      "The person or unit the row is about (D97 item 6): the web links the row to it, and the card shows on that entity for its owner. A key, never a name: a person's `userName`, a unit's id; the row's text stays the source's. Clew resolves a user name as the row arrives to whoever of the reader's organisation holds it then and keeps that person's id, so a later rename or reuse of the name moves nothing on the card (D116); a name nobody there holds names nobody.",
   }),
 });
 export type ThreadItem = Static<typeof ThreadItemSchema>;
@@ -1813,6 +1863,11 @@ export type ReceiptRow = Static<typeof ReceiptRowSchema>;
 
 export const ThreadKind = Type.Union([Type.Literal('pushed'), Type.Literal('question')]);
 export const ThreadState = Type.Union([Type.Literal('open'), Type.Literal('handled'), Type.Literal('dismissed')]);
+/**
+ * Why dispatch did not send a started action (D116): the user name it was decided with no longer names the person it is
+ * about, renamed or given to someone else since, so the person decides again.
+ */
+export const SUBJECT_CHANGED = 'subject-changed';
 export const ExecutionSummarySchema = object({
   id,
   decisionId: Type.String(),

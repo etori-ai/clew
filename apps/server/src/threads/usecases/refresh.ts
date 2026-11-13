@@ -7,6 +7,7 @@ import {
   type RefreshDeps,
   type RefreshRequest,
 } from '../refresh-model';
+import { keyedDrafts } from './keys';
 
 const assignment = (p: AuthenticatedContext) => p.unitId + ':' + p.role;
 /**
@@ -26,7 +27,18 @@ const canonical = (value: unknown): unknown =>
         )
       : value;
 /** Reads request work and return immediately; only leased workers wait for a source. */
-export function refreshUsecases({ store, clock, ids, key, current, sources, system, scan, session }: RefreshDeps) {
+export function refreshUsecases({
+  store,
+  clock,
+  ids,
+  key,
+  current,
+  sources,
+  system,
+  scan,
+  session,
+  people,
+}: RefreshDeps) {
   async function request(persona: AuthenticatedContext) {
     await persona.authorize();
     const at = clock().toISOString(),
@@ -384,6 +396,8 @@ export function refreshUsecases({ store, clock, ids, key, current, sources, syst
             : persona,
           job.connector,
         );
+        // A person a row names by user name is kept by id (D116), resolved as the rows arrive.
+        result = { ...result, drafts: await keyedDrafts(people, persona, result.drafts) };
         const latest = await current(job.personId);
         if (
           !latest ||

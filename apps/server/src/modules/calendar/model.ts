@@ -7,12 +7,23 @@ import type { CalendarBinding } from '@clew/calendar/accounts';
  * and the undo timer, inside one transaction. `adapters/postgres.ts` runs in the server, `adapters/memory.ts` in the
  * tests, both held to `tests/proposal-store-contract.ts`. Every instant is an ISO string the use case hands in.
  */
+/**
+ * Whom a proposal invites (N3): the person by Clew's key, their id, which finds them in the team, the round and the
+ * reminders whatever their address is now; and the address and name the proposal was drawn with, which the invitation
+ * goes to and the replies are matched on.
+ */
+export interface ProposalParticipant {
+  personId: string;
+  email: string;
+  name: string;
+}
 export interface ProposalRecord {
   id: string;
   threadId: string;
+  /** The manager who owns the thread and the proposal. */
   personId: string;
   status: ProposalStatus;
-  participant: { email: string; name: string };
+  participant: ProposalParticipant;
   start: string;
   end: string;
   eventUid: string | null;
@@ -56,8 +67,12 @@ export interface NewProposalThread {
   createdAt: string;
   updatedAt: string;
 }
+/** A thread's patch; `trigger` is counted again when drawn times leave an open card (M1). */
 export type ProposalThreadPatch = Partial<
-  Pick<Thread, 'title' | 'week' | 'state' | 'handledAt' | 'updatedAt' | 'summary' | 'deadline' | 'waitingOn'>
+  Pick<
+    Thread,
+    'title' | 'week' | 'state' | 'handledAt' | 'updatedAt' | 'summary' | 'deadline' | 'waitingOn' | 'trigger'
+  >
 > & { items?: ThreadItem[] };
 export interface AuditEntry {
   actor: string;
@@ -94,6 +109,11 @@ export interface ProposalStore {
   openThread(personId: string, topic: string): Promise<ProposalThread | undefined>;
   /** Proposed, confirmed and final proposals of a person, across threads. */
   activeProposals(personId: string): Promise<ProposalRecord[]>;
+  /**
+   * The proposals that book these people, whoever owns them (M1): confirmed, final or accepted, across threads, by the
+   * participant's person id. A manager learns from them that a co-manager booked the person, never when.
+   */
+  bookedProposals(participantIds: readonly string[]): Promise<ProposalRecord[]>;
   transaction<T>(fn: (tx: ProposalTx) => Promise<T>): Promise<T>;
 }
 /** A person's calendar: the provider (D11). The live one caches per authorization version. */
@@ -136,7 +156,10 @@ export interface NotifyDraft {
   deadline?: string | null;
 }
 export type Notifier = (personId: string, draft: NotifyDraft) => Promise<string | undefined>;
-/** Who a thread belongs to, as a system identity, for the timers that know only the thread. */
+/**
+ * Who a thread belongs to, as a system identity, for the timers that know only the thread; and whether another manager
+ * who booked a person still manages them (M1), through the team that identity has now.
+ */
 export interface People {
   personaFor(id: string): Promise<AuthenticatedContext | undefined>;
 }

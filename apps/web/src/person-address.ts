@@ -1,9 +1,10 @@
-import { sameSubject, type Subject } from '@clew/contracts';
+import { sameSubject, type PanelViewSpec, type Subject } from '@clew/contracts';
 import { pageOnly } from './panel-address';
 
 /**
- * Where a person or a unit is (D97, D43, D83 rule 4, D111 rule 3): `/people/<key>` is the person as a page, with
- * `section` the source whose fuller view is drawn and `from` the page they were opened from, for the way back;
+ * Where a person or a unit is (D97, D43, D83 rule 4, D111 rule 3): `/people/<key>` is the person as a page, by Clew's key,
+ * their id (D116: never their user name, which may be renamed or reused), with `section` the source whose fuller view is
+ * drawn and `from` the page they were opened from, for the way back;
  * `/units/<id>` is the unit as a page, with `from` the same way. A person is a page only: nothing draws them beside a
  * list, and the address that once did (`?person=`) leads to their page (`fromPersonBeside`).
  */
@@ -94,6 +95,23 @@ export function pageSubject(pathname: string): Subject | null {
   } catch {
     return null;
   }
+}
+/**
+ * The entity a record of a declared view names (D97 item 6), by Clew's key (D116): a unit by the id the record holds, a
+ * person by their id, found from the source's key in the record, their user name, in `view.people`, which the server
+ * fills for the reader. A user name nobody of the reader's organisation holds now has no id there: the record names
+ * nobody, and links nowhere.
+ */
+export function recordSubject(view: PanelViewSpec, value: unknown): Subject | undefined {
+  const subject = view.kind === 'table' || view.kind === 'list' || view.kind === 'detail' ? view.subject : undefined;
+  if (!subject || typeof value !== 'string' || !value) return undefined;
+  const key =
+    subject.entity === 'unit'
+      ? value
+      : view.people && Object.hasOwn(view.people, value)
+        ? view.people[value]
+        : undefined;
+  return key ? { entity: subject.entity, key } : undefined;
 }
 /**
  * Where a row that names an entity leads (D97 item 6): a person to their page, a unit to its page, each with the

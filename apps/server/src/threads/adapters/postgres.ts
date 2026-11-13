@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, or } from 'drizzle-orm';
-import { foldEntityKey, type EntityKind, type Subject, type ThreadItem } from '@clew/contracts';
+import type { EntityKind, Subject, ThreadItem } from '@clew/contracts';
 import { database, schema, type Transaction } from '@clew/db';
 import { listThreads, toThread, unresolvedThreads } from '@clew/db/threads';
 import { scheduleJob } from '@clew/db/jobs';
@@ -41,8 +41,7 @@ async function indexSubjects(
 /** The index rows naming any of these entities, one condition per kind. */
 const naming = (subjects: readonly Subject[]) => {
   const byKind = new Map<EntityKind, Set<string>>();
-  for (const s of subjects)
-    byKind.set(s.entity, (byKind.get(s.entity) ?? new Set()).add(foldEntityKey(s.entity, s.key)));
+  for (const s of subjects) byKind.set(s.entity, (byKind.get(s.entity) ?? new Set()).add(s.key));
   return or(
     ...[...byKind].map(([entity, keys]) =>
       and(eq(threadSubjects.entity, entity), inArray(threadSubjects.key, [...keys])),
@@ -147,10 +146,7 @@ export const threadTx = (tx: Transaction, options: ThreadStoreOptions, ended?: s
   },
   async eraseSubject(subject) {
     const erased = { cards: 0, rows: 0, cardSubjects: 0 };
-    const where = and(
-      eq(threadSubjects.entity, subject.entity),
-      eq(threadSubjects.key, foldEntityKey(subject.entity, subject.key)),
-    );
+    const where = and(eq(threadSubjects.entity, subject.entity), eq(threadSubjects.key, subject.key));
     const named = await tx.selectDistinct({ id: threadSubjects.threadId }).from(threadSubjects).where(where);
     if (!named.length) return erased;
     // The threads first, in id order, then their index rows, as a write of a thread's items takes them: two erasures, or

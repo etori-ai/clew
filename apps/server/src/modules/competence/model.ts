@@ -89,6 +89,19 @@ export class TypeNameTaken extends Error {
   }
 }
 
+/**
+ * The cards the competence scan put in a person's own stream (D108 item 12), such as "HLR gick ut 1 juni". Composition
+ * implements it over the thread store's transaction, which the competence transaction shares, so an erasure removes the
+ * cards with the holdings or nothing at all. Held to the same behaviour on both adapters by the store contract.
+ */
+export interface CompetenceCardsTx {
+  /**
+   * Remove every card of the competence connector in the person's own stream, with what hangs on it, and write one
+   * `thread.removed` row for each by `actor` at `at` (`details: { reason: 'erasure' }`); how many. Another connector's
+   * card of theirs and someone else's competence card stay.
+   */
+  removeOwn(personId: string, actor: string, at: string): Promise<number>;
+}
 /** Everything a competence use case reads and writes in one transaction. Reads that a write follows take a row lock. */
 export interface CompetenceTx {
   // The catalogue.
@@ -122,6 +135,8 @@ export interface CompetenceTx {
   erasePerson(personId: string): Promise<Erased>;
   /** Every type of the organisation, archived included, and every holding of them. */
   exportOrganisation(organisationId: string): Promise<CompetenceExport>;
+  /** The person's own competence cards, for an erasure. */
+  cards: CompetenceCardsTx;
   audit(entry: CompetenceAudit): Promise<void>;
 }
 export interface CompetenceStore {

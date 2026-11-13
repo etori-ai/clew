@@ -9,12 +9,14 @@ import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory
 import { threadUsecases } from '../../apps/server/src/threads/usecases/cards';
 import { SUBJECT_ERASED, subjectCards, subjectErasure } from '../../apps/server/src/threads/usecases/subjects';
 import type { ThreadStore } from '../../apps/server/src/threads/model';
+import { memoryPersonKeys } from '../person-keys';
 
 /**
  * "Behöver dig" on a person and "Just nu" on the list (D97 items 5 and 6) as the person meets them: a source's scan pushes
  * cards whose rows name people, through the real registry and the stream's own use cases on the memory store, and the
- * entities use cases read them back through the index from entity to cards, wired as composition wires them. Whose cards
- * show, which leave, who may be asked about at all, and erasing a person's key.
+ * entities use cases read them back through the index from entity to cards, wired as composition wires them. A row names
+ * a person by the source's key, their user name, and the card keeps the person's id (D116). Whose cards show, which
+ * leave, who may be asked about at all, a renamed person and a reused user name, and erasing a person's key.
  */
 const T0 = '2026-11-10T07:00:00.000Z';
 type Person = { id: string; name: string; userName: string | null; enabled?: boolean; organisationId?: string };
@@ -80,7 +82,7 @@ function directory() {
       },
     };
   };
-  return { staff, persona };
+  return { staff, persona, state: s, add: person };
 }
 
 const person = (key: string): Subject => ({ entity: 'person', key });
@@ -169,9 +171,11 @@ function world() {
   let now = Date.parse(T0),
     n = 0;
   const clock = () => new Date(now);
+  const keys = memoryPersonKeys(people.state);
   const threads = threadUsecases({
     store,
     registry,
+    people: keys,
     run: (p, name, input) => registry.run(actorOf(p), name, input),
     calendar: {
       ensureProposalThread: async () => undefined,
@@ -191,11 +195,12 @@ function world() {
     cards: async (p, subject) => (await cardsAbout.cardsNaming(p, [subject])).map(({ subjects: _, ...card }) => card),
     cardsNaming: (p, subjects) => cardsAbout.cardsNaming(p, subjects),
   });
-  const erasure = subjectErasure({ store, clock });
+  const erasure = subjectErasure({ store, clock, people: keys });
   /** The thread a person's scan pushed on a topic. */
   const card = async (who: string, topic: string) => (await store.openThread(who, topic))!.id;
   return {
     people,
+    keys,
     store,
     threads,
     entities,
@@ -218,8 +223,9 @@ describe('the cards about a person', () => {
       await w.card('hillevi', 'book'),
       await w.card('hillevi', 'note'),
     ];
-    // The key without regard to case, as the directory spells it and as the source did not.
-    expect((await w.entities.detail(hillevi, 'person', 'erik.s'))?.cards).toEqual([
+    // The source named Erik by his user name in its own spelling; the card keeps his id, and his page is his id.
+    expect((await w.store.readThread('hillevi', sick))?.items[0]?.subject).toEqual(person('erik'));
+    expect((await w.entities.detail(hillevi, 'person', 'erik'))?.cards).toEqual([
       { threadId: sick, title: 'Sjukanmälan att godkänna', source: 'Personalsystemet', kind: 'act' },
     ]);
     expect((await w.entities.detail(hillevi, 'person', 'maria'))?.cards).toEqual([
@@ -228,9 +234,9 @@ describe('the cards about a person', () => {
     expect((await w.entities.detail(hillevi, 'person', 'anna'))?.cards).toEqual([
       { threadId: note, title: 'Anna tackade ja', source: 'Personalsystemet', kind: 'fyi' },
     ]);
-    // In the list's order and spelling, each with its one card; a notice counts for nothing, so Anna is absent.
+    // In the list's order, by id, each with its one card; a notice counts for nothing, so Anna is absent.
     expect((await w.entities.list(hillevi, 'person')).attention).toEqual([
-      { key: 'Erik.S', act: 1, proposals: 0, threadId: sick },
+      { key: 'erik', act: 1, proposals: 0, threadId: sick },
       { key: 'maria', act: 0, proposals: 1, threadId: book },
     ]);
   });
@@ -251,7 +257,7 @@ describe('the cards about a person', () => {
         connector: 'personal',
         area: 'personal',
         summary: '',
-        items: [row('t:1', 'Erik Sund', person('ERIK.S'))],
+        items: [row('t:1', 'Erik Sund', person('erik'))],
         actions: [action('personal.approve', 'execute')],
         waitingOn: null,
         deadline: '2026-11-30',
@@ -261,11 +267,8 @@ describe('the cards about a person', () => {
       }),
     );
     const sick = await w.card('hillevi', 'sick');
-    expect((await w.entities.list(hillevi, 'person')).attention[0]).toEqual({ key: 'Erik.S', act: 2, proposals: 0 });
-    expect((await w.entities.detail(hillevi, 'person', 'Erik.S'))?.cards.map(c => c.threadId)).toEqual([
-      sick,
-      'second',
-    ]);
+    expect((await w.entities.list(hillevi, 'person')).attention[0]).toEqual({ key: 'erik', act: 2, proposals: 0 });
+    expect((await w.entities.detail(hillevi, 'person', 'erik'))?.cards.map(c => c.threadId)).toEqual([sick, 'second']);
   });
   test("another reader's card about the same person never shows", async () => {
     const w = world();
@@ -289,7 +292,7 @@ describe('the cards about a person', () => {
     const [sick, book] = [await w.card('hillevi', 'sick'), await w.card('hillevi', 'book')];
     await w.threads.dismissThread(hillevi, sick);
     await w.threads.snoozeThread(hillevi, book, { until: '2026-11-10T12:00:00.000Z' });
-    expect((await w.entities.detail(hillevi, 'person', 'Erik.S'))?.cards).toEqual([]);
+    expect((await w.entities.detail(hillevi, 'person', 'erik'))?.cards).toEqual([]);
     expect((await w.entities.detail(hillevi, 'person', 'maria'))?.cards).toEqual([]);
     expect((await w.entities.list(hillevi, 'person')).attention).toEqual([]);
     // Back from Inte nu, it asks again.
@@ -311,9 +314,44 @@ describe('the cards about a person', () => {
     // A colleague may be opened, and the reader's own card about her shows there; she is not on the reader's list.
     expect((await w.entities.detail(hillevi, 'person', 'karin'))?.cards.map(c => c.threadId)).toEqual([others]);
     const keys = (await w.entities.list(hillevi, 'person')).attention.map(a => a.key);
-    expect(keys).toEqual(['Erik.S', 'maria']);
+    expect(keys).toEqual(['erik', 'maria']);
+    // A user name nobody of the reader's organisation holds is attached to nobody: the row keeps its text alone.
+    expect((await w.store.readThread('hillevi', others))?.items.map(i => i.subject)).toEqual([
+      person('karin'),
+      person('bo'),
+      undefined,
+    ]);
     // An employee has no list, so nothing is counted.
     expect((await w.entities.list(w.people.persona('hassan'), 'person')).attention).toEqual([]);
+  });
+  test('a renamed person keeps the cards that named them; a reused user name reaches only rows that arrive after (D116)', async () => {
+    const w = world();
+    await w.scan('hillevi');
+    const hillevi = w.people.persona('hillevi');
+    const sick = await w.card('hillevi', 'sick');
+    // Erik is renamed, and his old user name is given to someone new on the same unit.
+    w.people.state.users.get('erik')!.userName = 'erik.sund';
+    w.people.add({ id: 'erik-2', name: 'Erik Nilsson', userName: 'Erik.S' }, 'unit-skola', 'employee');
+    expect((await w.entities.detail(hillevi, 'person', 'erik'))?.cards.map(c => c.threadId)).toEqual([sick]);
+    expect((await w.entities.detail(hillevi, 'person', 'erik-2'))?.cards).toEqual([]);
+    expect((await w.entities.list(hillevi, 'person')).attention.map(a => a.key)).toEqual(['erik', 'maria']);
+    // The source still names "erik.s" on its next scan: the row now names whoever holds that name, never the renamed Erik.
+    w.advance(60_000);
+    await w.scan('hillevi');
+    expect((await w.store.readThread('hillevi', sick))?.items[0]?.subject).toEqual(person('erik-2'));
+    expect((await w.entities.detail(hillevi, 'person', 'erik'))?.cards).toEqual([]);
+    expect((await w.entities.detail(hillevi, 'person', 'erik-2'))?.cards.map(c => c.threadId)).toEqual([sick]);
+  });
+  test('a row whose user name nobody holds any more, after a rename the source has not made, names nobody (D116)', async () => {
+    const w = world();
+    await w.scan('hillevi');
+    const hillevi = w.people.persona('hillevi');
+    const sick = await w.card('hillevi', 'sick');
+    w.people.state.users.get('erik')!.userName = 'erik.sund';
+    w.advance(60_000);
+    await w.scan('hillevi');
+    expect((await w.store.readThread('hillevi', sick))?.items).toEqual([row('sick:1', 'Erik Sund sjuk 10–11 nov')]);
+    expect((await w.entities.detail(hillevi, 'person', 'erik'))?.cards).toEqual([]);
   });
   test("an action point's card names the employee on the thread, never on a row, and shows on them (D96 item 6)", async () => {
     const w = world();
@@ -370,7 +408,7 @@ describe("erasing a person's key from the cards", () => {
     const hillevi = w.people.persona('hillevi');
     const sick = await w.card('hillevi', 'sick');
     const before = (await w.store.readThread('hillevi', sick))!;
-    expect(await w.erasure.eraseSubject('operator:cli', person('ERIK.S'), 'person:erik')).toEqual({
+    expect(await w.erasure.eraseSubject('operator:cli', person('erik'))).toEqual({
       cards: 1,
       rows: 1,
       cardSubjects: 0,
@@ -378,7 +416,7 @@ describe("erasing a person's key from the cards", () => {
     const after = (await w.store.readThread('hillevi', sick))!;
     expect(after.items).toEqual([row('sick:1', 'Erik Sund sjuk 10–11 nov')]);
     expect(after.updatedAt).toBe(before.updatedAt);
-    expect((await w.entities.detail(hillevi, 'person', 'Erik.S'))?.cards).toEqual([]);
+    expect((await w.entities.detail(hillevi, 'person', 'erik'))?.cards).toEqual([]);
     expect((await w.entities.list(hillevi, 'person')).attention.map(a => a.key)).toEqual(['maria']);
     const audit = w.store.audit.filter(e => e.action === SUBJECT_ERASED);
     expect(audit).toEqual([
@@ -392,6 +430,32 @@ describe("erasing a person's key from the cards", () => {
     ]);
     expect(JSON.stringify(audit).toLowerCase()).not.toContain('erik.s');
   });
+  test("a renamed person's id reaches the cards that named their earlier user name", async () => {
+    const w = world();
+    await w.scan('hillevi');
+    w.people.state.users.get('erik')!.userName = 'erik.sund';
+    expect(await w.erasure.eraseSubject('operator:cli', person('erik'))).toEqual({
+      cards: 1,
+      rows: 1,
+      cardSubjects: 0,
+    });
+    expect((await w.entities.detail(w.people.persona('hillevi'), 'person', 'erik'))?.cards).toEqual([]);
+  });
+  test('an id the people table does not hold, a user name among them, erases nothing and writes no audit row (R1)', async () => {
+    const w = world();
+    await w.scan('hillevi');
+    for (const key of ['Erik.S', 'erik.s', 'nobody'])
+      expect(await w.erasure.eraseSubject('operator:cli', person(key))).toBeUndefined();
+    expect(w.store.audit.filter(e => e.action === SUBJECT_ERASED)).toEqual([]);
+    expect((await w.entities.detail(w.people.persona('hillevi'), 'person', 'erik'))?.cards).toHaveLength(1);
+    // A unit is erased by any id, since a removed unit may still be named; nothing named it here, and that is said.
+    expect(await w.erasure.eraseSubject('operator:cli', { entity: 'unit', key: 'unit-gone' })).toEqual({
+      cards: 0,
+      rows: 0,
+      cardSubjects: 0,
+    });
+    expect(w.store.audit.filter(e => e.action === SUBJECT_ERASED).map(e => e.subject)).toEqual(['unit:unit-gone']);
+  });
   test('a failure after the audit row leaves every subject and no audit row behind', async () => {
     const w = world();
     await w.scan('hillevi', 'petra');
@@ -402,10 +466,8 @@ describe("erasing a person's key from the cards", () => {
           throw new Error('after the audit row');
         }),
     };
-    const erasure = subjectErasure({ store: failing, clock: () => new Date(T0) });
-    await expect(erasure.eraseSubject('operator:cli', person('anna'), 'person:anna')).rejects.toThrow(
-      'after the audit row',
-    );
+    const erasure = subjectErasure({ store: failing, clock: () => new Date(T0), people: w.keys });
+    await expect(erasure.eraseSubject('operator:cli', person('anna'))).rejects.toThrow('after the audit row');
     expect(w.store.audit.filter(e => e.action === SUBJECT_ERASED)).toEqual([]);
     expect(
       (await w.store.threadsNaming('petra', [person('anna')])).map(n => n.thread.items.map(i => i.subject)),

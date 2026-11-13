@@ -5,6 +5,9 @@ import { CapabilityError, type Actor, type Connector } from '../../packages/conn
 import { headingFollowUps, merge, staleness } from '../../apps/server/src/modules/search/domain';
 import { searchConnector } from '../../apps/server/src/modules/search/connector';
 import { searchUsecases } from '../../apps/server/src/modules/search/usecases';
+import type { SearchDeps } from '../../apps/server/src/modules/search/model';
+import type { UserRecord } from '../../apps/server/src/modules/people/domain';
+import { memoryPersonKeys } from '../person-keys';
 
 /**
  * The composite search (D26): every source at once under a budget, hits merged and marked stale in pure code, the
@@ -129,6 +132,18 @@ describe("staleness is computed in code, from the source's dates", () => {
     expect(full).toHaveLength(10);
     expect(full[0]!.sources?.map(s => s.connector)).toEqual(['a', 'b']);
   });
+  test('a user name is the same person in its decomposed form and its composed one, as Clew stores it (D116, NFC)', () => {
+    const person = (ref: string, key: string) => hit({ ref, kind: 'person', subject: { entity: 'person', key } });
+    const rows = merge(
+      [
+        // "å" as "a" and a combining ring, as some systems send it, and as the one character.
+        { id: 'a', source: 'A', status: 'ok', rows: [person('a1', 'a\u030asa.oberg')] },
+        { id: 'b', source: 'B', status: 'ok', rows: [person('b1', '\u00c5sa.Oberg')] },
+      ],
+      NOW,
+    );
+    expect(rows.map(r => [r.ref, r.sources?.map(s => s.connector)])).toEqual([['a1', ['a', 'b']]]);
+  });
   test('headings become the follow-ups without a model, three at most, no repeats', () => {
     expect(
       headingFollowUps([
@@ -190,9 +205,14 @@ function source(
     ],
   };
 }
-function world(connectors: Connector[], budget = { perSourceMs: 40, totalMs: 80 }) {
+function world(connectors: Connector[], budget = { perSourceMs: 40, totalMs: 80 }, people?: SearchDeps['people']) {
   const registry = new Registry();
-  const search = searchUsecases({ sources: a => registry.searchSources(a), clock: () => new Date(NOW), budget });
+  const search = searchUsecases({
+    sources: a => registry.searchSources(a),
+    clock: () => new Date(NOW),
+    budget,
+    ...(people ? { people } : {}),
+  });
   for (const c of connectors) registry.register(c);
   registry.register(searchConnector(search));
   return { registry, search };
@@ -218,6 +238,65 @@ describe('the composite search over the registry', () => {
     ]);
     expect(w.registry.tools(hassan).map(t => t.name)).toEqual(['clew.search']);
     expect(w.registry.searchSources(hassan).map(s => s.name)).toEqual(['docs.search', 'intra.search']);
+  });
+  test("a hit that names a person by user name names the one of the reader's organisation who holds it, by id (D116)", async () => {
+    const user = (id: string, userName: string, organisationId = 'org'): UserRecord => ({
+      id,
+      organisationId,
+      externalId: null,
+      userName,
+      name: id,
+      email: null,
+      title: null,
+      enabled: true,
+      createdAt: '2026-11-01T00:00:00.000Z',
+      updatedAt: '2026-11-01T00:00:00.000Z',
+      phoneNumbers: [],
+      employments: [],
+    });
+    const users = new Map(
+      [user('hassan', 'hassan.ali'), user('anna', 'anna.lindqvist'), user('outsider', 'ute.person', 'other')].map(
+        u => [u.id, u] as const,
+      ),
+    );
+    const keys = memoryPersonKeys({ users });
+    const asked: Array<[string, readonly string[]]> = [];
+    const person = (ref: string, key: string, label = 'Anna Lindqvist') =>
+      hit({ ref, kind: 'person', label, subject: { entity: 'person', key } });
+    const sources = [
+      source('phonebook', [person('p1', 'Anna.Lindqvist'), person('p2', 'okand', 'Okänd'), person('p3', 'ute.person')]),
+      // The same person in another spelling, and a unit, whose id is both keys.
+      source('hr', [
+        person('h1', 'anna.lindqvist'),
+        hit({ ref: 'u1', kind: 'room', subject: { entity: 'unit', key: 'u-1' } }),
+      ]),
+    ];
+    const w = world(sources, undefined, {
+      holders: async (readerId, names) => {
+        asked.push([readerId, names]);
+        return keys.holders(readerId, names);
+      },
+    });
+    type Row = { connector: string; ref: string; subject?: Subject; sources?: Array<{ connector: string }> };
+    const result = await w.registry.run<{ rows: Row[] }>(hassan, 'clew.search', { query: 'anna' });
+    expect(result.rows.map(r => [r.connector, r.ref, r.subject, r.sources?.map(s => s.connector)])).toEqual([
+      // Two sources' hits about Anna are one, which links to her page by her id.
+      ['phonebook', 'p1', { entity: 'person', key: 'anna' }, ['phonebook', 'hr']],
+      // A user name nobody of the reader's organisation holds, here or only in another, names nobody: the hit stays.
+      ['phonebook', 'p2', undefined, undefined],
+      ['hr', 'u1', { entity: 'unit', key: 'u-1' }, undefined],
+      ['phonebook', 'p3', undefined, undefined],
+    ]);
+    // One question for the list, as the reader, each user name once, in the spelling of the hit that was kept.
+    expect(asked).toEqual([['hassan', ['Anna.Lindqvist', 'okand', 'ute.person']]]);
+    // Without the people wired, a hit names no person; a unit is unchanged.
+    const unwired = await world(sources).registry.run<{ rows: Row[] }>(hassan, 'clew.search', { query: 'anna' });
+    expect(unwired.rows.map(r => [r.ref, r.subject])).toEqual([
+      ['p1', undefined],
+      ['p2', undefined],
+      ['u1', { entity: 'unit', key: 'u-1' }],
+      ['p3', undefined],
+    ]);
   });
   test('a slow source is reported as timeout and a failing one as unavailable; the others still answer', async () => {
     const w = world([

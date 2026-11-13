@@ -2,8 +2,8 @@ import type { StaffOverview } from '@clew/contracts';
 import { withThreadTx, type ThreadStoreOptions } from '../threads/adapters/postgres';
 import { talkTx } from '../modules/talks/adapters/postgres';
 import { talkUsecases } from '../modules/talks/usecases';
-import type { Sealer, Staff, TalkStore } from '../modules/talks/model';
-import type { Directory, DirectoryPerson } from '../modules/talk-seam/model';
+import type { Manages, Sealer, Staff, TalkStore } from '../modules/talks/model';
+import type { Directory, DirectoryPerson, Holders, Takeovers } from '../modules/talk-seam/model';
 import { openSecret, sealSecret } from '../auth-crypto';
 import { ForbiddenError } from '../context';
 import { cancelDurable } from '../dbos/start';
@@ -46,9 +46,23 @@ const staff: Staff = async persona => {
     throw error;
   }
 };
+/**
+ * Whether the owner of a manager's action point still manages the employee (Q12), as the talks module counts the people
+ * a manager has: from the owner's own assignments now, read through a context built from their current grant. Someone
+ * without an active grant, deactivated or erased, manages nobody, and nobody manages themselves or a deactivated
+ * person. Exported for the Postgres test that runs it over real assignments and grants.
+ */
+export const talkManages: Manages = async (managerId, employeeId) => {
+  if (managerId === employeeId) return false;
+  const persona = await systemContext(managerId, 'system:talks');
+  if (!persona) return false;
+  const overview = await staff(persona);
+  return overview.units.some(unit => unit.people.some(p => p.id === employeeId && p.enabled !== false));
+};
 export const talks = talkUsecases({
   store: talkStore,
   staff,
+  manages: talkManages,
   bookings: (persona, round) => calendar.samtalBookings(persona, round),
   clock,
   ids,
@@ -70,4 +84,28 @@ export const talkDirectory: Directory = async actor => {
       if (p.id !== actor.id && p.enabled !== false && !people.has(p.id))
         people.set(p.id, { id: p.id, userName: p.userName });
   return { self: { id: actor.id, userName }, staff: [...people.values()] };
+};
+/**
+ * Who a talks row's key names in the reader's organisation now, asked by the seam for the action points a former manager
+ * still owns (M2): the holder of a user name, as the people module compares one (D116), else the person provisioned
+ * without one whose id the key is (D96 item 8), read from the people table the talks store reads.
+ */
+export const talkHolders: Holders = async (actor, keys) => {
+  const found = await userReads.holders(actor.id, keys);
+  const rest = keys.filter(key => !found.has(key));
+  if (!rest.length) return found;
+  const persons = await talkStore.transaction(tx => tx.persons([actor.id, ...rest]));
+  const organisation = persons.find(p => p.id === actor.id)?.organisationId;
+  for (const p of persons)
+    if (p.id !== actor.id && p.userName === null && organisation !== undefined && p.organisationId === organisation)
+      found.set(p.id, p.id);
+  return found;
+};
+/**
+ * Which of a person's action points the reader may take over (Q12), asked by the seam when a manager reads that
+ * person's points: the talks module answers with the rule its write enforces, for the reader as their grant is now.
+ */
+export const talkTakeovers: Takeovers = async (actor, ids) => {
+  const persona = await systemContext(actor.id, 'connector:clew');
+  return persona ? talks.takeovers(persona, ids) : new Set();
 };

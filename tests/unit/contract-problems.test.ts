@@ -264,9 +264,12 @@ describe('what the schemas say after they are built', () => {
     expect(checkContract(SnoozeInput, { preset: long })).toBe(false);
     expect(ajv.compile(SnoozeInput)({ preset: fits })).toBe(true);
     expect(ajv.compile(SnoozeInput)({ preset: long })).toBe(false);
-    expect(isKey('😀'.repeat(256))).toBe(true);
-    expect(isKey('😀'.repeat(257))).toBe(false);
-    expect(isKey('')).toBe(false);
+    expect(isKey('unit', '😀'.repeat(256))).toBe(true);
+    expect(isKey('unit', '😀'.repeat(257))).toBe(false);
+    expect(isKey('unit', '')).toBe(false);
+    // A person's key is their id (D116): as long as an id may be.
+    expect(isKey('person', '😀'.repeat(80))).toBe(true);
+    expect(isKey('person', '😀'.repeat(81))).toBe(false);
   });
   test('a key SCIM stores fits wherever an administrator names it, an audience of a connector or a model among them, and a longer one fits nowhere (A6)', async () => {
     // A group key in distinguished-name form runs past the 80 characters an audience once took.

@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test';
+import type { PanelViewSpec } from '@clew/contracts';
 import {
   entityHref,
   fromCardsBeside,
   fromPersonBeside,
   personPageFrom,
   personPageHref,
+  recordSubject,
   unitPageHref,
 } from '../src/person-address';
 
@@ -56,5 +58,42 @@ describe('a person is a page only (D111 rule 3)', () => {
     );
     expect(fromCardsBeside('/staff', '?show=x&person=johan')).toBeNull();
     expect(fromCardsBeside('/staff', '?cards=')).toBeNull();
+  });
+});
+
+describe("the entity a record names, by Clew's key (D97 item 6, D116)", () => {
+  const view = (
+    subject?: { entity: 'person' | 'unit'; key: string },
+    people?: Record<string, string>,
+  ): PanelViewSpec => ({
+    kind: 'table',
+    title: 'name',
+    fields: [{ key: 'name', label: 'Namn' }],
+    ...(subject ? { subject } : {}),
+    capability: 'hr.list',
+    connector: 'hr',
+    source: 'Personalsystemet',
+    chip: false,
+    ...(people ? { people } : {}),
+  });
+  test("a person by the id the server found for the record's user name; a name nobody holds now names nobody", () => {
+    const people = view({ entity: 'person', key: 'user' }, { 'Anna.L': 'p-anna' });
+    expect(recordSubject(people, 'Anna.L')).toEqual({ entity: 'person', key: 'p-anna' });
+    expect(recordSubject(people, 'anna.l')).toBeUndefined();
+    expect(recordSubject(people, 'erik')).toBeUndefined();
+    // A name that is a property of every object is still only a name.
+    for (const name of ['constructor', '__proto__', 'toString', 'hasOwnProperty'])
+      expect([name, recordSubject(people, name)]).toEqual([name, undefined]);
+    expect(recordSubject(view({ entity: 'person', key: 'user' }), 'Anna.L')).toBeUndefined();
+    expect(recordSubject(people, '')).toBeUndefined();
+    expect(recordSubject(people, 42)).toBeUndefined();
+  });
+  test('a unit by the id the record holds; a view without a subject names nothing', () => {
+    expect(recordSubject(view({ entity: 'unit', key: 'unit' }), 'unit-skola')).toEqual({
+      entity: 'unit',
+      key: 'unit-skola',
+    });
+    expect(recordSubject(view(), 'unit-skola')).toBeUndefined();
+    expect(recordSubject(view(undefined, { 'unit-skola': 'p-1' }), 'unit-skola')).toBeUndefined();
   });
 });

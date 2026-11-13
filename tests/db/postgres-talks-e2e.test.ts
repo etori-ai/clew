@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { eq, inArray, or } from 'drizzle-orm';
 import { closeDatabase, database, schema } from '../../packages/db/src/index';
 import type { AuthenticatedContext, StaffOverview } from '../../packages/contracts/src/index';
-import { talkStoreWithCards } from '../../apps/server/src/composition/talks';
+import { talkHolders, talkManages, talkStoreWithCards } from '../../apps/server/src/composition/talks';
 import { dueTimerId } from '../../apps/server/src/composition/talk-work-items';
 import { talkUsecases } from '../../apps/server/src/modules/talks/usecases';
 import type { TalkStore } from '../../apps/server/src/modules/talks/model';
@@ -27,6 +27,19 @@ const ORG = `talks-e2e-${tag}`;
 const manager = `talks-e2e-${tag}-manager`,
   employee = `talks-e2e-${tag}-employee`,
   unitId = `unit-e2e-${tag}`;
+// The people the seam's lookup is asked about (M2): one with a user name, one provisioned without, one elsewhere.
+const named = `talks-e2e-${tag}-named`,
+  nameless = `talks-e2e-${tag}-nameless`,
+  foreign = `talks-e2e-${tag}-foreign`;
+// The people whose assignments the live Manages lookup reads (Q12): a current manager, one who moved to another unit,
+// one deactivated, and their employee; with the two units they are assigned to.
+const current = `talks-e2e-${tag}-current`,
+  moved = `talks-e2e-${tag}-moved`,
+  gone = `talks-e2e-${tag}-gone`,
+  staffer = `talks-e2e-${tag}-staffer`,
+  unitA = `unit-e2e-${tag}-a`,
+  unitB = `unit-e2e-${tag}-b`;
+const assigned = [current, moved, gone, staffer];
 const cancelled: string[] = [];
 const options = { durable: testDurable, cancel: async (id: string) => void cancelled.push(id) };
 let now = new Date('2026-03-02T09:00:00.000Z');
@@ -71,6 +84,7 @@ const usecases = (s: TalkStore) =>
   talkUsecases({
     store: s,
     staff: async p => (p.id === manager ? overview : { units: [] }),
+    manages: async (managerId, employeeId) => managerId === manager && employeeId === employee,
     bookings: async () => new Map(),
     clock,
     ids,
@@ -112,8 +126,12 @@ afterAll(async () => {
   }
   await db.delete(schema.workOccurrences).where(inArray(schema.workOccurrences.personId, [manager, employee]));
   await db.delete(schema.threads).where(inArray(schema.threads.personId, [manager, employee]));
-  await db.delete(schema.accessGrants).where(inArray(schema.accessGrants.personId, [manager, employee]));
-  await db.delete(schema.people).where(inArray(schema.people.id, [manager, employee]));
+  await db.delete(schema.accessGrants).where(inArray(schema.accessGrants.personId, [manager, employee, ...assigned]));
+  await db.delete(schema.assignments).where(inArray(schema.assignments.personId, assigned));
+  await db.delete(schema.units).where(inArray(schema.units.id, [unitA, unitB]));
+  await db
+    .delete(schema.people)
+    .where(inArray(schema.people.id, [manager, employee, named, nameless, foreign, ...assigned]));
   await forgetTestWorkflows();
   await closeDatabase();
 });
@@ -217,7 +235,9 @@ describe('the talks module on Postgres through the composition store (D96)', () 
     expect(c.thread).toMatchObject({ state: 'handled' });
     expect(c.timer).toMatchObject({ state: 'cancelled', generation: 1 });
     expect(cancelled).toContain(`${dueTimerId(threadId)}:v2:1`);
-    await talks.reopenCommitment(boss, id);
+    // The employee's own point is hers to open again; her manager is refused (Q12).
+    await expect(talks.reopenCommitment(boss, id)).rejects.toThrow('Du kan inte ändra den här åtgärdspunkten.');
+    await talks.reopenCommitment(persona(employee, 'employee'), id);
     c = await card(threadId);
     expect((await commitmentRow(id))!.doneAt).toBeNull();
     expect(c.thread).toMatchObject({ state: 'open', handledAt: null });
@@ -276,5 +296,60 @@ describe('the talks module on Postgres through the composition store (D96)', () 
       action: 'talks.person_erased',
       details: { talks: 1, commitments: 1, cleared: 0, cards: 1 },
     });
+  });
+
+  test('the seam finds the employee of a former manager’s point by user name in any case, or by id for a person provisioned without one, in the reader’s organisation only (M2)', async () => {
+    await database()
+      .insert(schema.people)
+      .values([
+        { id: named, organisationId: ORG, name: 'Synthetic Namngiven', userName: `e2e.named.${tag}` },
+        { id: nameless, organisationId: ORG, name: 'Synthetic Utan användarnamn' },
+        { id: foreign, organisationId: `${ORG}-other`, name: 'Synthetic Annan organisation' },
+      ]);
+    const reader = { id: manager, name: 'Synthetic Chef', unitId, unitLabel: 'Enheten', role: 'manager' as const };
+    const found = await talkHolders(reader, [`E2E.Named.${tag}`, nameless, foreign, `nobody-${tag}`]);
+    expect(Object.fromEntries(found)).toEqual({ [`E2E.Named.${tag}`]: named, [nameless]: nameless });
+    // A reader the people table does not hold finds nobody.
+    expect((await talkHolders({ ...reader, id: `missing-${tag}` }, [`e2e.named.${tag}`, nameless])).size).toBe(0);
+  });
+
+  test('whether an action point’s owner still manages the employee is read from their assignments and grant now (Q12)', async () => {
+    const db = database();
+    await db.insert(schema.people).values([
+      { id: current, organisationId: ORG, name: 'Synthetic Nuvarande chef' },
+      { id: moved, organisationId: ORG, name: 'Synthetic Flyttad chef' },
+      { id: gone, organisationId: ORG, name: 'Synthetic Avaktiverad chef', enabled: false },
+      { id: staffer, organisationId: ORG, name: 'Synthetic Medarbetare', userName: `e2e.staffer.${tag}` },
+    ]);
+    await db.insert(schema.units).values([
+      { id: unitA, organisationId: ORG, label: 'Enhet A' },
+      { id: unitB, organisationId: ORG, label: 'Enhet B' },
+    ]);
+    // The deactivated manager keeps her assignment and grant: only her being active is gone.
+    await db.insert(schema.assignments).values([
+      { personId: current, unitId: unitA, role: 'manager' },
+      { personId: gone, unitId: unitA, role: 'manager' },
+      { personId: moved, unitId: unitB, role: 'manager' },
+      { personId: staffer, unitId: unitA, role: 'employee' },
+    ]);
+    await db.insert(schema.accessGrants).values([
+      { personId: current, unitId: unitA, unitLabel: 'Enhet A', role: 'manager', capabilities: [] },
+      { personId: gone, unitId: unitA, unitLabel: 'Enhet A', role: 'manager', capabilities: [] },
+      { personId: moved, unitId: unitB, unitLabel: 'Enhet B', role: 'manager', capabilities: [] },
+      { personId: staffer, unitId: unitA, unitLabel: 'Enhet A', role: 'employee', capabilities: [] },
+    ]);
+    expect(await talkManages(current, staffer)).toBe(true);
+    // A manager moved to another unit, a deactivated one, someone unknown and the employee herself manage nobody here.
+    expect(await talkManages(moved, staffer)).toBe(false);
+    expect(await talkManages(gone, staffer)).toBe(false);
+    expect(await talkManages(`nobody-${tag}`, staffer)).toBe(false);
+    expect(await talkManages(staffer, staffer)).toBe(false);
+    expect(await talkManages(current, current)).toBe(false);
+    // The moved manager comes back to the unit: she manages the employee again at once.
+    await db.insert(schema.assignments).values({ personId: moved, unitId: unitA, role: 'manager' });
+    expect(await talkManages(moved, staffer)).toBe(true);
+    // A deactivated employee is nobody's to manage.
+    await db.update(schema.people).set({ enabled: false }).where(eq(schema.people.id, staffer));
+    expect(await talkManages(current, staffer)).toBe(false);
   });
 });
