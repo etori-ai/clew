@@ -478,7 +478,10 @@ account, which Q8 settles. No fix needed new surface
 - [D116](../decisions/D116-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) (Q11): Clew keys its own records about a person by the person's id. The id never changes and is never
   reused, so a rename loses nothing and a reused name reaches nobody else's records. Moving the stored names at each
   rename would have fixed renames only, and only if every provisioner renamed a leaver first. The user name stays the
-  key on the wire, and an approved action whose user name has come to name someone else is not sent.
+  key on the wire. An action started from a person's menu with an `execute` keeps its person, and once approved it is
+  not sent when its user name has come to name someone else. An action a source wrote on a card, a started `propose`'s
+  included, keeps no person and is not compared: it is sent as the source wrote it, and the source answers for whoever
+  holds a name it uses (D116 items 5 and 9).
 - [D117](../decisions/D117-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md) (Q7, L3, P4, R3): Clew empties expired sign-in data itself, and how long a leaver's record is kept is
   the organisation's decision. Here the decision goes further than the recommendation, which was to leave retention as
   an open question. A municipality's records can be official documents that only its own retention rules may cull, so

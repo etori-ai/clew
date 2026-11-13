@@ -361,4 +361,21 @@ describe('an approved action about a person (D116)', () => {
     const other = world();
     expect(await other.store.read((await other.approve()).id)).toMatchObject({ subject: null });
   });
+  test('an action its source wrote keeps no person and is sent as written, whoever holds a user name in it now (item 5)', async () => {
+    const names = new Map<string, string | null>([['p-anna', 'anna.l']]);
+    const w = world(undefined, names);
+    // A pushed card's action, or a started propose's: the source wrote its input, so the decision keeps no person.
+    const e = await w.uc.approve(persona, {
+      decisionId: 'decision',
+      operation: 'test.do',
+      payload: { person: 'anna.l', revision: 'r1' },
+    });
+    expect(await w.store.read(e.id)).toMatchObject({ subject: null });
+    // The name moves to someone else before dispatch. Nothing compares it: the source answers for whoever holds it.
+    names.set('p-anna', 'anna.lindqvist');
+    names.set('p-annika', 'anna.l');
+    await w.uc.progress(e.id);
+    expect(await w.uc.read(persona, e.id)).toMatchObject({ state: 'succeeded', reason: null });
+    expect(w.writes()).toBe(1);
+  });
 });
