@@ -27,7 +27,6 @@ import {
   CompetenceError,
   competenceUsecases,
   COPY_ACTOR,
-  PersonStillActive,
   type CompetenceUsecases,
 } from '../../apps/server/src/modules/competence/usecases';
 import { competenceRoutes } from '../../apps/server/src/routes/competence';
@@ -116,7 +115,7 @@ function fakeSources(): FakeSources {
     reaching: new Set(),
     // As composition applies the audiences: an active person, inside both.
     async admitted(_connectorId, personIds) {
-      return new Set(personIds.filter(id => !port.outside.has(id) && !store.state.inactive.has(id)));
+      return new Set(personIds.filter(id => !port.outside.has(id) && store.state.persons.get(id)?.enabled));
     },
     async reaches(_connectorId, organisationId) {
       return !port.reaching.size || port.reaching.has(organisationId);
@@ -182,6 +181,7 @@ beforeEach(() => {
       organisationId: ORG,
       name: p.name,
       userName: p.userName,
+      enabled: true,
     })),
   });
   source = fakeSources();
@@ -939,10 +939,10 @@ describe('leaving', () => {
 
     await competence.copySource(COPY_ACTOR, 'run-2', lms);
     // Erasure is for a person the directory has deactivated: the next read would copy an active person's rows back.
-    await expect(competence.erasePerson('operator:cli', 'anna')).rejects.toBeInstanceOf(PersonStillActive);
+    expect(await competence.erasePerson('operator:cli', 'anna')).toEqual({ refused: 'active' });
     expect(copied()).toHaveLength(2);
     store.deactivate('anna');
-    expect(await competence.erasePerson('operator:cli', 'anna')).toEqual({ holdings: 2, cleared: 0 });
+    expect(await competence.erasePerson('operator:cli', 'anna')).toEqual({ holdings: 2, cleared: 0, cards: 0 });
     expect(copied()).toEqual([]);
   });
 });
@@ -1114,7 +1114,7 @@ describe('audiences (D23)', () => {
   });
 
   test("each organisation is shown its own counts; the keys that matched nobody are every organisation's", async () => {
-    store.addPerson({ id: 'dan', organisationId: 'org-2', name: 'Dan Dahl', userName: 'dan.d' });
+    store.addPerson({ id: 'dan', organisationId: 'org-2', name: 'Dan Dahl', userName: 'dan.d', enabled: true });
     platform();
     source.pages
       .get('lms')![1]!

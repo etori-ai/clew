@@ -46,7 +46,7 @@ the app container (no route, no page):
 ```sh
 docker exec -w /workspace clew-app-1 bun scripts/talk-round.ts --label "Utvecklingssamtal 2027" --opens 2027-09-01 --due 2027-11-30 --organisation poc   # closes the open round
 docker exec -w /workspace clew-app-1 bun scripts/talks-export.ts --organisation poc --out /tmp/talks.json   # clew.talks/1, mode 0600, counts printed only
-docker exec -w /workspace clew-app-1 bun scripts/talks-erase.ts --person <person id> --confirm              # one person's talks, action points and cards
+docker exec -w /workspace clew-app-1 bun scripts/talks-erase.ts --person <person id> --confirm              # a deactivated person's talks, action points and cards
 ```
 
 `connectors/appraisals` (port 4051) is a generic system that answers the same profile. It is registered as a draft.

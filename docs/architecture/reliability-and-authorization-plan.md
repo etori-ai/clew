@@ -92,7 +92,7 @@ An execution's outcome is separate from delivery attempts. Model `pending`, `run
 - Reject execute on the generic capability endpoint. Keep existing human decision routes as the explicit transition boundary until phase 3.
 - Quarantine incompatible manifest updates and show the operator why. Implement required dependency and schema checks now; defer a general semantic compatibility engine.
 
-**Primary seams:** `main.ts`, `connectors/remote.ts`, `connectors/reconcile.ts`, `connectors/registry.ts`, `routes/connectors.ts`, `routes/api.ts`, `assistant/*`, `threads/*`, `packages/connectors/src/*`, `connectors/hello/*`.
+**Primary seams:** `main.ts`, `connectors/remote.ts`, `connectors/reconcile.ts`, `connectors/registry.ts`, `routes/connectors.ts`, `routes/connector-callback.ts`, `routes/api.ts`, `assistant/*`, `threads/*`, `packages/connectors/src/*`, `connectors/hello/*`.
 
 **Exit evidence:** connector-forged subjects and wrong-audience tokens fail; expired grants, undeclared dependencies and disabled origins fail; valid permitted callbacks still work. A boot with an unreachable connector exposes no ungoverned capability. Revoke a person or connector and test every listed read surface and captured model prompt, including another server instance. Nested invalid input, invalid output and changed schemas are caught. Generic execute returns no source effect.
 

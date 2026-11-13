@@ -197,7 +197,7 @@ export function fieldValue(value: unknown): string {
   return Object.entries(value)
     .filter(([key]) => !hiddenFields.has(key))
     .map(([, v]) => fieldValue(v))
-    .join(' · ');
+    .join('\u00a0· ');
 }
 /** A number and its word (D71): "3 fakturor", "1 rum", "12 platser"; without a declared word a row is a "rad". */
 export function counted(n: number, noun: ViewNoun = { one: 'rad', other: 'rader' }): string {

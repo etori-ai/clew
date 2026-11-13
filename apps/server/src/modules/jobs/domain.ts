@@ -1,4 +1,4 @@
-import { inAudience, type Actor, type FollowerRef } from '@clew/connectors';
+import { inAudience, type AudiencedActor, type FollowerRef } from '@clew/connectors';
 import type { FollowBinding, JobSource, JobStepDraft, StepDraft } from './contracts';
 import type { LedgerStep } from './model';
 
@@ -13,7 +13,7 @@ export type BindingVerdict =
 /** D37's rule applied to a binding: the kind must still be created, the follower must still exist, follow the kind and be callable by this person. */
 export function classify(
   binding: FollowBinding,
-  actor: Actor,
+  actor: AudiencedActor,
   offered: boolean,
   follower: FollowerRef | undefined,
 ): BindingVerdict {

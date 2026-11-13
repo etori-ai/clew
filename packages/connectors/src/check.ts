@@ -1,5 +1,6 @@
 import type {
   Area,
+  AuthenticatedContext,
   CheckFinding,
   CheckGroup,
   CheckItem,
@@ -63,7 +64,8 @@ export interface CheckOptions {
    * who may be asked about (D117), which the batch passes through as any call does and which tells the connector how
    * `as` stands to each key. With `as` and without `relations` (a test's harness) the check vouches for the keys given,
    * for `as` alone, under the first relation the read admits. Without `as` it vouches for nobody: the check's own
-   * manager is no one's manager, so no real key is sent with a relation Clew would never give it.
+   * manager is no one's manager, so no real key is sent with a relation Clew would never give it. `as` is handed to the
+   * registry as given: the CLI passes the person's whole context, as the refresh and a connector's callback do.
    */
   about?: { keys?: string[]; as?: Actor; relations?: RelationResolver };
 }
@@ -90,6 +92,24 @@ export const CHECK_EMPLOYEE: Actor = {
   role: 'employee',
   userName: 'check-employee',
 };
+/**
+ * One of the check's people in the fullest shape the server hands a person to the registry: the whole authenticated
+ * context, provisioned groups and session fields included, as the refresh and a connector's callback do (a request
+ * hands the published actor with the groups, `audiencedActorOf`). Either way only the published actor leaves the
+ * process, so a connector that refuses anything more is reached as in production; a check with a bare actor would pass
+ * a connector that then refuses every scan.
+ */
+export const asInProduction = (actor: Actor): AuthenticatedContext => ({
+  ...actor,
+  organisationId: 'check',
+  principal: { id: 'person:' + actor.id, kind: 'person' },
+  capabilities: [],
+  groups: ['check-group'],
+  authorizationVersion: 'check',
+  sessionBinding: 'operator:connector-check',
+  expiresAt: '2099-01-01T00:00:00.000Z',
+  authorize: async () => ({ version: 'check' }),
+});
 const UNAVAILABLE = /svarar inte just nu/;
 const ROLE: Record<Role, string> = { manager: 'chef', employee: 'medarbetare' };
 const VIEW: Record<NonNullable<ConnectorManifest['capabilities'][number]['view']>['kind'], string> = {
@@ -212,8 +232,14 @@ export async function checkConnector(
     ...(options.assertInstallation ? { installation: options.assertInstallation } : {}),
     fetch: fetchImpl,
   });
+  /** While the header is asked below, why it failed for that role: the header reports it, not as a refused draft. */
+  let header: { problem?: string } | undefined;
   const registry = new Registry({
     onRefused: (_id, topic, problem) => {
+      if (header && topic === 'header') {
+        header.problem = problem;
+        return;
+      }
       if (topic.startsWith('figure:')) {
         fail(`${topic}: ${problem}`);
         item('fail', 'surfaces', 'Nyckeltal', `Nyckeltalet för ${topic.slice(7)} kan inte vara en länk: ${problem}`);
@@ -266,6 +292,11 @@ export async function checkConnector(
       row.note('warn', `Anger inte vilka personer den gäller, så Clew frågar bara om ${relationWords(inputs.admits)}.`);
     }
   };
+  // The check's two people with the whole context, as the refresh and a callback hand a person to the registry; only the
+  // published actor leaves the process.
+  const manager = asInProduction(CHECK_MANAGER),
+    employee = asInProduction(CHECK_EMPLOYEE),
+    people = [manager, employee];
   const accepts = options.acceptsEmptyInput ?? listsNothingRequired;
   /** What one capability came to, for the row the administrator reads: every finding about it folds into one sentence each. */
   type Row = {
@@ -352,8 +383,7 @@ export async function checkConnector(
     }
   };
   type Declared = ConnectorManifest['capabilities'][number];
-  const inRoles = (c: Declared) =>
-    [CHECK_MANAGER, CHECK_EMPLOYEE].filter(a => !c.scope.roles || c.scope.roles.includes(a.role));
+  const inRoles = (c: Declared) => people.filter(a => !c.scope.roles || c.scope.roles.includes(a.role));
   const rowsOf = (c: Declared, output: unknown) => (c.view ? (viewRows(c.view, output) ?? []) : []);
   /** A call that should answer with no row, sent past the rule and without a claim: whether it did, refused, or answered rows. */
   const noRow = async (c: Declared, actor: Actor, keys: string[]) => {
@@ -374,7 +404,7 @@ export async function checkConnector(
     const head = `${c.name} about ${entity}`;
     const actors = inRoles(c);
     const keys = [...new Set(options.about?.keys ?? [])];
-    const as = options.about?.as ?? actors[0] ?? CHECK_MANAGER;
+    const as = options.about?.as ?? actors[0] ?? manager;
     if (!keys.length) {
       warn(`${head}, batch: no keys given; pass --keys (and --as a person who may see them) to check the rows`);
       row.note('warn', 'Inga nycklar gavs, så raderna är inte prövade.');
@@ -466,7 +496,7 @@ export async function checkConnector(
       fail(`${head}, input: param "${param ?? ''}" is not a string property of the input`);
       row.note('fail', `Fältet "${param ?? ''}" finns inte i indata.`);
     }
-    const offered = [CHECK_MANAGER, CHECK_EMPLOYEE].some(a => registry.tools(a).some(t => t.name === c.name));
+    const offered = people.some(a => registry.tools(a).some(t => t.name === c.name));
     if (offered) {
       warn(`${head}, model tool: offered to the model; an action in an entity's menu is a person's decision`);
       row.note('warn', 'Erbjuds till modellen som verktyg.');
@@ -479,7 +509,7 @@ export async function checkConnector(
     if (c.about) {
       const row = newRow();
       // The role scope still holds: a role outside it is refused before anything is asked.
-      for (const actor of [CHECK_MANAGER, CHECK_EMPLOYEE].filter(a => !inRoles(c).includes(a)))
+      for (const actor of people.filter(a => !inRoles(c).includes(a)))
         try {
           await registry.run(actor, c.name, c.kind === 'read' ? { keys: [UNKNOWN_KEY] } : {});
           fail(`${c.name}: ${actor.role} is out of scope but the registry let the call through`);
@@ -507,7 +537,7 @@ export async function checkConnector(
     }
     const row = newRow();
     if (named.has(c.name)) admitted(c.name, named.get(c.name)!, row);
-    for (const actor of [CHECK_MANAGER, CHECK_EMPLOYEE]) {
+    for (const actor of people) {
       const allowed = !c.scope.roles || c.scope.roles.includes(actor.role);
       if (!allowed) {
         try {
@@ -534,10 +564,17 @@ export async function checkConnector(
         const output = await registry.run(actor, c.name, {});
         ok(`${c.name} as ${actor.role}: ${JSON.stringify(output).slice(0, 100)}`);
         row.answered.push(actor.role);
-        if (actor === CHECK_MANAGER || c.scope.roles?.length === 1) checkView(c, output, row);
+        if (actor === manager || c.scope.roles?.length === 1) checkView(c, output, row);
       } catch (error) {
         const m = (error as Error).message;
-        if (manifest.delegation && /styrkas|behörighet/.test(m)) {
+        // The header's read refusing a person (`denied`, its 403) is how a content system lists nothing for them (D88).
+        if (c.name === manifest.header?.capability && error instanceof CapabilityError && error.code === 'denied') {
+          ok(`${c.name} as ${actor.role}: denied, the header lists nothing for this person (${m})`);
+          row.note('ok', `Listar inget för ${ROLE[actor.role]}, som då får Clews eget sidhuvud.`);
+        } else if (manifest.delegation && error instanceof CapabilityError && error.code === 'denied') {
+          // The check has no session, so no person's token to send, and a delegating connector refuses the person for
+          // it, in whatever words: `denied`, which a remote connector's error keeps only with its 403 (`remote.ts`). A
+          // 401 is the connector rejecting Clew's key or assertion, whatever its body says, and fails below.
           ok(`${c.name} as ${actor.role}: refused without the person's token, as a delegating connector should (${m})`);
           row.note('ok', 'Nekas utan personens egen inloggning, som väntat.');
         } else if (UNAVAILABLE.test(m)) {
@@ -685,7 +722,7 @@ export async function checkConnector(
   if (manifest.scan) {
     const counts: string[] = [];
     let same = true;
-    for (const actor of [CHECK_MANAGER, CHECK_EMPLOYEE]) {
+    for (const actor of people) {
       try {
         const drafts = await registry.scan(actor),
           twice = await registry.scan(actor);
@@ -725,14 +762,19 @@ export async function checkConnector(
         `Genomgången föreslår ${counts.join(' och ')}. ${same ? 'Två genomgångar gav samma ärenden.' : 'Två genomgångar gav olika ärenden.'}`,
       );
   }
-  // The shared header (D88): asked as both roles; the answer must be in the protocol's shape. Its words stay out of the
-  // report (D23, D44): the check counts the places and says whether a logo came along, never what they are.
+  // The shared header (D88): asked as both roles; the answer must be in the protocol's shape, or the holder's `denied`
+  // (its 403), which is how it lists nothing for a person and Clew then draws its own. Its words stay out of the report
+  // (D23, D44): the check counts the places and says whether a logo came along, never what they are.
   if (manifest.header) {
     // The check's registry makes the connector the holder for the probe; in an installation an administrator chooses one.
     registry.govern(manifest.id, { ...registry.governance(manifest.id), header: true });
-    for (const actor of [CHECK_MANAGER, CHECK_EMPLOYEE]) {
+    let denied = 0;
+    for (const actor of people) {
+      header = {};
       const answer = await registry.header(actor);
-      if (answer) {
+      const problem = header.problem;
+      header = undefined;
+      if (answer.status === 'answered') {
         const n = answer.output.items.length;
         ok(`header as ${actor.role}: ${n} places${answer.output.logo ? ', a logo' : ''}`);
         item(
@@ -741,15 +783,37 @@ export async function checkConnector(
           'Sidhuvud',
           `Kan ge sidhuvudet: för ${ROLE[actor.role]} ${count(n, 'plats', 'platser')}${answer.output.logo ? ' och en logotyp' : ''}.`,
         );
-      } else {
-        fail(`header as ${actor.role}: no answer in the protocol's shape`);
+      } else if (answer.status === 'denied') {
+        denied++;
+        ok(`header as ${actor.role}: denied, so this person gets Clew's own header`);
+        item(
+          'ok',
+          'surfaces',
+          'Sidhuvud',
+          `Kan ge sidhuvudet: listar inget för ${ROLE[actor.role]}, som då får Clews eget.`,
+        );
+      } else if (answer.status === 'failed') {
+        // An error, a 401 for Clew's key or assertion included, no answer in time or an answer out of shape.
+        fail(`header as ${actor.role}: ${problem ?? 'no answer'}`);
         item(
           'fail',
           'surfaces',
           'Sidhuvud',
-          `Kan inte ge sidhuvudet: svaret för ${ROLE[actor.role]} är inte i protokollets form.`,
+          `Kan inte ge sidhuvudet: svaret för ${ROLE[actor.role]} kom inte, eller inte i protokollets form.`,
         );
+      } else {
+        fail(`header as ${actor.role}: outside the header capability's scope`);
+        item('fail', 'surfaces', 'Sidhuvud', `Kan inte ge sidhuvudet: förmågan gäller inte ${ROLE[actor.role]}.`);
       }
+    }
+    if (denied === people.length) {
+      warn("header: denied for both of the check's people, so the shape of an answer is not checked");
+      item(
+        'warn',
+        'surfaces',
+        'Sidhuvud',
+        'Listar inget för vare sig chef eller medarbetare, så svarets form är inte prövad.',
+      );
     }
   }
   // One row per area: the roles that see the same thing share a sentence. The figure's value is an answer and stays out
@@ -758,7 +822,7 @@ export async function checkConnector(
   const shapeOf = (f: NonNullable<Area['figure']>) =>
     (['value', 'comparison', 'progress', 'opens'] as const).filter(k => f[k] !== undefined);
   const shapeWords = { value: 'värde', comparison: 'jämförelse', progress: 'mål', opens: 'länk till en vy' } as const;
-  for (const actor of [CHECK_MANAGER, CHECK_EMPLOYEE])
+  for (const actor of people)
     for (const a of await registry.areas(actor)) {
       const shape = a.figure && !a.figure.unavailable ? shapeOf(a.figure) : [];
       ok(

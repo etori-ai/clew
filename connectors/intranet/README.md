@@ -11,10 +11,12 @@ a real connector lists what the acting person may read in the content system.
 
 **What it answers is configuration, not code.** `menu.json` beside the connector holds the site's name, the logo and the
 places with their own pages, in the protocol's `SiteHeaderOutput` shape; a place or a page with `"roles": ["manager"]`
-is listed to that role only. Edit the file, or point `INTRANET_MENU_FILE` at another, and restart the service
-(`sh scripts/compose.sh restart intranet` in the development stack). The logo is a path on Clew's origin
-(`/branding/…`, served from `apps/web/public`) or an https address. The band's colour is not in this file: that is the
-installation's saved theme (Administration › Utseende, D98), since a connector may not choose the page's colours (D88).
+is listed to that role only. A person the file lists no place for is answered `denied` with HTTP 403, as a content
+system that lists nothing for someone answers, and Clew draws its own header for them. Edit the file, or point
+`INTRANET_MENU_FILE` at another, and restart the service (`sh scripts/compose.sh restart intranet` in the development
+stack). The logo is a path on Clew's origin (`/branding/…`, served from `apps/web/public`) or an https address. The
+band's colour is not in this file: that is the installation's saved theme (Administration › Utseende, D98), since a
+connector may not choose the page's colours (D88).
 
 Run it beside Clew with the development stack (`bun run dev:connectors` registers it on port 4049), or on its own:
 

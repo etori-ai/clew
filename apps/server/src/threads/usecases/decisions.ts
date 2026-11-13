@@ -1,6 +1,7 @@
 import {
   EffectOutputSchema,
   PreviewOutputSchema,
+  SUBJECT_CHANGED,
   type AskValues,
   type AuthenticatedContext,
   type EffectPreview,
@@ -12,6 +13,9 @@ import {
 import { answersOf, asksFor, CapabilityError, givenBy, type Registry } from '@clew/connectors';
 import { Value } from 'typebox/value';
 import { InputError } from '../../context';
+import { startedDecision, takesStarted } from '../domain';
+import type { PersonKeys } from '../model';
+import { viewWithPeople } from './keys';
 
 export interface CardDecisionsDeps {
   documentPreview?: (persona: AuthenticatedContext, capability: string, ref: string) => Promise<DocumentReview>;
@@ -28,12 +32,23 @@ export interface CardDecisionsDeps {
       presentation: { threadId: string; version: string; actionId: string };
       /** The person's answers to the asks (D112), already in `payload`; the audit row names them. */
       asked?: Record<string, string>;
+      /**
+       * The person a started action is about (D122): `payload[param]` is the user name `personId` held when the person
+       * decided, and dispatch checks that it still is.
+       */
+      subject?: { param: string; personId: string };
     },
   ): Promise<unknown>;
   clock: () => Date;
+  /**
+   * Whose a source's key is (D122): a started action's person from Clew's key to the user name now, and the people a
+   * read's records name to their ids. Absent: a started action about a person cannot be decided, and a record names nobody.
+   */
+  people?: PersonKeys;
 }
+
 /** Human card decisions enter the durable execution boundary. Reads remain immediate. */
-export function cardDecisions({ read, registry, run, approve, clock, documentPreview }: CardDecisionsDeps) {
+export function cardDecisions({ read, registry, run, approve, clock, documentPreview, people }: CardDecisionsDeps) {
   const required = async (persona: AuthenticatedContext, id: string) => {
     const t = await read(persona, id);
     if (!t) throw new InputError('Ärendet finns inte.');
@@ -64,13 +79,23 @@ export function cardDecisions({ read, registry, run, approve, clock, documentPre
     const asks = found.capability.kind === 'read' ? [] : asksFor(found.capability, givenBy(found.capability, action));
     const answered = answersOf(asks, values, clock().toISOString(), found.capability.input);
     if ('problem' in answered) throw new InputError(answered.problem);
+    // A card started from an entity's menu keeps its person by id, in the input property its topic names (D122). The
+    // capability must still take the person there, or the card's id would reach the source as if it were a user name;
+    // the source is sent the user name the person has as this is decided.
+    const started = startedDecision(t.topic, action);
+    if (started && !takesStarted(started, found.capability.about))
+      throw new InputError('Åtgärden har ändrats sedan ärendet skapades. Inget har skickats.');
+    const subject = started?.person;
+    const userName = subject && people ? await people.userName(subject.personId) : undefined;
+    if (subject && !userName) throw new InputError('Personen finns inte längre i katalogen. Inget har skickats.');
     const payload = {
       ...(action.input ?? {}),
       ...answered.answers,
       ...(action.usesItems ? { refs: [...new Set(selected)].sort() } : {}),
       ...(found.capability.review ? { reviews: reviews ?? [] } : {}),
+      ...(subject ? { [subject.param]: userName } : {}),
     };
-    return { t, action, found, selected, payload, asked: answered.answers };
+    return { t, action, found, selected, payload, asked: answered.answers, subject };
   }
   async function act(
     persona: AuthenticatedContext,
@@ -80,13 +105,28 @@ export function cardDecisions({ read, registry, run, approve, clock, documentPre
     reviews?: ReviewEvidence[],
     values?: AskValues,
   ) {
-    const { t, action, found, selected, payload, asked } = await decided(persona, id, actionId, refs, reviews, values);
+    const { t, action, found, selected, payload, asked, subject } = await decided(
+      persona,
+      id,
+      actionId,
+      refs,
+      reviews,
+      values,
+    );
     if (found.capability.kind !== 'execute') {
       const output = await run(persona, action.capability, payload),
         view = registry.viewFor(persona, action.capability);
-      return { kind: found.capability.kind, output, ...(view ? { view } : {}) };
+      // A record that names a person links to them by id (D122).
+      return {
+        kind: found.capability.kind,
+        output,
+        ...(view ? { view: await viewWithPeople(people, persona, view, output) } : {}),
+      };
     }
-    const previous = t.execution && !t.execution.compensates ? t.execution : undefined;
+    // A started action that dispatch refused because its user name had moved to someone else (D122) is decided again,
+    // as a new decision: the person decides on the user name the person has now.
+    const refused = t.execution?.state === 'failed' && t.execution.reason === SUBJECT_CHANGED;
+    const previous = t.execution && !t.execution.compensates && !refused ? t.execution : undefined;
     if (
       !previous &&
       found.capability.review &&
@@ -106,6 +146,7 @@ export function cardDecisions({ read, registry, run, approve, clock, documentPre
         payload,
         presentation: { threadId: id, version: t.updatedAt, actionId },
         ...(Object.keys(asked).length ? { asked } : {}),
+        ...(subject ? { subject } : {}),
       });
     } catch (error) {
       // An approved input the capability's schema refuses (the answers merged in, D112) is the person's to correct.

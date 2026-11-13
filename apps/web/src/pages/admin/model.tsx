@@ -41,6 +41,7 @@ import { AudienceEditor } from './audience';
 import { actionLabel, actorLabel, audienceLabel, modelStatusOf, providerHealthLabel } from './labels';
 import { AdminShell } from './shell';
 import { PageHeader } from '../../components/page-header';
+import { DOT } from '../../dot';
 
 /** One model (D24): what it is and how it answers, who can pick it in the box, and its history. */
 type TabId = 'oversikt' | 'publik' | 'historik';
@@ -49,7 +50,6 @@ const tabs: Array<{ id: TabId; label: string }> = [
   { id: 'publik', label: 'Vem kan välja den' },
   { id: 'historik', label: 'Historik' },
 ];
-const EMPTY_UNITS: Array<{ id: string; label: string }> = [];
 type Draft = Pick<ModelDetail, 'title' | 'description' | 'model'>;
 
 export function AdminModelPage({ user }: { user: SessionUser }) {
@@ -58,8 +58,8 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
   const mobile = useMediaQuery('(max-width: 720px)');
   const client = useQueryClient();
   const detail = useQuery(adminQueries.model(id));
-  const units = useQuery(adminQueries.units).data?.units ?? EMPTY_UNITS;
-  const groups = useQuery(adminQueries.groups).data?.groups ?? EMPTY_UNITS;
+  const units = useQuery(adminQueries.units);
+  const groups = useQuery(adminQueries.groups);
   const m = detail.data ?? null;
   const missing = detail.isError && detail.error instanceof ApiError && detail.error.status === 400;
   const readError =
@@ -178,7 +178,7 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
         meta={
           /* The title's line holds the title and the switch alone (D74); "Standard" is a state of the model, so it stands in the line under it. */
           <HStack gap={1} vAlign="center" wrap="wrap">
-            <StatusDot variant={s.tone} label={s.label} />
+            <StatusDot variant={s.tone} label={s.label} aria-hidden />
             <Text type="supporting">
               {s.label} ·{' '}
               <Text type="code" color="secondary">
@@ -244,7 +244,9 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
                   </MetadataListItem>
                   <MetadataListItem label="Vem kan välja den">{audienceLabel(m.audience)}</MetadataListItem>
                   <MetadataListItem label="Leverantörens hälsa">
-                    {providerHealthLabel[m.health.status]} · <Timestamp value={m.health.at} format="auto" />
+                    {providerHealthLabel[m.health.status]}
+                    {DOT}
+                    <Timestamp value={m.health.at} format="auto" />
                   </MetadataListItem>
                   <MetadataListItem label="Resonemang">
                     {m.reasoning === 'none'
@@ -252,7 +254,9 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
                       : 'Leverantörens standard'}
                   </MetadataListItem>
                   <MetadataListItem label="Tillagd">
-                    {actorLabel(m.createdBy)} · <Timestamp value={m.createdAt} format="date_time" />
+                    {actorLabel(m.createdBy)}
+                    {DOT}
+                    <Timestamp value={m.createdAt} format="date_time" />
                   </MetadataListItem>
                 </MetadataList>
                 {/* It applies at once, so it stands apart from the form that waits for Spara. */}
@@ -394,7 +398,7 @@ export function History({ history }: { history: ModelDetail['history'] }) {
           description={
             <Text type="supporting">
               {actorLabel(h.actor)}
-              {Object.keys(h.details).length ? ' · ' + JSON.stringify(h.details) : ''}
+              {Object.keys(h.details).length ? '\u00a0· ' + JSON.stringify(h.details) : ''}
             </Text>
           }
           endContent={<Timestamp value={h.at} format="date_time" />}

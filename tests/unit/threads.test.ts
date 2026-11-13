@@ -2,7 +2,7 @@ import { Registry } from '../registry';
 import { invoiceInput } from '../document-fixtures';
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext, Thread } from '../../packages/contracts/src/index';
-import { actorOf, type Connector } from '../../packages/connectors/src/index';
+import { audiencedActorOf, type Connector } from '../../packages/connectors/src/index';
 import { fixtureConnectors } from '../fixture-connectors';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
 import { ATTENTION_BUDGET, threadUsecases, type ThreadDeps } from '../../apps/server/src/threads/usecases/cards';
@@ -80,7 +80,7 @@ function world() {
   const deps: ThreadDeps = {
     store,
     registry,
-    run: (p, name, input) => registry.run(actorOf(p), name, input),
+    run: (p, name, input) => registry.run(audiencedActorOf(p), name, input),
     calendar,
     clock,
     ids: () => `thread-${++n}`,
@@ -706,4 +706,59 @@ test('area reads check the person again after figures complete', async () => {
   };
   await expect(w.threads.listAreas(p)).rejects.toThrow('person revoked');
   expect(checks).toBe(2);
+});
+
+test('a connector for one provisioned group only gives its members cards, an area and the actions, and nobody else (D68)', async () => {
+  const w = world();
+  w.registry.govern('finance', {
+    state: 'enabled',
+    audience: { mode: 'selected', groups: ['S-1-5-21-ekonomi'] },
+    scanEnabled: true,
+    toolsEnabled: true,
+    capabilities: {},
+  });
+  // Two managers of the same unit, one in the group and one outside it: the scan and the areas run with the groups.
+  const member = { ...hillevi, groups: ['S-1-5-21-ekonomi'] },
+    outsider = { ...persona('karin', 'manager'), groups: ['S-1-5-21-annan'] };
+  await w.threads.ensureThreads(member);
+  await w.threads.ensureThreads(outsider);
+  expect((await w.threads.listThreadsFor(member)).some(t => t.connector === 'finance')).toBe(true);
+  expect((await w.threads.listThreadsFor(outsider)).some(t => t.connector === 'finance')).toBe(false);
+  expect((await w.threads.listAreas(member)).map(a => a.id)).toContain('budget');
+  expect((await w.threads.listAreas(outsider)).map(a => a.id)).not.toContain('budget');
+  // A card's action follows the group too: a rejected row is tried again for a member; outside the group the card of a
+  // connector the person cannot see is not there at all.
+  const card = (await w.threads.listThreadsFor(member)).find(t => t.connector === 'finance')!;
+  const rejected = (personId: string, id: string) =>
+    w.store.transaction(async tx => {
+      await tx.insertThread({
+        ...card,
+        id,
+        topic: id,
+        personId,
+        execution: {
+          id: id + '-execution',
+          decisionId: 'decision',
+          operation: 'finance.approve',
+          state: 'partial' as const,
+          reason: null,
+          compensates: null,
+        },
+      });
+      await tx.updateThread(id, {
+        receipt: {
+          at: T0,
+          headline: 'En avvisad.',
+          undoUntil: null,
+          undoCapability: null,
+          rows: [{ ref: card.items[0]!.ref, label: card.items[0]!.label, outcome: 'failed' as const, detail: 'Nej' }],
+        },
+      });
+    });
+  await rejected(member.id, 'member-rejected');
+  await rejected(outsider.id, 'outsider-rejected');
+  expect((await w.threads.retryRejected(member, 'member-rejected')).items.map(i => i.ref)).toEqual([
+    card.items[0]!.ref,
+  ]);
+  await expect(w.threads.retryRejected(outsider, 'outsider-rejected')).rejects.toThrow('Ärendet finns inte.');
 });

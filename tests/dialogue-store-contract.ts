@@ -4,10 +4,12 @@ import type {
   AreaRecord,
   AssessmentRecord,
   DialogueStore,
+  NoteRecord,
 } from '../apps/server/src/modules/dialogue/model';
 
 /**
- * The dialogue store (D118): configuration, assessments, activities, the names it shows, erasure and export. One
+ * The dialogue store (D118, D120): configuration, assessments, activities, a manager's own notes, the names it shows,
+ * erasure and export. One
  * suite, two adapters: `tests/unit/dialogue-store.test.ts` on memory, `tests/db/postgres-dialogue-store.test.ts` on
  * Postgres. The harness supplies the store with a card port that writes the minimum a card needs.
  */
@@ -21,6 +23,7 @@ export interface DialogueStoreHarness {
   /** The free-text columns as stored, where the adapter seals them (Postgres). */
   stored?: (activityId: string) => Promise<{ text: string; note: string | null }>;
   storedComment?: (assessmentId: string) => Promise<string | null>;
+  storedNote?: (noteId: string) => Promise<string>;
 }
 const T = '2026-11-13T08:00:00.000Z';
 const T2 = '2026-11-13T09:00:00.000Z';
@@ -72,6 +75,23 @@ const assessment = (
   comment: null,
   authorId: null,
   at: T,
+  ...extra,
+});
+const note = (
+  id: string,
+  organisationId: string,
+  unitId: string,
+  authorId: string,
+  extra: Partial<NoteRecord> = {},
+): NoteRecord => ({
+  id,
+  organisationId,
+  unitId,
+  areaKey: 'ops',
+  authorId,
+  text: 'Tanke ' + id,
+  createdAt: T,
+  updatedAt: T,
   ...extra,
 });
 
@@ -263,6 +283,39 @@ export function dialogueStoreContract(name: string, make: () => Promise<Dialogue
       expect(await h.store.transaction(tx => tx.assessments(org, [unit]))).toEqual([]);
     });
 
+    test('a note is read by its author alone, newest first, locked by id, updated and deleted; its text is sealed', async () => {
+      const { h, p, org, unit, other, chef, boss } = await world();
+      const first = note(p + '-n1', org, unit, chef),
+        second = note(p + '-n2', org, unit, chef, { createdAt: T2, updatedAt: T2, areaKey: 'economy' });
+      await h.store.transaction(async tx => {
+        await tx.insertNote(first);
+        await tx.insertNote(second);
+        await tx.insertNote(note(p + '-n3', org, unit, boss));
+        await tx.insertNote(note(p + '-n4', org, other, chef));
+      });
+      expect(await h.store.transaction(tx => tx.notes(org, [unit], chef))).toEqual([second, first]);
+      expect((await h.store.transaction(tx => tx.notes(org, [unit], boss))).map(n => n.id)).toEqual([p + '-n3']);
+      expect((await h.store.transaction(tx => tx.notes(org, [unit, other], chef))).map(n => n.id).sort()).toEqual([
+        p + '-n1',
+        p + '-n2',
+        p + '-n4',
+      ]);
+      expect(await h.store.transaction(tx => tx.notes(org, [], chef))).toEqual([]);
+      expect(await h.store.transaction(tx => tx.notes(p + '-nowhere', [unit], chef))).toEqual([]);
+      expect(await h.store.transaction(tx => tx.note(first.id))).toEqual(first);
+      if (h.storedNote) expect(await h.storedNote(first.id)).not.toContain('Tanke');
+      await h.store.transaction(tx => tx.updateNote(first.id, { text: 'Ändrad tanke', updatedAt: T2 }));
+      expect(await h.store.transaction(tx => tx.note(first.id))).toEqual({
+        ...first,
+        text: 'Ändrad tanke',
+        updatedAt: T2,
+      });
+      if (h.storedNote) expect(await h.storedNote(first.id)).not.toContain('tanke');
+      await h.store.transaction(tx => tx.deleteNote(first.id));
+      expect(await h.store.transaction(tx => tx.note(first.id))).toBeUndefined();
+      expect(await h.store.transaction(tx => tx.note(p + '-missing'))).toBeUndefined();
+    });
+
     test('erasure clears the person from every row and returns the cards they owned; export holds everything', async () => {
       const w = await world();
       const { h, p, org, unit, chef, boss } = w;
@@ -273,10 +326,14 @@ export function dialogueStoreContract(name: string, make: () => Promise<Dialogue
       );
       await h.store.transaction(async tx => {
         await tx.insertAssessment(assessment(p + '-e3', org, unit, { authorId: chef }));
+        // The erased person's own note goes whole; another person's stays.
+        await tx.insertNote(note(p + '-e4', org, unit, chef));
+        await tx.insertNote(note(p + '-e5', org, unit, boss));
         await tx.audit({ actor: 'operator:test', action: 'dialogue.test', subject: 'dialogue-test:' + p, at: T });
       });
       const erased = await h.store.transaction(tx => tx.erasePerson(chef));
-      expect(erased).toEqual({ cleared: 3, threadIds: [p + '-t2'] });
+      expect(erased).toEqual({ cleared: 4, threadIds: [p + '-t2'] });
+      expect(await h.store.transaction(tx => tx.notes(org, [unit], chef))).toEqual([]);
       const rows = await h.store.transaction(tx => tx.activities(org, [unit]));
       expect(rows.map(r => [r.id, r.ownerId, r.createdBy, r.doneBy, r.threadId])).toEqual([
         [p + '-e1', null, boss, null, null],
@@ -288,6 +345,7 @@ export function dialogueStoreContract(name: string, make: () => Promise<Dialogue
         0, 0, 1, 2,
       ]);
       expect(doc.activities[0]!.text).toBe('Gör ' + p + '-e1');
+      expect(doc.notes.map(n => [n.id, n.authorId, n.text])).toEqual([[p + '-e5', boss, 'Tanke ' + p + '-e5']]);
       expect(await h.auditFor('dialogue-test:' + p)).toEqual([{ actor: 'operator:test', action: 'dialogue.test' }]);
     });
   });

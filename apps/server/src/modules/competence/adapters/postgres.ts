@@ -1,9 +1,9 @@
 import { and, asc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
-import { database, schema, type Transaction } from '@clew/db';
+import { schema, type Transaction } from '@clew/db';
 import { enqueueWorkflow, type DurableQueue } from '@clew/db/durable';
 import {
   TypeNameTaken,
-  type CompetenceStore,
+  type CompetenceCardsTx,
   type CompetenceTx,
   type HoldingRecord,
   type SourceMapping,
@@ -87,10 +87,13 @@ const sourceOf = (r: SourceRow): SourceRecord => ({
 /**
  * The competence tables (D108) on one Postgres transaction. Reads that a write follows take a row lock. The catalogue's
  * order is Swedish and is sorted here, since the database's collation is not Clew's to choose. `durable` names the
- * engine's application and queue, so a workflow start commits with the transaction that decides it (D86).
+ * engine's application and queue, so a workflow start commits with the transaction that decides it (D86). `cards` is
+ * the person's own cards on the same transaction, which composition shares with the thread store
+ * (`composition/competence.ts`).
  */
-export function competenceTx(tx: Transaction, durable: DurableQueue): CompetenceTx {
+export function competenceTx(tx: Transaction, durable: DurableQueue, cards: CompetenceCardsTx): CompetenceTx {
   return {
+    cards,
     async types(organisationId, options = {}) {
       const rows = await tx
         .select()
@@ -361,7 +364,13 @@ export function competenceTx(tx: Transaction, durable: DurableQueue): Competence
     async persons(ids) {
       if (!ids.length) return [];
       return tx
-        .select({ id: people.id, organisationId: people.organisationId, name: people.name, userName: people.userName })
+        .select({
+          id: people.id,
+          organisationId: people.organisationId,
+          name: people.name,
+          userName: people.userName,
+          enabled: people.enabled,
+        })
         .from(people)
         .where(inArray(people.id, [...ids]));
     },
@@ -375,6 +384,7 @@ export function competenceTx(tx: Transaction, durable: DurableQueue): Competence
               organisationId: people.organisationId,
               name: people.name,
               userName: people.userName,
+              enabled: people.enabled,
             })
             .from(people)
             .where(and(eq(people.enabled, true), inArray(sql`lower(${people.userName})`, slice)))),
@@ -441,7 +451,4 @@ export function competenceTx(tx: Transaction, durable: DurableQueue): Competence
       });
     },
   };
-}
-export function postgresCompetenceStore(durable: DurableQueue): CompetenceStore {
-  return { transaction: fn => database().transaction(tx => fn(competenceTx(tx, durable))) };
 }

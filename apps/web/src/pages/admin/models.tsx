@@ -31,6 +31,7 @@ import { AddModelDialog, AddProviderDialog } from './add-model';
 import { audienceLabel, modelStatusOf, providerStatusOf } from './labels';
 import { AdminShell } from './shell';
 import { PageHeader } from '../../components/page-header';
+import { DOT } from '../../dot';
 
 /**
  * "Modeller" (D24): every provider with the models under it. A provider is a Card with its name, its health and "Lägg
@@ -67,7 +68,7 @@ export function AdminModelsPage({ user }: { user: SessionUser }) {
     const s = modelStatusOf(m);
     return (
       <HStack gap={1} vAlign="center">
-        <StatusDot variant={s.tone} label={s.label} />
+        <StatusDot variant={s.tone} label={s.label} aria-hidden />
         <Text>{s.label}</Text>
       </HStack>
     );
@@ -175,9 +176,11 @@ export function AdminModelsPage({ user }: { user: SessionUser }) {
                     {p.title}
                   </Link>
                   <HStack gap={1} vAlign="center">
-                    <StatusDot variant={s.tone} label={s.label} />
+                    <StatusDot variant={s.tone} label={s.label} aria-hidden />
                     <Text type="supporting">
-                      {s.label} · {p.baseUrl}
+                      {s.label}
+                      {DOT}
+                      {p.baseUrl}
                     </Text>
                   </HStack>
                 </VStack>
@@ -210,7 +213,9 @@ export function AdminModelsPage({ user }: { user: SessionUser }) {
                             {m.model}
                           </Text>
                           <Text type="supporting">
-                            {modelStatusOf(m).label} · {audienceLabel(m.audience)}
+                            {modelStatusOf(m).label}
+                            {DOT}
+                            {audienceLabel(m.audience)}
                           </Text>
                         </VStack>
                       }

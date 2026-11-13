@@ -16,6 +16,15 @@ competenceStoreContract('memory', async () => {
     },
     // The memory store keeps no connector rows: what refers to one is held to nothing here.
     async seedConnector() {},
+    async seedCard(id, personId, connector) {
+      store.addCard(id, { personId, connector });
+    },
+    async cardsOf(personId) {
+      return [...store.state.cards]
+        .filter(([, card]) => card.personId === personId)
+        .map(([id]) => id)
+        .sort();
+    },
     async auditFor(subject) {
       return store
         .audit()

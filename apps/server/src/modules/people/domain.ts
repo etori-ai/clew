@@ -1,17 +1,20 @@
 /**
  * Deriving a person's authority from what was pushed (D68) and mapped (D85). Pure: no I/O, no clock.
  *
- * A group's meaning is a key in its `externalId`: `unit:<unitId>` makes the member an employee of that unit and names
- * it with the group's `displayName`; `unit-manager:<unitId>` makes the member its manager, which wins over `unit:` for
- * the same unit; `capability:<name>` gives a capability of the closed list; `protected` was to keep the person out of
- * lists others see, and D93 refuses that key at the boundary until Clew decides whether it may hold the fact, so the
- * flag below is false in any installation provisioned since. Any other group gives nothing here; a rules row (group
- * to capability) may give a capability. A person with no unit membership has no active grant, so a mapping mistake
- * fails closed.
+ * A group's meaning is a key in its `externalId`, and three keys carry one: `unit:<unitId>` makes the member an
+ * employee of that unit and names it with the group's `displayName`; `unit-manager:<unitId>` makes the member its
+ * manager, which wins over `unit:` for the same unit; `capability:<name>` gives a capability of the closed list. A key
+ * is read as the SCIM boundary accepts it (`readScimGroupKey`). The boundary refuses the key `protected` (D93) and a
+ * key written wrong, such as a reserved word in another case, a unit id with space around it or a capability outside
+ * the list (D96), but a group stored before either decision keeps its row: a key written wrong gives nobody anything
+ * here, and only a `protected` row stored before D93 sets the `protected` flag below, which D93 keeps and nothing
+ * reads. Any other group gives nothing here; a rules row (group to capability) may give a capability. A person with no
+ * unit membership has no active grant, so a mapping mistake fails closed.
  */
 import {
   CAPABILITIES,
   EmploymentSchema,
+  PROVISIONED_KEY_LENGTH,
   checkContract,
   isCapability,
   type Capability,
@@ -27,16 +30,18 @@ import {
   MANAGER_KEY,
   CAPABILITY_KEY,
   PROTECTED_KEY,
+  readScimGroupKey,
   reservedScimGroupKey,
 } from '@clew/contracts/scim-group-key';
 
-/** The unit a group's key names, whichever of the unit's two groups it is; undefined for any other key. */
-export const unitOfKey = (externalId: string | null | undefined): string | undefined =>
-  externalId?.startsWith(MANAGER_KEY)
-    ? externalId.slice(MANAGER_KEY.length)
-    : externalId?.startsWith(UNIT_KEY)
-      ? externalId.slice(UNIT_KEY.length)
-      : undefined;
+/**
+ * The unit a group's key names, whichever of the unit's two groups it is; undefined for any other key, one written
+ * wrong among them (`readScimGroupKey`).
+ */
+export const unitOfKey = (externalId: string | null | undefined): string | undefined => {
+  const key = readScimGroupKey(externalId);
+  return key && key.prefix !== CAPABILITY_KEY ? key.value : undefined;
+};
 export interface Membership {
   externalId: string;
   label: string;
@@ -78,10 +83,12 @@ export interface Derived {
   grant: Grant | undefined;
 }
 /**
- * The order of unit ids, which decides the active assignment. The locale is named, so the order is the same whatever
- * locale the process was started with: the one the server has always run under.
+ * The order of unit ids, which decides the active assignment (D101 item 8): character by character, by UTF-16 code
+ * unit, as `<` and JavaScript's default sort compare. A unit id is an opaque key, so no locale orders it: `Skola` comes
+ * before `förskola`, `z` before `ä`, `10` before `9`, and no upgrade of ICU or Node moves anyone's active unit. Both
+ * adapters reach the active unit through this one derivation.
  */
-const byUnitId = (a: string, b: string) => a.localeCompare(b, 'en');
+const byUnitId = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 export function activeOf(assignments: readonly Assignment[]): Assignment | undefined {
   return [...assignments].sort(
     (a, b) => Number(b.role === 'manager') - Number(a.role === 'manager') || byUnitId(a.unitId, b.unitId),
@@ -102,17 +109,13 @@ export function deriveAuthority(
     held = new Set(memberships.map(m => m.externalId));
   let isProtected = false;
   for (const m of memberships) {
-    if (m.externalId.startsWith(MANAGER_KEY)) {
-      const unitId = m.externalId.slice(MANAGER_KEY.length);
-      if (unitId) roles.set(unitId, 'manager');
-    } else if (m.externalId.startsWith(UNIT_KEY)) {
-      const unitId = m.externalId.slice(UNIT_KEY.length);
-      if (!unitId) continue;
-      if (roles.get(unitId) !== 'manager') roles.set(unitId, 'employee');
-      labels.set(unitId, m.label);
-    } else if (m.externalId.startsWith(CAPABILITY_KEY)) {
-      const name = m.externalId.slice(CAPABILITY_KEY.length);
-      if (isCapability(name)) capabilities.add(name);
+    const key = readScimGroupKey(m.externalId);
+    if (key?.prefix === MANAGER_KEY) roles.set(key.value, 'manager');
+    else if (key?.prefix === UNIT_KEY) {
+      if (roles.get(key.value) !== 'manager') roles.set(key.value, 'employee');
+      labels.set(key.value, m.label);
+    } else if (key?.prefix === CAPABILITY_KEY) {
+      if (isCapability(key.value)) capabilities.add(key.value);
     } else if (m.externalId === PROTECTED_KEY) isProtected = true;
   }
   for (const row of rules)
@@ -136,6 +139,22 @@ export function deriveAuthority(
       capabilities: sorted,
     },
   };
+}
+/**
+ * Whether a group with this key can give its members anything: a key with meaning (`unit:`, `unit-manager:`,
+ * `capability:`, read as `deriveAuthority` reads it), or one a D85 row of the organisation names. A write of any other
+ * group moves nobody's grant, whatever it does to the group, so nobody is derived for it. A key whose shape is written
+ * wrong is one: a reserved word in another case or with space in or before it, or a prefix without an id or a name or
+ * with space around it, which the SCIM boundary refuses (D96) and a group stored before then may still carry. A
+ * `capability:` key read as one counts whether or not its name is in the closed list: one outside it gives nothing,
+ * but its members are derived when it is written, so a name a later release takes off the list is taken back from
+ * them. `protected` is matched only because `deriveAuthority` reads it, on a row stored before D93.
+ */
+export function givesAuthority(key: string | null, rules: readonly GroupCapabilityRule[]): boolean {
+  return (
+    key !== null &&
+    (readScimGroupKey(key) !== undefined || key === PROTECTED_KEY || rules.some(row => row.groupExternalId === key))
+  );
 }
 /** Whether two grant projections carry the same authority and label, so an unchanged derivation writes no audit row. */
 export function sameGrant(a: Grant | undefined, b: Grant | undefined) {
@@ -169,9 +188,9 @@ export const bySwedish = (a: string, b: string) => a.localeCompare(b, 'sv');
 /**
  * D100: what the people list of Administration › Användare is narrowed by, as a store reads it. Every part narrows
  * further and an absent part narrows nothing. `words` each match, without regard to case, somewhere in the name, the
- * title (D110), the user name or the e-mail. `unitIds` is an assignment on one of the units, `role` an assignment
- * with that role, and the two together one assignment that is both. `status` is the row's reading of access
- * (`UserStatus`), `capability` a capability on the grant.
+ * title (D110), the user name, the e-mail or the title of one of the person's employments (D114). `unitIds` is an
+ * assignment on one of the units, `role` an assignment with that role, and the two together one assignment that is
+ * both. `status` is the row's reading of access (`UserStatus`), `capability` a capability on the grant.
  */
 export interface UserSearch {
   words?: readonly string[];
@@ -180,9 +199,12 @@ export interface UserSearch {
   status?: UserStatus;
   capability?: string;
 }
-/** The words of a typed search, in lower case as Swedish folds it; at most eight, so a pasted text stays one query. */
+/**
+ * The words of a typed search, in their composed form (NFC), as user names are kept (L12), and in lower case as Swedish
+ * folds it; at most eight, so a pasted text stays one query. A word pasted decomposed, as from a file name, is the word.
+ */
 export const searchWords = (text: string | undefined): string[] =>
-  (text ?? '').toLocaleLowerCase('sv').split(/\s+/).filter(Boolean).slice(0, 8);
+  (text ?? '').normalize('NFC').toLocaleLowerCase('sv').split(/\s+/).filter(Boolean).slice(0, 8);
 /**
  * A unit with every unit below it in the tree (D99), the unit first. A unit the tree does not name is itself alone,
  * and each unit is taken once, so a stored chain that were ever a cycle ends.
@@ -313,6 +335,106 @@ export interface GroupFields {
   parent: string | null;
   members: string[];
 }
+
+// ---- Erasure (Q7 of the 2026-11-12 users review, D123): what an operator's erasure of a deactivated person clears.
+
+/**
+ * What an erased identifier reads as in an audit row that keeps its event: one marker everywhere, so that whoever reads
+ * the trail sees that a value was there and was erased. A field that held nothing (null, an empty string) keeps it, so
+ * a rebind from no binding, or a release to none, still says so.
+ */
+export const ERASED = '[erased]';
+/**
+ * Where the audit trail holds a person's identifiers in the rows about them (`subject` is `person:<id>`), by action:
+ * the keys of `details` that hold a user name, a source key, a claim's value or a sign-in subject. `scimUsecases` writes
+ * the SCIM rows, and `@clew/db/auth` the identity rows, for the sign-in and for `scripts/identity-rebind.ts`. Every other
+ * key of these rows, and every other row about the person, says who did what and when and names the person by their id
+ * only, which stays: `changed` names attributes, not their values, and `identity.bound` the issuer and the claim's name.
+ */
+export const IDENTIFIERS_ABOUT: Readonly<Record<string, readonly string[]>> = {
+  'scim.user.created': ['userName', 'externalId'],
+  'scim.user.replaced': ['userName', 'externalId'],
+  'scim.user.patched': ['userName', 'externalId'],
+  'scim.user.deactivated': ['userName', 'externalId'],
+  'scim.user.reactivated': ['userName', 'externalId'],
+  'identity.conflict': ['value', 'subject'],
+  'identity.rebound': ['oldSubject', 'newSubject'],
+};
+/**
+ * The rows about someone else that name the person as the holder (`details.holder` is `person:<id>`): a sign-in
+ * refused because the subject it came with was bound to the person, so that subject is the person's account. The
+ * claim's value there is the claimed person's name and stays.
+ */
+export const IDENTIFIERS_AS_HOLDER: Readonly<Record<string, readonly string[]>> = {
+  'identity.conflict': ['subject'],
+};
+/** The identifier keys in this row that still hold something to erase. */
+export function auditKeysToErase(details: Readonly<Record<string, unknown>>, keys: readonly string[]): string[] {
+  return keys.filter(key => {
+    const value = details[key];
+    return value !== undefined && value !== null && value !== '' && value !== ERASED;
+  });
+}
+/**
+ * The values a sign-in may have claimed for the person, which the authentication log keeps as `claim:<value>` when it
+ * bound nobody: every user name they held, from their row, from the SCIM rows about them (a rename writes the new name)
+ * and from the refused sign-ins that claimed them, and their e-mail address, which a claim holds when the identity
+ * provider is set to send it. The log is matched without regard to case, as user names are; the marker and an empty
+ * value are no name.
+ */
+export function namesHeld(
+  person: Pick<UserRecord, 'userName' | 'email'>,
+  audited: ReadonlyArray<{ action: string; details: Readonly<Record<string, unknown>> }>,
+): string[] {
+  const names = new Set<string>();
+  const add = (value: unknown) => {
+    if (typeof value === 'string' && value && value !== ERASED) names.add(value);
+  };
+  add(person.userName);
+  add(person.email);
+  for (const row of audited)
+    add(
+      row.action.startsWith('scim.user.')
+        ? row.details.userName
+        : row.action === 'identity.conflict'
+          ? row.details.value
+          : undefined,
+    );
+  return [...names];
+}
+/**
+ * A person's record as an erasure leaves it: no name, e-mail address, phone numbers, employments or title (the fields
+ * D110 and D114 added among them), no user name and no source key, so that the name and the key are free for someone
+ * else while the row, its id and every reference to it stay. The name column holds text, so an erased name is the empty
+ * one. A record without a user name reads as its id wherever a user name is shown or written back (the SCIM resource,
+ * `fieldsOf`, Administration › Användare): that is how the erasure replaces the user name with the id (D123). Stored as
+ * none, it is no key: neither the id nor a name the person held resolves to them (`UserReads.userName` and `holders`),
+ * so a started action about them is refused (D122), and it cannot collide with a name someone else holds. Storing the
+ * id instead made the id resolve as their user name, and kept the name of a person whose id is their user name.
+ */
+export const erasedProfile = () => ({
+  name: '',
+  email: null,
+  phoneNumbers: [] as DirectoryPhone[],
+  employments: [] as Employment[],
+  title: null,
+  userName: null,
+  externalId: null,
+});
+/** How many of the person's fields hold something their erasure clears: none once they have been erased. */
+export function heldFields(person: UserRecord): number {
+  const held = (value: unknown) => (Array.isArray(value) ? value.length > 0 : value !== null && value !== '');
+  return [
+    person.name,
+    person.email,
+    person.phoneNumbers,
+    person.employments,
+    person.title,
+    person.userName,
+    person.externalId,
+  ].filter(held).length;
+}
+
 const need = (attribute: string): never => {
   throw new ScimError(400, `Attribute '${attribute}' is required.`, 'invalidValue');
 };
@@ -376,10 +498,18 @@ const asResource = (body: unknown, names: Names, what: string): Record<string, u
   if (read && typeof read === 'object' && !Array.isArray(read)) return read as Record<string, unknown>;
   throw new ScimError(400, `The request body is not a ${what} resource.`, 'invalidSyntax');
 };
-/** A text attribute Clew stores: not empty, not only space, at most 512 characters, and nothing PostgreSQL cannot hold. */
+/**
+ * A text attribute Clew stores: not empty, not only space, at most 512 characters, and nothing PostgreSQL cannot hold.
+ * The limit is a provisioned key's (`PROVISIONED_KEY_LENGTH`), which the administration fields that name a key take, so
+ * a key stored here is never refused where an administrator picks it (A6).
+ */
 const asString = (value: unknown, path: string): string => {
-  if (typeof value !== 'string' || !value.trim() || value.length > 512)
-    throw new ScimError(400, `Attribute '${path}' needs a non-empty string of at most 512 characters.`, 'invalidValue');
+  if (typeof value !== 'string' || !value.trim() || value.length > PROVISIONED_KEY_LENGTH)
+    throw new ScimError(
+      400,
+      `Attribute '${path}' needs a non-empty string of at most ${PROVISIONED_KEY_LENGTH} characters.`,
+      'invalidValue',
+    );
   if (/\p{Cs}/u.test(value))
     throw new ScimError(400, `Attribute '${path}' contains an invalid Unicode character.`, 'invalidValue');
   if (value.includes('\u0000'))
@@ -389,6 +519,24 @@ const asString = (value: unknown, path: string): string => {
 /** The same where the attribute may be left out: absent, and an empty string, are both no value. */
 const optional = (value: unknown, path: string): string | undefined =>
   value === undefined || value === '' ? undefined : asString(value, path);
+/** A user name in the one form it is stored and matched in, so a name sent decomposed is the same name. */
+const userNameForm = (value: string) => value.normalize('NFC');
+/**
+ * What a login is matched on is stored as exactly as a key is (D96). A user name with space at either end or a
+ * control character in it matches no claim an identity provider sends, and beside it a second row with the clean
+ * spelling would take that person's sign-ins, so it is refused by name; a deactivation beside it still goes through
+ * (D113). It is kept NFC, as a filter on it is read.
+ */
+const asUserName = (value: unknown, path: string): string => {
+  const name = asString(typeof value === 'string' ? userNameForm(value) : value, path);
+  if (name !== name.trim() || /\p{Cc}/u.test(name))
+    throw new ScimError(
+      400,
+      `Attribute '${path}' cannot begin or end with space or hold a control character.`,
+      'invalidValue',
+    );
+  return name;
+};
 /** A boolean, or the word for one in any case: Entra sends `"True"` and `"False"`. */
 const asBoolean = (value: unknown, path: string): boolean => {
   if (typeof value === 'boolean') return value;
@@ -405,6 +553,22 @@ const asObject = (value: unknown, path: string | undefined): Record<string, unkn
     'invalidValue',
   );
 };
+/**
+ * RFC 7644 §3.5.2.1 and §3.5.2.3 (D110 item 4): an `add` or a `replace` carries a value, on every resource and every
+ * path, and one without is malformed. It is refused before anything reads the value: read as `null`, a missing value
+ * once emptied a person's lists and took a unit's key or parent away, each with a 200. A JavaScript client sends it
+ * when a lookup answers `undefined`, since `JSON.stringify` leaves the member out. An explicit `null` and a `remove`
+ * are the ways to take an attribute away. `attribute` names the one attribute of an extension's object that the
+ * object left out. About one operation's value (`invalidValue`), so beside a deactivation it waits (D113).
+ */
+const noValue = (op: 'add' | 'replace', path: string | undefined, attribute?: string) =>
+  new ScimError(
+    400,
+    path === undefined
+      ? `Operation '${op}' without a path requires a value.`
+      : `Operation '${op}' on '${path}' requires a value${attribute ? ` for '${attribute}'` : ''}.`,
+    'invalidValue',
+  );
 interface Email {
   value: string;
   type?: string;
@@ -415,26 +579,38 @@ const contactEntries = (value: unknown, path: string): Record<string, unknown>[]
   (Array.isArray(value) ? value : [value])
     .filter(item => item !== null && item !== undefined)
     .map(item => (typeof item === 'string' ? { value: item } : asObject(plain(item, CONTACT_NAMES, 'dropped'), path)));
-const emailList = (value: unknown, path: string): Email[] =>
-  contactEntries(value, path).map(email => ({
-    value: asString(email.value, path + '.value'),
-    ...(typeof email.type === 'string' ? { type: email.type } : {}),
-    ...(email.primary === true || String(email.primary).toLowerCase() === 'true' ? { primary: true } : {}),
-  }));
 /**
- * The one address Clew holds, of the addresses a client sent: `type: "work"` first; otherwise one without a type, the
- * primary before the first. `whole` says the list is all the person has (a body, a `replace`): then an address of any
- * other type is taken before none at all, the primary before the first. What an address is called is the source's to
- * answer for (D114); Clew does not refuse a person for it. Without `whole` the list is added to what is held, and an
- * address of another type is beside the one Clew holds.
+ * The addresses of a body or a patch value. An entry whose value is absent, `null`, empty or only space is no address
+ * and is left out before one is chosen, as an unreadable phone number is (D114): a directory's empty secondary field
+ * once refused the whole person. A value that is there and is not an address (a number, an object) is still refused by
+ * name.
+ */
+const emailList = (value: unknown, path: string): Email[] =>
+  contactEntries(value, path).flatMap(email =>
+    email.value === undefined || (typeof email.value === 'string' && !email.value.trim())
+      ? []
+      : [
+          {
+            value: asString(email.value, path + '.value'),
+            ...(typeof email.type === 'string' ? { type: email.type } : {}),
+            ...(email.primary === true || String(email.primary).toLowerCase() === 'true' ? { primary: true } : {}),
+          },
+        ],
+  );
+/**
+ * The one address Clew holds, of the addresses a client sent: one with `type: "work"` first, the primary before the
+ * first (RFC 7643 §2.4: `primary` marks the preferred value); otherwise one without a type, likewise. `whole` says the
+ * list is all the person has (a body, a `replace`): then an address of any other type is taken before none at all,
+ * the primary before the first, so a home address is published when the work entry was blank. What an address is
+ * called is the source's to answer for (D114); Clew does not refuse a person for it. Without `whole` the list is added
+ * to what is held, and an address of another type is beside the one Clew holds.
  */
 export function workEmail(emails: readonly Email[], whole: boolean): string | undefined {
-  const untyped = emails.filter(email => !email.type);
+  const preferred = (list: readonly Email[]) => list.find(email => email.primary) ?? list[0];
   return (
-    emails.find(email => email.type?.toLowerCase() === 'work') ??
-    untyped.find(email => email.primary) ??
-    untyped[0] ??
-    (whole ? (emails.find(email => email.primary) ?? emails[0]) : undefined)
+    preferred(emails.filter(email => email.type?.toLowerCase() === 'work')) ??
+    preferred(emails.filter(email => !email.type)) ??
+    (whole ? preferred(emails) : undefined)
   )?.value;
 }
 /**
@@ -442,7 +618,8 @@ export function workEmail(emails: readonly Email[], whole: boolean): string | un
  * left out and never refuses the person, as a title is (D110): a number that is empty, `null`, not text or longer than
  * a number is; an entry with nothing in it. Having no phone number is not a mistake. What is refused is a request
  * that says something Clew cannot take as said: an employment without a unit or on a unit the organisation does not
- * hold (asked of the store), a list past `DETAIL_LIMIT`, `employments` written without the extension's URN.
+ * hold (asked of the store), a list past `DETAIL_LIMIT`, `employments` written without the extension's URN, an `add`
+ * or `replace` without a value and a `remove` of a whole list that carries a value.
  */
 const DETAIL_LIMIT = 50;
 function within<T>(rows: T[], attribute: string): T[] {
@@ -562,7 +739,9 @@ const EMPLOYMENT_LABEL_LENGTH = 512;
  * D110: a title is kept as sent, less the space around it and whatever is past 512 characters (counted as characters,
  * so none is cut in half). A control character in it, a line break or the NUL that PostgreSQL cannot hold, becomes a
  * space. An empty one, `null` and a value that is not text all mean the person has none. A title decides nothing, so
- * it is never a reason to refuse a person or the other changes of the same request.
+ * its value is never a reason to refuse a person or the other changes of the same request. An `add` or `replace` on
+ * `title` without a value is another matter: that operation is malformed, and refused as on every path (RFC 7644
+ * §3.5.2), except beside a deactivation (D113).
  */
 const titleOf = (value: unknown): string | null => shown(value, EMPLOYMENT_LABEL_LENGTH);
 /**
@@ -605,7 +784,7 @@ export function userFields(body: unknown, current?: UserFields): UserFields {
       kept?.externalId || undefined,
       () => optional(input.externalId, 'externalId') ?? (current?.externalId || need('externalId')),
     ),
-    userName: read(kept?.userName || undefined, () => asString(input.userName ?? need('userName'), 'userName')),
+    userName: read(kept?.userName || undefined, () => asUserName(input.userName ?? need('userName'), 'userName')),
     name: read(kept?.name || undefined, () => {
       const name = input.name === undefined ? {} : asObject(input.name, 'name'),
         part = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
@@ -638,9 +817,14 @@ export function userFields(body: unknown, current?: UserFields): UserFields {
   if (!enabled) deactivating.add(fields);
   return fields;
 }
-/** The unit id a `unit:` group's key names; undefined for `unit-manager:` and every other key. */
-export const unitGroupOf = (externalId: string | null | undefined): string | undefined =>
-  externalId?.startsWith(UNIT_KEY) ? externalId.slice(UNIT_KEY.length) : undefined;
+/**
+ * The unit id a `unit:` group's key names; undefined for `unit-manager:` and every other key, one written wrong among
+ * them (`readScimGroupKey`), so a group stored with one before D96 is no node of the tree.
+ */
+export const unitGroupOf = (externalId: string | null | undefined): string | undefined => {
+  const key = readScimGroupKey(externalId);
+  return key?.prefix === UNIT_KEY ? key.value : undefined;
+};
 const UNIT_EXTENSION = SCIM.unit.toLowerCase();
 /**
  * What a name aims at in the unit extension (D99), without regard to case as a schema URN is: the extension as a
@@ -657,26 +841,35 @@ const unitExtensionTarget = (name: string): 'extension' | 'parent' | undefined =
  */
 const isBareParent = (name: string) => name.trim().toLowerCase() === 'parent';
 const bareParent = () => new ScimError(400, `Use '${SCIM.unit}:parent' for the parent of a unit.`, 'invalidPath');
+const PARENT = SCIM.unit + ':parent';
 /**
  * The parent a client sent, as a unit id. It is the `externalId` of the parent's `unit:` group, written as exactly as
- * a key is (D96); null, or nothing, makes the unit a root.
+ * a key is (D96), and text Clew can hold as every stored attribute is (`asString`, naming the parent): a NUL in it once
+ * reached PostgreSQL in the parent's lookup and answered 500. null, or nothing, makes the unit a root.
  */
 export function parentUnitOf(value: unknown): string | null {
   if (value === undefined || value === null) return null;
-  const id = typeof value === 'string' ? unitGroupOf(value) : undefined;
-  if (!id || id !== id.trim())
+  const sent = asString(value, PARENT),
+    id = unitGroupOf(sent);
+  if (id === undefined)
     throw new ScimError(
       400,
-      `The parent ${typeof value === 'string' ? `'${value}'` : 'given'} must be the externalId of the unit group above, '${UNIT_KEY}<unitId>' (D99). The group was not stored.`,
+      `The parent '${sent}' must be the externalId of the unit group above, '${UNIT_KEY}<unitId>' (D99). The group was not stored.`,
       'invalidValue',
     );
   return id;
 }
-/** The extension's object, whose one attribute is read without regard to case, as every attribute name is. */
-const parentInExtension = (value: unknown, path: string | undefined) => {
+/**
+ * The extension's object, whose one attribute is read without regard to case, as every attribute name is. In a body an
+ * object without `parent` names no parent. In a patch's `add` or `replace` (`op`) it is an operation without a value
+ * (RFC 7644 §3.5.2): read as no parent, it once made a unit a root with a 200. `parent: null` is the way to make a unit
+ * a root.
+ */
+const parentInExtension = (value: unknown, path: string | undefined, op?: 'add' | 'replace') => {
   if (value === undefined || value === null) return null;
   const extension = asObject(value, path),
     name = Object.keys(extension).find(key => key.toLowerCase() === 'parent');
+  if (name === undefined && op) throw noValue(op, path, 'parent');
   return parentUnitOf(name === undefined ? undefined : extension[name]);
 };
 /** The ids a `members` value names: a list of objects with a `value`, or of the ids themselves. */
@@ -691,9 +884,16 @@ const memberIds = (value: unknown): string[] =>
         'members.value',
       ),
     );
-export function groupFields(body: unknown): GroupFields {
+/**
+ * A full group representation (POST, PUT) to the fields Clew holds. `current` is the group a `PUT` replaces: an
+ * `externalId` the body leaves out, sends as `null` or sends empty is the one Clew holds, for every group as for a user
+ * (D113 rule 3). Read as no key, it once took a unit's key, and the grants and mappings it gave, away with a 200; only a
+ * `PATCH` that removes the key or sets it to `null` takes it away. Clew requires the key at creation so the provisioner
+ * can recover the group's id by filtering on its source key if it loses the response.
+ */
+export function groupFields(body: unknown, current?: Pick<GroupFields, 'externalId'>): GroupFields {
   const input = asResource(body, GROUP_NAMES, 'Group');
-  const externalId = optional(input.externalId, 'externalId') ?? null;
+  const externalId = optional(input.externalId, 'externalId') ?? (current ? current.externalId : need('externalId'));
   if (unitGroupOf(externalId) !== undefined && Object.keys(input).some(isBareParent)) throw bareParent();
   const extension = Object.entries(input).find(([name]) => unitExtensionTarget(name) === 'extension');
   return {
@@ -724,12 +924,13 @@ export function assertAcceptedKey(fields: GroupFields): void {
     );
   if (!prefix) return;
   if (!key.startsWith(prefix)) throw refusedKey(`The key '${key}' must begin with '${prefix}' in lower case (D96).`);
-  const rest = key.slice(prefix.length);
-  if (!rest || rest !== rest.trim())
+  // Read as everything else in Clew reads a key, so a key accepted here is one that gives what it says.
+  const read = readScimGroupKey(key);
+  if (!read)
     throw refusedKey(
       `The key '${key}' needs ${prefix === CAPABILITY_KEY ? 'a capability name' : 'a unit id'} directly after '${prefix}' (D96).`,
     );
-  if (prefix === CAPABILITY_KEY && !isCapability(rest))
+  if (read.prefix === CAPABILITY_KEY && !isCapability(read.value))
     throw refusedKey(
       `The key '${key}' names no capability of this installation; the capabilities are ${CAPABILITIES.join(', ')} (D96).`,
     );
@@ -789,6 +990,12 @@ export function parseFilter(
   if (value.includes('\u0000'))
     throw new ScimError(400, 'A filter value cannot hold a NUL character.', 'invalidFilter');
   return { attribute, value };
+}
+/** A filter on users. A `userName` is matched in the NFC form it is stored in, so a name sent decomposed is found. */
+export function userFilter(filter: string | undefined) {
+  const parsed = parseFilter(filter, ['userName', 'externalId']) as
+    { attribute: 'userName' | 'externalId'; value: string } | undefined;
+  return parsed?.attribute === 'userName' ? { ...parsed, value: userNameForm(parsed.value) } : parsed;
 }
 /** A page cannot start past what PostgreSQL takes as an offset; nothing is that far in. */
 const LAST_START = 2_147_483_647;
@@ -1044,7 +1251,12 @@ function patchPhones(next: UserFields, path: string, op: 'add' | 'replace' | 're
   store([...(op === 'add' ? rows : others), ...phoneList(value, byType ? picked : undefined)]);
 }
 const employmentUrn = SCIM.employment.toLowerCase();
-/** The employments are replaced, added to or taken away as a list: an entry has no id to be picked by. */
+/**
+ * The employments are replaced, added to or taken away as a list: an entry has no id to be picked by. Named by the
+ * extension, the value is the extension's object, whose one attribute is read without regard to case: `null` there
+ * takes the list away, as it does by the attribute's own path, and an object that leaves the attribute out is an
+ * operation without a value (RFC 7644 §3.5.2), which once emptied the list with a 200.
+ */
 function patchEmployment(
   next: UserFields,
   key: string,
@@ -1060,14 +1272,41 @@ function patchEmployment(
         'invalidPath',
       ),
     );
-  const sent = op === 'remove' ? [] : employmentList(key === employmentUrn ? extensionEmployments(value) : value);
+  let list = value;
+  if (op !== 'remove' && key === employmentUrn) {
+    const extension = asObject(plain(value, { employments: true }, 'kept'), path);
+    if (!Object.hasOwn(extension, 'employments')) throw noValue(op, path, 'employments');
+    list = extension.employments;
+  }
+  const sent = op === 'remove' || list === null ? [] : employmentList(list);
   next.employments = within(
-    distinctEntries([...(op === 'add' ? next.employments : []), ...sent], employmentKey),
+    distinctEntries([...(op === 'add' && list !== null ? next.employments : []), ...sent], employmentKey),
     EMPLOYMENTS,
   );
 }
 const isPhonePath = (key: string) =>
   key === 'phonenumbers' || key.startsWith('phonenumbers[') || key.startsWith('phonenumbers.');
+/**
+ * A `remove` of a whole list (the numbers, or the employments, by any of the names they go by) takes the whole list
+ * away. One that carries a value reads like a removal of the entries it names, as on a group's `members`, and taking
+ * the whole list instead once answered 200; so it is refused, with the way to say it. A filtered `remove` of numbers
+ * takes what its filter names. About one operation's value, so beside a deactivation it waits (D113).
+ */
+function removedWithValue(key: string, path: string): ScimError | undefined {
+  if (key === 'phonenumbers')
+    return new ScimError(
+      400,
+      `Operation 'remove' on '${path}' takes no value: it takes away every number. To take away one number, remove phoneNumbers[value eq "<number>"]; to set the list, replace 'phoneNumbers'.`,
+      'invalidValue',
+    );
+  if (key === employmentUrn || key === employmentUrn + ':employments')
+    return new ScimError(
+      400,
+      `Operation 'remove' on '${path}' takes no value: it takes away every employment. To change the list, replace '${EMPLOYMENTS}' with the employments that remain.`,
+      'invalidValue',
+    );
+  return undefined;
+}
 /** Removal of other user attributes. A required value (D68) is refused and the optional title (D110) is cleared. */
 const userRemoval = (key: string, path: string): 'required' | 'readOnly' | 'title' | 'notHeld' => {
   if (isReadOnly(key, 'user')) return 'readOnly';
@@ -1107,8 +1346,7 @@ export function applyUserPatch(
   };
   const set = (path: string, value: unknown, op: 'add' | 'replace', pathless: boolean) => {
     const key = coreKey(path, 'user');
-    if (value === undefined)
-      throw beside(new ScimError(400, `Operation '${op}' on '${path}' requires a value.`, 'invalidSyntax'));
+    if (value === undefined) throw noValue(op, path);
     // RFC 7643 §2.5: a value of `null` is the attribute taken away.
     if (value === null) {
       if (pathless && isReadOnly(key, 'user')) return;
@@ -1123,7 +1361,7 @@ export function applyUserPatch(
       return patchEmployment(next, key, path, op, value);
     if (isBareEmployments(key)) throw bareEmployments();
     const email = emailTarget(key, path);
-    if (key === 'username') next.userName = asString(value, path);
+    if (key === 'username') next.userName = asUserName(value, path);
     else if (key === 'externalid') next.externalId = asString(value, path);
     else if (key === 'displayname' || key === 'name.formatted') next.name = asString(value, path);
     else if (key === 'active') {
@@ -1169,14 +1407,23 @@ export function applyUserPatch(
   }
   for (const operation of operations) {
     const op = opOf(operation),
-      { path } = operation;
+      { path, value } = operation;
     if (op === 'remove') {
       if (!path) throw new ScimError(400, 'A remove operation needs a path.', 'noTarget');
-      attempt(() => unset(coreKey(path, 'user'), path));
-    } else if (path) attempt(() => set(path, operation.value, op, false));
+      attempt(() => {
+        const key = coreKey(path, 'user'),
+          refused = value === undefined || value === null ? undefined : removedWithValue(key, path);
+        if (refused) throw refused;
+        unset(key, path);
+      });
+    } else if (path) attempt(() => set(path, value, op, false));
     else
-      for (const [key, value] of Object.entries(asObject(operation.value, undefined)))
-        attempt(() => set(key, value, op, true));
+      // Read inside `attempt`, as the nested form is: a path-less value that is missing or no object is about that
+      // operation's value, and once kept a leaver active by refusing the deactivation beside it (D113).
+      attempt(() => {
+        if (value === undefined) throw noValue(op, undefined);
+        for (const [key, inner] of Object.entries(asObject(value, undefined))) attempt(() => set(key, inner, op, true));
+      });
   }
   if (wrong.length && !deactivates) throw wrong[0];
   if (deactivates) deactivating.add(next);
@@ -1198,9 +1445,9 @@ export function applyGroupPatch(
     next = { ...current },
     placed = false,
     bare = false;
-  /** `add` and `replace` on `members` say who: without a value, a `replace` would empty the group. */
+  /** `add` and `replace` on `members` say who: with `null`, a `replace` would empty the group. */
   const named = (value: unknown, path: string) => {
-    if (value === undefined || value === null)
+    if (value === null)
       throw new ScimError(
         400,
         `Path '${path}' needs a value: the members to set. To take everyone out, remove 'members'.`,
@@ -1209,11 +1456,12 @@ export function applyGroupPatch(
     return memberIds(value);
   };
   const setAttribute = (path: string, value: unknown, op: 'add' | 'replace', pathless: boolean) => {
+    if (value === undefined) throw noValue(op, path);
     const key = coreKey(path, 'group'),
       extension = unitExtensionTarget(path);
     if (isBareParent(key)) bare = true;
     else if (extension) {
-      next.parent = extension === 'parent' ? parentUnitOf(value) : parentInExtension(value, path);
+      next.parent = extension === 'parent' ? parentUnitOf(value) : parentInExtension(value, path, op);
       placed = true;
     } else if (pathless && (key === GROUP_URN || key === GROUP_URN + ':')) {
       for (const [name, inner] of Object.entries(asObject(value, path))) setAttribute(name, inner, op, true);
@@ -1221,10 +1469,9 @@ export function applyGroupPatch(
       if (op === 'add') for (const member of named(value, path)) members.add(member);
       else members = new Set(named(value, path));
     } else if (key === 'displayname') {
-      if (value === null || value === undefined) throw required(path);
+      if (value === null) throw required(path);
       next.label = asString(value, path);
-    } else if (key === 'externalid')
-      next.externalId = value === null || value === undefined ? null : asString(value, path);
+    } else if (key === 'externalid') next.externalId = value === null ? null : asString(value, path);
     else if (isReadOnly(key, 'group')) {
       if (!pathless) throw readOnly(path);
       repeated(key, value, id);
@@ -1234,19 +1481,29 @@ export function applyGroupPatch(
     const op = opOf(operation),
       path = operation.path && corePath(operation.path, 'group'),
       key = path?.toLowerCase();
+    // RFC 7644 §3.5.2: the value of an `add` or `replace` is checked before any branch reads it, a path-less one's too.
+    if (op !== 'remove' && operation.value === undefined) throw noValue(op, operation.path);
     if (path && key?.startsWith('members') && key !== 'members') {
       // Matched on the path as it was sent: the attribute's case does not matter, the id's does. Any other path under
       // `members` is one this server cannot evaluate, and saying so is the only honest answer: accepted and ignored,
-      // it told a provisioner that a manager had been taken out of a group they were still in.
+      // it told a provisioner that a manager had been taken out of a group they were still in. A quoted id that is
+      // not a JSON string (an escape such as `\x`) matches nothing, as in the phone filter, and is refused the same
+      // way: parsed unguarded, it once threw past every SCIM answer and came back as a 500.
       const filtered = /^members\[\s*value\s+eq\s+("(?:[^"\\]|\\.)*")\s*\]$/i.exec(path);
-      if (!filtered)
+      let member: unknown;
+      try {
+        member = filtered && JSON.parse(filtered[1]!);
+      } catch {
+        member = undefined;
+      }
+      if (typeof member !== 'string')
         throw new ScimError(
           400,
           `Path '${path}' is not supported: use 'members' with a list of values, or members[value eq "<id>"] to remove one.`,
           'invalidPath',
         );
       if (op !== 'remove') throw new ScimError(400, `Path '${path}' supports remove only.`, 'invalidPath');
-      members.delete(asString(JSON.parse(filtered[1]!), 'members.value'));
+      members.delete(asString(member, 'members.value'));
       continue;
     }
     if (op === 'remove') {
@@ -1392,7 +1649,7 @@ export const schemaDocuments = (base: string) => [
         multiValued: true,
         required: true,
         description:
-          'Clew publishes the first work address. Otherwise it prefers untyped addresses, then any remaining addresses. Within each fallback it takes the primary address or the first. The selected address is returned with type "work" and primary true.',
+          'Clew publishes one address: a work address, otherwise one without a type, otherwise any other that was sent. Within each it takes the primary address before the first. An entry whose value is empty or missing is left out. The selected address is returned with type "work" and primary true.',
         subAttributes: [attribute('value', 'string'), attribute('type', 'string'), attribute('primary', 'boolean')],
       }),
       attribute('phoneNumbers', 'complex', {
@@ -1421,10 +1678,15 @@ export const schemaDocuments = (base: string) => [
     id: SCIM.group,
     name: 'Group',
     description:
-      'A group; unit:, unit-manager: and capability: keys in externalId carry meaning in Clew. The key protected is refused (D93), and so is a key written wrong (D96). Members are users; a group as a member is refused. A unit: group may name the unit above it in the unit extension (D99).',
+      'A group of users. unit:, unit-manager: and capability: keys in externalId carry meaning in Clew. The key protected is refused (D93), and so is a key written wrong (D96). A group as a member is refused. A unit: group may name the unit above it in the unit extension (D99).',
     attributes: [
       attribute('displayName', 'string', { required: true }),
-      attribute('externalId', 'string', { caseExact: true, uniqueness: 'server' }),
+      attribute('externalId', 'string', {
+        caseExact: true,
+        uniqueness: 'server',
+        description:
+          'Clew requires this source key on POST. PUT preserves the stored key when the value is absent, null or empty. PATCH can remove the key or set it to null.',
+      }),
       attribute('members', 'complex', {
         multiValued: true,
         subAttributes: [

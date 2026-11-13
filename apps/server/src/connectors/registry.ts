@@ -1,7 +1,13 @@
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import type { AuthenticatedContext } from '@clew/contracts';
-import { actorOf, CapabilityError, COMPETENCE_CONNECTOR, Registry, type HoldingsReader } from '@clew/connectors';
+import {
+  audiencedActorOf,
+  CapabilityError,
+  COMPETENCE_CONNECTOR,
+  Registry,
+  type HoldingsReader,
+} from '@clew/connectors';
 import { InputError } from '../context';
 import { calendarConnector } from '../modules/calendar/connector';
 import { calendar, events } from '../composition/calendar';
@@ -17,7 +23,7 @@ import { newsUsecases } from '../modules/news/usecases';
 import { talksConnector } from '../modules/talks/capabilities';
 import { talkSeamCapabilities } from '../modules/talk-seam/capabilities';
 import { talkSeamUsecases } from '../modules/talk-seam/usecases';
-import { talkDirectory, talks } from '../composition/talks';
+import { talkDirectory, talkHolders, talkTakeovers, talks } from '../composition/talks';
 import { competenceConnector } from '../modules/competence/capabilities';
 import { competence } from '../composition/competence';
 import { dialogueConnector } from '../modules/dialogue/capabilities';
@@ -38,7 +44,12 @@ export const registry = new Registry({
   relations: relations.relate,
 });
 /** The composite search (D26) lists its sources from the registry at call time, so a connector enabled by an administrator is searched from the next question on. */
-const search = searchUsecases({ sources: actor => registry.searchSources(actor), clock });
+const search = searchUsecases({
+  sources: actor => registry.searchSources(actor),
+  clock,
+  // A hit names a person by user name; the list links them by id (D122).
+  people: userReads,
+});
 /** The card an answer becomes is the stream's use case; the composition root fills this slot once the stream is built over the registry. */
 export const answerCards: AnswerCards = {};
 // Clew's core only (D61): every other system, the development fixtures included, is a connector row (D21, D23).
@@ -53,7 +64,12 @@ const news = newsUsecases({ sources: actor => registry.newsSources(actor) });
  * profile for the person, chosen from the registry at call time, so switching the built-in module off on Anslutna system
  * or enabling another system changes who answers from the next read on. Offered only while some system answers.
  */
-const talkSeam = talkSeamUsecases({ source: actor => registry.talkSource(actor), directory: talkDirectory });
+const talkSeam = talkSeamUsecases({
+  source: actor => registry.talkSource(actor),
+  directory: talkDirectory,
+  holders: talkHolders,
+  takeovers: talkTakeovers,
+});
 /**
  * Clew's own connector is assembled here, the only file that names connectors: the composite search owns the id and the
  * question area, the errand list adds its read and its area, the news list its read, the talks seam its two reads. The
@@ -86,7 +102,7 @@ export const internalIds = internal.map(m => m.id);
 export const bundledIds = bundled.map(m => m.id);
 /** The bundled connectors whose row is created disabled: an administrator switches them on (D108 item 13). */
 export const offAtFirstBoot: readonly string[] = [COMPETENCE_CONNECTOR];
-export { actorOf };
+export { audiencedActorOf };
 /**
  * The holdings port (D108 item 9, D119) over the live registry: the sources that answer the holdings profile for the
  * installation, and one page of one of them read as the installation. For composition to hand the competence register's
@@ -106,7 +122,11 @@ export const acceptsEmptyInput = (schema: object) => {
     return true;
   }
 };
-/** Run a capability through the registry with input validation. The single path for REST, cards, tools and connector callbacks. */
+/**
+ * Run a capability through the registry with input validation: the path for REST, cards and tools. A connector's
+ * callback goes through the registry's `clewFor` instead (`routes/connector-callback.ts`), which keeps the protocol's
+ * codes. It runs as the person with their provisioned groups, so an audience that names a group admits its members.
+ */
 export async function runCapability<O = unknown>(
   persona: AuthenticatedContext,
   name: string,
@@ -114,30 +134,13 @@ export async function runCapability<O = unknown>(
 ): Promise<O> {
   const found = registry.find(name);
   if (!found) throw new InputError('Okänd förmåga.');
-  await persona.authorize();
   try {
-    const result = await registry.run<O>(
-      actorOf(persona),
-      name,
-      input ?? {},
-      persona.delegate ? { delegate: persona.delegate } : {},
-    );
-    await persona.authorize();
-    return result;
+    return await registry.run<O>(audiencedActorOf(persona), name, input ?? {}, {
+      authorize: () => persona.authorize(),
+      delegate: persona.delegate,
+    });
   } catch (error) {
     if (error instanceof CapabilityError) throw new InputError(error.message);
     throw error;
   }
-}
-/** A connector's call into another connector (D20, D21): reads and proposals only, scope re-checked for the same actor, never execute. */
-export async function callFromConnector<O = unknown>(
-  persona: AuthenticatedContext,
-  name: string,
-  input: unknown,
-): Promise<O> {
-  const found = registry.find(name);
-  if (!found) throw new InputError('Okänd förmåga.');
-  if (found.capability.kind === 'execute')
-    throw new InputError('En anslutning kan inte utföra åtgärder i en annan anslutning.');
-  return runCapability<O>(persona, name, input);
 }

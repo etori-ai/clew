@@ -343,7 +343,7 @@ test.describe("a tool's page on a smaller screen", () => {
     page,
     api,
   }) => {
-    // The panel stands beside every page from 1336 px; the table needs 1280 px beside the rail, and as much again
+    // The panel stands beside every page from 1340 px; the table needs 1280 px beside the rail, and as much again
     // beside the panel (1720 px), so between the two the page draws the list it draws on a narrower window.
     await page.setViewportSize(wide);
     api.menu = menuRows;

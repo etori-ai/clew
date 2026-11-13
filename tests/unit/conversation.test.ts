@@ -1,7 +1,7 @@
 import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext, Thread, TurnEvent } from '../../packages/contracts/src/index';
-import { actorOf, type Connector } from '../../packages/connectors/src/index';
+import { audiencedActorOf, openGovernance, type Connector } from '../../packages/connectors/src/index';
 import { searchConnector } from '../../apps/server/src/modules/search/connector';
 import { searchUsecases } from '../../apps/server/src/modules/search/usecases';
 import { fixtureConnectors } from '../fixture-connectors';
@@ -82,7 +82,8 @@ function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) 
     n = 0;
   const clock = () => new Date(time),
     ids = () => `id-${++n}`;
-  const run = <O>(p: AuthenticatedContext, name: string, input: unknown) => registry.run<O>(actorOf(p), name, input);
+  const run = <O>(p: AuthenticatedContext, name: string, input: unknown) =>
+    registry.run<O>(audiencedActorOf(p), name, input);
   const calendar = calendarUsecases({
     store: proposals,
     bind: () => ({ provider: cal }),
@@ -97,6 +98,12 @@ function world(options: { generate?: ModelGenerate; extra?: Connector[] } = {}) 
   const threads = threadUsecases({
     store,
     registry,
+    // Whose a source's user name is (D122): in this world every person's id is their user name.
+    people: {
+      holders: async (_reader: string, names: readonly string[]) =>
+        new Map(names.filter(n => directory.some(d => d.key === n)).map(n => [n, n])),
+      userName: async (id: string) => (directory.some(d => d.key === id) ? id : null),
+    },
     run,
     calendar: { ...calendar, todayEvents: async () => [] },
     clock,
@@ -285,7 +292,7 @@ describe('a question without the model', () => {
       action: 'conversation.asked',
       details: { assistant: 'router', tools: ['clew.search'], view: 'clew.search' },
     });
-    expect(w.registry.tools(actorOf(hassan)).map(t => t.name)).not.toContain('docs.search');
+    expect(w.registry.tools(audiencedActorOf(hassan)).map(t => t.name)).not.toContain('docs.search');
   });
   test('the fixed questions answer from the calendar and the figures, and the samtal question points at the proposal card', async () => {
     const w = world();
@@ -1296,4 +1303,71 @@ describe('a question about a person the asker manages (D115)', () => {
     expect(model.handed.at(-3)).toContain('- Ärende "Åtgärdspunkt från utvecklingssamtal" (Utvecklingssamtal');
     expect(model.handed.at(-3)).not.toContain('Det ni kom överens om på samtalet.');
   });
+});
+
+test("a connector for one provisioned group only offers its tools to the group's members alone (D68)", async () => {
+  const offered: string[][] = [];
+  const generate: ModelGenerate = async ({ tools }) => {
+    offered.push(Object.keys(tools));
+    return { text: 'Tre på plats.', toolCalls: [] };
+  };
+  const w = world({ generate });
+  w.registry.govern('hr', {
+    state: 'enabled',
+    audience: { mode: 'selected', groups: ['S-1-5-21-hr'] },
+    scanEnabled: true,
+    toolsEnabled: true,
+    capabilities: {},
+  });
+  await w.assistant.converse({ ...hillevi, groups: ['S-1-5-21-hr'] }, { text: 'vem är här?' });
+  await w.assistant.converse({ ...hillevi, groups: ['S-1-5-21-annan'] }, { text: 'vem är här?' });
+  expect(offered).toHaveLength(2);
+  expect(offered[0]).toContain('hr__whoIsOn');
+  expect(offered[1]).not.toContain('hr__whoIsOn');
+  expect(offered[1]).toContain('finance__invoices');
+});
+
+test('a question the search answers asks a source for one provisioned group only for its members (D68)', async () => {
+  const asked: string[] = [];
+  const docs: Connector = {
+    id: 'docs',
+    kind: 'passthrough',
+    source: 'Intranätet',
+    areas: [],
+    capabilities: [
+      {
+        name: 'docs.search',
+        kind: 'read',
+        title: 'Sök på intranätet',
+        description: 'x',
+        input: {} as never,
+        output: {} as never,
+        model: true,
+        scope: {},
+        run: async actor => {
+          asked.push(actor.id);
+          return {
+            rows: [
+              { ref: 'fall-2', kind: 'document', label: 'Rutin vid fall', snippet: 'Lyft inte.', source: 'Intranätet' },
+            ],
+          };
+        },
+      },
+    ],
+  };
+  const w = world();
+  w.registry.register(docs);
+  w.registry.register(
+    searchConnector(searchUsecases({ sources: a => w.registry.searchSources(a), clock: w.deps.clock })),
+  );
+  w.registry.govern('docs', { ...openGovernance(), audience: { mode: 'selected', groups: ['S-1-5-21-omsorg'] } });
+  // The router sends a question no read answers to the composite search, as the person with their groups.
+  const question = { text: 'brukaren har ramlat men verkar oskadd, vad gör jag?' };
+  const member = await w.assistant.converse({ ...hassan, groups: ['S-1-5-21-omsorg'] }, question);
+  expect(member.view?.capability).toBe('clew.search');
+  expect(member.answer.body).toMatch(/^1 träff i rutiner och dokument: Rutin vid fall\./);
+  const outsider = await w.assistant.converse({ ...hassan, groups: ['S-1-5-21-annan'] }, question);
+  expect(outsider.view?.capability).toBe('clew.search');
+  expect(outsider.answer.body).toMatch(/^Jag hittade inget om det här i källorna jag får söka i\./);
+  expect(asked).toEqual(['hassan']);
 });

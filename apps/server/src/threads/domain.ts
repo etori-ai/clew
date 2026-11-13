@@ -1,6 +1,5 @@
 import {
   dayRhythm,
-  foldEntityKey,
   sameSubject,
   stockholmClock,
   stockholmDate,
@@ -9,6 +8,8 @@ import {
   type RhythmPoint,
   type Subject,
   type Thread,
+  type ThreadAction,
+  type ThreadItem,
 } from '@clew/contracts';
 import type { AuditEntry, SubjectErasure, TimerIntent, WorkflowStart } from './model';
 
@@ -107,18 +108,73 @@ export function itemEvents(
 }
 
 /**
- * What a thread is indexed under (D97 item 6): every entity its rows or the thread itself name, once each, with the key as
- * Clew compares it (`foldEntityKey`). The thread store writes these rows with the thread's items.
+ * What a thread is indexed under (D97 item 6): every entity its rows or the thread itself name, once each, by Clew's key
+ * (D122: a person's id, a unit's id). The thread store writes these rows with the thread's items.
  */
 export function namedSubjects(thread: Pick<Thread, 'items' | 'subjects'>): Subject[] {
   const out = new Map<string, Subject>();
-  for (const s of [...thread.items.flatMap(i => (i.subject ? [i.subject] : [])), ...(thread.subjects ?? [])]) {
-    const key = foldEntityKey(s.entity, s.key);
-    out.set(`${s.entity}\u0000${key}`, { entity: s.entity, key });
-  }
+  for (const s of [...thread.items.flatMap(i => (i.subject ? [i.subject] : [])), ...(thread.subjects ?? [])])
+    out.set(`${s.entity}\u0000${s.key}`, { entity: s.entity, key: s.key });
   return [...out.values()];
 }
-/** The entities among `asked` that a thread's index rows name, each in the asked spelling and once. */
+/**
+ * The user names a source's rows name people by (D122), each once: what is resolved to Clew's key when the rows arrive.
+ */
+export const personNames = (items: readonly ThreadItem[]): string[] => [
+  ...new Set(items.flatMap(i => (i.subject?.entity === 'person' ? [i.subject.key] : []))),
+];
+/**
+ * A source's rows as Clew keeps them (D122): a row that names a person by the source's key, their user name, names them by
+ * Clew's key, their id, from `held` (the name as asked, to the id of whoever holds it now). A row whose name nobody holds
+ * names nobody, the rest of it kept as the source wrote it. A unit's id is both keys.
+ */
+export function keyedItems(items: readonly ThreadItem[], held: ReadonlyMap<string, string>): ThreadItem[] {
+  return items.map(item => {
+    if (item.subject?.entity !== 'person') return item;
+    const id = held.get(item.subject.key);
+    if (id) return { ...item, subject: { entity: 'person', key: id } };
+    const { subject: _, ...rest } = item;
+    return rest;
+  });
+}
+/** The one action of a card started from an execute (D97): the human decision itself. */
+export const STARTED_ACTION = 'decide';
+/**
+ * The topic of a card the person started with this capability (D97, D8): `started:<capability>:<digest>`. A started
+ * execute about a person ends in `:person:<param>` (D122): the input property that names the person by Clew's key, so the
+ * card itself says where its person is, whatever the capability declares by the time the person decides.
+ */
+export const startedTopic = (capability: string, digest: string, personParam?: string) =>
+  `started:${capability}:${digest}${personParam ? `:person:${personParam}` : ''}`;
+/** A started execute's person, as its topic ends (`startedTopic`); an input property is a letter and letters or digits. */
+const STARTED_PERSON = /:person:([A-Za-z][A-Za-z0-9]*)$/;
+/**
+ * The decision on a card the person started from an entity's menu with an execute (D97, D122): undefined for every other
+ * card and action, a started propose's included, whose actions are the source's own. Otherwise `person`, when the card is
+ * about a person: the input property its topic names and the id the card keeps there, which is resolved to the user name
+ * when the person decides. A card about a unit keeps the unit's id, which is both keys.
+ */
+export function startedDecision(
+  topic: string,
+  action: Pick<ThreadAction, 'id' | 'kind' | 'capability' | 'input'>,
+): { person?: { param: string; personId: string } } | undefined {
+  if (action.id !== STARTED_ACTION || action.kind !== 'execute') return undefined;
+  if (!topic.startsWith(startedTopic(action.capability, ''))) return undefined;
+  const param = STARTED_PERSON.exec(topic)?.[1];
+  if (!param) return {};
+  const id = action.input?.[param];
+  return { person: { param, personId: typeof id === 'string' ? id : '' } };
+}
+/**
+ * Whether the capability, as declared when the person decides, still takes a started card's person where the card keeps
+ * them (D122). One that no longer names a person, or names them in another property, would send the card's id as if it
+ * were a user name; one that names a person where the card keeps a unit would send the unit's id as one.
+ */
+export const takesStarted = (
+  started: { person?: { param: string } },
+  about: { entity: string; param?: string | undefined } | undefined,
+) => (about?.entity === 'person' ? about.param : undefined) === started.person?.param;
+/** The entities among `asked` that a thread's index rows name, each once. */
 export function namedAmong(named: readonly Subject[], asked: readonly Subject[]): Subject[] {
   const out: Subject[] = [];
   for (const a of asked) if (named.some(n => sameSubject(n, a)) && !out.some(o => sameSubject(o, a))) out.push(a);

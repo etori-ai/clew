@@ -137,6 +137,27 @@ test.describe('appearance administration', () => {
       await themeFile(page, Buffer.from('{ not json'));
       await expect(problems).toContainText('Filen är inte giltig JSON.');
       expect(api.appearance.theme).toBeNull();
+
+      // The field with the error shows its focus (2.4.7). Astryx draws a FileInput's focus as its border's colour, which
+      // the error holds; Clew's theme draws an inset in the error colour (`packages/ui/src/theme.ts`). Forced colours
+      // paint no shadow and every border alike, so there the theme's outline, transparent until then, is what shows.
+      const field = page.locator('.astryx-file-input[data-status="error"]');
+      const look = () =>
+        field.evaluate(async el => {
+          await Promise.all(el.getAnimations().map(a => a.finished.catch(() => undefined)));
+          const s = getComputedStyle(el);
+          return { shadow: s.boxShadow, outline: `${s.outlineStyle} ${s.outlineWidth}`, colour: s.outlineColor };
+        });
+      expect((await look()).shadow).toBe('none');
+      await field.getByRole('button', { name: /^Temafil/ }).focus();
+      expect((await look()).shadow).toMatch(/inset/);
+      expect((await look()).colour).toBe('rgba(0, 0, 0, 0)');
+      await page.emulateMedia({ forcedColors: 'active' });
+      expect((await look()).outline).toBe('solid 2px');
+      expect((await look()).colour).not.toBe('rgba(0, 0, 0, 0)');
+      await page.evaluate(() => (document.activeElement as HTMLElement).blur());
+      expect((await look()).outline).not.toMatch(/^solid/);
+      await page.emulateMedia({ forcedColors: 'none' });
     });
 
     test('two colours make a theme by keyboard, and Neutral comes back with one button', async ({ page, api }) => {

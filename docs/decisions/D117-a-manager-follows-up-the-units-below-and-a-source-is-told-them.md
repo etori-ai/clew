@@ -1,6 +1,6 @@
 # D117 · A manager follows up the units of the managers who report to them, and a source is told those units
 
-**Status:** provisional (Oliver Borgström, 2026-11-13; built on the branch `dialogue-reach`, tested by nothing outside the repository; item 3's overview is a new page, built as an exception to the freeze on new surface, D101, at Oliver Borgström's choice) · **Date:** 2026-11-13 · **Area:** product, integrations
+**Status:** provisional (Oliver Borgström, 2026-11-13; built on the branch `dialogue-reach`, tested by nothing outside the repository; item 3's overview is a new page, built as an exception to the freeze on new surface, D101, at Oliver Borgström's choice); item 5 as built differs, see the note of 2026-11-13 at the end · **Date:** 2026-11-13 · **Area:** product, integrations
 
 **Decision.** The follow-up of the dialogue support (Dialogstöd) reaches one level down the organisation tree that SCIM
 pushes ([D99](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md)): a manager
@@ -59,3 +59,13 @@ organisation's rule (who may see sick leave per unit is open, the plan's questio
 assessments, activities) is not built and still waits for the freeze to lift.
 
 **Builds on** D99 (the tree and the reporting line), D97 (entities and reads about a unit), D44 (the signed actor).
+
+**Item 5 as built (2026-11-13).** Found in the merge of the
+[review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md):
+the code sends `units` wider than item 5 says. `withFollowedUnits` puts them on every read about an entity, a person as
+well as a unit, and on every view a manager opens (`GET /api/cap/:name`), and they name the units the manager is placed
+on as well as those they manage, since `followedUnits` starts from all of the reader's units. The guides and the
+protocol's description say what is sent. Nothing bounds the list: past about 115 units the signed assertion outgrows a
+16 KiB request header, past about 50 for a connector with callbacks, which signs them twice, and past 200 the body
+breaks the protocol's own limit. Narrowing the calls back to item 5 and bounding what is signed is a follow-up of its
+own, listed under *Left* in that review.

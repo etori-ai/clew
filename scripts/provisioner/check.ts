@@ -2,12 +2,18 @@
  * What an installation holds after a push, read through SCIM alone (D68): the check a team writing a provisioner
  * points at Clew to see whether its mapping did what it meant. It only reads. A finding is `ok`, a `warn` (the push
  * was accepted and somebody will not get what the source intended) or a `fail` (the endpoint or the token is wrong).
+ * It needs nothing of Clew's but the group keys, the one way Clew reads them, and the capability names in
+ * `packages/contracts/src/scim-group-key.ts`, which a copy of this folder carries along. Take that file from the
+ * installation's own release, and again on every upgrade: a capability the installation has and the copy does not is
+ * reported as one the check does not know.
  */
 import {
   UNIT_KEY,
   MANAGER_KEY,
   CAPABILITY_KEY,
   PROTECTED_KEY,
+  isCapability,
+  readScimGroupKey,
   reservedScimGroupKey,
 } from '../../packages/contracts/src/scim-group-key';
 import { ScimClientError, type Fetch, type ScimClient } from './client';
@@ -25,7 +31,7 @@ interface UserRow {
   [EMPLOYMENT_EXTENSION]?: { employments?: Array<{ unitId: string; title?: string }> };
   groups?: Array<{ value: string }>;
 }
-/** D114: the extension a user's current employments travel in. Written out here so the check needs nothing of Clew's. */
+/** D114: the extension a user's current employments travel in, written out here rather than read from Clew's contracts. */
 const EMPLOYMENT_EXTENSION = 'urn:clew:params:scim:schemas:extension:employment:2.0:User';
 /** D99: the extension a `unit:` group names the unit above it in. */
 const UNIT_EXTENSION = 'urn:clew:params:scim:schemas:extension:unit:2.0:Group';
@@ -36,13 +42,17 @@ interface GroupRow {
   [UNIT_EXTENSION]?: { parent?: string };
 }
 const PAGE = 200;
-async function all<T>(client: ScimClient, path: string, query: string): Promise<T[]> {
-  const rows: T[] = [];
+/**
+ * Every row, a page at a time. Clew reads each page on its own, so a row another writer adds or removes meanwhile
+ * shifts the rows after it: one that comes round again is counted once.
+ */
+async function all<T extends { id: string }>(client: ScimClient, path: string, query: string): Promise<T[]> {
+  const rows = new Map<string, T>();
   for (let startIndex = 1; ;) {
     const { body } = await client.request('GET', `${path}?startIndex=${startIndex}&count=${PAGE}&${query}`);
-    rows.push(...((body.Resources ?? []) as T[]));
+    for (const row of (body.Resources ?? []) as T[]) if (!rows.has(row.id)) rows.set(row.id, row);
     startIndex += body.itemsPerPage ?? 0;
-    if (!body.itemsPerPage || startIndex > body.totalResults) return rows;
+    if (!body.itemsPerPage || startIndex > body.totalResults) return [...rows.values()];
   }
 }
 /** At most five names and how many more: a finding names enough to start looking, not a whole directory. */
@@ -92,30 +102,50 @@ export async function checkProvisioning(
       `attributes=userName,active,title,groups.value,phoneNumbers.value,${EMPLOYMENT_EXTENSION}:employments`,
     ),
     groups = await all<GroupRow>(client, '/Groups', 'excludedAttributes=members');
+  // A key written wrong, stored before the server began refusing it (D96): a reserved word in another case or with
+  // space in or before it, a unit key without a unit id or with space around it, or `protected`. Clew reads a key as the
+  // server accepts it (`readScimGroupKey`), so such a key gives nobody anything and the group is a plain group to Clew,
+  // which an administrator may still map to a capability (D85); the next write of it is refused, and it is counted as
+  // none of the kinds below.
+  const miswritten = groups.filter(g => {
+    const prefix = reservedScimGroupKey(g.externalId ?? '');
+    return prefix !== undefined && (prefix === PROTECTED_KEY || !readScimGroupKey(g.externalId));
+  });
+  // A `capability:` key whose name is not in the closed list (D85) is written wrong as well, unless the installation is
+  // newer than the check's copy of the list and knows the name, so it is named apart. Like any group, an administrator
+  // may map it to a capability. It is counted as none of the kinds below either.
+  const unknown = groups.filter(g => {
+    const key = readScimGroupKey(g.externalId);
+    return key?.prefix === CAPABILITY_KEY && !isCapability(key.value);
+  });
+  const flagged = new Set([...miswritten, ...unknown]),
+    sound = groups.filter(g => !flagged.has(g));
   const active = users.filter(u => u.active),
+    deactivated = users.filter(u => !u.active),
     keyOf = new Map(groups.map(g => [g.id, g.externalId ?? ''])),
-    keyed = (prefix: string) => groups.filter(g => g.externalId?.startsWith(prefix)),
+    keyed = (prefix: string) => sound.filter(g => readScimGroupKey(g.externalId)?.prefix === prefix),
     units = keyed(UNIT_KEY),
     managers = keyed(MANAGER_KEY),
     capabilities = keyed(CAPABILITY_KEY),
-    plain = groups.length - units.length - managers.length - capabilities.length;
+    plain = sound.length - units.length - managers.length - capabilities.length;
+  say('ok', `${plural(users.length, 'user', 'users')}: ${active.length} active, ${deactivated.length} deactivated.`);
+  const counts = [
+    `${units.length} unit, ${managers.length} unit-manager, ${capabilities.length} capability, ${plain} plain (${groups.filter(g => !g.externalId).length} without an externalId)`,
+    ...(miswritten.length ? [`${miswritten.length} with a key written wrong`] : []),
+    ...(unknown.length ? [`${unknown.length} with a capability the check does not know`] : []),
+  ];
   say(
     'ok',
-    `${plural(users.length, 'user', 'users')}: ${active.length} active, ${users.length - active.length} deactivated.`,
+    `${plural(groups.length, 'group', 'groups')}: ${counts.length === 1 ? counts[0] : `${counts.slice(0, -1).join(', ')} and ${counts.at(-1)}`}.`,
   );
-  say(
-    'ok',
-    `${plural(groups.length, 'group', 'groups')}: ${units.length} unit, ${managers.length} unit-manager, ${capabilities.length} capability, ${plain} plain (${groups.filter(g => !g.externalId).length} without an externalId).`,
-  );
-  const membersOf = new Map<string, number>();
-  for (const u of users) for (const g of u.groups ?? []) membersOf.set(g.value, (membersOf.get(g.value) ?? 0) + 1);
-  const unassigned = active.filter(
-    u =>
-      !(u.groups ?? []).some(g => {
-        const key = keyOf.get(g.value) ?? '';
-        return key.startsWith(UNIT_KEY) || key.startsWith(MANAGER_KEY);
-      }),
-  );
+  // Who is in a group counts the active people only: a deactivated person is nobody's colleague and leads nobody (D99),
+  // as Administration › Organisation reads the same tree.
+  const activeIn = new Map<string, number>();
+  for (const u of active) for (const g of u.groups ?? []) activeIn.set(g.value, (activeIn.get(g.value) ?? 0) + 1);
+  // A person is on a unit by a `unit:` or `unit-manager:` group whose key is written right; one written wrong places
+  // nobody, so a person whose only unit key is written wrong is named here too.
+  const places = new Set([...units, ...managers].map(g => g.id)),
+    unassigned = active.filter(u => !(u.groups ?? []).some(g => places.has(g.value)));
   if (unassigned.length)
     say(
       'warn',
@@ -184,19 +214,18 @@ export async function checkProvisioning(
       'warn',
       `The tree has ${plural(roots.length, 'root', 'roots')} where ${expected.roots} ${expected.roots === 1 ? 'was' : 'were'} expected. Check the parent links. Roots: ${some(roots.map(id => UNIT_KEY + id)) || 'none'}.`,
     );
-  // A unit with units below it may be a heading nobody is placed on; one without is a unit somebody should be in.
+  // A unit with units below it may be a heading nobody is placed on; one without is a unit somebody should be in. A
+  // group whose members have all been deactivated is as empty: it names whom it held, not whom it has.
   const empty = [...units.filter(g => !hasBelow.has(g.externalId!.slice(UNIT_KEY.length))), ...managers].filter(
-    g => !membersOf.get(g.id),
-  );
+      g => !activeIn.get(g.id),
+    ),
+    heldByLeavers = new Set(deactivated.flatMap(u => (u.groups ?? []).map(g => g.value)));
   if (empty.length)
     say(
       'warn',
-      `${plural(empty.length, 'unit or unit-manager group has', 'unit or unit-manager groups have')} no members: ${some(empty.map(g => g.externalId!))}.`,
+      `${plural(empty.length, 'unit or unit-manager group has', 'unit or unit-manager groups have')} no ${empty.some(g => heldByLeavers.has(g.id)) ? 'active ' : ''}members: ${some(empty.map(g => g.externalId!))}.`,
     );
   // Who the people on a unit report to is the manager of that unit or of the nearest unit above with one (D99).
-  // Deactivated people lead nobody and are counted nowhere, as Administration › Organisation reads the same tree.
-  const activeIn = new Map<string, number>();
-  for (const u of active) for (const g of u.groups ?? []) activeIn.set(g.value, (activeIn.get(g.value) ?? 0) + 1);
   const led = new Set(managers.filter(g => activeIn.get(g.id)).map(g => g.externalId!.slice(MANAGER_KEY.length)));
   const leaderless = units.filter(g => {
     if (!activeIn.get(g.id)) return false;
@@ -210,19 +239,38 @@ export async function checkProvisioning(
       'warn',
       `${plural(leaderless.length, 'unit has', 'units have')} people and no manager, on the unit or on any unit above it, so its people report to nobody: ${some(leaderless.map(g => g.externalId!))}.`,
     );
-  // Stored before the server began refusing them (D96): they mean nothing, and the next write of them is refused.
-  const miswritten = groups.filter(g => {
-    const key = g.externalId ?? '',
-      prefix = reservedScimGroupKey(key);
-    if (!prefix) return false;
-    if (prefix === PROTECTED_KEY) return true;
-    const rest = key.slice(prefix.length);
-    return !key.startsWith(prefix) || !rest || rest !== rest.trim();
-  });
+  // A deactivated person keeps every group a provisioner leaves them in (D68 item 1), and making them active again
+  // gives back at once what those groups give. A provisioner that only deactivates leaves a leaver's duties waiting
+  // for the return; the example takes a leaver out of every group it owns.
+  const holding = (u: UserRow, among: ReadonlySet<string>) =>
+    (u.groups ?? []).filter(m => among.has(m.value)).map(m => keyOf.get(m.value)!);
+  const duties = new Set([...managers, ...capabilities].map(g => g.id)),
+    keepDuties = deactivated.filter(u => holding(u, duties).length);
+  if (keepDuties.length)
+    say(
+      'warn',
+      `${plural(keepDuties.length, 'deactivated user is', 'deactivated users are')} still in unit-manager: or capability: groups, and making ${keepDuties.length === 1 ? 'the user' : 'them'} active again gives those duties back at once: ${some(keepDuties.map(u => `${u.userName} (${holding(u, duties).join(', ')})`))}.`,
+    );
+  // A plain group gives nothing by itself, but one an administrator maps to a capability (D85) gives it back too. So
+  // does a group the check counts apart: its key gives nothing as the check reads it, and an administrator can map any
+  // group with an `externalId`, as the group picker offers every one.
+  const meaningful = new Set([...units, ...managers, ...capabilities]),
+    mappable = new Set(groups.filter(g => g.externalId && !meaningful.has(g)).map(g => g.id)),
+    keepPlain = deactivated.filter(u => holding(u, mappable).length);
+  if (keepPlain.length)
+    say(
+      'warn',
+      `${plural(keepPlain.length, 'deactivated user is', 'deactivated users are')} still in plain groups, and a group an administrator maps to a capability gives it back when ${keepPlain.length === 1 ? 'the user is' : 'they are'} made active again: ${some(keepPlain.map(u => u.userName))}.`,
+    );
   if (miswritten.length)
     say(
       'warn',
-      `${plural(miswritten.length, 'group carries', 'groups carry')} a key that is written wrong and gives nobody anything: ${some(miswritten.map(g => `'${g.externalId}'`))}.`,
+      `${plural(miswritten.length, 'group carries', 'groups carry')} a key that is written wrong, so Clew reads ${miswritten.length === 1 ? 'it as a plain group, which gives' : 'them as plain groups, which give'} nobody anything unless an administrator maps ${miswritten.length === 1 ? 'it' : 'them'} to a capability: ${some(miswritten.map(g => `'${g.externalId}'`))}.`,
+    );
+  if (unknown.length)
+    say(
+      'warn',
+      `${plural(unknown.length, 'group names', 'groups name')} a capability the check does not know, so ${unknown.length === 1 ? 'it gives' : 'they give'} nobody anything unless the installation is newer than the check's copy of packages/contracts/src/scim-group-key.ts, or an administrator maps ${unknown.length === 1 ? 'it' : 'them'} to a capability: ${some(unknown.map(g => `'${g.externalId}'`))}.`,
     );
   return findings;
 }

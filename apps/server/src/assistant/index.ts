@@ -16,7 +16,7 @@ import type {
   ViewRef,
 } from '@clew/contracts';
 import { citationsOf, parseAnswer, visibleSoFar } from './answer';
-import { actorOf, readsSummary, SEARCH_CONNECTOR } from '@clew/connectors';
+import { audiencedActorOf, readsSummary, SEARCH_CONNECTOR } from '@clew/connectors';
 import { displayDate, weekNumber } from '@clew/calendar/dates';
 import { InputError } from '../context';
 import { resolveChips, type ResolvedChips } from './chips';
@@ -121,7 +121,7 @@ export function assistantUsecases(deps: AssistantDeps) {
     let n = 0;
     let known: ReturnType<typeof registry.tools> | undefined;
     const run = async <O = unknown>(name: string, input: unknown): Promise<O> => {
-      known ??= registry.tools(actorOf(persona));
+      known ??= registry.tools(audiencedActorOf(persona));
       const info = known.find(t => t.name === name);
       const step: Omit<TurnStep, 'status'> = {
         id: `steg-${++n}`,
@@ -246,7 +246,7 @@ export function assistantUsecases(deps: AssistantDeps) {
         followUps: [],
         ...(fixed.forslagThreadId ? { forslag: { threadId: fixed.forslagThreadId } } : {}),
       };
-    const tools = registry.tools(actorOf(persona));
+    const tools = registry.tools(audiencedActorOf(persona));
     const match = matchCapability(
       text,
       tools.filter(t => t.name !== SEARCH_TOOL),
@@ -339,7 +339,7 @@ export function assistantUsecases(deps: AssistantDeps) {
     people: PeopleInTurn,
   ): Promise<Produced | ModelUnavailableOutcome> {
     if (!models.health.available(model.providerId)) return { unavailable: 'provider marked down' };
-    const tools = model.tools ? registry.tools(actorOf(persona)) : [];
+    const tools = model.tools ? registry.tools(audiencedActorOf(persona)) : [];
     const now = clock();
     // The one work item the conversation is about may have its actions filled in as a draft (D112 item 8): only what
     // the person may do, only with a model that uses tools, and nothing is sent. Without one chipped, the one work item

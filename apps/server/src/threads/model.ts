@@ -135,10 +135,21 @@ export interface ThreadTx {
   enqueue(start: WorkflowStart): Promise<void>;
   /**
    * Remove one entity from every thread of every person (D97): the `subject` of each row that names it and the thread's
-   * own subject, with the index rows, the rows' text left as the source wrote it. A key is compared as Clew compares it
-   * (`foldEntityKey`). Neither `updatedAt` nor anything the person decided on moves.
+   * own subject, with the index rows, the rows' text left as the source wrote it. A person is named by Clew's key, their
+   * id, compared exactly (D122). Neither `updatedAt` nor anything the person decided on moves.
    */
   eraseSubject(subject: Subject): Promise<SubjectErasure>;
+}
+/**
+ * Whose a source's key is (D122, composition: the people module's user reads). A row or an action arrives naming a person
+ * by the source's key, their user name (D96 talks item 8), and Clew keeps the person's id; a started action's id is
+ * resolved back to the user name when the person decides.
+ */
+export interface PersonKeys {
+  /** Who holds these user names now in the reader's organisation, by the name as asked; a name nobody holds is absent. */
+  holders(readerId: string, userNames: readonly string[]): Promise<Map<string, string>>;
+  /** The person's user name now; null for nobody, a person provisioned without one, or one an operator erased (D123). */
+  userName(personId: string): Promise<string | null>;
 }
 /** What `eraseSubject` touched: the threads, the rows that named the entity and the threads' own subjects. Counts only. */
 export interface SubjectErasure {
@@ -146,7 +157,7 @@ export interface SubjectErasure {
   rows: number;
   cardSubjects: number;
 }
-/** A thread found by the entities it names (D97 item 6), with those it names among the ones asked, in the asked spelling. */
+/** A thread found by the entities it names (D97 item 6), with those it names among the ones asked. */
 export interface NamingThread {
   thread: Thread;
   subjects: Subject[];
@@ -164,7 +175,8 @@ export interface ThreadStore {
   /**
    * The index from entity to cards (D97 item 6): the person's unresolved work threads (a pushed card that is open, or
    * whose execution has not settled, as `listThreads` lists work) whose rows, or which themselves, name one of these
-   * entities, newest first. A key is compared as Clew compares it (`foldEntityKey`); one read for the whole list.
+   * entities, newest first. A key is Clew's (D122: a person's id, a unit's id), compared exactly; one read for the whole
+   * list.
    */
   threadsNaming(personId: string, subjects: readonly Subject[]): Promise<NamingThread[]>;
   /**

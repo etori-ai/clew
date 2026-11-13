@@ -119,7 +119,7 @@ export function Today({ view, threads = [], cardHref, notice, calendar = true }:
                       {row.meta}
                       {talk && (
                         <>
-                          {' · '}
+                          {'\u00a0· '}
                           <Link href={`/conversations/${talk.id}`} color="secondary" hasUnderline>
                             underlaget ligger i samtalet
                           </Link>
@@ -127,7 +127,7 @@ export function Today({ view, threads = [], cardHref, notice, calendar = true }:
                       )}
                       {card && cardHref && (
                         <>
-                          {' · '}
+                          {'\u00a0· '}
                           <Link href={cardHref(card.id)} color="secondary" hasUnderline>
                             från ärendet {card.title}
                           </Link>

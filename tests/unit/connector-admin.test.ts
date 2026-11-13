@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { SignJWT } from 'jose';
 import { assertionFor, testJwks } from '../connector-authority';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
-import { actorOf, type Actor, type Connector } from '../../packages/connectors/src/index';
+import { audiencedActorOf, type Actor, type Connector } from '../../packages/connectors/src/index';
 import { checkConnector } from '../../packages/connectors/src/check';
 import { fetchManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import type { ConnectorManifest } from '../../packages/connectors/src/protocol';
@@ -206,7 +206,7 @@ describe('adding and governing a remote connector', () => {
     const { admin, store, registry } = world();
     await admin.add(mikael, { id: 'hello', url: 'http://hello', secret: SECRET });
     await admin.update(mikael, 'hello', { state: 'enabled' });
-    const figureOf = async () => (await registry.areas(actorOf(hillevi))).find(a => a.id === 'hello')!.figure;
+    const figureOf = async () => (await registry.areas(audiencedActorOf(hillevi))).find(a => a.id === 'hello')!.figure;
     expect(await figureOf()).toMatchObject({ label: '2 saker väntar', tone: 'warn' });
     const off = await admin.update(mikael, 'hello', { figures: { hello: false } });
     expect(off.areas.find(a => a.id === 'hello')).toMatchObject({ figure: true, figureShown: false });
@@ -253,18 +253,18 @@ describe('adding and governing a remote connector', () => {
     });
     expect(live.registered).toEqual(['hello']);
     expect(actions(store, 'hello')).toEqual(['connector.added', 'connector.enabled', 'connector.audience']);
-    expect(registry.visible(actorOf(hillevi), 'hello')).toBe(true);
-    expect(registry.visible(actorOf(hassan), 'hello')).toBe(false);
-    expect(await registry.run(actorOf(hillevi), 'hello.greeting', {})).toMatchObject({
+    expect(registry.visible(audiencedActorOf(hillevi), 'hello')).toBe(true);
+    expect(registry.visible(audiencedActorOf(hassan), 'hello')).toBe(false);
+    expect(await registry.run(audiencedActorOf(hillevi), 'hello.greeting', {})).toMatchObject({
       text: expect.stringContaining('hillevi'),
     });
-    await expect(registry.run(actorOf(hassan), 'hello.greeting', {})).rejects.toThrow('Okänd förmåga.');
+    await expect(registry.run(audiencedActorOf(hassan), 'hello.greeting', {})).rejects.toThrow('Okänd förmåga.');
     const preview = await admin.preview(mikael, 'hello', { role: 'manager' });
     expect(preview).toMatchObject({ visible: true, areas: [{ id: 'hello', title: 'Hello-anslutningen' }] });
     expect(preview.tools).toContain('hello.greeting');
     expect((await admin.preview(mikael, 'hello', { role: 'employee' })).visible).toBe(false);
     await admin.update(mikael, 'hello', { state: 'disabled' });
-    expect(registry.visible(actorOf(hillevi), 'hello')).toBe(false);
+    expect(registry.visible(audiencedActorOf(hillevi), 'hello')).toBe(false);
     expect(registry.connector('hello')).toBeDefined();
     // Nothing changed: no audit row.
     const n = store.audit.length;
@@ -284,8 +284,8 @@ describe('adding and governing a remote connector', () => {
     expect(detail.capabilities.find(c => c.name === 'hello.greeting')).toMatchObject({ enabled: true, tool: false });
     expect(detail.capabilities.find(c => c.name === 'hello.openItems')).toMatchObject({ enabled: false, tool: false });
     expect(detail.capabilities.find(c => c.name === 'hello.markDone')).toMatchObject({ kind: 'execute', tool: false });
-    expect(registry.tools(actorOf(hillevi)).map(t => t.name)).not.toContain('hello.greeting');
-    await expect(registry.run(actorOf(hillevi), 'hello.openItems', {})).rejects.toThrow('Okänd förmåga.');
+    expect(registry.tools(audiencedActorOf(hillevi)).map(t => t.name)).not.toContain('hello.greeting');
+    await expect(registry.run(audiencedActorOf(hillevi), 'hello.openItems', {})).rejects.toThrow('Okänd förmåga.');
     // Clearing an override removes it from the row.
     const cleared = await admin.update(mikael, 'hello', { capabilities: { 'hello.openItems': {} } });
     expect(cleared.capabilities.find(c => c.name === 'hello.openItems')?.enabled).toBe(true);
@@ -382,10 +382,10 @@ describe('bundled connectors are governed by the same rows', () => {
   test('Hassan loses the finance connector when the administrator limits it to managers, and gets it back; a row changed elsewhere is applied by the watcher', async () => {
     const { store, registry, reconcile, admin } = world();
     await syncBundledRows(reconcile);
-    expect(registry.visible(actorOf(hassan), 'finance')).toBe(true);
+    expect(registry.visible(audiencedActorOf(hassan), 'finance')).toBe(true);
     await admin.update(mikael, 'finance', { audience: { mode: 'selected', roles: ['manager'] } });
-    expect(registry.visible(actorOf(hassan), 'finance')).toBe(false);
-    expect(registry.visible(actorOf(hillevi), 'finance')).toBe(true);
+    expect(registry.visible(audiencedActorOf(hassan), 'finance')).toBe(false);
+    expect(registry.visible(audiencedActorOf(hillevi), 'finance')).toBe(true);
     expect((await admin.preview(mikael, 'finance', { role: 'employee' })).visible).toBe(false);
     const preview = await admin.preview(mikael, 'finance', { role: 'manager' });
     expect(preview.visible).toBe(true);
@@ -395,7 +395,7 @@ describe('bundled connectors are governed by the same rows', () => {
     // Another instance (or the CLI) changed the row: applying it brings Hassan back.
     await store.transaction(tx => tx.update('finance', { audience: { mode: 'all' } }, 'bootstrap:connector', T0));
     applyRow(reconcile, (await store.read('finance'))!);
-    expect(registry.visible(actorOf(hassan), 'finance')).toBe(true);
+    expect(registry.visible(audiencedActorOf(hassan), 'finance')).toBe(true);
   });
 });
 
@@ -407,14 +407,14 @@ describe('users are core entities, not connected systems (D62)', () => {
     await applyAllRows(reconcile);
     expect((await store.list()).map(r => r.id)).toEqual(['finance']);
     expect((await admin.list(mikael)).map(r => r.id)).toEqual(['finance']);
-    expect(await registry.run(actorOf(hassan), 'people.me', {})).toEqual({ id: 'hassan' });
-    expect(registry.tools(actorOf(hassan)).find(t => t.name === 'people.me')?.source).toBe('Användare');
-    expect(registry.allowed({ ...actorOf(hassan), unitId: '' }, 'people.me')).toBeUndefined();
+    expect(await registry.run(audiencedActorOf(hassan), 'people.me', {})).toEqual({ id: 'hassan' });
+    expect(registry.tools(audiencedActorOf(hassan)).find(t => t.name === 'people.me')?.source).toBe('Användare');
+    expect(registry.allowed({ ...audiencedActorOf(hassan), unitId: '' }, 'people.me')).toBeUndefined();
     // Removing a managed row still fails closed; only the explicit internal provider is independent.
     await store.transaction(tx => tx.remove('finance'));
     await applyAllRows(reconcile);
-    expect(registry.visible(actorOf(hassan), 'finance')).toBe(false);
-    expect(registry.visible(actorOf(hassan), 'people')).toBe(true);
+    expect(registry.visible(audiencedActorOf(hassan), 'finance')).toBe(false);
+    expect(registry.visible(audiencedActorOf(hassan), 'people')).toBe(true);
   });
 
   test('a disabled legacy row cannot turn users off or re-enable assistant access', async () => {
@@ -435,8 +435,8 @@ describe('users are core entities, not connected systems (D62)', () => {
     const before = await store.read('people');
     await applyAllRows(reconcile);
     expect(registry.governance('people').state).toBe('enabled');
-    expect(await registry.run(actorOf(hassan), 'people.me', {})).toEqual({ id: 'hassan' });
-    expect(registry.tools(actorOf(hassan)).some(t => t.name === 'people.me')).toBe(false);
+    expect(await registry.run(audiencedActorOf(hassan), 'people.me', {})).toEqual({ id: 'hassan' });
+    expect(registry.tools(audiencedActorOf(hassan)).some(t => t.name === 'people.me')).toBe(false);
     expect(await admin.list(mikael)).toEqual([]);
     const rejected = [
       () => admin.read(mikael, 'people'),
@@ -481,9 +481,9 @@ describe('users are core entities, not connected systems (D62)', () => {
       );
     });
     await applyAllRows(reconcile);
-    expect(registry.visible(actorOf(hassan), 'people')).toBe(false);
-    expect(await registry.run(actorOf(hillevi), 'people.me', {})).toEqual({ id: 'hillevi' });
-    expect(registry.tools(actorOf(hillevi)).some(t => t.name === 'people.me')).toBe(false);
+    expect(registry.visible(audiencedActorOf(hassan), 'people')).toBe(false);
+    expect(await registry.run(audiencedActorOf(hillevi), 'people.me', {})).toEqual({ id: 'hillevi' });
+    expect(registry.tools(audiencedActorOf(hillevi)).some(t => t.name === 'people.me')).toBe(false);
     expect(await admin.list(mikael)).toEqual([]);
     await store.transaction(tx =>
       tx.update(
@@ -496,7 +496,7 @@ describe('users are core entities, not connected systems (D62)', () => {
       ),
     );
     applyRow(reconcile, (await store.read('people'))!);
-    expect(registry.allowed(actorOf(hillevi), 'people.me')).toBeUndefined();
+    expect(registry.allowed(audiencedActorOf(hillevi), 'people.me')).toBeUndefined();
   });
 });
 
@@ -637,22 +637,20 @@ describe('the shared header is given by one chosen connector (D88)', () => {
         unitLabel: 'Skolan',
         role: 'employee',
       }),
-    ).toBeNull();
+    ).toEqual({ status: 'refused' });
     const chosen = await admin.update(mikael, 'intranet', { header: true });
     expect(chosen.header).toBe(true);
     expect(registry.governance('intranet').header).toBe(true);
     expect(actions(store, 'intranet')).toEqual(['connector.header']);
     expect(
-      (
-        await registry.header({
-          id: 'hassan',
-          name: 'Hassan',
-          unitId: 'unit-skola',
-          unitLabel: 'Skolan',
-          role: 'employee',
-        })
-      )?.connector.id,
-    ).toBe('intranet');
+      await registry.header({
+        id: 'hassan',
+        name: 'Hassan',
+        unitId: 'unit-skola',
+        unitLabel: 'Skolan',
+        role: 'employee',
+      }),
+    ).toMatchObject({ status: 'answered', connector: { id: 'intranet' } });
     // Choosing another takes it over in the same transaction, with the audit saying who took it.
     const taken = await admin.update(mikael, 'sharepoint', { header: true });
     expect(taken.header).toBe(true);

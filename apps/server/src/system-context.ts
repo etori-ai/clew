@@ -1,6 +1,7 @@
 import type { AuthenticatedContext } from '@clew/contracts';
-import { readAccess, readGroups } from '@clew/db/auth';
+import { groupsStillMatch, readAccess, readGroups } from '@clew/db/auth';
 import { authorizationVersion } from './auth-crypto';
+import { ForbiddenError } from './context';
 
 /**
  * An identity built from the person's current grant instead of a session: the nightly scan, a connector's figure,
@@ -12,7 +13,8 @@ export async function systemContext(
 ): Promise<AuthenticatedContext | undefined> {
   const access = await readAccess(personId);
   if (!access) return undefined;
-  const version = authorizationVersion(access);
+  const version = authorizationVersion(access),
+    groups = await readGroups(personId);
   return {
     id: access.person.id,
     name: access.person.name,
@@ -23,14 +25,14 @@ export async function systemContext(
     organisationId: access.person.organisationId,
     principal: { id: 'person:' + personId, kind: 'person' },
     capabilities: access.grant.capabilities,
-    groups: await readGroups(personId),
+    groups,
     authorizationVersion: version,
     sessionBinding: binding,
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
     async authorize() {
       const current = await readAccess(personId);
-      if (!current || authorizationVersion(current) !== version)
-        throw new Error('Authorization changed before dispatch.');
+      if (!current || authorizationVersion(current) !== version || !(await groupsStillMatch(personId, groups)))
+        throw new ForbiddenError();
       return { version };
     },
   };

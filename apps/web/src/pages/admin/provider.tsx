@@ -37,6 +37,7 @@ import { History } from './model';
 import { actorLabel, audienceLabel, modelStatusOf, providerHealthLabel, providerStatusOf } from './labels';
 import { AdminShell } from './shell';
 import { PageHeader } from '../../components/page-header';
+import { DOT } from '../../dot';
 
 /**
  * One provider (D24): its endpoint's health, the key (rotated, never shown), the name and the address, the models under
@@ -137,9 +138,11 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
         end={<Button variant="primary" label="Lägg till modell" onClick={() => setAdding(true)} />}
         meta={
           <HStack gap={1} vAlign="center" wrap="wrap">
-            <StatusDot variant={s.tone} label={s.label} />
+            <StatusDot variant={s.tone} label={s.label} aria-hidden />
             <Text type="supporting">
-              {s.label} · {p.baseUrl}
+              {s.label}
+              {DOT}
+              {p.baseUrl}
             </Text>
           </HStack>
         }
@@ -209,11 +212,15 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
               )}
             </MetadataListItem>
             <MetadataListItem label="Hälsa">
-              {providerHealthLabel[p.health.status]} · <Timestamp value={p.health.at} format="auto" />
+              {providerHealthLabel[p.health.status]}
+              {DOT}
+              <Timestamp value={p.health.at} format="auto" />
             </MetadataListItem>
-            <MetadataListItem label="Modeller">{`${p.models} · ${p.enabledModels} påslagna`}</MetadataListItem>
+            <MetadataListItem label="Modeller">{`${p.models}\u00a0· ${p.enabledModels} påslagna`}</MetadataListItem>
             <MetadataListItem label="Tillagd">
-              {actorLabel(p.createdBy)} · <Timestamp value={p.createdAt} format="date_time" />
+              {actorLabel(p.createdBy)}
+              {DOT}
+              <Timestamp value={p.createdAt} format="date_time" />
             </MetadataListItem>
           </MetadataList>
         </VStack>
@@ -247,9 +254,11 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
                           {m.model}
                         </Text>
                         <HStack gap={1} vAlign="center">
-                          <StatusDot variant={ms.tone} label={ms.label} />
+                          <StatusDot variant={ms.tone} label={ms.label} aria-hidden />
                           <Text type="supporting">
-                            {ms.label} · {audienceLabel(m.audience)}
+                            {ms.label}
+                            {DOT}
+                            {audienceLabel(m.audience)}
                           </Text>
                         </HStack>
                       </VStack>

@@ -1,6 +1,48 @@
 # D114 · Person profiles show current employments and categorised phone numbers
 
-**Status:** provisional (product owner, 2026-11-12, who directed the build against the freeze on new surface of D101 and settled items 3, 5 and 6 after the [review of the same day](../reviews/2026-11-12-scim-and-the-guides-before-the-handover.md)); implemented with the synthetic provisioner; accepted once a real directory has sent employments and numbers; no manual screen-reader pass yet · **Date:** 2026-11-12 · **Area:** identity, ui
+**Status:** provisional (product owner, 2026-11-12, who directed the build against the freeze on new surface of [D101](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) and settled items 3, 5 and 6 after the [review of the same day](../reviews/2026-11-12-scim-and-the-guides-before-the-handover.md)); implemented with the synthetic provisioner; accepted once a real directory has sent employments and numbers; no manual screen-reader pass yet; item 3 amended 2026-11-12 in the fixes of the review of users and the organisation (S8, Q2): blank addresses are left out before one is chosen, and the primary work address is taken before the first; the section on work placements, first written the same day with [the note on municipal employment](../reviews/2026-11-12-municipal-employment-and-work-placements.md), which names nobody who chose it, was settled in the same fixes, whose open decisions the product owner asked the work to take (X4, X5): a work placement is not a placement in the sense of [D99](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md), is not sent today and gives no access or reporting line, and a person who must act at another unit gets a `unit:` membership there · **Date:** 2026-11-12 · **Area:** identity, ui
+
+**Amended 2026-11-12.** In the fixes of the
+[review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md),
+which the product owner asked for on 2026-11-12 with every open decision taken in the work. The items and the section
+below stay as written; where they differ from this paragraph, this paragraph holds.
+
+- **Item 3, which address is published (S8, Q2).** An e-mail entry whose value is absent, `null`, empty or only space
+  is left out first; a value that is present but not text is still refused. Then Clew takes a `work` address, the
+  primary one before the first (`primary` true, or the word for it in any case); else an untyped address the same
+  way; else, for a whole list only (a body, or a `replace` on `emails`), any other address the same way. So a home
+  address is published when the work entry is blank, as it is when a body carries only a home address. An `add` of
+  an address of another type stands beside the one Clew holds and changes nothing. A person with no readable address
+  is refused, since one address is required ([D68](D68-people-are-pushed-into-clew-through-standard-scim.md) item 1
+  as amended).
+- **Work placements (X4, X5).** A work placement in the section below is not a placement in the sense of
+  [D99](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md), where a placement is a
+  membership of a `unit:` group. It is not sent today, and it gives no access and no reporting line. An employment names
+  the unit that holds the job. A person who must act at another unit is given a `unit:` membership there, which gives
+  the access and the reporting line of a placement under
+  [D99](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md): the host unit's
+  manager then has the person in their team and their talks round, and the person's active unit may move
+  ([D101](D101-a-provisioner-pushes-the-organisation-first-and-adds-before-it-removes-and-a-unit-belongs-to-one-organisation.md)
+  item 8, the order of unit ids). Work at another unit that needs no access is not sent. The three facts the first
+  municipal mapping must supply are among the operations guide's questions before anything is built: how the source
+  tells two employments on one unit apart, what dates or bookings make a placement, and which source names the manager
+  responsible for the employee.
+
+**Why these choices.** They were taken in the work, as the product owner asked. The primary work address is taken first
+because RFC 7643 §2.4 says `primary` marks the preferred value, and a directory that keeps an old alias beside the
+current address marks the current one: taking the first would publish the alias for everybody whose directory lists it
+first, depending on an order the directory team never chose. Blank entries are left out because a serializer that writes
+every empty field would otherwise refuse a new hire whose work address is readable. A home address is published when the
+work entry is blank because the product owner decided in S2 of the
+[handover review](../reviews/2026-11-12-scim-and-the-guides-before-the-handover.md#outcome) that what the directory
+sends is the directory's to answer for, which item 3 already applied to a body that carries only a home address. For
+work placements, building a placement now was weighed and left: no source sends one, the freeze on new surface of
+[D101](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) (the first real
+integration) holds, and the note shows that the source's model is not known. Sending every temporary posting as a
+`unit:` membership was also left: it would make a visiting care worker a direct report of each host manager, in that
+manager's talks round, and could move the worker's active unit; for staff booked from a staffing unit, as in the note's
+example, the reporting line would change with every booking. A membership only where the person must act keeps the
+reporting line and the talks round where the employment is until the first real mapping says more.
 
 A person can hold several current employments, including two on the same unit. The profile shows the unit and optional title for each, alongside the person's e-mail address and all phone numbers supplied for display. A phone category may occur several times. The existing person page is the destination for an active person's name in Administration › Användare and Administration › Organisation.
 

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import type { AuthenticatedContext, Thread } from '../../packages/contracts/src/index';
-import { actorOf, receipt, type ExecuteResult } from '../../packages/connectors/src/index';
+import { audiencedActorOf, receipt, type ExecuteResult } from '../../packages/connectors/src/index';
 import { parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import { memoryThreadStore } from '../../apps/server/src/threads/adapters/memory';
 import { memoryRefreshStore } from '../../apps/server/src/threads/adapters/refresh-memory';
@@ -154,7 +154,7 @@ function world(wrap: (source: ApprovalSource) => ApprovalSource = source => sour
           compensates: e.compensates,
         },
         updatedAt: e.updatedAt,
-        ...(stage === 'approval' ? { waitingOn: 'Väntar på källans besked' } : {}),
+        ...(stage === 'approval' ? { waitingOn: 'källans besked' } : {}),
         ...(!e.compensates && projected && e.state !== 'running' ? { receipt: projected } : {}),
         ...(!e.compensates && confirmed ? { state: 'handled' as const, handledAt: e.updatedAt, waitingOn: null } : {}),
         ...(['unknown', 'partial', 'failed'].includes(e.state) || e.reason ? { waitingOn: null } : {}),
@@ -186,7 +186,7 @@ function world(wrap: (source: ApprovalSource) => ApprovalSource = source => sour
   // As `composition/executions.ts`: the registry validates, executes with the operation id and the delegate it is given.
   const source: ExecutionSource = {
     async authorize(p, operation, input) {
-      const found = await registry.validate(actorOf(p), operation, input);
+      const found = await registry.validate(audiencedActorOf(p), operation, input);
       return {
         connector: found.connector.id,
         safety: found.capability.execution ?? { strategy: 'manual' },
@@ -195,7 +195,7 @@ function world(wrap: (source: ApprovalSource) => ApprovalSource = source => sour
     },
     current: fromGrant,
     execute: (p, e) =>
-      registry.run<ExecuteResult>(actorOf(p), e.operation, e.payload, {
+      registry.run<ExecuteResult>(audiencedActorOf(p), e.operation, e.payload, {
         operationId: e.id,
         ...(p.delegate ? { delegate: p.delegate } : {}),
       }),
@@ -219,7 +219,7 @@ function world(wrap: (source: ApprovalSource) => ApprovalSource = source => sour
     digest: sha,
   });
   const run = (p: AuthenticatedContext, name: string, input: unknown) =>
-    registry.run(actorOf(p), name, input, p.delegate ? { delegate: p.delegate } : {});
+    registry.run(audiencedActorOf(p), name, input, p.delegate ? { delegate: p.delegate } : {});
   const decisions = cardDecisions({
     read: (p, id) => threads.readThread(p.id, id),
     registry,

@@ -6,6 +6,7 @@ import type {
   DialogueStore,
   DialogueTx,
   DialogueWorkItems,
+  NoteRecord,
   QuestionRecord,
 } from '../model';
 
@@ -35,7 +36,8 @@ export interface MemoryDialogueState {
   questions: QuestionRecord[];
   assessments: Map<string, AssessmentRecord>;
   activities: Map<string, ActivityRecord>;
-  persons: Map<string, string>;
+  notes: Map<string, NoteRecord>;
+  persons: Map<string, { name: string; enabled: boolean }>;
   units: Map<string, string>;
   audit: DialogueAudit[];
   cards: Map<string, MemoryDialogueCard>;
@@ -56,7 +58,8 @@ export function memoryDialogueStore(seed: { persons?: Record<string, string>; un
     questions: [],
     assessments: new Map(),
     activities: new Map(),
-    persons: new Map(Object.entries(seed.persons ?? {})),
+    notes: new Map(),
+    persons: new Map(Object.entries(seed.persons ?? {}).map(([id, name]) => [id, { name, enabled: true }])),
     units: new Map(Object.entries(seed.units ?? {})),
     audit: [],
     cards: new Map(),
@@ -192,11 +195,41 @@ export function memoryDialogueStore(seed: { persons?: Record<string, string>; un
     async deleteActivity(id) {
       state.activities.delete(id);
     },
+    async notes(organisationId, unitIds, authorId) {
+      return structuredClone(
+        [...state.notes.values()]
+          .filter(n => n.authorId === authorId)
+          .filter(ofUnits(organisationId, unitIds))
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)),
+      );
+    },
+    async note(id) {
+      const n = state.notes.get(id);
+      return n ? structuredClone(n) : undefined;
+    },
+    async insertNote(n) {
+      state.notes.set(n.id, structuredClone(n));
+    },
+    async updateNote(id, patch) {
+      const n = state.notes.get(id);
+      if (n) Object.assign(n, structuredClone(patch));
+    },
+    async deleteNote(id) {
+      state.notes.delete(id);
+    },
     async names(ids) {
-      return new Map(ids.flatMap(id => (state.persons.has(id) ? [[id, state.persons.get(id)!] as const] : [])));
+      return new Map(
+        ids.flatMap(id => {
+          const person = state.persons.get(id);
+          return person ? [[id, person.name] as const] : [];
+        }),
+      );
     },
     async unitLabels(ids) {
       return new Map(ids.flatMap(id => (state.units.has(id) ? [[id, state.units.get(id)!] as const] : [])));
+    },
+    async lockPersonForErasure(personId) {
+      return state.persons.get(personId)?.enabled;
     },
     async erasePerson(personId) {
       const cleared = new Set<string>(),
@@ -222,6 +255,11 @@ export function memoryDialogueStore(seed: { persons?: Record<string, string>; un
           a.authorId = null;
           cleared.add('assessment:' + a.id);
         }
+      for (const n of [...state.notes.values()])
+        if (n.authorId === personId) {
+          state.notes.delete(n.id);
+          cleared.add('note:' + n.id);
+        }
       return { cleared: cleared.size, threadIds: [...threadIds].sort() };
     },
     async exportOrganisation(organisationId) {
@@ -236,6 +274,7 @@ export function memoryDialogueStore(seed: { persons?: Record<string, string>; un
         activities: structuredClone(
           byCreated([...state.activities.values()].filter(a => a.organisationId === organisationId)),
         ),
+        notes: structuredClone(byCreated([...state.notes.values()].filter(n => n.organisationId === organisationId))),
       };
     },
     async audit(entry) {
@@ -260,8 +299,8 @@ export function memoryDialogueStore(seed: { persons?: Record<string, string>; un
     get state() {
       return state;
     },
-    addPerson(id: string, name: string) {
-      state.persons.set(id, name);
+    addPerson(id: string, name: string, enabled = true) {
+      state.persons.set(id, { name, enabled });
     },
     addUnit(id: string, label: string) {
       state.units.set(id, label);

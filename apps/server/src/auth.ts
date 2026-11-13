@@ -7,17 +7,21 @@ import {
   ABSOLUTE_MS,
   IDLE_MS,
   LOGIN_TRANSACTION_MS,
-  activeSession,
   auditAuth,
   backchannelRevoke,
+  claimSessionRefresh,
   consumeLogin,
+  frontchannelRevoke,
   loginTransactions,
   readSession,
+  releaseSessionRefresh,
   resolveSubject,
-  bindFirstLogin,
+  signIn,
   readGroups,
+  groupsStillMatch,
   revokeSession,
   sessions,
+  storeRefreshedTokens,
   authenticationAudit,
   people,
   type SessionRecord,
@@ -33,6 +37,8 @@ import {
   tokenDigest,
 } from './auth-crypto';
 import { delegationFor } from './auth-exchange';
+import { authorizationUrl, redeemCode } from './auth-login';
+import { failureOf, grantEnded, refreshGrant, sessionRefresher } from './auth-refresh';
 import { frontendOrigins } from './auth-origin';
 
 /** Ported from startsidan `packages/platform/src/auth.ts`: Authorization Code + PKCE, opaque server session cookie, sealed tokens. */
@@ -129,16 +135,13 @@ export async function beginLogin(returnTo: string | null) {
       returnTo: localReturnTo(returnTo),
       expiresAt: new Date(Date.now() + LOGIN_TRANSACTION_MS),
     });
-  const url = oidc.buildAuthorizationUrl(config, {
-    redirect_uri: settings.callback,
+  // No `prompt` and no `max_age` (auth-login.ts): a sign-in follows the identity provider's own session (Q9).
+  const url = await authorizationUrl(config, {
+    callback: settings.callback,
     scope: settings.scope,
     state,
     nonce,
-    code_challenge: await oidc.calculatePKCECodeChallenge(verifier),
-    code_challenge_method: 'S256',
-    prompt: 'login',
-    max_age: '0',
-    ui_locales: 'sv',
+    verifier,
   });
   return { cookie, url };
 }
@@ -151,13 +154,8 @@ export async function completeLogin(currentUrl: URL, cookie: string | undefined)
   // The request reaches the BFF through the Vite proxy on another port. The callback is always the configured public URL.
   const callback = new URL(settings.callback);
   callback.search = currentUrl.search;
-  const tokens = await oidc.authorizationCodeGrant(config, callback, {
-    pkceCodeVerifier: transaction.verifier,
-    expectedState: transaction.state,
-    expectedNonce: transaction.nonce,
-    idTokenExpected: true,
-    maxAge: 0,
-  });
+  // The ID token's `auth_time` is not required (auth-login.ts, Q9).
+  const tokens = await redeemCode(config, callback, transaction);
   return { ...(await openSession(tokens, 'login')), returnTo: transaction.returnTo };
 }
 /**
@@ -169,15 +167,20 @@ async function openSession(tokens: oidc.TokenEndpointResponse & oidc.TokenEndpoi
   const claims = tokens.claims();
   if (!claims || !tokens.refresh_token || !tokens.id_token || typeof claims.sub !== 'string')
     throw new AuthError(401, 'invalid');
-  // A subject seen before is its person. A first login binds to the provisioned person whose userName equals the
-  // configured claim (D68 item 6); no match, two matches or a changed subject is a denied login, never a new user.
+  // A subject seen before is its person, unless the configured claim names another person; a first login binds to the
+  // provisioned person whose userName equals the claim (D68 item 6). No match, two matches, a changed subject or a
+  // claim that names someone else is a denied login, never a new user, and `login-denied` names the person when one is
+  // known.
   const claim = settings.bindingClaim,
     value = claims[claim];
-  const access =
-    (await resolveSubject(settings.issuer, claims.sub)) ??
-    (typeof value === 'string' && value ? await bindFirstLogin(settings.issuer, claims.sub, claim, value) : undefined);
+  const { access, personId } = await signIn(
+    settings.issuer,
+    claims.sub,
+    claim,
+    typeof value === 'string' && value ? value : undefined,
+  );
   if (!access) {
-    await auditAuth('login-denied');
+    await auditAuth('login-denied', personId ? 'person:' + personId : undefined);
     throw new AuthError(403, 'denied');
   }
   const raw = randomToken(),
@@ -264,47 +267,40 @@ export async function devLogin(userName: string, returnTo: string | null) {
   }
   return { ...(await openSession(tokens, 'login-dev')), returnTo: localReturnTo(returnTo) };
 }
-async function refreshSession(row: SessionRecord): Promise<SessionRecord> {
-  if (row.tokenExpiresAt.getTime() > Date.now() + 15_000) return row;
-  try {
-    const config = await oidcConfiguration();
-    return await database().transaction(async tx => {
-      // Row lock serializes refresh-token rotation across processes and simultaneous tabs.
-      const [current] = await tx.select().from(sessions).where(activeSession(row.digest)).for('update');
-      if (!current) throw new AuthError(401, 'expired');
-      if (current.tokenExpiresAt.getTime() > Date.now() + 15_000) return current;
-      const previous = decryptTokens(current.tokens, current.digest);
-      const tokens = await oidc.refreshTokenGrant(config, previous.refresh_token);
-      const claims = tokens.claims();
-      if (claims && claims.sub !== current.subject) throw new AuthError(401, 'invalid');
-      const [updated] = await tx
-        .update(sessions)
-        .set({
-          tokens: encryptTokens(
-            {
-              access_token: tokens.access_token,
-              refresh_token: tokens.refresh_token ?? previous.refresh_token,
-              id_token: tokens.id_token ?? previous.id_token,
-            },
-            current.digest,
-          ),
-          tokenExpiresAt: new Date(Date.now() + Math.min(tokens.expires_in ?? 60, 300) * 1000),
-        })
-        .where(activeSession(current.digest))
-        .returning();
-      if (!updated) throw new AuthError(401, 'expired');
-      return updated;
-    });
-  } catch {
-    delegation.forget(row.digest);
-    await revokeSession(row.digest, 'refresh-failed');
-    throw new AuthError(401, 'expired');
-  }
-}
 /**
- * Delegation (D26): a connector that acts as the person gets a token bound to its own audience, by RFC 8693 token exchange at
- * the IdP from the session's access token. The subject token is read fresh (and refreshed under the same row lock as every
- * request); the IdP's answer is never logged, only its error code, at most once a minute per audience.
+ * The session's IdP tokens, refreshed in their last seconds (`auth-refresh.ts`): only an ending answer from the
+ * provider (`grantEnded`), a changed subject, a row that is gone, an abandoned claim or unreadable tokens end the
+ * session; a provider that cannot answer keeps it, and is logged at most once a minute with its code (`failureOf`).
+ */
+let refreshFailedAt = 0;
+const refresher = sessionRefresher<SessionRecord>({
+  clock: Date.now,
+  read: readSession,
+  claim: claimSessionRefresh,
+  release: releaseSessionRefresh,
+  ids: randomToken,
+  grant: refreshGrant(oidcConfiguration),
+  ended: grantEnded,
+  store: storeRefreshedTokens,
+  async end(digest, action, expected) {
+    const ended = await revokeSession(digest, action, expected);
+    if (ended) delegation.forget(digest);
+    return ended;
+  },
+  open: decryptTokens,
+  seal: encryptTokens,
+  sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),
+  failed(error) {
+    if (Date.now() - refreshFailedAt < 60_000) return;
+    refreshFailedAt = Date.now();
+    logger.warn({ scope: 'auth', ...failureOf(error) }, 'token refresh failed; sessions are kept and delegation waits');
+  },
+});
+/**
+ * Delegation (D26): a connector that acts as the person gets a token bound to its own audience, by RFC 8693 token
+ * exchange at the IdP from the session's access token. The subject token is read fresh (and refreshed by the same
+ * refresher as every request, so it answers 503 while the IdP cannot refresh it); the IdP's answer is never logged,
+ * only its error code, at most once a minute per audience.
  */
 const TOKEN_EXCHANGE = 'urn:ietf:params:oauth:grant-type:token-exchange';
 const ACCESS_TOKEN_TYPE = 'urn:ietf:params:oauth:token-type:access_token';
@@ -312,11 +308,14 @@ const exchangeFailures = new Map<string, number>();
 const delegation = delegationFor({
   clock: Date.now,
   async subjectToken(digest) {
-    let row = await readSession(digest);
+    const row = await readSession(digest);
     if (!row) throw new AuthError(401, 'expired');
     if (!row.tokens) return undefined;
-    row = await refreshSession(row);
-    return decryptTokens(row.tokens, row.digest).access_token;
+    const refreshed = await refresher.refresh(row);
+    if (refreshed.state === 'ended') throw new AuthError(401, 'expired');
+    // The provider could not refresh the token: the session stands, but no connector gets a token until it can.
+    if (refreshed.state === 'unavailable') throw new AuthError(503, 'unavailable');
+    return decryptTokens(refreshed.row.tokens, refreshed.row.digest).access_token;
   },
   async exchange(subject, audience) {
     const config = await oidcConfiguration();
@@ -333,11 +332,10 @@ const delegation = delegationFor({
         ...(typeof r.expires_in === 'number' ? { expires_in: r.expires_in } : {}),
       };
     } catch (e) {
-      const code = e instanceof oidc.ResponseBodyError ? e.error : e instanceof Error ? e.name : 'unknown';
       const last = exchangeFailures.get(audience) ?? 0;
       if (Date.now() - last > 60_000) {
         exchangeFailures.set(audience, Date.now());
-        logger.error({ scope: 'auth', audience, code }, 'token exchange failed');
+        logger.error({ scope: 'auth', audience, ...failureOf(e) }, 'token exchange failed');
       }
       throw new AuthError(503, 'unavailable');
     }
@@ -385,13 +383,18 @@ export async function authenticate(raw: string | undefined) {
     throw new AuthError(401, 'expired');
   }
   if (row.issuer !== settings.issuer || row.clientId !== settings.clientId) throw new AuthError(401, 'expired');
-  row = await refreshSession(row);
+  // Clew's own authorization reads the session and the person, never the IdP's tokens: a refresh the provider cannot
+  // answer leaves the session as it is, and only delegation waits for the provider.
+  const refreshed = await refresher.refresh(row);
+  if (refreshed.state === 'ended') throw new AuthError(401, 'expired');
+  row = refreshed.row;
   const access = await resolveSubject(row.issuer, row.subject);
   if (!access || access.person.id !== row.personId) {
     await revokeSession(digest, 'access-revoked');
     throw new AuthError(403, 'denied');
   }
-  const version = authorizationVersion(access);
+  const version = authorizationVersion(access),
+    groups = await readGroups(access.person.id);
   const context: AuthenticatedContext = {
     id: access.person.id,
     name: access.person.name,
@@ -402,7 +405,7 @@ export async function authenticate(raw: string | undefined) {
     organisationId: access.person.organisationId,
     principal: { id: 'person:' + access.person.id, kind: 'person' },
     capabilities: access.grant.capabilities,
-    groups: await readGroups(access.person.id),
+    groups,
     authorizationVersion: version,
     sessionBinding: digest,
     expiresAt: new Date(Math.min(row.idleExpiresAt.getTime(), row.expiresAt.getTime())).toISOString(),
@@ -410,7 +413,12 @@ export async function authenticate(raw: string | undefined) {
       const current = await readSession(digest),
         latest = await resolveSubject(row.issuer, row.subject);
       if (!current) throw new AuthError(401, 'expired');
-      if (!latest || latest.person.id !== row.personId || authorizationVersion(latest) !== version)
+      if (
+        !latest ||
+        latest.person.id !== row.personId ||
+        authorizationVersion(latest) !== version ||
+        !(await groupsStillMatch(row.personId, groups))
+      )
         throw new AuthError(403, 'denied');
       return { version };
     },
@@ -479,6 +487,21 @@ export async function receiveLogout(token: string) {
     subject: payload.sub,
     jti: payload.jti,
   });
+}
+/**
+ * OpenID Connect Front-Channel Logout 1.0 (D121): when the person signs out at the identity provider, the provider
+ * loads Clew's front-channel logout address in a frame with the `sid` of its session and, by the specification, its
+ * `iss`; Microsoft Entra ID has no back-channel logout, so this is how a sign-out there reaches Clew. Every session of
+ * that `sid` under the configured issuer ends as a back-channel logout ends it. An `iss` that is given must be the
+ * configured issuer, or nothing ends and the request is refused. A `sid` without an `iss` is the configured issuer's:
+ * Entra has been reported to send only the `sid`, and Clew has one issuer. Without a `sid` nothing ends: no cookie
+ * reaches a cross-site frame, so nothing else names the session.
+ */
+export async function receiveFrontChannelLogout(iss: string | undefined, sid: string | undefined) {
+  const settings = authSettings();
+  if (iss !== undefined && iss !== settings.issuer) throw new AuthError(401, 'invalid');
+  if (!sid) return;
+  await frontchannelRevoke({ issuer: settings.issuer, clientId: settings.clientId, sid });
 }
 /** Session persistence the auth routes need, re-exported so routes never import the database package (D20). */
 export { LOGIN_TRANSACTION_MS, readSession, revokeSession, touchSession } from '@clew/db/auth';

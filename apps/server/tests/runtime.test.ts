@@ -68,6 +68,26 @@ test('the live API and its composition load in Node without external services', 
   assert.equal(typeof api.fetch, 'function');
 });
 
+test('the repeating timer that renews a scheduled job’s claim ticks until it is stopped and never holds the process open', async () => {
+  const { every } = await import('../src/composition/ambient');
+  const timers = () => process.getActiveResourcesInfo().filter(resource => resource === 'Timeout').length;
+  let ticks = 0;
+  const before = timers();
+  const stop = every(10, () => ticks++);
+  // Stopped whatever the assertions find, so a timer that holds the process cannot keep the suite from ending.
+  try {
+    assert.equal(timers(), before, 'the timer does not keep the event loop alive');
+    for (let waited = 0; ticks < 3 && waited < 5000; waited += 10)
+      await new Promise(resolve => setTimeout(resolve, 10));
+  } finally {
+    stop();
+  }
+  const seen = ticks;
+  assert.ok(seen >= 3, `it ticked ${seen} times`);
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(ticks, seen, 'no tick after it was stopped');
+});
+
 test('Node accepts a freshly issued document review and distinguishes invalid evidence from actual expiry', async () => {
   let now = Date.parse('2026-11-08T20:00:00.000Z');
   const clock = () => new Date(now);
@@ -140,9 +160,12 @@ test('the talks routes (D96): thin writes over the use cases, Swedish refusals, 
   const anna = { id: 'anna', name: 'Anna', userName: 'anna.a', email: null, role: 'employee' as const, enabled: true };
   let n = 0;
   const talks = talkUsecases({
-    store: memoryTalkStore({ persons: [{ id: 'anna', organisationId: 'org', name: 'Anna', userName: 'anna.a' }] }),
+    store: memoryTalkStore({
+      persons: [{ id: 'anna', organisationId: 'org', name: 'Anna', userName: 'anna.a', enabled: true }],
+    }),
     staff: async p =>
       p.id === 'boss' ? { units: [{ unitId: 'u1', unitLabel: 'Enheten', people: [anna] }] } : { units: [] },
+    manages: async (managerId, employeeId) => managerId === 'boss' && employeeId === 'anna',
     bookings: async () => new Map(),
     clock: () => new Date('2026-11-10T09:00:00.000Z'),
     ids: () => 'id-' + ++n,
@@ -186,7 +209,11 @@ test('the talks routes (D96): thin writes over the use cases, Swedish refusals, 
   assert.deepEqual(await held.json(), { id: 'id-4', heldOn: '2026-11-03' });
   assert.equal((await call('boss', 'DELETE', '/anna/held')).status, 204);
   assert.equal((await call('anna', 'POST', `/commitments/${id}/done`)).status, 204);
-  assert.equal((await call('boss', 'DELETE', `/commitments/${id}/done`)).status, 204);
+  // The employee's own point is hers: her manager may not open it again (Q12).
+  const notTheirs = await call('boss', 'DELETE', `/commitments/${id}/done`);
+  assert.equal(notTheirs.status, 403);
+  assert.deepEqual(await notTheirs.json(), { error: 'Du kan inte ändra den här åtgärdspunkten.', code: 'denied' });
+  assert.equal((await call('anna', 'DELETE', `/commitments/${id}/done`)).status, 204);
 
   const refused = await call('anna', 'POST', '/anna/held', {});
   assert.equal(refused.status, 403);
@@ -226,7 +253,7 @@ test('the talks routes (D96): thin writes over the use cases, Swedish refusals, 
   assert.equal(n, 4, 'no write reached the use cases while the built-in module did not answer');
 });
 
-test('the dialogue routes (D118): one unit read and its writes over the use cases, Swedish refusals, and a 403 on all while the module is off', async () => {
+test('the dialogue routes (D118, D120): one unit read and its writes over the use cases, Swedish refusals, and a 403 on all while the module is off', async () => {
   const { memoryDialogueStore } = await import('../src/modules/dialogue/adapters/memory');
   const { dialogueUsecases } = await import('../src/modules/dialogue/usecases');
   const { NOT_WRITABLE, dialogueRoutes } = await import('../src/routes/dialogue');
@@ -316,10 +343,28 @@ test('the dialogue routes (D118): one unit read and its writes over the use case
   for (const bad of [{ area: 'digital' }, { area: 'digital', tone: 'red' }, 'not json'])
     assert.equal((await call('boss', 'POST', '/units/u1/assessments', bad)).status, 400);
 
+  // A manager's own note (D120): written, changed, read back in its area, and removed.
+  const noted = await call('boss', 'POST', '/units/u1/notes', { area: 'digital', text: 'En tanke' });
+  assert.equal(noted.status, 201);
+  const note = ((await noted.json()) as { id: string }).id;
+  assert.equal((await call('boss', 'PATCH', `/notes/${note}`, { text: 'En tanke' })).status, 204);
+  const withNote = (await (await call('boss', 'GET', '/units/u1')).json()) as { areas: Array<{ notes: unknown[] }> };
+  assert.deepEqual(withNote.areas[0]!.notes, [{ id: note, text: 'En tanke', createdAt: '2026-11-13T09:00:00.000Z' }]);
+  for (const bad of [{ area: 'digital' }, { area: 'digital', text: '' }, { text: 'Utan område' }])
+    assert.equal((await call('boss', 'POST', '/units/u1/notes', bad)).status, 400);
+  assert.equal((await call('boss', 'PATCH', `/notes/${note}`, {})).status, 400);
+  const notMine = await call('anna', 'DELETE', `/notes/${note}`);
+  assert.equal(notMine.status, 403);
+  assert.deepEqual(await notMine.json(), { error: 'Du kan inte ändra den här anteckningen.', code: 'denied' });
+  assert.equal((await call('boss', 'DELETE', `/notes/${note}`)).status, 204);
+  assert.equal((await call('boss', 'DELETE', `/notes/${note}`)).status, 403);
+
   writable = false;
   for (const [method, path] of [
     ['GET', '/units/u1'],
     ['POST', '/units/u1/activities'],
+    ['POST', '/units/u1/notes'],
+    ['DELETE', `/notes/${note}`],
     ['DELETE', `/activities/${id}`],
   ] as const) {
     const off = await call('boss', method, path, method === 'GET' ? undefined : {});

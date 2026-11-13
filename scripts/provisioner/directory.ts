@@ -1,4 +1,4 @@
-import type { Capability, DirectoryPhone, Employment } from '@clew/contracts';
+import type { Capability } from '../../packages/contracts/src/scim-group-key';
 
 /**
  * The development stack's directory: what a municipality's source (Metakatalogen in Sundsvall, D68) knows about its
@@ -19,6 +19,28 @@ import type { Capability, DirectoryPhone, Employment } from '@clew/contracts';
  * led from the one above it, a unit with two managers, and one unit pushed the flat way. Nothing in Clew reads this
  * file; the provisioner does, and `scripts/auth-setup.ts` for the personas' accounts.
  */
+/**
+ * A phone number and a current employment as the source sends them (D114), declared here rather than taken from
+ * Clew's contracts, so that a copy of this folder type-checks outside Clew with the one file of Clew's it carries,
+ * `packages/contracts/src/scim-group-key.ts`, where the capability names come from. `tests/unit/provisioner.test.ts`
+ * holds them to the shapes Clew's SCIM server reads.
+ */
+export interface DirectoryPhone {
+  /** `work`, `mobile` and the other standard types, or a category of the source's own, such as `Jour`. */
+  type: string;
+  value: string;
+}
+export interface Employment {
+  /** The unit's id: what follows `unit:` in the `externalId` of its group. */
+  unitId: string;
+  title?: string;
+  employmentType?: string;
+  /** `YYYY-MM-DD`. */
+  startDate?: string;
+  /** Of full time, from 0 to 100. */
+  employmentPercentage?: number;
+}
+export type { Capability };
 export interface DirectoryUnit {
   id: string;
   label: string;

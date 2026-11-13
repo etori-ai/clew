@@ -51,12 +51,31 @@ export const people = pgTable(
     title: text('title'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    // When `name` last changed after the row was written, null if it never has. A SCIM Group resource shows each
+    // member's name, so its time of change is the later of its own and this time among its members (RFC 7643 §3.1;
+    // `memberNamesChanged` in the people store). The person's write sets it; a group row is never written for it.
+    nameChangedAt: timestamp('name_changed_at', { withTimezone: true }),
   },
-  // Unique across the installation, because a login carries no organisation; `userName` without regard to case,
-  // RFC 7643's default for it (Keycloak lowercases account names, Entra does not).
+  // Unique across the installation, because a login carries no organisation.
   t => [
-    uniqueIndex('auth_person_external_id').on(t.externalId),
-    uniqueIndex('auth_person_user_name').on(sql`lower(${t.userName})`),
+    // Partial, though nulls never collide: PostgreSQL counts the column of a whole unique index as a key, so an update
+    // that changes it needs `FOR UPDATE` and waits for the key-share lock a membership insert holds on the person,
+    // while that insert's transaction waits for the person's row lock (S4). A partial index is no such key.
+    uniqueIndex('auth_person_external_id')
+      .on(t.externalId)
+      .where(sql`${t.externalId} is not null`),
+    // `userName` without regard to case, RFC 7643's default for it (Keycloak lowercases account names, Entra does
+    // not), folded by ICU's root locale whatever the database's own collation: under the locale C a plain `lower`
+    // folds only A to Z, and `Åsa` and `åsa` were two people (L13). Compare a user name with this one expression on
+    // both sides, as the people store does (`caseless` in its adapter), so that it folds as the index does and the
+    // index serves the lookup.
+    uniqueIndex('auth_person_user_name').on(sql`lower(${t.userName} collate "und-x-icu")`),
+    // Who holds a user name a source sent (`holders` in the people store, D122 item 2) compares the composed form (NFC)
+    // on both sides too, so that a name held by a row stored decomposed beside a composed one names nobody; the unique
+    // index above does not fold composition and cannot serve that comparison. This index has its expression, so each
+    // lookup finds the holders of the names it asks without reading every person in the installation. It is not
+    // unique, since a row stored decomposed may stand beside a composed one.
+    index('auth_person_user_name_nfc').on(sql`lower(normalize(${t.userName}, NFC) collate "und-x-icu")`),
   ],
 );
 export const identityBindings = pgTable(
@@ -200,11 +219,16 @@ export const sessions = pgTable(
     csrf: text('csrf').notNull(),
     tokens: text('tokens').notNull(),
     tokenExpiresAt: timestamp('token_expires_at', { withTimezone: true }).notNull(),
+    refreshClaim: text('refresh_claim'),
+    refreshClaimUntil: timestamp('refresh_claim_until', { withTimezone: true }),
     idleExpiresAt: timestamp('idle_expires_at', { withTimezone: true }).notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
   },
-  t => [index('auth_session_sid').on(t.issuer, t.clientId, t.sid)],
+  t => [
+    index('auth_session_sid').on(t.issuer, t.clientId, t.sid),
+    check('auth_session_refresh_claim_pair', sql`(${t.refreshClaim} is null) = (${t.refreshClaimUntil} is null)`),
+  ],
 );
 export const authenticationAudit = pgTable('auth_audit', {
   id: bigserial('id', { mode: 'number' }).primaryKey(),
@@ -331,6 +355,11 @@ export const proposals = pgTable(
       >()
       .notNull()
       .default('proposed'),
+    // Whom the proposal invites, by Clew's key (N3): found by it in the team, the round and the reminders whatever their
+    // address is now, and by it a co-manager learns the person is booked (M1). No foreign key, as `thread_subject`
+    // names a person. The address and the name are what the proposal was drawn with: the invitation goes there and the
+    // replies are matched on it.
+    participantId: text('participant_id').notNull(),
     participantEmail: text('participant_email').notNull(),
     participantName: text('participant_name').notNull(),
     start: timestamp('start', { withTimezone: true }).notNull(),
@@ -340,6 +369,11 @@ export const proposals = pgTable(
     eventRevision: text('event_revision'),
     confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
     undoUntil: timestamp('undo_until', { withTimezone: true }),
+    // The approved decision that last took this proposal (M1): while that execution may still send the invitation (being
+    // sent, waiting to be sent, or sent with its result unknown, inside the approval's 24 hours), another manager's
+    // confirmation of the same person in the round is refused. Only that execution's state is read; no foreign key, as
+    // `participant_id` has none.
+    executionId: text('execution_id'),
     // Follow-ups to the invitee (D30): how many were sent and when the last one went.
     reminders: integer('reminders').notNull().default(0),
     remindedAt: timestamp('reminded_at', { withTimezone: true }),
@@ -348,6 +382,7 @@ export const proposals = pgTable(
   t => [
     index('proposal_thread').on(t.threadId),
     index('proposal_person_status').on(t.personId, t.status),
+    index('proposal_participant_status').on(t.participantId, t.status),
     check(
       'proposal_status',
       sql`${t.status} IN ('proposed', 'confirmed', 'final', 'accepted', 'declined-by-invitee', 'counter', 'undone', 'declined', 'superseded')`,
@@ -565,6 +600,9 @@ export const executions = pgTable(
     // the one that approved it (dispatch, replay, read-back) and the one that last asked to check it (read-back only).
     approvingSession: text('approving_session'),
     checkingSession: text('checking_session'),
+    // The person a started action is about (D122): the payload's `param` holds the user name they had when it was
+    // decided, and dispatch checks that it still names them. Null for every other execution.
+    subject: jsonb('subject').$type<{ param: string; personId: string } | null>(),
   },
   t => [
     uniqueIndex('execution_decision').on(t.personId, t.decisionId),
@@ -981,6 +1019,26 @@ export const dialogueActivities = pgTable(
       .on(t.ownerId)
       .where(sql`${t.doneAt} IS NULL`),
   ],
+);
+/**
+ * A manager's own note on an area of a unit (D120): free text sealed at rest, read by its author only. It has no card
+ * and no state. The author is never null: a note without its author is nobody's, so it goes with the person.
+ */
+export const dialogueNotes = pgTable(
+  'dialogue_note',
+  {
+    id: text('id').primaryKey(),
+    organisationId: text('organisation_id').notNull(),
+    unitId: text('unit_id').notNull(),
+    areaKey: text('area_key').notNull(),
+    authorId: text('author_id')
+      .notNull()
+      .references(() => people.id, { onDelete: 'cascade' }),
+    textSealed: text('text_sealed').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  t => [index('dialogue_note_author_unit').on(t.authorId, t.unitId)],
 );
 /**
  * The catalogue of competence types (D108 item 2): rows per installation, never an enumeration in code. Archived, never

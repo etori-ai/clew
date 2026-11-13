@@ -7,10 +7,12 @@ function world(options: { subject?: string | undefined; expiresIn?: number } = {
   const exchanges: string[] = [];
   const subjects: string[] = [];
   let fail = false;
+  let subjectError: Error | undefined;
   const delegation = delegationFor({
     clock: () => now,
     subjectToken: async digest => {
       subjects.push(digest);
+      if (subjectError) throw subjectError;
       return 'subject' in options ? options.subject : 'subj-' + digest;
     },
     exchange: async (subject, audience) => {
@@ -24,6 +26,9 @@ function world(options: { subject?: string | undefined; expiresIn?: number } = {
     delegation,
     exchanges,
     subjects,
+    setSubjectError: (error?: Error) => {
+      subjectError = error;
+    },
     advance: (ms: number) => {
       now += ms;
     },
@@ -42,9 +47,25 @@ describe('delegation', () => {
     w.advance(45_000);
     expect(await w.delegation.token('s1', 'eneo')).toBe('tok-eneo-1');
     w.advance(10_000);
-    expect(await w.delegation.token('s1', 'eneo')).toBe('tok-eneo-2');
+    const renewed = await Promise.all([w.delegation.token('s1', 'eneo'), w.delegation.token('s1', 'eneo')]);
+    expect(renewed).toEqual(['tok-eneo-2', 'tok-eneo-2']);
     expect(await w.delegation.token('s1', 'sharepoint')).toBe('tok-sharepoint-3');
     expect(await w.delegation.token('s2', 'eneo')).toBe('tok-eneo-4');
+  });
+  test('warm and cold audiences both wait for a refresh and both refuse a session revoked on another process', async () => {
+    const w = world();
+    expect(await w.delegation.token('s1', 'eneo')).toBe('tok-eneo-1');
+    const unavailable = new Error('refresh unavailable');
+    w.setSubjectError(unavailable);
+    await expect(w.delegation.token('s1', 'eneo')).rejects.toBe(unavailable);
+    await expect(w.delegation.token('s1', 'files')).rejects.toBe(unavailable);
+    w.setSubjectError();
+    expect(await w.delegation.token('s1', 'eneo')).toBe('tok-eneo-1');
+    const ended = new Error('session expired');
+    w.setSubjectError(ended);
+    await expect(w.delegation.token('s1', 'eneo')).rejects.toBe(ended);
+    await expect(w.delegation.token('s1', 'files')).rejects.toBe(ended);
+    expect(w.exchanges).toEqual(['subj-s1>eneo']);
   });
   test('a session without IdP tokens yields undefined and caches nothing; a failed exchange is not cached either', async () => {
     const w = world({ subject: undefined });

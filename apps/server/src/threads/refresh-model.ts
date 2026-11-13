@@ -1,6 +1,6 @@
 import type { AuthenticatedContext, Thread } from '@clew/contracts';
 import type { ScanObservation } from '@clew/connectors';
-import type { ThreadTx } from './model';
+import type { PersonKeys, ThreadTx } from './model';
 export interface RefreshRequest {
   id: string;
   personId: string;
@@ -86,6 +86,8 @@ export interface RefreshDeps {
    * answers `authorization-required`, as it did before.
    */
   session?: (binding: string) => Promise<StandingSession | undefined>;
+  /** Whose a source's key is (D122): a row that names a person by user name names them by id. Absent: by nobody. */
+  people?: PersonKeys;
 }
 /** Local presentation state is an optimistic fence, independent of source versions. */
 export const projectionVersion = (t: Thread) =>

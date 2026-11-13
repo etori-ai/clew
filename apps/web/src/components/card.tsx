@@ -5,6 +5,7 @@ import {
   parseSwedishTime,
   snoozeWhen,
   streamGroup,
+  SUBJECT_CHANGED,
   type AskValues,
   type CardAction,
   type SnoozeInput,
@@ -151,8 +152,8 @@ export function SystemLine({
   // Clew's own system is named alone ("Kalendern"): its area is the house's, not a guest's place.
   const lead = answered
     ? `${mark.source} svarade ${answered}`
-    : [mark.source, mark.area && mark.ordinal !== null ? mark.title : ''].filter(Boolean).join(' · ');
-  return <AreaLine icon={mark.area ? mark.icon : undefined}>{[lead, words].filter(Boolean).join(' · ')}</AreaLine>;
+    : [mark.source, mark.area && mark.ordinal !== null ? mark.title : ''].filter(Boolean).join('\u00a0· ');
+  return <AreaLine icon={mark.area ? mark.icon : undefined}>{[lead, words].filter(Boolean).join('\u00a0· ')}</AreaLine>;
 }
 /** A reminder the person set that could not be scheduled, said in a sentence under the item's status. */
 export function TimerNote({ thread }: { thread: Thread }) {
@@ -820,7 +821,7 @@ export function ActionRow({
         ))}
         {time && <TimeSubMenu label="Inte nu" rows={time.rows} own={time.own} />}
         {([...tucked, ...overflow].length > 0 || time) && <DropdownMenuDivider />}
-        <DropdownMenuItem label="Avfärda · inte aktuellt" onClick={() => void dismiss()} />
+        <DropdownMenuItem label={'Avfärda\u00a0· inte aktuellt'} onClick={() => void dismiss()} />
       </DropdownMenu>
       {snoozeRows.dialog}
       {remindRows.dialog}
@@ -837,15 +838,24 @@ export function ActionRow({
         href={reviewHref(thread.id, { from: pathname + search })}
       />
     ) : null;
+  // A started action that was not sent because its user name had moved to someone else, or away (D122): said so, and
+  // decided again with the item's own button, on the user name the person has now. Nothing is left to check.
+  const decideAgain = open && thread.execution?.state === 'failed' && thread.execution.reason === SUBJECT_CHANGED;
   // A decision the source has not confirmed is said so, unless it is the person's own and still on its way (D64).
   if (pending && (!settling || pressed === null))
     return (
       <HStack gap={2} vAlign="center" wrap="wrap">
-        {(!thread.execution ||
-          ['pending', 'running', 'unknown'].includes(thread.execution.state) ||
-          thread.execution.reason) && (
-          <Button size={size} label="Kontrollera status" clickAction={() => run(() => api.checkExecution(thread.id))} />
-        )}
+        {decideAgain
+          ? primaryButton
+          : (!thread.execution ||
+              ['pending', 'running', 'unknown'].includes(thread.execution.state) ||
+              thread.execution.reason) && (
+              <Button
+                size={size}
+                label="Kontrollera status"
+                clickAction={() => run(() => api.checkExecution(thread.id))}
+              />
+            )}
         {viewReview}
         <Text type="supporting">{pending}</Text>
         {addToConversation}

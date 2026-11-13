@@ -11,7 +11,8 @@ export type { ManagedPerson };
 /**
  * A person a question names (D115). Clew, not the model and not a source, resolves a name the asker wrote among the
  * people the asker manages (the people module's list behind Personal) and nobody else. What a resolved person brings
- * into the turn is the asker's own open work about them (the index from entity to cards, D97 item 6): each work item's
+ * into the turn is the asker's own open work about them (the index from entity to cards, D97 item 6, by Clew's key, the
+ * person's id, D122): each work item's
  * title, source, last day and buttons. Never a source's rows about the person, and never a card's text or rows when the
  * card is about someone the conversation names: a work item's summary and rows may say what a source knows about a
  * person's health, and the model is not handed that (D97 item 7, D115). Whether a card is about such a person is read
@@ -142,7 +143,7 @@ export function namesIn(people: readonly ManagedPerson[], text: string): NamedPe
   const seen = new Set<string>();
   return out.filter(n => {
     if (n.found.match !== 'one') return true;
-    const key = fold(n.found.person.key);
+    const key = n.found.person.key;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -189,15 +190,15 @@ export async function peopleInTurn(
 ): Promise<PeopleInTurn> {
   if (!deps.people) return NOBODY;
   const keyed = new Map<string, ManagedPerson>();
-  for (const p of await deps.people(persona)) if (p.key && !keyed.has(fold(p.key))) keyed.set(fold(p.key), p);
+  for (const p of await deps.people(persona)) if (p.key && !keyed.has(p.key)) keyed.set(p.key, p);
   const people = [...keyed.values()];
   if (!people.length) return NOBODY;
   const named = namesIn(people, text);
   const mentioned = mentionedIn(people, [text, ...earlier]);
   // Whom the question names is among whom it could name; held together anyway, so nothing named goes unguarded.
-  const about = new Map(mentioned.map(p => [fold(p.key), p]));
+  const about = new Map(mentioned.map(p => [p.key, p]));
   for (const n of named)
-    for (const p of n.found.match === 'one' ? [n.found.person] : n.found.people) about.set(fold(p.key), p);
+    for (const p of n.found.match === 'one' ? [n.found.person] : n.found.people) about.set(p.key, p);
   const byKey = new Map<string, Thread[]>();
   const guarded = new Set<string>();
   if (about.size) {
@@ -217,13 +218,11 @@ export async function peopleInTurn(
       for (const subject of card.subjects) {
         // Only a card whose rows name the person is their work here. A card of Clew's own that names its employee on
         // the thread alone (an action point, D96 item 6) is never read by the assistant: guarded, not listed.
-        const byRow = thread.items.some(
-          i => i.subject?.entity === 'person' && fold(i.subject.key) === fold(subject.key),
-        );
+        const byRow = thread.items.some(i => i.subject?.entity === 'person' && i.subject.key === subject.key);
         if (!byRow) continue;
-        const list = byKey.get(fold(subject.key)) ?? [];
+        const list = byKey.get(subject.key) ?? [];
         if (!list.some(t => t.id === thread.id)) list.push(thread);
-        byKey.set(fold(subject.key), list);
+        byKey.set(subject.key, list);
       }
     }
   }
@@ -235,7 +234,7 @@ export async function peopleInTurn(
     // The card's own subjects decide. The cards found through the index are kept beside them, so a card it named stays
     // guarded whatever the copy in hand says.
     guards: thread => guarded.has(thread.id) || namedAmong(namedSubjects(thread), asked).length > 0,
-    work: person => byKey.get(fold(person.key)) ?? [],
+    work: person => byKey.get(person.key) ?? [],
   };
 }
 

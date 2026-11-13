@@ -15,7 +15,7 @@ import {
 import type { Page } from '@playwright/test';
 import { NEXT_WEEK, events } from './data';
 
-/** Wide enough for the panel to stand beside the grid (1336 px, D111 amended): an entry opens in the end slot. */
+/** Wide enough for the panel to stand beside the grid (1340 px, D111 amended): an entry opens in the end slot. */
 const WIDE = { width: 1440, height: 900 };
 
 /**
@@ -88,14 +88,16 @@ test.describe('the levels and the mark (D71, artboard 6)', () => {
     await page.setViewportSize(desktop);
     await open(page, '/calendar');
     const block = page.locator('.clew-cal-event').first();
-    await expect(block).toHaveAccessibleName(/^Morgonmöte ledningsgrupp\s*08:15–08:45 · A12\s*, bokat$/);
+    await expect(block).toHaveAccessibleName(/^Morgonmöte ledningsgrupp\s*08:15–08:45\s·\sA12\s*, bokat$/);
   });
   test('a proposal is the assistant’s: the ✦ is seen, the word förslag is heard', async ({ page, api: _ }) => {
     await page.setViewportSize(desktop);
     await open(page, `/calendar?date=${NEXT_WEEK}`);
     const block = page.locator('.clew-cal-event-proposal').first();
     await expect(block).toContainText('✦ Utvecklingssamtal');
-    await expect(block).toHaveAccessibleName(/^Utvecklingssamtal\s*\d\d:\d\d–\d\d:\d\d · Anna Lindqvist\s*, förslag$/);
+    await expect(block).toHaveAccessibleName(
+      /^Utvecklingssamtal\s*\d\d:\d\d–\d\d:\d\d\s·\sAnna Lindqvist\s*, förslag$/,
+    );
   });
   test('Förslag N in the header lists the proposals that wait; choosing one opens it in the panel with its decisions', async ({
     page,

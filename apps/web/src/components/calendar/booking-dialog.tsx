@@ -202,7 +202,7 @@ export function BookingDialog({ isOpen, initial, onClose }: Props) {
                 ...rooms.map(r => ({
                   value: r.ref,
                   label: r.name,
-                  description: `${r.capacity} platser${r.equipment.length ? ' · ' + r.equipment.join(', ') : ''}`,
+                  description: `${r.capacity} platser${r.equipment.length ? '\u00a0· ' + r.equipment.join(', ') : ''}`,
                 })),
               ]}
               value={room}

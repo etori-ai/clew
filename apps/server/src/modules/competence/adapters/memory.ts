@@ -1,3 +1,4 @@
+import { COMPETENCE_CONNECTOR } from '@clew/connectors';
 import { TypeNameTaken } from '../model';
 import type {
   CompetenceAudit,
@@ -15,17 +16,27 @@ import type {
 /**
  * The competence store in memory: the unit tests' adapter (D25), held to Postgres by
  * `tests/competence-store-contract.ts`. State is plain and seedable; a transaction is a snapshot that a throw restores,
- * the audit rows and the workflow starts included. Transactions run one at a time, as row locks would make them.
+ * the audit rows, the workflow starts and the cards included. Transactions run one at a time, as row locks would make
+ * them. A person SCIM has deactivated (D68) stays in `persons` with `enabled` false, as in the people table.
+ *
+ * The cards of the people's streams (`CompetenceCardsTx`) stand in `state.cards` instead of a thread store, as much of
+ * each as an erasure reads: whose stream it is in and which connector pushed it. An erasure removes the person's own
+ * competence cards there and writes their `thread.removed` rows among the audit rows, as composition does over the
+ * thread store's transaction.
  */
+export interface MemoryCard {
+  personId: string;
+  connector: string;
+}
 export interface MemoryCompetenceState {
   types: Map<string, TypeRecord>;
   holdings: Map<string, HoldingRecord>;
   persons: Map<string, PersonRef>;
-  /** People SCIM has deactivated (D68): they stay, and the copy matches nobody to them. */
-  inactive: Set<string>;
   /** By `<connector>\n<organisation>\n<source type>`. */
   mappings: Map<string, SourceMapping>;
   sources: Map<string, SourceRecord>;
+  /** The cards in the people's own streams (D108 item 12), by card id. */
+  cards: Map<string, MemoryCard>;
   audit: CompetenceAudit[];
   /** The workflow starts committed (D86), each id once. */
   enqueued: WorkflowStart[];
@@ -36,14 +47,14 @@ const sv = (a: string, b: string) => a.localeCompare(b, 'sv');
 const mappingKey = (connectorId: string, organisationId: string, sourceType: string) =>
   connectorId + '\n' + organisationId + '\n' + sourceType;
 
-export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
+export function memoryCompetenceStore(seed: { persons?: PersonRef[]; cards?: Record<string, MemoryCard> } = {}) {
   let state: MemoryCompetenceState = {
     types: new Map(),
     holdings: new Map(),
     persons: new Map((seed.persons ?? []).map(p => [p.id, { ...p }])),
-    inactive: new Set(),
     mappings: new Map(),
     sources: new Map(),
+    cards: new Map(Object.entries(seed.cards ?? {}).map(([id, card]) => [id, { ...card }])),
     audit: [],
     enqueued: [],
   };
@@ -192,7 +203,7 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
       const counted = new Map<string, { connectorId: string; sourceType: string; label: string; holdings: number }>();
       const labelReadAt = new Map<string, string>();
       for (const h of copied()) {
-        if (h.state === 'revoked' || state.inactive.has(h.personId)) continue;
+        if (h.state === 'revoked' || state.persons.get(h.personId)?.enabled === false) continue;
         if (state.persons.get(h.personId)?.organisationId !== organisationId) continue;
         const key = h.copy!.connectorId + '\n' + h.copy!.sourceType;
         const row = counted.get(key) ?? {
@@ -276,11 +287,11 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     async activeByUserName(userNames) {
       const wanted = new Set(userNames.map(n => n.toLowerCase()));
       return [...state.persons.values()]
-        .filter(p => p.userName !== null && wanted.has(p.userName.toLowerCase()) && !state.inactive.has(p.id))
+        .filter(p => p.userName !== null && wanted.has(p.userName.toLowerCase()) && p.enabled)
         .map(p => ({ ...p }));
     },
     async activeIds(personIds) {
-      return new Set(personIds.filter(id => state.persons.has(id) && !state.inactive.has(id)));
+      return new Set(personIds.filter(id => state.persons.get(id)?.enabled === true));
     },
     async erasePerson(personId) {
       let holdings = 0;
@@ -319,6 +330,26 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
           ),
       });
     },
+    cards: {
+      async removeOwn(personId, actor, at) {
+        // In card id order, as the thread store locks and removes them.
+        const own = [...state.cards]
+          .filter(([, card]) => card.personId === personId && card.connector === COMPETENCE_CONNECTOR)
+          .map(([id]) => id)
+          .sort();
+        for (const id of own) {
+          state.cards.delete(id);
+          state.audit.push({
+            actor,
+            action: 'thread.removed',
+            subject: `thread:${id}`,
+            at,
+            details: { reason: 'erasure' },
+          });
+        }
+        return own.length;
+      },
+    },
     async audit(entry) {
       state.audit.push(structuredClone(entry));
     },
@@ -345,7 +376,12 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     },
     /** SCIM deactivates a person (D68): they stay, and leave every list. */
     deactivate(personId: string) {
-      state.inactive.add(personId);
+      const person = state.persons.get(personId);
+      if (person) person.enabled = false;
+    },
+    /** A card in a person's own stream, as a scan would have pushed it. */
+    addCard(id: string, card: MemoryCard) {
+      state.cards.set(id, { ...card });
     },
     audit: () => structuredClone(state.audit),
   };

@@ -11,6 +11,8 @@ import type { AuthenticatedContext, DialogueAreaKind, DialogueTone, Subject } fr
  * Every instant is an ISO string and every date a `YYYY-MM-DD` calendar day in Swedish time, both handed in by the use
  * case from `clock`; every id comes from `ids`. Text is plain here: sealing it at rest is the Postgres adapter's job.
  * No audit entry carries an activity's text, a note, a comment or a person's name (D118 item 9).
+ *
+ * A manager's own notes (D120) are in the same store: free text per unit and area that only its author reads.
  */
 
 /** An area of an organisation's dialogue, as the operator configured it (D118 item 3). */
@@ -74,6 +76,21 @@ export interface ActivityRecord {
   /** The owner's card; null once the card is removed. */
   threadId: string | null;
 }
+/**
+ * A manager's own note on an area of a unit (D120): read and changed by its author only, with no card, no owner and no
+ * state. The author is never null: when the author is erased the note goes with them.
+ */
+export interface NoteRecord {
+  id: string;
+  organisationId: string;
+  unitId: string;
+  areaKey: string;
+  authorId: string;
+  /** Plain text; the Postgres adapter seals it at rest. Never in an audit row, a log line, a trace or a card. */
+  text: string;
+  createdAt: string;
+  updatedAt: string;
+}
 export type ActivityPatch = Partial<
   Pick<ActivityRecord, 'text' | 'dueOn' | 'doneAt' | 'doneBy' | 'doneNote' | 'updatedAt'>
 >;
@@ -87,7 +104,7 @@ export interface DialogueAudit {
 }
 /** What `DialogueTx.erasePerson` did. */
 export interface Erased {
-  /** Rows from which the person was removed (owner, author, added by, done by). */
+  /** Rows from which the person was removed (owner, author, added by, done by), and their own notes, removed whole. */
   cleared: number;
   /** The cards of the activities they owned, to remove with `workItems.remove`. */
   threadIds: string[];
@@ -98,6 +115,7 @@ export interface DialogueExport {
   questions: QuestionRecord[];
   assessments: AssessmentRecord[];
   activities: ActivityRecord[];
+  notes: NoteRecord[];
 }
 
 /**
@@ -157,13 +175,26 @@ export interface DialogueTx {
   insertActivity(activity: ActivityRecord): Promise<void>;
   updateActivity(id: string, patch: ActivityPatch): Promise<void>;
   deleteActivity(id: string): Promise<void>;
+  // Notes (D120).
+  /** This author's notes on these units, the newest first. Nobody else's are ever returned. */
+  notes(organisationId: string, unitIds: readonly string[], authorId: string): Promise<NoteRecord[]>;
+  /** One note, locked. */
+  note(id: string): Promise<NoteRecord | undefined>;
+  insertNote(note: NoteRecord): Promise<void>;
+  updateNote(id: string, patch: Pick<NoteRecord, 'text' | 'updatedAt'>): Promise<void>;
+  deleteNote(id: string): Promise<void>;
   // Names.
   /** These people's names; an unknown id is absent. */
   names(ids: readonly string[]): Promise<ReadonlyMap<string, string>>;
   /** These units' names; an unknown id is absent. */
   unitLabels(ids: readonly string[]): Promise<ReadonlyMap<string, string>>;
   // Erasure and export.
-  /** Remove the person from every row (owner, author, added by, done by); the cards of what they owned are returned. */
+  /** Hold the person's current active state until the erasure commits. An unknown id has no state. */
+  lockPersonForErasure(personId: string): Promise<boolean | undefined>;
+  /**
+   * Remove the person from every row (owner, author, added by, done by) and remove their own notes; the cards of what
+   * they owned are returned.
+   */
   erasePerson(personId: string): Promise<Erased>;
   exportOrganisation(organisationId: string): Promise<DialogueExport>;
   audit(entry: DialogueAudit): Promise<void>;

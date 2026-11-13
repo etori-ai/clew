@@ -1,17 +1,18 @@
 import { afterAll, expect, test } from 'bun:test';
 import { createHash, randomBytes } from 'node:crypto';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { database, schema, closeDatabase } from '../../packages/db/src';
 import { postgresRefreshStore } from '../../apps/server/src/threads/adapters/refresh-postgres';
 import { postgresThreadStore } from '../../apps/server/src/threads/adapters/postgres';
 import { postgresAttention } from '../../apps/server/src/threads/adapters/attention-postgres';
 import { refreshUsecases } from '../../apps/server/src/threads/usecases/refresh';
 import { durableJobs } from '../../apps/server/src/scheduler/adapters/durable-postgres';
+import { scheduledJobRunner } from '../../apps/server/src/scheduler/usecases';
 import type { AuthenticatedContext } from '../../packages/contracts/src';
 import { Registry, openGovernance, type ScanObservation } from '../../packages/connectors/src';
 import { threadAccess } from '../../apps/server/src/threads/access';
 import { draft } from '../store-contract';
-import { forgetTestWorkflows, testDurable } from './durable';
+import { enqueuedWorkflows, forgetTestWorkflows, testDurable } from './durable';
 import { openSecret, sealSecret } from '../../apps/server/src/auth-crypto';
 
 process.env.MASTER_KEY ??= randomBytes(32).toString('base64');
@@ -43,6 +44,26 @@ afterAll(async () => {
   await forgetTestWorkflows();
   await closeDatabase();
 });
+/**
+ * The step of a job's `scheduledJob` workflow (D86) as the engine runs it at `at`: the job claimed by id, an attention
+ * batch released, the execution completed. Any other kind is a failure here.
+ */
+const jobStepAt = (attention: ReturnType<typeof postgresAttention>, at: string) =>
+  scheduledJobRunner({
+    executions: durableJobs,
+    release: batch => attention.release(batch, at),
+    run: async job => {
+      throw new Error('Not an attention job: ' + job.kind);
+    },
+    clock: () => new Date(at),
+    // A release is one short transaction: no renewal is due before it ends, and nothing is said.
+    every: () => () => undefined,
+    log: (...args) => {
+      throw new Error('Unexpected scheduler log: ' + String(args[0]));
+    },
+  });
+const auditActions = async (subject: string) =>
+  (await database().select().from(schema.audit).where(eq(schema.audit.subject, subject))).map(a => a.action).sort();
 async function person() {
   const id = 'refresh-test-' + crypto.randomUUID();
   people.push(id);
@@ -204,9 +225,170 @@ test('attention budget, concurrent tabs, explicit reminders and delayed release 
     }),
   );
   expect((await attention.pending(actor.id, '2098-11-05T11:21:00.000Z')).some(d => d.kind === 'reminder')).toBe(true);
-  await attention.release(bundled.batch, bundled.dueAt.toISOString());
-  subjects.push('delivery:' + bundled.batch);
-  expect((await attention.pending(actor.id, bundled.dueAt.toISOString())).some(d => d.id === bundled.id)).toBe(true);
+  // The fourth delivery of the day waits for the 16:00 bundle; its release job's workflow committed with it (D86).
+  const job = 'attention:' + bundled.batch,
+    due = bundled.dueAt.toISOString();
+  subjects.push('job:' + job, 'delivery:' + bundled.batch);
+  expect(due).toBe('2098-11-05T15:00:00.000Z');
+  expect((await enqueuedWorkflows('job:' + job)).map(w => [w.workflow, w.status, w.input])).toEqual([
+    ['scheduledJob', 'ENQUEUED', { id: job, dueAt: due }],
+  ]);
+  expect((await attention.pending(actor.id, due)).some(d => d.id === bundled.id)).toBe(false);
+  // The workflow's step before the bundle is told to come back; at the bundle it releases the batch.
+  expect(await jobStepAt(attention, '2098-11-05T14:59:59.999Z')(job)).toBe('busy');
+  expect(await jobStepAt(attention, due)(job)).toBe('done');
+  expect((await attention.pending(actor.id, due)).some(d => d.id === bundled.id)).toBe(true);
+  expect(await auditActions('delivery:' + bundled.batch)).toEqual(['attention.released']);
+  expect(await auditActions('job:' + job)).toEqual(['job.completed', 'job.scheduled']);
+});
+test('a delivery deferred by quiet hours waits with its release job and workflow, and its job makes it ready at its due time, with any delivery its batch gains after the release', async () => {
+  const actor = await person(),
+    store = postgresThreadStore({ durable: testDurable }),
+    attention = postgresAttention(),
+    card = draft(actor.id);
+  subjects.push('thread:' + card.id);
+  await store.transaction(tx => tx.insertThread(card));
+  const admit = (suffix: string, at: string) =>
+    store.transaction(tx =>
+      tx.admitDelivery({ id: actor.id + suffix, personId: actor.id, threadId: card.id, kind: 'automatic', at }),
+    );
+  const mine = () => database().select().from(schema.deliveries).where(eq(schema.deliveries.personId, actor.id));
+  // The delivery, its job and the job's workflow are one commit: a rollback leaves none of them.
+  await expect(
+    store.transaction(async tx => {
+      await tx.admitDelivery({
+        id: actor.id + ':rolled-back',
+        personId: actor.id,
+        threadId: card.id,
+        kind: 'automatic',
+        at: '2098-11-05T20:00:00.000Z',
+      });
+      throw new Error('rolled back');
+    }),
+  ).rejects.toThrow('rolled back');
+  expect(await mine()).toEqual([]);
+  expect(await enqueuedWorkflows('job:attention:automatic:' + actor.id)).toEqual([]);
+  // 21:00 in Stockholm is quiet hours: the delivery waits for 06:00.
+  await admit(':evening', '2098-11-05T20:00:00.000Z');
+  const [evening] = await mine();
+  expect(evening).toMatchObject({ state: 'waiting', dueAt: new Date('2098-11-06T05:00:00.000Z') });
+  const job = 'attention:' + evening!.batch,
+    due = '2098-11-06T05:00:00.000Z';
+  subjects.push('job:' + job, 'delivery:' + evening!.batch);
+  expect(
+    await database()
+      .select({
+        kind: schema.jobs.kind,
+        status: schema.jobs.status,
+        runAt: schema.jobs.runAt,
+        payload: schema.jobs.payload,
+      })
+      .from(schema.jobs)
+      .where(eq(schema.jobs.id, job)),
+  ).toEqual([
+    { kind: 'attention-release', status: 'temporal', runAt: new Date(due), payload: { batch: evening!.batch } },
+  ]);
+  expect((await enqueuedWorkflows('job:' + job)).map(w => [w.id, w.workflow, w.status, w.input])).toEqual([
+    ['job:' + job, 'scheduledJob', 'ENQUEUED', { id: job, dueAt: due }],
+  ]);
+  expect(await attention.pending(actor.id, due)).toEqual([]);
+  expect(await jobStepAt(attention, '2098-11-06T04:59:59.999Z')(job)).toBe('busy');
+  expect((await mine())[0]?.state).toBe('waiting');
+  expect(await jobStepAt(attention, due)(job)).toBe('done');
+  expect(await attention.pending(actor.id, due)).toEqual([
+    { id: actor.id + ':evening', threadId: card.id, kind: 'automatic' },
+  ]);
+  expect(await auditActions('job:' + job)).toEqual(['job.completed', 'job.scheduled']);
+  // A transaction that began at 05:59 and commits after the release joins the released batch: it is written ready,
+  // shown from the batch's due time, and its job is not scheduled again.
+  await admit(':late', '2098-11-06T04:59:00.000Z');
+  expect((await mine()).find(d => d.id === actor.id + ':late')).toMatchObject({
+    state: 'ready',
+    batch: evening!.batch,
+    dueAt: new Date(due),
+  });
+  expect((await attention.pending(actor.id, '2098-11-06T04:59:30.000Z')).map(d => d.id)).toEqual([]);
+  expect((await attention.pending(actor.id, due)).map(d => d.id).sort()).toEqual(
+    [actor.id + ':evening', actor.id + ':late'].sort(),
+  );
+  expect(await auditActions('job:' + job)).toEqual(['job.completed', 'job.scheduled']);
+  expect(await enqueuedWorkflows('job:' + job)).toHaveLength(1);
+});
+test('a release that comes while a delivery of its batch is being admitted waits for that commit, and one job releases both deliveries', async () => {
+  const actor = await person(),
+    store = postgresThreadStore({ durable: testDurable }),
+    attention = postgresAttention(),
+    card = draft(actor.id);
+  subjects.push('thread:' + card.id);
+  await store.transaction(tx => tx.insertThread(card));
+  const mine = async () =>
+    (await database().select().from(schema.deliveries).where(eq(schema.deliveries.personId, actor.id)))
+      .map(d => [d.id, d.state, d.batch])
+      .sort();
+  const admission = (suffix: string, at: string) => ({
+    id: actor.id + suffix,
+    personId: actor.id,
+    threadId: card.id,
+    kind: 'automatic' as const,
+    at,
+  });
+  // 21:00 and 21:30 in Stockholm are quiet hours: both deliveries wait for 06:00 in one batch.
+  const due = '2098-11-06T05:00:00.000Z',
+    batch = `automatic:${actor.id}:${due}`,
+    job = 'attention:' + batch;
+  subjects.push('job:' + job, 'delivery:' + batch);
+  await store.transaction(tx => tx.admitDelivery(admission(':first', '2098-11-05T20:00:00.000Z')));
+  // The second delivery is admitted and its transaction held open before it commits.
+  let admitted!: () => void, commit!: () => void;
+  const inside = new Promise<void>(resolve => (admitted = resolve)),
+    gate = new Promise<void>(resolve => (commit = resolve));
+  const second = store.transaction(async tx => {
+    await tx.admitDelivery(admission(':second', '2098-11-05T20:30:00.000Z'));
+    admitted();
+    await gate;
+  });
+  await inside;
+  // The job's step at the due time cannot claim the job row while the admission holds it: it is seen waiting for the
+  // row's lock, and does not settle until the admission commits.
+  let settled = false;
+  const step = jobStepAt(attention, due)(job).finally(() => (settled = true));
+  const claimWaits = async () =>
+    (
+      await database().execute<{ waiting: number }>(
+        sql`select count(*)::int as waiting from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like ${'%from "job" where "job"."id" = $1 for update'}`,
+      )
+    )[0]!.waiting > 0;
+  let waited = false,
+    settledWhileHeld = false,
+    held: string[][] = [];
+  try {
+    for (let n = 0; n < 250 && !settled && !waited; n++) {
+      waited = await claimWaits();
+      if (!waited) await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    held = await mine();
+    settledWhileHeld = settled;
+  } finally {
+    commit();
+    await second;
+  }
+  expect({ waited, settled: settledWhileHeld }).toEqual({ waited: true, settled: false });
+  expect(held).toEqual([[actor.id + ':first', 'waiting', batch]]);
+  expect(await step).toBe('done');
+  expect(await mine()).toEqual([
+    [actor.id + ':first', 'ready', batch],
+    [actor.id + ':second', 'ready', batch],
+  ]);
+  expect((await attention.pending(actor.id, due)).map(d => d.id).sort()).toEqual(
+    [actor.id + ':first', actor.id + ':second'].sort(),
+  );
+  const released = await database()
+    .select()
+    .from(schema.audit)
+    .where(and(eq(schema.audit.subject, 'delivery:' + batch), eq(schema.audit.action, 'attention.released')));
+  expect(released.map(a => a.details)).toEqual([{ count: 2 }]);
+  expect(await auditActions('job:' + job)).toEqual(['job.completed', 'job.scheduled']);
+  expect(await enqueuedWorkflows('job:' + job)).toHaveLength(1);
 });
 test('new jobs cannot be claimed by the legacy owner and stale acknowledgements cannot replace completion', async () => {
   const id = 'job-test-' + crypto.randomUUID();

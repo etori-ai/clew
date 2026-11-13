@@ -2548,7 +2548,7 @@ Example:
 
 #### `capabilities[].view.subject`
 
-The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it; a record without the property links nowhere.
+The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it, a person through the id of whoever of the reader's organisation holds the user name when the read is answered (D122); a record without the property, or whose user name nobody there holds, links nowhere.
 
 - Type: object
 - optional (table, list, detail only)
@@ -2987,7 +2987,7 @@ Example:
 
 #### `header`
 
-The shared header (D88): this connector gives Clew the header it draws above every page, for the people in the connector's audience, as the content system (Sitevision, SharePoint, WordPress) lists its sections for them. When several enabled connectors declare one, the earliest registered answers. Clew keeps no header of its own beyond its default (the site's name and Start).
+The shared header (D88): this connector can give Clew the header it draws above every page, for the people in the connector's audience, as the content system (Sitevision, SharePoint, WordPress) lists its sections for them. Declaring it makes the connector a candidate, not the holder: only the one connector an administrator chose to give the header answers, whatever the order connectors were registered in. Clew keeps no header of its own beyond its default (the site's name and Start).
 
 - Type: object
 - optional

@@ -26,6 +26,15 @@ const meetingTime = instant =>
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(instant));
+/** When something came in: the day, the month in full and the time, in Swedish time: "10 november kl. 16:40". */
+const arrivalTime = instant =>
+  new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Europe/Stockholm',
+    day: 'numeric',
+    month: 'long',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(instant));
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const fail = (code, message, status) => json({ error: { code, message } }, status);
@@ -584,7 +593,7 @@ export function createConnector({
           area: 'employees',
           title: `Godkänn en ledighetsansökan, ${shortDate(r.from)} till ${shortDate(r.to)}`,
           summary: `${r.days} dagar ${r.type}. ${clash ? 'En kollega har sökt samma period.' : 'Ingen annan i arbetslaget är ledig då'} och saldot räcker.`,
-          reason: `Ansökan kom ${new Date(r.submittedAt).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' })}`,
+          reason: `Ansökan kom ${arrivalTime(r.submittedAt)}`,
           deadline: null,
           // The card says what and when; the row names who by key only (D97), so the card shows on that person, and
           // "Se i personalsystemet" shows the source's record.

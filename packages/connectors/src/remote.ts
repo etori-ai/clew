@@ -3,6 +3,7 @@ import { MAX_DOCUMENT_BYTES, contractProblems, type DocumentContent } from '@cle
 import {
   CapabilityError,
   InstallationReadError,
+  actorOf,
   installationReadText,
   type Actor,
   type Capability,
@@ -22,6 +23,7 @@ import {
   protocolTerms,
   ScanResponseSchema,
   type ConnectorManifest,
+  type ProtocolErrorCode,
 } from './protocol';
 
 /**
@@ -113,7 +115,7 @@ export async function fetchManifest(
 }
 
 function unavailable(source: string) {
-  return new CapabilityError(`${source} svarar inte just nu.`);
+  return new CapabilityError(`${source} svarar inte just nu.`, 'unavailable');
 }
 /** The person's own token for the connector's system (D26), beside the assertion that proves Clew. Only when the manifest asks and a session is behind the call. */
 export const DELEGATED_TOKEN_HEADER = 'x-clew-delegated-token';
@@ -126,7 +128,7 @@ async function delegated(
   try {
     return await clew.delegate(manifest.delegation.audience);
   } catch {
-    throw new CapabilityError(`${source} kunde inte få din behörighet just nu.`);
+    throw new CapabilityError(`${source} kunde inte få din behörighet just nu.`, 'unavailable');
   }
 }
 const CAPABILITY_ROUTE = '/clew/capabilities/';
@@ -176,11 +178,18 @@ async function post(
   }
   return { status: response.status, json };
 }
-/** A connector's error answer in the protocol's shape, mapped to what the person sees. */
-function failWith(json: unknown, source: string): never {
-  const error = (json as { error?: { code?: string; message?: string } } | null)?.error;
+/**
+ * A connector's error answer in the protocol's shape, mapped to what the person sees, with its code kept: a caller
+ * tells the connector's refusal of the person (`denied`) from its failure by it. The status decides what the code may
+ * claim, as the protocol gives them: a 401 is the connector rejecting Clew's key or assertion, and a `denied` refuses
+ * the person only with its 403, so either is the connector failing, `unavailable`, whatever the body says. The message
+ * stays the connector's, so the conformance check still names the rejection.
+ */
+function failWith(json: unknown, status: number, source: string): never {
+  const error = (json as { error?: { code?: ProtocolErrorCode; message?: string } } | null)?.error;
   if (error?.code === 'unavailable' || !error?.message) throw unavailable(source);
-  throw new CapabilityError(error.message);
+  const failed = status === 401 || (error.code === 'denied' && status !== 403);
+  throw new CapabilityError(error.message, failed ? 'unavailable' : error.code);
 }
 
 const ERROR_CODES: readonly SourceErrorCode[] = ['invalid', 'denied', 'not-found', 'unavailable', 'unknown'];
@@ -247,7 +256,11 @@ function installationRead(
   };
 }
 
-/** Build the `Connector` the registry runs: every operation is a call to the service as the acting person. */
+/**
+ * Build the `Connector` the registry runs: every operation is a call to the service as the acting person. The registry
+ * hands it the actor inside the process, which may carry the person's groups or a whole authenticated context; every
+ * body posted here carries the published actor (`actorOf`) and nothing more, as the protocol's request schemas require.
+ */
 export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTransport): Connector {
   const source = manifest.source;
   // A connector on the previous protocol (D60) was written against bodies without `about`; it is never sent one.
@@ -280,14 +293,14 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
         CAPABILITY_ROUTE + encodeURIComponent(c.name),
         actor,
         // How the actor stands to each key the input names (D117), bound with the input by the assertion.
-        { actor, input, ...told(clew) },
+        { actor: actorOf(actor), input, ...told(clew) },
         await delegated(manifest, clew, source),
         clew.chain,
         clew.operationId,
         clew.signal,
       );
       if (status >= 500 || !Value.Check(CallResponseSchema, json)) throw unavailable(source);
-      if ('error' in json) failWith(json, source);
+      if ('error' in json) failWith(json, status, source);
       return json.output;
     },
   }));
@@ -302,7 +315,7 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
             request: import('@clew/contracts').DocumentRequest,
             clew: Clew,
           ): Promise<DocumentContent> => {
-            const text = JSON.stringify({ actor, request, ...told(clew) });
+            const text = JSON.stringify({ actor: actorOf(actor), request, ...told(clew) });
             const response = await (transport.fetch ?? fetch)(transport.url + '/clew/documents', {
               redirect: 'error',
               method: 'POST',
@@ -323,8 +336,10 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
             });
             if (!response.ok || !response.body) {
               await response.body?.cancel();
-              if (response.status === 409) throw new CapabilityError('Underlaget har ändrats. Läs in underlagen igen.');
-              if (response.status === 403) throw new CapabilityError('Du saknar behörighet att läsa underlaget.');
+              if (response.status === 409)
+                throw new CapabilityError('Underlaget har ändrats. Läs in underlagen igen.', 'invalid');
+              if (response.status === 403)
+                throw new CapabilityError('Du saknar behörighet att läsa underlaget.', 'denied');
               throw unavailable(source);
             }
             const declaredSize = Number(response.headers.get('content-length'));
@@ -388,7 +403,7 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
                 source,
                 '/clew/figure',
                 actor,
-                { actor, area: a.id },
+                { actor: actorOf(actor), area: a.id },
                 undefined,
                 clew.chain,
                 undefined,
@@ -410,7 +425,7 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
               source,
               '/clew/scan',
               actor,
-              { actor },
+              { actor: actorOf(actor) },
               await delegated(manifest, clew, source),
               clew.chain,
               undefined,

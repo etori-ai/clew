@@ -117,6 +117,32 @@ export function provisioningContract(name: string, make: () => Promise<Provision
       // b is managed without a unit: group of its own, so its label comes from the unit table.
       expect(await h.grant(lena)).toMatchObject({ unitId: p + '-b', unitLabel: 'B från tidigare', role: 'manager' });
     });
+    test('the lowest unit id is the lowest by code unit on both adapters, whatever the database collates (A5, Q4)', async () => {
+      const h = await make(),
+        p = h.prefix,
+        sara = p + '-sara';
+      // Under the English collation `förskola` comes first; by code unit `Skola` does, and that is the one to act in.
+      await h.seed({
+        people: [{ id: sara, organisationId: 'org' }],
+        groups: [
+          { externalId: 'unit:' + p + '-förskola', label: 'Förskolan' },
+          { externalId: 'unit:' + p + '-Skola', label: 'Skolan' },
+        ],
+        members: [
+          { group: 'unit:' + p + '-förskola', person: sara },
+          { group: 'unit:' + p + '-Skola', person: sara },
+        ],
+      });
+      await provisioningUsecases({ store: h.store }).derivePerson('system:test', sara);
+      expect(await h.grant(sara)).toMatchObject({ unitId: p + '-Skola', unitLabel: 'Skolan', role: 'employee' });
+      // Both assignments are kept. A harness reads them back in the database's order, so they are compared as a set.
+      const held = (await h.assignments(sara)).map(a => a.unitId + ' ' + a.role);
+      expect(held.sort()).toEqual([p + '-Skola employee', p + '-förskola employee']);
+      expect((await h.audit(sara)).at(-1)).toMatchObject({
+        action: 'grant.derived',
+        details: { unitId: p + '-Skola', role: 'employee', assignments: 2 },
+      });
+    });
     test('no unit membership means no grant: the projection is removed and the audit row says so', async () => {
       const h = await make(),
         p = h.prefix,

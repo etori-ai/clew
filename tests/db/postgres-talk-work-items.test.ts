@@ -129,8 +129,19 @@ async function rows(threadId: string) {
     .where(eq(schema.timerIntents.id, dueTimerId(threadId)));
   return { thread, messages, deliveries, audit, timer };
 }
+/** The employee of the talk, by Clew's key (D122); the cards here are about someone the store does not check. */
+const employeeOf = (threadId: string) => ({ entity: 'person' as const, key: `employee-${threadId}` });
 const open = (threadId: string, personId: string, dueOn: string, at = now.toISOString()) =>
-  run(items => items.open({ threadId, personId, commitmentId: `commitment-${threadId}`, dueOn, at }));
+  run(items =>
+    items.open({
+      threadId,
+      personId,
+      commitmentId: `commitment-${threadId}`,
+      dueOn,
+      at,
+      subject: employeeOf(threadId),
+    }),
+  );
 
 describe('the action point card (D96 items 5 and 6)', () => {
   test('open writes the card, its delivery, message, audit row and due timer with its workflow in one transaction; a throw leaves none', async () => {
@@ -144,6 +155,7 @@ describe('the action point card (D96 items 5 and 6)', () => {
           commitmentId: 'c-rolled-back',
           dueOn: '2026-03-12',
           at: now.toISOString(),
+          subject: employeeOf(rolledBack),
         });
         throw new Error('after open');
       }),
@@ -308,10 +320,10 @@ describe('the action point card (D96 items 5 and 6)', () => {
     expect((await store.listThreads(owner, now.toISOString())).find(t => t.id === id)?.timers).toBeUndefined();
   });
 
-  test("the card is about the talk's employee by key on the thread, never on a row, and leaves the index with the card (D97)", async () => {
+  test("the card is about the talk's employee by id on the thread, never on a row, and leaves the index with the card (D97, D122)", async () => {
     const { owner } = await people();
     const id = card();
-    const employee = { entity: 'person' as const, key: `Talks.Employee-${id}` };
+    const employee = { entity: 'person' as const, key: `talks-employee-${id}` };
     await run(items =>
       items.open({
         threadId: id,

@@ -39,7 +39,7 @@ test.describe('Dialogstöd, the units side by side', () => {
     await expect(attention).toContainText(`Sjukfrånvaro · Åtgärd krävs – ${BELOW_UNIT.label}`);
     await expect(attention).toContainText(`Sjukfrånvaro · Bevaka – ${ENTITY_UNIT.label}`);
     await expect(attention).toContainText(`Utvecklingssamtal · 1 saknas – ${ENTITY_UNIT.label}`);
-    const lines = await attention.getByText(/ · .* – /).allTextContents();
+    const lines = await attention.getByText(/\s· .* – /).allTextContents();
     expect(lines[0]).toContain('Åtgärd krävs');
     await expect(attention.getByRole('link', { name: BELOW_UNIT.label, exact: true })).toHaveAttribute(
       'href',

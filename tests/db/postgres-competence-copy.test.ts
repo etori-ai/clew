@@ -6,7 +6,7 @@ import type { DurableQueue } from '../../packages/db/src/durable';
 import { organisationInAudiences, readAudienceFacts } from '../../packages/db/src/auth';
 import { inAudience } from '../../packages/connectors/src/index';
 import type { ConnectorAudience } from '../../packages/contracts/src/index';
-import { postgresCompetenceStore } from '../../apps/server/src/modules/competence/adapters/postgres';
+import { competenceStoreWithCards } from '../../apps/server/src/composition/competence';
 import type { HoldingsPort, SourceHoldingsPage } from '../../apps/server/src/modules/competence/model';
 import { competenceUsecases, COPY_ACTOR } from '../../apps/server/src/modules/competence/usecases';
 import { copiedRow, typeRow } from '../competence-store-contract';
@@ -58,12 +58,12 @@ async function world() {
   await db
     .insert(schema.connectors)
     .values({ id: lms, url: 'http://x.test', secret: 's', createdBy: 't', updatedBy: 't' });
-  const store = postgresCompetenceStore(durable);
+  const store = competenceStoreWithCards({ durable, cancel: async () => undefined });
   await store.transaction(tx => tx.insertType(typeRow(p + '-t1', org)));
   return { p, org, lms, anna, bo, store };
 }
 /** The copy over the Postgres store, reading one page; everyone active is admitted. */
-function copyOver(store: ReturnType<typeof postgresCompetenceStore>, page: SourceHoldingsPage) {
+function copyOver(store: ReturnType<typeof competenceStoreWithCards>, page: SourceHoldingsPage) {
   const port: HoldingsPort = {
     switchedOn: async () => true,
     holdingsSources: async () => [],

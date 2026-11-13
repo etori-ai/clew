@@ -128,7 +128,9 @@ test.describe('the answer on its way', () => {
     ).toBeVisible();
     await expect(page.getByRole('region', { name: 'I dag' })).toBeVisible();
     await expect(
-      page.getByRole('region', { name: 'Sedan i går' }).getByText('Inget är klart och inget väntar på andra.'),
+      page
+        .getByRole('region', { name: 'Sedan i går' })
+        .getByText('Inget har blivit klart sedan i går, och inget väntar på andra.'),
     ).toBeVisible();
     await input.fill('attestera');
     await expect(page.getByRole('list', { name: 'Menar du' })).toBeVisible();
