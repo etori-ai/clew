@@ -146,11 +146,12 @@ function PersonDetails({ detail, from }: { detail: EntityDetail; from: string | 
  * The person as a page (D112 item 5, board Person; D97 item 5), at `/people/:key`, the one way a person is shown (D111
  * rule 3), reached from a name on Personal or on any row that names them. The work item's page shape (`EntityPage`):
  * the way back with their unit, their avatar, name and title, and every action about them with "Fråga Clew" in the
- * header; in the main column "Behöver dig" (the reader's work items about them) and then one section per source that
- * has something about them, one under the other, each with its source's badge; the directory's facts and their unit in
- * the rail. `?section=` names a section: the page scrolls to it and its heading takes the focus, so old links, "N att
- * agera på" on Personal and a talk's way back land where they did. A person the reader may not ask about is the page's
- * own "finns inte" (the server answers 404 for both).
+ * header; in the main column "Behöver dig" (the reader's work items about them), then what the directory sent about
+ * them (D114), "Anställningar" and "Kontaktuppgifter", each only when something was sent for it, and then one section
+ * per source that has something about them, one under the other, each with its source's badge; the directory's other
+ * facts and their unit in the rail. `?section=` names a section: the page scrolls to it and its heading takes the
+ * focus, so old links, "N att agera på" on Personal and a talk's way back land where they did. A person the reader may
+ * not ask about is the page's own "finns inte" (the server answers 404 for both).
  *
  * The page holds the panel beside its column (D111 rules 2 to 4, `usePagePanel`): a work item under Behöver dig and the
  * one an action makes open there, with the address kept, and closing leaves the page as it was. While the panel holds
