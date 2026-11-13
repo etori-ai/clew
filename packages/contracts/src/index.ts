@@ -1115,7 +1115,9 @@ export const TalksResultSchema = object({
 export type TalksResult = Static<typeof TalksResultSchema>;
 /**
  * What the composite `clew.commitments` returns (D96 item 8): as `clew.talks`, each row with `personId` (the employee)
- * and, only when `writable`, `id`: the built-in module's own id of the action point, which its write routes take.
+ * and, only when `writable` and the reader may mark it done or open it again, `id`: the built-in module's own id of the
+ * action point, which its write routes take. The reader may change their own, and a manager's point about someone they
+ * manage now whose owner no longer manages that person (Q12).
  */
 export const CommitmentsResultSchema = object({
   rows: Type.Array(object({ ...CommitmentRowSchema.properties, personId: id, id: Type.Optional(id) }), {

@@ -54,9 +54,12 @@ const TALK_WIDTH = 560;
 /** An action point is one short line (D96 item 4); the contract caps it. */
 const TEXT_MAX = 280;
 
-/** Who answers for an action point, as the manager reading the talk is told. */
-const responsible = (row: Pick<CommitmentEntry, 'owner' | 'mine'>) =>
-  row.mine ? 'Du' : row.owner === 'employee' ? 'Medarbetaren' : 'Chefen';
+/**
+ * Who answers for an action point, as the manager reading the talk is told. Another manager's point the reader may tick
+ * off (it carries its `id`, Q12) is a former manager's: its owner no longer manages the person.
+ */
+const responsible = (row: Pick<CommitmentEntry, 'owner' | 'mine' | 'id'>) =>
+  row.mine ? 'Du' : row.owner === 'employee' ? 'Medarbetaren' : row.id ? 'Tidigare chef' : 'Chefen';
 
 /**
  * One person's utvecklingssamtal (D96 item 7) as a focused overlay over the page it was opened on (D83, D111 rule 5):
@@ -249,7 +252,8 @@ function Talk({ person, talks }: { person: StaffPerson; talks: TalksResult }) {
   const day = today();
   const list = pointsQ.data?.rows ?? [];
   const groups = groupCommitments(list);
-  const writableRow = (c: CommitmentEntry) => !!pointsQ.data?.writable && !!c.id && c.mine;
+  // A row carries its `id` only when the reader may change it: their own, or a former manager's they take over (Q12).
+  const writableRow = (c: CommitmentEntry) => !!pointsQ.data?.writable && !!c.id;
   const group = (heading: string, rows: CommitmentEntry[]) =>
     rows.length === 0 ? null : (
       <VStack gap={1} as="section" aria-labelledby={`${ids}-${heading}`}>

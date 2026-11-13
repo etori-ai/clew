@@ -17,7 +17,7 @@ import { newsUsecases } from '../modules/news/usecases';
 import { talksConnector } from '../modules/talks/capabilities';
 import { talkSeamCapabilities } from '../modules/talk-seam/capabilities';
 import { talkSeamUsecases } from '../modules/talk-seam/usecases';
-import { talkDirectory, talkHolders, talks } from '../composition/talks';
+import { talkDirectory, talkHolders, talkTakeovers, talks } from '../composition/talks';
 import { competenceConnector } from '../modules/competence/capabilities';
 import { competence } from '../composition/competence';
 import { logger } from '../logging';
@@ -57,6 +57,7 @@ const talkSeam = talkSeamUsecases({
   source: actor => registry.talkSource(actor),
   directory: talkDirectory,
   holders: talkHolders,
+  takeovers: talkTakeovers,
 });
 /**
  * Clew's own connector is assembled here, the only file that names connectors: the composite search owns the id and the

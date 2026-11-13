@@ -24,7 +24,7 @@ import {
   talkRow,
   talkState,
 } from './domain';
-import type { RoundRecord, TalkDeps, TalkExport, TalkRecord, TalkTx } from './model';
+import type { CommitmentRecord, RoundRecord, TalkDeps, TalkExport, TalkRecord, TalkTx } from './model';
 
 /** A request the talks module turns down for what it asks, not who asks (D96); a 400 with this message. */
 export class TalkError extends InputError {
@@ -146,6 +146,23 @@ export function talkUsecases(deps: TalkDeps) {
     bookedUnknown: !s.bookings,
   });
   /**
+   * Who may mark this action point done or open it again (D96 item 4, Q12), and as whom: its owner, or a current manager
+   * of the employee (`people`, the persona's own) taking over a manager's point whose owner no longer manages the
+   * employee or was erased. Nobody else, so a co-manager's points and the employee's own stay their owners'.
+   */
+  async function mayChange(
+    persona: AuthenticatedContext,
+    people: ReadonlyMap<string, StaffPerson>,
+    c: CommitmentRecord,
+  ): Promise<'owner' | 'manager' | undefined> {
+    if (c.ownerId === persona.id) return 'owner';
+    return c.ownerRole === 'manager' &&
+      people.has(c.employeeId) &&
+      (c.ownerId === null || !(await deps.manages(c.ownerId, c.employeeId)))
+      ? 'manager'
+      : undefined;
+  }
+  /**
    * Mark an action point done or open again (D96 item 4, Q12): its owner does; a current manager of the employee takes
    * over a manager's point whose owner no longer manages the employee (or was erased), so that nothing stays open for good
    * when a manager leaves. A co-manager's points and the employee's own are left to their owners. Who may is read before
@@ -155,14 +172,10 @@ export function talkUsecases(deps: TalkDeps) {
   async function setDone(persona: AuthenticatedContext, id: string, done: boolean) {
     const { people } = await managed(persona);
     const read = await deps.store.transaction(tx => tx.commitment(id));
-    const asOwner = !!read && read.ownerId === persona.id;
-    const asManager =
-      !!read &&
-      !asOwner &&
-      read.ownerRole === 'manager' &&
-      people.has(read.employeeId) &&
-      (read.ownerId === null || !(await deps.manages(read.ownerId, read.employeeId)));
-    if (!read || (!asOwner && !asManager)) throw new ForbiddenError(NOT_ALLOWED);
+    const as = read && (await mayChange(persona, people, read));
+    if (!read || !as) throw new ForbiddenError(NOT_ALLOWED);
+    const asOwner = as === 'owner',
+      asManager = as === 'manager';
     const at = now().toISOString();
     await deps.store.transaction(async tx => {
       const c = await tx.commitment(id);
@@ -500,6 +513,27 @@ export function talkUsecases(deps: TalkDeps) {
     completeCommitment: (persona: AuthenticatedContext, id: string) => setDone(persona, id, true),
     /** The same people open it again; its card opens again with its `due` timer. */
     reopenCommitment: (persona: AuthenticatedContext, id: string) => setDone(persona, id, false),
+    /**
+     * Which of these action points the persona may take over (Q12): a manager's point about someone they manage now,
+     * whose owner no longer manages that person or was erased. What the talks seam asks when a manager reads a person's
+     * points, so that the page offers Klar on those rows too, as `completeCommitment` allows. Their own are not asked.
+     */
+    async takeovers(persona: AuthenticatedContext, ids: readonly string[]): Promise<Set<string>> {
+      const taken = new Set<string>();
+      if (!ids.length) return taken;
+      const { people } = await managed(persona);
+      if (!people.size) return taken;
+      const records = await deps.store.transaction(async tx => {
+        const found: CommitmentRecord[] = [];
+        for (const id of new Set(ids)) {
+          const c = await tx.commitment(id);
+          if (c) found.push(c);
+        }
+        return found;
+      });
+      for (const c of records) if ((await mayChange(persona, people, c)) === 'manager') taken.add(c.id);
+      return taken;
+    },
 
     /**
      * The `due` timer of an action point's card fired at `generation` (D96 item 5). While the action point is open the

@@ -529,6 +529,9 @@ describe('action points', () => {
     }
     expect(store.audit()).toHaveLength(audited);
     expect([karins, lenas, annas].map(id => store.state.commitments.get(id)?.doneAt)).toEqual([null, null, null]);
+    // So neither is offered the other's point, nor the employee's, to take over.
+    expect(await talks.takeovers(co, [karins, annas])).toEqual(new Set());
+    expect(await talks.takeovers(boss, [lenas, annas])).toEqual(new Set());
     // Each owner ticks off their own; the audit row names who, as the owner.
     await talks.completeCommitment(boss, karins);
     await talks.completeCommitment(co, lenas);
@@ -568,6 +571,12 @@ describe('action points', () => {
       ['commitment:talks:' + lenas, true, 'anna.a'],
       ['commitment:talks:' + later, true, 'anna.a'],
     ]);
+    // What the page is offered (Q12): Anna's current manager may take over the point, a manager of another unit and an
+    // employee may not, and an unknown id is nobody's; Lena's own is hers as its owner, never a takeover.
+    expect(await talks.takeovers(boss, [lenas, 'missing'])).toEqual(new Set([lenas]));
+    expect(await talks.takeovers(other, [lenas])).toEqual(new Set());
+    expect(await talks.takeovers(asAnna, [lenas])).toEqual(new Set());
+    expect(await talks.takeovers(co, [lenas])).toEqual(new Set());
     const audited = store.audit().length;
     now = new Date('2026-11-12T10:00:00.000Z');
     await talks.completeCommitment(co, later);
@@ -619,6 +628,7 @@ describe('action points', () => {
     });
     await talks.erasePerson('operator:cli', 'co');
     expect(store.state.commitments.get(lenas)).toMatchObject({ ownerId: null });
+    expect(await talks.takeovers(boss, [lenas])).toEqual(new Set([lenas]));
     await talks.completeCommitment(boss, lenas);
     expect(store.state.commitments.get(lenas)).toMatchObject({ doneAt: at(), doneBy: 'boss' });
     expect(store.audit().at(-1)).toEqual({

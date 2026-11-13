@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { TALKS_FAIL_ERROR, TALK_LENS } from './data';
+import { TALKS_FAIL_ERROR, TALK_LENS, coManagersPoint, formerManagersPoint } from './data';
 import { People } from './person-data';
 import {
   desktop,
@@ -103,6 +103,37 @@ for (const [layout, viewport] of [
       await expect(dialog.getByRole('button', { name: 'Ångra', exact: true })).toBeVisible();
       await expect(dialog.getByRole('button', { name: 'Markera som hållet' })).toHaveCount(0);
       await expect(dialog.getByRole('form', { name: 'Ny åtgärdspunkt' })).toBeVisible();
+    });
+
+    test('a former manager’s open point is the reader’s to tick off by keyboard; a co-manager’s and the employee’s are not (Q12)', async ({
+      page,
+      api,
+    }) => {
+      api.commitments = [...api.commitments, formerManagersPoint(), coManagersPoint()];
+      await open(page, '/staff?talk=anna');
+      const dialog = talk(page, 'Anna Lindqvist');
+      const thisRound = dialog.getByRole('list', { name: 'Från det här samtalet' });
+      const former = thisRound.getByRole('listitem').filter({ hasText: formerManagersPoint().text });
+      const co = thisRound.getByRole('listitem').filter({ hasText: coManagersPoint().text });
+      // Its owner no longer manages Anna, so it says who wrote it and offers Klar; her other manager's stays theirs.
+      await expect(former).toContainText('Tidigare chef · senast ons 25 nov.');
+      await expect(co).toContainText('Chefen · senast tors 26 nov.');
+      await expect(co.getByRole('button')).toHaveCount(0);
+      await expect(dialog.getByRole('list', { name: 'Kvar från tidigare samtal' }).getByRole('button')).toHaveCount(0);
+      await expectNoAxeViolations(page);
+
+      await former.getByRole('button', { name: `Klar: ${formerManagersPoint().text}` }).focus();
+      await page.keyboard.press('Enter');
+      const reopen = dialog
+        .getByRole('list', { name: 'Klara' })
+        .getByRole('button', { name: `Öppna igen: ${formerManagersPoint().text}` });
+      await expect(reopen).toBeFocused();
+      await expect(notices(page).getByText('Åtgärdspunkten är klar.')).toBeAttached();
+      expect(api.talkWrites.at(-1)).toEqual({ method: 'POST', path: '/talks/commitments/c-anna-5/done', body: {} });
+      await expectNoAxeViolations(page);
+      const { unmarked, hidden } = await hiddenFocusStops(page);
+      expect(unmarked).toEqual([]);
+      expect(hidden).toEqual([]);
     });
 
     test('a person with no points draws no empty groups', async ({ page, api }) => {

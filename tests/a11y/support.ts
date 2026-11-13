@@ -49,6 +49,7 @@ import {
   TODAY,
   USER_NAME,
   allCommitments,
+  changeable,
   commitmentsFor,
   myCommitments,
   readOnlyCommitments,
@@ -1248,7 +1249,7 @@ export class MockApi {
       const id = decodeURIComponent(done[1]!);
       const row = this.commitments.find(c => c.id === id);
       if (!row) return fail(400, 'Åtgärdspunkten finns inte.');
-      if (!row.mine) return fail(403, 'Bara den som äger åtgärdspunkten kan markera den som klar.');
+      if (!changeable(row)) return fail(403, 'Bara den som äger åtgärdspunkten kan markera den som klar.');
       this.commitments = this.commitments.map(c => {
         if (c.id !== id) return c;
         if (method === 'POST') return { ...c, done: true, doneAt: NOW };

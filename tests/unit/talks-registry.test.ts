@@ -24,7 +24,7 @@ import { talkUsecases } from '../../apps/server/src/modules/talks/usecases';
 import { talksConnector } from '../../apps/server/src/modules/talks/capabilities';
 import { talkSeamCapabilities } from '../../apps/server/src/modules/talk-seam/capabilities';
 import { talkSeamUsecases } from '../../apps/server/src/modules/talk-seam/usecases';
-import type { Directory, Holders } from '../../apps/server/src/modules/talk-seam/model';
+import type { Directory, Holders, Takeovers } from '../../apps/server/src/modules/talk-seam/model';
 import { memoryObligations, memoryProposalStore } from '../../apps/server/src/modules/calendar/adapters/memory';
 import type { UnitMember } from '../../apps/server/src/modules/calendar/model';
 import { calendarUsecases } from '../../apps/server/src/modules/calendar/usecases/samtal';
@@ -64,6 +64,8 @@ const persona = (
 const hillevi = { ...persona('hillevi', 'Hillevi Berg', 'manager'), userName: 'hillevi' };
 const anna = { ...persona('p-anna', 'Anna Lindqvist', 'employee'), userName: 'anna' };
 const mikael = persona('mikael', 'Mikael Lund', 'employee', ['admin.connectors']);
+/** The manager a person moves to in the Q12 test; manages nobody until then. */
+const gustav = { ...persona('gustav', 'Gustav Ek', 'manager'), userName: 'gustav' };
 const staffPerson = (id: string, name: string, userName: string): StaffPerson => ({
   id,
   name,
@@ -83,8 +85,12 @@ const STAFF = [
 const overviews = new Map<string, StaffOverview>([
   ['hillevi', { units: [{ unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', people: STAFF }] }],
 ]);
-const personas = new Map([hillevi, anna, mikael].map(p => [p.id, p]));
-const userNames = new Map<string, string>([['hillevi', 'hillevi'], ...STAFF.map(p => [p.id, p.userName!] as const)]);
+const personas = new Map([hillevi, anna, mikael, gustav].map(p => [p.id, p]));
+const userNames = new Map<string, string>([
+  ['hillevi', 'hillevi'],
+  ['gustav', 'gustav'],
+  ...STAFF.map(p => [p.id, p.userName!] as const),
+]);
 
 function world() {
   let now = Date.parse(T0);
@@ -141,8 +147,13 @@ function world() {
         return id ? [[name, id] as const] : [];
       }),
     );
+  // As composition/talks.ts asks the talks module (Q12): which points the reader may take over, as their grant is now.
+  const takeovers: Takeovers = async (actor, ids) => {
+    const p = personas.get(actor.id);
+    return p ? talks.takeovers(p, ids) : new Set();
+  };
   // As connectors/registry.ts assembles them: the seam's reads joined into Clew's core connector, the built-in bundled.
-  const seam = talkSeamUsecases({ source: actor => registry.talkSource(actor), directory, holders });
+  const seam = talkSeamUsecases({ source: actor => registry.talkSource(actor), directory, holders, takeovers });
   registry.register({
     id: SEARCH_CONNECTOR,
     kind: 'core',
@@ -369,6 +380,54 @@ describe('the talks wiring (D96 items 7 to 9)', () => {
     expect(
       (await read<CommitmentsResult>(w.registry, hillevi, 'clew.commitments')).rows.map(r => [r.id, r.done]),
     ).toEqual([[mentor, true]]);
+  });
+
+  test('the person’s new manager reads the former manager’s open point with its id and ticks it off; the employee’s own has none (Q12)', async () => {
+    const w = world();
+    await w.talks.openRound('operator:cli', {
+      organisationId: ORG,
+      label: 'Utvecklingssamtal 2026',
+      opensOn: '2026-09-01',
+      dueOn: '2026-11-28',
+    });
+    const mentor = await w.talks.addCommitment(hillevi, 'p-anna', {
+      owner: 'manager',
+      text: 'Ordna en mentor',
+      dueOn: '2026-12-15',
+    });
+    const course = await w.talks.addCommitment(hillevi, 'p-anna', {
+      owner: 'employee',
+      text: 'Gå kursen i arbetsrätt',
+      dueOn: '2026-12-15',
+    });
+    const anna = STAFF.filter(p => p.id === 'p-anna');
+    // While Hillevi manages Anna too, her point is hers: Gustav reads it without the id the write routes take.
+    w.managers.set('gustav', { units: [{ unitId: 'unit-fritids', unitLabel: 'Fritidshemmet', people: anna }] });
+    const ids = async () =>
+      (await read<CommitmentsResult>(w.registry, gustav, 'clew.commitments', { person: 'anna' })).rows
+        .map(r => [r.ref, r.id ?? null])
+        .sort();
+    expect(await ids()).toEqual(
+      [
+        ['commitment:talks:' + course, null],
+        ['commitment:talks:' + mentor, null],
+      ].sort(),
+    );
+    // Anna leaves Hillevi's unit: the point nobody who manages her owns is Gustav's to tick off, so it carries its id.
+    w.managers.set('hillevi', {
+      units: [{ unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', people: STAFF.filter(p => p.id !== 'p-anna') }],
+    });
+    const read1 = await read<CommitmentsResult>(w.registry, gustav, 'clew.commitments', { person: 'anna' });
+    expect(checkContract(CommitmentsResultSchema, read1)).toBe(true);
+    expect(await ids()).toEqual(
+      [
+        ['commitment:talks:' + course, null],
+        ['commitment:talks:' + mentor, mentor],
+      ].sort(),
+    );
+    await w.talks.completeCommitment(gustav, mentor);
+    expect(w.store.state.commitments.get(mentor)).toMatchObject({ doneBy: 'gustav' });
+    await expect(w.talks.completeCommitment(gustav, course)).rejects.toThrow();
   });
 
   test('the planner’s bookings never read the round, so the round read through clew.talks cannot loop back into the planner', async () => {

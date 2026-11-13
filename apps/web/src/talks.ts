@@ -9,7 +9,10 @@ import { displayDate, shortDayLabel, timeLabel } from '@clew/calendar/dates';
 
 /** One person in the round as `clew.talks` lists them, with their id on the reader's units. */
 export type TalkEntry = TalksResult['rows'][number];
-/** One action point as `clew.commitments` lists it; `id` only when Clew can write. */
+/**
+ * One action point as `clew.commitments` lists it; `id` only when Clew can write and the reader may change it: their
+ * own, or a former manager's point about someone they manage now (Q12).
+ */
 export type CommitmentEntry = CommitmentsResult['rows'][number];
 
 /** What `clew.commitments` takes as `person` for someone on Personal: their user name, else their id. */

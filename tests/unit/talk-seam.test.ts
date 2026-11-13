@@ -22,10 +22,17 @@ import {
   mapCommitmentRows,
   mapTalkRows,
   ownedElsewhere,
+  takeoverCandidates,
 } from '../../apps/server/src/modules/talk-seam/domain';
 import { talkSeamCapabilities } from '../../apps/server/src/modules/talk-seam/capabilities';
 import { NO_SOURCE, talkSeamUsecases } from '../../apps/server/src/modules/talk-seam/usecases';
-import type { Directory, DirectoryPerson, Holders, TalkCall } from '../../apps/server/src/modules/talk-seam/model';
+import type {
+  Directory,
+  DirectoryPerson,
+  Holders,
+  TalkCall,
+  Takeovers,
+} from '../../apps/server/src/modules/talk-seam/model';
 
 /**
  * The talks seam (D96 items 8 and 9): `clew.talks` and `clew.commitments` ask the one system that answers the talks
@@ -121,7 +128,11 @@ function talkSystem(id: string, source: string, answers: Answers): Connector {
     ],
   };
 }
-function world(connectors: Connector[], onRefused?: (id: string, topic: string) => void) {
+function world(
+  connectors: Connector[],
+  onRefused?: (id: string, topic: string) => void,
+  takenOver: ReadonlySet<string> = new Set(),
+) {
   const registry = new Registry(onRefused ? { onRefused } : {});
   // As the people module answers it (D116): who holds each user name in the organisation, active or not, by the name
   // as asked, compared without regard to case.
@@ -137,10 +148,17 @@ function world(connectors: Connector[], onRefused?: (id: string, topic: string) 
       }),
     );
   };
+  // As the talks module answers it (Q12): which of the asked points the reader may take over.
+  const takeoversAsked: Array<readonly string[]> = [];
+  const takeovers: Takeovers = async (_actor, ids) => {
+    takeoversAsked.push(ids);
+    return new Set(ids.filter(id => takenOver.has(id)));
+  };
   const seam = talkSeamUsecases({
     source: a => registry.talkSource(a),
     directory,
     holders,
+    takeovers,
     budget: { perSourceMs: 40 },
   });
   for (const c of connectors) registry.register(c);
@@ -152,7 +170,7 @@ function world(connectors: Connector[], onRefused?: (id: string, topic: string) 
     ...talkSeamCapabilities(seam, a => !!registry.talkSource(a)),
     uses: ['*'],
   });
-  return { registry, seam, asked };
+  return { registry, seam, asked, takeoversAsked };
 }
 const talks = (registry: Registry, actor: Actor) => registry.run<TalksResult>(actor, 'clew.talks', {});
 const commitments = (registry: Registry, actor: Actor, input: Record<string, unknown> = {}) =>
@@ -230,14 +248,40 @@ describe('rows keyed on the user name become rows about people the reader may se
     expect(builtInId('commitment:appraisals:abc-1', 'talks')).toBeUndefined();
     expect(builtInId('commitment:talks:' + 'x'.repeat(81), 'talks')).toBeUndefined();
   });
+  test('a row carries its own id only when the reader may change it: theirs, or one they may take over (Q12)', () => {
+    const rows = [
+      commitment('talks', 1, 'mikael', { owner: 'manager', mine: true }),
+      commitment('talks', 2, 'mikael', { owner: 'manager' }),
+      commitment('talks', 3, 'mikael', { owner: 'manager' }),
+      commitment('talks', 4, 'mikael'),
+      commitment('elsewhere', 5, 'mikael', { owner: 'manager' }),
+    ];
+    // Only another manager's points are asked about; the reader's own and the employee's are not.
+    expect(takeoverCandidates(rows, TALKS_CONNECTOR)).toEqual(['c2', 'c3']);
+    const mapping = { self: people.hillevi!, staff: [people.mikael!], builtIn: TALKS_CONNECTOR };
+    expect(mapCommitmentRows(rows, { ...mapping, takeovers: new Set(['c3']) }).map(r => [r.ref, r.id ?? null])).toEqual(
+      [
+        ['commitment:talks:c1', 'c1'],
+        ['commitment:talks:c2', null],
+        ['commitment:talks:c3', 'c3'],
+        ['commitment:talks:c4', null],
+      ],
+    );
+  });
 });
 
 describe('clew.talks and clew.commitments', () => {
-  test('the built-in module answers: writable, its label as the source, each action point with its own id', async () => {
-    const { registry } = world([
+  test('the built-in module answers: writable, its label as the source, the reader’s own action points with their own id', async () => {
+    const { registry, takeoversAsked } = world([
       talkSystem(TALKS_CONNECTOR, 'Clew', {
         talks: { round, rows: [talk('talks', 'mikael', { state: 'held', at: '2026-10-01' })], bookedUnknown: true },
-        commitments: { rows: [commitment('talks', 1, 'mikael'), commitment('talks', 2, 'p-noname')] },
+        commitments: {
+          rows: [
+            commitment('talks', 1, 'mikael', { owner: 'manager', mine: true }),
+            commitment('talks', 2, 'p-noname', { owner: 'manager', mine: true }),
+            commitment('talks', 3, 'mikael'),
+          ],
+        },
       }),
     ]);
     const read = await talks(registry, hillevi);
@@ -248,11 +292,59 @@ describe('clew.talks and clew.commitments', () => {
     expect(checkContract(TalksResultSchema, read)).toBe(true);
     const points = await commitments(registry, hillevi);
     expect(points).toMatchObject({ writable: true, source: 'Clew' });
-    expect(points.rows.map(r => [r.id, r.personId])).toEqual([
+    // The employee's own point is theirs to tick off: listed, without the id the write routes take.
+    expect(points.rows.map(r => [r.id ?? null, r.personId])).toEqual([
       ['c1', 'p-mikael'],
       ['c2', 'p-noname'],
+      [null, 'p-mikael'],
     ]);
     expect(checkContract(CommitmentsResultSchema, points)).toBe(true);
+    // The reader's own list holds no one else's point they could take over, so nobody is asked.
+    expect(takeoversAsked).toEqual([]);
+  });
+
+  test('a manager reading one person’s points gets the id of a former manager’s point they may take over, and of no other (Q12)', async () => {
+    const { registry, takeoversAsked } = world(
+      [
+        talkSystem(TALKS_CONNECTOR, 'Clew', {
+          commitments: {
+            rows: [
+              commitment('talks', 1, 'mikael', { owner: 'manager', mine: true }),
+              commitment('talks', 2, 'mikael', { owner: 'manager' }),
+              commitment('talks', 3, 'mikael', { owner: 'manager' }),
+              commitment('talks', 4, 'mikael'),
+            ],
+          },
+        }),
+      ],
+      undefined,
+      new Set(['c3']),
+    );
+    const points = await commitments(registry, hillevi, { person: 'mikael' });
+    expect(points.rows.map(r => [r.ref, r.id ?? null])).toEqual([
+      ['commitment:talks:c1', 'c1'],
+      ['commitment:talks:c2', null],
+      ['commitment:talks:c3', 'c3'],
+      ['commitment:talks:c4', null],
+    ]);
+    expect(checkContract(CommitmentsResultSchema, points)).toBe(true);
+    // Asked once, about the other managers' points only.
+    expect(takeoversAsked).toEqual([['c2', 'c3']]);
+  });
+
+  test('another system’s points carry no id and nobody is asked about a takeover', async () => {
+    const { registry, takeoversAsked } = world(
+      [
+        talkSystem('appraisals', 'Samtalssystemet', {
+          commitments: { rows: [commitment('appraisals', 1, 'mikael', { owner: 'manager' })] },
+        }),
+      ],
+      undefined,
+      new Set(['c1']),
+    );
+    const points = await commitments(registry, hillevi, { person: 'mikael' });
+    expect(points.rows.map(r => 'id' in r)).toEqual([false]);
+    expect(takeoversAsked).toEqual([]);
   });
 
   test('a built-in action point whose ref is not its own form is dropped', async () => {

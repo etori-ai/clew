@@ -1279,7 +1279,7 @@ const commitment = (
   carried: false,
   ...row,
 });
-/** Every action point the mock holds, writable (with `id`), in the order the server lists them. */
+/** Every action point the mock holds, each with its `id`, in the order the server lists them. */
 export const allCommitments = (): CommitmentEntry[] => [
   commitment('c-anna-1', 'anna', {
     owner: 'employee',
@@ -1381,8 +1381,35 @@ export function talksResult({
     source: TALKS_SOURCE,
   };
 }
-/** An action point as answered: `carried` means from an earlier round and still open, so a done one is never carried. */
-const answered = (row: CommitmentEntry): CommitmentEntry => ({ ...row, carried: row.carried && !row.done });
+/**
+ * A point Anna's former manager owns, which the reader, her manager now, may take over (Q12). Not among
+ * `allCommitments()`, so the lists and counts of the other specs stand; a spec adds it to the mock's.
+ */
+export const formerManagersPoint = (): CommitmentEntry =>
+  commitment('c-anna-5', 'anna', {
+    owner: 'manager',
+    mine: false,
+    text: 'Ordna en mentor för det första året',
+    dueOn: '2026-11-25',
+  });
+/** A point Anna's other manager owns, who manages her still: theirs to tick off, not the reader's (Q12). */
+export const coManagersPoint = (): CommitmentEntry =>
+  commitment('c-anna-6', 'anna', {
+    owner: 'manager',
+    mine: false,
+    text: 'Boka en kurs i ledarskap',
+    dueOn: '2026-11-26',
+  });
+/** Whether the reader may mark a point done or open it again: their own, or a former manager's they take over (Q12). */
+export const changeable = (row: CommitmentEntry): boolean => row.mine || row.id === 'c-anna-5';
+/**
+ * An action point as answered: `carried` means from an earlier round and still open, so a done one is never carried,
+ * and `id`, which the write routes take, comes only on a point the reader may change.
+ */
+const answered = (row: CommitmentEntry): CommitmentEntry => {
+  const { id, ...rest } = row;
+  return { ...rest, carried: row.carried && !row.done, ...(id && changeable(row) ? { id } : {}) };
+};
 /** `clew.commitments` with `person`: one employee's action points, as their manager reads them. */
 export const commitmentsFor = (personId: string, commitments = allCommitments()): CommitmentsResult => ({
   rows: commitments.filter(c => c.personId === personId).map(answered),

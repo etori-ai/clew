@@ -3,7 +3,7 @@ import { withThreadTx, type ThreadStoreOptions } from '../threads/adapters/postg
 import { talkTx } from '../modules/talks/adapters/postgres';
 import { talkUsecases } from '../modules/talks/usecases';
 import type { Manages, Sealer, Staff, TalkStore } from '../modules/talks/model';
-import type { Directory, DirectoryPerson, Holders } from '../modules/talk-seam/model';
+import type { Directory, DirectoryPerson, Holders, Takeovers } from '../modules/talk-seam/model';
 import { openSecret, sealSecret } from '../auth-crypto';
 import { ForbiddenError } from '../context';
 import { cancelDurable } from '../dbos/start';
@@ -100,4 +100,12 @@ export const talkHolders: Holders = async (actor, keys) => {
     if (p.id !== actor.id && p.userName === null && organisation !== undefined && p.organisationId === organisation)
       found.set(p.id, p.id);
   return found;
+};
+/**
+ * Which of a person's action points the reader may take over (Q12), asked by the seam when a manager reads that
+ * person's points: the talks module answers with the rule its write enforces, for the reader as their grant is now.
+ */
+export const talkTakeovers: Takeovers = async (actor, ids) => {
+  const persona = await systemContext(actor.id, 'connector:clew');
+  return persona ? talks.takeovers(persona, ids) : new Set();
 };

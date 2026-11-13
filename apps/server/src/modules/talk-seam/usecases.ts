@@ -10,7 +10,7 @@ import {
   type TalksInput,
   type TalksResult,
 } from '@clew/contracts';
-import { mapCommitmentRows, mapTalkRows, ownedElsewhere } from './domain';
+import { mapCommitmentRows, mapTalkRows, ownedElsewhere, takeoverCandidates } from './domain';
 import { DEFAULT_BUDGET, type TalkCall, type TalkSeamDeps } from './model';
 
 /** Said when no system answers the talks profile for the person (none, or several with the built-in module off). */
@@ -70,7 +70,9 @@ export function talkSeamUsecases(deps: TalkSeamDeps) {
   /**
    * Action points about the reader or the people they manage now; `person` narrows to one of them. With Clew's own
    * module, the reader's list keeps the points they own about someone they no longer manage too, until they are done
-   * (M2): the employee's id comes from `holders`.
+   * (M2): the employee's id comes from `holders`. A row carries its own id only when the reader may change it: their
+   * own, and on one person's points a former manager's they may take over (Q12, `takeovers`). The reader's own list
+   * holds none of those: it is what the reader owns and what is about them.
    */
   async function commitments(actor: Actor, input: CommitmentsInput, call: TalkCall): Promise<CommitmentsResult> {
     const source = sourceFor(actor);
@@ -81,7 +83,12 @@ export function talkSeamUsecases(deps: TalkSeamDeps) {
     ]);
     if (!checkContract(CommitmentsOutputSchema, answer)) throw new CapabilityError(unexpected(source.source));
     const elsewhere = source.builtIn && input.person === undefined ? ownedElsewhere(answer.rows, directory) : [];
-    const owned = elsewhere.length ? await deps.holders(actor, elsewhere) : undefined;
+    const candidates =
+      source.builtIn && input.person !== undefined ? takeoverCandidates(answer.rows, TALKS_CONNECTOR) : [];
+    const [owned, takeovers] = await Promise.all([
+      elsewhere.length ? deps.holders(actor, elsewhere) : undefined,
+      candidates.length ? deps.takeovers(actor, candidates) : undefined,
+    ]);
     const result: CommitmentsResult = {
       rows: mapCommitmentRows(answer.rows, {
         self: directory.self,
@@ -89,6 +96,7 @@ export function talkSeamUsecases(deps: TalkSeamDeps) {
         ...(input.person !== undefined ? { person: input.person } : {}),
         ...(source.builtIn ? { builtIn: TALKS_CONNECTOR } : {}),
         ...(owned ? { owned } : {}),
+        ...(takeovers ? { takeovers } : {}),
       }),
       writable: source.builtIn,
       source: source.source,

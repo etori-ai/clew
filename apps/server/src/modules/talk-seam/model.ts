@@ -25,6 +25,12 @@ export type Directory = (actor: Actor) => Promise<{ self: DirectoryPerson; staff
  * about someone they no longer manage, when Clew's own module answers (M2).
  */
 export type Holders = (actor: Actor, keys: readonly string[]) => Promise<ReadonlyMap<string, string>>;
+/**
+ * Which of these action points of Clew's own module, by its own id, the reader may take over now (Q12): a manager's
+ * point about someone they manage, whose owner no longer manages that person or was erased. Asked only when a manager
+ * reads one person's points; the talks module answers it with the rule its write enforces.
+ */
+export type Takeovers = (actor: Actor, ids: readonly string[]) => Promise<ReadonlySet<string>>;
 export type TalkCall = <O = unknown>(name: string, input?: unknown) => Promise<O>;
 export interface TalkSeamBudget {
   /** Milliseconds the source gets before it counts as not answering. */
@@ -34,6 +40,7 @@ export interface TalkSeamDeps {
   source: Source;
   directory: Directory;
   holders: Holders;
+  takeovers: Takeovers;
   budget?: Partial<TalkSeamBudget>;
 }
 export const DEFAULT_BUDGET: TalkSeamBudget = { perSourceMs: 4_000 };

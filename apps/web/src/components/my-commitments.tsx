@@ -169,7 +169,10 @@ function Meta({ row }: { row: CommitmentEntry }) {
   return <Text type="supporting">{row.mine ? lead : `${lead} · Din chef ansvarar`}</Text>;
 }
 
-/** One action point. The owner ticks it off with Klar when Clew can write; read-only, the text opens the other system. */
+/**
+ * One action point. The owner ticks it off with Klar when Clew can write: a row carries its `id` only when the reader may
+ * change it, which on this list is their own. Read-only, the text opens the other system.
+ */
 function CommitmentRow({
   row,
   writable,
@@ -228,7 +231,7 @@ function CommitmentRow({
         </VStack>
       }
       endContent={
-        writable && row.mine && id ? (
+        writable && id ? (
           <Button size="sm" variant="secondary" label={`Klar: ${row.text}`} clickAction={complete}>
             Klar
           </Button>

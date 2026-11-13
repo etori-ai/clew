@@ -62,8 +62,13 @@ export interface CommitmentMapping {
   staff: DirectoryPerson[];
   /** The `person` the reader asked about: only rows about that key are kept. */
   person?: string;
-  /** Set when the built-in module answered: each row gets its own id from the ref, and a row without one is dropped. */
+  /**
+   * Set when the built-in module answered: a row without its own id in the ref is dropped, and a row the reader may
+   * change carries that id (`id`), which the write routes take: one the reader owns, or one in `takeovers`.
+   */
   builtIn?: string;
+  /** The built-in ids of the points the reader may take over (Q12), as `Takeovers` answers. */
+  takeovers?: ReadonlySet<string>;
   /**
    * The person ids of the keys `ownedElsewhere` returns, by the key as the row has it (M2): a point the reader
    * owns about someone they no longer manage stays theirs until it is done (D96 As built item 5), so it keeps its row on
@@ -80,8 +85,19 @@ export function ownedElsewhere(rows: CommitmentRow[], mapping: Pick<CommitmentMa
   return [...new Set(rows.filter(row => row.mine && !index.has(foldKey(row.userName))).map(row => row.userName))];
 }
 /**
+ * The built-in ids of the rows a manager reading one person's points might take over (Q12): a manager's point the reader
+ * does not own. Whether they may is the talks module's to answer (`Takeovers`).
+ */
+export function takeoverCandidates(rows: CommitmentRow[], builtIn: string): string[] {
+  return rows.flatMap(row => {
+    const id = !row.mine && row.owner === 'manager' ? builtInId(row.ref, builtIn) : undefined;
+    return id === undefined ? [] : [id];
+  });
+}
+/**
  * Action points about the reader or about the people they manage now, each with the employee's person id; with the
- * built-in module, also the points the reader owns about someone they managed before (`owned`).
+ * built-in module, also the points the reader owns about someone they managed before (`owned`), and the own id on
+ * each row the reader may change: theirs, and the ones they may take over (Q12).
  */
 export function mapCommitmentRows(rows: CommitmentRow[], mapping: CommitmentMapping): CommitmentsResult['rows'] {
   const index = keyIndex([mapping.self, ...mapping.staff]);
@@ -97,6 +113,7 @@ export function mapCommitmentRows(rows: CommitmentRow[], mapping: CommitmentMapp
     if (personId === undefined) return [];
     if (mapping.builtIn === undefined) return [{ ...row, personId }];
     const id = builtInId(row.ref, mapping.builtIn);
-    return id === undefined ? [] : [{ ...row, personId, id }];
+    if (id === undefined) return [];
+    return [row.mine || mapping.takeovers?.has(id) ? { ...row, personId, id } : { ...row, personId }];
   });
 }
