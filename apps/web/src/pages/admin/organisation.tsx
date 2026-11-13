@@ -634,8 +634,7 @@ function UnitSheet({
     stepping.current = false;
     heading.current?.focus();
     announce(`Visar ${title}`);
-    // Only a step to another unit: the title follows the unit.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Only a step to another unit runs this: the title follows the unit, and is read as it is then.
   }, [unitId]);
   const stepLink = (to: { unitId: string; unitLabel: string }) => (
     <Link href={unitHref(to.unitId, search)} type="supporting" color="primary" hasUnderline onClick={go(to.unitId)}>
