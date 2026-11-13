@@ -7,6 +7,7 @@ import { postgresThreadStore } from '../src/threads/adapters/postgres';
 import { postgresAttention } from '../src/threads/adapters/attention-postgres';
 import { durableJobs } from '../src/scheduler/adapters/durable-postgres';
 import { scheduledJobRunner } from '../src/scheduler/usecases';
+import { every } from '../src/composition/ambient';
 import { bindActivities } from '../src/dbos/workflows';
 import { durableResult } from '../src/dbos/start';
 import { testEngine } from './durable';
@@ -31,6 +32,10 @@ test(
           throw new Error('Not an attention job: ' + job.kind);
         },
         clock: now,
+        every,
+        log: (...args) => {
+          throw new Error('Unexpected scheduler log: ' + String(args[0]));
+        },
       }),
     });
     let launched: Awaited<ReturnType<typeof engine.launch>> | undefined;

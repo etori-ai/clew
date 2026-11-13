@@ -559,6 +559,20 @@ what they say.
   still holds; and a card is also the record of what the person holding it did. The documents now claim no more than
   the code does, and also describe the erasure as built: no user name stored, rather than the id.
 - Two accessibility tests raced the frame in which the page moves the focus. They now wait for it.
+- A scheduled job whose run lasted longer than its claim's two-minute lease never completed, on `main` as well. The
+  engine gave up the step's attempt after a minute without stopping it, the retry claimed the job again once the lease
+  had passed and ran it beside the first, and every completion after that was refused without a word. The nightly
+  scan, one run for everyone, would have done this every night from about 7,000 people, one more such loop each night.
+  A run now renews its claim while it lasts and the job's step has no timeout; a lost claim and a refused completion
+  each write an error line, and a job that stopped without completing is counted as `stalledJobs`. A run that never
+  settles now holds its job until its process stops, so one still going after ten minutes writes an error line and is
+  counted as `longRunningJobs`, and the runbook says how to find and restart the instance that runs it. The nightly
+  scan runs 500 people to a page, each page a job of its own, so no run grows with the installation
+  ([scheduled work](../architecture/scheduled-work.md)).
+- No test reached the two pieces that make the server run the nightly clean-up: scheduling the first night when a
+  process starts, and the binding that hands the scheduler the clean-up the tests ran. Both nights are now scheduled by
+  one use case, `scheduleNights`, tested in memory and on PostgreSQL, and the PostgreSQL clean-up test runs through the
+  binding the composition gives the scheduler. The two lines of the composition that hand them over are left (below).
 
 **Left.**
 
@@ -568,5 +582,9 @@ what they say.
   and `execution.approved` rows, approved payloads and the operator name in `identity.rebound` rows. D117 and the
   runbook list them, for an operator or the organisation's retention to remove.
 - D115 is also taken on the branch `prototype-look`. Whichever reaches `main` second takes the next free number.
+- Two lines of the composition are reached by no test: the one that hands the scheduler `signInData`, and
+  `startJobs`'s call of `scheduleNights`. What they hand over is tested where it is defined. A test of the lines
+  themselves would need the composition to take a clock and a ledger of the test's own
+  ([testing](../architecture/testing.md)).
 
 **Verified.** VERIFIED-PLACEHOLDER

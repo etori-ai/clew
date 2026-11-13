@@ -56,6 +56,11 @@ const jobStepAt = (attention: ReturnType<typeof postgresAttention>, at: string) 
       throw new Error('Not an attention job: ' + job.kind);
     },
     clock: () => new Date(at),
+    // A release is one short transaction: no renewal is due before it ends, and nothing is said.
+    every: () => () => undefined,
+    log: (...args) => {
+      throw new Error('Unexpected scheduler log: ' + String(args[0]));
+    },
   });
 const auditActions = async (subject: string) =>
   (await database().select().from(schema.audit).where(eq(schema.audit.subject, subject))).map(a => a.action).sort();

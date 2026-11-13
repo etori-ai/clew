@@ -2,13 +2,21 @@ import { Temporal } from 'temporal-polyfill';
 import { timeZone } from '@clew/calendar/dates';
 import type { CalendarUsecases } from '../modules/calendar/usecases/samtal';
 import type { ThreadUsecases } from '../threads/usecases/cards';
-import type { Job, JobExecutions, JobQueue, People, SignInData } from './model';
+import {
+  JOB_LEASE_MS,
+  JOB_RUN_LONG_MS,
+  type Job,
+  type JobExecutions,
+  type JobQueue,
+  type People,
+  type SignInData,
+} from './model';
 
 /**
- * The scheduled jobs (D15, D47): one nightly scan per person with a grant, one nightly clean-up of expired sign-in data
- * (D117) and one timer per undo window. Each job row starts its `scheduledJob` workflow in the transaction that writes
- * it (D86), and the durable engine runs the job through `scheduledJobRunner` at its run time (D85); nothing polls the
- * table. Built over ports (D25).
+ * The scheduled jobs (D15, D47): the nightly scan of everyone with a grant, a page at a time, one nightly clean-up of
+ * expired sign-in data (D117) and one timer per undo window. Each job row starts its `scheduledJob` workflow in the
+ * transaction that writes it (D86), and the durable engine runs the job through `scheduledJobRunner` at its run time
+ * (D85); nothing polls the table. Built over ports (D25).
  */
 export interface SchedulerDeps {
   jobs: JobQueue;
@@ -21,6 +29,12 @@ export interface SchedulerDeps {
 }
 export const NIGHTLY = 'scan-utvecklingssamtal';
 /**
+ * How many people one page of the nightly scan runs for. The scan grows with the installation and a page does not:
+ * each page is a job of its own, so no run grows with the number of people, and a run that fails or whose process dies
+ * is run again for its own page, never from the first person of the night.
+ */
+export const SCAN_PAGE = 500;
+/**
  * The nightly clean-up of sign-in machinery (D117): sessions, login transactions and logout receipts past expiry. A
  * night whose clean-up fails says so in one line and completes; the next night cleans what it left.
  */
@@ -29,13 +43,8 @@ export function createScheduler(deps: SchedulerDeps) {
   const { jobs, people, threads, calendar, signIns, clock, log } = deps;
   const threadIdOf = (job: Job) => (typeof job.payload.threadId === 'string' ? job.payload.threadId : undefined);
   async function run(job: Job) {
-    if (job.kind === NIGHTLY) {
-      for (const id of await people.granted()) {
-        const persona = await people.personaFor(id);
-        if (persona) await threads.ensureThreads(persona).catch(error => log('scan', id, error));
-      }
-      await scheduleNightly();
-    } else if (job.kind === SIGN_IN_CLEANUP) {
+    if (job.kind === NIGHTLY) await scanPage(job);
+    else if (job.kind === SIGN_IN_CLEANUP) {
       // The next night first. A clean-up that fails is said and left to that night, and the night completes: a job
       // that threw would be claimed again by its workflow every few minutes for as long as the failure lasted, one more
       // workflow each night, while the next night repeats the clean-up anyway.
@@ -48,6 +57,30 @@ export function createScheduler(deps: SchedulerDeps) {
       const threadId = threadIdOf(job);
       if (threadId) await threads.closeReceiptWindow(threadId);
     } else throw new Error('Unsupported scheduled job kind: ' + job.kind);
+  }
+  /**
+   * One page of the night's scan: the people with a grant after the last of the page before, in id order. The night's
+   * first page, `scan:<date>`, schedules the next night before it scans, so the nights never wait on a scan. A full
+   * page then schedules the next one, `scan:<date>:<page>`, to run at once, carrying where it ended; a page that is not
+   * full ends the night. The pages run one after the other.
+   */
+  async function scanPage(job: Job) {
+    const night = typeof job.payload.night === 'string' ? job.payload.night : job.id,
+      page = typeof job.payload.page === 'number' ? job.payload.page : 1,
+      after = typeof job.payload.after === 'string' ? job.payload.after : undefined;
+    if (page === 1) await scheduleNightly();
+    const ids = await people.granted({ after, limit: SCAN_PAGE });
+    for (const id of ids) {
+      const persona = await people.personaFor(id);
+      if (persona) await threads.ensureThreads(persona).catch(error => log('scan', id, error));
+    }
+    if (ids.length === SCAN_PAGE)
+      await jobs.schedule({
+        id: `${night}:${page + 1}`,
+        kind: NIGHTLY,
+        runAt: clock().toISOString(),
+        payload: { night, page: page + 1, after: ids[ids.length - 1] },
+      });
   }
   /** The next time it is `hour` o'clock in Stockholm after now. */
   function nextAt(hour: number) {
@@ -76,7 +109,15 @@ export function createScheduler(deps: SchedulerDeps) {
       runAt: new Date(next.epochMilliseconds).toISOString(),
     });
   }
-  return { run, scheduleNightly, scheduleCleanup };
+  /**
+   * What every server process schedules when it starts (D117): the next nightly scan and the next sign-in clean-up.
+   * Each night then schedules the next one when it runs; this only starts the two chains, and it is idempotent by date.
+   */
+  async function scheduleNights() {
+    await scheduleNightly();
+    await scheduleCleanup();
+  }
+  return { run, scheduleNightly, scheduleCleanup, scheduleNights };
 }
 export type Scheduler = ReturnType<typeof createScheduler>;
 /**
@@ -84,21 +125,78 @@ export type Scheduler = ReturnType<typeof createScheduler>;
  * execution is claimed under its lease, the job is run by its kind and the execution completes with its audit row. An
  * `attention-release` job makes its deferred attention batch ready (D47) through `release`; every other kind is the
  * scheduler's `run`. `busy` asks the workflow to come back later; a job that is done, or not the engine's, is done.
+ *
+ * While the run lasts, its claim is renewed every quarter of the lease, so a run that outlasts the lease is never
+ * claimed again beside itself; only a run whose process has died or stopped loses its claim. A run that finds its claim
+ * taken all the same, or finishes after another attempt took it, says so in one line, and its completion writes nothing.
+ * A run still going after `JOB_RUN_LONG_MS` is said once, with its job and attempt, since it holds the job until it
+ * settles or its process stops.
  */
 export function scheduledJobRunner(deps: {
   executions: JobExecutions;
   release: (batch: string) => Promise<void>;
   run: (job: Job) => Promise<void>;
   clock: () => Date;
+  /** Calls `tick` every `ms` until the function it returns is called. */
+  every: (ms: number, tick: () => void) => () => void;
+  log: (message: string, ...details: unknown[]) => void;
 }) {
+  const { executions, clock, log } = deps;
+  /**
+   * Renews the attempt's claim, made at `claimedAt`, while its run lasts, and says once that the run has lasted
+   * `JOB_RUN_LONG_MS`; the function it returns stops the renewal and waits for one under way.
+   */
+  function keepClaim(job: Job & { attempt: number }, claimedAt: Date) {
+    let stopped = false,
+      lost = false,
+      long = false,
+      renewing: Promise<void> | undefined;
+    const renew = async () => {
+      try {
+        if (!(await executions.renew(job.id, job.attempt, clock().toISOString())) && !stopped) {
+          lost = true;
+          log('scheduled job lost its claim while it ran', job.id, job.attempt);
+        }
+      } catch (error) {
+        if (!stopped) log('scheduled job claim not renewed', job.id, error);
+      }
+    };
+    const cancel = deps.every(JOB_LEASE_MS / 4, () => {
+      if (stopped || lost) return;
+      if (!long && clock().getTime() - claimedAt.getTime() >= JOB_RUN_LONG_MS) {
+        long = true;
+        log(
+          'scheduled job still running after ten minutes; it holds its claim until the run settles or its process stops',
+          job.id,
+          job.attempt,
+        );
+      }
+      if (renewing) return;
+      renewing = renew().finally(() => {
+        renewing = undefined;
+      });
+    });
+    return async () => {
+      stopped = true;
+      cancel();
+      await renewing;
+    };
+  }
   return async function runScheduledJob(id: string): Promise<'done' | 'busy'> {
-    const job = await deps.executions.claimExecution(id, deps.clock().toISOString());
+    const claimedAt = clock();
+    const job = await executions.claimExecution(id, claimedAt.toISOString());
     if (!job) return 'done';
     if (job === 'busy') return 'busy';
-    if (job.kind === 'attention-release' && typeof job.payload.batch === 'string')
-      await deps.release(job.payload.batch);
-    else await deps.run(job);
-    await deps.executions.completed(id, job.attempt, deps.clock().toISOString());
+    const stopRenewing = keepClaim(job, claimedAt);
+    try {
+      if (job.kind === 'attention-release' && typeof job.payload.batch === 'string')
+        await deps.release(job.payload.batch);
+      else await deps.run(job);
+    } finally {
+      await stopRenewing();
+    }
+    if (!(await executions.completed(id, job.attempt, clock().toISOString())))
+      log('scheduled job finished after another attempt took it; its completion is not recorded', id, job.attempt);
     return 'done';
   };
 }

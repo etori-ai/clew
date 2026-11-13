@@ -172,13 +172,16 @@ names nobody.
   decided after the erasure and are sent as written, and an execution approved from one is dispatched as approved.
   Only a card started with an `execute`, and what was approved from it, is refused (item 3).
 
-**As built.** `removeExpiredSignIns` in `packages/db/src/auth.ts`; the job kind `sign-in-cleanup` and `scheduleCleanup`
-in `apps/server/src/scheduler/usecases.ts`; `startJobs` in `apps/server/src/composition/jobs.ts` and the binding in
-`apps/server/src/composition/index.ts`; `scripts/auth-setup.ts`. Tests: `tests/db/sign-in-cleanup.test.ts` (on
-PostgreSQL, what goes and what stays, and one job, one workflow and one `job.scheduled` row however often the night is
-scheduled), `tests/unit/scheduler.test.ts` (the next 03:00 Stockholm, once for each date, and a failing clean-up that
-still schedules the next night and completes), and `apps/server/tests/job-runtime.test.ts` in `bun run test:durability`
-(nights on the real durable engine, a failing one included). `scripts/person-erase.ts` runs `personErasureUsecases` in
+**As built.** `removeExpiredSignIns` in `packages/db/src/auth.ts`, bound for the scheduler as `signInData` in
+`apps/server/src/composition/sign-ins.ts`; the job kind `sign-in-cleanup`, `scheduleCleanup` and `scheduleNights`, which
+schedules the next nightly scan and the next clean-up, in `apps/server/src/scheduler/usecases.ts`; `startJobs` in
+`apps/server/src/composition/jobs.ts`, which calls `scheduleNights` when a process starts; `scripts/auth-setup.ts`.
+Tests: `tests/db/sign-in-cleanup.test.ts` (on PostgreSQL, through `signInData`, what goes and what stays, and one job,
+one workflow and one `job.scheduled` row for each of the two nights `scheduleNights` schedules, however often it is
+called), `tests/unit/scheduler.test.ts` (the next 03:00 Stockholm, once for each date; both nights from one call of
+`scheduleNights` and nothing more from a second; and a failing clean-up that still schedules the next night and
+completes), and `apps/server/tests/job-runtime.test.ts` in `bun run test:durability` (nights on the real durable engine,
+a failing one included). `scripts/person-erase.ts` runs `personErasureUsecases` in
 `apps/server/src/modules/people/usecases.ts`, bound as `personErasure` in `apps/server/src/composition/people.ts`; what
 it replaces in the audit trail and the authentication log is named by `IDENTIFIERS_ABOUT`, `IDENTIFIERS_AS_HOLDER` and
 `namesHeld` in `apps/server/src/modules/people/domain.ts`, and its store ports are held to

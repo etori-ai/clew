@@ -1,26 +1,27 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { eq, like } from 'drizzle-orm';
+import { eq, like, or } from 'drizzle-orm';
 import { database, schema } from '../../packages/db/src/index';
-import { removeExpiredSignIns } from '../../packages/db/src/auth';
 import { postgresJobQueue } from '../../apps/server/src/scheduler/adapters/postgres';
-import { createScheduler, SIGN_IN_CLEANUP } from '../../apps/server/src/scheduler/usecases';
+import { createScheduler, NIGHTLY, SIGN_IN_CLEANUP } from '../../apps/server/src/scheduler/usecases';
+import { signInData } from '../../apps/server/src/composition/sign-ins';
 import { enqueuedWorkflows, forgetTestWorkflows, testDurable } from './durable';
 
 /**
- * The nightly clean-up of sign-in machinery on PostgreSQL (D117; L3 of the 2026-11-12 users review). Every session past
- * either expiry goes with its sealed tokens, one that was still open with an `expired` row in the authentication log;
- * login transactions and logout receipts past theirs go too. Live sessions, sessions ended earlier that have not yet
- * expired and the authentication log itself stay: how long sign-in history is kept is the organisation's decision.
- * The job is scheduled for each night under its own id, with its workflow in the same commit (D86), and a night's run
- * schedules the next before it cleans. Run with `bun run test:db` inside the devcontainer.
+ * The nightly clean-up of sign-in machinery on PostgreSQL (D117; L3 of the 2026-11-12 users review), through the
+ * binding the composition gives the scheduler. Every session past either expiry goes with its sealed tokens, one that
+ * was still open with an `expired` row in the authentication log; login transactions and logout receipts past theirs go
+ * too. Live sessions, sessions ended earlier that have not yet expired and the authentication log itself stay: how long
+ * sign-in history is kept is the organisation's decision. What every process schedules when it starts, the next
+ * night's scan and clean-up, is one job each under its own id, with its workflow in the same commit (D86), and a night's
+ * run schedules the next before it cleans. Run with `bun run test:db` inside the devcontainer.
  */
 if (!process.env.DATABASE_URL)
   throw new Error('DATABASE_URL is not set. Run `bun run test:db` inside the devcontainer.');
 const person = 'cleanup-test-' + randomUUID(),
   issuer = 'https://idp.example.test/' + person;
 // The scheduling case runs on a clock in 2098, so the jobs it schedules are its own.
-const jobs = SIGN_IN_CLEANUP + ':2098-%';
+const jobs = [SIGN_IN_CLEANUP + ':2098-%', 'scan:2098-%'];
 beforeAll(async () => {
   await database().insert(schema.people).values({ id: person, organisationId: 'test', name: 'Synthetic clean-up' });
 });
@@ -33,10 +34,12 @@ afterAll(async () => {
     .delete(schema.loginTransactions)
     .where(like(schema.loginTransactions.digest, person + '%'));
   await database().delete(schema.logoutReceipts).where(eq(schema.logoutReceipts.issuer, issuer));
-  await database()
-    .delete(schema.audit)
-    .where(like(schema.audit.subject, 'job:' + jobs));
-  await database().delete(schema.jobs).where(like(schema.jobs.id, jobs));
+  for (const night of jobs) {
+    await database()
+      .delete(schema.audit)
+      .where(like(schema.audit.subject, 'job:' + night));
+    await database().delete(schema.jobs).where(like(schema.jobs.id, night));
+  }
   await forgetTestWorkflows();
   await database().delete(schema.people).where(eq(schema.people.id, person));
 });
@@ -94,7 +97,7 @@ test('sessions past either expiry go, an open one with an expired row; live data
     .insert(schema.authenticationAudit)
     .values({ actor: 'person:' + person, action: 'login', createdAt: at(-40 * 24 * hour) });
 
-  await removeExpiredSignIns(now);
+  await signInData.removeExpired(now);
 
   const sessions = await database()
     .select({ digest: schema.sessions.digest, tokens: schema.sessions.tokens, revokedAt: schema.sessions.revokedAt })
@@ -123,7 +126,7 @@ test('sessions past either expiry go, an open one with an expired row; live data
   expect(receipts).toEqual([{ jti: 'live' }]);
 
   // A second run the same night finds nothing more to do and writes nothing.
-  await removeExpiredSignIns(now);
+  await signInData.removeExpired(now);
   const again = await database()
     .select({ action: schema.authenticationAudit.action })
     .from(schema.authenticationAudit)
@@ -131,7 +134,7 @@ test('sessions past either expiry go, an open one with an expired row; live data
   expect(again).toHaveLength(3);
 });
 
-test('the clean-up is scheduled once a night with its workflow in the same commit, and a run schedules the next night', async () => {
+test('every process schedules the next scan and clean-up when it starts, one job and workflow a night each, and a run schedules the next night', async () => {
   let time = Date.parse('2098-11-05T10:00:00.000Z');
   const cleaned: string[] = [];
   const scheduler = createScheduler({
@@ -148,37 +151,35 @@ test('the clean-up is scheduled once a night with its workflow in the same commi
     clock: () => new Date(time),
     log: () => undefined,
   });
-  // Every process schedules it at start; one row and one workflow come of it.
-  await scheduler.scheduleCleanup();
-  await scheduler.scheduleCleanup();
+  // Every process schedules both nights when it starts, as `startJobs` does; one row and one workflow each come of it.
+  await scheduler.scheduleNights();
+  await scheduler.scheduleNights();
   const rows = await database()
     .select({ id: schema.jobs.id, kind: schema.jobs.kind, runAt: schema.jobs.runAt, status: schema.jobs.status })
     .from(schema.jobs)
-    .where(like(schema.jobs.id, jobs));
-  // 03:00 in Stockholm, an hour ahead of UTC in November.
-  expect(rows).toEqual([
-    {
-      id: SIGN_IN_CLEANUP + ':2098-11-06',
-      kind: SIGN_IN_CLEANUP,
-      runAt: new Date('2098-11-06T02:00:00.000Z'),
-      status: 'temporal',
-    },
-  ]);
-  expect(await enqueuedWorkflows('job:' + SIGN_IN_CLEANUP + ':2098-')).toEqual([
-    {
-      id: 'job:' + SIGN_IN_CLEANUP + ':2098-11-06',
-      workflow: 'scheduledJob',
-      status: 'ENQUEUED',
-      input: { id: SIGN_IN_CLEANUP + ':2098-11-06', dueAt: '2098-11-06T02:00:00.000Z' },
-    },
-  ]);
-  const scheduled = await database()
-    .select({ action: schema.audit.action, details: schema.audit.details })
-    .from(schema.audit)
-    .where(eq(schema.audit.subject, 'job:' + SIGN_IN_CLEANUP + ':2098-11-06'));
-  expect(scheduled).toEqual([
-    { action: 'job.scheduled', details: { kind: SIGN_IN_CLEANUP, runAt: '2098-11-06T02:00:00.000Z' } },
-  ]);
+    .where(or(...jobs.map(night => like(schema.jobs.id, night))))
+    .orderBy(schema.jobs.runAt);
+  // 03:00 and 06:00 in Stockholm, an hour ahead of UTC in November.
+  const nights = [
+    { id: SIGN_IN_CLEANUP + ':2098-11-06', kind: SIGN_IN_CLEANUP, runAt: '2098-11-06T02:00:00.000Z' },
+    { id: 'scan:2098-11-06', kind: NIGHTLY, runAt: '2098-11-06T05:00:00.000Z' },
+  ];
+  expect(rows).toEqual(nights.map(n => ({ ...n, runAt: new Date(n.runAt), status: 'temporal' })));
+  for (const night of nights) {
+    expect(await enqueuedWorkflows('job:' + night.id)).toEqual([
+      {
+        id: 'job:' + night.id,
+        workflow: 'scheduledJob',
+        status: 'ENQUEUED',
+        input: { id: night.id, dueAt: night.runAt },
+      },
+    ]);
+    const scheduled = await database()
+      .select({ action: schema.audit.action, details: schema.audit.details })
+      .from(schema.audit)
+      .where(eq(schema.audit.subject, 'job:' + night.id));
+    expect(scheduled).toEqual([{ action: 'job.scheduled', details: { kind: night.kind, runAt: night.runAt } }]);
+  }
 
   // The night's run, as the engine's step runs it: the next night is scheduled, and the clean-up runs on its clock.
   time = Date.parse('2098-11-06T02:00:05.000Z');
@@ -194,8 +195,8 @@ test('the clean-up is scheduled once a night with its workflow in the same commi
       { id: SIGN_IN_CLEANUP + ':2098-11-07', dueAt: '2098-11-07T02:00:00.000Z' },
     ],
   ]);
-  const ids = (await database().select({ id: schema.jobs.id }).from(schema.jobs).where(like(schema.jobs.id, jobs))).map(
-    r => r.id,
-  );
+  const ids = (
+    await database().select({ id: schema.jobs.id }).from(schema.jobs).where(like(schema.jobs.id, jobs[0]!))
+  ).map(r => r.id);
   expect(ids.sort()).toEqual([SIGN_IN_CLEANUP + ':2098-11-06', SIGN_IN_CLEANUP + ':2098-11-07']);
 });

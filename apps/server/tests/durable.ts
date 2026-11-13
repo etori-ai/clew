@@ -28,6 +28,13 @@ export function testEngine(label: string) {
       );
       return [...rows][0];
     },
+    /** The steps the engine recorded for a workflow, in order: each one's name and its stored output or error. */
+    async steps(workflowID: string) {
+      const rows = await database().execute<{ name: string; output: string | null; error: string | null }>(
+        sql`select function_name as name, output, error from dbos.operation_outputs where workflow_uuid = ${workflowID} order by function_id`,
+      );
+      return [...rows];
+    },
     /**
      * Everything this application enqueued or ran, and its queue, gone with the test. The engine's inputs, outputs and
      * step records have no foreign key to the status row, so they go with it here: a workflow id that a later run uses
