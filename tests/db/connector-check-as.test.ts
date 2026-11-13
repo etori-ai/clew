@@ -1,8 +1,8 @@
-import { afterAll, expect, test } from 'bun:test';
-import { randomUUID } from 'node:crypto';
-import { and, eq, inArray } from 'drizzle-orm';
-import { closeDatabase, database, schema } from '../../packages/db/src/index';
-import { registerConnector } from '../../scripts/connector-registry';
+import { afterAll, beforeAll, expect, test } from 'bun:test';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { and, eq } from 'drizzle-orm';
+import { schema } from '../../packages/db/src/index';
+import { upgradeDatabase, type UpgradeDatabase } from './upgrade';
 
 /**
  * `bun scripts/connector-check.ts --as` against services of this test's own (review 2026-11-12, R2; Q13): it refuses a
@@ -19,9 +19,15 @@ const tag = randomUUID().slice(0, 8),
   personId = 'check-as-person-' + tag,
   userName = 'Check.As.' + tag,
   secret = 'check-as-secret-' + tag;
-const db = database();
+// The CLI creates the installation's signing key on its first signed read.
+const masterKey = randomBytes(32).toString('base64');
+let installation: UpgradeDatabase;
+beforeAll(async () => {
+  installation = await upgradeDatabase();
+  await installation.migrate();
+}, 60_000);
 const checkedAs = () =>
-  db
+  installation.db
     .select()
     .from(schema.audit)
     .where(and(eq(schema.audit.action, 'connector.checked_as'), eq(schema.audit.subject, 'person:' + personId)));
@@ -84,9 +90,10 @@ function serve(connector: string) {
 }
 const service = serve(id);
 const { base, seen } = service;
-const check = async (url: string, ...args: string[]) => {
-  const child = Bun.spawn(['bun', 'scripts/connector-check.ts', url, '--secret', secret, ...args], {
+const runCli = async (script: string, ...args: string[]) => {
+  const child = Bun.spawn([process.execPath, script, ...args], {
     cwd: new URL('../..', import.meta.url).pathname,
+    env: { ...process.env, DATABASE_URL: installation.url, MASTER_KEY: masterKey },
     stdout: 'pipe',
     stderr: 'pipe',
   });
@@ -97,20 +104,24 @@ const check = async (url: string, ...args: string[]) => {
   ]);
   return { exitCode, stdout, stderr };
 };
+const check = (url: string, ...args: string[]) =>
+  runCli('scripts/connector-check.ts', url, '--secret', secret, ...args);
+const register = async () => {
+  const result = await runCli('scripts/connector-add.ts', id, base, '--secret', secret);
+  expect({ exitCode: result.exitCode, stderr: result.stderr }).toEqual({ exitCode: 0, stderr: '' });
+};
 const others: Array<ReturnType<typeof serve>> = [];
 
 afterAll(async () => {
   for (const s of [service, ...others]) s.server.stop(true);
-  await db.delete(schema.audit).where(inArray(schema.audit.subject, ['person:' + personId, 'connector:' + id]));
-  await db.delete(schema.connectors).where(inArray(schema.connectors.id, [id, ownId]));
-  await db.delete(schema.accessGrants).where(eq(schema.accessGrants.personId, personId));
-  await db.delete(schema.people).where(eq(schema.people.id, personId));
-  await closeDatabase();
+  await installation?.drop();
 });
 
 test('--as refuses an unregistered connector and an unknown person, then audits before it signs as the person', async () => {
-  await db.insert(schema.people).values({ id: personId, organisationId: 'test', name: 'Kontroll Person', userName });
-  await db
+  await installation.db
+    .insert(schema.people)
+    .values({ id: personId, organisationId: 'test', name: 'Kontroll Person', userName });
+  await installation.db
     .insert(schema.accessGrants)
     .values({ personId, unitId: 'unit-check-as', unitLabel: 'Kontrollenheten', role: 'manager', capabilities: [] });
 
@@ -119,7 +130,7 @@ test('--as refuses an unregistered connector and an unknown person, then audits 
   expect(unregistered.stderr).toContain(`--id ${id}: no connector with that id is registered in this installation`);
   expect(seen).toEqual([]);
 
-  await registerConnector({ id, url: base, secret });
+  await register();
   const unknown = await check(base, '--id', id, '--keys', 'anna', '--as', 'nobody-' + tag);
   expect(unknown.exitCode).toBe(2);
   expect(unknown.stderr).toContain(
@@ -150,16 +161,16 @@ test('--as refuses an unregistered connector and an unknown person, then audits 
 }, 60_000);
 
 test("--as refuses one of Clew's own connectors and a registered id at another address, signing nothing", async () => {
-  await db
+  await installation.db
     .insert(schema.people)
     .values({ id: personId, organisationId: 'test', name: 'Kontroll Person', userName })
     .onConflictDoNothing();
-  await db
+  await installation.db
     .insert(schema.accessGrants)
     .values({ personId, unitId: 'unit-check-as', unitLabel: 'Kontrollenheten', role: 'manager', capabilities: [] })
     .onConflictDoNothing();
-  await registerConnector({ id, url: base, secret });
-  await db.insert(schema.connectors).values({
+  await register();
+  await installation.db.insert(schema.connectors).values({
     id: ownId,
     bundled: true,
     state: 'enabled',

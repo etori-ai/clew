@@ -8,7 +8,7 @@ One page of [implementation status](../status.md). Each entry says what works in
 
 **Limits and pending work.** No spans for Clew's own `postgres.js` queries; no OTLP log export from the process (a collector reads stdout); no administration page over audit rows; Grafana in the stack is anonymous; the GenAI conventions are at Development status and may rename attributes.
 
-**Evidence.** [D91](../../decisions/D91-one-logger-opentelemetry-export-and-the-model-turn-in-the-audit-trail.md), [architecture](../../architecture/observability.md), [logger](../../../apps/server/src/logging.ts), [telemetry](../../../apps/server/src/telemetry.ts), [request spans](../../../apps/server/src/request-spans.ts), [tests](../../../tests/unit/conversation.test.ts), [log tests](../../../tests/unit/logging.test.ts), [failed statements on PostgreSQL](../../../tests/db/postgres-error-logging.test.ts), [span tests](../../../apps/server/tests/request-spans.test.ts), [a failed step on the engine](../../../apps/server/tests/failed-step-runtime.test.ts)
+**Evidence.** [D91](../../decisions/D91-one-logger-opentelemetry-export-and-the-model-turn-in-the-audit-trail.md), [architecture](../../architecture/observability.md), [logger](../../../apps/server/src/logging.ts), [telemetry](../../../apps/server/src/server-telemetry.ts), [request spans](../../../apps/server/src/request-spans.ts), [tests](../../../tests/unit/conversation.test.ts), [log tests](../../../tests/unit/logging.test.ts), [failed statements on PostgreSQL](../../../tests/db/postgres-error-logging.test.ts), [span tests](../../../apps/server/tests/request-spans.test.ts), [a failed step on the engine](../../../apps/server/tests/failed-step-runtime.test.ts)
 
 ## Operations
 

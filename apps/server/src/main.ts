@@ -1,5 +1,6 @@
 // Telemetry first (D91): the undici instrumentation patches `fetch` at load, before any module that calls it.
-import { shutdownTelemetry, telemetry } from './telemetry';
+import { shutdownTelemetry } from './server-telemetry';
+import { telemetry } from './telemetry';
 import { logger, logPort } from './logging';
 import { resolve } from 'node:path';
 import { Hono } from 'hono';
