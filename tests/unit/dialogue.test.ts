@@ -563,7 +563,7 @@ describe('the built-in connector', () => {
   test('it passes the registry validation, its reads are no model tools, and the unit read opens the dialogue drawer', () => {
     const connector = dialogueConnector(dialogue, async () => ingrid);
     expect(() => registry()).not.toThrow();
-    expect(connector).toMatchObject({ id: 'dialogue', kind: 'core', source: 'Dialog' });
+    expect(connector).toMatchObject({ id: 'dialogue', kind: 'core', source: 'Uppföljningsdialog' });
     const reads = connector.capabilities;
     expect(reads.map(c => [c.name, c.kind, c.model, menuEligible(c)])).toEqual([
       ['dialogue.unit', 'read', false, false],
@@ -577,19 +577,28 @@ describe('the built-in connector', () => {
     expect(unit.about).toEqual({ entity: 'unit', page: { title: 'Öppna dialogen', href: '?dialog={key}' } });
     expect(checkContract(EntityPageSchema, unit.about!.page)).toBe(true);
     expect(placesOf(unit)).toContain('section');
-    const state = unitDialogueView.kind === 'list' ? unitDialogueView.fields[1]! : undefined;
-    expect(['Bra', 'Bevaka', 'Åtgärd krävs', 'Inte bedömd'].map(word => fieldTone(state!, word))).toEqual([
-      'ok',
-      'warn',
-      'alert',
-      'none',
-    ]);
+    // Action before watching before the calm states: the first state with a value is the cell's badge, word included.
+    const fields = unitDialogueView.kind === 'list' ? unitDialogueView.fields : [];
+    const tone = (key: string, value: string) =>
+      fieldTone(
+        fields.find(f => f.key === key)!,
+        value,
+      );
+    expect(fields.map(f => f.key)).toEqual(['open', 'alert', 'warn', 'state', 'overdue']);
+    expect([
+      tone('alert', 'Åtgärd krävs: Verksamhet'),
+      tone('warn', 'Bevaka: Digital transformation'),
+      tone('state', 'Bra'),
+      tone('state', 'Inte bedömd'),
+    ]).toEqual(['alert', 'warn', 'ok', 'none']);
     expect(registry().tools(actor(ingrid))).toEqual([]);
   });
 
-  test('dialogue.unit answers one row per unit the reader follows up, with the worst state and the open activities', async () => {
+  test('dialogue.unit answers one row per unit the reader follows up, naming the areas that need action or watching', async () => {
     const r = registry();
     await dialogue.assess(ingrid, 'u-skola', { area: 'operations', dimension: 'mission', tone: 'alert' });
+    await dialogue.assess(ingrid, 'u-skola', { area: 'digital', tone: 'warn' });
+    await dialogue.assess(olle, 'u-other', { area: 'digital', tone: 'ok' });
     await dialogue.addActivity(ingrid, 'u-skola', { area: 'operations', text: 'A', dueOn: '2026-11-01' });
     await dialogue.addActivity(ingrid, 'u-skola', { area: 'digital', text: 'B' });
     const output = await r.run(actor(ingrid), 'dialogue.unit', { keys: ['u-top', 'u-skola', 'u-other', 'nope'] });
@@ -598,8 +607,22 @@ describe('the built-in connector', () => {
       rows: [
         // Nothing open: no value, so the unit's page draws no key-figure tile; the state says nothing is assessed.
         { key: 'u-top', state: 'Inte bedömd' },
-        { key: 'u-skola', open: '2 öppna aktiviteter', state: 'Åtgärd krävs', overdue: '1 försenad' },
+        {
+          key: 'u-skola',
+          open: '2 öppna aktiviteter',
+          alert: 'Åtgärd krävs: Verksamhet',
+          warn: 'Bevaka: Digital transformation',
+          overdue: '1 försenad',
+        },
       ],
+    });
+    // Assessed and nothing to act on or watch: "Bra".
+    followed.set('ingrid', [
+      ...followed.get('ingrid')!,
+      { unitId: 'u-other', label: 'Annan enhet', relation: 'below', managerId: 'olle' },
+    ]);
+    expect(await r.run(actor(ingrid), 'dialogue.unit', { keys: ['u-other'] })).toEqual({
+      rows: [{ key: 'u-other', state: 'Bra' }],
     });
     expect(await r.run(actor(olle), 'dialogue.unit', { keys: ['u-skola'] })).toEqual({ rows: [] });
     await expect(r.run(actor(anna), 'dialogue.unit', { keys: ['u-skola'] })).rejects.toThrow(

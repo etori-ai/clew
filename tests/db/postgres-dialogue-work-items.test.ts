@@ -121,7 +121,7 @@ describe('the activity card (D118 item 4)', () => {
       title: 'Aktivitet från uppföljningsdialogen',
       summary: 'En aktivitet ska vara klar senast 12 mars.',
       subjects: [{ entity: 'unit', key: unitId }],
-      trigger: { reason: 'Lades till i uppföljningsdialogen', source: 'Dialog' },
+      trigger: { reason: 'Lades till i uppföljningsdialogen', source: 'Uppföljningsdialog' },
       actions: [{ capability: 'dialogue.activities', kind: 'read', target: 'panel' }],
     });
     expect(messages.map(m => m.body)).toEqual(['En aktivitet ska vara klar senast 12 mars.']);

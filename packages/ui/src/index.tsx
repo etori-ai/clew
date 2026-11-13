@@ -100,6 +100,7 @@ export {
   pixel,
   proportional,
   resolveColumnWidths,
+  useTableStickyColumns,
 } from '@astryxdesign/core/Table';
 export { Switch } from '@astryxdesign/core/Switch';
 export { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';

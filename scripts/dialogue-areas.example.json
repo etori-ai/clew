@@ -14,7 +14,7 @@
     },
     {
       "key": "hme",
-      "title": "Hållbart medarbetarengagemang",
+      "title": "Medarbetarengagemang",
       "kind": "measured",
       "measure": "qlik.hmeUnit",
       "questions": [
@@ -76,7 +76,7 @@
       "kind": "assessed",
       "questions": [
         { "heading": "Information", "text": "Hur får medarbetarna veta det som rör dem, och hur vet du att det nått fram?" },
-        { "heading": "Dialog", "text": "När fick medarbetarna senast vara med och påverka ett beslut som rör dem?" }
+        { "heading": "Delaktighet", "text": "När fick medarbetarna senast vara med och påverka ett beslut som rör dem?" }
       ]
     }
   ]

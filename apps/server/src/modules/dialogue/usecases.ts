@@ -11,7 +11,7 @@ import {
   type DialogueUnit,
 } from '@clew/contracts';
 import { ForbiddenError, InputError } from '../../context';
-import { areaFor, isCalendarDay, isOverdue, normaliseText, orderActivities, unitTone } from './domain';
+import { areaFor, areaTone, isCalendarDay, isOverdue, normaliseText, orderActivities } from './domain';
 import type { ActivityRecord, AreaRecord, DialogueDeps, DialogueTx, FollowedUnit, QuestionRecord } from './model';
 
 /** A request the dialogue turns down for what it asks, not who asks; a 400 with this message. */
@@ -37,7 +37,12 @@ export const DIALOGUE_EXPORT_FORMAT = 'clew.dialogue/1';
 /** One unit's dialogue in short (`dialogue.unit`, D97): its state over the assessed areas and its open activities. */
 export interface UnitStanding {
   key: string;
-  tone?: DialogueTone;
+  /** The assessed areas whose state is `alert`, by title in the configured order. */
+  alert: string[];
+  /** The assessed areas whose state is `warn`, by title in the configured order. */
+  warn: string[];
+  /** Whether any assessed area has a state at all. */
+  assessed: boolean;
   open: number;
   overdue: number;
 }
@@ -148,7 +153,7 @@ export function dialogueUsecases(deps: DialogueDeps) {
       });
     },
     /**
-     * The dialogue of these units in short (D97, `dialogue.unit`): the worst state of the assessed areas and the open
+     * The dialogue of these units in short (D97, `dialogue.unit`): which assessed areas need action or watching, and the open
      * and overdue activities, one row per key the persona follows up; any other key has no row.
      */
     async aboutUnits(persona: AuthenticatedContext, keys: readonly string[]): Promise<UnitStanding[]> {
@@ -163,10 +168,12 @@ export function dialogueUsecases(deps: DialogueDeps) {
         const configured = new Set(areas.map(a => a.key));
         return wanted.map(key => {
           const own = activities.filter(a => a.unitId === key && a.doneAt === null && configured.has(a.areaKey));
-          const tone = unitTone(areas, key, assessments);
+          const tones = areas.map(area => ({ title: area.title, tone: areaTone(area, key, assessments) }));
           return {
             key,
-            ...(tone ? { tone } : {}),
+            alert: tones.filter(t => t.tone === 'alert').map(t => t.title),
+            warn: tones.filter(t => t.tone === 'warn').map(t => t.title),
+            assessed: tones.some(t => t.tone !== undefined),
             open: own.length,
             overdue: own.filter(a => isOverdue(a, today)).length,
           };

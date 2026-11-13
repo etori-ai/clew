@@ -39,16 +39,20 @@ below. The key figures stay with connectors (decision B of the plan, not taken h
 9. **Free text is sealed at rest** (the activity, the note, the comment), under purposes bound to the row, and appears
    in no card title, audit row, log line or trace (D96 item 6). Limits as big-boss-board: 4 000, 1 000 and 2 000
    characters.
-10. **Clew's own connector, `dialogue`**, bundled and enabled by default, answers two reads, neither a model tool:
-    `dialogue.unit` about a unit (open and overdue activities, the worst state of the assessed areas), which Clew draws
-    as a section on the unit's page, a column on Dialogstöd and a count under "Att ta upp" with no change to those
-    pages; and `dialogue.activities`, the reader's own open activities, which the card opens. The routes under
+10. **Clew's own connector, `dialogue`** (source "Uppföljningsdialog"), bundled and enabled by default, answers two
+    reads, neither a model tool: `dialogue.unit` about a unit (open and overdue activities, and the assessed areas that
+    need action or watching by name, "Åtgärd krävs: Verksamhet"), which Clew draws as a section on the unit's page, a
+    column on Dialogstöd and a line under "Att ta upp" that leads into the drawer; and `dialogue.activities`, the reader's own open activities, which the card opens. The routes under
     `/api/dialogue` refuse while an administrator has switched the module off. No profile lets another system answer;
     the plan's `<id>.followup` waits until a second system exists.
 11. **The dialogue is a drawer over the unit's page** (D83, D111 rule 5) at `?dialog=<unitId>`, opened by the section's
-    "Öppna dialogen": the areas as tabs, a measured area's figure from its source, an assessed area's state per
-    dimension with a form and the history, the questions, and the activities with their forms. It is the one new page
-    surface of this record.
+    "Öppna dialogen" or a unit's line under "Att ta upp". It reads as an agenda (amended 2026-11-13 after a design
+    critique): the areas as tabs, each with its state, opened on the area that needs action, else the one to watch;
+    each area in the order of the conversation, where it stands (a measured area's figure from its source, an assessed
+    area's state per dimension with who set it and the history), what to talk about, then a new assessment and the
+    activities, their forms behind "Ny bedömning" and "Lägg till aktivitet". An area to act on or watch with no open
+    activity says so. Every area's panel stays mounted, so text being written survives a change of tab. It is the one
+    new page surface of this record.
 12. **Erasure and export** are operator scripts, as for talks: `scripts/dialogue-erase.ts` (removes a person from every
     row and the cards they owned, `--confirm`) and `scripts/dialogue-export.ts` (`clew.dialogue/1`).
 

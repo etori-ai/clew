@@ -25,7 +25,7 @@ export interface DialogueWorkItemOptions {
 }
 const ACTOR = 'dialogue:activity';
 const TITLE = 'Aktivitet från uppföljningsdialogen';
-const SOURCE = 'Dialog';
+const SOURCE = 'Uppföljningsdialog';
 const ACTION: ThreadAction = {
   id: 'activities',
   label: 'Visa aktiviteter',

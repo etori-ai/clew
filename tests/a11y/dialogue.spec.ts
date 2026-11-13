@@ -175,13 +175,14 @@ class Dialogues {
           json: {
             capability: DIALOGUE_UNIT,
             status: 'ok',
-            row: { key: ENTITY_UNIT.id, open: '1 öppen aktivitet', state: 'Bevaka' },
+            row: { key: ENTITY_UNIT.id, open: '1 öppen aktivitet', warn: 'Bevaka: Verksamhet' },
           },
         }),
     );
   }
 }
-const drawer = (page: Page) => page.getByRole('dialog', { name: `Dialog med ${ENTITY_UNIT.label}`, exact: true });
+const drawer = (page: Page) =>
+  page.getByRole('dialog', { name: `Uppföljningsdialog med ${ENTITY_UNIT.label}`, exact: true });
 const notices = (page: Page) => page.getByRole('region', { name: 'Aviseringar' });
 async function setUp(page: Page) {
   await new DialogueUnits().route(page);
@@ -197,7 +198,7 @@ for (const [layout, viewport] of [
   test.describe(`the dialogue on ${layout}`, () => {
     test.use({ viewport });
 
-    test('it opens over the unit’s page with the areas as tabs; axe holds and every focus stop is marked', async ({
+    test('it opens over the unit’s page on the area to watch, read as an agenda; axe holds and every focus stop is marked', async ({
       page,
       api: _,
     }) => {
@@ -205,27 +206,32 @@ for (const [layout, viewport] of [
       await open(page, `${school}?dialog=${ENTITY_UNIT.id}`);
       const dialog = drawer(page);
       await expect(dialog).toBeVisible();
-      await expect(page).toHaveTitle(`Dialog med ${ENTITY_UNIT.label} · Startsidan`);
+      await expect(page).toHaveTitle(`Uppföljningsdialog med ${ENTITY_UNIT.label} · Startsidan`);
       const tabs = dialog.getByRole('tablist', { name: 'Områden' });
       await expect(tabs.getByRole('tab')).toHaveCount(2);
-      await expect(tabs.getByRole('tab').nth(0)).toHaveAccessibleName('Sjukfrånvaro');
-      await expect(tabs.getByRole('tab').nth(1)).toHaveAccessibleName('Verksamhet');
-      await expect(tabs.getByRole('tab', { name: 'Sjukfrånvaro' })).toHaveAttribute('aria-selected', 'true');
-      // A measured area: the key figure as the unit's page has it, its fact, and the questions.
-      await expect(dialog.getByRole('tabpanel', { name: 'Sjukfrånvaro' })).toBeVisible();
-      await expect(dialog.getByRole('heading', { name: 'Nyckeltalet' })).toBeVisible();
-      await expect(dialog.getByText('Källa: Qlik')).toBeVisible();
-      await expect(dialog.getByRole('list', { name: 'Att prata om' })).toContainText('Syns ett mönster i frånvaron?');
-      await expect(dialog.getByText('Inga aktiviteter än.')).toBeVisible();
-      await expectNoAxeViolations(page);
-      // An assessed area: its state per dimension, the history, and the activities.
-      await tabs.getByRole('tab', { name: 'Verksamhet' }).click();
+      // Each tab says its area's state, and the drawer opens on the area that needs a conversation most.
+      await expect(tabs.getByRole('tab').nth(0)).toHaveAccessibleName(/^Sjukfrånvaro/);
+      await expect(tabs.getByRole('tab').nth(1)).toHaveAccessibleName(/Verksamhet.*Bevaka/);
+      await expect(tabs.getByRole('tab').nth(1)).toHaveAttribute('aria-selected', 'true');
       const panel = dialog.getByRole('tabpanel', { name: 'Verksamhet' });
+      await expect(panel).toBeVisible();
+      // The agenda: where it stands, what to talk about, then the assessment and the activities, forms behind buttons.
+      const order = await panel
+        .getByRole('heading', { level: 3 })
+        .allTextContents()
+        .then(t => t.map(h => h.trim()));
+      expect(order).toEqual(['Läget', 'Att prata om', 'Bedömning', 'Aktiviteter']);
       await expect(panel.getByRole('heading', { name: 'Grunduppdrag' })).toBeVisible();
       await expect(panel.getByText('Bemanningen är tunn.')).toBeVisible();
       await expect(panel.getByRole('list', { name: 'Tidigare bedömningar av Grunduppdrag' })).toBeVisible();
       await expect(panel.getByText('Inte bedömd än.')).toBeVisible();
-      await expect(panel.getByText('Bygger på: ”Jag vet vad som förväntas av mig.”')).toBeVisible();
+      const questions = panel.getByRole('list', { name: 'Att prata om' });
+      await expect(questions).toContainText('Uppdraget');
+      await expect(questions).toContainText('Klarar enheten sitt uppdrag?');
+      await expect(questions).toContainText('Bygger på: ”Jag vet vad som förväntas av mig.”');
+      await expect(panel.getByRole('form')).toHaveCount(0);
+      await expect(panel.getByRole('button', { name: 'Ny bedömning av Verksamhet' })).toBeVisible();
+      await expect(panel.getByRole('button', { name: 'Lägg till aktivitet i Verksamhet' })).toBeVisible();
       const openList = panel.getByRole('list', { name: 'Öppna aktiviteter' });
       await expect(openList).toContainText('Se över schemat');
       await expect(openList).toContainText('Hillevi Berg · senast 20 oktober');
@@ -235,6 +241,13 @@ for (const [layout, viewport] of [
       const { unmarked, hidden } = await hiddenFocusStops(page);
       expect(unmarked).toEqual([]);
       expect(hidden).toEqual([]);
+      // A measured area: its figure as the unit's page draws it, what it measures and where it comes from.
+      await tabs.getByRole('tab').nth(0).click();
+      const sick = dialog.getByRole('tabpanel', { name: 'Sjukfrånvaro' });
+      await expect(sick.getByText('Sjukfrånvaro · Qlik')).toBeVisible();
+      await expect(sick.getByRole('list', { name: 'Att prata om' })).toContainText('Syns ett mönster i frånvaron?');
+      await expect(sick.getByText('Inga aktiviteter än.')).toBeVisible();
+      await expectNoAxeViolations(page);
     });
   });
 
@@ -253,16 +266,17 @@ test.describe('the dialogue by keyboard', () => {
     await page.keyboard.press('Enter');
     const dialog = drawer(page);
     await expect(dialog).toBeVisible();
-
-    // The tabs by arrow keys.
-    await dialog.getByRole('tab', { name: 'Sjukfrånvaro' }).focus();
-    await page.keyboard.press('ArrowRight');
-    await page.keyboard.press('Enter');
     const panel = dialog.getByRole('tabpanel', { name: 'Verksamhet' });
     await expect(panel).toBeVisible();
 
-    // Fullmäktigemål's state: the radio group, a comment, Spara.
-    const form = panel.getByRole('form', { name: 'Ny bedömning av Fullmäktigemål' });
+    // Ny bedömning opens the form with the focus in it: the part, the state, a comment, Spara.
+    const assess = panel.getByRole('button', { name: 'Ny bedömning av Verksamhet' });
+    await assess.focus();
+    await page.keyboard.press('Enter');
+    const form = panel.getByRole('form', { name: 'Ny bedömning av Verksamhet' });
+    await expect(form.getByRole('radio', { name: 'Grunduppdrag' })).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(form.getByRole('radio', { name: 'Fullmäktigemål' })).toBeChecked();
     await form.getByRole('radio', { name: 'Bra' }).focus();
     await page.keyboard.press('ArrowRight');
     await expect(form.getByRole('radio', { name: 'Bevaka' })).toBeChecked();
@@ -276,11 +290,16 @@ test.describe('the dialogue by keyboard', () => {
       body: { area: 'operations', dimension: 'council-goals', tone: 'warn', comment: 'Målen syns inte i vardagen.' },
     });
     await expect(panel.getByText('Målen syns inte i vardagen.')).toBeVisible();
+    await expect(form).toHaveCount(0);
+    await expect(assess).toBeFocused();
 
-    // Add an activity; the field empties and keeps the focus.
+    // Lägg till aktivitet opens the form with the focus in its text; after adding, the field empties and keeps it.
+    const addButton = panel.getByRole('button', { name: 'Lägg till aktivitet i Verksamhet' });
+    await addButton.focus();
+    await page.keyboard.press('Enter');
     const add = panel.getByRole('form', { name: 'Ny aktivitet' });
     const text = add.getByRole('textbox', { name: /Vad ska göras/ });
-    await text.focus();
+    await expect(text).toBeFocused();
     await page.keyboard.type('Ta fram en plan');
     await add.getByRole('button', { name: 'Lägg till' }).focus();
     await page.keyboard.press('Enter');
@@ -290,6 +309,10 @@ test.describe('the dialogue by keyboard', () => {
     const openList = panel.getByRole('list', { name: 'Öppna aktiviteter' });
     await expect(openList).toContainText('Ta fram en plan');
     await expect(openList).toContainText('Hillevi Berg · inget slutdatum');
+    await add.getByRole('button', { name: 'Stäng' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(add).toHaveCount(0);
+    await expect(addButton).toBeFocused();
 
     // Klar opens a form with the focus in its note; Markera klar moves the row and Öppna igen takes the focus.
     await openList.getByRole('button', { name: 'Klar: Ta fram en plan' }).focus();
@@ -321,17 +344,63 @@ test.describe('the dialogue by keyboard', () => {
     await expect(panel.getByRole('list', { name: 'Klara aktiviteter' })).toHaveCount(0);
 
     // Escape closes the dialogue: the page is as it was, the focus on the way in.
-    await dialog.getByRole('tab', { name: 'Verksamhet' }).focus();
+    await dialog.getByRole('tab', { name: /Verksamhet/ }).focus();
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
     await expect(page).toHaveURL(school);
     await expect(way).toBeFocused();
   });
 
+  test('closed after arriving by a direct link, the focus goes to the section’s way in, never the page’s body', async ({
+    page,
+    api: _,
+  }) => {
+    await setUp(page);
+    await open(page, `${school}?dialog=${ENTITY_UNIT.id}`);
+    await expect(drawer(page)).toBeVisible();
+    await expect(page.getByRole('main').getByRole('link', { name: 'Öppna dialogen' })).toBeAttached();
+    await page.keyboard.press('Escape');
+    await expect(drawer(page)).toBeHidden();
+    await expect(page.getByRole('main').getByRole('link', { name: 'Öppna dialogen' })).toBeFocused();
+  });
+
+  test('the other areas are hidden until found, and find in page reaching one selects its tab', async ({
+    page,
+    api: _,
+  }) => {
+    await setUp(page);
+    await open(page, `${school}?dialog=${ENTITY_UNIT.id}`);
+    const dialog = drawer(page);
+    await expect(dialog.getByRole('tabpanel', { name: 'Verksamhet' })).toBeVisible();
+    const sick = dialog.locator('[role="tabpanel"][aria-label="Sjukfrånvaro"]');
+    await expect(sick).toHaveAttribute('hidden', 'until-found');
+    // The browser removes `hidden` and fires `beforematch` when its search reaches a hidden panel.
+    await sick.evaluate(el => {
+      el.removeAttribute('hidden');
+      el.dispatchEvent(new Event('beforematch'));
+    });
+    await expect(dialog.getByRole('tab').nth(0)).toHaveAttribute('aria-selected', 'true');
+    await expect(dialog.locator('[role="tabpanel"][aria-label="Verksamhet"]')).toHaveAttribute('hidden', 'until-found');
+  });
+
+  test('text being written survives a change of tab', async ({ page, api: _ }) => {
+    await setUp(page);
+    await open(page, `${school}?dialog=${ENTITY_UNIT.id}`);
+    const dialog = drawer(page);
+    const panel = dialog.getByRole('tabpanel', { name: 'Verksamhet' });
+    await panel.getByRole('button', { name: 'Lägg till aktivitet i Verksamhet' }).click();
+    await panel.getByRole('textbox', { name: /Vad ska göras/ }).fill('Halvskriven');
+    await dialog.getByRole('tab').nth(0).click();
+    await dialog.getByRole('tab').nth(1).click();
+    await expect(panel.getByRole('textbox', { name: /Vad ska göras/ })).toHaveValue('Halvskriven');
+  });
+
   test('blank text is said on the field and nothing is sent', async ({ page, api: _ }) => {
     const d = await setUp(page);
     await open(page, `${school}?dialog=${ENTITY_UNIT.id}`);
-    const add = drawer(page).getByRole('form', { name: 'Ny aktivitet' });
+    const panel = drawer(page).getByRole('tabpanel', { name: 'Verksamhet' });
+    await panel.getByRole('button', { name: 'Lägg till aktivitet i Verksamhet' }).click();
+    const add = panel.getByRole('form', { name: 'Ny aktivitet' });
     await add.getByRole('button', { name: 'Lägg till' }).click();
     const text = add.getByRole('textbox', { name: /Vad ska göras/ });
     await expect(text).toBeFocused();
@@ -346,8 +415,8 @@ test.describe('the dialogue by keyboard', () => {
     const d = await setUp(page);
     d.refused = true;
     await open(page, `${school}?dialog=${ENTITY_UNIT.id}`);
-    const dialog = page.getByRole('dialog', { name: 'Dialogen finns inte' });
-    await expect(dialog.getByRole('heading', { name: 'Dialogen finns inte' }).first()).toBeVisible();
+    const dialog = page.getByRole('dialog', { name: 'Uppföljningsdialogen finns inte' });
+    await expect(dialog.getByRole('heading', { name: 'Uppföljningsdialogen finns inte' }).first()).toBeVisible();
     await dialog.getByRole('button', { name: `Tillbaka till ${ENTITY_UNIT.label}` }).click();
     await expect(page).toHaveURL(school);
   });
@@ -358,7 +427,10 @@ test.describe('the dialogue by keyboard', () => {
     await open(page, `${school}?dialog=${ENTITY_UNIT.id}`);
     const dialog = drawer(page);
     await expect(dialog).toBeVisible();
-    await dialog.getByRole('tab', { name: 'Verksamhet' }).click();
+    await dialog
+      .getByRole('tabpanel', { name: 'Verksamhet' })
+      .getByRole('button', { name: /Ny bedömning/ })
+      .click();
     expect(await reflowProblems(page, dialog)).toEqual([]);
   });
 });

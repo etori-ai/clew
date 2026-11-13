@@ -51,9 +51,6 @@ export function latestOf(area: AreaRecord, unitId: string, assessments: readonly
 /** An assessed area's state for a unit: the worst of its dimensions' newest assessments (D118 item 6). */
 export const areaTone = (area: AreaRecord, unitId: string, assessments: readonly AssessmentRecord[]) =>
   area.kind === 'assessed' ? worst(latestOf(area, unitId, assessments).map(a => a.tone)) : undefined;
-/** A unit's state over every assessed area: the worst of them. */
-export const unitTone = (areas: readonly AreaRecord[], unitId: string, assessments: readonly AssessmentRecord[]) =>
-  worst(areas.flatMap(area => areaTone(area, unitId, assessments) ?? []));
 /** "Inga öppna aktiviteter", "1 öppen aktivitet", "3 öppna aktiviteter". */
 export const openWords = (n: number) =>
   n === 0 ? 'Inga öppna aktiviteter' : n === 1 ? '1 öppen aktivitet' : `${n} öppna aktiviteter`;

@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import type { EntityList, EntitySection, EntitySource, SessionUser } from '@clew/contracts';
 import {
@@ -17,6 +18,7 @@ import {
   VStack,
   proportional,
   useMediaQuery,
+  useTableStickyColumns,
 } from '@clew/ui';
 import { entityDetailQuery, entityListQuery, entitySectionQuery } from '../queries';
 import { usePageTitle } from '../page-title';
@@ -26,6 +28,7 @@ import { PageHeader } from '../components/page-header';
 import { ContentSkeleton } from '../components/loading';
 import { Summary, measureOf, summaryOf, toneWeight } from '../components/unit-figures';
 import { unitPageHref } from '../person-address';
+import { sourcePageHref } from '../talk-address';
 import { errorMessage } from '../query-policy';
 import { fieldText } from '../components/view';
 
@@ -48,6 +51,14 @@ function Cell({ answer, source }: { answer: Answer; source: EntitySource }) {
   const row = rowIn(answer);
   return row ? <Summary source={source} row={row} /> : <Text type="supporting">–</Text>;
 }
+
+/** A card's label on a phone, the column heading in one line: "Ekonomi · Avvikelse mot budget · Qlik". */
+const cardLabel = (source: EntitySource) => {
+  const measure = measureOf(source);
+  return [source.title, measure === source.title ? null : measure, source.own ? 'Clew' : source.source]
+    .filter(Boolean)
+    .join(' · ');
+};
 
 /** A column's heading: what the figure is ("Avvikelse mot budget") under the source's title, and where it comes from. */
 function SourceHeader({ source }: { source: EntitySource }) {
@@ -77,6 +88,9 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
   const short = useMediaQuery(shortQuery);
   const nav = useRail({ current: { surface: 'verktyg', view: null }, admin, manager: user.role === 'manager' });
   usePageTitle('Dialogstöd');
+  // The unit's name stays in view when a narrow window scrolls the figures sideways: a figure is never read without
+  // knowing which unit it is (the responsive-table pattern; Astryx's own pinned column).
+  const pinned = useTableStickyColumns<TableRow>({ startKeys: ['unit'] });
   const list = useQuery(entityListQuery('unit'));
   const groups = list.data?.groups.filter(g => g.entities.length) ?? [];
   const units = groups.flatMap(g => g.entities);
@@ -108,22 +122,29 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
   const ordered = (entities: Unit[]) =>
     settled ? [...entities].sort((a, b) => weightOf(b.key) - weightOf(a.key)) : entities;
 
-  // The line on top: per source and state, how many units it holds ("2 enheter · Ekonomi · Mot underskott").
-  const counts = new Map<string, { source: string; word: string; tone: 'alert' | 'warn'; units: number }>();
+  // The line on top: per source and state, the units it holds ("Ekonomi · Mot underskott – Bergsåkers skola, Hagaskolan").
+  const counts = new Map<string, { source: EntitySource; word: string; tone: 'alert' | 'warn'; units: Unit[] }>();
   if (settled)
     for (const u of units)
       for (const s of statesOf(u.key)) {
         const id = `${s.source.capability}:${s.word}`;
-        const c = counts.get(id) ?? {
-          source: s.source.title,
-          word: s.word,
-          tone: s.tone as 'alert' | 'warn',
-          units: 0,
-        };
-        c.units++;
+        const c = counts.get(id) ?? { source: s.source, word: s.word, tone: s.tone as 'alert' | 'warn', units: [] };
+        c.units.push(u);
         counts.set(id, c);
       }
-  const attention = [...counts.values()].sort((a, b) => toneWeight(b.tone) - toneWeight(a.tone) || b.units - a.units);
+  const attention = [...counts.values()].sort(
+    (a, b) => toneWeight(b.tone) - toneWeight(a.tone) || b.units.length - a.units.length,
+  );
+  /**
+   * Where a line's unit leads: into the source's own way in when that lies over the unit's page (the dialogue's
+   * `?dialog=`), else the unit's page; either way with Dialogstöd as the way back.
+   */
+  const wayInto = (unit: Unit, source: EntitySource) => {
+    const page = unitPageHref(unit.key, { from: UNITS });
+    if (!source.page?.href.startsWith('?')) return page;
+    const [pathname, search = ''] = page.split('?');
+    return sourcePageHref(source.page, { key: unit.key }, { pathname: pathname!, search }) ?? page;
+  };
 
   const unitLink = (unit: Unit) => (
     <Link href={unitPageHref(unit.key, { from: UNITS })} weight="semibold">
@@ -139,10 +160,20 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
         </Heading>
         <VStack gap={1}>
           {attention.map(a => (
-            <HStack key={`${a.source}:${a.word}`} gap={2} vAlign="center">
-              <StatusDot variant={a.tone === 'alert' ? 'error' : 'warning'} label={a.word} />
+            <HStack key={`${a.source.capability}:${a.word}`} gap={2} vAlign="start" wrap="wrap">
+              {/* The dot names the level, the line the state itself: a screen reader hears each once. */}
+              <StatusDot
+                variant={a.tone === 'alert' ? 'error' : 'warning'}
+                label={a.tone === 'alert' ? 'Kräver åtgärd' : 'Att bevaka'}
+              />
               <Text>
-                {a.units} {a.units === 1 ? 'enhet' : 'enheter'} · {a.source} · {a.word}
+                {a.source.title} · {a.word} –{' '}
+                {a.units.map((u, i) => (
+                  <Fragment key={u.key}>
+                    {i > 0 && ', '}
+                    <Link href={wayInto(u, a.source)}>{u.name}</Link>
+                  </Fragment>
+                ))}
               </Text>
             </HStack>
           ))}
@@ -188,7 +219,8 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
                       {unitLink(unit)}
                       <MetadataList label={{ position: 'top' }}>
                         {shown.map(({ s, si }) => (
-                          <MetadataListItem key={s.capability} label={s.title}>
+                          // The measure and its source as the table's heading names them: a figure is never bare.
+                          <MetadataListItem key={s.capability} label={cardLabel(s)}>
                             <Cell answer={answerOf(unit.key, si)} source={s} />
                           </MetadataListItem>
                         ))}
@@ -202,6 +234,7 @@ export function UnitsPage({ user, admin }: { user: SessionUser; admin: boolean }
                 data={entities.map(unit => ({ id: unit.key, unit }))}
                 idKey="id"
                 density="balanced"
+                plugins={{ pinned }}
                 columns={[
                   { key: 'unit', header: 'Enhet', width: UNIT_WIDTH, renderCell: (r: TableRow) => unitLink(r.unit) },
                   ...shown.map(({ s, si }) => ({

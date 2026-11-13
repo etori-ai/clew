@@ -13,7 +13,7 @@ import type { DialogueUsecases } from './usecases';
  * added to a conversation as a chip: its text is free text about a unit's work. Writes are use cases behind Clew's own
  * routes, never capabilities. The use cases come built from composition (D25).
  */
-export const DIALOGUE_SOURCE = 'Dialog';
+export const DIALOGUE_SOURCE = 'Uppföljningsdialog';
 const KeysSchema = Type.Object(
   { keys: Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { maxItems: ENTITY_KEYS_MAX }) },
   { additionalProperties: false },
@@ -26,7 +26,9 @@ export const UnitDialogueOutputSchema = Type.Object(
         {
           key: Type.String({ minLength: 1, maxLength: 256 }),
           open: Type.Optional(Type.String({ maxLength: 40 })),
-          state: Type.String({ maxLength: 40 }),
+          alert: Type.Optional(Type.String({ maxLength: 4000 })),
+          warn: Type.Optional(Type.String({ maxLength: 4000 })),
+          state: Type.Optional(Type.String({ maxLength: 40 })),
           overdue: Type.Optional(Type.String({ maxLength: 40 })),
         },
         { additionalProperties: false },
@@ -56,29 +58,28 @@ export const MyActivitiesOutputSchema = Type.Object(
   { additionalProperties: false },
 );
 /**
- * One unit's dialogue in short: its open activities as the value, the worst state of its assessed areas as the badge
- * (the colour is never alone: the word is the state), and the overdue ones warning beside it. A unit with nothing open
- * has no value, so the unit's page draws no key-figure tile for it, and says "Inte bedömd" until something is assessed,
- * so its section (the way into the drawer) and its cell on Dialogstöd still say something.
+ * One unit's dialogue in short: its open activities as the value, and as the state the areas that need action
+ * ("Åtgärd krävs: Verksamhet") or watching ("Bevaka: Digital transformation"), so a reader knows which area to open; the
+ * word is always in the value, never the colour alone. With nothing to act on or watch the state is "Bra", or "Inte
+ * bedömd" until an area is assessed, so the section (the way into the drawer) and the cell on Dialogstöd still say
+ * something. A unit with nothing open has no value, so the unit's page draws no key-figure tile for it.
  */
 export const NOT_ASSESSED = 'Inte bedömd';
 export const unitDialogueView: View = {
   kind: 'list',
   title: 'open',
   noun: { one: 'enhet', other: 'enheter' },
-  empty: 'Dialogen har inget om enheten än.',
+  empty: 'Uppföljningsdialogen har inget om enheten än.',
   fields: [
     { key: 'open', label: 'Aktiviteter' },
+    // The first state with a value is the cell's badge: action before watching before the calm states.
+    { key: 'alert', label: 'Läge', format: 'status', tones: { '*': 'alert' } },
+    { key: 'warn', label: 'Läge', format: 'status', tones: { '*': 'warn' } },
     {
       key: 'state',
-      label: 'Bedömning',
+      label: 'Läge',
       format: 'status',
-      tones: {
-        [TONE_WORDS.ok]: 'ok',
-        [TONE_WORDS.warn]: 'warn',
-        [TONE_WORDS.alert]: 'alert',
-        [NOT_ASSESSED]: 'none',
-      },
+      tones: { [TONE_WORDS.ok]: 'ok', [NOT_ASSESSED]: 'none' },
     },
     { key: 'overdue', label: 'Försenade', format: 'status', tones: { '*': 'warn' }, beside: true },
   ],
@@ -119,10 +120,10 @@ export function dialogueConnector(
   const aboutUnit: Capability<Keys> = {
     name: DIALOGUE_CONNECTOR + '.unit',
     kind: 'read',
-    title: 'Dialog',
+    title: 'Uppföljningsdialog',
     model: false,
     description:
-      'Uppföljningsdialogen för varje enhet du följer upp: hur många aktiviteter som är öppna och försenade, och det sämsta läget bland de bedömda områdena.',
+      'Uppföljningsdialogen för varje enhet du följer upp: hur många aktiviteter som är öppna och försenade, och vilka bedömda områden som kräver åtgärd eller bevakas.',
     input: KeysSchema,
     output: UnitDialogueOutputSchema,
     view: unitDialogueView,
@@ -137,7 +138,9 @@ export function dialogueConnector(
           return {
             key: r.key,
             ...(r.open ? { open: openWords(r.open) } : {}),
-            state: r.tone ? TONE_WORDS[r.tone] : NOT_ASSESSED,
+            ...(r.alert.length ? { alert: `${TONE_WORDS.alert}: ${r.alert.join(', ')}` } : {}),
+            ...(r.warn.length ? { warn: `${TONE_WORDS.warn}: ${r.warn.join(', ')}` } : {}),
+            ...(r.alert.length || r.warn.length ? {} : { state: r.assessed ? TONE_WORDS.ok : NOT_ASSESSED }),
             ...(overdue ? { overdue } : {}),
           };
         }),
