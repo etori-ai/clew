@@ -45,6 +45,7 @@ export interface PageSectionEntry {
 export function EntityPage({
   back,
   place,
+  crumbs,
   icon,
   title,
   subtitle,
@@ -59,6 +60,8 @@ export function EntityPage({
   back: { label: string; href: string } | null;
   /** Where the entity stands, after the way back on the trail's line ("Bergsåkers skola"). */
   place?: string | undefined;
+  /** A trail of the entity's own, after the way back: a unit's place among the units the reader follows up (D117). */
+  crumbs?: ReactNode;
   /** What stands before the name: a person's avatar. */
   icon?: ReactNode;
   title: string;
@@ -88,7 +91,7 @@ export function EntityPage({
     if (!narrow) setDetailsOpen(false);
   }, [narrow]);
   const trail =
-    back || (place && !mobile) ? (
+    back || crumbs || (place && !mobile) ? (
       <HStack gap={3} wrap="wrap" vAlign="center">
         {back && (
           <Link href={back.href} type="supporting" color="secondary">
@@ -98,7 +101,8 @@ export function EntityPage({
             </HStack>
           </Link>
         )}
-        {back && place && !mobile && <Divider orientation="vertical" />}
+        {back && (crumbs || (place && !mobile)) && <Divider orientation="vertical" />}
+        {crumbs}
         {place && !mobile && (
           <Text type="supporting" color="secondary">
             {place}

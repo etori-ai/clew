@@ -43,10 +43,13 @@ function errorResponse(code, message, status) {
  * "warn" and "alert"; economyAlertBelow, a deviation in mnkr below which the economy is "alert"; hmeOkFrom and
  * hmeWarnFrom, indexes from which HME is "ok" and "warn". Identity comes from the verified assertion, never the body.
  *
+ * The scope is the units the verified actor follows up (D117): their own unit, and the units Clew lists in `units` (those
+ * they manage and those of the managers who report to them, D99) when the call carries them. Any other unit is no row,
+ * a chart for it is not found. With a map each of these Clew units is the source's units the map names for it.
+ *
  * Open mode (`unitMap: null`), for the fixture only: there is no map from Clew's units to the source's, so a unit's name
- * in the source is Clew's unit id and every manager has figures for their own unit, whatever the organisation tree. The
- * scope is the same as with a map: the reader's own unit only (the assertion carries one unit, D99). Who may see which
- * units in the real source, and the units below a manager, are not settled (the review
+ * in the source is Clew's unit id and every manager has figures for the units they follow up, whatever the organisation
+ * tree. How Clew's units map to the real source is not settled (the review
  * docs/reviews/2026-11-12-absorbing-big-boss-board-into-clew.md, decision B item 4).
  */
 export function createConnector({
@@ -90,13 +93,24 @@ export function createConnector({
     return inflight.get(key);
   }
 
-  const unitsOf = actor => {
-    if (open) return actor.unitId ? [actor.unitId] : [];
-    const units = unitMap[actor.unitId];
+  /** The Clew units the actor follows up (D117), their own first, each once, with their labels. */
+  const followed = actor => {
+    const seen = new Map();
+    if (actor.unitId) seen.set(actor.unitId, actor.unitLabel);
+    for (const u of Array.isArray(actor.units) ? actor.units : [])
+      if (u && typeof u.unitId === 'string' && u.unitId && !seen.has(u.unitId)) seen.set(u.unitId, u.unitLabel);
+    return seen;
+  };
+  /** The source's units behind one Clew unit: in open mode the unit itself, else the map's names for it. */
+  const sourceUnits = clewUnit => {
+    if (open) return [clewUnit];
+    const units = unitMap[clewUnit];
     return Array.isArray(units) ? units : [];
   };
-  /** What a unit is called in a row: in open mode the reader's own unit by its label, any other by Clew's id. */
-  const nameOf = (actor, unit) => (open && unit === actor.unitId && actor.unitLabel ? actor.unitLabel : unit);
+  /** Every source unit the actor may see, their own unit's first. */
+  const unitsOf = actor => [...new Set([...followed(actor).keys()].flatMap(sourceUnits))];
+  /** What a unit is called in a row: in open mode the Clew unit's label as Clew sent it, else the source's name. */
+  const nameOf = (actor, unit) => (open ? followed(actor).get(unit) || unit : unit);
   // A unit's ref: in open mode Clew's unit id itself, which is already in Clew's addresses; else a hash of its name in
   // the source, stable, with no unit name in Clew's addresses.
   const refOf = unit => (open && unitRef.test(`unit:${unit}`) ? `unit:${unit}` : hashRef(unit));
@@ -221,11 +235,13 @@ export function createConnector({
   }
 
   /**
-   * Which source units answer a read about units: only the reader's own unit id, with the source units behind it. Any
-   * other id is no row, never a refusal (D97); the connector check holds a connector to that.
+   * Which source units answer a read about units: each asked Clew unit the reader follows up (D117), with the source
+   * units behind it. Any other id is no row, never a refusal (D97); the connector check holds a connector to that.
    */
-  const aboutUnits = (actor, keys) =>
-    keys.includes(actor.unitId) && unitsOf(actor).length ? [{ key: actor.unitId, units: unitsOf(actor) }] : [];
+  const aboutUnits = (actor, keys) => {
+    const mine = followed(actor);
+    return keys.filter(key => mine.has(key) && sourceUnits(key).length).map(key => ({ key, units: sourceUnits(key) }));
+  };
 
   const updated = data => (data?.reloadedAt ? { updated: data.reloadedAt } : {});
   const dataAt = data => data?.reloadedAt ?? new Date(now()).toISOString();

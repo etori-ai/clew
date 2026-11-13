@@ -7,9 +7,10 @@
 
 1. **Clew draws Start first among the places**, leading to `/`, with Clew's own pages under it: Hem (`/`), Att göra
    (`/todo`), Kalender (`/calendar`) and, for a manager, Personal (`/staff`), the places at the top of the rail (D112
-   item 1) in its order and with its words; and for a manager **Dialogstöd**, the page of their own unit
-   (`/units/<id>`), which Läget on Hem already calls the dialogue support ("Öppna dialogstödet"). The server knows the
-   person's unit, so the address is their own.
+   item 1) in its order and with its words; and for a manager **Dialogstöd**, the page of their own unit, which Läget
+   on Hem already calls the dialogue support ("Öppna dialogstödet"). It leads to `/units`, the overview of the units
+   they follow up, the address every unit page shares, so the entry stays marked on each of them (amended by
+   [D117](D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md); first built as `/units/<id>`).
 2. **The rail stays.** The same places stand in the rail and under Start; the header is the intranet's way through the
    site and the rail is Clew's own navigation, with its tools, conversations and administration.
 3. **A connector's own Start is left out.** A place the header connector lists with the id `start`, or with Clew's root
