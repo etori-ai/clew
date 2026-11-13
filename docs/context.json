@@ -159,6 +159,20 @@
       ]
     },
     {
+      "id": "servicedesk",
+      "source": "connectors/servicedesk/connector.mjs",
+      "manifest": "docs/generated/servicedesk.manifest.json",
+      "capabilities": [
+        "servicedesk.requests",
+        "servicedesk.request",
+        "servicedesk.order",
+        "servicedesk.orderEffect",
+        "servicedesk.lookup",
+        "servicedesk.person",
+        "servicedesk.equipment"
+      ]
+    },
+    {
       "id": "appraisals",
       "source": "connectors/appraisals/connector.mjs",
       "manifest": "docs/generated/appraisals.manifest.json",
@@ -509,7 +523,7 @@
       "number": 35,
       "path": "docs/decisions/D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md",
       "title": "D35 · Errands from several case systems: one connector per system, a shared profile for the reads, and a card's buttons reach only its own connector",
-      "status": "accepted, the card-action rule built 2026-11-05; identity and the row amended by D89 (2026-11-09), which built the list profile (`<id>.errands`, `ErrandRow`), `clew.errands` and the `sm` connector's two reads on a fixture; `errandCard`, errand search, the executes and `casedata` not built",
+      "status": "accepted, the card-action rule built 2026-11-05; identity and the row amended by D89 (2026-11-09), which built the list profile (`<id>.errands`, `ErrandRow`), `clew.errands` and the `sm` connector's two reads on a fixture; `errandCard`, errand search, the executes and `casedata` not built; item 4 amended by [D123](D123-requests-are-a-profile-of-their-own-apart-from-the-errands-a-person-handles.md) (2026-11-13, provisional): what a person ordered or reported in a service desk is the profile `<id>.requests`, listed as `clew.requests` apart from `clew.errands`",
       "date": "2026-11-05",
       "area": "integrations"
     },
@@ -1430,6 +1444,24 @@
       "status": "provisional (product owner, 2026-11-13, said in a working session; nothing is built and nothing outside the repository has tested it)",
       "date": "2026-11-13",
       "area": "assistant, identity, product"
+    },
+    {
+      "key": "D123-requests-are-a-profile-of-their-own-apart-from-the-errands-a-person-handles",
+      "number": 123,
+      "path": "docs/decisions/D123-requests-are-a-profile-of-their-own-apart-from-the-errands-a-person-handles.md",
+      "title": "D123 · What a person ordered or reported is a profile of its own, `<id>.requests`, listed apart from the errands they handle",
+      "status": "provisional (built 2026-11-13 on branch `boarding`; accepted once a service desk outside the repository answers `<id>.requests` for a person and that person has used the section on Hem; the development stack's fixture `connectors/servicedesk` answers the profile, no system outside the repository does yet, and no manual screen-reader pass)",
+      "date": "2026-11-13",
+      "area": "integrations, ui"
+    },
+    {
+      "key": "D124-introduction-and-leaving-are-an-owned-domain-a-plan-the-manager-starts-assembled-from-flat-layers",
+      "number": 124,
+      "path": "docs/decisions/D124-introduction-and-leaving-are-an-owned-domain-a-plan-the-manager-starts-assembled-from-flat-layers.md",
+      "title": "D124 · Introduction and leaving are an owned domain: a plan the manager starts, assembled from flat layers, each item a work item",
+      "status": "provisional (two statements by the product owner on 2026-11-13, paraphrased below; everything else is this build's choice; the server side and its pages built 2026-11-13 on synthetic data, and amended the same day after an independent review; nothing outside the repository has tested it)",
+      "date": "2026-11-13",
+      "area": "product, people"
     }
   ],
   "documents": [
@@ -1626,6 +1658,18 @@
       "title": "Durable synthetic reference source",
       "category": "integrator-guide",
       "headings": []
+    },
+    {
+      "path": "connectors/servicedesk/README.md",
+      "title": "servicedesk: a generic IT service desk, as a fixture connector",
+      "category": "integrator-guide",
+      "headings": [
+        "Capabilities",
+        "The source port",
+        "Moving a request forward",
+        "Running it",
+        "Checks"
+      ]
     },
     {
       "path": "connectors/supportmanagement/README.md",
@@ -2117,6 +2161,18 @@
     {
       "path": "docs/decisions/D122-the-assistant-may-read-and-propose-whatever-the-person-who-asks-may-and-adding-a-model-is-answering-for-it.md",
       "title": "D122 · The assistant may read and propose whatever the person who asks may, and adding a model is answering for it",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D123-requests-are-a-profile-of-their-own-apart-from-the-errands-a-person-handles.md",
+      "title": "D123 · What a person ordered or reported is a profile of its own, `<id>.requests`, listed apart from the errands they handle",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D124-introduction-and-leaving-are-an-owned-domain-a-plan-the-manager-starts-assembled-from-flat-layers.md",
+      "title": "D124 · Introduction and leaving are an owned domain: a plan the manager starts, assembled from flat layers, each item a work item",
       "category": "decision-history",
       "headings": []
     },
@@ -3158,6 +3214,7 @@
         "Phone book",
         "Sick-leave statistics",
         "Errands",
+        "Requests",
         "News",
         "Nextcloud Approval",
         "Learning platform (Moodle)"
@@ -3207,6 +3264,7 @@
         "Personal",
         "Utvecklingssamtal (talks)",
         "Kompetens (competence)",
+        "Introduktion och avslut (boarding)",
         "Sources about an entity",
         "The opened person and the unit page",
         "Subjects on cards and their erasure",

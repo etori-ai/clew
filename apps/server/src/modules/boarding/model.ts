@@ -8,7 +8,7 @@ import type {
 } from '@clew/contracts';
 
 /**
- * The ports of the boarding module (D124): introduction and leaving plans, Clew's third owned domain. Everything the use
+ * The ports of the boarding module (D124): introduction and leaving plans, an owned domain of Clew's. Everything the use
  * cases read and write in Clew's own tables happens inside one `BoardingStore` transaction, together with the audit row
  * and the owners' cards (`WorkItemTx`), so a plan, its items and their cards commit or roll back as one, as talks'
  * action points do. `adapters/postgres.ts` runs in the server, `adapters/memory.ts` in the unit tests, both held to

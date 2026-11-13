@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**120 in force**: 99 accepted and 21 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
+**122 in force**: 99 accepted and 23 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -30,6 +30,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D117 · A manager follows up the units of the managers who report to them, and a source is told those units](D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md) | 2026-11-13 | provisional | [D101](README.md) |
 | [D118 · The follow-up dialogue is an owned domain: assessments and activities per unit, areas and questions as configuration](D118-the-follow-up-dialogue-is-an-owned-domain.md) | 2026-11-13 | provisional | [D101](README.md) |
 | [D120 · A skill is a holding with a level, and the competence domain covers what a skills platform does for a public-sector organisation](D120-a-skill-is-a-holding-with-a-level-and-the-competence-domain-covers-what-a-skills-platform-does.md) | 2026-11-12 | provisional |  |
+| [D124 · Introduction and leaving are an owned domain: a plan the manager starts, assembled from flat layers, each item a work item](D124-introduction-and-leaving-are-an-owned-domain-a-plan-the-manager-starts-assembled-from-flat-layers.md) | 2026-11-13 | provisional |  |
 
 ## Integrations
 
@@ -44,7 +45,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D21 · Every integration is a module service behind the Clew module protocol](D21-integrations-are-module-services.md) | 2026-11-04 | accepted |  |
 | [D22 · Connectors, not modules: the word for an integration that a person, an operator or a vendor meets](D22-connectors-not-modules.md) | 2026-11-04 | accepted |  |
 | [D23 · Connectors are registered and governed in the database by an administrator, not by environment variables](D23-connectors-are-managed-in-the-database.md) | 2026-11-04 | accepted |  |
-| [D35 · Errands from several case systems: one connector per system, a shared profile for the reads, and a card's buttons reach only its own connector](D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md) | 2026-11-05 | accepted | [D89](D89-an-errand-connector-acts-as-the-person-and-the-case-system-decides-access.md) |
+| [D35 · Errands from several case systems: one connector per system, a shared profile for the reads, and a card's buttons reach only its own connector](D35-errands-are-a-connector-profile-and-a-card-is-one-systems.md) | 2026-11-05 | accepted | [D89](D89-an-errand-connector-acts-as-the-person-and-the-case-system-decides-access.md), [D123](D123-requests-are-a-profile-of-their-own-apart-from-the-errands-a-person-handles.md) |
 | [D52 · The mocks are generic systems; nothing in the repository names a vendor](D52-the-mocks-are-generic-systems-without-vendor-names.md) | 2026-11-05 | accepted |  |
 | [D54 · Figures come from connectors, and Läget draws them](D54-figures-come-from-connectors-and-laget-draws-them.md) | 2026-11-06 | accepted | [D71](D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md) |
 | [D60 · The instance serves its connector protocol, and a protocol break keeps the number before it](D60-the-instance-serves-its-connector-protocol.md) | 2026-11-06 | accepted |  |
@@ -57,6 +58,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D97 · A source says what its rows are about, and Clew places them](D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md) | 2026-11-10 | accepted | [D99](README.md), [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md), [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md), [D115](D115-the-assistant-resolves-a-person-the-asker-names-and-hands-the-model-the-work-about-them-not-health-rows.md), [D117](README.md) |
 | [D117 · The core decides who a source may be asked about, on every call, and signs the relation](D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md) | 2026-11-12 | provisional |  |
 | [D119 · The installation reads as itself, through a read no person can reach](D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md) | 2026-11-12 | provisional | [D108](D108-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md) |
+| [D123 · What a person ordered or reported is a profile of its own, `<id>.requests`, listed apart from the errands they handle](D123-requests-are-a-profile-of-their-own-apart-from-the-errands-a-person-handles.md) | 2026-11-13 | provisional |  |
 
 ## Identity
 

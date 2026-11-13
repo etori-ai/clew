@@ -4,7 +4,7 @@
 
 **Decision.** Introduction and leaving (Swedish in the product: **Introduktion och avslut**; in code `boarding`) is a
 domain Clew owns under [D95](D95-clew-may-own-a-domain-by-choice-decided-with-the-core-or-connector-checklist.md): a
-module `apps/server/src/modules/boarding/` with its own tables (migrations 0067 and 0068) and the checklist block of
+module `apps/server/src/modules/boarding/` with its own tables (migrations 0071 and 0072) and the checklist block of
 [Core or connector](../maintainers/core-or-connector.md) Part 5, built from the commitment block talks built
 ([D96](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md)).
 
@@ -145,7 +145,7 @@ for a leaving: rejected, the last day is the manager's to enter. Storing the emp
 rejected by D68; the date is copied into the plan only when the manager confirms it as the plan's day.
 
 **Built 2026-11-13, server side.** The tables `boarding_layer`, `boarding_layer_item`, `boarding_plan` and
-`boarding_item`, and (migration 0068, after review) `boarding_plan_holder` with `boarding_plan.held_at`; the module (`model.ts`, `domain.ts`, `usecases.ts`, `capabilities.ts`, a memory and a Postgres adapter
+`boarding_item`, and (migration 0072, after review) `boarding_plan_holder` with `boarding_plan.held_at`; the module (`model.ts`, `domain.ts`, `usecases.ts`, `capabilities.ts`, a memory and a Postgres adapter
 under one store contract); the cards in `composition/boarding-work-items.ts` and the timer kind `boarding` fired by
 `fireTimer`; the routes; the capability `admin.boarding`; the parser `packages/contracts/src/boarding-import.ts`; the
 operator scripts and the development seed (`scripts/boarding-seed.ts`, data in `scripts/boarding-development.ts`); a

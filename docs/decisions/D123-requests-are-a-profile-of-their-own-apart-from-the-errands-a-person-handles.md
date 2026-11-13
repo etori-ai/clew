@@ -49,9 +49,9 @@ its own, combined across systems as the errand list is, but into a list of its o
    page, `/tools/clew.requests`, with Hem as the way back ([D116](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md)):
    the page's heading takes the focus, and Back returns it to "Visa allt". A row opens the request beside Hem, in the
    system it came from, with the focus on the panel's heading; closing gives it back to the row. The shared state is a
-   badge on every row, in Clew's words for it ("väntar på dig", "ny", "pågår", "stängd"), and only "väntar på dig" has
+   badge on every row, in Clew's words for it ("Väntar på dig", "Ny", "Pågår", "Stängd"), and only "Väntar på dig" has
    a tone, `warn`; the system's own status stays beside it. This uses what views already have: a `status` field over
-   `state` with `tones` keyed on the state, its words from the web's dictionary of state words (`panel-labels.ts`),
+   `state` with `tones` keyed on the state, its words from the shared dictionary of value words (`VALUE_WORDS` in `@clew/contracts`),
    which already gives the talks round's and the competence register's states theirs. No field and no view feature was
    added. While the read is on its way the section keeps its
    place with a skeleton; a read that fails is an alert with the server's sentence and "Försök igen". As D90 item 6 says
