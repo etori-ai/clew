@@ -2764,6 +2764,7 @@
         "1. Send units from root to leaf",
         "2. Send people",
         "3. Send placements, managers and permissions",
+        "The directory team: a provisioner",
         "Test the delivery"
       ]
     },
@@ -2828,6 +2829,7 @@
       "title": "Writing a provisioner",
       "category": "integrator-guide",
       "headings": [
+        "SCIM profile and compatibility",
         "What Clew expects",
         "What a provisioner does when something changes",
         "What a provisioner does on every reconciliation",

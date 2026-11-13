@@ -10,6 +10,19 @@ The repository ships one: [`scripts/provisioner/`](../../scripts/provisioner), w
 
 *Figure 1. The provisioner owns the directory mapping. When memberships or capability mappings change, Clew updates the affected grants in the same transaction. A grant requires an employee or manager placement. An inactive person cannot sign in.*
 
+## SCIM profile and compatibility
+
+Clew uses SCIM 2.0 resources with its own [group-key conventions](#groups), [unit extension](#the-organisation-tree) and [employment extension](#current-employments). Creating a user or group requires `externalId`; clients that omit it need an adapter ([creation rules](#how-a-request-is-read)). These are requirements of Clew's profile.
+
+Two behaviours depart from RFC 7644. Check that your client can handle them before choosing or configuring it:
+
+| Operation | RFC 7644 | Clew's behaviour and what the client does |
+|---|---|---|
+| `DELETE /Users/<id>` | A deleted resource must answer 404 afterwards and disappear from query results, even when retained internally ([§3.6](https://www.rfc-editor.org/rfc/rfc7644.html#section-3.6)). | Clew answers 204 and deactivates the person. The resource remains readable and searchable with `active: false`. Send `active: false` for a leaver and look up the existing person before a return; deleting and recreating the same account name can produce 409. [Deactivation, not deletion](#deactivation-not-deletion) |
+| A user `PATCH` with `active: false` and an invalid operation on another attribute | A failing operation must fail the whole PATCH and restore the original resource ([§3.5.2](https://www.rfc-editor.org/rfc/rfc7644.html#section-3.5.2)). | Some attribute errors are ignored so that the person is deactivated: the request can answer 200, the invalid attribute stays as it was and valid attributes can change. Send deactivation in a request of its own. Read back other fields if a mixed request was sent; success does not confirm every operation was applied. [Exact rules and errors that still refuse deactivation](#how-a-request-is-read) |
+
+Each accepted mutation and its audit are committed in one database transaction. The database transaction is atomic; the PATCH semantics above still differ from RFC 7644. The [client request tests](../../tests/unit/scim-as-clients-send-it.test.ts) cover that behaviour, and the [SCIM tests](../../tests/unit/scim.test.ts) cover deletion. An integration that requires strict RFC 7644 behaviour must resolve these differences before rollout.
+
 ## What Clew expects
 
 ### Users
@@ -249,11 +262,14 @@ A unit, a manager's role and a capability are memberships, and SCIM changes a me
 
 Look up the person by their stable source id with `GET /Users?filter=externalId eq "<source id>"`. An existing deactivated row keeps its Clew id. An empty result is possible if the person was inactive at the first import or an operator erased them. Confirm that the source id is still the same before following the first-time creation and placement flow. If the source changed the id, [recover the existing identity first](#renames-reused-names-and-sign-in).
 
-For an existing inactive row, apply these checks on a change event and during daily reconciliation.
+For an existing inactive row, name the writer responsible for the user's `active` state. That writer coordinates the return and holds activation until every group owner has confirmed the person's current memberships. Apply the same checks on a change event and during daily reconciliation.
 
 1. Add the memberships the source now assigns and remove any it has withdrawn from groups this writer owns. If a person left unit A and returns to unit B, add B and remove A unless the source still assigns both.
 2. Read back the user's actual memberships with `GET /Users/<id>?attributes=groups.value` and each listed group's key with `GET /Groups/<id>?attributes=externalId`. Confirm at least one intended `unit:` or `unit-manager:` placement and check that every remaining membership this writer owns is current. Include plain groups, which can grant capabilities or connector access.
-3. When other writers own groups for this person, coordinate the return so each confirms its memberships before the writer responsible for the user enables them. The example checks its own group keys. Keep the person inactive if verification fails or a required confirmation is pending. After verification, send one `PUT /Users/<id>` with the whole current profile and `active: true`.
+3. Obtain confirmation from every other group owner that its actual memberships match the person's current duties. Record who confirmed the memberships for this return. A successful comparison of one writer's groups does not confirm another writer's groups.
+4. Keep the person inactive and report the return as pending if verification fails or any required confirmation is missing. Only after verification and all confirmations, send one `PUT /Users/<id>` with the whole current profile and `active: true`. A user `PUT` without `active` also enables the person, so every writer must preserve `active: false` while the return is pending.
+
+**The example verifies only its own groups.** It does not collect or wait for other owners' confirmations and can activate a person who still belongs to another writer's group. The integration must provide that coordination before using the example with several writers. This boundary is visible in [the activation check](../../scripts/provisioner/push.ts) and [its tests](../../tests/unit/provisioner.test.ts). A single-writer pilot avoids this coordination only when that writer owns every group that can give its people a placement, a capability or connector access, including memberships left by earlier writers.
 
 ## What a provisioner does on every reconciliation
 

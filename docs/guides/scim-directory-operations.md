@@ -13,6 +13,8 @@ A provisioner is told what it owns, so that it never withdraws what somebody els
 
 When two provisioners send to one organisation, give them prefixes and keys that do not overlap, capability groups included. A provisioner owns the whole membership of the groups it writes.
 
+`SourceScope` is enforced by the example client. Clew's token grants provisioning access to the organisation; the server does not restrict each writer to those prefixes or keys. Writers in one organisation must therefore be mutually trusted. Name the writer responsible for a person's activation and agree how every other group owner confirms a return before it enables the person ([return-to-work procedure](writing-a-provisioner.md#reactivating-a-returning-person)).
+
 It does two things ([D109](../decisions/D109-a-provisioner-sends-a-change-when-it-happens-and-reconciles-the-whole-source-daily.md)). It sends each change to Clew when it happens, which is the rule. And it compares the whole source with what Clew holds at least once a day, which is the net under the rule: a change that was lost on the way is found by nothing else. The example does only the second, because its source is a file that has no events; sending a change when it happens is yours to add. This page calls the second the **comparison**; [Writing a provisioner](writing-a-provisioner.md) calls the same thing a reconciliation.
 
 ### What it reads from the source
@@ -102,7 +104,7 @@ On an unchanged export the example still sends a `PUT` for each present person. 
 
 ### What Clew answers when something is wrong
 
-Every refusal is the standard's error resource, with the reason in `detail`. Nothing is stored when a request is refused. A field that is merely empty is not a mistake: a person without a phone number or a title is stored without one. These are the answers to the mistakes a first provisioner makes:
+Every refusal is a SCIM error resource, with the reason in `detail`. A validation refusal leaves the user or group unchanged. Authentication can still update the provisioner's last-seen time and write a `provisioner.seen` audit row before validation. A field that is merely empty is not a mistake: a person without a phone number or a title is stored without one. These are the answers to the mistakes a first provisioner makes:
 
 | The request | Status | `detail` |
 |---|---|---|
@@ -148,6 +150,7 @@ Every refusal is the standard's error resource, with the reason in `detail`. Not
 - Administration › Organisation shows the tree as the source has it.
 - A second comparison leaves identity fields, memberships and effective access unchanged. The checker exits zero with warnings. Investigate unexpected warnings and compare exact unit parents, placements and intended administrators with the source.
 - A person who is moved in the source is moved in Clew without waiting for the comparison, and was never without a unit in between.
+- A returning person stays inactive while a membership check or a required group-owner confirmation is pending. Verify a refused removal and a remaining membership owned by another writer before enabling automatic reactivation; the example checks only its own groups ([return-to-work procedure](writing-a-provisioner.md#reactivating-a-returning-person)).
 
 ## What Clew gives back
 

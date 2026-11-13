@@ -2,6 +2,8 @@
 
 Your municipality’s provisioner sends people as SCIM `User` resources and units, placements and permissions as `Group` resources. Before your first delivery, obtain the test installation’s HTTPS base URL ending in `/scim/v2` and its provisioner token. Send the token in `Authorization: Bearer <token>` and request bodies as `Content-Type: application/scim+json`. Paths below are relative to that base. [Transport and authentication](writing-a-provisioner.md#transport)
 
+Review [Clew's SCIM profile and compatibility rules](writing-a-provisioner.md#scim-profile-and-compatibility) before configuring a client. User `DELETE` leaves the resource readable, and a deactivating `PATCH` can succeed while leaving an invalid attribute unchanged. Both differ from RFC 7644.
+
 ## 1. Send units from root to leaf
 
 Each Clew installation serves one organisation. The provisioner token identifies that organisation for every request. Within it, give each unit its own permanent source ID. Keep that ID when the unit is renamed or moved. Change its parent link when it moves.
@@ -81,6 +83,10 @@ This membership gives Anna her placement as manager. Send one such membership pe
 | Permission to administer users | `capability:admin.users`. Give the first administrator this membership as well as a unit placement. |
 
 When a manager changes, add the incoming manager and remove the outgoing manager’s membership when their responsibility ends. Adding the successor alone leaves both managers responsible for the unit. A directory group such as `ad:larare` can also be mapped to a capability by a Clew administrator. An active person needs an employee or manager placement to sign in. [Group semantics and reserved keys](writing-a-provisioner.md#groups)
+
+## The directory team: a provisioner
+
+The directory team owns [ongoing directory operations](scim-directory-operations.md#the-directory-team-a-provisioner): source mapping, ordered change delivery and the daily comparison. Name the writer responsible for reactivating a returning person; it must obtain confirmation from the other owners of that person's memberships before restoring access. Follow the [return-to-work procedure](writing-a-provisioner.md#reactivating-a-returning-person).
 
 ## Test the delivery
 
