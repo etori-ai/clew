@@ -1,7 +1,7 @@
 import { afterAll, expect, test } from 'bun:test';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { eq, inArray } from 'drizzle-orm';
-import { database, schema, closeDatabase } from '../../packages/db/src';
+import { database, databaseAnswers, schema, closeDatabase } from '../../packages/db/src';
 import { memoryCalendar } from '../../packages/calendar/src/memory';
 import type { AuthenticatedContext } from '../../packages/contracts/src';
 import { postgresProposalStore } from '../../apps/server/src/modules/calendar/adapters/postgres';
@@ -12,9 +12,10 @@ import {
   calendarExecutionSource,
   type CalendarCommand,
 } from '../../apps/server/src/modules/calendar/usecases/decisions';
-import { bookedInRound, teamsOf } from '../../apps/server/src/modules/calendar/usecases/booked';
+import { bookedElsewhere, teamsOf } from '../../apps/server/src/modules/calendar/usecases/booked';
 import type { PlanningRound, UnitMember } from '../../apps/server/src/modules/calendar/model';
 import { projectExecution } from '../../apps/server/src/composition/execution-projection';
+import { invitationTeams } from '../../apps/server/src/composition/calendar';
 import { forgetTestWorkflows, testDurable } from './durable';
 import { sealSecret, openSecret } from '../../apps/server/src/auth-crypto';
 process.env.MASTER_KEY ??= randomBytes(32).toString('base64');
@@ -32,7 +33,17 @@ const people: string[] = [],
   at = '2098-11-05T09:00:00.000Z';
 /** The directory: whom each manager of this file has in their team now, by the manager's id. */
 const teams = new Map<string, UnitMember[]>();
+/** The rows a test wrote to Clew's own directory, as Personal reads it: units, and the people placed on them. */
+const directory = { units: [] as string[], people: [] as string[] };
 afterAll(async () => {
+  const placed = [...people, ...directory.people];
+  if (placed.length) {
+    await database().delete(schema.assignments).where(inArray(schema.assignments.personId, placed));
+    await database().delete(schema.accessGrants).where(inArray(schema.accessGrants.personId, placed));
+  }
+  if (directory.units.length) await database().delete(schema.units).where(inArray(schema.units.id, directory.units));
+  if (directory.people.length)
+    await database().delete(schema.people).where(inArray(schema.people.id, directory.people));
   if (people.length) {
     const executions = await database()
       .select()
@@ -60,7 +71,11 @@ afterAll(async () => {
   await forgetTestWorkflows();
   await closeDatabase();
 });
-async function world() {
+/**
+ * One manager's world. `teams` binds whom the approval's projection asks another manager manages: by default this
+ * file's directory in memory, or the binding composition uses, over Clew's own directory tables.
+ */
+async function world(options: { teams?: Parameters<typeof projectExecution>[1] } = {}) {
   const id = 'calendar-test-' + randomUUID();
   people.push(id);
   await database().insert(schema.people).values({ id, name: 'Synthetic calendar test', organisationId: 'test' });
@@ -102,7 +117,7 @@ async function world() {
   const owners = { personaFor: async (id: string) => setting.personas.get(id) };
   const proposals = postgresProposalStore(testDurable);
   let failCommit = false;
-  const project = projectExecution(testDurable, teamsOf({ team, people: owners }));
+  const project = projectExecution(testDurable, options.teams ?? (() => teamsOf({ team, people: owners })));
   const store = postgresExecutionStore({ seal: sealSecret, open: openSecret }, testDurable, async (tx, e, stage) => {
     await project(tx, e, stage);
     if (failCommit && e.state === 'succeeded') {
@@ -113,7 +128,7 @@ async function world() {
   const uc = executionUsecases({
     store,
     source: {
-      ...calendarExecutionSource(bind, team, bookedInRound({ store: proposals, team, people: owners, round })),
+      ...calendarExecutionSource(bind, team, bookedElsewhere({ store: proposals, team, people: owners })),
       current: async () => setting.current,
     },
     clock,
@@ -347,9 +362,9 @@ async function cardFor(w: Awaited<ReturnType<typeof world>>, member: UnitMember,
  * Two managers, A and B, of one person in the open round, each with a card drawn before either booked: each holds a time
  * for the shared person, A's on 11 November and B's on 12 November.
  */
-async function sharedPair() {
-  const a = await world(),
-    b = await world();
+async function sharedPair(options: Parameters<typeof world>[0] = {}) {
+  const a = await world(options),
+    b = await world(options);
   const key = 'shared-' + randomUUID();
   const shared: UnitMember = { personId: key, ref: key, email: key + '@example.test', name: 'Delad Medarbetare' };
   const round: PlanningRound = { label: 'Synthetic round', opensOn: '2098-11-01', dueOn: '2098-11-30', held: [] };
@@ -482,3 +497,64 @@ test('an invitation whose result is unknown holds the person for its approval’
   const next = await cardFor(later.b, later.shared, '2098-12-10T09:00:00.000Z');
   expect((await later.b.decisions.confirm(later.b.actor, next, [next + ':shared'])).execution?.state).toBe('pending');
 });
+test('more approvals at once that find another manager’s invitation on its way than the pool has connections all finish: the directory is read through the approval’s own transaction (M1, L1)', async () => {
+  const refusal = 'Delad Medarbetare bjuds redan in till ett utvecklingssamtal av en annan chef.';
+  /**
+   * A pair whose manager A has the shared person on a unit in Clew's own directory, as Personal reads it, and whose
+   * approved invitation to them is unknown: it may still be sent, so B's confirmation must ask whom A manages.
+   */
+  async function onItsWay() {
+    const pair = await sharedPair({ teams: invitationTeams });
+    const unit = 'unit-calendar-test-' + randomUUID();
+    directory.units.push(unit);
+    directory.people.push(pair.shared.personId);
+    const db = database();
+    await db
+      .insert(schema.people)
+      .values({ id: pair.shared.personId, organisationId: 'test', name: pair.shared.name, email: pair.shared.email });
+    await db.insert(schema.units).values({ id: unit, organisationId: 'test', label: 'Synthetic unit' });
+    await db.insert(schema.assignments).values([
+      { personId: pair.a.id, unitId: unit, role: 'manager' },
+      { personId: pair.shared.personId, unitId: unit, role: 'employee' },
+    ]);
+    await db
+      .insert(schema.accessGrants)
+      .values({ personId: pair.a.id, unitId: unit, unitLabel: 'Synthetic unit', role: 'manager', capabilities: [] });
+    pair.a.provider.create = async () => {
+      throw new Error('offline');
+    };
+    const first = await pair.confirmA();
+    await pair.a.uc.progress(first.execution!.id);
+    expect(await pair.a.store.read(first.execution!.id)).toMatchObject({ state: 'unknown', reason: null });
+    return pair;
+  }
+  /** What the confirmations came to, or "stuck" when they had not all finished after ten seconds. */
+  const settled = <T>(work: Promise<T>) =>
+    Promise.race([work, new Promise<'stuck'>(resolve => setTimeout(() => resolve('stuck'), 10_000))]);
+  const reasons = (results: PromiseSettledResult<unknown>[]) =>
+    results.map(r => (r.status === 'rejected' ? (r.reason as Error).message : 'approved'));
+  // Twice the pool's five connections, each B confirming while its A's invitation is on its way. Each approval holds a
+  // connection and its invitee's lock while it asks whom A manages: an ask that waited for a connection of its own would
+  // wait for good once five of them held every one.
+  const pairs: Awaited<ReturnType<typeof onItsWay>>[] = [];
+  for (let i = 0; i < 10; i++) pairs.push(await onItsWay());
+  const all = await settled(Promise.allSettled(pairs.map(pair => pair.confirmB())));
+  expect(all).not.toBe('stuck');
+  if (all === 'stuck') return;
+  expect(reasons(all)).toEqual(pairs.map(() => refusal));
+  // One card confirmed six times at once: the first approval asks while the other five wait for its lock, each holding a
+  // connection.
+  const one = await onItsWay();
+  const same = await settled(Promise.allSettled(Array.from({ length: 6 }, () => one.confirmB())));
+  expect(same).not.toBe('stuck');
+  if (same === 'stuck') return;
+  expect(reasons(same)).toEqual(Array.from({ length: 6 }, () => refusal));
+  // Nothing was approved for any B, and the pool serves the next request.
+  for (const { b } of [...pairs, one])
+    expect(await database().select().from(schema.executions).where(eq(schema.executions.personId, b.id))).toEqual([]);
+  expect(await databaseAnswers(1000)).toBe(true);
+  // A leaves the unit and manages none: Personal's overview refuses inside the approval's transaction, A manages nobody,
+  // and B's confirmation is approved in the same transaction.
+  await database().delete(schema.assignments).where(eq(schema.assignments.personId, one.a.id));
+  expect((await one.confirmB()).execution?.state).toBe('pending');
+}, 60_000);

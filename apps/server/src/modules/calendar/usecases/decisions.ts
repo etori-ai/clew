@@ -15,7 +15,7 @@ import {
   bookedSentence,
   heldSentence,
   uncertainSentence,
-  type BookedInRound,
+  type BookedElsewhere,
   type Period,
 } from './booked';
 
@@ -43,7 +43,8 @@ export interface CalendarCommand {
   followup?: { afterWorkdays: number; maxReminders: number; expiresAt: string };
   /**
    * The period of the round a confirmation of drawn times was approved in (M1): another manager's invitation on its way
-   * holds the person against this one only when it falls inside it. Absent without an open round.
+   * holds the person against this one only when it falls inside it, and right before the invitation is sent the person's
+   * other managers' bookings are asked about inside it, without reading the round again. Absent without an open round.
    */
   round?: Period;
 }
@@ -293,11 +294,12 @@ export function calendarDecisions({
 /**
  * Conditional source boundary: stable UID per approved item, exact revisions, and readback before evidence. A proposal's
  * invitation is checked once more right before it is sent (M1, Q12): a person another of their current managers booked
- * after this one was approved is not invited a second time, and the row says so. With the approval of one manager's
- * invitation refused while another's to the same person may still be sent (`composition/execution-projection.ts`), two
- * managers can never both send one.
+ * inside the round the confirmation was approved in (`CalendarCommand.round`), after it was approved, is not invited a
+ * second time, and the row says so. The round is not read again for it. With the approval of one manager's invitation
+ * refused while another's to the same person may still be sent (`composition/execution-projection.ts`), two managers
+ * can never both send one.
  */
-export function calendarExecutionSource(bind: CalendarBinder, team: Team, bookedInRound: BookedInRound) {
+export function calendarExecutionSource(bind: CalendarBinder, team: Team, elsewhere: BookedElsewhere) {
   /**
    * Why Clew does not send this invitation, checked right before it would be: the manager has another meeting then, an
    * invitee is not known to be free, the room is not, or one of them cannot be read now. Undefined when it may be sent.
@@ -376,13 +378,17 @@ export function calendarExecutionSource(bind: CalendarBinder, team: Team, booked
     const rows: ExecuteResult['rows'] = [],
       undo: CalendarItem[] = [];
     const established = new Set<string>();
-    // Asked once, for every proposal this command invites, and only when something is about to be sent.
+    // Asked once, for every proposal this command invites, and only when something is about to be sent: inside the round
+    // the confirmation was approved in, and nobody without one (no round was open then).
     let booked: Promise<ReadonlySet<string>> | undefined;
     const bookedNow = () =>
-      (booked ??= bookedInRound(
-        p,
-        command.items.flatMap(i => (i.action === 'create' && i.personId !== undefined ? [i.personId] : [])),
-      ));
+      (booked ??= command.round
+        ? elsewhere(
+            p.id,
+            command.items.flatMap(i => (i.action === 'create' && i.personId !== undefined ? [i.personId] : [])),
+            command.round,
+          )
+        : Promise.resolve(new Set<string>()));
     for (const item of command.items) {
       // A done row is the source's evidence; a skipped invitation was never sent, so a later check keeps it as it was.
       const prior = e.result?.rows.find(

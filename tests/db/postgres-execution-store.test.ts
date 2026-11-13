@@ -113,7 +113,7 @@ test('approval, card state and outcome are atomic; an uncertain undo preserves t
   const store = postgresExecutionStore(
     sealer,
     testDurable,
-    projectExecution(testDurable, async () => new Map()),
+    projectExecution(testDurable, () => async () => new Map()),
   );
   const persona: AuthenticatedContext = {
     id: w.personId,

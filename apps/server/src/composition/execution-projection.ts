@@ -12,15 +12,21 @@ import { nextCheck } from '../modules/calendar/usecases/obligation';
 
 type Stage = 'approval' | 'update';
 /**
- * The execution, visible card and audit commit through this same physical transaction. Never source I/O here. The
- * obligation timer and the receipt jobs it writes start their workflows in the same transaction (D86), in the engine's
- * application and queue named by `durable`; the composition root binds it, a Postgres test binds its own. `teams` says
- * whom another manager with an invitation on its way manages now (M1), read from Clew's own directory.
+ * Whom another manager with an invitation on its way manages now (M1), read from Clew's own directory through this
+ * transaction: it holds one of the pool's connections and the invitees' locks, so nothing in it may wait for a second
+ * connection (L1). `composition/calendar.ts` binds it.
+ */
+export type TeamsIn = (tx: Transaction) => TeamsOf;
+/**
+ * The execution, visible card and audit commit through this same physical transaction. Never source I/O here, and no
+ * read through another connection. The obligation timer and the receipt jobs it writes start their workflows in the
+ * same transaction (D86), in the engine's application and queue named by `durable`; the composition root binds it, a
+ * Postgres test binds its own.
  */
 export const projectExecution =
-  (durable: DurableQueue, teams: TeamsOf) => (tx: Transaction, e: Execution, stage: Stage) =>
+  (durable: DurableQueue, teams: TeamsIn) => (tx: Transaction, e: Execution, stage: Stage) =>
     project(tx, e, stage, durable, teams);
-async function project(tx: Transaction, e: Execution, stage: Stage, durable: DurableQueue, teams: TeamsOf) {
+async function project(tx: Transaction, e: Execution, stage: Stage, durable: DurableQueue, teams: TeamsIn) {
   if (!e.presentation) return;
   if (stage === 'approval' && e.presentation.newTitle && e.connector === 'calendar' && !e.compensates) {
     await tx.insert(schema.threads).values({
@@ -221,9 +227,10 @@ async function project(tx: Transaction, e: Execution, stage: Stage, durable: Dur
  * (`mayStillBeSent`: being sent, waiting to be sent, or sent with its result unknown, inside its approval's 24 hours and
  * the period of this confirmation's round) by a manager who has the person in their team now, and the proposals it
  * takes are marked with its execution, so that the confirmation after it sees it. A booking that settled in the meantime
- * is caught when the invitation is sent. The directory is read only when such an invitation is found.
+ * is caught when the invitation is sent. The directory is read only when such an invitation is found, and through this
+ * transaction.
  */
-async function refuseInvitedElsewhere(tx: Transaction, e: Execution, command: CalendarCommand, teams: TeamsOf) {
+async function refuseInvitedElsewhere(tx: Transaction, e: Execution, command: CalendarCommand, teams: TeamsIn) {
   const selected = command.items.filter(i => i.action === 'create');
   const invitees = [...new Set(selected.flatMap(i => (i.personId === undefined ? [] : [i.personId])))].sort();
   for (const id of invitees)
@@ -256,7 +263,7 @@ async function refuseInvitedElsewhere(tx: Transaction, e: Execution, command: Ca
       command.round,
     ),
   );
-  const managed = onItsWay.length ? await teams(onItsWay.map(r => r.owner)) : undefined;
+  const managed = onItsWay.length ? await teams(tx)(onItsWay.map(r => r.owner)) : undefined;
   const taken = new Set(onItsWay.filter(r => managed?.get(r.owner)?.has(r.personId)).map(r => r.personId));
   if (taken.size)
     throw new ExecutionError(

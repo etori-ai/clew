@@ -6,8 +6,7 @@ import {
   type CalendarCommand,
 } from '../../apps/server/src/modules/calendar/usecases/decisions';
 import type { UnitMember } from '../../apps/server/src/modules/calendar/model';
-import { bookedInRound, type BookedInRound } from '../../apps/server/src/modules/calendar/usecases/booked';
-import { memoryProposalStore } from '../../apps/server/src/modules/calendar/adapters/memory';
+import type { BookedElsewhere } from '../../apps/server/src/modules/calendar/usecases/booked';
 import { talksRound } from '../../apps/server/src/modules/calendar/adapters/talks-round';
 import { memoryExecutionStore } from '../../apps/server/src/modules/executions/adapters/memory';
 import { executionUsecases } from '../../apps/server/src/modules/executions/usecases';
@@ -40,7 +39,9 @@ const command = (): CalendarCommand => ({
   items: [{ id: 'p1', proposalId: 'p1', label: 'Guest', action: 'create', input }],
 });
 const guest: UnitMember = { ref: 'guest', personId: 'guest', email: 'guest@clew.test', name: 'Guest' };
-function world(team: UnitMember[] = [guest], booked: BookedInRound = async () => new Set()) {
+/** The round a confirmation of drawn times was approved in, as `confirm` writes it into the command (M1). */
+const round = { opensOn: '2026-11-01', dueOn: '2026-11-30' };
+function world(team: UnitMember[] = [guest], booked: BookedElsewhere = async () => new Set()) {
   let n = 0,
     now = Date.parse(at);
   const provider = memoryCalendar({ ref: 'a', email: 'a@clew.test', name: 'A' });
@@ -273,7 +274,7 @@ test('a declined invitation is retired only once the new one for the same person
 test('an invitation to a person another manager booked after the approval is not sent, and a later check keeps it unsent (M1, Q12)', async () => {
   const other: UnitMember = { personId: 'other', ref: 'other', email: 'other@clew.test', name: 'Other' };
   const asked: string[][] = [];
-  const w = world([guest, other], async (_p, ids) => {
+  const w = world([guest, other], async (_reader, ids) => {
     asked.push([...ids]);
     return new Set(['guest']);
   });
@@ -299,6 +300,7 @@ test('an invitation to a person another manager booked after the approval is not
         },
       },
     ],
+    round,
   });
   await w.uc.progress(e.id);
   // Asked once, for everyone the command invites, right before sending; Guest's invitation is never sent.
@@ -331,24 +333,30 @@ test('an invitation to a person another manager booked after the approval is not
   expect(asked).toHaveLength(1);
   expect(w.provider.events).toHaveLength(1);
 });
-test('an invitation is not sent when the round cannot be read, so it cannot be told whether another manager booked the person (M1)', async () => {
-  const logged: string[] = [];
-  // The round as the server reads it (`composition/index.ts`), over a talks read that fails or times out.
-  const round = talksRound({
-    answers: () => true,
-    read: async () => {
-      throw new Error('Källan svarade inte som väntat.');
-    },
-    failed: message => logged.push(message),
-  });
-  const booked = bookedInRound({
-    store: memoryProposalStore(),
-    team: async () => [guest],
-    people: { personaFor: async () => undefined },
-    round,
-  });
+test('an invitation is checked against the round its confirmation was approved in, which is not read again; one approved while no round was open asks nobody (M1)', async () => {
+  const asked: Array<[string, string[], unknown]> = [];
+  const booked: BookedElsewhere = async (reader, ids, period) => {
+    asked.push([reader, [...ids], period]);
+    return new Set();
+  };
   const w = world([guest], booked);
-  const e = await w.approve({ items: [{ ...command().items[0]!, personId: 'guest' }] });
+  const e = await w.approve({ items: [{ ...command().items[0]!, personId: 'guest' }], round });
+  await w.uc.progress(e.id);
+  expect(asked).toEqual([['a', ['guest'], round]]);
+  expect(w.provider.events.map(x => x.uid)).toEqual(['clew-exec-e1-p1']);
+  // Without a round in the approved command there was no open round when it was confirmed: nobody booked in it to ask
+  // about, and the invitation is sent.
+  const closed = world([guest], booked);
+  const sent = await closed.approve({ items: [{ ...command().items[0]!, personId: 'guest' }] });
+  await closed.uc.progress(sent.id);
+  expect(asked).toHaveLength(1);
+  expect(closed.provider.events.map(x => x.uid)).toEqual(['clew-exec-e1-p1']);
+});
+test('an invitation is not sent when it cannot be told whether another manager booked the person, because the bookings cannot be read (M1)', async () => {
+  const w = world([guest], async () => {
+    throw new Error('The database did not answer.');
+  });
+  const e = await w.approve({ items: [{ ...command().items[0]!, personId: 'guest' }], round });
   await w.uc.progress(e.id);
   expect(w.provider.events).toEqual([]);
   expect(await w.uc.read(person, e.id)).toMatchObject({
@@ -362,8 +370,19 @@ test('an invitation is not sent when the round cannot be read, so it cannot be t
       ],
     },
   });
+});
+test('the round the server reads: a failing talks read is logged and rejects, and no talks system or no open round is no round', async () => {
+  const logged: string[] = [];
+  // The round as the server reads it (`composition/index.ts`), over a talks read that fails or times out.
+  const failing = talksRound({
+    answers: () => true,
+    read: async () => {
+      throw new Error('Källan svarade inte som väntat.');
+    },
+    failed: message => logged.push(message),
+  });
+  await expect(failing(person)).rejects.toThrow('Källan svarade inte som väntat.');
   expect(logged).toEqual(['talks: the planning round could not be read']);
-  // No talks system for the person, or no open round, is no round: there is nobody booked in it to ask about.
   const closed = { round: null, rows: [], writable: true, source: 'Utvecklingssamtal' };
   for (const none of [
     talksRound({ answers: () => false, read: async () => closed, failed: () => {} }),

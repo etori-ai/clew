@@ -22,18 +22,28 @@ this paragraph, this paragraph holds.
   "har redan ett utvecklingssamtal bokat med en annan chef.", or with "har redan haft sitt utvecklingssamtal i den här
   omgången." when the round records the talk as held. While the round cannot be read, confirming is refused with "Det
   gick inte att se om … redan har ett utvecklingssamtal bokat. Försök igen om en stund." and the planner plans
-  nothing. Dispatch skips the invitation and leaves the card open, also when it cannot tell whether the person is
-  booked. The nightly scan keeps an open card in step with the rule both ways, in one write with the audit row
-  `proposals.settled_elsewhere`: the drawn time of a person booked elsewhere, or whose talk is held, becomes an
-  unplaced row, "bokad av en annan chef" or "har redan haft sitt samtal"; such a row says "behöver en tid" once the
-  person lacks a time again, as does a new row for someone of the team the card leaves out; and the card's "N samtal
-  saknar tid" is counted again.
+  nothing. Dispatch asks the rule inside the period of the round the confirmation was approved in, which the
+  confirmation wrote into the approved command, and does not read the round again; an invitation confirmed while no
+  round was open asks nobody. It skips the invitation and leaves the card open when the person was booked meanwhile,
+  and also when it cannot tell, because the bookings, the team or the directory cannot be read. The scan keeps an open
+  card in step with what its count says, in one write with the audit row `proposals.settled_elsewhere`: the drawn
+  time of a person booked elsewhere, or whose talk is held, becomes an unplaced row, "bokad av en annan chef" or "har
+  redan haft sitt samtal"; a row of someone with a talk in the manager's own calendar, booked by hand or sent by the
+  manager through Clew, says "har ett samtal i din kalender", while their drawn time stays, since a no leaves the
+  declined invitation in the calendar while the card offers new times; a row whose reason no longer holds says
+  "behöver en tid" once the person lacks a time again, as does a new row for someone of the team the card leaves out;
+  the row of someone who has left the team leaves the card; and the card's "N samtal saknar tid" is counted again.
+  The scan comes back every minute, but it reads the manager's calendar only when the round or another manager's
+  booking changes a drawn time or a row on the card, and otherwise at most once an hour per card and server process,
+  so what only the calendar or the team says reaches the card within the hour.
   On PostgreSQL the approval projection adds a check of its own, which does not ask the rule
   (`apps/server/src/composition/execution-projection.ts`). Under a lock per invitee, it refuses a confirmation while
   another manager's approved invitation to the same person may still be sent: a proposal of that manager's that is
   still `proposed`, with an execution that is running, pending without a reason or unknown, inside the approval's 24
   hours ([D45](D45-approved-intent-precedes-source-dispatch.md)) and the period of this confirmation's round, whose
-  manager still has the person in their team. Its refusal, after the person's name, is "bjuds redan in till ett
+  manager still has the person in their team. Whom that manager has is read from Clew's directory through the
+  approval's own transaction, one manager at a time, so that no approval holding a connection of the pool waits for a
+  second one (L1 of the review). Its refusal, after the person's name, is "bjuds redan in till ett
   utvecklingssamtal av en annan chef.". An invitation that Clew's own check refused right before sending, because the
   time or the room was not free or could not be read, was never sent: its row begins "Inget skickades:", the
   execution settles `failed` and it holds nobody, and neither does a pending execution settled with a reason, such as

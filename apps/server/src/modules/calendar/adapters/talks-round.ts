@@ -6,8 +6,9 @@ import type { RoundReader } from '../model';
  * system answers the talks profile, read as the person through the registry: its dates, and the people whose talk the
  * source records as held. No system that answers for this person, or no open round, is no round (null). A read that
  * fails or runs out of time is logged and rejects, so that it is never taken for no round: the planner then plans
- * nothing, and a confirmation or the dispatch of an invitation, which must tell whether the person already has a talk
- * in the round (M1, Q12), sends nothing. `composition/index.ts` binds it to the registry.
+ * nothing, and a confirmation, which must tell whether the person already has a talk in the round (M1, Q12), approves
+ * nothing. The dispatch of an approved invitation does not read it: the confirmation wrote the round's period into the
+ * approved command. `composition/index.ts` binds it to the registry.
  */
 export function talksRound(deps: {
   /** Whether a system answers the talks profile for this person. */

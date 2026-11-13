@@ -1,6 +1,5 @@
-import type { AuthenticatedContext } from '@clew/contracts';
 import { displayDate } from '@clew/calendar/dates';
-import type { People, ProposalStore, RoundReader, Team } from '../model';
+import type { People, ProposalStore, Team } from '../model';
 
 /**
  * One talk a round (D96 talks items 1 and 2, Q12 of the 2026-11-12 review). A person with two managers has one talk a
@@ -25,19 +24,19 @@ export const within = (start: string, period: Period) => {
 /**
  * Whom each of these managers (person ids) has in their team now, by person id, read through the identity each has
  * now: a manager gone from the directory has nobody. A booking, or an invitation on its way, of a manager who has left
- * the person counts for nobody else (M1).
+ * the person counts for nobody else (M1). One manager at a time, since the reads may share one connection: the
+ * approval's projection asks through its own transaction (L1).
  */
 export type TeamsOf = (managerIds: readonly string[]) => Promise<ReadonlyMap<string, ReadonlySet<string>>>;
 export function teamsOf(deps: { team: Team; people: People }): TeamsOf {
-  return async managerIds =>
-    new Map(
-      await Promise.all(
-        [...new Set(managerIds)].map(async id => {
-          const manager = await deps.people.personaFor(id);
-          return [id, new Set(manager ? (await deps.team(manager)).map(m => m.personId) : [])] as const;
-        }),
-      ),
-    );
+  return async managerIds => {
+    const teams = new Map<string, ReadonlySet<string>>();
+    for (const id of new Set(managerIds)) {
+      const manager = await deps.people.personaFor(id);
+      teams.set(id, new Set(manager ? (await deps.team(manager)).map(m => m.personId) : []));
+    }
+    return teams;
+  };
 }
 /**
  * Who among these people (person ids) another of their current managers booked through Clew inside the period: a
@@ -57,27 +56,6 @@ export function bookedElsewhere(deps: { store: ProposalStore; team: Team; people
     return new Set(
       theirs.filter(p => owners.get(p.personId)?.has(p.participant.personId)).map(p => p.participant.personId),
     );
-  };
-}
-/**
- * Who among these people (person ids) another of their current managers has booked through Clew in the open round,
- * asked right before an approved invitation is sent; empty without an open round. Rejects when the round cannot be
- * read, so that the invitation is not sent while it cannot be told.
- */
-export type BookedInRound = (
-  persona: AuthenticatedContext,
-  personIds: readonly string[],
-) => Promise<ReadonlySet<string>>;
-export function bookedInRound(deps: {
-  store: ProposalStore;
-  team: Team;
-  people: People;
-  round: RoundReader;
-}): BookedInRound {
-  const elsewhere = bookedElsewhere(deps);
-  return async (persona, personIds) => {
-    const open = await deps.round(persona);
-    return open ? elsewhere(persona.id, personIds, open) : new Set();
   };
 }
 /**
@@ -109,6 +87,11 @@ export const BOOKED_ELSEWHERE = 'bokad av en annan chef';
 export const ALREADY_HELD = 'har redan haft sitt samtal';
 /** A row's reason for someone of the team the card has no time for: a talk settled elsewhere is gone, or they are new. */
 export const NEEDS_TIME = 'behöver en tid';
+/**
+ * A row's reason for someone of the team the count leaves out because of the manager's own calendar: a talk with them
+ * is in it (booked by hand, or an invitation of the manager's own that was sent).
+ */
+export const OWN_CALENDAR = 'har ett samtal i din kalender';
 const names = (list: readonly string[]) =>
   list.length < 2 ? list.join('') : `${list.slice(0, -1).join(', ')} och ${list.at(-1)}`;
 /** What a manager reads when the round cannot be read now, so that it cannot be told whether someone has a talk. */
