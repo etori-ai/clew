@@ -10,7 +10,10 @@ import { testDurable } from './durable';
 /**
  * Kompetenssökning on Postgres (D121 items 4 and 5, D108 item 15): a search, its file and a person opened each write
  * their row of the read log in the transaction that reads what it records, so a row the database refuses takes the read
- * with it, the file's audit row included, and nothing is answered. Run with `bun run test:db` inside the devcontainer.
+ * with it, the file's audit row included, and nothing is answered. A search of several types is one row naming every
+ * type (`type_ids`, migration 0068), found again by any of them. The sorting and the filters are the use case's, over
+ * what the store reads (`domain.ts`), so they are the same on both adapters and held by the unit suite. Run with
+ * `bun run test:db` inside the devcontainer.
  */
 if (!process.env.DATABASE_URL)
   throw new Error('DATABASE_URL is not set. Run `bun run test:db` inside the devcontainer.');
@@ -69,6 +72,7 @@ const logged = () =>
       kind: schema.competenceReadLog.kind,
       relation: schema.competenceReadLog.relation,
       typeId: schema.competenceReadLog.typeId,
+      typeIds: schema.competenceReadLog.typeIds,
       personId: schema.competenceReadLog.personId,
       rows: schema.competenceReadLog.rows,
     })
@@ -93,28 +97,28 @@ describe('Kompetenssökning on Postgres (D121)', () => {
     typeId = await competence.seedType('operator:test', ORG, { name: 'HLR', area: 'Akut', kind: 'course' });
     await competence.seedHolding('operator:test', ORG, anna, { typeId, issuedOn: '2026-01-10' });
     await competence.seedHolding('operator:test', ORG, bo, { typeId, issuedOn: '2025-01-10', expiresOn: '2026-01-10' });
-    const page = await competence.search(registrar, { typeId });
-    expect(page.rows.map(r => [r.name, r.status])).toEqual([
+    const page = await competence.search(registrar, { typeIds: [typeId] });
+    expect(page.rows.map(r => [r.name, r.held[0]?.status])).toEqual([
       ['Synthetic Anna', 'valid'],
       ['Synthetic Bo', 'expired'],
     ]);
-    const file = await competence.exportSearch(registrar, { typeId });
+    const file = await competence.exportSearch(registrar, { typeIds: [typeId] });
     expect(file.text.split('\r\n')).toHaveLength(4);
     // The registry tells the module `registrar` only on her own direct read of it (`RunContext.direct`).
     expect((await competence.holdings(registrar, { person: `ANNA.${tag}` }, 'registrar')).rows).toHaveLength(1);
     expect(await logged()).toEqual([
-      { kind: 'search', relation: 'registrar', typeId, personId: null, rows: 2 },
-      { kind: 'export', relation: 'registrar', typeId, personId: null, rows: 2 },
-      { kind: 'person', relation: 'registrar', typeId: null, personId: anna, rows: 1 },
+      { kind: 'search', relation: 'registrar', typeId, typeIds: [typeId], personId: null, rows: 2 },
+      { kind: 'export', relation: 'registrar', typeId, typeIds: [typeId], personId: null, rows: 2 },
+      { kind: 'person', relation: 'registrar', typeId: null, typeIds: [], personId: anna, rows: 1 },
     ]);
-    expect(await exported()).toEqual([{ details: { typeId, people: 2 } }]);
+    expect(await exported()).toEqual([{ details: { typeIds: [typeId], people: 2 } }]);
   });
 
   test('a row the database refuses takes the read with it: nothing is answered and the file is not audited', async () => {
     const failing = usecasesOver(refusing);
     for (const read of [
-      () => failing.search(registrar, { typeId }),
-      () => failing.exportSearch(registrar, { typeId }),
+      () => failing.search(registrar, { typeIds: [typeId] }),
+      () => failing.exportSearch(registrar, { typeIds: [typeId] }),
       () => failing.holdings(registrar, { person: `bo.${tag}` }, 'registrar'),
     ])
       await expect(read()).rejects.toThrow();
@@ -192,8 +196,34 @@ describe('Kompetenssökning on Postgres (D121)', () => {
     await expect(competence.holdings(registrar, { person: `bo.${tag}` }, 'registrar')).rejects.toThrow(
       'Personen finns inte bland dem du är chef för.',
     );
-    expect((await competence.search(registrar, { typeId })).rows.map(r => r.name)).toEqual(['Synthetic Anna']);
+    expect((await competence.search(registrar, { typeIds: [typeId] })).rows.map(r => r.name)).toEqual([
+      'Synthetic Anna',
+    ]);
     // The three reads of the first test, the assistant's for a manager, and this search.
     expect((await logged()).map(r => r.kind)).toEqual(['search', 'export', 'person', 'person', 'search']);
+  });
+
+  test('a search of two types is one row of the log naming both in the order chosen, found again by either (0068)', async () => {
+    const english = await competence.seedType('operator:test', ORG, { name: 'Engelska', area: 'Språk', kind: 'skill' });
+    await competence.seedSkill('operator:test', ORG, anna, { typeId: english, level: 2, confirmed: true });
+    const page = await competence.search(registrar, {
+      typeIds: [typeId, english],
+      status: ['valid'],
+      sort: 'until',
+      order: 'desc',
+    });
+    expect(page.rows.map(r => [r.name, r.held.map(h => h.typeId)])).toEqual([['Synthetic Anna', [typeId, english]]]);
+    expect((await logged()).at(-1)).toEqual({
+      kind: 'search',
+      relation: 'registrar',
+      typeId,
+      typeIds: [typeId, english],
+      personId: null,
+      rows: 1,
+    });
+    // Narrowed by a type in SQL: the search of both is found by the second, and every read of the first by it.
+    const byEnglish = await competence.readLog({ organisationId: ORG, typeId: english, limit: 10 });
+    expect(byEnglish.map(r => r.typeIds)).toEqual([[typeId, english]]);
+    expect(await competence.readLog({ organisationId: ORG, typeId, limit: 10 })).toHaveLength(4);
   });
 });

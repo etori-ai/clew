@@ -107,7 +107,7 @@ function useSurfaceWidth() {
  * piles (Behöver dig, Väntar på andra, Klart) as links, so the address names the pile; a filter field and the system
  * narrow the rows. A row is one link: choosing it shows the work item in the pane beside the list and puts it in the
  * address as `item`, so Back, Forward and a reload show the same. The pane draws the work item at its narrow width
- * (D112 item 4, `WorkItem`), with "Öppna som sida". Where the pane does not fit beside the list (the template measures
+ * (D112 item 4, `WorkItem`), its title the link to the item's page. Where the pane does not fit beside the list (the template measures
  * the page's own box) the item takes the whole surface as its page draws it (`WorkItemPage`: the details behind an
  * information button, on a phone the buttons pinned to the foot), with the way back to the list.
  */

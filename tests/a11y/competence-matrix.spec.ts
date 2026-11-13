@@ -63,7 +63,7 @@ const settled = (page: Page) =>
 const switchedOn = (api: MockApi) => {
   api.competenceTypes = competenceTypes();
 };
-const heading = (page: Page) => page.getByRole('heading', { level: 1, name: 'Medarbetarnas kompetens' });
+const heading = (page: Page) => page.getByRole('heading', { level: 1, name: 'Medarbetare', exact: true });
 const approvalDialog = (page: Page) => page.getByRole('dialog', { name: 'Granska intyg' });
 const validation = (page: Page) => page.getByRole('dialog', { name: 'Bekräfta nivå' });
 /** Journalsystem is required of every report at least Självständig; Anna's own rating of it waits to be confirmed. */
@@ -128,7 +128,7 @@ test.describe('Kompetens › Medarbetare', () => {
       test('the matrix has no axe violations and every focus stop is marked', async ({ page, api }) => {
         switchedOn(api);
         await open(page, MATRIX);
-        await expect(page.getByRole('heading', { level: 1, name: 'Medarbetarnas kompetens' })).toBeVisible();
+        await expect(page.getByRole('heading', { level: 1, name: 'Medarbetare', exact: true })).toBeVisible();
         await expect(cell(page, 'HLR', 'Anna Lindqvist')).toBeVisible();
         await expectNoAxeViolations(page);
         const { unmarked } = await hiddenFocusStops(page);
@@ -144,14 +144,21 @@ test.describe('Kompetens › Medarbetare', () => {
     }) => {
       switchedOn(api);
       await open(page, MATRIX);
-      await expect(page).toHaveTitle('Medarbetarnas kompetens · Startsidan');
-      await expect(tabs(page).getByRole('link', { name: 'Medarbetare' })).toHaveAttribute('aria-current', 'true');
-      const table = page.getByRole('table');
+      await expect(page).toHaveTitle('Medarbetare · Startsidan');
+      // The tab is named as the page is headed (the review of 2026-11-13).
+      await expect(tabs(page).getByRole('link', { name: 'Medarbetare', exact: true })).toHaveAttribute(
+        'aria-current',
+        'true',
+      );
+      // The table has a name of its own (1.3.1), through the Table's documented hook for the table itself.
+      const table = page.getByRole('table', { name: 'Medarbetarnas kompetens' });
       await expect(table.getByRole('columnheader')).toHaveText(['Medarbetare', 'HLR', 'Fallskydd', 'Heta arbeten']);
       // Each cell is one control that draws the status in one word, named with the person, the competence and all of
-      // it: the day a holding ends, and "Krävs inte" where it is not required of the person, held or not.
+      // it: the day a holding ends, and "Krävs inte" where it is not required of the person, held or not. "Går ut snart"
+      // says when under the control, short; the day is in the control's name already, so it is not read twice.
       const anna = row(page, 'Anna Lindqvist');
-      await expect(anna.getByRole('cell')).toHaveText(['Går ut snart', 'Saknas', 'Utgånget']);
+      await expect(anna.getByRole('cell')).toHaveText([/^Går ut snart\s*10 jan\. 2027$/, 'Saknas', 'Utgånget']);
+      await expect(anna.getByRole('cell').first().getByText('10 jan. 2027')).toHaveAttribute('aria-hidden', 'true');
       await expect(cell(page, 'HLR', 'Anna Lindqvist')).toHaveAccessibleName(
         'Anna Lindqvist, HLR: går ut snart, 10 jan. 2027',
       );
@@ -168,8 +175,9 @@ test.describe('Kompetens › Medarbetare', () => {
         'Erik Sandström, Heta arbeten: krävs inte',
       );
       await expect(row(page, 'Lena Berg').getByRole('cell')).toHaveText(['Saknas', 'Krävs inte', 'Krävs inte']);
+      // A holding that never ends is said one way, wherever its end would stand.
       await expect(cell(page, 'Heta arbeten', 'Lena Berg')).toHaveAccessibleName(
-        'Lena Berg, Heta arbeten: krävs inte, giltigt utan slutdatum',
+        'Lena Berg, Heta arbeten: krävs inte, giltigt tills vidare',
       );
       // A pointer gets the same words in the control's tooltip, which adds no description of its own.
       await expect(cell(page, 'HLR', 'Anna Lindqvist')).not.toHaveAttribute('aria-describedby', /.+/);
@@ -224,6 +232,35 @@ test.describe('Kompetens › Medarbetare', () => {
       expect(api.registered).toEqual([{ personId: 'anna', body: { typeId: 't-fall', issuedOn: '2026-10-01' } }]);
       await expect(notices(page).getByText('Intyget är registrerat för Anna Lindqvist.')).toBeAttached();
       await expect(control).toBeFocused();
+      // Closing replaced the dialog's address: Back never opens a write again (the review of 2026-11-13).
+      await page.goBack();
+      await expect(page).toHaveURL(MATRIX);
+      await expect(registration(page)).toHaveCount(0);
+    });
+
+    test('every dialog opened by an address closes by replacing it, so Back opens none of them again', async ({
+      page,
+      api,
+    }) => {
+      switchedOn(api);
+      lenaWaits(api);
+      await open(page, MATRIX);
+      // Opened from the page, closed with Esc: each is a step forward, and its closing takes that step's place.
+      const dialogs: Array<[string, () => Locator]> = [
+        ['Lägg till krav för en person', () => requirement(page)],
+        ['Granska HLR för Lena Berg', () => approvalDialog(page)],
+      ];
+      for (const [name, dialog] of dialogs) {
+        await page.getByRole('link', { name }).click();
+        await expect(dialog()).toBeVisible();
+        await page.keyboard.press('Escape');
+        await expect(dialog()).toBeHidden();
+        await expect(page).toHaveURL(MATRIX);
+        await page.goBack();
+        await expect(dialog()).toHaveCount(0);
+        await expect(page).not.toHaveURL(/requirement=|approve=/);
+        await open(page, MATRIX);
+      }
     });
 
     test('an address from before opens the registration over the matrix, and Esc closes it to the cell’s control', async ({
@@ -432,8 +469,9 @@ test.describe('Kompetens › Medarbetare', () => {
       const dialog = approvalDialog(page);
       await expect(dialog.getByText('Registrerat av Lena Berg')).toBeVisible();
       await expect(dialog).toContainText('HLR');
-      await expect(dialog).toContainText('1 okt. 2026');
-      await expect(dialog).toContainText('1 okt. 2028');
+      // One record's facts: its days are long (the date rule of 2026-11-13).
+      await expect(dialog).toContainText('1 oktober 2026');
+      await expect(dialog).toContainText('1 oktober 2028');
       await settled(page);
       await expectNoAxeViolations(page);
       await tabTo(page, dialog.getByRole('button', { name: 'Godkänn' }), { max: 12 });
@@ -486,13 +524,17 @@ test.describe('Kompetens › Medarbetare', () => {
       await expect(list.getByRole('listitem')).toHaveCount(2);
       await expect(list.getByRole('listitem').filter({ hasText: 'Erik Sandström' })).toContainText('Socionomexamen');
       await expect(list.getByRole('listitem').filter({ hasText: 'Erik Sandström' })).toContainText(
-        'Utfärdat 5 juni 2015 · Inget slutdatum',
+        'Utfärdat 5 juni 2015 · Giltigt tills vidare',
       );
       await expectNoAxeViolations(page);
-      // A row's name is its way in, and the row has no button beside it.
+      // A person's name leads to the person, as everywhere (the review of 2026-11-13); the registration's own way in is
+      // "Granska" at the row's end, named with the competence and the person.
       const erik = list.getByRole('listitem').filter({ hasText: 'Socionomexamen' });
-      await expect(erik.getByRole('button')).toHaveCount(0);
-      const review = erik.getByRole('link', { name: 'Erik Sandström', exact: true });
+      await expect(erik.getByRole('link', { name: 'Erik Sandström', exact: true })).toHaveAttribute(
+        'href',
+        '/people/erik.sandstrom?from=%2Fcompetence%2Fmatrix',
+      );
+      const review = erik.getByRole('link', { name: 'Granska Socionomexamen för Erik Sandström' });
       await expect(review).toHaveAttribute('href', `${MATRIX}?approve=own-erik`);
       await tabTo(page, review);
       await page.keyboard.press('Enter');
@@ -752,7 +794,7 @@ test.describe('Kompetens › Medarbetare', () => {
         'Fallskydd',
         'Heta arbeten',
       ]);
-      await expect(page.getByRole('link', { name: 'Ladda ner som CSV' })).toHaveAttribute(
+      await expect(page.getByRole('link', { name: /^Ladda ner \d+ medarbetare som CSV$/ })).toHaveAttribute(
         'href',
         '/api/competence/matrix.csv?by=area%3AS%C3%A4kerhet',
       );
@@ -827,14 +869,23 @@ test.describe('Kompetens › Medarbetare', () => {
       ]);
       const left = page.getByRole('status').filter({ hasText: 'visas' });
       await expect(left).toHaveText('2 av 3 medarbetare och 3 av 3 kompetenser visas.');
-      // Read from what was read: the server is asked nothing more, and the file is the set as read.
+      // Read from what was read: the server is asked nothing more. The file is what is shown, narrowed the same way,
+      // and its button says how many people it holds (the review of 2026-11-13).
       expect(api.matrixReads).toEqual(['']);
-      await expect(page.getByRole('link', { name: 'Ladda ner som CSV' })).toHaveAttribute(
+      await expect(page.getByRole('link', { name: 'Ladda ner 2 medarbetare som CSV' })).toHaveAttribute(
         'href',
-        '/api/competence/matrix.csv',
+        '/api/competence/matrix.csv?only=attention',
       );
       await expectNoAxeViolations(page);
-      // A reload keeps it, and the list a phone draws carries it too.
+      // The narrowing is a step of its own: Back undoes it and leaves the page where it was.
+      await page.goBack();
+      await expect(page).toHaveURL(MATRIX);
+      await expect(only).not.toBeChecked();
+      await expect(page.getByRole('rowheader')).toHaveText(['Anna Lindqvist', 'Erik Sandström', 'Lena Berg']);
+      await page.goForward();
+      await expect(only).toBeChecked();
+      // A reload keeps it, and the list a phone draws carries it too, with only what needs the manager under each
+      // person: what nothing requires of them is left out, and nothing is said twice.
       await page.setViewportSize(phone);
       await open(page, `${MATRIX}?only=attention`);
       await expect(page.getByRole('switch', { name: /Visa bara det som behöver åtgärdas/ })).toBeChecked();
@@ -842,6 +893,9 @@ test.describe('Kompetens › Medarbetare', () => {
         'Anna Lindqvist',
         'Lena Berg',
       ]);
+      const lena = page.getByRole('list', { name: 'Kompetens för Lena Berg' });
+      await expect(lena.getByRole('listitem')).toHaveCount(1);
+      await expect(lena.getByText('Krävs inte')).toHaveCount(0);
       // With nothing left to show, the page says so and offers the whole matrix.
       api.competenceMatrix = {
         ...api.competenceMatrix,
@@ -929,11 +983,14 @@ test.describe('Kompetens › Medarbetare', () => {
       expect(stops.filter(s => s.under > 0)).toEqual([]);
     });
 
-    test('the matrix as shown is downloaded as a file', async ({ page, api }) => {
+    test('the matrix as shown is downloaded as a file, its button saying how many people it holds', async ({
+      page,
+      api,
+    }) => {
       switchedOn(api);
       await open(page, MATRIX);
       const download = page.waitForEvent('download');
-      await page.getByRole('link', { name: 'Ladda ner som CSV' }).click();
+      await page.getByRole('link', { name: 'Ladda ner 3 medarbetare som CSV' }).click();
       expect((await download).suggestedFilename()).toBe('kompetens-2026-11-04.csv');
       expect(api.matrixDownloads).toEqual(['']);
     });
@@ -957,6 +1014,16 @@ test.describe('Kompetens › Medarbetare', () => {
       await expect(fall).toContainText('Saknas');
       await expect(fall.getByRole('button')).toHaveAccessibleName('Anna Lindqvist, Fallskydd: saknas');
       await expect(anna.getByRole('listitem').filter({ hasText: 'HLR' })).toContainText('Går ut snart, 10 jan. 2027');
+      // What nothing requires of a person is one quiet line: the control says "Krävs inte", once.
+      const erik = page.getByRole('list', { name: 'Kompetens för Erik Sandström' });
+      await expect(erik.getByRole('listitem').filter({ hasText: 'Heta arbeten' }).getByText('Krävs inte')).toHaveCount(
+        1,
+      );
+      // The name is underlined, as in the table: a link that says it is one without its colour (1.4.1).
+      const line = await people
+        .getByRole('link', { name: 'Anna Lindqvist' })
+        .evaluate(el => getComputedStyle(el).textDecorationLine);
+      expect(line).toContain('underline');
       expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
       await expectNoAxeViolations(page);
       // Closed, the matrix is the table again.

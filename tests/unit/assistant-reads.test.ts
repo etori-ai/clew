@@ -193,12 +193,19 @@ async function world(script: Script = [], options: { brandskydd?: boolean } = {}
   await held('erik', '2025-12-01', '2026-12-20'); // runs out within 90 days
   await held('maria', '2026-01-10', '2028-01-10'); // valid
   for (const other of ['cohead', 'sven', 'karin']) await held(other, '2024-01-10', '2026-01-10');
+  // What needs doing is a requirement not met (the product owner, 2026-11-13): HLR is required of Hillevi's reports.
+  const required = async (typeId: string) => {
+    for (const personId of ['anna', 'erik', 'maria'])
+      await competence.seedRequirement('operator:test', ORG, { typeId, personId });
+  };
+  await required(hlr);
   if (options.brandskydd) {
     const fire = await competence.seedType('operator:test', ORG, {
       name: 'Brandskydd',
       area: 'Säkerhet',
       kind: 'course',
     });
+    await required(fire);
     await competence.seedHolding('operator:test', ORG, 'anna', {
       typeId: fire,
       issuedOn: '2023-05-02',
@@ -329,6 +336,34 @@ describe('which of Clew’s own reads the model is offered (D122 item 3)', () =>
     expect(
       await w.registry.run(actorOf(w.d.persona('hillevi')), 'competence.holdings', { person: 'anna' }),
     ).toMatchObject({ rows: [{ competence: 'HLR', status: 'expired' }] });
+  });
+});
+
+describe('what needs doing is what is required (the product owner, 2026-11-13)', () => {
+  test('an expired certificate nothing requires is not in what needs doing; the read tells the model to read the holdings for it', async () => {
+    const w = await world([
+      ['competence__attention', {}],
+      ['competence__holdings', { person: 'Erik.S' }],
+    ]);
+    const truck = await w.competence.seedType('operator:test', ORG, {
+      name: 'Truckkort',
+      area: 'Fordon',
+      kind: 'course',
+    });
+    await w.competence.seedHolding('operator:test', ORG, 'erik', {
+      typeId: truck,
+      issuedOn: '2020-03-01',
+      expiresOn: '2025-03-01',
+    });
+    const { handed } = await w.ask('hillevi', 'Vems truckkort har gått ut?');
+    const said = JSON.stringify(handed[0]);
+    expect(said).not.toContain('Truckkort');
+    expect((handed[0] as { antal: number }).antal).toBe(2);
+    // The report's own holdings say it, as their page does.
+    expect(JSON.stringify(handed[1])).toContain('Truckkort');
+    expect(w.model.described['competence__attention']).toContain(
+      'Ett intyg som inte krävs av medarbetaren finns inte här, även om det har gått ut',
+    );
   });
 });
 

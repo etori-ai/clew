@@ -477,6 +477,20 @@
       "when": 1794571882065,
       "tag": "0067_read_log_caller",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1794583927256,
+      "tag": "0068_read_log_types",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1794585755867,
+      "tag": "0069_read_log_types_check",
+      "breakpoints": true
     }
   ]
 }

@@ -34,6 +34,12 @@ export const fixtureViews = (): ViewEntry[] => [
   { capability: 'talks.commitments', title: 'Åtgärdspunkter', kind: 'list' },
   { capability: 'clew.talks', title: 'Utvecklingssamtal', kind: 'table' },
   { capability: 'clew.commitments', title: 'Åtgärdspunkter', kind: 'list' },
-  { capability: 'competence.attention', title: 'Kompetenser att åtgärda', kind: 'table' },
+  // Clew's own page for its rows (`page`): the figure on Hem, a card and an answer's list lead to the matrix narrowed.
+  {
+    capability: 'competence.attention',
+    title: 'Krav som inte uppfylls',
+    kind: 'table',
+    page: '/competence/matrix?only=attention',
+  },
   { capability: 'competence.holdings', title: 'Mina kompetenser', kind: 'list' },
 ];

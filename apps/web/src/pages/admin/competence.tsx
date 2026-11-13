@@ -612,7 +612,8 @@ export function AdminCompetencePage({ user }: { user: SessionUser }) {
   address.current = params;
   const list = listOf(params);
   const editHref = (id: string) => hrefWith(list, { [TYPE_PARAM]: id });
-  const close = () => navigate(hrefWith(list));
+  // Closing replaces the dialog's address, so Back never opens a type's dialog again (D83 rule 8).
+  const close = () => navigate(hrefWith(list), { replace: true });
   const active = types.filter(t => !t.archived).length;
   const byId = useMemo(() => new Map(types.map(t => [t.id, t])), [types]);
   // Searched and paged in the browser: an imported classification is thousands of types (D120 item 7). The words go

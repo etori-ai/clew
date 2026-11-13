@@ -350,9 +350,12 @@ test.describe('the shared document and semantic catalogue', () => {
     await open(page, beside);
     const panel = page.getByRole('dialog', { name: 'Underlag' });
     await expect(panel.getByRole('status', { name: 'Sida 1 av 2', exact: true })).toBeVisible();
-    // The link stands in the panel's header, worded as a work item's link to its page, with the panel's own page as
-    // the way back. The record is still read beside the page: the link is never the only way to it.
-    const link = panel.getByRole('link', { name: 'Öppna som sida' });
+    // The record's name in the panel's header is the link to its page (the name is the way in, as a work item's title),
+    // with the panel's own page as the way back. The record is still read beside the page: the link is never the only
+    // way to it.
+    const link = panel
+      .getByRole('heading', { level: 2, name: 'Underlag', exact: true })
+      .getByRole('link', { name: 'Underlag' });
     await expect(link).toHaveAttribute(
       'href',
       `/tools/finance.record?input=${encodeURIComponent(JSON.stringify({ ref: 'finance:inv:55120' }))}&title=Underlag&from=${encodeURIComponent(beside)}`,
@@ -377,7 +380,10 @@ test.describe('the shared document and semantic catalogue', () => {
     await page.goBack();
     await expect(page).toHaveURL(beside);
     await expect(
-      page.getByRole('dialog', { name: 'Underlag' }).getByRole('link', { name: 'Öppna som sida' }),
+      page
+        .getByRole('dialog', { name: 'Underlag' })
+        .getByRole('heading', { level: 2, name: 'Underlag', exact: true })
+        .getByRole('link', { name: 'Underlag' }),
     ).toBeVisible();
   });
   test('metrics, line/bar series and activity have labelled values and accessible data tables', async ({

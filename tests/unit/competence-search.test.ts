@@ -5,7 +5,13 @@ import {
   memoryCompetenceStore,
   type MemoryCompetenceStore,
 } from '../../apps/server/src/modules/competence/adapters/memory';
-import { holdingRef, pageOfRows, searchCsv, typeSearchWords } from '../../apps/server/src/modules/competence/domain';
+import {
+  holdingRef,
+  pageOfRows,
+  searchCsv,
+  sortSearchRows,
+  typeSearchWords,
+} from '../../apps/server/src/modules/competence/domain';
 import {
   COMPETENCE_EXPORT_FORMAT,
   CompetenceError,
@@ -130,8 +136,8 @@ describe('who may search across the organisation (D121 items 1 and 2)', () => {
     for (const persona of [plain, admin, asAnna]) {
       for (const read of [
         () => competence.searchOptions(persona),
-        () => competence.search(persona, { typeId: types.hlr }),
-        () => competence.exportSearch(persona, { typeId: types.hlr }),
+        () => competence.search(persona, { typeIds: [types.hlr] }),
+        () => competence.exportSearch(persona, { typeIds: [types.hlr] }),
       ]) {
         const error = await read().catch(e => e);
         expect(error).toBeInstanceOf(ForbiddenError);
@@ -172,38 +178,27 @@ describe('who may search across the organisation (D121 items 1 and 2)', () => {
 
 describe('a search (D121 item 4)', () => {
   test('finds every active holder of the type in the organisation by the holding that decides, by name, and logs the read', async () => {
-    const page = await competence.search(hr, { typeId: types.hlr });
-    expect(page.type).toEqual({ id: types.hlr, name: 'HLR', area: 'Akut', kind: 'course' });
+    const page = await competence.search(hr, { typeIds: [types.hlr] });
+    expect(page.types).toEqual([{ id: types.hlr, name: 'HLR', area: 'Akut', kind: 'course' }]);
+    const held = (status: 'valid' | 'expiring' | 'expired', expiresOn: string) => [
+      { typeId: types.hlr, status, expiresOn },
+    ];
     expect(page.rows).toEqual([
       // The formula-looking name sorts as text; the deactivated holder and the stranger are not here.
-      {
-        personId: 'eva',
-        key: 'eva.e',
-        name: '=SUM(A1:A2)',
-        units: ['Enhet 3'],
-        status: 'valid',
-        expiresOn: '2028-02-01',
-      },
+      { personId: 'eva', key: 'eva.e', name: '=SUM(A1:A2)', units: ['Enhet 3'], held: held('valid', '2028-02-01') },
       {
         personId: 'anna',
         key: 'anna.a',
         name: 'Anna Andersson',
         units: ['Enhet 1', 'Enhet 3'],
-        status: 'valid',
-        expiresOn: '2028-01-10',
+        held: held('valid', '2028-01-10'),
       },
-      { personId: 'bo', key: null, name: 'Bo Berg', units: ['Enhet 2'], status: 'expired', expiresOn: '2026-01-10' },
-      {
-        personId: 'dan',
-        key: 'dan.d',
-        name: 'Dan Dahl',
-        units: ['Enhet 3'],
-        status: 'expiring',
-        expiresOn: '2026-12-01',
-      },
+      { personId: 'bo', key: null, name: 'Bo Berg', units: ['Enhet 2'], held: held('expired', '2026-01-10') },
+      { personId: 'dan', key: 'dan.d', name: 'Dan Dahl', units: ['Enhet 3'], held: held('expiring', '2026-12-01') },
     ]);
-    expect({ total: page.total, page: page.page, pageSize: page.pageSize }).toEqual({
+    expect({ total: page.total, unfiltered: page.unfiltered, page: page.page, pageSize: page.pageSize }).toEqual({
       total: 4,
+      unfiltered: 4,
       page: 1,
       pageSize: 25,
     });
@@ -217,6 +212,7 @@ describe('a search (D121 item 4)', () => {
         caller: 'person',
         kind: 'search',
         typeId: types.hlr,
+        typeIds: [types.hlr],
         minLevel: null,
         unitId: null,
         personId: null,
@@ -230,15 +226,15 @@ describe('a search (D121 item 4)', () => {
   test('a unit narrows to the people placed on it or below it; a least level to a skill held at it, confirmed or not', async () => {
     const names = async (body: Parameters<CompetenceUsecases['search']>[1]) =>
       (await competence.search(hr, body)).rows.map(r => r.name);
-    expect(await names({ typeId: types.hlr, unitId: 'u-top' })).toEqual(['Anna Andersson', 'Bo Berg']);
-    expect(await names({ typeId: types.hlr, unitId: 'u2' })).toEqual(['Bo Berg']);
-    const skilled = await competence.search(hr, { typeId: types.english, minLevel: 2 });
-    expect(skilled.rows.map(r => [r.name, r.level, r.validated, r.status, r.expiresOn])).toEqual([
-      ['Anna Andersson', 3, true, 'valid', undefined],
+    expect(await names({ typeIds: [types.hlr], unitId: 'u-top' })).toEqual(['Anna Andersson', 'Bo Berg']);
+    expect(await names({ typeIds: [types.hlr], unitId: 'u2' })).toEqual(['Bo Berg']);
+    const skilled = await competence.search(hr, { typeIds: [types.english], minLevel: 2 });
+    expect(skilled.rows.map(r => [r.name, r.held[0]])).toEqual([
+      ['Anna Andersson', { typeId: types.english, status: 'valid', level: 3, validated: true }],
       // The person's own rating is found, and says so ("Egen bedömning").
-      ['Bo Berg', 2, false, 'valid', undefined],
+      ['Bo Berg', { typeId: types.english, status: 'valid', level: 2, validated: false }],
     ]);
-    expect((await competence.search(hr, { typeId: types.english })).total).toBe(3);
+    expect((await competence.search(hr, { typeIds: [types.english] })).total).toBe(3);
     expect(reads().map(r => [r.typeId, r.minLevel, r.unitId, r.rows])).toEqual([
       [types.hlr, null, 'u-top', 2],
       [types.hlr, null, 'u2', 1],
@@ -247,17 +243,25 @@ describe('a search (D121 item 4)', () => {
     ]);
   });
   test('a level is for a skill alone, a type of another organisation is no type, and a unit is one of the tree', async () => {
-    await expect(competence.search(hr, { typeId: types.hlr, minLevel: 2 })).rejects.toThrow(
+    await expect(competence.search(hr, { typeIds: [types.hlr], minLevel: 2 })).rejects.toThrow(
       'Bara en färdighet söks på en viss nivå.',
     );
-    const elsewhere = await competence.search(hr, { typeId: types.elsewhere }).catch(e => e);
-    expect(elsewhere).toBeInstanceOf(CompetenceError);
-    expect(elsewhere.message).toBe('Kompetensen finns inte i katalogen.');
+    // A status or a window is for a type that can end: a search of skills alone is refused them.
+    for (const narrowing of [{ status: ['valid' as const] }, { until: 30 as const }])
+      await expect(competence.search(hr, { typeIds: [types.english], ...narrowing })).rejects.toThrow(
+        'En färdighet går inte ut: status och giltighet söks bara för en kompetens som gör det.',
+      );
+    // A type of another organisation is no type, alone or among the organisation's own.
+    for (const typeIds of [[types.elsewhere], [types.hlr, types.elsewhere], [types.hlr, 'no-such-type']]) {
+      const elsewhere = await competence.search(hr, { typeIds }).catch(e => e);
+      expect(elsewhere).toBeInstanceOf(CompetenceError);
+      expect(elsewhere.message).toBe('Kompetensen finns inte i katalogen.');
+    }
     // What the body names reaches the log, the audit and an operator's terminal only once it is the organisation's own.
     for (const unitId of ['no-such-unit', 'u1\n2026-11-10\tforged', 'u-other'])
       for (const read of [
-        () => competence.search(hr, { typeId: types.hlr, unitId }),
-        () => competence.exportSearch(hr, { typeId: types.hlr, unitId }),
+        () => competence.search(hr, { typeIds: [types.hlr], unitId }),
+        () => competence.exportSearch(hr, { typeIds: [types.hlr], unitId }),
       ]) {
         const refused = await read().catch(e => e);
         expect(refused).toBeInstanceOf(CompetenceError);
@@ -267,20 +271,133 @@ describe('a search (D121 item 4)', () => {
     expect(audits().some(a => a.action === 'competence.search_exported')).toBe(false);
   });
   test('a page past the end answers with the last; pages are cut in one order', async () => {
-    expect((await competence.search(hr, { typeId: types.hlr, page: 9 })).page).toBe(1);
+    expect((await competence.search(hr, { typeIds: [types.hlr], page: 9 })).page).toBe(1);
     expect(pageOfRows([1, 2, 3, 4, 5], 2, 2)).toEqual({ rows: [3, 4], page: 2 });
     expect(pageOfRows([1, 2, 3, 4, 5], 9, 2)).toEqual({ rows: [5], page: 3 });
     expect(pageOfRows([], 3, 25)).toEqual({ rows: [], page: 1 });
   });
   test('a manager who is a registrar too searches as a registrar, and their own report is found like anyone else', async () => {
-    expect((await competence.search(boss, { typeId: types.hlr })).total).toBe(4);
+    expect((await competence.search(boss, { typeIds: [types.hlr] })).total).toBe(4);
     expect(reads().map(r => [r.readerId, r.relation])).toEqual([['boss', 'registrar']]);
+  });
+});
+
+describe('several types, the status, the validity window and the order (the search as its address names it)', () => {
+  test('a person is found who holds every chosen type, each said in the order chosen; a least level holds the skills to it', async () => {
+    const both = await competence.search(hr, { typeIds: [types.hlr, types.english] });
+    expect(both.types.map(t => t.name)).toEqual(['HLR', 'Engelska']);
+    // Eva holds HLR and no Engelska, so she is not found.
+    expect(both.rows.map(r => [r.name, r.held.map(h => h.typeId)])).toEqual([
+      ['Anna Andersson', [types.hlr, types.english]],
+      ['Bo Berg', [types.hlr, types.english]],
+      ['Dan Dahl', [types.hlr, types.english]],
+    ]);
+    expect(both.rows[1]!.held).toEqual([
+      { typeId: types.hlr, status: 'expired', expiresOn: '2026-01-10' },
+      { typeId: types.english, status: 'valid', level: 2, validated: false },
+    ]);
+    const levelled = await competence.search(hr, { typeIds: [types.hlr, types.english], minLevel: 2 });
+    expect(levelled.rows.map(r => r.name)).toEqual(['Anna Andersson', 'Bo Berg']);
+    // One search is one row of the log, naming every type asked for by id, the first also as `typeId`.
+    expect(reads().map(r => [r.kind, r.typeId, r.typeIds, r.minLevel, r.rows])).toEqual([
+      ['search', types.hlr, [types.hlr, types.english], null, 3],
+      ['search', types.hlr, [types.hlr, types.english], 2, 2],
+    ]);
+    expect(audits().some(a => a.actor === 'person:hr')).toBe(false);
+  });
+  test('the status and the window narrow each type that can end, before the page is cut, and the count before them is said', async () => {
+    const soon = await competence.search(hr, { typeIds: [types.hlr], status: ['expiring', 'expired'] });
+    expect(soon.rows.map(r => r.name)).toEqual(['Bo Berg', 'Dan Dahl']);
+    expect([soon.total, soon.unfiltered]).toEqual([2, 4]);
+    // Within 30 days: Dan's ends on 1 December, 21 days on. One that has run out ends within no window.
+    expect((await competence.search(hr, { typeIds: [types.hlr], until: 30 })).rows.map(r => r.name)).toEqual([
+      'Dan Dahl',
+    ]);
+    expect((await competence.search(hr, { typeIds: [types.hlr], until: 180, status: ['valid'] })).total).toBe(0);
+    // A skill never ends: beside a certificate the filters are the certificate's.
+    const valid = await competence.search(hr, { typeIds: [types.hlr, types.english], status: ['valid'] });
+    expect(valid.rows.map(r => r.name)).toEqual(['Anna Andersson']);
+    expect([valid.total, valid.unfiltered]).toEqual([1, 3]);
+    // The log keeps the types, the level and the unit; the status and the window have no column of it.
+    expect(reads().every(r => r.kind === 'search' && r.typeId === types.hlr)).toBe(true);
+  });
+  test('the result is sorted on the server before it is paged, ties by name and then by id, the same on every page', async () => {
+    const ordered = async (sort: 'name' | 'unit' | 'status' | 'until', order: 'asc' | 'desc' = 'asc') =>
+      (await competence.search(hr, { typeIds: [types.hlr], sort, order })).rows.map(r => r.personId);
+    expect(await ordered('until')).toEqual(['bo', 'dan', 'anna', 'eva']);
+    expect(await ordered('until', 'desc')).toEqual(['eva', 'anna', 'dan', 'bo']);
+    expect(await ordered('status')).toEqual(['bo', 'dan', 'eva', 'anna']);
+    expect(await ordered('status', 'desc')).toEqual(['eva', 'anna', 'dan', 'bo']);
+    // Units by name: Eva and Dan share Enhet 3 and go by name.
+    expect(await ordered('unit')).toEqual(['anna', 'bo', 'eva', 'dan']);
+    expect(await ordered('name', 'desc')).toEqual(['dan', 'bo', 'anna', 'eva']);
+    const levels = await competence.search(hr, { typeIds: [types.english], sort: 'level' });
+    expect(levels.rows.map(r => r.personId)).toEqual(['dan', 'bo', 'anna']);
+    // With several types: the worst status first.
+    const worst = await competence.search(hr, { typeIds: [types.english, types.hlr], sort: 'status' });
+    expect(worst.rows.map(r => r.personId)).toEqual(['bo', 'dan', 'anna']);
+    // Ties: the same day goes by name in Swedish order (Z before Å), then by id; nothing that ends goes last.
+    const row = (personId: string, name: string, expiresOn?: string) => ({
+      personId,
+      key: null,
+      name,
+      units: [],
+      held: [{ typeId: 't', status: 'valid' as const, ...(expiresOn ? { expiresOn } : {}) }],
+    });
+    const rows = [
+      row('b', 'Åsa', '2027-01-01'),
+      row('a', 'Åsa', '2027-01-01'),
+      row('c', 'Örjan'),
+      row('d', 'Zara', '2027-01-01'),
+    ];
+    expect(sortSearchRows(rows, 'until').map(r => r.personId)).toEqual(['d', 'a', 'b', 'c']);
+    expect(sortSearchRows(rows, 'until', 'desc').map(r => r.personId)).toEqual(['c', 'd', 'a', 'b']);
+    // The second page continues the first in that one order.
+    expect(pageOfRows(sortSearchRows(rows, 'until'), 2, 2).rows.map(r => r.personId)).toEqual(['b', 'c']);
+  });
+  test('the file holds what the screen shows: its filters and its order, a pair of columns per type, audited with them', async () => {
+    const file = await competence.exportSearch(hr, {
+      typeIds: [types.hlr, types.english],
+      status: ['expiring', 'expired'],
+      sort: 'until',
+      order: 'desc',
+    });
+    expect(file.text.split('\r\n')).toEqual([
+      '﻿Namn;Användarnamn;Enhet;HLR: status;HLR: giltigt till;Engelska: nivå;Engelska: bedömning',
+      'Dan Dahl;dan.d;Enhet 3;Går ut snart;2026-12-01;Grundläggande;Bekräftad',
+      'Bo Berg;bo;Enhet 2;Utgånget;2026-01-10;Självständig;Egen bedömning',
+      '',
+    ]);
+    expect(audits().filter(a => a.action === 'competence.search_exported')).toEqual([
+      {
+        actor: 'person:hr',
+        action: 'competence.search_exported',
+        subject: 'organisation:' + ORG,
+        at: T,
+        details: { typeIds: [types.hlr, types.english], status: ['expiring', 'expired'], people: 2 },
+      },
+    ]);
+    expect(reads().map(r => [r.kind, r.typeIds, r.rows])).toEqual([['export', [types.hlr, types.english], 2]]);
+  });
+  test('the catalogue asked by id answers the organisation’s own types in the order asked, and logs nothing', async () => {
+    const named = await competence.findTypes(hr, { ids: [types.english, types.elsewhere, 'no-such-type', types.hlr] });
+    expect(named).toMatchObject({ rows: [{ id: types.english }, { id: types.hlr }], more: false });
+    expect(named.rows).toHaveLength(2);
+    expect(reads()).toEqual([]);
+  });
+  test('the read log is read by type: a search of several is found by any of them', async () => {
+    await competence.search(hr, { typeIds: [types.hlr, types.english] });
+    await competence.search(hr, { typeIds: [types.english] });
+    expect((await competence.readLog({ typeId: types.hlr, limit: 10 })).map(r => r.typeIds)).toEqual([
+      [types.hlr, types.english],
+    ]);
+    expect(await competence.readLog({ typeId: types.english, limit: 10 })).toHaveLength(2);
   });
 });
 
 describe('the file of a search (D121 item 4)', () => {
   test('lists every holder in the matrix’s format, keeps a formula as text, is audited as an export and logged as one', async () => {
-    const file = await competence.exportSearch(hr, { typeId: types.hlr, unitId: 'u-top' });
+    const file = await competence.exportSearch(hr, { typeIds: [types.hlr], unitId: 'u-top' });
     expect(file.filename).toBe('kompetenssokning-2026-11-10.csv');
     expect(file.text).toBe(
       '﻿' +
@@ -291,7 +408,7 @@ describe('the file of a search (D121 item 4)', () => {
         ].join('\r\n') +
         '\r\n',
     );
-    const all = await competence.exportSearch(hr, { typeId: types.hlr });
+    const all = await competence.exportSearch(hr, { typeIds: [types.hlr] });
     expect(all.text.split('\r\n')[1]).toBe("'=SUM(A1:A2);eva.e;Enhet 3;Giltigt;2028-02-01");
     const audit = audits().filter(a => a.action === 'competence.search_exported');
     expect(audit).toEqual([
@@ -300,14 +417,14 @@ describe('the file of a search (D121 item 4)', () => {
         action: 'competence.search_exported',
         subject: 'organisation:' + ORG,
         at: T,
-        details: { typeId: types.hlr, unitId: 'u-top', people: 2 },
+        details: { typeIds: [types.hlr], unitId: 'u-top', people: 2 },
       },
       {
         actor: 'person:hr',
         action: 'competence.search_exported',
         subject: 'organisation:' + ORG,
         at: T,
-        details: { typeId: types.hlr, people: 4 },
+        details: { typeIds: [types.hlr], people: 4 },
       },
     ]);
     expect(JSON.stringify(audit)).not.toMatch(/Anna|Bo Berg|HLR/);
@@ -317,13 +434,16 @@ describe('the file of a search (D121 item 4)', () => {
     ]);
   });
   test('a skill’s file says the level and whether it is the person’s own rating', async () => {
-    const file = await competence.exportSearch(hr, { typeId: types.english, minLevel: 2 });
+    const file = await competence.exportSearch(hr, { typeIds: [types.english], minLevel: 2 });
     expect(file.text.split('\r\n').slice(0, 3)).toEqual([
       '﻿Namn;Användarnamn;Enhet;Status;Nivå;Bedömning;Giltigt till',
-      'Anna Andersson;anna.a;Enhet 1, Enhet 3;Giltigt;Expert;Bekräftad;',
-      'Bo Berg;bo;Enhet 2;Giltigt;Självständig;Egen bedömning;',
+      // A skill never ends: "Tills vidare", as the page says it.
+      'Anna Andersson;anna.a;Enhet 1, Enhet 3;Giltigt;Expert;Bekräftad;Tills vidare',
+      'Bo Berg;bo;Enhet 2;Giltigt;Självständig;Egen bedömning;Tills vidare',
     ]);
-    expect(searchCsv({ kind: 'course' }, [])).toBe('﻿Namn;Användarnamn;Enhet;Status;Giltigt till\r\n');
+    expect(searchCsv([{ id: 'x', name: 'X', kind: 'course' }], [])).toBe(
+      '﻿Namn;Användarnamn;Enhet;Status;Giltigt till\r\n',
+    );
   });
 });
 
@@ -343,6 +463,7 @@ describe('one person’s holdings opened (D121 items 4 and 5)', () => {
         caller: 'person',
         kind: 'person',
         typeId: null,
+        typeIds: [],
         minLevel: null,
         unitId: null,
         personId: 'dan',
@@ -517,7 +638,7 @@ describe('a registrar sees only what counts (D121, the decision of 2026-11-13)',
   test('no decision history: a row says what is held and how it is attested, never who decided, revoked or registered it, or when', async () => {
     // The fields a row may carry to a registrar; the contract's row has no field for a decision, its maker or its time.
     const said = [
-      ...['ref', 'userName', 'name', 'competence', 'area', 'kind', 'issuedOn', 'expiresOn', 'status'],
+      ...['ref', 'userName', 'name', 'competence', 'typeId', 'area', 'kind', 'issuedOn', 'expiresOn', 'status'],
       ...['evidence', 'source', 'readAt', 'level', 'assessment'],
     ];
     for (const row of await registered()) for (const key of Object.keys(row)) expect(said).toContain(key);
@@ -567,6 +688,7 @@ describe('a manager’s matrix as a file is an export of their reports’ compet
         caller: 'person',
         kind: 'export',
         typeId: null,
+        typeIds: [],
         minLevel: null,
         unitId: null,
         personId: null,
@@ -586,8 +708,10 @@ describe('a read whose row cannot be written answers nothing (D121 item 5)', () 
   test('the search, the file and a person opened all fail, and the file’s audit row goes with them', async () => {
     store.readLogSink.fail = true;
     const before = audits().length;
-    await expect(competence.search(hr, { typeId: types.hlr })).rejects.toThrow('the read log cannot be written');
-    await expect(competence.exportSearch(hr, { typeId: types.hlr })).rejects.toThrow('the read log cannot be written');
+    await expect(competence.search(hr, { typeIds: [types.hlr] })).rejects.toThrow('the read log cannot be written');
+    await expect(competence.exportSearch(hr, { typeIds: [types.hlr] })).rejects.toThrow(
+      'the read log cannot be written',
+    );
     await expect(competence.holdings(hr, { person: 'anna.a' }, 'registrar')).rejects.toThrow(
       'the read log cannot be written',
     );
@@ -597,14 +721,14 @@ describe('a read whose row cannot be written answers nothing (D121 item 5)', () 
     expect(audits()).toHaveLength(before);
     expect(reads()).toEqual([]);
     store.readLogSink.fail = false;
-    expect((await competence.search(hr, { typeId: types.hlr })).total).toBe(4);
+    expect((await competence.search(hr, { typeIds: [types.hlr] })).total).toBe(4);
   });
 });
 
 describe('the read log beside erasure and export (D108 items 14 and 15)', () => {
   test('erasing a person leaves the reads of them and by them; the export of the domain does not carry the log', async () => {
     await competence.holdings(hr, { person: 'anna.a' }, 'registrar');
-    await competence.search(hr, { typeId: types.hlr });
+    await competence.search(hr, { typeIds: [types.hlr] });
     store.deactivate('anna');
     await competence.erasePerson('operator:cli', 'anna');
     expect(reads().map(r => [r.kind, r.personId])).toEqual([

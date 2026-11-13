@@ -452,6 +452,8 @@ describe('a read of a source', () => {
   test("a deactivated person's key matches nobody and their copied rows go at the next read, whatever the source says", async () => {
     const { hlr } = await catalogue();
     await competence.mapSourceType(admin, 'lms', { sourceType: 'clew-dev:hlr', typeId: hlr });
+    // Required of her, so her copied HLR that has run out is a requirement not met (the definition of 2026-11-13).
+    await competence.addRequirement(boss, { typeId: hlr, personId: 'cia' });
     source.pages.set('lms', [
       {
         rows: [row('cia.c', [holding('course:7:user:3', 'clew-dev:hlr', 'HLR', '2024-01-10')])],
@@ -725,7 +727,9 @@ describe('status and reads with copied rows', () => {
       rows: [{ key: 'anna.a', expired: 0, missing: 0, expiring: 0, holdings: 1 }],
     });
     expect((await competence.attention(boss)).rows).toEqual([]);
-    // Mapped, the badge counts at once with the issuer's own end date: 51 days left, so it needs attention.
+    // Mapped, the badge counts at once with the issuer's own end date: 51 days left, so, required of her, it needs
+    // attention. Required or not, her own card has it.
+    await competence.addRequirement(boss, { typeId: instructor, personId: 'anna' });
     expect(await competence.mapSourceType(admin, 'lms', { sourceType: 'badge:4', typeId: instructor })).toEqual({
       holdings: 1,
     });

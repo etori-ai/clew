@@ -23,7 +23,6 @@ import { dayLabel, displayDate, timeLabel, weekNumber } from '@clew/calendar/dat
 import { InputError } from '../context';
 import { cardRows, type CardRows } from './card';
 import { resolveChips, type ResolvedChips } from './chips';
-import { completionsFor } from './completions';
 import { serialiseContext } from './context';
 import { routeFixed } from './fixed';
 import {
@@ -768,7 +767,6 @@ export function assistantUsecases(deps: AssistantDeps) {
     converse,
     ask,
     reply,
-    completionsFor: (persona: AuthenticatedContext) => completionsFor(deps, persona),
     listObjects: (persona: AuthenticatedContext, q: string, near: string[] = []) => listObjects(deps, persona, q, near),
   };
 }

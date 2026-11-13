@@ -111,21 +111,7 @@ test.describe('the answer on its way', () => {
     });
   }
 
-  test('the box stays where it is while "Menar du" comes and goes under it', async ({ page, api: _ }) => {
-    await open(page, '/');
-    const input = composer(page);
-    const top = async () => (await input.boundingBox())!.y;
-    const before = await top();
-    await input.fill('attestera');
-    await expect(page.getByRole('list', { name: 'Menar du' })).toBeVisible();
-    expect(await top()).toBe(before);
-    await input.fill('attestera xq');
-    await input.fill('');
-    await expect(page.getByRole('list', { name: 'Menar du' })).toHaveCount(0);
-    expect(await top()).toBe(before);
-  });
-
-  test('with nothing pushed the page says so under the box, which stays under the greeting, and "Menar du" under it does not move it', async ({
+  test('with nothing pushed the page says so under the box, which stays under the greeting and does not move as the person types', async ({
     page,
     api,
   }) => {
@@ -140,13 +126,7 @@ test.describe('the answer on its way', () => {
       page.getByRole('region', { name: 'Behöver dig' }).getByText('Inget behöver dig just nu.'),
     ).toBeVisible();
     await expect(page.getByRole('region', { name: 'I dag' })).toBeVisible();
-    await expect(
-      page
-        .getByRole('region', { name: 'Sedan i går' })
-        .getByText('Inget har blivit klart sedan i går, och inget väntar på andra.'),
-    ).toBeVisible();
     await input.fill('attestera');
-    await expect(page.getByRole('list', { name: 'Menar du' })).toBeVisible();
     expect((await input.boundingBox())!.y).toBe(top);
     await expectNoAxeViolations(page);
   });
@@ -196,7 +176,7 @@ test.describe('the cards in a conversation', () => {
     await expect(log.getByText('Anna Lindqvist')).toHaveCount(0);
     await expect(log.getByText(/^1 av 4 rader\./)).toBeVisible();
     // Where the answer came from is the turn's line; the answer's text carries no system and no time.
-    await expect(log.getByText('Assistenten · läste Kompetenser att åtgärda', { exact: true })).toBeVisible();
+    await expect(log.getByText('Assistenten · läste Krav som inte uppfylls', { exact: true })).toBeVisible();
     await expect(log.getByText('Maria Källströms brandskydd går ut 20 januari 2027.', { exact: true })).toBeVisible();
     await expect(log.getByText(/Kompetens \d\d:\d\d/)).toHaveCount(0);
     // The older answer's card, folded in its place: its title, its system and its count as the turn recorded them.

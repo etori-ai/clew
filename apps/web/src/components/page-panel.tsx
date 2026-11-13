@@ -61,6 +61,8 @@ export interface OwnThing {
   subject?: ThingSubject;
   /** The thing's facts and buttons; `folded` while a conversation about it runs. Absent, the conversation alone. */
   body?: (inline: boolean, folded: boolean) => ReactNode;
+  /** The thing's own page, where it has one (Kalender's proposal: its work item): its name in the header links there. */
+  page?: string;
 }
 
 const parse = (json: string | null): Record<string, unknown> => {
@@ -257,8 +259,8 @@ function usePanelOnPage({
     const shown = rows ? null : side.shown;
     if (shown) {
       view = shown;
-      // A record or a document is one thing too large to read beside a page alone: its own page is a link in the
-      // panel's header, worded as a work item's link to its page (D116). A record is its view's page with its input.
+      // A record or a document is one thing too large to read beside a page alone: its name in the panel's header is the
+      // link to its own page, as a work item's title is (D116). A record is its view's page with its input.
       const whole = shown.spec?.kind === 'record' || shown.spec?.kind === 'document';
       frame = {
         // Named by the view on screen, not by the one on its way: focus follows a view when its rows are there to land on.
@@ -342,6 +344,7 @@ function usePanelOnPage({
       id: own.id,
       title: own.title,
       ...(own.subtitle ? { subtitle: own.subtitle } : {}),
+      ...(own.page ? { page: own.page } : {}),
       address,
       onClose: close,
       ...(own.subject ? { subject: own.subject } : {}),

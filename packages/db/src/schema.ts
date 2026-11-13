@@ -1328,8 +1328,9 @@ export const competenceShareTargets = pgTable(
 );
 /**
  * The read log of the competence domain (D108 item 15, D121 item 5): one row per read of competence about people, kept
- * apart from the audit table since a read changes nothing. A search across the organisation and its export (`type_id`,
- * with the least level and the unit narrowed to), or one person's holdings opened (`person_id`); who read, as which
+ * apart from the audit table since a read changes nothing. A search across the organisation and its export (`type_ids`,
+ * the first also in `type_id`, with the least level and the unit narrowed to), or one person's holdings opened
+ * (`person_id`); who read, as which
  * relation, by whom (the person, or the assistant for them, D122 item 6), when and how many rows the read returned. Ids
  * and counts only: never a name and never content. Written in
  * the transaction that reads what it records, so a read whose row cannot be written answers nothing. No foreign keys:
@@ -1347,6 +1348,12 @@ export const competenceReadLog = pgTable(
     caller: text('caller').$type<'person' | 'assistant'>().notNull().default('person'),
     kind: text('kind').$type<'search' | 'person' | 'export'>().notNull(),
     typeId: text('type_id'),
+    // Every type a search or its file asked for, in the order chosen, `type_id` first (a search may ask for up to five
+    // that a person must all hold); empty where `type_id` is null. Rows from before migration 0068 hold their one type.
+    typeIds: text('type_ids')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     minLevel: integer('min_level'),
     unitId: text('unit_id'),
     personId: text('person_id'),
@@ -1355,6 +1362,13 @@ export const competenceReadLog = pgTable(
   },
   t => [
     check('competence_read_log_relation', sql`${t.relation} IN ('self', 'managed', 'registrar')`),
+    // The types asked for begin with `type_id`, and there are none where it is none. `coalesce`: an empty list's first
+    // element is NULL, and a check that comes to NULL holds, so without it a row naming a type and no list would pass
+    // (migration 0069 corrects 0068).
+    check(
+      'competence_read_log_types',
+      sql`CASE WHEN ${t.typeId} IS NULL THEN cardinality(${t.typeIds}) = 0 ELSE coalesce(${t.typeIds}[1] = ${t.typeId}, false) END`,
+    ),
     // The assistant reads one person's holdings as their manager, never as a registrar and never a search or a file
     // (D122 item 5): a row that says otherwise is refused, and the read with it.
     check(

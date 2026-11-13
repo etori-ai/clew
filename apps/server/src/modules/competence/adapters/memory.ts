@@ -100,6 +100,8 @@ function assertReadLog(r: ReadLogEntry) {
     r.rows >= 0 &&
     (r.caller === 'person' || (r.caller === 'assistant' && r.kind === 'person' && r.relation === 'managed')) &&
     (r.minLevel === null || (r.minLevel >= 1 && r.minLevel <= 3)) &&
+    // Every type asked for, the first of them in `typeId` (migration 0068): none where `typeId` is none.
+    (r.typeId === null ? r.typeIds.length === 0 : r.typeIds[0] === r.typeId) &&
     (r.kind === 'person'
       ? r.personId !== null && r.typeId === null && r.minLevel === null && r.unitId === null
       : r.relation === 'registrar'
@@ -909,6 +911,7 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
           r =>
             (query.organisationId === undefined || r.organisationId === query.organisationId) &&
             (query.personId === undefined || r.personId === query.personId) &&
+            (query.typeId === undefined || r.typeIds.includes(query.typeId)) &&
             (query.readerId === undefined || r.readerId === query.readerId) &&
             (query.relation === undefined || r.relation === query.relation) &&
             (query.caller === undefined || r.caller === query.caller) &&

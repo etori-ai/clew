@@ -1436,7 +1436,7 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
         ]);
       });
 
-      test('the read log keeps a read as it is given and is read the newest first, narrowed by organisation, person, reader, relation, caller, kind and time', async () => {
+      test('the read log keeps a read as it is given and is read the newest first, narrowed by organisation, person, type, reader, relation, caller, kind and time', async () => {
         const w = await world();
         const entry = (id: string, extra: Partial<ReadLogEntry> = {}): ReadLogEntry => ({
           id: w.p + '-' + id,
@@ -1446,6 +1446,7 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
           caller: 'person',
           kind: 'search',
           typeId: w.p + '-t1',
+          typeIds: [w.p + '-t1'],
           minLevel: null,
           unitId: null,
           personId: null,
@@ -1453,14 +1454,16 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
           readAt: T,
           ...extra,
         });
-        const search = entry('l1', { minLevel: 2, unitId: 'unit-a' }),
-          opened = entry('l2', { kind: 'person', typeId: null, personId: w.anna, rows: 4, readAt: T2 }),
+        const none = { typeId: null, typeIds: [] };
+        // A search of two types that a person must both hold: one row, every type asked for, in the order chosen.
+        const search = entry('l1', { minLevel: 2, unitId: 'unit-a', typeIds: [w.p + '-t1', w.p + '-t2'] }),
+          opened = entry('l2', { kind: 'person', ...none, personId: w.anna, rows: 4, readAt: T2 }),
           // A manager's read of a report; a person's own reads are no longer logged, but a row from before stays.
           own = entry('l3', {
             kind: 'person',
             relation: 'managed',
             readerId: w.anna,
-            typeId: null,
+            ...none,
             personId: w.bo,
             readAt: T2,
           }),
@@ -1470,7 +1473,7 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
           matrix = entry('l6', {
             kind: 'export',
             relation: 'managed',
-            typeId: null,
+            ...none,
             rows: 8,
             readAt: '2026-11-10T06:00:00.000Z',
           }),
@@ -1479,7 +1482,7 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
             kind: 'person',
             relation: 'managed',
             caller: 'assistant',
-            typeId: null,
+            ...none,
             personId: w.bo,
             rows: 2,
             readAt: '2026-11-10T05:00:00.000Z',
@@ -1492,6 +1495,10 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
         // The newest first, then by id; another organisation's row is not this one's.
         expect(await read()).toEqual([opened, own, search, file, matrix, assisted]);
         expect(await read({ personId: w.anna })).toEqual([opened]);
+        // By a type: the searches and files that asked for it, alone or among others.
+        expect(await read({ typeId: w.p + '-t1' })).toEqual([search, file]);
+        expect(await read({ typeId: w.p + '-t2' })).toEqual([search]);
+        expect(await read({ typeId: w.p + '-t3' })).toEqual([]);
         expect(await read({ readerId: w.anna })).toEqual([own]);
         expect(await read({ relation: 'managed' })).toEqual([own, matrix, assisted]);
         expect(await read({ caller: 'assistant' })).toEqual([assisted]);
@@ -1516,36 +1523,42 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
           caller: 'person',
           kind: 'search',
           typeId: w.p + '-t1',
+          typeIds: [w.p + '-t1'],
           minLevel: null,
           unitId: null,
           personId: null,
           rows: 1,
           readAt: T,
         };
+        const none = { typeId: null, typeIds: [] };
         for (const wrong of [
+          // The types asked for begin with `typeId`, and there are none where it is none (migration 0068).
+          { ...base, typeIds: [] },
+          { ...base, typeIds: [w.p + '-t2', w.p + '-t1'] },
+          { ...base, kind: 'person' as const, ...none, typeIds: [w.p + '-t1'], personId: w.anna },
           // A person opened names whom and nothing of a search.
           { ...base, kind: 'person' as const },
           { ...base, kind: 'person' as const, personId: w.anna },
           // A search or a file names the type and nobody, and is a registrar's.
-          { ...base, typeId: null },
+          { ...base, ...none },
           { ...base, personId: w.anna },
           { ...base, relation: 'managed' as const },
           { ...base, kind: 'export' as const, relation: 'self' as const },
           // A manager's export names no type, and nobody.
           { ...base, kind: 'export' as const, relation: 'managed' as const },
-          { ...base, kind: 'export' as const, relation: 'managed' as const, typeId: null, unitId: 'unit-a' },
-          { ...base, kind: 'search' as const, relation: 'managed' as const, typeId: null },
+          { ...base, kind: 'export' as const, relation: 'managed' as const, ...none, unitId: 'unit-a' },
+          { ...base, kind: 'search' as const, relation: 'managed' as const, ...none },
           { ...base, minLevel: 4 },
           { ...base, rows: -1 },
           // The assistant reads one person's holdings as their manager, nothing else (D122 items 5 and 6): never as a
           // registrar, never a search or a file, and no caller but the two.
           { ...base, caller: 'assistant' as const },
-          { ...base, kind: 'person' as const, typeId: null, personId: w.anna, caller: 'assistant' as const },
+          { ...base, kind: 'person' as const, ...none, personId: w.anna, caller: 'assistant' as const },
           {
             ...base,
             kind: 'export' as const,
             relation: 'managed' as const,
-            typeId: null,
+            ...none,
             caller: 'assistant' as const,
           },
           { ...base, caller: 'robot' as never },

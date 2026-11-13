@@ -32,7 +32,8 @@ export async function phonebook(
   const answer = (await response.json()) as { output?: unknown; error?: { message: string } };
   if (answer.error) return { status: 400, body: { error: answer.error.message } };
   const view = capabilities.find(c => c.name === name)?.view;
-  // What the registry adds for the browser: whose view it is, and that a row with a ref can be chipped (the connector is a search source).
+  // What the registry adds for the browser: whose view it is, that a row with a ref can be chipped (the connector is a
+  // search source), and that its rows live outside Clew (a connector over the protocol, `passthrough`).
   const spec = view
     ? ({
         ...view,
@@ -40,6 +41,7 @@ export async function phonebook(
         connector: 'phonebook',
         source: 'Telefonboken',
         chip: (view.kind === 'table' || view.kind === 'list') && !!view.ref,
+        external: true,
       } as PanelViewSpec)
     : undefined;
   return { status: 200, body: { output: answer.output, ...(spec ? { view: spec } : {}) } };

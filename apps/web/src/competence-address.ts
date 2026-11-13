@@ -1,4 +1,20 @@
-import { COMPETENCE_SEARCH_PAGE_MAX, COMPETENCE_SEARCH_PAGE_SIZES, type CompetenceMatrixInput } from '@clew/contracts';
+import {
+  COMPETENCE_SEARCH_PAGE_MAX,
+  COMPETENCE_SEARCH_PAGE_SIZES,
+  COMPETENCE_SEARCH_SORTS,
+  COMPETENCE_SEARCH_STATUSES,
+  COMPETENCE_SEARCH_TYPES_MAX,
+  COMPETENCE_SEARCH_WINDOWS,
+  isCompetenceLevel,
+  type CompetenceLevel,
+  type CompetenceMatrixInput,
+  type CompetenceSearchBody,
+  type CompetenceSearchFileBody,
+  type CompetenceSearchOrder,
+  type CompetenceSearchSort,
+  type CompetenceSearchStatus,
+  type CompetenceSearchWindow,
+} from '@clew/contracts';
 import { viewPageHref } from './view-address';
 
 /**
@@ -6,13 +22,15 @@ import { viewPageHref } from './view-address';
  * holdings at `/competence`, and the manager's matrix at `/competence/matrix` (D108 item 11). The matrix names its set
  * of columns in the address, `by` (`area:<the area>` or `position:<the position's id>`) and `part` (from 1, left out for
  * the first), so a reload, a link and Back show the same columns; `only=attention` narrows what it shows to the people
- * and the competences where something needs the manager, which the page does with what the read answered, so it is
- * never sent to the server and the file is the set as read. Over the matrix, `requirement=new` is the dialog that
- * adds a requirement for one person, `register` and `competence` the registration of a certificate
+ * and the competences where something needs the manager, which the page does with what the read answered, so the read
+ * is never asked again; the file is asked for narrowed the same way. Over the matrix, `requirement=new` is the dialog
+ * that adds a requirement for one person, `register` and `competence` the registration of a certificate
  * (`register-address.ts`), `approve=<holding id>` the decision on a report's own registration (D108 item 7), and
  * `validate=<holding id>` the confirmation of a report's skill (D120 item 2). Over the reader's own page, `add=new` is
- * the dialog in which they register one of their own, and `skill=<holding id>` the one in which they change a skill
- * of theirs. This file imports nothing of the page, so a unit test loads it on its own.
+ * the dialog in which they register one of their own (with `competence=<type id>` from a row, the type it starts on),
+ * and `skill=<holding id>` the one in which they change a skill of theirs. Every one of these dialogs is closed by
+ * replacing its address, so Back never opens a write again (D83 rule 8); a choice of columns or the narrowing is a
+ * step of its own, so Back undoes it. This file imports nothing of the page, so a unit test loads it on its own.
  */
 export const COMPETENCE_PATH = '/competence';
 export const MATRIX_PATH = '/competence/matrix';
@@ -21,6 +39,8 @@ const BY = 'by',
 export const REQUIREMENT_PARAM = 'requirement';
 export const NEW = 'new';
 export const ADD_PARAM = 'add';
+/** The type the reader's own dialog starts on: the same name the matrix's registration uses (`register-address.ts`). */
+const ADD_TYPE_PARAM = 'competence';
 export const APPROVE_PARAM = 'approve';
 export const VALIDATE_PARAM = 'validate';
 export const SKILL_PARAM = 'skill';
@@ -75,8 +95,16 @@ export function attentionHref(on: boolean, search: URLSearchParams | string = ''
   if (on) q.set(ONLY, ATTENTION);
   return address(MATRIX_PATH, q);
 }
-/** The matrix as shown, as a file to download. */
-export const matrixFileHref = (input: CompetenceMatrixInput) => '/api/competence/matrix.csv' + matrixQuery(input);
+/**
+ * The matrix as shown, as a file to download: its set of columns, and narrowed to what needs the manager when the page
+ * is (`only=attention`), which the server narrows with the same definition (`competenceMatrixNeeding`).
+ */
+export function matrixFileHref(input: CompetenceMatrixInput, attention = false): string {
+  const q = new URLSearchParams(matrixQuery(input));
+  if (attention) q.set(ONLY, ATTENTION);
+  const s = q.toString();
+  return '/api/competence/matrix.csv' + (s ? `?${s}` : '');
+}
 /** The matrix with the dialog that adds a requirement for one person over it, the set of columns kept. */
 export function requirementHref(search: URLSearchParams | string): string {
   const q = new URLSearchParams(search);
@@ -89,18 +117,28 @@ export function withoutRequirement(search: URLSearchParams | string): string {
   q.delete(REQUIREMENT_PARAM);
   return address(MATRIX_PATH, q);
 }
-/** The reader's own page with the dialog that registers one of their own over it, the rest of the address kept. */
-export function addHref(search: URLSearchParams | string = ''): string {
+/**
+ * The reader's own page with the dialog that registers one of their own over it, the rest of the address kept; with a
+ * type, the dialog starts on it (`competence`, the name the matrix's registration uses too): a row of the reader's own
+ * list leads there, to renew what has run out or register what is missing.
+ */
+export function addHref(search: URLSearchParams | string = '', typeId?: string): string {
   const q = new URLSearchParams(search);
   q.set(ADD_PARAM, NEW);
+  if (typeId) q.set(ADD_TYPE_PARAM, typeId);
+  else q.delete(ADD_TYPE_PARAM);
   return address(COMPETENCE_PATH, q);
 }
 /** Whether the address opens that dialog. */
 export const adding = (search: URLSearchParams | string) => new URLSearchParams(search).get(ADD_PARAM) === NEW;
+/** The type the dialog starts on, while it is open; null for none. */
+export const addingType = (search: URLSearchParams | string) =>
+  adding(search) ? holdingIn(new URLSearchParams(search).get(ADD_TYPE_PARAM)) : null;
 /** The reader's own page with that dialog closed. */
 export function withoutAdd(search: URLSearchParams | string): string {
   const q = new URLSearchParams(search);
   q.delete(ADD_PARAM);
+  q.delete(ADD_TYPE_PARAM);
   return address(COMPETENCE_PATH, q);
 }
 /** The registration whose decision the address opens over the matrix, or null for none. */
@@ -156,6 +194,7 @@ export const skillOf = (search: URLSearchParams | string) => holdingIn(new URLSe
 export function skillHref(holdingId: string, search: URLSearchParams | string = ''): string {
   const q = new URLSearchParams(search);
   q.delete(ADD_PARAM);
+  q.delete(ADD_TYPE_PARAM);
   q.set(SKILL_PARAM, holdingId);
   return address(COMPETENCE_PATH, q);
 }
@@ -167,49 +206,129 @@ export function withoutSkill(search: URLSearchParams | string): string {
 }
 
 /**
- * Kompetenssökning (D121 item 4) at `/competence/search`: who in the organisation holds a type. What is searched for (the
- * type, a least level, a unit) is never in the address, as Användare keeps a searched name out of it (D100 item 5): the
- * type would tell a log line what the reader looked for. The page and its size are (`page`, `size`), so Back undoes a
- * step through the result; the search itself is kept in memory for the session (`competence-search-session.ts`).
+ * Kompetenssökning (D121 item 4) at `/competence/search`: who in the organisation holds every one of the chosen types.
+ * The whole search is in the address, by ids and codes only, never a name (D43: English names and values):
+ * `?type=<id>[,<id>…]&unit=<id>&level=<1-3>&status=<valid,expiring,expired>&until=<30|90|180>&sort=<…>&order=desc&page=<n>&size=<n>`,
+ * so a reload, a link and Back show the same search, and every change is one step in the history. A reload or a link
+ * therefore reads the search again, and that read is logged as any other (D121 item 5). The request itself still
+ * carries it in a body. The first page, the first size, the order by name and an ascending order are left out.
  */
 export const SEARCH_PATH = '/competence/search';
-const PAGE = 'page',
+const TYPE = 'type',
+  UNIT = 'unit',
+  LEVEL = 'level',
+  STATUS = 'status',
+  UNTIL = 'until',
+  SORT = 'sort',
+  ORDER = 'order',
+  PAGE = 'page',
   SIZE = 'size';
-/** The page of the result and its size the address names: a page from 1, a size of 25, 50 or 100; anything else is the first. */
-export function searchPageOf(search: URLSearchParams | string): {
+const SEARCH_PARAMS = [TYPE, UNIT, LEVEL, STATUS, UNTIL, SORT, ORDER, PAGE, SIZE];
+/** An id as the server takes one in a body: 1 to 80 characters, none of them a control character. */
+const isSearchId = (value: string) => value.length >= 1 && value.length <= 80 && !/[\u0000-\u001F\u007F]/.test(value);
+type PageSize = (typeof COMPETENCE_SEARCH_PAGE_SIZES)[number];
+/** The search an address names. */
+export interface SearchAddress {
+  /** The chosen types, in the order chosen; empty before one is chosen. */
+  typeIds: string[];
+  unitId: string | null;
+  minLevel: CompetenceLevel | null;
+  /** The statuses asked for, in the contract's order; empty for every status. */
+  status: CompetenceSearchStatus[];
+  until: CompetenceSearchWindow | null;
+  sort: CompetenceSearchSort;
+  order: CompetenceSearchOrder;
   page: number;
-  pageSize: (typeof COMPETENCE_SEARCH_PAGE_SIZES)[number];
-} {
+  pageSize: PageSize;
+  /**
+   * What the address names that no search can mean, so nothing is asked: an id that is no id (`type`, `unit`), or more
+   * types than one search takes (`types`). A code the lists do not hold (a status, a window, an order) is left out
+   * instead, as Användare leaves one out (D100 item 2): it names nobody and nothing.
+   */
+  unreadable: 'type' | 'types' | 'unit' | null;
+}
+/** The search the address names; anything it cannot mean as a code is the default. */
+export function searchOf(search: URLSearchParams | string): SearchAddress {
   const q = new URLSearchParams(search);
-  const page = Number(q.get(PAGE)),
+  const typed = (q.get(TYPE) ?? '').split(',').filter(Boolean),
+    unit = q.get(UNIT),
+    level = Number(q.get(LEVEL)),
+    asked = (q.get(STATUS) ?? '').split(','),
+    until = Number(q.get(UNTIL)),
+    sort = q.get(SORT),
+    page = Number(q.get(PAGE)),
     size = Number(q.get(SIZE));
+  const typeIds = [...new Set(typed)];
   return {
+    typeIds: typeIds.length <= COMPETENCE_SEARCH_TYPES_MAX && typeIds.every(isSearchId) ? typeIds : [],
+    unitId: unit && isSearchId(unit) ? unit : null,
+    minLevel: isCompetenceLevel(level) ? level : null,
+    status: COMPETENCE_SEARCH_STATUSES.filter(s => asked.includes(s)),
+    until: COMPETENCE_SEARCH_WINDOWS.find(n => n === until) ?? null,
+    sort: COMPETENCE_SEARCH_SORTS.find(s => s === sort) ?? 'name',
+    order: q.get(ORDER) === 'desc' ? 'desc' : 'asc',
     page: Number.isInteger(page) && page > 1 && page <= COMPETENCE_SEARCH_PAGE_MAX ? page : 1,
     pageSize: COMPETENCE_SEARCH_PAGE_SIZES.find(n => n === size) ?? COMPETENCE_SEARCH_PAGE_SIZES[0],
+    unreadable: !typeIds.every(isSearchId)
+      ? 'type'
+      : typeIds.length > COMPETENCE_SEARCH_TYPES_MAX
+        ? 'types'
+        : unit && !isSearchId(unit)
+          ? 'unit'
+          : null,
   };
 }
+/** A change to the search; what it leaves out stays as it is. */
+export type SearchChange = Partial<Omit<SearchAddress, 'unreadable'>>;
 /**
- * The search page at another page or size, everything else in the address kept: the first page and the first size are
- * left out, and a new size starts again from the first page.
+ * The search page with a change, everything else in the address kept (the panel's address too). Anything but a step to
+ * another page starts again from the first page; the defaults are left out, the parts are written in one order, and the
+ * lists with plain commas, so one search has one address.
  */
-export function searchHref(change: { page?: number; size?: number }, search: URLSearchParams | string = ''): string {
+export function searchHref(change: SearchChange, search: URLSearchParams | string = ''): string {
   const q = new URLSearchParams(search);
-  if (change.size !== undefined) {
-    q.delete(PAGE);
-    if (change.size === COMPETENCE_SEARCH_PAGE_SIZES[0]) q.delete(SIZE);
-    else q.set(SIZE, String(change.size));
-  }
-  if (change.page !== undefined) {
-    if (change.page > 1) q.set(PAGE, String(change.page));
-    else q.delete(PAGE);
-  }
-  return address(SEARCH_PATH, q);
+  const next = { ...searchOf(q), ...change, ...('page' in change ? {} : { page: 1 }) };
+  for (const name of SEARCH_PARAMS) q.delete(name);
+  if (next.typeIds.length) q.set(TYPE, next.typeIds.join(','));
+  if (next.unitId) q.set(UNIT, next.unitId);
+  if (next.minLevel) q.set(LEVEL, String(next.minLevel));
+  const status = COMPETENCE_SEARCH_STATUSES.filter(s => next.status.includes(s));
+  if (status.length) q.set(STATUS, status.join(','));
+  if (next.until) q.set(UNTIL, String(next.until));
+  if (next.sort !== 'name') q.set(SORT, next.sort);
+  if (next.order === 'desc') q.set(ORDER, 'desc');
+  if (next.page > 1) q.set(PAGE, String(next.page));
+  if (next.pageSize !== COMPETENCE_SEARCH_PAGE_SIZES[0]) q.set(SIZE, String(next.pageSize));
+  return address(SEARCH_PATH, q).replace(/%2C/gi, ',');
 }
-/** The search page from its first page, its size kept: a new search starts there. */
-export function firstSearchPage(search: URLSearchParams | string = ''): string {
+/** The address as `searchHref` writes it, nothing changed: two addresses of one search are equal in this form. */
+export const sameSearch = (search: URLSearchParams | string) => searchHref({ page: searchOf(search).page }, search);
+/** The search page with nothing searched for, the order and the page size kept: where "Rensa sökningen" leads. */
+export function noSearchHref(search: URLSearchParams | string = ''): string {
+  const { sort, order, pageSize } = searchOf(search);
   const q = new URLSearchParams(search);
-  q.delete(PAGE);
-  return address(SEARCH_PATH, q);
+  for (const name of SEARCH_PARAMS) q.delete(name);
+  return searchHref({ sort, order, pageSize }, q);
+}
+/** The body the address asks the server with, or null when it names no search that can be asked. */
+export function searchBodyOf(a: SearchAddress): CompetenceSearchBody | null {
+  if (a.unreadable || a.typeIds.length === 0) return null;
+  return {
+    typeIds: a.typeIds,
+    ...(a.minLevel ? { minLevel: a.minLevel } : {}),
+    ...(a.unitId ? { unitId: a.unitId } : {}),
+    ...(a.status.length ? { status: a.status } : {}),
+    ...(a.until ? { until: a.until } : {}),
+    ...(a.sort !== 'name' ? { sort: a.sort } : {}),
+    ...(a.order !== 'asc' ? { order: a.order } : {}),
+    page: a.page,
+    pageSize: a.pageSize,
+  };
+}
+/** The body of the file of the search on screen: the same search, every page of it. */
+export function searchFileBodyOf(body: CompetenceSearchBody): CompetenceSearchFileBody {
+  const { page: _page, pageSize: _size, ...file } = body;
+  return file;
 }
 /**
  * One person's holdings opened from a hit (D121 item 4): the page of the read `competence.holdings` (D116) for that

@@ -540,14 +540,28 @@ describe('the reads', () => {
       'Intyg registreras av den som är chef för en enhet.',
     );
   });
-  test("what needs attention is the reports' expired and expiring holdings, the expired first; a renewal clears the row", async () => {
+  test('what needs attention is the requirements not met among the reports, the expired first; a certificate nothing requires is not one; a renewal clears the row', async () => {
     const types = await world();
+    // Nothing is required of anyone yet: Anna's expired and expiring certificates are facts about her, on her holdings,
+    // and nothing the manager is told to act on (the product owner's definition, 2026-11-13).
+    expect((await competence.attention(boss)).rows).toEqual([]);
+    expect(await competence.summary(boss)).toEqual({ expired: 0, missing: 0, expiring: 0, people: 0, reports: 2 });
+    expect((await competence.holdings(boss, { person: 'anna.a' })).rows.map(r => r.status)).toEqual([
+      'expired',
+      'expiring',
+      'valid',
+    ]);
+    // Required of her, both are requirements not met, now or soon; Bo's valid one, required too, is not.
+    await competence.addRequirement(boss, { typeId: types.hot, personId: 'anna' });
+    await competence.addRequirement(boss, { typeId: types.hlr, personId: 'anna' });
+    await competence.addRequirement(boss, { typeId: types.hot, personId: 'bo' });
     const out = await competence.attention(boss);
     expect(checkContract(CompetenceAttentionOutputSchema, out)).toBe(true);
     expect(out.rows.map(r => [r.name, r.competence, r.status])).toEqual([
       ['Anna Andersson', 'Heta arbeten', 'expired'],
       ['Anna Andersson', 'HLR', 'expiring'],
     ]);
+    expect(out).not.toHaveProperty('omitted');
     expect(await competence.summary(boss)).toEqual({ expired: 1, missing: 0, expiring: 1, people: 1, reports: 2 });
     await competence.registerHolding(boss, 'anna', {
       typeId: types.hot,
@@ -560,6 +574,42 @@ describe('the reads', () => {
     expect((await competence.attention(other)).rows).toEqual([]);
     await expect(competence.attention(asAnna)).rejects.toBeInstanceOf(ForbiddenError);
     expect(await competence.summary(asAnna)).toBeNull();
+  });
+  test('the list gives at most 500 rows and says how many more there are; the figure counts them all', async () => {
+    await world();
+    // 501 types required of Bo that he holds nothing of: 501 requirements not met.
+    for (let i = 0; i < 501; i++) {
+      const id = `t-many-${String(i).padStart(3, '0')}`;
+      store.state.types.set(id, {
+        id,
+        organisationId: ORG,
+        name: `Krav ${String(i).padStart(3, '0')}`,
+        area: 'Många',
+        kind: 'certificate',
+        validityMonths: null,
+        archivedAt: null,
+        createdBy: 'test',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        sourceUri: null,
+        mergedInto: null,
+      });
+      store.state.requirements.set('r-' + id, {
+        id: 'r-' + id,
+        organisationId: ORG,
+        typeId: id,
+        positionCode: null,
+        unitId: null,
+        personId: 'bo',
+        minLevel: null,
+        createdBy: 'boss',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      });
+    }
+    const out = await competence.attention(boss);
+    expect(checkContract(CompetenceAttentionOutputSchema, out)).toBe(true);
+    expect(out.rows).toHaveLength(500);
+    expect(out.omitted).toBe(1);
+    expect((await competence.summary(boss))?.missing).toBe(501);
   });
   test('about people: one row per report asked by user name, the counts, and a row for someone who holds nothing', async () => {
     await world();
@@ -671,6 +721,7 @@ describe('the built-in connector', () => {
       return p;
     });
   const registry = () => new Registry().register(connector());
+  /** Anna: Heta arbeten expired and HLR expiring, both required of her by her manager. Bo: Heta arbeten valid for years. */
   async function world() {
     const types = await catalogue();
     await competence.registerHolding(boss, 'anna', {
@@ -684,6 +735,8 @@ describe('the built-in connector', () => {
       issuedOn: '2025-03-01',
       expiresOn: '2030-02-28',
     });
+    await competence.addRequirement(boss, { typeId: types.hot, personId: 'anna' });
+    await competence.addRequirement(boss, { typeId: types.hlr, personId: 'anna' });
     return types;
   }
 
@@ -719,16 +772,18 @@ describe('the built-in connector', () => {
       title: 'Kompetens',
       core: true,
       lens: false,
-      page: { title: 'Registrera intyg', href: '/staff?register={id}' },
+      // A query alone: the dialog lies over the page the person is on (their own page, Personal), never moves them.
+      page: { title: 'Registrera intyg', href: '?register={id}' },
     });
     expect(r.aboutReads(actor(asAnna), 'person')).toEqual([]);
     staff.get('boss')!.units[0]!.people.push(person('eve', 'Eve Ek', 'eve.e'));
     const out = await r.run<{ rows: unknown[] }>(actor(boss), 'competence.person', {
       keys: ['anna.a', 'eve.e', 'dan.d'],
     });
+    // Where the person stands, and no counts beside it: the holdings drawn under it say every fact (no digest).
     expect(out.rows).toEqual([
-      { key: 'anna.a', status: 'Utgånget', due: '1 har gått ut, 1 går ut inom 90 dagar', held: '2 registrerade' },
-      { key: 'eve.e', status: 'Inget registrerat', held: 'Inga' },
+      { key: 'anna.a', status: 'Utgånget' },
+      { key: 'eve.e', status: 'Inget registrerat' },
     ]);
     // Only what has run out or soon will has a tone, so only that is a mark on a row.
     expect(personView.kind === 'list' && personView.fields[0]!.tones).toEqual({
@@ -748,21 +803,21 @@ describe('the built-in connector', () => {
     await expect(r.run(actor(asAnna), 'competence.attention', {})).rejects.toThrow();
   });
 
-  test('the figure says what has run out for a manager, is calm when nothing has, and is absent for an employee', async () => {
+  test('the figure counts requirements not met for a manager, is calm when every one is, and is absent for an employee', async () => {
     const r = registry();
     const figureOf = async (p: AuthenticatedContext) =>
       (await r.areas(actor(p))).find(a => a.id === 'competence')?.figure ?? null;
     expect(await figureOf(boss)).toMatchObject({
-      label: 'Inga kompetenser saknas eller går ut inom 90 dagar.',
+      label: 'Alla krav uppfylls, och inget går ut inom 90 dagar.',
       tone: 'ok',
     });
     const types = await world();
     expect(await figureOf(boss)).toMatchObject({
-      label: 'Kompetenser som har gått ut',
+      label: 'Krav som inte uppfylls',
       value: '1',
       comparison: '1 till går ut inom 90 dagar',
       tone: 'alert',
-      opens: { capability: 'competence.attention', title: 'Kompetenser att åtgärda' },
+      opens: { capability: 'competence.attention', title: 'Krav som inte uppfylls' },
     });
     await competence.registerHolding(boss, 'anna', {
       typeId: types.hot,
@@ -770,11 +825,47 @@ describe('the built-in connector', () => {
       expiresOn: '2031-10-31',
     });
     expect(await figureOf(boss)).toMatchObject({
-      label: 'Kompetenser som går ut inom 90 dagar',
+      label: 'Krav som snart inte uppfylls',
       value: '1',
       tone: 'warn',
     });
     expect(await figureOf(asAnna)).toBeNull();
+  });
+
+  test('the figure, the manager’s card and the list count the same; the tile and the card lead to the matrix narrowed', async () => {
+    const types = await world();
+    // An expired certificate nothing requires of Bo: a fact about him, not counted anywhere a manager is told to act.
+    await competence.registerHolding(boss, 'bo', {
+      typeId: types.hlr,
+      issuedOn: '2020-01-10',
+      expiresOn: '2024-01-10',
+    });
+    const r = registry();
+    const figure = (await r.areas(actor(boss))).find(a => a.id === 'competence')?.figure;
+    const [card] = await r.scan(actor(boss));
+    const rows = (
+      await r.run<{ rows: Array<{ name: string; status: string }> }>(actor(boss), 'competence.attention', {})
+    ).rows;
+    const unmet = rows.filter(x => x.status !== 'expiring').length;
+    expect(figure).toMatchObject({ value: String(unmet), comparison: '1 till går ut inom 90 dagar' });
+    expect(card!.summary).toBe('1 har gått ut och 1 går ut inom 90 dagar, hos 1 person.');
+    expect(rows.map(x => x.name)).not.toContain('Bo Berg');
+    // The read declares the page its rows are worked on: what opens it without input leads to the matrix narrowed to
+    // the same (D116), by declaration.
+    expect(r.views(actor(boss)).find(v => v.capability === 'competence.attention')).toMatchObject({
+      kind: 'table',
+      page: '/competence/matrix?only=attention',
+    });
+    expect(card!.actions.map(a => a.capability)).toEqual(['competence.attention']);
+    // Nobody else's read declares one.
+    expect(
+      r
+        .views(actor(boss))
+        .filter(v => v.page)
+        .map(v => v.capability),
+    ).toEqual(['competence.attention']);
+    // Bo's own card for his expired certificate is kept, required or not (his own, not his manager's).
+    expect((await r.scan(actor(asBo))).map(d => d.title)).toEqual(['HLR gick ut 10 januari']);
   });
 
   test('the scan gives a person one card per competence of their own, with the end date as the deadline', async () => {
@@ -799,11 +890,13 @@ describe('the built-in connector', () => {
     const [card] = await registry().scan(actor(boss));
     expect(card).toMatchObject({
       topic: 'competence:attention',
-      title: 'Kompetenser att åtgärda bland dina medarbetare',
-      summary: '1 kompetens har gått ut och 1 kompetens går ut inom 90 dagar, hos 1 person.',
-      reason: 'Kompetenser har gått ut',
+      title: 'Krav som inte uppfylls bland dina medarbetare',
+      summary: '1 har gått ut och 1 går ut inom 90 dagar, hos 1 person.',
+      reason: 'Har gått ut',
     });
-    expect(card!.actions.map(a => a.capability)).toEqual(['competence.attention']);
+    expect(card!.actions.map(a => [a.capability, a.label])).toEqual([
+      ['competence.attention', 'Visa medarbetarnas kompetens'],
+    ]);
     const text = JSON.stringify(card);
     for (const name of [...NAMES, ...TYPE_NAMES]) expect(text).not.toContain(name);
     await competence.registerHolding(boss, 'anna', {
@@ -1282,6 +1375,8 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
         userName: 'anna.a',
         name: 'Anna Andersson',
         competence: 'Socionomexamen',
+        // The type, from which her own page registers one (the row's name opens the dialog with it chosen).
+        typeId: degree,
         area: 'Examen',
         kind: 'degree',
         status: 'missing',
@@ -1302,19 +1397,29 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
       ]);
     });
 
-    test('what is to act on among the reports counts missing beside expired and expiring, and names each in its row', async () => {
+    test('what is to act on among the reports counts missing beside expired and expiring of what is required, and names each in its row', async () => {
       directory();
       const { hot, degree } = await catalogue();
       await competence.addRequirement(admin, { typeId: degree, positionCode: USK });
       await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2021-06-01', expiresOn: '2026-05-31' });
+      // Anna's Heta arbeten has run out, but nothing requires it of her: it is no requirement not met.
+      const before = await competence.attention(boss);
+      expect(before.rows.map(r => [r.name, r.competence, r.status])).toEqual([
+        ['Anna Andersson', 'Socionomexamen', 'missing'],
+        ['Bo Berg', 'Socionomexamen', 'missing'],
+      ]);
+      expect(await competence.summary(boss)).toEqual({ expired: 0, missing: 2, expiring: 0, people: 2, reports: 2 });
+      // Required of her position, it is one.
+      await competence.addRequirement(admin, { typeId: hot, positionCode: USK });
       const out = await competence.attention(boss);
       expect(checkContract(CompetenceAttentionOutputSchema, out)).toBe(true);
       expect(out.rows.map(r => [r.name, r.competence, r.status])).toEqual([
         ['Anna Andersson', 'Heta arbeten', 'expired'],
         ['Anna Andersson', 'Socionomexamen', 'missing'],
+        ['Bo Berg', 'Heta arbeten', 'missing'],
         ['Bo Berg', 'Socionomexamen', 'missing'],
       ]);
-      expect(await competence.summary(boss)).toEqual({ expired: 1, missing: 2, expiring: 0, people: 2, reports: 2 });
+      expect(await competence.summary(boss)).toEqual({ expired: 1, missing: 3, expiring: 0, people: 2, reports: 2 });
       expect((await competence.aboutPeople(boss, ['anna.a'])).rows).toEqual([
         { key: 'anna.a', expired: 1, missing: 1, expiring: 0, holdings: 1 },
       ]);
@@ -1339,7 +1444,7 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
         }),
       );
 
-    test('the read about a person says Saknas after Utgånget and before Går ut snart, with what is missing counted', async () => {
+    test('the read about a person says Saknas after Utgånget and before Går ut snart, and nothing beside it', async () => {
       directory();
       const { hot, hlr, degree } = await catalogue();
       await competence.addRequirement(admin, { typeId: degree, positionCode: USK });
@@ -1347,18 +1452,9 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
       const r = registry();
       const read = async () =>
         (await r.run<{ rows: unknown[] }>(actor(boss), 'competence.person', { keys: ['anna.a'] })).rows;
-      expect(await read()).toEqual([
-        { key: 'anna.a', status: 'Saknas', due: '1 saknas, 1 går ut inom 90 dagar', held: '1 registrerade' },
-      ]);
+      expect(await read()).toEqual([{ key: 'anna.a', status: 'Saknas' }]);
       await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2021-06-01', expiresOn: '2026-05-31' });
-      expect(await read()).toEqual([
-        {
-          key: 'anna.a',
-          status: 'Utgånget',
-          due: '1 har gått ut, 1 saknas, 1 går ut inom 90 dagar',
-          held: '2 registrerade',
-        },
-      ]);
+      expect(await read()).toEqual([{ key: 'anna.a', status: 'Utgånget' }]);
     });
 
     test('the figure and the manager’s card count what is missing and name nobody; the person gets a card per missing type', async () => {
@@ -1368,13 +1464,13 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
       const r = registry();
       const figureOf = async (p: AuthenticatedContext) =>
         (await r.areas(actor(p))).find(a => a.id === 'competence')?.figure ?? null;
-      expect(await figureOf(boss)).toMatchObject({ label: 'Kompetenser som saknas', value: '2', tone: 'alert' });
+      expect(await figureOf(boss)).toMatchObject({ label: 'Krav som inte uppfylls', value: '2', tone: 'alert' });
       const [card] = await r.scan(actor(boss));
       expect(card).toMatchObject({
         topic: 'competence:attention',
-        title: 'Kompetenser att åtgärda bland dina medarbetare',
-        summary: '2 kompetenser saknas, hos 2 personer.',
-        reason: 'Kompetenser saknas',
+        title: 'Krav som inte uppfylls bland dina medarbetare',
+        summary: '2 saknas, hos 2 personer.',
+        reason: 'Saknas',
       });
       const text = JSON.stringify(card);
       for (const name of [...NAMES, ...TYPE_NAMES]) expect(text).not.toContain(name);
@@ -1396,21 +1492,21 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
         ],
       });
       expect(own).not.toHaveProperty('deadline');
-      // An expired holding beside it: both in the figure, the expired first in the card.
+      // An expired holding beside it that nothing requires: not in the figure or the manager's card, still in hers.
       await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2021-06-01', expiresOn: '2026-05-31' });
-      expect(await figureOf(boss)).toMatchObject({
-        label: 'Kompetenser som har gått ut eller saknas',
-        value: '3',
-        tone: 'alert',
-      });
-      expect((await r.scan(actor(boss)))[0]).toMatchObject({
-        summary: '1 kompetens har gått ut och 2 kompetenser saknas, hos 2 personer.',
-        reason: 'Kompetenser har gått ut',
-      });
+      expect(await figureOf(boss)).toMatchObject({ label: 'Krav som inte uppfylls', value: '2', tone: 'alert' });
+      expect((await r.scan(actor(boss)))[0]).toMatchObject({ summary: '2 saknas, hos 2 personer.', reason: 'Saknas' });
       expect((await r.scan(actor(asAnna))).map(d => d.title)).toEqual([
         'Heta arbeten gick ut 31 maj',
         'Socionomexamen saknas',
       ]);
+      // Required of her, both: the expired first in the card.
+      await competence.addRequirement(boss, { typeId: hot, personId: 'anna' });
+      expect(await figureOf(boss)).toMatchObject({ label: 'Krav som inte uppfylls', value: '3', tone: 'alert' });
+      expect((await r.scan(actor(boss)))[0]).toMatchObject({
+        summary: '1 har gått ut och 2 saknas, hos 2 personer.',
+        reason: 'Har gått ut',
+      });
     });
 
     test('the read about a unit counts the reader’s own reports and names nobody; its row opens the table per required type and target', async () => {
@@ -1445,9 +1541,10 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
         keys: ['u1', 'u2', 'u3', 'nope'],
       });
       expect(units.rows).toEqual([
-        { key: 'u1', covered: '1 av 2 medarbetare', short: '1 medarbetare', targets: '0 av 2 nås', below: '1 mål' },
+        // Each pair says what it counts with the same words: 1 of 2 meet every requirement, and 1 does not.
+        { key: 'u1', covered: '1 av 2', short: '1 uppfyller inte', targets: '0 av 2 nås', below: '1 under målet' },
         // Nobody on Enhet 2 holds the sjuksköterska position: that target is neither reached nor missed.
-        { key: 'u2', covered: '1 av 1 medarbetare', targets: '0 av 1 nås' },
+        { key: 'u2', covered: '1 av 1', targets: '0 av 1 nås' },
       ]);
       const text = JSON.stringify(units);
       for (const name of NAMES) expect(text).not.toContain(name);
@@ -2008,6 +2105,14 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
         at: now.toISOString(),
         details: { people: 2, types: 2 },
       });
+      // Narrowed as the page is (`only: 'attention'`): with HLR registered for Bo, his soon expiring Heta arbeten is
+      // not required of him and needs nobody, so he is not in the file; Anna's missing Heta arbeten is, alone.
+      await competence.registerHolding(boss, 'bo', { typeId: hlr, issuedOn: '2025-12-01', expiresOn: '2028-01-31' });
+      const narrowed = await competence.exportMatrix(boss, { only: 'attention' });
+      expect(narrowed.text).toBe(
+        '﻿' + ['Namn;Användarnamn;Heta arbeten', 'Anna Andersson;anna.a;Saknas'].join('\r\n') + '\r\n',
+      );
+      expect(lastAudit()).toMatchObject({ action: 'competence.matrix_exported', details: { people: 1, types: 1 } });
       const written = audits().length;
       await expect(competence.exportMatrix(asAnna)).rejects.toBeInstanceOf(ForbiddenError);
       expect(audits().length).toBe(written);
@@ -3126,6 +3231,7 @@ describe('skills with levels and interest (D120)', () => {
         userName: 'anna.a',
         name: 'Anna Andersson',
         competence: 'Engelska',
+        typeId: english,
         area: 'Språk',
         kind: 'skill',
         status: 'valid',
@@ -3529,6 +3635,7 @@ describe('skills with levels and interest (D120)', () => {
         userName: 'anna.a',
         name: 'Anna Andersson',
         competence: 'Journalsystem',
+        typeId: records,
         area: 'Digital kompetens',
         kind: 'skill',
         status: 'missing',
@@ -3647,7 +3754,10 @@ describe('skills with levels and interest (D120)', () => {
         'source',
         'readAt',
       ]);
-      expect(attentionView.kind === 'table' && attentionView.noun).toEqual({ one: 'kompetens', other: 'kompetenser' });
+      expect(attentionView.kind === 'table' && attentionView.noun).toEqual({
+        one: 'krav som inte uppfylls',
+        other: 'krav som inte uppfylls',
+      });
       expect(await competence.summary(boss)).toMatchObject({ missing: 2, expired: 0, expiring: 0, people: 2 });
       const registry = new Registry().register(competenceConnector(competence, async a => personaOf(a.id, a.role)));
       const actor = (p: AuthenticatedContext): Actor => ({
@@ -3660,9 +3770,9 @@ describe('skills with levels and interest (D120)', () => {
       // The read about people counts a skill held as registered, and the one that does not reach the level as missing.
       expect(
         (await registry.run<{ rows: unknown[] }>(actor(boss), 'competence.person', { keys: ['anna.a'] })).rows,
-      ).toEqual([{ key: 'anna.a', status: 'Saknas', due: '1 saknas', held: '2 registrerade' }]);
+      ).toEqual([{ key: 'anna.a', status: 'Saknas' }]);
       expect((await registry.areas(actor(boss))).find(a => a.id === 'competence')?.figure).toMatchObject({
-        label: 'Kompetenser som saknas',
+        label: 'Krav som inte uppfylls',
         value: '2',
       });
       // Her card says what would meet it: her rating waits for her manager.

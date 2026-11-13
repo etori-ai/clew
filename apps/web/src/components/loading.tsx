@@ -61,26 +61,23 @@ export function ContentSkeleton({
   );
 }
 
-/** Hem's side cards reserve their place from the first paint, including their real heading. */
-export function AsideSkeleton({ kind }: { kind: 'today' | 'since' }) {
-  const day = kind === 'today';
-  const title = day ? 'I dag' : 'Sedan i går';
+/** Hem's "I dag" reserves its place from the first paint, including its real heading. */
+export function AsideSkeleton() {
+  const title = 'I dag';
   return (
-    <Card padding={4} variant={day ? 'default' : 'muted'}>
-      <VStack gap={day ? 1 : 2} as="section" aria-label={title}>
+    <Card padding={4}>
+      <VStack gap={1} as="section" aria-label={title}>
         <Heading level={3} accessibilityLevel={2}>
           {title}
         </Heading>
         <VisuallyHidden role="status">Hämtar {title.toLowerCase()} …</VisuallyHidden>
         {Array.from({ length: 3 }, (_, i) => (
           <VStack key={i} gap={0}>
-            {day && i > 0 && <Divider />}
-            <HStack gap={3} paddingBlock={day ? 3 : 1}>
-              {day && (
-                <VStack width={52}>
-                  <Skeleton height={18} width={40} index={i} />
-                </VStack>
-              )}
+            {i > 0 && <Divider />}
+            <HStack gap={3} paddingBlock={3}>
+              <VStack width={52}>
+                <Skeleton height={18} width={40} index={i} />
+              </VStack>
               <VStack gap={1.5} width="100%">
                 <Skeleton height={18} width="85%" index={i} />
                 <Skeleton height={14} width="60%" index={i} />
@@ -88,7 +85,6 @@ export function AsideSkeleton({ kind }: { kind: 'today' | 'since' }) {
             </HStack>
           </VStack>
         ))}
-        {!day && <Skeleton height={14} width="45%" />}
       </VStack>
     </Card>
   );

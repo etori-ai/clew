@@ -25,24 +25,21 @@ for (const viewport of [{ width: 1440, height: 1000 }, narrow]) {
       if (refresh) await page.reload();
       else await page.goto('/');
       await expect(page.getByRole('region', { name: 'I dag', exact: true })).toBeAttached();
-      await expect(page.getByRole('region', { name: 'Sedan i går' })).toBeAttached();
       await expect(page.getByText('Hämtar det som behöver dig …')).toBeAttached();
       await expect(page.getByText('Lugnt läge', { exact: true })).toHaveCount(0);
       await composer(page).fill('En fråga medan sidan hämtas');
       const before = await composer(page).boundingBox();
       await page.screenshot({ path: `test-results/screens/loading-${viewport.width}.png` });
       threads();
-      // Each block arrives with its own read (D112 item 2): the work items and Sedan i går with the cards, while the
-      // figures keep their shape until the areas have answered and the day until it has.
+      // Each block arrives with its own read (D112 item 2): the work items with the cards, while the figures keep their
+      // shape until the areas have answered and the day until it has.
       await expect(page.getByText('Hämtar det som behöver dig …')).toHaveCount(0);
-      await expect(page.getByText('Hämtar sedan i går …')).toHaveCount(0);
       await expect(page.getByRole('region', { name: 'Läget', exact: true })).toHaveAttribute('aria-busy', 'true');
       await expect(page.getByText('Hämtar i dag …')).toBeAttached();
       areas();
       await expect(page.getByRole('region', { name: 'Läget', exact: true })).not.toHaveAttribute('aria-busy', 'true');
       day();
       await expect(page.getByText('Hämtar i dag …')).toHaveCount(0);
-      await expect(page.getByText('Hämtar sedan i går …')).toHaveCount(0);
       await expect(composer(page)).toHaveText('En fråga medan sidan hämtas');
       await expect(composer(page)).toBeFocused();
       expect(Math.abs((await composer(page).boundingBox())!.y - before!.y)).toBeLessThan(2);
@@ -54,12 +51,12 @@ for (const viewport of [{ width: 1440, height: 1000 }, narrow]) {
 }
 
 for (const colorScheme of ['light', 'dark'] as const) {
-  test(`the muted card has visible placeholders in ${colorScheme} appearance`, async ({ page, api: _ }) => {
+  test(`the day's card has visible placeholders in ${colorScheme} appearance`, async ({ page, api: _ }) => {
     await page.emulateMedia({ colorScheme });
     const release = await hold(page, '**/api/threads');
     await page.goto('/');
-    const card = page.getByRole('region', { name: 'Sedan i går' });
-    await expect(card.getByText('Hämtar sedan i går …')).toBeAttached();
+    const card = page.getByRole('region', { name: 'I dag', exact: true });
+    await expect(card.getByText('Hämtar i dag …')).toBeAttached();
     const colors = await card
       .locator('.astryx-skeleton')
       .first()
@@ -69,7 +66,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       }));
     expect(colors.skeleton).not.toBe(colors.card);
     release();
-    await expect(card.getByText('Hämtar sedan i går …')).toHaveCount(0);
+    await expect(card.getByText('Hämtar i dag …')).toHaveCount(0);
   });
 }
 

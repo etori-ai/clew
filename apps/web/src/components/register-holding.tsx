@@ -252,14 +252,16 @@ export function useHoldingFields(types: CompetenceType[], preset: string | null,
             presentation="adaptive-bottom-sheet"
             {...status(issuedProblem)}
           />
+          {/* One text for an empty end date, in either dialog: what to fill in, and what an empty field means for the
+              chosen type (its validity counted from the issue, or valid until further notice). */}
           <DateInput
             ref={expiresField}
             label="Giltigt till"
-            description={
+            description={`Slutdatumet som står på intyget. Lämna tomt om det inte har något: ${
               type?.validityMonths
-                ? `Lämna tomt om intyget saknar slutdatum: då gäller det ${months(type.validityMonths)} från utfärdandet.`
-                : 'Slutdatumet som står på intyget. Lämna tomt om det inte har något.'
-            }
+                ? `då gäller det ${months(type.validityMonths)} från utfärdandet.`
+                : 'då gäller det tills vidare.'
+            }`}
             value={expiresOn as never}
             onChange={value => setExpiresOn(value ?? undefined)}
             weekStartsOn="mon"
@@ -276,10 +278,12 @@ export function useHoldingFields(types: CompetenceType[], preset: string | null,
 }
 
 /**
- * Registering a holding for a person who reports to the manager (D108 item 7, D120 item 2). A dialog over the list,
- * with the person named in its heading and in the address (`?register=<personId>`, D83): closing it, by Avbryt, Esc or
- * the close button, is the list again with the focus on what opened it, which Astryx gives back. The way in is the page
- * the competence module declares on its read about a person (D97): "Registrera intyg" in the person's Kompetens section.
+ * Registering a holding for a person who reports to the manager (D108 item 7, D120 item 2). A dialog over the page the
+ * manager is on, with the person named in its heading and in the address (`?register=<personId>`, D83): closing it, by
+ * Avbryt, Esc or the close button, is the same page again, the address replaced so Back never opens it again, with the
+ * focus on what opened it, which Astryx gives back. The way in is the page the competence module declares on its read
+ * about a person (D97), a query alone (`?register={id}`), so "Registrera intyg" in the person's Kompetens section opens
+ * it over the person's page, and Personal's row menu over Personal.
  * Its title names what is registered: a certificate with its dates, or a skill with its level, confirmed by the manager
  * who registers it.
  *
@@ -320,10 +324,12 @@ export function RegisterHolding({
     toastId: 'competence:register',
   });
   const form = useHoldingFields(types, preset);
+  // Closing replaces the address that opened the dialog, so Back never opens a write again (D83 rule 8): Back leaves
+  // the page the dialog lay over, as it would have before it opened.
   const close = () => {
     form.reset();
     action.reset();
-    navigate(withoutRegister(pathname, search));
+    navigate(withoutRegister(pathname, search), { replace: true });
   };
   const submit = async () => {
     if (action.busy || !person) return;
@@ -408,7 +414,8 @@ export const NO_APPROVER = 'Registreringen kan inte skickas: ingen chef är regi
 
 /**
  * A person adds a competence of their own (D108 item 7, D120 item 2), on Mina kompetenser in a dialog named in the
- * address (`?add=new`). A certificate asks what the manager's registration asks and is sent for the manager they report
+ * address (`?add=new`), from a row of their own list with its type chosen (`&competence=<typeId>`: renewing what has
+ * run out, registering what is missing). A certificate asks what the manager's registration asks and is sent for the manager they report
  * to to approve, which the dialog says before it is sent. A skill asks the level and whether they want to develop it,
  * and is saved at once as their own rating, which the dialog says instead; the sentence is a status region, so the change
  * of kind is announced. A skill they hold already (`held`) is not offered: it is changed from its own row. Someone who
@@ -421,6 +428,7 @@ export function AddOwnHolding({
   isOpen,
   approver,
   held = [],
+  preset = null,
   onClose,
 }: {
   isOpen: boolean;
@@ -428,6 +436,8 @@ export function AddOwnHolding({
   approver: boolean | undefined;
   /** The skills the person holds now, by type: not offered again, since one is changed, not added twice. */
   held?: readonly string[];
+  /** The type the form starts on (`?competence=<typeId>`, from a row of the person's own list), while it can be added. */
+  preset?: string | null;
   onClose: () => void;
 }) {
   const mobile = useMediaQuery(mobileQuery);
@@ -440,7 +450,7 @@ export function AddOwnHolding({
     invalidate: [keys.competenceAll, keys.viewAll, keys.entities.all],
     toastId: 'competence:own',
   });
-  const form = useHoldingFields(types, null, noApprover ? 'own-alone' : 'own');
+  const form = useHoldingFields(types, preset, noApprover ? 'own-alone' : 'own');
   useEffect(() => {
     form.reset();
     action.reset();

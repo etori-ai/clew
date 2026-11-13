@@ -29,7 +29,6 @@ import type {
   Area,
   Attention,
   CalendarEvent,
-  Completions,
   SnoozePreset,
   CheckReport,
   ConnectorDetail,
@@ -453,7 +452,7 @@ export const competenceConversation = thread({
         view: {
           capability: 'competence.attention',
           input: {},
-          title: 'Kompetenser att åtgärda',
+          title: 'Krav som inte uppfylls',
           source: 'Kompetens',
           declared: true,
         },
@@ -615,16 +614,6 @@ export const attention: Attention = {
     { kind: 'bundle', at: '12:00', state: 'next' },
     { kind: 'bundle', at: '16:00', state: 'later' },
     { kind: 'quiet', at: '17:00', state: 'later' },
-  ],
-};
-/** What the box offers while the person types (D34): the standing actions for the role. The areas under the box (D41) come from `areas`. */
-export const completions: Completions = {
-  completions: ['Vad har jag i dag?'],
-  ask: [],
-  recent: [],
-  do: [
-    { text: 'Attestera fakturor', capability: 'finance.approve', source: 'Ekonomisystemet', kind: 'execute' },
-    { text: 'Rapportera avvikelse', capability: 'incidents.report', source: 'Avvikelsesystemet', kind: 'execute' },
   ],
 };
 export const today: TodayView = {

@@ -105,8 +105,13 @@ export {
   // Row selection with a page of checkboxes and its count (the catalogue's import, D120 item 7).
   TableSelectionToolbar,
   useTableSelection,
+  // Headers that sort, the order held by the page and read on the server (Kompetenssökning).
+  useTableSortable,
 } from '@astryxdesign/core/Table';
-export type { TableColumn, TablePlugin } from '@astryxdesign/core/Table';
+export type { TableColumn, TablePlugin, TableSortState } from '@astryxdesign/core/Table';
+// A searchable choice of several, over a search on the server (Kompetenssökning's types).
+export { Tokenizer } from '@astryxdesign/core/Tokenizer';
+export type { TokenizerHandle } from '@astryxdesign/core/Tokenizer';
 export { Switch } from '@astryxdesign/core/Switch';
 export { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 export { AlertDialog } from '@astryxdesign/core/AlertDialog';

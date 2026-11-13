@@ -19,8 +19,8 @@ import { AskClew } from '../components/thing-panel';
 import { PageHeader } from '../components/page-header';
 
 /**
- * A work item as a page (D112 item 4, board WorkItem, `/items/<threadId>`): the item's own address, reached with "Öppna
- * som sida" from Att göra's reading pane and from the panel beside any page, with `from` as the way back (the same
+ * A work item as a page (D112 item 4, board WorkItem, `/items/<threadId>`): the item's own address, reached by its title
+ * in Att göra's reading pane and in the panel beside any page, with `from` as the way back (the same
  * convention as a person's page, `person-address.ts`). The way back names the page it came from when Clew can name it,
  * else Att göra. The item comes from the stream every page shares (D33), so a decision here is the decision everywhere;
  * an item the stream no longer lists (handled long ago) is read on its own. An item the person may not see is the

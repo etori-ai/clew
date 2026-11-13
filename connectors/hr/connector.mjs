@@ -198,6 +198,8 @@ export function createConnector({
           const days = k => mine.filter(a => a.kind === k).reduce((n, a) => n + daysBetween(a.from, a.to) + 1, 0);
           return {
             ref: e.ref,
+            // The employee's user name (their `personId` here), the key Clew knows them by (D97 item 6).
+            person: e.personId,
             name: e.name,
             short: days('short'),
             vab: days('vab'),

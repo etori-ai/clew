@@ -47,7 +47,7 @@ A `propose` result is preparation, not permission to perform its suggested write
 | Read | To the model | Why |
 |---|---|---|
 | `competence.holdings` | Offered | The reader's own holdings, or a report's with the report's user name as `person`. |
-| `competence.attention` | Offered (managers) | What has run out, is missing or soon runs out among the reader's reports; each row carries the report's user name for a follow-up read. |
+| `competence.attention` | Offered (managers) | The requirements not met among the reader's reports (the product owner's definition of 2026-11-13, `competenceRequirementUnmet`): a type required of a report that is missing, has run out or soon runs out. A certificate nothing requires is not in it; its description tells the model to read the report's holdings (`competence.holdings`) for that. At most 500 rows, with `omitted` saying how many more there are. Each row carries the report's user name for a follow-up read. |
 | `competence.coverage` | Offered (managers) | Counts over the reader's reports on a unit they manage; names nobody. |
 | `competence.person`, `competence.unit` | Closed | Reads about an entity, for Personal and a unit's page; the loader holds every such read from the model (D97 item 7). |
 | `competence.approval` | Closed | Exists only for the page an approval's card opens. |
@@ -85,7 +85,7 @@ Every answer keeps its card in the history: the latest answer's is drawn open an
 
 ## Where an answer comes from, and what the model keeps between turns
 
-Which systems an answer read and when are facts the server knows: the message's `source` is the registry's names for the systems whose reads the turn made and that answered (`Assistenten` when it read nothing, or only what it was refused), `reads` lists each read with its row count or that it failed, and the message's time is the turn's. The transcript draws them under the answer ("Assistenten · läste Kompetenser att åtgärda"). The model is not asked to write a source or a time; the prompt tells it not to, and a system's name and a time it writes as the answer's last sentence anyway are cut. The router's sentences carry none either.
+Which systems an answer read and when are facts the server knows: the message's `source` is the registry's names for the systems whose reads the turn made and that answered (`Assistenten` when it read nothing, or only what it was refused), `reads` lists each read with its row count or that it failed, and the message's time is the turn's. The transcript draws them under the answer ("Assistenten · läste Krav som inte uppfylls"). The model is not asked to write a source or a time; the prompt tells it not to, and a system's name and a time it writes as the answer's last sentence anyway are cut. The router's sentences carry none either.
 
 Between turns the model is given the last twenty messages' text and, in the system prompt, one line per earlier answer saying when it was written and which reads it made, with their row counts ("Svaret kl. 13:59: Mina kompetenser (9 rader)."). It is never given what an earlier read answered: no tool result of an earlier turn reaches it. The prompt asks it to read again in this turn for any question about facts from a system, even one answered before, and to answer a question that is not about facts ("förklara det enklare") without a read. A follow-up about facts costs a read; it reads the source as it is now instead of trusting an answer from a moment that has passed.
 

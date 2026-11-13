@@ -589,7 +589,7 @@ test.describe('Administration › Kompetens', () => {
       await page.reload();
       await expect(search).toHaveValue('ledarskap');
       await expect(table.getByRole('row', { name: /Färdighet 111/ })).toBeVisible();
-      // A type's dialog keeps the list's place, its close goes back to it, and so does Back.
+      // A type's dialog keeps the list's place, and its close goes back to it, replacing the dialog's address.
       const t111 = typeLink(page, 'Färdighet 111');
       await t111.focus();
       await page.keyboard.press('Enter');
@@ -606,9 +606,8 @@ test.describe('Administration › Kompetens', () => {
       await expect(page).toHaveURL('/admin/competence?text=ledarskap&page=2');
       await expect(table.getByRole('row', { name: /Färdighet 111/ })).toBeVisible();
       await expect(t111).toBeFocused();
-      // Back steps through what was opened and the pages, each with the search; the words typed are no steps.
-      await page.goBack();
-      await expect(page).toHaveURL('/admin/competence?text=ledarskap&page=2&type=t-110');
+      // Back steps through the pages, each with the search; the words typed are no steps, and a dialog, closed by
+      // replacing its address, is never opened again by Back (D83 rule 8, the review of 2026-11-13).
       await page.goBack();
       await expect(page).toHaveURL('/admin/competence?text=ledarskap&page=2');
       await expect(dialogOf(page, 'Ändra kompetens')).toBeHidden();

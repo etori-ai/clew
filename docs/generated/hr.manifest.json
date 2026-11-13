@@ -170,6 +170,9 @@
                 "ref": {
                   "type": "string"
                 },
+                "person": {
+                  "type": "string"
+                },
                 "name": {
                   "type": "string"
                 },
@@ -188,6 +191,7 @@
               },
               "required": [
                 "ref",
+                "person",
                 "name",
                 "short",
                 "vab",
@@ -213,6 +217,10 @@
           "other": "medarbetare"
         },
         "empty": "Ingen frånvaro de senaste sex månaderna.",
+        "subject": {
+          "entity": "person",
+          "key": "person"
+        },
         "open": {
           "capability": "hr.absencePattern",
           "title": "Mönster",

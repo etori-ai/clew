@@ -2,6 +2,7 @@ import {
   COMPETENCE_CATALOGUE_MAX,
   COMPETENCE_SEARCH_PAGE_SIZES,
   COMPETENCE_STATUSES,
+  competenceMatrixNeeding,
   COMPETENCE_TYPE_SEARCH_MAX,
   ENTITY_KEY_MAX,
   type CompetenceReadCaller,
@@ -80,7 +81,8 @@ import {
   requiredSince,
   matrixOf,
   meets,
-  needsAttention,
+  dueForHolder,
+  requirementUnmet,
   organisationOutcome,
   nextDailyCopy,
   normaliseArea,
@@ -90,9 +92,11 @@ import {
   ownCard,
   ownRow,
   countingRows,
+  narrowSearchRows,
   pageOfRows,
   searchCsv,
   searchRows,
+  sortSearchRows,
   typeSearchWords,
   COPY_HOLDINGS_MAX,
   PAGES_MAX,
@@ -253,6 +257,7 @@ const CATALOGUE_FULL = `Katalogen får ha högst ${COMPETENCE_CATALOGUE_MAX} kom
 const ESCO_ROW = 'En rad ur ESCO är en färdighet med en adress.';
 const NOT_A_REGISTRAR = 'Kompetenssökning är inte tilldelad dig. En administratör ger den genom en grupp.';
 const LEVEL_ON_SKILL_SEARCH = 'Bara en färdighet söks på en viss nivå.';
+const STATUS_ON_SKILL_SEARCH = 'En färdighet går inte ut: status och giltighet söks bara för en kompetens som gör det.';
 /**
  * A merge refused while registrations of people's own wait for both types (D108 items 2 and 7). It says neither who nor
  * how many: an administrator has no relation to the people (D118).
@@ -515,7 +520,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
     at: Date,
     relation: CompetenceReadRelation,
     read: Pick<ReadLogEntry, 'kind' | 'rows'> &
-      Partial<Pick<ReadLogEntry, 'typeId' | 'minLevel' | 'unitId' | 'personId' | 'caller'>>,
+      Partial<Pick<ReadLogEntry, 'typeIds' | 'minLevel' | 'unitId' | 'personId' | 'caller'>>,
   ): ReadLogEntry => ({
     id: deps.ids(),
     organisationId: persona.organisationId,
@@ -523,41 +528,61 @@ export function competenceUsecases(deps: CompetenceDeps) {
     relation,
     caller: read.caller ?? 'person',
     kind: read.kind,
-    typeId: read.typeId ?? null,
+    typeId: read.typeIds?.[0] ?? null,
+    typeIds: read.typeIds ?? [],
     minLevel: read.minLevel ?? null,
     unitId: read.unitId ?? null,
     personId: read.personId ?? null,
     rows: read.rows,
     readAt: at.toISOString(),
   });
-  /** What a search asked for, as its read-log row and its audit row carry it: ids and a level. */
+  /**
+   * What a search asked for, as its read-log row carries it: the types' ids in the order chosen, a level and a unit's
+   * id. The status, the window and the order have no column of the log; the file's audit row carries them.
+   */
   const searched = (body: CompetenceSearchFileBody) => ({
-    typeId: body.typeId,
+    typeIds: [...new Set(body.typeIds)],
     ...(body.minLevel !== undefined ? { minLevel: body.minLevel } : {}),
     ...(body.unitId !== undefined ? { unitId: body.unitId } : {}),
   });
   /**
-   * Every person of the organisation who holds the type (D121 item 4), as narrowed, read in the transaction it is given.
-   * A type of another organisation is no type; a least level is for a skill alone.
+   * Every person of the organisation who holds every chosen type (D121 item 4), as narrowed, filtered and sorted, read in
+   * the transaction it is given; `unfiltered` is how many there were before the status and the validity window. A type
+   * of another organisation is no type; a least level needs a chosen skill, and a status or a window a chosen type that
+   * can end. Everything is checked before anything about a person is read, so a refused search logs nothing.
    */
   async function searchIn(tx: CompetenceTx, organisationId: string, body: CompetenceSearchFileBody, today: string) {
-    const [type] = await tx.typesById([body.typeId]);
-    if (!type || type.organisationId !== organisationId) throw new CompetenceError(NO_TYPE);
-    if (body.minLevel !== undefined && !isSkill(type)) throw new CompetenceError(LEVEL_ON_SKILL_SEARCH);
+    const ids = [...new Set(body.typeIds)];
+    const found = new Map((await tx.typesById(ids)).map(t => [t.id, t]));
+    const types = ids.map(id => found.get(id));
+    if (types.length === 0 || types.some(t => !t || t.organisationId !== organisationId))
+      throw new CompetenceError(NO_TYPE);
+    const chosen = types as TypeRecord[];
+    if (body.minLevel !== undefined && !chosen.some(isSkill)) throw new CompetenceError(LEVEL_ON_SKILL_SEARCH);
+    if ((body.status !== undefined || body.until !== undefined) && chosen.every(isSkill))
+      throw new CompetenceError(STATUS_ON_SKILL_SEARCH);
     // A unit is one of the organisation's tree, or the search is refused before anything is read or logged: what the
     // body names reaches the read log and the audit only once it is known to be the organisation's own.
     const units = await tx.units(organisationId);
     if (body.unitId !== undefined && !units.some(u => u.id === body.unitId)) throw new CompetenceError(NO_UNIT);
-    const holdings = await tx.holdingsOfType(type.id);
-    const ids = [...new Set(holdings.map(h => h.personId))];
+    const holdings: HoldingRecord[] = [];
+    let holders: Set<string> | undefined;
+    for (const type of chosen) {
+      const of = await tx.holdingsOfType(type.id);
+      holdings.push(...of);
+      // Only someone who holds something of every type can be found, so only they are read.
+      const these = new Set(of.map(h => h.personId));
+      holders = holders === undefined ? these : new Set([...holders].filter(id => these.has(id)));
+    }
+    const people = [...(holders ?? [])];
     const [persons, active, places] = [
-      await tx.persons(ids),
-      await tx.activeIds(ids),
-      await tx.placesOf(organisationId, ids),
+      await tx.persons(people),
+      await tx.activeIds(people),
+      await tx.placesOf(organisationId, people),
     ];
-    const rows = searchRows({
-      type,
-      holdings,
+    const all = searchRows({
+      types: chosen,
+      holdings: holdings.filter(h => holders?.has(h.personId)),
       persons: new Map(persons.map(p => [p.id, p])),
       active,
       organisationId,
@@ -567,7 +592,16 @@ export function competenceUsecases(deps: CompetenceDeps) {
       ...(body.unitId !== undefined ? { unitId: body.unitId } : {}),
       ...(body.minLevel !== undefined ? { minLevel: body.minLevel } : {}),
     });
-    return { type, rows };
+    const narrowed = narrowSearchRows(
+      all,
+      chosen,
+      {
+        ...(body.status !== undefined ? { status: body.status } : {}),
+        ...(body.until !== undefined ? { until: body.until } : {}),
+      },
+      today,
+    );
+    return { types: chosen, rows: sortSearchRows(narrowed, body.sort, body.order), unfiltered: all.length };
   }
   async function reportOf(persona: AuthenticatedContext, personId: string, notAManager = NOT_A_MANAGER) {
     const { manages, people } = await reports(persona);
@@ -680,6 +714,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
     waiting: HoldingRecord[];
     own: HoldingRecord[];
     types: ReadonlyMap<string, TypeRecord>;
+    required: ReadonlyMap<string, readonly string[]>;
   }> {
     const holdings = await tx.holdingsOf(personIds);
     const { required, least } = await requiredFor(tx, organisationId, personIds);
@@ -692,15 +727,26 @@ export function competenceUsecases(deps: CompetenceDeps) {
       waiting: holdings.filter(uncounted),
       own: holdings.filter(h => h.evidence === 'self' && (h.state === 'pending' || h.state === 'rejected')),
       types,
+      required,
     };
   }
   const standings = async (tx: CompetenceTx, organisationId: string, personIds: readonly string[], today: string) =>
     (await standingsWith(tx, organisationId, personIds, today)).standings;
   /**
-   * What needs these people today (D108 item 12, D47), each standing that has run out, is missing or soon runs out, the
-   * expired first, with the identity of the person's own card of it (`ownCard`): when the type began to be required of
-   * them (`requiredSince`) and the last revocation that changed where they stand (`decidingRevocation`). The person's
-   * card and the manager's alike are derived from it, so the two never disagree on what is due.
+   * What needs a manager among these people today (`requirementUnmet`, the product owner's definition of 2026-11-13):
+   * each type required of a person that is missing, has expired or expires within 90 days. What nothing requires is
+   * left out, whatever its status.
+   */
+  const unmet = async (tx: CompetenceTx, organisationId: string, personIds: readonly string[], today: string) => {
+    const { standings: all, required } = await standingsWith(tx, organisationId, personIds, today);
+    return all.filter(s => requirementUnmet(s, required));
+  };
+  /**
+   * What is due for these people today (D108 item 12, D47), each standing that has run out, is missing or soon runs out,
+   * the expired first, with the identity of the person's own card of it (`ownCard`): when the type began to be required
+   * of them (`requiredSince`) and the last revocation that changed where they stand (`decidingRevocation`), and whether
+   * it is a requirement not met (`unmet`, `requirementUnmet`). A person's own cards are every entry, required or not; the
+   * manager's card is derived from the unmet ones, so it counts what the figure on Hem and the matrix count.
    */
   async function dueCards(tx: CompetenceTx, organisationId: string, personIds: readonly string[], today: string) {
     if (!personIds.length) return [];
@@ -717,10 +763,11 @@ export function competenceUsecases(deps: CompetenceDeps) {
     const required = new Map([...applying].map(([id, rs]) => [id, [...new Set(rs.map(r => r.typeId))]]));
     const least = new Map(personIds.map(id => [id, leastLevels(placeOf(id), requirements)]));
     return deciding(holdings, types, today, required, least)
-      .filter(needsAttention)
+      .filter(dueForHolder)
       .sort(byUrgency)
       .map(standing => ({
         standing,
+        unmet: requirementUnmet(standing, required),
         card: ownCard(standing, {
           requiredSince: requiredSince(applying.get(standing.personId) ?? [], standing.type.id),
           revoked: decidingRevocation(holdings, standing.personId, standing.type),
@@ -2568,12 +2615,19 @@ export function competenceUsecases(deps: CompetenceDeps) {
     /**
      * The type field of the search (D121 item 4): the types of the reader's organisation that are not archived whose name
      * or area holds every word typed, at most `COMPETENCE_TYPE_SEARCH_MAX`, by name. Asked in a body, so the words are
-     * in no address. The catalogue names nobody, so anyone the module is on for may ask it, as `ownTypes` is.
+     * in no address. The catalogue names nobody, so anyone the module is on for may ask it, as `ownTypes` is. With `ids`
+     * instead, the organisation's types of those ids, archived ones too, in the order asked: what the search page names
+     * the types of an address with before its answer, and how it tells an id the catalogue does not hold. Writes nothing.
      */
     async findTypes(
       persona: AuthenticatedContext,
       body: CompetenceTypeSearchBody,
     ): Promise<CompetenceTypeSearchOutput> {
+      if ('ids' in body) {
+        const found = await deps.store.transaction(tx => tx.typesById([...new Set(body.ids)]));
+        const own = new Map(found.filter(t => t.organisationId === persona.organisationId).map(t => [t.id, t]));
+        return { rows: body.ids.flatMap(id => (own.has(id) ? [typeRow(own.get(id)!)] : [])), more: false };
+      }
       const words = typeSearchWords(body.text);
       const rows = await deps.store.transaction(tx =>
         tx.findTypes(persona.organisationId, words, COMPETENCE_TYPE_SEARCH_MAX + 1),
@@ -2585,25 +2639,27 @@ export function competenceUsecases(deps: CompetenceDeps) {
     },
 
     /**
-     * Kompetenssökning (D121 item 4): one page of the people of the reader's organisation who hold a type, through the
-     * relation `registrar` alone, by name in Swedish order (`searchRows`). A page past the end answers with the last.
-     * Read in one transaction with its row of the read log (D121 item 5): the type, the least level and the unit asked
-     * for, and how many people the page named; a read whose row cannot be written answers nothing.
+     * Kompetenssökning (D121 item 4): one page of the people of the reader's organisation who hold every chosen type,
+     * through the relation `registrar` alone (`searchIn`): narrowed, filtered and sorted before the page is cut, so a
+     * page past the end answers with the last of one order. Read in one transaction with its one row of the read log
+     * (D121 item 5): the types, the least level and the unit asked for, and how many people the page named; a read
+     * whose row cannot be written answers nothing.
      */
     async search(persona: AuthenticatedContext, body: CompetenceSearchBody): Promise<CompetenceSearchPage> {
       requireRegistrar(persona);
       const pageSize = body.pageSize ?? COMPETENCE_SEARCH_PAGE_SIZES[0];
       const at = now();
       return deps.store.transaction(async tx => {
-        const { type, rows } = await searchIn(tx, persona.organisationId, body, swedishDay(at));
+        const { types, rows, unfiltered } = await searchIn(tx, persona.organisationId, body, swedishDay(at));
         const page = pageOfRows(rows, body.page ?? 1, pageSize);
         await tx.logRead(
           readOf(persona, at, 'registrar', { kind: 'search', ...searched(body), rows: page.rows.length }),
         );
         return {
-          type: { id: type.id, name: type.name, area: type.area, kind: type.kind },
+          types: types.map(t => ({ id: t.id, name: t.name, area: t.area, kind: t.kind })),
           rows: page.rows,
           total: rows.length,
+          unfiltered,
           page: page.page,
           pageSize,
         };
@@ -2611,9 +2667,10 @@ export function competenceUsecases(deps: CompetenceDeps) {
     },
 
     /**
-     * The whole result of a search as a file (D121 item 4), with the matrix's writer (`csvFile`, which keeps a value a
-     * spreadsheet would read as a formula as text). Audited as an export (`competence.search_exported`, ids and counts)
-     * and written to the read log, both in the transaction that reads it.
+     * The whole result of a search as a file (D121 item 4), narrowed, filtered and sorted as the page shows it, with the
+     * matrix's writer (`csvFile`, which keeps a value a spreadsheet would read as a formula as text). Audited as an export
+     * (`competence.search_exported`: the ids, codes and count the file was made with, never a name) and written to the
+     * read log, both in the transaction that reads it.
      */
     async exportSearch(
       persona: AuthenticatedContext,
@@ -2623,16 +2680,21 @@ export function competenceUsecases(deps: CompetenceDeps) {
       const at = now(),
         today = swedishDay(at);
       return deps.store.transaction(async tx => {
-        const { type, rows } = await searchIn(tx, persona.organisationId, body, today);
+        const { types, rows } = await searchIn(tx, persona.organisationId, body, today);
         await tx.logRead(readOf(persona, at, 'registrar', { kind: 'export', ...searched(body), rows: rows.length }));
         await tx.audit({
           actor: persona.principal.id,
           action: 'competence.search_exported',
           subject: 'organisation:' + persona.organisationId,
           at: at.toISOString(),
-          details: { ...searched(body), people: rows.length },
+          details: {
+            ...searched(body),
+            ...(body.status !== undefined ? { status: body.status } : {}),
+            ...(body.until !== undefined ? { until: body.until } : {}),
+            people: rows.length,
+          },
         });
-        return { filename: `kompetenssokning-${today}.csv`, text: searchCsv(type, rows) };
+        return { filename: `kompetenssokning-${today}.csv`, text: searchCsv(types, rows) };
       });
     },
 
@@ -2676,29 +2738,34 @@ export function competenceUsecases(deps: CompetenceDeps) {
     },
 
     /**
-     * `competence.attention` (D108 items 6 and 11): what has expired, is missing or expires within 90 days among the
-     * manager's reports, the expired first.
+     * `competence.attention` (D108 items 6 and 11): the requirements not met among the manager's reports
+     * (`requirementUnmet`): a type required of a person that is missing, has expired or expires within 90 days, the
+     * expired first. A certificate nothing requires of the person is not among them, whatever its status; their
+     * holdings say it. At most 500 rows, those that run out last left out and counted (`omitted`), so neither the page
+     * nor the model reads a cut list as the whole.
      */
     async attention(persona: AuthenticatedContext): Promise<CompetenceAttentionOutput> {
       const { manages, people } = await reports(persona);
       if (!manages) throw new ForbiddenError(NOT_A_MANAGER);
       const today = swedishDay(now());
       return deps.store.transaction(async tx => {
-        const due = (await standings(tx, persona.organisationId, [...people.keys()], today)).filter(needsAttention);
+        const due = await unmet(tx, persona.organisationId, [...people.keys()], today);
         const persons = new Map((await tx.persons([...new Set(due.map(s => s.personId))])).map(p => [p.id, p]));
         const names = await sourceNames(tx);
-        const rows = due.flatMap(s => {
-          const person = persons.get(s.personId);
-          return person ? [holdingRow(s, person, names)] : [];
-        });
-        return { rows: orderHoldingRows(rows).slice(0, 500) };
+        const rows = orderHoldingRows(
+          due.flatMap(s => {
+            const person = persons.get(s.personId);
+            return person ? [holdingRow(s, person, names)] : [];
+          }),
+        );
+        return { rows: rows.slice(0, 500), ...(rows.length > 500 ? { omitted: rows.length - 500 } : {}) };
       });
     },
 
     /**
-     * The area's figure and the manager's card: how many holdings among the reports have expired, how many required
-     * types they lack and how many holdings expire within 90 days, and how many people that is. Null for someone who
-     * manages nobody.
+     * The area's figure and the manager's card: the requirements not met among the reports (`requirementUnmet`, the
+     * rows `competence.attention` lists), how many have expired, how many are missing and how many expire within 90
+     * days, and how many people that is. Null for someone who manages nobody.
      */
     async summary(
       persona: AuthenticatedContext,
@@ -2706,9 +2773,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
       const { manages, people } = await reports(persona);
       if (!manages) return null;
       const today = swedishDay(now());
-      const due = (
-        await deps.store.transaction(tx => standings(tx, persona.organisationId, [...people.keys()], today))
-      ).filter(needsAttention);
+      const due = await deps.store.transaction(tx => unmet(tx, persona.organisationId, [...people.keys()], today));
       return {
         expired: due.filter(s => s.status === 'expired').length,
         missing: due.filter(s => s.status === 'missing').length,
@@ -2726,14 +2791,17 @@ export function competenceUsecases(deps: CompetenceDeps) {
       const today = swedishDay(now());
       const due = (
         await deps.store.transaction(tx => standings(tx, persona.organisationId, [persona.id], today))
-      ).filter(needsAttention);
+      ).filter(dueForHolder);
       return due.sort(byUrgency);
     },
 
     /**
-     * What the scan reads (D108 item 12, D47): when it read, the reader's own standings to act on (`ownAttention`), and,
-     * for a manager, what is due among their reports, one entry per person and type with its status and end, from which
-     * the manager's one card is counted and its occurrences named. Never stored: the scan derives it each time.
+     * What the scan reads (D108 item 12, D47): when it read, the reader's own standings to act on (`ownAttention`, every
+     * holding of theirs that runs out, required or not), and, for a manager, the requirements not met among their
+     * reports (`requirementUnmet`, what the figure counts), one entry per person and type with its status and end, from
+     * which the manager's one card is counted and its occurrences named. Never stored: the scan derives it each time.
+     * The manager's card's period is a digest of that set, so the narrowing of 2026-11-13 (a certificate nothing
+     * requires no longer counted) gives every manager who had one counted a new card once.
      */
     async scanOf(persona: AuthenticatedContext, manager: boolean) {
       const at = now(),
@@ -2747,7 +2815,9 @@ export function competenceUsecases(deps: CompetenceDeps) {
       if (manager) {
         const { manages, people } = await reports(persona);
         if (manages) {
-          const due = await deps.store.transaction(tx => dueCards(tx, org, [...people.keys()], today));
+          const due = (await deps.store.transaction(tx => dueCards(tx, org, [...people.keys()], today))).filter(
+            d => d.unmet,
+          );
           const count = (status: Standing['status']) => due.filter(d => d.standing.status === status).length;
           const [expired, missing, expiring] = [count('expired'), count('missing'), count('expiring')];
           team = {
@@ -3010,7 +3080,8 @@ export function competenceUsecases(deps: CompetenceDeps) {
 
     /**
      * The matrix as shown, as a file to download (D108 item 11): the same read as `matrix` with the same set of columns,
-     * written as CSV. It names the manager's own reports, which is what it is for; its audit row, in the same
+     * narrowed to what needs the manager when the page is (`only: 'attention'`), written as CSV. It names the manager's
+     * own reports, which is what it is for; its audit row, in the same
      * transaction, counts the people and the columns and names nobody, and so does its row of the read log (an export
      * by a manager, D108 item 15).
      */
@@ -3023,7 +3094,9 @@ export function competenceUsecases(deps: CompetenceDeps) {
       const at = now(),
         today = swedishDay(at);
       return deps.store.transaction(async tx => {
-        const matrix = await matrixIn(tx, persona.organisationId, [...people.values()], today, input);
+        const read = await matrixIn(tx, persona.organisationId, [...people.values()], today, input);
+        // Narrowed as the page narrows it (`only=attention`), so what is downloaded is what is shown.
+        const matrix = input.only === 'attention' ? competenceMatrixNeeding(read) : read;
         await tx.audit({
           actor: persona.principal.id,
           action: 'competence.matrix_exported',

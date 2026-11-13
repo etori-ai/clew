@@ -160,11 +160,12 @@ function useWorkItem(thread: Thread, onChange: (thread: Thread) => void, idBase:
   const mark = marks.ofThread(thread);
   const systems = rowSystems(thread, marks);
   const from = pathname + search;
-  // A read that answers with rows is a page (D116): its button leads there, with the page the item is on as the way back.
+  // A read that answers with rows is a page (D116): its button leads there, with the page the item is on as the way back;
+  // a read of Clew's own that declares the page its rows are worked on leads there instead (`declaredPage`).
   const views = useQuery(areasQuery).data?.views;
   const readHref = (a: Thread['actions'][number]) =>
     a.kind === 'read' && a.target !== 'link' && opensAsPage(views, a.capability)
-      ? readPageHref(thread, a, withoutRead(pathname, search))
+      ? readPageHref(thread, a, withoutRead(pathname, search), views)
       : undefined;
   const unfold = read.action ? (
     <CardRead
@@ -173,7 +174,7 @@ function useWorkItem(thread: Thread, onChange: (thread: Thread) => void, idBase:
       id={readSection}
       animatedLayout={animatedLayout}
       onFold={fold}
-      page={readPageHref(thread, read.action, withoutRead(pathname, search))}
+      page={readPageHref(thread, read.action, withoutRead(pathname, search), views)}
     />
   ) : null;
   // A notice leads with its text, and its link out stands after the text instead of among the buttons.
@@ -641,8 +642,9 @@ function Notes({ thread, item }: { thread: Thread; item: ItemState }) {
 /** Where a work item is drawn at its narrow width: the reading pane, the panel beside a page, a conversation's answer. */
 export type ItemPlace = 'pane' | 'panel' | 'answer';
 /**
- * The work item at its narrow width (D112 item 4): the source line, the title with "Öppna som sida", the status and the
- * badges, the buttons and what one of its reads unfolded, then the main column. An `article` named by its title.
+ * The work item at its narrow width (D112 item 4): the source line, the title, the status and the badges, the buttons
+ * and what one of its reads unfolded, then the main column. An `article` named by its title. The title is the way to the
+ * item's own page, a link (the name is the way in, 2026-11-13; "Öppna som sida" is gone), with this page as the way back.
  */
 export function WorkItem({
   thread,
@@ -662,7 +664,7 @@ export function WorkItem({
    * badges and the buttons, and the main column folds under "Visa allt".
    */
   folded?: boolean;
-  /** Let go of the item where it is open beside a list: its ✕, after "Öppna som sida" in the title's row. */
+  /** Let go of the item where it is open beside a list: its ✕, at the end of the title's row. */
   onClose?: () => void;
 }) {
   const idBase = place === 'answer' ? 'thread' : 'card';
@@ -685,21 +687,20 @@ export function WorkItem({
               level={2}
               accessibilityLevel={headingLevel}
             >
-              {thread.title}
+              <Link href={itemPageHref(thread.id, item.from)} hasUnderline>
+                {thread.title}
+              </Link>
             </Heading>
           </StackItem>
-          <HStack gap={1} vAlign="center">
-            <Button size="sm" variant="secondary" label="Öppna som sida" href={itemPageHref(thread.id, item.from)} />
-            {onClose && (
-              <IconButton
-                variant="ghost"
-                size="sm"
-                label="Stäng ärendet"
-                icon={<Icon icon="close" />}
-                onClick={onClose}
-              />
-            )}
-          </HStack>
+          {onClose && (
+            <IconButton
+              variant="ghost"
+              size="sm"
+              label="Stäng ärendet"
+              icon={<Icon icon="close" />}
+              onClick={onClose}
+            />
+          )}
         </HStack>
       </VStack>
       <StatusLine thread={thread} item={item} />

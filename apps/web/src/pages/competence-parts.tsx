@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   COMPETENCE_LEVEL_LABELS,
+  competenceNeedsAttention,
+  statusLabel,
   type CompetenceLevel,
   type CompetenceMatrixCell,
   type CompetenceMatrixRow,
@@ -26,6 +28,7 @@ import { useAdminAction } from '../mutations';
 import { keys } from '../query-keys';
 import { refused } from '../query-policy';
 import { DialogFrame } from '../components/dialog-frame';
+import { longDay, shortDay } from '../components/panel-labels';
 import { LevelField, isSkillType, levelLabel } from '../components/register-holding';
 import { PageHeader } from '../components/page-header';
 import { mobileQuery } from '../components/shell';
@@ -37,11 +40,19 @@ import { mobileQuery } from '../components/shell';
 
 /** Which page of the place is shown. */
 export type CompetencePageId = 'own' | 'matrix' | 'search';
+/** The tab pressed on the page before, so the page it leads to gives it the focus once drawn (`CompetenceHeader`). */
+let pressedTab: CompetencePageId | null = null;
 /**
  * The page's header (D74): its title and its own actions on the first line; under it, where the reader has another page
  * of the place, the place's pages as Astryx's navigation tabs, each a link with its own address (D116), the current one
  * marked: the matrix where the reader has it (`hasTabs`, `managesFrom`), and Kompetenssökning where they hold the
- * relation `registrar` (`hasSearch`, D121). Someone with neither has one page, so no tabs.
+ * relation `registrar` (`hasSearch`, D121). Someone with neither has one page, so no tabs. Each tab is named as the page
+ * it leads to is headed, so the two never disagree.
+ *
+ * Each tab is a page of its own, so a press draws a new page, which would leave the focus nowhere (the review of
+ * 2026-11-13). The focus goes where Att göra's tabs leave it, on the tab that was pressed, now the current one: the
+ * pressed tab is remembered for the next page, whose header gives its tab the focus once it is drawn, also when the
+ * tabs come a moment after the page (the matrix's while the server answers who reports to the reader).
  */
 export function CompetenceHeader({
   title,
@@ -58,19 +69,48 @@ export function CompetenceHeader({
   hasSearch?: boolean;
   end?: ReactNode;
 }) {
+  // The current page's tab, once drawn, takes the focus when it was pressed on the page before.
+  const current = useCallback(
+    (el: HTMLElement | null) => {
+      if (!el || pressedTab !== page) return;
+      pressedTab = null;
+      requestAnimationFrame(() => el.focus());
+    },
+    [page],
+  );
+  const tab = (value: CompetencePageId, label: string, href: string) => (
+    <Tab value={value} label={label} href={href} {...(value === page ? { ref: current } : {})} />
+  );
   return (
     <VStack gap={4}>
       <PageHeader title={title} titleId={titleId} {...(end ? { end } : {})} />
       {(hasTabs || hasSearch) && (
-        <TabList hasDivider value={page} onChange={() => {}} aria-label="Kompetens">
-          <Tab value="own" label="Mina kompetenser" href={COMPETENCE_PATH} />
-          {hasTabs && <Tab value="matrix" label="Medarbetare" href={MATRIX_PATH} />}
-          {hasSearch && <Tab value="search" label="Kompetenssökning" href={SEARCH_PATH} />}
+        <TabList
+          hasDivider
+          value={page}
+          onChange={value => {
+            if (value !== page) pressedTab = value as CompetencePageId;
+          }}
+          aria-label="Kompetens"
+        >
+          {tab('own', COMPETENCE_PAGE_TITLES.own, COMPETENCE_PATH)}
+          {hasTabs && tab('matrix', COMPETENCE_PAGE_TITLES.matrix, MATRIX_PATH)}
+          {hasSearch && tab('search', COMPETENCE_PAGE_TITLES.search, SEARCH_PATH)}
         </TabList>
       )}
     </VStack>
   );
 }
+/**
+ * Each page's heading, which its tab says too (the review of 2026-11-13: the tab "Medarbetare" stood over the heading
+ * "Medarbetarnas kompetens"). The matrix's is the short word, so the place's tabs fit a 320 px window side by side
+ * (1.4.10) under the place the rail and the tabs' own name already say: Kompetens.
+ */
+export const COMPETENCE_PAGE_TITLES: Readonly<Record<CompetencePageId, string>> = {
+  own: 'Mina kompetenser',
+  matrix: 'Medarbetare',
+  search: 'Kompetenssökning',
+};
 
 /**
  * Whether the reader has the matrix, someone reporting to them (D99): the server's answer to the matrix's read decides,
@@ -86,12 +126,20 @@ export function managesFrom(
   return matrix.isSuccess || (matrix.isError && !refused(matrix.error));
 }
 
-const day = new Intl.DateTimeFormat('sv-SE', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
-const instant = new Intl.DateTimeFormat('sv-SE', { day: 'numeric', month: 'short', year: 'numeric' });
-/** An instant as the day it falls on where the reader is: "3 mars 2026". */
-export const instantDay = (value: string) => instant.format(new Date(value));
-/** A calendar day as a cell says it: `2027-01-10` is "10 jan. 2027". */
-export const cellDay = (value: string) => day.format(new Date(value + 'T12:00:00Z'));
+/**
+ * A day as a row of Kompetens says it, short: `2027-01-10` is "10 jan. 2027" (the one rule for a day's length is
+ * written where the two formats live, `panel-labels.ts`: short in a row, long in a sentence or among one record's
+ * facts, so a dialog's facts use `factDay`).
+ */
+export const cellDay = shortDay;
+/** A day among one record's facts or in a sentence, long: "10 januari 2027". An instant is the day it falls on. */
+export const factDay = longDay;
+/** An instant as the day it falls on where the reader is, among a record's facts: "3 mars 2026". */
+export const instantDay = longDay;
+/** A holding that never ends, said one way wherever its end would stand (the review of 2026-11-13). */
+export const UNTIL_FURTHER_NOTICE = 'Tills vidare';
+/** Until when a holding is valid, in a row: its last day, or "Tills vidare" for one that never ends. */
+export const untilWords = (expiresOn: string | undefined) => (expiresOn ? cellDay(expiresOn) : UNTIL_FURTHER_NOTICE);
 /** The least levels a skill's column asks of the people shown (D120 item 4): "Minst Självständig", "Minst A eller B". */
 export function levelsWords(levels: readonly number[]): string {
   const words = levels.map(levelLabel);
@@ -115,17 +163,17 @@ export function cellPhrases(cell: CompetenceMatrixCell, skill: boolean): string[
       return [cell.validated ? level(cell.level) : `Egen bedömning: ${level(cell.level)}`];
     }
     return cell.status === 'expired'
-      ? [ends ? `Utgånget ${ends}` : 'Utgånget']
+      ? [ends ? `${statusLabel('expired')} ${ends}` : statusLabel('expired')]
       : cell.status === 'expiring'
-        ? [ends ? `Går ut snart, ${ends}` : 'Går ut snart']
+        ? [ends ? `${statusLabel('expiring')}, ${ends}` : statusLabel('expiring')]
         : cell.status === 'valid'
-          ? [ends ? `Giltigt till ${ends}` : 'Giltigt utan slutdatum']
+          ? [ends ? `${statusLabel('valid')} till ${ends}` : `${statusLabel('valid')} tills vidare`]
           : [];
   };
   const standing =
     cell.status === 'missing'
       ? [
-          'Saknas',
+          statusLabel('missing'),
           ...(skill && cell.least !== undefined ? [`Kräver ${level(cell.least)}`] : []),
           ...(skill && cell.level !== undefined
             ? [cell.validated ? `Har ${level(cell.level)}` : `Egen bedömning: ${level(cell.level)}`]
@@ -147,22 +195,30 @@ export const cellSentence = (phrases: readonly string[]) =>
  * What a cell's control draws (D108 item 11, D120): one short word, so a column is as narrow as its longest. What needs
  * the manager is a badge in its tone with its word (Att granska, Saknas, Utgånget, Går ut snart), so the colour never
  * says it alone (1.4.1); a required holding that is valid is the word Giltigt, or a skill's level, in the badges' size;
- * anything not required of the person is "Krävs inte" in supporting text, drawn quietly. The date, the levels and the
- * rest are the control's name and its menu's (`cellPhrases`).
+ * anything not required of the person is "Krävs inte" in supporting text, drawn quietly. The words are the register's
+ * (`statusLabel`). The levels and the rest are the control's name and its menu's (`cellPhrases`); the day a required
+ * holding runs out soon stands under the control (`cellDue`), since "Går ut snart" alone does not say when.
  */
 export function CellMark({ cell, skill }: { cell: CompetenceMatrixCell; skill: boolean }) {
   if (cell.pending) return <Badge variant="info" label="Att granska" />;
-  if (cell.status === 'missing') return <Badge variant="error" label="Saknas" />;
+  if (cell.status === 'missing') return <Badge variant="error" label={statusLabel('missing')} />;
   if (!cell.required || cell.status === 'none') return <Text type="supporting">Krävs inte</Text>;
-  if (cell.status === 'expired') return <Badge variant="error" label="Utgånget" />;
-  if (cell.status === 'expiring') return <Badge variant="warning" label="Går ut snart" />;
+  if (cell.status === 'expired') return <Badge variant="error" label={statusLabel('expired')} />;
+  if (cell.status === 'expiring') return <Badge variant="warning" label={statusLabel('expiring')} />;
   // In the badges' size, so the longest level ("Grundläggande") fits the column as the longest badge does.
   return (
     <Text type="supporting" color="primary">
-      {skill && cell.level !== undefined ? level(cell.level) : 'Giltigt'}
+      {skill && cell.level !== undefined ? level(cell.level) : statusLabel('valid')}
     </Text>
   );
 }
+/**
+ * The day a cell's "Går ut snart" falls on, short ("10 jan. 2027"), where the cell draws that badge: a required holding
+ * that runs out within 90 days and no registration waiting. Null anywhere else, where the word says enough or the menu
+ * holds the day.
+ */
+export const cellDue = (cell: CompetenceMatrixCell): string | null =>
+  !cell.pending && cell.required && cell.status === 'expiring' && cell.expiresOn ? cellDay(cell.expiresOn) : null;
 /** What requires the type of the person, as the cell's menu says it: "Krävs: befattning Undersköterska, eget krav". */
 export function reasonWords(cell: CompetenceMatrixCell): string | null {
   if (!cell.through.length) return null;
@@ -175,10 +231,11 @@ export function reasonWords(cell: CompetenceMatrixCell): string | null {
       .join(', ')
   );
 }
-/** Whether a cell needs the manager: a required type missing, run out or soon to, or the person's own registration waiting. */
-export const needsAttention = (cell: CompetenceMatrixCell) =>
-  !!cell.pending ||
-  (cell.required && (cell.status === 'missing' || cell.status === 'expired' || cell.status === 'expiring'));
+/**
+ * Whether a cell needs the manager: the one definition the server counts with too (`competenceNeedsAttention`, the
+ * product owner's of 2026-11-13): a requirement not met now or soon, or the person's own registration waiting.
+ */
+export const needsAttention = competenceNeedsAttention;
 /** The catalogue's types a requirement can name, grouped by area: an archived type takes nothing new. */
 const typeOptions = (types: CompetenceType[]) => {
   const open = types.filter(t => !t.archived);

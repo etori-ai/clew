@@ -286,6 +286,13 @@ export interface Capability<I = unknown, O = unknown> {
   asks?: Ask[];
   /** On an execute (D112): a read of the same connector, same input, that says what the write will do where. */
   effect?: string;
+  /**
+   * On a read of Clew's own connectors only: Clew's own page where its rows are worked through, a path inside Clew
+   * (`ViewEntry.page`). Whatever opens the read without input (a figure's `opens`, a card's read, an answer's "Visa
+   * allt") leads there, and the read's own page stays for an address that names it. A manifest cannot carry it, so a
+   * remote connector never claims a page inside Clew, as with `about.page`.
+   */
+  page?: string;
   run: (actor: Actor, input: I, clew: Clew) => Promise<O>;
 }
 /** A capability is a search source when it is named `<id>.search` and is a read (D26); the composite `clew.search` is never one itself. */
@@ -1471,6 +1478,8 @@ export class Registry implements HoldingsReader {
       source: found.connector.source,
       chip,
       ...(rows && found.connector.kind === 'core' ? { rowViews: true } : {}),
+      // Who owns the data (D3): anything but Clew's own domain lives in the system it was read from.
+      ...(found.connector.kind !== 'core' ? { external: true } : {}),
     } as PanelViewSpec;
   }
   /**
@@ -1530,10 +1539,12 @@ export class Registry implements HoldingsReader {
   views(actor: Actor): ViewEntry[] {
     return this.capabilitiesFor(actor)
       .filter(({ capability }) => capability.kind === 'read')
-      .map(({ capability }) => ({
+      .map(({ capability, connector }) => ({
         capability: capability.name,
         title: capability.title,
         ...(capability.view ? { kind: capability.view.kind } : {}),
+        // Clew's own page for the read's rows: only a core connector's read has one.
+        ...(capability.page && connector.kind === 'core' ? { page: capability.page } : {}),
       }));
   }
   /**

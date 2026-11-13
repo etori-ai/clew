@@ -66,6 +66,16 @@ per organisation: more exact, and nobody has asked for it; the list is closed so
   D118 item 3 ("not one person's holdings") is then one mapping away, kept by the trail and not by a second
   person.
 
+- *The search is in the address, and may ask for several types* (item 4, amended 2026-11-13 after a review of the
+  page, on the product owner's word). The chosen types, the unit, the least level, the status and validity filters,
+  the order and the page are in the address as ids and codes, never a name, as
+  [D100](D100-the-people-list-is-read-a-page-at-a-time-and-narrowed-on-the-server.md) item 5 has filters; the
+  session memory that kept them out is gone. A search may name up to five types and finds who holds every one of
+  them, each passing the filters by itself. A reload or an opened link is therefore a search, and is logged; going
+  back to an address read a few minutes ago is shown from what was read and is not. One search is one row in the
+  log, with the list of type ids (migration 0068). The status and validity filters are not recorded in the log,
+  though they change who was shown.
+
 Erasure of a person leaves the log's rows, which hold an id and no name. The log is read with
 `scripts/competence-read-log.ts`; no page shows it.
 

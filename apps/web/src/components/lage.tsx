@@ -1,9 +1,11 @@
 import { useLocation } from 'react-router';
 import type { Area } from '@clew/contracts';
 import { FigureTile, FigureTileSkeleton, Grid, Heading, HStack, Link, Text, VStack, figureItems } from '@clew/ui';
-import type { Source } from '../since';
 import { useMarks } from '../marks';
 import { unitPageHref } from '../person-address';
+
+/** A source's state from the last read of the cards, as `/api/threads` gives it (`sources`): a tile is dated by it. */
+export type Source = { connector: string; state: string; lastSuccess: string | null; error: string | null };
 
 type Props = {
   areas: Area[];

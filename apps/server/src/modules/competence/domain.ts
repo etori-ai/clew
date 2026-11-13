@@ -8,6 +8,7 @@ import {
   INTEREST_WORD,
   SELF_RATED_WORD,
   SKILL_KIND,
+  competenceRequirementUnmet,
   daysUntil,
   importText,
   isCompetenceLevel,
@@ -23,7 +24,10 @@ import {
   type CompetenceMatrixReason,
   type CompetenceMatrixStatus,
   type CompetenceMergePreview,
+  type CompetenceSearchHeld,
+  type CompetenceSearchOrder,
   type CompetenceSearchRow,
+  type CompetenceSearchSort,
   type CompetenceShownCount,
   type CompetenceStatus,
   type CompetenceType,
@@ -242,8 +246,27 @@ export function deciding(
     }
   return [...best.values(), ...missing];
 }
-/** Whether a standing needs a person: it has expired, is missing or expires within `EXPIRING_DAYS`. */
-export const needsAttention = (standing: Pick<Standing, 'status'>) => standing.status !== 'valid';
+/**
+ * Whether a standing is due for the person who holds it, their own card's cause (D108 item 12): it has expired, is
+ * missing or expires within `EXPIRING_DAYS`, whether or not anything requires it of them. A manager's attention is
+ * narrower (`requirementUnmet`).
+ */
+export const dueForHolder = (standing: Pick<Standing, 'status'>) => standing.status !== 'valid';
+/**
+ * Whether the type of a standing is required of its person (D108 item 6): one of the types `required` names for them
+ * that is not archived, since an archived type is required of nobody. A `missing` standing is one by its nature.
+ */
+export const isRequired = (standing: Standing, required: ReadonlyMap<string, readonly string[]>) =>
+  standing.status === 'missing' ||
+  (standing.type.archivedAt === null && (required.get(standing.personId)?.includes(standing.type.id) ?? false));
+/**
+ * Whether a standing needs the person's manager (the product owner, 2026-11-13; `competenceRequirementUnmet`, the one
+ * definition the matrix counts its cells with too): a type required of the person that is missing, has expired or
+ * expires within `EXPIRING_DAYS`. A certificate nothing requires of them is a fact about them, never the manager's
+ * attention, whatever its status.
+ */
+export const requirementUnmet = (standing: Standing, required: ReadonlyMap<string, readonly string[]>) =>
+  competenceRequirementUnmet({ required: isRequired(standing, required), status: standing.status });
 /**
  * Whether a standing meets a requirement that asks for `least` (D108 item 6, D120 item 4): a holding that counts and
  * has not run out (expiring still meets it); a skill only confirmed and at least at that level.
@@ -646,6 +669,7 @@ export function holdingRow(
       userName: personKey(person),
       name: person.name,
       competence: standing.type.name,
+      typeId: standing.type.id,
       area: standing.type.area,
       kind: standing.type.kind,
       status: 'missing',
@@ -659,6 +683,7 @@ export function holdingRow(
     userName: personKey(person),
     name: person.name,
     competence: standing.type.name,
+    typeId: standing.type.id,
     area: standing.type.area,
     kind: standing.type.kind,
     ...(skill ? {} : { issuedOn: standing.holding.issuedOn }),
@@ -728,6 +753,7 @@ export function ownRow(
     userName: personKey(person),
     name: person.name,
     competence: type.name,
+    typeId: type.id,
     area: type.area,
     kind: type.kind,
     issuedOn: holding.issuedOn,
@@ -1271,15 +1297,17 @@ export function csvFile(lines: readonly (readonly string[])[]): string {
 export const typeSearchWords = (text: string): string[] =>
   text.toLocaleLowerCase('sv').split(/\s+/).filter(Boolean).slice(0, 8);
 /**
- * Who of the organisation holds a type today (D121 item 4), as the registrar's search lists them: for each person the
- * holding that decides (`deciding`: valid, about to run out or run out, never one that waits, was rejected or was
- * revoked), only for a person who is active and of the organisation; on a skill (D120) at `minLevel` or above, confirmed
- * or the person's own rating alike, which the row says; with `unitId`, only someone placed on the unit or below it
- * (`branchOf`). By name in Swedish order, then id, so the order is the same on every page. A row carries the units the
- * person is placed on by name, a unit the tree does not name by its id.
+ * Who of the organisation holds every one of the chosen types today (D121 item 4), as the registrar's search lists them:
+ * for each person and type the holding that decides (`deciding`: valid, about to run out or run out, never one that
+ * waits, was rejected or was revoked), only for a person who is active and of the organisation and holds all of them;
+ * each chosen skill (D120) at `minLevel` or above, confirmed or the person's own rating alike, which the row says; with
+ * `unitId`, only someone placed on the unit or below it (`branchOf`). By name in Swedish order, then id. A row carries
+ * the units the person is placed on by name, a unit the tree does not name by its id, and each chosen type as held, in
+ * the order the types were chosen. The status and the validity window narrow these rows afterwards
+ * (`narrowSearchRows`), so the count before them is known.
  */
 export function searchRows(input: {
-  type: TypeRecord;
+  types: readonly TypeRecord[];
   holdings: readonly HoldingRecord[];
   persons: ReadonlyMap<string, PersonRef>;
   active: ReadonlySet<string>;
@@ -1290,29 +1318,120 @@ export function searchRows(input: {
   minLevel?: number;
   today: string;
 }): CompetenceSearchRow[] {
-  const { type } = input;
+  const types = [...new Map(input.types.map(t => [t.id, t])).values()];
   const branch = input.unitId === undefined ? undefined : new Set(branchOf(input.units, input.unitId));
   const labelOf = new Map(input.units.map(u => [u.id, u.label]));
-  const rows: CompetenceSearchRow[] = [];
-  for (const s of deciding(input.holdings, new Map([[type.id, type]]), input.today)) {
+  const standings = new Map<string, Map<string, HeldStanding>>();
+  for (const s of deciding(input.holdings, new Map(types.map(t => [t.id, t])), input.today)) {
     if (s.holding === null) continue;
-    const person = input.persons.get(s.personId);
+    const held = standings.get(s.personId) ?? new Map<string, HeldStanding>();
+    held.set(s.type.id, s);
+    standings.set(s.personId, held);
+  }
+  const rows: CompetenceSearchRow[] = [];
+  for (const [personId, standing] of standings) {
+    if (standing.size !== types.length) continue;
+    const person = input.persons.get(personId);
     if (!person || person.organisationId !== input.organisationId || !input.active.has(person.id)) continue;
-    const level = isSkill(type) ? levelOf(s.holding) : undefined;
-    if (input.minLevel !== undefined && (level ?? 0) < input.minLevel) continue;
     const placed = input.places.get(person.id)?.unitIds ?? [];
     if (branch && !placed.some(u => branch.has(u))) continue;
+    const held: CompetenceSearchHeld[] = [];
+    for (const type of types) {
+      const s = standing.get(type.id)!;
+      const level = isSkill(type) ? levelOf(s.holding) : undefined;
+      if (isSkill(type) && input.minLevel !== undefined && (level ?? 0) < input.minLevel) break;
+      held.push({
+        typeId: type.id,
+        status: s.status,
+        ...(s.end ? { expiresOn: s.end } : {}),
+        ...(level !== undefined ? { level, validated: confirmed(s.holding) } : {}),
+      });
+    }
+    if (held.length !== types.length) continue;
     rows.push({
       personId: person.id,
       key: person.userName,
       name: person.name,
       units: placed.map(u => labelOf.get(u) ?? u).sort((a, b) => a.localeCompare(b, 'sv')),
-      status: s.status,
-      ...(s.end ? { expiresOn: s.end } : {}),
-      ...(level !== undefined ? { level, validated: confirmed(s.holding) } : {}),
+      held,
     });
   }
-  return rows.sort((a, b) => a.name.localeCompare(b.name, 'sv') || a.personId.localeCompare(b.personId));
+  return sortSearchRows(rows, 'name', 'asc');
+}
+/**
+ * The rows whose every chosen type that can end (no skill: a skill never ends) stands as `status` names, and is still
+ * valid today and ends within `until` days, the last day counted. Each type is held to the filters by itself: a person
+ * with two certificates is found by "Går ut snart" only when both are about to run out.
+ */
+export function narrowSearchRows(
+  rows: readonly CompetenceSearchRow[],
+  types: readonly Pick<TypeRecord, 'id' | 'kind'>[],
+  filter: { status?: readonly HeldStatus[]; until?: number },
+  today: string,
+): CompetenceSearchRow[] {
+  if (filter.status === undefined && filter.until === undefined) return [...rows];
+  const ending = new Set(types.filter(t => !isSkill(t)).map(t => t.id));
+  const passes = (h: CompetenceSearchHeld) => {
+    if (!ending.has(h.typeId)) return true;
+    if (filter.status !== undefined && !filter.status.includes(h.status)) return false;
+    if (filter.until === undefined) return true;
+    if (h.expiresOn === undefined) return false;
+    const days = daysUntil(h.expiresOn, today);
+    return days >= 0 && days <= filter.until;
+  };
+  return rows.filter(r => r.held.every(passes));
+}
+/** Run out first, then about to run out, then valid: the order "status, ascending" reads. */
+const STATUS_RANK: Record<HeldStatus, number> = { expired: 0, expiring: 1, valid: 2 };
+/**
+ * What a row is sorted by, besides its name: its units by name; the worst status of the chosen types; the earliest day
+ * one of them ends; the lowest level among the chosen skills. Undefined where the row has none (no unit, nothing that
+ * ends, no skill), which sorts after every value ascending and before them descending.
+ */
+function searchSortValue(row: CompetenceSearchRow, sort: CompetenceSearchSort): string | number | undefined {
+  if (sort === 'unit') return row.units.length ? row.units.join(', ') : undefined;
+  if (sort === 'status') return Math.min(...row.held.map(h => STATUS_RANK[h.status]));
+  if (sort === 'until')
+    return row.held.reduce<string | undefined>(
+      (first, h) => (h.expiresOn !== undefined && (first === undefined || h.expiresOn < first) ? h.expiresOn : first),
+      undefined,
+    );
+  if (sort === 'level')
+    return row.held.reduce<number | undefined>(
+      (least, h) => (h.level !== undefined && (least === undefined || h.level < least) ? h.level : least),
+      undefined,
+    );
+  return undefined;
+}
+/**
+ * The rows in the order asked for (D100's paging needs one order): by the value of `sort`, ascending or descending, then
+ * by name in Swedish order and then by id, both ascending whatever the order, so two people who share a value never
+ * change places between two pages. Sorted by name, the name is the value and the id alone breaks a tie.
+ */
+export function sortSearchRows(
+  rows: readonly CompetenceSearchRow[],
+  sort: CompetenceSearchSort = 'name',
+  order: CompetenceSearchOrder = 'asc',
+): CompetenceSearchRow[] {
+  const sign = order === 'desc' ? -1 : 1;
+  const byId = (a: CompetenceSearchRow, b: CompetenceSearchRow) => a.personId.localeCompare(b.personId);
+  if (sort === 'name') return [...rows].sort((a, b) => sign * a.name.localeCompare(b.name, 'sv') || byId(a, b));
+  const keyed = rows.map(row => ({ row, value: searchSortValue(row, sort) }));
+  const compare = (a: string | number | undefined, b: string | number | undefined) =>
+    a === b
+      ? 0
+      : a === undefined
+        ? 1
+        : b === undefined
+          ? -1
+          : typeof a === 'number' && typeof b === 'number'
+            ? a - b
+            : String(a).localeCompare(String(b), 'sv');
+  return keyed
+    .sort(
+      (a, b) => sign * compare(a.value, b.value) || a.row.name.localeCompare(b.row.name, 'sv') || byId(a.row, b.row),
+    )
+    .map(k => k.row);
 }
 /** One page of rows, 1-based: a page past the end, which an old address or a list that became shorter leaves, is the last. */
 export function pageOfRows<T>(rows: readonly T[], page: number, pageSize: number): { rows: T[]; page: number } {
@@ -1321,22 +1440,70 @@ export function pageOfRows<T>(rows: readonly T[], page: number, pageSize: number
   return { rows: rows.slice((at - 1) * pageSize, at * pageSize), page: at };
 }
 /**
- * The search as a file (D121 item 4): a heading row, then one row per person who holds the type, with their name, their
- * user name (Clew's id for someone provisioned without one, so two people who share a name are told apart), their
- * units, where it stands and the day it ends; on a skill its level and "Egen bed\u00f6mning" where no manager has confirmed
- * it, "Bekr\u00e4ftad" where one has. The matrix's file's format (`csvFile`).
+ * A holding that never ends where its last day would stand, as the pages of the register say it ("Tills vidare",
+ * `UNTIL_FURTHER_NOTICE` in the web's `competence-parts.tsx`). The matrix's file says the status alone there ("Giltigt").
  */
-export function searchCsv(type: Pick<TypeRecord, 'kind'>, rows: readonly CompetenceSearchRow[]): string {
-  const skill = isSkill(type);
+const UNTIL_FURTHER_NOTICE_WORD = 'Tills vidare';
+/**
+ * The search as a file (D121 item 4), the rows in the order and narrowed as the page shows them: a heading row, then one
+ * row per person found, with their name, their user name (Clew's id for someone provisioned without one, so two people
+ * who share a name are told apart) and their units. For one type, where it stands and the day it ends, and on a skill
+ * its level and "Egen bed\u00f6mning" where no manager has confirmed it, "Bekr\u00e4ftad" where one has. For several,
+ * a pair of columns per type, named with it: where it stands and the day it ends, or for a skill the level and the
+ * assessment. The matrix's file's format (`csvFile`).
+ */
+export function searchCsv(
+  types: readonly Pick<TypeRecord, 'id' | 'name' | 'kind'>[],
+  rows: readonly CompetenceSearchRow[],
+): string {
+  const assessed = (h: CompetenceSearchHeld | undefined) =>
+    h?.validated === false ? SELF_RATED_WORD : h?.level !== undefined ? 'Bekr\u00e4ftad' : '';
+  const levelOfHeld = (h: CompetenceSearchHeld | undefined) => (h?.level ? levelWord(h.level) : '');
+  if (types.length === 1) {
+    const skill = isSkill(types[0]!);
+    return csvFile([
+      [
+        'Namn',
+        'Anv\u00e4ndarnamn',
+        'Enhet',
+        'Status',
+        ...(skill ? ['Niv\u00e5', 'Bed\u00f6mning'] : []),
+        'Giltigt till',
+      ],
+      ...rows.map(r => {
+        const h = r.held[0];
+        return [
+          r.name,
+          r.key ?? r.personId,
+          r.units.join(', '),
+          h ? CSV_WORDS[h.status] : '',
+          ...(skill ? [levelOfHeld(h), assessed(h)] : []),
+          h ? (h.expiresOn ?? UNTIL_FURTHER_NOTICE_WORD) : '',
+        ];
+      }),
+    ]);
+  }
   return csvFile([
-    ['Namn', 'Anv\u00e4ndarnamn', 'Enhet', 'Status', ...(skill ? ['Niv\u00e5', 'Bed\u00f6mning'] : []), 'Giltigt till'],
+    [
+      'Namn',
+      'Anv\u00e4ndarnamn',
+      'Enhet',
+      ...types.flatMap(t =>
+        isSkill(t)
+          ? [`${t.name}: niv\u00e5`, `${t.name}: bed\u00f6mning`]
+          : [`${t.name}: status`, `${t.name}: giltigt till`],
+      ),
+    ],
     ...rows.map(r => [
       r.name,
       r.key ?? r.personId,
       r.units.join(', '),
-      CSV_WORDS[r.status],
-      ...(skill ? [r.level ? levelWord(r.level) : '', r.validated === false ? SELF_RATED_WORD : 'Bekr\u00e4ftad'] : []),
-      r.expiresOn ?? '',
+      ...types.flatMap(t => {
+        const h = r.held.find(x => x.typeId === t.id);
+        return isSkill(t)
+          ? [levelOfHeld(h), assessed(h)]
+          : [h ? CSV_WORDS[h.status] : '', h ? (h.expiresOn ?? UNTIL_FURTHER_NOTICE_WORD) : ''];
+      }),
     ]),
   ]);
 }

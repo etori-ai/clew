@@ -4,6 +4,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   COMPETENCE_MATRIX_COLUMNS,
   SKILL_KIND,
+  competenceMatrixNeeding,
+  competenceNeedsAttention,
   type CompetenceApproval,
   type CompetenceDecision,
   type CompetenceLevel,
@@ -84,16 +86,19 @@ import { panelBesideQuery } from '../components/panel';
 import { DialogFrame } from '../components/dialog-frame';
 import { LevelField, RegisterHolding, levelLabel } from '../components/register-holding';
 import {
+  COMPETENCE_PAGE_TITLES,
   CellMark,
   CompetenceHeader,
   PersonRequirementDialog,
+  UNTIL_FURTHER_NOTICE,
   cellDay,
+  cellDue,
   cellPhrases,
   cellSentence,
+  factDay,
   instantDay,
   levelsWords,
   managesFrom,
-  needsAttention,
   reasonWords,
 } from './competence-parts';
 
@@ -102,6 +107,8 @@ const COLUMN = 1440 - 2 * 32;
 /** The page's own padding on each side of the matrix, which the matrix's least width does not count. */
 const PADDING = 32;
 const TITLE_ID = 'matris-rubrik';
+/** The table's name: the page is "Medarbetare", its first column too, so the table says what it holds. */
+const TABLE_NAME = 'Medarbetarnas kompetens';
 /**
  * The pinned column of names, and each competence's column: as wide as a cell's one control, its longest word a badge
  * ("Går ut snart") or a skill's level ("Grundläggande"): at 1280 px six columns are in view where a cell of a word, a day
@@ -137,6 +144,8 @@ interface CellContext {
   control: (personId: string, typeId: string) => (el: HTMLButtonElement | null) => void;
   confirm: (c: Confirming) => void;
   review: (personId: string, typeId: string) => void;
+  /** Whether a cell draws the day a required holding runs out soon under its control: in the table, where the cell is all. */
+  withDue?: boolean;
 }
 
 /**
@@ -219,7 +228,7 @@ function CellControl({
       ],
     },
   ];
-  return (
+  const menu = (
     <DropdownMenu
       button={{
         ref: ctx.control(row.personId, column.typeId),
@@ -235,6 +244,19 @@ function CellControl({
       menuWidth={280}
       items={items}
     />
+  );
+  // "Går ut snart" says when under the control, short, as the column's width allows: the day is in the control's name
+  // and its menu too, so it is not read twice (the cell is the control, named with it).
+  const due = ctx.withDue ? cellDue(cell) : null;
+  return due ? (
+    <VStack gap={0} hAlign="start">
+      {menu}
+      <Text type="supporting" aria-hidden>
+        {due}
+      </Text>
+    </VStack>
+  ) : (
+    menu
   );
 }
 
@@ -269,14 +291,18 @@ function MatrixTable({ data, ctx }: { data: CompetenceMatrixOutput; ctx: CellCon
   const sticky = useTableStickyColumns<TableRow>({ startKeys: ['person'] });
   // The name is each row's header (1.3.1), so moving down a column a screen reader names the person with each status.
   // Astryx's Table draws every body cell as a `td` and has no row-header column; its documented plugin hook
-  // (`transformBodyCell`) gives the name's cell the role.
+  // (`transformBodyCell`) gives the name's cell the role. The table has a name of its own (1.3.1, the review of
+  // 2026-11-13), "Medarbetarnas kompetens": Astryx's Table has no caption prop, and its documented hook for the
+  // `<table>` itself (`transformTable`) gives it `aria-label`.
   const rowHeaders = useMemo<TablePlugin<TableRow>>(
     () => ({
+      transformTable: props => ({ ...props, htmlProps: { ...props.htmlProps, 'aria-label': TABLE_NAME } }),
       transformBodyCell: (props, column) =>
         column.key === 'person' ? { ...props, htmlProps: { ...props.htmlProps, role: 'rowheader' } } : props,
     }),
     [],
   );
+  const cells = { ...ctx, withDue: true };
   return (
     <Card padding={0}>
       <Table<TableRow>
@@ -297,7 +323,7 @@ function MatrixTable({ data, ctx }: { data: CompetenceMatrixOutput; ctx: CellCon
             key: `type:${c.typeId}`,
             header: columnHeader(c),
             width: CELL_WIDTH,
-            renderCell: (r: TableRow) => <CellControl row={r.row} column={c} cell={r.row.cells[i]!} ctx={ctx} />,
+            renderCell: (r: TableRow) => <CellControl row={r.row} column={c} cell={r.row.cells[i]!} ctx={cells} />,
           })),
         ]}
         density="compact"
@@ -310,12 +336,17 @@ function MatrixTable({ data, ctx }: { data: CompetenceMatrixOutput; ctx: CellCon
   );
 }
 
+/** The phrase a cell's control draws itself where nothing is required: the list says it once, in the control. */
+const NOT_REQUIRED = 'Krävs inte';
 /**
  * The matrix where the table does not fit (a phone, and beside the panel where the table would not keep its columns'
- * widths), as Personal draws its rows there: one person per item, their name leading to their page, and their cells as
- * the item's content, a short list of each competence with its details and its control.
+ * widths), as Personal draws its rows there: one person per item, their name leading to their page (underlined, as in
+ * the table), and their cells as the item's content, a short list of each competence with its details and its
+ * control. What the control draws is not said again under it: a competence nothing requires of the person is one quiet
+ * line, its name and the control's "Krävs inte". Narrowed to what needs the manager (`narrowed`), a person's list holds
+ * only the competences that do, so a narrowed list of thirty people is not thirty times every column.
  */
-function MatrixList({ data, ctx }: { data: CompetenceMatrixOutput; ctx: CellContext }) {
+function MatrixList({ data, ctx, narrowed }: { data: CompetenceMatrixOutput; ctx: CellContext; narrowed: boolean }) {
   const location = useLocation();
   return (
     <Card padding={0}>
@@ -326,25 +357,25 @@ function MatrixList({ data, ctx }: { data: CompetenceMatrixOutput; ctx: CellCont
             itemKey={row.personId}
             align="start"
             label={
-              <Link href={personPageFrom(location.pathname, location.search, row.key)} weight="semibold">
+              <Link href={personPageFrom(location.pathname, location.search, row.key)} weight="semibold" hasUnderline>
                 {row.name}
               </Link>
             }
             description={
               <List aria-label={`Kompetens för ${row.name}`} density="compact" edge="flush">
-                {data.columns.map((c, i) => {
+                {data.columns.flatMap((c, i) => {
                   const cell = row.cells[i]!;
-                  return (
+                  if (narrowed && !needsAttention(cell)) return [];
+                  const said = cellPhrases(cell, c.kind === SKILL_KIND).filter(p => p !== NOT_REQUIRED);
+                  return [
                     <ListItem
                       key={c.typeId}
                       align="start"
                       label={<Text>{c.name}</Text>}
-                      description={
-                        <Text type="supporting">{cellPhrases(cell, c.kind === SKILL_KIND).join(' · ')}</Text>
-                      }
+                      {...(said.length ? { description: <Text type="supporting">{said.join(' · ')}</Text> } : {})}
                       endContent={<CellControl row={row} column={c} cell={cell} ctx={ctx} />}
-                    />
-                  );
+                    />,
+                  ];
                 })}
               </List>
             }
@@ -354,29 +385,18 @@ function MatrixList({ data, ctx }: { data: CompetenceMatrixOutput; ctx: CellCont
     </Card>
   );
 }
-
-/**
- * The matrix narrowed to what needs the manager (`only=attention`): the competences where a cell does, and the people
- * with such a cell among them, from what the read answered.
- */
-function needing(data: CompetenceMatrixOutput): CompetenceMatrixOutput {
-  const columns = data.columns.flatMap((c, i) => (data.rows.some(r => needsAttention(r.cells[i]!)) ? [i] : []));
-  return {
-    ...data,
-    columns: columns.map(i => data.columns[i]!),
-    rows: data.rows
-      .filter(r => columns.some(i => needsAttention(r.cells[i]!)))
-      .map(r => ({ ...r, cells: columns.map(i => r.cells[i]!) })),
-  };
-}
+/** Whether a cell needs the manager: the one definition the server counts with (`competenceNeedsAttention`). */
+const needsAttention = (cell: CompetenceMatrixCell) => competenceNeedsAttention(cell);
 
 /** The value of the choice that shows every required competence, where they all fit (`by` left out). */
 const EVERY = 'every';
 /**
- * The ways to narrow the matrix, both in the address and rewritten in place, as a view's own controls do, so a reload
- * and a link show the same and one step back leaves the page. The set (D108 item 11): every required competence where
- * they fit, else none, then each area and each position, a part of a set larger than fits its own choice. And "Visa bara
- * det som behöver åtgärdas" (`only=attention`), with a status that says how much is left when it is on.
+ * The ways to narrow the matrix, both in the address, each change a step of its own, so a reload and a link show the
+ * same and Back undoes a change (the review of 2026-11-13: they were rewritten in place, so Back left the page). The set
+ * (D108 item 11): every required competence where they fit, else none, then each area and each position, a part of a
+ * set larger than fits its own choice. And "Visa bara det som behöver åtgärdas" (`only=attention`, the definition the
+ * figure on Hem counts with, `competenceNeedsAttention`), with a status that says how much is left when it is on, in
+ * people: the figure on Hem counts requirements.
  */
 function MatrixChoice({
   data,
@@ -435,7 +455,7 @@ function MatrixChoice({
       <VStack gap={1} hAlign="start">
         <Switch
           label="Visa bara det som behöver åtgärdas"
-          description="Saknas, utgånget, går ut snart eller att granska."
+          description="Krav som saknas, har gått ut eller går ut snart, och registreringar att granska."
           value={attention}
           onChange={next => onAttention(next)}
         />
@@ -450,17 +470,20 @@ function MatrixChoice({
   );
 }
 
-/** A registration's days as a row says them: "Utfärdat 1 okt. 2026 · Giltigt till 1 okt. 2028". */
+/** A registration's days as a row says them: "Utfärdat 1 okt. 2026 · Giltigt till 1 okt. 2028", or "Giltigt tills vidare". */
 const awaitingDays = (a: CompetenceMatrixAwaiting) =>
-  [`Utfärdat ${cellDay(a.issuedOn)}`, a.expiresOn ? `Giltigt till ${cellDay(a.expiresOn)}` : 'Inget slutdatum'].join(
-    ' · ',
-  );
+  [
+    `Utfärdat ${cellDay(a.issuedOn)}`,
+    a.expiresOn ? `Giltigt till ${cellDay(a.expiresOn)}` : `Giltigt ${UNTIL_FURTHER_NOTICE.toLocaleLowerCase('sv')}`,
+  ].join(' · ');
 /**
  * Every registration of the reader's reports' own that waits for their decision (D108 item 7), above the matrix: a type
  * nobody requires has no column, so this list is where each is within reach whatever its type. Astryx's card with a
  * toolbar and a list, as the person's own page draws what waits, the count in the toolbar told as it changes; each row
- * the person, the competence and its dates, the person's name its way in: it opens the decision over the page
- * (`approve`), and takes the focus back when the decision is left without one.
+ * the person, the competence and its dates. The person's name leads to the person, as a person's name does everywhere
+ * (the review of 2026-11-13); the registration's own way in is "Granska" at the row's end, named with the competence
+ * and the person, which opens the decision over the page (`approve`) and takes the focus back when the decision is
+ * left without one.
  */
 function Awaiting({
   rows,
@@ -475,6 +498,7 @@ function Awaiting({
   control: (key: string) => (el: HTMLAnchorElement | HTMLButtonElement | null) => void;
   onReview: (row: CompetenceMatrixAwaiting) => void;
 }) {
+  const location = useLocation();
   return (
     <Card padding={0}>
       <Toolbar
@@ -497,13 +521,7 @@ function Awaiting({
           <ListItem
             key={row.holdingId}
             label={
-              <Link
-                ref={control(awaitingKey(row.holdingId))}
-                href={approveHref(row.holdingId, search)}
-                weight="semibold"
-                hasUnderline
-                onClick={() => onReview(row)}
-              >
+              <Link href={personPageFrom(location.pathname, location.search, row.key)} weight="semibold" hasUnderline>
                 {row.name}
               </Link>
             }
@@ -512,6 +530,17 @@ function Awaiting({
                 <Text>{row.competence}</Text>
                 <Text type="supporting">{awaitingDays(row)}</Text>
               </VStack>
+            }
+            endContent={
+              <Button
+                ref={control(awaitingKey(row.holdingId))}
+                size="sm"
+                variant="secondary"
+                label="Granska"
+                aria-label={`Granska ${row.competence} för ${row.name}`}
+                href={approveHref(row.holdingId, search)}
+                onClick={() => onReview(row)}
+              />
             }
           />
         ))}
@@ -587,9 +616,10 @@ function ApprovalDialog({
               <MetadataListItem label="Medarbetare">{approval.name}</MetadataListItem>
               <MetadataListItem label="Kompetens">{approval.competence}</MetadataListItem>
               <MetadataListItem label="Område">{approval.area}</MetadataListItem>
-              <MetadataListItem label="Utfärdat">{cellDay(approval.issuedOn)}</MetadataListItem>
+              {/* One record's facts: a day is long here, as a detail writes it. */}
+              <MetadataListItem label="Utfärdat">{factDay(approval.issuedOn)}</MetadataListItem>
               <MetadataListItem label="Giltigt till">
-                {approval.expiresOn ? cellDay(approval.expiresOn) : 'Inget slutdatum'}
+                {approval.expiresOn ? factDay(approval.expiresOn) : UNTIL_FURTHER_NOTICE}
               </MetadataListItem>
               <MetadataListItem label="Registrerat">{instantDay(approval.registeredAt)}</MetadataListItem>
             </MetadataList>
@@ -719,7 +749,7 @@ function SkillDialog({
  * template's does.
  */
 export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin: boolean }) {
-  usePageTitle('Medarbetarnas kompetens');
+  usePageTitle(COMPETENCE_PAGE_TITLES.matrix);
   const mobile = useMediaQuery(mobileQuery);
   const short = useMediaQuery(shortQuery);
   // The rail's Personal follows the session's role; who reports to the reader is the matrix read's answer (D99).
@@ -737,7 +767,7 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
   const off = matrixQ.isError && refused(matrixQ.error);
   // What needs the manager, narrowed on the page from what the read answered (`only=attention`).
   const attention = attentionOnly(search);
-  const data = useMemo(() => (read && attention ? needing(read) : read), [read, attention]);
+  const data = useMemo(() => (read && attention ? competenceMatrixNeeding(read) : read), [read, attention]);
   const tableBeside = useMediaQuery(panelBesideQuery(matrixMinWidth(data?.columns.length ?? 0) + 2 * PADDING));
   const narrow = mobile || (panel.occupied && !tableBeside);
 
@@ -815,14 +845,14 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
     toastId: 'competence:approval',
   });
   /**
-   * Closed after a decision the address is replaced, so Back never comes to a decision already made; closed without one
-   * it is a step of its own, as opening it was. Without a decision the focus goes back at once; after one, `decide`
+   * Closed, decided or not, the address is replaced, so Back never comes to the decision again (the review of
+   * 2026-11-13: Back reopened a write dialog). Without a decision the focus goes back at once; after one, `decide`
    * gives it back once the page has been read again (the control that opened it may have gone with the registration).
    */
   const closeApproval = (wasDecided = false) => {
     if (approving) client.removeQueries({ queryKey: keys.competenceApproval(approving) });
     decision.reset();
-    navigate(withoutApprove(search), wasDecided ? { replace: true } : undefined);
+    navigate(withoutApprove(search), { replace: true });
     const from = reviewedFrom.current ?? TITLE_ID;
     reviewedFrom.current = null;
     if (!wasDecided) setFocusAfter(from);
@@ -863,7 +893,8 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
   const closeValidation = () => {
     if (validating) client.removeQueries({ queryKey: keys.competenceSkill(validating) });
     validation.reset();
-    navigate(withoutValidate(search));
+    // Replaced, so Back never opens the confirmation again (D83 rule 8).
+    navigate(withoutValidate(search), { replace: true });
     setFocusAfter(reviewedFrom.current ?? TITLE_ID);
     reviewedFrom.current = null;
   };
@@ -912,20 +943,23 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
       reviewedFrom.current = cellKey(personId, typeId);
     },
   };
+  // A choice of columns, or the narrowing, is a step of its own, so Back undoes it (the review of 2026-11-13).
   const choose = (g: CompetenceMatrixGroup | null) =>
-    navigate(matrixHref(g ? { by: g.by, part: g.part } : {}, search), { replace: true, preventScrollReset: true });
-  const narrowTo = (on: boolean) => navigate(attentionHref(on, search), { replace: true, preventScrollReset: true });
+    navigate(matrixHref(g ? { by: g.by, part: g.part } : {}, search), { preventScrollReset: true });
+  const narrowTo = (on: boolean) => navigate(attentionHref(on, search), { preventScrollReset: true });
 
   const shown = read && read.rows.length > 0 && read.columns.length > 0;
+  // The file holds what the page shows (the set, and narrowed when the page is), and its button says how many people.
+  const filed = data?.rows.length ?? 0;
   const actions =
     read && !off ? (
       <HStack gap={2} wrap="wrap">
-        {shown && (
+        {shown && filed > 0 && (
           <Button
             variant="secondary"
-            label="Ladda ner som CSV"
+            label={`Ladda ner ${filed === 1 ? '1 medarbetare' : `${filed} medarbetare`} som CSV`}
             icon={<Icon icon={ArrowDownTrayIcon} size="sm" />}
-            href={matrixFileHref(read.by ? { by: read.by, ...(read.part ? { part: read.part } : {}) } : {})}
+            href={matrixFileHref(read.by ? { by: read.by, ...(read.part ? { part: read.part } : {}) } : {}, attention)}
           />
         )}
         {read.rows.length > 0 && (
@@ -950,7 +984,7 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
             <VStack hAlign="center">
               <VStack gap={5} width="100%" maxWidth={COLUMN}>
                 <CompetenceHeader
-                  title="Medarbetarnas kompetens"
+                  title={COMPETENCE_PAGE_TITLES.matrix}
                   titleId={TITLE_ID}
                   page="matrix"
                   hasTabs={!off && managesFrom(user, matrixQ)}
@@ -1037,13 +1071,17 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
                             <EmptyState
                               headingLevel={2}
                               title="Inget behöver åtgärdas"
-                              description="Ingen av dem som visas saknar något som krävs, har något som har gått ut eller går ut snart, eller har en registrering att granska."
+                              description="Inget som krävs av dem som visas saknas, har gått ut eller går ut snart, och ingen registrering väntar på granskning."
                               actions={<Button label="Visa alla" href={attentionHref(false, search)} />}
                             />
                           </Card>
                         ) : (
                           <VStack gap={0} aria-busy={matrixQ.isPlaceholderData}>
-                            {narrow ? <MatrixList data={data} ctx={ctx} /> : <MatrixTable data={data} ctx={ctx} />}
+                            {narrow ? (
+                              <MatrixList data={data} ctx={ctx} narrowed={attention} />
+                            ) : (
+                              <MatrixTable data={data} ctx={ctx} />
+                            )}
                           </VStack>
                         )}
                       </>
@@ -1063,7 +1101,8 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
         people={read?.rows ?? []}
         catalogue={typesQ.data?.rows ?? []}
         onClose={() => {
-          navigate(withoutRequirement(search));
+          // Replaced, so Back never opens the dialog again (D83 rule 8).
+          navigate(withoutRequirement(search), { replace: true });
           setFocusAfter(REQUIREMENT_PARAM);
         }}
       />

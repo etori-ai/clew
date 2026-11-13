@@ -306,7 +306,7 @@ describe('the manager’s card (D108 item 12)', () => {
   test('one occurrence that names nobody: its period a digest of what is due, so nothing of a person or a type is stored', async () => {
     await requiredOfAnna();
     await scan(boss);
-    expect(states('boss')).toEqual([['Kompetenser att åtgärda bland dina medarbetare', 'open']]);
+    expect(states('boss')).toEqual([['Krav som inte uppfylls bland dina medarbetare', 'open']]);
     const [card] = cards('boss');
     const [occurrence] = occurrencesOf('boss');
     expect(occurrence).toEqual(['competence:attention', expect.stringMatching(/^[0-9a-f]{64}$/), '1|0', 'open']);
@@ -327,7 +327,7 @@ describe('the manager’s card (D108 item 12)', () => {
     await handle(card!.id, 'handled');
     await scan(boss);
     await scan(boss);
-    expect(states('boss')).toEqual([['Kompetenser att åtgärda bland dina medarbetare', 'handled']]);
+    expect(states('boss')).toEqual([['Krav som inte uppfylls bland dina medarbetare', 'handled']]);
     expect(occurrencesOf('boss')).toHaveLength(1);
   });
 
@@ -336,14 +336,14 @@ describe('the manager’s card (D108 item 12)', () => {
     await scan(boss);
     const holding = await competence.registerHolding(boss, 'anna', { typeId, issuedOn: '2015-06-05' });
     await scan(boss);
-    expect(states('boss')).toEqual([['Kompetenser att åtgärda bland dina medarbetare', 'handled']]);
+    expect(states('boss')).toEqual([['Krav som inte uppfylls bland dina medarbetare', 'handled']]);
     now += 60_000;
     await competence.revokeHolding(boss, holding);
     await scan(boss);
     // The same counts as before (1|0), and a new card: the old one stays handled with its occurrence resolved.
     expect(states('boss')).toEqual([
-      ['Kompetenser att åtgärda bland dina medarbetare', 'handled'],
-      ['Kompetenser att åtgärda bland dina medarbetare', 'open'],
+      ['Krav som inte uppfylls bland dina medarbetare', 'handled'],
+      ['Krav som inte uppfylls bland dina medarbetare', 'open'],
     ]);
     expect(occurrencesOf('boss').map(([, , revision, state]) => [revision, state])).toEqual([
       ['1|0', 'resolved'],
@@ -357,8 +357,8 @@ describe('the manager’s card (D108 item 12)', () => {
     await requiredOfAnna('Fallskydd');
     await scan(boss);
     expect(states('boss')).toEqual([
-      ['Kompetenser att åtgärda bland dina medarbetare', 'handled'],
-      ['Kompetenser att åtgärda bland dina medarbetare', 'open'],
+      ['Krav som inte uppfylls bland dina medarbetare', 'handled'],
+      ['Krav som inte uppfylls bland dina medarbetare', 'open'],
     ]);
     expect(occurrencesOf('boss').map(([, , revision, state]) => [revision, state])).toEqual([
       ['1|0', 'resolved'],
@@ -371,7 +371,29 @@ describe('the manager’s card (D108 item 12)', () => {
     await scan(boss);
     await competence.registerHolding(boss, 'anna', { typeId, issuedOn: '2015-06-05' });
     await scan(boss);
-    expect(states('boss')).toEqual([['Kompetenser att åtgärda bland dina medarbetare', 'handled']]);
+    expect(states('boss')).toEqual([['Krav som inte uppfylls bland dina medarbetare', 'handled']]);
+  });
+
+  test('a certificate nothing requires is not counted: it leaves the card as it is; once required, the set is new and the card comes again, once', async () => {
+    await requiredOfAnna();
+    await scan(boss);
+    // Anna's expired certificate that nothing requires of her is a fact about her (the product owner, 2026-11-13).
+    const hot = await competence.addType(admin, { name: 'Heta arbeten', area: 'Säkerhet', kind: 'certificate' });
+    await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2021-06-01', expiresOn: '2026-05-31' });
+    await scan(boss);
+    expect(occurrencesOf('boss').map(([, , revision, state]) => [revision, state])).toEqual([['1|0', 'open']]);
+    // What is counted changes when it is required, as it did for every manager when the definition narrowed: one new
+    // card for the new set, the old one resolved, and no further one while the set stands.
+    await competence.addRequirement(admin, { typeId: hot, positionCode: 'usk' });
+    await scan(boss);
+    await scan(boss);
+    expect(occurrencesOf('boss').map(([, , revision, state]) => [revision, state])).toEqual([
+      ['1|0', 'resolved'],
+      ['2|0', 'open'],
+    ]);
+    // Her own card for it is there either way: hers, not her manager's.
+    await scan(anna);
+    expect(states('anna').map(([title]) => title)).toContain('Heta arbeten gick ut 31 maj');
   });
 });
 
@@ -552,16 +574,16 @@ describe('a skill that stops meeting its requirement brings its card back (D120 
     expect(cards('boss')).toEqual([]);
     await competence.changeOwnSkill(anna, id, { level: 1, interest: false });
     await scan(boss);
-    expect(states('boss')).toEqual([['Kompetenser att åtgärda bland dina medarbetare', 'open']]);
+    expect(states('boss')).toEqual([['Krav som inte uppfylls bland dina medarbetare', 'open']]);
     await competence.validateSkill(boss, id, { level: 2 });
     await scan(boss);
-    expect(states('boss')).toEqual([['Kompetenser att åtgärda bland dina medarbetare', 'handled']]);
+    expect(states('boss')).toEqual([['Krav som inte uppfylls bland dina medarbetare', 'handled']]);
     // The same count again, a new spell: a new card, not the handled one left as it was.
     await competence.changeOwnSkill(anna, id, { level: 1, interest: false });
     await scan(boss);
     expect(states('boss')).toEqual([
-      ['Kompetenser att åtgärda bland dina medarbetare', 'handled'],
-      ['Kompetenser att åtgärda bland dina medarbetare', 'open'],
+      ['Krav som inte uppfylls bland dina medarbetare', 'handled'],
+      ['Krav som inte uppfylls bland dina medarbetare', 'open'],
     ]);
   });
 });
@@ -604,8 +626,8 @@ describe('a merge leaves no open card of the type merged away (D108 items 2 and 
     ]);
     // The manager's one card counts the same things under their new identities: it is a new set, so a new card.
     expect(states('boss')).toEqual([
-      ['Kompetenser att åtgärda bland dina medarbetare', 'handled'],
-      ['Kompetenser att åtgärda bland dina medarbetare', 'open'],
+      ['Krav som inte uppfylls bland dina medarbetare', 'handled'],
+      ['Krav som inte uppfylls bland dina medarbetare', 'open'],
     ]);
     // Scanned again, everything stands as it is.
     await scan(anna);
@@ -624,7 +646,7 @@ describe('a scan that cannot read says nothing', () => {
     await scan(boss);
     storeFails = true;
     await scan(anna);
-    expect(states('boss')).toEqual([['Kompetenser att åtgärda bland dina medarbetare', 'open']]);
+    expect(states('boss')).toEqual([['Krav som inte uppfylls bland dina medarbetare', 'open']]);
     expect(states('anna')).toEqual([['Socionomexamen saknas', 'open']]);
     expect(audited('thread.source_resolved')).toEqual([]);
     expect(threads.dump().every(o => o.sourceState === 'open')).toBe(true);

@@ -1,5 +1,7 @@
 import type { Locator, Page } from '@playwright/test';
 import {
+  attentionOutput,
+  attentionSpec,
   competenceTypes,
   expectLevelNames,
   holdingsOutput,
@@ -144,23 +146,143 @@ test.describe('Kompetens › Mina kompetenser', () => {
       await expect(page).toHaveTitle('Mina kompetenser · Startsidan');
       await expect(place).toHaveAttribute('aria-current', 'page');
       const main = page.getByRole('main');
-      // A required type the reader lacks is a row of its own, its status in words beside the badge's colour.
-      await expect(main.getByRole('listitem').filter({ hasText: 'Fallskydd' })).toContainText(/saknas/i);
-      await expect(main.getByRole('listitem').filter({ hasText: 'Heta arbeten' })).toContainText(/utgånget/i);
-      // The place's pages as tabs that are links, the current one marked; the matrix is one of them for a manager.
+      // A required type the reader lacks is a row of its own, its status in words beside the badge's colour, the words
+      // written as every face of the register writes them (one casing, the review of 2026-11-13), and a day short in a
+      // row ("31 maj 2026" is the short form too; "10 jan. 2027" shows it).
+      await expect(main.getByRole('listitem').filter({ hasText: 'Fallskydd' })).toContainText('Saknas');
+      await expect(main.getByRole('listitem').filter({ hasText: 'Heta arbeten' })).toContainText('Utgånget');
+      await expect(main.getByRole('listitem').filter({ hasText: 'HLR' })).toContainText('Giltigt till: 10 jan. 2027');
+      // Clew's own register says nothing of being stored elsewhere: its rows are kept in Clew.
+      await expect(main.getByText(/Inget av det sparas på Startsidan/)).toHaveCount(0);
+      // The place's pages as tabs that are links, each named as its page is headed, the current one marked; the matrix
+      // is one of them for a manager.
       await expect(tabs(page).getByRole('link')).toHaveCount(2);
       await expect(tabs(page).getByRole('link', { name: 'Mina kompetenser' })).toHaveAttribute('aria-current', 'true');
-      const matrix = tabs(page).getByRole('link', { name: 'Medarbetare' });
+      const matrix = tabs(page).getByRole('link', { name: 'Medarbetare', exact: true });
       await expect(matrix).toHaveAttribute('href', '/competence/matrix');
       await matrix.focus();
       await page.keyboard.press('Enter');
       await expect(page).toHaveURL('/competence/matrix');
-      await expect(page.getByRole('heading', { level: 1, name: 'Medarbetarnas kompetens' })).toBeVisible();
+      await expect(page.getByRole('heading', { level: 1, name: 'Medarbetare', exact: true })).toBeVisible();
+      // The focus stays where it was, on the tab pressed, now the current one, as Att göra's tabs leave it: never the
+      // start of the document.
+      const current = tabs(page).getByRole('link', { name: 'Medarbetare', exact: true });
+      await expect(current).toHaveAttribute('aria-current', 'true');
+      await expect(current).toBeFocused();
       // The rail keeps Kompetens as the place on both pages.
       await expect(place).toHaveAttribute('aria-current', 'page');
+      // And back by the other tab, by keyboard (the tabs are one stop, the arrows move between them, Astryx's
+      // TabList): its tab has the focus on the page it leads to.
+      await page.keyboard.press('ArrowLeft');
+      await expect(tabs(page).getByRole('link', { name: 'Mina kompetenser' })).toBeFocused();
+      await page.keyboard.press('Enter');
+      await expect(page).toHaveURL(OWN);
+      await expect(tabs(page).getByRole('link', { name: 'Mina kompetenser' })).toBeFocused();
+      await page.goBack();
+      await expect(page).toHaveURL('/competence/matrix');
       await page.goBack();
       await expect(page).toHaveURL(OWN);
       await expect(page.getByRole('heading', { level: 1, name: 'Mina kompetenser' })).toBeVisible();
+    });
+
+    test('the figure on Hem leads to the matrix narrowed to what needs attention, by the read’s declared page', async ({
+      page,
+      api,
+    }) => {
+      switchedOn(api);
+      api.areas.push({
+        id: 'competence',
+        title: 'Kompetens',
+        connector: 'competence',
+        source: 'Kompetens',
+        figure: {
+          label: 'Krav som inte uppfylls',
+          value: '19',
+          comparison: '3 till går ut inom 90 dagar',
+          tone: 'alert',
+          opens: { capability: 'competence.attention', title: 'Krav som inte uppfylls' },
+          observedAt: '2026-11-04T07:00:00.000Z',
+        },
+        needsYou: 0,
+        waiting: 0,
+        urgency: null,
+        standing: [],
+        schedules: [],
+      });
+      await open(page, '/');
+      const lage = page.getByRole('region', { name: 'Läget' });
+      // One face for those rows: the matrix narrowed, which counts people, never the list of the same rows.
+      const tile = lage.getByRole('link', { name: /Krav som inte uppfylls/ });
+      await expect(tile).toHaveAttribute('href', '/competence/matrix?only=attention');
+      await tile.focus();
+      await page.keyboard.press('Enter');
+      await expect(page).toHaveURL('/competence/matrix?only=attention');
+      await expect(page.getByRole('switch', { name: /Visa bara det som behöver åtgärdas/ })).toBeChecked();
+      await expect(rail(page).getByRole('link', { name: 'Kompetens', exact: true })).toHaveAttribute(
+        'aria-current',
+        'page',
+      );
+    });
+
+    test('a read of Kompetens is a page of the place wherever it was opened from, and a cut list says what it left out', async ({
+      page,
+      api,
+    }) => {
+      switchedOn(api);
+      // The attention list keeps its page for an address that names it; the rail marks Kompetens on it from anywhere.
+      for (const from of ['%2F', '%2Ftodo', '%2Fcompetence%2Fmatrix']) {
+        await open(page, `/tools/competence.attention?from=${from}`);
+        await expect(page.getByRole('heading', { level: 1, name: 'Krav som inte uppfylls' })).toBeVisible();
+        await expect(rail(page).getByRole('link', { name: 'Kompetens', exact: true })).toHaveAttribute(
+          'aria-current',
+          'page',
+        );
+      }
+      // A read of Clew's own that left rows out says how many under the rows, and counts them all.
+      await page.route('**/api/cap/competence.attention*', route =>
+        route.fulfill({
+          json: {
+            source: 'Kompetens',
+            view: { ...attentionSpec, rowViews: true },
+            output: { ...attentionOutput, omitted: 37 },
+          },
+        }),
+      );
+      await open(page, '/tools/competence.attention?from=%2F');
+      const main = page.getByRole('main');
+      await expect(main.getByText('41 krav som inte uppfylls', { exact: true })).toBeVisible();
+      await expect(main.getByText('Visar de första 4. 37 till visas inte.')).toBeVisible();
+      // Clew's own register: nothing says it is not stored here.
+      await expect(main.getByText(/Inget av det sparas på Startsidan/)).toHaveCount(0);
+      await expectNoAxeViolations(page);
+    });
+
+    test('a row of the own list renews it: its name opens the dialog with its competence chosen, closing gives the name the focus, and Back opens nothing', async ({
+      page,
+      api,
+    }) => {
+      switchedOn(api);
+      await open(page, OWN);
+      const main = page.getByRole('main');
+      // Heta arbeten has run out: its name is the way to registering it again, with the competence chosen.
+      const heta = main.getByRole('link', { name: 'Heta arbeten', exact: true });
+      await expect(heta).toHaveAttribute('href', `${OWN}?add=new&competence=t-heta`);
+      // A copied row whose type is not mapped has no type to register: its name is text.
+      await expect(main.getByRole('link', { name: 'Livsmedelshygien' })).toHaveCount(0);
+      await heta.focus();
+      await page.keyboard.press('Enter');
+      await expect(page).toHaveURL(`${OWN}?add=new&competence=t-heta`);
+      const dialog = page.getByRole('dialog', { name: 'Lägg till intyg' });
+      await expect(dialog.getByRole('combobox', { name: /Kompetens/ })).toContainText('Heta arbeten');
+      await expectNoAxeViolations(page);
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+      await expect(page).toHaveURL(OWN);
+      await expect(heta).toBeFocused();
+      // Closing replaced the dialog's address: Back leaves the page as it was before it opened, and opens no dialog.
+      await page.goBack();
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      await expect(page).not.toHaveURL(/add=new/);
     });
 
     test('the rail draws Kompetens only while the module is on, and an address from before gets the page’s answer', async ({
@@ -578,7 +700,7 @@ test.describe('Kompetens › Mina kompetenser', () => {
       twoWaiting(api);
       await page.setViewportSize(narrow);
       await open(page, OWN);
-      await expect(tabs(page).getByRole('link', { name: 'Medarbetare' })).toBeVisible();
+      await expect(tabs(page).getByRole('link', { name: 'Medarbetare', exact: true })).toBeVisible();
       await expect(page.getByRole('button', { name: 'Ta tillbaka HLR' })).toBeVisible();
       expect(await reflowProblems(page)).toEqual([]);
       await open(page, `${OWN}?add=new`);

@@ -9,7 +9,6 @@ import {
   systems,
   attention,
   checkReport,
-  completions,
   connectorDetail,
   connectorPreview,
   connectors,
@@ -230,6 +229,8 @@ export class MockApi {
   searchOptionsReads = 0;
   searchFiles: CompetenceSearchFileBody[] = [];
   searchFails = false;
+  /** The type ids the search page asked the catalogue to name (an address opened from a link or a reload; no log). */
+  typesNamed: string[] = [];
   /**
    * The person's calendar (D116, amended 2026-11-12): `ok` answers; `silent` does not (the calendar's own 400, as when its
    * server fails); `unbound` is an account with no calendar bound to it; `hidden` is a calendar the registry does not
@@ -880,7 +881,6 @@ export class MockApi {
       });
     }
     if (path === '/attention') return json(attention);
-    if (path === '/completions') return json(completions);
     if (path === '/assistant/status') return json(assistantStatus(this.modelChoices, this.currentModel));
     if (path === '/assistant/model' && request.method() === 'PATCH') {
       this.currentModel = (request.postDataJSON() as { modelId: string }).modelId;
@@ -1104,12 +1104,18 @@ export class MockApi {
       }
     }
     // Kompetenssökning (D121): refused to anyone without the relation, as the server refuses; the type field asks the
-    // catalogue; a search and its file are asked in a body, a page at a time, by name.
+    // catalogue, by words or by the ids an address names; a search and its file are asked in a body, every chosen type
+    // held, filtered and sorted before a page is cut, as the server does.
     if (path === '/competence/search/types' && route.request().method() === 'POST') {
-      const words = ((route.request().postDataJSON() as { text: string }).text ?? '')
-        .toLocaleLowerCase('sv')
-        .split(/\s+/)
-        .filter(Boolean);
+      const asked = route.request().postDataJSON() as { text?: string; ids?: string[] };
+      this.typesNamed.push(...(asked.ids ?? []));
+      // By the ids an address names, archived ones too, in the order asked; an unknown id is left out.
+      if (asked.ids)
+        return json({
+          rows: asked.ids.flatMap(id => (this.competenceTypes ?? []).filter(t => t.id === id)),
+          more: false,
+        });
+      const words = (asked.text ?? '').toLocaleLowerCase('sv').split(/\s+/).filter(Boolean);
       const found = (this.competenceTypes ?? []).filter(
         t => !t.archived && words.every(w => (t.name + ' ' + t.area).toLocaleLowerCase('sv').includes(w)),
       );
@@ -1135,12 +1141,64 @@ export class MockApi {
       }
       if (this.searchFails) return route.fulfill({ status: 503, json: { error: 'Något gick fel. Försök igen.' } });
       const body = route.request().postDataJSON() as CompetenceSearchBody;
-      const type = this.competenceTypes?.find(t => t.id === body.typeId);
-      const held = (this.competenceSearch[body.typeId] ?? []).filter(
-        r =>
-          (!body.unitId || r.units.includes(body.unitId === 'unit-skola' ? 'Bergsåkers skola' : 'Hemtjänst Centrum')) &&
-          (!body.minLevel || (r.level ?? 0) >= body.minLevel),
+      // As the server: every type is the catalogue's, or nothing is read or logged.
+      const types = body.typeIds.map(id => this.competenceTypes?.find(t => t.id === id));
+      if (types.some(t => !t))
+        return route.fulfill({ status: 400, json: { error: 'Kompetensen finns inte i katalogen.' } });
+      const chosen = types as NonNullable<(typeof types)[number]>[];
+      const skill = (typeId: string) => chosen.find(t => t.id === typeId)?.kind === 'skill';
+      const today = NOW.slice(0, 10);
+      const days = (end: string) => Math.round((Date.parse(end) - Date.parse(today)) / 86_400_000);
+      // One row per person who holds every chosen type, their types as held in the order chosen.
+      const [first, ...rest] = chosen.map(t => this.competenceSearch[t.id] ?? []);
+      const all = (first ?? [])
+        .filter(r => rest.every(rows => rows.some(o => o.personId === r.personId)))
+        .map(r => ({
+          ...r,
+          held: [r, ...rest.map(rows => rows.find(o => o.personId === r.personId)!)].flatMap(o => o.held),
+        }))
+        .filter(
+          r =>
+            (!body.unitId ||
+              r.units.includes(body.unitId === 'unit-skola' ? 'Bergsåkers skola' : 'Hemtjänst Centrum')) &&
+            r.held.every(h => !skill(h.typeId) || !body.minLevel || (h.level ?? 0) >= body.minLevel),
+        );
+      const narrowed = all.filter(r =>
+        r.held.every(
+          h =>
+            skill(h.typeId) ||
+            ((!body.status || body.status.includes(h.status)) &&
+              (!body.until ||
+                (h.expiresOn !== undefined && days(h.expiresOn) >= 0 && days(h.expiresOn) <= body.until))),
+        ),
       );
+      const rank = { expired: 0, expiring: 1, valid: 2 } as const;
+      const value = (r: CompetenceSearchRow): string | number | undefined =>
+        body.sort === 'unit'
+          ? r.units.join(', ') || undefined
+          : body.sort === 'status'
+            ? Math.min(...r.held.map(h => rank[h.status]))
+            : body.sort === 'until'
+              ? r.held.flatMap(h => (h.expiresOn ? [h.expiresOn] : [])).sort()[0]
+              : body.sort === 'level'
+                ? Math.min(...r.held.flatMap(h => (h.level ? [h.level] : [9])))
+                : r.name;
+      const sign = body.order === 'desc' ? -1 : 1;
+      const held = [...narrowed].sort((a, b) => {
+        const x = value(a),
+          y = value(b);
+        const by =
+          x === y
+            ? 0
+            : x === undefined
+              ? 1
+              : y === undefined
+                ? -1
+                : typeof x === 'number'
+                  ? x - (y as number)
+                  : String(x).localeCompare(String(y), 'sv');
+        return sign * by || a.name.localeCompare(b.name, 'sv') || a.personId.localeCompare(b.personId);
+      });
       if (path === '/competence/search.csv') {
         this.searchFiles.push(body);
         return route.fulfill({
@@ -1157,14 +1215,10 @@ export class MockApi {
         last = Math.max(1, Math.ceil(held.length / pageSize)),
         at = Math.min(body.page ?? 1, last);
       return json({
-        type: {
-          id: body.typeId,
-          name: type?.name ?? body.typeId,
-          area: type?.area ?? '',
-          kind: type?.kind ?? 'course',
-        },
+        types: chosen.map(t => ({ id: t.id, name: t.name, area: t.area, kind: t.kind })),
         rows: held.slice((at - 1) * pageSize, at * pageSize),
         total: held.length,
+        unfiltered: all.length,
         page: at,
         pageSize,
       });

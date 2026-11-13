@@ -62,7 +62,6 @@ import type {
   RescheduleEventInput,
   CheckReport,
   ClewObject,
-  Completions,
   ConnectorDetail,
   ConnectorHealth,
   ConnectorPatchInput,
@@ -429,7 +428,6 @@ export const api = {
   undo: (id: string) => post<Thread>(`/api/threads/${id}/undo`),
   replan: (id: string, week: string) => post<Thread>(`/api/threads/${id}/replan`, { week }),
   dismiss: (id: string) => post<Thread>(`/api/threads/${id}/dismiss`),
-  completions: () => call<Completions>('/api/completions'),
   thread: (id: string) => call<Thread>(`/api/threads/${id}`),
   /** A work item's Händelser (D112 item 4), from its audit rows. */
   itemEvents: (id: string) => call<ItemEvents>(`/api/threads/${id}/events`),

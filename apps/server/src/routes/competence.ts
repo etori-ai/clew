@@ -190,9 +190,16 @@ function connector(value: string | undefined) {
   if (!value || value.length > 80 || !/^[a-z][a-z0-9-]*$/.test(value)) throw new InputError('Ogiltig förfrågan.');
   return value;
 }
-/** The matrix's set of columns (D108 item 11): `?by=` (1 to 200 characters) and `?part=` (1 to 99), each optional. */
-function matrixInput(by: string | undefined, part: string | undefined): CompetenceMatrixInput {
+/**
+ * The matrix's set of columns (D108 item 11): `?by=` (1 to 200 characters) and `?part=` (1 to 99), each optional; for
+ * the file, `?only=attention` as the page narrows it.
+ */
+function matrixInput(by: string | undefined, part: string | undefined, only?: string): CompetenceMatrixInput {
   const input: CompetenceMatrixInput = {};
+  if (only !== undefined) {
+    if (only !== 'attention') throw new InputError('Ogiltig förfrågan.');
+    input.only = only;
+  }
   if (by !== undefined) {
     if (!by || by.length > 200) throw new InputError('Ogiltig förfrågan.');
     input.by = by;
@@ -384,7 +391,7 @@ export function competenceRoutes(deps: CompetenceRouteDeps) {
   routes.get('/matrix.csv', async c => {
     const file = await competence.exportMatrix(
       c.get('session').context,
-      matrixInput(c.req.query('by'), c.req.query('part')),
+      matrixInput(c.req.query('by'), c.req.query('part'), c.req.query('only')),
     );
     return c.body(file.text, 200, {
       ...privateHeaders,

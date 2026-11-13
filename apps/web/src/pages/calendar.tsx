@@ -221,7 +221,7 @@ function EventFacts({
  * booked, when the round must be done, when it is and with whom. Its buttons are the proposal's existing decisions,
  * through the same use cases as before (`modules/calendar/usecases/decisions.ts`): send the invitation for this time,
  * move it (the dialog, never drag alone), draw the proposals again in the next week, and undo while the calendar allows
- * it. "Öppna som sida" leads to the proposals' work item, where several are chosen at once.
+ * it. Its name in the panel's header leads to the proposals' work item, where several are chosen at once (`page`).
  */
 function ProposalFacts({
   item,
@@ -235,8 +235,6 @@ function ProposalFacts({
   onMove: () => void;
 }) {
   const p = item.proposal!;
-  const { pathname, search } = useLocation();
-  const from = pathname + search;
   const { run, error } = useThreadAction();
   const proposed = p.status === 'proposed';
   const open = thread?.state === 'open';
@@ -299,7 +297,6 @@ function ProposalFacts({
           />
         )}
         {undoOpen && <Button variant="destructive" label="Ångra" clickAction={() => run(() => api.undo(p.threadId))} />}
-        <Button variant="ghost" label="Öppna som sida" href={itemPageHref(p.threadId, from)} />
       </HStack>
     </>
   );
@@ -458,6 +455,8 @@ export function CalendarPage({ user, admin = false }: { user: SessionUser; admin
         id: 'entry:' + item.id,
         title: item.title,
         subtitle: `Förslag · ${mark?.source ?? 'Kalendern'}`,
+        // The name is the way in (2026-11-13): the proposal's work item as a page, with Kalender as the way back.
+        page: itemPageHref(p.threadId, pathname + search),
         subject: {
           key: 'proposal:' + p.id,
           label: 'förslaget',

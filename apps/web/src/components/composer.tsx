@@ -13,8 +13,6 @@ import {
   DropdownMenuRadioItem,
   HStack,
   Link,
-  List,
-  ListItem,
   Text,
   Token,
   TypeaheadItem,
@@ -28,10 +26,9 @@ import {
 } from '@clew/ui';
 import { mobileQuery } from './shell';
 import { api } from '../api';
-import { assistantQuery, completionsQuery, threadsQuery } from '../queries';
+import { assistantQuery } from '../queries';
 import { keys } from '../query-keys';
 import { errorMessage } from '../query-policy';
-import { addDays, displayDate, shortDayLabel, timeLabel, today } from '@clew/calendar/dates';
 import { tokenValue, useClaimBox, useConversation, type AskFrom } from './conversation-context';
 import { useObjectMark } from '../marks';
 
@@ -135,34 +132,6 @@ function Dictation({ onResult }: { onResult: (text: string) => void }) {
  * asking (D111 rule 6), and a card is what the box asks about only once the person has added it as a chip. In a
  * conversation (H1) it says "Det här samtalet" with the way to a new question; at the foot of a tool's page (D50) the
  * placeholder says what the box asks about, or that it starts a new conversation, and the box keeps to one line.
- */
-const STOP = new Set([
-  'att',
-  'och',
-  'som',
-  'för',
-  'med',
-  'den',
-  'det',
-  'ett',
-  'jag',
-  'vad',
-  'hur',
-  'när',
-  'var',
-  'min',
-  'mitt',
-  'mina',
-  'har',
-  'kan',
-  'vill',
-  'ska',
-  'till',
-  'från',
-  'över',
-  'om',
-]);
-/**
  * `thing` is the box at the foot of the panel beside an opened thing (D112 item 7): it asks about that thing only, so it
  * has no drawer, no `@`, no model menu and no verbs, and its placeholder names the thing ("Fråga om ärendet …").
  */
@@ -358,102 +327,5 @@ export function Composer({
       sendActions={<Dictation onResult={text => talk.setValue((talk.value + ' ' + text).trim())} />}
       status={talk.error ? { type: 'error', message: talk.error } : undefined}
     />
-  );
-}
-
-/**
- * "Menar du" under the box while the person types (G): what the router finds without the model (D8), an open card that
- * matches first, then the connectors' standing actions, then the questions a connector answers, then an earlier conversation to continue. A read
- * opens its view (a list or a table on its own page, one thing beside the page, D116), everything else is asked in the
- * box, a conversation opens. What leads somewhere is a link, so it can be opened in a new tab. Nothing here waits for
- * the model.
- */
-export function Suggestions({
-  viewHref,
-  cardHref,
-}: {
-  viewHref: (capability: string, title: string) => string;
-  cardHref: (threadId: string) => string;
-}) {
-  const talk = useConversation();
-  const completions = useQuery(completionsQuery).data;
-  const threads = useQuery(threadsQuery).data?.threads;
-  const query = talk.value
-    .replace(/@\[[^\]]+\]/g, '')
-    .trim()
-    .toLowerCase();
-  if (!completions || query.length < 2) return null;
-  // Word stems, so "faktura" finds "fakturor"; short words and the little words of a question find nothing on their own.
-  const words = query
-    .split(/\s+/)
-    .filter(w => w.length >= 3 && !STOP.has(w))
-    .map(w => (w.length > 5 ? w.slice(0, w.length - 2) : w));
-  const hits = (text: string) => {
-    const t = text.toLowerCase();
-    return t !== query && words.length > 0 && words.some(w => t.includes(w));
-  };
-  const todayDate = today();
-  const when = (at: string) => {
-    const day = displayDate(at);
-    return day === todayDate
-      ? timeLabel(at)
-      : day === addDays(todayDate, -1)
-        ? `i går ${timeLabel(at)}`
-        : shortDayLabel(day);
-  };
-  // The card the push already made comes first: asking for it and being told about it land on the same card (G).
-  const cards = (threads ?? []).filter(t => t.state === 'open' && t.kind === 'pushed' && hits(t.title));
-  const rows: { key: string; label: string; detail: string; href?: string; go?: () => void }[] = [
-    ...cards.map(t => ({
-      key: 'card:' + t.id,
-      label: t.title,
-      detail: `${t.trigger.source} · öppnar ärendet`,
-      href: cardHref(t.id),
-    })),
-    ...completions.do
-      .filter(d => hits(d.text))
-      .map(d => ({
-        key: 'do:' + d.capability,
-        label: d.text,
-        detail: `${d.source} · ${d.kind === 'read' ? 'öppnar vyn' : 'öppnar ärendet'}`,
-        ...(d.kind === 'read' ? { href: viewHref(d.capability, d.text) } : { go: () => talk.ask(d.text) }),
-      })),
-    ...completions.ask
-      .filter(a => hits(a.text))
-      .map(a => ({
-        key: 'ask:' + a.capability,
-        label: a.text,
-        detail: `${a.source} · svarar utan modellen`,
-        go: () => talk.ask(a.text),
-      })),
-    ...completions.recent
-      .filter(r => hits(r.title))
-      .map(r => ({
-        key: 'recent:' + r.conversationId,
-        label: `Fortsätt samtalet · ${r.title}`,
-        detail: when(r.at),
-        href: `/conversations/${r.conversationId}`,
-      })),
-  ].slice(0, 4);
-  if (rows.length === 0) return null;
-  return (
-    <List
-      density="compact"
-      hasDividers
-      header={
-        <Text type="supporting" weight="semibold">
-          Menar du
-        </Text>
-      }
-    >
-      {rows.map(r => (
-        <ListItem
-          key={r.key}
-          label={<Text>{r.label}</Text>}
-          endContent={<Text type="supporting">{r.detail}</Text>}
-          {...(r.href ? { href: r.href } : { onClick: r.go })}
-        />
-      ))}
-    </List>
   );
 }

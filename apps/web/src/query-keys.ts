@@ -10,7 +10,6 @@ export const keys = {
   areas: ['areas'] as const,
   today: ['today'] as const,
   attention: ['attention'] as const,
-  completions: ['completions'] as const,
   assistant: ['assistant'] as const,
   /** The prefix of every loaded week; invalidated when a thread with proposals changes. */
   calendarAll: ['calendar'] as const,
@@ -76,8 +75,10 @@ export const keys = {
    * logged, and one is made only when the reader asks.
    */
   competenceSearchOptions: ['competence', 'search-options'] as const,
-  competenceSearch: (body: { typeId: string; minLevel?: number; unitId?: string; page?: number; pageSize?: number }) =>
+  competenceSearch: (body: { typeIds: readonly string[]; [part: string]: unknown }) =>
     ['competence-search', body] as const,
+  /** The catalogue's types an address names, by id (the search's field labels them before its answer): no log. */
+  competenceTypesNamed: (ids: readonly string[]) => ['competence', 'types-named', ids] as const,
   competenceAll: ['competence'] as const,
   /** The follow-up dialogue (D118): one unit's dialogue. */
   dialogue: {

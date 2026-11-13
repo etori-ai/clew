@@ -99,8 +99,10 @@ test.describe('a declared table or list on its page', () => {
     await expect(contact.getByText('Rum')).toBeVisible();
     await expect(contact.getByRole('link', { name: '0980-319 203' })).toHaveAttribute('href', 'tel:0980319203');
     await expect(contact.getByRole('link', { name: /Öppna i telefonboken/ })).toHaveAttribute('target', '_blank');
-    // A contact card is no record: no page of its own is offered in the panel.
-    await expect(contact.getByRole('link', { name: 'Öppna som sida' })).toHaveCount(0);
+    // A contact card is no record: no page of its own, so its name in the panel's header is no link.
+    await expect(
+      contact.getByRole('heading', { level: 2, name: 'Kontaktkort', exact: true }).getByRole('link'),
+    ).toHaveCount(0);
     await expectNoAxeViolations(page);
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -471,41 +473,88 @@ test.describe('a view row that names a person', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Anna Lindqvist' })).toBeVisible();
   });
 
-  test('a row that also opens a read keeps it on its name and has the person as its own link at the end', async ({
+  test('a row that also opens a read keeps the person on its name and has the read as its own link, named for the row', async ({
     page,
     api: _,
   }) => {
     await serve(page, withOpen);
     await open(page, planner);
     const panel = page.getByRole('main');
-    await expect(panel.getByRole('columnheader')).toHaveText(['Namn', 'Samtal', 'När', 'Person']);
+    // A person's name always leads to the person (the app critique of 2026-11-13); the row's own read has a column of
+    // its own, headed with the read's title.
+    await expect(panel.getByRole('columnheader')).toHaveText(['Namn', 'Samtal', 'När', 'Åtgärdspunkter']);
     const anna = panel.getByRole('row').filter({ hasText: 'Anna Lindqvist' });
-    // The row's own read is a list (the person's action points): its page, with the planner as the way back (D116).
     await expect(anna.getByRole('link', { name: 'Anna Lindqvist', exact: true })).toHaveAttribute(
+      'href',
+      /^\/people\/anna\?from=%2Ftools%2Ftalks\.talks/,
+    );
+    // The row's own read is a list (the person's action points): its page, with the planner as the way back (D116).
+    await expect(anna.getByRole('link', { name: 'Åtgärdspunkter för Anna Lindqvist' })).toHaveAttribute(
       'href',
       /^\/tools\/talks\.commitments\?input=.*&from=%2Ftools%2Ftalks\.talks/,
     );
-    await expect(anna.getByRole('link', { name: 'Öppna Anna Lindqvist' })).toHaveAttribute(
-      'href',
-      /^\/people\/anna\?from=/,
-    );
-    // The row that names nobody and opens nothing has neither.
+    // The row without the key names nobody: its name is text, and its read is still its own link.
     const nobody = panel.getByRole('row').filter({ hasText: 'Utan användarnamn' });
-    await expect(nobody.getByRole('link')).toHaveCount(0);
+    await expect(nobody.getByRole('link', { name: 'Utan användarnamn', exact: true })).toHaveCount(0);
     await expectNoAxeViolations(page);
-    // On a phone the table is its list: the person's link stands at the row's end.
+    // On a phone the table is its list: the read's link stands at the row's end, the name still the person's.
     await page.setViewportSize(phone);
     const sheet = page.getByRole('main');
     const item = sheet.getByRole('listitem').filter({ hasText: 'Anna Lindqvist' });
-    await expect(item.getByRole('link', { name: 'Öppna Anna Lindqvist' })).toHaveAttribute(
+    await expect(item.getByRole('link', { name: 'Anna Lindqvist', exact: true })).toHaveAttribute(
       'href',
       /^\/people\/anna\?from=/,
     );
-    await expect(item.getByRole('link', { name: 'Anna Lindqvist', exact: true })).toHaveAttribute(
+    await expect(item.getByRole('link', { name: 'Åtgärdspunkter för Anna Lindqvist' })).toHaveAttribute(
       'href',
       /^\/tools\/talks\.commitments\?/,
     );
     await page.evaluate(() => Promise.all(document.getAnimations().map(a => a.finished)));
+    await expectNoAxeViolations(page);
+  });
+
+  test('a row whose read is one thing opens it beside the page from its own link, the name still the person’s', async ({
+    page,
+    api: _,
+  }) => {
+    // Absence per person as the HR system declares it (`connectors/hr`): the name names the employee (`subject`), the
+    // row opens the employee's pattern (`open`, a detail, one thing beside the page).
+    await page.route('**/api/cap/hr.absenceOverview*', route =>
+      route.fulfill({
+        json: {
+          source: 'Personalsystemet',
+          view: {
+            kind: 'table',
+            capability: 'hr.absenceOverview',
+            connector: 'hr',
+            source: 'Personalsystemet',
+            chip: false,
+            external: true,
+            title: 'name',
+            ref: 'ref',
+            noun: { one: 'medarbetare', other: 'medarbetare' },
+            subject: { entity: 'person', key: 'person' },
+            open: { capability: 'hr.absencePattern', title: 'Mönster', params: { ref: 'ref' } },
+            fields: [
+              { key: 'name', label: 'Namn' },
+              { key: 'periods', label: 'Perioder', format: 'number' },
+            ],
+          },
+          output: { rows: [{ ref: 'hr:emp:1', person: 'anna', name: 'Anna Lindqvist', periods: 3 }] },
+        },
+      }),
+    );
+    await open(page, `/tools/hr.absenceOverview?title=${title('Frånvaro per person')}&from=%2F`);
+    const main = page.getByRole('main');
+    const anna = main.getByRole('row').filter({ hasText: 'Anna Lindqvist' });
+    await expect(anna.getByRole('link', { name: 'Anna Lindqvist', exact: true })).toHaveAttribute(
+      'href',
+      /^\/people\/anna\?from=%2Ftools%2Fhr\.absenceOverview/,
+    );
+    const pattern = anna.getByRole('link', { name: 'Mönster för Anna Lindqvist' });
+    await expect(pattern).toHaveAttribute('href', /[?&]open=hr\.absencePattern/);
+    // A connector outside Clew: what it shows is not stored in Clew, and the page says so.
+    await expect(main.getByText(/Inget av det sparas på Startsidan\./)).toBeVisible();
     await expectNoAxeViolations(page);
   });
 

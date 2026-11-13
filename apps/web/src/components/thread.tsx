@@ -20,10 +20,10 @@ import {
   Heading,
   HStack,
   Icon,
+  Link,
   List,
   ListItem,
   MoreMenu,
-  StackItem,
   Step,
   Stepper,
   Text,
@@ -192,8 +192,8 @@ export function ThreadCard({ thread, compact, headingLevel = 3, beside = false, 
   const count = selected.length,
     plural = count === 1 ? 'inbjudan' : 'inbjudningar';
   const status = statusLine(thread);
-  // Beside a page the proposal is a peek, with the way to its own page as every work item has it (D112 item 4, D116);
-  // on that page itself, and in an answer, there is nowhere further to go.
+  // Beside a page the proposal is a peek, its title the way to its own page as every work item's is (D112 item 4, D116,
+  // the name is the way in); on that page itself, and in an answer, there is nowhere further to go.
   const { pathname, search } = useLocation();
   const toPage =
     beside && pathname !== `/items/${encodeURIComponent(thread.id)}`
@@ -224,20 +224,15 @@ export function ThreadCard({ thread, compact, headingLevel = 3, beside = false, 
       </HStack>
       {thread.kind === 'pushed' && (
         <>
-          {toPage ? (
-            <HStack gap={3} vAlign="start" wrap="wrap">
-              <StackItem size="fill">
-                <Heading level={2} accessibilityLevel={headingLevel}>
-                  {lead}
-                </Heading>
-              </StackItem>
-              <Button size="sm" variant="secondary" label="Öppna som sida" href={toPage} />
-            </HStack>
-          ) : (
-            <Heading level={2} accessibilityLevel={headingLevel}>
-              {lead}
-            </Heading>
-          )}
+          <Heading level={2} accessibilityLevel={headingLevel}>
+            {toPage ? (
+              <Link href={toPage} hasUnderline>
+                {lead}
+              </Link>
+            ) : (
+              lead
+            )}
+          </Heading>
           {rest && (
             <Text as="p" color="secondary">
               {rest}

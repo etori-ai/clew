@@ -1,17 +1,20 @@
 /**
  * Read the competence domain's read log (D108 item 15, D121 item 5): who read competence about other people, as which
  * relation, by whom (the person, or the assistant reading for them, D122 item 6), what and when, the newest first. A
- * search across the organisation and its file name the type searched for (with the least level and the unit, where one
- * was given); one person's holdings opened names whom; a manager's matrix as a file names neither. Ids and counts only, as the log holds them: no name and no content. Read-only: it writes
+ * search across the organisation and its file name every type searched for, in the order chosen (with the least level
+ * and the unit, where one was given); one person's holdings opened names whom; a manager's matrix as a file names neither. Ids and counts only, as the log holds them: no name and no content. Read-only: it writes
  * nothing, not even an audit row. Runs inside the app container with the server's local settings (DATABASE_URL); no
  * route, no page (D121 asks for none) and no `package.json` entry.
  *
- *   bun scripts/competence-read-log.ts [--organisation <id>] [--person <person id>] [--reader <person id>]
+ *   bun scripts/competence-read-log.ts [--organisation <id>] [--person <person id>] [--type <type id>]
+ *                                      [--reader <person id>]
  *                                      [--relation managed|registrar|self] [--caller person|assistant]
  *                                      [--kind search|person|export]
  *                                      [--since <ISO instant>] [--limit <n, default 100, at most 10000>]
  *
- * One line per read, tab-separated: when, organisation, reader, relation, caller, kind, the type or the person, the
+ * `--type` keeps the searches and files that asked for that type, alone or among others.
+ *
+ * One line per read, tab-separated: when, organisation, reader, relation, caller, kind, the types or the person, the
  * least level and the unit where given, and how many rows the read returned. Every field is printed escaped (`printable`), so no
  * value a row holds can start a line of its own, hide one or move the terminal's cursor.
  */
@@ -35,7 +38,7 @@ if (import.meta.main) {
     return value && !value.startsWith('--') ? value : undefined;
   };
   const usage =
-    'Usage: bun scripts/competence-read-log.ts [--organisation <id>] [--person <person id>] [--reader <person id>] [--relation managed|registrar|self] [--caller person|assistant] [--kind search|person|export] [--since <ISO instant>] [--limit <n>]';
+    'Usage: bun scripts/competence-read-log.ts [--organisation <id>] [--person <person id>] [--type <type id>] [--reader <person id>] [--relation managed|registrar|self] [--caller person|assistant] [--kind search|person|export] [--since <ISO instant>] [--limit <n>]';
   const limit = option('limit') === undefined ? 100 : Number(option('limit'));
   const since = option('since'),
     relation = option('relation'),
@@ -57,6 +60,7 @@ if (import.meta.main) {
   const query: ReadLogQuery = {
     ...(option('organisation') !== undefined ? { organisationId: option('organisation') } : {}),
     ...(option('person') !== undefined ? { personId: option('person') } : {}),
+    ...(option('type') !== undefined ? { typeId: option('type') } : {}),
     ...(option('reader') !== undefined ? { readerId: option('reader') } : {}),
     ...(relation !== undefined ? { relation: relation as ReadLogQuery['relation'] } : {}),
     ...(caller !== undefined ? { caller: caller as ReadLogQuery['caller'] } : {}),
@@ -80,7 +84,11 @@ if (import.meta.main) {
           r.relation,
           r.caller,
           r.kind,
-          r.personId !== null ? 'person:' + r.personId : r.typeId !== null ? 'type:' + r.typeId : '',
+          r.personId !== null
+            ? 'person:' + r.personId
+            : r.typeIds.length
+              ? r.typeIds.map(id => 'type:' + id).join(',')
+              : '',
           r.minLevel ?? '',
           r.unitId ?? '',
           r.rows,

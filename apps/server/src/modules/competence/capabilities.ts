@@ -16,6 +16,7 @@ import {
   type View,
   type ViewField,
   literals,
+  statusLabel,
 } from '@clew/contracts';
 import { systemContext } from '../../system-context';
 import {
@@ -53,10 +54,11 @@ const copiedFields: ViewField[] = [
   { key: 'readAt', label: 'Inläst', format: 'instant', beside: true },
 ];
 /**
- * What has run out, is missing or runs out soon among the manager's reports: the figure and the manager's card open it.
- * A missing row is a type required of the person that they hold nothing of that counts (D108 item 6), with no dates. A
- * skill's row (D120) says the level held, "Egen bedömning" beside it while no manager has confirmed it, and the least
- * level asked; the rows are kompetenser, since a skill is no certificate.
+ * The requirements not met among the manager's reports (the product owner's definition of 2026-11-13): a type required
+ * of a person that is missing, has run out or runs out soon. A missing row is a type required of the person that they
+ * hold nothing of that counts (D108 item 6), with no dates. A skill's row (D120) says the level held, "Egen bedömning"
+ * beside it while no manager has confirmed it, and the least level asked. The rows are krav, the unit the figure on Hem
+ * counts in. The figure and the manager's card lead to the matrix narrowed to the same (`page`), not here.
  */
 export const attentionView: View = {
   kind: 'table',
@@ -64,8 +66,8 @@ export const attentionView: View = {
   // The person a row names (D97 item 6): the name is the way to their page, and the user name is the key
   // `competence.holdings` takes as `person`, which is what the model reads beside the name.
   subject: { entity: 'person', key: 'userName' },
-  noun: { one: 'kompetens', other: 'kompetenser' },
-  empty: 'Inget saknas, inget har gått ut och inget går ut inom 90 dagar.',
+  noun: { one: 'krav som inte uppfylls', other: 'krav som inte uppfylls' },
+  empty: 'Inget som krävs saknas, har gått ut eller går ut inom 90 dagar.',
   fields: [
     { key: 'name', label: 'Namn' },
     { key: 'competence', label: 'Kompetens' },
@@ -122,21 +124,19 @@ type Keys = Static<typeof KeysSchema>;
 /**
  * Where a person stands, in the word a person reads, in order of precedence (`personStatus`): something has run out,
  * something required is missing, something runs out soon, all is valid, nothing is registered. Only the first three have
- * a tone, so only they can be a mark.
+ * a tone, so only they can be a mark. The statuses are the words every face of the register uses (`statusLabel`).
  */
 export const STANDING_WORDS = {
-  expired: 'Utgånget',
-  missing: 'Saknas',
-  expiring: 'Går ut snart',
-  valid: 'Giltigt',
+  expired: statusLabel('expired'),
+  missing: statusLabel('missing'),
+  expiring: statusLabel('expiring'),
+  valid: statusLabel('valid'),
   none: 'Inget registrerat',
-} as const;
+};
 export const PersonCompetenceRowSchema = Type.Object(
   {
     key: Type.String({ minLength: 1, maxLength: 256 }),
     status: literals(Object.values(STANDING_WORDS)),
-    due: Type.Optional(Type.String({ maxLength: 60 })),
-    held: Type.String({ maxLength: 40 }),
   },
   { additionalProperties: false },
 );
@@ -145,8 +145,9 @@ export const PersonCompetenceOutputSchema = Type.Object(
   { additionalProperties: false },
 );
 /**
- * One person's competence in a row: the status as a badge, the one value where only one has room; beside it how many
- * have run out, are missing or soon run out; then how many are registered. A row opens the person's holdings.
+ * One person's competence in a row: where they stand, as a badge where it needs the manager, the one value where only
+ * one has room. No counts beside it (the review of 2026-11-13: no digest sentences): the row opens the person's
+ * holdings, which are drawn under it on their page and say every fact.
  */
 export const personView: View = {
   kind: 'list',
@@ -165,17 +166,9 @@ export const personView: View = {
       },
       compact: true,
     },
-    { key: 'due', label: 'Att åtgärda', beside: true },
-    { key: 'held', label: 'Registrerade' },
   ],
   open: { capability: COMPETENCE_CONNECTOR + '.holdings', title: 'Kompetenser', params: { person: 'key' } },
 };
-const dueWords = (expired: number, missing: number, expiring: number) =>
-  [
-    ...(expired ? [`${expired} har gått ut`] : []),
-    ...(missing ? [`${missing} saknas`] : []),
-    ...(expiring ? [`${expiring} går ut inom 90 dagar`] : []),
-  ].join(', ');
 /** "a", "a och b", "a, b och c". */
 const listWords = (parts: readonly string[]) =>
   parts.length < 2 ? (parts[0] ?? '') : `${parts.slice(0, -1).join(', ')} och ${parts.at(-1)}`;
@@ -270,7 +263,6 @@ export const coverageView: View = {
     },
   ],
 };
-const reportsWords = (n: number) => `${n} medarbetare`;
 const cut = (text: string, max: number) => ([...text].length > max ? [...text].slice(0, max - 1).join('') + '…' : text);
 /** The table's rows: the required types first, in the catalogue's order, then the share targets set on the unit. */
 export function coverageRows(c: UnitCoverageResult) {
@@ -301,17 +293,23 @@ export function coverageRows(c: UnitCoverageResult) {
     })),
   ].slice(0, 500);
 }
-/** A unit's row: what is met of what is required of the reader's reports, and of the share targets, in counts only. */
+/**
+ * A unit's row: what is met of what is required of the reader's reports, and of the share targets, in counts only.
+ * Each pair says what it counts with the same words (the app critique of 2026-11-13: "0 av 8 medarbetare" beside a
+ * badge "8 medarbetare" read as two numbers for one thing): those who meet every requirement out of those anything is
+ * required of, "0 av 8", and beside it, warning, how many of them do not, "8 uppfyller inte"; the targets reached out
+ * of those set, and beside them how many are not, "1 under målet".
+ */
 function unitRow(c: UnitCoverageResult) {
   const short = c.under - c.meetingAll;
   const counted = c.targets.filter(t => t.met !== null);
   const below = counted.filter(t => !t.met).length;
   return {
     key: c.unitId,
-    covered: c.under ? `${c.meetingAll} av ${reportsWords(c.under)}` : 'Inga krav på någon',
-    ...(short ? { short: reportsWords(short) } : {}),
+    covered: c.under ? `${c.meetingAll} av ${c.under}` : 'Inga krav på någon',
+    ...(short ? { short: `${short} uppfyller inte` } : {}),
     ...(c.targets.length ? { targets: `${counted.length - below} av ${c.targets.length} nås` } : {}),
-    ...(below ? { below: `${below} mål` } : {}),
+    ...(below ? { below: `${below} under målet` } : {}),
   };
 }
 /** What the read behind an approval's card takes: the registration, by its holding's id. */
@@ -383,17 +381,20 @@ export function competenceConnector(
   persona: (actor: Actor) => Promise<AuthenticatedContext> = systemPersona,
 ): Connector {
   // Offered to the model (D122 item 3): a manager's read of their own reports, the reports D99 gives them and nobody else.
+  // The figure on Hem and the manager's card open it, and lead to the matrix narrowed to the same (`page`, D116): the
+  // read's own page stays for an address that names it, and the model reads it as before.
   const attention: Capability<CompetenceAttentionInput, CompetenceAttentionOutput> = {
     name: COMPETENCE_CONNECTOR + '.attention',
     kind: 'read',
-    title: 'Kompetenser att åtgärda',
+    title: 'Krav som inte uppfylls',
     model: true,
     description:
-      'Det som har gått ut, saknas eller går ut inom 90 dagar bland medarbetarna du är chef för, det som har gått ut först: medarbetarens namn, kompetensen, läget i ord och sista giltiga dag; för en färdighet nivån och den nivå som krävs. Tar ingen indata. Varje rad har medarbetarens användarnamn, som Mina kompetenser tar som person för att läsa allt medarbetaren har.',
+      'Kraven som inte uppfylls bland medarbetarna du är chef för: en kompetens som krävs av medarbetaren och som saknas (också en färdighet under den nivå som krävs eller som chefen inte har bekräftat), har gått ut eller går ut inom 90 dagar, det som har gått ut först: medarbetarens namn, kompetensen, läget i ord och sista giltiga dag; för en färdighet nivån och den nivå som krävs. Ett intyg som inte krävs av medarbetaren finns inte här, även om det har gått ut: läs medarbetarens egna kompetenser för det. Tar ingen indata. Högst 500 rader; omitted säger hur många fler det finns. Varje rad har medarbetarens användarnamn, som Mina kompetenser tar som person för att läsa allt medarbetaren har.',
     input: CompetenceAttentionInputSchema,
     output: CompetenceAttentionOutputSchema,
     view: attentionView,
     scope: { roles: ['manager'] },
+    page: '/competence/matrix?only=attention',
     run: async actor => competence.attention(await persona(actor)),
   };
   // Offered to the model (D122 item 3): the reader's own holdings, or a report's. A call the assistant makes is never the
@@ -438,23 +439,14 @@ export function competenceConnector(
     output: PersonCompetenceOutputSchema,
     view: personView,
     scope: { roles: ['manager'] },
-    // A certificate is registered on Personal, in the dialog (D108 item 7): the section's second way in.
-    about: { entity: 'person', page: { title: 'Registrera intyg', href: '/staff?register={id}' } },
+    // A certificate is registered in the dialog (D108 item 7), the section's second way in: a query alone, so it lies over
+    // the page the person is on (a person's page, Personal's row) and closing it leaves them there (D83 rule 5).
+    about: { entity: 'person', page: { title: 'Registrera intyg', href: '?register={id}' } },
     // A manager's reports (D99), nobody else (D117).
     person: { admits: ['managed'] },
     run: async (actor, input) => {
       const { rows } = await competence.aboutPeople(await persona(actor), input.keys);
-      return {
-        rows: rows.map(r => {
-          const due = dueWords(r.expired, r.missing, r.expiring);
-          return {
-            key: r.key,
-            status: STANDING_WORDS[personStatus(r)],
-            ...(due ? { due } : {}),
-            held: r.holdings ? `${r.holdings} registrerade` : 'Inga',
-          };
-        }),
-      };
+      return { rows: rows.map(r => ({ key: r.key, status: STANDING_WORDS[personStatus(r)] })) };
     },
   };
   // Offered to the model (D122 item 3): counts over the reader's own reports on a unit they manage, naming nobody.
@@ -533,27 +525,22 @@ export function competenceConnector(
         roles: ['manager', 'employee'],
         standing: [attention.name, holdings.name],
         schedules: [],
-        // Läget's tile (D54): how much has run out or is missing among the manager's reports, then what soon runs out.
-        // Nobody managed: no figure. Nothing due is said as a calm sentence, so the tile does not disappear the day the
-        // last certificate is renewed.
+        // Läget's tile (D54): the requirements not met among the manager's reports, counted in requirements (the matrix
+        // it leads to counts people, and says so), then those that soon will not be. Nobody managed: no figure. Nothing
+        // due is said as a calm sentence, so the tile does not disappear the day the last certificate is renewed. It
+        // opens `competence.attention`, whose declared page is the matrix narrowed to the same (`page`).
         figure: async actor => {
           if (actor.role !== 'manager') return null;
           const s = await competence.summary(await persona(actor));
           if (!s || !s.reports) return null;
           if (!s.expired && !s.missing && !s.expiring)
-            return { label: 'Inga kompetenser saknas eller går ut inom 90 dagar.', tone: 'ok' };
-          const lacking = s.expired + s.missing;
+            return { label: 'Alla krav uppfylls, och inget går ut inom 90 dagar.', tone: 'ok' };
+          const unmet = s.expired + s.missing;
           return {
-            label: s.expired
-              ? s.missing
-                ? 'Kompetenser som har gått ut eller saknas'
-                : 'Kompetenser som har gått ut'
-              : s.missing
-                ? 'Kompetenser som saknas'
-                : 'Kompetenser som går ut inom 90 dagar',
-            value: String(lacking || s.expiring),
-            ...(lacking && s.expiring ? { comparison: `${s.expiring} till går ut inom 90 dagar` } : {}),
-            tone: lacking ? 'alert' : 'warn',
+            label: unmet ? 'Krav som inte uppfylls' : 'Krav som snart inte uppfylls',
+            value: String(unmet || s.expiring),
+            ...(unmet && s.expiring ? { comparison: `${s.expiring} till går ut inom 90 dagar` } : {}),
+            tone: unmet ? 'alert' : 'warn',
             opens: attention.name,
           };
         },
@@ -618,24 +605,29 @@ export function competenceConnector(
           occurrences: occurrence(card),
         });
       }
+      // The manager's card counts what the figure on Hem counts (`requirementUnmet`), in the same unit, and its read leads
+      // to the matrix narrowed to the same (the read's `page`).
       if (team && (team.expired || team.missing || team.expiring)) {
         const parts = [
-          ...(team.expired ? [`${plural(team.expired, 'kompetens har', 'kompetenser har')} gått ut`] : []),
-          ...(team.missing ? [`${plural(team.missing, 'kompetens saknas', 'kompetenser saknas')}`] : []),
-          ...(team.expiring ? [`${plural(team.expiring, 'kompetens går', 'kompetenser går')} ut inom 90 dagar`] : []),
+          ...(team.expired ? [`${team.expired} har gått ut`] : []),
+          ...(team.missing ? [`${team.missing} saknas`] : []),
+          ...(team.expiring ? [`${team.expiring} går ut inom 90 dagar`] : []),
         ];
         drafts.push({
           topic: team.card.topic,
           area: COMPETENCE_AREA,
-          title: 'Kompetenser att åtgärda bland dina medarbetare',
+          title: 'Krav som inte uppfylls bland dina medarbetare',
+          // Under the title, which says what is counted: "9 har gått ut, 10 saknas och 3 går ut inom 90 dagar, hos 10 personer."
           summary: `${listWords(parts)}, hos ${plural(team.people, 'person', 'personer')}.`,
-          reason: team.expired
-            ? 'Kompetenser har gått ut'
-            : team.missing
-              ? 'Kompetenser saknas'
-              : 'Kompetenser går ut inom 90 dagar',
+          reason: team.expired ? 'Har gått ut' : team.missing ? 'Saknas' : 'Går ut inom 90 dagar',
           actions: [
-            { id: 'open', label: 'Visa kompetenserna', capability: attention.name, kind: 'read', role: 'primary' },
+            {
+              id: 'open',
+              label: 'Visa medarbetarnas kompetens',
+              capability: attention.name,
+              kind: 'read',
+              role: 'primary',
+            },
           ],
           occurrences: occurrence(team.card),
         });

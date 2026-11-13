@@ -18,7 +18,6 @@ import { PanelClaims } from './components/page-panel';
 import { ReviewPage } from './pages/review';
 import { legacyReview, reviewPageFrom } from './review-address';
 import { clearDrafts } from './review-session';
-import { clearSearch } from './competence-search-session';
 import { CalendarPage } from './pages/calendar';
 import { ToolPage } from './pages/tool';
 import { NewsPage } from './pages/news';
@@ -166,10 +165,7 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
   }, [client, shell]);
   // Nobody is signed in: no review's draft from a session before stays in this tab (`review-session.ts`).
   useEffect(() => {
-    if (shell === 'anonymous') {
-      clearDrafts();
-      clearSearch();
-    }
+    if (shell === 'anonymous') clearDrafts();
   }, [shell]);
   if (shell === 'loading')
     return (
@@ -187,7 +183,6 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
       onEnded={() => {
         client.clear();
         clearDrafts();
-        clearSearch();
       }}
     >
       <QueryClientProvider client={client}>
@@ -385,7 +380,7 @@ function App() {
         path="/todo"
         element={<Protected>{shell => <TodoPage user={shell.user} admin={shell.admin} />}</Protected>}
       />
-      {/* A work item as a page (D112 item 4): "Öppna som sida" from the reading pane and the panel; `from` is the way back. */}
+      {/* A work item as a page (D112 item 4): its title in the reading pane and the panel leads here; `from` is the way back. */}
       <Route
         path="/items/:threadId"
         element={<Protected>{shell => <ItemPage user={shell.user} admin={shell.admin} />}</Protected>}

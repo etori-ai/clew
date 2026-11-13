@@ -19,7 +19,9 @@ connector, and imports nothing from the rest of the repository (D21). Start with
 ## What it answers
 
 A manager of the unit (role `manager`, unit `unit-skola` after `FIXTURE_UNIT_MAP`) gets the area `employees`: who is at
-work, absence per person with the rehab pattern, the leave requests waiting, the figure "Sjukfrånvaro n %" against the target, opening absence per person (D54), and the cards
+work, absence per person with the rehab pattern (`hr.absenceOverview`, each row naming the employee by user name in
+`person`, the view's `subject`, so the name leads to the person in Clew and the pattern is the row's own link, "Mönster"),
+the leave requests waiting, the figure "Sjukfrånvaro n %" against the target, opening absence per person (D54), and the cards
 the scan pushes (a rehab talk to book, each leave request to decide). The same manager is answered `hr.person`, a read about a person
 ([D97](../../docs/decisions/D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)): asked with a batch of
 user names (`{ keys }`, at most 200), it gives one row per employee of the manager's unit here, `{ key, ref, presence,

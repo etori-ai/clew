@@ -47,7 +47,7 @@ import {
   useAnnounce,
   useMediaQuery,
 } from '@clew/ui';
-import { counted, fieldValue, statusWord } from './panel-labels';
+import { counted, dayText, fieldValue, statusWord, type DayLength } from './panel-labels';
 import { groupFields, rowGroups, wholeRow, type FieldGroup } from '../view-fields';
 import { useMarks } from '../marks';
 import { useConversation } from './conversation-context';
@@ -105,7 +105,6 @@ export interface DeclaredViewProps {
   isOpen?: ((view: ViewRef) => boolean) | undefined;
 }
 
-const dateOnly = new Intl.DateTimeFormat('sv-SE', { dateStyle: 'long' });
 const tone = { ok: 'success', warn: 'warning', alert: 'error', none: 'neutral' } as const;
 /** The Astryx Badge variant a view's tone is drawn in: only what needs the person has a status colour. */
 export const badgeVariant = (t: ViewTone) => tone[t];
@@ -197,6 +196,11 @@ const unansweredIn = (output: unknown): string[] => {
   const names = output && typeof output === 'object' ? (output as Row).unanswered : undefined;
   return Array.isArray(names) ? names.filter((n): n is string => typeof n === 'string' && n.length > 0) : [];
 };
+/** How many rows a read of Clew's own left out beside those it gave (`omitted`), or none. */
+const omittedIn = (output: unknown): number => {
+  const n = output && typeof output === 'object' ? (output as Row).omitted : undefined;
+  return typeof n === 'number' && Number.isInteger(n) && n > 0 ? n : 0;
+};
 /** A number as something a phone can dial: digits and a leading plus. Too short to be a number is drawn as text. */
 const dial = (value: string) => {
   const n = value.replace(/[^\d+]/g, '').replace(/(?!^)\+/g, '');
@@ -209,18 +213,30 @@ const linked = (field: ViewField) => field.format === 'phone' || field.format ==
 const drawnWhole = ({ compact: _compact, ...field }: ViewField): ViewField => field;
 /**
  * One cell of a row (D97): the field that names it, then each field beside it on the same line, a value beside another
- * in supporting text unless it is a badge or a link.
+ * in supporting text unless it is a badge or a link. `day` is how long a day is written there: short in a row, long
+ * among one record's facts (`shortDay`, `longDay`).
  */
-function Cell({ group, row, lead }: { group: FieldGroup; row: Row; lead?: ReactNode }): ReactNode {
-  if (!group.beside.length) return lead ?? <Value field={group.lead} value={row[group.lead.key]} />;
+function Cell({
+  group,
+  row,
+  lead,
+  day = 'short',
+}: {
+  group: FieldGroup;
+  row: Row;
+  lead?: ReactNode;
+  day?: DayLength;
+}): ReactNode {
+  if (!group.beside.length) return lead ?? <Value field={group.lead} value={row[group.lead.key]} day={day} />;
   const beside = group.beside.filter(f => !empty(row[f.key]));
-  const first = lead ?? (empty(row[group.lead.key]) ? null : <Value field={group.lead} value={row[group.lead.key]} />);
+  const first =
+    lead ?? (empty(row[group.lead.key]) ? null : <Value field={group.lead} value={row[group.lead.key]} day={day} />);
   if (!beside.length) return first ?? <Value field={group.lead} value={undefined} />;
   return (
     <HStack gap={2} vAlign="center" wrap="wrap">
       {first}
       {beside.map(f => (
-        <Value key={f.key} field={f} value={row[f.key]} text="supporting" />
+        <Value key={f.key} field={f} value={row[f.key]} text="supporting" day={day} />
       ))}
     </HStack>
   );
@@ -238,7 +254,18 @@ export type ValueText = 'ordinary' | 'supporting';
  * broken link. Exported as `FieldValue` for a page that places one field of one row itself (Personal's columns and lens,
  * the opened person's sections, D97), with `text` saying how a value without a badge reads there.
  */
-function Value({ field, value, text }: { field: ViewField; value: unknown; text?: ValueText }): ReactNode {
+function Value({
+  field,
+  value,
+  text,
+  day = 'short',
+}: {
+  field: ViewField;
+  value: unknown;
+  text?: ValueText;
+  /** How long a day is written here: short in a row, long among one record's facts. */
+  day?: DayLength;
+}): ReactNode {
   if (empty(value)) return <Text type="supporting">–</Text>;
   const raw = String(value);
   const words = (said: string, fallback: ValueText = 'ordinary') =>
@@ -285,22 +312,21 @@ function Value({ field, value, text }: { field: ViewField; value: unknown; text?
         words(fieldText(field, value), 'supporting')
       );
     default:
-      return words(fieldText(field, value));
+      return words(fieldText(field, value, day));
   }
 }
 
 export { Value as FieldValue };
 /**
  * A value as words without its label (D97: the time beside a state, a value in a one-line summary): a date or a moment
- * in Swedish, a number with its unit, a status its word, anything else as given.
+ * in Swedish, a number with its unit, a status its word, anything else as given. A day is short unless `day` asks
+ * for it long (one record's facts, a sentence; `shortDay` and `longDay` say where each belongs).
  */
-export function fieldText(field: ViewField, value: unknown): string {
+export function fieldText(field: ViewField, value: unknown, day: DayLength = 'short'): string {
   const raw = String(value);
   switch (field.format) {
-    case 'date': {
-      const at = Date.parse(raw);
-      return Number.isNaN(at) ? raw : dateOnly.format(at);
-    }
+    case 'date':
+      return dayText(raw, day);
     case 'instant':
       return instantText(raw) ?? raw;
     case 'number':
@@ -322,8 +348,9 @@ export function fieldText(field: ViewField, value: unknown): string {
 export function fieldWord(f: ViewField, value: unknown): string {
   if (f.format === 'status') return statusWord(f.label, value);
   if (f.format === 'number') return f.unit ? amount(f, value) : `${f.label}: ${amount(f, value)}`;
+  // A list's line is a row: its day is short ("Giltigt till: 13 okt. 2026").
   if (f.format === 'date' && !Number.isNaN(Date.parse(String(value))))
-    return `${f.label}: ${dateOnly.format(Date.parse(String(value)))}`;
+    return `${f.label}: ${dayText(String(value), 'short')}`;
   if (f.format === 'instant') {
     const at = instantText(String(value));
     if (at) return `${f.label}: ${at}`;
@@ -468,32 +495,45 @@ function Rows({
       ? (entityHref({ entity: view.subject.entity, key }, pathname + search) ?? undefined)
       : undefined;
   };
-  // A row that opens a read keeps that on its name; the entity is then a link of its own at the row's end, named for it.
-  const entityLink = (row: Row) => {
-    const href = opens(row) ? entityOf(row) : undefined;
-    if (!href) return null;
-    const label = empty(row[view.title])
-      ? view.subject!.entity === 'unit'
-        ? 'Öppna enheten'
-        : 'Öppna personen'
-      : `Öppna ${String(row[view.title])}`;
-    return (
-      <Link href={href} weight="semibold" isStandalone>
-        {label}
-      </Link>
-    );
-  };
+  /**
+   * The name in a row is the way in, and a person's name always leads to the person (the product owner's rule, the app
+   * critique of 2026-11-13). A view that says what its rows name (`subject`, D97 item 6) has a title that is that
+   * person's or unit's name: the name leads to them, and only to them, and where the row has no key for them, or on
+   * their own page, it is text. The row's own read (`open`, or a combined list's row `view`) is then a link of its own,
+   * named with the read's title for this row ("Mönster för Anna Lindqvist"): at the row's end in a list, in a column of
+   * its own in a table, since one cell cannot be two links. A view that names nothing has a title that names the row's
+   * own thing (an invoice, a contact card), which opens the row's own read, as it always has.
+   */
+  const named = !!view.subject;
+  const label = (row: Row) => (empty(row[view.title]) ? '–' : String(row[view.title]));
   const name = (row: Row) => {
-    const href = opens(row) ?? entityOf(row);
-    const label = empty(row[view.title]) ? '–' : String(row[view.title]);
+    const href = named ? entityOf(row) : opens(row);
     return href ? (
-      <Link href={href} weight="semibold" hasUnderline aria-current={current(row) ? 'true' : undefined}>
-        {label}
+      <Link href={href} weight="semibold" hasUnderline aria-current={!named && current(row) ? 'true' : undefined}>
+        {label(row)}
       </Link>
     ) : (
-      <Text weight="semibold">{label}</Text>
+      <Text weight="semibold">{label(row)}</Text>
     );
   };
+  /** The row's own read where the name leads to the entity it names: its own link, named for the read and the row. */
+  const readLink = (row: Row) => {
+    const href = named ? opens(row) : undefined;
+    const ref = href ? readOf(row) : undefined;
+    if (!href || !ref) return null;
+    return (
+      <Link
+        href={href}
+        isStandalone
+        aria-label={empty(row[view.title]) ? ref.title : `${ref.title} för ${label(row)}`}
+        aria-current={current(row) ? 'true' : undefined}
+      >
+        {ref.title}
+      </Link>
+    );
+  };
+  /** The heading of the column of the rows' own reads: the read's title, as each of its links says it. */
+  const readsTitle = named ? rows.map(r => (opens(r) ? readOf(r)?.title : undefined)).find(Boolean) : undefined;
   // A row with a ref of a connector that can read it back can go into the box (D12), as a search hit can, where the
   // page has a box (D111 rule 6); without one neither the `@` nor its column is drawn.
   const chips = view.chip && !!view.ref && talk.hasBox;
@@ -545,14 +585,15 @@ function Rows({
       ...(chips
         ? [{ key: 'clew-chip', header: 'Samtal', width: pixel(66), renderCell: (r: TableRow) => chip(r.row) }]
         : []),
-      // One cell cannot be two links: a row whose name opens a read has the entity it names in a column of its own.
-      ...(view.subject && rows.some(row => opens(row) && entityOf(row))
+      // One cell cannot be two links: a row whose name leads to the person or unit it names has its own read in a column
+      // of its own.
+      ...(readsTitle
         ? [
             {
-              key: 'clew-entity',
-              header: view.subject.entity === 'unit' ? 'Enhet' : 'Person',
-              width: share(145),
-              renderCell: (r: TableRow) => entityLink(r.row),
+              key: 'clew-read',
+              header: readsTitle,
+              width: share(130),
+              renderCell: (r: TableRow) => readLink(r.row),
             },
           ]
         : []),
@@ -611,13 +652,13 @@ function Rows({
             isSelected={current(row)}
             label={name(row)}
             endContent={
-              marks.length > 0 || entityLink(row) ? (
+              marks.length > 0 || readLink(row) ? (
                 <HStack gap={2} vAlign="center" wrap="wrap" justify="end">
                   {marks.map(f => (
                     <StatusBadge key={f.key} field={f} value={row[f.key]} />
                   ))}
                   {chip(row)}
-                  {entityLink(row)}
+                  {readLink(row)}
                 </HStack>
               ) : (
                 chip(row)
@@ -682,7 +723,9 @@ export function DeclaredView({
   // A count that changes while someone types is spoken as one message, the latest (4.1.3); the visible line says the same.
   const announce = useAnnounce({ hasReplace: true });
   const all = view.kind === 'table' || view.kind === 'list' ? (viewRows(view, output) ?? []) : null;
-  const count = all?.length ?? null;
+  // A read of Clew's own may leave rows out and say how many (`omitted`): the count is of them all.
+  const omitted = all && view.rowViews ? omittedIn(output) : 0;
+  const count = all ? all.length + omitted : null;
   const said = useRef<number | null>(null);
   const controls = (view.kind === 'table' || view.kind === 'list') && onInput ? view.input : undefined;
   useEffect(() => {
@@ -806,7 +849,12 @@ export function DeclaredView({
           <MetadataList>
             {factLines.map(g => (
               <MetadataListItem key={g.lead.key} label={g.lead.label}>
-                <Cell group={{ lead: g.lead, beside: g.beside.filter(f => facts.includes(f)) }} row={record} />
+                {/* One record's facts are read, not scanned: a day among them is long ("13 oktober 2026"). */}
+                <Cell
+                  group={{ lead: g.lead, beside: g.beside.filter(f => facts.includes(f)) }}
+                  row={record}
+                  day="long"
+                />
               </MetadataListItem>
             ))}
           </MetadataList>
@@ -842,7 +890,8 @@ export function DeclaredView({
             {view.activity && <ActivityView activity={record[view.activity] as Activity} />}
           </>
         )}
-        <Text type="supporting">Hämtat ur {view.source}. Inget av det sparas på Startsidan.</Text>
+        {/* What lives in a system outside Clew is not stored here (`external`); Clew's own register is, so it says nothing. */}
+        {view.external && <Text type="supporting">Hämtat ur {view.source}. Inget av det sparas på Startsidan.</Text>}
       </VStack>
     );
   }
@@ -871,12 +920,24 @@ export function DeclaredView({
           Något av det svaret byggde på ser inte likadant ut längre.
         </Text>
       )}
-      {/* Under an answer a cut list says how much is left out (artboard 4); the rows keep the order the source gave, which is the answer's. */}
-      {rows.length > 0 && (
+      {/* Rows a read of Clew's own left out (`omitted`): said under the rows, so a cut list is never read as the whole. */}
+      {omitted > 0 && rows.length > 0 && (
+        <Text as="p" type="supporting">
+          {`Visar de första ${all!.length.toLocaleString('sv-SE')}. ${omitted.toLocaleString('sv-SE')} till visas inte.`}
+        </Text>
+      )}
+      {/* Under an answer a cut list says how much is left out (artboard 4); the rows keep the order the source gave, which
+          is the answer's. What lives in a system outside Clew is not stored here (`external`); Clew's own register is. */}
+      {rows.length > 0 && (all!.length > rows.length || view.external) && (
         <Text type="supporting">
-          {all!.length > rows.length
-            ? `${rows.length} av ${all!.length} rader. Inget av det sparas på Startsidan.`
-            : `${counted(rows.length)} · ${view.source}. Inget av det sparas på Startsidan.`}
+          {[
+            all!.length > rows.length
+              ? `${rows.length} av ${all!.length} rader.`
+              : `${counted(rows.length)} · ${view.source}.`,
+            view.external ? 'Inget av det sparas på Startsidan.' : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
         </Text>
       )}
       {missed.length > 0 && <Text type="supporting">{missed.join(', ')} svarade inte.</Text>}

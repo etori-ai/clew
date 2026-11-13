@@ -22,7 +22,7 @@ import { insideClew, originOf, toolOf } from '../person-address';
 import { opensAsPage, viewOpenHref, withViewInput } from '../view-address';
 import { useShownForTheWayBack } from '../way-back';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
-import { useRail, type RailCurrent } from '../components/nav';
+import { placeOfRead, useRail, type RailCurrent } from '../components/nav';
 import { DeclaredView } from '../components/view';
 import { PanelBody, RAIL, answersWithRowsOf, panelBesideQuery } from '../components/panel';
 import { usePagePanel, useView, viewSubject, type OwnThing } from '../components/page-panel';
@@ -52,8 +52,9 @@ function nounOf(spec: { kind: string; noun?: { other: string } } | undefined): s
 }
 
 /**
- * Where the rail stands on a view's page that is not a tool of its own: on the place the view was opened from, as a
- * work item's page does (`item.tsx`); with no such place, on nothing.
+ * Where the rail stands on a view's page that is neither a tool of its own nor a read of a connector with a place in
+ * the rail (`placeOfRead`): on the place the view was opened from, as a work item's page does (`item.tsx`); with no
+ * such place, on nothing.
  */
 function placeOf(from: string | null): RailCurrent {
   const tool = toolOf(from);
@@ -134,8 +135,10 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
   const back = from
     ? (originOf(from, menu) ?? { label: from.startsWith('/conversations/') ? 'Samtalet' : 'Tillbaka', href: from })
     : null;
+  // A tool in the rail marks its row; a read of a connector with a place of its own in the rail (Kompetens, Kalender)
+  // marks that place wherever it was opened from; any other view the place it was opened from.
   const nav = useRail({
-    current: entry ? { surface: 'verktyg', view: capability } : placeOf(from),
+    current: entry ? { surface: 'verktyg', view: capability } : (placeOfRead(capability) ?? placeOf(from)),
     admin,
     manager: user.role === 'manager',
   });

@@ -619,7 +619,8 @@ export function AdminCompetenceRequirementsPage({ user }: { user: SessionUser })
   const ready = !!query.data && !!targetsQuery.data && !!catalogue.data;
   const requirementOpener = useRef<HTMLButtonElement>(null);
   const targetOpener = useRef<HTMLButtonElement>(null);
-  const close = () => navigate(REQUIREMENTS_PATH);
+  // Closing replaces the dialog's address, so Back never opens it again (D83 rule 8).
+  const close = () => navigate(REQUIREMENTS_PATH, { replace: true });
 
   // Removal is asked for through Astryx's confirmation, which has no address; a row that goes takes its button with it,
   // so the focus then goes to the heading of the card it was in (D83 rule 7).

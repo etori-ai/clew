@@ -47,11 +47,14 @@ export const holdingsSpec: PanelViewSpec = {
   source: 'Kompetens',
   chip: false,
 };
+/** The catalogue's id of a type the specs name, as `competenceTypes` has them; the others are their own. */
+const TYPE_IDS: Record<string, string> = { HLR: 't-hlr', 'Heta arbeten': 't-heta', Fallskydd: 't-fall' };
 const holding = (competence: string, area: string, status: string, issuedOn: string, expiresOn?: string) => ({
   ref: 'holding:competence:' + competence.toLowerCase().replace(/[^a-z]+/g, '-'),
   userName: 'anna.lindqvist',
   name: 'Anna Lindqvist',
   competence,
+  typeId: TYPE_IDS[competence] ?? 't-' + competence.toLowerCase().replace(/[^a-z]+/g, '-'),
   area,
   kind: 'certificate',
   issuedOn,
@@ -71,6 +74,7 @@ export const holdingsOutput = {
       userName: 'anna.lindqvist',
       name: 'Anna Lindqvist',
       competence: 'Fallskydd',
+      typeId: 't-fall',
       area: 'Säkerhet',
       kind: 'certificate',
       status: 'missing',
@@ -97,15 +101,15 @@ export const holdingsOutput = {
   ],
 };
 /**
- * What needs doing among a manager's reports (`competence.attention`), as the module declares it: a row names the
- * person it is about (`subject`), so the name leads to their page, in a card under an answer too.
+ * What needs doing among a manager's reports (`competence.attention`), as the module declares it: the requirements not
+ * met; a row names the person it is about (`subject`), so the name leads to their page, in a card under an answer too.
  */
 export const attentionSpec: PanelViewSpec = {
   kind: 'table',
   title: 'name',
   subject: { entity: 'person', key: 'userName' },
-  noun: { one: 'kompetens', other: 'kompetenser' },
-  empty: 'Inget saknas, inget har gått ut och inget går ut inom 90 dagar.',
+  noun: { one: 'krav som inte uppfylls', other: 'krav som inte uppfylls' },
+  empty: 'Inget som krävs saknas, har gått ut eller går ut inom 90 dagar.',
   fields: [
     { key: 'name', label: 'Namn' },
     { key: 'competence', label: 'Kompetens' },
@@ -579,10 +583,11 @@ export const annaJournal = (): CompetenceSkillValidation => ({
   interest: true,
 });
 /**
- * Kompetenssökning (D121): who in the organisation holds each type, as the server finds them, by name. HLR is held by
+ * Kompetenssökning (D121): who in the organisation holds each type, as the server finds them, by name, each row with its
+ * one type as held (the mock joins the rows of several types into one per person who holds them all). HLR is held by
  * three people across two units, one run out and one about to, one without a user name and so without a page; Engelska
- * (a skill) by two, one confirmed and one the person's own rating; Heta arbeten by nobody. `many` gives HLR sixty more
- * holders, for three pages.
+ * (a skill) by two, one confirmed and one the person's own rating, both of whom hold HLR too; Heta arbeten by nobody.
+ * `many` gives HLR sixty more holders, for three pages.
  */
 export function searchHolders(many = false): Record<string, CompetenceSearchRow[]> {
   const extra = many
@@ -593,58 +598,33 @@ export function searchHolders(many = false): Record<string, CompetenceSearchRow[
           key: 'person' + n,
           name: 'Person ' + n,
           units: ['Hemtjänst Centrum'],
-          status: 'valid' as const,
-          expiresOn: '2027-06-01',
+          held: [{ typeId: 't-hlr', status: 'valid' as const, expiresOn: '2027-06-01' }],
         };
       })
     : [];
+  const anna = { personId: 'p-anna', key: 'anna.lindqvist', name: 'Anna Lindqvist', units: ['Bergsåkers skola'] };
+  const hassan = {
+    personId: 'p-hassan',
+    key: 'hassan',
+    name: 'Hassan Ali',
+    units: ['Hemtjänst Centrum', 'Bergsåkers skola'],
+  };
   return {
     't-hlr': [
-      {
-        personId: 'p-anna',
-        key: 'anna.lindqvist',
-        name: 'Anna Lindqvist',
-        units: ['Bergsåkers skola'],
-        status: 'expiring',
-        expiresOn: '2027-01-10',
-      },
+      { ...anna, held: [{ typeId: 't-hlr', status: 'expiring', expiresOn: '2027-01-10' }] },
       {
         personId: 'p-bo',
         key: null,
         name: 'Bo Ek',
         units: ['Hemtjänst Centrum'],
-        status: 'expired',
-        expiresOn: '2026-01-10',
+        held: [{ typeId: 't-hlr', status: 'expired', expiresOn: '2026-01-10' }],
       },
-      {
-        personId: 'p-hassan',
-        key: 'hassan',
-        name: 'Hassan Ali',
-        units: ['Hemtjänst Centrum', 'Bergsåkers skola'],
-        status: 'valid',
-        expiresOn: '2027-11-01',
-      },
+      { ...hassan, held: [{ typeId: 't-hlr', status: 'valid', expiresOn: '2027-11-01' }] },
       ...extra,
     ],
     't-eng': [
-      {
-        personId: 'p-anna',
-        key: 'anna.lindqvist',
-        name: 'Anna Lindqvist',
-        units: ['Bergsåkers skola'],
-        status: 'valid',
-        level: 3,
-        validated: true,
-      },
-      {
-        personId: 'p-hassan',
-        key: 'hassan',
-        name: 'Hassan Ali',
-        units: ['Hemtjänst Centrum'],
-        status: 'valid',
-        level: 2,
-        validated: false,
-      },
+      { ...anna, held: [{ typeId: 't-eng', status: 'valid', level: 3, validated: true }] },
+      { ...hassan, held: [{ typeId: 't-eng', status: 'valid', level: 2, validated: false }] },
     ],
   };
 }

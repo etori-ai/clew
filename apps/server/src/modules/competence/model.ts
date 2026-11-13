@@ -255,8 +255,8 @@ export interface PersonRef {
 }
 /**
  * One row of the read log (D108 item 15, D121 item 5): who read competence about people, as which relation, what and
- * when. A search and its export name the type (with the least level and the unit narrowed to, where given) and are a
- * registrar's; one person's holdings opened names whom. `rows` is how many rows the read returned. Ids, a level and a
+ * when. A search and its export name the types asked for (with the least level and the unit narrowed to, where given;
+ * not the status, the validity window or the order) and are a registrar's; one person's holdings opened names whom. `rows` is how many rows the read returned. Ids, a level and a
  * count: never a name and never content. Written in the transaction that reads what it records.
  */
 export interface ReadLogEntry {
@@ -272,7 +272,13 @@ export interface ReadLogEntry {
    */
   caller: CompetenceReadCaller;
   kind: CompetenceReadKind;
+  /** The first type a search or its file asked for (the one type of a row from before several could be asked); null otherwise. */
   typeId: string | null;
+  /**
+   * Every type a search or its file asked for, in the order chosen, `typeId` first (migration 0068; a row from before
+   * holds its one type); empty for one person opened and for a manager's matrix as a file.
+   */
+  typeIds: string[];
   minLevel: number | null;
   unitId: string | null;
   personId: string | null;
@@ -284,6 +290,8 @@ export interface ReadLogQuery {
   organisationId?: string;
   /** The reads of this person's competence. */
   personId?: string;
+  /** The searches and files that asked for this type, alone or among others. */
+  typeId?: string;
   /** The reads this person made. */
   readerId?: string;
   /** The reads made as this relation. */

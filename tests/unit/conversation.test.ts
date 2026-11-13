@@ -303,19 +303,9 @@ describe('a question without the model', () => {
     expect(budget.answer.body).toBe('Förbrukat av ramen: 98 %, av periodens ram.');
     expect(budget.answer.source).toBe('Ekonomisystemet');
   });
-  test('completions and the @ objects come from the registry and the open cards in scope', async () => {
+  test('the @ objects come from the open cards in scope', async () => {
     const w = world();
     await w.threads.ensureThreads(hillevi);
-    const completions = await w.assistant.completionsFor(hillevi);
-    expect(completions.ask.map(a => a.capability)).toContain('hr.whoIsOn');
-    expect(completions.completions.slice(0, 2)).toEqual([
-      'Vad har jag i dag?',
-      'Hur ligger vi till med utvecklingssamtalen?',
-    ]);
-    expect(completions.do).toEqual([]); // the mock areas list only reads under Gör själv
-    expect(completions.recent).toEqual([]);
-    await w.assistant.ask(hillevi, 'Vad har jag i dag?');
-    expect((await w.assistant.completionsFor(hillevi)).recent.map(r => r.title)).toEqual(['Vad har jag i dag?']);
     const invoices = (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'finance:invoices')!;
     // With nothing typed, `@` offers the context alone, never everything open.
     expect(await w.assistant.listObjects(hillevi, '')).toEqual([]);

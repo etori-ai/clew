@@ -112,13 +112,6 @@ export const competenceTypesQuery = queryOptions({
 /** The day and the model's status are extras on the page: a failure is tolerated, never retried, never shown as the page's error. */
 export const todayQuery = queryOptions({ queryKey: keys.today, queryFn: () => api.today(), retry: false });
 export const attentionQuery = queryOptions({ queryKey: keys.attention, queryFn: () => api.attention() });
-/** What the box offers (D34): the standing actions for the role and the recent conversations, kept a minute. */
-export const completionsQuery = queryOptions({
-  queryKey: keys.completions,
-  queryFn: () => api.completions(),
-  staleTime: 60_000,
-  retry: false,
-});
 export const assistantQuery = queryOptions({
   queryKey: keys.assistant,
   queryFn: () => api.assistantStatus(),
@@ -270,16 +263,29 @@ export const competenceSearchOptionsQuery = queryOptions({
   retry: false,
 });
 /**
- * One page of a search (D121 item 4). Every read of it writes a row of the read log on the server, so it is read only
- * when the reader asks: never again on its own when the tab is shown, the network returns or something else changes.
- * The page on screen stays while the next is read.
+ * One page of a search (D121 item 4), as the address names it. Every read of it writes a row of the read log on the
+ * server, so it is read once per address the reader goes to: never again on its own when the tab is shown, the network
+ * returns or something else changes. An address read in the last five minutes that the reader comes back to (Back,
+ * Forward, a person's page and back) is shown as it was read, with no new read and no new row; after that it is read,
+ * and logged, again. The page on screen stays while the next is read.
  */
 export const competenceSearchQuery = (body: CompetenceSearchBody) =>
   queryOptions({
     queryKey: keys.competenceSearch(body),
     queryFn: () => api.competence.search(body),
     ...LOGGED_READ,
+    gcTime: 5 * 60_000,
     placeholderData: keepPreviousData,
+  });
+/**
+ * The catalogue's types an address names, by id (D121 item 4): what the search's field names them with before the
+ * search answers, and how the page tells an id the catalogue does not hold. The catalogue names nobody: not logged.
+ */
+export const competenceTypesNamedQuery = (ids: readonly string[]) =>
+  queryOptions({
+    queryKey: keys.competenceTypesNamed(ids),
+    queryFn: () => api.competence.findTypes({ ids: [...ids] }),
+    retry: false,
   });
 /**
  * The reader's own registration (D108 item 7): whether anyone would decide it, and the ones that wait. `null` while the

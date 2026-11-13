@@ -408,7 +408,8 @@ export function AdminCompetenceSourcesPage({ user }: { user: SessionUser }) {
   const error = query.isError && !refused ? errorMessage(query.error, 'Källorna kunde inte läsas.') : null;
   const openedSource = sources.find(s => s.connectorId === search.get(SOURCE_PARAM));
   const openedType = openedSource?.types.find(t => t.sourceType === search.get(TYPE_PARAM));
-  const close = () => navigate(SOURCES_PATH);
+  // Closing replaces the dialog's address, so Back never opens a mapping again (D83 rule 8).
+  const close = () => navigate(SOURCES_PATH, { replace: true });
   return (
     <AdminShell
       user={user}

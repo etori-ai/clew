@@ -69,6 +69,22 @@ export interface RailCurrent {
   /** The administration's section that is open (D45), so its row under Administration is marked. */
   section?: AdminSection;
 }
+/**
+ * The places in the rail that belong to one connector: the rail draws each of them on that connector's own signal
+ * (`sees`, the system the person may see, D23), Kalender for the calendar and Kompetens for the competence module. A
+ * view of one of its reads is a page of that place, so the rail marks the place on it, wherever it was opened from (the
+ * review of 2026-11-13: the same list was marked Kompetens, Hem or nothing by its `from`). Personal and Dialogstöd
+ * show many systems' rows and belong to none.
+ */
+const CONNECTOR_PLACES: Readonly<Record<string, RailCurrent['surface']>> = {
+  calendar: 'calendar',
+  competence: 'competence',
+};
+/** The place a read's page belongs to, by its connector (a capability's name begins with its connector's id), or null. */
+export function placeOfRead(capability: string): RailCurrent | null {
+  const surface = CONNECTOR_PLACES[capability.split('.')[0] ?? ''];
+  return surface ? { surface } : null;
+}
 const EMPTY_THREADS: Thread[] = [];
 const EMPTY_AREAS: Area[] = [];
 const EMPTY_MENU: MenuEntry[] = [];
@@ -227,6 +243,7 @@ export function useRail({
               ) : undefined
             }
           />
+          {/* Kalender and Kompetens are drawn on their connector's signal, so a read of theirs marks them (`CONNECTOR_PLACES`). */}
           {sees('calendar') && (
             <SideNavItem
               label="Kalender"

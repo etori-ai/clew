@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type Ref } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { viewRows, type CompetenceOwnPending, type CompetenceOwnSkill, type SessionUser } from '@clew/contracts';
+import {
+  viewRows,
+  type CompetenceOwnPending,
+  type CompetenceOwnSkill,
+  type PanelViewSpec,
+  type SessionUser,
+  type ViewRef,
+} from '@clew/contracts';
 import {
   AlertDialog,
   Badge,
@@ -22,7 +29,7 @@ import {
   useMediaQuery,
 } from '@clew/ui';
 import { api } from '../api';
-import { addHref, adding, skillHref, skillOf, withoutAdd, withoutSkill } from '../competence-address';
+import { addHref, adding, addingType, skillHref, skillOf, withoutAdd, withoutSkill } from '../competence-address';
 import { useAdminAction } from '../mutations';
 import { competenceMatrixQuery, competenceOwnQuery, viewQuery } from '../queries';
 import { keys } from '../query-keys';
@@ -35,7 +42,13 @@ import { AsyncContent, ContentSkeleton } from '../components/loading';
 import { usePagePanel } from '../components/page-panel';
 import { AddOwnHolding, ChangeOwnSkill, levelLabel } from '../components/register-holding';
 import { DeclaredView } from '../components/view';
-import { CompetenceHeader, cellDay, managesFrom } from './competence-parts';
+import {
+  COMPETENCE_PAGE_TITLES,
+  CompetenceHeader,
+  UNTIL_FURTHER_NOTICE,
+  cellDay,
+  managesFrom,
+} from './competence-parts';
 
 /** The read behind the page: `competence.holdings` with no input answers the reader's own (D108, relation `self`). */
 const HOLDINGS = 'competence.holdings';
@@ -55,11 +68,21 @@ const heldSkill = (row: unknown) => {
   return r?.kind === 'skill' && typeof r.level === 'string';
 };
 
-/** A registration's days as a row says them: "Utfärdat 1 okt. 2026 · Giltigt till 1 okt. 2028". */
+/** A registration's days as a row says them: "Utfärdat 1 okt. 2026 · Giltigt till 1 okt. 2028", or "Giltigt tills vidare". */
 const days = (p: CompetenceOwnPending) =>
-  [`Utfärdat ${cellDay(p.issuedOn)}`, p.expiresOn ? `Giltigt till ${cellDay(p.expiresOn)}` : 'Inget slutdatum'].join(
-    ' · ',
-  );
+  [
+    `Utfärdat ${cellDay(p.issuedOn)}`,
+    p.expiresOn ? `Giltigt till ${cellDay(p.expiresOn)}` : `Giltigt ${UNTIL_FURTHER_NOTICE.toLocaleLowerCase('sv')}`,
+  ].join(' · ');
+/**
+ * A row of the reader's own list opens the dialog that adds one of their own with the row's type chosen (the review of
+ * 2026-11-13: an expired certificate had no way to its renewal): the view's `open` and the page's `hrefFor`, the two
+ * hooks the one renderer links a row's name by, set here for the reader's own list only. The read named is the list's
+ * own, which is never asked with this input: `hrefFor` turns the row's type into the dialog's address. A row without a
+ * type (a copied one whose type is not mapped) is not a link. Anyone else's holdings (a manager's, a registrar's page
+ * of the read) keep plain titles: their pages set neither hook.
+ */
+const ADD_FROM_ROW = { capability: HOLDINGS, title: 'Lägg till', params: { competence: 'typeId' } };
 
 /**
  * The reader's own registrations that wait for their manager's decision (D108 item 7), as Astryx's card with a toolbar
@@ -230,12 +253,15 @@ function Skills({
  * that instead. It holds the panel beside it as every page with a column does, so a work item opened from the bell
  * lies beside it.
  *
- * Closing the dialog gives the focus to "Lägg till", also when the address opened it; closing a skill's gives it to what
- * opened it, the skill's name or its menu (the name when the address did). A row taken back or removed takes its control
+ * A row of the list is its competence's name, which opens the same dialog with that competence chosen
+ * (`&competence=<type id>`, `ADD_FROM_ROW`): an expired or soon expiring certificate is renewed from its row, a missing
+ * one registered. Every dialog closes by replacing its address, so Back never opens it again. Closing the dialog gives
+ * the focus to the row's name that opened it, else to "Lägg till", also when the address opened it; closing a skill's
+ * gives it to what opened it, the skill's name or its menu (the name when the address did). A row taken back or removed takes its control
  * with it, so the focus goes to its card's heading, or to the page's when the card went with the last row (D83 rule 7).
  */
 export function CompetencePage({ user, admin }: { user: SessionUser; admin: boolean }) {
-  usePageTitle('Mina kompetenser');
+  usePageTitle(COMPETENCE_PAGE_TITLES.own);
   const mobile = useMediaQuery(mobileQuery);
   const short = useMediaQuery(shortQuery);
   const nav = useRail({ current: { surface: 'competence' }, admin, manager: user.role === 'manager' });
@@ -304,8 +330,13 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
   }, [changed, search]);
   const [removing, setRemoving] = useState<CompetenceOwnSkill | null>(null);
   const [focusAfter, setFocusAfter] = useState<
-    'add' | 'pending' | 'rejected' | { skill: string; via: SkillOpener } | null
+    'add' | 'pending' | 'rejected' | { skill: string; via: SkillOpener } | { row: string } | null
   >(null);
+  // A row's name that opened the dialog for its type: the link the one renderer drew, found by where it leads.
+  const rowLink = (typeId: string) => {
+    const href = addHref(search, typeId);
+    return [...document.querySelectorAll<HTMLAnchorElement>('a[href]')].find(a => a.getAttribute('href') === href);
+  };
   useEffect(() => {
     if (focusAfter === null || open || changed || removing) return;
     setFocusAfter(null);
@@ -317,10 +348,20 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
           ? [pendingHeading.current]
           : focusAfter === 'rejected'
             ? [rejectedHeading.current]
-            : [controls.current.get(focusAfter.via + '\n' + focusAfter.skill), skillsHeading.current];
+            : 'row' in focusAfter
+              ? [rowLink(focusAfter.row), addButton.current]
+              : [controls.current.get(focusAfter.via + '\n' + focusAfter.skill), skillsHeading.current];
     // A frame later, once a dialog that closed has given the focus back where it took it from.
     requestAnimationFrame(() => (targets.find(t => t?.isConnected) ?? document.getElementById(TITLE_ID))?.focus());
   }, [focusAfter, open, changed, removing, pending.length, rejected.length, skills.length]);
+  // The reader's own list with its rows' names leading to the dialog for their type (`ADD_FROM_ROW`).
+  const ownView: PanelViewSpec | undefined =
+    view && (view.kind === 'list' || view.kind === 'table') ? { ...view, open: ADD_FROM_ROW } : view;
+  const addFor = (ref: ViewRef) => {
+    const typeId = ref.input?.competence;
+    return addHref(search, typeof typeId === 'string' ? typeId : undefined);
+  };
+  const presetType = addingType(search);
 
   const withdraw = useAdminAction({
     invalidate: [keys.competenceAll, keys.viewAll, keys.entities.all],
@@ -384,7 +425,7 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
             <VStack hAlign="center">
               <VStack gap={5} width="100%" maxWidth={COLUMN}>
                 <CompetenceHeader
-                  title="Mina kompetenser"
+                  title={COMPETENCE_PAGE_TITLES.own}
                   titleId={TITLE_ID}
                   page="own"
                   hasTabs={manages && !off}
@@ -457,7 +498,7 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
                       />
                     )}
                     {view && rows.length > 0 ? (
-                      <DeclaredView view={view} output={output} headingLevel={2} />
+                      <DeclaredView view={ownView ?? view} output={output} headingLevel={2} hrefFor={addFor} />
                     ) : pending.length === 0 && rejected.length === 0 && skills.length === 0 ? (
                       <Card>
                         <EmptyState
@@ -475,19 +516,22 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
         }
       />
       {panel.overlay}
+      {/* Each dialog closes by replacing its address, so Back never opens a write again (D83 rule 8). */}
       <AddOwnHolding
         isOpen={open}
         approver={own.data?.approver}
         held={skills.map(k => k.typeId)}
+        preset={presetType}
         onClose={() => {
-          navigate(withoutAdd(search));
-          setFocusAfter('add');
+          navigate(withoutAdd(search), { replace: true });
+          // Opened from a row, its name takes the focus back; from "Lägg till" or an address, the button.
+          setFocusAfter(presetType ? { row: presetType } : 'add');
         }}
       />
       <ChangeOwnSkill
         skill={changed}
         onClose={() => {
-          navigate(withoutSkill(search));
+          navigate(withoutSkill(search), { replace: true });
           if (changed) setFocusAfter({ skill: changed.holdingId, via: openedVia.current });
           openedVia.current = 'name';
         }}

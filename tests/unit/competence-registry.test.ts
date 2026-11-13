@@ -589,6 +589,13 @@ describe('the competence wiring (D108 item 13)', () => {
     expect((await w.call(hillevi, 'GET', '/matrix.csv?part=0')).status).toBe(400);
     expect(w.store.audit().length).toBe(before + 1);
     expect(w.store.readLog()).toHaveLength(1);
+    // Narrowed as the page is (`only=attention`, the review of 2026-11-13): Anna's missing HLR is required of her, so
+    // she is in it; any other narrowing is refused.
+    const narrowed = await w.call(hillevi, 'GET', '/matrix.csv?only=attention');
+    expect(new TextDecoder('utf-8', { ignoreBOM: true }).decode(await narrowed.arrayBuffer())).toBe(
+      '﻿Namn;Användarnamn;HLR\r\nAnna Lindqvist;anna.lindqvist;Saknas\r\n',
+    );
+    expect((await w.call(hillevi, 'GET', '/matrix.csv?only=everything')).status).toBe(400);
   });
 
   test('Kompetenssökning (D121): the registrar alone searches, in a body, gets the file, and every read is logged', async () => {
@@ -616,8 +623,8 @@ describe('the competence wiring (D108 item 13)', () => {
         error: 'Kompetenssökning är inte tilldelad dig. En administratör ger den genom en grupp.',
         code: 'denied',
       });
-      expect((await w.call(who, 'POST', '/search', { typeId })).status).toBe(403);
-      expect((await w.call(who, 'POST', '/search.csv', { typeId })).status).toBe(403);
+      expect((await w.call(who, 'POST', '/search', { typeIds: [typeId] })).status).toBe(403);
+      expect((await w.call(who, 'POST', '/search.csv', { typeIds: [typeId] })).status).toBe(403);
     }
     expect(w.store.readLog()).toEqual([]);
     const options = await w.call(hr, 'GET', '/search');
@@ -627,43 +634,65 @@ describe('the competence wiring (D108 item 13)', () => {
     const found = await w.call(anna, 'POST', '/search/types', { text: 'hl' });
     expect(((await found.json()) as { rows: Array<{ name: string }> }).rows.map(t => t.name)).toEqual(['HLR']);
     expect((await w.call(anna, 'POST', '/search/types', { text: 'x'.repeat(121) })).status).toBe(400);
+    // Or by the ids an address names, which the page labels its field with; an unknown id is left out.
+    const named = await w.call(anna, 'POST', '/search/types', { ids: [typeId, 'type-borta'] });
+    expect(((await named.json()) as { rows: Array<{ id: string }> }).rows.map(t => t.id)).toEqual([typeId]);
+    for (const wrong of [
+      {},
+      { ids: [] },
+      { ids: ['a', 'a'] },
+      { ids: ['a', 'b', 'c', 'd', 'e', 'f'] },
+      { text: '', ids: ['a'] },
+    ])
+      expect((await w.call(anna, 'POST', '/search/types', wrong)).status).toBe(400);
     // What is searched for is a body; anything outside the contract is a 400 and is not read.
-    const page = await w.call(hr, 'POST', '/search', { typeId, pageSize: 50 });
+    const page = await w.call(hr, 'POST', '/search', { typeIds: [typeId], pageSize: 50 });
     expect(page.status).toBe(200);
     expect(page.headers.get('cache-control')).toContain('no-store');
     expect(await page.json()).toEqual({
-      type: { id: typeId, name: 'HLR', area: 'Akut', kind: 'course' },
+      types: [{ id: typeId, name: 'HLR', area: 'Akut', kind: 'course' }],
       rows: [
         {
           personId: 'p-anna',
           key: 'anna.lindqvist',
           name: 'Anna Lindqvist',
           units: [],
-          status: 'valid',
-          expiresOn: '2028-01-09',
+          held: [{ typeId, status: 'valid', expiresOn: '2028-01-09' }],
         },
       ],
       total: 1,
+      unfiltered: 1,
       page: 1,
       pageSize: 50,
     });
     for (const wrong of [
       {},
-      { typeId, page: 0 },
-      { typeId, pageSize: 30 },
-      { typeId, minLevel: 4 },
-      { typeId, name: 'x' },
+      { typeId },
+      { typeIds: [] },
+      { typeIds: [typeId, typeId] },
+      { typeIds: ['a', 'b', 'c', 'd', 'e', 'f'] },
+      { typeIds: [typeId], page: 0 },
+      { typeIds: [typeId], pageSize: 30 },
+      { typeIds: [typeId], minLevel: 4 },
+      { typeIds: [typeId], name: 'x' },
+      // The filters and the order are closed lists.
+      { typeIds: [typeId], status: [] },
+      { typeIds: [typeId], status: ['gone'] },
+      { typeIds: [typeId], status: ['valid', 'valid'] },
+      { typeIds: [typeId], until: 60 },
+      { typeIds: [typeId], sort: 'age' },
+      { typeIds: [typeId], order: 'up' },
       // A unit or a type is an id: no control character, no more than 80 characters.
-      { typeId, unitId: 'u\n1' },
-      { typeId, unitId: 'u'.repeat(81) },
-      { typeId: typeId + '\u001b[2K' },
+      { typeIds: [typeId], unitId: 'u\n1' },
+      { typeIds: [typeId], unitId: 'u'.repeat(81) },
+      { typeIds: [typeId + '\u001b[2K'] },
     ])
       expect((await w.call(hr, 'POST', '/search', wrong)).status).toBe(400);
     // A unit that is no unit of the organisation's tree is refused by the use case, in Swedish, and nothing is logged.
-    const unknown = await w.call(hr, 'POST', '/search', { typeId, unitId: 'unit-borta' });
+    const unknown = await w.call(hr, 'POST', '/search', { typeIds: [typeId], unitId: 'unit-borta' });
     expect(unknown.status).toBe(400);
     expect(await unknown.json()).toMatchObject({ error: 'Enheten finns inte.' });
-    const file = await w.call(hr, 'POST', '/search.csv', { typeId });
+    const file = await w.call(hr, 'POST', '/search.csv', { typeIds: [typeId] });
     expect(file.status).toBe(200);
     expect(file.headers.get('content-type')).toBe('text/csv; charset=utf-8');
     expect(file.headers.get('content-disposition')).toBe('attachment; filename="kompetenssokning-2026-11-10.csv"');
@@ -677,7 +706,7 @@ describe('the competence wiring (D108 item 13)', () => {
     expect(w.store.audit().at(-1)).toMatchObject({
       actor: 'person:hr',
       action: 'competence.search_exported',
-      details: { typeId, people: 1 },
+      details: { typeIds: [typeId], people: 1 },
     });
   });
 
