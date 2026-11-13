@@ -1,6 +1,6 @@
 import { Value } from 'typebox/value';
 import type { AuthenticatedContext, ThreadAction, ThreadItem } from '@clew/contracts';
-import { actorOf, CapabilityError, pendingAsks, type Registry, type ThreadDraft } from '@clew/connectors';
+import { audiencedActorOf, CapabilityError, pendingAsks, type Registry, type ThreadDraft } from '@clew/connectors';
 import { ThreadDraftSchema } from '@clew/connectors/protocol';
 import { InputError } from '../../context';
 import { STARTED_ACTION, startedTopic, takesStarted } from '../domain';
@@ -64,7 +64,7 @@ export function startedCards({ store, registry, run, digest, clock, ids, people 
     if (person && input[person.param] !== person.personId) throw new InputError('Åtgärden kan inte startas härifrån.');
     const sent = person ? { ...input, [person.param]: person.sourceKey } : input;
     try {
-      found = await registry.validate(actorOf(persona), capability, sent, pending);
+      found = await registry.validate(audiencedActorOf(persona), capability, sent, pending);
     } catch (error) {
       throw error instanceof CapabilityError ? new InputError(error.message) : error;
     }

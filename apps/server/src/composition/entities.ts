@@ -1,4 +1,4 @@
-import { actorOf } from '@clew/connectors';
+import { audiencedActorOf } from '@clew/connectors';
 import { registry } from '../connectors/registry';
 import { logPort } from '../logging';
 import { entityUsecases } from '../modules/entities/usecases';
@@ -32,7 +32,7 @@ export const entities = entityUsecases({
   },
   read: (persona, capability, input, signal) =>
     registry
-      .clewFor(actorOf(persona), { signal, ...(persona.delegate ? { delegate: persona.delegate } : {}) })
+      .clewFor(audiencedActorOf(persona), { signal, ...(persona.delegate ? { delegate: persona.delegate } : {}) })
       .call(capability, input),
   // The reader's cards about an entity (D97 items 5 and 6): the thread store's index from entity to cards.
   cards: async (persona, subject) =>

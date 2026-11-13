@@ -1,4 +1,4 @@
-import { actorOf } from '@clew/connectors';
+import { audiencedActorOf } from '@clew/connectors';
 import type { AuthenticatedContext, ClewObject } from '@clew/contracts';
 import { displayDate, shortDayLabel, timeRange } from '@clew/calendar/dates';
 import type { AssistantDeps } from './ports';
@@ -75,7 +75,7 @@ export async function listObjects(
     }
   if (!needle) return all.filter(o => o.visible).slice(0, LIMIT);
   // Only what the person may call (D23): a connector outside their audience has no capabilities to find.
-  const actor = actorOf(persona);
+  const actor = audiencedActorOf(persona);
   for (const { connector: m, capability: c } of deps.registry.capabilitiesFor(actor))
     all.push({
       ref: 'capability:' + c.name,

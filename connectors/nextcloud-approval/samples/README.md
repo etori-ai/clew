@@ -21,6 +21,13 @@ File ids (625 to 632), etags and timestamps belong to this instance; a fake shou
   `mapping-uid=preferred_username`, `unique-uid=0`, `bearer-provisioning=0`; system config
   `user_oidc.auto_provision=false`. The container must reach `keycloak.orb.local:8090` (`extra_hosts` in
   `.devcontainer/compose.yaml`).
+- Accounts: every Nextcloud account id equals the person's user name in the directory that provisions Clew, case
+  aside, since `mapping-uid=preferred_username` finds the account by it, `auto_provision=false` creates none, and the
+  connector refuses a token whose account id differs from the assertion's `userName`. A Nextcloud account cannot be
+  renamed, and a leaver's account is deleted, not disabled, before the name is given to someone else: what an operator
+  does in both cases is in [the connector's README](../README.md#accounts-and-user-names). The seed
+  (`.devcontainer/calendar/seed.php`) creates the accounts under the development directory's user names, and the rule
+  names its approvers by account id (`'type' => 'user', 'entityId' => 'hillevi'`).
 - Data, from `.devcontainer/calendar/approval-seed.php`: one rule ("Underlag att godkänna", approvers the users
   `hillevi` and `hassan`, requesters the group `calendar-staff`, tags "Väntar på godkännande", "Godkänd", "Avvisad");
   Erik shares three files with Hillevi and Karin two with Hassan, and each asks for approval. Mikael has none.

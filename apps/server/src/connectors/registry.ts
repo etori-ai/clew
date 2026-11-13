@@ -1,7 +1,7 @@
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import type { AuthenticatedContext } from '@clew/contracts';
-import { actorOf, CapabilityError, COMPETENCE_CONNECTOR, Registry } from '@clew/connectors';
+import { audiencedActorOf, CapabilityError, COMPETENCE_CONNECTOR, Registry } from '@clew/connectors';
 import { InputError } from '../context';
 import { calendarConnector } from '../modules/calendar/connector';
 import { calendar, events } from '../composition/calendar';
@@ -89,7 +89,7 @@ export const internalIds = internal.map(m => m.id);
 export const bundledIds = bundled.map(m => m.id);
 /** The bundled connectors whose row is created disabled: an administrator switches them on (D108 item 13). */
 export const offAtFirstBoot: readonly string[] = [COMPETENCE_CONNECTOR];
-export { actorOf };
+export { audiencedActorOf };
 
 const ajv = addFormats(new Ajv({ allErrors: false, strict: false }));
 /** Whether a capability's input schema accepts `{}`: the conformance check calls only the reads that do (the same rule as `scripts/connector-check.ts`). */
@@ -100,7 +100,10 @@ export const acceptsEmptyInput = (schema: object) => {
     return true;
   }
 };
-/** Run a capability through the registry with input validation. The single path for REST, cards, tools and connector callbacks. */
+/**
+ * Run a capability through the registry with input validation. The single path for REST, cards, tools and connector
+ * callbacks. It runs as the person with their provisioned groups, so an audience that names a group admits its members.
+ */
 export async function runCapability<O = unknown>(
   persona: AuthenticatedContext,
   name: string,
@@ -111,7 +114,7 @@ export async function runCapability<O = unknown>(
   await persona.authorize();
   try {
     const result = await registry.run<O>(
-      actorOf(persona),
+      audiencedActorOf(persona),
       name,
       input ?? {},
       persona.delegate ? { delegate: persona.delegate } : {},

@@ -1,5 +1,5 @@
 import type { AuthenticatedContext, DayView, MeetingTimes } from '@clew/contracts';
-import { actorOf, type Registry } from '@clew/connectors';
+import { audiencedActorOf, type Registry } from '@clew/connectors';
 import { InputError } from '../../context';
 
 /**
@@ -37,7 +37,7 @@ export function askUsecases({ registry, calendar }: AskDeps) {
     if ((options.date && !DAY.test(options.date)) || (options.before && !DAY.test(options.before)))
       throw new InputError('Ogiltigt datum.');
     await persona.authorize();
-    const found = registry.allowed(actorOf(persona), capability);
+    const found = registry.allowed(audiencedActorOf(persona), capability);
     const ask =
       found && found.capability.kind !== 'read' ? found.capability.asks?.find(a => a.property === property) : undefined;
     if (ask?.kind !== 'meeting') throw new InputError('Okänd förmåga.');

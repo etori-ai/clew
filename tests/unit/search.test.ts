@@ -1,7 +1,13 @@
 import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import type { SearchHit, Subject } from '../../packages/contracts/src/index';
-import { CapabilityError, type Actor, type Connector } from '../../packages/connectors/src/index';
+import {
+  audiencedActorOf,
+  CapabilityError,
+  openGovernance,
+  type Actor,
+  type Connector,
+} from '../../packages/connectors/src/index';
 import { headingFollowUps, merge, staleness } from '../../apps/server/src/modules/search/domain';
 import { searchConnector } from '../../apps/server/src/modules/search/connector';
 import { searchUsecases } from '../../apps/server/src/modules/search/usecases';
@@ -334,6 +340,28 @@ describe('the composite search over the registry', () => {
     ]);
     await w.registry.run(hassan, 'clew.search', { query: 'q', kinds: ['person'] });
     expect(calls).toEqual(['people:q', 'any:q']);
+  });
+  test('a source for one provisioned group is asked for its members only, and the search keeps the groups on its call (D68)', async () => {
+    const calls: string[] = [];
+    const w = world([source('docs', [hit({ ref: 'r1' })], { calls }), source('hr', [hit({ ref: 'h1' })], { calls })]);
+    w.registry.govern('hr', { ...openGovernance(), audience: { mode: 'selected', groups: ['S-1-5-21-hr'] } });
+    // The server hands the registry the person with their groups (audiencedActorOf), as every request does.
+    const ask = (groups: string[]) =>
+      w.registry.run<{ rows: { ref: string }[]; sources: { id: string; status: string }[] }>(
+        audiencedActorOf({ ...hassan, groups }),
+        'clew.search',
+        { query: 'q' },
+      );
+    const member = await ask(['S-1-5-21-annan', 'S-1-5-21-hr']);
+    expect(member.rows.map(r => r.ref)).toEqual(['r1', 'h1']);
+    expect(member.sources.map(s => s.id + ':' + s.status)).toEqual(['docs:ok', 'hr:ok']);
+    expect(calls).toEqual(['docs:q', 'hr:q']);
+    // Outside the group the source is not asked at all, and nothing says it exists.
+    calls.length = 0;
+    const outsider = await ask(['S-1-5-21-annan']);
+    expect(outsider.rows.map(r => r.ref)).toEqual(['r1']);
+    expect(outsider.sources.map(s => s.id)).toEqual(['docs']);
+    expect(calls).toEqual(['docs:q']);
   });
   test('a source that answers the wrong shape counts as unavailable', async () => {
     const bad: Connector = {

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import type { AuthenticatedContext } from '../../packages/contracts/src/index';
 import { Registry, openGovernance, type Actor } from '../../packages/connectors/src/index';
 import { checkConnector } from '../../packages/connectors/src/check';
 import { manifestProblems, parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
@@ -8,6 +9,7 @@ import {
   loadMenu,
   manifest as intranetManifest,
 } from '../../connectors/intranet/connector.mjs';
+import { DEFAULT_HEADER, siteHeaders } from '../../apps/server/src/connectors/usecases/header';
 import { assertionFor, testJwks } from '../connector-authority';
 
 /**
@@ -169,5 +171,52 @@ describe('the intranet connector and the shared header (D88)', () => {
     ]);
     expect(report.findings.map(f => f.text)).toContain('header as manager: 5 places, a logo');
     expect(JSON.stringify(report)).not.toContain('Kompetensförsörjning');
+  });
+});
+
+describe('the header a person is served, kept for a minute (D88)', () => {
+  const GROUP = 'S-1-5-21-intranat';
+  /** Hassan as the server holds him: the whole authenticated context, his provisioned groups included. */
+  const signedIn = (groups: string[]): AuthenticatedContext => ({
+    ...hassan,
+    organisationId: 'sundsvall',
+    principal: { id: 'person:hassan', kind: 'person' },
+    capabilities: [],
+    groups,
+    authorizationVersion: 'v1',
+    sessionBinding: 'test',
+    expiresAt: '2099-01-01T00:00:00.000Z',
+    authorize: async () => ({ version: 'v1' }),
+  });
+  test('a header for one provisioned group stops at once for a person who leaves the group, though the grant is unchanged (D68)', async () => {
+    let asked = 0;
+    const answer = { site: { name: 'Portalen', href: '/' }, items: [{ id: 'start', label: 'Start', href: '/' }] };
+    const holder = answering('portal', 0, answer);
+    const registry = new Registry().register({
+      ...holder,
+      capabilities: [
+        {
+          ...holder.capabilities[0]!,
+          run: async () => {
+            asked++;
+            return answer;
+          },
+        },
+      ],
+    });
+    registry.govern('portal', { ...openGovernance(), header: true, audience: { mode: 'selected', groups: [GROUP] } });
+    let now = Date.parse('2026-11-12T08:00:00Z');
+    const headers = siteHeaders({ registry, clock: () => new Date(now) });
+
+    expect((await headers.read(signedIn([GROUP, 'S-1-5-21-annan']))).source).toEqual({ id: 'portal', label: 'portal' });
+    // Kept: the same person a second later, whatever order the groups come in, is not asked for again.
+    now += 1000;
+    expect((await headers.read(signedIn(['S-1-5-21-annan', GROUP]))).source).toEqual({ id: 'portal', label: 'portal' });
+    expect(asked).toBe(1);
+    // The provisioner takes him out of the group. His grant and its version stay as they were, yet within the same
+    // minute he gets Clew's default, not the header kept for him while he was in the group.
+    now += 1000;
+    expect(await headers.read(signedIn(['S-1-5-21-annan']))).toEqual(DEFAULT_HEADER);
+    expect(asked).toBe(1);
   });
 });

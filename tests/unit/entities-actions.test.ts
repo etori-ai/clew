@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { SUBJECT_CHANGED, type AuthenticatedContext } from '../../packages/contracts/src/index';
 import {
-  actorOf,
+  audiencedActorOf,
   CapabilityError,
   openGovernance,
   Registry,
@@ -232,7 +232,7 @@ function world(options: { fixture?: boolean } = {}) {
   // The server's `runCapability`: the registry's call path as the person, a source's refusal as a Swedish input error.
   const run = async (persona: AuthenticatedContext, name: string, input: unknown) => {
     try {
-      return await registry.run(actorOf(persona), name, input);
+      return await registry.run(audiencedActorOf(persona), name, input);
     } catch (error) {
       throw error instanceof CapabilityError ? new InputError(error.message) : error;
     }
@@ -253,7 +253,7 @@ function world(options: { fixture?: boolean } = {}) {
       actions: async (actor, kind) => registry.aboutActions(actor, kind),
     },
     read: (persona, capability, input, signal) =>
-      registry.clewFor(actorOf(persona), { signal }).call(capability, input),
+      registry.clewFor(audiencedActorOf(persona), { signal }).call(capability, input),
     cards: async () => [],
   });
   const access = threadAccess(store, registry);

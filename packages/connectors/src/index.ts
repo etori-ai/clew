@@ -88,7 +88,12 @@ export type ConnectorKind = 'core' | 'passthrough' | 'derived';
  * user name, signed into a connector's actor (D44) as the key other systems know them by (D97); absent without one.
  */
 export type Actor = Pick<SessionUser, 'id' | 'name' | 'unitId' | 'unitLabel' | 'role'> & { userName?: string };
-/** The actor a capability sees, cut from an authenticated context: identity and scope, never tokens. */
+/** An actor with the provisioned groups the authenticated context carries (D68); a bare actor has none. */
+export type AudiencedActor = Actor & { groups?: readonly string[] };
+/**
+ * The published actor (the protocol's `ActorSchema`), cut from an authenticated context: identity and scope, never
+ * tokens. It is what leaves the process: every body a remote connector is posted carries this and nothing more.
+ */
 export const actorOf = (persona: Actor): Actor => ({
   id: persona.id,
   name: persona.name,
@@ -96,6 +101,15 @@ export const actorOf = (persona: Actor): Actor => ({
   unitLabel: persona.unitLabel,
   role: persona.role,
   ...(persona.userName ? { userName: persona.userName } : {}),
+});
+/**
+ * The actor inside Clew's process: the published actor and the person's provisioned groups, which an audience's
+ * `groups` match (D68). Every path that serves a person hands the registry this, and a nested `clew.call` keeps it, so
+ * Clew's composites ask with it too. The groups never leave: a remote connector is posted `actorOf` of it.
+ */
+export const audiencedActorOf = (persona: AudiencedActor): AudiencedActor => ({
+  ...actorOf(persona),
+  ...(persona.groups ? { groups: persona.groups } : {}),
 });
 /**
  * Who may call a capability. Declarative so a remote manifest can carry it: no `roles` means every signed-in
@@ -380,8 +394,6 @@ export interface ScanObservation {
   };
 }
 /** A person is in the audience by role, by unit or by group (any of). Groups are the provisioned groups' external ids (D68). */
-/** An actor with the provisioned groups the authenticated context carries (D68); a bare actor has none. */
-export type AudiencedActor = Actor & { groups?: readonly string[] };
 export const inAudience = (audience: ConnectorAudience, actor: AudiencedActor) =>
   audience.mode === 'all' ||
   !!audience.roles?.includes(actor.role) ||

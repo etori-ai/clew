@@ -89,13 +89,14 @@ export function createConnector({
   const refusals = {
     missing: `Din inloggning kan inte styrkas mot ${sourceLabel} i den här sessionen.`,
     'no-user-name': `Ditt konto i Clew saknar användarnamn, så din inloggning kan inte styrkas mot ${sourceLabel}.`,
-    refused: `${sourceLabel} godtar inte din inloggning just nu.`,
-    mismatch: `Inloggningen mot ${sourceLabel} hör till en annan person än den som använder Clew.`,
+    refused: `${sourceLabel} godtar inte din inloggning.`,
+    mismatch: `Kontot i ${sourceLabel} har ett annat användarnamn än ditt konto i Clew.`,
   };
 
   /**
-   * The Nextcloud account behind the token, which must be the person Clew signed for: a token for one person is never
-   * used under another person's assertion. Compared on the directory user name, without regard to case.
+   * The Nextcloud account behind the token, whose id must equal the user name Clew signed for, without regard to case: a
+   * token is never used under an assertion that names another user name. Names are compared, not people: an account
+   * left under a name the directory has given to someone else passes (README, Identity).
    */
   async function identify(actor, token) {
     if (!token) throw new Refusal('missing');

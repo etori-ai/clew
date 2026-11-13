@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import type { Ask, AuthenticatedContext, DayView, EntityAction } from '../../packages/contracts/src/index';
-import { actorOf, answersOf, CapabilityError, type Connector } from '../../packages/connectors/src/index';
+import { audiencedActorOf, answersOf, CapabilityError, type Connector } from '../../packages/connectors/src/index';
 import { manifestProblems, parseManifest } from '../../packages/connectors/src/remote';
 import { previewManifest } from '../../packages/connectors/src/preview';
 import { freeSlots } from '../../packages/calendar/src/proposals';
@@ -307,7 +307,7 @@ function world() {
   const registry = new Registry();
   registry.register(fixtures.connectors[0]!);
   const run = <O = unknown>(p: AuthenticatedContext, name: string, input: unknown) =>
-    registry.run<O>(actorOf(p), name, input).catch(error => {
+    registry.run<O>(audiencedActorOf(p), name, input).catch(error => {
       throw new InputError(error instanceof Error ? error.message : String(error));
     });
   const store = memoryThreadStore();
@@ -332,7 +332,7 @@ function world() {
   const ledger = memoryExecutionStore();
   const source: ExecutionSource = {
     async authorize(p, operation, input) {
-      const found = await registry.validate(actorOf(p), operation, input);
+      const found = await registry.validate(audiencedActorOf(p), operation, input);
       if (found.capability.kind !== 'execute') throw new ExecutionError('Förmågan är ingen åtgärd.');
       return { connector: found.connector.id, safety: found.capability.execution!, needsSession: false };
     },
@@ -440,7 +440,7 @@ describe('a work item whose write asks (D112)', () => {
     expect(execution.presentation).toEqual({ threadId: rehab.id, version: rehab.updatedAt, actionId: 'book' });
     expect(w.ledger.enqueued().map(s => s.id)).toEqual(['execution:execution-1']);
     // Dispatched as the ledger dispatches it, the source keeps the time, the place and the message with the talk.
-    await w.registry.run(actorOf(persona()), 'hr.bookTalk', execution.payload, { operationId: execution.id });
+    await w.registry.run(audiencedActorOf(persona()), 'hr.bookTalk', execution.payload, { operationId: execution.id });
     expect(w.states.hr!.get<Record<string, unknown>>('talks', {})['hr:emp:1001']).toMatchObject({
       when: LATER,
       place: 'Rum 12',
@@ -522,7 +522,7 @@ describe('an execute about a person that asks (D112)', () => {
   test('its card starts with the key alone and waits for the answer, which the decision takes with the user name', async () => {
     const registry = new Registry();
     registry.register(talks);
-    expect(registry.aboutActions(actorOf(persona()), 'person')[0]!.path).toEqual({
+    expect(registry.aboutActions(audiencedActorOf(persona()), 'person')[0]!.path).toEqual({
       asks: talks.capabilities[0]!.asks!,
       effect: false,
       description: 'Bokar ett samtal.',
@@ -551,7 +551,7 @@ describe('an execute about a person that asks (D112)', () => {
       { reason: 'Du valde', person: { param: 'person', personId: 'anna', sourceKey: 'anna.l' } },
     );
     // Without the answer the input is not yet whole: the card asks for it, and the decision supplies it.
-    await expect(registry.validate(actorOf(persona()), 'talks2.book', { person: 'anna' })).rejects.toThrow(
+    await expect(registry.validate(audiencedActorOf(persona()), 'talks2.book', { person: 'anna' })).rejects.toThrow(
       'Ogiltig förfrågan',
     );
     const approvals: unknown[] = [];

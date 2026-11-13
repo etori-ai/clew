@@ -1,4 +1,4 @@
-import { actorOf } from '@clew/connectors';
+import { audiencedActorOf } from '@clew/connectors';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import Ajv from 'ajv';
@@ -233,7 +233,9 @@ api.post('/executions/:id/reconcile', async c =>
 api.post('/jobs/assemble', async c => {
   const { fact } = await body(c.req.raw, validators.fact as unknown as (value: unknown) => value is FactEnvelope),
     persona = c.get('session').context;
-  return c.json(await jobs.assemble(actorOf(persona), fact, (name, input) => runCapability(persona, name, input)));
+  return c.json(
+    await jobs.assemble(audiencedActorOf(persona), fact, (name, input) => runCapability(persona, name, input)),
+  );
 });
 api.post('/jobs', async c => {
   const input = await body(
@@ -275,13 +277,13 @@ api.get('/areas', async c => {
   const context = c.get('session').context;
   return c.json({
     areas: await listAreas(context),
-    menu: registry.menu(actorOf(context)),
-    systems: registry.systems(actorOf(context)),
+    menu: registry.menu(audiencedActorOf(context)),
+    systems: registry.systems(audiencedActorOf(context)),
   });
 });
 /** The registry as data: what the architecture derives everything from. Read-only, and only what the caller can see (D23). */
 api.get('/connectors', c => {
-  const actor = actorOf(c.get('session').context);
+  const actor = audiencedActorOf(c.get('session').context);
   return c.json({
     connectors: registry.listFor(actor).map(m => ({
       id: m.id,

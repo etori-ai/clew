@@ -22,7 +22,7 @@ import {
 } from '@clew/contracts';
 import { HISTORY_LIMIT, historySubjects, itemEvents, reminderStart, rhythmFor } from '../domain';
 import {
-  actorOf,
+  audiencedActorOf,
   givenBy,
   pathOf,
   receipt,
@@ -106,10 +106,10 @@ export function threadUsecases(deps: ThreadDeps) {
     return task;
   }
   async function scanInto(persona: AuthenticatedContext, source: string) {
-    if (registry.visible(actorOf(persona), 'calendar')) await calendar.ensureProposalThread(persona, source);
+    if (registry.visible(audiencedActorOf(persona), 'calendar')) await calendar.ensureProposalThread(persona, source);
     await wakeDue(persona);
     // A person a row names by user name is kept by id (D116), resolved as the rows arrive.
-    const drafts = await keyedDrafts(people, persona, await registry.scan(actorOf(persona)));
+    const drafts = await keyedDrafts(people, persona, await registry.scan(audiencedActorOf(persona)));
     const now = clock();
     for (const d of drafts) {
       const scopedTopic = `${d.topic}:authority:${persona.authorizationVersion}`;
@@ -249,7 +249,7 @@ export function threadUsecases(deps: ThreadDeps) {
     if (!execution || execution.compensates || !['failed', 'partial'].includes(execution.state))
       throw new InputError('Kontrollera källans besked innan ett nytt försök görs.');
     const action = original.actions.find(a => a.kind === 'execute' && a.role === 'primary' && a.review === 'each');
-    if (!action || !registry.allowed(actorOf(persona), action.capability))
+    if (!action || !registry.allowed(audiencedActorOf(persona), action.capability))
       throw new InputError('Åtgärden är inte tillgänglig.');
     const rejected = new Set(original.receipt?.rows.filter(r => r.outcome === 'failed').map(r => r.ref));
     const items = original.items
@@ -298,7 +298,7 @@ export function threadUsecases(deps: ThreadDeps) {
     await persona.authorize();
     const now = clock();
     const threads = await access.list(persona, now.toISOString());
-    const areas = await registry.areas(actorOf(persona), { authorize: () => persona.authorize() });
+    const areas = await registry.areas(audiencedActorOf(persona), { authorize: () => persona.authorize() });
     const open = threads.filter(t => (t.state === 'open' || unresolvedExecution(t)) && t.kind === 'pushed');
     const today = stockholmDate(now.toISOString());
     return areas.map(a => {
@@ -361,7 +361,7 @@ export function threadUsecases(deps: ThreadDeps) {
   async function snoozeOptions(persona: AuthenticatedContext): Promise<SnoozePreset[]> {
     return snoozePresets(
       clock().toISOString(),
-      registry.visible(actorOf(persona), 'calendar') ? await calendar.todayEvents(persona) : [],
+      registry.visible(audiencedActorOf(persona), 'calendar') ? await calendar.todayEvents(persona) : [],
     );
   }
   /**

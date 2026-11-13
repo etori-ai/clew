@@ -1,5 +1,6 @@
 import type {
   Area,
+  AuthenticatedContext,
   CheckFinding,
   CheckGroup,
   CheckItem,
@@ -35,7 +36,8 @@ export interface CheckOptions {
   /**
    * For the reads about an entity (D97): `keys` are asked in one batch, signed as `as`, a person who may see them
    * (the check's manager when absent, for whom every real key is out of scope). Without keys the rows are not checked;
-   * an unknown key and the keys asked from another unit are checked anyway.
+   * an unknown key and the keys asked from another unit are checked anyway. `as` is handed to the registry as given:
+   * the CLI passes the person's whole context, as the refresh and a connector's callback do.
    */
   about?: { keys?: string[]; as?: Actor };
 }
@@ -62,6 +64,24 @@ export const CHECK_EMPLOYEE: Actor = {
   role: 'employee',
   userName: 'check-employee',
 };
+/**
+ * One of the check's people in the fullest shape the server hands a person to the registry: the whole authenticated
+ * context, provisioned groups and session fields included, as the refresh and a connector's callback do (a request
+ * hands the published actor with the groups, `audiencedActorOf`). Either way only the published actor leaves the
+ * process, so a connector that refuses anything more is reached as in production; a check with a bare actor would pass
+ * a connector that then refuses every scan.
+ */
+export const asInProduction = (actor: Actor): AuthenticatedContext => ({
+  ...actor,
+  organisationId: 'check',
+  principal: { id: 'person:' + actor.id, kind: 'person' },
+  capabilities: [],
+  groups: ['check-group'],
+  authorizationVersion: 'check',
+  sessionBinding: 'operator:connector-check',
+  expiresAt: '2099-01-01T00:00:00.000Z',
+  authorize: async () => ({ version: 'check' }),
+});
 const UNAVAILABLE = /svarar inte just nu/;
 const ROLE: Record<Role, string> = { manager: 'chef', employee: 'medarbetare' };
 const VIEW: Record<NonNullable<ConnectorManifest['capabilities'][number]['view']>['kind'], string> = {
@@ -145,6 +165,11 @@ export async function checkConnector(
     },
   }).register(remoteConnector(manifest, { url, key: options.key, assert: options.assert, fetch: fetchImpl }));
   registry.govern(manifest.id, openGovernance());
+  // The check's two people with the whole context, as the refresh and a callback hand a person to the registry; only the
+  // published actor leaves the process.
+  const manager = asInProduction(CHECK_MANAGER),
+    employee = asInProduction(CHECK_EMPLOYEE),
+    people = [manager, employee];
   const accepts = options.acceptsEmptyInput ?? listsNothingRequired;
   /** What one capability came to, for the row the administrator reads: every finding about it folds into one sentence each. */
   type Row = {
@@ -231,8 +256,7 @@ export async function checkConnector(
     }
   };
   type Declared = ConnectorManifest['capabilities'][number];
-  const inRoles = (c: Declared) =>
-    [CHECK_MANAGER, CHECK_EMPLOYEE].filter(a => !c.scope.roles || c.scope.roles.includes(a.role));
+  const inRoles = (c: Declared) => people.filter(a => !c.scope.roles || c.scope.roles.includes(a.role));
   const rowsOf = (c: Declared, output: unknown) => (c.view ? (viewRows(c.view, output) ?? []) : []);
   /** A call that should answer with no row: whether it did, refused, or answered rows. */
   const noRow = async (c: Declared, actor: Actor, keys: string[]) => {
@@ -253,7 +277,7 @@ export async function checkConnector(
     const head = `${c.name} about ${entity}`;
     const actors = inRoles(c);
     const keys = [...new Set(options.about?.keys ?? [])];
-    const as = options.about?.as ?? actors[0] ?? CHECK_MANAGER;
+    const as = options.about?.as ?? actors[0] ?? manager;
     if (!keys.length) {
       warn(`${head}, batch: no keys given; pass --keys (and --as a person who may see them) to check the rows`);
       row.note('warn', 'Inga nycklar gavs, så raderna är inte prövade.');
@@ -345,7 +369,7 @@ export async function checkConnector(
       fail(`${head}, input: param "${param ?? ''}" is not a string property of the input`);
       row.note('fail', `Fältet "${param ?? ''}" finns inte i indata.`);
     }
-    const offered = [CHECK_MANAGER, CHECK_EMPLOYEE].some(a => registry.tools(a).some(t => t.name === c.name));
+    const offered = people.some(a => registry.tools(a).some(t => t.name === c.name));
     if (offered) {
       warn(`${head}, model tool: offered to the model; an action in an entity's menu is a person's decision`);
       row.note('warn', 'Erbjuds till modellen som verktyg.');
@@ -358,7 +382,7 @@ export async function checkConnector(
     if (c.about) {
       const row = newRow();
       // The role scope still holds: a role outside it is refused before anything is asked.
-      for (const actor of [CHECK_MANAGER, CHECK_EMPLOYEE].filter(a => !inRoles(c).includes(a)))
+      for (const actor of people.filter(a => !inRoles(c).includes(a)))
         try {
           await registry.run(actor, c.name, c.kind === 'read' ? { keys: [UNKNOWN_KEY] } : {});
           fail(`${c.name}: ${actor.role} is out of scope but the registry let the call through`);
@@ -387,7 +411,7 @@ export async function checkConnector(
       continue;
     }
     const row = newRow();
-    for (const actor of [CHECK_MANAGER, CHECK_EMPLOYEE]) {
+    for (const actor of people) {
       const allowed = !c.scope.roles || c.scope.roles.includes(actor.role);
       if (!allowed) {
         try {
@@ -414,7 +438,7 @@ export async function checkConnector(
         const output = await registry.run(actor, c.name, {});
         ok(`${c.name} as ${actor.role}: ${JSON.stringify(output).slice(0, 100)}`);
         row.answered.push(actor.role);
-        if (actor === CHECK_MANAGER || c.scope.roles?.length === 1) checkView(c, output, row);
+        if (actor === manager || c.scope.roles?.length === 1) checkView(c, output, row);
       } catch (error) {
         const m = (error as Error).message;
         if (manifest.delegation && /styrkas|behörighet/.test(m)) {
@@ -501,7 +525,7 @@ export async function checkConnector(
   if (manifest.scan) {
     const counts: string[] = [];
     let same = true;
-    for (const actor of [CHECK_MANAGER, CHECK_EMPLOYEE]) {
+    for (const actor of people) {
       try {
         const drafts = await registry.scan(actor),
           twice = await registry.scan(actor);
@@ -546,7 +570,7 @@ export async function checkConnector(
   if (manifest.header) {
     // The check's registry makes the connector the holder for the probe; in an installation an administrator chooses one.
     registry.govern(manifest.id, { ...registry.governance(manifest.id), header: true });
-    for (const actor of [CHECK_MANAGER, CHECK_EMPLOYEE]) {
+    for (const actor of people) {
       const answer = await registry.header(actor);
       if (answer) {
         const n = answer.output.items.length;
@@ -574,7 +598,7 @@ export async function checkConnector(
   const shapeOf = (f: NonNullable<Area['figure']>) =>
     (['value', 'comparison', 'progress', 'opens'] as const).filter(k => f[k] !== undefined);
   const shapeWords = { value: 'värde', comparison: 'jämförelse', progress: 'mål', opens: 'länk till en vy' } as const;
-  for (const actor of [CHECK_MANAGER, CHECK_EMPLOYEE])
+  for (const actor of people)
     for (const a of await registry.areas(actor)) {
       const shape = a.figure && !a.figure.unavailable ? shapeOf(a.figure) : [];
       ok(

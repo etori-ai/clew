@@ -9,7 +9,7 @@ import {
   type StaffPerson,
   type TalksResult,
 } from '../../packages/contracts/src/index';
-import { SEARCH_CONNECTOR, actorOf, type Actor } from '../../packages/connectors/src/index';
+import { SEARCH_CONNECTOR, audiencedActorOf, type Actor } from '../../packages/connectors/src/index';
 import { checkConnector } from '../../packages/connectors/src/check';
 import { fetchManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import type { ConnectorManifest } from '../../packages/connectors/src/protocol';
@@ -235,7 +235,7 @@ function world() {
   };
 }
 const read = <T>(registry: Registry, p: AuthenticatedContext, name: string, input: unknown = {}) =>
-  registry.run<T>(actorOf(p), name, input);
+  registry.run<T>(audiencedActorOf(p), name, input);
 const PROFILE = ['clew.talks', 'clew.commitments', 'talks.talks', 'talks.commitments'];
 const noProfileTool = (registry: Registry, actor: Actor) =>
   expect(registry.tools(actor).filter(t => PROFILE.includes(t.name) || t.name.startsWith('appraisals.'))).toEqual([]);
@@ -265,7 +265,7 @@ describe('the talks wiring (D96 items 7 to 9)', () => {
       dueOn: '2026-12-15',
     });
 
-    expect(w.registry.talkSource(actorOf(hillevi))).toMatchObject({ builtIn: true, connectorId: 'talks' });
+    expect(w.registry.talkSource(audiencedActorOf(hillevi))).toMatchObject({ builtIn: true, connectorId: 'talks' });
     const round = await read<TalksResult>(w.registry, hillevi, 'clew.talks');
     expect(checkContract(TalksResultSchema, round)).toBe(true);
     expect(round).toMatchObject({
@@ -290,11 +290,11 @@ describe('the talks wiring (D96 items 7 to 9)', () => {
     expect(own).toMatchObject({ writable: true, source: 'Utvecklingssamtal' });
     expect(own.rows.map(r => [r.id, r.personId, r.owner, r.mine])).toEqual([[pointId, 'p-anna', 'employee', true]]);
 
-    const area = (await w.registry.areas(actorOf(hillevi))).find(a => a.id === 'talks')!;
+    const area = (await w.registry.areas(audiencedActorOf(hillevi))).find(a => a.id === 'talks')!;
     expect(area.title).toBe('Utvecklingssamtal');
     expect(area.figure).toMatchObject({ label: 'Utvecklingssamtal hållna', value: '1 av 5' });
-    noProfileTool(w.registry, actorOf(hillevi));
-    noProfileTool(w.registry, actorOf(anna));
+    noProfileTool(w.registry, audiencedActorOf(hillevi));
+    noProfileTool(w.registry, audiencedActorOf(anna));
   });
 
   test('switched off by an administrator, the enabled appraisal system answers read-only with its links; with neither, the composites are not offered', async () => {
@@ -303,7 +303,7 @@ describe('the talks wiring (D96 items 7 to 9)', () => {
     await w.admin.add(mikael, { id: 'appraisals', url: 'http://appraisals', secret: SECRET });
     await w.admin.update(mikael, 'appraisals', { state: 'enabled' });
     // Both answer the profile: the built-in module does, while it is enabled.
-    expect(w.registry.talkSource(actorOf(hillevi))).toMatchObject({ builtIn: true, connectorId: 'talks' });
+    expect(w.registry.talkSource(audiencedActorOf(hillevi))).toMatchObject({ builtIn: true, connectorId: 'talks' });
 
     w.advance(60_000);
     await w.admin.update(mikael, 'talks', { state: 'disabled' });
@@ -316,7 +316,10 @@ describe('the talks wiring (D96 items 7 to 9)', () => {
         details: { from: 'enabled' },
       },
     ]);
-    expect(w.registry.talkSource(actorOf(hillevi))).toMatchObject({ builtIn: false, connectorId: 'appraisals' });
+    expect(w.registry.talkSource(audiencedActorOf(hillevi))).toMatchObject({
+      builtIn: false,
+      connectorId: 'appraisals',
+    });
     const round = await read<TalksResult>(w.registry, hillevi, 'clew.talks');
     expect(checkContract(TalksResultSchema, round)).toBe(true);
     expect(round).toMatchObject({ writable: false, source: 'Samtalssystemet' });
@@ -335,17 +338,17 @@ describe('the talks wiring (D96 items 7 to 9)', () => {
     // Read-only: no row carries the built-in module's id, which only its write routes take.
     expect(hers.rows.every(r => r.id === undefined && r.personId === 'p-anna' && !!r.link)).toBe(true);
     // The built-in module's area is gone with it.
-    expect((await w.registry.areas(actorOf(hillevi))).find(a => a.id === 'talks')).toBeUndefined();
-    noProfileTool(w.registry, actorOf(hillevi));
+    expect((await w.registry.areas(audiencedActorOf(hillevi))).find(a => a.id === 'talks')).toBeUndefined();
+    noProfileTool(w.registry, audiencedActorOf(hillevi));
 
     await w.admin.update(mikael, 'appraisals', { state: 'disabled' });
-    expect(w.registry.talkSource(actorOf(hillevi))).toBeUndefined();
+    expect(w.registry.talkSource(audiencedActorOf(hillevi))).toBeUndefined();
     for (const p of [hillevi, anna]) {
-      expect(w.registry.allowed(actorOf(p), 'clew.talks')).toBeUndefined();
-      expect(w.registry.allowed(actorOf(p), 'clew.commitments')).toBeUndefined();
+      expect(w.registry.allowed(audiencedActorOf(p), 'clew.talks')).toBeUndefined();
+      expect(w.registry.allowed(audiencedActorOf(p), 'clew.commitments')).toBeUndefined();
       await expect(read(w.registry, p, 'clew.talks')).rejects.toThrow();
     }
-    noProfileTool(w.registry, actorOf(hillevi));
+    noProfileTool(w.registry, audiencedActorOf(hillevi));
   });
 
   test('a former manager keeps the action points they own about someone they no longer manage on their own list until done (M2)', async () => {

@@ -1,5 +1,5 @@
 import { Hono, type MiddlewareHandler } from 'hono';
-import { actorOf, type Registry } from '@clew/connectors';
+import { audiencedActorOf, type Registry } from '@clew/connectors';
 import type { AuthenticatedContext } from '@clew/contracts';
 import { failure, InputError, type Env } from '../context';
 import type { PersonKeys } from '../threads/model';
@@ -41,7 +41,7 @@ export function capabilityRoutes(deps: CapabilityRouteDeps) {
     // The output and, when the capability declares one, how to draw it (D38): the browser never guesses a declared view.
     const persona = c.get('session').context;
     const output = await run(persona, name, input);
-    const view = registry.viewFor(actorOf(persona), name);
+    const view = registry.viewFor(audiencedActorOf(persona), name);
     // A record that names a person links to them by id (D116).
     return c.json({
       output,

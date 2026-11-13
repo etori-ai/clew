@@ -2,7 +2,7 @@ import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext, EntityCard, Subject } from '../../packages/contracts/src/index';
 import {
-  actorOf,
+  audiencedActorOf,
   openGovernance,
   type Actor,
   type Capability,
@@ -226,7 +226,7 @@ function world(
       actions: async (actor, kind) => registry.aboutActions(actor, kind),
     },
     read: (persona, capability, input, signal) =>
-      registry.clewFor(actorOf(persona), { signal }).call(capability, input),
+      registry.clewFor(audiencedActorOf(persona), { signal }).call(capability, input),
     cards: async (_persona, subject) => {
       cardsAsked.push(subject);
       return subject.key === 'anna' ? [card] : [];
@@ -1027,4 +1027,27 @@ describe("Clew's own domain among the sources", () => {
     ]);
     expect(detail?.sections[1]).not.toHaveProperty('own');
   });
+});
+
+test('a source for one provisioned group only is asked for its members and is not there for anyone else (D68)', async () => {
+  const calls: string[][] = [];
+  const w = world([connector('hr', 'Personalsystemet', [aboutRead('hr.skills', 'Kompetenser', { calls }), bookTalk])]);
+  w.registry.govern('hr', {
+    ...openGovernance(),
+    audience: { mode: 'selected', groups: ['S-1-5-21-hr'] },
+    capabilities: { 'hr.skills': { lens: true } },
+  });
+  // Hillevi in the group and Hillevi outside it: the reads, the sections and the actions follow the group.
+  const member = { ...w.people.persona('hillevi'), groups: ['S-1-5-21-hr'] },
+    outsider = { ...w.people.persona('hillevi'), groups: ['S-1-5-21-annan'] };
+  expect((await w.entities.rows(member, 'person', 'hr.skills'))?.status).toBe('ok');
+  expect(await w.entities.section(member, 'person', 'anna', 'hr.skills')).toMatchObject({ status: 'ok' });
+  const detail = await w.entities.detail(member, 'person', 'anna');
+  expect(detail?.sections.map(s => s.connector)).toEqual(['hr']);
+  expect(detail?.actions.map(a => a.capability)).toEqual(['hr.book']);
+  const asked = calls.length;
+  expect(await w.entities.rows(outsider, 'person', 'hr.skills')).toBeUndefined();
+  expect(await w.entities.section(outsider, 'person', 'anna', 'hr.skills')).toBeUndefined();
+  expect(await w.entities.detail(outsider, 'person', 'anna')).toMatchObject({ sections: [], actions: [] });
+  expect(calls).toHaveLength(asked);
 });

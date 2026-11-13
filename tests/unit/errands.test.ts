@@ -1,7 +1,14 @@
 import { Registry } from '../registry';
 import { describe, expect, test } from 'bun:test';
 import type { ErrandRow, ErrandsResult } from '../../packages/contracts/src/index';
-import { CapabilityError, SEARCH_CONNECTOR, type Actor, type Connector } from '../../packages/connectors/src/index';
+import {
+  audiencedActorOf,
+  CapabilityError,
+  SEARCH_CONNECTOR,
+  type Actor,
+  type AudiencedActor,
+  type Connector,
+} from '../../packages/connectors/src/index';
 import { parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
 import { merge, systemReport, unanswered } from '../../apps/server/src/modules/errands/domain';
 import { errandCapabilities } from '../../apps/server/src/modules/errands/capabilities';
@@ -153,7 +160,7 @@ function world(connectors: Connector[], budget = { perSourceMs: 40, totalMs: 80 
   });
   return registry;
 }
-const list = (registry: Registry, actor: Actor, input: Record<string, unknown> = {}, context = {}) =>
+const list = (registry: Registry, actor: AudiencedActor, input: Record<string, unknown> = {}, context = {}) =>
   registry.run<ErrandsResult>(actor, 'clew.errands', input, context);
 
 describe('clew.errands', () => {
@@ -327,4 +334,32 @@ describe('clew.errands', () => {
     expect(without.rows.map(r => r.system)).toEqual(['Bygglovssystemet']);
     expect(without.unanswered).toEqual(['Ärendesystemet']);
   });
+});
+
+test('a case system for one provisioned group only is asked for its members, through the nested call, and for nobody else (D68)', async () => {
+  const registry = world([
+    caseSystem('permits', 'Bygglovssystemet', [row('permits', 1)]),
+    caseSystem('support', 'Kundtjänsten', [row('support', 7)]),
+  ]);
+  registry.govern('support', {
+    state: 'enabled',
+    audience: { mode: 'selected', groups: ['S-1-5-21-it'] },
+    scanEnabled: true,
+    toolsEnabled: true,
+    capabilities: {},
+  });
+  // The server hands the registry the person with their groups (audiencedActorOf), and the list's call into each system
+  // keeps them.
+  const member = audiencedActorOf({ ...mikael, groups: ['S-1-5-21-it'] }),
+    outsider = audiencedActorOf({ ...mikael, groups: ['S-1-5-21-annan'] });
+  expect((await list(registry, member)).systems.map(s => [s.id, s.status])).toEqual([
+    ['permits', 'ok'],
+    ['support', 'ok'],
+  ]);
+  expect((await list(registry, outsider)).systems.map(s => s.id)).toEqual(['permits']);
+  // With only the group's system there, the list is not offered outside the group at all.
+  registry.govern('permits', { ...registry.governance('support') });
+  expect(registry.allowed(member, 'clew.errands')).toBeDefined();
+  expect(registry.allowed(outsider, 'clew.errands')).toBeUndefined();
+  expect(registry.allowed(mikael, 'clew.errands')).toBeUndefined();
 });
