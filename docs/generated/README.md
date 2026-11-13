@@ -82,6 +82,7 @@ These JSON files are complete, generated inputs, not abbreviated pseudocode. The
 | `unitLabel` | yes | string |  |
 | `role` | yes | "manager" / "employee" |  |
 | `userName` | no | string | The person's provisioned directory user name (SCIM `userName`, D68): the key your system knows them by, and the key a read about a person is asked with (D97). Absent for a person provisioned without one. |
+| `units` | no | array of object | The units the person follows up (D117): those they manage and those of the managers who report to them (D99). Present on the calls where Clew knows them (a read about units, a view opened on a page); a source may answer for these units and must refuse every other. Absent means `unitId` alone. |
 
 ## CallRequest
 

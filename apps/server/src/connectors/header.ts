@@ -35,7 +35,7 @@ async function fetchSiteHeader(persona: AuthenticatedContext): Promise<SiteHeade
     menu: {
       version: 1,
       site: found.output.site,
-      items: withClewsStart(found.output.items, clewsStart(persona.role, persona.unitId)),
+      items: withClewsStart(found.output.items, clewsStart(persona.role)),
     },
     logo: found.output.logo ?? null,
     source: { id: found.connector.id, label: found.connector.source },

@@ -17,19 +17,15 @@ describe("Clew's Start in the shared header", () => {
         { id: 'kalender', label: 'Kalender', href: '/calendar' },
       ],
     });
+    // Dialogstöd is the units' address, which opens the manager's own unit; an employee has none.
     expect(clewsStart('manager').children?.map(c => [c.label, c.href])).toEqual([
       ['Hem', '/'],
       ['Att göra', '/todo'],
       ['Kalender', '/calendar'],
       ['Personal', '/staff'],
+      ['Dialogstöd', '/units'],
     ]);
-    // Dialogstöd is the manager's own unit's page, as Läget on Hem calls it; an employee has none.
-    expect(clewsStart('manager', 'unit-skola').children?.at(-1)).toEqual({
-      id: 'dialogstod',
-      label: 'Dialogstöd',
-      href: '/units/unit-skola',
-    });
-    expect(clewsStart('employee', 'unit-skola').children?.map(c => c.id)).not.toContain('dialogstod');
+    expect(clewsStart('employee').children?.map(c => c.id)).not.toContain('dialogstod');
   });
 
   test("Clew's Start comes first, and the connector's own Start, by its id or Clew's root, is left out with its pages", () => {

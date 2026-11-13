@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**110 in force**: 98 accepted and 12 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 10 proposed and not decided. 6 no longer in force.
+**111 in force**: 98 accepted and 13 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 10 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -26,6 +26,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D100 · The vision is narrowed to what Clew can keep today: the open page, adapters as the norm, a closed view catalogue](D100-the-vision-is-narrowed-to-what-clew-can-keep-today.md) | 2026-11-10 | accepted | [D81](D81-mcp-apps-extend-ai-chat-with-provider-owned-interactions.md), [D101](README.md) |
 | [D101 · The first real integration is Nextcloud's Approval app, and new surface waits until its loop works](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) | 2026-11-10 | provisional |  |
 | [D104 · The model does the work: a floor holds without it, and the assistant may act alone within governed limits](D104-the-model-does-the-work-a-floor-holds-without-it-and-the-assistant-may-act-alone-within-limits.md) | 2026-11-10 | provisional |  |
+| [D117 · A manager follows up the units of the managers who report to them, and a source is told those units](D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md) | 2026-11-13 | provisional | [D101](README.md) |
 
 ## Integrations
 

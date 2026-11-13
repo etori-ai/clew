@@ -483,6 +483,58 @@ describe('the key figures beside sick leave', () => {
   });
 });
 
+/**
+ * The units a manager follows up (D117): Clew signs the units below the reader into the actor when a call has them, and
+ * the connector answers for those units and refuses every other, with a map and in open mode alike.
+ */
+describe('the units below the reader (D117)', () => {
+  type Row = { key?: string; ref: string; unit: string };
+  const ingrid: Actor = {
+    id: 'ingrid',
+    name: 'Ingrid Holm',
+    unitId: 'unit-grundskola',
+    unitLabel: 'Grundskola',
+    role: 'manager',
+    units: [
+      { unitId: 'unit-grundskola', unitLabel: 'Grundskola' },
+      { unitId: 'unit-skola', unitLabel: 'Bergsåkers skola' },
+      { unitId: 'unit-skola-haga', unitLabel: 'Hagaskolan' },
+    ],
+  };
+  test('open mode: a section and a chart for a unit below, the table with every unit, named as Clew names them', async () => {
+    const { registry } = stack({ unitMap: null });
+    const keys = ['unit-skola', 'unit-skola-haga', 'unit-omsorg'];
+    for (const read of ['qlik.unit', 'qlik.economyUnit', 'qlik.hmeUnit']) {
+      const { rows } = await registry.run<{ rows: Row[] }>(ingrid, read, { keys });
+      expect(rows.map(r => [r.key, r.unit])).toEqual([
+        ['unit-skola', 'Bergsåkers skola'],
+        ['unit-skola-haga', 'Hagaskolan'],
+      ]);
+    }
+    const table = await registry.run<{ rows: Row[] }>(ingrid, 'qlik.economyByUnit', {});
+    expect(table.rows.map(r => r.unit)).toEqual(['Grundskola', 'Bergsåkers skola', 'Hagaskolan']);
+    const chart = await registry.run<{ series: { categories: string[] } }>(ingrid, 'qlik.sickLeaveChart', {
+      unit: 'unit:unit-skola',
+    });
+    expect(chart.series.categories).toHaveLength(12);
+    await expect(registry.run(ingrid, 'qlik.sickLeaveChart', { unit: 'unit:unit-omsorg' })).rejects.toThrow();
+    // Without the units the same manager has her own unit alone.
+    const { units: _, ...alone } = ingrid;
+    expect((await registry.run<{ rows: Row[] }>(alone, 'qlik.unit', { keys })).rows).toEqual([]);
+  });
+  test('with a map, a unit below is the source units the map names for it, and an unmapped one is no row', async () => {
+    const { registry } = stack({
+      unitMap: { 'unit-grundskola': ['IT och digitalisering'], 'unit-skola': ['Bergsåkers skola'] },
+    });
+    const { rows } = await registry.run<{ rows: Row[] }>(ingrid, 'qlik.unit', {
+      keys: ['unit-skola', 'unit-skola-haga'],
+    });
+    expect(rows.map(r => [r.key, r.unit])).toEqual([['unit-skola', 'Bergsåkers skola']]);
+    const table = await registry.run<{ rows: Row[] }>(ingrid, 'qlik.sickLeaveByUnit', {});
+    expect(table.rows.map(r => r.unit)).toEqual(['IT och digitalisering', 'Bergsåkers skola']);
+  });
+});
+
 /** A fake of the part of Qlik's Engine API the adapter calls, behind a socket: JSON-RPC 2.0, one app, one cube. */
 type Cell = { qText?: string; qNum: number | 'NaN' };
 function fakeEngine(options: { matrix: Cell[][]; reload?: string; fail?: string; silent?: boolean }) {

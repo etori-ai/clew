@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { announcements, expect, expectNoAxeViolations, heading, narrow, open, reflowProblems, test } from './support';
 import { ENTITY_UNIT, TALK_LENS, user } from './data';
-import { MEMBER_UNIT, SICK_UNIT, TALK_UNITS, Units, unitAction, unitCard } from './unit-data';
+import { BELOW_UNIT, MEMBER_UNIT, SICK_UNIT, TALK_UNITS, Units, unitAction, unitCard } from './unit-data';
 
 /**
  * The unit as an entity (D112 item 5, the shape of board Person; D97): a page of its own at `/units/:id`, in the work
@@ -112,6 +112,43 @@ test.describe('the unit as a page', () => {
     await expect(heading(page, 2, `Inget mer att visa om ${MEMBER_UNIT.label}`)).toBeVisible();
     await expect(wayBack(page, 'Hem')).toHaveCount(0);
     await expectNoAxeViolations(page);
+  });
+
+  test('the units below in the reader’s reporting line are links in the facts, and the one opened says its manager reports to the reader (D117)', async ({
+    page,
+    api: _,
+  }) => {
+    const units = new Units();
+    units.withBelow = true;
+    await units.route(page);
+    await open(page, school);
+    const details = page.getByRole('complementary', { name: 'Detaljer' });
+    await expect(details).toContainText('Enheter under');
+    const link = details.getByRole('link', { name: BELOW_UNIT.label, exact: true });
+    await expect(link).toHaveAttribute('href', `/units/${BELOW_UNIT.id}?from=${encodeURIComponent(school)}`);
+    await expectNoAxeViolations(page);
+    await link.click();
+    await expect(heading(page, 1, BELOW_UNIT.label)).toBeVisible();
+    const below = page.getByRole('complementary', { name: 'Detaljer' });
+    await expect(below).toContainText('Enhetens chef rapporterar till dig');
+    await expect(below).not.toContainText('Medarbetare');
+    await expect(below).not.toContainText('Enheter under');
+    // The trail above the name: the way up to the school, and the unit as a menu of the other units the reader follows up.
+    const trail = page.getByRole('navigation', { name: 'Enheter', exact: true });
+    await expect(trail.getByRole('link', { name: 'Bergsåkers skola', exact: true })).toHaveAttribute(
+      'href',
+      '/units/unit-skola',
+    );
+    const switcher = trail.getByRole('button', { name: BELOW_UNIT.label });
+    await expect(switcher).toHaveAttribute('aria-haspopup', 'menu');
+    await switcher.press('Enter');
+    const menu = page.getByRole('menu');
+    await expect(menu.getByRole('menuitem', { name: 'Hagaskolan' })).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: 'Bergsåkers skola' })).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: BELOW_UNIT.label })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+    await page.keyboard.press('Escape');
+    await expect(switcher).toBeFocused();
   });
 
   test('a unit the reader may not ask about is the page’s own “finns inte”', async ({ page, api: _ }) => {

@@ -236,8 +236,11 @@ and `series` views. The profile of decision B is a contract change and waits for
 - [ ] The real source: waits for the API. Then its adapter beside `engine.mjs` or its own connector, the map from
       Clew's units, and bbb's rules checked against what the API answers (bbb's backend tests `test_ekonomi_import.py`,
       `test_product_imports.py` and `test_sjuk_underlag.py` are the cases to port).
-- [ ] A manager seeing the units below: Clew's unit page opens only units the reader belongs to or manages, and the
-      connector knows only the reader's own unit (the assertion carries one, D99). Both change with the mapping.
+- [x] A manager seeing the units below, built by
+      [D117](../decisions/D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md): one level down the
+      SCIM tree, D99's reporting line. The unit's page lists the units below and opens them, and the connector is told
+      the reader's followed units in the signed actor, so Qlik answers for them. Dialogstöd at `/units` is the overview
+      of them side by side, big-boss-board's start page, built as an exception to the freeze.
 - [ ] Economy and HME in the engine adapter: HME's source is the employee survey, not Qlik.
 
 ### Phase 2 · The dialogue module (after the freeze lifts)

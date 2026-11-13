@@ -51,8 +51,9 @@ and which one the source gives is not settled, so the rise rule is not built.
 
 **Open mode.** Without `QLIK_UNIT_MAP` the fixture has no map from Clew's units to the source's: a unit's name in the
 source is Clew's unit id, and every manager has made-up figures for their own unit, whatever the organisation tree,
-the same every time. The scope is the same as with a map, the reader's own unit only. How Clew's units are mapped to
-the real source, and whether a manager sees the units below, are not settled.
+the same every time. The scope is the same as with a map: the reader's own unit, and the units Clew lists in the actor's
+`units` when the call has them (those of the managers who report to the reader, [D117](../../docs/decisions/D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md)); every other unit is no row. How Clew's units are mapped to
+the real source is not settled.
 
 ## Configuration
 

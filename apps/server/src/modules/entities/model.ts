@@ -14,6 +14,8 @@ export interface DirectoryPerson {
   /** Null for a person provisioned without one; such a person cannot be asked about (D97). */
   userName: string | null;
   enabled: boolean;
+  /** For a person who reports to the unit from below (D99): the units below that they lead or are placed on. */
+  below?: Array<DirectoryUnit & { role: 'manager' | 'employee' }>;
 }
 export interface DirectoryUnit {
   unitId: string;
