@@ -194,7 +194,10 @@ the server derives the date from `clock()` and the purity guard refuses them.
 
 Still outside the pattern, on purpose: `auth.ts`, `system-context.ts` and `connectors/remote.ts` (identity and
 connector loading, platform code over `@clew/db` directly) and the connector descriptors `modules/*/connector.ts`
-that describe built-in capabilities. Internal `people.*` reads now use a `UserReads` port, composed with a PostgreSQL adapter.
+that describe built-in capabilities. `auth.ts` is tested on PostgreSQL through its routes, with the identity provider
+served in place of the network (`tests/db/sign-in-routes.test.ts`): a row the server writes at a sign-in or a logout,
+such as `login-denied`, is asserted there, and the rows the binding writes in `tests/db/identity-binding.test.ts`.
+Internal `people.*` reads now use a `UserReads` port, composed with a PostgreSQL adapter.
 
 The shared follow-up contract (`tests/followup-contract.ts`) runs on memory and PostgreSQL. Calendar execution projection, refresh/attention and ownership have PostgreSQL scenarios in addition to pure/use-case tests. Runtime tests are required for boundaries memory cannot prove: real transactions, process/protocol response loss and recovery of a pending workflow after process death. Keep these in the separate reliability lane, not the fast suite.
 
