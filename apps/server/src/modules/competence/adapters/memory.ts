@@ -244,6 +244,10 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
       const s = state.sources.get(connectorId);
       return s && structuredClone(s);
     },
+    async openSource(blank) {
+      if (!state.sources.has(blank.connectorId)) state.sources.set(blank.connectorId, structuredClone(blank));
+      return structuredClone(state.sources.get(blank.connectorId)!);
+    },
     async putSource(record) {
       state.sources.set(record.connectorId, structuredClone(record));
     },

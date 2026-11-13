@@ -457,6 +457,74 @@ describe('a read of a source', () => {
     expect(copied()).toEqual([]);
   });
 
+  test('two rows for one person, on different pages and in different spellings, give the person nothing from either', async () => {
+    const { hlr } = await catalogue();
+    await competence.mapSourceType(admin, 'lms', { sourceType: 'clew-dev:hlr', typeId: hlr });
+    // What Anna already has from the source, from a read when one account was hers.
+    source.pages.set('lms', [
+      {
+        rows: [row('anna.a', [holding('course:7:user:1', 'clew-dev:hlr', 'HLR', '2025-11-01')])],
+        withdrawalsReported: true,
+      },
+    ]);
+    await competence.copySource(COPY_ACTOR, 'run-1', lms);
+    expect(copied().map(h => h.copy!.sourceId)).toEqual(['course:7:user:1']);
+    // Two accounts of the source whose keys differ only in case, a page apart: Clew reads both keys as Anna's.
+    source.pages.set('lms', [
+      {
+        rows: [
+          row('Anna.A', [holding('course:9:user:1', 'clew-dev:hlr', 'HLR', '2026-03-01')]),
+          row('bo.b', [holding('course:7:user:2', 'clew-dev:hlr', 'HLR', '2026-02-01')]),
+        ],
+        withdrawalsReported: true,
+      },
+      {
+        rows: [
+          row('ANNA.A', [
+            holding('course:9:user:77', 'clew-dev:hlr', 'HLR', '2026-04-01'),
+            holding('course:8:user:77', 'clew-dev:hlr', 'HLR', '2026-13-01'),
+          ]),
+        ],
+        withdrawalsReported: true,
+      },
+    ]);
+    logged = [];
+    const result = await competence.copySource(COPY_ACTOR, 'run-2', lms);
+    // Neither account's holdings are Anna's: the two usable ones count as unusable beside the one that already was.
+    expect(result).toMatchObject({
+      outcome: 'complete',
+      unmatched: 0,
+      counts: { read: 4, stored: 1, unchanged: 0, invalid: 3, revoked: 0, removed: 0 },
+    });
+    // Bo's row is kept; what Anna had is as it was, neither revoked for absence nor removed.
+    expect(copied().map(h => [h.personId, h.copy!.sourceId, h.state])).toEqual(
+      [
+        ['bo', 'course:7:user:2', 'valid'],
+        ['anna', 'course:7:user:1', 'valid'],
+      ].sort((a, b) => a[1]!.localeCompare(b[1]!)),
+    );
+    expect(audits().at(-1)).toMatchObject({
+      action: 'competence.source_read',
+      details: { run: 'run-2', outcome: 'complete', ambiguous: 1, invalid: 3 },
+    });
+    // Said in the log by kind and count, never by key or name.
+    const line = JSON.stringify(logged);
+    expect(line).toContain('more than one row for the same person');
+    for (const word of [...KEYS, ...NAMES]) expect(line).not.toContain(word);
+    // The same spelling twice is the same thing: one person, two rows.
+    source.pages.set('lms', [
+      {
+        rows: [row('bo.b', [holding('course:1:user:2', 'clew-dev:hlr', 'HLR', '2026-05-01')])],
+        withdrawalsReported: false,
+      },
+      {
+        rows: [row('bo.b', [holding('course:2:user:2', 'clew-dev:hlr', 'HLR', '2026-05-02')])],
+        withdrawalsReported: false,
+      },
+    ]);
+    expect((await competence.copySource(COPY_ACTOR, 'run-3', lms)).counts).toMatchObject({ stored: 0, invalid: 2 });
+  });
+
   test('a page as the development learning platform answers it: the guest, the administrator and the service account match nobody and nothing of them is kept', async () => {
     const { hlr } = await catalogue();
     await competence.mapSourceType(admin, 'lms', { sourceType: 'clew-dev:hlr', typeId: hlr });

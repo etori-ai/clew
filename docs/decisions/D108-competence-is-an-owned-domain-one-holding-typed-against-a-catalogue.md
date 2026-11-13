@@ -327,13 +327,18 @@ connector that stays. The module declares the source as a port (`HoldingsPort` i
 on, the sources that answer the profile, one page of one, in the profile's own types from `@clew/contracts`), which
 `composition/index.ts` binds to the registry's `holdingsReader` (D119); the module imports no connector code and
 reads a failure's kind from its `code`. The copy (`copySource` in `usecases.ts`, `planCopy` in `domain.ts`) takes a
-lease on the source and reads it page by page to the end, renewing the lease after each page; whether the module is on
+lease on the source and reads it page by page to the end, renewing the lease after each page. The lease is taken
+through `openSource`, which writes the source's row when it has none before locking it, so two first runs of a source
+wait for each other and only one reads (2026-11-13); whether the module is on
 is asked again for each source. Each page is taken in as it comes: its new keys are matched to active people by user
 name, and what a key that matches nobody holds is counted and dropped there, and so is what a person outside the
 audiences holds (`HoldingsPort.admitted`, which composition answers with the registry's own `inAudience` over
 `readAudienceFacts` in `@clew/db/auth`). The read holds only the usable holdings of people it may keep rows for and the
 source's row ids. A key, an id or a type with a control character or a lone surrogate, which Postgres would refuse or
-which names nothing reliably, is unusable; a label has them taken out.
+which names nothing reliably, is unusable; a label has them taken out. A person is one row of a read: a key a second
+row answers for, in any spelling and on any page, is nobody's, nothing of either row is kept, their holdings count as
+unusable (`ambiguous` in the audit row), and what the person already has from the source is left as it is (2026-11-13;
+a source cannot always tell that two of its accounts differ only in case, and Clew compares keys without it).
 A failure is handled by its kind: `unavailable` asks the same page again after 5 and 30 seconds, `invalid` (a cursor
 the source no longer knows) starts the sweep again from the first page once, and `not-found`, `denied`, `unknown`, a
 second `invalid`, a third `unavailable`, a cancelled run, a cursor that comes back, ten thousand pages or more than
@@ -342,7 +347,8 @@ with the kind; the next run reads the source again. Then everything is written i
 `competence.source_read`, which carries the run, the outcome (`complete`, `partial`, `failed`), the failure's kind and
 the whole read's counts (read, stored, unchanged, keys that matched nobody, unusable, types not mapped, revoked, people
 outside an audience, rows removed), never a name, a key or a label. The transaction locks the source's row first, as a
-mapping, an erasure (`erasePerson`, the rows of every source the person has rows from, in one order) and forgetting a
+mapping, an erasure (`erasePerson`, the row of every source in one order, whether the person has rows from it yet or
+not, so an erasure also waits for the write of a person's very first copied row; 2026-11-13) and forgetting a
 source do, so two writers wait for each other and never deadlock; it checks again that each person it writes for is
 still active, and deletes the rows of anyone no longer admitted. Removing the connector takes the same order: a copied
 row refers to its source's row in `competence_source` (`competence_holding_source_fk`), not to the connector's, so the

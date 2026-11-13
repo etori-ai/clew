@@ -5,6 +5,8 @@ export declare const PERSON_KEYS_MAX: number;
 export declare const HOLDINGS_PAGE: number;
 /** The most holdings one row carries. */
 export declare const HOLDINGS_PER_ROW: number;
+/** The most rows one person's list of courses and badges carries; a longer list is cut and its last row says so. */
+export declare const COURSES_ROWS_MAX: number;
 /** The cursor of the next page: the last account answered and its place in Moodle's list. */
 export declare const cursorPattern: string;
 export declare const SUMMARY_MAX: number;

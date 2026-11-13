@@ -233,6 +233,12 @@ export interface CompetenceTx {
   sources(): Promise<SourceRecord[]>;
   /** One source, locked. */
   source(connectorId: string): Promise<SourceRecord | undefined>;
+  /**
+   * One source, locked, written as `blank` first when it has no record: what a run claims a source through. Of two
+   * transactions that open a source nobody has read before, the second waits for the first and is answered what the
+   * first wrote, so they never both find it free.
+   */
+  openSource(blank: SourceRecord): Promise<SourceRecord>;
   /** Write a source's record, replacing the one there. */
   putSource(record: SourceRecord): Promise<void>;
   /**
@@ -252,7 +258,10 @@ export interface CompetenceTx {
   // Erasure and export (D108 item 14).
   /**
    * Remove the person's holdings, copied ones included, and remove them from other people's (null `registeredBy`,
-   * `revokedBy`). Takes the row lock of every source the person has copied rows from first, in the order of their ids.
+   * `revokedBy`). Takes the row lock of every source first, in the order of their ids, whether the person has rows of
+   * it yet or not: a read's write holds its source's row from before it asks who is active until it commits, so an
+   * erasure waits for a write under way, the person's very first one included, and a write that starts after the
+   * erasure finds the person deactivated.
    */
   erasePerson(personId: string): Promise<Erased>;
   /** Every type of the organisation, archived included, every holding of its people, and its mappings. */

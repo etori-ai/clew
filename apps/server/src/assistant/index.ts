@@ -366,7 +366,7 @@ export function assistantUsecases(deps: AssistantDeps) {
       unitLabel: persona.unitLabel,
       now,
       week: weekNumber(displayDate(now.toISOString())),
-      objects: serialiseContext(chips.objects, now.toISOString(), people.guarded),
+      objects: serialiseContext(chips.objects, now.toISOString(), people.guards),
       drafts: draftable.length > 0,
       ...(people.people.length ? { people: { lines: peopleLines(people, now.toISOString()), lookup } } : {}),
     });

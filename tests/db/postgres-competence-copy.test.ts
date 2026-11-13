@@ -204,6 +204,152 @@ describe('two writers of copied rows at once', () => {
     expect(erased.status).toBe('fulfilled');
     expect(await w.store.transaction(tx => tx.holdingsOf([w.anna]))).toEqual([]);
   });
+
+  /** Whether a promise has settled within `ms`: an operation that waits for a lock has not. */
+  const settledWithin = (promise: Promise<unknown>, ms: number) =>
+    Promise.race([promise.then(() => true), new Promise<boolean>(resolve => setTimeout(() => resolve(false), ms))]);
+  const blank = (connectorId: string) => ({
+    connectorId,
+    source: 'Lärplattformen',
+    run: null,
+    claimedAt: null,
+    leaseUntil: null,
+    startedAt: null,
+    finishedAt: null,
+    outcome: null,
+    counts: null,
+  });
+
+  test('erasing a person while a read writes their very first row waits for the write, and the row does not come back', async () => {
+    // The source has its record, as it has from the moment a run claims it, and Anna has nothing from it yet: the
+    // erasure has no row of hers to find the source by.
+    const w = await world();
+    await w.store.transaction(tx => tx.putSource(blank(w.lms)));
+    let open!: () => void, locked!: () => void;
+    const gate = new Promise<void>(resolve => (open = resolve));
+    const hasLock = new Promise<void>(resolve => (locked = resolve));
+    // The copy's write as the use case makes it: the source's row, who is active, then the rows.
+    const writing = w.store.transaction(async tx => {
+      await tx.source(w.lms);
+      const active = await tx.activeIds([w.anna]);
+      locked();
+      await gate;
+      if (active.has(w.anna))
+        await tx.putCopied([copiedRow(w.p + '-c1', w.anna, w.p + '-t1', { connectorId: w.lms, sourceId: 's1' })]);
+      return active.has(w.anna);
+    });
+    await hasLock;
+    // Anna was active when the write asked. Now the directory deactivates her and the operator erases her, both in
+    // transactions of their own, while the write is still to come.
+    await database().update(schema.people).set({ enabled: false }).where(eq(schema.people.id, w.anna));
+    const erasing = w.store.transaction(tx => tx.erasePerson(w.anna));
+    // The erasure waits for the write: it has not finished while the write holds the source.
+    expect(await settledWithin(erasing, 500)).toBe(false);
+    open();
+    const [written, erased] = await Promise.allSettled([writing, erasing]);
+    expect(written).toEqual({ status: 'fulfilled', value: true });
+    // It then takes the row the write just made with it.
+    expect(erased).toEqual({ status: 'fulfilled', value: { holdings: 1, cleared: 0 } });
+    expect(await w.store.transaction(tx => tx.holdingsOf([w.anna]))).toEqual([]);
+    expect(await w.store.transaction(tx => tx.copiedFrom(w.lms))).toEqual([]);
+  });
+
+  test("an erasure under way holds every source: a read's write that starts meanwhile waits and finds the person deactivated", async () => {
+    const w = await world();
+    await w.store.transaction(tx => tx.putSource(blank(w.lms)));
+    await database().update(schema.people).set({ enabled: false }).where(eq(schema.people.id, w.anna));
+    let open!: () => void, locked!: () => void;
+    const gate = new Promise<void>(resolve => (open = resolve));
+    const hasLock = new Promise<void>(resolve => (locked = resolve));
+    const erasing = w.store.transaction(async tx => {
+      const erased = await tx.erasePerson(w.anna);
+      locked();
+      await gate;
+      return erased;
+    });
+    await hasLock;
+    const writing = w.store.transaction(async tx => {
+      await tx.source(w.lms);
+      const active = await tx.activeIds([w.anna]);
+      if (active.has(w.anna))
+        await tx.putCopied([copiedRow(w.p + '-c1', w.anna, w.p + '-t1', { connectorId: w.lms, sourceId: 's1' })]);
+      return active.has(w.anna);
+    });
+    expect(await settledWithin(writing, 500)).toBe(false);
+    open();
+    expect(await Promise.all([erasing, writing])).toEqual([{ holdings: 0, cleared: 0 }, false]);
+    expect(await w.store.transaction(tx => tx.holdingsOf([w.anna]))).toEqual([]);
+  });
+
+  test('two transactions open a source nobody has read: the second waits and is answered what the first wrote', async () => {
+    const w = await world();
+    let open!: () => void, locked!: () => void;
+    const gate = new Promise<void>(resolve => (open = resolve));
+    const hasLock = new Promise<void>(resolve => (locked = resolve));
+    const first = w.store.transaction(async tx => {
+      const base = await tx.openSource(blank(w.lms));
+      locked();
+      await gate;
+      await tx.putSource({
+        ...base,
+        run: 'first',
+        claimedAt: '2026-11-12T10:00:00.000Z',
+        leaseUntil: '2026-11-12T10:15:00.000Z',
+      });
+      return base.run;
+    });
+    await hasLock;
+    const second = w.store.transaction(async tx => (await tx.openSource(blank(w.lms))).run);
+    expect(await settledWithin(second, 500)).toBe(false);
+    open();
+    // The first found it free; the second sees the first's claim, where it used to find no record at all.
+    expect(await Promise.all([first, second])).toEqual([null, 'first']);
+  });
+
+  test('two runs start the first read of a source at once: one reads it, the other finds it held', async () => {
+    const w = await world();
+    let asked = 0,
+      release!: () => void;
+    const held = new Promise<void>(resolve => (release = resolve));
+    const page: SourceHoldingsPage = {
+      rows: [
+        {
+          key: w.p + '.anna',
+          holdings: [{ id: 'c1', type: 't1', label: 'HLR', kind: 'course', issuedOn: '2025-11-01' }],
+        },
+      ],
+      withdrawalsReported: false,
+    };
+    const port: HoldingsPort = {
+      switchedOn: async () => true,
+      holdingsSources: async () => [],
+      // The source is slow: the run that reads it still holds it when the other tries.
+      readHoldings: async () => {
+        asked++;
+        await held;
+        return page;
+      },
+      admitted: async (_id, personIds) => new Set(personIds),
+      reaches: async () => true,
+    };
+    const copy = competenceUsecases({
+      store: w.store,
+      staff: async () => ({ units: [] }),
+      clock: () => new Date('2026-11-12T10:00:00Z'),
+      ids: () => randomUUID(),
+      holdings: port,
+    });
+    const ref = { connectorId: w.lms, source: 'Lärplattformen' };
+    const runs = [copy.copySource(COPY_ACTOR, 'daily', ref), copy.copySource(COPY_ACTOR, 'read-now', ref)];
+    // The one that lost answers at once; the other is still reading.
+    const lost = await Promise.race(runs);
+    expect(lost).toEqual({ connectorId: w.lms, outcome: 'busy' });
+    release();
+    const outcomes = (await Promise.all(runs)).map(r => r.outcome).sort();
+    expect(outcomes).toEqual(['busy', 'complete']);
+    expect(asked).toBe(1);
+    expect((await w.store.transaction(tx => tx.copiedFrom(w.lms))).map(h => h.copy!.sourceId)).toEqual(['c1']);
+  });
 });
 
 describe('the audience asked of the database', () => {

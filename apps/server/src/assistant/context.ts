@@ -80,16 +80,17 @@ export function workItemLine(t: Thread, now: string): string {
 /**
  * Swedish lines for the system prompt's "Du tittar på" block. Names appear here only because the person pointed at the
  * object. `now` (an instant) decides whether a card's undo window is still open; chips are resolved again every turn, so
- * the state is the card's as it is now, not as it was when it was added. A card in `guarded` is about a person the
- * conversation names (D115) and is handed by its title, last day and buttons alone, whichever of its parts was pointed at.
+ * the state is the card's as it is now, not as it was when it was added. A card `guards` answers for is about a person
+ * the conversation names (D115) and is handed by its title, last day and buttons alone, whichever of its parts was
+ * pointed at and whatever state it is in.
  */
 export function serialiseContext(
   objects: ResolvedObject[],
   now: string,
-  guarded: ReadonlySet<string> = new Set(),
+  guards: (thread: Thread) => boolean = () => false,
 ): string[] {
   return objects.map(o => {
-    if ('thread' in o && guarded.has(o.thread.id)) return workItemLine(o.thread, now);
+    if ('thread' in o && guards(o.thread)) return workItemLine(o.thread, now);
     switch (o.kind) {
       case 'thread': {
         const t = o.thread;

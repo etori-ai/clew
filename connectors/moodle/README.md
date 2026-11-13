@@ -20,6 +20,7 @@ How Moodle actually answers is recorded in [samples/](samples/README.md): 36 rea
 
 | File | Holds |
 |---|---|
+| `config.mjs` | Which adapter the environment names: always said, and a half-configured deployment does not start |
 | `manifest.mjs` | The contract: three reads a person makes, their views, and the installation's read of the holdings profile |
 | `connector.mjs` | The reads, matching a person, who may be answered about, the installation's pages, deadlines, and HTTP error handling |
 | `learning.mjs` | The learning-platform port, its errors, and an in-memory stand-in shaped like the development seed |
@@ -31,7 +32,7 @@ How Moodle actually answers is recorded in [samples/](samples/README.md): 36 rea
 | Capability | Shown as | Answers |
 |---|---|---|
 | `moodle.person` "Utbildningar" | A section on the opened person; a lens and a column on Personal when an administrator offers them | About a person (D97), asked with up to 50 keys: one row per key the platform knows, `completed` and `ongoing` course counts. Its row opens `moodle.courses` |
-| `moodle.courses` "Kurser och märken" | The list under the section: course or badge, "Kurs" or "Märke", status, day, "Gäller till", and "Öppna i Lärplattformen" | One person's courses: "Pågår" (enrolled, not completed), "Genomförd" with the day; badges "Giltigt" or "Utgånget" (a warning tone) with the day issued and the day they run out. A course's row carries the person's key as asked and the course id, which open `moodle.course`, and a link to the course in Moodle. A badge's row opens nothing and links nowhere |
+| `moodle.courses` "Kurser och märken" | The list under the section: course or badge, "Kurs" or "Märke", status, day, "Gäller till", and "Öppna i Lärplattformen" | One person's courses: "Pågår" (enrolled, not completed), "Genomförd" with the day; badges "Giltigt" or "Utgånget" (a warning tone) with the day issued and the day they run out. A course's row carries the person's key as asked and the course id, which open `moodle.course`, and a link to the course in Moodle. A badge's row opens nothing and links nowhere. At most 500 rows: a longer list is cut, the oldest completed courses first, then the oldest badges, and its last row is the line "Listan är avkortad: N kurser och märken till visas inte här." |
 | `moodle.course` "Kurs" | A `detail` view: the course name as heading, then Kategori, Status, Genomförd (the day), Villkor, Om kursen, and the link | One person's one course: its category, status, the day it was completed, the completion criteria with which are met and when ("Markerad som klar av Teacher: uppfyllt 26 apr. 2026"), at most 12, and its summary as plain text, at most 600 characters |
 | `moodle.holdings` (under `installation`) | Nothing: the installation's read, which Clew's competence register copies (D119) | Every account the service account can see, a page of at most 25 at a time in Moodle's id order: one row per account, keyed by the value of the match field, with every holding it can see: `id` (the source's row id), `type` (the source's type id), `label`, `kind` (`course` or `badge`), `issuedOn` and, when there is one, `expiresOn`; `next` for the following page, absent on the last; `withdrawalsReported: false`. Not a capability: no person reaches it ("The installation's read of every holding") |
 
@@ -68,8 +69,8 @@ without it is not thereby complete.
 
 Clew asks with the person's key, the provisioned user name (D97, compared without regard to case).
 `MOODLE_MATCH_FIELD` names the Moodle user field that holds it: `username` (default) or `idnumber`. Moodle compares a
-value exactly (02), so each key is looked up as asked and in lower case. A key that matches more than one account
-without regard to case (two accounts that differ only in case, or that share the value) is no one, whoever asks; and
+value exactly (02), so each key is looked up in lower case, and the person's account is the one that holds the key in
+that spelling. A key that no account holds in lower case, or that more than one does, is no one, whoever asks; and
 whose account it is is decided by the account found, not by the key asked.
 
 - `username` (default): the person cannot change it. Moodle keeps it in lower case and unique, and a value it would
@@ -77,9 +78,14 @@ whose account it is is decided by the account found, not by the key asked.
   outside its plain set, on a site without extended username characters) is dropped and the rest asked again: that
   key is no one.
 - `idnumber`: free text, neither lower-cased nor kept unique by Moodle, and editable by each person on their own profile
-  unless locked ("What Moodle needs"). Only the spellings asked can be compared, so an account whose idnumber differs
-  from the key in case other than all lower case (`Anna.Berg` for the key `anna.berg`) is not found, and a twin in a
-  third spelling is not noticed.
+  unless locked ("What Moodle needs"). Only an account that holds the key in lower case is the person's: an idnumber
+  with a capital letter (`Anna.Berg`, `AB12`) is no one, in a person's read and in the installation's. Moodle compares
+  exactly, so the connector cannot ask whether another account holds the same idnumber in another spelling, and Clew
+  compares keys without regard to case: `Ab12` on one page of the installation's read and `AB12` on another would
+  both have been copied to the same person. The lower-case spelling is the one an exact lookup settles, since every
+  account that holds it comes back and more than one is no one. An installation whose idnumbers have capital letters
+  matches on `username`, or lower-cases them in Moodle first. Clew's copy checks the same thing from its side: a
+  person answered by two rows of one read gets nothing from either (D108 item 9).
 
 ## Who may be answered about
 
@@ -228,15 +234,20 @@ so the connector reads `&#38;` and its kin back to text. A course summary is HTM
 | `CLEW_CONNECTOR_SECRET` | The secret shared with Clew, 16 characters or more. Required |
 | `CLEW_URL` | Trusted Clew base URL, used to fetch `/api/connectors/jwks`. Required; HTTPS outside the local development allowlist |
 | `PORT` | Default 4053 |
-| `MOODLE_ADAPTER` | `fixture` (default, the stand-in) or `moodle` (the real API) |
-| `MOODLE_URL` | Moodle's base address as the connector reaches it. Required for `moodle`; HTTPS unless localhost |
-| `MOODLE_TOKEN` | The service account's web service token. Required for `moodle`. Sent in the form body of every call, never in the address |
+| `MOODLE_ADAPTER` | `moodle` (the real API) or `fixture` (the stand-in, made-up people: development and tests only). Required, no default: the connector does not start without it |
+| `MOODLE_URL` | Moodle's base address as the connector reaches it. Required for `moodle`, refused for `fixture`; HTTPS unless localhost |
+| `MOODLE_TOKEN` | The service account's web service token. Required for `moodle`, refused for `fixture`. Sent in the form body of every call, never in the address |
 | `MOODLE_ALLOW_HTTP` | `true` lets `MOODLE_URL` be plain http on a private development network (`http://moodle`) |
 | `MOODLE_PUBLIC_URL` | Moodle's address in the person's browser, for links to a course (`<address>/course/view.php?id=<id>`). Optional: without it there are no links. HTTPS unless localhost |
 | `MOODLE_MATCH_FIELD` | `username` (default) or `idnumber`: the Moodle field that holds the key Clew sends |
 | `MOODLE_SOURCE_LABEL` | The system's name as a person reads it. Default `Lärplattformen` |
 | `MOODLE_TIMEZONE` | The zone Moodle's times are read as days in. Default `Europe/Stockholm` |
 | `MOODLE_CONCURRENCY` | How many Moodle calls one read may have open at once, 1 to 16. Default 4 |
+
+The adapter is always named (`config.mjs`). The stand-in answers with made-up people whose user names can be real ones
+in an installation, and Clew copies what a source holds into its competence register, where a later change of adapter
+does not take it out again. So a start without `MOODLE_ADAPTER`, as `moodle` without the address or the token, or as
+`fixture` beside either of them, fails with the variable to change, before anything is served.
 
 ## The stand-in
 
@@ -375,9 +386,9 @@ are added at the end of the list, so a new one comes on a later page. The same c
 Moodle does not change. A cursor that is not one is `invalid`.
 
 **Who has a row.** An account's key is the value of the match field. Each key of a page is checked as every read checks
-one: it must find its own account and no other, looked up as Moodle spells it and in lower case (33). So two accounts on
-a page whose keys differ only in case are no one, as is an account whose key also finds a lower-case twin elsewhere; an
-account whose details the service account may not see has no key; neither has a row, and the page goes on past them.
+one: it must be in lower case and find its own account and no other (33). So an account whose key has a capital letter
+is no one, on whatever page an account that differs from it only in case may be, as are two accounts that share a key;
+an account whose details the service account may not see has no key; neither has a row, and the page goes on past them.
 Moodle's guest account has no row either: it is listed with everyone and nobody's. A suspended account is answered: what it completed stays true. The limit under "Known limits" stays: a user name Clew
 gives to someone new while the old account is suspended and not renamed carries that account's rows. Each holding's `id`
 names the Moodle account (`course:<id>:user:<user id>`), never the user name, so rows of two accounts never merge, but

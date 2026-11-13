@@ -189,6 +189,73 @@ test.describe('Administration › Kompetens › Källor', () => {
       await expect(read).toBeDisabled();
     });
 
+    test('a read asked for is followed to its result, which is shown and said without a reload', async ({
+      page,
+      api,
+    }) => {
+      switchedOn(api);
+      await open(page, SOURCES);
+      const read = page.getByRole('button', { name: 'Läs in nu: Lärplattformen' });
+      await read.click();
+      await expect(notices(page).getByText('Lärplattformen läses in.')).toBeAttached();
+      await expect(page.getByText('Läses in', { exact: true })).toBeVisible();
+      // The run finishes on the server some time after the page last asked.
+      const lms = api.competenceSources.find(s => s.connectorId === 'lms')!;
+      lms.reading = false;
+      lms.lastRead = {
+        ...lms.lastRead!,
+        startedAt: '2026-11-13T09:29:00.000Z',
+        finishedAt: '2026-11-13T09:30:00.000Z',
+        outcome: 'partial',
+        counts: { ...lms.lastRead!.counts, read: 431 },
+      };
+      await expect(page.getByText('13 november 2026 kl. 10:30')).toBeVisible();
+      await expect(page.getByText('Delvis läst', { exact: true })).toBeVisible();
+      await expect(page.getByText('431', { exact: true })).toBeVisible();
+      await expect(notices(page).getByText('Lärplattformen är delvis inläst.')).toBeAttached();
+      await expect(page.getByText('Läses in', { exact: true })).toHaveCount(0);
+      await expect(read).toBeEnabled();
+      await expectNoAxeViolations(page);
+    });
+
+    test('a read queued and not yet begun is still followed: the source says it is being read until its result shows', async ({
+      page,
+      api,
+    }) => {
+      switchedOn(api);
+      await open(page, SOURCES);
+      const read = page.getByRole('button', { name: 'Läs in nu: Lärplattformen' });
+      await read.click();
+      await expect(notices(page).getByText('Lärplattformen läses in.')).toBeAttached();
+      // The server has queued the read and no run holds the source yet: it does not say it is being read.
+      const lms = api.competenceSources.find(s => s.connectorId === 'lms')!;
+      lms.reading = false;
+      await page.waitForResponse(r => r.url().endsWith('/competence/sources') && r.request().method() === 'GET');
+      await expect(page.getByText('Läses in', { exact: true })).toBeVisible();
+      await expect(read).toBeDisabled();
+      lms.lastRead = { ...lms.lastRead!, finishedAt: '2026-11-13T09:30:00.000Z' };
+      await expect(notices(page).getByText('Lärplattformen är inläst.')).toBeAttached();
+      await expect(read).toBeEnabled();
+    });
+
+    test('a read under way when the page opens is followed too, without a notice nobody asked for', async ({
+      page,
+      api,
+    }) => {
+      switchedOn(api);
+      const lms = api.competenceSources.find(s => s.connectorId === 'lms')!;
+      lms.reading = true;
+      await open(page, SOURCES);
+      const read = page.getByRole('button', { name: 'Läs in nu: Lärplattformen' });
+      await expect(page.getByText('Läses in', { exact: true })).toBeVisible();
+      await expect(read).toBeDisabled();
+      lms.reading = false;
+      lms.lastRead = { ...lms.lastRead!, finishedAt: '2026-11-13T09:30:00.000Z' };
+      await expect(page.getByText('13 november 2026 kl. 10:30')).toBeVisible();
+      await expect(read).toBeEnabled();
+      await expect(notices(page).getByText('Lärplattformen är inläst.')).toHaveCount(0);
+    });
+
     test('a refusal of the server is an alert in the dialog, and what was chosen stays', async ({ page, api }) => {
       switchedOn(api);
       api.sourceFail = 'Kompetensen är arkiverad och kan inte kopplas.';
