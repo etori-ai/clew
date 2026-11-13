@@ -198,9 +198,10 @@ searched for each value that named them; the stale group push undone by a second
 again as a new person; the other three erasures still finding the person by id; and the script's exit codes and answers,
 with someone else holding the person's id as a user name in another case), `tests/unit/entities-actions.test.ts` (an
 execute about a person erased since cannot be decided, and nothing is approved), and, for the three erasures that come
-first, `tests/unit/erase-scripts.test.ts` (the arguments refused before the database is asked) and
-`tests/db/erase-scripts.test.ts` (as scripts on PostgreSQL: an unknown id and an active person refused, and a
-deactivated person erased with the script's own answer alone, a card with a waiting timer included).
+first, `tests/unit/erase-scripts.test.ts` (the arguments refused before the database is asked, and the answer of all
+four to a database they cannot reach) and `tests/db/erase-scripts.test.ts` (as scripts on PostgreSQL: an unknown id and
+an active person refused; a failed query answered by all four with the database's own message and that nothing was
+written; and a deactivated person erased with the script's own answer alone, a card with a waiting timer included).
 
 **Replaces.** `pruneAuthentication`, which only the development setup ran. Its revocation and removal of expired
 sessions is now done every night in the server, from the first night after either expiry rather than a day after the

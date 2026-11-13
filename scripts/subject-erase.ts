@@ -68,7 +68,12 @@ try {
       `Erased ${entity} "${key}" from ${erased.cards} cards: ${erased.rows} rows and ${erased.cardSubjects} card subjects no longer name it. Audited as ${entity}:${key}.`,
     );
 } catch (error) {
-  console.error(`Could not erase: ${(error as Error).message}`);
+  // Neither the check of the person, made before the transaction, nor the transaction wrote anything. A query's own
+  // error is its cause; the wrapper's message repeats the statement.
+  const cause = (error as { cause?: unknown }).cause;
+  console.error(
+    `Could not erase: ${(cause instanceof Error ? cause : (error as Error)).message}. Nothing was written.`,
+  );
   process.exitCode = 1;
 } finally {
   await closeDatabase();

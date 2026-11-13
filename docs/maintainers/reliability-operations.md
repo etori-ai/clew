@@ -172,7 +172,7 @@ How long a deactivated person's record is kept is the organisation's decision un
    - 2, on standard error, without `--confirm`: what an erasure removes, and that it cannot be undone, then, from `talks-erase` and `competence-erase`, the usage line. Neither of these asks the database anything, so neither gives counts or checks the id.
    - 1, on standard error, for an id the people table does not hold: `No person has the id "<id>": nothing was erased and nothing was audited. A person is named by their id, never by a user name.`
    - 1, on standard error, for a person who is still active: `Person "<id>" is still active: only a person the source has deactivated is erased (D68 item 1). Nothing was erased and nothing was audited.`
-   - 1, on standard error, when the database fails: `Could not erase: <the database's message>`. The transaction wrote nothing.
+   - 1, on standard error, when the database fails: `Could not erase: <the database's message>. Nothing was written.`, as from `person-erase` in step 5; for a database that cannot be reached, for example, `Could not erase: connect ECONNREFUSED <address>:<port>. Nothing was written.` The transaction wrote nothing, so run it again.
    - 0, on standard output: the counts, such as `Erased person "<id>" from the talks domain: <n> talks and <n> action points removed, <n> other records cleared, <n> cards removed. Audited as person:<id>.`, or, when nothing matched, that nothing was changed, with the same `Audited as person:<id>.`
 5. **The record, last:**
 

@@ -68,7 +68,11 @@ try {
       `Erased person "${personId}" from the competence domain: ${erased.holdings} holdings removed, ${erased.cleared} other holdings cleared of their id, ${erased.cards} cards removed. Audited as person:${personId}.`,
     );
 } catch (error) {
-  console.error(`Could not erase: ${(error as Error).message}`);
+  // The transaction wrote nothing. A query's own error is its cause; the wrapper's message repeats the statement.
+  const cause = (error as { cause?: unknown }).cause;
+  console.error(
+    `Could not erase: ${(cause instanceof Error ? cause : (error as Error)).message}. Nothing was written.`,
+  );
   process.exitCode = 1;
 } finally {
   await closeDatabase();

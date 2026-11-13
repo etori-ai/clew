@@ -548,7 +548,8 @@ what they say.
   ([D117](../decisions/D117-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md)
   item 3). When a card they removed had a timer waiting, both also printed an error from the durable engine before
   their answer: a script never starts the engine, so they no longer cancel through it, and the timer's workflow finds
-  no timer when it wakes.
+  no timer when it wakes. And the three answered a failed query with the statement and its parameters, where
+  `person-erase` gives the database's own message and that nothing was written; they now answer as it does.
 - Two accessibility tests raced the frame in which the page moves the focus. They now wait for it.
 
 **Left.**

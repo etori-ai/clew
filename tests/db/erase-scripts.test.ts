@@ -16,8 +16,11 @@ import { enqueuedWorkflows, forgetTestWorkflows, testDurable } from './durable';
  * person who is still active, with exit code 1, writing nothing and no audit row. A deactivated person is erased with
  * the script's own answer alone on standard output, also when a removed card has a timer still waiting: the timer goes
  * with its card, and the script sends no cancel to the durable engine, which a script never starts, so no "durable
- * cancel failed" line comes before the answer. The card's workflow stays queued, for the generation fence (D86). Run
- * with `bun run test:db` inside the devcontainer.
+ * cancel failed" line comes before the answer. The card's workflow stays queued, for the generation fence (D86). A query
+ * that fails is answered, by each of them and by person-erase, with the database's own message and that nothing was
+ * written, never with the statement the ORM wraps it in. Each test that runs scripts gives them a minute, since every
+ * script loads the server's composition and a busy machine takes seconds for each. Run with `bun run test:db` inside
+ * the devcontainer.
  */
 if (!process.env.DATABASE_URL)
   throw new Error('DATABASE_URL is not set. Run `bun run test:db` inside the devcontainer.');
@@ -79,15 +82,16 @@ const talks = talkUsecases({
 const threadIds: string[] = [];
 const commitmentIds: string[] = [];
 
-/** One script as the runbook runs it, with the environment the test was given. */
-function run(script: string, ...args: string[]) {
+/** One script as the runbook runs it, with the environment the test was given and the database it names. */
+function runOn(databaseUrl: string, script: string, ...args: string[]) {
   const result = Bun.spawnSync([process.execPath, join(import.meta.dir, '../../scripts', script), ...args], {
-    env: process.env,
+    env: { ...process.env, DATABASE_URL: databaseUrl },
     stdout: 'pipe',
     stderr: 'pipe',
   });
   return { code: result.exitCode, out: result.stdout.toString().trim(), err: result.stderr.toString().trim() };
 }
+const run = (script: string, ...args: string[]) => runOn(process.env.DATABASE_URL!, script, ...args);
 const auditAbout = (...subjects: string[]) =>
   database()
     .select({ actor: schema.audit.actor, action: schema.audit.action, details: schema.audit.details })
@@ -235,7 +239,7 @@ describe('the erase scripts on PostgreSQL (D116 item 7, D117 item 3)', () => {
         script,
         { code: 1, out: '', err: unknown(leaverName) },
       ]);
-  });
+  }, 60_000);
 
   test('a person who is still active is refused by each, and nothing is written', async () => {
     expect(run('subject-erase.ts', 'person', leaver, '--confirm')).toEqual({
@@ -268,7 +272,30 @@ describe('the erase scripts on PostgreSQL (D116 item 7, D117 item 3)', () => {
         .from(schema.competenceHoldings)
         .where(eq(schema.competenceHoldings.personId, leaver)),
     ).toEqual([{ id: `${ORG}-holding` }]);
-  });
+  }, 60_000);
+
+  test("a query that fails is answered by each with the database's own message and that nothing was written", () => {
+    // The same server's maintenance database holds none of Clew's tables, so each script's first query fails there
+    // and its driver's error comes inside the ORM's, whose message is the statement and a line of its parameters.
+    const elsewhere = new URL(process.env.DATABASE_URL!);
+    elsewhere.pathname = '/postgres';
+    const calls: Array<[string, string[]]> = [
+      ['subject-erase.ts', ['person', leaver, '--confirm']],
+      ['talks-erase.ts', ['--person', leaver, '--confirm']],
+      ['competence-erase.ts', ['--person', leaver, '--confirm']],
+      ['person-erase.ts', ['--person', leaver, '--confirm']],
+    ];
+    expect(calls.map(([script, args]) => [script, runOn(elsewhere.href, script, ...args)])).toEqual(
+      calls.map(([script]) => [
+        script,
+        {
+          code: 1,
+          out: '',
+          err: expect.stringMatching(/^Could not erase: relation "[a-z_]+" does not exist\. Nothing was written\.$/),
+        },
+      ]),
+    );
+  }, 60_000);
 
   test('once the source has deactivated the person, each erases them and prints its answer alone, with no line from the engine', async () => {
     const db = database();
@@ -313,5 +340,5 @@ describe('the erase scripts on PostgreSQL (D116 item 7, D117 item 3)', () => {
           .where(eq(schema.timerIntents.id, dueTimerId(activesCard!)))
       ).map(t => t.state),
     ).toEqual(['active']);
-  });
+  }, 60_000);
 });

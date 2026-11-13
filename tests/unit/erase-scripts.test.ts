@@ -6,7 +6,9 @@ import { join } from 'node:path';
  * `tests/unit/person-erase.test.ts` holds person-erase's: every malformed call is refused with exit code 2 and the usage
  * line before the database is asked anything, an option given twice and a stray argument among them, so that a copied
  * line cannot erase the wrong person. The database each script is given cannot be reached, so a call that got that far
- * would end with exit code 1 instead. What the scripts answer from a database is `tests/db/erase-scripts.test.ts`.
+ * would end with exit code 1 instead. A confirmed call does get that far, and each of the four erasures of the
+ * runbook's steps 4 and 5 answers it alike: the error's own message and that nothing was written. What the scripts
+ * answer from a database is `tests/db/erase-scripts.test.ts`.
  */
 type Answer = { code: number; out: string; err: string };
 async function run(script: string, args: string[]): Promise<Answer> {
@@ -58,3 +60,26 @@ for (const { script, unconfirmed } of SCRIPTS)
     test('a call without --confirm, saying what it would erase', async () =>
       expect(await answers.get('unconfirmed')).toEqual({ code: 2, out: '', err: unconfirmed + '\n' + usage }));
   });
+
+/** Each erasure's confirmed call as the runbook writes it; the database fails before the id is checked. */
+const CONFIRMED: Array<[string, string[]]> = [
+  ['subject-erase.ts', ['person', 'p1', '--confirm']],
+  ['talks-erase.ts', ['--person', 'p1', '--confirm']],
+  ['competence-erase.ts', ['--person', 'p1', '--confirm']],
+  ['person-erase.ts', ['--person', 'p1', '--confirm']],
+];
+describe('each erasure, when its database cannot be reached, says why in one line and that nothing was written:', () => {
+  const answers = new Map<string, Promise<Answer>>();
+  beforeAll(() => {
+    for (const [script, args] of CONFIRMED) answers.set(script, run(script, args));
+  });
+  // subject-erase asks whether the person is active before its transaction, in a query that the ORM wraps in a message
+  // of its own (the statement, then a line of its parameters); the others fail as their transaction begins.
+  for (const [script] of CONFIRMED)
+    test(`scripts/${script}`, async () =>
+      expect(await answers.get(script)).toEqual({
+        code: 1,
+        out: '',
+        err: 'Could not erase: connect ECONNREFUSED 127.0.0.1:1. Nothing was written.',
+      }));
+});
