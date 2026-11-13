@@ -40,9 +40,10 @@ A core rule per kind, checked before any source is called (`resolve` and `listed
 | `person` | `self`: the reader | The opened person |
 | `person` | `managed`: an active person on a unit the reader manages | The list and the opened person |
 | `person` | `colleague`: another active person in the reader's organisation, opened by Clew's id | The opened person only |
-| `unit` | `member`: a unit the reader manages or is assigned to | The opened unit |
+| `unit` | `member`: a unit the reader manages or is assigned to | The list and the opened unit |
+| `unit` | `below`: a unit whose manager reports to the reader, one level below a unit the reader manages ([D117](../decisions/D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md)) | The list and the opened unit |
 
-The list of people holds only `managed` people, one group per unit the reader manages; someone who manages nobody gets a list without groups. A key outside the rule, a source the reader may not call and a kind Clew does not have all answer the same 404 as an unknown address. Inside the rule the source narrows further as the person: a key it may not answer for is answered as no row, never as a refusal. A colleague's opened page therefore usually has few sections.
+The list of people holds only `managed` people, one group per unit the reader manages; someone who manages nobody gets a list without groups. The list of units holds the reader's own units under "Mina enheter" and the units below under "Enheter under dig", and a read about units is asked about all of them, with the units the reader follows up in the signed actor (`units`). A key outside the rule, a source the reader may not call and a kind Clew does not have all answer the same 404 as an unknown address. Inside the rule the source narrows further as the person: a key it may not answer for is answered as no row, never as a refusal. A colleague's opened page therefore usually has few sections.
 
 ## How a source is asked
 

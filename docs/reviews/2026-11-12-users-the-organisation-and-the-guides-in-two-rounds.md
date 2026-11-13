@@ -584,7 +584,8 @@ what they say.
   item 3). When a card they removed had a timer waiting, both also printed an error from the durable engine before
   their answer: a script never starts the engine, so they no longer cancel through it, and the timer's workflow finds
   no timer when it wakes. And the three answered a failed query with the statement and its parameters, where
-  `person-erase` gives the database's own message and that nothing was written; they now answer as it does.
+  `person-erase` gives the database's own message and that nothing was written; they now answer as it does, and so
+  does `scripts/identity-rebind.ts`, whose statement's parameters are the person and the subject.
 - The check said that a group whose key is written wrong gives nobody anything, and
   [D96](../decisions/D96-a-key-written-wrong-is-refused-at-the-scim-boundary.md) said so of every such row stored
   before it. A `unit:` or `unit-manager:` key with space after the prefix or at the end still placed its members on, or
@@ -596,6 +597,8 @@ what they say.
   plain groups. The unit an administrator opens on Administration › Organisation, and the walk that refuses a cycle in
   the tree, had taken such a group for a unit and now read a unit as the tree does. D96 is amended to say so.
 - Two accessibility tests raced the frame in which the page moves the focus. They now wait for it.
+- The users page's own line "Läser användarna …", which W3's fix gave a check of its own, could never show: the
+  administration frame draws its skeleton until the overview's first answer. It is gone.
 - A scheduled job whose run lasted longer than its claim's two-minute lease never completed, on `main` as well. The
   engine gave up the step's attempt after a minute without stopping it, the retry claimed the job again once the lease
   had passed and ran it beside the first, and every completion after that was refused without a word. The nightly
@@ -626,6 +629,13 @@ what they say.
   a deployment during the scan left the page it had reached waiting under the replaced release, and the rest of that
   night was never scanned, since only a page's run schedules the next. A start now takes over the last night's pages
   that have not completed with that night ([scheduled work](../architecture/scheduled-work.md)).
+- Merging `main` into the branch brought
+  [D117](../decisions/D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md), under which a manager
+  opens a unit below whose manager reports to them. The person page links a person's unit only when the reader may
+  open it, and that test did not yet count such a unit, so the page left out a link that `/units/<id>` would have
+  answered. It counts it now. The test of someone who reports from below has a unit the reader follows up and one the
+  reader does not. [D116](../decisions/D116-start-and-the-row-under-it-are-clews.md) puts Clew's Start first in the
+  header, and the kept header serves it in every case, the last good answer kept through a failure included.
 
 **Left.**
 
@@ -646,10 +656,45 @@ what they say.
   `startJobs`'s call of `seedNightly`. What they hand over is tested where it is defined. A test of the lines
   themselves would need the composition to take a clock and a ledger of the test's own
   ([testing](../architecture/testing.md)).
+- Rows of the sign-in log that this work did not change are still asserted by no test: `logout`, `replaced` (a
+  sign-in over an open session), `login-dev`, and the `expired` and `access-revoked` rows written at a request. The
+  testing page no longer claims they are tested. A case for each fits in `tests/db/sign-in-routes.test.ts`.
+- The connector callback checks a grant's signature, audience and two-minute life, but keeps no receipt of its `jti`,
+  so a grant can be used again within those two minutes. A read or a propose whose origin is hidden between the call's
+  read of the governance and the run's can still run once. An execute cannot: it is refused on the run's lookup. A
+  failed read of the key set after startup answers 503 with Clew's plain error body, which the published 503 allows.
+- An approved execution's step keeps its one-minute timeout and its own two-minute lease, which is not renewed. A
+  dispatch that outlasts them is claimed again, and the claim investigates rather than sends again (D45), so nothing is
+  written twice. It was not among the findings, and it deserves the review the scheduled jobs had. The lease test of
+  the scheduled jobs adds about 70 seconds to `bun run test:durability`.
+- The people search compares names in NFC with a match inside the name, which no B-tree index serves, and
+  `person-erase` finds a person's rows in the audit trail the same way, once per erasure. Migration 0056 indexes the
+  exact comparison, which every lookup of a user name uses.
+- The provisioner check cannot see an administrator's mappings, so it says nothing about a leaver in a `unit:` group
+  that an administrator mapped to a capability. Its warning is about the groups' keys, as D96's wording is.
+- When an erase script removes a talks card, the workflow of the card's due timer stays in the engine's queue. When it
+  wakes it finds no timer and ends without writing ([D86](../decisions/D86-the-ledger-starts-its-workflow-inside-its-own-transaction.md)'s
+  generation fence).
+- `UsersAdminOverview.capabilities` still copies the closed list `CAPABILITIES`. Since W3 only the group-mapping editor
+  reads it, and that card waits for the overview. Removing it would change the contract for no reader.
+- The talks card's limits that its fixes leave are on [the people status page](../reference/status/people.md): a drawn
+  time stays for someone with a talk in the manager's own calendar or who has left the team, a change only in the
+  calendar or the team reaches the card within the hour, and an unknown outcome holds other managers for the
+  approval's 24 hours. The web planning card still offers no new decision after a failed one
+  ([connectors status](../reference/status/connectors.md)).
 - Every workflow other than the last and the next nights that a deployment leaves under the replaced application
   version, such as a reminder, an approved execution, a watch or a follow-up, still runs only once an operator moves it
   with `scripts/workflows-move.ts` ([D85](../decisions/D85-dbos-transact-replaces-temporal-as-the-durable-engine.md)
   item 2). A start does not move them, since it cannot tell whether the processes of the older version have stopped, and
   a workflow moved while one of them still runs it would run in both.
 
-**Verified.** VERIFIED-PLACEHOLDER
+**Verified.** On the branch's head after merging `main` (D116, D117): `bun run check` (formatting, types, the
+dependency rules, purity, 1,624 unit tests, the Node tests and the documents); on a fresh PostgreSQL 18.6 after
+`db:init`, the 265 database tests and the nine durability tests, among them process death and takeover, a run that
+outlasts its lease and the move of a replaced release's work; and the whole accessibility suite on one worker, 703
+tests, with the 173 screenshot tests left to run on demand (`CLEW_SCREENS=1`). The merged lanes had a final review in
+eleven lenses: 26 problems reported and 21 confirmed and fixed, each fix in the code with a test that failed against
+the unfixed code. A second check of each fix found 34 more: 32 were fixed, and the other two were the migration that two lanes numbered
+0055, which the merge settled as 0055 and 0056. `person-erase` ran four times in half a second in the database test,
+so the ten-second wait before it exits, which one lane saw in its environment, did not recur. No pass with a screen
+reader, and none signed in on the development stack.
