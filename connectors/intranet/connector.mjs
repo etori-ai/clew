@@ -26,7 +26,8 @@ export const manifest = {
       name: 'intranet.header',
       kind: 'read',
       title: 'Sidhuvudets platser',
-      description: 'Intranätets sektioner och startsidans egna sidor, som Clew ritar i sidhuvudet på varje sida.',
+      description:
+        'Intranätets sektioner med sina sidor, som Clew ritar i sidhuvudet på varje sida efter sin egen Start.',
       input: Empty,
       output: {
         type: 'object',
