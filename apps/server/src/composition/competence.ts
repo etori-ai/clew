@@ -4,7 +4,7 @@ import { competenceUsecases } from '../modules/competence/usecases';
 import { reportsByUnit } from '../modules/entities/domain';
 import type { Above, CompetenceStore, HoldingsPort, Staff } from '../modules/competence/model';
 import { createHash } from 'node:crypto';
-import { cancelWhereRunning } from '../dbos/start';
+import { cancelDurable } from '../dbos/start';
 import { systemContext } from '../system-context';
 import { logPort, logger } from '../logging';
 import { competenceWorkItems } from './competence-work-items';
@@ -21,32 +21,17 @@ import { ledger } from './durable';
  * One competence transaction is one thread-store transaction (D108 item 7): the competence tables and the approvals'
  * cards (`competenceWorkItems`) share the physical database transaction, so a person's own registration, its cards in
  * the managers' streams, their audit rows and anything enqueued commit or roll back as one, as talks' action points do.
- * `options` names the durable engine's queue: the server's ledger here, a test's own in `tests/db`. A wait the
- * competence transaction ends (an erasure intent cancelled or re-timed, D108 item 14) is cancelled after the commit
- * with `options.cancel`, best effort, as the thread store cancels its timers: the generation fence covers one that
- * fails or never arrives, so a failure is logged and never raised.
+ * `options` names the durable engine's queue: the server's ledger here, a test's own in `tests/db`.
  */
 export function competenceStoreWithCards(options: ThreadStoreOptions, deps: { clock: () => Date }): CompetenceStore {
   return {
-    async transaction(fn) {
-      const ended: string[] = [];
-      const result = await withThreadTx(options, (tx, thread) =>
-        fn(competenceTx(tx, options.durable, competenceWorkItems(tx, thread, { clock: deps.clock }), ended)),
-      );
-      for (const id of ended)
-        await options
-          .cancel?.(id)
-          .catch(error => logger.error({ scope: 'competence', workflow: id, error }, 'durable cancel failed'));
-      return result;
-    },
+    transaction: fn =>
+      withThreadTx(options, (tx, thread) =>
+        fn(competenceTx(tx, options.durable, competenceWorkItems(tx, thread, { clock: deps.clock }))),
+      ),
   };
 }
-/**
- * The server's competence store. A wait ended by a script's transaction (a period changed with
- * `scripts/competence-retention.ts`, an erasure by hand) is not cancelled from the script, which runs no engine: the
- * generation fence refuses it when it wakes.
- */
-export const competenceStore = competenceStoreWithCards({ durable: ledger, cancel: cancelWhereRunning }, { clock });
+export const competenceStore = competenceStoreWithCards({ durable: ledger, cancel: cancelDurable }, { clock });
 /**
  * The reader's reports (D99 item 4) as the module's `Staff` port has them: the units they manage, each with exactly the
  * people the `managed` relation names (D117, `reportsByUnit`), read from the people module's directory on every call.
@@ -95,16 +80,22 @@ export const competence = competenceUsecases({
   },
   pause: ms => new Promise(resolve => setTimeout(resolve, ms)),
   log: logPort('competence', 'warn'),
+  info: logPort('competence', 'info'),
 });
 const RETRY_MS = 5000;
 const GUARD_MS = 60 * 60_000;
 /**
- * The daily copy (D108 item 9) is asked for at boot and every hour after, idempotent by its day, and each daily run asks
- * for the next one before it reads. The retry is only for a database that is not reachable yet.
+ * The competence module's guard, started at boot and run every hour after (D108 items 9 and 14). It asks for the daily
+ * copy, idempotent by its day, and each daily run asks for the next one before it reads; the retry is only for a
+ * database that is not reachable yet. It also runs the erasure sweep (`sweepErasures`): what is due is erased within
+ * the hour, by whichever instance runs, whatever the durable engine's version, since the timer is the intents' rows
+ * and this loop, not a sleeping workflow. One sweep at a time in an instance; two instances sweeping at once erase each
+ * person once, since every erasure re-reads its intent under its lock.
  */
 export function startCompetenceCopy() {
   // One attempt at a time: the hourly guard does not start a second retry beside one still waiting.
-  let retrying = false;
+  let retrying = false,
+    sweeping = false;
   const ask = async (retry = false) => {
     if (retrying && !retry) return;
     try {
@@ -116,8 +107,25 @@ export function startCompetenceCopy() {
       setTimeout(() => void ask(true), RETRY_MS).unref();
     }
   };
+  const sweep = async () => {
+    if (sweeping) return;
+    sweeping = true;
+    try {
+      await competence.sweepErasures();
+    } catch (error) {
+      // A round that cannot read its intents at all (the database is away) is tried again at the next hour.
+      logger.error({ scope: 'competence', error }, 'the erasure sweep could not run; the next round tries again');
+    } finally {
+      sweeping = false;
+    }
+  };
   void ask();
+  void sweep();
   // The chain heals itself: a daily run that could not ask for the next one (its step failed after its retries), or a
-  // day with no instance running at 04:00, is asked for again within the hour. Idempotent by the day's id.
-  setInterval(() => void ask(), GUARD_MS).unref();
+  // day with no instance running at 04:00, is asked for again within the hour. Idempotent by the day's id. The sweep
+  // erases within the hour what fell due since the last.
+  setInterval(() => {
+    void ask();
+    void sweep();
+  }, GUARD_MS).unref();
 }

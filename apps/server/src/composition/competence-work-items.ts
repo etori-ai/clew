@@ -236,19 +236,24 @@ export function competenceWorkItems(
       await removeCards(rows.map(r => r.id));
     },
     async removeOwned(personId) {
+      // Every card of the module in their stream: the approvals they decide as a manager, and the scan's cards about
+      // their own competence ("HLR saknas", "… gick ut"), whose titles name a type and a day (D108 items 7, 12 and 14).
       const cards = await tx
         .select({ id: threads.id })
         .from(threads)
-        .where(
-          and(
-            eq(threads.personId, personId),
-            eq(threads.connector, COMPETENCE_CONNECTOR),
-            like(threads.topic, approvalTopic('%')),
-          ),
-        )
+        .where(and(eq(threads.personId, personId), eq(threads.connector, COMPETENCE_CONNECTOR)))
         .orderBy(threads.id)
         .for('update');
       await removeCards(cards.map(c => c.id));
+      // The occurrences the scan keeps for them, a type and its dates in each key and period, card or none.
+      await tx
+        .delete(schema.workOccurrences)
+        .where(
+          and(
+            eq(schema.workOccurrences.personId, personId),
+            eq(schema.workOccurrences.connector, COMPETENCE_CONNECTOR),
+          ),
+        );
     },
   };
 }

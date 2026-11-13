@@ -35,8 +35,6 @@ export interface CompetenceStoreHarness {
   auditFor(subject: string): Promise<Array<{ actor: string; action: string }>>;
   /** The ids of the workflow starts committed by this suite's store, each once. */
   enqueued(): Promise<string[]>;
-  /** The workflows the store cancelled after a commit (D86), in order. */
-  cancelled(): Promise<string[]>;
   /** A position as a `position:` group writes it (D108 item 5). */
   seedPosition(position: PositionRecord): Promise<void>;
   /** The person holds the position, as their `position:` membership derives it. */
@@ -1529,13 +1527,14 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
       const intent = (personId: string, organisationId: string, extra: Partial<ErasureRecord> = {}): ErasureRecord => ({
         personId,
         organisationId,
-        state: 'waiting',
+        state: 'inactive',
         inactiveSince: T,
-        dueAt: '2026-12-10T08:00:00.000Z',
         generation: 1,
         updatedAt: T,
         ...extra,
       });
+      const DAY = 24 * 60 * 60_000;
+      const plus = (at: string, days: number) => new Date(Date.parse(at) + days * DAY).toISOString();
 
       test('the retention period is one per organisation: written, replaced, read and removed, within 1 to 3650 days', async () => {
         const w = await world();
@@ -1574,35 +1573,30 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
         await w.seedPerson(person(other, w.p + '-org2'));
         await w.store.transaction(async tx => {
           await tx.putErasure(intent(w.bo, w.org));
-          await tx.putErasure(intent(w.anna, w.org, { state: 'held', dueAt: null, generation: 0 }));
+          await tx.putErasure(intent(w.anna, w.org, { state: 'cancelled', inactiveSince: null, generation: 0 }));
           await tx.putErasure(intent(other, w.p + '-org2'));
         });
         expect(await w.store.transaction(tx => tx.erasure(w.anna))).toEqual(
-          intent(w.anna, w.org, { state: 'held', dueAt: null, generation: 0 }),
+          intent(w.anna, w.org, { state: 'cancelled', inactiveSince: null, generation: 0 }),
         );
         expect(await w.store.transaction(tx => tx.erasure(w.boss))).toBeUndefined();
-        for (const lock of [false, true])
-          expect((await w.store.transaction(tx => tx.erasures(w.org, { lock }))).map(e => e.personId)).toEqual(
-            [w.anna, w.bo].sort(),
-          );
-        const erased = intent(w.bo, w.org, { state: 'erased', dueAt: null, generation: 1, updatedAt: T2 });
+        expect((await w.store.transaction(tx => tx.erasures(w.org))).map(e => e.personId)).toEqual(
+          [w.anna, w.bo].sort(),
+        );
+        const erased = intent(w.bo, w.org, { state: 'erased', generation: 1, updatedAt: T2 });
         await w.store.transaction(tx => tx.putErasure(erased));
         expect(await w.store.transaction(tx => tx.erasure(w.bo))).toEqual(erased);
-        // A cancelled or erased intent may forget when the person left; one that waits or holds may not.
-        await w.store.transaction(tx =>
-          tx.putErasure(intent(w.bo, w.org, { state: 'cancelled', dueAt: null, inactiveSince: null })),
-        );
+        // No reference to the person, as the read log has none: an intent may name an id the directory does not know.
+        await w.store.transaction(tx => tx.putErasure(intent(w.p + '-nobody', w.org)));
+        expect((await w.store.transaction(tx => tx.erasure(w.p + '-nobody')))?.state).toBe('inactive');
       });
 
-      test('an erasure intent holds its checks: a due time exactly while waiting, a start while waiting or held, a person', async () => {
+      test('an erasure intent holds its checks: a start while inactive, a generation of zero or more', async () => {
         const w = await world();
         for (const wrong of [
-          intent(w.anna, w.org, { dueAt: null }),
-          intent(w.anna, w.org, { state: 'held' }),
-          intent(w.anna, w.org, { state: 'held', dueAt: null, inactiveSince: null }),
           intent(w.anna, w.org, { inactiveSince: null }),
           intent(w.anna, w.org, { generation: -1 }),
-          intent(w.p + '-nobody', w.org),
+          intent(w.anna, w.org, { state: 'held' as never }),
         ])
           expect(await refused(() => w.store.transaction(tx => tx.putErasure(wrong)))).toBeDefined();
         expect(await w.store.transaction(tx => tx.erasure(w.anna))).toBeUndefined();
@@ -1619,20 +1613,87 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
         expect(await w.store.transaction(tx => tx.inactiveIn(w.org))).toEqual([w.anna, w.bo].sort());
       });
 
-      test('a wait the transaction ends is cancelled once it has committed, and never after a rollback', async () => {
+      test('what is due is the period after the start and never sooner than a day after the period was set, of organisations with a period, earliest first', async () => {
         const w = await world();
-        const id = (n: number) => `competence-erasure:${w.p}:${n}`;
+        const org2 = w.p + '-org2',
+          zed = w.p + '-zed',
+          now = '2026-12-20T08:00:00.000Z';
+        await w.seedPerson(person(zed, org2));
         await w.store.transaction(async tx => {
-          await tx.cancel(id(1));
-          await tx.cancel(id(2));
+          // Set long ago: Bo's due time is his start and 30 days, Anna's too, a day later.
+          await tx.putRetention({ organisationId: w.org, days: 30, setBy: 'x', setAt: '2026-01-01T00:00:00.000Z' });
+          await tx.putErasure(intent(w.anna, w.org, { inactiveSince: '2026-11-02T08:00:00.000Z', generation: 2 }));
+          await tx.putErasure(intent(w.bo, w.org, { inactiveSince: '2026-11-01T08:00:00.000Z' }));
+          // Not due yet, cancelled or erased: none of them.
+          await tx.putErasure(intent(w.boss, w.org, { inactiveSince: '2026-11-25T08:00:00.000Z' }));
+          await tx.putErasure(intent(w.p + '-gone', w.org, { state: 'erased' }));
+          await tx.putErasure(intent(w.p + '-back', w.org, { state: 'cancelled', inactiveSince: null }));
+          // Another organisation's period was set a moment ago: its long-inactive person is due a day after.
+          await tx.putRetention({ organisationId: org2, days: 1, setBy: 'x', setAt: '2026-12-20T00:00:00.000Z' });
+          await tx.putErasure(intent(zed, org2, { inactiveSince: '2026-01-01T00:00:00.000Z' }));
+          // An organisation without a period has nothing due.
+          await tx.putErasure(intent(w.p + '-none', w.p + '-org3', { inactiveSince: '2020-01-01T00:00:00.000Z' }));
         });
-        await refused(() =>
-          w.store.transaction(async tx => {
-            await tx.cancel(id(3));
-            throw new Error('stop');
-          }),
+        // Across the installation: this run's own rows, read among whatever else the database holds.
+        const ours = async (asOf: string) =>
+          (await w.store.transaction(tx => tx.dueErasures(asOf, 100_000))).filter(d => d.personId.startsWith(w.p));
+        const everyone = async (asOf: string) =>
+          [
+            (await w.store.transaction(tx => tx.dueErasures(asOf, 100_000))).length,
+            await w.store.transaction(tx => tx.countDue(asOf)),
+          ] as const;
+        expect(await ours(now)).toEqual([
+          { personId: w.bo, organisationId: w.org, generation: 1, dueAt: plus('2026-11-01T08:00:00.000Z', 30) },
+          { personId: w.anna, organisationId: w.org, generation: 2, dueAt: plus('2026-11-02T08:00:00.000Z', 30) },
+        ]);
+        expect(await w.store.transaction(tx => tx.dueErasures(now, 1))).toHaveLength(1);
+        const [listed, counted] = await everyone(now);
+        expect(counted).toBe(listed);
+        expect(await ours(plus(now, 1))).toContainEqual({
+          personId: zed,
+          organisationId: org2,
+          generation: 1,
+          dueAt: '2026-12-21T00:00:00.000Z',
+        });
+        expect((await ours(plus(now, 7))).map(d => d.personId)).toEqual([w.bo, w.anna, zed, w.boss]);
+        await w.store.transaction(async tx => {
+          await tx.removeRetention(w.org);
+          await tx.removeRetention(org2);
+        });
+        expect(await ours(plus(now, 7))).toEqual([]);
+      });
+
+      test('the sweep’s reconciliation: deactivated people no intent records, of organisations with a period, and intents of people active again', async () => {
+        const w = await world();
+        const org2 = w.p + '-org2',
+          zed = w.p + '-zed';
+        await w.seedPerson(person(zed, org2));
+        await w.deactivate(w.anna);
+        await w.deactivate(w.bo);
+        await w.deactivate(zed);
+        await w.store.transaction(async tx => {
+          await tx.putRetention({ organisationId: w.org, days: 30, setBy: 'x', setAt: T });
+          // Bo's deactivation is recorded; Anna has none; Karin is active with an intent left inactive, and erased.
+          await tx.putErasure(intent(w.bo, w.org));
+          await tx.putErasure(intent(w.boss, w.org, { state: 'erased' }));
+        });
+        const unrecorded = async () =>
+          (await w.store.transaction(tx => tx.unrecordedLeavers(100_000))).filter(l => l.personId.startsWith(w.p));
+        const returned = async () =>
+          (await w.store.transaction(tx => tx.returnedLeavers(100_000))).filter(e => e.personId.startsWith(w.p));
+        // Zed's organisation has no period: nobody of it is listed.
+        expect(await unrecorded()).toEqual([{ personId: w.anna, organisationId: w.org }]);
+        // A cancelled intent is no record of a deactivation since.
+        await w.store.transaction(tx =>
+          tx.putErasure(intent(w.anna, w.org, { state: 'cancelled', inactiveSince: null })),
         );
-        expect((await w.cancelled()).filter(c => c.includes(w.p))).toEqual([id(1), id(2)]);
+        expect((await unrecorded()).map(l => l.personId)).toEqual([w.anna]);
+        expect((await returned()).map(e => [e.personId, e.state])).toEqual([[w.boss, 'erased']]);
+        await w.store.transaction(tx =>
+          tx.putErasure(intent(w.boss, w.org, { state: 'cancelled', inactiveSince: null })),
+        );
+        expect(await returned()).toEqual([]);
+        expect(await w.store.transaction(tx => tx.unrecordedLeavers(1))).toHaveLength(1);
       });
     });
   });

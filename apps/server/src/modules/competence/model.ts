@@ -329,7 +329,8 @@ export interface Forgotten {
 }
 /**
  * How long an organisation keeps the competence of a person the directory has deactivated (D108 item 14): an operator's
- * setting, with no default. No record, no period: nothing is scheduled and nothing is erased. `setBy` is an actor string.
+ * setting, with no default. No record, no period: nothing is erased. `setBy` is an actor string; `setAt` is when the
+ * period last changed, from which no erasure falls due within the grace (`RETENTION_GRACE_MS`).
  */
 export interface RetentionRecord {
   organisationId: string;
@@ -338,26 +339,31 @@ export interface RetentionRecord {
   setAt: string;
 }
 /**
- * Where one person's erasure stands (D108 item 14): `held` while they are deactivated and no period is set, `waiting`
- * while a workflow of this generation sleeps until `dueAt`, `cancelled` once they are active again, `erased` once the
- * timer or an operator erased them.
+ * Where one person's erasure stands (D108 item 14): `inactive` from the deactivation until they are active again
+ * (`cancelled`) or erased (`erased`).
  */
-export type ErasureState = 'held' | 'waiting' | 'cancelled' | 'erased';
+export type ErasureState = 'inactive' | 'cancelled' | 'erased';
 /**
  * One person's erasure intent (D108 item 14), the module's own (the shared timer intent needs a thread). `inactiveSince`
- * is when the directory deactivated them or, for someone deactivated before Clew recorded it, when a period first
- * applied to them: the period counts from it; set while `held` or `waiting`. `dueAt` is set while `waiting` only. The
- * generation grows with every workflow started for the person, so one that wakes for an older generation, or for a row
- * no longer `waiting`, does nothing (D47's fence).
+ * is when the directory deactivated them or, for a deactivation Clew did not record, when the sweep found it; set while
+ * `inactive`. When the erasure falls due is not stored: it follows from `inactiveSince` and the organisation's period as
+ * it stands (`erasureDue`). The generation grows with every deactivation, so an erasure planned for an earlier spell
+ * does nothing (D47's fence).
  */
 export interface ErasureRecord {
   personId: string;
   organisationId: string;
   state: ErasureState;
   inactiveSince: string | null;
-  dueAt: string | null;
   generation: number;
   updatedAt: string;
+}
+/** An intent the sweep acts on (D108 item 14): whom, of which organisation and spell, and when it fell due. */
+export interface DueErasure {
+  personId: string;
+  organisationId: string;
+  generation: number;
+  dueAt: string;
 }
 
 /** The store's refusal of a type name the organisation already uses; the use case turns it into what the person reads. */
@@ -448,7 +454,11 @@ export interface ApprovalWorkItemTx {
    * them goes, a registration's they took back included, whose row is gone and with it the approval's key.
    */
   removeAbout(subject: Subject): Promise<void>;
-  /** Erasure of a manager: the approval cards in their own stream go; the other managers' stay. */
+  /**
+   * Erasure of a person (D108 item 14): every card of the module in their own stream goes, the approvals they decide as
+   * a manager (the other managers' cards of those approvals stay) and the scan's cards about their own competence, with
+   * the occurrences the scan keeps for them.
+   */
   removeOwned(personId: string): Promise<void>;
 }
 
@@ -473,16 +483,20 @@ export class ShareTargetTaken extends Error {
  * **The lock order.** A transaction that takes more than one kind of lock takes them in this order, and several of one
  * kind in the order of their ids, so two transactions wait for each other and never deadlock:
  *
- * 1. the organisation's retention period (`lockRetention`), taken by setting or clearing it, by a deactivation and a
- *    reactivation (inside the SCIM transaction, after the people module's own locks), and by an erasure;
- * 2. the rows of erasure intents (`erasure`, `erasures` with `lock`), taken by the same;
- * 3. the organisation's catalogue (`lockCatalogue`), taken by what adds types (an add, an import);
- * 4. the rows of the sources (`source`, `lockSources`), taken by a source's copy and its write, a mapping, forgetting a
+ * 1. the row of one person's erasure intent (`erasure`), taken by a deactivation and a reactivation (inside the SCIM
+ *    transaction, after the people module's own locks, and bounded there by a lock timeout), by the sweep's
+ *    reconciliation and by an erasure, the timer's or an operator's; one person's at a time;
+ * 2. the organisation's catalogue (`lockCatalogue`), taken by what adds types (an add, an import);
+ * 3. the rows of the sources (`source`, `lockSources`), taken by a source's copy and its write, a mapping, forgetting a
  *    source, erasure and a merge;
- * 5. the rows of types (`type`), taken by what registers, rates, maps, requires, changes, archives, restores and merges;
- * 6. the rows of holdings (`holding`, `lockHoldingsOfTypes`), taken by what changes, decides, confirms, revokes or
+ * 4. the rows of types (`type`), taken by what registers, rates, maps, requires, changes, archives, restores and merges;
+ * 5. the rows of holdings (`holding`, `lockHoldingsOfTypes`), taken by what changes, decides, confirms, revokes or
  *    removes one, and by a merge;
- * 7. the rows of requirements and share targets (`requirement`, `shareTarget`).
+ * 6. the rows of requirements and share targets (`requirement`, `shareTarget`).
+ *
+ * The retention period's own lock (`lockRetention`) is taken by setting or clearing the period and by nothing else, and
+ * that transaction takes no other lock, so it stands outside the order. No competence transaction waits for a row of
+ * the people module: an intent has no foreign key to `auth_person`, and nothing here locks a person's row.
  *
  * A use case that knows only a holding and needs its type as well (a person's change of their own skill) reads the
  * holding without a lock to learn the type, locks the type, then locks the holding and reads it again. A write takes
@@ -607,16 +621,10 @@ export interface CompetenceTx {
   forgetSource(connectorId: string): Promise<Forgotten>;
   /** Start a durable workflow with this transaction's commit (D86). An id that already exists is left as it is. */
   enqueue(start: WorkflowStart): Promise<void>;
-  /**
-   * End this durable workflow's wait once the transaction has committed, best effort (D86): nothing is cancelled after
-   * a rollback, and the generation fence covers a cancel that fails or never arrives.
-   */
-  cancel(workflowId: string): Promise<void>;
   // Erasure after a person leaves (D108 item 14).
   /**
-   * Hold the organisation's retention period for this transaction (the first lock of the order): setting it, a
-   * deactivation, a reactivation and an erasure take it, so a person deactivated while the period is being set is
-   * either among the people it re-times or reads the new period, and an erasure never runs beside a change of either.
+   * Hold the organisation's retention period for this transaction: only setting or clearing it takes this, so two
+   * changes of one period run one after the other and each reads what the other left.
    */
   lockRetention(organisationId: string): Promise<void>;
   /** The organisation's period; undefined while none is set. */
@@ -627,12 +635,31 @@ export interface CompetenceTx {
   removeRetention(organisationId: string): Promise<boolean>;
   /** One person's erasure intent, locked. */
   erasure(personId: string): Promise<ErasureRecord | undefined>;
-  /** The erasure intents of the organisation's people, by person id; with `lock`, locked in that order. */
-  erasures(organisationId: string, options?: { lock?: boolean }): Promise<ErasureRecord[]>;
-  /** Write one person's erasure intent, replacing the one there. The person must exist. */
+  /** Every erasure intent of the organisation's people, whatever its state, by person id; not locked. */
+  erasures(organisationId: string): Promise<ErasureRecord[]>;
+  /** Write one person's erasure intent, replacing the one there. Takes no lock on the person's row. */
   putErasure(record: ErasureRecord): Promise<void>;
   /** The people of the organisation the directory has deactivated now, by id. */
   inactiveIn(organisationId: string): Promise<string[]>;
+  /**
+   * The `inactive` intents of every organisation that has a period whose erasure is due at `asOf` (`erasureDue`: the
+   * period after `inactiveSince`, never sooner than the grace after the period was set), the earliest due first, then
+   * by person id; at most `limit`, not locked.
+   */
+  dueErasures(asOf: string, limit: number): Promise<DueErasure[]>;
+  /** How many `inactive` intents of every organisation with a period are due at `asOf`. */
+  countDue(asOf: string): Promise<number>;
+  /**
+   * People the directory has deactivated, of an organisation that has a period, whose deactivation no intent records
+   * (none, or one cancelled by a reactivation): a deactivation from before the intents, or one whose port failed. By
+   * person id, at most `limit`.
+   */
+  unrecordedLeavers(limit: number): Promise<Array<{ personId: string; organisationId: string }>>;
+  /**
+   * Intents `inactive` or `erased` of people who are active now, whose reactivation no intent records. By person id,
+   * at most `limit`.
+   */
+  returnedLeavers(limit: number): Promise<ErasureRecord[]>;
   // People.
   /** These people as the domain names them; an unknown id is absent. */
   persons(ids: readonly string[]): Promise<PersonRef[]>;
@@ -795,4 +822,6 @@ export interface CompetenceDeps {
   /** Waits before a page that did not answer is asked again (item 9); composition waits, a test need not. */
   pause?: (ms: number) => Promise<void>;
   log?: CompetenceLog;
+  /** The same port at the information level: what the erasure sweep did, in counts (D91). */
+  info?: CompetenceLog;
 }

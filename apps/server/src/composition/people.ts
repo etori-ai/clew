@@ -1,11 +1,8 @@
-import type { Transaction } from '@clew/db';
 import { postgresProvisionStore, postgresUserReads } from '../modules/people/adapters/postgres';
 import { organisationUsecases, scimUsecases, staffUsecases, usersAdminUsecases } from '../modules/people/usecases';
-import type { LeaversTx } from '../modules/people/ports';
 import { competenceTx } from '../modules/competence/adapters/postgres';
 import { competenceLeavers } from '../modules/competence/usecases';
 import { randomToken, tokenDigest } from '../auth-crypto';
-import { cancelWhereRunning } from '../dbos/start';
 import { logger } from '../logging';
 import { clock, ids } from './ambient';
 import { ledger } from './durable';
@@ -13,25 +10,31 @@ import { ledger } from './durable';
 /** Local identity reads use the same scoped capability dispatch as other internal functions. */
 export const userReads = postgresUserReads();
 /**
- * What a deactivation or a reactivation means beyond the people module (D108 item 14), bound here because the people
- * module imports no other: the competence module's erasure intent, on the SCIM transaction itself, so the intent, its
- * audit row and its workflow's start (D86) commit or roll back with the change. The approvals' cards are not touched
- * by a change of `active`, so the competence transaction here has none; the waits it ends go to `ended`.
- */
-const leavers = (tx: Transaction, ended: string[]): LeaversTx =>
-  competenceLeavers(competenceTx(tx, ledger, undefined, ended));
-/** A wait a committed change ended is cancelled best effort: the generation fence covers one that fails (D86). */
-const cancel = (workflowId: string) =>
-  cancelWhereRunning(workflowId).catch(error =>
-    logger.error({ scope: 'scim', workflow: workflowId, error }, 'durable cancel failed'),
-  );
-/**
  * The SCIM server's use cases and the derivation of a person's grant from memberships and the mapping (D68, D85):
  * `scim` serves `/scim/v2`. A grant is derived inside the transaction of the change that moves it, by the SCIM use
- * cases and by the mapping on the users page alike. A change of `active` is told to the leavers in the same transaction.
+ * cases and by the mapping on the users page alike. A change of `active` is told, in the same transaction, to the
+ * competence module's leavers (D108 item 14): its erasure intent, on a `CompetenceTx` over the SCIM transaction's own
+ * savepoint, bound here because the people module imports no other. A call that fails is logged and left to the
+ * competence module's hourly sweep, which records from the directory what no intent recorded (D113: the deactivation
+ * commits whatever the competence module does).
  */
 export const scim = scimUsecases({
-  store: postgresProvisionStore({ leavers, cancel }),
+  store: postgresProvisionStore({
+    leavers: tx => competenceLeavers(competenceTx(tx, ledger)),
+    leaverFailed: (error, change, kind) =>
+      logger.warn(
+        {
+          scope: 'scim',
+          person: change.personId,
+          kind,
+          code:
+            (error as { code?: unknown } | null)?.code ??
+            (error as { cause?: { code?: unknown } } | null)?.cause?.code ??
+            null,
+        },
+        'the competence module could not record a change of active; its hourly sweep reconciles it with the directory',
+      ),
+  }),
   clock,
   ids,
   digest: tokenDigest,

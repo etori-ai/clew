@@ -3,7 +3,7 @@ import { database, schema, type Transaction } from '@clew/db';
 import { writeAudit } from '@clew/db/threads';
 import { UNIT_KEY } from '@clew/contracts/scim-group-key';
 import { unitGroupOf, type GroupRecord, type UserRecord, type UserSearch } from '../domain';
-import type { LeaversTx, ProvisionStore, ProvisionTx, UserReads } from '../ports';
+import type { LeaverChange, LeaversTx, ProvisionStore, ProvisionTx, UserReads } from '../ports';
 
 /** Read the local user/grant tables; directory access is restricted to the actor's unit. */
 export const postgresUserReads = (): UserReads => ({
@@ -151,29 +151,42 @@ const provisionerRecord = (r: { id: string; organisationId: string; label: strin
 });
 /**
  * What the provisioning store tells beyond its own tables (D108 item 14), bound in composition: `leavers` builds the
- * leavers port on one transaction, the first time a change of `active` is told on it, and puts in `ended` the durable
- * workflows whose wait the change ended; `cancel` ends those once the transaction has committed, never after a
- * rollback, best effort (D86): the generation fence covers a cancel that fails, and composition logs it.
+ * leavers port on the transaction it is given, and `leaverFailed` hears of a call that failed.
  */
 export interface ProvisionStoreOptions {
-  leavers?: (tx: Transaction, ended: string[]) => LeaversTx;
-  cancel?: (workflowId: string) => Promise<void>;
+  leavers?: (tx: Transaction) => LeaversTx;
+  leaverFailed?: (error: unknown, change: LeaverChange, kind: keyof LeaversTx) => void;
 }
-/** Without a binding a change of `active` is told to nobody: a store for what never deactivates anyone. */
-const nobody: LeaversTx = { async deactivated() {}, async reactivated() {} };
+/** The longest a leavers call may wait for a lock before it is given up and left to the domain's own reconciliation. */
+const LEAVERS_LOCK_TIMEOUT = '2s';
 /** The provisioning tables and the grant projection (D68, D85) inside one Postgres transaction. */
 export function postgresProvisionStore(options: ProvisionStoreOptions = {}): ProvisionStore {
-  /** The leavers port of one transaction, bound the first time it is told something. */
-  const leaversOf = (tx: Transaction, ended: string[]): LeaversTx => {
-    let bound: LeaversTx | undefined;
-    const leavers = () => (bound ??= options.leavers ? options.leavers(tx, ended) : nobody);
-    return {
-      deactivated: change => leavers().deactivated(change),
-      reactivated: change => leavers().reactivated(change),
+  /**
+   * The leavers port of one transaction (D108 item 14, D113: nothing beside a deactivation may keep a leaver's access).
+   * Each call runs in a savepoint of the change's transaction with a lock timeout, so what the domain writes commits or
+   * rolls back with the change, it waits for a lock at most `LEAVERS_LOCK_TIMEOUT`, and a call that fails, by an error
+   * or by the timeout, is rolled back to the savepoint and reported, and the change itself goes on and commits. The
+   * domain finds what it missed from the directory later (the competence module's sweep). Without a binding a change
+   * of `active` is told to nobody: a store for what never deactivates anyone.
+   */
+  const leaversOf = (tx: Transaction): LeaversTx => {
+    const tell = (kind: keyof LeaversTx) => async (change: LeaverChange) => {
+      if (!options.leavers) return;
+      try {
+        await tx.transaction(async savepoint => {
+          await savepoint.execute(sql`set local lock_timeout = ${sql.raw(`'${LEAVERS_LOCK_TIMEOUT}'`)}`);
+          await options.leavers!(savepoint)[kind](change);
+        });
+        // A setting made in a savepoint that was released lasts the transaction: the change's own work waits as before.
+        await tx.execute(sql`set local lock_timeout to default`);
+      } catch (error) {
+        options.leaverFailed?.(error, change, kind);
+      }
     };
+    return { deactivated: tell('deactivated'), reactivated: tell('reactivated') };
   };
-  const txOf = (tx: Transaction, ended: string[]): ProvisionTx => ({
-    leavers: leaversOf(tx, ended),
+  const txOf = (tx: Transaction): ProvisionTx => ({
+    leavers: leaversOf(tx),
     async lockPerson(id) {
       const [row] = await tx
         .select({ id: schema.people.id, organisationId: schema.people.organisationId })
@@ -744,12 +757,5 @@ export function postgresProvisionStore(options: ProvisionStoreOptions = {}): Pro
       return removed.length > 0;
     },
   });
-  return {
-    async transaction(fn) {
-      const ended: string[] = [];
-      const result = await database().transaction(tx => fn(txOf(tx, ended)));
-      for (const id of ended) await options.cancel?.(id).catch(() => undefined);
-      return result;
-    },
-  };
+  return { transaction: fn => database().transaction(tx => fn(txOf(tx))) };
 }

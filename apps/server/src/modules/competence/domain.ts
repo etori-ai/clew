@@ -30,11 +30,13 @@ import {
 } from '@clew/contracts';
 import {
   SOURCE_READ_ERRORS,
+  type ErasureRecord,
   type HoldingRecord,
   type PersonRef,
   type Placed,
   type PositionRecord,
   type RequirementRecord,
+  type RetentionRecord,
   type ShareTargetRecord,
   type SourceHolding,
   type SourceMapping,
@@ -1564,30 +1566,53 @@ export const isRetentionDays = (days: unknown): days is number =>
   typeof days === 'number' && Number.isInteger(days) && days >= RETENTION_DAYS_MIN && days <= RETENTION_DAYS_MAX;
 const DAY_MS = 24 * 60 * 60_000;
 /**
- * No erasure that setting or changing the period schedules falls due sooner than this after the change: a period set
- * too short by mistake gives the operator a day to see what it scheduled and set it again, before anyone deactivated
- * long ago is erased. A deactivation's own erasure is at least a day away anyway, since the period is.
+ * No erasure falls due sooner than this after the period was last set or changed: a period set too short by mistake
+ * gives the operator a day to see what it brings due and set it again, before anyone deactivated long ago is erased. A
+ * deactivation's own erasure is at least a day away anyway, since the period is.
  */
 export const RETENTION_GRACE_MS = DAY_MS;
+/** An erasure still waiting this long after it fell due is said in the log as a warning: the sweep is not keeping up. */
+export const OVERDUE_WARNING_MS = DAY_MS;
+/** How many intents the sweep reads at a time; each is then handled in a transaction of its own. */
+export const SWEEP_BATCH = 100;
+/** How many intents one round of the sweep handles at most in each of its steps; the rest wait for the next round. */
+export const SWEEP_ROUND_MAX = 2000;
 /**
  * When a person's competence falls due for erasure: `days` whole days of 24 hours after `since` (when they were
- * deactivated, or when a period first applied to them), and never sooner than the grace after `now`.
+ * deactivated, or when the sweep found the deactivation), and never sooner than the grace after the period was set
+ * (`setAt`). The stores' queries compute the same.
  */
-export function erasureDue(since: string, days: number, now: string): string {
-  return new Date(Math.max(Date.parse(since) + days * DAY_MS, Date.parse(now) + RETENTION_GRACE_MS)).toISOString();
+export function erasureDue(since: string, days: number, setAt: string): string {
+  return new Date(Math.max(Date.parse(since) + days * DAY_MS, Date.parse(setAt) + RETENTION_GRACE_MS)).toISOString();
 }
-/** The erasure's workflow (`dbos/workflows.ts`): its name is the contract between the store's start and the engine. */
-export const ERASURE_WORKFLOW = 'competenceErasure';
-/** What the erasure's workflow takes: whom, the generation it was started for, and when it falls due. */
-export interface ErasureInput {
-  personId: string;
-  generation: number;
-  dueAt: string;
+/** Where an organisation's erasures stand at `now`, for the operator: counts and the next one due. */
+export interface RetentionSummary {
+  /** Deactivated people whose erasure is set by the period and not yet due. */
+  waiting: number;
+  /** Deactivated people while no period is set: nothing is erased. */
+  held: number;
+  /** Due and not yet erased: the next sweep erases them. */
+  overdue: number;
+  /** Of the waiting, how many fall due within a day. */
+  dueWithinDay: number;
+  /** The earliest due time still ahead, if any. */
+  nextDue: string | null;
 }
-/** One workflow per person and generation, so a new generation never meets an old one's id. */
-export const erasureWorkflowId = (personId: string, generation: number) =>
-  `competence-erasure:${personId}:${generation}`;
-/** The erasure's start, committed with the intent it carries out (D86). */
-export function erasureStart(input: ErasureInput): WorkflowStart {
-  return { workflow: ERASURE_WORKFLOW, id: erasureWorkflowId(input.personId, input.generation), input };
+export function retentionSummary(
+  intents: readonly ErasureRecord[],
+  period: Pick<RetentionRecord, 'days' | 'setAt'> | undefined,
+  now: string,
+): RetentionSummary {
+  const inactive = intents.filter(e => e.state === 'inactive' && e.inactiveSince !== null);
+  if (!period) return { waiting: 0, held: inactive.length, overdue: 0, dueWithinDay: 0, nextDue: null };
+  const at = Date.parse(now);
+  const dues = inactive.map(e => Date.parse(erasureDue(e.inactiveSince!, period.days, period.setAt)));
+  const ahead = dues.filter(due => due > at).sort((a, b) => a - b);
+  return {
+    waiting: ahead.length,
+    held: 0,
+    overdue: dues.length - ahead.length,
+    dueWithinDay: ahead.filter(due => due <= at + DAY_MS).length,
+    nextDue: ahead.length ? new Date(ahead[0]!).toISOString() : null,
+  };
 }

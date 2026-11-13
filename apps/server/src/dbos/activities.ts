@@ -27,7 +27,5 @@ export function bindLiveActivities() {
       (await competence.copySource(COPY_ACTOR, run, source, signal ? { signal } : {})).outcome,
     /** The daily reconciliation of the approvals' cards (D108 item 7) with who can decide each now. */
     reconcileApprovals: () => competence.reconcileApprovals(RECONCILE_ACTOR),
-    /** The erasure of a person's competence once its period has run (D108 item 14), fenced by generation. */
-    eraseLeaver: (personId, generation) => competence.eraseDue(personId, generation),
   });
 }

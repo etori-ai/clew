@@ -41,13 +41,9 @@ competenceStoreContract('postgres', async () => {
   // A connector's id is lower case (`connector_id` check), and every id this run writes starts with it.
   const prefix = 'test-comp-' + randomUUID().slice(0, 8);
   prefixes.push(prefix);
-  const cancelled: string[] = [];
   return {
-    store: postgresCompetenceStore(durable, async id => void cancelled.push(id)),
+    store: postgresCompetenceStore(durable),
     prefix,
-    async cancelled() {
-      return [...cancelled];
-    },
     async seedPerson(person) {
       await database().insert(schema.people).values(person);
     },

@@ -455,6 +455,7 @@ export function scimUsecases(deps: {
         await tx.leavers[fields.enabled ? 'reactivated' : 'deactivated']({
           actor: actorOf(p),
           personId: current.id,
+          organisationId: current.organisationId,
           at,
         });
     }
@@ -587,7 +588,13 @@ export function scimUsecases(deps: {
           details: { userName: fields.userName, externalId: fields.externalId },
         });
         // A person pushed already deactivated is inactive from now on (D108 item 14), as one deactivated later is.
-        if (!record.enabled) await tx.leavers.deactivated({ actor: actorOf(p), personId: record.id, at });
+        if (!record.enabled)
+          await tx.leavers.deactivated({
+            actor: actorOf(p),
+            personId: record.id,
+            organisationId: p.organisationId,
+            at,
+          });
         await derivation.deriveWithin(tx, actorOf(p), record.id);
         return userResource(record, [], base);
       }),
@@ -649,7 +656,7 @@ export function scimUsecases(deps: {
           subject: 'person:' + id,
           details: { userName: current.userName, externalId: current.externalId },
         });
-        await tx.leavers.deactivated({ actor: actorOf(p), personId: id, at });
+        await tx.leavers.deactivated({ actor: actorOf(p), personId: id, organisationId: current.organisationId, at });
         await derivation.deriveWithin(tx, actorOf(p), id);
       }),
     createGroup: (p: Provisioner, body: unknown, base: string): Promise<ScimGroup> =>

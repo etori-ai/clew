@@ -1,11 +1,13 @@
 import { foldEntityKey, type Subject } from '@clew/contracts';
 import { PendingTaken, RequirementTaken, ShareTargetTaken, SkillTaken, TypeNameTaken, TypeUriTaken } from '../model';
+import { erasureDue } from '../domain';
 import type {
   ApprovalOutcome,
   ApprovalWorkItemTx,
   CompetenceAudit,
   CompetenceStore,
   CompetenceTx,
+  DueErasure,
   Erased,
   ErasureRecord,
   HoldingRecord,
@@ -78,8 +80,6 @@ export interface MemoryCompetenceState {
   audit: CompetenceAudit[];
   /** The workflow starts committed (D86), each id once. */
   enqueued: WorkflowStart[];
-  /** The workflows whose wait a committed transaction ended, in order (D86): cancelled after the commit. */
-  cancelled: string[];
   /** The retention period of each organisation that has one (D108 item 14). */
   retention: Map<string, RetentionRecord>;
   /** Each person's erasure intent, by person id (D108 item 14). */
@@ -133,13 +133,24 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     shareTargets: new Map(),
     audit: [],
     enqueued: [],
-    cancelled: [],
     retention: new Map(),
     erasures: new Map(),
     cards: new Map(),
     calls: [],
     readLog: [],
   };
+  /** The `inactive` intents of organisations with a period that are due at `asOf`, earliest first (`erasureDue`). */
+  const dueAt = (asOf: string): DueErasure[] =>
+    [...state.erasures.values()]
+      .flatMap(e => {
+        const period = state.retention.get(e.organisationId);
+        if (e.state !== 'inactive' || !e.inactiveSince || !period) return [];
+        const due = erasureDue(e.inactiveSince, period.days, period.setAt);
+        return Date.parse(due) <= Date.parse(asOf)
+          ? [{ personId: e.personId, organisationId: e.organisationId, generation: e.generation, dueAt: due }]
+          : [];
+      })
+      .sort((a, b) => a.dueAt.localeCompare(b.dueAt) || a.personId.localeCompare(b.personId));
   const sink: MemoryApprovalSink = {};
   const logSink = { fail: false };
   let tail = Promise.resolve();
@@ -603,12 +614,8 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
     async enqueue(start) {
       if (!state.enqueued.some(s => s.id === start.id)) state.enqueued.push(structuredClone(start));
     },
-    async cancel(workflowId) {
-      // Recorded with the transaction's state, so a rollback takes it back: a cancel is made only after a commit.
-      state.cancelled.push(workflowId);
-    },
     async lockRetention() {
-      // Transactions run one at a time here, as the advisory lock makes them for one organisation.
+      // Transactions run one at a time here, as the advisory lock makes two changes of one period.
     },
     async retention(organisationId) {
       const r = state.retention.get(organisationId);
@@ -633,11 +640,9 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
         .map(e => ({ ...e }));
     },
     async putErasure(record) {
-      // The foreign key and the checks of `competence_erasure`.
-      if (!state.persons.has(record.personId)) throw new Error('erasure references an unknown person');
-      if ((record.state === 'waiting') !== (record.dueAt !== null)) throw new Error('competence_erasure_due');
-      if ((record.state === 'held' || record.state === 'waiting') && record.inactiveSince === null)
-        throw new Error('competence_erasure_since');
+      // The checks of `competence_erasure`; like the table, no reference to the person.
+      if (!['inactive', 'cancelled', 'erased'].includes(record.state)) throw new Error('competence_erasure_state');
+      if (record.state === 'inactive' && record.inactiveSince === null) throw new Error('competence_erasure_since');
       if (!Number.isInteger(record.generation) || record.generation < 0)
         throw new Error('competence_erasure_generation');
       state.erasures.set(record.personId, { ...record });
@@ -647,6 +652,30 @@ export function memoryCompetenceStore(seed: { persons?: PersonRef[] } = {}) {
         .filter(p => p.organisationId === organisationId && state.inactive.has(p.id))
         .map(p => p.id)
         .sort();
+    },
+    async dueErasures(asOf, limit) {
+      return dueAt(asOf).slice(0, limit);
+    },
+    async countDue(asOf) {
+      return dueAt(asOf).length;
+    },
+    async unrecordedLeavers(limit) {
+      return [...state.persons.values()]
+        .filter(p => state.inactive.has(p.id) && state.retention.has(p.organisationId))
+        .filter(p => {
+          const e = state.erasures.get(p.id);
+          return !e || e.state === 'cancelled';
+        })
+        .sort((a, b) => a.id.localeCompare(b.id))
+        .slice(0, limit)
+        .map(p => ({ personId: p.id, organisationId: p.organisationId }));
+    },
+    async returnedLeavers(limit) {
+      return [...state.erasures.values()]
+        .filter(e => e.state !== 'cancelled' && state.persons.has(e.personId) && !state.inactive.has(e.personId))
+        .sort((a, b) => a.personId.localeCompare(b.personId))
+        .slice(0, limit)
+        .map(e => ({ ...e }));
     },
     async persons(ids) {
       return ids.flatMap(id => (state.persons.has(id) ? [{ ...state.persons.get(id)! }] : []));

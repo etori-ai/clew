@@ -180,6 +180,6 @@ scimStoreContract('postgres', async () => {
         .insert(schema.identityBindings)
         .values({ issuer: 'https://idp.test/' + prefix, subject: personId, personId });
     },
-    withLeavers: (leavers, cancel) => postgresProvisionStore({ leavers: (_tx, ended) => leavers(ended), cancel }),
+    withLeavers: (leavers, leaverFailed) => postgresProvisionStore({ leavers: () => leavers(), leaverFailed }),
   };
 });

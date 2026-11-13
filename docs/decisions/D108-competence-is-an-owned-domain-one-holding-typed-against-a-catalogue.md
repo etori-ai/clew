@@ -429,8 +429,9 @@ above lists is built, except what this paragraph says is not. A person's positio
 (item 5); requirements on a position, a unit or a person, the status `missing`, coverage and share targets (items 6
 and 10); the place Kompetens with the reader's own page and the matrix (item 11); a person's own registration,
 approved or rejected by the manager they report to through a work item (item 7); merging two types and bringing an
-archived one back (item 2); revoking from the product; the erasure timer (item 14), which starts only when an
-operator has set a period; and the read log (item 15) together with the search across the organisation, which
+archived one back (item 2); revoking from the product; erasure after a person leaves (item 14), which happens only when an
+operator has set a period, and is an intent per person and an hourly sweep, not a durable timer per person: a
+sleeping workflow did not survive a deployment; and the read log (item 15) together with the search across the organisation, which
 [D121](D121-a-registrar-reads-competence-across-the-organisation-through-a-relation-of-its-own.md) builds as a
 relation and not as the capability `competence.search` that item 8 names. Skills with levels and the catalogue
 import are [D120](D120-a-skill-is-a-holding-with-a-level-and-the-competence-domain-covers-what-a-skills-platform-does.md).

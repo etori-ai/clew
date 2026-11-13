@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { GroupRecord, UserRecord } from '../apps/server/src/modules/people/domain';
-import type { LeaversTx, Provisioner, ProvisionStore } from '../apps/server/src/modules/people/ports';
+import type { LeaverChange, LeaversTx, Provisioner, ProvisionStore } from '../apps/server/src/modules/people/ports';
 
 /**
  * The SCIM half of the provisioning store (D68): users within an organisation, groups and their members, the provisioner
@@ -20,10 +20,13 @@ export interface ScimStoreHarness {
   /** An identity binding for the person, as a first login would write it. */
   bind(personId: string): Promise<void>;
   /**
-   * The same adapter built with a leavers binding (D108 item 14), as composition builds the SCIM store: `leavers` is
-   * given the transaction's list of workflows to end, and `cancel` is called with each once it has committed.
+   * The same adapter built with a leavers binding (D108 item 14), as composition builds the SCIM store: `leavers` is the
+   * port, and `failed` hears of a call that failed.
    */
-  withLeavers(leavers: (ended: string[]) => LeaversTx, cancel: (workflowId: string) => Promise<void>): ProvisionStore;
+  withLeavers(
+    leavers: () => LeaversTx,
+    failed: (error: unknown, change: LeaverChange, kind: keyof LeaversTx) => void,
+  ): ProvisionStore;
 }
 const T = '2026-11-09T06:00:00.000Z';
 export const userRow = (id: string, organisationId: string, extra: Partial<UserRecord> = {}): UserRecord => ({
@@ -623,46 +626,56 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         await tx.lockUnits([p + '-unit-without-a-row', p + '-u', p + '-u']);
       });
     });
-    test('the leavers bound to the store are told on its transaction, and the waits they end are cancelled once it has committed, never after a rollback (D108 item 14)', async () => {
+    test('the leavers bound to the store are told on its transaction, and one that fails is reported and never fails the change (D108 item 14, D113)', async () => {
       const h = await make();
       const p = h.prefix,
+        org = p + '-org',
         told: string[] = [],
-        cancelled: string[] = [];
+        failed: string[] = [];
+      let failing = false;
       const store = h.withLeavers(
-        ended => ({
+        () => ({
           async deactivated(change) {
-            told.push('deactivated:' + change.personId + ':' + change.actor + ':' + change.at);
-            ended.push('wait:' + change.personId);
+            told.push(`deactivated:${change.personId}:${change.organisationId}:${change.actor}:${change.at}`);
+            if (failing) throw new Error('the domain failed');
           },
           async reactivated(change) {
             told.push('reactivated:' + change.personId);
           },
         }),
-        async id => void cancelled.push(id),
+        (_error, change, kind) => failed.push(kind + ':' + change.personId),
       );
+      const change = (personId: string) => ({ actor: 'provisioner:x', personId, organisationId: org, at: T });
       await store.transaction(async tx => {
-        await tx.leavers.deactivated({ actor: 'provisioner:x', personId: p + '-a', at: T });
-        expect(cancelled).toEqual([]);
+        await tx.insertUser(userRow(p + '-a', org));
+        await tx.leavers.deactivated(change(p + '-a'));
       });
-      expect(cancelled).toEqual(['wait:' + p + '-a']);
+      // The binding fails: the change it was told of commits all the same, and the failure is reported.
+      failing = true;
+      await store.transaction(async tx => {
+        await tx.updateUser(p + '-a', { enabled: false, updatedAt: T });
+        await tx.leavers.deactivated(change(p + '-a'));
+        await tx.updateUser(p + '-a', { name: 'After the port', updatedAt: T });
+      });
+      expect(failed).toEqual(['deactivated:' + p + '-a']);
+      await store.transaction(async tx => {
+        expect(await tx.readUser(org, p + '-a')).toMatchObject({ enabled: false, name: 'After the port' });
+      });
+      // A rollback of the change takes it all back, whatever the binding did.
+      failing = false;
       await expect(
         store.transaction(async tx => {
-          await tx.leavers.deactivated({ actor: 'provisioner:x', personId: p + '-b', at: T });
+          await tx.leavers.reactivated(change(p + '-a'));
           throw new Error('after the port');
         }),
       ).rejects.toThrow('after the port');
-      expect(cancelled).toEqual(['wait:' + p + '-a']);
-      await store.transaction(tx => tx.leavers.reactivated({ actor: 'provisioner:x', personId: p + '-a', at: T }));
       expect(told).toEqual([
-        `deactivated:${p}-a:provisioner:x:${T}`,
-        `deactivated:${p}-b:provisioner:x:${T}`,
+        `deactivated:${p}-a:${org}:provisioner:x:${T}`,
+        `deactivated:${p}-a:${org}:provisioner:x:${T}`,
         'reactivated:' + p + '-a',
       ]);
-      // A transaction that tells nothing builds no binding and cancels nothing.
-      await store.transaction(tx => tx.lockPerson(p + '-nobody'));
-      expect(cancelled).toHaveLength(1);
       // A store built without a binding tells nobody, and is no error.
-      await h.store.transaction(tx => tx.leavers.deactivated({ actor: 'provisioner:x', personId: p + '-c', at: T }));
+      await h.store.transaction(tx => tx.leavers.deactivated(change(p + '-c')));
     });
   });
 }

@@ -1,22 +1,26 @@
 /**
- * A second instance for the competence erasure's runtime test (D108 item 14): launches the engine under the application
- * and executor id it is given and starts one `competenceErasure` workflow here (directly, so this executor and not the
- * parent's queue runner owns it), due some seconds ahead, then waits to be killed. Its step must never run: the parent
- * kills it while the workflow sleeps and adopts it, and the parent's own step must erase the person once.
+ * A second instance for the erasure's runtime test (D108 item 14): it asks for one person's erasure, as the sweep
+ * would, through a store whose transaction holds still once the erasure's work is done and before it commits, says so,
+ * and waits to be killed. Its transaction dies with it, so the parent finds the person as they were.
  */
-import { launchDurable } from '../../src/dbos/runtime';
-import { bindActivities, competenceErasure } from '../../src/dbos/workflows';
-import { startDurable } from '../../src/dbos/start';
-import type { ErasureInput } from '../../src/modules/competence/domain';
-import type { WorkflowStart } from '../../src/modules/competence/model';
+import type { CompetenceStore } from '../../src/modules/competence/model';
+import { postgresCompetenceStore } from '../../src/modules/competence/adapters/postgres';
+import { competenceUsecases } from '../../src/modules/competence/usecases';
 
-bindActivities({
-  eraseLeaver: async () => {
-    throw new Error('the child instance must not erase anyone');
-  },
+const store = postgresCompetenceStore({ application: 'clew-test-erasure-child', queue: 'unused' });
+const hanging: CompetenceStore = {
+  transaction: fn =>
+    store.transaction(async tx => {
+      const result = await fn(tx);
+      console.log('erasing');
+      await new Promise(() => {});
+      return result;
+    }),
+};
+const competence = competenceUsecases({
+  store: hanging,
+  staff: async () => ({ units: [] }),
+  clock: () => new Date(),
+  ids: () => crypto.randomUUID(),
 });
-const start = JSON.parse(process.env.ERASURE_START!) as WorkflowStart;
-await launchDurable({ name: process.env.DURABLE_APP, executorID: process.env.DURABLE_EXECUTOR, heartbeat: false });
-await startDurable(competenceErasure, start.id, start.input as ErasureInput);
-console.log(`started ${start.id}`);
-await new Promise(() => {});
+await competence.eraseDue(process.env.ERASE_PERSON!, 1);

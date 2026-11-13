@@ -4,11 +4,12 @@ import { ForbiddenError } from '../../apps/server/src/context';
 import { memoryCompetenceStore } from '../../apps/server/src/modules/competence/adapters/memory';
 import {
   erasureDue,
-  erasureStart,
-  erasureWorkflowId,
   isRetentionDays,
   RETENTION_GRACE_MS,
+  retentionSummary,
+  SWEEP_BATCH,
 } from '../../apps/server/src/modules/competence/domain';
+import type { CompetenceStore, ErasureRecord } from '../../apps/server/src/modules/competence/model';
 import {
   competenceLeavers,
   competenceUsecases,
@@ -17,13 +18,15 @@ import {
 import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import { SCIM } from '../../apps/server/src/modules/people/contracts';
 import { scimUsecases } from '../../apps/server/src/modules/people/usecases';
+import { parseRetentionArguments } from '../../scripts/competence-retention-arguments';
 
 /**
  * The erasure of a person's competence a set time after the directory deactivates them (D108 item 14), on the memory
- * adapters: the SCIM use cases tell the people module's leavers port, which the test binds to the competence module's
- * leavers on the competence memory store as composition binds them on one Postgres transaction (the test mirrors the
- * person's `active` into the competence store, which in Postgres reads the same row). The period is an operator's
- * setting with no default; the timer's step is `eraseDue`, fenced by the intent's generation. Every branch asserts the
+ * adapters. The SCIM use cases tell the people module's leavers port, which the test binds to the competence module's
+ * leavers on the competence memory store as composition binds them on the SCIM transaction (the test mirrors the
+ * person's `active` into the competence store, which on Postgres reads the same row; the memory stores commit apart, so
+ * one transaction across both is shown in `tests/db`). The period is an operator's setting with no default; the timer is
+ * the intents and the hourly sweep (`sweepErasures`), each erasure fenced by the intent's spell. Every branch asserts the
  * state the stores end in and the audit rows written.
  */
 const ORG = 'org-1';
@@ -60,20 +63,29 @@ function world() {
   let seq = 0;
   const ids = () => 'id-' + ++seq;
   const store = memoryCompetenceStore();
+  const control = { portFails: false };
+  const failures: Array<{ kind: string; personId: string }> = [];
+  const logs: Array<{ level: 'info' | 'warn'; message: string; details: unknown[] }> = [];
   // The people module's leavers port, bound as composition binds it: the competence module's own, in a transaction.
+  // `active` is mirrored first: on Postgres it is the person's own row, written by the SCIM change whatever the port does.
   const provision = memoryProvisionStore({
     leavers: () => ({
-      deactivated: change =>
-        store.transaction(async tx => {
-          store.deactivate(change.personId);
+      async deactivated(change) {
+        store.deactivate(change.personId);
+        await store.transaction(async tx => {
           await competenceLeavers(tx).deactivated(change);
-        }),
-      reactivated: change =>
-        store.transaction(async tx => {
-          store.reactivate(change.personId);
+          if (control.portFails) throw Object.assign(new Error('the port failed'), { code: '55P03' });
+        });
+      },
+      async reactivated(change) {
+        store.reactivate(change.personId);
+        await store.transaction(async tx => {
           await competenceLeavers(tx).reactivated(change);
-        }),
+          if (control.portFails) throw Object.assign(new Error('the port failed'), { code: '55P03' });
+        });
+      },
     }),
+    leaverFailed: (_error, change, kind) => failures.push({ kind, personId: change.personId }),
   });
   const scim = scimUsecases({ store: provision, clock: () => clock.now, ids, digest: t => 'digest:' + t });
   // The manager, Karin, leads one unit with everyone hired on it, active or not as the directory says (D99 item 4).
@@ -96,7 +108,16 @@ function world() {
             },
           ],
         };
-  const competence = competenceUsecases({ store, staff, clock: () => clock.now, ids });
+  const over = (s: CompetenceStore) =>
+    competenceUsecases({
+      store: s,
+      staff,
+      clock: () => clock.now,
+      ids,
+      log: (message, ...details) => logs.push({ level: 'warn', message, details }),
+      info: (message, ...details) => logs.push({ level: 'info', message, details }),
+    });
+  const competence = over(store);
   const at = () => clock.now.toISOString();
   return {
     clock,
@@ -104,6 +125,10 @@ function world() {
     provision,
     scim,
     competence,
+    over,
+    control,
+    failures,
+    logs,
     at,
     /** Move the clock on by days (fractions allowed). */
     later(days: number) {
@@ -132,14 +157,17 @@ function world() {
           : await competence.seedType(OPERATOR, ORG, { name: 'HLR', area: 'Akut', kind: 'certificate' });
       return competence.seedHolding(OPERATOR, ORG, personId, { typeId, issuedOn: '2026-01-10' });
     },
+    sweep: () => competence.sweepErasures(),
     intent: (personId: string) => store.state.erasures.get(personId),
     holdings: (personId: string) => [...store.state.holdings.values()].filter(h => h.personId === personId),
-    /** The competence audit rows about the person or the organisation, as action and actor. */
+    /** The competence audit rows about the person or the organisation, as action, actor and details. */
     audit: (subject: string) =>
       store
         .audit()
         .filter(a => a.subject === subject)
         .map(a => ({ action: a.action, actor: a.actor, details: a.details })),
+    erasedRows: (personId: string) =>
+      store.audit().filter(a => a.subject === 'person:' + personId && a.action === 'competence.person_erased'),
   };
 }
 
@@ -148,21 +176,46 @@ describe('the domain of the erasure timer', () => {
     expect([1, 30, 3650].every(isRetentionDays)).toBe(true);
     expect([0, -1, 3651, 1.5, Number.NaN, '30', null].some(isRetentionDays)).toBe(false);
   });
-  test('the due time is the period after the start, never sooner than a day after the change', () => {
+  test('an erasure falls due the period after the deactivation, never sooner than a day after the period was set', () => {
+    const setAt = '2026-01-01T09:00:00.000Z';
+    expect(erasureDue('2026-11-10T09:00:00.000Z', 30, setAt)).toBe('2026-12-10T09:00:00.000Z');
+    // Deactivated a hundred days before a period of thirty is set: a day after it was set, not at once.
     const now = '2026-11-10T09:00:00.000Z';
-    expect(erasureDue(now, 30, now)).toBe('2026-12-10T09:00:00.000Z');
-    // Deactivated a hundred days ago and a period of thirty set now: a day's grace, not at once.
     expect(erasureDue('2026-08-02T09:00:00.000Z', 30, now)).toBe(
       new Date(Date.parse(now) + RETENTION_GRACE_MS).toISOString(),
     );
   });
-  test('one workflow per person and generation, carrying whom, which generation and when', () => {
-    expect(erasureStart({ personId: 'p1', generation: 2, dueAt: '2026-12-10T09:00:00.000Z' })).toEqual({
-      workflow: 'competenceErasure',
-      id: 'competence-erasure:p1:2',
-      input: { personId: 'p1', generation: 2, dueAt: '2026-12-10T09:00:00.000Z' },
+  test('an organisation’s erasures in counts: held without a period; waiting, overdue and within a day with one', () => {
+    const intent = (personId: string, since: string, state: ErasureRecord['state'] = 'inactive'): ErasureRecord => ({
+      personId,
+      organisationId: ORG,
+      state,
+      inactiveSince: since,
+      generation: 1,
+      updatedAt: since,
     });
-    expect(erasureWorkflowId('p1', 1)).not.toBe(erasureWorkflowId('p1', 2));
+    const intents = [
+      intent('a', '2026-10-01T09:00:00.000Z'), // due 10-31: overdue
+      intent('b', '2026-10-10T21:00:00.000Z'), // due 11-09 21:00: overdue
+      intent('c', '2026-10-11T12:00:00.000Z'), // due 11-10 12:00: within a day
+      intent('d', '2026-11-01T09:00:00.000Z'), // due 12-01
+      intent('e', '2026-10-01T09:00:00.000Z', 'cancelled'),
+    ];
+    const now = '2026-11-10T09:00:00.000Z';
+    expect(retentionSummary(intents, undefined, now)).toEqual({
+      waiting: 0,
+      held: 4,
+      overdue: 0,
+      dueWithinDay: 0,
+      nextDue: null,
+    });
+    expect(retentionSummary(intents, { days: 30, setAt: '2026-01-01T00:00:00.000Z' }, now)).toEqual({
+      waiting: 2,
+      held: 0,
+      overdue: 2,
+      dueWithinDay: 1,
+      nextDue: '2026-11-10T12:00:00.000Z',
+    });
   });
 });
 
@@ -170,9 +223,9 @@ describe('the leavers port is told on every path that changes active (D68, D108 
   test('PATCH, PUT and DELETE that deactivate, PUT and PATCH that reactivate, and a user created deactivated', async () => {
     const w = world();
     const anna = await w.hire('annber', 'Anna Andersson');
-    const told = () => w.provision.state.leavers.map(l => [l.change, l.personId, l.actor, l.at]);
+    const told = () => w.provision.state.leavers.map(l => [l.change, l.personId, l.organisationId, l.actor, l.at]);
     await w.deactivate(anna);
-    expect(told()).toEqual([['deactivated', anna, 'provisioner:mk', w.at()]]);
+    expect(told()).toEqual([['deactivated', anna, ORG, 'provisioner:mk', w.at()]]);
     // Deactivating again, or changing something else, says nothing.
     await w.deactivate(anna);
     await w.patch(anna, [{ op: 'replace', path: 'displayName', value: 'Anna A' }]);
@@ -180,7 +233,7 @@ describe('the leavers port is told on every path that changes active (D68, D108 
     // A full PUT without `active` enables the person (RFC 7643's default), and is a reactivation.
     const { active: _, ...withoutActive } = user('annber', 'Anna Andersson');
     await w.scim.replaceUser(provisioner, anna, withoutActive, BASE);
-    expect(told().at(-1)).toEqual(['reactivated', anna, 'provisioner:mk', w.at()]);
+    expect(told().at(-1)).toEqual(['reactivated', anna, ORG, 'provisioner:mk', w.at()]);
     await w.scim.replaceUser(provisioner, anna, user('annber', 'Anna Andersson', false), BASE);
     expect(told().at(-1)?.[0]).toBe('deactivated');
     await w.reactivate(anna);
@@ -189,12 +242,21 @@ describe('the leavers port is told on every path that changes active (D68, D108 
     await w.scim.deleteUser(provisioner, anna);
     await w.scim.deleteUser(provisioner, anna);
     expect(told().map(t => t[0])).toEqual(['deactivated', 'reactivated', 'deactivated', 'reactivated', 'deactivated']);
-    // A person pushed already deactivated is inactive from the start.
+    expect(w.intent(anna)).toMatchObject({ state: 'inactive', generation: 3, inactiveSince: w.at() });
+    // A person pushed already deactivated is inactive from the start, and the intent says so.
     const bo = await w.hire('boberg', 'Bo Berg', false);
-    expect(told().at(-1)).toEqual(['deactivated', bo, 'provisioner:mk', w.at()]);
+    expect(told().at(-1)).toEqual(['deactivated', bo, ORG, 'provisioner:mk', w.at()]);
+    expect(w.intent(bo)).toEqual({
+      personId: bo,
+      organisationId: ORG,
+      state: 'inactive',
+      inactiveSince: w.at(),
+      generation: 1,
+      updatedAt: w.at(),
+    });
   });
 
-  test('a SCIM change that fails takes back what the port was told, with the rest of the transaction', async () => {
+  test('a SCIM change that fails takes back the people store’s record of the call (on memory only; tests/db shows both stores roll back together)', async () => {
     const w = world();
     const anna = await w.hire('annber', 'Anna Andersson');
     const failing = scimUsecases({
@@ -220,10 +282,42 @@ describe('the leavers port is told on every path that changes active (D68, D108 
     expect(w.provision.state.leavers).toEqual([]);
     expect(w.provision.state.users.get(anna)?.enabled).toBe(true);
   });
+
+  test('a port that fails never fails the deactivation: it is reported, and the sweep records it once a period is set', async () => {
+    const w = world();
+    const anna = await w.hire('annber', 'Anna Andersson');
+    await w.certify(anna);
+    w.control.portFails = true;
+    await w.deactivate(anna);
+    expect(w.provision.state.users.get(anna)?.enabled).toBe(false);
+    expect(
+      w.provision.state.audit.some(a => a.action === 'scim.user.deactivated' && a.subject === 'person:' + anna),
+    ).toBe(true);
+    expect(w.failures).toEqual([{ kind: 'deactivated', personId: anna }]);
+    expect(w.intent(anna)).toBeUndefined();
+    w.control.portFails = false;
+    // Without a period the sweep records nothing: no organisation's leavers are recorded until it has one.
+    expect((await w.sweep()).recorded).toBe(0);
+    await w.competence.setRetention(OPERATOR, ORG, 30);
+    w.later(1);
+    expect(await w.sweep()).toMatchObject({ recorded: 1, erased: 0 });
+    expect(w.intent(anna)).toMatchObject({ state: 'inactive', inactiveSince: w.at(), generation: 1 });
+    expect(w.audit('person:' + anna).at(-1)).toEqual({
+      action: 'competence.leaver_recorded',
+      actor: RETENTION_ACTOR,
+      details: { organisationId: ORG, generation: 1 },
+    });
+    // Counted from when the sweep found it, not earlier.
+    w.later(29.5);
+    expect((await w.sweep()).erased).toBe(0);
+    w.later(0.5);
+    expect((await w.sweep()).erased).toBe(1);
+    expect(w.holdings(anna)).toEqual([]);
+  });
 });
 
 describe('a deactivated person’s competence is erased a set time after (D108 item 14)', () => {
-  test('with no period set nothing is scheduled and nothing erased: the deactivation is held, and a reactivation lets go of it', async () => {
+  test('with no period set nothing is erased: the deactivation is recorded, and a reactivation cancels it', async () => {
     const w = world();
     const anna = await w.hire('annber', 'Anna Andersson');
     await w.certify(anna);
@@ -232,23 +326,22 @@ describe('a deactivated person’s competence is erased a set time after (D108 i
     expect(w.intent(anna)).toEqual({
       personId: anna,
       organisationId: ORG,
-      state: 'held',
+      state: 'inactive',
       inactiveSince: deactivatedAt,
-      dueAt: null,
-      generation: 0,
+      generation: 1,
       updatedAt: deactivatedAt,
     });
-    expect(w.store.state.enqueued).toEqual([]);
-    expect(w.audit('person:' + anna).filter(a => a.action.startsWith('competence.erasure'))).toEqual([]);
+    // The port writes the intent and nothing else: no audit row of the module's own in the SCIM transaction.
+    expect(w.store.audit().filter(a => a.subject === 'person:' + anna)).toEqual([]);
     w.later(400);
+    expect(await w.sweep()).toMatchObject({ erased: 0, failed: 0, overdue: 0 });
     expect(w.holdings(anna)).toHaveLength(1);
     expect(await w.competence.retentionOf(ORG)).toMatchObject({ period: null, waiting: 0, held: 1 });
     await w.reactivate(anna);
-    expect(w.intent(anna)).toMatchObject({ state: 'cancelled', inactiveSince: null, dueAt: null, generation: 0 });
-    expect(w.store.state.cancelled).toEqual([]);
+    expect(w.intent(anna)).toMatchObject({ state: 'cancelled', inactiveSince: null, generation: 1 });
   });
 
-  test('deactivated with a period set: scheduled in the deactivation’s transaction, erased when due, audited with the cause and counts', async () => {
+  test('deactivated with a period set: erased by the sweep once due, once, audited with the cause, the spell and counts', async () => {
     const w = world();
     const anna = await w.hire('annber', 'Anna Andersson');
     const bo = await w.hire('boberg', 'Bo Berg');
@@ -258,76 +351,79 @@ describe('a deactivated person’s competence is erased a set time after (D108 i
       changed: true,
       previous: null,
       days: 30,
-      scheduled: 0,
-      retimed: 0,
-      cancelled: 0,
+      inactive: 0,
     });
     expect(w.audit('organisation:' + ORG).at(-1)).toEqual({
       action: 'competence.retention_set',
       actor: OPERATOR,
-      details: { days: 30, previous: null, scheduled: 0, retimed: 0, cancelled: 0 },
+      details: { days: 30, previous: null, inactive: 0 },
     });
     await w.scim.deleteUser(provisioner, anna);
-    const dueAt = new Date(w.clock.now.getTime() + 30 * DAY).toISOString();
-    expect(w.intent(anna)).toMatchObject({ state: 'waiting', inactiveSince: w.at(), dueAt, generation: 1 });
-    expect(w.store.state.enqueued).toEqual([erasureStart({ personId: anna, generation: 1, dueAt })]);
-    expect(w.audit('person:' + anna)).toContainEqual({
-      action: 'competence.erasure_scheduled',
-      actor: 'provisioner:mk',
-      details: { organisationId: ORG, days: 30, dueAt, generation: 1 },
+    expect(await w.competence.retentionOf(ORG)).toMatchObject({
+      waiting: 1,
+      overdue: 0,
+      nextDue: new Date(w.clock.now.getTime() + 30 * DAY).toISOString(),
     });
-    // Not yet: the workflow woke early by the server's clock and asks again.
+    // Not yet due: the sweep erases nothing, and eraseDue asked early says so.
     w.later(29);
+    expect(await w.sweep()).toMatchObject({ erased: 0 });
     expect(await w.competence.eraseDue(anna, 1)).toBe('early');
     expect(w.holdings(anna)).toHaveLength(1);
     w.later(1);
-    expect(await w.competence.eraseDue(anna, 1)).toBe('erased');
+    expect(await w.sweep()).toEqual({
+      recorded: 0,
+      returned: 0,
+      erased: 1,
+      skipped: 0,
+      failed: 0,
+      left: 0,
+      overdue: 0,
+    });
     expect(w.holdings(anna)).toEqual([]);
     expect(w.holdings(bo)).toHaveLength(1);
-    expect(w.intent(anna)).toMatchObject({ state: 'erased', dueAt: null, generation: 1, updatedAt: w.at() });
+    expect(w.intent(anna)).toMatchObject({ state: 'erased', generation: 1, updatedAt: w.at() });
     expect(w.audit('person:' + anna).at(-1)).toEqual({
       action: 'competence.person_erased',
       actor: RETENTION_ACTOR,
       details: { cause: 'retention', holdings: 1, cleared: 0, requirements: 0, approvals: 0, generation: 1 },
     });
-    // A second wake (a retried step, an adopted workflow) erases nothing and writes nothing.
+    // Every card of the module in her stream goes in the same transaction (the memory store records the call).
+    expect(w.store.calls()).toContainEqual({ op: 'removeOwned', personId: anna });
+    expect(w.logs).toContainEqual({
+      level: 'info',
+      message: 'competence: the erasure sweep ran',
+      details: [{ recorded: 0, returned: 0, erased: 1, skipped: 0, failed: 0, left: 0, overdue: 0 }],
+    });
+    // A second round, or an erasure asked for again, erases nothing and writes nothing.
     const written = w.store.audit().length;
+    expect(await w.sweep()).toMatchObject({ erased: 0, skipped: 0 });
     expect(await w.competence.eraseDue(anna, 1)).toBe('stale');
     expect(w.store.audit()).toHaveLength(written);
-    // No audit row names a person or a type.
     const all = JSON.stringify(w.store.audit());
     for (const name of NAMES) expect(all).not.toContain(name);
   });
 
-  test('reactivated before the due time: the wait is cancelled after the commit and the person keeps everything', async () => {
+  test('reactivated before the due time: nothing is erased, and the manager reads what was there before', async () => {
     const w = world();
     const anna = await w.hire('annber', 'Anna Andersson');
     await w.certify(anna);
     await w.competence.setRetention(OPERATOR, ORG, 30);
     await w.deactivate(anna);
-    const dueAt = w.intent(anna)!.dueAt;
     // Between the deactivation and the erasure her holdings leave every view: her manager reaches them no more.
     expect((await w.competence.holdings(MANAGER, { person: 'annber' }).catch(e => e)) instanceof ForbiddenError).toBe(
       true,
     );
     w.later(10);
     await w.reactivate(anna);
-    expect(w.intent(anna)).toMatchObject({ state: 'cancelled', dueAt: null, inactiveSince: null, generation: 1 });
-    // Back, she is as she left: her manager reads the certificate registered before.
+    expect(w.intent(anna)).toMatchObject({ state: 'cancelled', inactiveSince: null, generation: 1 });
     expect((await w.competence.holdings(MANAGER, { person: 'annber' })).rows.map(r => r.status)).toEqual(['valid']);
-    expect(w.store.state.cancelled).toEqual([erasureWorkflowId(anna, 1)]);
-    expect(w.audit('person:' + anna).at(-1)).toEqual({
-      action: 'competence.erasure_cancelled',
-      actor: 'provisioner:mk',
-      details: { organisationId: ORG, reason: 'reactivated', dueAt, generation: 1 },
-    });
-    // The cancelled workflow wakes anyway (a cancel that never arrived): the fence refuses it.
     w.later(30);
+    expect(await w.sweep()).toMatchObject({ erased: 0 });
     expect(await w.competence.eraseDue(anna, 1)).toBe('stale');
     expect(w.holdings(anna)).toHaveLength(1);
   });
 
-  test('deactivated twice: the second deactivation is a new generation from its own time, and the first’s wake is stale', async () => {
+  test('deactivated twice: the second deactivation is a new spell from its own time, and the first’s erasure is stale', async () => {
     const w = world();
     const anna = await w.hire('annber', 'Anna Andersson');
     await w.certify(anna);
@@ -337,132 +433,139 @@ describe('a deactivated person’s competence is erased a set time after (D108 i
     await w.reactivate(anna);
     w.later(5);
     await w.deactivate(anna);
-    const second = w.intent(anna)!;
-    expect(second).toMatchObject({ state: 'waiting', inactiveSince: w.at(), generation: 2 });
-    expect(second.dueAt).toBe(new Date(w.clock.now.getTime() + 30 * DAY).toISOString());
-    expect(w.store.state.enqueued.map(s => s.id)).toEqual([erasureWorkflowId(anna, 1), erasureWorkflowId(anna, 2)]);
-    w.later(20);
+    expect(w.intent(anna)).toMatchObject({ state: 'inactive', inactiveSince: w.at(), generation: 2 });
+    w.later(25);
+    expect(await w.sweep()).toMatchObject({ erased: 0 });
     expect(await w.competence.eraseDue(anna, 1)).toBe('stale');
-    expect(w.holdings(anna)).toHaveLength(1);
-    w.later(10);
-    expect(await w.competence.eraseDue(anna, 2)).toBe('erased');
+    w.later(5);
+    expect(await w.sweep()).toMatchObject({ erased: 1 });
     expect(w.holdings(anna)).toEqual([]);
-    // Back again after the erasure and gone once more: the next generation, and nothing left to erase but the record.
+    // Back after the erasure, and gone again: the next spell, nothing left to erase but the record.
     await w.reactivate(anna);
-    expect(w.intent(anna)?.state).toBe('erased');
+    expect(w.intent(anna)?.state).toBe('cancelled');
     await w.deactivate(anna);
-    expect(w.intent(anna)).toMatchObject({ state: 'waiting', generation: 3 });
+    expect(w.intent(anna)).toMatchObject({ state: 'inactive', generation: 3 });
   });
 
-  test('a changed period re-times every erasure that waits as a new generation; shortened, none falls due within a day', async () => {
+  test('a changed period moves no row and applies at once; shortened, nothing falls due within a day of the change', async () => {
     const w = world();
     const anna = await w.hire('annber', 'Anna Andersson');
     await w.certify(anna);
     await w.competence.setRetention(OPERATOR, ORG, 30);
     await w.deactivate(anna);
-    const since = w.intent(anna)!.inactiveSince!;
+    const before = structuredClone(w.intent(anna));
     w.later(5);
-    // Lengthened: counted from the deactivation.
-    expect(await w.competence.setRetention(OPERATOR, ORG, 60)).toMatchObject({
-      previous: 30,
-      retimed: 1,
-      scheduled: 0,
-    });
-    expect(w.intent(anna)).toMatchObject({
-      state: 'waiting',
-      generation: 2,
-      inactiveSince: since,
-      dueAt: new Date(Date.parse(since) + 60 * DAY).toISOString(),
-    });
-    expect(w.store.state.cancelled).toEqual([erasureWorkflowId(anna, 1)]);
-    // Shortened below what has passed: a day from now, not at once.
-    expect(await w.competence.setRetention(OPERATOR, ORG, 2)).toMatchObject({ previous: 60, retimed: 1 });
-    expect(w.intent(anna)).toMatchObject({
-      generation: 3,
-      dueAt: new Date(w.clock.now.getTime() + RETENTION_GRACE_MS).toISOString(),
-    });
-    expect(await w.competence.retentionOf(ORG)).toMatchObject({ waiting: 1, dueWithinDay: 1 });
+    // Lengthened: counted from the deactivation, so not erased at the old due time.
+    expect(await w.competence.setRetention(OPERATOR, ORG, 60)).toMatchObject({ previous: 30, inactive: 1 });
+    expect(w.intent(anna)).toEqual(before!);
+    w.later(26);
+    expect((await w.sweep()).erased).toBe(0);
+    // Shortened below what has passed: due a day after the change, not at once.
+    expect(await w.competence.setRetention(OPERATOR, ORG, 2)).toMatchObject({ previous: 60 });
+    expect(await w.competence.retentionOf(ORG)).toMatchObject({ waiting: 1, overdue: 0, dueWithinDay: 1 });
+    expect((await w.sweep()).erased).toBe(0);
     expect(w.audit('organisation:' + ORG).at(-1)).toEqual({
       action: 'competence.retention_set',
       actor: OPERATOR,
-      details: { days: 2, previous: 60, scheduled: 0, retimed: 1, cancelled: 0 },
+      details: { days: 2, previous: 60, inactive: 1 },
     });
     // The same period again changes nothing and writes nothing.
     const written = w.store.audit().length;
     expect(await w.competence.setRetention(OPERATOR, ORG, 2)).toMatchObject({ changed: false });
     expect(w.store.audit()).toHaveLength(written);
-    // The old generations wake to nothing; the current one erases.
     w.later(1);
-    expect(await w.competence.eraseDue(anna, 1)).toBe('stale');
-    expect(await w.competence.eraseDue(anna, 2)).toBe('stale');
-    expect(w.holdings(anna)).toHaveLength(1);
-    expect(await w.competence.eraseDue(anna, 3)).toBe('erased');
-    expect(w.holdings(anna)).toEqual([]);
+    expect((await w.sweep()).erased).toBe(1);
   });
 
-  test('cleared, every wait is cancelled and the people are held with their times; set again, counted from them', async () => {
+  test('cleared, nothing is erased; set again, counted from the deactivation and never sooner than a day after', async () => {
     const w = world();
     const anna = await w.hire('annber', 'Anna Andersson');
     await w.certify(anna);
     await w.competence.setRetention(OPERATOR, ORG, 30);
     await w.deactivate(anna);
-    const since = w.intent(anna)!.inactiveSince!;
     w.later(3);
-    expect(await w.competence.setRetention(OPERATOR, ORG, null)).toMatchObject({
+    expect(await w.competence.setRetention(OPERATOR, ORG, null)).toEqual({
       changed: true,
       previous: 30,
       days: null,
-      cancelled: 1,
+      inactive: 1,
     });
-    expect(w.intent(anna)).toMatchObject({ state: 'held', dueAt: null, inactiveSince: since, generation: 1 });
     expect(w.store.state.retention.has(ORG)).toBe(false);
     expect(w.audit('organisation:' + ORG).at(-1)).toEqual({
       action: 'competence.retention_cleared',
       actor: OPERATOR,
-      details: { days: null, previous: 30, scheduled: 0, retimed: 0, cancelled: 1 },
+      details: { days: null, previous: 30, inactive: 1 },
     });
     w.later(40);
-    expect(await w.competence.eraseDue(anna, 1)).toBe('stale');
+    expect(await w.sweep()).toMatchObject({ erased: 0 });
+    expect(await w.competence.eraseDue(anna, 1)).toBe('unset');
     expect(w.holdings(anna)).toHaveLength(1);
-    // Set again: from the deactivation, which is long past, so a day from now.
-    expect(await w.competence.setRetention(OPERATOR, ORG, 10)).toMatchObject({ scheduled: 1, retimed: 0 });
-    expect(w.intent(anna)).toMatchObject({
-      state: 'waiting',
-      generation: 2,
-      inactiveSince: since,
-      dueAt: new Date(w.clock.now.getTime() + RETENTION_GRACE_MS).toISOString(),
-    });
+    await w.competence.setRetention(OPERATOR, ORG, 10);
+    expect((await w.sweep()).erased).toBe(0);
+    w.later(1);
+    expect((await w.sweep()).erased).toBe(1);
   });
 
-  test('setting a period schedules everyone already deactivated: from their deactivation where known, else from now', async () => {
+  test('a period set when people are long deactivated brings them due a day later, in one round of the sweep, one after the other', async () => {
+    const w = world();
+    const people: string[] = [];
+    const count = SWEEP_BATCH * 2 + 50;
+    for (let i = 0; i < count; i++) {
+      const id = 'p' + String(i).padStart(4, '0');
+      w.store.addPerson({ id, organisationId: ORG, name: 'Synthetic', userName: 'u' + id });
+      await w.store.transaction(tx =>
+        competenceLeavers(tx).deactivated({ actor: 'provisioner:mk', personId: id, organisationId: ORG, at: w.at() }),
+      );
+      w.store.deactivate(id);
+      people.push(id);
+    }
+    w.later(400);
+    await w.competence.setRetention(OPERATOR, ORG, 30);
+    expect(await w.competence.retentionOf(ORG)).toMatchObject({ waiting: count, dueWithinDay: count, overdue: 0 });
+    w.later(1);
+    // Counted: never two transactions at once.
+    let open = 0,
+      most = 0;
+    const counting: CompetenceStore = {
+      transaction: async fn => {
+        most = Math.max(most, ++open);
+        try {
+          return await w.store.transaction(fn);
+        } finally {
+          open--;
+        }
+      },
+    };
+    expect(await w.over(counting).sweepErasures()).toMatchObject({ erased: count, failed: 0, left: 0 });
+    expect(most).toBe(1);
+    expect(people.every(id => w.intent(id)?.state === 'erased')).toBe(true);
+  });
+
+  test('a deactivation no intent recorded (before the intents, or a failed port) is recorded by the sweep from when it found it', async () => {
     const w = world();
     const anna = await w.hire('annber', 'Anna Andersson');
     const bo = await w.hire('boberg', 'Bo Berg');
     const cia = await w.hire('ciacar', 'Cia Carlsson');
+    await w.certify(bo);
     await w.deactivate(anna);
     const annaLeft = w.at();
-    // Bo was deactivated before Clew recorded it: the competence store knows him as inactive and nothing more.
+    // Bo was deactivated before Clew recorded it: the store knows him as inactive and nothing more.
     w.store.deactivate(bo);
     w.later(1);
-    expect(await w.competence.setRetention(OPERATOR, ORG, 30)).toMatchObject({ scheduled: 2, retimed: 0 });
-    expect(w.intent(anna)).toMatchObject({
-      inactiveSince: annaLeft,
-      dueAt: new Date(Date.parse(annaLeft) + 30 * DAY).toISOString(),
-      generation: 1,
-    });
-    expect(w.intent(bo)).toMatchObject({
-      state: 'waiting',
-      inactiveSince: w.at(),
-      dueAt: new Date(w.clock.now.getTime() + 30 * DAY).toISOString(),
-      generation: 1,
-    });
+    await w.competence.setRetention(OPERATOR, ORG, 30);
+    expect(await w.sweep()).toMatchObject({ recorded: 1 });
+    expect(w.intent(anna)).toMatchObject({ inactiveSince: annaLeft, generation: 1 });
+    expect(w.intent(bo)).toMatchObject({ state: 'inactive', inactiveSince: w.at(), generation: 1 });
     expect(w.intent(cia)).toBeUndefined();
-    expect(w.store.state.enqueued.map(s => s.id).sort()).toEqual(
-      [erasureWorkflowId(anna, 1), erasureWorkflowId(bo, 1)].sort(),
-    );
+    w.later(29);
+    expect(await w.sweep()).toMatchObject({ erased: 1 });
+    expect(w.intent(anna)?.state).toBe('erased');
+    w.later(1);
+    expect(await w.sweep()).toMatchObject({ erased: 1 });
+    expect(w.holdings(bo)).toEqual([]);
   });
 
-  test('erased by hand before the timer fires: the intent is settled, its wait cancelled, and the wake erases nothing more', async () => {
+  test('erased by hand before the period runs: the intent is settled, and neither the sweep nor a later period erases again', async () => {
     const w = world();
     const anna = await w.hire('annber', 'Anna Andersson');
     await w.certify(anna);
@@ -475,50 +578,111 @@ describe('a deactivated person’s competence is erased a set time after (D108 i
       requirements: 0,
       approvals: 0,
     });
-    expect(w.intent(anna)).toMatchObject({ state: 'erased', dueAt: null, generation: 1 });
-    expect(w.store.state.cancelled).toEqual([erasureWorkflowId(anna, 1)]);
+    expect(w.intent(anna)).toMatchObject({ state: 'erased', generation: 1 });
     w.later(30);
-    expect(await w.competence.eraseDue(anna, 1)).toBe('stale');
-    expect(w.audit('person:' + anna).filter(a => a.action === 'competence.person_erased')).toEqual([
-      {
-        action: 'competence.person_erased',
-        actor: OPERATOR,
-        details: { cause: 'operator', holdings: 1, cleared: 0, requirements: 0, approvals: 0 },
-      },
+    expect(await w.sweep()).toMatchObject({ erased: 0, recorded: 0 });
+    await w.competence.setRetention(OPERATOR, ORG, 60);
+    w.later(100);
+    expect(await w.sweep()).toMatchObject({ erased: 0, recorded: 0 });
+    expect(w.erasedRows(anna).map(a => a.details)).toEqual([
+      { cause: 'operator', holdings: 1, cleared: 0, requirements: 0, approvals: 0 },
     ]);
-    // A period set later schedules nothing for someone erased.
-    expect(await w.competence.setRetention(OPERATOR, ORG, 60)).toMatchObject({ scheduled: 0, retimed: 0 });
   });
 
-  test('a person found active when due, though no reactivation reached the intent, is not erased and the intent is cancelled', async () => {
+  test('a person active again whose reactivation no intent recorded is never erased: the sweep cancels the intent', async () => {
     const w = world();
     const anna = await w.hire('annber', 'Anna Andersson');
     await w.certify(anna);
     await w.competence.setRetention(OPERATOR, ORG, 30);
+    await w.deactivate(anna);
+    w.control.portFails = true;
+    await w.reactivate(anna);
+    expect(w.failures).toEqual([{ kind: 'reactivated', personId: anna }]);
+    expect(w.intent(anna)?.state).toBe('inactive');
+    w.control.portFails = false;
+    w.later(30);
+    expect(await w.sweep()).toMatchObject({ returned: 1, erased: 0 });
+    expect(w.holdings(anna)).toHaveLength(1);
+    expect(w.intent(anna)).toMatchObject({ state: 'cancelled', inactiveSince: null });
+    expect(w.audit('person:' + anna).at(-1)).toEqual({
+      action: 'competence.erasure_cancelled',
+      actor: RETENTION_ACTOR,
+      details: { organisationId: ORG, generation: 1, reason: 'active', was: 'inactive' },
+    });
+    // Asked for directly while she is active, the erasure says so and erases nothing.
     await w.deactivate(anna);
     w.store.reactivate(anna);
     w.later(30);
-    expect(await w.competence.eraseDue(anna, 1)).toBe('active');
+    expect(await w.competence.eraseDue(anna, 2)).toBe('active');
     expect(w.holdings(anna)).toHaveLength(1);
-    expect(w.intent(anna)).toMatchObject({ state: 'cancelled', dueAt: null });
-    expect(w.audit('person:' + anna).at(-1)).toMatchObject({
-      action: 'competence.erasure_cancelled',
-      actor: RETENTION_ACTOR,
-      details: { reason: 'active', generation: 1 },
-    });
   });
 
-  test('a period removed under a waiting intent erases nothing, and an unknown person is stale', async () => {
+  test('back after an erasure and gone again with both ports failing: the sweep reconciles each and erases the new spell', async () => {
     const w = world();
     const anna = await w.hire('annber', 'Anna Andersson');
-    await w.certify(anna);
     await w.competence.setRetention(OPERATOR, ORG, 30);
     await w.deactivate(anna);
-    await w.store.transaction(tx => tx.removeRetention(ORG));
     w.later(30);
-    expect(await w.competence.eraseDue(anna, 1)).toBe('unset');
+    expect((await w.sweep()).erased).toBe(1);
+    w.control.portFails = true;
+    await w.reactivate(anna);
+    expect(w.intent(anna)?.state).toBe('erased');
+    // A round while she is active marks the erased intent as hers no more.
+    expect(await w.sweep()).toMatchObject({ returned: 1 });
+    expect(w.intent(anna)?.state).toBe('cancelled');
+    await w.certify(anna);
+    await w.deactivate(anna);
+    w.control.portFails = false;
+    expect(w.failures.map(f => f.kind)).toEqual(['reactivated', 'deactivated']);
+    // The next round records the new spell from when it finds it, and its period runs from there.
+    expect(await w.sweep()).toMatchObject({ recorded: 1 });
+    expect(w.intent(anna)).toMatchObject({ state: 'inactive', generation: 2 });
+    w.later(30);
+    expect(await w.sweep()).toMatchObject({ erased: 1 });
+    expect(w.holdings(anna)).toEqual([]);
+  });
+
+  test('an erasure that fails is logged and asked for again next round; one due for over a day is a warning', async () => {
+    const w = world();
+    const anna = await w.hire('annber', 'Anna Andersson');
+    const bo = await w.hire('boberg', 'Bo Berg');
+    await w.certify(anna);
+    await w.certify(bo);
+    await w.competence.setRetention(OPERATOR, ORG, 30);
+    await w.deactivate(anna);
+    await w.deactivate(bo);
+    // A store whose erasure of Anna fails, as a database that refuses a write would.
+    const flaky: CompetenceStore = {
+      transaction: fn =>
+        w.store.transaction(tx =>
+          fn({
+            ...tx,
+            erasePerson: async id => {
+              if (id === anna) throw Object.assign(new Error('refused'), { code: '40001' });
+              return tx.erasePerson(id);
+            },
+          }),
+        ),
+    };
+    w.later(31.5);
+    expect(await w.over(flaky).sweepErasures()).toMatchObject({ erased: 1, failed: 1, left: 1, overdue: 1 });
     expect(w.holdings(anna)).toHaveLength(1);
-    expect(await w.competence.eraseDue('nobody', 1)).toBe('stale');
+    expect(w.intent(anna)?.state).toBe('inactive');
+    expect(w.logs.filter(l => l.level === 'warn')).toEqual([
+      {
+        level: 'warn',
+        message: 'competence: the erasure sweep could not erase one person; the next round asks again',
+        details: [{ code: '40001' }],
+      },
+      {
+        level: 'warn',
+        message: 'competence: the erasure sweep left erasures due',
+        details: [{ recorded: 0, returned: 0, erased: 1, skipped: 0, failed: 1, left: 1, overdue: 1 }],
+      },
+    ]);
+    // The next round, with the store well again, erases her.
+    expect(await w.sweep()).toMatchObject({ erased: 1, failed: 0, left: 0, overdue: 0 });
+    expect(w.holdings(anna)).toEqual([]);
   });
 
   test('copied rows the daily read has not removed yet go with the erasure, as the registered ones do', async () => {
@@ -551,9 +715,9 @@ describe('a deactivated person’s competence is erased a set time after (D108 i
     await w.competence.setRetention(OPERATOR, ORG, 30);
     await w.deactivate(anna);
     w.later(30);
-    expect(await w.competence.eraseDue(anna, 1)).toBe('erased');
+    expect((await w.sweep()).erased).toBe(1);
     expect(w.holdings(anna)).toEqual([]);
-    expect(w.audit('person:' + anna).at(-1)?.details).toMatchObject({ cause: 'retention', holdings: 2 });
+    expect(w.erasedRows(anna).at(-1)?.details).toMatchObject({ cause: 'retention', holdings: 2 });
   });
 
   test('a period out of bounds is refused before anything is written', async () => {
@@ -566,21 +730,51 @@ describe('a deactivated person’s competence is erased a set time after (D108 i
     expect(w.store.audit()).toEqual([]);
   });
 
-  test('a leavers call whose transaction fails leaves the intent as it was and cancels nothing', async () => {
-    // The memory stores commit apart, so this shows only the competence side's own rollback: a leavers call that
-    // throws leaves its intent as it was. On Postgres both are one transaction (tests/db).
+  test('a leavers call whose transaction fails leaves the intent as it was', async () => {
     const w = world();
     const anna = await w.hire('annber', 'Anna Andersson');
-    await w.competence.setRetention(OPERATOR, ORG, 30);
     await w.deactivate(anna);
     const before = structuredClone(w.intent(anna));
     await expect(
       w.store.transaction(async tx => {
-        await competenceLeavers(tx).reactivated({ actor: 'provisioner:mk', personId: anna, at: w.at() });
+        await competenceLeavers(tx).reactivated({
+          actor: 'provisioner:mk',
+          personId: anna,
+          organisationId: ORG,
+          at: w.at(),
+        });
         throw new Error('after the port');
       }),
     ).rejects.toThrow('after the port');
     expect(w.intent(anna)).toEqual(before!);
-    expect(w.store.state.cancelled).toEqual([]);
+  });
+});
+
+describe('the retention script’s arguments', () => {
+  test('`--name value` and `--name=value` alike; an unknown, missing, repeated or contradictory argument is refused', () => {
+    expect(parseRetentionArguments(['--organisation', 'org-1'])).toEqual({ organisation: 'org-1', off: false });
+    expect(parseRetentionArguments(['--organisation=org-1', '--days=30'])).toEqual({
+      organisation: 'org-1',
+      days: '30',
+      off: false,
+    });
+    expect(parseRetentionArguments(['--days', '30', '--organisation', 'org-1'])).toEqual({
+      organisation: 'org-1',
+      days: '30',
+      off: false,
+    });
+    expect(parseRetentionArguments(['--organisation', 'org-1', '--off'])).toEqual({ organisation: 'org-1', off: true });
+    for (const [args, says] of [
+      [[], 'Name the organisation'],
+      [['--organisation'], '--organisation needs a value'],
+      [['--organisation', '--days', '3'], '--organisation needs a value'],
+      [['--organisation', 'org-1', '--days'], '--days needs a value'],
+      [['--organisation', 'org-1', '--days='], '--days needs a value'],
+      [['--organisation', 'org-1', '--dayz', '3'], 'Unknown argument "--dayz"'],
+      [['--organisation', 'org-1', 'extra'], 'Unknown argument "extra"'],
+      [['--organisation', 'org-1', '--days', '3', '--off'], 'either --days or --off'],
+      [['--organisation', 'a', '--organisation', 'b'], 'Give --organisation once'],
+    ] as const)
+      expect(parseRetentionArguments(args)).toContain(says);
   });
 });

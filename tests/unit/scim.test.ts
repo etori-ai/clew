@@ -1288,6 +1288,6 @@ scimStoreContract('memory', async () => {
     async bind(personId) {
       store.state.bindings.add(personId);
     },
-    withLeavers: (leavers, cancel) => memoryProvisionStore({ leavers, cancel }),
+    withLeavers: (leavers, leaverFailed) => memoryProvisionStore({ leavers, leaverFailed }),
   };
 });

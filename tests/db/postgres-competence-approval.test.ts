@@ -105,6 +105,8 @@ afterAll(async () => {
   await db.delete(schema.threads).where(inArray(schema.threads.personId, people));
   await db.delete(schema.jobs).where(or(...people.map(p => like(schema.jobs.id, `attention:automatic:${p}:%`))));
   await db.delete(schema.competenceTypes).where(eq(schema.competenceTypes.organisationId, ORG));
+  // Erasure marks the person's intent erased (D108 item 14); the intent has no foreign key to take it with the person.
+  await db.delete(schema.competenceErasures).where(inArray(schema.competenceErasures.personId, people));
   await db.delete(schema.people).where(inArray(schema.people.id, people));
   await forgetTestWorkflows();
   await closeDatabase();

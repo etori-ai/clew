@@ -1297,32 +1297,33 @@ export const competenceRetention = pgTable(
 /**
  * The erasure of one person's competence after they left (D108 item 14): a row per person the directory has
  * deactivated, written in the SCIM transaction that deactivates or activates them (the people module's leavers port,
- * bound in composition), when the period is set or cleared, and by an erasure. `held` while they are deactivated and no
- * period is set; `waiting` while a `competenceErasure` workflow of this `generation` sleeps until `due_at`; `cancelled`
- * once they are active again; `erased` once the timer or an operator erased them. `inactive_since` is when the
- * directory deactivated them or, for a person deactivated before Clew recorded it, when a period first applied to them:
- * the period counts from it. The generation grows with every workflow started, so a workflow that wakes for an older
- * one, or for a row no longer waiting, does nothing. Kept after the erasure (ids and times, no content), since a later
- * deactivation of the same person takes the next generation.
+ * bound in composition), by the hourly sweep that reconciles it with the directory and erases what is due, and by an
+ * erasure by hand. `inactive` from the deactivation until the person is active again (`cancelled`) or erased
+ * (`erased`). `inactive_since` is when the directory deactivated them or, for a deactivation Clew did not record (one
+ * from before this table, or one whose port failed), when the sweep found it: the period counts from it. When the
+ * erasure falls due is never stored: it follows from `inactive_since` and the organisation's period as it stands
+ * (`competence_retention`), so a change of the period moves no row. The generation grows with every deactivation, so
+ * an erasure planned for an earlier spell does nothing. No foreign key, as `competence_read_log` has none: a write here
+ * takes no lock on `auth_person`, which the SCIM transaction holds while it tells the port. Kept after the erasure (ids
+ * and times, no content), since a later deactivation of the same person takes the next generation.
  */
 export const competenceErasures = pgTable(
   'competence_erasure',
   {
-    personId: text('person_id')
-      .primaryKey()
-      .references(() => people.id, { onDelete: 'cascade' }),
+    personId: text('person_id').primaryKey(),
     organisationId: text('organisation_id').notNull(),
-    state: text('state').$type<'held' | 'waiting' | 'cancelled' | 'erased'>().notNull(),
+    state: text('state').$type<'inactive' | 'cancelled' | 'erased'>().notNull(),
     inactiveSince: timestamp('inactive_since', { withTimezone: true }),
-    dueAt: timestamp('due_at', { withTimezone: true }),
     generation: integer('generation').notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
   t => [
-    check('competence_erasure_state', sql`${t.state} IN ('held', 'waiting', 'cancelled', 'erased')`),
-    check('competence_erasure_due', sql`(${t.state} = 'waiting') = (${t.dueAt} IS NOT NULL)`),
-    check('competence_erasure_since', sql`${t.state} NOT IN ('held', 'waiting') OR ${t.inactiveSince} IS NOT NULL`),
+    check('competence_erasure_state', sql`${t.state} IN ('inactive', 'cancelled', 'erased')`),
+    check('competence_erasure_since', sql`${t.state} <> 'inactive' OR ${t.inactiveSince} IS NOT NULL`),
     check('competence_erasure_generation', sql`${t.generation} >= 0`),
     index('competence_erasure_organisation').on(t.organisationId, t.state),
+    index('competence_erasure_inactive')
+      .on(t.inactiveSince)
+      .where(sql`${t.state} = 'inactive'`),
   ],
 );

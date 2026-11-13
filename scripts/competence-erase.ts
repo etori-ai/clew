@@ -2,8 +2,8 @@
  * Erase one person from the competence domain by hand (D108 item 14): their holdings, the rows copied from sources
  * included, the requirements set on them alone (item 6), and their id on the holdings they registered or revoked for
  * others. Only a person the directory has deactivated is erased: an active person is refused, since the next read of a
- * source would copy their holdings back. The same use case as the erasure timer's (`scripts/competence-retention.ts`
- * sets its period); an erasure the timer still waits to make is settled here and its wait cancelled. Runs inside the
+ * source would copy their holdings back. The same erasure as the hourly sweep's (`scripts/competence-retention.ts` sets
+ * its period); the person's intent is marked erased here, so the sweep has nothing more to do for them. Runs inside the
  * app container with the server's local settings (DATABASE_URL); no route and no `package.json` entry. Audited
  * (`competence.person_erased` with the cause `operator`, counts only) with the actor `operator:cli`. It cannot be
  * undone, so it needs `--confirm`.

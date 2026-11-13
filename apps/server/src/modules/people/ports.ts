@@ -38,19 +38,25 @@ export interface Listed<T> {
   total: number;
   rows: T[];
 }
-/** A change of a person's `active` as the leavers port is told it: who made it (`provisioner:<id>`), whom, and when. */
+/**
+ * A change of a person's `active` as the leavers port is told it: who made it (`provisioner:<id>`), whom, of which
+ * organisation, and when.
+ */
 export interface LeaverChange {
   actor: string;
   personId: string;
+  organisationId: string;
   at: string;
 }
 /**
  * What a change of a person's `active` means to a domain that keeps data about them (D68: a person is deactivated,
  * never erased; D108 item 14: the competence of one who left is erased a set time after). The SCIM use cases tell it,
  * inside the transaction that deactivates or activates the person and after the person's row is written, so whatever
- * the domain records there commits or rolls back with the change. The people module imports no such domain:
- * composition binds the port (`composition/people.ts`, the competence module's erasure timer), and a store built
- * without a binding tells nobody.
+ * the domain records there commits or rolls back with the change. It never holds the change up for long or fails it
+ * (D113): the store runs each call in a savepoint with a lock timeout, and a call that fails is rolled back to the
+ * savepoint and reported, while the change commits; the domain reconciles what it missed from the directory. The people
+ * module imports no such domain: composition binds the port (`composition/people.ts`, the competence module's erasure
+ * intent), and a store built without a binding tells nobody.
  */
 export interface LeaversTx {
   /** The person was deactivated, or created deactivated. */
