@@ -33,6 +33,7 @@ import type {
   TalkCall,
   Takeovers,
 } from '../../apps/server/src/modules/talk-seam/model';
+import { personKey as webPersonKey } from '../../apps/web/src/talks';
 
 /**
  * The talks seam (D96 items 8 and 9): `clew.talks` and `clew.commitments` ask the one system that answers the talks
@@ -538,6 +539,20 @@ describe('clew.talks and clew.commitments', () => {
     const points = await commitments(registry, hillevi, { person: 'mikael' });
     expect(points.rows.map(r => r.ref)).toEqual(['commitment:appraisals:c1']);
     expect(calls).toEqual([{ name: 'appraisals.commitments', input: { person: 'mikael' } }]);
+  });
+
+  test('a person without a user name is asked about by their Clew id, the talks profile’s one exception to the user name on the wire (D96 As built item 8, D116 item 6)', async () => {
+    const calls: Array<{ name: string; input: unknown }> = [];
+    const { registry } = world([
+      talkSystem('appraisals', 'Samtalssystemet', {
+        calls,
+        commitments: { rows: [commitment('appraisals', 1, 'mikael'), commitment('appraisals', 2, 'p-noname')] },
+      }),
+    ]);
+    // The talk's drawer on Personal asks with the key the web gives the person: the user name, else the id.
+    const points = await commitments(registry, hillevi, { person: webPersonKey(people.noname!) });
+    expect(calls).toEqual([{ name: 'appraisals.commitments', input: { person: 'p-noname' } }]);
+    expect(points.rows.map(r => [r.ref, r.personId])).toEqual([['commitment:appraisals:c2', 'p-noname']]);
   });
 
   test('no source: neither read is offered and the use case refuses', async () => {

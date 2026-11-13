@@ -407,7 +407,8 @@ describe('action points', () => {
       },
     ]);
     expect((await talks.round(boss)).rows.find(r => r.userName === 'anna.a')?.openCommitments).toBe(2);
-    // Someone provisioned without a user name is still named by id (D116): no source asks about them, but the card is theirs.
+    // Someone provisioned without a user name is still named by id (D116): no read about a person asks a source about
+    // them, but the card is theirs.
     await talks.addCommitment(boss, 'bo', { owner: 'manager', text: 'Boka ett möte', dueOn: '2027-01-15' });
     expect(store.calls()[2]).toMatchObject({ op: 'open', personId: 'boss', subject: { entity: 'person', key: 'bo' } });
   });

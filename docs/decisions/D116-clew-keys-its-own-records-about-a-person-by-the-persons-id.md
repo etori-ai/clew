@@ -16,22 +16,24 @@ user name, so a rename separated a person from the cards about them and a reuse 
    (item 7). What the browser is given names the person by id too: the cards counted in Personal's "Just nu", search
    hits, the links of a read's records and the person's address `/people/<id>`, which reads `/api/entities/person/<id>`.
    A user name there names nobody, and the read is answered 404 "Okänd adress.". So is the id of a person who is
-   deactivated or has no user name, since no source can be asked about them. A calendar proposal keeps its participant's
-   id beside the address the invitation goes to (`proposal.participant_id`, N3). A unit's id is both of its keys, as
-   before.
-2. **A source's key is resolved when a row arrives.** A source names a person by their user name (item 6). When rows
-   arrive (a scan's or a refresh's cards, a started propose's draft, a read's records and search hits), Clew resolves
-   every user name in them with one read (`holders` in `apps/server/src/modules/people/ports.ts`) to whoever in the
-   reader's organisation holds that name at that moment, active or deactivated, compared in the composed form (NFC) and
-   without regard to case under ICU's root collation. The row then names that person by id. A name that nobody there
-   holds names nobody: the row keeps its text as the source wrote it and links nowhere. A name that two people hold
-   names neither of them. The unique index on user names folds case under ICU on any database, so that can only be a
-   row stored decomposed (NFD) beside a composed one. A read's records are linked through the view's `people`, from
-   user name to id, and the web links a record only through it. The talks' rows are placed only on the reader and the
-   people the reader manages now, compared in NFC and without regard to case, and a row that names nobody there is
-   left out ([D96](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md) item 8). With
-   Clew's own talks module, an action point the reader owns about someone they no longer manage is placed with
-   `holders`. What Clew has kept is never moved afterwards.
+   deactivated or has no user name, since no read about a person
+   ([D97](D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)) asks a source about them. A calendar
+   proposal keeps its participant's id beside the address the invitation goes to (`proposal.participant_id`, N3). A
+   unit's id is both of its keys, as before.
+2. **A source's key is resolved when a row arrives.** A source names a person by their user name, and a talks source
+   names a person without one by their id (item 6). When rows arrive (a scan's or a refresh's cards, a started
+   propose's draft, a read's records and search hits), Clew resolves every user name in them with one read (`holders`
+   in `apps/server/src/modules/people/ports.ts`) to whoever in the reader's organisation holds that name at that
+   moment, active or deactivated, compared in the composed form (NFC) and without regard to case under ICU's root
+   collation. The row then names that person by id. A name that nobody there holds names nobody: the row keeps its text
+   as the source wrote it and links nowhere. A name that two people hold names neither of them. The unique index on
+   user names folds case under ICU on any database, so that can only be a row stored decomposed (NFD) beside a composed
+   one. A read's records are linked through the view's `people`, from user name to id, and the web links a record only
+   through it. The talks' rows are placed only on the reader and the people the reader manages now, by the user name
+   compared in NFC and without regard to case, or by the id of a person without one, and a row that names nobody there
+   is left out ([D96](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md) item 8).
+   With Clew's own talks module, an action point the reader owns about someone they no longer manage is placed with
+   `holders`, or by the id of a person without a user name. What Clew has kept is never moved afterwards.
 3. **A rename and a reuse.** A rename moves nothing in Clew: every card keeps the id. Rows that the source sends under
    the old name afterwards name nobody until the source uses the new name, or name the next holder once the organisation
    gives the old name to someone else. After a reuse, only rows that arrive later reach the new holder. The cards about
@@ -78,11 +80,16 @@ user name, so a rename separated a person from the cards about them and a reuse 
    people port, no write that keeps its person is ever dispatched.
 6. **The user name stays on the wire.** A source is asked about a person, and sent the person of an action, by the user
    name, compared without regard to case and in NFC, as
-   [D96](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md) item 8 keys the talks. A
-   source is never asked about a person by Clew's id. The signed actor a connector receives carries the id, and the user
-   name when the person has one ([D97](D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)). Whether
-   `Actor` should also carry a key that the source knows and that never changes, such as the directory's `externalId`,
-   stays an [open question](../maintainers/open-questions.md#waiting-for-the-product-owner), in its row on `Actor`.
+   [D96](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md) item 8 keys the talks.
+   Outside the talks profile a source is never asked about a person by Clew's id. The talks profile keeps the one
+   exception D96 built (As built, item 8): a person without a user name is keyed on their id, so the rows of
+   `<id>.talks` and `<id>.commitments` may name them by it, and `<id>.commitments` asked about them gets it as
+   `person`. SCIM requires a user name, so such a person is rare: an erased record that a client makes active again is
+   one ([D117](D117-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md)
+   item 3). The signed actor a connector receives carries the id, and the user name when the person has one
+   ([D97](D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md)). Whether `Actor` should also carry a key
+   that the source knows and that never changes, such as the directory's `externalId`, stays an
+   [open question](../maintainers/open-questions.md#waiting-for-the-product-owner), in its row on `Actor`.
 7. **Erasure is by the id.** `bun scripts/subject-erase.ts person <person id> --confirm`,
    `bun scripts/talks-erase.ts --person <person id> --confirm` and
    `bun scripts/competence-erase.ts --person <person id> --confirm` take the person's id, never a user name. An id the
@@ -119,7 +126,8 @@ person, a request's span and its failure line carried it too, often a person's s
   inside a SCIM request.
 - The directory's `externalId` on the wire. Most systems Clew reads do not know it, so each source would need a mapping
   it does not have.
-- Clew's id on the wire. Only Clew knows it, so each source would need a table from Clew's ids to its own.
+- Clew's id on the wire. Only Clew knows it, so each source would need a table from Clew's ids to its own. It stays
+  only as the talks profile's key for a person without a user name, who has no other (item 6).
 
 The chosen rule does not depend on the order in which a provisioner pushes a rename and a reuse: Clew's records never
 move, and a row is placed by whoever holds its name when it arrives. Nobody is better than the wrong person: a row whose
@@ -162,5 +170,5 @@ reaches a span or that line through the address (T2).
 [D97](D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md), and replaces the keying by user name that
 D97's build took for card rows, the subject index, started actions and erasure.
 [D96](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md) item 8 stands: rows are keyed
-on the user name on the wire. The advice in the review's fix for N2, to erase a leaver before the name is reused, is not
-given.
+on the user name on the wire, and on the id for a person without one (D96, As built, item 8). The advice in the
+review's fix for N2, to erase a leaver before the name is reused, is not given.
