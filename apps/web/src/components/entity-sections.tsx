@@ -37,6 +37,7 @@ import { useMarks } from '../marks';
 import { withCard } from '../panel-address';
 import { sourcePageHref } from '../talk-address';
 import { rowFacts } from '../work-items';
+import { DOT } from '../dot';
 import { groupFields, present, rowGroups, wholeRow, type FieldGroup } from '../view-fields';
 import { DeclaredView, FieldCell, FieldValue, fieldText, isBadged } from './view';
 import { WorkList, WorkRow } from './work-row';
@@ -166,12 +167,15 @@ export function OpenRead({
   limit,
   headingLevel = 3,
   tableQuery,
+  about,
 }: {
   source: EntitySource;
   row: Row;
   limit?: number;
   headingLevel?: 2 | 3;
   tableQuery?: string;
+  /** The name of the person or unit whose page the read stands on. */
+  about?: string;
 }) {
   const ref = openOf(source, row);
   const read = useQuery({
@@ -199,6 +203,8 @@ export function OpenRead({
       view={read.data.view}
       output={read.data.output}
       headingLevel={headingLevel}
+      // The section over it names the source (D121 item 6): the read has its own name as a small heading.
+      section={{ title: ref.title, about }}
       {...(limit ? { limit } : {})}
       {...(tableQuery ? { tableQuery } : {})}
     />
@@ -210,10 +216,12 @@ const INLINE_ROWS = 5;
 /**
  * The fuller read under a section (artboard C: the talk's action points under its state), as a plain short list: up to
  * five rows of a table or a list, each the row's title and, at the end of its line, what else the whole row draws in
- * supporting text with its badges (D97), and nothing around them: no header, no count, no footer. A read of any other
- * kind (a detail, a text) is not drawn here; the section's way in leads to it.
+ * supporting text with its badges (D97), under a small heading with the read's own name (D121 item 6) and nothing else
+ * around them: no source, no count, no footer. A read of any other kind (a detail, a text) is not drawn here; the
+ * section's way in leads to it.
  */
 export function InlineRead({ source, row }: { source: EntitySource; row: Row }) {
+  const id = useId();
   const ref = openOf(source, row);
   const read = useQuery({
     ...viewQuery(ref?.capability ?? '', ref ? JSON.stringify(ref.input) : null),
@@ -242,32 +250,37 @@ export function InlineRead({ source, row }: { source: EntitySource; row: Row }) 
   if (!rows.length || !title) return null;
   const rest = wholeRow(view.fields).filter(f => f.key !== view.title);
   return (
-    <List density="compact" edge="flush" aria-label={ref.title}>
-      {rows.map((r, i) => {
-        const shown = rest.filter(f => present(r[f.key]));
-        const badges = shown.filter(f => f.format === 'status' && isBadged(f, r[f.key]));
-        const words = shown.filter(f => !badges.includes(f)).map(f => fieldText(f, r[f.key]));
-        return (
-          // The rest stands at the end of the line where there is room and under the text where there is not.
-          <ListItem
-            key={view.ref && typeof r[view.ref] === 'string' ? (r[view.ref] as string) : i}
-            label={
-              <HStack gap={2} vAlign="center" justify="between" wrap="wrap">
-                <FieldValue field={title} value={r[title.key]} text="ordinary" />
-                {(words.length > 0 || badges.length > 0) && (
-                  <HStack gap={2} vAlign="center" wrap="wrap">
-                    {words.length > 0 && <Text type="supporting">{words.join(' · ')}</Text>}
-                    {badges.map(f => (
-                      <FieldValue key={f.key} field={f} value={r[f.key]} />
-                    ))}
-                  </HStack>
-                )}
-              </HStack>
-            }
-          />
-        );
-      })}
-    </List>
+    <VStack gap={2}>
+      <Heading level={4} accessibilityLevel={3} id={id}>
+        {ref.title}
+      </Heading>
+      <List density="compact" edge="flush" aria-labelledby={id}>
+        {rows.map((r, i) => {
+          const shown = rest.filter(f => present(r[f.key]));
+          const badges = shown.filter(f => f.format === 'status' && isBadged(f, r[f.key]));
+          const words = shown.filter(f => !badges.includes(f)).map(f => fieldText(f, r[f.key]));
+          return (
+            // The rest stands at the end of the line where there is room and under the text where there is not.
+            <ListItem
+              key={view.ref && typeof r[view.ref] === 'string' ? (r[view.ref] as string) : i}
+              label={
+                <HStack gap={2} vAlign="center" justify="between" wrap="wrap">
+                  <FieldValue field={title} value={r[title.key]} text="ordinary" />
+                  {(words.length > 0 || badges.length > 0) && (
+                    <HStack gap={2} vAlign="center" wrap="wrap">
+                      {words.length > 0 && <Text type="supporting">{words.join(DOT)}</Text>}
+                      {badges.map(f => (
+                        <FieldValue key={f.key} field={f} value={r[f.key]} />
+                      ))}
+                    </HStack>
+                  )}
+                </HStack>
+              }
+            />
+          );
+        })}
+      </List>
+    </VStack>
   );
 }
 
@@ -377,14 +390,25 @@ function Pending() {
  * fuller read in full (`view.open`), as the chosen section drew them before the sections stood one under the other. A
  * source that did not answer says so with "Försök igen".
  */
-export function PersonSourceBody({ answer, tableQuery }: { answer: SectionAnswer; tableQuery: string }) {
+export function PersonSourceBody({
+  answer,
+  tableQuery,
+  about,
+}: {
+  answer: SectionAnswer;
+  tableQuery: string;
+  /** The person's name, which a record under their own section does not repeat. */
+  about: string;
+}) {
   const row = rowOf(answer);
   if (answer.query.isPending) return <Pending />;
   if (unanswered(answer) || !row) return <Unanswered answer={answer} />;
   return (
     <VStack gap={5}>
       <SectionRow source={answer.source} row={row} />
-      {openOf(answer.source, row) && <OpenRead source={answer.source} row={row} tableQuery={tableQuery} />}
+      {openOf(answer.source, row) && (
+        <OpenRead source={answer.source} row={row} tableQuery={tableQuery} about={about} />
+      )}
     </VStack>
   );
 }

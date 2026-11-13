@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import {
   ANY_TONE,
   ViewRefSchema,
@@ -48,6 +48,7 @@ import {
   useMediaQuery,
 } from '@clew/ui';
 import { counted, fieldValue, statusWord } from './panel-labels';
+import { DOT } from '../dot';
 import { groupFields, rowGroups, wholeRow, type FieldGroup } from '../view-fields';
 import { useMarks } from '../marks';
 import { useConversation } from './conversation-context';
@@ -63,8 +64,10 @@ import { entityHref, recordSubject } from '../person-address';
  * every placement: the side panel, a tool's page and the compact embed under an answer, and every kind gets the one
  * header (D71, artboards 4 and 7): the area's chip, the source and the count in supporting, the view's own controls or
  * "Visa allt" at the end of the same line. On a tool's page (D112 item 6, board Tool) the title comes first with the
- * system's badge at the end of its line, then the filter bar: the view's own controls and the count of its rows. A
- * connector never sends markup, so a view looks, reads and tabs the same whichever system it comes from.
+ * system's badge at the end of its line, then the filter bar: the view's own controls and the count of its rows. Under
+ * a section of a person's or a unit's page (D121 item 6) the section has already named the source, so the view has a
+ * small heading with its own title in place of the header, and says the source no second time. A connector never sends
+ * markup, so a view looks, reads and tabs the same whichever system it comes from.
  */
 type Row = Record<string, unknown>;
 type RowsView = Extract<PanelViewSpec, { kind: 'table' | 'list' }>;
@@ -94,6 +97,12 @@ export interface DeclaredViewProps {
    * current one, marked on the row and on its name.
    */
   isOpen?: ((view: ViewRef) => boolean) | undefined;
+  /**
+   * The view is the fuller read under a section that already names its source (D121 item 6): `title` is the read's own
+   * name, drawn as a small heading in place of the mark row, and `about` the name of the person or unit the page is
+   * about, which a record under it does not repeat as its heading.
+   */
+  section?: { title: string; about?: string | undefined } | undefined;
 }
 
 const dateOnly = new Intl.DateTimeFormat('sv-SE', { dateStyle: 'long' });
@@ -159,7 +168,7 @@ function MarkRow({ view, count }: { view: PanelViewSpec; count: number | null })
         {/* A view with no area of its own has the system's word on its chip, and it is not said twice. */}
         {[mark.title === mark.source ? '' : mark.source, count === null ? '' : counted(count, noun)]
           .filter(Boolean)
-          .join(' · ')}
+          .join(DOT)}
       </Text>
     </HStack>
   );
@@ -416,12 +425,15 @@ function Rows({
   hrefFor,
   wide,
   isOpen,
+  labelledBy,
 }: {
   view: RowsView;
   rows: Row[];
   hrefFor?: (view: ViewRef) => string;
   wide: boolean;
   isOpen?: ((view: ViewRef) => boolean) | undefined;
+  /** The id of the small heading that names the rows under a section; the rows are then named by it, not by the source. */
+  labelledBy?: string | undefined;
 }) {
   const talk = useConversation();
   const titleField = view.fields.find(f => f.key === view.title)!;
@@ -552,6 +564,7 @@ function Rows({
     return (
       <Card padding={0}>
         <Table<TableRow>
+          {...(labelledBy ? { 'aria-labelledby': labelledBy } : {})}
           data={rows.map((row, i) => ({ id: key(row, i), row }))}
           idKey="id"
           columns={columns}
@@ -576,13 +589,20 @@ function Rows({
   }
   // The list, and a table on a narrow surface: the row is not interactive itself, so its name, its numbers and its `@` are the only stops.
   return (
-    <List hasDividers density="compact" aria-label={view.source}>
+    <List
+      hasDividers
+      density="compact"
+      {...(labelledBy ? { 'aria-labelledby': labelledBy } : { 'aria-label': view.source })}
+    >
       {rows.map((row, i) => {
         const shown = others.filter(f => !empty(row[f.key]));
         // The meta line holds the words, the badges stand at the row's end, the links under the line (D71: the row level).
+        // Under a section a state without a tone stands at the row's end too, as ordinary words, where the states
+        // with a badge are: the rows' states are then read down one edge (D121 item 6).
         const marks = shown.filter(f => f.format === 'status' && isBadged(f, row[f.key])),
+          states = labelledBy ? shown.filter(f => f.format === 'status' && !marks.includes(f)) : [],
           links = shown.filter(linked),
-          worded = shown.filter(f => !linked(f) && !marks.includes(f));
+          worded = shown.filter(f => !linked(f) && !marks.includes(f) && !states.includes(f));
         // A word beside another follows it on the line without a label of its own (D97): "Samtal: Bokat tors 12 nov".
         const words = groups
           .map(g =>
@@ -600,8 +620,13 @@ function Rows({
             isSelected={current(row)}
             label={name(row)}
             endContent={
-              marks.length > 0 || entityLink(row) ? (
+              marks.length > 0 || states.length > 0 || entityLink(row) ? (
                 <HStack gap={2} vAlign="center" wrap="wrap" justify="end">
+                  {states.map(f => (
+                    <Text key={f.key} color="secondary" textWrap="nowrap">
+                      {fieldText(f, row[f.key])}
+                    </Text>
+                  ))}
                   {marks.map(f => (
                     <StatusBadge key={f.key} field={f} value={row[f.key]} />
                   ))}
@@ -614,7 +639,7 @@ function Rows({
             }
             description={
               <VStack gap={1}>
-                {words.length > 0 && <Text type="supporting">{words.join(' · ')}</Text>}
+                {words.length > 0 && <Text type="supporting">{words.join(DOT)}</Text>}
                 {links.length > 0 && (
                   <HStack gap={3} wrap="wrap">
                     {links.map(f => (
@@ -648,7 +673,9 @@ export function DeclaredView({
   onShowAll,
   pageAction,
   isOpen,
+  section,
 }: DeclaredViewProps) {
+  const sectionId = useId();
   const wide = useMediaQuery(tableQuery);
   const { pathname, search } = useLocation();
   // A count that changes while someone types is spoken as one message, the latest (4.1.3); the visible line says the same.
@@ -699,6 +726,11 @@ export function DeclaredView({
         </HStack>
       )}
     </VStack>
+  ) : section ? (
+    // The section over the view has named the source: the view's own name, small, and nothing about whose it is.
+    <Heading level={4} accessibilityLevel={headingLevel} id={sectionId}>
+      {section.title}
+    </Heading>
   ) : (
     <ViewHeader view={view} count={count} end={end} />
   );
@@ -756,17 +788,22 @@ export function DeclaredView({
       <VStack gap={3}>
         {header}
         {/* The record's title is the open card's level (D71: level 2), under the surface's own heading in the outline. */}
-        {!empty(record[view.title]) && (
-          <Heading level={2} accessibilityLevel={headingLevel}>
-            {entity ? (
-              <Link href={entity} hasUnderline>
-                {String(record[view.title])}
-              </Link>
-            ) : (
-              String(record[view.title])
-            )}
-          </Heading>
-        )}
+        {/* Under a section of the page about them, the person's or unit's own name is not said once more. */}
+        {!empty(record[view.title]) &&
+          !(section && (entity === null || String(record[view.title]) === section.about)) && (
+            <Heading
+              level={section ? 5 : 2}
+              accessibilityLevel={section ? (Math.min(headingLevel + 1, 6) as 3 | 4) : headingLevel}
+            >
+              {entity ? (
+                <Link href={entity} hasUnderline>
+                  {String(record[view.title])}
+                </Link>
+              ) : (
+                String(record[view.title])
+              )}
+            </Heading>
+          )}
         {facts.length > 0 && (
           <MetadataList>
             {factLines.map(g => (
@@ -824,14 +861,21 @@ export function DeclaredView({
           title={missed.length > 0 ? 'Inget att visa från de system som svarade' : (view.empty ?? 'Inget att visa')}
         />
       ) : (
-        <Rows view={view} rows={rows} hrefFor={hrefFor} wide={wide && !limit} isOpen={isOpen} />
+        <Rows
+          view={view}
+          rows={rows}
+          hrefFor={hrefFor}
+          wide={wide && !limit}
+          isOpen={isOpen}
+          labelledBy={section ? sectionId : undefined}
+        />
       )}
-      {/* Under an answer a cut list says how much is left out (artboard 4); the rows keep the order the source gave, which is the answer's. */}
-      {rows.length > 0 && (
+      {/* Under an answer a cut list says how much is left out (artboard 4); the rows keep the order the source gave, which is the answer's. Under a section the heading and the section say what the rows are and whose. */}
+      {rows.length > 0 && (!section || all!.length > rows.length) && (
         <Text type="supporting">
           {all!.length > rows.length
             ? `${rows.length} av ${all!.length} rader. Inget av det sparas på Startsidan.`
-            : `${counted(rows.length)} · ${view.source}. Inget av det sparas på Startsidan.`}
+            : `${counted(rows.length)}${DOT}${view.source}. Inget av det sparas på Startsidan.`}
         </Text>
       )}
       {missed.length > 0 && <Text type="supporting">{missed.join(', ')} svarade inte.</Text>}

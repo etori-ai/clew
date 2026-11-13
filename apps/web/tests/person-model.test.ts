@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { employmentLabel, employmentPercent } from '../src/pages/person-model';
+import { employmentLabel, employmentPercent, employmentTitles } from '../src/pages/person-model';
 
 /** The words of a person's profile (D114): the percentage of full time and what an employment is called. */
 const plain = (text: string) => text.replace(/\s/g, ' ');
@@ -22,5 +22,17 @@ describe('a profile', () => {
     expect(employmentLabel({ unitId: 'skola', unitLabel: 'Skolan', title: 'Rektor' })).toBe('Rektor');
     expect(employmentLabel({ unitId: 'skola', unitLabel: 'Skolan' })).toBe('Skolan');
     expect(employmentLabel({ unitId: 'borta', employmentType: 'Tillsvidare' })).toBe('Anställning');
+  });
+  test('the line under the name is the titles of the employments, each once and in the order sent; none when no employment has one (D121 item 6)', () => {
+    expect(
+      employmentTitles([
+        { unitId: 'skola', unitLabel: 'Skolan', title: 'Lärare' },
+        { unitId: 'skola', unitLabel: 'Skolan', title: 'Förstelärare' },
+        { unitId: 'fritids', unitLabel: 'Fritids', title: 'Lärare' },
+        { unitId: 'borta' },
+      ]),
+    ).toBe('Lärare, Förstelärare');
+    expect(employmentTitles([{ unitId: 'skola', unitLabel: 'Skolan' }])).toBeNull();
+    expect(employmentTitles([])).toBeNull();
   });
 });
