@@ -4,7 +4,7 @@ import { logPort } from '../logging';
 import { entityUsecases } from '../modules/entities/usecases';
 import { entityActionUsecases } from '../modules/entities/actions';
 import { threads } from './index';
-import { staff } from './people';
+import { staff, withFollowedUnits } from './people';
 import { subjectCards } from '../threads/usecases/subjects';
 import { subjectStore } from './subjects';
 import { clock } from './ambient';
@@ -30,9 +30,13 @@ export const entities = entityUsecases({
       return registry.aboutActions(actor, kind);
     },
   },
-  read: (persona, capability, input, signal) =>
+  // As the person with the units they follow up (D117), so a source can answer for a unit below them and refuse the rest.
+  read: async (persona, capability, input, signal) =>
     registry
-      .clewFor(actorOf(persona), { signal, ...(persona.delegate ? { delegate: persona.delegate } : {}) })
+      .clewFor(actorOf(await withFollowedUnits(persona)), {
+        signal,
+        ...(persona.delegate ? { delegate: persona.delegate } : {}),
+      })
       .call(capability, input),
   // The reader's cards about an entity (D97 items 5 and 6): the thread store's index from entity to cards.
   cards: async (persona, subject) =>

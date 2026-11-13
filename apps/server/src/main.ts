@@ -12,7 +12,7 @@ import { adminRoutes } from './routes/admin';
 import { headerRoutes } from './routes/header';
 import { appearanceRoutes } from './routes/appearance';
 import { appearance } from './composition/appearance';
-import { competenceWritable, connectorReconcile, talksWritable } from './composition';
+import { competenceWritable, connectorReconcile, dialogueWritable, talksWritable } from './composition';
 import { applyAllRows, syncBundledRows, watchConnectors } from './connectors/reconcile';
 import { connectorRoutes } from './routes/connectors';
 import { protocolRoutes } from './routes/protocol';
@@ -34,6 +34,8 @@ import { entities, entityActions } from './composition/entities';
 import { scim } from './composition/people';
 import { talkRoutes } from './routes/talks';
 import { talks } from './composition/talks';
+import { dialogueRoutes } from './routes/dialogue';
+import { dialogue } from './composition/dialogue';
 import { competenceRoutes } from './routes/competence';
 import { competence, startCompetenceCopy } from './composition/competence';
 
@@ -109,6 +111,8 @@ app.route('/api/staff', staffRoutes);
 app.route('/api/entities', entityRoutes({ entities, actions: entityActions }));
 // The talks module's writes (D96), only while Clew's own module answers the talks profile for the person.
 app.route('/api/talks', talkRoutes({ talks, writable: talksWritable }));
+// The follow-up dialogue (D118), only while Clew's own module is switched on and visible to the person.
+app.route('/api/dialogue', dialogueRoutes({ dialogue, writable: dialogueWritable }));
 // The competence module's catalogue and registrations (D108), only while the built-in module is switched on for the person.
 app.route('/api/competence', competenceRoutes({ competence, writable: competenceWritable }));
 // The shared header (D88): what the person's header connector lists for them.

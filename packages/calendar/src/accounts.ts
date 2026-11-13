@@ -17,7 +17,7 @@ const graphUrl = () => process.env.GRAPH_URL ?? 'http://graph:4010/v1.0';
 export const fakeGraphToken = (email: string) => `fake-graph-token:${email.toLowerCase()}`;
 /**
  * Each account names its adapter (D11): a real directory would carry the same `kind` per person. The development stack
- * is a mixed estate (D69, amended): Hillevi and Hassan keep their CalDAV calendars in Nextcloud, Mikael's calendar is in
+ * is a mixed estate (D69, amended): Hillevi, Hassan and Ingrid keep their CalDAV calendars in Nextcloud, Mikael's calendar is in
  * Microsoft 365 over the local fake of Microsoft Graph, which the stack runs beside the fixture connectors. One adapter
  * for everyone is a run-time choice: CALENDAR_ADAPTER=microsoft365 binds every account to the fake, =caldav to Nextcloud.
  */
@@ -32,7 +32,12 @@ const credential = (user: string, name = user): CalendarCredential => {
     ? { kind: 'microsoft365', url: graphUrl(), account: { email, name }, token: async () => fakeGraphToken(email) }
     : { kind: 'caldav', url: calendarUrl(), user, password: `calendar-${user}-local-only` };
 };
-const names: Record<string, string> = { hillevi: 'Hillevi Berg', hassan: 'Hassan Ali', mikael: 'Mikael Lund' };
+const names: Record<string, string> = {
+  hillevi: 'Hillevi Berg',
+  hassan: 'Hassan Ali',
+  mikael: 'Mikael Lund',
+  ingrid: 'Ingrid Holm',
+};
 const accounts = Object.fromEntries(
   Object.entries(names).map(([user, name]) => [user, { name, credential: credential(user, name) }]),
 );

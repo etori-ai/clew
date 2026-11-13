@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**113 in force**: 98 accepted and 15 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 10 proposed and not decided. 6 no longer in force.
+**116 in force**: 98 accepted and 18 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -12,7 +12,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 
 | Decision | Date | Standing | Read with |
 |---|---|---|---|
-| [D8 · Every action works without the model](D08-every-action-works-without-the-model.md) | 2026-11-03 | accepted | [D71](D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md), [D104](D104-the-model-does-the-work-a-floor-holds-without-it-and-the-assistant-may-act-alone-within-limits.md), [D116](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md) |
+| [D8 · Every action works without the model](D08-every-action-works-without-the-model.md) | 2026-11-03 | accepted | [D71](D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md), [D104](D104-the-model-does-the-work-a-floor-holds-without-it-and-the-assistant-may-act-alone-within-limits.md), [D116](README.md) |
 | [D14 · Clew stands alone; Eneo enhances it through an optional module](D14-clew-stands-alone-eneo-enhances.md) | 2026-11-04 | accepted |  |
 | [D24 · Model providers and models are administered in the product, and the chat can choose between them](D24-model-endpoints-are-administered-in-the-product.md) | 2026-11-04 | accepted |  |
 | [D29 · "Inte nu" is a timed snooze with a visible landing time that breaks on activity](D29-inte-nu-is-a-timed-snooze-that-breaks-on-activity.md) | 2026-11-04 | accepted |  |
@@ -27,6 +27,8 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D101 · The first real integration is Nextcloud's Approval app, and new surface waits until its loop works](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) | 2026-11-10 | provisional |  |
 | [D104 · The model does the work: a floor holds without it, and the assistant may act alone within governed limits](D104-the-model-does-the-work-a-floor-holds-without-it-and-the-assistant-may-act-alone-within-limits.md) | 2026-11-10 | provisional |  |
 | [D115 · The assistant resolves a person the asker names among their own people, and hands the model the work about them, never a source's health rows](D115-the-assistant-resolves-a-person-the-asker-names-and-hands-the-model-the-work-about-them-not-health-rows.md) | 2026-11-12 | provisional |  |
+| [D117 · A manager follows up the units of the managers who report to them, and a source is told those units](D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md) | 2026-11-13 | provisional | [D101](README.md) |
+| [D118 · The follow-up dialogue is an owned domain: assessments and activities per unit, areas and questions as configuration](D118-the-follow-up-dialogue-is-an-owned-domain.md) | 2026-11-13 | provisional | [D101](README.md) |
 
 ## Integrations
 
@@ -51,7 +53,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D79 · Semantic views and versioned document review](D79-semantic-views-and-versioned-document-review.md) | 2026-11-08 | accepted |  |
 | [D80 · Recover rejected rows without replaying confirmed writes](D80-recover-rejected-rows-without-replaying-confirmed-writes.md) | 2026-11-08 | accepted |  |
 | [D89 · An errand connector acts as the person, and the case system decides access](D89-an-errand-connector-acts-as-the-person-and-the-case-system-decides-access.md) | 2026-11-09 | accepted |  |
-| [D97 · A source says what its rows are about, and Clew places them](D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md) | 2026-11-10 | accepted | [D99](README.md), [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md), [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md), [D115](D115-the-assistant-resolves-a-person-the-asker-names-and-hands-the-model-the-work-about-them-not-health-rows.md), [D117](D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md) |
+| [D97 · A source says what its rows are about, and Clew places them](D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md) | 2026-11-10 | accepted | [D99](README.md), [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md), [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md), [D115](D115-the-assistant-resolves-a-person-the-asker-names-and-hands-the-model-the-work-about-them-not-health-rows.md), [D117](README.md) |
 | [D117 · The core decides who a source may be asked about, on every call, and signs the relation](D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md) | 2026-11-12 | provisional |  |
 | [D119 · The installation reads as itself, through a read no person can reach](D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md) | 2026-11-12 | provisional | [D108](D108-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md) |
 
@@ -60,7 +62,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | Decision | Date | Standing | Read with |
 |---|---|---|---|
 | [D5 · OIDC and OAuth 2.1 with JWT access tokens are the only identification path](D05-oidc-and-oauth-only-identification-path.md) | 2026-11-03 | accepted |  |
-| [D44 · Authorized reads and Clew-signed connector authority](D44-authorized-reads-and-clew-signed-connector-authority.md) | 2026-11-05 | accepted | [D117](D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md) |
+| [D44 · Authorized reads and Clew-signed connector authority](D44-authorized-reads-and-clew-signed-connector-authority.md) | 2026-11-05 | accepted | [D117](README.md) |
 | [D62 · Users are core entities, not connected systems](D62-users-are-core-entities-not-connected-systems.md) | 2026-11-06 | accepted |  |
 | [D68 · People are pushed into Clew through standard SCIM, and mapping happens outside Clew](D68-people-are-pushed-into-clew-through-standard-scim.md) | 2026-11-06 | accepted | [D85](README.md), [D99](README.md), [D109](D109-a-provisioner-sends-a-change-when-it-happens-and-reconciles-the-whole-source-daily.md), [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md) |
 | [D75 · Source snapshots retain the authority that produced them](D75-source-snapshots-retain-the-authority-that-produced-them.md) | 2026-11-07 | accepted |  |
@@ -133,18 +135,19 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D70 · One press confirms on the row, and rows with a document are reviewed one at a time](D70-one-press-confirms-on-the-row-and-rows-with-a-document-are-reviewed-one-at-a-time.md) | 2026-11-06 | accepted |  |
 | [D71 · Three type levels on every surface, and an area mark whose colour is the system's](D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md) | 2026-11-06 | accepted |  |
 | [D72 · The day is the page's, and the panel holds only what was opened](D72-the-day-is-the-pages-and-the-panel-holds-only-what-was-opened.md) | 2026-11-07 | accepted |  |
-| [D73 · The review is a page in the shell, with an address](D73-the-review-is-a-page-in-the-shell-with-an-address.md) | 2026-11-07 | accepted | [D116](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md) |
+| [D73 · The review is a page in the shell, with an address](D73-the-review-is-a-page-in-the-shell-with-an-address.md) | 2026-11-07 | accepted | [D116](README.md) |
 | [D74 · One page header for every surface](D74-one-page-header-for-every-surface.md) | 2026-11-07 | accepted |  |
 | [D76 · Loading sections reserve their place and enter together](D76-loading-sections-reserve-their-place-and-enter-together.md) | 2026-11-07 | accepted |  |
 | [D83 · Interface spaces have stable navigation roles](D83-interface-spaces-have-stable-navigation-roles.md) | 2026-11-09 | accepted | [D81](D81-mcp-apps-extend-ai-chat-with-provider-owned-interactions.md), [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) |
-| [D88 · The web app draws the shared header above its rail, a connector gives Clew its content, and Clew has one front end](D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md) | 2026-11-09 | accepted |  |
+| [D88 · The web app draws the shared header above its rail, a connector gives Clew its content, and Clew has one front end](D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md) | 2026-11-09 | accepted | [D116](README.md) |
 | [D90 · Mina ärenden is a section on Hem, after the day's work](D90-mina-arenden-is-a-section-on-hem.md) | 2026-11-09 | accepted |  |
 | [D92 · What goes into the box enters on Astryx's entry motion](D92-what-goes-into-the-box-enters-on-astryxs-entry-motion.md) | 2026-11-09 | accepted |  |
 | [D98 · The installation's theme and logo are saved in Clew by an administrator, the theme as a design tokens file](D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md) | 2026-11-10 | accepted |  |
 | [D100 · The people list is read a page at a time and narrowed on the server](D100-the-people-list-is-read-a-page-at-a-time-and-narrowed-on-the-server.md) | 2026-11-11 | accepted |  |
-| [D111 · Where something opens is decided by what it is, never by the page it was clicked on](D111-where-something-opens-is-decided-by-what-it-is.md) | 2026-11-11 | provisional | [D73](D73-the-review-is-a-page-in-the-shell-with-an-address.md), [D99](README.md), [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md), [D116](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md) |
-| [D112 · The interface is rebuilt on Astryx's templates: a queue, one detail shape, and one panel with the assistant in it](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) | 2026-11-11 | provisional | [D116](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md) |
+| [D111 · Where something opens is decided by what it is, never by the page it was clicked on](D111-where-something-opens-is-decided-by-what-it-is.md) | 2026-11-11 | provisional | [D73](D73-the-review-is-a-page-in-the-shell-with-an-address.md), [D99](README.md), [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md), [D116](README.md) |
+| [D112 · The interface is rebuilt on Astryx's templates: a queue, one detail shape, and one panel with the assistant in it](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) | 2026-11-11 | provisional | [D116](README.md) |
 | [D116 · A panel is a peek at one thing; a list is a page, and every view has an address](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md) | 2026-11-12 | provisional | [D8](D08-every-action-works-without-the-model.md), [D71](D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md) |
+| [D116 · Start and the row under it are Clew's; the intranet keeps the other places](D116-start-and-the-row-under-it-are-clews.md) | 2026-11-13 | provisional |  |
 
 ## Proposed, not decided
 
@@ -159,7 +162,8 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D82 · Sick-leave statistics come through an absence connector that reads only aggregates](D82-sick-leave-statistics-come-through-an-absence-connector-that-reads-only-aggregates.md) | integrations | 2026-11-06 | [D63](D63-hem-is-drawn-as-the-canvas-draws-it.md) |
 | [D87 · One header shared by the portal and the intranet, built with Astryx and embedded as a custom element](D87-one-header-shared-by-the-portal-and-the-intranet.md) | ui | 2026-11-09 | [D88](D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md) |
 | [D99 · An unresolved job step reaches a person and is finished forward; no connector is asked for rollback](D99-an-unresolved-job-step-reaches-a-person-and-is-finished-forward.md) | integrations, product | 2026-11-10 |  |
-| [D108 · Competence is an owned domain: one holding for competences and certificates, typed against a catalogue](D108-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md) | product, identity, integrations | 2026-11-11 | [D101](README.md), [D119](D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md) |
+| [D108 · Competence is an owned domain: one holding for competences and certificates, typed against a catalogue](D108-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md) | product, identity, integrations | 2026-11-11 | [D101](README.md), [D119](README.md) |
+| [D119 · Key figures per unit come through one vendor-neutral profile](D119-key-figures-per-unit-come-through-one-vendor-neutral-profile.md) | integrations | 2026-11-13 | [D101](README.md) |
 
 ## No longer in force
 

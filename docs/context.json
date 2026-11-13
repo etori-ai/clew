@@ -191,7 +191,10 @@
     "D96",
     "D99",
     "D100",
-    "D101"
+    "D101",
+    "D116",
+    "D117",
+    "D119"
   ],
   "decisions": [
     {
@@ -1045,7 +1048,7 @@
       "number": 88,
       "path": "docs/decisions/D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md",
       "title": "D88 · The web app draws the shared header above its rail, a connector gives Clew its content, and Clew has one front end",
-      "status": "accepted, built 2026-11-09 on `main`",
+      "status": "accepted, built 2026-11-09 on `main`; Start and the row under it are Clew's since [D116](D116-start-and-the-row-under-it-are-clews.md) (provisional, 2026-11-13), the connector gives the other places",
       "date": "2026-11-09",
       "area": "ui, product, integrations"
     },
@@ -1338,6 +1341,24 @@
       "area": "ui"
     },
     {
+      "key": "D116-start-and-the-row-under-it-are-clews",
+      "number": 116,
+      "path": "docs/decisions/D116-start-and-the-row-under-it-are-clews.md",
+      "title": "D116 · Start and the row under it are Clew's; the intranet keeps the other places",
+      "status": "provisional (Oliver Borgström, 2026-11-13; built on the branch `start-is-clews`, tested by nothing outside the repository)",
+      "date": "2026-11-13",
+      "area": "ui, integrations"
+    },
+    {
+      "key": "D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them",
+      "number": 117,
+      "path": "docs/decisions/D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md",
+      "title": "D117 · A manager follows up the units of the managers who report to them, and a source is told those units",
+      "status": "provisional (Oliver Borgström, 2026-11-13; built on the branch `dialogue-reach`, tested by nothing outside the repository; item 3's overview is a new page, built as an exception to the freeze on new surface, D101, at Oliver Borgström's choice)",
+      "date": "2026-11-13",
+      "area": "product, integrations"
+    },
+    {
       "key": "D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation",
       "number": 117,
       "path": "docs/decisions/D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md",
@@ -1345,6 +1366,24 @@
       "status": "provisional (built 2026-11-12 on branch `about-relation` against the product owner's rule \"a user can view and edit their own data and nothing else; a manager their employees'\", revised the same day after an independent review; accepted once a connector outside the repository has been called under it and reads the relation)",
       "date": "2026-11-12",
       "area": "integrations, identity"
+    },
+    {
+      "key": "D118-the-follow-up-dialogue-is-an-owned-domain",
+      "number": 118,
+      "path": "docs/decisions/D118-the-follow-up-dialogue-is-an-owned-domain.md",
+      "title": "D118 · The follow-up dialogue is an owned domain: assessments and activities per unit, areas and questions as configuration",
+      "status": "provisional (Oliver Borgström, 2026-11-13; built on the branch `followup-dialogue`, tested by nothing outside the repository; a new owned domain and a new drawer, built as an exception to the freeze on new surface, D101, at Oliver Borgström's choice; checklist questions 6, 11 and 12 are open)",
+      "date": "2026-11-13",
+      "area": "product"
+    },
+    {
+      "key": "D119-key-figures-per-unit-come-through-one-vendor-neutral-profile",
+      "number": 119,
+      "path": "docs/decisions/D119-key-figures-per-unit-come-through-one-vendor-neutral-profile.md",
+      "title": "D119 · Key figures per unit come through one vendor-neutral profile",
+      "status": "proposed (Oliver Borgström asked for it on 2026-11-13; nothing built; the source, the history and the class of the data are open, and building it needs the product owner's word on the freeze, D101)",
+      "date": "2026-11-13",
+      "area": "integrations"
     },
     {
       "key": "D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach",
@@ -1975,8 +2014,32 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D116-start-and-the-row-under-it-are-clews.md",
+      "title": "D116 · Start and the row under it are Clew's; the intranet keeps the other places",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md",
+      "title": "D117 · A manager follows up the units of the managers who report to them, and a source is told those units",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md",
       "title": "D117 · The core decides who a source may be asked about, on every call, and signs the relation",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D118-the-follow-up-dialogue-is-an-owned-domain.md",
+      "title": "D118 · The follow-up dialogue is an owned domain: assessments and activities per unit, areas and questions as configuration",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D119-key-figures-per-unit-come-through-one-vendor-neutral-profile.md",
+      "title": "D119 · Key figures per unit come through one vendor-neutral profile",
       "category": "decision-history",
       "headings": []
     },
@@ -4015,6 +4078,22 @@
       ]
     },
     {
+      "path": "docs/reviews/2026-11-12-absorbing-big-boss-board-into-clew.md",
+      "title": "Plan: absorbing big-boss-board (Dialogstöd) into Clew · 2026-11-12",
+      "category": "review-history",
+      "headings": [
+        "What was asked",
+        "Changed the same day",
+        "Sources read",
+        "What bbb is",
+        "Where each part goes in Clew",
+        "Decisions this plan rests on",
+        "Phases",
+        "Behaviour that changes for bbb's users",
+        "Risks"
+      ]
+    },
+    {
       "path": "docs/reviews/2026-11-12-municipal-employment-and-work-placements.md",
       "title": "Municipal employment, work placements and managerial responsibility",
       "category": "review-history",
@@ -4062,6 +4141,15 @@
         "Review and verification",
         "Outcome",
         "Pre-merge review of the fixes"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-13-dialogstod-design-critique.md",
+      "title": "Design critique: Dialogstöd's overview and the unit page · 2026-11-13",
+      "category": "review-history",
+      "headings": [
+        "Findings",
+        "What changed"
       ]
     },
     {

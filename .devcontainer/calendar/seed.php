@@ -25,13 +25,14 @@ $groups = OC::$server->get(OCP\IGroupManager::class);
 $config = OC::$server->get(OCP\IConfig::class);
 $dav = OC::$server->get(OCA\DAV\CalDAV\CalDavBackend::class);
 if (!$groups->groupExists('calendar-staff')) $groups->createGroup('calendar-staff');
-// Synthetic people. Hillevi (rektor), Hassan (undersköterska) and Mikael (systemförvaltare) are the three personas
-// that can sign in; every persona gets a calendar. The rest are Hillevi's unit: the five named people of Bergsåkers
+// Synthetic people. Hillevi (rektor), Hassan (undersköterska), Mikael (systemförvaltare) and Ingrid (verksamhetschef,
+// D117) are the four personas that can sign in; every persona gets a calendar. The rest are Hillevi's unit: the five named people of Bergsåkers
 // skola in scripts/provisioner/directory.ts, and whoever else the directory puts on the unit, handed over by
 // `calendar.sh seed` in CLEW_CALENDAR_UNIT_PEOPLE as {"<user>": "<name>"}. The planner refuses to plan when one person
 // on the unit has no readable calendar, so the accounts follow the directory.
 $people = [
     'hillevi' => 'Hillevi Berg', 'hassan' => 'Hassan Ali', 'mikael' => 'Mikael Lund',
+    'ingrid' => 'Ingrid Holm',
     'anna' => 'Anna Lindqvist', 'erik' => 'Erik Sandström', 'maria' => 'Maria Källström', 'johan' => 'Johan Byström',
     'karin' => 'Karin Lindqvist',
 ];

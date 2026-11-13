@@ -3,6 +3,8 @@ import { useParams, useSearchParams } from 'react-router';
 import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import type { EntityDetail, EntityList, SessionUser } from '@clew/contracts';
 import {
+  BreadcrumbItem,
+  Breadcrumbs,
   Button,
   EmptyState,
   HStack,
@@ -21,13 +23,15 @@ import { areasQuery, entityDetailQuery, entityListQuery } from '../queries';
 import { keys } from '../query-keys';
 import { errorMessage } from '../query-policy';
 import { usePageTitle } from '../page-title';
-import { NEEDS_YOU, insideClew, originOf, toolOf } from '../person-address';
+import { NEEDS_YOU, insideClew, originOf, toolOf, unitPageHref } from '../person-address';
 import { useRail, type RailCurrent } from '../components/nav';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { ContentSkeleton } from '../components/loading';
 import { usePagePanel, type OwnThing } from '../components/page-panel';
 import { AskClew } from '../components/thing-panel';
 import { TalkOverlay } from '../components/talk-overlay';
+import { DialogueOverlay } from '../components/dialogue-overlay';
+import { DIALOGUE_PARAM } from '../dialogue-address';
 import {
   EntityPage,
   PageSection,
@@ -42,8 +46,10 @@ import {
   SourceWay,
   UnitSourceBody,
   drawnSections,
+  rowOf,
   useSectionAnswers,
 } from '../components/entity-sections';
+import { KeyFigureTiles } from '../components/unit-figures';
 
 /**
  * Whether the reader manages the unit and how many people it has: the people the reader may ask about come in one group
@@ -68,6 +74,32 @@ function useStaffCount(user: SessionUser, id: string) {
 }
 type StaffCount = ReturnType<typeof useStaffCount>;
 
+/**
+ * The unit's place among the units the reader follows up (D117), as Astryx's breadcrumb with a menu on a crumb:
+ * Dialogstöd's overview first, for a unit below the reader the way up to their own unit it reports to, and the current
+ * unit as a menu of every other unit
+ * they follow up, in the groups the list of units gives ("Mina enheter", "Enheter under dig"), each a real link. Nothing
+ * for a reader who follows up one unit alone, or while the list is on its way.
+ */
+function unitTrail(detail: EntityDetail, list: EntityList | undefined): ReactNode {
+  const others = (list?.groups ?? []).flatMap(g => {
+    const items = g.entities
+      .filter(e => e.key !== detail.entity.key)
+      .map(e => ({ id: e.key, label: e.name, href: unitPageHref(e.key) }));
+    return items.length ? [{ type: 'section' as const, id: g.id, title: g.label, items }] : [];
+  });
+  if (!others.length && !detail.above) return null;
+  return (
+    <Breadcrumbs label="Enheter" variant="supporting">
+      <BreadcrumbItem href="/units">Dialogstöd</BreadcrumbItem>
+      {detail.above && <BreadcrumbItem href={unitPageHref(detail.above.key)}>{detail.above.name}</BreadcrumbItem>}
+      <BreadcrumbItem isCurrent {...(others.length ? { menu: others } : {})}>
+        {detail.entity.name}
+      </BreadcrumbItem>
+    </Breadcrumbs>
+  );
+}
+
 /** The unit's head count as Clew's own list of the reader's people gives it, while it is on its way, and when it failed. */
 function StaffValue({ count, read }: { count: number | undefined; read: UseQueryResult<EntityList, Error> }) {
   if (read.isPending) return <Skeleton height={20} width={120} />;
@@ -90,11 +122,12 @@ function StaffValue({ count, read }: { count: number | undefined; read: UseQuery
 
 /**
  * The details rail of a unit's page (D112 item 5): "Detaljer", what the directory (Katalogen) says of the unit that the
- * page has: that it is a unit, the reader's role on it, and for a unit the reader manages how many people it has, with
- * the way to Personal as a link. The directory's tree (the unit above, the units below, their managers) does not reach
- * this page, so none of it is drawn.
+ * page has: that it is a unit, the reader's role on it, for a unit the reader manages how many people it has, with the
+ * way to Personal as a link, and the units under it whose managers report to the reader (D117), each a link to its
+ * page with this one as the way back. A unit below the reader says so as the role. The unit above is not drawn.
  */
-function UnitDetails({ staff }: { staff: StaffCount }) {
+function UnitDetails({ staff, detail, here }: { staff: StaffCount; detail: EntityDetail; here: string }) {
+  const below = detail.below ?? [];
   return (
     <RailSection title="Detaljer" caption="Katalogen">
       <VStack gap={4}>
@@ -102,9 +135,26 @@ function UnitDetails({ staff }: { staff: StaffCount }) {
           <MetadataListItem label="Typ">
             <Text>Enhet</Text>
           </MetadataListItem>
-          {staff.manages !== null && (
+          {detail.relation === 'below' ? (
             <MetadataListItem label="Din roll">
-              <Text>{staff.manages ? 'Chef' : 'Medarbetare'}</Text>
+              <Text>Enhetens chef rapporterar till dig</Text>
+            </MetadataListItem>
+          ) : (
+            staff.manages !== null && (
+              <MetadataListItem label="Din roll">
+                <Text>{staff.manages ? 'Chef' : 'Medarbetare'}</Text>
+              </MetadataListItem>
+            )
+          )}
+          {below.length > 0 && (
+            <MetadataListItem label="Enheter under">
+              <VStack gap={1}>
+                {below.map(unit => (
+                  <Link key={unit.key} href={unitPageHref(unit.key, { from: here })}>
+                    {unit.name}
+                  </Link>
+                ))}
+              </VStack>
             </MetadataListItem>
           )}
           {staff.shown && (
@@ -155,6 +205,8 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
   // Every source's answer for the unit, each its own read, a silent one said aloud once, as on the opened person.
   const answers = useSectionAnswers(detail?.entity.key, detail?.sections ?? [], 'unit');
   const staff = useStaffCount(user, id);
+  // The units the reader follows up, for the trail's menu (D117); a manager's only, since an employee has one.
+  const units = useQuery({ ...entityListQuery('unit'), enabled: user.role === 'manager' });
   const menu = useQuery(areasQuery).data?.menu;
   const origin = originOf(from, menu);
   const tool = toolOf(from);
@@ -184,7 +236,7 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
       }
     : null;
   const panel = usePagePanel({ overlayOnly: short, onChange: cardChanged, pageThing });
-  const hold = panel.ref !== null || search.has('talk') || search.has('review');
+  const hold = panel.ref !== null || search.has('talk') || search.has('review') || search.has(DIALOGUE_PARAM);
   const headingRef = useAddressedSection(section, id, hold);
 
   let body: ReactNode;
@@ -226,7 +278,11 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
     );
   else {
     const { name } = detail.entity;
+    // The unit's key figures first (D117), each source's value large with its state, so what a follow-up is about is
+    // what the page opens on; the sections under them hold the details.
+    const tiles = <KeyFigureTiles answers={answers} />;
     const sections: PageSectionEntry[] = [
+      ...(answers.some(a => !!rowOf(a)) ? [{ key: 'key-figures', node: tiles }] : []),
       ...(detail.cards.length > 0
         ? [
             {
@@ -255,7 +311,9 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
     ];
     body = (
       <EntityPage
-        back={origin}
+        // The trail leads back to Dialogstöd itself, so a unit opened from it needs no way back of its own.
+        back={from?.split('?')[0] === '/units' ? null : origin}
+        crumbs={unitTrail(detail, units.data)}
         title={name}
         subtitle="Enhet"
         actions={
@@ -277,7 +335,7 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
         sections={sections}
         // A section on its way is drawn, so none at all means every source answered without a row and there is no work item.
         empty={<EmptyState isCompact headingLevel={2} title={`Inget mer att visa om ${name}`} />}
-        details={<UnitDetails staff={staff} />}
+        details={<UnitDetails staff={staff} detail={detail} here={`/units/${encodeURIComponent(detail.entity.key)}`} />}
         label={name}
         panel={panel}
       />
@@ -289,6 +347,10 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
       {panel.overlay}
       {/* A source's way in that is a talk lies over the page and its panel, as on a person's page (D111 rule 5). */}
       {user.role === 'manager' && <TalkOverlay back={detail ? `Tillbaka till ${detail.entity.name}` : 'Tillbaka'} />}
+      {/* The unit's follow-up dialogue (D118) lies over the page the same way; its way in is the Dialog section's. */}
+      {user.role === 'manager' && (
+        <DialogueOverlay unitId={id} back={detail ? `Tillbaka till ${detail.entity.name}` : 'Tillbaka'} />
+      )}
     </Shell>
   );
 }

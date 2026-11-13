@@ -115,6 +115,7 @@ const RELATION: Record<Relation, string> = {
   colleague: 'andra i organisationen',
   manages: 'enheter den inloggade är chef för',
   member: 'enheter den inloggade är placerad på',
+  below: 'enheter vars chef rapporterar till den inloggade',
 };
 /** The relations a person-naming capability admits, in the order of the closed list. */
 const relationWords = (admits: readonly Relation[]) => admits.map(r => RELATION[r]).join(' och ');

@@ -255,6 +255,27 @@ services:
         condition: service_started
     ports:
       - "127.0.0.1:4046:4046"
+  # The Qlik connector (D82) on its made-up statistics, in open mode (no QLIK_UNIT_MAP): sick leave, economy and HME for
+  # every unit a manager has, as the key figures of the follow-up dialogue (docs/reviews/2026-11-12-absorbing-big-boss-
+  # board-into-clew.md) until their source is settled. The thresholds are big-boss-board's: sick leave good to 6.0 %, warn
+  # to 7.5 %, alert above (rates have one decimal, so "above 6.0" is "at or above 6.1"); the economy alert below budget
+  # in balance; HME ok from 75, warn from 70. A real connector, not a fixture of the stack: it runs here so its reads and
+  # its figures can be seen beside the others. Stateless.
+  qlik:
+    <<: *fixture
+    working_dir: /workspace/connectors/qlik
+    volumes:
+      - ${CLEW_HOST_WORKSPACE:-..}:/workspace:ro
+    environment:
+      <<: *fixture-environment
+      QLIK_ADAPTER: fixture
+      QLIK_SICK_LEAVE_WARN_ABOVE: "6.1"
+      QLIK_SICK_LEAVE_ALERT_ABOVE: "7.6"
+      QLIK_ECONOMY_ALERT_BELOW: "0"
+      QLIK_HME_OK_FROM: "75"
+      QLIK_HME_WARN_FROM: "70"
+    ports:
+      - "127.0.0.1:4048:4048"
   # The intranet (D88): the connector that gives Clew its shared header, standing in for the content system an
   # installation lists its sections from. No state of its own. 4049: 4048 is the Qlik connector's.
   intranet:
@@ -264,16 +285,6 @@ services:
       - ${CLEW_HOST_WORKSPACE:-..}:/workspace:ro
     ports:
       - "127.0.0.1:4049:4049"
-  # The Qlik connector (D82) in its fixture mode: made-up sick-leave aggregates per unit and month, no Qlik behind it
-  # (QLIK_ADAPTER defaults to "fixture"). A real connector, not a fixture of the stack: it runs here so its reads and
-  # its figure can be seen beside the others. No state of its own.
-  qlik:
-    <<: *fixture
-    working_dir: /workspace/connectors/qlik
-    volumes:
-      - ${CLEW_HOST_WORKSPACE:-..}:/workspace:ro
-    ports:
-      - "127.0.0.1:4048:4048"
   # The appraisal system (D96 items 8 and 9): a generic third-party system answering the talks profile, so an
   # administrator can switch from Clew's built-in module to it. Stateless; registered as a draft, not enabled.
   # 4051: 4050 is the SupportManagement connector's.

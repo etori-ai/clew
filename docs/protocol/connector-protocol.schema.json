@@ -1924,9 +1924,13 @@
                         {
                           "type": "string",
                           "const": "member"
+                        },
+                        {
+                          "type": "string",
+                          "const": "below"
                         }
                       ],
-                      "description": "`manages`: the caller holds a manager's role on the unit. `member`: the caller is placed on it otherwise."
+                      "description": "`manages`: the caller holds a manager's role on the unit. `member`: the caller is placed on it otherwise. `below`: the unit is one the caller follows up from above (D117): the nearest unit below one they manage that has a manager, led by a manager who reports to them (D99's reporting line, one level down, never the whole branch)."
                     },
                     "minItems": 1,
                     "uniqueItems": true,
@@ -2359,6 +2363,29 @@
           "minLength": 1,
           "maxLength": 512,
           "description": "The person's provisioned directory user name (SCIM `userName`, D68): the key your system knows them by, and the key a read about a person is asked with (D97). Absent for a person provisioned without one."
+        },
+        "units": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "unitId",
+              "unitLabel"
+            ],
+            "properties": {
+              "unitId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "unitLabel": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "maxItems": 200,
+          "description": "The units the person follows up (D117): those they manage and those of the managers who report to them (D99). Present on the calls where Clew knows them (a read about units, a view opened on a page); a source may answer for these units and must refuse every other. Absent means `unitId` alone."
         }
       },
       "additionalProperties": false,
@@ -2415,14 +2442,18 @@
                     {
                       "type": "string",
                       "const": "member"
+                    },
+                    {
+                      "type": "string",
+                      "const": "below"
                     }
                   ],
-                  "description": "`manages`: the caller holds a manager's role on the unit. `member`: the caller is placed on it otherwise."
+                  "description": "`manages`: the caller holds a manager's role on the unit. `member`: the caller is placed on it otherwise. `below`: the unit is one the caller follows up from above (D117): the nearest unit below one they manage that has a manager, led by a manager who reports to them (D99's reporting line, one level down, never the whole branch)."
                 }
               ]
             }
           },
-          "description": "Every key the input carries (each of `keys`, or the value of the property that takes one key), exactly as the input spells it, mapped to how the actor stands to it: a person's `self`, `managed` or `colleague`, a unit's `manages` or `member`. Clew sends no key the capability does not admit, so a key the input carries and this map does not name is one Clew did not vouch for: answer it as no row."
+          "description": "Every key the input carries (each of `keys`, or the value of the property that takes one key), exactly as the input spells it, mapped to how the actor stands to it: a person's `self`, `managed` or `colleague`, a unit's `manages`, `member` or `below`. Clew sends no key the capability does not admit, so a key the input carries and this map does not name is one Clew did not vouch for: answer it as no row."
         }
       },
       "additionalProperties": false,
@@ -2476,6 +2507,29 @@
               "minLength": 1,
               "maxLength": 512,
               "description": "The person's provisioned directory user name (SCIM `userName`, D68): the key your system knows them by, and the key a read about a person is asked with (D97). Absent for a person provisioned without one."
+            },
+            "units": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "unitId",
+                  "unitLabel"
+                ],
+                "properties": {
+                  "unitId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "unitLabel": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "maxItems": 200,
+              "description": "The units the person follows up (D117): those they manage and those of the managers who report to them (D99). Present on the calls where Clew knows them (a read about units, a view opened on a page); a source may answer for these units and must refuse every other. Absent means `unitId` alone."
             }
           },
           "additionalProperties": false,
@@ -2533,14 +2587,18 @@
                         {
                           "type": "string",
                           "const": "member"
+                        },
+                        {
+                          "type": "string",
+                          "const": "below"
                         }
                       ],
-                      "description": "`manages`: the caller holds a manager's role on the unit. `member`: the caller is placed on it otherwise."
+                      "description": "`manages`: the caller holds a manager's role on the unit. `member`: the caller is placed on it otherwise. `below`: the unit is one the caller follows up from above (D117): the nearest unit below one they manage that has a manager, led by a manager who reports to them (D99's reporting line, one level down, never the whole branch)."
                     }
                   ]
                 }
               },
-              "description": "Every key the input carries (each of `keys`, or the value of the property that takes one key), exactly as the input spells it, mapped to how the actor stands to it: a person's `self`, `managed` or `colleague`, a unit's `manages` or `member`. Clew sends no key the capability does not admit, so a key the input carries and this map does not name is one Clew did not vouch for: answer it as no row."
+              "description": "Every key the input carries (each of `keys`, or the value of the property that takes one key), exactly as the input spells it, mapped to how the actor stands to it: a person's `self`, `managed` or `colleague`, a unit's `manages`, `member` or `below`. Clew sends no key the capability does not admit, so a key the input carries and this map does not name is one Clew did not vouch for: answer it as no row."
             }
           },
           "additionalProperties": false,
@@ -3127,6 +3185,29 @@
               "minLength": 1,
               "maxLength": 512,
               "description": "The person's provisioned directory user name (SCIM `userName`, D68): the key your system knows them by, and the key a read about a person is asked with (D97). Absent for a person provisioned without one."
+            },
+            "units": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "unitId",
+                  "unitLabel"
+                ],
+                "properties": {
+                  "unitId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "unitLabel": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "maxItems": 200,
+              "description": "The units the person follows up (D117): those they manage and those of the managers who report to them (D99). Present on the calls where Clew knows them (a read about units, a view opened on a page); a source may answer for these units and must refuse every other. Absent means `unitId` alone."
             }
           },
           "additionalProperties": false,
@@ -3228,14 +3309,18 @@
                         {
                           "type": "string",
                           "const": "member"
+                        },
+                        {
+                          "type": "string",
+                          "const": "below"
                         }
                       ],
-                      "description": "`manages`: the caller holds a manager's role on the unit. `member`: the caller is placed on it otherwise."
+                      "description": "`manages`: the caller holds a manager's role on the unit. `member`: the caller is placed on it otherwise. `below`: the unit is one the caller follows up from above (D117): the nearest unit below one they manage that has a manager, led by a manager who reports to them (D99's reporting line, one level down, never the whole branch)."
                     }
                   ]
                 }
               },
-              "description": "Every key the input carries (each of `keys`, or the value of the property that takes one key), exactly as the input spells it, mapped to how the actor stands to it: a person's `self`, `managed` or `colleague`, a unit's `manages` or `member`. Clew sends no key the capability does not admit, so a key the input carries and this map does not name is one Clew did not vouch for: answer it as no row."
+              "description": "Every key the input carries (each of `keys`, or the value of the property that takes one key), exactly as the input spells it, mapped to how the actor stands to it: a person's `self`, `managed` or `colleague`, a unit's `manages`, `member` or `below`. Clew sends no key the capability does not admit, so a key the input carries and this map does not name is one Clew did not vouch for: answer it as no row."
             }
           },
           "additionalProperties": false,
@@ -3686,6 +3771,29 @@
               "minLength": 1,
               "maxLength": 512,
               "description": "The person's provisioned directory user name (SCIM `userName`, D68): the key your system knows them by, and the key a read about a person is asked with (D97). Absent for a person provisioned without one."
+            },
+            "units": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "unitId",
+                  "unitLabel"
+                ],
+                "properties": {
+                  "unitId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "unitLabel": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "maxItems": 200,
+              "description": "The units the person follows up (D117): those they manage and those of the managers who report to them (D99). Present on the calls where Clew knows them (a read about units, a view opened on a page); a source may answer for these units and must refuse every other. Absent means `unitId` alone."
             }
           },
           "additionalProperties": false,
@@ -4343,6 +4451,29 @@
               "minLength": 1,
               "maxLength": 512,
               "description": "The person's provisioned directory user name (SCIM `userName`, D68): the key your system knows them by, and the key a read about a person is asked with (D97). Absent for a person provisioned without one."
+            },
+            "units": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "unitId",
+                  "unitLabel"
+                ],
+                "properties": {
+                  "unitId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "unitLabel": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "maxItems": 200,
+              "description": "The units the person follows up (D117): those they manage and those of the managers who report to them (D99). Present on the calls where Clew knows them (a read about units, a view opened on a page); a source may answer for these units and must refuse every other. Absent means `unitId` alone."
             }
           },
           "additionalProperties": false,

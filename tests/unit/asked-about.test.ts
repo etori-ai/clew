@@ -458,6 +458,27 @@ describe('the rule, resolved from the directory', () => {
     const ghost: Actor = { id: 'ghost', name: 'x', unitId: 'unit-skola', unitLabel: 'x', role: 'manager' };
     expect(await people.relations.relate(ghost, 'person', ['anna'], ['self', 'managed', 'colleague'])).toEqual([]);
   });
+  test('a unit led by a manager who reports to the caller is below: one level down, never upward, and only where admitted', async () => {
+    const { people } = world();
+    // Olle leads Fritids directly below the school Hillevi leads, so he reports to her (D99) and Fritids is below her.
+    const hillevi = actorOf(people.persona('hillevi'));
+    expect(
+      await people.relations.relate(
+        hillevi,
+        'unit',
+        ['unit-skola', 'unit-fritids', 'unit-top', 'unit-ekonomi'],
+        ['manages', 'member', 'below'],
+      ),
+    ).toEqual([
+      { asked: 'unit-skola', key: 'unit-skola', relation: 'manages' },
+      { asked: 'unit-fritids', key: 'unit-fritids', relation: 'below' },
+    ]);
+    // A read that does not admit `below` (the default admits `manages` alone) is not asked about it.
+    expect(await people.relations.relate(hillevi, 'unit', ['unit-fritids'], ['manages'])).toEqual([]);
+    // Nothing upward: the school is not below the manager of Fritids.
+    const olle = actorOf(people.persona('olle'));
+    expect(await people.relations.relate(olle, 'unit', ['unit-skola'], ['manages', 'member', 'below'])).toEqual([]);
+  });
   test('a person without a user name is named by id only where a core capability takes ids, and only as a report', async () => {
     const { people } = world();
     const hillevi = actorOf(people.persona('hillevi'));

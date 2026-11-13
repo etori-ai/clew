@@ -18,7 +18,9 @@ import {
   isKey,
   lensesOf,
   listedKeys,
+  belowUnit,
   memberUnit,
+  unitsBelow,
   personKey,
   personRef,
   personRelation,
@@ -32,7 +34,7 @@ import {
 import { DEFAULT_BUDGET, type EntityDeps } from './model';
 
 type Answer = ({ status: 'ok' } & Checked) | { status: 'unavailable' | 'timeout' };
-type Found = Pick<EntityDetail, 'entity' | 'relation' | 'profile'>;
+type Found = Pick<EntityDetail, 'entity' | 'relation' | 'profile' | 'below' | 'above'>;
 
 /**
  * Entities (D97): a person or a unit, and what the sources that declare `about` say of it, placed by Clew. Who may be
@@ -122,7 +124,8 @@ export function entityUsecases(deps: EntityDeps) {
   /**
    * The entity behind a key, and how the reader stands to it; undefined outside the rule. A person: the reader
    * (`self`), someone on a unit the reader manages (`managed`) or another active person of the directory (`colleague`).
-   * A unit: one the reader manages (`manages`) or is placed on otherwise (`member`).
+   * A unit: one the reader manages (`manages`), is placed on otherwise (`member`), or one whose manager reports to the
+   * reader (`below`, D117); with the units under it that the reader follows up, and for a unit below the way up.
    */
   async function resolve(
     persona: AuthenticatedContext,
@@ -133,9 +136,22 @@ export function entityUsecases(deps: EntityDeps) {
     if (!isKey(key)) return undefined;
     if (kind === 'unit') {
       const reach = await deps.directory.reach(persona);
-      const unit = memberUnit(reach, key);
-      const relation = unitRelation(reach, key);
-      return unit && relation && { entity: { ...unitRef(unit) }, relation };
+      const member = memberUnit(reach, key),
+        below = member ? undefined : belowUnit(reach, key),
+        unit = member ?? below,
+        relation = unitRelation(reach, key);
+      if (!unit || !relation) return undefined;
+      const under = unitsBelow(reach)
+        .filter(u => u.under === unit.unitId)
+        .map(u => ({ key: u.unitId, name: u.unitLabel }));
+      // The way up from a unit below: the reader's own unit its manager reports to.
+      const up = below && memberUnit(reach, below.under);
+      return {
+        entity: { ...unitRef(unit) },
+        relation,
+        ...(under.length ? { below: under } : {}),
+        ...(up ? { above: { key: up.unitId, name: up.unitLabel } } : {}),
+      };
     }
     const person = await deps.directory.person(persona, key, includeProfile);
     if (!person || !personKey(person) || !person.userName) return undefined;

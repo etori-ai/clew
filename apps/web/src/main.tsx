@@ -32,6 +32,7 @@ import { AdminOrganisationUnitPage } from './pages/admin/organisation-unit';
 import { StaffPage } from './pages/staff';
 import { PersonPage } from './pages/person';
 import { UnitPage } from './pages/unit';
+import { UnitsPage } from './pages/units';
 import { AdminModelPage } from './pages/admin/model';
 import { AdminProviderPage } from './pages/admin/provider';
 import { NotAdmin } from './pages/admin/shell';
@@ -244,6 +245,12 @@ function App() {
       <Route
         path="/units/:id"
         element={<Protected>{shell => <UnitPage user={shell.user} admin={shell.admin} />}</Protected>}
+      />
+      {/* Dialogstöd (D116, D117): the units the reader follows up side by side, at the address every unit page shares, so
+        the entry under Start stays marked from the overview through each unit. */}
+      <Route
+        path="/units"
+        element={<Protected>{shell => <UnitsPage user={shell.user} admin={shell.admin} />}</Protected>}
       />
       <Route
         path="/admin"

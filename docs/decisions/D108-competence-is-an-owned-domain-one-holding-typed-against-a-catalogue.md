@@ -314,7 +314,7 @@ for is still not built (the Moodle stand-in answers the profile in the unit suit
 `competence_holding` and an administrator maps the source's types to the catalogue. Built beside the installation's
 read and joined to it the same day; run end to end in process (below), not yet by the running server.
 
-*Server.* Migration `0054_competence_sources`: the copy's columns on `competence_holding` (`connector_id`,
+*Server.* Migration `0055_competence_sources`: the copy's columns on `competence_holding` (`connector_id`,
 `source_id`, `source_type`, `source_label`, `read_at`; `type_id` may be empty only on a copied row, a copied row has
 evidence `system` and no `registered_by`, checked by the table), unique on the connector and the source's row id;
 `competence_source_mapping` (connector, organisation, source type, catalogue type, who and when; its primary key named

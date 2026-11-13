@@ -96,7 +96,11 @@ export type ConnectorKind = 'core' | 'passthrough' | 'derived';
  * The caller as capabilities see it: identity and scope, never tokens. `userName` is the person's provisioned directory
  * user name, signed into a connector's actor (D44) as the key other systems know them by (D97); absent without one.
  */
-export type Actor = Pick<SessionUser, 'id' | 'name' | 'unitId' | 'unitLabel' | 'role'> & { userName?: string };
+export type Actor = Pick<SessionUser, 'id' | 'name' | 'unitId' | 'unitLabel' | 'role'> & {
+  userName?: string;
+  /** The units the person follows up (D117), when the call has them. */
+  units?: Array<{ unitId: string; unitLabel: string }>;
+};
 /** The actor a capability sees, cut from an authenticated context: identity and scope, never tokens. */
 export const actorOf = (persona: Actor): Actor => ({
   id: persona.id,
@@ -105,6 +109,7 @@ export const actorOf = (persona: Actor): Actor => ({
   unitLabel: persona.unitLabel,
   role: persona.role,
   ...(persona.userName ? { userName: persona.userName } : {}),
+  ...(persona.units?.length ? { units: persona.units.map(u => ({ unitId: u.unitId, unitLabel: u.unitLabel })) } : {}),
 });
 /**
  * Who may call a capability. Declarative so a remote manifest can carry it: no `roles` means every signed-in
@@ -274,6 +279,8 @@ export const isCommitmentSource = (c: Pick<Capability, 'name' | 'kind'>, connect
   c.kind === 'read' && c.name === connectorId + '.commitments' && connectorId !== SEARCH_CONNECTOR;
 /** The built-in connector of the competence domain (D108 item 13): Clew's own module, switched on by an administrator. */
 export const COMPETENCE_CONNECTOR = 'competence';
+/** The built-in connector of the follow-up dialogue (D118): Clew's own module, a manager's dialogue per unit. */
+export const DIALOGUE_CONNECTOR = 'dialogue';
 const TALK_COMPOSITE = SEARCH_CONNECTOR + '.talks';
 const COMMITMENT_COMPOSITE = SEARCH_CONNECTOR + '.commitments';
 /**
