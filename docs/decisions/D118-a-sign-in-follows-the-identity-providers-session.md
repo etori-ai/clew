@@ -28,6 +28,8 @@
      the person gets no token until a refresh succeeds, and the request is answered 503 with
      "Tjänsten går inte att nå just nu.". An approved write that meets this is settled with the reason
      `source-unavailable`, and the person checks it again from its card.
+     This gate also applies before a cached exchanged token is returned: every delegation request reads the live
+     session and checks refresh availability, even when that audience's exchanged token has not expired.
    - After such a failure the session waits 30 seconds before it asks again. Each server process logs the failure at
      most once a minute, as the warning "token refresh failed; sessions are kept and delegation waits", scope `auth`,
      with the error's code and the HTTP status.
