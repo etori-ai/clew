@@ -141,8 +141,8 @@ export function SystemLine({
   // Clew's own system is named alone ("Kalendern"): its area is the house's, not a guest's place.
   const lead = answered
     ? `${mark.source} svarade ${answered}`
-    : [mark.source, mark.area && mark.ordinal !== null ? mark.title : ''].filter(Boolean).join(' · ');
-  return <AreaLine icon={mark.area ? mark.icon : undefined}>{[lead, words].filter(Boolean).join(' · ')}</AreaLine>;
+    : [mark.source, mark.area && mark.ordinal !== null ? mark.title : ''].filter(Boolean).join('\u00a0· ');
+  return <AreaLine icon={mark.area ? mark.icon : undefined}>{[lead, words].filter(Boolean).join('\u00a0· ')}</AreaLine>;
 }
 /** A reminder the person set that could not be scheduled, said in a sentence under the item's status. */
 export function TimerNote({ thread }: { thread: Thread }) {
@@ -783,7 +783,7 @@ export function ActionRow({
         ))}
         {time && <TimeSubMenu label="Inte nu" rows={time.rows} own={time.own} />}
         {([...tucked, ...overflow].length > 0 || time) && <DropdownMenuDivider />}
-        <DropdownMenuItem label="Avfärda · inte aktuellt" onClick={() => void dismiss()} />
+        <DropdownMenuItem label={'Avfärda\u00a0· inte aktuellt'} onClick={() => void dismiss()} />
       </DropdownMenu>
       {snoozeRows.dialog}
       {remindRows.dialog}

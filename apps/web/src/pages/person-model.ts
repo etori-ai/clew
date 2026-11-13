@@ -16,3 +16,13 @@ export const employmentPercent = (value: number) => percent.format(value);
 
 /** What an employment is called in its list: its title, else its unit, else, for a unit since removed, the word alone. */
 export const employmentLabel = (employment: Employment) => employment.title ?? employment.unitLabel ?? 'Anställning';
+
+/**
+ * The titles of a person's employments as one line under their name (D124 item 6): each title once, in the order the
+ * directory sent them ("Lärare, Förstelärare"). Null when no employment has a title; the page then falls back on the
+ * directory's own title for the person.
+ */
+export const employmentTitles = (employments: readonly Employment[]): string | null => {
+  const titles = [...new Set(employments.map(employment => employment.title).filter((t): t is string => !!t))];
+  return titles.length ? titles.join(', ') : null;
+};

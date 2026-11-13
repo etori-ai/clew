@@ -1150,7 +1150,7 @@
       "number": 99,
       "path": "docs/decisions/D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md",
       "title": "D99 · Units form a tree pushed over SCIM, and a manager works with their direct reports",
-      "status": "accepted (product owner, 2026-11-10: units form a tree, the tree is pushed as resources of its own, a manager works with their direct reports and not with everyone below), built 2026-11-10 (the parent on the unit group, the SCIM extension and its refusals, the reporting line in Personal, talks and the calendar's team, the development directory as a tree, the check, Administration › Organisation; see \"As built\"); the transport in item 2 is proposed until a real provisioner has used it, the branch of item 5 has no user yet, and the items under \"Open\" are not decided; the order of a push and whose a unit is are D101 (2026-11-11); the order inside the unit overlay of item 6 and where its close returns the focus are amended by [D124](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) (2026-11-13, provisional, not built)",
+      "status": "accepted (product owner, 2026-11-10: units form a tree, the tree is pushed as resources of its own, a manager works with their direct reports and not with everyone below), built 2026-11-10 (the parent on the unit group, the SCIM extension and its refusals, the reporting line in Personal, talks and the calendar's team, the development directory as a tree, the check, Administration › Organisation; see \"As built\"); the transport in item 2 is proposed until a real provisioner has used it, the branch of item 5 has no user yet, and the items under \"Open\" are not decided; the order of a push and whose a unit is are D101 (2026-11-11); the order inside the unit overlay of item 6 and where its close returns the focus are amended by [D124](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) (2026-11-13, provisional, built 2026-11-13: see the last paragraph of \"As built\")",
       "date": "2026-11-10",
       "area": "identity, product"
     },
@@ -1384,7 +1384,7 @@
       "number": 124,
       "path": "docs/decisions/D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md",
       "title": "D124 · A unit is walked one step up and one step down, and Organisation, Användare and the person card follow their canvas",
-      "status": "provisional (accepted when an administrator has found a unit's reporting line in the drawer of a directory with several hundred units, and the walk has passed a manual screen-reader pass); built: item 9, and of item 10 Personal's sizes and the hidden avatars in the unit drawer and on Personal, and of item 8 the work row and Användare's narrow list; nothing else is",
+      "status": "provisional (accepted when an administrator has found a unit's reporting line in the drawer of a directory with several hundred units, and the walk has passed a manual screen-reader pass); built 2026-11-13, see \"As built\"",
       "date": "2026-11-13",
       "area": "ui"
     }

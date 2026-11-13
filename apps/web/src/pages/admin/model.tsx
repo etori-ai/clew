@@ -41,6 +41,7 @@ import { AudienceEditor } from './audience';
 import { actionLabel, actorLabel, audienceLabel, modelStatusOf, providerHealthLabel } from './labels';
 import { AdminShell } from './shell';
 import { PageHeader } from '../../components/page-header';
+import { DOT } from '../../dot';
 
 /** One model (D24): what it is and how it answers, who can pick it in the box, and its history. */
 type TabId = 'oversikt' | 'publik' | 'historik';
@@ -243,7 +244,9 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
                   </MetadataListItem>
                   <MetadataListItem label="Vem kan välja den">{audienceLabel(m.audience)}</MetadataListItem>
                   <MetadataListItem label="Leverantörens hälsa">
-                    {providerHealthLabel[m.health.status]} · <Timestamp value={m.health.at} format="auto" />
+                    {providerHealthLabel[m.health.status]}
+                    {DOT}
+                    <Timestamp value={m.health.at} format="auto" />
                   </MetadataListItem>
                   <MetadataListItem label="Resonemang">
                     {m.reasoning === 'none'
@@ -251,7 +254,9 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
                       : 'Leverantörens standard'}
                   </MetadataListItem>
                   <MetadataListItem label="Tillagd">
-                    {actorLabel(m.createdBy)} · <Timestamp value={m.createdAt} format="date_time" />
+                    {actorLabel(m.createdBy)}
+                    {DOT}
+                    <Timestamp value={m.createdAt} format="date_time" />
                   </MetadataListItem>
                 </MetadataList>
                 {/* It applies at once, so it stands apart from the form that waits for Spara. */}
@@ -393,7 +398,7 @@ export function History({ history }: { history: ModelDetail['history'] }) {
           description={
             <Text type="supporting">
               {actorLabel(h.actor)}
-              {Object.keys(h.details).length ? ' · ' + JSON.stringify(h.details) : ''}
+              {Object.keys(h.details).length ? '\u00a0· ' + JSON.stringify(h.details) : ''}
             </Text>
           }
           endContent={<Timestamp value={h.at} format="date_time" />}

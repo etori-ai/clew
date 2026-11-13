@@ -164,7 +164,7 @@ export function AudiencePreview({ connectorId }: { connectorId: string }) {
             {p.areas.map(a => (
               <Text key={a.id} type="supporting">
                 {a.title}
-                {a.standing.length ? ` · Gör själv: ${a.standing.join(', ')}` : ''}
+                {a.standing.length ? `\u00a0· Gör själv: ${a.standing.join(', ')}` : ''}
               </Text>
             ))}
             {p.menu.length > 0 && <Text type="supporting">I menyn under Verktyg: {p.menu.join(', ')}</Text>}

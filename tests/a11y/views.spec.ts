@@ -63,9 +63,11 @@ test.describe('a declared view in the side panel', () => {
     await panel.getByRole('combobox', { name: 'Sök i', exact: true }).click();
     await page.getByRole('option', { name: 'Min enhet' }).click();
     await expect(panel.getByRole('row')).toHaveCount(6);
-    await expect(page).toHaveURL(/scope/);
+    await expect(page).toHaveURL(url => url.searchParams.get('open-input') === JSON.stringify({ scope: 'unit' }));
     await field.fill('xyzzy');
     await expect(panel.getByRole('paragraph').filter({ hasText: 'Inga träffar i telefonboken.' })).toBeVisible();
+    const input = new URL(page.url()).searchParams.get('open-input');
+    expect(JSON.parse(input ?? '{}')).toEqual({ scope: 'unit', query: 'xyzzy' });
     await expect
       .poll(() => announcements(page))
       .toContainEqual(expect.stringContaining('Inga träffar i telefonboken.'));

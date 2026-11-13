@@ -167,7 +167,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expect(today.locator('[aria-level="2"]').filter({ hasText: 'I dag' })).toBeVisible();
     await expect(today.getByText('Rektorsmöte', { exact: true })).toBeVisible();
     // The row level (D71, artboard 6): the time in its cell, the title 14 semibold, the length and the place under it.
-    await expect(today.getByText(/^1 tim · A12 · /)).toBeVisible();
+    await expect(today.getByText(/^1 tim\s·\sA12\s·\s/)).toBeVisible();
     // A meeting the person pointed at in a conversation says so, one link from its row (D63).
     await expect(today.getByRole('link', { name: 'underlaget ligger i samtalet' })).toHaveAttribute(
       'href',

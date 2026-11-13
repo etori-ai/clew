@@ -14,6 +14,7 @@ import type { PanelViewSpec, Thread, ViewRef } from '@clew/contracts';
 import { Button, HStack, Text, VStack, type AgendaItem } from '@clew/ui';
 import { threadsQuery, viewQuery } from '../queries';
 import { errorMessage } from '../query-policy';
+import { pageLocation } from '../page-location';
 import { panelOf, readOf, viewSearch, withView, withoutPanel, withoutRead, type PanelRef } from '../panel-address';
 import { cardBody } from './card-panel';
 import { unfoldsInCard, useCardRead } from './card-read';
@@ -212,7 +213,11 @@ function usePanelOnPage({
   const changedCard = useCallback((t: Thread) => changed.current?.(t), []);
   const held = useRef<{ frame: PanelFrame; card: Thread | null; view: { title: string } | null } | null>(null);
 
-  const close = () => navigate(withoutPanel(pathname, search));
+  const close = () => {
+    // A review above this drawer can have just closed. Use the current address so dismissing the card keeps it closed.
+    const current = pageLocation();
+    navigate(withoutPanel(current.pathname, current.search));
+  };
   /** Where a row's own view leads (`view.open`): the same page with that view in the panel, and the way back to this one. */
   const hrefFor = (v: ViewRef) => withView(pathname, search, v, true);
   const failed = (

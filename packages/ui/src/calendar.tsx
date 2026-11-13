@@ -256,7 +256,7 @@ export function EventCalendar({
           const clip = week ? ({ maxLines: 1, hasTruncateTooltip: false } as const) : {};
           const line = (when || where) && (
             <Text type="supporting" hasTabularNumbers {...clip}>
-              {[when, where].filter(Boolean).join(' · ')}
+              {[when, where].filter(Boolean).join('\u00a0· ')}
             </Text>
           );
           return (

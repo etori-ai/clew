@@ -356,7 +356,7 @@ test.describe('Hem with the parts of version 1.0, narrow', () => {
     const lines = await workRowLines(page.getByRole('region', { name: 'Behöver dig' }).locator('[id^="work-"]'));
     expect(lines.length).toBeGreaterThan(1);
     expect(lines.map(l => l.text)).toContain(
-      'Ska göras\u00a0· Ansökan väntar på beslut · påminnelsen väntar på schemaläggning',
+      'Ska göras\u00a0· Ansökan väntar på beslut\u00a0· påminnelsen väntar på schemaläggning',
     );
     for (const line of lines) {
       expect(line.text).toMatch(/^(Ska göras i dag|Ska göras)\u00a0· \S/);

@@ -128,7 +128,7 @@ interface CapabilityRow extends Record<string, unknown> {
 function WhatClewWouldDo({ manifest, mobile }: { manifest: Manifest; mobile: boolean }) {
   const all = manifest.capabilities;
   return (
-    <Block title="What Clew would do with it" caption={`${manifest.id} · ${manifest.source}`} flush>
+    <Block title="What Clew would do with it" caption={`${manifest.id}\u00a0· ${manifest.source}`} flush>
       {mobile ? (
         <List aria-label="Capabilities" hasDividers>
           {all.map(c => (
@@ -440,7 +440,7 @@ const PathHeading = ({ children }: { children: string }) => (
  */
 function WritePath({ c, path, mobile }: { c: PreviewCapability; path: PreviewPath; mobile: boolean }) {
   return (
-    <Block title={`${c.name} · ${c.kind}`} caption={c.title} level={3}>
+    <Block title={`${c.name}\u00a0· ${c.kind}`} caption={c.title} level={3}>
       <VStack gap={6}>
         <VStack gap={3}>
           <PathHeading>Where it starts</PathHeading>

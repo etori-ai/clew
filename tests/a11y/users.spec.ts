@@ -18,7 +18,9 @@ import type { Locator, Page } from '@playwright/test';
  * they have signed in, narrowed by a search and four filters, and the mapping from a group to a capability that an
  * administrator adds and removes, the group found by searching every group of the organisation (D85), and the
  * catalogues' keys: one is issued, replaced and taken back (D107). A person's title stands under the name when the
- * catalogue sent one (D110). Keyboard, structure, focus, announcements, axe and reflow, at desktop, phone and 320 px.
+ * catalogue sent one (D110), with the user name after it (D124 item 7). The page starts with the people and ends with
+ * the catalogues, says at its top when a catalogue has gone silent, and its add form says under a field what is missing
+ * (D124 item 5). Keyboard, structure, focus, announcements, axe and reflow, at desktop, phone and 320 px.
  */
 /** The line over the list that counts the people: Astryx's own live regions repeat other words about them. */
 const readout = (page: Page) => page.getByRole('status').filter({ hasText: /^\d+ (av \d+ )?person(er)?$/ });
@@ -111,11 +113,17 @@ test.describe('users administration', () => {
         api.admin = true;
         await open(page, '/admin/users');
         await expect(page.getByRole('heading', { level: 1, name: 'Användare' })).toBeVisible();
-        // A list of the headings finds the two cards by their titles (W5): drawn at D71's level for a part of a page and
-        // read as level 2 under the title. Playwright gives a heading the level of its tag, so the outline's level is
-        // read from the attribute, as admin.spec reads it.
-        for (const name of ['Inläsning från katalogen', 'Behörigheter från grupper'])
+        // A list of the headings finds the page's parts by their titles (W5): drawn at D71's level for a part of a page
+        // and read as level 2 under the title. Playwright gives a heading the level of its tag, so the outline's level
+        // is read from the attribute, as admin.spec reads it. The people come first and the catalogues last (D124).
+        const parts = ['Personer', 'Behörigheter från grupper', 'Inläsning från katalogen'];
+        for (const name of parts)
           await expect(page.getByRole('heading', { name, exact: true })).toHaveAttribute('aria-level', '2');
+        await expect(
+          page.locator('[aria-level="2"]').filter({ hasText: new RegExp(`^(${parts.join('|')})$`) }),
+        ).toHaveText(parts);
+        // Each part is a region named by its heading.
+        for (const name of parts) await expect(page.getByRole('region', { name, exact: true })).toBeVisible();
         await expectNoAxeViolations(page);
         const { unmarked } = await hiddenFocusStops(page);
         expect(unmarked).toEqual([]);
@@ -172,6 +180,19 @@ test.describe('users administration', () => {
       await expect(people.getByText('Har loggat in', { exact: true })).toHaveCount(2);
       await expect(people.getByText('Inte inloggad ännu', { exact: true })).toBeVisible();
       await expect(people.getByText('Ingen åtkomst', { exact: true })).toBeVisible();
+      // A state that is in order is a word; only what an administrator must act on is a mark with a colour.
+      await expect(people.locator('.astryx-badge')).toHaveText(['Ingen åtkomst']);
+      // The table is named by its heading, and a capability is a token.
+      await expect(page.getByRole('table', { name: 'Personer' })).toBeVisible();
+      await expect(people.locator('.astryx-token')).toHaveText([
+        'Administrera anslutna system',
+        'Administrera användare',
+      ]);
+      // The initials before a name are decoration, 24 px as in every table: the name is said once, by its link.
+      const initials = people.getByRole('row', { name: /Hillevi Berg/ }).locator('.astryx-avatar');
+      await expect(initials).toHaveAttribute('aria-hidden', 'true');
+      expect(await initials.boundingBox()).toMatchObject({ width: 24, height: 24 });
+      await expect(people.getByRole('img')).toHaveCount(0);
       await expect(page.getByRole('table').nth(1).getByText('IT-personal')).toBeVisible();
       // Four people fit one page, so there is nothing to step through and nothing to clear.
       await expect(readout(page)).toHaveText('4 personer');
@@ -287,15 +308,23 @@ test.describe('users administration', () => {
       await open(page, '/admin/users');
       const people = page.getByRole('table').first(),
         cells = (name: RegExp) => people.getByRole('row', { name }).getByRole('cell');
+      // The name alone on its line, and under it the title and the user name as one supporting line. The space before
+      // the dot never breaks, so the dot never starts a line.
       await expect(
         cells(/Hillevi Berg/)
           .first()
-          .getByText('Rektor', { exact: true }),
+          .getByText('Rektor\u00a0· hillevi.berg', { exact: true }),
       ).toBeVisible();
+      // A user name beside a person is supporting text, never code type.
+      await expect(
+        cells(/Hillevi Berg/)
+          .first()
+          .locator('code, [data-type="code"]'),
+      ).toHaveCount(0);
       // The title is the catalogue's word and the role is Clew's: both are on the row, and neither stands in for the other.
       await expect(cells(/Hillevi Berg/).nth(2)).toHaveText('Chef');
       // A catalogue that sends no title leaves the name and the user name, and no words about what is missing.
-      await expect(cells(/Omar Ny/).first()).toHaveText('Omar Nyomar');
+      await expect(cells(/Omar Ny/).first()).toHaveText(/Omar Ny\s*omar$/);
       await filters(page).getByRole('searchbox', { name: 'Sök person' }).pressSequentially('rektor');
       await expect(readout(page)).toHaveText('1 av 4 personer');
       await expect(people.locator('tbody tr')).toHaveText([/Hillevi Berg/]);
@@ -361,7 +390,7 @@ test.describe('users administration', () => {
     }) => {
       api.admin = true;
       await open(page, '/admin/users');
-      const pushes = page.getByRole('list', { name: 'Inläsning från katalogen' });
+      const pushes = page.getByRole('list', { name: 'Kataloger' });
       const rows = pushes.getByRole('listitem');
       await expect(rows).toHaveCount(2);
       await expect(rows.nth(0)).toContainText('HR-systemet');
@@ -374,6 +403,46 @@ test.describe('users administration', () => {
       await expect(pushes.getByRole('button')).toHaveCount(2);
       await expect(pushes.getByRole('button', { name: 'Åtgärder för Metakatalogen' })).toBeVisible();
       await expect(pushes.getByRole('link')).toHaveCount(0);
+      // A catalogue that reads in is a word; one that does not is the mark.
+      await expect(pushes.locator('.astryx-badge')).toHaveText(['Tyst i över två dygn']);
+    });
+    test('a catalogue that has gone silent is said at the top of the page, with a way down to the catalogues', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/users');
+      const banner = page.locator('.astryx-banner').filter({ hasText: 'läser inte in' });
+      await expect(banner).toContainText('1 katalog läser inte in');
+      await expect(banner).toContainText(
+        'HR-systemet har varit tyst i över två dygn. Tills dess ändringar har kommit fram gäller den åtkomst personerna hade.',
+      );
+      // The way down lands on the catalogues' heading, which takes the focus and is in view.
+      await banner.getByRole('button', { name: 'Till katalogerna' }).focus();
+      await page.keyboard.press('Enter');
+      const catalogues = page.getByRole('heading', { name: 'Inläsning från katalogen', exact: true });
+      await expect(catalogues).toBeFocused();
+      await expect(catalogues).toBeInViewport();
+      // Two that do not read in are two clauses, and a catalogue that never called says that.
+      api.users.provisioners = [
+        ...api.users.provisioners,
+        { id: 'ny', label: 'Vikariepoolen', lastSeenAt: null, silent: true, previousValidUntil: null },
+      ];
+      await page.reload();
+      await expect(banner).toContainText('2 kataloger läser inte in');
+      await expect(banner).toContainText(
+        'HR-systemet har varit tyst i över två dygn, och Vikariepoolen har aldrig anropat Clew. Tills deras ändringar har kommit fram',
+      );
+      await expectNoAxeViolations(page);
+      // A day when every catalogue reads in has no banner.
+      api.users.provisioners = api.users.provisioners.map(p => ({
+        ...p,
+        silent: false,
+        lastSeenAt: p.lastSeenAt ?? '2026-11-10T05:02:00.000Z',
+      }));
+      await page.reload();
+      await expect(page.getByRole('heading', { name: 'Personer', exact: true })).toBeVisible();
+      await expect(banner).toHaveCount(0);
     });
     test('a catalogue is added from the keyboard, and its key is shown once, to copy (D107)', async ({ page, api }) => {
       api.admin = true;
@@ -412,7 +481,7 @@ test.describe('users administration', () => {
       await expect(shown).toBeHidden();
       await expect(add).toBeFocused();
       // The catalogue is in the list, and the key is nowhere on the page.
-      const rows = page.getByRole('list', { name: 'Inläsning från katalogen' }).getByRole('listitem');
+      const rows = page.getByRole('list', { name: 'Kataloger' }).getByRole('listitem');
       await expect(rows).toHaveCount(3);
       await expect(rows.filter({ hasText: 'Nya Katalogen' })).toContainText('Har aldrig anropat Clew');
       await expect(page.getByText('a11y-key-nya-katalogen')).toHaveCount(0);
@@ -430,7 +499,7 @@ test.describe('users administration', () => {
     }) => {
       api.admin = true;
       await open(page, '/admin/users');
-      const pushes = page.getByRole('list', { name: 'Inläsning från katalogen' });
+      const pushes = page.getByRole('list', { name: 'Kataloger' });
       const menu = pushes.getByRole('button', { name: 'Åtgärder för Metakatalogen' });
       await menu.focus();
       await page.keyboard.press('Enter');
@@ -476,7 +545,7 @@ test.describe('users administration', () => {
       );
       await open(page, '/admin/users');
       const menu = page
-        .getByRole('list', { name: 'Inläsning från katalogen' })
+        .getByRole('list', { name: 'Kataloger' })
         .getByRole('button', { name: 'Åtgärder för Metakatalogen' });
       const shown = page.getByRole('alertdialog', { name: 'Byt nyckel' });
       const replace = async () => {
@@ -520,7 +589,7 @@ test.describe('users administration', () => {
     }) => {
       api.admin = true;
       await open(page, '/admin/users');
-      const pushes = page.getByRole('list', { name: 'Inläsning från katalogen' });
+      const pushes = page.getByRole('list', { name: 'Kataloger' });
       const menu = pushes.getByRole('button', { name: 'Åtgärder för Metakatalogen' });
       await menu.focus();
       await page.keyboard.press('Enter');
@@ -549,7 +618,7 @@ test.describe('users administration', () => {
     }) => {
       api.admin = true;
       await open(page, '/admin/users');
-      const pushes = page.getByRole('list', { name: 'Inläsning från katalogen' });
+      const pushes = page.getByRole('list', { name: 'Kataloger' });
       await pushes.getByRole('button', { name: 'Åtgärder för Metakatalogen' }).click();
       await page.getByRole('menuitem', { name: 'Återkalla nyckeln' }).click();
       const confirm = page.getByRole('alertdialog', { name: 'Återkalla nyckeln för Metakatalogen' });
@@ -573,7 +642,7 @@ test.describe('users administration', () => {
         { id: 'ny', label: 'Ny katalog', lastSeenAt: null, silent: true, previousValidUntil: null },
       ];
       await open(page, '/admin/users');
-      const row = page.getByRole('list', { name: 'Inläsning från katalogen' }).getByRole('listitem');
+      const row = page.getByRole('list', { name: 'Kataloger' }).getByRole('listitem');
       await expect(row).toContainText('Har aldrig anropat Clew');
       await expect(row).toContainText('Inget anrop ännu');
       api.users.provisioners = [];
@@ -643,6 +712,94 @@ test.describe('users administration', () => {
       await page.keyboard.press('Enter');
       await expect(page.getByText(/^Ingen grupp ger någon behörighet ännu/)).toBeVisible();
       await expect(form.getByRole('button', { name: 'Grupp Rektorer' })).toBeFocused();
+    });
+    test('"Lägg till" is always there to press: a field left empty says so under itself and takes the focus', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/users');
+      const form = page.getByRole('form', { name: 'Lägg till behörighet från grupp' });
+      const add = form.getByRole('button', { name: 'Lägg till' });
+      const group = form.getByRole('combobox', { name: 'Grupp' });
+      const gives = form.getByRole('combobox', { name: 'Ger behörigheten' });
+      await expect(add).toBeEnabled();
+      await expect(form.getByText('Välj en grupp.')).toHaveCount(0);
+      // Nothing chosen: each field says what is missing, and the first of them takes the focus.
+      await add.focus();
+      await page.keyboard.press('Enter');
+      await expect(form.getByText('Välj en grupp.')).toBeVisible();
+      await expect(form.getByText('Välj en behörighet.')).toBeVisible();
+      await expect(group).toBeFocused();
+      // The error is the field's own description, so it is read with the label.
+      await expect(group).toHaveAccessibleDescription(/Välj en grupp\./);
+      await expect(group).toHaveAttribute('aria-invalid', 'true');
+      // Nothing was saved.
+      await expect(page.getByRole('table', { name: 'Behörigheter från grupper' }).locator('tbody tr')).toHaveCount(1);
+      await expectNoAxeViolations(page);
+      // A group chosen takes its error away; the capability is still missing, and now it takes the focus.
+      await page.keyboard.type('rekt');
+      await expect(page.getByRole('option', { name: /^Rektorer/ })).toBeVisible();
+      await page.keyboard.press('ArrowDown');
+      await page.keyboard.press('Enter');
+      await expect(form.getByText('Välj en grupp.')).toHaveCount(0);
+      await add.click();
+      await expect(form.getByText('Välj en behörighet.')).toBeVisible();
+      await expect(gives).toBeFocused();
+      await page.keyboard.press('Enter');
+      await page.getByRole('option', { name: 'Administrera anslutna system' }).click();
+      await expect(form.getByText('Välj en behörighet.')).toHaveCount(0);
+      await add.click();
+      await expect
+        .poll(() => announcements(page))
+        .toContainEqual(expect.stringContaining('Sparat: Rektorer ger administrera anslutna system'));
+      // A saved mapping leaves the form as it started, with no error.
+      await expect(form.getByText(/^Välj en /)).toHaveCount(0);
+    });
+    test('a mapping’s capability leads to the people who have it: the list narrowed, its heading with the focus', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/users?role=manager');
+      const mapping = page.getByRole('table', { name: 'Behörigheter från grupper' });
+      const gives = mapping.getByRole('link', { name: 'Administrera anslutna system' });
+      await expect(gives).toHaveAttribute('href', '/admin/users?capability=admin.connectors');
+      await gives.focus();
+      await page.keyboard.press('Enter');
+      // The capability alone narrows the list: the role it was narrowed by is let go.
+      await expect(page).toHaveURL(/\/admin\/users\?capability=admin\.connectors$/);
+      await expect(page.getByRole('heading', { name: 'Personer', exact: true })).toBeFocused();
+      await expect(filters(page).getByRole('combobox', { name: 'Behörighet' })).toContainText(
+        'Behörighet: Administrera anslutna system',
+      );
+      await expect(page.getByRole('button', { name: 'Rensa filter' })).toBeVisible();
+    });
+    test('the people are a table where its columns fit, from 1267 px, and a list below that', async ({ page, api }) => {
+      api.admin = true;
+      await page.setViewportSize({ width: 1267, height: 800 });
+      await open(page, '/admin/users');
+      const table = page.getByRole('table', { name: 'Personer' });
+      await expect(table).toBeVisible();
+      // The table fits its card: nothing of it is scrolled sideways to.
+      expect(await table.evaluate(el => el.scrollWidth <= (el.parentElement?.clientWidth ?? 0) + 1)).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      // A capability's token stays inside its cell: one too long for the column ends in an ellipsis (D124's canvas),
+      // and never runs into the status beside it.
+      for (const token of await table.locator('.astryx-token').all()) {
+        const [box, cell] = await Promise.all([token.boundingBox(), token.locator('xpath=ancestor::td').boundingBox()]);
+        expect(box!.x + box!.width).toBeLessThanOrEqual(cell!.x + cell!.width);
+      }
+      await page.setViewportSize({ width: 1266, height: 800 });
+      await expect(table).toHaveCount(0);
+      const rows = page.getByRole('list', { name: 'Personer' }).getByRole('listitem');
+      await expect(rows.first()).toContainText('Hassan Ali');
+      await expect(rows.first()).toContainText('Undersköterska\u00a0· hassan');
+      // The mappings keep their table down to 864 px.
+      await expect(page.getByRole('table', { name: 'Behörigheter från grupper' })).toBeVisible();
+      await page.setViewportSize({ width: 863, height: 800 });
+      await expect(page.getByRole('table')).toHaveCount(0);
+      await expect(page.getByRole('list', { name: 'Behörigheter från grupper' })).toBeVisible();
     });
     test('a group beyond those the page holds is found on the server, and a mapping on one is named by its group (K2)', async ({
       page,
@@ -744,7 +901,7 @@ test.describe('users administration', () => {
       // The cards are drawn from an overview that was not read, so none is drawn (W3).
       await expect(page.getByRole('heading', { name: 'Behörigheter från grupper' })).toHaveCount(0);
       await expect(page.getByText(/^Ingen grupp ger någon behörighet ännu/)).toHaveCount(0);
-      await expect(page.getByRole('list', { name: 'Inläsning från katalogen' })).toHaveCount(0);
+      await expect(page.getByRole('list', { name: 'Kataloger' })).toHaveCount(0);
     });
     test('an overview that cannot be read says so once, and nothing about groups, catalogues or units it has not read (W3)', async ({
       page,
@@ -851,7 +1008,7 @@ test.describe('users administration', () => {
       // The title first, as the catalogue words it (D110), then where the person is placed and what they are there.
       // The role is written as the filter and the table write it, and a no-break space holds the separator to the unit,
       // so a wrapped line never starts with it.
-      await expect(people).toHaveText([/Hillevi Berg.*Rektor.*Bergsåkers skola\u00a0· Chef/]);
+      await expect(people).toHaveText([/Hillevi Berg.*Rektor\u00a0· hillevi.*Bergsåkers skola\u00a0· Chef/]);
       await page.getByRole('button', { name: 'Rensa filter' }).click();
       await expect(readout(page)).toHaveText('64 personer');
       await expect(people).toHaveCount(25);
@@ -873,7 +1030,7 @@ test.describe('users administration', () => {
       await expect(page.getByRole('list', { name: 'Personer' })).toBeVisible();
       await expect(filters(page).getByRole('combobox', { name: 'Status' })).toContainText('Status: Inte inloggad ännu');
       await expect(pager(page)).toContainText('Sida 1 av 3');
-      await expect(page.getByRole('list', { name: 'Inläsning från katalogen' })).toContainText('Tyst i över två dygn');
+      await expect(page.getByRole('list', { name: 'Kataloger' })).toContainText('Tyst i över två dygn');
       // A title longer than the column wraps inside its row (D110).
       await expect(page.getByRole('list', { name: 'Personer' })).toContainText('digitalisering och välfärdsteknik');
       expect(await reflowProblems(page)).toEqual([]);

@@ -271,7 +271,7 @@ export function ReviewOverlay() {
         leave();
       }}
       header={header(
-        `${shown.thread.title} · ${readOnly ? 'resultat och underlag' : 'inget skrivs förrän du skickar'}`,
+        `${shown.thread.title}\u00a0· ${readOnly ? 'resultat och underlag' : 'inget skrivs förrän du skickar'}`,
       )}
       phone={mobile}
     />

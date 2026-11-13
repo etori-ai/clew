@@ -265,7 +265,7 @@ export function AddConnectorDialog({ isOpen, onClose, units, groups }: Props) {
               <MetadataListItem label="System">{result.connector.source}</MetadataListItem>
               <MetadataListItem label="Id">{result.connector.id}</MetadataListItem>
               <MetadataListItem label="Adress">{result.connector.url}</MetadataListItem>
-              <MetadataListItem label="Funktioner">{`${result.connector.counts.capabilities} · ${result.connector.counts.execute} utför`}</MetadataListItem>
+              <MetadataListItem label="Funktioner">{`${result.connector.counts.capabilities}\u00a0· ${result.connector.counts.execute} utför`}</MetadataListItem>
               <MetadataListItem label="Vem ser det">{audienceLabel(audience)}</MetadataListItem>
               <MetadataListItem label="Skickar ärenden">{scan ? 'Ja' : 'Nej'}</MetadataListItem>
               <MetadataListItem label="Erbjuder assistenten">{tools ? 'Ja' : 'Nej'}</MetadataListItem>

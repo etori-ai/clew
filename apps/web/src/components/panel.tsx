@@ -116,14 +116,14 @@ function SearchRows({ result, hrefFor }: { result: SearchResult; hrefFor?: ((vie
             const reviewed = r.reviewedAt ?? r.updatedAt;
             const note = r.kind === 'document' ? staleLabel(r.stale, reviewed) : '';
             const mark = marks.ofObject(`document:${r.connector}:`);
-            const title = `${r.label}${r.section ? ` · ${r.section}` : ''}`;
+            const title = `${r.label}${r.section ? `\u00a0· ${r.section}` : ''}`;
             // The entity's page, except on that page itself (`entityHref`): the name is then plain text.
             const entity = r.subject ? entityHref(r.subject, pathname + search) : null;
             // Every source that answered for the same entity, the hit's own first: said once, on the hit's line.
-            const merged = r.sources?.map(s => s.source).join(' · ');
+            const merged = r.sources?.map(s => s.source).join('\u00a0· ');
             const meta = [merged ? '' : r.source, r.owner, reviewLabel(reviewed), r.stale ? '' : note.toLowerCase()]
               .filter(Boolean)
-              .join(' · ');
+              .join('\u00a0· ');
             // A hit whose source declares its view (D38) opens here, drawn by Startsidan; the link still leads to the
             // source, in a new tab and marked as leaving Clew with Astryx's external link (D111 rule 8). A hit about an
             // entity leads to the entity instead. "Lägg till i samtalet" only where the page has a box (D111 rule 6); a
@@ -301,7 +301,7 @@ export function PanelBody({
             const detail = Object.entries(r)
               .filter(([k, v]) => k !== key && !hiddenFields.has(k) && scalar(v))
               .map(([k, v]) => `${fieldLabel(k)}: ${fieldValue(v)}`)
-              .join(' · ');
+              .join('\u00a0· ');
             return (
               <ListItem
                 key={i}

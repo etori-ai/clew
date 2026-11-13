@@ -291,7 +291,7 @@ export function ActionDialog({
     <>
       <DialogHeader
         title={labels.label}
-        subtitle={`${labels.source} · ${labels.about}`}
+        subtitle={`${labels.source}\u00a0· ${labels.about}`}
         onOpenChange={open => {
           if (!open) close();
         }}

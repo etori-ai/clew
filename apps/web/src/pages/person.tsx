@@ -6,6 +6,7 @@ import {
   Avatar,
   Button,
   ClickableCard,
+  ProgressBar,
   EmptyState,
   HStack,
   Layout,
@@ -51,7 +52,7 @@ import {
   personTitle,
   useSectionAnswers,
 } from '../components/entity-sections';
-import { employmentLabel, employmentPercent } from './person-model';
+import { employmentLabel, employmentPercent, employmentTitles } from './person-model';
 
 /** The details rail's width beside the column (`EntityPage`). */
 const DETAILS = 340;
@@ -70,13 +71,16 @@ const phoneLabel = new Map([
   ['other', 'Övrigt'],
 ]);
 /**
- * The line under the name. The employments carry their own titles in their section (D114), so it is the core title
- * only where no employment has one.
+ * The line under the name, which is always there when the directory knows a title (D124 item 6): the titles of the
+ * person's employments ("Lärare, Förstelärare"), else the directory's own title for them (D110).
  */
 const shownTitle = (detail: EntityDetail): string | null =>
-  detail.profile?.employments.some(employment => employment.title)
-    ? null
-    : (detail.profile?.title ?? personTitle(detail.entity) ?? null);
+  (detail.profile ? employmentTitles(detail.profile.employments) : null) ??
+  detail.profile?.title ??
+  personTitle(detail.entity) ??
+  null;
+/** The bar under an employment's share of full time is as wide as the board draws it. */
+const SHARE_WIDTH = 160;
 /**
  * A section's fuller read is drawn as a table where the column has the 1020 px a tool's page gives it beside the rail:
  * a window of 1280 px plus the details rail.
@@ -87,13 +91,13 @@ const TABLE_BESIDE_QUERY = panelBesideQuery(1280 - RAIL);
 
 /**
  * The details rail of a person's page (board Person): "Detaljer", what the directory (Katalogen) says of them that the
- * page has (their title, their user name, and that the reader is their manager), and "Tillhör", their unit, a link to
- * the unit's page where the server says the reader may open it (a unit they manage or belong to, or one below whose
- * manager reports to them, D117) and its name otherwise. Nothing the directory has not given is drawn.
+ * page has (their user name, and that the reader is their manager), and "Tillhör", their unit, a link to the unit's
+ * page where the server says the reader may open it (a unit they manage or belong to, or one below whose manager
+ * reports to them, D117) and its name otherwise. The title is the header's (D124 item 6). The user name is itself the value here, so it is in code type (item 7). Nothing
+ * the directory has not given is drawn.
  */
 function PersonDetails({ detail, from }: { detail: EntityDetail; from: string | null }) {
   const { entity, relation } = detail;
-  const title = shownTitle(detail);
   const unit = entity.unit;
   const opens = !!unit?.opens;
   const body = unit && (
@@ -108,13 +112,8 @@ function PersonDetails({ detail, from }: { detail: EntityDetail; from: string | 
     <VStack gap={10}>
       <RailSection title="Detaljer" caption="Katalogen">
         <MetadataList>
-          {title && (
-            <MetadataListItem label="Titel">
-              <Text>{title}</Text>
-            </MetadataListItem>
-          )}
           <MetadataListItem label="Användarnamn">
-            <Text>{entity.sourceKey}</Text>
+            <Text type="code">{entity.sourceKey}</Text>
           </MetadataListItem>
           {relation === 'managed' && (
             <MetadataListItem label="Chef">
@@ -145,11 +144,12 @@ function PersonDetails({ detail, from }: { detail: EntityDetail; from: string | 
 /**
  * The person as a page (D112 item 5, board Person; D97 item 5), at `/people/:key`, the one way a person is shown (D111
  * rule 3), reached from a name on Personal or on any row that names them. The work item's page shape (`EntityPage`):
- * the way back with their unit, their avatar, name and title, and every action about them with "Fråga Clew" in the
- * header; in the main column "Behöver dig" (the reader's work items about them), then what the directory sent about
- * them (D114), "Anställningar" and "Kontaktuppgifter", each only when something was sent for it, and then one section
- * per source that has something about them, one under the other, each with its source's badge; the directory's other
- * facts and their unit in the rail. `?section=` names a section: the page scrolls to it and its heading takes the
+ * the way back with their unit, their avatar (72 px, 48 on a phone), name and title line, and every action about them
+ * with "Fråga Clew" in the header; in the main column "Behöver dig" (the reader's work items about them), then what the
+ * directory sent about them (D114), "Kontaktuppgifter", how the person is reached, before "Anställningar" (D124 item
+ * 6), each only when something was sent for it, and then one section per source that has something about them, one
+ * under the other, each with its source's badge once: the fuller read under it has a small heading of its own. The
+ * directory's other facts and their unit are in the rail. `?section=` names a section: the page scrolls to it and its heading takes the
  * focus, so old links, "N att agera på" on Personal and a talk's way back land where they did. A person the reader may
  * not ask about is the page's own "finns inte" (the server answers 404 for both).
  *
@@ -266,6 +266,39 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
             },
           ]
         : []),
+      ...(detail.profile && (detail.profile.email || detail.profile.phoneNumbers.length > 0)
+        ? [
+            {
+              key: 'contact',
+              node: (
+                <PageSection title="Kontaktuppgifter" headingRef={headingRef('contact')}>
+                  {/* Beside the sources' values where the column is wide, above on a phone (W2). */}
+                  <MetadataList label={mobile ? LABELS_ABOVE : SECTION_LABELS}>
+                    {detail.profile.email && (
+                      <MetadataListItem label="E-post">
+                        <FieldValue
+                          field={{ key: 'email', label: 'E-post', format: 'email' }}
+                          value={detail.profile.email}
+                        />
+                      </MetadataListItem>
+                    )}
+                    {detail.profile.phoneNumbers.map(phone => (
+                      <MetadataListItem
+                        key={JSON.stringify([phone.type, phone.value])}
+                        label={phoneLabel.get(phone.type) ?? phone.type}
+                      >
+                        <FieldValue
+                          field={{ key: 'phone', label: 'Telefon', format: 'phone' }}
+                          value={phone.value.replace(/^tel:/i, '')}
+                        />
+                      </MetadataListItem>
+                    ))}
+                  </MetadataList>
+                </PageSection>
+              ),
+            },
+          ]
+        : []),
       ...(detail.profile?.employments.length
         ? [
             {
@@ -308,7 +341,20 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
                                 )}
                                 {employment.employmentPercentage !== undefined && (
                                   <MetadataListItem label="Sysselsättningsgrad">
-                                    {employmentPercent(employment.employmentPercentage)}
+                                    {/* The share is said in words; the bar under it is for the eye. */}
+                                    <VStack gap={1}>
+                                      <Text hasTabularNumbers>
+                                        {employmentPercent(employment.employmentPercentage)}
+                                      </Text>
+                                      <VStack width={SHARE_WIDTH} maxWidth="100%" aria-hidden>
+                                        <ProgressBar
+                                          label="Sysselsättningsgrad"
+                                          isLabelHidden
+                                          variant="neutral"
+                                          value={Math.max(0, Math.min(100, employment.employmentPercentage))}
+                                        />
+                                      </VStack>
+                                    </VStack>
                                   </MetadataListItem>
                                 )}
                               </MetadataList>
@@ -323,39 +369,6 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
             },
           ]
         : []),
-      ...(detail.profile && (detail.profile.email || detail.profile.phoneNumbers.length > 0)
-        ? [
-            {
-              key: 'contact',
-              node: (
-                <PageSection title="Kontaktuppgifter" headingRef={headingRef('contact')}>
-                  {/* Beside the sources' values where the column is wide, above on a phone (W2). */}
-                  <MetadataList label={mobile ? LABELS_ABOVE : SECTION_LABELS}>
-                    {detail.profile.email && (
-                      <MetadataListItem label="E-post">
-                        <FieldValue
-                          field={{ key: 'email', label: 'E-post', format: 'email' }}
-                          value={detail.profile.email}
-                        />
-                      </MetadataListItem>
-                    )}
-                    {detail.profile.phoneNumbers.map(phone => (
-                      <MetadataListItem
-                        key={JSON.stringify([phone.type, phone.value])}
-                        label={phoneLabel.get(phone.type) ?? phone.type}
-                      >
-                        <FieldValue
-                          field={{ key: 'phone', label: 'Telefon', format: 'phone' }}
-                          value={phone.value.replace(/^tel:/i, '')}
-                        />
-                      </MetadataListItem>
-                    ))}
-                  </MetadataList>
-                </PageSection>
-              ),
-            },
-          ]
-        : []),
       ...drawnSections(answers).map(a => ({
         key: a.source.capability,
         node: (
@@ -365,7 +378,7 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
             end={<SourceWay source={a.source} entity={detail.entity} />}
             headingRef={headingRef(a.source.capability)}
           >
-            <PersonSourceBody answer={a} tableQuery={tableQuery} />
+            <PersonSourceBody answer={a} tableQuery={tableQuery} about={name} />
           </PageSection>
         ),
       })),
@@ -374,7 +387,8 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
       <EntityPage
         back={back}
         place={detail.entity.unit?.label}
-        icon={<Avatar name={name} size="lg" tooltip={false} aria-hidden />}
+        // 72 px only here, at the top of the person's page; 48 in the phone's header (D124 item 10).
+        icon={<Avatar name={name} size={mobile ? 48 : 72} tooltip={false} aria-hidden />}
         title={name}
         subtitle={shownTitle(detail) ?? undefined}
         actions={

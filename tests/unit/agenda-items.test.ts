@@ -40,7 +40,7 @@ describe('agendaItems', () => {
       [event('e1', 'Morgonmöte ledningsgrupp', '2026-11-03T07:15:00Z', '2026-11-03T07:45:00Z', 'Personalrummet')],
       [],
     );
-    expect(item).toMatchObject({ kind: 'event', place: 'Personalrummet', meta: '30 min · Personalrummet' });
+    expect(item).toMatchObject({ kind: 'event', place: 'Personalrummet', meta: '30 min\u00a0· Personalrummet' });
     expect(item!.marker).toBeUndefined();
   });
   test('a drawn proposal carries the assistant mark; a confirmed one is a booked meeting without it', () => {
@@ -51,7 +51,7 @@ describe('agendaItems', () => {
         proposal('p2', 'confirmed', '2026-11-12T10:00:00Z', '2026-11-12T11:00:00Z'),
       ],
     );
-    expect(items[0]).toMatchObject({ kind: 'proposal', marker: PROPOSAL_MARK, meta: '1 tim · Hassan Ali' });
+    expect(items[0]).toMatchObject({ kind: 'proposal', marker: PROPOSAL_MARK, meta: '1 tim\u00a0· Hassan Ali' });
     expect(items[1]).toMatchObject({ kind: 'booked' });
     expect(items[1]!.marker).toBeUndefined();
     expect(PROPOSAL_MARK).toBe('✦');
