@@ -722,3 +722,40 @@ in three lenses confirmed 16 of 19 problems: fifteen are fixed, and the unbounde
 those fixes and a second merge of `main` (Dialogstöd's design critique and Ingrid's calendar, which touch no server
 or database code), `bun run check` passed again, as did the person, unit and Dialogstöd specs and the rebind
 script's database tests. No pass with a screen reader, and none signed in on the development stack.
+
+## Independent validation of PR 63 (2026-11-13)
+
+The product owner requested an independent Astra validation of five subsequent review findings against PR 63's
+immutable head `88194ac9f69c714b11790d9e2fe8aa8b5a507d3d`, fixes where both reviewers agreed, and an independent
+parallel review. Three Astra tasks separately checked recipient/refresh identity, group audiences/CLI/provisioning,
+and the PR without the first review's findings. All five warranted a correction, with these qualifications and owners:
+
+| Finding | Validation and resulting behavior | Canonical owner and evidence |
+|---|---|---|
+| An invitation can reach a reassigned address | Confirmed. A person id does not prove that a stored mailbox still belongs to that person. Confirmation and dispatch require one current recipient with both that id and address; a change refuses or visibly skips the unsent invitation and allows a fresh proposal. Historical reply matching and approved payloads stay intact. | Calendar decisions; `tests/unit/calendar-executions.test.ts`, `tests/unit/samtal.test.ts`, `tests/db/postgres-calendar-decisions.test.ts`. D119 amended. |
+| Independent BFFs can reuse a rotating refresh token | Confirmed, and already acknowledged as a tradeoff in D118. An independent review also found the losing request can revoke a successfully renewed session after its final read. A short database claim now fences the generation before provider I/O and fences result/terminal writes. An abandoned claim requires a new sign-in rather than replay. | Session mutations in `packages/db/src/auth.ts` and `sessionRefresher`; `tests/unit/auth-refresh.test.ts`, `tests/db/session-refresh.test.ts`. D118 amended; migration 0057. |
+| Group withdrawal does not invalidate an in-flight actor | Confirmed for the ongoing operation; a new request already reads fresh groups. Session and system contexts now compare current ordered audience groups as well as the existing authority version. The registry invokes the live guard before dispatch and before returning a result, including nested calls and callbacks. This leaves durable authority-version semantics unchanged. | Existing identity reads and the registry invocation boundary; `tests/db/standing-session.test.ts`, `tests/unit/connector-callback.test.ts`, `tests/unit/group-audiences.test.ts`. |
+| The current CI is red | Confirmed from Check run 43410336454 (21 unit failures) and Reliability run 43410336574 (6 database failures). Correction to the first diagnosis: exporter startup during CLI imports is an operator-visible output defect, not just a non-hermetic test. Only the server entrypoint now starts telemetry; exact erasure output remains tested with export configured. Model/connector test children receive their own encryption key, and connector registration/signing run in a disposable database. | Server telemetry bootstrap; `tests/unit/erase-scripts.test.ts`, `tests/db/erase-scripts.test.ts`, `tests/db/models-check.test.ts`, `tests/db/connector-check-as.test.ts`. D91 amended. |
+| Parking a reused account name can collide | Confirmed as an incomplete new feature, rather than a regression of an old working reuse path. Source ids and user names are separate namespaces. The allocator reserves visible held/requested names, and handles bounded uniqueness conflicts with names held by another organisation that its SCIM listing cannot show. Active requested-name conflicts remain normal refusals. | Existing example provisioner reconciliation; `tests/unit/provisioner.test.ts`. D101 and the provisioner guide amended. |
+
+The independent pass's suspected SCIM unknown-attribute problem was present unchanged on the base and was excluded.
+A same-subject rebind rollback concern was not established as contrary to the stated contract and was excluded.
+No new domain, UI, published actor field or connector wire contract was introduced by these corrections.
+
+Verification is deliberately separated by what ran. Focused calendar, refresh, callback/group/remote-connector,
+erasure CLI and provisioner unit scenarios ran under the global supervisor, one job at a time. The local runtime was
+Bun 1.3.4; the repository declares Bun 1.4.4, so these are not evidence of a run on that exact pinned runtime.
+In total, 201 unit tests passed across those eight files. Formatting, TypeScript, dependency boundaries, purity,
+documentation generation/link validation and the documentation smoke scenario passed. The provider in the refresh
+scenario was simulated, not a live identity provider.
+
+The product owner explicitly requested that database tests remain unrun. The PostgreSQL concurrency, projection,
+group withdrawal and CLI fixture scenarios are included for that lane but are not verified by this pass. The 0057
+migration was generated from the schema and statically reviewed; it was not applied to an installation. No full
+suite, development server or production build was run, and the original dirty checkout was left intact.
+
+Before deployment, stop all older BFFs, apply 0057 and start the new release. A mixed old/new rollout cannot provide
+the claim guarantee because an older binary ignores ownership. An external refresh response lost after provider
+rotation remains ambiguous under D118's transient-error policy. Claim deadlines assume synchronized BFF clocks.
+The operations runbook records deployment and rollback; the nullable columns can stay on rollback after all newer
+BFFs have stopped. The old binary then has its former refresh limitation.
