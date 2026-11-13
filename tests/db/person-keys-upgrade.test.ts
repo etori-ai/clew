@@ -1,12 +1,6 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
-import { randomUUID } from 'node:crypto';
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
 import { sql } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import { migrate } from 'drizzle-orm/postgres-js/migrator';
-import { database } from '../../packages/db/src/index';
+import { journal, position, upgradeDatabase, type Entry, type UpgradeDatabase } from './upgrade';
 
 /**
  * An upgrade through the migration that keys a planning proposal by person (`person_keys_and_participants`: N3, D116,
@@ -20,63 +14,32 @@ import { database } from '../../packages/db/src/index';
 if (!process.env.DATABASE_URL)
   throw new Error('DATABASE_URL is not set. Run `bun run test:db` inside the devcontainer.');
 
-const MIGRATIONS = resolve(import.meta.dir, '../../packages/db/migrations');
-interface Entry {
-  idx: number;
-  version: string;
-  when: number;
-  tag: string;
-  breakpoints: boolean;
-}
-const name = 'clew_test_upgrade_' + randomUUID().replaceAll('-', '').slice(0, 12);
-const url = new URL(process.env.DATABASE_URL);
-url.pathname = '/' + name;
-const db = drizzle({ connection: { url: url.toString(), max: 2, onnotice: () => undefined } });
-const folders: string[] = [];
-/** A migrations folder of `entries` from the repository's, and `extra` written as the files it names. */
-async function folder(entries: Entry[], extra: Record<string, string> = {}) {
-  const dir = await mkdtemp(join(tmpdir(), 'clew-upgrade-'));
-  folders.push(dir);
-  await mkdir(join(dir, 'meta'));
-  const journal = JSON.parse(await readFile(join(MIGRATIONS, 'meta/_journal.json'), 'utf8'));
-  await writeFile(join(dir, 'meta/_journal.json'), JSON.stringify({ ...journal, entries }));
-  for (const entry of entries)
-    if (extra[entry.tag]) await writeFile(join(dir, entry.tag + '.sql'), extra[entry.tag]!);
-    else await copyFile(join(MIGRATIONS, entry.tag + '.sql'), join(dir, entry.tag + '.sql'));
-  return dir;
-}
+let installation: UpgradeDatabase;
 let upgrade: () => Promise<void>;
 
 beforeAll(async () => {
-  await database().execute(sql.raw(`create database ${name}`));
-  const { entries } = JSON.parse(await readFile(join(MIGRATIONS, 'meta/_journal.json'), 'utf8')) as {
-    entries: Entry[];
-  };
-  const at = entries.findIndex(e => e.tag.endsWith('_person_keys_and_participants'));
-  if (at < 1) throw new Error('The migration that keys a planning proposal by person is not in the journal.');
+  installation = await upgradeDatabase();
+  const entries = await journal(),
+    at = position(entries, 'person_keys_and_participants');
   const before = entries.slice(0, at),
     target = entries[at]!;
-  await migrate(db, { migrationsFolder: await folder(before) });
-  await db.execute(sql.raw(SEED));
+  await installation.migrate(before);
+  await installation.db.execute(sql.raw(SEED));
   // One migration before the target that writes a person, and one after it that alters every table the target writes
   // or removes rows from, run with it in the one transaction Drizzle runs every pending migration in.
   const previous = before.at(-1)!;
   if (previous.when + 1 >= target.when) throw new Error('No room in the journal for a migration before the target.');
   const writes: Entry = { ...previous, when: previous.when + 1, tag: 'upgrade_probe_before' },
     alters: Entry = { ...target, idx: target.idx + 1, when: target.when + 1, tag: 'upgrade_probe_after' };
-  const dir = await folder([...before, writes, target, alters], {
+  const probes = {
     upgrade_probe_before: `UPDATE "auth_person" SET "name" = "name" || '' WHERE "id" = 'mgr-hillevi';`,
     upgrade_probe_after: ['thread', 'execution', 'timer_intent', 'followup_policy', 'attention_delivery', 'auth_person']
       .map(table => `ALTER TABLE "${table}" ADD COLUMN "upgrade_probe" text;`)
       .join('--> statement-breakpoint\n'),
-  });
-  upgrade = () => migrate(db, { migrationsFolder: dir });
+  };
+  upgrade = () => installation.migrate([...before, writes, target, alters], probes);
 }, 60_000);
-afterAll(async () => {
-  await db.$client.end();
-  await database().execute(sql.raw(`drop database if exists ${name} with (force)`));
-  for (const dir of folders) await rm(dir, { recursive: true, force: true });
-});
+afterAll(() => installation?.drop());
 
 /** The rows before the upgrade: a planning card with what hangs on it, and decisions on their way or done. */
 const SEED = `
@@ -107,7 +70,7 @@ INSERT INTO timer_intent (id, person_id, thread_id, kind, generation, unit_id, a
 INSERT INTO attention_delivery (id, person_id, thread_id, kind, batch, due_at, state, created_at) VALUES
  ('ad-plan', 'mgr-hillevi', 'card-plan', 'pushed', 'b1', '2026-01-10T06:00:00Z', 'pending', '2026-01-10T06:00:00Z');
 `;
-const rows = async <T>(query: string) => (await db.execute(sql.raw(query))) as unknown as T[];
+const rows = async <T>(query: string) => (await installation.db.execute(sql.raw(query))) as unknown as T[];
 /** A time as an ISO instant, whatever the session's time zone. */
 const instant = (column: string) => `to_char(${column} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
 
