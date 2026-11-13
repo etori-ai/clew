@@ -18,6 +18,19 @@ export interface DirectoryPerson {
  * nobody. Read on every call, never cached here, so a change of unit or manager narrows the next read at once.
  */
 export type Directory = (actor: Actor) => Promise<{ self: DirectoryPerson; staff: DirectoryPerson[] }>;
+/**
+ * Whom these keys name now in the reader's organisation, active or not, by person id, keyed by the key as asked: the
+ * holder of a user name, compared as Clew compares one (D122), or the person provisioned without one whose id the key
+ * is (`personKey`). A key that names nobody there is absent. The seam asks only about the action points the reader owns
+ * about someone they no longer manage, when Clew's own module answers (M2).
+ */
+export type Holders = (actor: Actor, keys: readonly string[]) => Promise<ReadonlyMap<string, string>>;
+/**
+ * Which of these action points of Clew's own module, by its own id, the reader may take over now (Q12): a manager's
+ * point about someone they manage, whose owner no longer manages that person or was erased. Asked only when a manager
+ * reads one person's points; the talks module answers it with the rule its write enforces.
+ */
+export type Takeovers = (actor: Actor, ids: readonly string[]) => Promise<ReadonlySet<string>>;
 export type TalkCall = <O = unknown>(name: string, input?: unknown) => Promise<O>;
 export interface TalkSeamBudget {
   /** Milliseconds the source gets before it counts as not answering. */
@@ -26,6 +39,8 @@ export interface TalkSeamBudget {
 export interface TalkSeamDeps {
   source: Source;
   directory: Directory;
+  holders: Holders;
+  takeovers: Takeovers;
   budget?: Partial<TalkSeamBudget>;
 }
 export const DEFAULT_BUDGET: TalkSeamBudget = { perSourceMs: 4_000 };

@@ -116,7 +116,7 @@ function ActionDraftCard({
             <Text weight="semibold">{action.label}</Text>
             {state ? (
               <HStack gap={1.5} vAlign="center">
-                <StatusDot variant={state.variant} label={state.label} />
+                <StatusDot variant={state.variant} label={state.label} aria-hidden />
                 <Text type="supporting">{state.label}</Text>
               </HStack>
             ) : (
@@ -449,9 +449,9 @@ export function Transcript({
                     <Text type="supporting">
                       Assistenten
                       {m.meta?.view
-                        ? ` · läste ${m.meta.view.title}`
+                        ? `\u00a0· läste ${m.meta.view.title}`
                         : m.meta?.source && m.meta.source !== 'Assistenten'
-                          ? ` · läste ${m.meta.source}`
+                          ? `\u00a0· läste ${m.meta.source}`
                           : ''}
                     </Text>
                   </HStack>
@@ -650,7 +650,7 @@ export function Transcript({
         <Text
           type="supporting"
           justify="end"
-        >{`${mobile ? '' : 'Esc stänger · '}${latest?.draft || messages.some(m => m.meta?.draft) ? 'ärendet behåller utkastet' : 'samtalet sparas under Samtal'}`}</Text>
+        >{`${mobile ? '' : 'Esc stänger\u00a0· '}${latest?.draft || messages.some(m => m.meta?.draft) ? 'ärendet behåller utkastet' : 'samtalet sparas under Samtal'}`}</Text>
       )}
     </VStack>
   );

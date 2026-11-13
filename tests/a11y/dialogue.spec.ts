@@ -18,7 +18,7 @@ import {
  * One unit's follow-up dialogue (D118) as a focused overlay over the unit's page (D83, D111 rule 5): an end Drawer on a
  * desktop, a tall sheet on a phone, at the page's own address with `dialog=<unitId>`. The way in is the Dialog section's
  * "Öppna dialogen". The areas are tabs; an assessed area has its state per dimension with a form and the history, every
- * area its questions and its activities with a form to add one. `Dialogues` answers `/api/dialogue/**` from memory, as
+ * area its questions, its activities with a form to add one, and the reader's own notes (D120). `Dialogues` answers `/api/dialogue/**` from memory, as
  * the server would, so a write is read back.
  */
 const school = `/units/${ENTITY_UNIT.id}`;
@@ -66,6 +66,7 @@ const fresh = (): DialogueUnit => ({
       dimensions: [],
       questions: [{ heading: 'Mönster', text: 'Syns ett mönster i frånvaron?' }],
       activities: [],
+      notes: [],
     },
     {
       key: 'operations',
@@ -105,6 +106,7 @@ const fresh = (): DialogueUnit => ({
           createdAt: at,
         },
       ],
+      notes: [{ id: 'n1', text: 'Fråga om vikarierna nästa gång.', createdAt: at }],
     },
   ],
 });
@@ -154,6 +156,20 @@ class Dialogues {
             createdAt: at,
           });
           return route.fulfill({ status: 201, json: { id: newId } });
+        }
+        // The reader's own notes (D120): written, changed and removed.
+        if (kind === 'units' && sub === 'notes') {
+          const newId = 'note' + ++this.n;
+          area(b.area).notes.unshift({ id: newId, text: b.text!, createdAt: at });
+          return route.fulfill({ status: 201, json: { id: newId } });
+        }
+        if (kind === 'notes') {
+          for (const ar of this.data.areas)
+            ar.notes =
+              request.method() === 'PATCH'
+                ? ar.notes.map(n => (n.id === id ? { ...n, text: b.text!, editedAt: '2026-11-05T09:00:00.000Z' } : n))
+                : ar.notes.filter(n => n.id !== id);
+          return route.fulfill({ status: 204 });
         }
         const a = activity(id!);
         if (sub === 'done' && request.method() === 'POST') Object.assign(a, { doneAt: at, doneNote: b.note });
@@ -220,7 +236,7 @@ for (const [layout, viewport] of [
         .getByRole('heading', { level: 3 })
         .allTextContents()
         .then(t => t.map(h => h.trim()));
-      expect(order).toEqual(['Läget', 'Att prata om', 'Bedömning', 'Aktiviteter']);
+      expect(order).toEqual(['Läget', 'Att prata om', 'Bedömning', 'Aktiviteter', 'Mina anteckningar']);
       await expect(panel.getByRole('heading', { name: 'Grunduppdrag' })).toBeVisible();
       await expect(panel.getByText('Bemanningen är tunn.')).toBeVisible();
       await expect(panel.getByRole('list', { name: 'Tidigare bedömningar av Grunduppdrag' })).toBeVisible();
@@ -237,6 +253,14 @@ for (const [layout, viewport] of [
       await expect(openList).toContainText('Hillevi Berg · senast 20 oktober');
       await expect(openList.getByText('Försenad', { exact: true })).toBeVisible();
       await expect(panel.getByRole('list', { name: 'Klara aktiviteter' })).toContainText('Gjort.');
+      // The reader's own notes last, said to be theirs alone, with when each was written.
+      const notes = panel.getByRole('region', { name: 'Mina anteckningar' });
+      await expect(notes.getByText('Bara du ser dem.', { exact: false })).toBeVisible();
+      await expect(notes.getByRole('list', { name: 'Mina anteckningar' })).toContainText(
+        'Fråga om vikarierna nästa gång.',
+      );
+      await expect(notes.getByRole('list', { name: 'Mina anteckningar' })).toContainText('2 nov 2026');
+      await expect(notes.getByRole('button', { name: 'Ny anteckning om Verksamhet' })).toBeVisible();
       await expectNoAxeViolations(page);
       const { unmarked, hidden } = await hiddenFocusStops(page);
       expect(unmarked).toEqual([]);
@@ -247,6 +271,7 @@ for (const [layout, viewport] of [
       await expect(sick.getByText('Sjukfrånvaro · Qlik')).toBeVisible();
       await expect(sick.getByRole('list', { name: 'Att prata om' })).toContainText('Syns ett mönster i frånvaron?');
       await expect(sick.getByText('Inga aktiviteter än.')).toBeVisible();
+      await expect(sick.getByText('Inga anteckningar än.')).toBeVisible();
       await expectNoAxeViolations(page);
     });
   });
@@ -349,6 +374,83 @@ test.describe('the dialogue by keyboard', () => {
     await expect(dialog).toBeHidden();
     await expect(page).toHaveURL(school);
     await expect(way).toBeFocused();
+  });
+
+  test('a note of one’s own: written, changed and removed by keyboard, the focus never lost, blank said on the field', async ({
+    page,
+    api: _,
+  }) => {
+    const d = await setUp(page);
+    await open(page, `${school}?dialog=${ENTITY_UNIT.id}`);
+    const panel = drawer(page).getByRole('tabpanel', { name: 'Verksamhet' });
+    const notes = panel.getByRole('region', { name: 'Mina anteckningar' });
+    const list = notes.getByRole('list', { name: 'Mina anteckningar' });
+
+    // Ny anteckning opens the form with the focus in its text; blank is said on the field and nothing is sent.
+    const addButton = notes.getByRole('button', { name: 'Ny anteckning om Verksamhet' });
+    await addButton.focus();
+    await page.keyboard.press('Enter');
+    const add = notes.getByRole('form', { name: 'Ny anteckning' });
+    const text = add.getByRole('textbox', { name: /Anteckning/ });
+    await expect(text).toBeFocused();
+    await add.getByRole('button', { name: 'Spara' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(add.getByText('Skriv din anteckning.')).toBeVisible();
+    await expect(text).toBeFocused();
+    expect(d.writes).toEqual([]);
+
+    // Saved: said aloud, first in the list, the field emptied and still holding the focus for the next thought.
+    await text.fill('Rektorn vill ha stöd i schemafrågan.');
+    await add.getByRole('button', { name: 'Spara' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(notices(page).getByText('Anteckningen är sparad.')).toBeAttached();
+    expect(d.writes.at(-1)).toEqual({
+      method: 'POST',
+      path: `/units/${ENTITY_UNIT.id}/notes`,
+      body: { area: 'operations', text: 'Rektorn vill ha stöd i schemafrågan.' },
+    });
+    await expect(list.getByRole('listitem').first()).toContainText('Rektorn vill ha stöd i schemafrågan.');
+    await expect(text).toHaveValue('');
+    await expect(text).toBeFocused();
+    await add.getByRole('button', { name: 'Stäng' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(add).toHaveCount(0);
+    await expect(addButton).toBeFocused();
+
+    // Ändra opens the form on the note's text; Spara closes it, says when it was changed and gives the focus back.
+    const change = list.getByRole('button', { name: 'Ändra anteckningen från 2 nov 2026' }).last();
+    await change.focus();
+    await page.keyboard.press('Enter');
+    const edit = notes.getByRole('form', { name: 'Ändra anteckningen' });
+    const editText = edit.getByRole('textbox', { name: /Anteckning/ });
+    await expect(editText).toBeFocused();
+    await expect(editText).toHaveValue('Fråga om vikarierna nästa gång.');
+    await editText.fill('Fråga om vikarierna och om budgeten.');
+    await edit.getByRole('button', { name: 'Spara' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(notices(page).getByText('Anteckningen är ändrad.')).toBeAttached();
+    expect(d.writes.at(-1)).toEqual({
+      method: 'PATCH',
+      path: '/notes/n1',
+      body: { text: 'Fråga om vikarierna och om budgeten.' },
+    });
+    await expect(edit).toHaveCount(0);
+    await expect(list).toContainText('Fråga om vikarierna och om budgeten.');
+    await expect(list).toContainText('2 nov 2026 · ändrad 5 nov 2026');
+    await expect(list.getByRole('button', { name: 'Ändra anteckningen från 2 nov 2026' }).last()).toBeFocused();
+    await expectNoAxeViolations(page);
+
+    // Ta bort asks first; once removed the note is gone for good and the focus is on the section's heading.
+    await list.getByRole('button', { name: 'Ta bort anteckningen från 2 nov 2026' }).last().focus();
+    await page.keyboard.press('Enter');
+    const confirm = page.getByRole('alertdialog', { name: 'Ta bort anteckningen' });
+    await expect(confirm).toContainText('Det går inte att ångra.');
+    await confirm.getByRole('button', { name: 'Ta bort' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(notices(page).getByText('Anteckningen är borttagen.')).toBeAttached();
+    expect(d.writes.at(-1)).toMatchObject({ method: 'DELETE', path: '/notes/n1' });
+    await expect(list).not.toContainText('vikarierna');
+    await expect(notes.getByRole('heading', { name: 'Mina anteckningar' })).toBeFocused();
   });
 
   test('closed after arriving by a direct link, the focus goes to the section’s way in, never the page’s body', async ({

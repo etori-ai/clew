@@ -10,7 +10,7 @@ import type { EntityUsecases } from '../../apps/server/src/modules/entities/usec
  */
 const persona = { id: 'hillevi', name: 'Hillevi' } as AuthenticatedContext;
 const detail = (key: string): EntityDetail => ({
-  entity: { kind: 'person', key, name: 'Anna' },
+  entity: { kind: 'person', key, sourceKey: 'anna.l', name: 'Anna' },
   relation: 'managed',
   actions: [],
   sections: [],

@@ -413,7 +413,7 @@ test.describe('the panel over a page that has none of its own', () => {
 
 /**
  * One panel (the product owner, 2026-11-11: "there are multiple different sidebars"): on every page that holds it, a
- * card stands beside the page from the one width, 1336 px, as a named region that leaves the page in use, and below it
+ * card stands beside the page from the one width, 1340 px, as a named region that leaves the page in use, and below it
  * is the drawer over the page; either way under the same header, the same small "Kort" at the same level and the same
  * ✕ in the same place. The page gives way to the panel, never the other way round: nothing scrolls sideways.
  */

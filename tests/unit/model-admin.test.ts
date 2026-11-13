@@ -450,6 +450,21 @@ describe("the person's model", () => {
     expect((await w.models.statusFor(w.hassan)).choices.map(c => c.id)).toEqual([big]);
     await expect(w.models.choose(w.hassan, small)).rejects.toThrow('Modellen finns inte.');
   });
+  test('a model for one provisioned group only is offered to its members and to nobody else (D68)', async () => {
+    const w = world();
+    const { big, small } = await installed(w);
+    await w.models.updateModel(w.mikael, small, { audience: { mode: 'selected', groups: ['S-1-5-21-skolledare'] } });
+    const member = { ...w.hassan, groups: ['S-1-5-21-annan', 'S-1-5-21-skolledare'] };
+    expect((await w.models.statusFor(member)).choices.map(c => c.id)).toEqual([big, small]);
+    expect((await w.models.choose(member, small)).current?.id).toBe(small);
+    expect((await w.models.resolve(member))!.id).toBe(small);
+    // The role that admitted Hillevi before is not in the audience now, and a person outside the group is not either.
+    expect((await w.models.statusFor(w.hillevi)).choices.map(c => c.id)).toEqual([big]);
+    expect((await w.models.statusFor({ ...w.hassan, groups: ['S-1-5-21-annan'] })).choices.map(c => c.id)).toEqual([
+      big,
+    ]);
+    await expect(w.models.choose(w.hassan, small)).rejects.toThrow('Modellen finns inte.');
+  });
   test("a pick is the person's own, audited, used by the next turn with the opened key, and falls back silently when the model goes away", async () => {
     const w = world();
     const { big, small } = await installed(w);

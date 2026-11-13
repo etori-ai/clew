@@ -1,7 +1,7 @@
-import { afterAll } from 'bun:test';
+import { afterAll, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { eq, inArray, like, or } from 'drizzle-orm';
-import { database, schema } from '../../packages/db/src/index';
+import { eq, inArray, like, or, sql } from 'drizzle-orm';
+import { database, schema, type Database } from '../../packages/db/src/index';
 import { postgresProvisionStore } from '../../apps/server/src/modules/people/adapters/postgres';
 import { provisioningContract, type ProvisioningHarness } from '../provisioning-store-contract';
 
@@ -9,7 +9,9 @@ import { provisioningContract, type ProvisioningHarness } from '../provisioning-
 if (!process.env.DATABASE_URL)
   throw new Error('DATABASE_URL is not set. Run `bun run test:db` inside the devcontainer.');
 const prefixes: string[] = [],
-  createdGroups: string[] = [];
+  createdGroups: string[] = [],
+  /** Rows of the authentication log the SCIM harness wrote on the suite's database; they name no person to find them by. */
+  signInRows: number[] = [];
 afterAll(async () => {
   const db = database();
   for (const p of prefixes) {
@@ -23,6 +25,7 @@ afterAll(async () => {
     await db.delete(schema.groupRelations).where(like(schema.groupRelations.groupExternalId, '%' + p + '%'));
     if (people.length) {
       await db.delete(schema.identityBindings).where(inArray(schema.identityBindings.personId, people));
+      await db.delete(schema.sessions).where(inArray(schema.sessions.personId, people));
       await db.delete(schema.audit).where(
         inArray(
           schema.audit.subject,
@@ -42,6 +45,8 @@ afterAll(async () => {
     await db.delete(schema.units).where(like(schema.units.id, p + '%'));
     if (people.length) await db.delete(schema.people).where(inArray(schema.people.id, people));
   }
+  if (signInRows.length)
+    await db.delete(schema.authenticationAudit).where(inArray(schema.authenticationAudit.id, signInRows));
   // Capability groups the harness created because the development stack had not; one that existed is left as found.
   if (createdGroups.length) {
     await db.delete(schema.groupMembers).where(inArray(schema.groupMembers.groupId, createdGroups));
@@ -156,30 +161,101 @@ provisioningContract('postgres', async (): Promise<ProvisioningHarness> => {
     },
   };
 });
-import { scimStoreContract } from '../scim-store-contract';
+import { scimStoreContract, type ScimStoreHarness } from '../scim-store-contract';
+import { cLocaleDatabase, type CLocaleDatabase } from './c-locale';
+/** The SCIM half's harness on the suite's database, or on `db` when a test names another. */
+const scimHarness = (prefix: string, db: () => Database = database): ScimStoreHarness => ({
+  store: postgresProvisionStore({ db }),
+  withLeavers: (leavers, leaverFailed) => postgresProvisionStore({ leavers: () => leavers(), leaverFailed, db }),
+  prefix,
+  async seedProvisioner(p, digest, revoked, previous) {
+    await db()
+      .insert(schema.provisioners)
+      .values({
+        ...p,
+        tokenDigest: digest,
+        createdBy: 'test',
+        revokedAt: revoked ? new Date() : null,
+        previousTokenDigest: previous?.digest ?? null,
+        previousValidUntil: previous ? new Date(previous.until) : null,
+      });
+  },
+  async bind(personId, issuer = 'https://idp.test/' + prefix, subject = personId) {
+    await db().insert(schema.identityBindings).values({ issuer, subject, personId });
+  },
+  async openSession(personId, digest) {
+    const until = new Date(Date.now() + 60 * 60_000);
+    await db()
+      .insert(schema.sessions)
+      .values({
+        digest,
+        personId,
+        issuer: 'https://idp.test/' + prefix,
+        subject: personId,
+        clientId: 'clew',
+        csrf: 'csrf',
+        tokens: 'sealed',
+        tokenExpiresAt: until,
+        idleExpiresAt: until,
+        expiresAt: until,
+      });
+  },
+  async sessions(personId) {
+    const rows = await db()
+      .select({ digest: schema.sessions.digest })
+      .from(schema.sessions)
+      .where(eq(schema.sessions.personId, personId));
+    return rows.length;
+  },
+  async logSignIn(actor, action) {
+    const [row] = await db()
+      .insert(schema.authenticationAudit)
+      .values({ actor, action })
+      .returning({ id: schema.authenticationAudit.id });
+    // The database created with the locale C is dropped whole.
+    if (db === database) signInRows.push(row!.id);
+    return row!.id;
+  },
+  async signInActor(id) {
+    const [row] = await db()
+      .select({ actor: schema.authenticationAudit.actor })
+      .from(schema.authenticationAudit)
+      .where(eq(schema.authenticationAudit.id, id));
+    return row?.actor;
+  },
+});
 scimStoreContract('postgres', async () => {
   const prefix = 'test-scim-' + randomUUID().slice(0, 8);
   prefixes.push(prefix);
-  return {
-    store: postgresProvisionStore(),
-    prefix,
-    async seedProvisioner(p, digest, revoked, previous) {
-      await database()
-        .insert(schema.provisioners)
-        .values({
-          ...p,
-          tokenDigest: digest,
-          createdBy: 'test',
-          revokedAt: revoked ? new Date() : null,
-          previousTokenDigest: previous?.digest ?? null,
-          previousValidUntil: previous ? new Date(previous.until) : null,
-        });
-    },
-    async bind(personId) {
-      await database()
-        .insert(schema.identityBindings)
-        .values({ issuer: 'https://idp.test/' + prefix, subject: personId, personId });
-    },
-    withLeavers: (leavers, leaverFailed) => postgresProvisionStore({ leavers: () => leavers(), leaverFailed }),
-  };
+  return scimHarness(prefix);
+});
+/**
+ * The same contract on a database created with the locale C, which D100 supports and where only ICU folds å, ä and ö:
+ * a comparison of a user name, a group's name or a word of the people list's search that leaves the folding to the
+ * database's collation passes on the suite's database and fails here (L13). The first case creates the database, and
+ * it is dropped when the file ends.
+ */
+let cLocale: Promise<CLocaleDatabase> | undefined;
+afterAll(async () => {
+  await (await cLocale?.catch(() => undefined))?.drop();
+});
+scimStoreContract('postgres created with the locale C', async () => {
+  const { db } = await (cLocale ??= cLocaleDatabase());
+  return scimHarness('test-scim-c-' + randomUUID().slice(0, 8), () => db);
+});
+/**
+ * What the store's comparisons and locks rely on, pinned as the migrations define it: the user names' index folds as
+ * the store compares, which the contract shows by behaviour only on the database created with the locale C, and the
+ * source keys' index is partial, which only the interleaving in `postgres-scim-concurrency.test.ts` shows otherwise.
+ */
+test('auth_person holds a source key unique where one is set, and a user name unique as ICU folds it whatever the database collates (S4, L13)', async () => {
+  const rows = await database().execute<{ indexname: string; indexdef: string }>(
+    sql`select indexname, indexdef from pg_indexes where tablename = 'auth_person' and indexname in ('auth_person_external_id', 'auth_person_user_name')`,
+  );
+  const defined = Object.fromEntries([...rows].map(row => [row.indexname, row.indexdef]));
+  // Partial, so that the column is no key to PostgreSQL's row locks: a new key is written beside a membership insert.
+  expect(defined.auth_person_external_id).toContain('UNIQUE INDEX auth_person_external_id');
+  expect(defined.auth_person_external_id).toEndWith('(external_id) WHERE (external_id IS NOT NULL)');
+  expect(defined.auth_person_user_name).toContain('UNIQUE INDEX auth_person_user_name');
+  expect(defined.auth_person_user_name).toEndWith('(lower((user_name COLLATE "und-x-icu")))');
 });

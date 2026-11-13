@@ -34,15 +34,17 @@ import { personKey } from '../modules/entities/domain';
 import { staff } from './people';
 import { postgresJobQueue, postgresPeople } from '../scheduler/adapters/postgres';
 import { createScheduler } from '../scheduler/usecases';
+import { signInData } from './sign-ins';
 import { postgresThreadStore } from '../threads/adapters/postgres';
-import { cancelDurable } from '../dbos/start';
+import { cancelDurable, moveToRunningVersion } from '../dbos/start';
 import { ledger } from './durable';
-import { actorOf, COMPETENCE_CONNECTOR, DIALOGUE_CONNECTOR, inAudience } from '@clew/connectors';
+import { audiencedActorOf, COMPETENCE_CONNECTOR, DIALOGUE_CONNECTOR, inAudience } from '@clew/connectors';
 import { organisationInAudiences, readAudienceFacts } from '@clew/db/auth';
 import { reminderUsecases } from '../threads/usecases/reminders';
 import { threadUsecases } from '../threads/usecases/cards';
 import { clock, ids } from './ambient';
 import { calendar, events, notifier, calendarAuthority, followups, planningRound } from './calendar';
+import { talksRound } from '../modules/calendar/adapters/talks-round';
 import { talks } from './talks';
 import { holdingsPort } from './competence';
 import { dialogue } from './dialogue';
@@ -57,6 +59,7 @@ import { executions } from './executions';
 import { reviewDocuments } from './documents';
 import { visibleThread } from '../threads/access';
 import { refresh } from './refresh';
+import { personKeys } from './person-keys';
 import { postgresAttention } from '../threads/adapters/attention-postgres';
 import { logPort } from '../logging';
 import { currentTraceId, telemetry } from '../telemetry';
@@ -77,6 +80,8 @@ const threadCore = threadUsecases({
   run: runCapability,
   clock,
   ids,
+  // A row names a person by user name; the card keeps their id (D122).
+  people: personKeys,
   calendar: {
     ensureProposalThread: calendar.ensureProposalThread,
     replan: calendar.replan,
@@ -103,6 +108,7 @@ export const threads = {
     approve: executions.approve,
     clock,
     documentPreview: reviewDocuments.preview,
+    people: personKeys,
   }),
   // A card the person starts without the model (D8, D97): a propose's draft, or an execute behind its decision.
   ...startedCards({
@@ -112,6 +118,7 @@ export const threads = {
     digest: value => createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 32),
     clock,
     ids,
+    people: personKeys,
   }),
 };
 const meetingFailed = logPort('asks', 'warn');
@@ -124,7 +131,7 @@ export const asks = askUsecases({
   registry,
   calendar: {
     free: async (persona, input) => {
-      if (!registry.allowed(actorOf(persona), 'calendar.freeTimes')) return [];
+      if (!registry.allowed(audiencedActorOf(persona), 'calendar.freeTimes')) return [];
       try {
         return (
           await runCapability<{ gaps: Array<{ start: string; end: string }> }>(persona, 'calendar.freeTimes', input)
@@ -135,7 +142,7 @@ export const asks = askUsecases({
       }
     },
     day: async (persona, date) => {
-      if (!registry.allowed(actorOf(persona), 'calendar.day')) return undefined;
+      if (!registry.allowed(audiencedActorOf(persona), 'calendar.day')) return undefined;
       try {
         return await runCapability<DayView>(persona, 'calendar.day', { date });
       } catch (error) {
@@ -191,26 +198,16 @@ export async function fireTimer(id: string, generation: number) {
   if (timer?.kind === 'dialogue-due') return dialogue.activityDue(timer.threadId, generation);
   return reminders.fire(id, generation);
 }
-const roundFailed = logPort('talks', 'error');
 /**
- * The round the planner works towards (D96 items 1-3) is the one `clew.talks` answers for the person, from whichever
- * system answers the talks profile, read as the person through the registry: its dates, and the people whose talk the
- * source records as held. No round, no system that answers for this person, or a read that fails: no round, and the
- * planner plans nothing rather than fail the stream. The built-in round asks the calendar who is booked
- * (`samtalBookings`), which takes the period as input and never reads the round, so the two do not call each other.
+ * The round (`talksRound`, D96 items 1-3), read as the person through the registry. The built-in round asks the
+ * calendar who is booked (`samtalBookings`), which takes the period as input and never reads the round, so the two do
+ * not call each other.
  */
-planningRound.read = async persona => {
-  if (!registry.allowed(actorOf(persona), TALKS_CAPABILITY)) return null;
-  try {
-    const result = await runCapability<TalksResult>(persona, TALKS_CAPABILITY, {});
-    if (!result.round) return null;
-    const { label, opensOn, dueOn } = result.round;
-    return { label, opensOn, dueOn, held: result.rows.filter(r => r.state === 'held').map(r => r.personId) };
-  } catch (error) {
-    roundFailed('talks: the planning round could not be read', error);
-    return null;
-  }
-};
+planningRound.read = talksRound({
+  answers: persona => !!registry.allowed(audiencedActorOf(persona), TALKS_CAPABILITY),
+  read: persona => runCapability<TalksResult>(persona, TALKS_CAPABILITY, {}),
+  failed: logPort('talks', 'error'),
+});
 /**
  * Clew writes its own talk records only while the built-in module answers the talks profile for this person (D96 item
  * 9): not when an administrator has switched it off, nor for someone outside its audience. The rows are read first, as
@@ -218,7 +215,7 @@ planningRound.read = async persona => {
  */
 export async function talksWritable(persona: AuthenticatedContext) {
   await refreshConnectors();
-  return registry.talkSource(actorOf(persona))?.builtIn === true;
+  return registry.talkSource(audiencedActorOf(persona))?.builtIn === true;
 }
 /**
  * Clew writes competence records only while the built-in module is switched on and visible to this person (D108 item
@@ -226,7 +223,7 @@ export async function talksWritable(persona: AuthenticatedContext) {
  */
 export async function competenceWritable(persona: AuthenticatedContext) {
   await refreshConnectors();
-  return registry.visible(actorOf(persona), COMPETENCE_CONNECTOR);
+  return registry.visible(audiencedActorOf(persona), COMPETENCE_CONNECTOR);
 }
 /**
  * Clew writes the follow-up dialogue only while its built-in module is switched on and visible to this person (D118).
@@ -234,7 +231,7 @@ export async function competenceWritable(persona: AuthenticatedContext) {
  */
 export async function dialogueWritable(persona: AuthenticatedContext) {
   await refreshConnectors();
-  return registry.visible(actorOf(persona), DIALOGUE_CONNECTOR);
+  return registry.visible(audiencedActorOf(persona), DIALOGUE_CONNECTOR);
 }
 /**
  * The copy of what sources hold (D108 item 9) reads only while the module is switched on for the installation, the
@@ -312,10 +309,8 @@ export const assistant = assistantUsecases({
   // The people the asker manages (D115): Personal's list, read on every turn; only people who can be asked about (D97).
   people: async persona =>
     (await staff.reach(persona)).managed.flatMap(unit =>
-      unit.people.flatMap(p => {
-        const key = personKey(p);
-        return key ? [{ key, name: p.name, unit: unit.unitLabel }] : [];
-      }),
+      // By Clew's key, the person's id (D122), as the cards about them name them; only someone who can be asked about.
+      unit.people.flatMap(p => (personKey(p) ? [{ key: p.id, name: p.name, unit: unit.unitLabel }] : [])),
     ),
 });
 /** The models' health probe (D8), started by main.ts beside the server: once at boot, then every minute. */
@@ -386,10 +381,12 @@ export const connectorReconcile: ConnectorReconcileDeps = {
 export const refreshConnectors = () => applyAllRows(connectorReconcile);
 registry.setRefresh(refreshConnectors);
 export const scheduler = createScheduler({
-  jobs: postgresJobQueue(ledger),
+  jobs: postgresJobQueue({ durable: ledger, move: moveToRunningVersion }),
   people: postgresPeople(),
   threads,
   calendar,
+  // The nightly clean-up of sign-in machinery (D123).
+  signIns: signInData,
   clock,
   log: logPort('scheduler', 'error'),
 });

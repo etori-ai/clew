@@ -1,14 +1,20 @@
 import { afterAll, expect, test } from 'bun:test';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { eq, like, sql } from 'drizzle-orm';
 import { database, schema } from '../../packages/db/src/index';
 import type { DurableQueue } from '../../packages/db/src/durable';
+import { competenceStoreWithCards } from '../../apps/server/src/composition/competence';
 import { postgresCompetenceStore } from '../../apps/server/src/modules/competence/adapters/postgres';
 import { competenceStoreContract, copiedRow, typeRow } from '../competence-store-contract';
 
-/** The competence store contract on Postgres (D108). Run with `bun run test:db` inside the devcontainer. */
+/**
+ * The competence store contract on Postgres (D108), over the store composition builds: the competence tables and the
+ * person's own competence cards on one thread-store transaction (`competenceStoreWithCards`), with this suite's own
+ * engine application and queue. Run with `bun run test:db` inside the devcontainer.
+ */
 if (!process.env.DATABASE_URL)
   throw new Error('DATABASE_URL is not set. Run `bun run test:db` inside the devcontainer.');
+process.env.MASTER_KEY ??= randomBytes(32).toString('base64');
 /** An application of its own, so the starts this suite commits are never dequeued by the development server. */
 const application = 'clew-test-competence-' + randomUUID().slice(0, 8);
 const durable: DurableQueue = { application, queue: application + '.ledger' };
@@ -25,6 +31,7 @@ afterAll(async () => {
     await db.delete(schema.competenceSourceMappings).where(like(schema.competenceSourceMappings.connectorId, p + '%'));
     await db.delete(schema.competenceSources).where(like(schema.competenceSources.connectorId, p + '%'));
     await db.delete(schema.competenceTypes).where(like(schema.competenceTypes.id, p + '%'));
+    await db.delete(schema.threads).where(like(schema.threads.id, p + '%'));
     await db.delete(schema.audit).where(like(schema.audit.subject, '%:' + p + '%'));
     await db.delete(schema.connectors).where(like(schema.connectors.id, p + '%'));
     await db.delete(schema.assignments).where(like(schema.assignments.personId, p + '%'));
@@ -36,13 +43,14 @@ afterAll(async () => {
   }
   await db.execute(sql`delete from dbos.workflow_status where application_name = ${application}`);
 });
+const store = competenceStoreWithCards({ durable, cancel: async () => undefined });
 
 competenceStoreContract('postgres', async () => {
   // A connector's id is lower case (`connector_id` check), and every id this run writes starts with it.
   const prefix = 'test-comp-' + randomUUID().slice(0, 8);
   prefixes.push(prefix);
   return {
-    store: postgresCompetenceStore(durable),
+    store,
     prefix,
     async seedPerson(person) {
       await database().insert(schema.people).values(person);
@@ -54,6 +62,32 @@ competenceStoreContract('postgres', async () => {
       await database()
         .insert(schema.connectors)
         .values({ id, url: 'http://' + id + '.test', secret: 'sealed', createdBy: 'test', updatedBy: 'test' });
+    },
+    async seedCard(id, personId, connector) {
+      const at = new Date('2026-11-10T08:00:00.000Z');
+      await database()
+        .insert(schema.threads)
+        .values({
+          id,
+          personId,
+          kind: 'pushed',
+          topic: `${connector}:${id}`,
+          title: 'HLR gick ut 1 juni',
+          state: 'open',
+          connector,
+          area: connector,
+          trigger: { reason: 'Behörigheten har gått ut', source: 'Kompetens', at: at.toISOString() },
+          createdAt: at,
+          updatedAt: at,
+        });
+    },
+    async cardsOf(personId) {
+      const rows = await database()
+        .select({ id: schema.threads.id })
+        .from(schema.threads)
+        .where(eq(schema.threads.personId, personId))
+        .orderBy(schema.threads.id);
+      return rows.map(r => r.id);
     },
     async auditFor(subject) {
       return database()
@@ -101,7 +135,7 @@ competenceStoreContract('postgres', async () => {
 test('removing a connector removes what it put in the competence register, and nothing else', async () => {
   const p = 'test-comp-' + randomUUID().slice(0, 8);
   prefixes.push(p);
-  const store = postgresCompetenceStore(durable);
+  const store = competenceStoreWithCards({ durable, cancel: async () => undefined });
   const db = database();
   await db.insert(schema.people).values({ id: p + '-anna', organisationId: p + '-org', name: 'Synthetic' });
   for (const id of [p + '-lms', p + '-hr'])

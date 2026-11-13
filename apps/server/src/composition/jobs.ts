@@ -1,31 +1,38 @@
 import { durableJobs } from '../scheduler/adapters/durable-postgres';
+import { scheduledJobRunner, seedNightly } from '../scheduler/usecases';
 import { scheduler, attention } from './index';
-import { clock } from './ambient';
-import { logger } from '../logging';
+import { clock, every } from './ambient';
+import { logPort } from '../logging';
 
-export async function runScheduledJob(id: string): Promise<'done' | 'busy'> {
-  const job = await durableJobs.claimExecution(id, clock().toISOString());
-  if (!job) return 'done';
-  if (job === 'busy') return 'busy';
-  if (job.kind === 'attention-release' && typeof job.payload.batch === 'string')
-    await attention.release(job.payload.batch);
-  else await scheduler.run(job);
-  await durableJobs.completed(id, job.attempt, clock().toISOString());
-  return 'done';
-}
 /**
- * The nightly scan is scheduled at boot (idempotent by date; the job reschedules the next one when it runs). Every job
- * row starts its workflow inside the transaction that writes it (D86), so nothing here polls for delivery; the retry is
- * only for a database that is not reachable yet.
+ * The `scheduledJob` workflow's step (D47, D86) over the live job table, the attention store and the scheduler. Its
+ * claim is renewed on the wall clock while a run lasts.
  */
-export function startJobs() {
-  const seed = async () => {
-    try {
-      await scheduler.scheduleNightly();
-    } catch (error) {
-      logger.error({ scope: 'scheduler', error }, 'nightly scan could not be scheduled, retrying');
-      setTimeout(() => void seed(), 2000).unref();
-    }
-  };
-  void seed();
+export const runScheduledJob = scheduledJobRunner({
+  executions: durableJobs,
+  release: batch => attention.release(batch),
+  run: job => scheduler.run(job),
+  clock,
+  every,
+  log: logPort('scheduler', 'error'),
+});
+/**
+ * The nightly scan and the nightly clean-up of sign-in data (D123) are scheduled at boot (idempotent by date; each job
+ * reschedules the next one when it runs), once the durable engine has launched (`seedNightly`): its version is then the
+ * latest, so this release takes each night from the queue, and the last and the next night that a deployment left
+ * waiting under the replaced release are taken over (D85 item 2, as amended 2026-11-13). Every job row starts its
+ * workflow inside the transaction that writes it (D86), so nothing here polls for delivery. While the engine cannot
+ * launch, it says so itself every 30 seconds (`dbos/runtime.ts`); the retry here, every two seconds, is for a failure
+ * after it has launched, such as a database that stopped answering or a take-over that failed.
+ */
+export function startJobs(engine: Promise<unknown>) {
+  void seedNightly({
+    engine,
+    startNightly: () => scheduler.startNightly(),
+    log: logPort('scheduler'),
+    fail: logPort('scheduler', 'error'),
+    retry: run => {
+      setTimeout(() => void run(), 2000).unref();
+    },
+  });
 }

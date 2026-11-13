@@ -86,7 +86,7 @@ export function audienceLabel(a: ConnectorAudience): string {
     ...(a.units?.length ? [`${a.units.length} ${a.units.length === 1 ? 'enhet' : 'enheter'}`] : []),
     ...(a.groups?.length ? [`${a.groups.length} ${a.groups.length === 1 ? 'grupp' : 'grupper'}`] : []),
   ];
-  return parts.length ? parts.join(' · ') : 'Ingen';
+  return parts.length ? parts.join('\u00a0· ') : 'Ingen';
 }
 export const capabilityKindLabel = { read: 'Läs', propose: 'Föreslå', execute: 'Utför' } as const;
 export const actionLabel: Record<string, string> = {

@@ -10,6 +10,7 @@ import { cancelDurable } from '../dbos/start';
 import { logger } from '../logging';
 import { standingSession } from '../auth';
 import { openSecret, sealSecret } from '../auth-crypto';
+import { personKeys } from './person-keys';
 
 export const refresh = refreshUsecases({
   store: postgresRefreshStore({
@@ -23,6 +24,8 @@ export const refresh = refreshUsecases({
   current: id => systemContext(id, 'system:refresh'),
   // The person's own session that asked for a refresh, while it is active (D26): what a delegated connector's scan runs with.
   session: standingSession,
+  // A row names a person by user name; the card keeps their id (D122).
+  people: personKeys,
   sources: async p => {
     await registry.refreshGovernance();
     return registry

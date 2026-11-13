@@ -1,6 +1,6 @@
 # D99 · Units form a tree pushed over SCIM, and a manager works with their direct reports
 
-**Status:** accepted (product owner, 2026-11-10: units form a tree, the tree is pushed as resources of its own, a manager works with their direct reports and not with everyone below), built 2026-11-10 (the parent on the unit group, the SCIM extension and its refusals, the reporting line in Personal, talks and the calendar's team, the development directory as a tree, the check, Administration › Organisation; see "As built"); the transport in item 2 is proposed until a real provisioner has used it, the branch of item 5 has no user yet, and the items under "Open" are not decided; the order of a push and whose a unit is are D101 (2026-11-11); item 6 amended 2026-11-12 (product owner): a unit's people moved from an overlay over the tree to the unit's own page, `/admin/organisation/<unitId>`, see the amendment · **Date:** 2026-11-10 · **Area:** identity, product
+**Status:** accepted (product owner, 2026-11-10: units form a tree, the tree is pushed as resources of its own, a manager works with their direct reports and not with everyone below), built 2026-11-10 (the parent on the unit group, the SCIM extension and its refusals, the reporting line in Personal, talks and the calendar's team, the development directory as a tree, the check, Administration › Organisation; see "As built"); the transport in item 2 is proposed until a real provisioner has used it, the branch of item 5 has no user yet, and the items under "Open" are not decided; the order of a push and whose a unit is are D101 (2026-11-11); the order inside the unit overlay of item 6 and where its close returns the focus are amended by [D124](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) (2026-11-13, provisional, built 2026-11-13: see the last paragraph of "As built"); an amendment of item 6 of 2026-11-12 (a unit's people as a page) was withdrawn in the merge with D124, see that amendment · **Date:** 2026-11-10 · **Area:** identity, product
 
 **Decision.** A unit in Clew has at most one parent, so the units of an installation form a tree, or several. The
 provisioner pushes the tree explicitly; Clew never infers it from the people that arrive. Who a manager works with
@@ -159,12 +159,22 @@ refused for a parent the client never sent. `attributes` and `excludedAttributes
 level at a time, and the overlay reads one unit instead of the organisation. The overlay counts as the row does,
 deactivated people named beside the count.
 
+Since 2026-11-13 ([D124](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md)) item 6 is built in another order and
+with another return. The overlay is walked: "Ingår i …" steps to the unit above, and the unit a reporting row names,
+or a row under "Enheter under", steps down, each replacing `?unit=` without a history entry, with the focus on the
+unit's heading and "Visar <enhet>" announced. Its order is the step up, the status line, who leads the unit, who
+reports to them from the units below, the units below that no reporting row names, and last the others placed on
+the unit, one line each; no row shows a user name. Closing with no step taken still returns the focus to the row
+that opened the overlay; after a step it goes to the row of the unit shown, with the tree open down to it. The tree
+is a ledger on a screen wider than a phone, the counts in a column at the row's end and still in the row's name,
+and what a push left wrong is one card, "Att rätta i katalogen", whose units open the overlay.
+
 **Not done.** A manual pass with a screen reader, which the suite does not replace. Personal looked at signed in as a
 manager with a report from below (the use case was read against the development database; the page was run on
 fixtures). A provisioner against a real source. The two figures in `docs/architecture/figures/` that draw the group
 keys do not show the parent.
 
-**Amended 2026-11-12: a unit's people are a page, not an overlay.** The product owner, looking at the overlay of item
+**Amended 2026-11-12, and withdrawn in the merge with `main` on 2026-11-13: a unit's people are a page, not an overlay.** The product owner, looking at the overlay of item
 6: "should an organisation really open in a sidebar? This can get extremely crammed, an organisation might have
 hundreds of employees. The sidebar needs to be for peeking or some kind of instant actions, otherwise a full route is
 needed." The overlay was 480 px wide, three lines per person and no search. Item 6 now reads: a row of the tree leads
@@ -188,7 +198,11 @@ stated is recorded for every surface in [D111](D111-where-something-opens-is-dec
 2026-11-12) and in [interface spaces](../reference/interface-spaces.md) rule 11. Code:
 `apps/web/src/pages/admin/organisation-unit.tsx` and `organisation-model.ts`; tests:
 `apps/web/tests/organisation-model.test.ts` and `tests/a11y/organisation.spec.ts`, rewritten for the page, with a unit
-of 412 people.
+of 412 people. Withdrawn: `main` had meanwhile taken
+[D124](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) (2026-11-13),
+which keeps the unit in its drawer and walks it one step up and down, so the merge kept `main`'s overlay and removed
+the page, its code and its tests. Whether a unit's people should be a page after all is an open question for the
+product owner ([open questions](../maintainers/open-questions.md)).
 
 **Replaces.** Amends [D68](D68-people-are-pushed-into-clew-through-standard-scim.md): the provisioner no longer
 flattens a hierarchy, a `unit:` group gains a parent, and a group as a member of a group stays refused. Amends

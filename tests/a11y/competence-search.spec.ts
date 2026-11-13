@@ -44,9 +44,9 @@ const registrar = (api: MockApi, many = false) => {
   api.competenceSearch = searchHolders(many);
   // The person a hit opens, as the directory names them to a colleague: their page's own lookup.
   api.entityDetailOf = key =>
-    key === 'anna.lindqvist'
+    key === 'p-anna'
       ? {
-          entity: { kind: 'person', key, name: 'Anna Lindqvist' },
+          entity: { kind: 'person', key, sourceKey: 'anna.lindqvist', name: 'Anna Lindqvist' },
           relation: 'colleague',
           actions: [],
           sections: [],
@@ -165,7 +165,7 @@ test.describe('Kompetens › Kompetenssökning', () => {
         expect(api.searchBodies).toHaveLength(1);
         // The name opens the person, as a name does on every list, with the search as the way back.
         await page.getByRole('link', { name: 'Anna Lindqvist', exact: true }).click();
-        await expect(page).toHaveURL(/\/people\/anna\.lindqvist\?/);
+        await expect(page).toHaveURL(/\/people\/p-anna\?/);
         expect(new URL(page.url()).searchParams.get('from')).toBe(`${SEARCH}?type=t-hlr`);
         await page.goBack();
         await expect(readout(page)).toHaveText('3 personer med HLR');

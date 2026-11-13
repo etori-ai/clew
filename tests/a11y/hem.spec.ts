@@ -13,6 +13,7 @@ import {
   reflowProblems,
   silentSaidIn,
   test,
+  workRowLines,
   type MockApi,
 } from './support';
 import {
@@ -41,7 +42,7 @@ const rail = (page: Page) => page.getByRole('navigation', { name: 'Sidonavigerin
 const news = (page: Page) => page.getByRole('region', { name: 'Nyheter' });
 const callout = (page: Page) => page.getByRole('region', { name: 'Viktigt' });
 const toasts = (page: Page) => page.getByRole('region', { name: 'Aviseringar' });
-/** The panel from the one width where it stands beside the page (1336 px), and the drawer below it. */
+/** The panel from the one width where it stands beside the page (1340 px), and the drawer below it. */
 const wide = { width: 1440, height: 900 };
 const beside = (page: Page) => page.getByRole('complementary', { name: 'Ärende', exact: true });
 /** The panel's name for a work item, the heading that takes the focus when it opens. */
@@ -601,12 +602,28 @@ test.describe('a work item opened from Hem, beside Hem', () => {
 test.describe('Hem with the parts of version 1.0, narrow', () => {
   test('at 320 px nothing reflows past the edge or is cut', async ({ page, api }) => {
     everything(api);
+    // The longest line a row has: the state, the reason and a reminder that waits to be scheduled.
+    api.threads.find(t => t.id === 'ledighet')!.timers = [
+      { kind: 'reminder', dueAt: '2026-11-05T10:00:00.000Z', state: 'queued' },
+    ];
     api.header = siteHeaderWithToolbox();
     await page.setViewportSize(narrow);
     await open(page, '/');
     await expect(callout(page)).toBeVisible();
     await expect(news(page)).toBeVisible();
     expect(await reflowProblems(page)).toEqual([]);
+    // `reflowProblems` sees what is cut sideways, not what a line clamp cuts downwards. A work item's supporting line
+    // begins with its state in words (1.4.1) and is not clamped: every row under Behöver dig says its state, and the
+    // whole line is drawn, the one with the queued reminder too, none of it behind an ellipsis.
+    const lines = await workRowLines(page.getByRole('region', { name: 'Behöver dig' }).locator('[id^="work-"]'));
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines.map(l => l.text)).toContain(
+      'Ska göras\u00a0· Ansökan väntar på beslut\u00a0· påminnelsen väntar på schemaläggning',
+    );
+    for (const line of lines) {
+      expect(line.text).toMatch(/^(Ska göras i dag|Ska göras)\u00a0· \S/);
+      expect(line, line.text).toMatchObject({ cut: false });
+    }
   });
 
   test('at 320 px the notice opened from Hem is the drawer over it, and nothing in it reflows past the edge', async ({

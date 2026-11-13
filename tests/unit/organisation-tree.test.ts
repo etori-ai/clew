@@ -10,6 +10,7 @@ import {
   schemaDocuments,
 } from '../../apps/server/src/modules/people/domain';
 import { organisationUsecases, scimUsecases, staffUsecases } from '../../apps/server/src/modules/people/usecases';
+import { refusingNul } from '../refusing-nul';
 
 /**
  * The organisation tree (D99) on the memory adapter: a `unit:` group carries the unit above it, the server refuses
@@ -225,21 +226,42 @@ describe('the organisation tree over SCIM (D99)', () => {
     expect(unknown).toMatchObject({ status: 400, scimType: 'invalidValue' });
     expect(unknown.detail).toContain("'unit:ksk' is not a unit of this organisation");
     expect(unknown.detail).toContain('from the root down (D99)');
-    for (const parent of ['ksk', 'Unit:ksk', 'unit:', 'unit: ksk', 'unit-manager:ksk', 7, {}]) {
+    for (const parent of ['ksk', 'Unit:ksk', 'unit:', 'unit: ksk', 'unit-manager:ksk']) {
       const wrong = await refusal(
         scim.createGroup(p, { externalId: 'unit:ksk-it', displayName: 'IT', [SCIM.unit]: { parent } }, BASE),
       );
       expect(wrong).toMatchObject({ status: 400, scimType: 'invalidValue' });
       expect(wrong.detail).toContain("'unit:<unitId>' (D99)");
     }
+    // What is no text Clew can hold is refused as any stored attribute is, naming the parent (S10).
+    for (const [parent, says] of [
+      [7, 'needs a non-empty string of at most 512 characters.'],
+      [{}, 'needs a non-empty string of at most 512 characters.'],
+      ['', 'needs a non-empty string of at most 512 characters.'],
+      ['unit:ksk\u0000', 'holds a NUL character, which cannot be stored.'],
+      ['unit:\uD800', 'contains an invalid Unicode character.'],
+    ] as const) {
+      const wrong = await refusal(
+        scim.createGroup(p, { externalId: 'unit:ksk-it', displayName: 'IT', [SCIM.unit]: { parent } }, BASE),
+      );
+      expect(wrong).toMatchObject({
+        status: 400,
+        scimType: 'invalidValue',
+        detail: `Attribute '${SCIM.unit}:parent' ${says}`,
+      });
+    }
     await unit('ksk', 'Kommunstyrelsekontoret', null);
-    for (const externalId of ['unit-manager:ksk-it', 'capability:admin.users', 'ad:plain', undefined]) {
+    for (const externalId of ['unit-manager:ksk-it', 'capability:admin.users', 'ad:plain']) {
       const misplaced = await refusal(
         scim.createGroup(p, { externalId, displayName: 'Other', [SCIM.unit]: { parent: 'unit:ksk' } }, BASE),
       );
       expect(misplaced).toMatchObject({ status: 400, scimType: 'invalidValue' });
       expect(misplaced.detail).toContain("carried by a 'unit:' group only");
     }
+    // A group without a key is no group a POST makes (S2), parent or not.
+    expect(
+      await refusal(scim.createGroup(p, { displayName: 'Other', [SCIM.unit]: { parent: 'unit:ksk' } }, BASE)),
+    ).toMatchObject({ status: 400, scimType: 'invalidValue', detail: "Attribute 'externalId' is required." });
     expect((await refusal(unit('ksk-it', 'IT', 'ksk-it'))).detail).toContain('cannot be its own parent');
     // Another organisation's unit is no parent here, and the refusal does not say that it exists.
     const other = { id: 'other', organisationId: 'timra', label: 'Timrå' };
@@ -342,7 +364,22 @@ describe('the organisation tree over SCIM (D99)', () => {
     expect(await patch([{ op: 'remove', path: SCIM.unit.toUpperCase() + ':parent' }])).toBeUndefined();
     const fields = { externalId: 'unit:skola', label: 'Skolan', parent: 'ksk', members: [] };
     expect(applyGroupPatch(fields, [{ op: 'remove', path: SCIM.unit }]).parent).toBeNull();
-    expect(applyGroupPatch(fields, [{ op: 'replace', value: { [SCIM.unit]: {} } }]).parent).toBeNull();
+    // `null` makes a unit a root, by the parent's path, the extension's and in a path-less value (Q1).
+    for (const operation of [
+      { op: 'replace', path: SCIM.unit + ':parent', value: null },
+      { op: 'replace', path: SCIM.unit, value: null },
+      { op: 'replace', path: SCIM.unit, value: { Parent: null } },
+      { op: 'replace', value: { [SCIM.unit]: { parent: null } } },
+      { op: 'add', value: { [SCIM.unit]: null } },
+    ])
+      expect(applyGroupPatch(fields, [operation]).parent).toBeNull();
+    // An extension's object that leaves `parent` out says nothing about it, which an add or replace may not: it once
+    // made the unit a root with a 200.
+    for (const operation of [
+      { op: 'replace', value: { [SCIM.unit]: {} } },
+      { op: 'add', path: SCIM.unit, value: { other: 'x' } },
+    ])
+      expect(() => applyGroupPatch(fields, [operation])).toThrow("requires a value for 'parent'.");
     expect(() => applyGroupPatch(fields, [{ op: 'replace', path: SCIM.unit + ':parent', value: 'ksk' }])).toThrow(
       "'unit:<unitId>' (D99)",
     );
@@ -372,6 +409,44 @@ describe('the organisation tree over SCIM (D99)', () => {
     await unit('d', 'D', 'a');
     expect((await move('c', 'd'))[SCIM.unit]).toEqual({ parent: 'unit:d' });
   });
+  test('a parent that a unit key written wrong names, stored before D96, ends the walk for a cycle where it ends the tree (D96)', async () => {
+    const { store, scim, p, unit, groups, persona } = harness();
+    await unit('a', 'A', null);
+    await unit('b', 'B', null);
+    // Stored before the server refused such a key and such a parent: a unit key with a space after the prefix, under
+    // 'b', and 'a' under that row. The tree reads the row as no node, so 'a' is a root and nothing stands above it.
+    store.state.groups.set('lone', {
+      id: 'lone',
+      organisationId: ORG,
+      parentUnitId: 'b',
+      externalId: 'unit: lone',
+      label: 'Stored before D96',
+      createdAt: '2026-11-09T06:00:00.000Z',
+      updatedAt: '2026-11-09T06:00:00.000Z',
+    });
+    store.state.groups.set(groups.get('a')!, { ...store.state.groups.get(groups.get('a')!)!, parentUnitId: ' lone' });
+    const tree = async () =>
+      (await organisationUsecases({ store }).overview(persona('admin', ['admin.users']))).units.map(u => [
+        u.unitId,
+        u.parentId,
+      ]);
+    expect(await tree()).toEqual([
+      ['a', null],
+      ['b', null],
+    ]);
+    // So 'b' goes under 'a' without closing a cycle through the row.
+    const moved = await scim.patchGroup(
+      p,
+      groups.get('b')!,
+      { schemas: [SCIM.patch], Operations: [{ op: 'replace', path: SCIM.unit + ':parent', value: 'unit:a' }] },
+      BASE,
+    );
+    expect(moved[SCIM.unit]).toEqual({ parent: 'unit:a' });
+    expect(await tree()).toEqual([
+      ['a', null],
+      ['b', 'a'],
+    ]);
+  });
   test('a unit with units below it is neither removed nor re-keyed: the tree is removed from the leaves up', async () => {
     const { scim, p, unit, groups, refusal, store } = harness();
     await unit('ksk', 'Kommunstyrelsekontoret', null);
@@ -388,6 +463,23 @@ describe('the organisation tree over SCIM (D99)', () => {
       expect(rekeyed).toMatchObject({ status: 400, scimType: 'invalidValue' });
       expect(rekeyed.detail).toContain("The unit 'ksk' still has 2 units below it");
     }
+    // A PATCH that takes the key away is refused the same way; a PUT that leaves it out keeps it, and the tree (S2).
+    const unkeyed = await refusal(
+      scim.patchGroup(
+        p,
+        groups.get('ksk')!,
+        { schemas: [SCIM.patch], Operations: [{ op: 'remove', path: 'externalId' }] },
+        BASE,
+      ),
+    );
+    expect(unkeyed).toMatchObject({ status: 400, scimType: 'invalidValue' });
+    expect(unkeyed.detail).toContain("The unit 'ksk' still has 2 units below it");
+    for (const externalId of [undefined, null, ''])
+      expect(
+        (await scim.replaceGroup(p, groups.get('ksk')!, { externalId, displayName: 'Kommunstyrelsekontoret' }, BASE))
+          .externalId,
+      ).toBe('unit:ksk');
+    expect((await scim.getGroup(p, groups.get('it')!, BASE))[SCIM.unit]).toEqual({ parent: 'unit:ksk' });
     expect(store.state.groups.get(groups.get('ksk')!)?.externalId).toBe('unit:ksk');
     await scim.deleteGroup(p, groups.get('it')!);
     expect((await refusal(scim.deleteGroup(p, groups.get('ksk')!))).detail).toContain(
@@ -705,6 +797,36 @@ describe('Administration › Organisation (D99)', () => {
     await expect(h.organisation.unit(h.persona('karin', ['admin.users']), 'finns-inte')).rejects.toBeInstanceOf(
       InputError,
     );
+    // A NUL names no unit: the same answer, and the store, which refuses one as PostgreSQL does, is never handed it.
+    const refusing = organisationUsecases({ store: refusingNul(h.store) });
+    expect(await refusing.unit(h.persona('karin', ['admin.users']), 'it')).toMatchObject({ unitId: 'it' });
+    await expect(refusing.unit(h.persona('karin', ['admin.users']), 'it\u0000')).rejects.toThrow(
+      new InputError('Enheten finns inte.'),
+    );
+  });
+  test('a unit key written wrong, stored before D96, names no unit when one unit is read, as it names no node in the tree (D96)', async () => {
+    const h = await organisation();
+    const admin = h.persona('karin', ['admin.users']);
+    // Stored before the server began refusing it: a unit key with a space after the prefix, under a unit of the tree.
+    h.store.state.groups.set('lone', {
+      id: 'lone',
+      organisationId: ORG,
+      parentUnitId: 'ksk',
+      externalId: 'unit: lone',
+      label: 'Stored before D96',
+      createdAt: '2026-11-09T06:00:00.000Z',
+      updatedAt: '2026-11-09T06:00:00.000Z',
+    });
+    expect((await h.organisation.overview(admin)).units.map(u => u.unitId)).not.toContain(' lone');
+    // Its id is answered as an id nobody holds is; a unit written right still reads.
+    await expect(h.organisation.unit(admin, ' lone')).rejects.toThrow(new InputError('Enheten finns inte.'));
+    await expect(h.organisation.unit(admin, 'nowhere')).rejects.toThrow(new InputError('Enheten finns inte.'));
+    expect(await h.organisation.unit(admin, 'avd')).toEqual({
+      unitId: 'avd',
+      unitLabel: 'KSK Avdelningar',
+      people: [],
+      reports: [],
+    });
   });
   test('a parent that names no node is read as no parent, and a chain that is a cycle still ends', () => {
     const view = organisationOf(

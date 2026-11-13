@@ -8,10 +8,22 @@ import type {
 import type { ExecuteResult } from '@clew/connectors';
 import { CalendarError, type EventOccurrence, type MeetingInput } from '@clew/calendar/model';
 import { InputError } from '../../../context';
-import type { CalendarBinder, ProposalStore, Team } from '../model';
+import type { CalendarBinder, People, ProposalStore, RoundReader, Team, UnitMember } from '../model';
 import { SAMTAL_TITLE } from './reads';
+import {
+  bookedElsewhere,
+  bookedSentence,
+  heldSentence,
+  uncertainSentence,
+  type BookedElsewhere,
+  type Period,
+} from './booked';
 
-export type CalendarItem = { id: string; proposalId?: string; label: string } & (
+/**
+ * One change of an approved calendar command. A proposal's items name the invitee by Clew's key, `personId` (N3): the
+ * proposal's address in `input.participants` may receive the invitation only while it belongs to that person.
+ */
+export type CalendarItem = { id: string; proposalId?: string; personId?: string; label: string } & (
   | { action: 'create'; input: MeetingInput }
   | {
       action: 'move';
@@ -28,6 +40,12 @@ export interface CalendarCommand {
   request?: CreateEventInput | RescheduleEventInput | CancelEventInput;
   threadId?: string;
   followup?: { afterWorkdays: number; maxReminders: number; expiresAt: string };
+  /**
+   * The period of the round a confirmation of drawn times was approved in (M1): another manager's invitation on its way
+   * holds the person against this one only when it falls inside it, and right before the invitation is sent the person's
+   * other managers' bookings are asked about inside it, without reading the round again. Absent without an open round.
+   */
+  round?: Period;
 }
 export interface CalendarApproval {
   decisionId: string;
@@ -41,6 +59,10 @@ export interface CalendarDecisionDeps {
   bind: CalendarBinder;
   /** Whom a booking may invite: the manager's team (D96 item 3). */
   team: Team;
+  /** The open round: one talk a person in it (M1, Q12), so a confirmation never sends a second one. */
+  round: RoundReader;
+  /** The owners of other managers' bookings, to ask whether they still manage the person (M1). */
+  people: People;
   clock: () => Date;
   ids: () => string;
   approve(persona: AuthenticatedContext, input: CalendarApproval): Promise<unknown>;
@@ -64,9 +86,26 @@ const window = (start: string, end: string) => {
   if (b - a > 86_400_000) throw new InputError('Ett möte kan vara högst ett dygn.');
 };
 const active = (t: Thread) => t.execution && ['pending', 'running', 'unknown'].includes(t.execution.state);
+const recipientIsCurrent = (members: readonly UnitMember[], personId: string, address: string | undefined) => {
+  const email = address?.toLowerCase();
+  const holders = members.filter(m => m.email.toLowerCase() === email);
+  return holders.length === 1 && holders[0]?.personId === personId;
+};
+const recipientChanged = (name: string) =>
+  `Det går inte att bekräfta adressen för ${name} i din enhet. Ta fram nya tider.`;
 
 /** Human routes prepare immutable commands. No calendar write is reachable through a model tool. */
-export function calendarDecisions({ store, bind, team, clock, approve, previous }: CalendarDecisionDeps) {
+export function calendarDecisions({
+  store,
+  bind,
+  team,
+  round,
+  people,
+  clock,
+  approve,
+  previous,
+}: CalendarDecisionDeps) {
+  const elsewhereOf = bookedElsewhere({ store, team, people });
   const required = async (p: AuthenticatedContext, id: string) => {
     const t = await store.readThread(p.id, id);
     if (!t) throw new InputError('Ärendet finns inte.');
@@ -172,11 +211,36 @@ export function calendarDecisions({ store, bind, team, clock, approve, previous 
     const selected = current.proposals.filter(x => proposalIds.includes(x.id) && x.status === 'proposed');
     if (selected.length !== new Set(proposalIds).size)
       throw new InputError('Något förslag är inte längre aktuellt. Läs om sidan.');
-    if (new Set(selected.map(x => x.participant.email.toLowerCase())).size !== selected.length)
+    if (new Set(selected.map(x => x.participant.personId)).size !== selected.length)
       throw new InputError('Välj bara en tid per medarbetare.');
+    const members = await team(p);
+    for (const { participant } of selected) {
+      if (!recipientIsCurrent(members, participant.personId, participant.email))
+        throw new InputError(recipientChanged(participant.name));
+    }
+    // One talk a round (M1, Q12): a card drawn before the person's talk was held, or booked by another of their current
+    // managers, sends no second one. Named, never when or with whom; refused while the round cannot be read.
+    let open: Awaited<ReturnType<typeof round>>;
+    try {
+      open = await round(p);
+    } catch {
+      throw new InputError(uncertainSentence(selected.map(x => x.participant.name)));
+    }
+    if (open) {
+      const held = selected.filter(x => open.held.includes(x.participant.personId));
+      if (held.length) throw new InputError(heldSentence(held.map(x => x.participant.name)));
+      const elsewhere = await elsewhereOf(
+        p.id,
+        selected.map(x => x.participant.personId),
+        open,
+      );
+      const taken = selected.filter(x => elsewhere.has(x.participant.personId));
+      if (taken.length) throw new InputError(bookedSentence(taken.map(x => x.participant.name)));
+    }
     const items: CalendarItem[] = selected.map(x => ({
       id: x.id,
       proposalId: x.id,
+      personId: x.participant.personId,
       label: x.participant.name,
       action: 'create',
       input: {
@@ -188,15 +252,14 @@ export function calendarDecisions({ store, bind, team, clock, approve, previous 
     }));
     // Replacing a declined invitation is part of this exact approval, with the revision last observed by Clew.
     for (const old of current.proposals.filter(
-      x =>
-        x.status === 'declined-by-invitee' &&
-        selected.some(s => s.participant.email.toLowerCase() === x.participant.email.toLowerCase()),
+      x => x.status === 'declined-by-invitee' && selected.some(s => s.participant.personId === x.participant.personId),
     )) {
       if (!old.eventRef || !old.eventRevision)
         throw new InputError('Den tidigare inbjudan behöver kontrolleras först.');
       items.push({
         id: `replace:${old.id}`,
         proposalId: old.id,
+        personId: old.participant.personId,
         label: old.participant.name,
         action: 'cancel',
         ref: old.eventRef,
@@ -214,6 +277,7 @@ export function calendarDecisions({ store, bind, team, clock, approve, previous 
           maxReminders: 2,
           expiresAt: new Date(Date.parse(t.updatedAt) + 30 * 86_400_000).toISOString(),
         },
+        ...(open ? { round: { opensOn: open.opensOn, dueOn: open.dueOn } } : {}),
       },
       presentation: { threadId, version: t.updatedAt, actionId: 'confirm' },
     });
@@ -238,8 +302,58 @@ export function calendarDecisions({ store, bind, team, clock, approve, previous 
   return { createEvent, rescheduleEvent, cancelEvent, confirm, undo };
 }
 
-/** Conditional source boundary: stable UID per approved item, exact revisions, and readback before evidence. */
-export function calendarExecutionSource(bind: CalendarBinder, team: Team) {
+/**
+ * Conditional source boundary: stable UID per approved item, exact revisions, and readback before evidence. A proposal's
+ * invitation is checked once more right before it is sent (M1, Q12): a person another of their current managers booked
+ * inside the round the confirmation was approved in (`CalendarCommand.round`), after it was approved, is not invited a
+ * second time, and the row says so. The round is not read again for it. With the approval of one manager's invitation
+ * refused while another's to the same person may still be sent (`composition/execution-projection.ts`), two managers
+ * can never both send one.
+ */
+export function calendarExecutionSource(bind: CalendarBinder, team: Team, elsewhere: BookedElsewhere) {
+  /**
+   * Why Clew does not send this invitation, checked right before it would be: the manager has another meeting then, an
+   * invitee is not known to be free, the room is not, or one of them cannot be read now. Undefined when it may be sent.
+   * Nothing has been written when this answers, so the invitation is reported unsent, never left for a read-back.
+   */
+  async function unsendable(
+    p: AuthenticatedContext,
+    b: ReturnType<CalendarBinder>,
+    item: Extract<CalendarItem, { action: 'create' }>,
+    uid: string,
+  ): Promise<string | undefined> {
+    const { start, end, room: wanted } = item.input;
+    try {
+      const members = await team(p);
+      if (
+        item.personId !== undefined &&
+        (item.input.participants.length !== 1 ||
+          !recipientIsCurrent(members, item.personId, item.input.participants[0]))
+      )
+        return `Inget skickades. ${recipientChanged(item.label)}`;
+      const targets = members
+        .filter(m => item.input.participants.some(email => email.toLowerCase() === m.email.toLowerCase()))
+        .map(m => ({ ref: m.ref, email: m.email }));
+      const [own, busy] = await Promise.all([b.provider.list(start, end), b.provider.freeBusy(start, end, targets)]);
+      if (
+        own.some(x => x.uid !== uid && !x.allDay && x.start < end && x.end > start) ||
+        targets.some(target => !busy.some(x => x.ref === target.ref && x.state === 'known' && !x.busy.length))
+      )
+        return 'Inget skickades: tiden kunde inte bekräftas som ledig.';
+    } catch {
+      return 'Inget skickades: det gick inte att kontrollera att tiden är ledig.';
+    }
+    if (!wanted) return undefined;
+    try {
+      const room = (await b.provider.resources()).find(r => r.ref === wanted);
+      const free =
+        !!room &&
+        (await b.provider.availability(start, end, [room])).some(r => r.ref === room.ref && r.state === 'free');
+      return free ? undefined : 'Inget skickades: rummet kunde inte bekräftas som ledigt.';
+    } catch {
+      return 'Inget skickades: det gick inte att kontrollera att rummet är ledigt.';
+    }
+  }
   async function authorize(p: AuthenticatedContext, operation: string, value: unknown) {
     if (!calendarOperations.includes(operation as (typeof calendarOperations)[number]))
       throw new InputError('Okänd kalenderåtgärd.');
@@ -253,11 +367,12 @@ export function calendarExecutionSource(bind: CalendarBinder, team: Team) {
         throw new InputError('Ogiltigt kalenderbeslut.');
       if (item.action === 'create') {
         window(item.input.start, item.input.end);
-        if (
-          !b.provider.capabilities.create ||
-          item.input.participants.some(e => !members.some(m => m.email.toLowerCase() === e.toLowerCase()))
-        )
-          throw new InputError('Deltagarna måste tillhöra din enhet.');
+        // This also gates access to past executions. The approved address is checked separately before a new invitation.
+        const invited =
+          item.personId !== undefined
+            ? item.input.participants.length === 1 && members.some(m => m.personId === item.personId)
+            : item.input.participants.every(e => members.some(m => m.email.toLowerCase() === e.toLowerCase()));
+        if (!b.provider.capabilities.create || !invited) throw new InputError('Deltagarna måste tillhöra din enhet.');
       } else if (!item.ref || !item.revision) throw new InputError('Ogiltig kalenderrevision.');
     }
     return {
@@ -276,23 +391,64 @@ export function calendarExecutionSource(bind: CalendarBinder, team: Team) {
     const rows: ExecuteResult['rows'] = [],
       undo: CalendarItem[] = [];
     const established = new Set<string>();
+    // Asked once, for every proposal this command invites, and only when something is about to be sent: inside the round
+    // the confirmation was approved in, and nobody without one (no round was open then).
+    let booked: Promise<ReadonlySet<string>> | undefined;
+    const bookedNow = () =>
+      (booked ??= command.round
+        ? elsewhere(
+            p.id,
+            command.items.flatMap(i => (i.action === 'create' && i.personId !== undefined ? [i.personId] : [])),
+            command.round,
+          )
+        : Promise.resolve(new Set<string>()));
     for (const item of command.items) {
-      const prior = e.result?.rows.find(r => r.ref === item.id && r.outcome === 'done');
+      // A done row is the source's evidence; a skipped invitation was never sent, so a later check keeps it as it was.
+      const prior = e.result?.rows.find(
+        r => r.ref === item.id && (r.outcome === 'done' || (r.outcome === 'skipped' && item.action === 'create')),
+      );
       if (prior) {
         rows.push(prior);
         const priorUndo = (e.result?.undoInput as unknown as CalendarCommand | undefined)?.items.find(
           i => i.id === item.id,
         );
         if (priorUndo) undo.push(priorUndo);
-        if (item.action === 'create') established.add(item.label);
+        if (item.action === 'create' && prior.outcome === 'done') established.add(item.personId ?? item.label);
         continue;
       }
+      if (write && item.action === 'create' && item.personId !== undefined) {
+        // Not sent when another manager booked the person meanwhile, nor when that cannot be told: the card stays open.
+        const taken = await bookedNow().then(
+          booked => booked.has(item.personId!),
+          () => undefined,
+        );
+        if (taken !== false) {
+          rows.push({
+            ref: item.id,
+            label: item.label,
+            outcome: 'skipped',
+            detail: taken
+              ? bookedSentence([item.label])
+              : `Inbjudan skickades inte: det gick inte att se om ${item.label} redan har ett utvecklingssamtal bokat.`,
+          });
+          continue;
+        }
+      }
       const uid = `clew-exec-${e.id}-${item.id}`;
+      if (write && item.action === 'create') {
+        // Clew's own check right before sending: when it refuses, nothing was written, so the row says so and the
+        // execution settles without waiting on a read-back of an invitation that does not exist (M1).
+        const refused = await unsendable(p, b, item, uid);
+        if (refused) {
+          rows.push({ ref: item.id, label: item.label, outcome: 'skipped', detail: refused });
+          continue;
+        }
+      }
       let ref = item.action === 'create' ? await b.provider.eventRef(uid) : item.ref;
       let found: EventOccurrence | null | undefined,
         outcome: 'done' | 'unknown' | 'skipped' = 'unknown';
       // Never retire an old invitation until this attempt established its replacement.
-      if (item.id.startsWith('replace:') && !established.has(item.label)) {
+      if (item.id.startsWith('replace:') && !established.has(item.personId ?? item.label)) {
         rows.push({
           ref: item.id,
           label: item.label,
@@ -303,31 +459,8 @@ export function calendarExecutionSource(bind: CalendarBinder, team: Team) {
       }
       try {
         if (write) {
-          if (item.action === 'create') {
-            const targets = (await team(p))
-              .filter(m => item.input.participants.some(email => email.toLowerCase() === m.email.toLowerCase()))
-              .map(m => ({ ref: m.ref, email: m.email }));
-            const [own, busy] = await Promise.all([
-              b.provider.list(item.input.start, item.input.end),
-              b.provider.freeBusy(item.input.start, item.input.end, targets),
-            ]);
-            if (
-              own.some(x => x.uid !== uid && !x.allDay && x.start < item.input.end && x.end > item.input.start) ||
-              targets.some(target => !busy.some(x => x.ref === target.ref && x.state === 'known' && !x.busy.length))
-            )
-              throw new CalendarError('Tiden kunde inte bekräftas som ledig.');
-            if (item.input.room) {
-              const room = (await b.provider.resources()).find(r => r.ref === item.input.room);
-              if (
-                !room ||
-                !(await b.provider.availability(item.input.start, item.input.end, [room])).some(
-                  r => r.ref === room.ref && r.state === 'free',
-                )
-              )
-                throw new CalendarError('Rummet kunde inte bekräftas som ledigt.');
-            }
-            await b.provider.create(uid, item.input);
-          } else if (item.action === 'move') await b.provider.reschedule(ref, item.revision, item.start, item.end);
+          if (item.action === 'create') await b.provider.create(uid, item.input);
+          else if (item.action === 'move') await b.provider.reschedule(ref, item.revision, item.start, item.end);
           else await b.provider.cancel(ref, item.revision);
         }
       } catch {
@@ -373,11 +506,12 @@ export function calendarExecutionSource(bind: CalendarBinder, team: Team) {
       // An undo carries this exact revision, and a room that has yet to answer will change it (D69).
       const undoable = found?.roomResponse !== 'pending';
       if (outcome === 'done' && item.action === 'create' && found) {
-        established.add(item.label);
+        established.add(item.personId ?? item.label);
         if (undoable)
           undo.push({
             id: item.id,
             ...(item.proposalId ? { proposalId: item.proposalId } : {}),
+            ...(item.personId ? { personId: item.personId } : {}),
             label: item.label,
             action: 'cancel',
             ref: found.ref,

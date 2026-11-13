@@ -80,7 +80,7 @@ describe('side panel labels (3.1.2)', () => {
     expect(fieldValue(true)).toBe('Ja');
     expect(fieldValue('2026-11-04')).toBe('4 november 2026');
     expect(fieldValue(1234)).toBe('1 234');
-    expect(fieldValue({ name: 'Sara Nyström', kind: 'short' })).toBe('Sara Nyström · sjuk');
+    expect(fieldValue({ name: 'Sara Nyström', kind: 'short' })).toBe('Sara Nyström\u00a0· sjuk');
     expect(
       fieldValue([
         { ref: 'x', title: 'En' },

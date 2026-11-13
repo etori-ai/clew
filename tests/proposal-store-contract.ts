@@ -39,7 +39,7 @@ const proposal = (
   threadId,
   personId,
   status: 'proposed',
-  participant: { email: name.toLowerCase() + '@clew.test', name },
+  participant: { personId: 'invitee-' + name.toLowerCase(), email: name.toLowerCase() + '@clew.test', name },
   start: '2026-11-09T08:00:00.000Z',
   end: '2026-11-09T09:00:00.000Z',
   eventUid: null,
@@ -98,7 +98,8 @@ export function proposalStoreContract(name: string, make: () => Promise<Proposal
           status: 'proposed',
           start: anna.start,
           end: anna.end,
-          participant: anna.participant,
+          // The contract view names the invitee as the page draws them; the record keeps their id (N3).
+          participant: { email: anna.participant.email, name: anna.participant.name },
           eventRef: null,
           undoUntil: null,
           reminders: 0,
@@ -106,6 +107,11 @@ export function proposalStoreContract(name: string, make: () => Promise<Proposal
         },
       ]);
       expect(read.proposals.map(p => p.id).sort()).toEqual([anna.id, erik.id].sort());
+      expect(read.proposals.find(p => p.id === anna.id)?.participant).toEqual({
+        personId: 'invitee-anna',
+        email: 'anna@clew.test',
+        name: 'Anna',
+      });
       expect(await store.readThread(b, t.id)).toBeUndefined();
       expect((await store.readThreadById(t.id))?.thread.id).toBe(t.id);
       expect((await store.openThread(a, t.topic))?.thread.id).toBe(t.id);
@@ -127,6 +133,40 @@ export function proposalStoreContract(name: string, make: () => Promise<Proposal
         await tx.insertProposals([...mine, proposal(other.id, b, 'Q')]);
       });
       expect((await store.activeProposals(a)).map(p => p.status).sort()).toEqual(['confirmed', 'final', 'proposed']);
+    });
+    test('booked proposals are the confirmed, final and accepted ones that invite these people by id, whoever owns them (M1, N3)', async () => {
+      const {
+        store,
+        people: [a, b],
+      } = await make();
+      const t1 = draft(a),
+        t2 = draft(b);
+      const anna = 'invitee-' + unique(),
+        erik = 'invitee-' + unique(),
+        other = 'invitee-' + unique();
+      // All of them at one address: the person is found by id, never by an address that may have changed.
+      const invite = (threadId: string, owner: string, personId: string, status: ProposalRecord['status']) =>
+        proposal(threadId, owner, 'Anna', { status, participant: { personId, email: 'anna@clew.test', name: 'Anna' } });
+      const booked = [
+        invite(t1.id, a, anna, 'confirmed'),
+        invite(t2.id, b, anna, 'final'),
+        invite(t2.id, b, erik, 'accepted'),
+      ];
+      await store.transaction(async tx => {
+        await tx.insertThread(t1);
+        await tx.insertThread(t2);
+        await tx.insertProposals([
+          ...booked,
+          ...(['proposed', 'declined', 'undone', 'superseded', 'declined-by-invitee', 'counter'] as const).map(status =>
+            invite(t1.id, a, erik, status),
+          ),
+          invite(t1.id, a, other, 'confirmed'),
+        ]);
+      });
+      const read = await store.bookedProposals([anna, erik]);
+      expect(read.map(p => p.id).sort()).toEqual(booked.map(p => p.id).sort());
+      expect(read.find(p => p.id === booked[1]!.id)).toEqual(booked[1]!);
+      expect(await store.bookedProposals([])).toEqual([]);
     });
     test('a transition patches every proposal in a status and names them; a patch by id changes only those', async () => {
       const {
@@ -188,6 +228,24 @@ export function proposalStoreContract(name: string, make: () => Promise<Proposal
         participant: p1.participant,
         start: '2026-11-11T13:00:00.000Z',
         end: '2026-11-11T14:00:00.000Z',
+      });
+    });
+    test('a thread patch writes the trigger counted again, its source and time kept (M1)', async () => {
+      const {
+        store,
+        people: [a],
+      } = await make();
+      const t = draft(a);
+      await store.transaction(async tx => {
+        await tx.insertThread(t);
+      });
+      await store.transaction(tx =>
+        tx.updateThread(t.id, { trigger: { ...t.trigger, reason: '3 samtal saknar tid' }, updatedAt: plus(T0, 1000) }),
+      );
+      expect((await store.readThread(a, t.id))!.thread).toMatchObject({
+        trigger: { reason: '3 samtal saknar tid', source: 'Nattlig genomgång 06:00', at: T0 },
+        updatedAt: plus(T0, 1000),
+        summary: t.summary,
       });
     });
     test('messages, the thread patch, the audit row and the job commit together and roll back together', async () => {

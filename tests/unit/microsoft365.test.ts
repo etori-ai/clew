@@ -117,6 +117,7 @@ async function approved(w: ReturnType<typeof world>, input: MeetingInput) {
     ...calendarExecutionSource(
       () => ({ provider: w.hillevi }),
       async () => members,
+      async () => new Set(),
     ),
     current: async () => actor,
   };

@@ -73,7 +73,7 @@ per organisation: more exact, and nobody has asked for it; the list is closed so
   session memory that kept them out is gone. A search may name up to five types and finds who holds every one of
   them, each passing the filters by itself. A reload or an opened link is therefore a search, and is logged; going
   back to an address read a few minutes ago is shown from what was read and is not. One search is one row in the
-  log, with the list of type ids (migration 0068). The status and validity filters are not recorded in the log,
+  log, with the list of type ids (migration 0074). The status and validity filters are not recorded in the log,
   though they change who was shown.
 
 Erasure of a person leaves the log's rows, which hold an id and no name. The log is read with

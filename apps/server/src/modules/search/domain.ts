@@ -1,4 +1,4 @@
-import { foldEntityKey, type SearchHit, type SearchResult, type SearchSource } from '@clew/contracts';
+import { foldSourceKey, type SearchHit, type SearchResult, type SearchSource } from '@clew/contracts';
 
 /**
  * The pure part of the composite search (D26): what "stale" means, how hits from several sources become one list, and
@@ -36,7 +36,7 @@ export function merge(outcomes: SourceOutcome[], now: number, limit = ROW_LIMIT)
   const out: SearchResult['rows'] = [];
   const entities = new Map<string, SearchResult['rows'][number]>();
   const entityOf = (hit: SearchHit) =>
-    hit.subject && `${hit.subject.entity}\u0000${foldEntityKey(hit.subject.entity, hit.subject.key)}`;
+    hit.subject && `${hit.subject.entity}\u0000${foldSourceKey(hit.subject.entity, hit.subject.key)}`;
   /** Another source's hit about an entity already listed: its source joins the first hit's, once. */
   const join = (first: SearchResult['rows'][number], connector: string, hit: SearchHit) => {
     const sources = first.sources ?? [{ connector: first.connector, source: first.source }];
@@ -70,6 +70,27 @@ export function merge(outcomes: SourceOutcome[], now: number, limit = ROW_LIMIT)
       if (first) join(first, q.connector, hit);
     }
   return out;
+}
+/** The user names the hits name people by (D122), each once: what is resolved to Clew's key before the list is answered. */
+export const hitNames = (rows: readonly Pick<SearchHit, 'subject'>[]): string[] => [
+  ...new Set(rows.flatMap(r => (r.subject?.entity === 'person' ? [r.subject.key] : []))),
+];
+/**
+ * The list as the person gets it (D122): a hit that names a person by the source's key, their user name, names them by
+ * Clew's key, their id, from `held` (the name as asked, to the id of whoever holds it now), so it links to their page. A
+ * hit whose name nobody of the reader's organisation holds names nobody, the rest of it kept. A unit's id is both keys.
+ */
+export function keyedHits<T extends Pick<SearchHit, 'subject'>>(
+  rows: readonly T[],
+  held: ReadonlyMap<string, string>,
+): T[] {
+  return rows.map(row => {
+    if (row.subject?.entity !== 'person') return row;
+    const id = held.get(row.subject.key);
+    if (id) return { ...row, subject: { entity: 'person', key: id } };
+    const { subject: _, ...rest } = row;
+    return rest as T;
+  });
 }
 export const clip = (text: string, limit = SNIPPET_LIMIT) =>
   text.length <= limit ? text : text.slice(0, limit - 1).trimEnd() + '…';

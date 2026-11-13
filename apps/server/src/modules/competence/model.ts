@@ -247,13 +247,18 @@ export interface WorkflowStart {
   id: string;
   input: unknown;
 }
-/** A person as the domain needs them: to key a row on the user name and to name them to the reader. */
+/**
+ * A person as the domain needs them: to key a row on the user name, to name them to the reader, and to erase only a
+ * person the source has deactivated (D123 item 3).
+ */
 export interface PersonRef {
   id: string;
   organisationId: string;
   name: string;
   /** Null for a person provisioned without one. */
   userName: string | null;
+  /** False once the source has deactivated the person (D68 item 1). */
+  enabled: boolean;
 }
 /**
  * One row of the read log (D108 item 15, D121 item 5): who read competence about people, as which relation, what and
@@ -278,7 +283,7 @@ export interface ReadLogEntry {
   /** The first type a search or its file asked for (the one type of a row from before several could be asked); null otherwise. */
   typeId: string | null;
   /**
-   * Every type a search or its file asked for, in the order chosen, `typeId` first (migration 0068; a row from before
+   * Every type a search or its file asked for, in the order chosen, `typeId` first (migration 0074; a row from before
    * holds its one type); empty for one person opened and for a manager's matrix as a file.
    */
   typeIds: string[];
@@ -287,7 +292,7 @@ export interface ReadLogEntry {
   personId: string | null;
   /**
    * The statuses a search or its file narrowed by, in the contract's order (`COMPETENCE_SEARCH_STATUSES`), each once;
-   * empty for every status, and on every other read (migration 0070; a row from before is empty).
+   * empty for every status, and on every other read (migration 0076; a row from before is empty).
    */
   status: CompetenceSearchStatus[];
   /** The validity window in days a search or its file narrowed by; null for none, and on every other read. */
@@ -459,7 +464,7 @@ export interface ApprovalCard {
 export interface ApprovalWorkItemTx {
   /**
    * Insert an open card for each of `managers` (`<threadId>:<manager id>`), admit its delivery, write its message and
-   * its `thread.pushed` audit row. `subject` is the person who registered it, by user name.
+   * its `thread.pushed` audit row. `subject` is the person who registered it, by Clew's key, their id (D122).
    */
   open(input: {
     threadId: string;
@@ -507,6 +512,19 @@ export class ShareTargetTaken extends Error {
   }
 }
 
+/**
+ * The cards the competence scan put in a person's own stream (D108 item 12), such as "HLR gick ut 1 juni". Composition
+ * implements it over the thread store's transaction, which the competence transaction shares, so an erasure removes the
+ * cards with the holdings or nothing at all. Held to the same behaviour on both adapters by the store contract.
+ */
+export interface CompetenceCardsTx {
+  /**
+   * Remove every card of the competence connector in the person's own stream, with what hangs on it, and write one
+   * `thread.removed` row for each by `actor` at `at` (`details: { reason: 'erasure' }`); how many. Another connector's
+   * card of theirs and someone else's competence card stay.
+   */
+  removeOwn(personId: string, actor: string, at: string): Promise<number>;
+}
 /**
  * Everything a competence use case reads and writes in one transaction. Reads that a write follows take a row lock.
  *
@@ -767,6 +785,8 @@ export interface CompetenceTx {
    * its share targets.
    */
   exportOrganisation(organisationId: string): Promise<CompetenceExport>;
+  /** The person's own competence cards, for an erasure. */
+  cards: CompetenceCardsTx;
   audit(entry: CompetenceAudit): Promise<void>;
   // The read log (D108 item 15, D121 item 5).
   /** Write one row of the read log. A row the store cannot write throws, and the read it records fails with it. */

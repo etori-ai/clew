@@ -73,11 +73,17 @@ export const commitmentRow = (
   threadId: null,
   ...extra,
 });
-const person = (id: string, organisationId: string, userName: string | null = 'u-' + id): PersonRef => ({
+const person = (
+  id: string,
+  organisationId: string,
+  userName: string | null = 'u-' + id,
+  enabled = true,
+): PersonRef => ({
   id,
   organisationId,
   name: 'Name ' + id,
   userName,
+  enabled,
 });
 
 export function talkStoreContract(name: string, make: () => Promise<TalkStoreHarness>) {
@@ -101,6 +107,7 @@ export function talkStoreContract(name: string, make: () => Promise<TalkStoreHar
           commitmentId: c.id,
           dueOn: c.dueOn,
           at: c.createdAt,
+          subject: { entity: 'person', key: c.employeeId },
         });
         await tx.insertCommitment({ ...c, threadId });
       });
@@ -235,13 +242,16 @@ export function talkStoreContract(name: string, make: () => Promise<TalkStoreHar
       ).rejects.toThrow();
     });
 
-    test('persons are named as the domain needs them; an unknown id is absent', async () => {
+    test('persons are named as the domain needs them, active or deactivated; an unknown id is absent', async () => {
       const w = await world();
-      const nameless = w.p + '-nameless';
+      const nameless = w.p + '-nameless',
+        leaver = w.p + '-leaver';
       await w.seedPerson(person(nameless, w.org, null));
-      const found = await w.store.transaction(tx => tx.persons([w.anna, nameless, w.p + '-unknown']));
+      await w.seedPerson(person(leaver, w.org, 'u-' + leaver, false));
+      const found = await w.store.transaction(tx => tx.persons([w.anna, nameless, leaver, w.p + '-unknown']));
       expect(found.sort((a, b) => a.id.localeCompare(b.id))).toEqual([
         person(w.anna, w.org),
+        person(leaver, w.org, 'u-' + leaver, false),
         person(nameless, w.org, null),
       ]);
       expect(await w.store.transaction(tx => tx.persons([]))).toEqual([]);
@@ -340,6 +350,7 @@ export function talkStoreContract(name: string, make: () => Promise<TalkStoreHar
             commitmentId: w.p + '-c1',
             dueOn: '2026-12-15',
             at: T,
+            subject: { entity: 'person', key: w.anna },
           });
           await tx.insertCommitment(commitmentRow(w.p + '-c1', w.round, w.anna, { threadId: w.p + '-th1' }));
           await tx.closeRound(w.round, T);

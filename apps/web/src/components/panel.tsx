@@ -134,14 +134,14 @@ function SearchRows({ result, hrefFor }: { result: SearchResult; hrefFor?: ((vie
             const reviewed = r.reviewedAt ?? r.updatedAt;
             const note = r.kind === 'document' ? staleLabel(r.stale, reviewed) : '';
             const mark = marks.ofObject(`document:${r.connector}:`);
-            const title = `${r.label}${r.section ? ` · ${r.section}` : ''}`;
+            const title = `${r.label}${r.section ? `\u00a0· ${r.section}` : ''}`;
             // The entity's page, except on that page itself (`entityHref`): the name is then plain text.
             const entity = r.subject ? entityHref(r.subject, pathname + search) : null;
             // Every source that answered for the same entity, the hit's own first: said once, on the hit's line.
-            const merged = r.sources?.map(s => s.source).join(' · ');
+            const merged = r.sources?.map(s => s.source).join('\u00a0· ');
             const meta = [merged ? '' : r.source, r.owner, reviewLabel(reviewed), r.stale ? '' : note.toLowerCase()]
               .filter(Boolean)
-              .join(' · ');
+              .join('\u00a0· ');
             // A hit whose source declares its view (D38) opens here, drawn by Startsidan; the link still leads to the
             // source, in a new tab and marked as leaving Clew with Astryx's external link (D111 rule 8). A hit about an
             // entity leads to the entity instead. "Lägg till i samtalet" only where the page has a box (D111 rule 6); a
@@ -313,7 +313,7 @@ export function PanelBody({
             const detail = Object.entries(r)
               .filter(([k, v]) => k !== key && !hiddenFields.has(k) && scalar(v))
               .map(([k, v]) => `${fieldLabel(k)}: ${fieldValue(v)}`)
-              .join(' · ');
+              .join('\u00a0· ');
             return (
               <ListItem
                 key={i}
@@ -378,13 +378,13 @@ export interface PanelFrame {
 /** The one body region, where the open thing is drawn. */
 const BODY_ID = 'panel-body';
 /** The rail and the panel as the shell draws them. */
-export const RAIL = 256,
+export const RAIL = 260,
   PANEL = 440;
 /** The least width a page's own column keeps beside the panel: Hem's rows with their day, their line and their one button. */
 export const PAGE_MIN = 640;
 /**
  * The one window width from which the panel stands beside the page, on every page that holds it (the product owner,
- * 2026-11-11, D111 amended): the rail, Hem's least column and the panel, 256 + 640 + 440 = 1336 px. Narrower, or short
+ * 2026-11-11, D111 amended): the rail, Hem's least column and the panel, 260 + 640 + 440 = 1340 px. Narrower, or short
  * (1.4.10), or on a phone, it is the drawer over the page. A page whose own layout needs more than 640 px does not move
  * this line: it gives way, drawing the narrow layout it already has while the panel is open beside it (its own
  * breakpoint shifted by the panel, `panelBesideQuery`).

@@ -320,7 +320,7 @@ describe('several types, the status, the validity window and the order (the sear
     const valid = await competence.search(hr, { typeIds: [types.hlr, types.english], status: ['valid'] });
     expect(valid.rows.map(r => r.name)).toEqual(['Anna Andersson']);
     expect([valid.total, valid.unfiltered]).toEqual([1, 3]);
-    // Each search's one row of the log keeps the filters it narrowed by (migration 0070): the statuses in the
+    // Each search's one row of the log keeps the filters it narrowed by (migration 0076): the statuses in the
     // contract's order, the window in days; the count is what the page named.
     expect(reads().map(r => [r.kind, r.typeIds, r.status, r.until, r.rows])).toEqual([
       ['search', [types.hlr], ['expiring', 'expired'], null, 2],

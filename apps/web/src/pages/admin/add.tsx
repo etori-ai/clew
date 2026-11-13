@@ -18,7 +18,7 @@ import {
 } from '@clew/ui';
 import { api } from '../../api';
 import { useAdminAction } from '../../mutations';
-import { AudienceEditor } from './audience';
+import { AudienceEditor, type GroupsRead, type UnitsRead } from './audience';
 import { CheckResult } from './check-result';
 import { DialogFrame } from '../../components/dialog-frame';
 import { audienceLabel } from './labels';
@@ -34,8 +34,8 @@ const stepLabels = ['Adress', 'Kontroll', 'Vem ser det', 'Aktivera'];
 type Props = {
   isOpen: boolean;
   onClose: (added: boolean) => void;
-  units: Array<{ id: string; label: string }>;
-  groups?: Array<{ id: string; label: string }>;
+  units: UnitsRead;
+  groups: GroupsRead;
 };
 export function AddConnectorDialog({ isOpen, onClose, units, groups }: Props) {
   const [step, setStep] = useState(0);
@@ -265,7 +265,7 @@ export function AddConnectorDialog({ isOpen, onClose, units, groups }: Props) {
               <MetadataListItem label="System">{result.connector.source}</MetadataListItem>
               <MetadataListItem label="Id">{result.connector.id}</MetadataListItem>
               <MetadataListItem label="Adress">{result.connector.url}</MetadataListItem>
-              <MetadataListItem label="Funktioner">{`${result.connector.counts.capabilities} · ${result.connector.counts.execute} utför`}</MetadataListItem>
+              <MetadataListItem label="Funktioner">{`${result.connector.counts.capabilities}\u00a0· ${result.connector.counts.execute} utför`}</MetadataListItem>
               <MetadataListItem label="Vem ser det">{audienceLabel(audience)}</MetadataListItem>
               <MetadataListItem label="Skickar ärenden">{scan ? 'Ja' : 'Nej'}</MetadataListItem>
               <MetadataListItem label="Erbjuder assistenten">{tools ? 'Ja' : 'Nej'}</MetadataListItem>

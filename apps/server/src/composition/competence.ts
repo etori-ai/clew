@@ -1,14 +1,19 @@
+import { and, eq } from 'drizzle-orm';
+import { COMPETENCE_CONNECTOR } from '@clew/connectors';
+import { schema, type Transaction } from '@clew/db';
 import { withThreadTx, type ThreadStoreOptions } from '../threads/adapters/postgres';
+import type { ThreadTx } from '../threads/model';
 import { competenceTx } from '../modules/competence/adapters/postgres';
 import { competenceUsecases } from '../modules/competence/usecases';
 import { reportsByUnit } from '../modules/entities/domain';
-import type { Above, CompetenceStore, HoldingsPort, Staff } from '../modules/competence/model';
+import type { Above, CompetenceCardsTx, CompetenceStore, HoldingsPort, Staff } from '../modules/competence/model';
 import { createHash } from 'node:crypto';
 import { cancelDurable } from '../dbos/start';
 import { systemContext } from '../system-context';
 import { logPort, logger } from '../logging';
 import { competenceWorkItems } from './competence-work-items';
 import { staff as staffUsecases } from './people';
+import { removeCards } from './card-removal';
 import { clock, ids } from './ambient';
 import { ledger } from './durable';
 
@@ -17,17 +22,36 @@ import { ledger } from './durable';
  * connector over what is built here, and `composition/index.ts` builds the stream over the registry: this file imports
  * neither. The store starts the copy's workflow inside its own transaction (D86).
  */
+/** A person's own competence cards (D108 item 12), over the thread store's transaction that the competence one shares. */
+export const competenceCards = (tx: Transaction, thread: ThreadTx): CompetenceCardsTx => ({
+  async removeOwn(personId, actor, at) {
+    const own = and(eq(schema.threads.personId, personId), eq(schema.threads.connector, COMPETENCE_CONNECTOR));
+    return (await removeCards(tx, thread, own, actor, at)).length;
+  },
+});
 /**
- * One competence transaction is one thread-store transaction (D108 item 7): the competence tables and the approvals'
- * cards (`competenceWorkItems`) share the physical database transaction, so a person's own registration, its cards in
- * the managers' streams, their audit rows and anything enqueued commit or roll back as one, as talks' action points do.
- * `options` names the durable engine's queue: the server's ledger here, a test's own in `tests/db`.
+ * One competence transaction is one thread-store transaction (D108 items 7 and 14): the competence tables, the
+ * approvals' cards (`competenceWorkItems`) and the person's own cards (`competenceCards`) share the physical database
+ * transaction, so a person's own registration, its cards in the managers' streams, an erasure with the cards it removes,
+ * their audit rows and anything enqueued commit or roll back as one, as talks' action points do. `options` names the
+ * durable engine's queue: the server's ledger here, a test's own in `tests/db`; `deps.clock` is composition's unless a
+ * test gives its own.
  */
-export function competenceStoreWithCards(options: ThreadStoreOptions, deps: { clock: () => Date }): CompetenceStore {
+export function competenceStoreWithCards(
+  options: ThreadStoreOptions,
+  deps: { clock: () => Date } = { clock },
+): CompetenceStore {
   return {
     transaction: fn =>
       withThreadTx(options, (tx, thread) =>
-        fn(competenceTx(tx, options.durable, competenceWorkItems(tx, thread, { clock: deps.clock }))),
+        fn(
+          competenceTx(
+            tx,
+            options.durable,
+            competenceWorkItems(tx, thread, { clock: deps.clock }),
+            competenceCards(tx, thread),
+          ),
+        ),
       ),
   };
 }
@@ -63,24 +87,28 @@ export const holdingsPort: HoldingsPort = {
   admitted: async () => new Set(),
   reaches: async () => false,
 };
-export const competence = competenceUsecases({
-  store: competenceStore,
+const holdings: HoldingsPort = {
+  switchedOn: () => holdingsPort.switchedOn(),
+  holdingsSources: () => holdingsPort.holdingsSources(),
+  readHoldings: (connectorId, cursor, options) => holdingsPort.readHoldings(connectorId, cursor, options),
+  admitted: (connectorId, personIds) => holdingsPort.admitted(connectorId, personIds),
+  reaches: (connectorId, organisationId) => holdingsPort.reaches(connectorId, organisationId),
+};
+const shared = {
   staff,
   above,
   personaOf,
-  digest: text => createHash('sha256').update(text).digest('hex'),
+  digest: (text: string) => createHash('sha256').update(text).digest('hex'),
   clock,
   ids,
-  holdings: {
-    switchedOn: () => holdingsPort.switchedOn(),
-    holdingsSources: () => holdingsPort.holdingsSources(),
-    readHoldings: (connectorId, cursor, options) => holdingsPort.readHoldings(connectorId, cursor, options),
-    admitted: (connectorId, personIds) => holdingsPort.admitted(connectorId, personIds),
-    reaches: (connectorId, organisationId) => holdingsPort.reaches(connectorId, organisationId),
-  },
-  pause: ms => new Promise(resolve => setTimeout(resolve, ms)),
+  holdings,
   log: logPort('competence', 'warn'),
   info: logPort('competence', 'info'),
+};
+export const competence = competenceUsecases({
+  ...shared,
+  store: competenceStore,
+  pause: ms => new Promise(resolve => setTimeout(resolve, ms)),
 });
 const RETRY_MS = 5000;
 const GUARD_MS = 60 * 60_000;
@@ -129,3 +157,14 @@ export function startCompetenceCopy() {
     void sweep();
   }, GUARD_MS).unref();
 }
+/**
+ * The competence module as the operator's erasure runs it (`scripts/competence-erase.ts`): the same use cases and tables
+ * over a store that cancels no workflow. A script never launches the durable engine, so a cancel there could only fail
+ * after the commit, and print an error before the script's own answer. The timers of the removed cards go with them,
+ * and a workflow still waiting on one, a reminder or a snooze, wakes at its time, finds no timer and ends without a
+ * write: the generation fence covers a cancel that never arrives (D86).
+ */
+export const competenceForScripts = competenceUsecases({
+  ...shared,
+  store: competenceStoreWithCards({ durable: ledger }),
+});

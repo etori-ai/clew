@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { Resolution, actorOf, type ExecuteResult } from '@clew/connectors';
+import { Resolution, audiencedActorOf, type ExecuteResult } from '@clew/connectors';
 import { Value } from 'typebox/value';
 import { ExecuteResultSchema } from '@clew/connectors/protocol';
 import { registry } from '../connectors/registry';
@@ -22,6 +22,7 @@ import { reviewDocuments } from './documents';
 import { projectExecution } from './execution-projection';
 import { watchCardSink } from './watch-card';
 import { calendarApproval, calendarSource } from './calendar';
+import { personKeys } from './person-keys';
 import { calendarOperations, type CalendarCommand } from '../modules/calendar/usecases/decisions';
 import type { AuthenticatedContext } from '@clew/contracts';
 
@@ -44,7 +45,7 @@ const place = (connector: string) => {
 // Every approval starts its workflow inside the ledger's transaction (D86); there is no outbox loop behind it.
 export const executionStore = postgresExecutionStore({ seal: sealSecret, open: openSecret }, ledger, {
   project: projectExecution(ledger),
-  pushCard: watchCardSink(place),
+  pushCard: watchCardSink(place, ledger),
 });
 /**
  * The registry's check of an approval as the executions ask it (D117): whom the input names is resolved for a new effect
@@ -52,7 +53,7 @@ export const executionStore = postgresExecutionStore({ seal: sealSecret, open: o
  * ledger takes as unavailable, never as revoked.
  */
 const validated = (persona: AuthenticatedContext, operation: string, input: unknown, options?: AuthorizeOptions) =>
-  registry.validate(actorOf(persona), operation, input, [], { subjects: !options?.reading });
+  registry.validate(audiencedActorOf(persona), operation, input, [], { subjects: !options?.reading });
 const source: ExecutionSource = {
   async authorize(persona, operation, input, options) {
     if (calendarOperations.includes(operation as (typeof calendarOperations)[number])) {
@@ -64,7 +65,7 @@ const source: ExecutionSource = {
     if (found.capability.kind !== 'execute') throw new ExecutionError('Förmågan är ingen åtgärd.');
     const safety = found.capability.execution ?? { strategy: 'manual' as const };
     if (safety.strategy !== 'manual') {
-      const lookup = registry.allowed(actorOf(persona), safety.lookup);
+      const lookup = registry.allowed(audiencedActorOf(persona), safety.lookup);
       if (!lookup || lookup.connector.id !== found.connector.id || lookup.capability.kind !== 'read')
         throw new ExecutionError('Källans återläsning är inte tillgänglig.');
     }
@@ -81,9 +82,10 @@ const source: ExecutionSource = {
     if (e.connector === 'calendar' && calendarOperations.includes(e.operation as (typeof calendarOperations)[number]))
       return calendarSource.execute(persona, e);
     // The resolution `authorize` made just before (D117): the registry redeems it once, for this very call, or resolves again.
-    const result = await registry.run<ExecuteResult>(actorOf(persona), e.operation, e.payload, {
+    const result = await registry.run<ExecuteResult>(audiencedActorOf(persona), e.operation, e.payload, {
       operationId: e.id,
-      ...(persona.delegate ? { delegate: persona.delegate } : {}),
+      authorize: () => persona.authorize(),
+      delegate: persona.delegate,
       ...(resolution instanceof Resolution ? { resolution } : {}),
     });
     if (!Value.Check(ExecuteResultSchema, result)) throw new Error('Invalid execution result');
@@ -93,14 +95,14 @@ const source: ExecutionSource = {
     if (e.connector === 'calendar' && calendarOperations.includes(e.operation as (typeof calendarOperations)[number]))
       return calendarSource.lookup(persona, e);
     if (e.safety.strategy === 'manual') throw new Error('No safe lookup');
-    const found = registry.allowed(actorOf(persona), e.safety.lookup);
+    const found = registry.allowed(audiencedActorOf(persona), e.safety.lookup);
     if (!found || found.connector.id !== e.connector || found.capability.kind !== 'read')
       throw new Error('Lookup revoked');
     const response = await registry.run<{ found: boolean; result?: ExecuteResult }>(
-      actorOf(persona),
+      audiencedActorOf(persona),
       e.safety.lookup,
       { operationId: e.id },
-      persona.delegate ? { delegate: persona.delegate } : {},
+      { authorize: () => persona.authorize(), delegate: persona.delegate },
     );
     if (response.found === false) return undefined;
     if (response.found !== true || !Value.Check(ExecuteResultSchema, response.result))
@@ -127,7 +129,8 @@ const watch: WatchSource = {
     if (found.capability.kind !== 'read') throw new ExecutionError('En bevakning måste vara en läsning.');
     return { connector: found.connector.id };
   },
-  read: (persona, operation, input) => registry.run(actorOf(persona), operation, input),
+  read: (persona, operation, input) =>
+    registry.run(audiencedActorOf(persona), operation, input, { authorize: () => persona.authorize() }),
 };
 export const executions = executionUsecases({
   review: reviewDocuments.validate,
@@ -141,6 +144,8 @@ export const executions = executionUsecases({
     createHash('sha256')
       .update(JSON.stringify(canonical(input)))
       .digest('hex'),
+  // A started action is sent only while its user name still names its person (D122).
+  people: personKeys,
 });
 calendarApproval.approve = executions.approve;
 calendarApproval.previous = async (p, id) => {

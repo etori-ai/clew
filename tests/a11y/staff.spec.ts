@@ -31,8 +31,8 @@ import { phonebook } from './phonebook';
 const LENS = `/staff?show=${TALK_LENS}`;
 /**
  * Wide enough for the whole table beside the panel: "Alla" and the talk lens each need 1020 px for their table
- * (Astryx's floor for their columns), so the table stays beside the panel from 1780 px. The panel itself stands beside
- * the list from 1336 px, as on every page, and the list gives way to it below 1780 (`MIDDLE`); below 1336 the panel is
+ * (Astryx's floor for their columns), so the table stays beside the panel from 1784 px. The panel itself stands beside
+ * the list from 1340 px, as on every page, and the list gives way to it below 1784 (`MIDDLE`); below 1340 the panel is
  * the drawer over the list.
  */
 const WIDE = { width: 1840, height: 1000 };
@@ -131,6 +131,12 @@ test.describe('Personal', () => {
         'Åtgärder',
       ]);
       await expect(table.getByRole('row').nth(1)).toContainText('Anna Lindqvist');
+      // The initials before a name are a table's avatar, 24 px as in every table, and decoration: the name is said
+      // once, by its link.
+      const initials = table.getByRole('row').nth(1).locator('.astryx-avatar');
+      await expect(initials).toHaveAttribute('aria-hidden', 'true');
+      expect(await initials.boundingBox()).toMatchObject({ width: 24, height: 24 });
+      await expect(table.getByRole('img')).toHaveCount(0);
       // A column draws one field of the person's row from its source, a toned value as a badge.
       await expect(row(page, 'Erik Sandström').getByText('Sjuk · dag 1', { exact: true })).toBeVisible();
       await expect(row(page, 'Anna Lindqvist').getByText('I tjänst', { exact: true })).toBeVisible();
@@ -236,12 +242,20 @@ test.describe('Personal', () => {
         .getByRole('main')
         .getByRole('link', { name: 'Planera utvecklingssamtal vecka 45', exact: true });
       await expect(title).toHaveAttribute('href', '/people/johan?section=needs-you&from=%2Fstaff&card=samtal-svar');
+      // A row says its state in words before why it is here, as the queue's rows do (1.4.1).
+      await expect(page.getByRole('main').locator('#work-ledighet')).toHaveText(
+        /Ska göras\u00a0· Ansökan väntar på beslut/,
+      );
       await expectNoAxeViolations(page);
       // A card under Behöver dig opens beside the person's page; Esc gives the page back with the focus on its title.
       await title.focus();
       await page.keyboard.press('Enter');
       const card = page.getByRole('complementary', { name: 'Ärende' });
       await expect(card.getByRole('article', { name: 'Ärende: Planera utvecklingssamtal vecka 45' })).toBeVisible();
+      // The panel's heading takes the focus the frame after the card is drawn, and Esc is pressed there, once a person
+      // has heard it. Pressed before, Esc went to the title on the page and closed nothing, which failed this test in
+      // about half the runs.
+      await expect(card.locator('[aria-level="2"]').filter({ hasText: 'Ärende' })).toBeFocused();
       await page.keyboard.press('Escape');
       await expect(page).toHaveURL('/people/johan?section=needs-you&from=%2Fstaff');
       await expect(title).toBeFocused();
@@ -408,7 +422,7 @@ test.describe('Personal', () => {
         page.getByRole('complementary', { name: 'Ärende' }).getByRole('link', { name: 'Se mönstret' }),
       ).toBeFocused();
     });
-    test('the panel stands beside Personal from 1336 px on the window’s edge, and the list gives way to it', async ({
+    test('the panel stands beside Personal from 1340 px on the window’s edge, and the list gives way to it', async ({
       page,
       api: _,
     }) => {
@@ -420,9 +434,9 @@ test.describe('Personal', () => {
           return n ? n.scrollWidth - n.clientWidth : 0;
         });
       const pageSideways = () => page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
-      // From 1780 px the whole table keeps its 1020 px beside the panel, which docks to the window's edge (it is not
+      // From 1784 px the whole table keeps its 1020 px beside the panel, which docks to the window's edge (it is not
       // framed with the list); it stood 120 px in from the edge when it was.
-      for (const width of [1780, 1840]) {
+      for (const width of [1784, 1840]) {
         await page.setViewportSize({ width, height: 1000 });
         await open(page, '/staff?card=omtanke');
         const panel = page.getByRole('complementary', { name: 'Ärende' });
@@ -438,9 +452,9 @@ test.describe('Personal', () => {
       // Below that, down to the one width every page has, the panel still stands beside the list, and the list is the
       // rows it is on a phone, with every name, mark and menu: the page gives way, the panel does not.
       for (const [width, lens] of [
-        [1779, '/staff'],
+        [1783, '/staff'],
         [1440, LENS],
-        [1336, '/staff'],
+        [1340, '/staff'],
       ] as const) {
         await page.setViewportSize({ width, height: 900 });
         await open(page, `${lens}${lens.includes('?') ? '&' : '?'}card=omtanke`);
@@ -455,13 +469,19 @@ test.describe('Personal', () => {
         await expect(school.getByRole('button', { name: 'Åtgärder för Johan Byström' })).toBeVisible();
         expect(await pageSideways()).toBe(false);
         if (width === 1440) await expectNoAxeViolations(page);
+        // The rail itself, measured: the width the panel's breakpoint is counted from is Astryx's 260 px, so the
+        // constant cannot drift from the component unnoticed.
+        if (width === 1340)
+          expect(
+            Math.round((await page.getByRole('navigation', { name: 'Sidonavigering' }).boundingBox())!.width),
+          ).toBe(260);
       }
       // Closed, the list is the table again.
       await page.keyboard.press('Escape');
       await expect(page.getByRole('complementary', { name: 'Ärende' })).toHaveCount(0);
       await expect(page.getByRole('table')).toBeVisible();
-      // A pixel narrower than 1336 px the panel is the drawer over the list, as on every page.
-      await page.setViewportSize({ width: 1335, height: 900 });
+      // A pixel narrower than 1340 px the panel is the drawer over the list, as on every page.
+      await page.setViewportSize({ width: 1339, height: 900 });
       await open(page, '/staff?card=omtanke');
       await expect(page.getByRole('dialog', { name: 'Ärende' })).toBeVisible();
       await expect(page.getByRole('complementary', { name: 'Ärende' })).toHaveCount(0);
@@ -569,8 +589,20 @@ test.describe('Personal', () => {
       await expect(page).toHaveURL('/staff');
       await expect(showMenu(page)).toHaveText('Visa: Alla');
     });
+    test('a talk another of the person’s managers booked is Bokat with no time beside it (Q12)', async ({
+      page,
+      api,
+    }) => {
+      api.entityRows[TALK_LENS]!.rows = api.entityRows[TALK_LENS]!.rows.map(r =>
+        r.key === 'erik.sandstrom' ? { key: r.key, state: 'Bokat', next: 'Bokat', open: r.open } : r,
+      );
+      await open(page, LENS);
+      const erik = row(page, 'Erik Sandström').getByRole('cell');
+      await expect(erik.nth(1)).toHaveText('Bokat');
+      await expectNoAxeViolations(page);
+    });
     test('a person the lens has no row for comes last with nothing in its columns', async ({ page, api }) => {
-      api.entityRows[TALK_LENS]!.rows = api.entityRows[TALK_LENS]!.rows.filter(r => r.key !== 'anna');
+      api.entityRows[TALK_LENS]!.rows = api.entityRows[TALK_LENS]!.rows.filter(r => r.key !== 'anna.lindqvist');
       await open(page, LENS);
       const names = page.getByRole('table').getByRole('row').locator('a');
       await expect(names.last()).toHaveText('Anna Lindqvist');
@@ -623,7 +655,7 @@ test.describe('Personal', () => {
       await expect(showMenu(page)).toHaveText('Visa: Frånvaro');
       await expect(page.getByRole('button', { name: 'Åtgärder för Karin Lindqvist' })).toBeFocused();
     });
-    test("an action's card in a window narrower than 1336 px is the drawer over the list, and closing it gives the focus back to the row's menu", async ({
+    test("an action's card in a window narrower than 1340 px is the drawer over the list, and closing it gives the focus back to the row's menu", async ({
       page,
       api,
     }) => {
@@ -758,6 +790,10 @@ test.describe('Personal', () => {
         '/people/johan?from=%2Fstaff',
       );
       await expect(johan.getByText('2 försenade', { exact: true })).toBeVisible();
+      // The row's avatar is 36 px, where the table's is 24, and decoration beside the name.
+      await expect(johan.locator('.astryx-avatar')).toHaveAttribute('aria-hidden', 'true');
+      expect(await johan.locator('.astryx-avatar').boundingBox()).toMatchObject({ width: 36, height: 36 });
+      await expect(johan.getByRole('img')).toHaveCount(0);
       await expect(
         johan.getByText('Närvaro: I tjänst · Nästa samtal: tors 12 nov · 1 att agera på', { exact: true }),
       ).toBeVisible();

@@ -215,10 +215,10 @@ describe("a person's own registration on Postgres through the composition store 
         input: { holding: id },
       },
     ]);
-    // The card is about Anna by her key, which is never drawn: each manager finds it on her page.
+    // The card is about Anna by Clew's key for her, her id (D122), which is never drawn: each manager finds it on her page.
     expect(c.subjects.map(s => [s.personId, s.entity, s.key]).sort()).toEqual([
-      [boss, 'person', `e2e.${tag}`],
-      [other, 'person', `e2e.${tag}`],
+      [boss, 'person', anna],
+      [other, 'person', anna],
     ]);
     expect(c.deliveries.map(d => d.kind)).toEqual(['automatic', 'automatic']);
     expect(c.messages).toHaveLength(2);
@@ -404,7 +404,7 @@ describe("a person's own registration on Postgres through the composition store 
   test('erasing her leaves no registration of hers and no card of their approvals in any stream', async () => {
     await database().update(schema.people).set({ enabled: false }).where(eq(schema.people.id, anna));
     const erased = await competence.erasePerson('operator:cli', anna);
-    expect(erased).toEqual({ holdings: 2, cleared: 0, requirements: 0, approvals: 2 });
+    expect(erased).toEqual({ holdings: 2, cleared: 0, requirements: 0, approvals: 2, cards: 0 });
     expect(
       await database().select().from(schema.competenceHoldings).where(eq(schema.competenceHoldings.personId, anna)),
     ).toEqual([]);

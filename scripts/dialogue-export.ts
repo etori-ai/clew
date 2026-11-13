@@ -38,7 +38,7 @@ try {
   const document = await dialogue.exportDomain(OPERATOR, organisationId);
   await file.writeFile(JSON.stringify(document, null, 2) + '\n');
   console.log(
-    `Exported ${document.format} for organisation "${organisationId}" to ${out}: ${document.areas.length} areas, ${document.assessments.length} assessments, ${document.activities.length} activities.`,
+    `Exported ${document.format} for organisation "${organisationId}" to ${out}: ${document.areas.length} areas, ${document.assessments.length} assessments, ${document.activities.length} activities, ${document.notes.length} notes.`,
   );
 } catch (error) {
   console.error(`Could not export: ${(error as Error).message}`);

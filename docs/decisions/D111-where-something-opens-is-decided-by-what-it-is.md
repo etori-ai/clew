@@ -76,8 +76,9 @@ fit, about 1780 px), and "2 att agera på" listed cards in the drawer, where a c
 the one before with only ✕ leading back. Their five answers:
 
 1. **One panel, one width, every page.** The panel stands beside the page from one window width on every page that
-   holds it: Hem's, the rail, 640 px of column and the panel, 256 + 640 + 440 = 1336 px (`BESIDE_FROM` in
-   `apps/web/src/components/panel.tsx`). The page gives way, the panel does not: where the page's wide layout no longer
+   holds it: Hem's, the rail, 640 px of column and the panel, 260 + 640 + 440 = 1340 px (`BESIDE_FROM` in
+   `apps/web/src/components/panel.tsx`; 256 and 1336 until 2026-11-13, when `RAIL` took the 260 px Astryx's `SideNav`
+   draws). The page gives way, the panel does not: where the page's wide layout no longer
    fits beside the panel it draws the narrow layout it already has (Personal its rows instead of the table, a person's
    page its drill-in, a tool's page its list), its own breakpoint shifted by the panel's width while the panel is open.
    The modal drawer remains only below that width, on a short screen (1.4.10) and on a phone. Kalender, whose end slot
@@ -110,9 +111,11 @@ over Administration › Organisation: "should an organisation really open in a s
 an organisation might have hundreds of employees. The sidebar needs to be for peeking or some kind of instant actions,
 otherwise a full route is needed." A ninth rule: **a panel, a drawer or a sheet is for peeking at one thing or for an
 instant action; a list that can grow, or something a person works in, gets a full route** with an address of its own.
-The first place changed for it is a unit of the organisation tree, now a page at `/admin/organisation/<unitId>`
+The first place changed for it was a unit of the organisation tree, a page at `/admin/organisation/<unitId>`
 ([D99, the organisation tree](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md),
-amended the same day). Rule 5 and answer 5 above, the wide drawer for a review and a talk, are not yet weighed against
+amended the same day); when it was merged with `main` on 2026-11-13, the drawer of
+[D124](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) was kept instead
+and the page removed. Rule 5 and answer 5 above, the wide drawer for a review and a talk, are not yet weighed against
 it; that waits for the product owner ([open questions](../maintainers/open-questions.md)). The panel's one thing (answer
 3) already meets it.
 

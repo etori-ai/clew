@@ -53,8 +53,11 @@ below. The key figures stay with connectors (decision B of the plan, not taken h
     activities, their forms behind "Ny bedömning" and "Lägg till aktivitet". An area to act on or watch with no open
     activity says so. Every area's panel stays mounted, so text being written survives a change of tab. It is the one
     new page surface of this record.
-12. **Erasure and export** are operator scripts, as for talks: `scripts/dialogue-erase.ts` (removes a person from every
-    row and the cards they owned, `--confirm`) and `scripts/dialogue-export.ts` (`clew.dialogue/1`).
+12. **Erasure and export** use operator scripts. After deactivation, `scripts/dialogue-erase.ts` clears the person's
+    identity references and removes owned activity cards and the person's private notes
+    ([private notes](D120-a-managers-own-notes-in-the-follow-up-dialogue-are-private-posts-and-files-go-to-the-document-system.md)).
+    The unit's assessments and activities keep their free text. Run it as part of [erasing one person](../maintainers/reliability-operations.md#erasing-one-person).
+    `scripts/dialogue-export.ts` exports one organisation's dialogue as `clew.dialogue/1`.
 
 **Why.** Oliver Borgström, 2026-11-13: big-boss-board is to be retired once Clew is in production, and the dialogue is
 what it has that Clew lacked. The plan's checklist (D95 Part 3) answers questions 1 to 5 and 7 to 10 with yes; the

@@ -33,7 +33,8 @@ describe('figureItems (D54, artboard 3)', () => {
       label: 'Sjukfrånvaro',
       value: '4,2 %',
       tone: { variant: 'warning', word: 'Bevaka' },
-      rest: 'mål ≤ 4,0 % · +0,3 sedan oktober · Personalsystemet 06:00',
+      // The source follows what the source sent after a dot whose space does not break (D124 item 8).
+      rest: 'mål ≤ 4,0 % · +0,3 sedan oktober\u00a0· Personalsystemet 06:00',
     });
     expect(word).toEqual({ variant: 'warning', word: 'Bevaka' });
   });
@@ -85,7 +86,7 @@ describe('figureItems (D54, artboard 3)', () => {
       kind: 'silent',
       tone: null,
       label: 'Personalsystemet svarar inte.',
-      comparison: 'Senast läst 06:00 · försöker igen 12:00',
+      comparison: 'Senast läst 06:00\u00a0· försöker igen 12:00',
       name: 'Personal: Personalsystemet svarar inte',
     });
     expect(tile.opens).toBeUndefined();

@@ -385,7 +385,7 @@ describe('a deactivated person’s competence is erased a set time after (D108 i
     expect(w.audit('person:' + anna).at(-1)).toEqual({
       action: 'competence.person_erased',
       actor: RETENTION_ACTOR,
-      details: { cause: 'retention', holdings: 1, cleared: 0, requirements: 0, approvals: 0, generation: 1 },
+      details: { cause: 'retention', holdings: 1, cleared: 0, requirements: 0, approvals: 0, cards: 0, generation: 1 },
     });
     // Every card of the module in her stream goes in the same transaction (the memory store records the call).
     expect(w.store.calls()).toContainEqual({ op: 'removeOwned', personId: anna });
@@ -577,6 +577,7 @@ describe('a deactivated person’s competence is erased a set time after (D108 i
       cleared: 0,
       requirements: 0,
       approvals: 0,
+      cards: 0,
     });
     expect(w.intent(anna)).toMatchObject({ state: 'erased', generation: 1 });
     w.later(30);
@@ -585,7 +586,7 @@ describe('a deactivated person’s competence is erased a set time after (D108 i
     w.later(100);
     expect(await w.sweep()).toMatchObject({ erased: 0, recorded: 0 });
     expect(w.erasedRows(anna).map(a => a.details)).toEqual([
-      { cause: 'operator', holdings: 1, cleared: 0, requirements: 0, approvals: 0 },
+      { cause: 'operator', holdings: 1, cleared: 0, requirements: 0, approvals: 0, cards: 0 },
     ]);
   });
 

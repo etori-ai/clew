@@ -1,13 +1,43 @@
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext, UsersAdminOverview } from '@clew/contracts';
 import { memoryProvisionStore, memberKey } from '../../apps/server/src/modules/people/adapters/memory';
-import { scimUsecases, usersAdminUsecases } from '../../apps/server/src/modules/people/usecases';
+import {
+  provisionerKeyUsecases,
+  scimUsecases,
+  usersAdminUsecases,
+} from '../../apps/server/src/modules/people/usecases';
+import type { ProvisionStore } from '../../apps/server/src/modules/people/ports';
+import { refusingNul } from '../refusing-nul';
 
 /**
  * Administration › Användare (D85, D100): the overview, the people a page at a time with what narrows them, and the
- * mapping from a group to a capability with its audit and derivation.
+ * mapping from a group to a capability with its audit and derivation. The use cases run over a store that refuses a
+ * NUL as PostgreSQL does, so none of them hands one on.
  */
 const T = '2026-11-09T06:00:00.000Z';
+/**
+ * The store with `meanwhile` run whenever a transaction takes a group's row lock, before the row is answered: what a
+ * SCIM write of the group committed while a mapping change waited for that row (K4).
+ */
+function lockedAfter(store: ProvisionStore, meanwhile: () => void): ProvisionStore {
+  return {
+    transaction: fn =>
+      store.transaction(tx =>
+        fn(
+          new Proxy(tx, {
+            get(target, key) {
+              const member: unknown = Reflect.get(target, key);
+              if (typeof member !== 'function') return member;
+              return (...args: unknown[]) => {
+                if (key === 'readGroup' && args[2] === true) meanwhile();
+                return (member as (...values: unknown[]) => unknown).apply(target, args);
+              };
+            },
+          }),
+        ),
+      ),
+  };
+}
 function stack() {
   const store = memoryProvisionStore(),
     s = store.state;
@@ -79,7 +109,7 @@ function stack() {
   s.assignments.set('mikael', [{ unitId: 'unit-it', role: 'employee' }]);
   s.grants.set('hillevi', { unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager', capabilities: [] });
   s.grants.set('mikael', { unitId: 'unit-it', unitLabel: 'IT', role: 'employee', capabilities: [] });
-  s.bindings.add('hillevi');
+  s.bindings.push({ issuer: 'https://idp.test/', subject: 'hillevi', personId: 'hillevi' });
   let tokens = 0;
   const persona = (capabilities: string[]): AuthenticatedContext => ({
     id: 'mikael',
@@ -95,14 +125,19 @@ function stack() {
     expiresAt: T,
     authorize: async () => ({ version: 'v' }),
   });
+  const keys = {
+    store: refusingNul(store),
+    clock: () => new Date('2026-11-10T06:00:00.000Z'),
+    token: () => 'token-' + ++tokens,
+    digest: (token: string) => 'digest:' + token,
+  };
   return {
     store,
-    usecases: usersAdminUsecases({
-      store,
-      clock: () => new Date('2026-11-10T06:00:00.000Z'),
-      token: () => 'token-' + ++tokens,
-      digest: token => 'digest:' + token,
-    }),
+    usecases: usersAdminUsecases(keys),
+    /** The page's use cases over the same store, where `meanwhile` commits while a change waits for a group's row. */
+    waiting: (meanwhile: () => void) => usersAdminUsecases({ ...keys, store: lockedAfter(keys.store, meanwhile) }),
+    /** The operator's script's use cases over the same store and keys (D107 item 6). */
+    operator: provisionerKeyUsecases(keys),
     /** The SCIM server over the same store, at the instant given: what a provisioner's key meets. */
     scimAt: (at: string) =>
       scimUsecases({ store, clock: () => new Date(at), ids: () => 'x', digest: token => 'digest:' + token }),
@@ -421,7 +456,8 @@ describe('Användare', () => {
     await expect(usecases.addGroupCapability(elsewhere, row)).rejects.toThrow('Gruppen finns inte');
     expect(store.state.audit).toEqual([]);
     await usecases.addGroupCapability(admin, row);
-    await expect(usecases.removeGroupCapability(elsewhere, row)).rejects.toThrow('Gruppen finns inte');
+    // A removal from there finds no row of its own to remove, answers the page as it is and writes nothing.
+    expect((await usecases.removeGroupCapability(elsewhere, row)).groupCapabilities).toEqual([]);
     expect((await usecases.overview(elsewhere)).groupCapabilities).toEqual([]);
     expect((await usecases.overview(admin)).groupCapabilities).toEqual([
       { groupExternalId: 'S-1-5-21-it-staff', groupLabel: 'IT-personal', capability: 'admin.connectors' },
@@ -480,6 +516,8 @@ describe('Användare', () => {
     const rotated = await usecases.rotateProvisioner(admin, 'metakatalogen', { graceHours: 24 });
     expect(rotated.token).toBe('token-2');
     expect(rowOf(rotated)?.previousValidUntil).toBe('2026-11-11T06:00:00.000Z');
+    // No key replaced earlier was ended, so the answer says nothing of one.
+    expect(rotated).not.toHaveProperty('endedEarlier');
     expect(store.state.audit.at(-1)).toEqual({
       actor: 'person:mikael',
       action: 'provisioner.rotated',
@@ -498,6 +536,8 @@ describe('Användare', () => {
     const again = await usecases.rotateProvisioner(admin, 'metakatalogen', { graceHours: 0 });
     expect(again.token).toBe('token-3');
     expect(rowOf(again)?.previousValidUntil).toBeNull();
+    // The answer says until when the key it ended would have answered, so the page can say so (K1).
+    expect(again.endedEarlier).toBe('2026-11-11T06:00:00.000Z');
     expect(store.state.audit.slice(audited)).toEqual([
       {
         actor: 'person:mikael',
@@ -549,6 +589,270 @@ describe('Användare', () => {
     expect(rowOf(reissued)).toMatchObject({ label: 'Metakatalogen 2', lastSeenAt: null, silent: true });
     expect((await scim.authenticate(reissued.token))?.label).toBe('Metakatalogen 2');
     expect(await scim.authenticate('token-2')).toBeUndefined();
+  });
+  test('a second replacement inside the grace period answers until when the key it ended would have answered, whatever period is chosen (K1)', async () => {
+    const { usecases, admin } = stack();
+    await usecases.issueProvisioner(admin, { id: 'metakatalogen', label: 'Metakatalogen' });
+    await usecases.rotateProvisioner(admin, 'metakatalogen', { graceHours: 168 });
+    // A week is chosen again: the key replaced first still ends now, and the answer says so beside the new period.
+    const again = await usecases.rotateProvisioner(admin, 'metakatalogen', { graceHours: 168 });
+    expect(again.endedEarlier).toBe('2026-11-17T06:00:00.000Z');
+    expect(rowOf(again)?.previousValidUntil).toBe('2026-11-17T06:00:00.000Z');
+  });
+  test('the operator replaces and takes back a key through the use cases the page runs, with its audit rows and the operator as the actor (D107 item 6, K5)', async () => {
+    const { usecases, operator, admin, store, scimAt } = stack();
+    await usecases.issueProvisioner(admin, { id: 'metakatalogen', label: 'Metakatalogen' });
+    await usecases.issueProvisioner({ ...admin, organisationId: 'timra' }, { id: 'timra-katalog', label: 'Timrå' });
+    const audited = store.state.audit.length;
+    expect(await operator.rotate('bootstrap:cli', 'metakatalogen', 24)).toEqual({
+      token: 'token-3',
+      previousValidUntil: '2026-11-11T06:00:00.000Z',
+      endedEarlier: null,
+    });
+    expect(await operator.rotate('bootstrap:cli', 'metakatalogen', 0)).toEqual({
+      token: 'token-4',
+      previousValidUntil: null,
+      endedEarlier: '2026-11-11T06:00:00.000Z',
+    });
+    // The cut-off the second rotation really used is in its audit row, as the page writes it.
+    expect(store.state.audit.slice(audited)).toEqual([
+      {
+        actor: 'bootstrap:cli',
+        action: 'provisioner.rotated',
+        subject: 'provisioner:metakatalogen',
+        details: { graceHours: 24, previousValidUntil: '2026-11-11T06:00:00.000Z' },
+      },
+      {
+        actor: 'bootstrap:cli',
+        action: 'provisioner.rotated',
+        subject: 'provisioner:metakatalogen',
+        details: { graceHours: 0, previousValidUntil: null, endedEarlier: '2026-11-11T06:00:00.000Z' },
+      },
+    ]);
+    const during = scimAt('2026-11-10T12:00:00.000Z');
+    expect(await during.authenticate('token-1')).toBeUndefined();
+    expect(await during.authenticate('token-3')).toBeUndefined();
+    expect((await during.authenticate('token-4'))?.id).toBe('metakatalogen');
+    // The installation is the operator's, so a provisioner of any organisation is theirs to take back.
+    expect(await operator.revoke('bootstrap:cli', 'timra-katalog')).toEqual({ id: 'timra-katalog' });
+    expect(store.state.audit.at(-1)).toEqual({
+      actor: 'bootstrap:cli',
+      action: 'provisioner.revoked',
+      subject: 'provisioner:timra-katalog',
+      details: {},
+    });
+    expect(await scimAt('2026-11-10T12:00:00.000Z').authenticate('token-2')).toBeUndefined();
+    // A provisioner whose keys were taken back, or that is not there, answers nothing and writes nothing.
+    const after = store.state.audit.length;
+    expect(await operator.revoke('bootstrap:cli', 'timra-katalog')).toBeUndefined();
+    expect(await operator.rotate('bootstrap:cli', 'timra-katalog', 24)).toBeUndefined();
+    expect(await operator.rotate('bootstrap:cli', 'okand', 24)).toBeUndefined();
+    expect(store.state.audit).toHaveLength(after);
+    expect(JSON.stringify(store.state.audit)).not.toContain('token-');
+  });
+  test("the group picker searches the organisation's groups on the server, the first ten by name, with admin.users only (K2)", async () => {
+    const { usecases, admin, other, store } = stack(),
+      s = store.state;
+    for (let i = 0; i < 12; i++) {
+      const n = String(i).padStart(2, '0');
+      s.groups.set('g-x' + n, {
+        ...s.groups.get('g-ad')!,
+        id: 'g-x' + n,
+        externalId: 'S-1-5-21-extra-' + n,
+        label: 'Extra ' + n,
+      });
+    }
+    s.groups.set('g-timra', {
+      ...s.groups.get('g-ad')!,
+      id: 'g-timra',
+      organisationId: 'timra',
+      externalId: 'S-1-5-21-timra',
+      label: 'IT-personal Timrå',
+    });
+    expect(await usecases.searchGroups(admin, '  it-PERSONAL ')).toEqual({
+      groups: [{ id: 'S-1-5-21-it-staff', label: 'IT-personal' }],
+    });
+    // Each word in the name or in the external id.
+    expect(await usecases.searchGroups(admin, 'unit:')).toEqual({
+      groups: [
+        { id: 'unit:unit-skola', label: 'Bergsåkers skola' },
+        { id: 'unit:unit-it', label: 'IT' },
+      ],
+    });
+    expect(await usecases.searchGroups(admin, 'extra 11')).toEqual({
+      groups: [{ id: 'S-1-5-21-extra-11', label: 'Extra 11' }],
+    });
+    expect((await usecases.searchGroups(admin, 'extra')).groups.map(g => g.label)).toEqual(
+      Array.from({ length: 10 }, (_, i) => 'Extra 0' + i),
+    );
+    // No words is every group, the first ten by name. A group without an external id and another organisation's
+    // group are never found.
+    expect((await usecases.searchGroups(admin, '')).groups.map(g => g.label)).toEqual([
+      'Bergsåkers skola',
+      ...Array.from({ length: 9 }, (_, i) => 'Extra 0' + i),
+    ]);
+    expect(await usecases.searchGroups(admin, 'timrå')).toEqual({ groups: [] });
+    expect(await usecases.searchGroups(admin, 'no external')).toEqual({ groups: [] });
+    await expect(usecases.searchGroups(other, 'it')).rejects.toThrow('behörighet');
+    expect(s.audit).toEqual([]);
+  });
+  test('every mapping row is named by its own group, beyond the groups the overview offers too, and the picker reaches that group (K2)', async () => {
+    const { usecases, admin, store } = stack(),
+      s = store.state;
+    for (let i = 0; i < 10_000; i++)
+      s.groups.set('g-many-' + i, {
+        ...s.groups.get('g-ad')!,
+        id: 'g-many-' + i,
+        externalId: 'S-1-5-21-many-' + i,
+        label: 'Grupp ' + String(i).padStart(5, '0'),
+      });
+    s.groups.set('g-last', {
+      ...s.groups.get('g-ad')!,
+      id: 'g-last',
+      externalId: 'S-1-5-21-last',
+      label: 'Östra lärare',
+    });
+    s.groupCapabilities.push({ organisationId: 'poc', groupExternalId: 'S-1-5-21-last', capability: 'admin.users' });
+    const o = await usecases.overview(admin);
+    // The first ten thousand by name are offered; the row is named all the same, and not as a group that is gone.
+    expect(o.groups).toHaveLength(10_000);
+    expect(o.groups.slice(0, 2)).toEqual([
+      { id: 'unit:unit-skola', label: 'Bergsåkers skola' },
+      { id: 'S-1-5-21-many-0', label: 'Grupp 00000' },
+    ]);
+    expect(o.groups.some(g => g.id === 'S-1-5-21-last')).toBe(false);
+    expect(o.groupCapabilities).toEqual([
+      { groupExternalId: 'S-1-5-21-last', groupLabel: 'Östra lärare', capability: 'admin.users' },
+    ]);
+    expect(await usecases.searchGroups(admin, 'ÖSTRA')).toEqual({
+      groups: [{ id: 'S-1-5-21-last', label: 'Östra lärare' }],
+    });
+    const mapped = await usecases.addGroupCapability(admin, {
+      groupExternalId: 'S-1-5-21-last',
+      capability: 'admin.connectors',
+    });
+    expect(mapped.groupCapabilities.map(r => [r.groupLabel, r.capability])).toEqual([
+      ['Östra lärare', 'admin.connectors'],
+      ['Östra lärare', 'admin.users'],
+    ]);
+  });
+  test('a word pasted decomposed is the same letters as one typed composed, in the list and in the group picker (L12)', async () => {
+    const { usecases, admin } = stack();
+    // As text copied from a file name or a PDF may arrive: an a and a ring above, an a and two dots.
+    expect((await usecases.people(admin, { text: 'AVSTÄNGD'.normalize('NFD') })).rows.map(u => u.id)).toEqual(['zara']);
+    expect(await usecases.searchGroups(admin, 'bergsåkers'.normalize('NFD'))).toEqual({
+      groups: [{ id: 'unit:unit-skola', label: 'Bergsåkers skola' }],
+    });
+  });
+  test("a row whose group is gone is removed after another organisation has taken the group's external id, and that group is never mapped from here (K4)", async () => {
+    const { usecases, admin, store } = stack(),
+      s = store.state;
+    s.groupCapabilities.push({ organisationId: 'poc', groupExternalId: 'S-1-5-21-moved', capability: 'admin.users' });
+    // Timrå's group now holds the id, with a person of Timrå's in it whose grant is not what a derivation would give.
+    s.groups.set('g-timra', {
+      ...s.groups.get('g-ad')!,
+      id: 'g-timra',
+      organisationId: 'timra',
+      externalId: 'S-1-5-21-moved',
+      label: 'Timrås grupp',
+    });
+    s.users.set('ulla', { ...s.users.get('mikael')!, id: 'ulla', organisationId: 'timra', name: 'Ulla Timrå' });
+    s.members.add(memberKey('g-timra', 'ulla'));
+    s.grants.set('ulla', { unitId: 'unit-t', unitLabel: 'Timrå', role: 'employee', capabilities: [] });
+    // Timrå's group does not name the row, and is not offered.
+    expect((await usecases.overview(admin)).groupCapabilities).toEqual([
+      { groupExternalId: 'S-1-5-21-moved', groupLabel: null, capability: 'admin.users' },
+    ]);
+    expect(await usecases.searchGroups(admin, 'moved')).toEqual({ groups: [] });
+    await expect(
+      usecases.addGroupCapability(admin, { groupExternalId: 'S-1-5-21-moved', capability: 'admin.connectors' }),
+    ).rejects.toThrow('Gruppen finns inte bland de provisionerade grupperna.');
+    expect(s.audit).toEqual([]);
+    const removed = await usecases.removeGroupCapability(admin, {
+      groupExternalId: 'S-1-5-21-moved',
+      capability: 'admin.users',
+    });
+    expect(removed.groupCapabilities).toEqual([]);
+    // Audited without a name, as a row whose group is gone, and nobody of Timrå's is derived from here.
+    expect(s.audit).toEqual([
+      {
+        actor: 'person:mikael',
+        action: 'group-capability.removed',
+        subject: 'group:S-1-5-21-moved',
+        details: { capability: 'admin.users', groupLabel: null },
+      },
+    ]);
+    expect(s.grants.get('ulla')).toEqual({ unitId: 'unit-t', unitLabel: 'Timrå', role: 'employee', capabilities: [] });
+  });
+  test('a group re-keyed or removed while a mapping to it waits for its row is no group to map, and nothing is written (K4)', async () => {
+    for (const meanwhile of ['re-keyed', 'removed'] as const) {
+      const { store, waiting, admin } = stack(),
+        s = store.state;
+      const changing = waiting(() => {
+        if (meanwhile === 're-keyed') s.groups.get('g-ad')!.externalId = 'S-1-5-21-it-staff-v2';
+        else {
+          s.groups.delete('g-ad');
+          s.members.delete(memberKey('g-ad', 'mikael'));
+        }
+      });
+      // In the order the writes committed, the group no longer holds the key when the mapping is added: refused, as
+      // an addition after that write is, with no row left to give whatever group takes the key later.
+      await expect(
+        changing.addGroupCapability(admin, { groupExternalId: 'S-1-5-21-it-staff', capability: 'admin.connectors' }),
+      ).rejects.toThrow('Gruppen finns inte bland de provisionerade grupperna.');
+      expect(s.groupCapabilities).toEqual([]);
+      expect(s.audit).toEqual([]);
+      expect(s.grants.get('mikael')?.capabilities).toEqual([]);
+    }
+  });
+  test('a change is audited with the name its group has once the change holds the row, and a row whose group was re-keyed meanwhile goes as one whose group is gone (K4)', async () => {
+    const { store, waiting, admin } = stack(),
+      s = store.state,
+      row = { groupExternalId: 'S-1-5-21-it-staff', capability: 'admin.connectors' as const };
+    // Renamed while the addition waited: the row is named, and audited, by the name the group has now.
+    const added = await waiting(() => (s.groups.get('g-ad')!.label = 'IT-avdelningen')).addGroupCapability(admin, row);
+    expect(added.groupCapabilities).toEqual([{ ...row, groupLabel: 'IT-avdelningen' }]);
+    expect(s.audit[0]).toEqual({
+      actor: 'person:mikael',
+      action: 'group-capability.added',
+      subject: 'group:S-1-5-21-it-staff',
+      details: { capability: 'admin.connectors', groupLabel: 'IT-avdelningen' },
+    });
+    expect(s.grants.get('mikael')?.capabilities).toEqual(['admin.connectors']);
+    // Re-keyed while the removal waited: the row is removed and audited without a name, and nobody is derived from
+    // here, since the write that took the key away derived the group's members itself.
+    const removed = await waiting(
+      () => (s.groups.get('g-ad')!.externalId = 'S-1-5-21-it-staff-v2'),
+    ).removeGroupCapability(admin, row);
+    expect(removed.groupCapabilities).toEqual([]);
+    expect(s.audit.slice(2)).toEqual([
+      {
+        actor: 'person:mikael',
+        action: 'group-capability.removed',
+        subject: 'group:S-1-5-21-it-staff',
+        details: { capability: 'admin.connectors', groupLabel: null },
+      },
+    ]);
+  });
+  test('a NUL names no unit and no group and is in no name: the answer is nobody and nothing, and the store is never handed it (K3)', async () => {
+    const { usecases, admin, store } = stack();
+    const nobody = { rows: [], total: 0, all: 3, page: 1, pageSize: 25 };
+    expect(await usecases.people(admin, { unitId: 'unit-it\u0000' })).toEqual(nobody);
+    expect(await usecases.people(admin, { text: 'mikael\u0000' })).toEqual(nobody);
+    expect(await usecases.people(admin, { text: 'mikael \u0000', page: 3, role: 'employee' })).toEqual(nobody);
+    expect(await usecases.searchGroups(admin, 'it\u0000')).toEqual({ groups: [] });
+    await expect(
+      usecases.addGroupCapability(admin, { groupExternalId: 'S-1-5-21-it-staff\u0000', capability: 'admin.users' }),
+    ).rejects.toThrow('Gruppen finns inte bland de provisionerade grupperna.');
+    expect(
+      (
+        await usecases.removeGroupCapability(admin, {
+          groupExternalId: 'S-1-5-21-it-staff\u0000',
+          capability: 'admin.users',
+        })
+      ).groupCapabilities,
+    ).toEqual([]);
+    expect(store.state.audit).toEqual([]);
   });
   test('a group that is not provisioned cannot be mapped, but a stale mapping can be removed; an unknown capability is refused', async () => {
     const { usecases, admin, store } = stack();

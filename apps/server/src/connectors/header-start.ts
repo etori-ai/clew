@@ -14,6 +14,6 @@ export const CLEWS_START: Place = { id: 'start', label: 'Start', href: '/' };
  * The header connector's places with Clew's Start first (D116 item 3): a place the connector calls `start`, or one
  * that leads to Clew's root, is left out with the pages under it, since what Start is is not the connector's.
  */
-export function withClewsStart(places: readonly Place[], start: Place = CLEWS_START): Place[] {
-  return [start, ...places.filter(p => p.id !== 'start' && p.href !== '/')];
+export function withClewsStart(places: readonly Place[]): Place[] {
+  return [CLEWS_START, ...places.filter(p => p.id !== 'start' && p.href !== '/')];
 }

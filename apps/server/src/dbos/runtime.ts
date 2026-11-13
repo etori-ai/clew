@@ -3,7 +3,6 @@ import { DBOS } from '@dbos-inc/dbos-sdk';
 import './workflows';
 import { startHeartbeat } from './heartbeat';
 import { dbosLogger, logger } from '../logging';
-import { telemetry } from '../telemetry';
 
 /**
  * The durable engine (D85): DBOS Transact in the BFF process, checkpointing to Clew's own PostgreSQL database (the
@@ -12,8 +11,10 @@ import { telemetry } from '../telemetry';
  *    transaction (`dbos.enqueue_workflow` in the store adapters, D86) and the application name below is what they name.
  *  - `CLEW_EXECUTOR_ID`: a stable name per instance (default: the host name). Recovery and takeover key on it.
  *  - `CLEW_RELEASE`: the application version; unset, DBOS hashes the workflow source. Workflows are tagged with the
- *    version that started them and are recovered only by executors of that version; an operator moves the rest with
- *    `forkWorkflow`. Only the latest registered version dequeues, so the version that launches promotes itself.
+ *    version that started them and are recovered only by executors of that version; a server's start takes the last
+ *    and the next nights of the nightly jobs over (`moveToRunningVersion` in `start.ts`), and an operator moves the rest
+ *    with `scripts/workflows-move.ts`. Only the latest registered version dequeues, so the version that launches
+ *    promotes itself.
  *  - Logging and tracing (D91): the engine's log lines go through Clew's logger, and when telemetry export is on the
  *    engine emits its workflow and step spans on the global tracer provider, in the `dbos.*` semantic-convention
  *    names, so a reminder's workflow and the Postgres writes under it are one trace.
@@ -31,6 +32,8 @@ export interface DurableOptions {
   executorID?: string;
   applicationVersion?: string;
   databaseUrl?: string;
+  /** Join the tracer provider installed by the process that launches the engine. */
+  tracingEnabled?: boolean;
   /** The heartbeat and takeover sweep (heartbeat.ts); a test of one executor turns it off. */
   heartbeat?: boolean;
 }
@@ -48,7 +51,7 @@ export async function launchDurable(options: DurableOptions = {}) {
     executorID,
     ...(applicationVersion ? { applicationVersion } : {}),
     logger: dbosLogger,
-    tracingEnabled: telemetry.enabled,
+    tracingEnabled: options.tracingEnabled ?? false,
     otelAttributeFormat: 'semconv',
     systemDatabasePoolSize: 5,
   });
@@ -78,18 +81,26 @@ async function promoteCurrentVersion() {
 }
 
 const RETRY_MS = 30_000;
-/** Launch beside the server; if the database is unreachable the page still works (D8) and the launch retries. */
-export function startDurableRuntime() {
-  launchDurable()
-    .then(info =>
-      logger.info(
-        { scope: 'dbos', executor: info.executorID, version: info.applicationVersion },
-        'durable engine (DBOS) launched',
-      ),
-    )
-    .catch(async error => {
-      logger.error({ scope: 'dbos', error }, `durable engine unavailable, retrying in ${RETRY_MS / 1000} s`);
-      await DBOS.shutdown().catch(() => undefined);
-      setTimeout(startDurableRuntime, RETRY_MS).unref();
-    });
+/**
+ * Launch beside the server; if the database is unreachable the page still works (D8) and the launch retries. Resolves
+ * once the engine has launched, which may be after several attempts, and never rejects.
+ */
+export function startDurableRuntime(options: Pick<DurableOptions, 'tracingEnabled'>) {
+  return new Promise<Awaited<ReturnType<typeof launchDurable>>>(resolve => {
+    const attempt = () =>
+      launchDurable(options)
+        .then(info => {
+          logger.info(
+            { scope: 'dbos', executor: info.executorID, version: info.applicationVersion },
+            'durable engine (DBOS) launched',
+          );
+          resolve(info);
+        })
+        .catch(async error => {
+          logger.error({ scope: 'dbos', error }, `durable engine unavailable, retrying in ${RETRY_MS / 1000} s`);
+          await DBOS.shutdown().catch(() => undefined);
+          setTimeout(attempt, RETRY_MS).unref();
+        });
+    void attempt();
+  });
 }

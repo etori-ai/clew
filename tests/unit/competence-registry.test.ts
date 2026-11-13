@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext, StaffOverview, StaffPerson } from '../../packages/contracts/src/index';
-import { COMPETENCE_CONNECTOR, Registry, actorOf, openGovernance } from '../../packages/connectors/src/index';
+import { COMPETENCE_CONNECTOR, Registry, audiencedActorOf, openGovernance } from '../../packages/connectors/src/index';
 import { memoryConnectorStore } from '../../apps/server/src/connectors/adapters/memory';
 import { connectorUsecases, type AdminDeps } from '../../apps/server/src/connectors/usecases/admin';
 import { applyAllRows, syncBundledRows, type ReconcileDeps } from '../../apps/server/src/connectors/reconcile';
@@ -62,8 +62,8 @@ function world() {
   let n = 0;
   const store = memoryCompetenceStore({
     persons: [
-      { id: 'p-anna', organisationId: ORG, name: 'Anna Lindqvist', userName: 'anna.lindqvist' },
-      { id: 'hillevi', organisationId: ORG, name: 'Hillevi Berg', userName: 'hillevi.berg' },
+      { id: 'p-anna', organisationId: ORG, name: 'Anna Lindqvist', userName: 'anna.lindqvist', enabled: true },
+      { id: 'hillevi', organisationId: ORG, name: 'Hillevi Berg', userName: 'hillevi.berg', enabled: true },
     ],
   });
   const competence = competenceUsecases({
@@ -117,7 +117,7 @@ function world() {
   };
   const writable = async (p: AuthenticatedContext) => {
     await applyAllRows(reconcile);
-    return registry.visible(actorOf(p), COMPETENCE_CONNECTOR);
+    return registry.visible(audiencedActorOf(p), COMPETENCE_CONNECTOR);
   };
   /** The routes behind a guard that signs the request in as the persona named in `x-test-person`. */
   const app = competenceRoutes({
@@ -161,10 +161,10 @@ describe('the competence wiring (D108 item 13)', () => {
     await applyAllRows(w.reconcile);
     expect((await w.connectors.read(COMPETENCE_CONNECTOR))!).toMatchObject({ bundled: true, state: 'disabled' });
     for (const p of [hillevi, anna]) {
-      expect(w.registry.visible(actorOf(p), COMPETENCE_CONNECTOR)).toBe(false);
-      expect((await w.registry.areas(actorOf(p))).map(a => a.id)).toEqual([]);
-      expect(await w.registry.scan(actorOf(p))).toEqual([]);
-      await expect(w.registry.run(actorOf(p), 'competence.holdings', {})).rejects.toThrow();
+      expect(w.registry.visible(audiencedActorOf(p), COMPETENCE_CONNECTOR)).toBe(false);
+      expect((await w.registry.areas(audiencedActorOf(p))).map(a => a.id)).toEqual([]);
+      expect(await w.registry.scan(audiencedActorOf(p))).toEqual([]);
+      await expect(w.registry.run(audiencedActorOf(p), 'competence.holdings', {})).rejects.toThrow();
     }
     const refused = await w.call(mikael, 'GET', '/types');
     expect(refused.status).toBe(403);
@@ -174,9 +174,9 @@ describe('the competence wiring (D108 item 13)', () => {
 
     w.advance(60_000);
     await w.admin.update(mikael, COMPETENCE_CONNECTOR, { state: 'enabled' });
-    expect(w.registry.visible(actorOf(hillevi), COMPETENCE_CONNECTOR)).toBe(true);
-    expect((await w.registry.areas(actorOf(hillevi))).map(a => a.id)).toEqual(['competence']);
-    expect(await w.registry.run(actorOf(anna), 'competence.holdings', {})).toEqual({ rows: [] });
+    expect(w.registry.visible(audiencedActorOf(hillevi), COMPETENCE_CONNECTOR)).toBe(true);
+    expect((await w.registry.areas(audiencedActorOf(hillevi))).map(a => a.id)).toEqual(['competence']);
+    expect(await w.registry.run(audiencedActorOf(anna), 'competence.holdings', {})).toEqual({ rows: [] });
     // A later boot leaves the administrator's choice alone, on as well as off.
     await syncBundledRows(w.reconcile);
     expect((await w.connectors.read(COMPETENCE_CONNECTOR))!.state).toBe('enabled');
@@ -294,15 +294,17 @@ describe('the competence wiring (D108 item 13)', () => {
     expect((await w.call(mikael, 'POST', `/approvals/${holdingId}`, { decision: 'approve' })).status).toBe(403);
     expect((await w.call(hillevi, 'POST', `/approvals/${holdingId}`, { decision: 'maybe' })).status).toBe(400);
     // Through the registry too, as the card's read: a row for her manager, refused to anyone else.
-    expect(await w.registry.run(actorOf(hillevi), 'competence.approval', { holding: holdingId })).toEqual({
+    expect(await w.registry.run(audiencedActorOf(hillevi), 'competence.approval', { holding: holdingId })).toEqual({
       rows: [{ name: 'Anna Lindqvist', competence: 'HLR', issuedOn: '2025-05-10' }],
     });
-    await expect(w.registry.run(actorOf(mikael), 'competence.approval', { holding: holdingId })).rejects.toThrow();
+    await expect(
+      w.registry.run(audiencedActorOf(mikael), 'competence.approval', { holding: holdingId }),
+    ).rejects.toThrow();
     // Scoped as the matrix is, by whom the server counts as reports, not by the session's role.
-    expect(await w.registry.run(actorOf(acting), 'competence.approval', { holding: holdingId })).toEqual({
+    expect(await w.registry.run(audiencedActorOf(acting), 'competence.approval', { holding: holdingId })).toEqual({
       rows: [{ name: 'Anna Lindqvist', competence: 'HLR', issuedOn: '2025-05-10' }],
     });
-    expect(w.registry.views(actorOf(acting)).map(v => v.capability)).toContain('competence.approval');
+    expect(w.registry.views(audiencedActorOf(acting)).map(v => v.capability)).toContain('competence.approval');
 
     expect((await w.call(hillevi, 'POST', `/approvals/${holdingId}`, { decision: 'approve' })).status).toBe(204);
     expect(w.store.state.holdings.get(holdingId)).toMatchObject({ state: 'valid', decidedBy: 'hillevi' });
@@ -734,23 +736,23 @@ describe('the competence wiring (D108 item 13)', () => {
       .govern(COMPETENCE_CONNECTOR, openGovernance());
     // Her own session's direct read (`GET /api/cap`) is the one call the relation is resolved on.
     expect(
-      await registry.run(actorOf(hr), 'competence.holdings', { person: 'Anna.Lindqvist' }, { direct: true }),
+      await registry.run(audiencedActorOf(hr), 'competence.holdings', { person: 'Anna.Lindqvist' }, { direct: true }),
     ).toEqual({ rows: [] });
     expect(w.store.readLog().map(r => [r.readerId, r.relation, r.kind, r.personId])).toEqual([
       ['hr', 'registrar', 'person', 'p-anna'],
     ]);
     // Any other call (a card, a tool, a job) is refused, and logs nothing.
-    await expect(registry.run(actorOf(hr), 'competence.holdings', { person: 'anna.lindqvist' })).rejects.toThrow(
-      'Okänd förmåga.',
-    );
+    await expect(
+      registry.run(audiencedActorOf(hr), 'competence.holdings', { person: 'anna.lindqvist' }),
+    ).rejects.toThrow('Okänd förmåga.');
     // The read about a person is a manager's, of their reports alone: it is not opened to a registrar.
-    await expect(registry.run(actorOf(hr), 'competence.person', { keys: ['anna.lindqvist'] })).rejects.toThrow(
+    await expect(registry.run(audiencedActorOf(hr), 'competence.person', { keys: ['anna.lindqvist'] })).rejects.toThrow(
       'Du saknar behörighet för åtgärden.',
     );
     // Nor is anyone else who does not hold the grant.
-    await expect(registry.run(actorOf(anna), 'competence.holdings', { person: 'hillevi.berg' })).rejects.toThrow(
-      'Okänd förmåga.',
-    );
+    await expect(
+      registry.run(audiencedActorOf(anna), 'competence.holdings', { person: 'hillevi.berg' }),
+    ).rejects.toThrow('Okänd förmåga.');
     expect(w.store.readLog()).toHaveLength(1);
   });
 

@@ -14,6 +14,7 @@ import type { PanelViewSpec, Thread, ViewRef } from '@clew/contracts';
 import { Button, HStack, Text, VStack, type AgendaItem } from '@clew/ui';
 import { areasQuery, threadsQuery, viewQuery } from '../queries';
 import { errorMessage } from '../query-policy';
+import { pageLocation } from '../page-location';
 import { panelOf, viewSearch, withoutPanel, type PanelRef } from '../panel-address';
 import { openedAsPage, opensAsPage, viewOpenHref, viewPageHref } from '../view-address';
 import { cardBody } from './card-panel';
@@ -221,7 +222,12 @@ function usePanelOnPage({
   const changedCard = useCallback((t: Thread) => changed.current?.(t), []);
   const held = useRef<{ frame: PanelFrame; card: Thread | null; view: { title: string } | null } | null>(null);
 
-  const close = () => navigate(withoutPanel(pathname, search));
+  const close = () => {
+    // Use the current address, which another surface can have changed since this one was drawn, so dismissing the
+    // card keeps it.
+    const current = pageLocation();
+    navigate(withoutPanel(current.pathname, current.search));
+  };
   /** Where a row of the thing in the panel leads (a record's line that opens a read): a list to its page, one thing in its place. */
   const hrefFor = (v: ViewRef) => viewOpenHref(views, pathname, search, v);
   const failed = (

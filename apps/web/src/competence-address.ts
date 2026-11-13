@@ -335,5 +335,15 @@ export function searchFileBodyOf(body: CompetenceSearchBody): CompetenceSearchFi
  * person, by user name, with the search as the way back. No name: the page names the person from the directory, as
  * their own page does, so a name never rides in the address (the review of 2026-11-13).
  */
-export const holdingsPageHref = (key: string, from: string) =>
-  viewPageHref({ capability: 'competence.holdings', input: { person: key } }, from);
+/**
+ * One person's holdings as a view's page. The read is asked by the source's key (`person`); `of` is Clew's key for the
+ * person, their id (D122), by which the page names them from the directory, as their own page does.
+ */
+export const holdingsPageHref = (key: string, from: string, personId?: string) => {
+  const href = viewPageHref({ capability: 'competence.holdings', input: { person: key } }, from);
+  if (!personId) return href;
+  const [path, query = ''] = href.split('?');
+  const q = new URLSearchParams(query);
+  q.set('of', personId);
+  return `${path}?${q}`;
+};

@@ -9,6 +9,7 @@ import { commitmentsQuery } from '../queries';
 import { dueText, isOverdue, splitMine, type CommitmentEntry } from '../talks';
 import { personPageHref } from '../person-address';
 import { ContentArrival } from './loading';
+import { DOT } from '../dot';
 
 /** The area of the talks domain (D96 item 7): with it chosen, Hem still shows the person's action points. */
 export const TALKS_AREA = 'talks';
@@ -98,7 +99,8 @@ export function MyCommitments() {
   return (
     <VStack gap={2} as="section" aria-label="Mina åtgärdspunkter">
       <Heading ref={heading} id="mina-atgardspunkter" tabIndex={-1} level={3} accessibilityLevel={2}>
-        Mina åtgärdspunkter · {open.length}
+        Mina åtgärdspunkter{DOT}
+        {open.length}
       </Heading>
       <ContentArrival gap={2}>
         <Card>
@@ -142,34 +144,40 @@ export function MyCommitments() {
  * The words under an action point: when it is due, whether it is from an earlier talk, and whom it concerns. A manager's
  * own point is about an employee, so it names them; one the other party owns says who answers for it; an employee's own
  * point is about themselves and names nobody. The employee's name, where it is said, leads to them (D97 item 6, artboard
- * M): the row carries their user name, which is the person's key.
+ * M): by the person's id, which `clew.commitments` gives every row (D122).
  */
 function Meta({ row }: { row: CommitmentEntry }) {
   const { pathname, search } = useLocation();
   const words = [`Senast ${dueText(row)}`];
   if (row.carried) words.push('Från tidigare samtal');
-  const lead = words.join(' · ');
+  const lead = words.join('\u00a0· ');
   const name = (
-    <Link href={personPageHref(row.userName, { from: pathname + search })} hasUnderline>
+    <Link href={personPageHref(row.personId, { from: pathname + search })} hasUnderline>
       {row.name}
     </Link>
   );
   if (row.mine && row.owner === 'manager')
     return (
       <Text type="supporting">
-        {lead} · Samtal med {name}
+        {lead}
+        {DOT}Samtal med {name}
       </Text>
     );
   if (!row.mine && row.owner === 'employee')
     return (
       <Text type="supporting">
-        {lead} · {name} ansvarar
+        {lead}
+        {DOT}
+        {name} ansvarar
       </Text>
     );
-  return <Text type="supporting">{row.mine ? lead : `${lead} · Din chef ansvarar`}</Text>;
+  return <Text type="supporting">{row.mine ? lead : `${lead}\u00a0· Din chef ansvarar`}</Text>;
 }
 
-/** One action point. The owner ticks it off with Klar when Clew can write; read-only, the text opens the other system. */
+/**
+ * One action point. The owner ticks it off with Klar when Clew can write: a row carries its `id` only when the reader may
+ * change it, which on this list is their own. Read-only, the text opens the other system.
+ */
 function CommitmentRow({
   row,
   writable,
@@ -228,7 +236,7 @@ function CommitmentRow({
         </VStack>
       }
       endContent={
-        writable && row.mine && id ? (
+        writable && id ? (
           <Button size="sm" variant="secondary" label={`Klar: ${row.text}`} clickAction={complete}>
             Klar
           </Button>

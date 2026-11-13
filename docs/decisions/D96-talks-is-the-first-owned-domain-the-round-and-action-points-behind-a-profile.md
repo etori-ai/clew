@@ -1,6 +1,102 @@
 # D96 · Talks is Clew's first owned domain: the round and action points, behind a profile a connector can answer
 
-**Status:** accepted, built 2026-11-10 (the round, action points, the profile and its fixture; see "As built"); synthetic data only until questions 6 and 11 below are answered; item 1 amended by D99 (2026-11-10): a person is due a talk with the manager they report to in the organisation tree · **Date:** 2026-11-10 · **Area:** product, integrations
+**Status:** accepted, built 2026-11-10 (the round, action points, the profile and its fixture; see "As built"); synthetic data only until questions 6 and 11 below are answered; item 1 amended by [D99](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md) (2026-11-10): a person is due a talk with the manager they report to in the organisation tree; item 7 amended by [D111](D111-where-something-opens-is-decided-by-what-it-is.md) (2026-11-11, provisional, rule 5): the talk lies over the page it was opened on; items 2 and 4 and As built item 4 amended 2026-11-12 in the fixes of the review of users and the organisation (Q12): a person has one talk a round however many current managers they have, a booking any of them made through Clew counts as booked for all of them, any of them marks, moves or undoes the held mark, and a manager ticks off only their own action points and a manager's point whose owner no longer manages the person; question 6 of the checklist amended the same day (M2): every current manager reads the record, and a former manager reads nothing about the person but the action points they own, which stay on their Hem until done; item 8 amended by [D122](D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) (2026-11-12, provisional): rows stay keyed on the user name on the wire, a user name can be renamed and reused, and Clew keys its own records about a person by the person's id · **Date:** 2026-11-10 · **Area:** product, integrations
+
+**Amended 2026-11-12.** The product owner asked on 2026-11-12 for every finding of the
+[review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md)
+to be fixed and every open decision to be taken. Q12 of that review settled how talks work for a person with two
+current managers (M1, M2), and Q11 the key of item 8 (N2). The items below stay as written; where they differ from
+this paragraph, this paragraph holds.
+
+- **One talk per person per round (items 1 and 2).** The record stays one per person per round, keyed on the
+  employee. A person with two current managers, such as co-managers of one unit
+  ([D99](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md)), has one talk a
+  round, whichever of them books it. A proposal another current manager made through Clew counts as booked for every
+  current manager, without its time, when it is confirmed, final or accepted, starts on a day of the round's period
+  and its owner still has the person in their team. The row then shows "Bokat" and no time, no planner draws the
+  person, and the nightly "N samtal saknar tid" leaves them out. A booking whose manager has left the person, or is
+  gone from the directory, books nothing for anyone else.
+- **Where the rule holds.** The rule is one function, `bookedElsewhere` in
+  `apps/server/src/modules/calendar/usecases/booked.ts`. The round's rows, the planner, the nightly count, the open
+  card, the confirmation and the dispatch all ask it. Confirming a proposal is refused, after the person's name, with
+  "har redan ett utvecklingssamtal bokat med en annan chef.", or with "har redan haft sitt utvecklingssamtal i den här
+  omgången." when the round records the talk as held. While the round cannot be read, confirming is refused with "Det
+  gick inte att se om … redan har ett utvecklingssamtal bokat. Försök igen om en stund." and the planner plans
+  nothing. Dispatch asks the rule inside the period of the round the confirmation was approved in, which the
+  confirmation wrote into the approved command, and does not read the round again; an invitation confirmed while no
+  round was open asks nobody. It skips the invitation and leaves the card open when the person was booked meanwhile,
+  and also when it cannot tell, because the bookings, the team or the directory cannot be read. The scan keeps an open
+  card in step with what its count says, in one write with the audit row `proposals.settled_elsewhere`: the drawn
+  time of a person booked elsewhere, or whose talk is held, becomes an unplaced row, "bokad av en annan chef" or "har
+  redan haft sitt samtal"; a row of someone with a talk in the manager's own calendar, booked by hand or sent by the
+  manager through Clew, says "har ett samtal i din kalender", while their drawn time stays, since a no leaves the
+  declined invitation in the calendar while the card offers new times; a row whose reason no longer holds says
+  "behöver en tid" once the person lacks a time again, as does a new row for someone of the team the card leaves out;
+  the row of someone who has left the team leaves the card; and the card's "N samtal saknar tid" is counted again.
+  The scan comes back every minute, but it reads the manager's calendar only when the round or another manager's
+  booking changes a drawn time or a row on the card, and otherwise at most once an hour per card and server process,
+  so what only the calendar or the team says reaches the card within the hour.
+  On PostgreSQL the approval projection adds a check of its own, which does not ask the rule
+  (`apps/server/src/composition/execution-projection.ts`). Under a lock per invitee, it refuses a confirmation while
+  another manager's approved invitation to the same person may still be sent: a proposal of that manager's that is
+  still `proposed`, with an execution that is running, pending or unknown, inside the approval's 24
+  hours ([D45](D45-approved-intent-precedes-source-dispatch.md)) and the period of this confirmation's round.
+  This reservation outlasts a team change: the former manager may regain the person and retry the same approval
+  before expiry. No directory lookup is needed to establish who owns the reservation. Its refusal, after the person's
+  name, is "bjuds redan in till ett
+  utvecklingssamtal av en annan chef.". An invitation that Clew's own check refused right before sending, because the
+  time or the room was not free or could not be read, was never sent: its row begins "Inget skickades:", the
+  execution settles `failed` and it holds nobody. A pending execution with a reason still holds its reservation:
+  `authority-revoked` can describe a temporary team-read failure, and reconciliation can queue that same approval
+  again. A `source-reset` execution cannot retry and holds nobody. Expiry releases the reservation as well.
+- **The held mark (item 2).** Any current manager of the person marks the talk held, moves its day or undoes it, as
+  the code did before. The audit rows `talks.held` and `talks.held_undone` name who acted. This is how a co-manager
+  corrects a wrong mark.
+- **Action points (item 4).** The owner marks their own done or open again. A current manager of the employee may
+  also take over a manager's point whose owner no longer manages the employee or was erased. A co-manager's points
+  and the employee's own stay with their owners: the use case refuses them with 403 "Du kan inte ändra den här
+  åtgärdspunkten.". As built item 4's "the use case would also let the current manager tick off the employee's" is
+  no longer true. The audit rows `talks.commitment_done` and `talks.commitment_reopened` say in `details.by` whether
+  the owner or a manager acted. A row of `clew.commitments` carries its id only when the reader may change it, and
+  the talk's drawer offers "Klar" and "Öppna igen" on a point the reader may take over, labelled "Tidigare chef".
+- **A former manager (question 6, M2).** When Clew's own module answers, a former manager keeps the action points
+  they own about the person on their Hem until they are done. They read nothing else about the person. Every current
+  manager reads the record. Question 6's "Built so far" therefore reads: the record is keyed on the employee, every
+  current manager of the employee reads it, a former manager reads nothing about the person but the action points
+  they own, HR reads nothing, the text is sealed, erasure and export exist. The question itself stays open.
+- **The key (item 8, N2).** On the wire, rows stay keyed on the SCIM `userName`, since that is what a source knows.
+  A user name can be renamed and given to a newcomer, so a source answers for the name's current holder and moves
+  its records off a leaver when the name moves. Clew compares a row's key with its people's user names NFC-normalised
+  and without regard to case, and a key that two people share after that names neither, so its rows are dropped.
+  Clew keys its own records about a person, such as cards and started actions, by the person's id, which a rename
+  does not change and nobody reuses ([D122](D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md)).
+  The actor and the signed assertion carry the person's `userName` when they have one
+  ([D97](D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md), As built, item 8, since 2026-11-10), so
+  a system behind a connector knows who is calling by the key its rows use and needs no operator's map from Clew's
+  id. The sentence on this under "Not established" no longer holds.
+
+**Why these choices.** Q12 was taken in the work, as the product owner asked, and no HR practitioner has seen it
+(question 11 is still open).
+
+- *One talk, not one per manager.* The record is already one per person per round. A talk per manager would need
+  another model and would hold the same conversation twice with the same person.
+- *A booking counts without its time.* A manager may not read another manager's calendar. Counting the booking
+  without its time keeps a second planner from proposing a second talk and shows nobody the other manager's day.
+- *An invitation on its way holds its person only while it may still be sent.* A terminal refusal or a source reset
+  releases it. A pending approval can retry even with a reason, so retaining its reservation avoids two live
+  invitations after reconciliation. Team loss alone cannot release it safely: the former manager may regain the
+  person and retry while the new manager's invitation is pending. A new manager may therefore wait until the old
+  approval's original 24-hour expiry (D45). This bounded delay avoids a second reservation owner or another dispatch
+  acquisition path. Confirmed bookings still count only for current managers. A talk an
+  unknown invitation did send counts as booked once a check reads it back, as every booking does.
+- *The held mark stays open to every current manager.* It is one fact about the person, and a co-manager must be
+  able to correct a wrong mark. The audit row says who changed it.
+- *Ticking off narrowed to the owner, widened to a takeover.* Item 4 and the page say the owner ticks off their own;
+  letting any current manager do it closed another manager's card and cancelled that manager's reminder. Without the
+  takeover, a point would stay open for good when its owner stops managing the person. A reorganisation moves many
+  people to new managers at once, and the new manager must be able to close what the old one left.
+- *A former manager keeps their own points.* What a manager promised is still theirs to do after the person moves,
+  and only their own Hem offers "Klar" for it.
 
 **Decision.** Utvecklingssamtal becomes the first domain Clew owns under
 [D95](D95-clew-may-own-a-domain-by-choice-decided-with-the-core-or-connector-checklist.md): a module

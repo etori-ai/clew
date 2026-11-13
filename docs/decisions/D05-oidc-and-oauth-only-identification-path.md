@@ -1,6 +1,16 @@
 # D5 · OIDC and OAuth 2.1 with JWT access tokens are the only identification path
 
-**Status:** accepted · **Date:** 2026-11-03 · **Area:** identity
+**Status:** accepted, refined by [D121](D121-a-sign-in-follows-the-identity-providers-session.md) (2026-11-12, provisional: a sign-in follows the identity provider's session, and a sign-out there ends Clew's) · **Date:** 2026-11-03 · **Area:** identity
+
+**Amended 2026-11-12.** [D121](D121-a-sign-in-follows-the-identity-providers-session.md) records how a sign-in
+relates to the identity provider's session (Q9 and L5 of the
+[review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md)).
+Clew sends neither `prompt=login` nor `max_age` and redeems the code without a maximum age, so a sign-in follows the
+identity provider's own session and single sign-on works. An organisation that needs a fresh prompt, for example on
+shared computers, sets it in the identity provider (in Microsoft Entra ID, a Conditional Access sign-in frequency). A
+sign-out at the identity provider ends Clew's session: by back-channel logout where the provider offers it (Keycloak),
+and by OpenID Connect Front-Channel Logout 1.0 at `/api/auth/frontchannel-logout` where it does not (Microsoft Entra
+ID). The decision below is otherwise unchanged.
 
 **Decision.** People log in through OIDC (Authorization Code + PKCE, Keycloak, opaque server session).
 Every call on their behalf (BFF to MCP server, Clew to an external system, a model tool call) uses an OAuth

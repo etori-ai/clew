@@ -31,7 +31,7 @@ const adapter = (tx: Transaction, timers: ThreadTx): FollowupTx => ({
         threadId: r.threadId,
         personId: r.personId,
         status: r.status,
-        participant: { email: r.participantEmail, name: r.participantName },
+        participant: { personId: r.participantId, email: r.participantEmail, name: r.participantName },
         start: r.start.toISOString(),
         end: r.end.toISOString(),
         eventUid: r.eventUid,

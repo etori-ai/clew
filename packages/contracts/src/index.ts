@@ -399,8 +399,9 @@ export type ViewRef = Static<typeof ViewRefSchema>;
 
 /**
  * The entities a source's rows can be about (D97): a closed list, as `CAPABILITIES` is. A new kind is a contract change
- * that comes with the core rule saying who may be asked about it. A person's key is their directory `userName`, compared
- * without regard to case (a person without one cannot be asked about); a unit's key is its unit id.
+ * that comes with the core rule saying who may be asked about it. A source knows a person by their directory `userName`,
+ * compared without regard to case (a person without one cannot be asked about), and Clew keeps the person's id (D122); a
+ * unit's key is its unit id, on both sides.
  */
 export const ENTITY_KINDS = ['person', 'unit'] as const;
 export const EntityKind = literals(ENTITY_KINDS, {
@@ -417,19 +418,27 @@ export const ENTITY_KEY_MAX = 256;
 const entityKey = Type.String({
   minLength: 1,
   maxLength: ENTITY_KEY_MAX,
-  description: "The entity's key: a person's `userName`, a unit's id.",
+  description:
+    "The entity's key. A source sends a person's `userName` and a unit's id. Clew resolves a user name as it arrives to the person of the reader's organisation who holds it then, and keeps that person's id (D122); a name nobody there holds names nobody.",
 });
 /** A row that names an entity (D97 item 6): a card row, a search hit or a view field may carry one, so it links to the entity. */
 export const SubjectSchema = object(
   { entity: EntityKind, key: entityKey },
-  'An entity a row names (D97): the web links the row to it. Clew never checks that the key exists; a reader only ever reaches an entity they may ask about.',
+  "An entity a row names (D97): the web links the row to it. A source names a person by their `userName`, without regard to case, and a unit by its id. Clew resolves the user name as the row arrives, to whoever of the reader's organisation, active or not, holds it then, and keeps that person's id in its own records, so a later rename or reuse of the name moves nothing it kept (D122). A name nobody there holds names nobody: the row keeps its text and links nowhere. A reader only ever reaches an entity they may ask about.",
 );
 export type Subject = Static<typeof SubjectSchema>;
-/** A key as Clew compares it (D97): a person's user name without regard to case (RFC 7643's default), a unit's id exactly. */
-export const foldEntityKey = (entity: EntityKind, key: string) => (entity === 'person' ? key.toLowerCase() : key);
-/** Whether two subjects name the same entity. */
-export const sameSubject = (a: Subject, b: Subject) =>
-  a.entity === b.entity && foldEntityKey(a.entity, a.key) === foldEntityKey(b.entity, b.key);
+/**
+ * A key as a source sends it, compared as Clew compares it there (D97): a person's user name without regard to case (RFC
+ * 7643's default) and in its composed form (NFC, as a stored user name is), a unit's id exactly. Only for what arrives
+ * from a source: Clew's own records key a person by the person's id (D122), compared exactly (`sameSubject`).
+ */
+export const foldSourceKey = (entity: EntityKind, key: string) =>
+  entity === 'person' ? key.normalize('NFC').toLowerCase() : key;
+/**
+ * Whether two subjects of Clew's own records name the same entity (D122): a person by the person's id and a unit by its
+ * id, both compared exactly. A source's key (a person's user name) is resolved to the id when it arrives.
+ */
+export const sameSubject = (a: Subject, b: Subject) => a.entity === b.entity && a.key === b.key;
 
 /**
  * A declared view (D38): how a read capability's output is shown, said by the connector as data and drawn by Clew with
@@ -584,7 +593,7 @@ export const RecordSubjectSchema = object(
         "The record property holding the entity's key, a string: a person's provisioned `userName`, a unit's id.",
     },
   },
-  "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it; a record without the property links nowhere.",
+  "The entity a record names (D97): the record property holding its key. Clew links the record's title to the entity for a reader who may open it, a person through the id of whoever of the reader's organisation holds the user name when the read is answered (D122); a record without the property, or whose user name nobody there holds, links nowhere.",
 );
 export type RecordSubject = Static<typeof RecordSubjectSchema>;
 /**
@@ -795,6 +804,23 @@ export const statusLabel = (value: string): string => {
   return word.charAt(0).toLocaleUpperCase('sv') + word.slice(1);
 };
 /**
+ * The keys a view's records name people by (`subject` on a person, D97 item 6), each once: a source's key, the user name,
+ * which Clew resolves to the person's id before a name links to their page (D122, `PanelViewSpec.people`).
+ */
+export function subjectKeys(view: View, output: unknown): string[] {
+  const subject = view.kind === 'table' || view.kind === 'list' || view.kind === 'detail' ? view.subject : undefined;
+  if (subject?.entity !== 'person') return [];
+  const records = view.kind === 'detail' ? (isViewRecord(output) ? [output] : []) : (viewRows(view, output) ?? []);
+  return [
+    ...new Set(
+      records.flatMap(r => {
+        const key = r[subject.key];
+        return typeof key === 'string' && key ? [key] : [];
+      }),
+    ),
+  ];
+}
+/**
  * The fields of a table or list that can mark a row (D97 item 2): those giving some value a `warn` or `alert` tone. A
  * read about an entity with one of them can mark the entity's row where an administrator chose the source.
  */
@@ -833,6 +859,12 @@ export type PanelViewSpec = View & {
   chip: boolean;
   rowViews?: boolean;
   external?: boolean;
+  /**
+   * The people the output's records name (`subject` on a person, D97 item 6), from the key on the record (the source's,
+   * a user name) to Clew's key for the person, their id (D122), so a name links to `/people/<id>`. A key nobody of the
+   * reader's organisation holds when the read is answered is absent, and its record links nowhere.
+   */
+  people?: Record<string, string>;
 };
 
 /**
@@ -1123,7 +1155,8 @@ export const TalkRowSchema = object(
     state: TalkState,
     at: Type.Optional(
       Type.Union([calendarDay, instant], {
-        description: 'When the talk is booked (an instant), or the day it was held (a date). Absent when missing.',
+        description:
+          "When the talk is booked (an instant), or the day it was held (a date). Absent when missing, and for a booked talk whose time the reader may not see, such as one another of the person's managers booked.",
       }),
     ),
     openCommitments: Type.Integer({
@@ -1212,7 +1245,9 @@ export const TalksResultSchema = object({
 export type TalksResult = Static<typeof TalksResultSchema>;
 /**
  * What the composite `clew.commitments` returns (D96 item 8): as `clew.talks`, each row with `personId` (the employee)
- * and, only when `writable`, `id`: the built-in module's own id of the action point, which its write routes take.
+ * and, only when `writable` and the reader may mark it done or open it again, `id`: the built-in module's own id of the
+ * action point, which its write routes take. The reader may change their own, and a manager's point about someone they
+ * manage now whose owner no longer manages that person (Q12).
  */
 export const CommitmentsResultSchema = object({
   rows: Type.Array(object({ ...CommitmentRowSchema.properties, personId: id, id: Type.Optional(id) }), {
@@ -1244,8 +1279,11 @@ export type DialogueTone = (typeof DIALOGUE_TONES)[number];
 export const DialogueToneSchema = literals(DIALOGUE_TONES);
 export const DIALOGUE_AREA_KINDS = ['measured', 'assessed'] as const;
 export type DialogueAreaKind = (typeof DIALOGUE_AREA_KINDS)[number];
-/** The limits of the free text (D118 item 9), as big-boss-board had them. */
-export const DIALOGUE_TEXT_MAX = { activity: 4000, note: 1000, comment: 2000 } as const;
+/**
+ * The limits of the free text (D118 item 9), as big-boss-board had them; `note` is an activity's done note and
+ * `ownNote` a manager's own note on an area (D120).
+ */
+export const DIALOGUE_TEXT_MAX = { activity: 4000, note: 1000, comment: 2000, ownNote: 4000 } as const;
 const areaKey = Type.String({ pattern: '^[a-z][a-z0-9-]{0,39}$', maxLength: 40 });
 const dimensionKey = Type.String({ pattern: '^[a-z][a-z0-9-]{0,39}$', maxLength: 40 });
 /** An assessment as the dialogue shows it: the state, its comment, who set it and when. */
@@ -1286,6 +1324,18 @@ export const DialogueActivitySchema = object({
   createdAt: Type.String({ maxLength: 40 }),
 });
 export type DialogueActivity = Static<typeof DialogueActivitySchema>;
+/**
+ * A manager's own note on an area of a unit (D120): free text only its author reads, looser than an activity: no owner,
+ * no card, nothing to mark done, and it can be removed.
+ */
+export const DialogueNoteSchema = object({
+  id,
+  text: Type.String({ maxLength: DIALOGUE_TEXT_MAX.ownNote }),
+  createdAt: Type.String({ maxLength: 40 }),
+  /** Present when the text was changed after it was written. */
+  editedAt: Type.Optional(Type.String({ maxLength: 40 })),
+});
+export type DialogueNote = Static<typeof DialogueNoteSchema>;
 export const DialogueAreaSchema = object({
   key: areaKey,
   title: Type.String({ maxLength: 120 }),
@@ -1299,6 +1349,8 @@ export const DialogueAreaSchema = object({
   dimensions: Type.Array(DialogueDimensionSchema, { maxItems: 10 }),
   questions: Type.Array(DialogueQuestionSchema, { maxItems: 50 }),
   activities: Type.Array(DialogueActivitySchema, { maxItems: 500 }),
+  /** The reader's own notes on the area, the newest first (D120); nobody else's are ever here. */
+  notes: Type.Array(DialogueNoteSchema, { maxItems: 500 }),
 });
 export type DialogueArea = Static<typeof DialogueAreaSchema>;
 /** One unit's dialogue (`GET /api/dialogue/units/:unitId`): every configured area in order. */
@@ -1339,6 +1391,17 @@ export const DialogueActivityDoneBodySchema = object({
   note: Type.Optional(Type.String({ maxLength: DIALOGUE_TEXT_MAX.note })),
 });
 export type DialogueActivityDoneBody = Static<typeof DialogueActivityDoneBodySchema>;
+/** A manager writes a note of their own on a unit's area (D120). */
+export const DialogueNoteAddBodySchema = object({
+  area: areaKey,
+  text: Type.String({ minLength: 1, maxLength: DIALOGUE_TEXT_MAX.ownNote }),
+});
+export type DialogueNoteAddBody = Static<typeof DialogueNoteAddBodySchema>;
+/** A note's text changed by its author. */
+export const DialogueNoteEditBodySchema = object({
+  text: Type.String({ minLength: 1, maxLength: DIALOGUE_TEXT_MAX.ownNote }),
+});
+export type DialogueNoteEditBody = Static<typeof DialogueNoteEditBodySchema>;
 /**
  * The areas, dimensions and questions of an organisation's dialogue (D118 item 3), as an operator loads them from a
  * file (`scripts/dialogue-areas.ts`). A question with `units` is shown only on those units and replaces the area's
@@ -1553,10 +1616,16 @@ export const EntityPageSchema = object({
 export type EntityPage = Static<typeof EntityPageSchema>;
 /** How one source answered for a list or a section: it answered, it did not, or not in time. */
 const entityAnswer = Type.Union([Type.Literal('ok'), Type.Literal('unavailable'), Type.Literal('timeout')]);
-/** An entity as the browser gets it (D97). `detail` is one line ("Lärare 4–6 · Bergsåkers skola") when known; `id` is Clew's own id, never sent to a connector. */
+/**
+ * An entity as the browser gets it (D97). `key` is Clew's key (D122): a person's id, a unit's id; it is the address
+ * (`/people/<key>`, `/units/<key>`) and what "Just nu" and a card's row name. `sourceKey` is the key a source knows the
+ * entity by and answers its rows with (`row.key`): a person's `userName`, a unit's id. `detail` is one line ("Lärare
+ * 4–6 · Bergsåkers skola") when known; `id` is Clew's own id, never sent to a connector.
+ */
 export const EntityRefSchema = object({
   kind: EntityKind,
-  key: entityKey,
+  key: Type.String({ minLength: 1, maxLength: ENTITY_KEY_MAX }),
+  sourceKey: entityKey,
   name: Type.String(),
   detail: Type.Optional(Type.String()),
   id: Type.Optional(id),
@@ -1751,7 +1820,8 @@ export type EntityAction = Static<typeof EntityActionSchema>;
  * på" opens it. An entity without such a card is absent.
  */
 export const EntityAttentionSchema = object({
-  key: entityKey,
+  /** Clew's key of the entity (`EntityRef.key`): a person's id, a unit's id. */
+  key: Type.String({ minLength: 1, maxLength: ENTITY_KEY_MAX }),
   act: Type.Integer({ minimum: 0 }),
   proposals: Type.Integer({ minimum: 0 }),
   threadId: Type.Optional(id),
@@ -1766,7 +1836,10 @@ export const EntityListSchema = object({
   attention: Type.Array(EntityAttentionSchema),
 });
 export type EntityList = Static<typeof EntityListSchema>;
-/** `GET /api/entities/:kind/rows?capability=`: one source over every entity the reader may ask about. Each row carries `key`; an entity without a row is absent. */
+/**
+ * `GET /api/entities/:kind/rows?capability=`: one source over every entity the reader may ask about. Each row carries
+ * `key`, the source's key of its entity (`EntityRef.sourceKey`); an entity without a row is absent.
+ */
 export const EntityRowsSchema = object({
   capability: Type.String(),
   status: entityAnswer,
@@ -1808,7 +1881,12 @@ export const EntityDetailSchema = object({
   profile: Type.Optional(PersonProfileSchema),
   entity: object({
     ...EntityRefSchema.properties,
-    unit: Type.Optional(object({ id: Type.String(), label: Type.String() })),
+    /**
+     * A person's unit: the reader's own for the reader, the unit the reader manages that the person is placed on, else
+     * the person's own, also for someone who reports to the reader from below (D99). `opens` when the reader may open
+     * the unit's page (`/units/<id>`): a unit they manage or belong to, or one below whose manager reports to them (D117).
+     */
+    unit: Type.Optional(object({ id: Type.String(), label: Type.String(), opens: Type.Optional(Type.Literal(true)) })),
   }),
   relation: Type.Union([
     Type.Literal('managed'),
@@ -2934,7 +3012,7 @@ export const ThreadItemSchema = object({
   subject: Type.Optional({
     ...SubjectSchema,
     description:
-      "The person or unit the row is about (D97 item 6): the web links the row to it, and the card shows on that entity for its owner. A key, never a name; the row's text stays the source's. Clew does not check that the key exists.",
+      "The person or unit the row is about (D97 item 6): the web links the row to it, and the card shows on that entity for its owner. A key, never a name: a person's `userName`, a unit's id; the row's text stays the source's. Clew resolves a user name as the row arrives to whoever of the reader's organisation holds it then and keeps that person's id, so a later rename or reuse of the name moves nothing on the card (D122); a name nobody there holds names nobody.",
   }),
 });
 export type ThreadItem = Static<typeof ThreadItemSchema>;
@@ -3035,6 +3113,11 @@ export type ReceiptRow = Static<typeof ReceiptRowSchema>;
 
 export const ThreadKind = Type.Union([Type.Literal('pushed'), Type.Literal('question')]);
 export const ThreadState = Type.Union([Type.Literal('open'), Type.Literal('handled'), Type.Literal('dismissed')]);
+/**
+ * Why dispatch did not send a started action (D122): the user name it was decided with no longer names the person it is
+ * about, renamed or given to someone else since, so the person decides again.
+ */
+export const SUBJECT_CHANGED = 'subject-changed';
 export const ExecutionSummarySchema = object({
   id,
   decisionId: Type.String(),
@@ -3433,15 +3516,12 @@ export function parseSwedishTime(text: string, now: string): string | null {
 export const RoleSchema = Type.Union([Type.Literal('manager'), Type.Literal('employee')]);
 export type Role = Static<typeof RoleSchema>;
 /**
- * The grant capabilities Clew enforces (D85): a closed list. A group mapping, a `capability:` group key or the development
- * seed may name nothing else; a new name is a contract change. `admin.connectors` administers connected systems (D23),
- * `admin.users` the users page and the group-to-capability mapping (D85), `admin.appearance` the installation's theme
- * and logo (D98), `admin.competence` the catalogue of competence types (D108 item 8).
+ * The grant capabilities Clew enforces (D85), a closed list kept in `scim-group-key.ts` beside the group keys, which the
+ * example provisioner and its check read without loading TypeBox. Named one by one, as the theme file's exports are.
  */
-export const CAPABILITIES = ['admin.connectors', 'admin.users', 'admin.appearance', 'admin.competence'] as const;
-export type Capability = (typeof CAPABILITIES)[number];
+export { CAPABILITIES, isCapability, type Capability } from './scim-group-key';
+import { CAPABILITIES, type Capability } from './scim-group-key';
 export const CapabilitySchema = literals(CAPABILITIES);
-export const isCapability = (value: string): value is Capability => (CAPABILITIES as readonly string[]).includes(value);
 /**
  * D108 item 5: a position as a source sends it, a code and a label and nothing else. It arrives as membership of a SCIM
  * group whose `externalId` is `position:<code>`, the group's name being the label, and it is tied to the person, not to
@@ -3559,10 +3639,16 @@ export interface GroupRelation {
   relation: RelationGrant;
 }
 export interface UsersAdminOverview {
+  /** Each row is named by its own group, whichever groups `groups` holds. */
   groupCapabilities: GroupCapability[];
   /** D121: the groups that give a relation to people by grant, `registrar` ("Kompetenssökning"). */
   groupRelations: GroupRelation[];
   /** The provisioned groups with an external id, as the editor offers them. */
+  /**
+   * The organisation's groups with an external id, by name in Swedish order, at most the first 10 000: what the group
+   * picker offers before anything is typed and finds at once. It asks the server for the others
+   * (`POST /api/admin/users/groups/search`), so every group can be chosen however many the catalogue pushes.
+   */
   groups: Array<{ id: string; label: string }>;
   capabilities: Capability[];
   /** D121: the relations a group may give, as the editor offers them beside the capabilities. */
@@ -3592,12 +3678,18 @@ export interface ProvisionerAdminRow {
 /** D107: the name a provisioner is issued under, as `scripts/provisioner-token.ts` takes it. */
 export const PROVISIONER_ID_PATTERN = '^[a-z0-9][a-z0-9-]{1,63}$';
 export const PROVISIONER_LABEL_MAX = 120;
+/**
+ * D107: what a provisioner's label may hold: one line of text, without a control character (Unicode's Cc: U+0000 to
+ * U+001F and U+007F to U+009F). A NUL in particular cannot be stored, so a label with one is refused before it reaches
+ * the store.
+ */
+export const PROVISIONER_LABEL_PATTERN = '^[^\\u0000-\\u001f\\u007f-\\u009f]*$';
 /** D107: how long the key that is replaced may still answer, in hours; 0 ends it at once. */
 export const PROVISIONER_GRACE_HOURS = [24, 168, 0] as const;
 export const ProvisionerIssueInput = Type.Object(
   {
     id: Type.String({ pattern: PROVISIONER_ID_PATTERN }),
-    label: Type.String({ minLength: 1, maxLength: PROVISIONER_LABEL_MAX }),
+    label: Type.String({ minLength: 1, maxLength: PROVISIONER_LABEL_MAX, pattern: PROVISIONER_LABEL_PATTERN }),
   },
   { additionalProperties: false },
 );
@@ -3618,6 +3710,12 @@ export interface ProvisionerKeyIssued {
   /** Where the provisioner sends the key: the address the SCIM server answers at, as the server knows it. */
   address: string;
   overview: UsersAdminOverview;
+  /**
+   * Only on a rotation that ended a key early: until when the key replaced before this one would still have answered.
+   * Clew keeps one replaced key (D107 item 5), so a rotation inside a grace period ends the key replaced earlier at
+   * once, whatever period is chosen.
+   */
+  endedEarlier?: string;
 }
 /**
  * D100: what a person's row says about their access, as the people list narrows by it. `disabled` is a deactivated
@@ -3629,15 +3727,25 @@ export type UserStatus = (typeof USER_STATUSES)[number];
 /** D100: how many people a page of the list may hold; the first is the default. */
 export const USERS_PAGE_SIZES = [25, 50, 100] as const;
 /**
+ * The most characters a key pushed over SCIM may hold (D68): a user's or a group's `externalId`, and so a unit id, which
+ * is what follows `unit:` in its group's key. It is the SCIM server's limit for every text attribute it stores. The
+ * administration fields that name such a key take it, so that an administrator can name every key SCIM stored: an
+ * audience's units and groups, a group-capability row, the people list's unit and a preview's unit (A6). An entity's
+ * key is shorter (`ENTITY_KEY_MAX`, D97): a unit whose id is longer than that is stored and may be named in those
+ * fields, but is never offered as an entity.
+ */
+export const PROVISIONED_KEY_LENGTH = 512;
+/**
  * D100: the most a question about the people may hold. The page holds what it sends to the same limits, so that
  * nothing a person types or an address names is refused as a malformed request.
  */
-export const USERS_QUERY_LIMITS = { text: 200, unitId: 512, page: 1_000_000 } as const;
+export const USERS_QUERY_LIMITS = { text: 200, unitId: PROVISIONED_KEY_LENGTH, page: 1_000_000 } as const;
 /**
  * D100: one page of Administration › Användare, asked for in a request body so that a searched name is never part of
- * an address. Every part narrows the list further. `text` is words matched without regard to case against name, user
- * name and e-mail, each word in one of them. `unitId` is a unit with everything below it in the tree. `role` is a role
- * on some unit, and with `unitId` on one of those units.
+ * an address. Every part narrows the list further. `text` is words matched without regard to case against the name,
+ * the title, the user name, the e-mail and the titles of the person's employments (D110, D114), each word in one of
+ * them. `unitId` is a unit with everything below it in the tree. `role` is a role on some unit, and with `unitId` on
+ * one of those units.
  */
 export const UsersAdminQuery = Type.Object(
   {
@@ -3663,8 +3771,10 @@ export interface UsersAdminPage {
   page: number;
   pageSize: number;
 }
+/** A unit id or a group's key as an administrator names one: any key SCIM stored (A6). */
+const provisionedKey = Type.String({ minLength: 1, maxLength: PROVISIONED_KEY_LENGTH });
 export const GroupCapabilityInput = Type.Object(
-  { groupExternalId: Type.String({ minLength: 1, maxLength: 512 }), capability: CapabilitySchema },
+  { groupExternalId: provisionedKey, capability: CapabilitySchema },
   { additionalProperties: false },
 );
 export type GroupCapabilityInputType = Static<typeof GroupCapabilityInput>;
@@ -3674,17 +3784,29 @@ export const GroupRelationInput = Type.Object(
   { additionalProperties: false },
 );
 export type GroupRelationInputType = Static<typeof GroupRelationInput>;
+/** How many groups one search of the group picker on Administration › Användare answers with. */
+export const GROUP_SEARCH_LIMIT = 10;
+/**
+ * The group picker on Administration › Användare asks the server for the organisation's groups whose name or external
+ * id holds every word of `text`, without regard to case; in a body, as the people list asks (D100), and no longer than
+ * the people list's search text.
+ */
+export const GroupSearchInput = Type.Object(
+  { text: Type.String({ maxLength: USERS_QUERY_LIMITS.text }) },
+  { additionalProperties: false },
+);
+export type GroupSearchInputType = Static<typeof GroupSearchInput>;
+/** The answer to a search of the group picker: at most `GROUP_SEARCH_LIMIT` groups, by name in Swedish order. */
+export interface GroupSearchResult {
+  groups: UsersAdminOverview['groups'];
+}
 export const ConnectorAudienceSchema = Type.Union([
   object({ mode: Type.Literal('all') }),
   object({
     mode: Type.Literal('selected'),
     roles: Type.Optional(Type.Array(RoleSchema, { uniqueItems: true, maxItems: 2 })),
-    units: Type.Optional(
-      Type.Array(Type.String({ minLength: 1, maxLength: 80 }), { uniqueItems: true, maxItems: 200 }),
-    ),
-    groups: Type.Optional(
-      Type.Array(Type.String({ minLength: 1, maxLength: 80 }), { uniqueItems: true, maxItems: 200 }),
-    ),
+    units: Type.Optional(Type.Array(provisionedKey, { uniqueItems: true, maxItems: 200 })),
+    groups: Type.Optional(Type.Array(provisionedKey, { uniqueItems: true, maxItems: 200 })),
   }),
 ]);
 export type ConnectorAudience = Static<typeof ConnectorAudienceSchema>;
@@ -3762,7 +3884,10 @@ export const RotateSecretInput = object({ secret: connectorSecret });
 export type RotateSecretInput = Static<typeof RotateSecretInput>;
 export const RefreshManifestInput = object({ apply: Type.Optional(Type.Boolean()) });
 export type RefreshManifestInput = Static<typeof RefreshManifestInput>;
-export const PreviewQuery = object({ role: RoleSchema, unitId: Type.Optional(Type.String({ maxLength: 80 })) });
+export const PreviewQuery = object({
+  role: RoleSchema,
+  unitId: Type.Optional(Type.String({ maxLength: PROVISIONED_KEY_LENGTH })),
+});
 export type PreviewQuery = Static<typeof PreviewQuery>;
 export type CheckLevel = 'ok' | 'warn' | 'fail';
 /** One line of a check's log: the conformance check's English lines for the CLI, a provider test's Swedish ones for the page. */

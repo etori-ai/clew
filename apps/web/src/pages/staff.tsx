@@ -210,7 +210,7 @@ function Personal({ user, admin }: { user: SessionUser; admin: boolean }) {
                               lens.own ? 'Clew' : lens.source,
                             ]
                               .filter(Boolean)
-                              .join(' · ')}
+                              .join('\u00a0· ')}
                           </Text>
                         </VStack>
                         {/* A lens whose source did not answer has nothing to list: the sentence takes the table's place. */}

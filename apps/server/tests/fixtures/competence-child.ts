@@ -7,7 +7,7 @@
 import { launchDurable } from '../../src/dbos/runtime';
 import { bindActivities, competenceCopy } from '../../src/dbos/workflows';
 import { startDurable } from '../../src/dbos/start';
-import { postgresCompetenceStore } from '../../src/modules/competence/adapters/postgres';
+import { competenceStoreWithCards } from '../../src/composition/competence';
 import { competenceUsecases } from '../../src/modules/competence/usecases';
 import type { CopyInput } from '../../src/modules/competence/domain';
 import type { WorkflowStart } from '../../src/modules/competence/model';
@@ -16,7 +16,7 @@ const application = process.env.DURABLE_APP!;
 const source = JSON.parse(process.env.COPY_SOURCE!) as { connectorId: string; source: string };
 const start = JSON.parse(process.env.COPY_START!) as WorkflowStart;
 const competence = competenceUsecases({
-  store: postgresCompetenceStore({ application, queue: application + '.ledger' }),
+  store: competenceStoreWithCards({ durable: { application, queue: application + '.ledger' } }),
   staff: async () => ({ units: [] }),
   clock: () => new Date(),
   ids: () => crypto.randomUUID(),

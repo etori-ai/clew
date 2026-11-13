@@ -1,4 +1,4 @@
-import type { AuthenticatedContext } from '@clew/contracts';
+import { foldSourceKey, SUBJECT_CHANGED, type AuthenticatedContext } from '@clew/contracts';
 import { RelationsUnavailableError, type ExecuteResult } from '@clew/connectors';
 import {
   ExecutionError,
@@ -56,10 +56,22 @@ type ApproveInput = {
    * there, and the approval's audit row names them, in the same transaction.
    */
   asked?: Record<string, string>;
+  /** The person a started action is about (D122): `payload[param]` is the user name they held when it was decided. */
+  subject?: { param: string; personId: string };
 };
 /** Which of the person's kept sessions stood behind a call to a connector that acts as them (D26); what the audit records instead of a binding. */
 type Backing = 'approving' | 'checking';
-export function executionUsecases({ store, source, sessions, watch, clock, ids, digest, review }: ExecutionDeps) {
+export function executionUsecases({
+  store,
+  source,
+  sessions,
+  watch,
+  clock,
+  ids,
+  digest,
+  review,
+  people,
+}: ExecutionDeps) {
   /** Everything an approval needs before its transaction: authority, the source's write safety and, for an undo, the compensation rule. No I/O on the store beyond reading the original. */
   async function prepare(persona: AuthenticatedContext, input: ApproveInput, at: string): Promise<Execution> {
     if (!DECISION.test(input.decisionId)) throw new ExecutionError('Ogiltigt beslut.');
@@ -98,6 +110,8 @@ export function executionUsecases({ store, source, sessions, watch, clock, ids, 
         compensates: input.compensates ?? null,
         threadId: input.presentation?.threadId ?? null,
         actionId: input.presentation?.actionId ?? null,
+        // The person the payload's user name was decided for is part of what was approved (D122).
+        ...(input.subject ? { subject: input.subject } : {}),
       }),
       safety: access.safety,
       ...(input.presentation ? { presentation: input.presentation } : {}),
@@ -113,6 +127,7 @@ export function executionUsecases({ store, source, sessions, watch, clock, ids, 
       leaseUntil: null,
       approvingSession,
       checkingSession: null,
+      subject: input.subject ?? null,
     };
   }
   /**
@@ -531,6 +546,13 @@ export function executionUsecases({ store, source, sessions, watch, clock, ids, 
     }
     return undefined;
   }
+  /** Whether the user name in a started action's payload still names the person it was decided for (D122). */
+  async function stillNamed(e: Execution): Promise<boolean> {
+    if (!e.subject || !people) return false;
+    const sent = (e.payload as Record<string, unknown> | null)?.[e.subject.param];
+    const now = await people.userName(e.subject.personId);
+    return typeof sent === 'string' && now !== null && foldSourceKey('person', sent) === foldSourceKey('person', now);
+  }
   /** One bounded activity. Recovery investigates dispatched state; it never blindly replays a write. */
   async function progress(id: string): Promise<'done' | 'busy' | 'reconcile'> {
     const at = clock().toISOString();
@@ -633,6 +655,12 @@ export function executionUsecases({ store, source, sessions, watch, clock, ids, 
         await settle(e, 'unknown', 'needs-session', undefined, backing);
         return 'done';
       }
+    }
+    // A started action names a person by the user name they held when it was decided (D122). Sent only while that name
+    // is still theirs: after a rename it would reach nobody, after a reuse someone else, so the person decides again.
+    if (e.subject && !(await stillNamed(e))) {
+      await settle(e, e.dispatchedAt ? 'unknown' : 'failed', SUBJECT_CHANGED, undefined, backing);
+      return 'done';
     }
     // Persist dispatch BEFORE I/O. A crash from this point must be reconciled, even if no request reached the source.
     const dispatched = await store.transaction(async tx => {

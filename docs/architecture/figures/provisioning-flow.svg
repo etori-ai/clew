@@ -1,5 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="760" height="666" viewBox="0 0 760 666" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14">
-  <title>How people enter Clew: a provisioner sends the organisation's source to Clew's SCIM server, and Clew derives each person's grant</title>
+  <title>How directory changes become access in Clew</title>
+  <desc>The directory writer sends users, groups and memberships over SCIM. An administrator can map group keys to capabilities in Clew. Memberships and mappings determine the grant. Sign-in requires an active person with an employee or manager placement.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#4b5563"/>
@@ -18,42 +19,48 @@
   <text x="161" y="112" text-anchor="middle" fill="#374151">a directory or an HR system</text>
   <text x="161" y="132" text-anchor="middle" font-size="13" fill="#4b5563">people, units, managers</text>
   <line x1="161" y1="146" x2="161" y2="178" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
-  <text x="174" y="167" font-size="13" fill="#4b5563">reads</text>
+  <text x="174" y="167" font-size="13" fill="#4b5563">source records</text>
 
   <rect x="36" y="180" width="250" height="108" rx="10" fill="#ffffff" stroke="#9ca3af"/>
   <text x="161" y="208" text-anchor="middle" font-weight="600" fill="#111827">Provisioner</text>
-  <text x="161" y="230" text-anchor="middle" fill="#374151">the installation's own process</text>
-  <text x="161" y="250" text-anchor="middle" fill="#374151">maps the source to SCIM</text>
-  <text x="161" y="272" text-anchor="middle" font-size="13" fill="#4b5563">sends a change as it happens</text>
+  <text x="161" y="230" text-anchor="middle" fill="#374151">maps source records to SCIM</text>
+  <text x="161" y="250" text-anchor="middle" fill="#374151">sends changes as they happen</text>
+  <text x="161" y="272" text-anchor="middle" font-size="13" fill="#4b5563">reconciles at least daily</text>
 
   <!-- Clew -->
   <rect x="414" y="62" width="310" height="84" rx="10" fill="#ffffff" stroke="#93b4ee" stroke-dasharray="4 3"/>
-  <text x="569" y="90" text-anchor="middle" font-weight="600" fill="#1e3a8a">Clew never reads the source</text>
-  <text x="569" y="112" text-anchor="middle" fill="#374151">It knows none of its fields,</text>
-  <text x="569" y="132" text-anchor="middle" fill="#374151">groups or system names.</text>
+  <text x="569" y="90" text-anchor="middle" font-weight="600" fill="#1e3a8a">Directory access</text>
+  <text x="569" y="112" text-anchor="middle" fill="#374151">Only the provisioner reads the source.</text>
+  <text x="569" y="132" text-anchor="middle" fill="#374151">Clew receives the mapped records.</text>
 
   <rect x="414" y="186" width="310" height="96" rx="10" fill="#ffffff" stroke="#1d4ed8"/>
   <text x="569" y="216" text-anchor="middle" font-weight="600" fill="#1e3a8a">SCIM 2.0 server</text>
   <text x="569" y="240" text-anchor="middle" fill="#374151">/scim/v2 · Users · Groups</text>
-  <text x="569" y="262" text-anchor="middle" font-size="13" fill="#4b5563">one key per provisioner</text>
+  <text x="569" y="262" text-anchor="middle" font-size="13" fill="#4b5563">authenticated by bearer token</text>
   <line x1="286" y1="234" x2="412" y2="234" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
   <text x="350" y="222" text-anchor="middle" font-size="13" fill="#4b5563">sends</text>
   <line x1="569" y1="282" x2="569" y2="308" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
 
   <rect x="414" y="310" width="310" height="84" rx="10" fill="#ffffff" stroke="#1d4ed8"/>
-  <text x="569" y="338" text-anchor="middle" font-weight="600" fill="#1e3a8a">Stored as sent</text>
-  <text x="569" y="360" text-anchor="middle" fill="#374151">people · units · groups · members</text>
-  <text x="569" y="380" text-anchor="middle" font-size="13" fill="#4b5563">and the administrator's mapping</text>
+  <text x="569" y="338" text-anchor="middle" font-weight="600" fill="#1e3a8a">Provisioned records</text>
+  <text x="569" y="360" text-anchor="middle" fill="#374151">People, groups and memberships</text>
+  <text x="569" y="380" text-anchor="middle" font-size="13" fill="#4b5563">Unit groups also describe the tree</text>
   <line x1="569" y1="394" x2="569" y2="420" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
 
   <rect x="414" y="422" width="310" height="84" rx="10" fill="#ffffff" stroke="#1d4ed8"/>
-  <text x="569" y="450" text-anchor="middle" font-weight="600" fill="#1e3a8a">Derivation</text>
-  <text x="569" y="472" text-anchor="middle" fill="#374151">in the same transaction</text>
-  <text x="569" y="492" text-anchor="middle" font-size="13" fill="#4b5563">one audit row per change</text>
+  <rect x="36" y="422" width="250" height="84" rx="10" fill="#fff7ed" stroke="#c2410c"/>
+  <text x="161" y="450" text-anchor="middle" font-weight="600" fill="#9a3412">Clew administrator</text>
+  <text x="161" y="472" text-anchor="middle" fill="#374151">maps group keys to capabilities</text>
+  <text x="161" y="492" text-anchor="middle" font-size="13" fill="#4b5563">in Administration › Användare</text>
+  <line x1="286" y1="464" x2="412" y2="464" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="350" y="452" text-anchor="middle" font-size="13" fill="#4b5563">mappings</text>
+  <text x="569" y="450" text-anchor="middle" font-weight="600" fill="#1e3a8a">Derive access</text>
+  <text x="569" y="472" text-anchor="middle" fill="#374151">Apply memberships and mappings</text>
+  <text x="569" y="492" text-anchor="middle" font-size="13" fill="#4b5563">in the transaction that changes them</text>
   <line x1="569" y1="506" x2="569" y2="532" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
 
   <rect x="414" y="534" width="310" height="96" rx="10" fill="#ecfdf5" stroke="#059669"/>
   <text x="569" y="562" text-anchor="middle" font-weight="600" fill="#065f46">The person's grant</text>
   <text x="569" y="584" text-anchor="middle" fill="#374151">unit and role · capabilities</text>
-  <text x="569" y="606" text-anchor="middle" font-size="13" fill="#4b5563">no unit membership: no grant</text>
+  <text x="569" y="606" text-anchor="middle" font-size="13" fill="#4b5563">requires an employee or manager placement</text>
 </svg>

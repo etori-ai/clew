@@ -1,48 +1,72 @@
 /**
  * Erase one person from the competence domain by hand (D108 item 14): their holdings, the rows copied from sources
- * included, the requirements set on them alone (item 6), and their id on the holdings they registered or revoked for
- * others. Only a person the directory has deactivated is erased: an active person is refused, since the next read of a
- * source would copy their holdings back. The same erasure as the hourly sweep's (`scripts/competence-retention.ts` sets
- * its period); the person's intent is marked erased here, so the sweep has nothing more to do for them. Runs inside the
- * app container with the server's local settings (DATABASE_URL); no route and no `package.json` entry. Audited
- * (`competence.person_erased` with the cause `operator`, counts only) with the actor `operator:cli`. It cannot be
- * undone, so it needs `--confirm`.
+ * included, the requirements set on them alone (item 6), their id on the holdings they registered or revoked for
+ * others, the cards of their own registrations' approvals and every card of the module in their own stream ("HLR gick
+ * ut 1 juni"), each with a `thread.removed` row. Only a person the directory has deactivated is erased, since the next
+ * read of a source would copy an active person's holdings back. The same erasure as the hourly sweep's
+ * (`scripts/competence-retention.ts` sets its period); the person's intent is marked erased here, so the sweep has
+ * nothing more to do for them. Runs inside the app container with the server's local settings (DATABASE_URL); no route
+ * and no `package.json` entry. Audited (`competence.person_erased` with the cause `operator`, counts only) with the
+ * actor `operator:cli`. It cannot be undone, so it needs `--confirm`.
  *
  *   bun scripts/competence-erase.ts --person <person id> --confirm
+ *
+ * A person is named by their id, never by a user name. Refused, writing nothing and no audit row, for an id the people
+ * table does not hold and for a person who is still active: the source deactivates a person first (D68 item 1). An
+ * option given twice, or any other argument, is refused too, before the database is asked. A person with nothing in
+ * the domain is still audited, with zero counts, and the script says so. It cancels no workflow, since a script never
+ * starts the durable engine: a reminder or a snooze on a removed card goes with the card, and its workflow wakes at its
+ * time, finds no timer and ends without a write (D86).
  */
 import { resolve } from 'node:path';
+import { parsePersonErasureArgs } from './person-erasure-args';
 import { closeDatabase } from '@clew/db';
-import { competence } from '../apps/server/src/composition/competence';
+import { competenceForScripts } from '../apps/server/src/composition/competence';
 import { OPERATOR } from './competence-seed';
+
+const USAGE = 'Usage: bun scripts/competence-erase.ts --person <person id> --confirm';
 
 try {
   process.loadEnvFile(resolve(import.meta.dir, '../apps/server/.env.local'));
 } catch {
   /* settings may come from the environment */
 }
-const args = process.argv.slice(2);
-const option = (name: string) => {
-  const i = args.indexOf('--' + name);
-  return i >= 0 ? args[i + 1] : undefined;
-};
-const personId = option('person');
-if (!personId || personId.startsWith('--')) {
-  console.error('Usage: bun scripts/competence-erase.ts --person <person id> --confirm');
+const args = parsePersonErasureArgs(process.argv.slice(2));
+if (!args) {
+  console.error(USAGE);
   process.exit(2);
 }
-if (!args.includes('--confirm')) {
+const { personId, confirmed } = args;
+if (!confirmed) {
   console.error(
-    `Erasing person "${personId}" from the competence domain removes every holding they have and cannot be undone. Run again with --confirm to erase.`,
+    `Erasing person "${personId}" from the competence domain removes every holding they have and their competence cards, and cannot be undone. Run again with --confirm to erase.`,
   );
+  console.error(USAGE);
   process.exit(2);
 }
 try {
-  const erased = await competence.erasePerson(OPERATOR, personId);
-  console.log(
-    `Erased person "${personId}" from the competence domain: ${erased.holdings} holdings and ${erased.requirements} requirements removed, ${erased.cleared} other holdings cleared of their id, the cards of ${erased.approvals} approvals removed.`,
-  );
+  const erased = await competenceForScripts.erasePerson(OPERATOR, personId);
+  if ('refused' in erased) {
+    console.error(
+      erased.refused === 'unknown'
+        ? `No person has the id "${personId}": nothing was erased and nothing was audited. A person is named by their id, never by a user name.`
+        : `Person "${personId}" is still active: only a person the source has deactivated is erased (D68 item 1). Nothing was erased and nothing was audited.`,
+    );
+    process.exitCode = 1;
+  } else if (!erased.holdings && !erased.cleared && !erased.requirements && !erased.approvals && !erased.cards)
+    console.log(
+      `Person "${personId}" has nothing in the competence domain: nothing was changed. Audited as person:${personId}.`,
+    );
+  else
+    console.log(
+      `Erased person "${personId}" from the competence domain: ${erased.holdings} holdings and ${erased.requirements} requirements removed, ${erased.cleared} other holdings cleared of their id, the cards of ${erased.approvals} approvals and ${erased.cards} cards of their own removed. Audited as person:${personId}.`,
+    );
 } catch (error) {
-  console.error(`Could not erase: ${(error as Error).message}`);
+  // The transaction wrote nothing. A query's own error is its cause; the wrapper's message repeats the statement.
+  const cause = (error as { cause?: unknown }).cause;
+  console.error(
+    `Could not erase: ${(cause instanceof Error ? cause : (error as Error)).message}. Nothing was written.`,
+  );
   process.exitCode = 1;
 } finally {
   await closeDatabase();

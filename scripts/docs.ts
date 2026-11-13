@@ -193,10 +193,14 @@ generated.set(
 const AREAS = ['product', 'integrations', 'identity', 'platform', 'ui'];
 const fileOf = (d: { path: string }) => d.path.split('/').at(-1)!;
 const primaryArea = (d: { area: string }) => d.area.split(',')[0]!.trim().toLowerCase();
-/** The later decisions a status names ("refined by D95", "amended by D100"): read together with the record. */
+/**
+ * The later decisions a status names ("refined by D95", "amended by D100"): read together with the record. Only a
+ * number above the record's own counts: a later record can refine, amend or replace it, while an earlier number in a
+ * status ("built against the freeze of D101", "left with D81") is context, not a change to the record.
+ */
 const namedIn = (d: (typeof decisions)[number]) =>
   [...new Set([...d.status.matchAll(/\bD(\d+)\b/g)].map(m => Number(m[1])))]
-    .filter(n => n !== d.number)
+    .filter(n => n > d.number)
     .sort((a, b) => a - b)
     .map(n => {
       const hits = decisions.filter(o => o.number === n);

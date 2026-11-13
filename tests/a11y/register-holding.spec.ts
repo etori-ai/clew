@@ -133,7 +133,11 @@ test.describe('Registrera intyg', () => {
       await page.keyboard.press('Tab');
       await expect(expires).toHaveValue('1 september 2026');
       await dialog.getByRole('button', { name: 'Registrera', exact: true }).click();
-      await expect(dialog.getByText('Slutdatumet kan inte vara före utfärdandet.', { exact: true })).toBeVisible();
+      // The dialog also announces these words in a live region. Check the message shown beside each field.
+      const fieldError = (message: string) =>
+        dialog.getByText(message, { exact: true }).and(dialog.locator(':not([aria-live])'));
+      await expect(fieldError('Slutdatumet kan inte vara före utfärdandet.')).toBeVisible();
+      await expect(expires).toHaveAccessibleDescription(/Slutdatumet kan inte vara före utfärdandet\./);
       await expect(expires).toBeFocused();
       // The mock's clock stands at 2026-11-04: the day after has not come.
       await issued.focus();
@@ -141,7 +145,9 @@ test.describe('Registrera intyg', () => {
       await page.keyboard.type('2026-11-05');
       await page.keyboard.press('Tab');
       await dialog.getByRole('button', { name: 'Registrera', exact: true }).click();
-      await expect(dialog.getByText('Dagen har inte kommit.', { exact: true }).first()).toBeVisible();
+      await expect(fieldError('Dagen har inte kommit.')).toBeVisible();
+      await expect(issued).toHaveAccessibleDescription(/Dagen har inte kommit\./);
+      await expect(issued).toBeFocused();
       expect(api.registered).toEqual([]);
     });
     test('from a person’s page the dialog lies over that page: Esc leaves the person where they are, and Back opens nothing', async ({

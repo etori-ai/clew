@@ -269,6 +269,15 @@ export function scimRoutes(scim: ScimUsecases, log: ScimLog) {
     app.all(collection, notAllowed('GET, POST'));
     app.all(collection + '/:id', notAllowed('GET, PUT, PATCH, DELETE'));
   }
+  // Discovery is read only: another method there once fell through to the 404 below.
+  for (const discovery of [
+    '/ServiceProviderConfig',
+    '/ResourceTypes',
+    '/ResourceTypes/:id',
+    '/Schemas',
+    '/Schemas/:id',
+  ])
+    app.all(discovery, notAllowed('GET'));
   app.all('*', c => fail(c, new ScimError(404, 'No such SCIM resource.')));
   return app;
 }

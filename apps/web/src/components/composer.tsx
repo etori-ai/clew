@@ -236,7 +236,7 @@ export function Composer({
         <Text as="span" weight="semibold" color="primary">
           Det här samtalet
         </Text>
-        {mobile ? '' : ' · svaret kommer under frågan'}
+        {mobile ? '' : '\u00a0· svaret kommer under frågan'}
       </Text>
     ) : undefined;
   // While an answer is on its way the send button is Stoppa and the field stays open, so the person can write the next

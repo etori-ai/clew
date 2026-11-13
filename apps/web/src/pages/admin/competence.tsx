@@ -55,6 +55,7 @@ import { AdminShell } from './shell';
 import { SOURCES_PATH } from './competence-sources';
 import { REQUIREMENTS_PATH } from './competence-requirements';
 import { IMPORT_PATH } from './competence-import';
+import { DOT } from '../../dot';
 
 /**
  * "Kompetens" (D108 items 2, 3 and 8): the catalogue of competence types, kept by whoever has `admin.competence`. A
@@ -806,7 +807,11 @@ export function AdminCompetencePage({ user }: { user: SessionUser }) {
                   description={
                     <VStack gap={1} hAlign="start">
                       <Text type="supporting">
-                        {t.area} · {kindLabel[t.kind]} · {validityText(t.validityMonths, t.kind)}
+                        {t.area}
+                        {DOT}
+                        {kindLabel[t.kind]}
+                        {DOT}
+                        {validityText(t.validityMonths, t.kind)}
                       </Text>
                       {mark(t)}
                     </VStack>

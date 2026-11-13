@@ -4,10 +4,10 @@
  * and waits to be killed. Its transaction dies with it, so the parent finds the person as they were.
  */
 import type { CompetenceStore } from '../../src/modules/competence/model';
-import { postgresCompetenceStore } from '../../src/modules/competence/adapters/postgres';
+import { competenceStoreWithCards } from '../../src/composition/competence';
 import { competenceUsecases } from '../../src/modules/competence/usecases';
 
-const store = postgresCompetenceStore({ application: 'clew-test-erasure-child', queue: 'unused' });
+const store = competenceStoreWithCards({ durable: { application: 'clew-test-erasure-child', queue: 'unused' } });
 const hanging: CompetenceStore = {
   transaction: fn =>
     store.transaction(async tx => {

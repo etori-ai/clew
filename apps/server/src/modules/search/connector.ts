@@ -61,7 +61,7 @@ export function searchConnector(search: SearchUsecases, cards: AnswerCards = {})
         run: async (actor, input: { ref: string }, clew) => {
           const parsed = parseSourceRef(input.ref);
           const hit = parsed && (await search.fetch(actor, parsed.connectorId, { ref: parsed.ref }, clew.call));
-          if (!hit?.link) throw new CapabilityError('Källan går inte att öppna härifrån.');
+          if (!hit?.link) throw new CapabilityError('Källan går inte att öppna härifrån.', 'not-found');
           return { url: hit.link };
         },
       },
@@ -77,7 +77,7 @@ export function searchConnector(search: SearchUsecases, cards: AnswerCards = {})
         run: async (actor, input: FetchInput, clew) => {
           const parsed = parseSourceRef(input.ref);
           const hit = parsed && (await search.fetch(actor, parsed.connectorId, { ref: parsed.ref }, clew.call));
-          if (!hit) throw new CapabilityError('Avsnittet finns inte längre.');
+          if (!hit) throw new CapabilityError('Avsnittet finns inte längre.', 'not-found');
           return hit;
         },
       },
@@ -92,7 +92,7 @@ export function searchConnector(search: SearchUsecases, cards: AnswerCards = {})
         output: Type.Object({ threadId: Type.String() }),
         scope: () => true,
         run: async (actor, input: CardFromAnswerInput) => {
-          if (!cards.create) throw new CapabilityError('Ärenden kan inte skapas här.');
+          if (!cards.create) throw new CapabilityError('Ärenden kan inte skapas här.', 'unavailable');
           return cards.create(actor.id, input);
         },
       },

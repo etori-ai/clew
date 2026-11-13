@@ -2,10 +2,16 @@
  * Model administration live (D24), inside the devcontainer: the Postgres store, the master-key sealer, the
  * OpenAI-compatible wire and the AI SDK, wired the way the composition root wires them, against one endpoint. Without
  * arguments it starts a stand-in endpoint on a free port (`/models`, and `/chat/completions` answering one tool call
- * and then text, refusing any request without the key); with `--url <base> --model <id>` it uses a real one, such as a
- * self-hosted open-weight model, with the key from `MODEL_KEY` if it needs one. It adds a provider and a model under
- * throwaway ids, switches the model on, picks it for a throwaway person, tests it, runs one turn with a read tool, and
- * removes everything it added, audit rows included. It never prints a key.
+ * and then text, streamed when the request asks for a stream as a turn does, refusing any request without the key);
+ * with `--url <base> --model <id>` it uses a real one, such as a self-hosted open-weight model, with the key from
+ * `MODEL_KEY` if it needs one. It adds a provider and a model under throwaway ids, switches the model on for its own
+ * throwaway unit only, picks it for a throwaway person on that unit, tests it, runs one turn with a read tool, and
+ * removes everything it added. Its clean-up deletes only the audit rows whose actor is the run's own person, so what
+ * administrators wrote about an earlier model of the same name stays. It never prints a key.
+ *
+ * It is for the development stack: it refuses to run unless `CLEW_POC=true`, or `--confirm` says to run it in this
+ * installation anyway. A run killed before its clean-up leaves the model, its provider, their audit rows and a person in
+ * organisation `check` behind.
  *
  *   docker exec -w /workspace clew-app-1 bun scripts/models-check.ts [--url http://ollama:11434/v1 --model gpt-oss:20b]
  */
@@ -18,7 +24,13 @@ try {
 } catch {
   /* settings may come from the environment */
 }
-const { eq, inArray } = await import('drizzle-orm');
+if (process.env.CLEW_POC !== 'true' && !process.argv.includes('--confirm')) {
+  console.error(
+    'models-check is for the development stack (CLEW_POC=true): it adds a provider, a model and a person to this installation and removes them afterwards. Run again with --confirm to run it here.',
+  );
+  process.exit(2);
+}
+const { eq } = await import('drizzle-orm');
 const { closeDatabase, database, schema } = await import('@clew/db');
 const { openSecret, sealSecret } = await import('../apps/server/src/auth-crypto');
 const { postgresModelStore } = await import('../apps/server/src/assistant/adapters/postgres');
@@ -34,7 +46,10 @@ const arg = (name: string) => {
 };
 const run = randomBytes(3).toString('hex');
 const providerId = `check-${run}`,
-  personId = `check-${run}-person`;
+  personId = `check-${run}-person`,
+  unitId = `check-${run}-unit`;
+/** The run's own actor: every audit row it writes, and the only rows its clean-up deletes. */
+const actor = 'person:' + personId;
 const checks: string[] = [];
 const ok = (text: string) => {
   checks.push(text);
@@ -61,6 +76,7 @@ async function standIn(): Promise<string> {
       for await (const chunk of req) text += chunk;
       const body = JSON.parse(text) as {
         model: string;
+        stream?: boolean;
         tools?: Array<{ function: { name: string } }>;
         messages: Array<{ role: string }>;
       };
@@ -76,6 +92,17 @@ async function standIn(): Promise<string> {
             ],
           }
         : { role: 'assistant', content: 'Tre på plats. Personalsystemet 08:00.' };
+      // A turn streams (D36): the same answer in OpenAI's chunk format, as an open-weight server sends it.
+      if (body.stream) {
+        const chunk = (delta: object, finish: string | null) =>
+          `data: ${JSON.stringify({ id: 'x', object: 'chat.completion.chunk', created: 1, model: body.model, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
+        const toolDelta = toolTurn
+          ? { ...message, tool_calls: message.tool_calls!.map((c, index) => ({ index, ...c })) }
+          : message;
+        res.writeHead(200, { 'content-type': 'text/event-stream' });
+        res.end(chunk(toolDelta, null) + chunk({}, toolTurn ? 'tool_calls' : 'stop') + 'data: [DONE]\n\n');
+        return;
+      }
       return reply(200, {
         id: 'x',
         object: 'chat.completion',
@@ -110,11 +137,11 @@ const models = modelUsecases({
 const persona = (capabilities: string[]): Persona => ({
   id: personId,
   name: 'Kontroll',
-  unitId: 'unit-check',
+  unitId,
   unitLabel: 'Kontroll',
   role: 'manager',
   organisationId: 'check',
-  principal: { id: 'person:' + personId, kind: 'person' },
+  principal: { id: actor, kind: 'person' },
   capabilities,
   authorizationVersion: 'v1',
   sessionBinding: 'check',
@@ -161,8 +188,11 @@ try {
   modelId = added.model.id;
   if (!added.report.ok) fail('test on add: ' + added.report.findings.map(f => f.text).join('; '));
   ok(`model tested on add, reasoning ${added.model.reasoning}`);
-  await models.updateModel(admin, modelId, { state: 'enabled' });
-  ok(`model ${modelId} added and switched on`);
+  // Switched on for the run's own unit in the same call, so it is never offered to anyone else.
+  await models.updateModel(admin, modelId, { state: 'enabled', audience: { mode: 'selected', units: [unitId] } });
+  if ((await models.statusFor({ ...person, unitId: 'unit-outside-the-check' })).choices.some(m => m.id === modelId))
+    fail("the model is offered outside the check's unit");
+  ok(`model ${modelId} added and switched on for the check's own unit only`);
   const test = await models.testModel(admin, modelId);
   if (!test.ok) fail('model test: ' + test.findings.map(f => f.text).join('; '));
   ok('model test: one tiny completion answered');
@@ -196,8 +226,10 @@ try {
   ok(
     `one turn through the AI SDK: ${ran.length ? `tool ${ran.join(', ')} called, ` : 'no tool called, '}answer "${answer.body.slice(0, 80)}"`,
   );
-  const history = await store.history('model:' + modelId);
-  if (!['model.added', 'model.enabled'].every(a => history.some(h => h.action === a))) fail('audit rows missing');
+  // Only the run's own rows: an earlier model of the same name may have a history that administrators wrote.
+  const history = (await store.history('model:' + modelId)).filter(h => h.actor === actor);
+  if (!['model.added', 'model.enabled', 'model.audience'].every(a => history.some(h => h.action === a)))
+    fail('audit rows missing');
   ok(
     `audit: ${history.map(h => h.action).join(', ')}; ${(await store.history('person:' + personId)).length} row(s) for the pick`,
   );
@@ -205,15 +237,9 @@ try {
 } finally {
   if (modelId) await database().delete(schema.models).where(eq(schema.models.id, modelId));
   await database().delete(schema.modelProviders).where(eq(schema.modelProviders.id, providerId));
-  await database()
-    .delete(schema.audit)
-    .where(
-      inArray(schema.audit.subject, [
-        'provider:' + providerId,
-        'person:' + personId,
-        ...(modelId ? ['model:' + modelId] : []),
-      ]),
-    );
+  // The run's own audit rows and nothing else: a model id is unique only among the models that exist now, so rows
+  // about `model:<id>` may be an earlier model's, written by administrators.
+  await database().delete(schema.audit).where(eq(schema.audit.actor, actor));
   await database().delete(schema.people).where(eq(schema.people.id, personId));
   await closeDatabase();
   server?.close();

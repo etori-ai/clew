@@ -1,4 +1,4 @@
-import { actorOf } from '@clew/connectors';
+import { audiencedActorOf } from '@clew/connectors';
 import { registry } from '../connectors/registry';
 import { logPort } from '../logging';
 import { entityUsecases } from '../modules/entities/usecases';
@@ -33,7 +33,7 @@ export const entities = entityUsecases({
   // As the person with the units they follow up (D117), so a source can answer for a unit below them and refuse the rest.
   read: async (persona, capability, input, signal) =>
     registry
-      .clewFor(actorOf(await withFollowedUnits(persona)), {
+      .clewFor(audiencedActorOf(await withFollowedUnits(persona)), {
         signal,
         ...(persona.delegate ? { delegate: persona.delegate } : {}),
       })

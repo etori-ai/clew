@@ -66,7 +66,7 @@ test(
     };
     const engine = testEngine('watch');
     const store = postgresExecutionStore({ seal: sealSecret, open: openSecret }, engine.durable, {
-      pushCard: watchCardSink(() => ({ source: 'Lönesystemet', area: 'lon' })),
+      pushCard: watchCardSink(() => ({ source: 'Lönesystemet', area: 'lon' }), engine.durable),
     });
     const uc = executionUsecases({ store, source, watch, clock, ids: randomUUID, digest: JSON.stringify });
     bindActivities({ observeWatch: uc.observe });
