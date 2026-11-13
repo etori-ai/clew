@@ -72,3 +72,4 @@ Dated evidence, design explorations and recommendations. They are historical con
 - [Review: an outside reading of the merged SCIM server and its example provisioner · 2026-11-12](2026-11-12-outside-review-of-the-merged-scim-server.md)
 - [Review: SCIM and the two guides before they are handed to the directory team · 2026-11-12](2026-11-12-scim-and-the-guides-before-the-handover.md)
 - [SCIM profile updates before the directory handover](2026-11-12-scim-profile-fields-and-directory-handover.md)
+- [Design critique: Dialogstöd's overview and the unit page · 2026-11-13](2026-11-13-dialogstod-design-critique.md)

@@ -20,7 +20,12 @@ those units to them and tells a connector which units they are.
    [D116](D116-start-and-the-row-under-it-are-clews.md) item 1), lists the units the reader follows up side by side in
    the list's two groups, "Mina enheter" and "Enheter under dig": one row per unit, one column per source about a unit
    (the key figures and the round of talks), each cell the source's row in short, its title value and the state the view
-   gives a tone ("7,3 %" and "Bevaka"). A unit's name opens its page. This is big-boss-board's start page, and the one
+   gives a tone ("7,3 %" and "Bevaka"). A unit's name opens its page. What needs a conversation comes first
+   ([critique of 2026-11-13](../reviews/2026-11-13-dialogstod-design-critique.md)): "Att ta upp" above the groups counts
+   the units per source and state that needs action or watching, the units with the most of it stand first in their
+   group, a column's heading names its measure and source, and a source with nothing for any unit of a group has no
+   column there. On a phone each unit is a card with its figures one under the other. A unit's page opens with the same
+   figures as a row of cards above its sections. This is big-boss-board's start page, and the one
    new page of this record: built as an exception to the freeze on new surface
    ([D101](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md)) at Oliver
    Borgström's choice, after a page that opened the reader's own unit first was found to give no overview. Because every
