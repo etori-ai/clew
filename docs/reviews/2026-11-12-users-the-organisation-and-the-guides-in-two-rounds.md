@@ -566,6 +566,16 @@ what they say.
   their answer: a script never starts the engine, so they no longer cancel through it, and the timer's workflow finds
   no timer when it wakes. And the three answered a failed query with the statement and its parameters, where
   `person-erase` gives the database's own message and that nothing was written; they now answer as it does.
+- The check said that a group whose key is written wrong gives nobody anything, and
+  [D96](../decisions/D96-a-key-written-wrong-is-refused-at-the-scim-boundary.md) said so of every such row stored
+  before it. A `unit:` or `unit-manager:` key with space after the prefix or at the end still placed its members on, or
+  made them managers of, a unit whose id kept the space; the role came back when a leaver returned, and the check left
+  that leaver out of its warning about duties. Clew now reads a key one way, as the SCIM boundary accepts it
+  (`readScimGroupKey`), in the derivation, the tree and the check, and the check names a person whose only unit key is
+  written wrong among those without a unit. Such a group is a plain group to Clew, which an administrator can map, so
+  the check names a leaver still in one, or in a group whose capability name it does not know, among the leavers in
+  plain groups. The unit an administrator opens on Administration › Organisation, and the walk that refuses a cycle in
+  the tree, had taken such a group for a unit and now read a unit as the tree does. D96 is amended to say so.
 - Two accessibility tests raced the frame in which the page moves the focus. They now wait for it.
 - A scheduled job whose run lasted longer than its claim's two-minute lease never completed, on `main` as well. The
   engine gave up the step's attempt after a minute without stopping it, the retry claimed the job again once the lease

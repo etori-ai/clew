@@ -1105,7 +1105,7 @@
       "number": 96,
       "path": "docs/decisions/D96-a-key-written-wrong-is-refused-at-the-scim-boundary.md",
       "title": "D96 · A key written wrong is refused at the SCIM boundary, not stored as a plain group",
-      "status": "accepted, built 2026-11-10",
+      "status": "accepted, built 2026-11-10; what it does to rows already stored amended 2026-11-13 in the fixes of the review of users and the organisation: Clew reads a key the one way this boundary accepts it, so a unit key with space around its id, stored before this decision, gives nobody anything",
       "date": "2026-11-10",
       "area": "identity"
     },

@@ -409,6 +409,44 @@ describe('the organisation tree over SCIM (D99)', () => {
     await unit('d', 'D', 'a');
     expect((await move('c', 'd'))[SCIM.unit]).toEqual({ parent: 'unit:d' });
   });
+  test('a parent that a unit key written wrong names, stored before D96, ends the walk for a cycle where it ends the tree (D96)', async () => {
+    const { store, scim, p, unit, groups, persona } = harness();
+    await unit('a', 'A', null);
+    await unit('b', 'B', null);
+    // Stored before the server refused such a key and such a parent: a unit key with a space after the prefix, under
+    // 'b', and 'a' under that row. The tree reads the row as no node, so 'a' is a root and nothing stands above it.
+    store.state.groups.set('lone', {
+      id: 'lone',
+      organisationId: ORG,
+      parentUnitId: 'b',
+      externalId: 'unit: lone',
+      label: 'Stored before D96',
+      createdAt: '2026-11-09T06:00:00.000Z',
+      updatedAt: '2026-11-09T06:00:00.000Z',
+    });
+    store.state.groups.set(groups.get('a')!, { ...store.state.groups.get(groups.get('a')!)!, parentUnitId: ' lone' });
+    const tree = async () =>
+      (await organisationUsecases({ store }).overview(persona('admin', ['admin.users']))).units.map(u => [
+        u.unitId,
+        u.parentId,
+      ]);
+    expect(await tree()).toEqual([
+      ['a', null],
+      ['b', null],
+    ]);
+    // So 'b' goes under 'a' without closing a cycle through the row.
+    const moved = await scim.patchGroup(
+      p,
+      groups.get('b')!,
+      { schemas: [SCIM.patch], Operations: [{ op: 'replace', path: SCIM.unit + ':parent', value: 'unit:a' }] },
+      BASE,
+    );
+    expect(moved[SCIM.unit]).toEqual({ parent: 'unit:a' });
+    expect(await tree()).toEqual([
+      ['a', null],
+      ['b', 'a'],
+    ]);
+  });
   test('a unit with units below it is neither removed nor re-keyed: the tree is removed from the leaves up', async () => {
     const { scim, p, unit, groups, refusal, store } = harness();
     await unit('ksk', 'Kommunstyrelsekontoret', null);
@@ -765,6 +803,30 @@ describe('Administration › Organisation (D99)', () => {
     await expect(refusing.unit(h.persona('karin', ['admin.users']), 'it\u0000')).rejects.toThrow(
       new InputError('Enheten finns inte.'),
     );
+  });
+  test('a unit key written wrong, stored before D96, names no unit when one unit is read, as it names no node in the tree (D96)', async () => {
+    const h = await organisation();
+    const admin = h.persona('karin', ['admin.users']);
+    // Stored before the server began refusing it: a unit key with a space after the prefix, under a unit of the tree.
+    h.store.state.groups.set('lone', {
+      id: 'lone',
+      organisationId: ORG,
+      parentUnitId: 'ksk',
+      externalId: 'unit: lone',
+      label: 'Stored before D96',
+      createdAt: '2026-11-09T06:00:00.000Z',
+      updatedAt: '2026-11-09T06:00:00.000Z',
+    });
+    expect((await h.organisation.overview(admin)).units.map(u => u.unitId)).not.toContain(' lone');
+    // Its id is answered as an id nobody holds is; a unit written right still reads.
+    await expect(h.organisation.unit(admin, ' lone')).rejects.toThrow(new InputError('Enheten finns inte.'));
+    await expect(h.organisation.unit(admin, 'nowhere')).rejects.toThrow(new InputError('Enheten finns inte.'));
+    expect(await h.organisation.unit(admin, 'avd')).toEqual({
+      unitId: 'avd',
+      unitLabel: 'KSK Avdelningar',
+      people: [],
+      reports: [],
+    });
   });
   test('a parent that names no node is read as no parent, and a chain that is a cycle still ends', () => {
     const view = organisationOf(
