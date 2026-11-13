@@ -1,6 +1,6 @@
 # D123 · What a person ordered or reported is a profile of its own, `<id>.requests`, listed apart from the errands they handle
 
-**Status:** provisional (built 2026-11-13 on branch `boarding`; accepted once a service desk outside the repository answers `<id>.requests` for a person and that person has used the section on Hem; no connector answers the profile yet, and no manual screen-reader pass) · **Date:** 2026-11-13 · **Area:** integrations, ui
+**Status:** provisional (built 2026-11-13 on branch `boarding`; accepted once a service desk outside the repository answers `<id>.requests` for a person and that person has used the section on Hem; the development stack's fixture `connectors/servicedesk` answers the profile, no system outside the repository does yet, and no manual screen-reader pass) · **Date:** 2026-11-13 · **Area:** integrations, ui
 
 **Decision.** What a person ordered or reported in a service desk and waits for (an account, a computer, a broken
 printer, a lamp out in the corridor) is kept apart from the errands a person handles. It has a connector profile of
@@ -64,7 +64,7 @@ its own, combined across systems as the errand list is, but into a list of its o
    two definitions were added, `RequestRow` and `RequestsOutput`; none was removed; the one changed is
    `ConnectorManifest`, and only in the description of a capability's `name`; the OpenAPI document's paths are
    unchanged and its component schemas differ in the same three. Every manifest in this repository (the sixteen under
-   `connectors/`) validates against the published `ConnectorManifest` (Ajv's 2020-12 validator over the committed
+   `connectors/` before `connectors/servicedesk`) validates against the published `ConnectorManifest` (Ajv's 2020-12 validator over the committed
    bundle), has no problem under the changed loader, and declares no `<id>.requests` or `<id>.request`, so none of them
    is treated differently. A manifest that declares `desk.requests` and `desk.request` validates against the published
    schema too.
@@ -92,12 +92,16 @@ its own, combined across systems as the errand list is, but into a list of its o
    Hem as its way back and the focus back on "Visa allt", nothing to follow with five or fewer, no section without a
    source, the failed read and the retry, 320 px.
 
-**Not built.** No connector answers the profile: a service-desk fixture connector among the development stack's
-fixtures comes next, and until then the section is seen only in the browser suite on routed data. No input asks for
-someone else's requests (a manager's view of what their people ordered): the read takes `{}` and is about the person
-who asks. No scan, so the desk asking the person something does not become a work item; no writes (answering the desk,
-confirming a delivery, withdrawing an order); no search kind for a request. A system that is both a case system and a
-service desk declares both reads, and nothing relates the two lists. The design canvas has no such section.
+**Not built.** No system outside the repository answers the profile. The development stack's fixture
+`connectors/servicedesk` does (added 2026-11-13): its list and one request, a card per open request through the
+connector's own scan, waiting on the desk or on the person when the desk waits for them and resolved when the desk closes
+the request, an order for oneself or a direct report from the person's menu, and the equipment registered to a person
+as a section on the opened person; the section on Hem has not been seen on the development stack in a browser. No input
+asks for someone else's requests (a manager's view of what their people ordered): the read takes `{}` and is about the
+person who asks, and an order placed for someone is listed for the one who placed it. The profile itself adds no scan
+and no writes: nothing answers the desk, confirms a delivery or withdraws an order; no search kind for a request. A
+system that is both a case system and a service desk declares both reads, and nothing relates the two lists. The design
+canvas has no such section.
 
 **Why.** The product owner, on 2026-11-13, on whether what a person ordered or reported belongs with the errands: "I
 think we need to keep them separate in clew for the user. Supportmanagement is not something all users even see I

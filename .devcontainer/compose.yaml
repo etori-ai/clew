@@ -1,5 +1,5 @@
 name: clew
-# What every fixture connector service shares (the six are under services, after the stack). The workspace is mounted
+# What every fixture connector service shares (the fixtures are under services, after the stack). The workspace is mounted
 # read-only: a code change is `restart <service>`, no image build. CLEW_URL names the app container, where the BFF must
 # listen on 0.0.0.0 (HOST below) so the connectors can fetch its public keys and call back.
 x-fixture: &fixture
@@ -332,6 +332,22 @@ services:
       MOODLE_PUBLIC_URL: http://localhost:3024
     ports:
       - "127.0.0.1:4053:4053"
+  # The IT service desk (D123): what a person ordered or reported and waits for, an order placed for a person and the
+  # equipment registered to them, the first source of the requests profile. Its records in SQLite on a volume of its
+  # own; FIXTURE_KEY opens its route that moves a request forward (connectors/servicedesk/README.md). 4054: 4053 is the
+  # Moodle connector's.
+  servicedesk:
+    <<: *fixture
+    working_dir: /workspace/connectors/servicedesk
+    volumes:
+      - ${CLEW_HOST_WORKSPACE:-..}:/workspace:ro
+      - servicedesk_state:/state
+    environment:
+      <<: *fixture-environment
+      # Its own key, not the HR feed's: the feed carries health data, and one key should open one thing.
+      FIXTURE_KEY: ${CLEW_DEV_SERVICEDESK_KEY:-clew-dev-only-servicedesk-key}
+    ports:
+      - "127.0.0.1:4054:4054"
 
 volumes:
   node_modules:
@@ -344,3 +360,4 @@ volumes:
   incidents_state:
   communication_state:
   timesheet_state:
+  servicedesk_state:

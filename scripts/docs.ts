@@ -22,6 +22,7 @@ import { manifest as timesheet } from '../connectors/timesheet/connector.mjs';
 import { manifest as payroll } from '../connectors/payroll/connector.mjs';
 import { manifest as appraisals } from '../connectors/appraisals/connector.mjs';
 import { manifest as moodle } from '../connectors/moodle/manifest.mjs';
+import { manifest as servicedesk } from '../connectors/servicedesk/connector.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const check = process.argv.includes('--check');
@@ -88,8 +89,9 @@ const duplicates = [
 const reviews = files('docs/reviews')
   .filter(path => /\/\d{4}-\d{2}-\d{2}-.+\.md$/.test(path))
   .map(path => ({ path, title: titleOf(read(path)) }));
-// The runnable examples: the two documentation connectors, the six fixture connectors of the development stack, the
-// fixture that answers the talks profile (D96) and the Moodle connector, the first source of the holdings profile (D108).
+// The runnable examples: the two documentation connectors, the seven fixture connectors of the development stack (the
+// service desk the first to answer the requests profile, D123), the fixture that answers the talks profile (D96) and the
+// Moodle connector, the first source of the holdings profile (D108).
 const manifests = [
   parseManifest(hello, 'hello'),
   parseManifest(phonebook, 'phonebook'),
@@ -99,6 +101,7 @@ const manifests = [
   parseManifest(communication, 'communication'),
   parseManifest(timesheet, 'timesheet'),
   parseManifest(payroll, 'payroll'),
+  parseManifest(servicedesk, 'servicedesk'),
   parseManifest(appraisals, 'appraisals'),
   parseManifest(moodle, 'moodle'),
 ];

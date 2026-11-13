@@ -25,20 +25,35 @@ import {
   httpFeed,
   manifest as payrollManifest,
 } from '../connectors/payroll/connector.mjs';
+import {
+  createConnector as createServicedesk,
+  manifest as servicedeskManifest,
+} from '../connectors/servicedesk/connector.mjs';
+import { memoryState as servicedeskState } from '../connectors/servicedesk/state.mjs';
 import type { FixtureState } from '../connectors/hr/state.mjs';
 
 /**
- * The six fixture connectors of the development stack (D61), run in-process over the protocol for the unit suites: each
+ * The seven fixture connectors of the development stack (D61), run in-process over the protocol for the unit suites: each
  * service on its memory store behind an ephemeral RS256 authority, reached through `remoteConnector` exactly as the BFF
- * reaches the containers. What the suites use as the HR, economy, deviation, communication, time and payroll systems of
- * their scenarios is what ships in `connectors/`; nothing here is a copy of them.
+ * reaches the containers. What the suites use as the HR, economy, deviation, communication, time, payroll and service
+ * desk systems of their scenarios is what ships in `connectors/`; nothing here is a copy of them.
  */
 export const FIXTURE_SECRET = 'test-secret-test-secret';
-export const FIXTURE_IDS = ['hr', 'finance', 'incidents', 'communication', 'timesheet', 'payroll'] as const;
+/** The key of the service desk's own route that moves a request forward (`POST /fixture/requests/<number>`). */
+export const FIXTURE_KEY = 'test-fixture-key';
+export const FIXTURE_IDS = [
+  'hr',
+  'finance',
+  'incidents',
+  'communication',
+  'timesheet',
+  'payroll',
+  'servicedesk',
+] as const;
 export type FixtureId = (typeof FIXTURE_IDS)[number];
 type Service = { manifest: unknown; handle(request: Request): Promise<Response> };
 export interface FixtureOptions {
-  /** The connectors to build; all six by default. */
+  /** The connectors to build; all seven by default. */
   only?: readonly FixtureId[];
   /** The sources' clock: the records are seeded relative to its first reading. */
   clock?: () => Date;
@@ -120,6 +135,13 @@ export function fixtureConnectors(options: FixtureOptions = {}): Fixtures {
     });
     const { unitMap, ...rest } = common('payroll');
     add('payroll', createPayroll({ ...rest, unitMap, feed }), payrollManifest);
+  }
+  if (wanted.has('servicedesk')) {
+    const state = servicedeskState();
+    states.servicedesk = state;
+    // The desk knows a person by user name, not by Clew's ids, so it has no id maps.
+    const { unitMap: _units, personMap: _people, ...rest } = common('servicedesk');
+    add('servicedesk', createServicedesk({ ...rest, state, fixtureKey: FIXTURE_KEY }), servicedeskManifest);
   }
   return { connectors, services, states, fetches };
 }

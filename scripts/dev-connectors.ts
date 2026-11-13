@@ -55,6 +55,8 @@ export const FIXTURES: Array<[id: string, port: number, options?: { enable: bool
   // The appraisal system (D96 item 9): Clew's built-in talks module answers while it is enabled, so this one is
   // registered for an administrator to switch to on Anslutna system, never enabled here.
   ['appraisals', 4051, { enable: false }],
+  // The IT service desk (D123): what a person ordered or reported, an order for a person and the equipment on them.
+  ['servicedesk', 4054],
 ];
 /**
  * When the Qlik connector is first added, the figures it replaces on Hem are switched off, as an administrator would with

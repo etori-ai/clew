@@ -115,6 +115,8 @@ The assistant reads the same index when a question names one of the reader's peo
 | `hr.prepareAbsence` | The HR fixture | person | Menu: "Registrera frånvaro", a propose |
 | `appraisals.person` | The talks-system fixture ([connector](../../connectors/appraisals/connector.mjs)), registered as a draft | person | Section, lens, column, a mark for "Saknas" |
 | `qlik.unit` | The sick-leave statistics connector ([manifest](../../connectors/qlik/manifest.mjs)) | unit | Section on the unit page |
+| `servicedesk.person` | The IT service desk fixture ([manifest](../../connectors/servicedesk/manifest.mjs)) | person | Section, lens, column; admits `self` and `managed`; the section's way in is the person's equipment, `servicedesk.equipment` |
+| `servicedesk.order` | The IT service desk fixture | person | Menu: "Beställ från IT-servicedesken", an execute that asks what and an optional message, for oneself or a direct report |
 
 No page lists units, so a read about a unit shows only as a section on the unit page.
 

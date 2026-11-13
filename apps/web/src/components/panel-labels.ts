@@ -93,6 +93,18 @@ export const fieldLabels: Record<string, string> = {
   sender: 'Avsändare',
   publishedAt: 'Publicerad',
   body: 'Text',
+  // Fields the requests profile (D123) and the service-desk fixture's reads return, named for any read that returns
+  // them without a view of its own: neutral words, since an errand's `since` is when it last changed and a request's when
+  // it was made. A source's own word (the desk's "Handläggs av") belongs in the view it declares.
+  since: 'Sedan',
+  expectedAt: 'Beräknas klar',
+  group: 'Grupp',
+  description: 'Beskrivning',
+  latest: 'Senaste meddelande',
+  devices: 'Enheter',
+  ordered: 'Beställt',
+  model: 'Modell',
+  inventoryNumber: 'Inventarienummer',
 };
 /** Addresses and references: useful to the code, never to the person reading the panel. */
 /** A follower's step drafts (D55) are Clew's input, drawn as a job, never as panel fields. */

@@ -29,7 +29,7 @@ function reset(env: Record<string, string> = {}) {
         'if [ "$1" = exec ]; then while [ "$1" != bun ]; do shift; done; shift; exec bun "$@"; fi',
         'printf "docker %s\\n" "$*" >> "$LOG"',
         'if [ "$1 $2" = "volume ls" ]; then',
-        '  printf "%s\\n" clew_hr_state clew_finance_state clew_incidents_state clew_communication_state clew_timesheet_state clew_postgres_data clew_calendar_data another_hr_state',
+        '  printf "%s\\n" clew_hr_state clew_finance_state clew_incidents_state clew_communication_state clew_timesheet_state clew_servicedesk_state clew_postgres_data clew_calendar_data another_hr_state',
         'fi',
         'if [ "${REMOVE_FAIL:-}" = yes ] && [ "$1 $2 $3" = "volume rm clew_finance_state" ]; then exit 9; fi',
       ].join('\n'),
@@ -51,7 +51,7 @@ function reset(env: Record<string, string> = {}) {
     rmSync(dir, { recursive: true, force: true });
   }
 }
-test('reset stops sources and retires work before deleting only the five fixture volumes', () => {
+test('reset stops sources and retires work before deleting only the six fixture volumes', () => {
   const { code, commands } = reset();
   expect(code).toBe(0);
   expect(commands.filter(c => c.startsWith('docker volume rm'))).toEqual([
@@ -60,14 +60,15 @@ test('reset stops sources and retires work before deleting only the five fixture
     'docker volume rm clew_incidents_state',
     'docker volume rm clew_communication_state',
     'docker volume rm clew_timesheet_state',
+    'docker volume rm clew_servicedesk_state',
   ]);
-  expect(commands.indexOf('compose stop hr finance incidents communication timesheet payroll')).toBeLessThan(
-    commands.indexOf('bun scripts/dev-reset.ts --sources-stopped'),
-  );
+  expect(
+    commands.indexOf('compose stop hr finance incidents communication timesheet payroll servicedesk'),
+  ).toBeLessThan(commands.indexOf('bun scripts/dev-reset.ts --sources-stopped'));
   expect(commands.indexOf('bun scripts/dev-reset.ts --sources-stopped')).toBeLessThan(
     commands.indexOf('docker volume rm clew_hr_state'),
   );
-  expect(commands.at(-1)).toBe('compose up -d hr finance incidents communication timesheet payroll');
+  expect(commands.at(-1)).toBe('compose up -d hr finance incidents communication timesheet payroll servicedesk');
 });
 test('a live-server guard failure cannot stop a source or touch a volume', () => {
   const { code, commands } = reset({ GUARD_FAIL: 'yes' });

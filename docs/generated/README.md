@@ -16,6 +16,7 @@ The manifest field by field, with examples and the rules between fields, is [man
 - [communication manifest](communication.manifest.json), from [connector.mjs](../../connectors/communication/connector.mjs): 6 capabilities; scan enabled.
 - [timesheet manifest](timesheet.manifest.json), from [connector.mjs](../../connectors/timesheet/connector.mjs): 5 capabilities; no scan.
 - [payroll manifest](payroll.manifest.json), from [connector.mjs](../../connectors/payroll/connector.mjs): 3 capabilities; no scan.
+- [servicedesk manifest](servicedesk.manifest.json), from [connector.mjs](../../connectors/servicedesk/connector.mjs): 7 capabilities; scan enabled.
 - [appraisals manifest](appraisals.manifest.json), from [connector.mjs](../../connectors/appraisals/connector.mjs): 4 capabilities; no scan.
 - [moodle manifest](moodle.manifest.json), from [connector.mjs](../../connectors/moodle/connector.mjs): 3 capabilities; no scan.
 

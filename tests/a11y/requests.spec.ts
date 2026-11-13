@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import type { Area, RequestsResult } from '@clew/contracts';
 import { desktop, expect, expectNoAxeViolations, heading, narrow, open, reflowProblems, test } from './support';
-import { requestsOutput, requestsSpec } from './requests';
+import { deskRequestTitle, requestsOutput, requestsSpec } from './requests';
 
 /**
  * Beställningar och felanmälningar on Hem (D123): what the person ordered or reported in a service desk and waits for,
@@ -39,7 +39,7 @@ const closed = (n: number): RequestsResult['rows'][number] => ({
   view: {
     capability: 'servicedesk.request',
     input: { ref: `request:servicedesk:SD-2610040${n}` },
-    title: 'Beställning',
+    title: deskRequestTitle,
     source: 'IT-servicedesken',
   },
 });
@@ -94,9 +94,9 @@ test.describe('Beställningar och felanmälningar on Hem', () => {
     await expect(link).toHaveAttribute('href', /open=servicedesk\.request/);
     await link.focus();
     await page.keyboard.press('Enter');
-    const panel = page.getByRole('dialog', { name: 'Beställning' });
+    const panel = page.getByRole('dialog', { name: deskRequestTitle });
     await expect(panel.getByText('Läsbehörighet till ekonomisystemets rapporter')).toBeVisible();
-    await expect(panel.getByRole('heading', { level: 2, name: 'Beställning', exact: true })).toBeFocused();
+    await expect(panel.getByRole('heading', { level: 2, name: deskRequestTitle, exact: true })).toBeFocused();
     await expect(requests.getByRole('listitem')).toHaveCount(5);
     await expectNoAxeViolations(page);
     await page.keyboard.press('Escape');

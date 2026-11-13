@@ -1875,12 +1875,20 @@ Example:
 ```json
 [
   {
-    "value": "approve",
-    "label": "Godkänn"
+    "value": "laptop",
+    "label": "Bärbar dator"
   },
   {
-    "value": "reject",
-    "label": "Avslå"
+    "value": "phone",
+    "label": "Mobiltelefon"
+  },
+  {
+    "value": "access-card",
+    "label": "Passerkort"
+  },
+  {
+    "value": "system-access",
+    "label": "Behörighet till ett system"
   }
 ]
 ```
@@ -1896,7 +1904,7 @@ One of the property's `enum` values.
 Example:
 
 ```json
-"approve"
+"laptop"
 ```
 
 #### `capabilities[].asks[].options[].label`
@@ -1910,7 +1918,7 @@ Swedish. What the person reads.
 Example:
 
 ```json
-"Godkänn"
+"Bärbar dator"
 ```
 
 #### `capabilities[].effect`
