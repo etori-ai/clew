@@ -2266,15 +2266,12 @@ export function parseSwedishTime(text: string, now: string): string | null {
 export const RoleSchema = Type.Union([Type.Literal('manager'), Type.Literal('employee')]);
 export type Role = Static<typeof RoleSchema>;
 /**
- * The grant capabilities Clew enforces (D85): a closed list. A group mapping, a `capability:` group key or the development
- * seed may name nothing else; a new name is a contract change. `admin.connectors` administers connected systems (D23),
- * `admin.users` the users page and the group-to-capability mapping (D85), `admin.appearance` the installation's theme
- * and logo (D98), `admin.competence` the catalogue of competence types (D108 item 8).
+ * The grant capabilities Clew enforces (D85), a closed list kept in `scim-group-key.ts` beside the group keys, which the
+ * example provisioner and its check read without loading TypeBox. Named one by one, as the theme file's exports are.
  */
-export const CAPABILITIES = ['admin.connectors', 'admin.users', 'admin.appearance', 'admin.competence'] as const;
-export type Capability = (typeof CAPABILITIES)[number];
+export { CAPABILITIES, isCapability, type Capability } from './scim-group-key';
+import { CAPABILITIES, type Capability } from './scim-group-key';
 export const CapabilitySchema = literals(CAPABILITIES);
-export const isCapability = (value: string): value is Capability => (CAPABILITIES as readonly string[]).includes(value);
 /** Administration › Användare (D62, D68, D85): a provisioned person as the page lists them. No token, no subject. */
 export interface UserAdminRow {
   id: string;
