@@ -4083,6 +4083,18 @@
       ]
     },
     {
+      "path": "docs/reviews/2026-11-13-scim-provisioning-guide-handover.md",
+      "title": "Handover review of the SCIM provisioning guides",
+      "category": "review-history",
+      "headings": [
+        "Corrections before handover",
+        "Smaller corrections",
+        "What to keep",
+        "Verification",
+        "Outcome"
+      ]
+    },
+    {
       "path": "docs/reviews/README.md",
       "title": "Reviews and explorations",
       "category": "review-history",

@@ -40,9 +40,10 @@ written; where they differ from this paragraph, this paragraph holds.
 - **When a rebind is needed.** A source id that changed after the person signed in, when the source cannot map the
   old id to the new one (release the old, deactivated row); an account the identity provider deleted and created
   again; a new app registration (one run per person); and a binding made while an account name moved between two
-  people (release the wrong holder). An account name moves between people in this order: the identity provider gives
-  the name to the new holder only after the provisioner has confirmed that Clew moved it off the old row. A swap of
-  two names goes through a temporary name on both sides.
+  people (release the wrong holder). Before a name moves to another active person in Clew, the identity provider
+  confirms the former account can no longer sign in with that claim. It gives the name to the new account once the
+  provisioner verifies the intended person's SCIM id and user name. A swap uses a temporary name on both sides.
+  [Account-name handover](../guides/provisioning-for-operations.md#handing-an-account-name-to-another-person).
 
 **Why these choices.** They were taken in the work, as the product owner asked.
 

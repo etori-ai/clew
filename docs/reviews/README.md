@@ -74,3 +74,4 @@ Dated evidence, design explorations and recommendations. They are historical con
 - [SCIM profile updates before the directory handover](2026-11-12-scim-profile-fields-and-directory-handover.md)
 - [Review: users, the organisation and the provisioning guides, in two rounds · 2026-11-12](2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md)
 - [Design critique: Dialogstöd's overview and the unit page · 2026-11-13](2026-11-13-dialogstod-design-critique.md)
+- [Handover review of the SCIM provisioning guides](2026-11-13-scim-provisioning-guide-handover.md)

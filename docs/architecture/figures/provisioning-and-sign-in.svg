@@ -1,5 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="760" height="556" viewBox="0 0 760 556" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14">
-  <title>Two paths into Clew: the provisioner sends each person with a user name, and the identity provider sends the account name at sign-in; Clew matches the two</title>
+  <title>Provisioning and first sign-in in Clew</title>
+  <desc>The provisioner creates the person's record through SCIM. At first sign-in, Clew matches the verified account-name claim to an active person's userName and binds the issuer and subject if the person is free to bind. Usable access also requires a placement.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#4b5563"/>
@@ -56,11 +57,11 @@
   <line x1="604" y1="282" x2="604" y2="308" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
 
   <rect x="484" y="422" width="240" height="96" rx="10" fill="#ffffff" stroke="#1d4ed8"/>
-  <text x="604" y="452" text-anchor="middle" font-weight="600" fill="#1e3a8a">Sign-in</text>
+  <text x="604" y="452" text-anchor="middle" font-weight="600" fill="#1e3a8a">First sign-in</text>
   <text x="604" y="476" text-anchor="middle" fill="#374151">OpenID Connect</text>
   <text x="604" y="498" text-anchor="middle" fill="#374151">account name = userName</text>
   <line x1="604" y1="422" x2="604" y2="396" stroke="#059669" stroke-width="2" marker-end="url(#arrow)"/>
   <line x1="316" y1="470" x2="482" y2="470" stroke="#4b5563" stroke-width="2" marker-end="url(#arrow)"/>
-  <text x="400" y="458" text-anchor="middle" font-size="13" fill="#4b5563">ID token:</text>
-  <text x="400" y="490" text-anchor="middle" font-size="13" fill="#4b5563">anna.berg</text>
+  <text x="400" y="458" text-anchor="middle" font-size="13" fill="#4b5563">ID token</text>
+  <text x="400" y="490" text-anchor="middle" font-size="13" fill="#4b5563">claim: anna.berg</text>
 </svg>

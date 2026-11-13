@@ -38,11 +38,11 @@
 <text x="210" y="344" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">timestamptz</text>
 <line x1="52" y1="354" x2="388" y2="354" stroke="#e5e7eb"/>
 <text x="52" y="368" font-size="10.5" fill="#6b7280">external_id: the source&#x27;s stable id, unique where one is set</text>
-<text x="52" y="384" font-size="10.5" fill="#6b7280">user_name: what a sign-in matches; NFC, unique as ICU folds case</text>
+<text x="52" y="384" font-size="10.5" fill="#6b7280">user_name: first sign-in matches this field (NFC, case-insensitive)</text>
 <text x="52" y="400" font-size="10.5" fill="#6b7280">email, phone_numbers, employments: the person&#x27;s profile (D114)</text>
 <text x="52" y="416" font-size="10.5" fill="#6b7280">title: shown and searched, decides nothing (D110)</text>
 <text x="52" y="432" font-size="10.5" fill="#6b7280">name_changed_at: a group&#x27;s time follows its members&#x27; names</text>
-<text x="52" y="448" font-size="10.5" fill="#6b7280">DELETE deactivates and clears nothing; person-erase minimises (D120)</text>
+<text x="52" y="448" font-size="10.5" fill="#6b7280">SCIM DELETE disables. The operator can erase personal data.</text>
 <rect x="420" y="56" width="360" height="234" rx="8" fill="#ffffff" stroke="#9ca3af"/>
 <path d="M 428 56 H 772 a 8 8 0 0 1 8 8 V 86 H 420 V 64 a 8 8 0 0 1 8 -8 Z" fill="#f3f4f6" stroke="#9ca3af"/>
 <text x="432" y="76" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-weight="600" font-size="13" fill="#111827">auth_group</text>
@@ -139,9 +139,9 @@
 <text x="812" y="686" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#111827">version</text>
 <text x="970" y="686" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">integer</text>
 <line x1="812" y1="696" x2="1148" y2="696" stroke="#e5e7eb"/>
-<text x="812" y="710" font-size="10.5" fill="#6b7280">one row per person = the active assignment (manager</text>
-<text x="812" y="726" font-size="10.5" fill="#6b7280">first, then the lowest unit id, compared by code unit)</text>
-<text x="812" y="742" font-size="10.5" fill="#6b7280">capabilities: string[], the union of every group&#x27;s</text>
+<text x="812" y="710" font-size="10.5" fill="#6b7280">At most one row per person with a unit assignment.</text>
+<text x="812" y="726" font-size="10.5" fill="#6b7280">Managers first, then the lowest unit id by UTF-16 code unit.</text>
+<text x="812" y="742" font-size="10.5" fill="#6b7280">Capabilities from capability groups and mapped groups.</text>
 <text x="812" y="758" font-size="10.5" fill="#6b7280">version: part of the authority fingerprint</text>
 <line x1="420" y1="607" x2="400" y2="607" stroke="#4b5563" stroke-width="1.5" marker-end="url(#a)"/>
 <line x1="600" y1="480" x2="600" y2="500" stroke="#4b5563" stroke-width="2" marker-end="url(#a)"/>
@@ -209,10 +209,10 @@
 <text x="990" y="934" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#1d4ed8">text</text>
 <text x="1088" y="934" font-weight="600" font-size="10.5" fill="#9a3412">FK</text>
 <line x1="832" y1="944" x2="1188" y2="944" stroke="#e5e7eb"/>
-<text x="832" y="958" font-size="10.5" fill="#6b7280">→ auth_person.id · one subject per issuer and person</text>
-<text x="832" y="974" font-size="10.5" fill="#6b7280">written at the first sign-in; the claim is checked at every sign-in</text>
-<text x="832" y="990" font-size="10.5" fill="#6b7280">moved or released by an operator with scripts/identity-rebind.ts,</text>
-<text x="832" y="1006" font-size="10.5" fill="#6b7280">audited as identity.rebound; removed by person-erase (D120)</text>
+<text x="832" y="958" font-size="10.5" fill="#6b7280">UNIQUE (issuer, person_id) · person_id references auth_person.id</text>
+<text x="832" y="974" font-size="10.5" fill="#6b7280">First sign-in can bind an active, unbound person under this issuer.</text>
+<text x="832" y="990" font-size="10.5" fill="#6b7280">An operator can move or release it with scripts/identity-rebind.ts.</text>
+<text x="832" y="1006" font-size="10.5" fill="#6b7280">Changes are audited. Person erasure removes the binding.</text>
 <rect x="820" y="1032" width="380" height="82" rx="8" fill="#ffffff" stroke="#c7d7f5" stroke-dasharray="4 3"/>
 <text x="832" y="1052" font-size="11.5" fill="#374151">Not drawn: auth_session, auth_login_transaction,</text>
 <text x="832" y="1068" font-size="11.5" fill="#374151">auth_logout_receipt and the log auth_audit. The nightly</text>

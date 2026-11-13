@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1000" height="480" viewBox="0 0 1000 480" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14">
-<title>A sign-in: the identity provider vouches for the account; Clew checks the claim of a subject it bound before, binds a new subject to the one provisioned person with the same user name, or refuses, and the person's grant decides the rest</title>
+<title>How Clew binds an account at first sign-in and checks the binding on later sign-ins</title>
 <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#4b5563"/></marker></defs>
 <rect width="1000" height="480" fill="#ffffff"/>
 <rect x="30" y="28" width="150" height="80" rx="10" fill="#f3f4f6" stroke="#9ca3af"/>
@@ -9,52 +9,56 @@
 <rect x="220" y="28" width="230" height="80" rx="10" fill="#f3f4f6" stroke="#9ca3af"/>
 <text x="335" y="52" text-anchor="middle" font-weight="600" fill="#111827">The organisation&#x27;s SSO</text>
 <text x="335" y="73" text-anchor="middle" fill="#374151">OIDC: Keycloak, Entra, …</text>
-<text x="335" y="94" text-anchor="middle" font-size="12" fill="#6b7280">its own session, no forced prompt (D118)</text>
+<text x="335" y="94" text-anchor="middle" font-size="12" fill="#4b5563">IdP policy controls the prompt</text>
 <line x1="450" y1="68" x2="488" y2="68" stroke="#4b5563" stroke-width="2" marker-end="url(#a)"/>
 <rect x="490" y="18" width="480" height="100" rx="10" fill="#eef4ff" stroke="#1d4ed8"/>
-<text x="730" y="43" text-anchor="middle" font-weight="600" fill="#1e3a8a">Clew: is this subject already bound to a person?</text>
-<text x="730" y="66" text-anchor="middle" font-size="13" fill="#374151">It reads the claim OIDC_BINDING_CLAIM (default preferred_username)</text>
-<text x="730" y="86" text-anchor="middle" font-size="13" fill="#374151">and compares it with userName in NFC, case folded as ICU folds it.</text>
-<text x="730" y="106" text-anchor="middle" font-size="12" fill="#6b7280">An e-mail address is never the match.</text>
+<text x="730" y="43" text-anchor="middle" font-weight="600" fill="#1e3a8a">Does Clew have a binding for this issuer and subject?</text>
+<text x="730" y="66" text-anchor="middle" font-size="13" fill="#374151">Clew reads OIDC_BINDING_CLAIM (default preferred_username).</text>
+<text x="730" y="86" text-anchor="middle" font-size="13" fill="#374151">The claim is compared only with the SCIM userName.</text>
+<text x="730" y="106" text-anchor="middle" font-size="12" fill="#6b7280">A userName can be an e-mail address.</text>
 <line x1="600" y1="118" x2="300" y2="148" stroke="#4b5563" stroke-width="2" marker-end="url(#a)"/>
 <text x="458" y="126" font-weight="600" font-size="12" fill="#374151">yes</text>
 <line x1="860" y1="118" x2="800" y2="148" stroke="#4b5563" stroke-width="2" marker-end="url(#a)"/>
 <text x="842" y="140" font-weight="600" font-size="12" fill="#374151">no</text>
 <rect x="30" y="150" width="450" height="54" rx="10" fill="#ffffff" stroke="#1d4ed8"/>
-<text x="255" y="172" text-anchor="middle" font-weight="600" fill="#1e3a8a">Bound: every later sign-in</text>
-<text x="255" y="193" text-anchor="middle" font-size="13" fill="#374151">Does the claim name another person than the bound one?</text>
+<text x="255" y="172" text-anchor="middle" font-weight="600" fill="#1e3a8a">Existing binding</text>
+<text x="255" y="193" text-anchor="middle" font-size="13" fill="#374151">Does the claim name a different person?</text>
 <rect x="520" y="150" width="450" height="54" rx="10" fill="#ffffff" stroke="#1d4ed8"/>
-<text x="745" y="172" text-anchor="middle" font-weight="600" fill="#1e3a8a">Not bound: the first sign-in</text>
-<text x="745" y="193" text-anchor="middle" font-size="13" fill="#374151">One enabled person whose userName equals the claim?</text>
+<text x="745" y="172" text-anchor="middle" font-weight="600" fill="#1e3a8a">First sign-in for this account under this issuer</text>
+<text x="745" y="193" text-anchor="middle" font-size="13" fill="#374151">One active person with this userName and no binding here?</text>
 <line x1="137.5" y1="204" x2="137.5" y2="224" stroke="#059669" stroke-width="2" marker-end="url(#a)"/>
+<text x="147.5" y="218" font-size="12" fill="#374151">no</text>
 <rect x="30" y="226" width="215" height="100" rx="10" fill="#ecfdf5" stroke="#059669"/>
-<text x="137.5" y="249" text-anchor="middle" font-weight="600" fill="#065f46">No: that person</text>
+<text x="137.5" y="249" text-anchor="middle" font-weight="600" fill="#065f46">Use the bound person</text>
 <text x="137.5" y="270" text-anchor="middle" font-size="12.5" fill="#374151">the claim names them,</text>
 <text x="137.5" y="289" text-anchor="middle" font-size="12.5" fill="#374151">names nobody, or is absent</text>
 <line x1="372.5" y1="204" x2="372.5" y2="224" stroke="#b91c1c" stroke-width="2" marker-end="url(#a)"/>
+<text x="382.5" y="218" font-size="12" fill="#374151">yes</text>
 <rect x="265" y="226" width="215" height="100" rx="10" fill="#fef2f2" stroke="#b91c1c"/>
-<text x="372.5" y="249" text-anchor="middle" font-weight="600" fill="#991b1b">Yes: refused</text>
+<text x="372.5" y="249" text-anchor="middle" font-weight="600" fill="#991b1b">Refuse sign-in</text>
 <text x="372.5" y="270" text-anchor="middle" font-size="12.5" fill="#374151">identity-conflict on the</text>
 <text x="372.5" y="289" text-anchor="middle" font-size="12.5" fill="#374151">claimed person, naming</text>
-<text x="372.5" y="308" text-anchor="middle" font-size="12.5" fill="#374151">the holder; nothing rebound</text>
+<text x="372.5" y="308" text-anchor="middle" font-size="12.5" fill="#374151">the existing holder</text>
 <line x1="627.5" y1="204" x2="627.5" y2="224" stroke="#059669" stroke-width="2" marker-end="url(#a)"/>
+<text x="637.5" y="218" font-size="12" fill="#374151">yes</text>
 <rect x="520" y="226" width="215" height="100" rx="10" fill="#ecfdf5" stroke="#059669"/>
-<text x="627.5" y="249" text-anchor="middle" font-weight="600" fill="#065f46">Exactly one: bound</text>
-<text x="627.5" y="270" text-anchor="middle" font-size="12.5" fill="#374151">the binding is written</text>
+<text x="627.5" y="249" text-anchor="middle" font-weight="600" fill="#065f46">Bind the account</text>
+<text x="627.5" y="270" text-anchor="middle" font-size="12.5" fill="#374151">store issuer, subject and person</text>
 <text x="627.5" y="289" text-anchor="middle" font-size="12.5" fill="#374151">identity-bound</text>
 <line x1="862.5" y1="204" x2="862.5" y2="224" stroke="#b91c1c" stroke-width="2" marker-end="url(#a)"/>
+<text x="872.5" y="218" font-size="12" fill="#374151">no</text>
 <rect x="755" y="226" width="215" height="100" rx="10" fill="#fef2f2" stroke="#b91c1c"/>
 <text x="862.5" y="249" text-anchor="middle" font-weight="600" fill="#991b1b">Refused</text>
-<text x="862.5" y="268" text-anchor="middle" font-size="12.5" fill="#374151">nobody or disabled:</text>
+<text x="862.5" y="268" text-anchor="middle" font-size="12.5" fill="#374151">no match or disabled person</text>
 <text x="862.5" y="284" text-anchor="middle" font-size="12.5" fill="#374151">identity-unmatched</text>
-<text x="862.5" y="300" text-anchor="middle" font-size="12.5" fill="#374151">a binding in the way:</text>
+<text x="862.5" y="300" text-anchor="middle" font-size="12.5" fill="#374151">conflicting binding</text>
 <text x="862.5" y="316" text-anchor="middle" font-size="12.5" fill="#374151">identity-conflict</text>
 <line x1="137.5" y1="326" x2="137.5" y2="344" stroke="#059669" stroke-width="2" marker-end="url(#a)"/>
 <line x1="627.5" y1="326" x2="627.5" y2="344" stroke="#059669" stroke-width="2" marker-end="url(#a)"/>
 <rect x="30" y="346" width="940" height="52" rx="10" fill="#f3f4f6" stroke="#9ca3af"/>
-<text x="500" y="368" text-anchor="middle" font-size="13" fill="#111827">The person&#x27;s grant decides: a grant → a session starts · no grant (no unit) or disabled → refused</text>
+<text x="500" y="368" text-anchor="middle" font-size="13" fill="#111827">Clew checks local access. The person must be active and have a grant for a session to start.</text>
 <text x="500" y="388" text-anchor="middle" font-size="12" fill="#6b7280">Every refusal writes login-denied in the authentication log, naming the person when one is known.</text>
 <rect x="30" y="414" width="940" height="52" rx="10" fill="#ffffff" stroke="#c7d7f5" stroke-dasharray="4 3"/>
-<text x="500" y="436" text-anchor="middle" font-size="13" fill="#374151">The provisioner decided who exists and what they may do, before anyone signed in. SSO decides who is at the keyboard.</text>
-<text x="500" y="456" text-anchor="middle" font-size="12" fill="#6b7280">Clew never rebinds by itself: an operator moves or releases a binding with scripts/identity-rebind.ts, audited as identity.rebound.</text>
+<text x="500" y="436" text-anchor="middle" font-size="13" fill="#374151">The identity provider verifies the account. Clew derives access from provisioned groups and capability mappings.</text>
+<text x="500" y="456" text-anchor="middle" font-size="12" fill="#6b7280">An operator can move or release a binding with scripts/identity-rebind.ts. Clew records identity.rebound.</text>
 </svg>
