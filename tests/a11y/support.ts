@@ -116,6 +116,7 @@ import {
 } from './competence';
 import { errandsOutput, errandsSpec, smErrandOutput, smErrandSpec } from './errands';
 import { deskRequestOutput, deskRequestSpec, requestsOutput, requestsSpec } from './requests';
+import { BoardingMock, boardingOff } from './boarding';
 import { manifestReference } from '../../packages/connectors/src/reference';
 import { previewManifest } from '../../packages/connectors/src/preview';
 import { parseManifest } from '../../packages/connectors/src/remote';
@@ -386,6 +387,11 @@ export class MockApi {
    */
   competenceSkills: Record<string, CompetenceSkillValidation> = {};
   skillWrites: Array<{ method: string; path: string; body?: unknown }> = [];
+  /**
+   * Introduktion och avslut (D124): the module's state and routes (`boarding.ts`). Null: the module is switched off, so
+   * every route is refused as the server's guard refuses it, and the system is not among the person's.
+   */
+  boarding: BoardingMock | null = null;
   /** Utvecklingssamtal (D96). False: the person has no talks system, so both reads are refused as the registry refuses them. */
   talksOffered = true;
   /** False: another system answers the profile; the reads are read-only (no `id`, a `link` on every row) and the writes refused. */
@@ -854,6 +860,7 @@ export class MockApi {
       const systems = [
         ...this.systems.filter(s => s.connector !== 'calendar' || this.calendar !== 'hidden'),
         ...(this.competenceTypes ? [{ connector: 'competence', source: 'Kompetens', ordinal: null }] : []),
+        ...(this.boarding ? [{ connector: 'boarding', source: 'Clew', ordinal: null }] : []),
       ];
       return json({ areas: this.areas, menu: this.menu, systems, views: this.views });
     }
@@ -1511,6 +1518,15 @@ export class MockApi {
       return this.competenceTypes
         ? json({ output: this.competenceHoldings, source: 'Kompetens', view: holdingsSpec })
         : route.fulfill({ status: 400, json: { error: 'Okänd förmåga.' } });
+    // Introduktion och avslut (D124): the module's own routes, refused while it is off; the layers are an
+    // administrator's with `admin.boarding` alone.
+    if (path.startsWith('/boarding/')) {
+      if (!this.boarding) return boardingOff(route);
+      if (path.startsWith('/boarding/layers') && !(this.admin && this.capabilities.includes('admin.boarding')))
+        return route.fulfill({ status: 403, json: { error: 'Du saknar behörighet för åtgärden.', code: 'denied' } });
+      const answered = await this.boarding.handle(route, path);
+      if (answered !== null) return answered;
+    }
     // Utvecklingssamtal (D96): the two composites and the built-in module's writes.
     if (path === '/cap/clew.talks' || path === '/cap/clew.commitments' || path.startsWith('/talks/'))
       return this.handleTalks(route, path, url);

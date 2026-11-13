@@ -27,6 +27,7 @@ import { openSecret, sealSecret } from '../apps/server/src/auth-crypto';
 import { fetchManifest } from '../packages/connectors/src/remote';
 import { seedCompetence } from './competence-seed';
 import { EXAMPLE_AREAS, loadDialogueAreas } from './dialogue-areas';
+import { seedBoarding } from './boarding-seed';
 
 try {
   process.loadEnvFile(resolve(import.meta.dir, '../apps/server/.env.local'));
@@ -69,12 +70,14 @@ export const FIGURES_OFF: Array<{ connector: string; area: string }> = [
 ];
 /**
  * Personal as the canvas draws it (D97, artboard A2): absence and the round of talks under "Visa", and their presence
- * and next talk as the two columns on "Alla", in this order. An administrator's choice, made here for the development
- * stack only while no lens or column is chosen anywhere, so a later choice on Anslutna system is kept.
+ * and next talk as the two columns on "Alla", in this order; and introduction and leaving under "Visa" (D124), with no
+ * column of its own. An administrator's choice, made here for the development stack only while no lens or column is
+ * chosen anywhere, so a later choice on Anslutna system is kept.
  */
-export const ENTITY_CHOICE: Array<{ connector: string; capability: string; column: string }> = [
+export const ENTITY_CHOICE: Array<{ connector: string; capability: string; column?: string }> = [
   { connector: 'hr', capability: 'hr.person', column: 'presence' },
   { connector: 'talks', capability: 'talks.person', column: 'next' },
+  { connector: 'boarding', capability: 'boarding.person' },
 ];
 const secret = process.env.CLEW_DEV_CONNECTOR_SECRET;
 if (!secret) {
@@ -162,10 +165,10 @@ async function chooseForPersonal() {
   for (const c of ENTITY_CHOICE)
     await admin.update(operator, c.connector, {
       lens: { [c.capability]: true },
-      column: { [c.capability]: c.column },
+      ...(c.column ? { column: { [c.capability]: c.column } } : {}),
     });
   console.log(
-    `entities       chose for Personal: lenses ${ENTITY_CHOICE.map(c => c.capability).join(', ')}; columns ${ENTITY_CHOICE.map(c => `${c.capability} ${c.column}`).join(', ')}`,
+    `entities       chose for Personal: lenses ${ENTITY_CHOICE.map(c => c.capability).join(', ')}; columns ${ENTITY_CHOICE.flatMap(c => (c.column ? [`${c.capability} ${c.column}`] : [])).join(', ')}`,
   );
 }
 
@@ -237,6 +240,18 @@ try {
     areas.kept
       ? `dialogue       kept the dialogue areas of organisation "${DEVELOPMENT_ROUND.organisationId}"`
       : `dialogue       loaded ${areas.areas} areas and ${areas.questions} questions for organisation "${DEVELOPMENT_ROUND.organisationId}"`,
+  );
+  // Introduction and leaving (D124): the layers the development organisation lacks and one open introduction the
+  // manager started, unless the person has one. The module stays off until an administrator switches it on (item 9).
+  const boarded = await seedBoarding(DEVELOPMENT_ROUND.organisationId);
+  console.log(
+    `boarding       seeded ${boarded.layers.added} layers added, ${boarded.layers.replaced} replaced and ${boarded.layers.unchanged} unchanged of organisation "${DEVELOPMENT_ROUND.organisationId}"; ${
+      boarded.plan.state === 'started'
+        ? `one introduction started with ${boarded.plan.items} items, ${boarded.plan.done} done`
+        : boarded.plan.state === 'kept'
+          ? 'the open introduction kept'
+          : 'no introduction started (the manager or the person is not provisioned yet)'
+    }`,
   );
   await chooseForPersonal();
 } finally {

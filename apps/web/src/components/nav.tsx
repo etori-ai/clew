@@ -34,11 +34,12 @@ import { SubRows, type ShellNav } from './shell';
 import { useHeldCapabilities } from '../capabilities';
 
 /** The administration's sections, rows under Administration (D45, administration keeps the rail). */
-export type AdminSection = 'anslutningar' | 'modeller' | 'anvandare' | 'organisation' | 'utseende' | 'kompetens';
+export type AdminSection =
+  'anslutningar' | 'modeller' | 'anvandare' | 'organisation' | 'utseende' | 'kompetens' | 'introduktion';
 /**
  * Each row under Administration with the capability its page is behind on the server (D85): a row is drawn only for a
- * person who holds it, so no row leads to a refusal. Kompetens also needs the module switched on and visible to the
- * person (D108 item 13), which `/api/areas` says by listing the system.
+ * person who holds it, so no row leads to a refusal. Kompetens and Introduktion och avslut also need their module switched
+ * on and visible to the person (D108 item 13, D124 item 9), which `/api/areas` says by listing the system.
  */
 const ADMIN_ROWS: ReadonlyArray<{
   section: AdminSection;
@@ -58,6 +59,13 @@ const ADMIN_ROWS: ReadonlyArray<{
     href: '/admin/competence',
     capability: 'admin.competence',
     system: 'competence',
+  },
+  {
+    section: 'introduktion',
+    label: 'Introduktion och avslut',
+    href: '/admin/boarding',
+    capability: 'admin.boarding',
+    system: 'boarding',
   },
 ];
 /** What the rail marks as current: the place, and within the start page the conversation. */

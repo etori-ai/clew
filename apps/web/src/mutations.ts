@@ -1,6 +1,6 @@
 import { createElement, useCallback, useRef, useSyncExternalStore, type ReactNode } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { Thread } from '@clew/contracts';
+import type { BoardingPlanOutput, Thread } from '@clew/contracts';
 import { CompletionFeedback, useToast } from '@clew/ui';
 import { applyThread, previewThread } from './thread-cache';
 import { atRest } from './optimistic';
@@ -317,6 +317,104 @@ export function useDialogueAction({ fallback = 'Något gick fel.' }: { fallback?
     error: mutation.isError ? errorMessage(mutation.error, fallback) : null,
     reset: mutation.reset,
   };
+}
+/** What a boarding write changes and is waited for before `busy` lets go: the person's plans and the plans (D124). */
+const BOARDING_KEYS: readonly QueryKey[] = [keys.boarding.all];
+/**
+ * What it changes beside them and is re-read without waiting (D124 item 5): the owners' cards (ticking an item closes
+ * its card, opening it again opens it, starting a plan opens one per item, closing it closes them), the counts beside
+ * them, what `boarding.person` says on a person's page and Personal's lens (D97), and a plan's view open anywhere.
+ */
+const BOARDING_SIDE_KEYS: readonly QueryKey[] = [
+  keys.threads,
+  keys.attention,
+  keys.areas,
+  keys.entities.all,
+  keys.viewAll,
+];
+type BoardingVars = { fn: Action<unknown>; done: string | null };
+/**
+ * Run a boarding write (D124: a plan started, an item added, a plan closed). `run(fn, done)` settles, never rejects,
+ * and resolves true once the write is through and the module's reads are fresh again, so a dialog can close and the page
+ * shows what it made before the focus moves; then `done`, a Swedish sentence, is the completion toast. A failure
+ * resolves false and its Swedish text is `error`. A second `run` while one is in flight is ignored.
+ */
+export function useBoardingWrite({
+  fallback = 'Något gick fel.',
+  toastId,
+}: { fallback?: string; toastId?: string } = {}) {
+  const client = useQueryClient();
+  const toast = useToast();
+  const mutation = useMutation<unknown, unknown, BoardingVars>({
+    mutationFn: vars => vars.fn(),
+    onSuccess: async (_answer, vars) => {
+      BOARDING_SIDE_KEYS.forEach(queryKey => void client.invalidateQueries({ queryKey }));
+      await Promise.all(BOARDING_KEYS.map(queryKey => client.invalidateQueries({ queryKey })));
+      if (vars.done)
+        toast({
+          // As children, so Astryx can read the words it announces (see CompletionFeedback).
+          body: createElement(CompletionFeedback, null, vars.done),
+          ...(toastId ? { uniqueID: toastId } : {}),
+        });
+    },
+  });
+  const inFlight = useRef(false);
+  const { mutateAsync } = mutation;
+  const run = useCallback(
+    async (fn: Action<unknown>, done: string | null = null): Promise<boolean> => {
+      if (inFlight.current) return false;
+      inFlight.current = true;
+      try {
+        await mutateAsync({ fn, done });
+        return true;
+      } catch {
+        /* the error is in the mutation's state */
+        return false;
+      } finally {
+        inFlight.current = false;
+      }
+    },
+    [mutateAsync],
+  );
+  return {
+    run,
+    busy: mutation.isPending,
+    error: mutation.isError ? errorMessage(mutation.error, fallback) : null,
+    reset: mutation.reset,
+  };
+}
+/**
+ * Tick an item of a plan off or open it again (D124): the plan in the cache shows it at once (D64: the change is drawn
+ * before the server answers, `change`), then the server's answer reads the module, the cards and the sections again.
+ * Resolves null once it went through, or the server's Swedish refusal, the plan as it was put back. Settles, never
+ * rejects; ticks of different items may run side by side.
+ */
+export function useBoardingTick(
+  change: (plan: BoardingPlanOutput, itemId: string, done: boolean) => BoardingPlanOutput,
+) {
+  const client = useQueryClient();
+  const latest = useRef(change);
+  latest.current = change;
+  // A mutation, so the change stream's notice for the write waits for its answer (`changeNotices`) as for every write.
+  const { mutateAsync } = useMutation<unknown, unknown, Action<unknown>>({ mutationFn: fn => fn() });
+  return useCallback(
+    async (planId: string, itemId: string, done: boolean, fn: Action<unknown>): Promise<string | null> => {
+      const key = keys.boarding.plan(planId);
+      await client.cancelQueries({ queryKey: key });
+      const before = client.getQueryData<BoardingPlanOutput>(key);
+      if (before) client.setQueryData(key, latest.current(before, itemId, done));
+      try {
+        await mutateAsync(fn);
+      } catch (error) {
+        if (before) client.setQueryData(key, before);
+        return errorMessage(error, 'Uppgiften kunde inte ändras.');
+      }
+      BOARDING_SIDE_KEYS.forEach(queryKey => void client.invalidateQueries({ queryKey }));
+      void client.invalidateQueries({ queryKey: keys.boarding.all });
+      return null;
+    },
+    [client, mutateAsync],
+  );
 }
 
 /** The entity an action is started on (D97): its kind and its key, for the reads that follow the new card. */

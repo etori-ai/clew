@@ -30,7 +30,7 @@ import {
 import { FieldCell, FieldValue, badgeVariant, fieldText, fieldWord, isBadged } from '../components/view';
 import type { EntityActionStart } from '../entity-actions';
 import { pageOnly, withCard } from '../panel-address';
-import { NEEDS_YOU, personPageFrom, personPageHref } from '../person-address';
+import { NEEDS_YOU, personPageFrom, personPageHref, wayBack } from '../person-address';
 import { sourcePageHref } from '../talk-address';
 import { groupFields, present, rowGroups, type FieldGroup } from '../view-fields';
 import {
@@ -143,7 +143,7 @@ export function RowMenu({ entity, ctx, lens }: { entity: EntityRef; ctx: Context
       onClick: () => start(a, { key: entity.key, name: entity.name }),
     });
   for (const s of list.lenses) {
-    const href = s.page ? sourcePageHref(s.page, entity, here) : null;
+    const href = s.page ? sourcePageHref(s.page, entity, here, wayBack(pageOnly(here.pathname, here.search))) : null;
     if (s.page && href) add(s.source, { id: `page:${s.capability}`, label: s.page.title, href });
   }
   const items: MenuItems = [...sections]

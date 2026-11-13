@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode, type Ref } from 'react';
 import { useIsFetching } from '@tanstack/react-query';
 import {
   Dialog,
@@ -55,6 +55,8 @@ export function EntityPage({
   details,
   label,
   panel,
+  headingRef,
+  meta,
 }: {
   /** The way back, named; none for an address that names no page Clew can name. */
   back: { label: string; href: string } | null;
@@ -78,6 +80,10 @@ export function EntityPage({
   label: string;
   /** The page's panel (`usePagePanel`), in the end slot after the rail. */
   panel: { end: ReactNode; occupied: boolean };
+  /** The heading, for a page that gives it the focus from a script (a plan just started, D124): never from Tab. */
+  headingRef?: Ref<HTMLHeadingElement> | undefined;
+  /** Where the thing stands, under the name's line and before the phone's actions: a plan's progress (D124). */
+  meta?: ReactNode;
 }) {
   const mobile = useMediaQuery(mobileQuery);
   const narrowWindow = useMediaQuery(narrowItemQuery);
@@ -137,13 +143,16 @@ export function EntityPage({
                     {place}
                   </Text>
                 )}
-                <Heading level={1}>{title}</Heading>
+                <Heading level={1} {...(headingRef ? { ref: headingRef, tabIndex: -1 } : {})}>
+                  {title}
+                </Heading>
                 {subtitle && <Text color="secondary">{subtitle}</Text>}
               </VStack>
             </HStack>
           </StackItem>
           {!mobile && actions}
         </HStack>
+        {meta}
         {mobile && actions}
       </VStack>
     </LayoutHeader>

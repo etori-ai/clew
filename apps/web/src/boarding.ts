@@ -1,0 +1,177 @@
+import type {
+  BoardingCondition,
+  BoardingEvent,
+  BoardingItemRow,
+  BoardingPhase,
+  BoardingPlanOutput,
+  BoardingPlanSummary,
+  BoardingPreview,
+} from '@clew/contracts';
+import { BOARDING_CONDITION_WORDS, BOARDING_EVENT_WORDS } from '@clew/contracts';
+import { addDays, dayLabel, displayDate, shortDayLabel } from '@clew/calendar/dates';
+
+/**
+ * Introduction and leaving on Clew's own pages (D124): the words the plan's page, the start dialog and the
+ * administration's layers say things in. Pure: no React, no request. Rows and counts only; no sentence sums them up.
+ */
+
+/** "Introduktion för Sara Holm", "Avslut för Lena Ek": the page's heading. */
+export const planTitle = (event: BoardingEvent, name: string) => `${BOARDING_EVENT_WORDS[event]} för ${name}`;
+/** The day a plan is anchored on, as a field and a fact name it. */
+export const anchorWord: Record<BoardingEvent, string> = { introduction: 'Första dagen', leaving: 'Sista dagen' };
+/** What the start dialog's last button and its title say. */
+export const startWords: Record<
+  BoardingEvent,
+  { button: string; open: string; title: string; started: (name: string) => string }
+> = {
+  introduction: {
+    button: 'Starta introduktionen',
+    open: 'Starta introduktion',
+    title: 'Förbered introduktionen',
+    started: name => `Introduktionen för ${name} är startad.`,
+  },
+  leaving: {
+    button: 'Starta avslutet',
+    open: 'Starta avslut',
+    title: 'Förbered avslutet',
+    started: name => `Avslutet för ${name} är startat.`,
+  },
+};
+/** A day as a sentence says it: "måndag 1 december". */
+export const longDay = (day: string) => dayLabel(displayDate(day));
+/** A day as a row says it: "mån 1 dec.". */
+export const shortDay = (day: string) => shortDayLabel(displayDate(day));
+
+/** Whole calendar days from `from` to `to`, both `YYYY-MM-DD`: negative when `to` comes first. */
+export function daysBetween(from: string, to: string): number {
+  const utc = (day: string) => {
+    const [y, m, d] = day.split('-').map(Number) as [number, number, number];
+    return Date.UTC(y, m - 1, d);
+  };
+  return Math.round((utc(to) - utc(from)) / 86_400_000);
+}
+/**
+ * How far the plan's day is from today, as its header says it: "Börjar om 18 dagar", "Började i går", "Slutar i dag".
+ * A closed plan says nothing of it.
+ */
+export function distanceWords(event: BoardingEvent, anchorOn: string, today: string): string {
+  const days = daysBetween(today, anchorOn);
+  const [ahead, behind] = event === 'introduction' ? ['Börjar', 'Började'] : ['Slutar', 'Slutade'];
+  if (days === 0) return `${ahead} i dag`;
+  if (days === 1) return `${ahead} i morgon`;
+  if (days === -1) return `${behind} i går`;
+  return days > 0 ? `${ahead} om ${days} dagar` : `${behind} för ${-days} dagar sedan`;
+}
+/**
+ * When a phase is, from the plan's day, as the heading of its section says it: the days the server counts into it
+ * (`phaseOf`: an introduction's first week is days 1 to 6, its first 90 days 7 to 89; a leaving's last week the six days
+ * before the last day).
+ */
+export function phaseWhen(phase: BoardingPhase, anchorOn: string): string {
+  const day = (offset: number) => longDay(addDays(anchorOn, offset));
+  const span = (from: number, to: number) => `${day(from)} till ${day(to)}`;
+  switch (phase) {
+    case 'beforeStart':
+      return `senast ${day(-1)}`;
+    case 'firstDay':
+    case 'lastDay':
+      return day(0);
+    case 'firstWeek':
+      return span(1, 6);
+    case 'first90Days':
+      return span(7, 89);
+    case 'later':
+      return `från ${day(90)}`;
+    case 'earlier':
+      return `senast ${day(-90)}`;
+    case 'last90Days':
+      return span(-89, -7);
+    case 'lastWeek':
+      return span(-6, -1);
+    case 'afterLeaving':
+      return `från ${day(1)}`;
+  }
+}
+/** "1 punkt", "7 punkter". */
+export const itemsWords = (n: number) => (n === 1 ? '1 punkt' : `${n} punkter`);
+/** Who does an item, as its row says it: "Du", or the role with the owner's name ("Fadder, Erik Nyström"). */
+export const ownerWords = (row: Pick<BoardingItemRow, 'mine' | 'owner' | 'ownerLabel'>) =>
+  row.mine ? 'Du' : row.owner ? `${row.ownerLabel}, ${row.owner}` : row.ownerLabel;
+/** The line under an item's title: its kind, who does it and the day it is due. */
+export const itemLine = (row: Pick<BoardingItemRow, 'kindLabel' | 'mine' | 'owner' | 'ownerLabel' | 'dueOn'>) =>
+  `${row.kindLabel} · ${ownerWords(row)} · senast ${shortDay(row.dueOn)}`;
+/** Whom a layer applies to, in words: "Alla", "Enhet: unit-omsorg och enheterna under den". */
+export function conditionWords(condition: BoardingCondition, value: string | null): string {
+  if (condition === 'all' || !value) return 'Alla anställda';
+  if (condition === 'unit') return `${BOARDING_CONDITION_WORDS.unit}: ${value} och enheterna under den`;
+  return `${BOARDING_CONDITION_WORDS[condition]}: ${value}`;
+}
+
+/** The counts the plan's header says: done of all, what waits for the reader, what is past its day. */
+export function counts(rows: readonly Pick<BoardingItemRow, 'done' | 'mine' | 'status'>[]) {
+  return {
+    done: rows.filter(r => r.done).length,
+    total: rows.length,
+    waiting: rows.filter(r => r.mine && !r.done).length,
+    overdue: rows.filter(r => r.status === 'Försenad').length,
+  };
+}
+/** An item ticked off or opened again, as the page draws it until the server's answer is read: its state from `today`. */
+export function ticked<R extends Pick<BoardingItemRow, 'done' | 'dueOn' | 'status' | 'doneAt'>>(
+  row: R,
+  done: boolean,
+  today: string,
+): R {
+  const { doneAt: _doneAt, ...rest } = row;
+  return {
+    ...rest,
+    done,
+    status: done ? 'Klar' : row.dueOn < today ? 'Försenad' : 'Att göra',
+  } as R;
+}
+/** The plan with one item ticked off or opened again, in its rows and its phases, and the counts with it. */
+export function withTicked(plan: BoardingPlanOutput, itemId: string, done: boolean, today: string): BoardingPlanOutput {
+  const change = (r: BoardingItemRow) => (r.id === itemId ? ticked(r, done, today) : r);
+  const was = plan.rows.find(r => r.id === itemId);
+  const delta = !was || was.done === done ? 0 : done ? 1 : -1;
+  return {
+    ...plan,
+    plan: { ...plan.plan, done: plan.plan.done + delta },
+    rows: plan.rows.map(change),
+    phases: plan.phases.map(p => ({ ...p, items: p.items.map(change) })),
+  };
+}
+/**
+ * The plan the page shows when the address chooses none (D124): an open one, the one started last (the server lists
+ * open plans first, newest first), else the latest closed one.
+ */
+export const defaultPlan = (plans: readonly BoardingPlanSummary[]): BoardingPlanSummary | undefined => plans[0];
+/** Whether the person has an open plan of this event, which a second start would be refused for. */
+export const hasOpen = (plans: readonly BoardingPlanSummary[], event: BoardingEvent) =>
+  plans.some(p => p.event === event && p.closedAt === null);
+
+/** What starting would make, per owner (the start dialog's last step): in the order their first item is due. */
+export function previewOwners(preview: BoardingPreview, readerId: string) {
+  const owners = new Map<string, { id: string; name: string; you: boolean; count: number; first: string }>();
+  for (const item of preview.items) {
+    const at = owners.get(item.owner.id);
+    if (at) {
+      at.count++;
+      if (item.dueOn < at.first) at.first = item.dueOn;
+    } else
+      owners.set(item.owner.id, {
+        id: item.owner.id,
+        name: item.owner.name,
+        you: item.owner.id === readerId,
+        count: 1,
+        first: item.dueOn,
+      });
+  }
+  return [...owners.values()].sort((a, b) => a.first.localeCompare(b.first) || a.name.localeCompare(b.name, 'sv'));
+}
+/** How many items each layer gives, by the layer's id. */
+export function layerCounts(preview: BoardingPreview): Map<string, number> {
+  const counted = new Map<string, number>();
+  for (const item of preview.items) counted.set(item.layerId, (counted.get(item.layerId) ?? 0) + 1);
+  return counted;
+}

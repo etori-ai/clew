@@ -85,6 +85,18 @@ export const keys = {
     all: ['dialogue'] as const,
     unit: (unitId: string) => ['dialogue', 'unit', unitId] as const,
   },
+  /**
+   * Introduktion och avslut (D124): one person's plans, one plan and the administrator's layers, under `all`, so a write
+   * reads the module again at once; and what starting a plan would make, per body, outside it, so the start itself does
+   * not read the preview again on its way out.
+   */
+  boarding: {
+    all: ['boarding'] as const,
+    person: (personId: string) => ['boarding', 'person', personId] as const,
+    plan: (planId: string) => ['boarding', 'plan', planId] as const,
+    preview: (body: object) => ['boarding-preview', body] as const,
+    layers: ['boarding', 'layers'] as const,
+  },
   /** Utvecklingssamtal (D96): the round, and action points per reader (`null`) or per person (their user name, else id). */
   talks: {
     all: ['talks'] as const,

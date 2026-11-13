@@ -1,6 +1,6 @@
 # D124 · Introduction and leaving are an owned domain: a plan the manager starts, assembled from flat layers, each item a work item
 
-**Status:** provisional (two statements by the product owner on 2026-11-13, quoted below; everything else is this build's choice; the server side built 2026-11-13 on synthetic data, no page yet; nothing outside the repository has tested it) · **Date:** 2026-11-13 · **Area:** product, people
+**Status:** provisional (two statements by the product owner on 2026-11-13, quoted below; everything else is this build's choice; the server side and its pages built 2026-11-13 on synthetic data; nothing outside the repository has tested it) · **Date:** 2026-11-13 · **Area:** product, people
 
 **Decision.** Introduction and leaving (Swedish in the product: **Introduktion och avslut**; in code `boarding`) is a
 domain Clew owns under [D95](D95-clew-may-own-a-domain-by-choice-decided-with-the-core-or-connector-checklist.md): a
@@ -116,9 +116,25 @@ rejected by D68; the date is copied into the plan only when the manager confirms
 under one store contract); the cards in `composition/boarding-work-items.ts` and the timer kind `boarding` fired by
 `fireTimer`; the routes; the capability `admin.boarding`; the parser `packages/contracts/src/boarding-import.ts`; the
 operator scripts and the development seed (`scripts/boarding-seed.ts`, data in `scripts/boarding-development.ts`); a
-person in the synthetic directory whose employment starts three weeks after the provisioner runs. Not built: every
-page (the plan's page, the start dialog, the administrator's import page), the a11y specs, and anything item 3 holds
-back. Nothing specific to leaving beyond the event exists: no return list, no hook on a leaver, no retention sweep.
+person in the synthetic directory whose employment starts three weeks after the provisioner runs. Not built on the
+server: anything item 3 holds back. Nothing specific to leaving beyond the event exists: no return list, no hook on a
+leaver, no retention sweep.
+
+**Built 2026-11-13, web side.** One person's plans as a page, `/boarding/<personId>` with `?plan=` (the detail shape of
+a person's page: the plan's day, progress and counts in the header, a section per phase, each item a checkbox named by
+its title for a reader who may tick it, the facts and "Tillhör" in the rail), reached from `boarding.person`'s way in
+with the page it was drawn on as `from`, and from the pages of both reads (an item's card, the suggestion's card), which
+lead there. "Lägg till punkt" and "Avsluta planen" (Astryx's confirmation) for the plan's manager; an owner who is
+neither manager nor person told they see their own items; with no plan, "Starta introduktion" and "Starta avslut" for
+the manager and "Planen finns inte" for anyone else. The start dialog over the page (`?start=`), the action dialog's two
+steps over `POST /api/boarding/preview`. Administration › Introduktion och avslut, the layers read only, and its import
+page, which reads a file with the server's parser and sends only a whole file without problems. The browser specs on a
+mock (`tests/a11y/boarding.spec.ts`, `boarding-start.spec.ts`, `admin-boarding.spec.ts`), and `boarding.person` among the
+development stack's lenses with the seed run by `bun run dev:connectors`. Not built: an order or a booking button on an
+item, editing a layer in the product, the canvas's order dialog and one layer's page, the groups the canvas draws for a
+leaving (return, access, handover), "Planen är byggd av" (the plan's output does not name an item's layer), "Fråga Clew"
+on the plan's page (nothing of a plan reaches a model), and a way in for the new hire beyond the cards in Att göra and
+Hem.
 
 **Not established.** The answers to questions 6 and 11. Whether matching on the free-text employment type is
 acceptable (the directory has no concept of a consultant). Where a new hire finds their plan besides Hem and Att göra.
