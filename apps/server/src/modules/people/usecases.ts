@@ -327,8 +327,10 @@ export function scimUsecases(deps: {
       throw refused(
         `The parent '${UNIT_KEY}${fields.parent}' is not a unit of this organisation; a tree is pushed from the root down (D99).`,
       );
+    // Walked as the tree reads it: a stored parent that names no node of the organisation, such as a unit key written
+    // wrong that a group stored before D96 still carries, ends the walk, as it is read as no parent there.
     const above = async (id: string) =>
-      id === fields.parent ? parent.parentUnitId : (await tx.findGroup('externalId', UNIT_KEY + id))?.parentUnitId;
+      id === fields.parent ? parent.parentUnitId : (await tx.unitTree(p.organisationId, [id]))[0]?.parentId;
     if (await closesCycle(unit, fields.parent, above))
       throw refused(
         `The parent '${UNIT_KEY}${fields.parent}' stands below the unit '${unit}' and would close a cycle (D99).`,
@@ -1348,8 +1350,9 @@ export function organisationUsecases(deps: { store: ProvisionStore }) {
       // A unit id is the source's and never holds a NUL, which PostgreSQL would refuse to compare: it names no unit.
       if (holdsNul(unitId)) throw new InputError('Enheten finns inte.');
       return deps.store.transaction(async tx => {
-        const group = await tx.findGroup('externalId', UNIT_KEY + unitId),
-          node = group?.organisationId === persona.organisationId ? group : undefined,
+        // The unit's node as the overview reads it (`unitTree`): the organisation's own, by a key read as the SCIM
+        // boundary accepts one, so a unit key written wrong that a group stored before D96 still carries names no unit.
+        const [node] = await tx.unitTree(persona.organisationId, [unitId]),
           people = (await tx.unitPeople([unitId], persona.organisationId))[unitId] ?? [];
         if (!node && !people.length) throw new InputError('Enheten finns inte.');
         const held = new Map<string, StaffPerson>(people.map(p => [p.id, p]));

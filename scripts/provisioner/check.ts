@@ -104,15 +104,16 @@ export async function checkProvisioning(
     groups = await all<GroupRow>(client, '/Groups', 'excludedAttributes=members');
   // A key written wrong, stored before the server began refusing it (D96): a reserved word in another case or with
   // space in or before it, a unit key without a unit id or with space around it, or `protected`. Clew reads a key as the
-  // server accepts it (`readScimGroupKey`), so such a key gives nobody anything; the next write of it is refused, and it
-  // is counted as none of the kinds below.
+  // server accepts it (`readScimGroupKey`), so such a key gives nobody anything and the group is a plain group to Clew,
+  // which an administrator may still map to a capability (D85); the next write of it is refused, and it is counted as
+  // none of the kinds below.
   const miswritten = groups.filter(g => {
     const prefix = reservedScimGroupKey(g.externalId ?? '');
     return prefix !== undefined && (prefix === PROTECTED_KEY || !readScimGroupKey(g.externalId));
   });
   // A `capability:` key whose name is not in the closed list (D85) is written wrong as well, unless the installation is
-  // newer than the check's copy of the list and knows the name, so it is named apart. It is counted as none of the
-  // kinds below either.
+  // newer than the check's copy of the list and knows the name, so it is named apart. Like any group, an administrator
+  // may map it to a capability. It is counted as none of the kinds below either.
   const unknown = groups.filter(g => {
     const key = readScimGroupKey(g.externalId);
     return key?.prefix === CAPABILITY_KEY && !isCapability(key.value);
@@ -250,8 +251,11 @@ export async function checkProvisioning(
       'warn',
       `${plural(keepDuties.length, 'deactivated user is', 'deactivated users are')} still in unit-manager: or capability: groups, and making ${keepDuties.length === 1 ? 'the user' : 'them'} active again gives those duties back at once: ${some(keepDuties.map(u => `${u.userName} (${holding(u, duties).join(', ')})`))}.`,
     );
-  // A plain group gives nothing by itself, but one an administrator maps to a capability (D85) gives it back too.
-  const mappable = new Set(sound.filter(g => g.externalId && !reservedScimGroupKey(g.externalId)).map(g => g.id)),
+  // A plain group gives nothing by itself, but one an administrator maps to a capability (D85) gives it back too. So
+  // does a group the check counts apart: its key gives nothing as the check reads it, and an administrator can map any
+  // group with an `externalId`, as the group picker offers every one.
+  const meaningful = new Set([...units, ...managers, ...capabilities]),
+    mappable = new Set(groups.filter(g => g.externalId && !meaningful.has(g)).map(g => g.id)),
     keepPlain = deactivated.filter(u => holding(u, mappable).length);
   if (keepPlain.length)
     say(
@@ -261,12 +265,12 @@ export async function checkProvisioning(
   if (miswritten.length)
     say(
       'warn',
-      `${plural(miswritten.length, 'group carries', 'groups carry')} a key that is written wrong and gives nobody anything: ${some(miswritten.map(g => `'${g.externalId}'`))}.`,
+      `${plural(miswritten.length, 'group carries', 'groups carry')} a key that is written wrong, so Clew reads ${miswritten.length === 1 ? 'it as a plain group, which gives' : 'them as plain groups, which give'} nobody anything unless an administrator maps ${miswritten.length === 1 ? 'it' : 'them'} to a capability: ${some(miswritten.map(g => `'${g.externalId}'`))}.`,
     );
   if (unknown.length)
     say(
       'warn',
-      `${plural(unknown.length, 'group names', 'groups name')} a capability the check does not know, so ${unknown.length === 1 ? 'it gives' : 'they give'} nobody anything unless the installation is newer than the check's copy of packages/contracts/src/scim-group-key.ts: ${some(unknown.map(g => `'${g.externalId}'`))}.`,
+      `${plural(unknown.length, 'group names', 'groups name')} a capability the check does not know, so ${unknown.length === 1 ? 'it gives' : 'they give'} nobody anything unless the installation is newer than the check's copy of packages/contracts/src/scim-group-key.ts, or an administrator maps ${unknown.length === 1 ? 'it' : 'them'} to a capability: ${some(unknown.map(g => `'${g.externalId}'`))}.`,
     );
   return findings;
 }

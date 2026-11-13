@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext } from '@clew/contracts';
-import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
+import { memberKey, memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
 import type { ProvisionStore, ProvisionTx } from '../../apps/server/src/modules/people/ports';
 import { scimUsecases, usersAdminUsecases } from '../../apps/server/src/modules/people/usecases';
 
@@ -403,6 +403,42 @@ describe('what a group write costs and what it leaves in the audit', () => {
         admin.addGroupCapability(administrator('org-a'), { groupExternalId: 'ad:staff', capability: 'admin.users' }),
       ),
     ).toMatchObject({ derived: staff.length, rules: 2, held: 1 });
+  });
+  test('a write of a group stored before D93 or D96 derives its members by how its key reads: a capability name off the list is taken back, and a key whose shape is written wrong derives nobody', async () => {
+    const { store, scim, a, person } = stack();
+    const member = await person(a);
+    await scim.createGroup(a, { externalId: 'unit:a1', displayName: 'A1', members: [{ value: member }] }, BASE);
+    // Stored before the server began refusing them, each with the person as its member: a capability name the list
+    // does not hold, as one a later release takes off it, a `protected` row, and keys written wrong.
+    const stored = ['capability:admin.gone', 'protected', 'capability: admin.users', 'unit-manager: a1', 'Unit:a1'];
+    for (const externalId of stored) {
+      store.state.groups.set(externalId, {
+        id: externalId,
+        organisationId: 'org-a',
+        parentUnitId: null,
+        externalId,
+        label: 'Stored before D96',
+        createdAt: '2026-11-09T06:00:00.000Z',
+        updatedAt: '2026-11-09T06:00:00.000Z',
+      });
+      store.state.members.add(memberKey(externalId, member));
+    }
+    // The grant still carries the name that left the list; a removal that derives the person rewrites it.
+    const grant = store.state.grants.get(member)!;
+    for (const [externalId, derives] of [
+      ['capability: admin.users', false],
+      ['unit-manager: a1', false],
+      ['Unit:a1', false],
+      ['protected', true],
+      ['capability:admin.gone', true],
+    ] as const) {
+      store.state.grants.set(member, { ...grant, capabilities: ['admin.gone'] });
+      await scim.deleteGroup(a, externalId);
+      expect([externalId, store.state.grants.get(member)]).toEqual([
+        externalId,
+        { ...grant, capabilities: derives ? [] : ['admin.gone'] },
+      ]);
+    }
   });
   test("a list that leaves out a person's groups does not read them: the daily comparison asks for three attributes", async () => {
     const calls: Record<string, number> = {};

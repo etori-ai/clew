@@ -26,10 +26,12 @@ export interface ScimGroupKey {
 /**
  * A key as the SCIM boundary accepts it (D96): one of the three prefixes exactly, in lower case, and directly after it
  * a unit id or a capability name that is not empty and has no space at either end. Clew reads a key this way wherever
- * it reads one, so any other key means nothing: a plain group, `protected` (D93), and a reserved word written wrong,
- * which a group stored before D96 may still carry and which therefore gives nobody anything. Whether a capability name
- * is one of the closed list is asked apart (`isCapability`): the boundary refuses one that is not, the derivation gives
- * none, and the example's check names one its copy of the list does not know.
+ * it reads one, and takes a group for a unit only when its key reads as that unit's, so any other key means nothing: a
+ * plain group, `protected` (D93), and a reserved word written wrong, which a group stored before D96 may still carry
+ * and which therefore gives nobody anything by itself, as a plain group gives nothing until an administrator maps it
+ * to a capability (D85). Whether a capability name is one of the closed list is asked apart (`isCapability`): the
+ * boundary refuses one that is not, the derivation gives none, and the example's check names one its copy of the list
+ * does not know.
  */
 export function readScimGroupKey(key: string | null | undefined): ScimGroupKey | undefined {
   if (!key) return undefined;

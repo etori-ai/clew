@@ -102,8 +102,20 @@ describe('deriveAuthority', () => {
     const rules = [{ groupExternalId: 'S-1-5-21-ad', capability: 'admin.users' }];
     for (const key of ['unit:skola', 'unit-manager:skola', 'capability:admin.users', 'protected', 'S-1-5-21-ad'])
       expect(givesAuthority(key, rules)).toBe(true);
-    // A plain key, one no row of this organisation names, a key the derivation does not read, and no key at all.
-    for (const key of ['ad:audience', 'S-1-5-21-other', 'Unit:skola', 'units:skola', null])
+    // A capability name outside the closed list gives nothing, yet its group's members are derived when it is written,
+    // so a name a later release takes off the list is taken back from them.
+    expect(givesAuthority('capability:admin.nope', [])).toBe(true);
+    // A plain key, one no row of this organisation names, a key the derivation does not read (one whose shape is
+    // written wrong, D96), and no key at all.
+    for (const key of [
+      'ad:audience',
+      'S-1-5-21-other',
+      'Unit:skola',
+      'units:skola',
+      'capability: admin.users',
+      'unit-manager: skola',
+      null,
+    ])
       expect(givesAuthority(key, rules)).toBe(false);
     expect(givesAuthority('S-1-5-21-ad', [])).toBe(false);
     // What the derivation makes of the same keys.

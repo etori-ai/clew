@@ -12,9 +12,15 @@ of its warning about duties. Only a reserved word in another case or with space 
 and a capability outside the list gave nothing. Clew now reads a key one way, as this boundary accepts it
 (`readScimGroupKey` in `packages/contracts/src/scim-group-key.ts`): one of the three prefixes exactly, in lower case,
 and directly after it an id or a name that is not empty and has no space at either end. The boundary, the derivation,
-the organisation tree and the example's check all read it so. The check also names a person whose only unit key is
-written wrong among the active users without a unit. A grant derived from such a row before this change stays until
-the person is next derived, which any write of the person does.
+the organisation tree and the example's check all read it so, and so do the unit an administrator opens on
+Administration › Organisation and the walk that refuses a cycle in the tree. The check also names a person whose only
+unit key is written wrong among the active users without a unit. A group whose key is written wrong is then a plain
+group to Clew: the key gives nobody anything, and an administrator may still map the group to a capability
+([D85](D85-capabilities-are-mapped-from-provisioned-groups-in-clew.md)), so the check names a leaver still in one, or
+in a group whose capability name it does not know, among the leavers still in plain groups. A `capability:` key whose
+name is outside the closed list gives nothing either, but a write of its group still derives the members, so that a
+capability a later release takes off the list is taken back from them. A grant derived from such a row before this
+change stays until the person is next derived, which any write of the person does.
 
 *Why.* One reading was chosen over a check that reports what the derivation made of such a key. A key this decision
 refuses as a mistake should mean nothing wherever it is stored, and the check then says what Clew does. Nothing

@@ -2,13 +2,14 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   SCIM_EMPLOYMENT_SCHEMA,
+  type AuthenticatedContext,
   type Capability as ClewCapability,
   type DirectoryPhone as ClewPhone,
   type Employment as ClewEmployment,
 } from '@clew/contracts';
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { memberKey, memoryProvisionStore } from '../../apps/server/src/modules/people/adapters/memory';
-import { scimUsecases, staffUsecases } from '../../apps/server/src/modules/people/usecases';
+import { scimUsecases, staffUsecases, usersAdminUsecases } from '../../apps/server/src/modules/people/usecases';
 import { scimRoutes } from '../../apps/server/src/routes/scim';
 import { checkProvisioning } from '../../scripts/provisioner/check';
 import { scimClient, ScimClientError, type ScimClient } from '../../scripts/provisioner/client';
@@ -1605,8 +1606,8 @@ describe('the synthetic provisioner', () => {
         '1 unit or unit-manager group has no active members: unit:kansli.',
         '1 deactivated user is still in unit-manager: or capability: groups, and making the user active again gives those duties back at once: former (unit-manager:skola, capability:admin.users).',
         '1 deactivated user is still in plain groups, and a group an administrator maps to a capability gives it back when the user is made active again: gone.',
-        "1 group carries a key that is written wrong and gives nobody anything: 'Capability:admin.users'.",
-        "1 group names a capability the check does not know, so it gives nobody anything unless the installation is newer than the check's copy of packages/contracts/src/scim-group-key.ts: 'capability:admin.everything'.",
+        "1 group carries a key that is written wrong, so Clew reads it as a plain group, which gives nobody anything unless an administrator maps it to a capability: 'Capability:admin.users'.",
+        "1 group names a capability the check does not know, so it gives nobody anything unless the installation is newer than the check's copy of packages/contracts/src/scim-group-key.ts, or an administrator maps it to a capability: 'capability:admin.everything'.",
       ]);
       // With only one of the two, the counts end as they did.
       store.state.groups.delete('legacy');
@@ -1675,7 +1676,7 @@ describe('the synthetic provisioner', () => {
           '3 groups: 1 unit, 0 unit-manager, 0 capability, 0 plain (0 without an externalId) and 2 with a key written wrong.',
         unplaced = '1 active user has no unit: or unit-manager: group and can do nothing in Clew: anna.',
         harmless =
-          "2 groups carry a key that is written wrong and gives nobody anything: 'unit-manager: skola', 'unit:skola '.";
+          "2 groups carry a key that is written wrong, so Clew reads them as plain groups, which give nobody anything unless an administrator maps them to a capability: 'unit-manager: skola', 'unit:skola '.";
       // Nobody leads the unit either, so the people on it report to nobody.
       expect((await check()).map(f => f.text)).toEqual([
         counted,
@@ -1684,12 +1685,14 @@ describe('the synthetic provisioner', () => {
         harmless,
       ]);
       // Chef leaves and returns: what the key written wrong never gave is no duty a leaver holds, and the return gives
-      // back the unit and nothing more.
+      // back the unit and nothing more. The group is a plain group to Clew, so Chef is named among the leavers still in
+      // one, which an administrator may map to a capability.
       await client.request('DELETE', '/Users/' + chef);
       expect((await check()).map(f => f.text)).toEqual([
         counted,
         unplaced,
         '1 unit or unit-manager group has no active members: unit:skola.',
+        '1 deactivated user is still in plain groups, and a group an administrator maps to a capability gives it back when the user is made active again: chef.',
         harmless,
       ]);
       await client.request('PATCH', '/Users/' + chef, {
@@ -1701,7 +1704,95 @@ describe('the synthetic provisioner', () => {
         [{ unitId: 'skola', role: 'employee' }],
       ]);
     });
-    test("the example declares the shapes Clew reads, and takes nothing of Clew's but the group keys and the capability names", () => {
+    test('a group whose key is written wrong, or names a capability the check does not know, gives what an administrator maps to it, and the check names a leaver still in one (D85, D96)', async () => {
+      const { store, client, app, grantOf } = stack();
+      const person = async (userName: string) =>
+        (
+          await client.request('POST', '/Users', {
+            externalId: 'e-' + userName,
+            userName,
+            displayName: userName,
+            emails: [{ value: userName + '@clew.test', type: 'work' }],
+          })
+        ).body.id as string;
+      const chef = await person('chef'),
+        kim = await person('kim');
+      await client.request('POST', '/Groups', {
+        externalId: 'unit:skola',
+        displayName: 'Skolan',
+        members: [{ value: chef }, { value: kim }],
+      });
+      // Stored before the server began refusing them (D96), each with a member: a managers' key with a space after the
+      // prefix, which Clew reads as no key, and a capability name the closed list does not hold.
+      for (const [id, externalId, member] of [
+        ['spaced', 'unit-manager: skola', chef],
+        ['unknown', 'capability:admin.everything', kim],
+      ] as const) {
+        store.state.groups.set(id, {
+          id,
+          organisationId: 'poc',
+          parentUnitId: null,
+          externalId,
+          label: 'Stored before D96',
+          createdAt: '2026-11-09T06:00:00.000Z',
+          updatedAt: '2026-11-09T06:00:00.000Z',
+        });
+        store.state.members.add(memberKey(id, member));
+      }
+      // The group picker offers each, and an administrator maps each to a capability, as any plain group (D85).
+      const admin = usersAdminUsecases({
+          store,
+          clock: () => new Date('2026-11-09T06:00:00.000Z'),
+          token: () => 'token',
+          digest: token => 'digest:' + token,
+        }),
+        administrator = {
+          id: 'admin-poc',
+          name: 'Admin',
+          organisationId: 'poc',
+          unitId: 'u',
+          unitLabel: 'U',
+          role: 'employee',
+          capabilities: ['admin.users'],
+          principal: { id: 'person:admin-poc', kind: 'person' },
+          authorizationVersion: 'v1',
+          sessionBinding: 'test',
+          expiresAt: '2099-01-01T00:00:00Z',
+          authorize: async () => ({ version: 'v1' }),
+        } as AuthenticatedContext;
+      expect((await admin.searchGroups(administrator, 'stored')).groups.map(g => g.id)).toEqual([
+        'capability:admin.everything',
+        'unit-manager: skola',
+      ]);
+      await admin.addGroupCapability(administrator, {
+        groupExternalId: 'unit-manager: skola',
+        capability: 'admin.connectors',
+      });
+      await admin.addGroupCapability(administrator, {
+        groupExternalId: 'capability:admin.everything',
+        capability: 'admin.appearance',
+      });
+      const mapped = () => [grantOf('chef')?.capabilities, grantOf('kim')?.capabilities];
+      expect(mapped()).toEqual([['admin.connectors'], ['admin.appearance']]);
+      // Both leave, under a provisioner that only deactivates: the check names them as it names a leaver still in a
+      // plain group, since it cannot see what an administrator has mapped.
+      for (const id of [chef, kim]) await client.request('DELETE', '/Users/' + id);
+      const findings = await checkProvisioning('http://clew.local', client, (input, init) => app.request(input, init));
+      expect(findings.filter(f => f.level === 'warn').map(f => f.text)).toEqual([
+        '1 unit or unit-manager group has no active members: unit:skola.',
+        '2 deactivated users are still in plain groups, and a group an administrator maps to a capability gives it back when they are made active again: chef, kim.',
+        "1 group carries a key that is written wrong, so Clew reads it as a plain group, which gives nobody anything unless an administrator maps it to a capability: 'unit-manager: skola'.",
+        "1 group names a capability the check does not know, so it gives nobody anything unless the installation is newer than the check's copy of packages/contracts/src/scim-group-key.ts, or an administrator maps it to a capability: 'capability:admin.everything'.",
+      ]);
+      // Made active again, each has the mapped capability back at once, which is what the warning is about.
+      for (const id of [chef, kim])
+        await client.request('PATCH', '/Users/' + id, {
+          schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+          Operations: [{ op: 'replace', path: 'active', value: true }],
+        });
+      expect(mapped()).toEqual([['admin.connectors'], ['admin.appearance']]);
+    });
+    test("the example declares the shapes Clew reads, and takes nothing of Clew's but the group keys, the one way Clew reads a key, and the capability names", () => {
       // Held by the type checker: a shape that parts from Clew's contracts fails `bun run typecheck`.
       type Same<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
       const same: [
@@ -2094,7 +2185,7 @@ describe('the synthetic provisioner', () => {
       '1 unit has a unit-manager: group and no unit: group, so the unit is shown by its id instead of a name: unit-nameless.',
       '1 unit or unit-manager group has no members: unit:unit-empty.',
       '1 unit has people and no manager, on the unit or on any unit above it, so its people report to nobody: unit:unit-adrift-below.',
-      "1 group carries a key that is written wrong and gives nobody anything: ' Unit :old'.",
+      "1 group carries a key that is written wrong, so Clew reads it as a plain group, which gives nobody anything unless an administrator maps it to a capability: ' Unit :old'.",
     ]);
     // More roots than the source has: a unit written without its parent became one (D99).
     expect(

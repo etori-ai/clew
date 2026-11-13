@@ -143,9 +143,12 @@ export function deriveAuthority(
 /**
  * Whether a group with this key can give its members anything: a key with meaning (`unit:`, `unit-manager:`,
  * `capability:`, read as `deriveAuthority` reads it), or one a D85 row of the organisation names. A write of any other
- * group moves nobody's grant, whatever it does to the group, so nobody is derived for it: a key written wrong is one,
- * which the SCIM boundary refuses (D96) and a group stored before then may still carry. `protected` is matched only
- * because `deriveAuthority` reads it, on a row stored before D93.
+ * group moves nobody's grant, whatever it does to the group, so nobody is derived for it. A key whose shape is written
+ * wrong is one: a reserved word in another case or with space in or before it, or a prefix without an id or a name or
+ * with space around it, which the SCIM boundary refuses (D96) and a group stored before then may still carry. A
+ * `capability:` key read as one counts whether or not its name is in the closed list: one outside it gives nothing,
+ * but its members are derived when it is written, so a name a later release takes off the list is taken back from
+ * them. `protected` is matched only because `deriveAuthority` reads it, on a row stored before D93.
  */
 export function givesAuthority(key: string | null, rules: readonly GroupCapabilityRule[]): boolean {
   return (
