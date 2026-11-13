@@ -1345,7 +1345,7 @@
       "number": 116,
       "path": "docs/decisions/D116-start-and-the-row-under-it-are-clews.md",
       "title": "D116 · Start and the row under it are Clew's; the intranet keeps the other places",
-      "status": "provisional (Oliver Borgström, 2026-11-13; built on the branch `start-is-clews`, tested by nothing outside the repository)",
+      "status": "provisional (Oliver Borgström, 2026-11-13; built on the branch `start-is-clews`, tested by nothing outside the repository; amended the same day: Start has no row of pages, the rail holds Clew's places once, Dialogstöd joins the rail as an exception to the freeze, D101, at Oliver Borgström's choice)",
       "date": "2026-11-13",
       "area": "ui, integrations"
     },

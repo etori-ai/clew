@@ -2,7 +2,7 @@ import type { AuthenticatedContext, SiteHeaderView } from '@clew/contracts';
 import { actorOf } from '@clew/connectors';
 import { registry } from './registry';
 import { clock } from '../composition/ambient';
-import { clewsStart, withClewsStart } from './header-start';
+import { CLEWS_START, withClewsStart } from './header-start';
 
 /**
  * The shared header for a signed-in person (D88): the answer of the connector an administrator chose to give it
@@ -17,7 +17,7 @@ import { clewsStart, withClewsStart } from './header-start';
  * the person and their authorization version, so a changed grant is a new read; it lives in this process only.
  */
 export const DEFAULT_HEADER: SiteHeaderView = {
-  menu: { version: 1, site: { name: 'Startsidan', href: '/' }, items: [{ id: 'start', label: 'Start', href: '/' }] },
+  menu: { version: 1, site: { name: 'Startsidan', href: '/' }, items: [CLEWS_START] },
   logo: null,
   source: null,
 };
@@ -35,7 +35,7 @@ async function fetchSiteHeader(persona: AuthenticatedContext): Promise<SiteHeade
     menu: {
       version: 1,
       site: found.output.site,
-      items: withClewsStart(found.output.items, clewsStart(persona.role)),
+      items: withClewsStart(found.output.items),
     },
     logo: found.output.logo ?? null,
     source: { id: found.connector.id, label: found.connector.source },

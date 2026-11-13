@@ -147,7 +147,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D111 · Where something opens is decided by what it is, never by the page it was clicked on](D111-where-something-opens-is-decided-by-what-it-is.md) | 2026-11-11 | provisional | [D73](D73-the-review-is-a-page-in-the-shell-with-an-address.md), [D99](README.md), [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md), [D116](README.md) |
 | [D112 · The interface is rebuilt on Astryx's templates: a queue, one detail shape, and one panel with the assistant in it](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) | 2026-11-11 | provisional | [D116](README.md) |
 | [D116 · A panel is a peek at one thing; a list is a page, and every view has an address](D116-a-panel-is-a-peek-at-one-thing-a-list-is-a-page-and-every-view-has-an-address.md) | 2026-11-12 | provisional | [D8](D08-every-action-works-without-the-model.md), [D71](D71-three-type-levels-and-an-area-mark-whose-colour-is-the-system.md) |
-| [D116 · Start and the row under it are Clew's; the intranet keeps the other places](D116-start-and-the-row-under-it-are-clews.md) | 2026-11-13 | provisional |  |
+| [D116 · Start and the row under it are Clew's; the intranet keeps the other places](D116-start-and-the-row-under-it-are-clews.md) | 2026-11-13 | provisional | [D101](README.md) |
 
 ## Proposed, not decided
 

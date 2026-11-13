@@ -210,14 +210,17 @@ export function UnitPage({ user, admin }: { user: SessionUser; admin: boolean })
   const menu = useQuery(areasQuery).data?.menu;
   const origin = originOf(from, menu);
   const tool = toolOf(from);
-  // The rail marks the place the unit was opened from; nothing in it is the unit's own.
+  // The rail marks the place the unit was opened from; otherwise a manager's unit is Dialogstöd's (D117), whose address
+  // every unit page shares, and an employee's marks nothing.
   const current: RailCurrent = from?.startsWith('/staff')
     ? { surface: 'staff' }
     : tool
       ? { surface: 'verktyg', view: tool }
       : from === '/' || from?.startsWith('/?')
         ? { surface: 'start' }
-        : { surface: 'verktyg', view: null };
+        : user.role === 'manager'
+          ? { surface: 'units' }
+          : { surface: 'verktyg', view: null };
   const nav = useRail({ current, admin, manager: user.role === 'manager' });
   usePageTitle(detail ? detail.entity.name : missing ? 'Enheten finns inte' : null);
   // A decision made on a work item beside the page changes what Behöver dig holds: the unit is read again, its sources not.
