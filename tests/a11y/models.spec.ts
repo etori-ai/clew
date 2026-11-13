@@ -76,6 +76,8 @@ test.describe('model administration', () => {
       await expect(tables.first().getByText('Chefer', { exact: true })).toBeVisible();
       await expect(page.getByText(/Svarar inte · http:\/\/pilot\.test\/v1/)).toBeVisible();
       await expect(tables.nth(1).getByText('Avstängd', { exact: true })).toBeVisible();
+      // The dot beside the word is decoration, so the state is heard once.
+      await expect(tables.nth(1).getByRole('img', { name: 'Avstängd' })).toHaveCount(0);
       const { unmarked } = await hiddenFocusStops(page);
       expect(unmarked).toEqual([]);
     });

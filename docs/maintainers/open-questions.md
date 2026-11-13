@@ -85,3 +85,18 @@ Att göra's reading pane opens past the item's title on a wide screen: the pane 
 to its latest message and has no setting to open at the top, so the title and "Jag har läst" sit above the fold until
 the person scrolls up (app critique, 2026-11-13). Whether Astryx gains such a setting, or the pane stops being a
 `ChatLayout`, is undecided; nothing custom is built against it.
+
+For the product owner: should a theme file be held to Clew's error and warning colours? A saved theme
+([D98](../decisions/D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md)) may set
+`background-surface`, and `THEME_CONTRAST_PAIRS` in `packages/contracts/src/theme-file.ts` holds the success text
+colour against it but neither the error nor the warning one, which stay Clew's own. A field's error border, its
+message and the focus inset of a field with a status (`packages/ui/src/theme.ts`) are drawn in those colours on that
+surface, so a mid-tone surface that passes for text could take them under 3:1. Adding the two pairs is a contract
+change that may refuse a file accepted today (2026-11-13,
+[Organisation, Användare and the person card](../reviews/2026-11-13-organisation-users-and-the-person-card.md)).
+
+For the product owner: a conversation in the rail tells "Svarar" from "Väntar på dig" by its dot's colour alone
+(`apps/web/src/components/nav.tsx`), with no word beside it, which WCAG 1.4.1 does not allow. A work item's row got
+its state in words by [D124](../decisions/D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md)
+item 9; the rail's row has no supporting line to hold one, so the answer is a design choice: a visible word or a
+shape per state (2026-11-13, the same review).

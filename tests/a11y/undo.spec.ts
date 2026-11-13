@@ -74,7 +74,7 @@ test.describe('a decision the card is left waiting on keeps its way back where t
       .click();
     const waiting = page.getByRole('list', { name: 'Väntar på andra' }).locator('#work-samtal');
     await expect(waiting).toContainText('kalenderändringar är bekräftade');
-    await expect(waiting.getByRole('img', { name: 'Väntar på andra' })).toBeVisible();
+    await expect(waiting).toContainText('Väntar på andra\u00a0· ');
     await expectNoAxeViolations(page);
     await waiting.getByRole('link').click();
     await pane

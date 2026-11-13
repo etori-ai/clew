@@ -177,7 +177,7 @@ export function AdminModelPage({ user }: { user: SessionUser }) {
         meta={
           /* The title's line holds the title and the switch alone (D74); "Standard" is a state of the model, so it stands in the line under it. */
           <HStack gap={1} vAlign="center" wrap="wrap">
-            <StatusDot variant={s.tone} label={s.label} />
+            <StatusDot variant={s.tone} label={s.label} aria-hidden />
             <Text type="supporting">
               {s.label} ·{' '}
               <Text type="code" color="secondary">

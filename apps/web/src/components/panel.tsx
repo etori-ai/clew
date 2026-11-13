@@ -362,13 +362,13 @@ export interface PanelFrame {
 /** The one body region, where the open thing is drawn. */
 const BODY_ID = 'panel-body';
 /** The rail and the panel as the shell draws them. */
-export const RAIL = 256,
+export const RAIL = 260,
   PANEL = 440;
 /** The least width a page's own column keeps beside the panel: Hem's rows with their day, their line and their one button. */
 export const PAGE_MIN = 640;
 /**
  * The one window width from which the panel stands beside the page, on every page that holds it (the product owner,
- * 2026-11-11, D111 amended): the rail, Hem's least column and the panel, 256 + 640 + 440 = 1336 px. Narrower, or short
+ * 2026-11-11, D111 amended): the rail, Hem's least column and the panel, 260 + 640 + 440 = 1340 px. Narrower, or short
  * (1.4.10), or on a phone, it is the drawer over the page. A page whose own layout needs more than 640 px does not move
  * this line: it gives way, drawing the narrow layout it already has while the panel is open beside it (its own
  * breakpoint shifted by the panel, `panelBesideQuery`).

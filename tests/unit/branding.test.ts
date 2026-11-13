@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { themeFromAccent } from '@clew/contracts';
+import { contrastRatio, themeFromAccent } from '@clew/contracts';
 import { NEUTRAL_BRANDING, readBranding, type Branding } from '../../packages/ui/src/branding';
-import { createClewTheme, createHeaderBandTheme } from '../../packages/ui/src/theme';
+import {
+  clewComponentCSS,
+  createClewTheme,
+  createHeaderBandTheme,
+  resolveClewTokens,
+} from '../../packages/ui/src/theme';
 
 const custom: Branding = { revision: 3, theme: themeFromAccent('#5b1f78', '#d7dbf2', 'Exempelkommunen'), logo: null };
 
@@ -78,6 +83,62 @@ describe('the appearance the browser draws (D98)', () => {
     expect(theme.tokens['--color-warning']).toBe(neutral.tokens['--color-warning']);
     expect(neutral.components?.['chat-layout']).toEqual({ base: { scrollPaddingBottom: '240px' } });
     expect(theme.components?.['chat-layout']).toEqual(neutral.components?.['chat-layout']);
+  });
+
+  // What this holds is the theme, not the drawing: the keys, the rules Astryx generates from them and the colour's
+  // contrast. That a browser paints the inset on a focused field is `tests/a11y` (keyboard, action-dialog, admin-appearance).
+  test('the theme holds a focus inset for every field with a status, as its keys and as the :focus-within rules Astryx generates from them, in a colour that stands out on the field (WCAG 2.4.7)', () => {
+    const fields = [
+      'text-input',
+      'text-area',
+      'number-input',
+      'date-input',
+      'time-input',
+      'date-time-input-date-segment',
+      'date-time-input-time-segment',
+      'date-range-input',
+      'typeahead',
+      'tokenizer',
+      'file-input',
+    ];
+    const inset = (type: string) => ({
+      ':focus-within': { boxShadow: `inset 0 0 0 2px var(--color-text-${type})` },
+    });
+    for (const branding of [NEUTRAL_BRANDING, custom]) {
+      const theme = createClewTheme(branding);
+      // The rules as the browser gets them, one space between their parts.
+      const css = clewComponentCSS(branding).replace(/\s+/g, ' ');
+      const rule = (selector: string, type: string) =>
+        `${selector}[data-status="${type}"]:focus-within { box-shadow: inset 0 0 0 2px var(--color-text-${type}); }`;
+      for (const type of ['error', 'warning', 'success']) {
+        for (const field of fields) {
+          expect(theme.components?.[field]?.[`status:${type}`]).toEqual(inset(type));
+          expect(css).toContain(` ${rule(`.astryx-${field}`, type)}`);
+        }
+        // A selector draws its status only as a field: the ghost and secondary variants take no inset.
+        for (const field of ['selector', 'multi-selector']) {
+          expect(theme.components?.[field]?.[`variant:input+status:${type}`]).toEqual(inset(type));
+          expect(theme.components?.[field]?.[`status:${type}`]).toBeUndefined();
+          expect(css).toContain(` ${rule(`.astryx-${field}[data-variant="input"]`, type)}`);
+          expect(css).not.toContain(`.astryx-${field}[data-status="${type}"]:focus-within`);
+        }
+      }
+      // A FileInput's focus is a border colour alone: the transparent outline is what forced colours paint.
+      expect(theme.components?.['file-input']?.base).toEqual({
+        ':focus-within': { outline: '2px solid transparent', outlineOffset: '-2px' },
+      });
+      expect(css).toContain(
+        ' .astryx-file-input:focus-within { outline: 2px solid transparent; outline-offset: -2px; }',
+      );
+    }
+    // The inset is the indicator, so it holds 3:1 against the field's surface in both appearances (1.4.11).
+    for (const mode of ['light', 'dark'] as const) {
+      const tokens = resolveClewTokens(NEUTRAL_BRANDING, mode);
+      for (const type of ['error', 'warning', 'success'])
+        expect(
+          contrastRatio(tokens[`--color-text-${type}`]!, tokens['--color-background-surface']!),
+        ).toBeGreaterThanOrEqual(3);
+    }
   });
 
   test('the same colours are the same theme, built once, whatever the revision or the name', () => {

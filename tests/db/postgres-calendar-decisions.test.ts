@@ -169,6 +169,8 @@ test('calendar approval creates its card atomically; a source commit before a fa
   ]);
   expect(a.id).toBe(b.id);
   expect(a.execution?.state).toBe('pending');
+  // What the item waits on, without the words every reader puts before it ("Väntar på …").
+  expect(a.waitingOn).toBe('källans besked');
   expect(w.provider.events).toHaveLength(0);
   w.failNextCommit();
   await w.uc.progress(a.execution!.id);

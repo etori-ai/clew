@@ -325,7 +325,9 @@ test.describe('the person as a page', () => {
     const title = rows.getByRole('link', { name: ITEM, exact: true });
     await expect(title).toHaveAttribute('href', '/people/johan?section=needs-you&from=%2Fstaff&card=samtal-svar');
     // The row's state dot and its why, as the queue draws it.
-    await expect(rows.getByText('Väntar på svar från 1 medarbetare')).toBeVisible();
+    await expect(rows.getByText('Väntar på svar från 1 medarbetare', { exact: true })).toBeVisible();
+    // An item set aside says its state in words, then when it comes back.
+    await expect(rows.locator('#work-brandskydd')).toContainText('Inte nu\u00a0· Tillbaka i morgon 06:00');
     await title.focus();
     await page.keyboard.press('Enter');
     // The person's page stays: its address with the item added, its title, its heading and its way back (D111 rule 3).
@@ -356,7 +358,7 @@ test.describe('the person as a page', () => {
     api,
   }) => {
     await new People().route(page, api);
-    // The panel stands beside every page from 1336 px; the page under it keeps its header as it was.
+    // The panel stands beside every page from 1340 px; the page under it keeps its header as it was.
     await page.setViewportSize({ width: 1400, height: 900 });
     const here = '/people/johan?from=%2Fstaff';
     await open(page, here);

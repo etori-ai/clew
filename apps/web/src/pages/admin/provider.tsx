@@ -137,7 +137,7 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
         end={<Button variant="primary" label="Lägg till modell" onClick={() => setAdding(true)} />}
         meta={
           <HStack gap={1} vAlign="center" wrap="wrap">
-            <StatusDot variant={s.tone} label={s.label} />
+            <StatusDot variant={s.tone} label={s.label} aria-hidden />
             <Text type="supporting">
               {s.label} · {p.baseUrl}
             </Text>
@@ -247,7 +247,7 @@ export function AdminProviderPage({ user }: { user: SessionUser }) {
                           {m.model}
                         </Text>
                         <HStack gap={1} vAlign="center">
-                          <StatusDot variant={ms.tone} label={ms.label} />
+                          <StatusDot variant={ms.tone} label={ms.label} aria-hidden />
                           <Text type="supporting">
                             {ms.label} · {audienceLabel(m.audience)}
                           </Text>

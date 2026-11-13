@@ -119,7 +119,7 @@ const group = (heading: string, unitLabel: string, members: StaffPerson[], note?
         {members.map(p => (
           <ListItem
             key={p.id}
-            startContent={<Avatar name={p.name} size="sm" tooltip={false} />}
+            startContent={<Avatar name={p.name} size="sm" tooltip={false} aria-hidden />}
             label={<PersonNameLink person={p} />}
             description={
               <VStack gap={0} hAlign="start">
@@ -389,7 +389,7 @@ function UnitPeople({
       ) : (
         <>
           <Text type="supporting" role="status">
-            {`${people(placed.length - off)} på enheten${off ? `, ${off} ${off === 1 ? 'avstängd' : 'avstängda'}` : ''}`}
+            {`${people(placed.length - off)} på enheten${off ? ` och ${off} ${off === 1 ? 'avstängd' : 'avstängda'}` : ''}`}
           </Text>
           {group(leaders.length === 1 ? 'Chef' : 'Chefer', title, leaders)}
           {group('Medarbetare', title, others)}

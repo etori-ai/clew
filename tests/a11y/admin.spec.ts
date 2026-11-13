@@ -281,6 +281,8 @@ test.describe('administration', () => {
       const table = page.getByRole('table');
       await expect(table.getByRole('link', { name: 'Ekonomisystemet' })).toBeVisible();
       await expect(table.getByText('Svarar inte')).toBeVisible();
+      // The dot beside the word is decoration, so the state is heard once.
+      await expect(table.getByRole('img', { name: 'Svarar inte' })).toHaveCount(0);
       await expect(table.getByText('Utkast')).toBeVisible();
       await expect(table.getByText('Chefer · 1 enhet')).toBeVisible();
       await expect(page.getByRole('switch', { name: 'Hello på' })).toBeChecked();

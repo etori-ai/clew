@@ -108,7 +108,8 @@ the decision in `LayoutContent`, Föregående, Nästa and the footer's sentence 
 the amendment or were not in it. The ✕ is named "Stäng", Astryx's own name for it (`@astryx.dialog.close`, shared with
 every Dialog), not "Stäng, Esc": `DrawerHeader` takes no label for it, and overriding the catalogue key would rename every
 dialog's close. The drawer opens once the threads have been read, not before with a loading state of its own: where the
-card under it is itself a drawer (below 1336 px) or the phone's sheet, the overlay shown last stacks on top, so the review
+card under it is itself a drawer (below 1340 px; 1336 until 2026-11-13) or the phone's sheet, the overlay shown last
+stacks on top, so the review
 opens in the same commit as the card and after it; until then Hem draws its own loading state under the address. Closing
 lets the drawer slide away first and only then leads to `/?card=<threadId>` (on the dialog's `close` event): while the
 drawer is modal the page is inert and the card could not take the focus. The card stood under the drawer all along, so

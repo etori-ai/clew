@@ -67,7 +67,7 @@ export function AdminModelsPage({ user }: { user: SessionUser }) {
     const s = modelStatusOf(m);
     return (
       <HStack gap={1} vAlign="center">
-        <StatusDot variant={s.tone} label={s.label} />
+        <StatusDot variant={s.tone} label={s.label} aria-hidden />
         <Text>{s.label}</Text>
       </HStack>
     );
@@ -175,7 +175,7 @@ export function AdminModelsPage({ user }: { user: SessionUser }) {
                     {p.title}
                   </Link>
                   <HStack gap={1} vAlign="center">
-                    <StatusDot variant={s.tone} label={s.label} />
+                    <StatusDot variant={s.tone} label={s.label} aria-hidden />
                     <Text type="supporting">
                       {s.label} · {p.baseUrl}
                     </Text>

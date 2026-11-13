@@ -92,9 +92,10 @@ export function AdminConnectorsPage({ user }: { user: SessionUser }) {
     await client.invalidateQueries({ queryKey: keys.admin.all });
   };
   const shown = (connectors ?? []).filter(c => matches(c, filter)).sort(byOrdinal);
+  // The dot stands beside its own word in both layouts, so it is decoration and the state is heard once.
   const status = (c: ConnectorSummary) => {
     const s = statusOf(c);
-    return <StatusDot variant={s.tone} label={s.label} />;
+    return <StatusDot variant={s.tone} label={s.label} aria-hidden />;
   };
   const statusText = (c: ConnectorSummary) => {
     const s = statusOf(c);

@@ -757,7 +757,7 @@ export class MockApi {
         actions: [],
         proposals: [],
         receipt: null,
-        waitingOn: 'Väntar på kalenderns besked',
+        waitingOn: 'kalenderns besked',
         execution: {
           id: b.decisionId,
           decisionId: b.decisionId,
@@ -1619,6 +1619,28 @@ export async function expectNoAxeViolations(page: Page, { without = [] }: { with
     ),
   ).toEqual([]);
 }
+
+/**
+ * The supporting line of each work item's row in `rows` (`#work-<id>`): its words, and whether any of it is cut.
+ * `reflowProblems` sees what is cut sideways, not what a line clamp cuts downwards, so this looks at the line itself:
+ * the element that holds the state's separator, and every box around it inside the row that clamps or clips. A row
+ * without such a line counts as cut.
+ */
+export const workRowLines = (rows: Locator) =>
+  rows.evaluateAll(list =>
+    list.map(row => {
+      const line = [...row.querySelectorAll<HTMLElement>('*')].find(el =>
+        [...el.childNodes].some(n => n.nodeType === Node.TEXT_NODE && /\u00a0· /.test(n.textContent ?? '')),
+      );
+      let cut = !line;
+      for (let el = line ?? null; el && row.contains(el) && !cut; el = el.parentElement) {
+        const s = getComputedStyle(el);
+        const clips = s.webkitLineClamp !== 'none' || s.overflowX !== 'visible' || s.overflowY !== 'visible';
+        cut = clips && (el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1);
+      }
+      return { text: line?.textContent ?? '', cut };
+    }),
+  );
 
 /**
  * 1.4.10: nothing may need sideways scrolling, and no text may be clipped to fit. A drawer still sliding in is not a

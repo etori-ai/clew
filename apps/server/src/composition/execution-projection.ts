@@ -178,7 +178,7 @@ async function project(tx: Transaction, e: Execution, stage: Stage, durable: Dur
     .set({
       execution,
       updatedAt: new Date(e.updatedAt),
-      ...(stage === 'approval' ? { waitingOn: 'Väntar på källans besked' } : {}),
+      ...(stage === 'approval' ? { waitingOn: 'källans besked' } : {}),
       ...(!e.compensates && projectedReceipt && e.state !== 'running' ? { receipt: projectedReceipt } : {}),
       ...(!e.compensates && confirmed
         ? { state: 'handled' as const, handledAt: new Date(e.updatedAt), waitingOn: null }
