@@ -14,7 +14,8 @@ comparison this rests on is
 1. **Astryx only still holds.** The prototype is Tailwind, its own primitives and its own shell CSS; none of that comes
    into Clew. Where Astryx measures or draws differently, Astryx wins and the difference is recorded below.
 2. **Type.** Headings and buttons in Raleway at 800, body text in the system's `Arial, Helvetica, sans-serif`, on
-   Astryx's scale at base 14; a page title one step larger (29 px). Raleway is built into the bundle
+   Astryx's scale at base 14; a page title one step larger (29 px), and 24 px below `md`, where Raleway's width
+   would otherwise push a title's controls (the calendar's Förslag and Ny bokning) onto a row of their own. Raleway is built into the bundle
    (`@fontsource-variable/raleway`, OFL-1.1), in the web app and in the embedded header, so no font is fetched from
    another host: Astryx Neutral's `fonts.css`, which asked Google Fonts for Figtree on every page, is no longer imported.
 3. **Form.** The container radius is 16 px with 8 and 6 inside it, and a card rests on the prototype's soft shadow as
