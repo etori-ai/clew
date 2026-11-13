@@ -1,6 +1,26 @@
 # D85 · Capabilities are mapped from provisioned groups in Clew; units and manager roles keep D68's keys
 
-**Status:** accepted, built 2026-11-09 (the mapping table, the closed list `CAPABILITIES` with `admin.connectors` and `admin.users`, the derivation, the editor on Administration › Användare); amended 2026-11-11 after [the full SCIM review](../reviews/2026-11-11-scim-full-review.md): a row belongs to the organisation whose administrator wrote it (`organisation_id`, migration 0051) and applies to that organisation's groups alone, so a row left by a group that is gone is not picked up by another organisation's group of the same id · **Date:** 2026-11-09 · **Area:** identity
+**Status:** accepted, built 2026-11-09 (the mapping table, the closed list `CAPABILITIES` with `admin.connectors` and `admin.users`, the derivation, the editor on Administration › Användare); amended 2026-11-11 after [the full SCIM review](../reviews/2026-11-11-scim-full-review.md): a row belongs to the organisation whose administrator wrote it (`organisation_id`, migration 0051) and applies to that organisation's groups alone, so a row left by a group that is gone is not picked up by another organisation's group of the same id; amended 2026-11-12 in the fixes of [the review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md) (K2, K4, L12): the group picker searches the organisation's groups on the server, and a change is decided on the group that holds the key once the change holds that group's row and the organisation's mappings · **Date:** 2026-11-09 · **Area:** identity
+
+**Amended 2026-11-12.** In the fixes of the
+[review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md),
+which the product owner asked for on 2026-11-12 (K2, K4, L12). The items below stay as written; where they differ from
+this paragraph, this paragraph holds.
+
+- **Item 3, the editor's group picker (K2, L12).** The picker searches the organisation's groups on the server,
+  `POST /api/admin/users/groups/search`, and answers the first ten by name. A word matches a group's name or its
+  `externalId` as a word of the people list matches
+  ([D100](D100-the-people-list-is-read-a-page-at-a-time-and-narrowed-on-the-server.md) item 2, as amended): in the
+  composed form (NFC) and without regard to case under ICU's root collation, so a word pasted decomposed is the same
+  letters as one typed composed. Each mapping row is named by its own group, also a group beyond those the page
+  offers.
+- **Item 3, the group a change acts on (K4).** A change holds the group's row, as a SCIM write of the group does, and
+  then the organisation's capability rows, and is decided on the organisation's group that holds the key once both
+  are held. Adding a row for a group that was given another key or removed meanwhile is refused with 400 "Gruppen
+  finns inte bland de provisionerade grupperna.", and nothing is written. A row is removed whatever holds its key
+  now, another organisation's group included, as a row whose group is gone. The audit row carries `groupLabel`, the
+  name the group has at that moment, or `null` when no group of the organisation holds the key, as when a removal
+  raced a change of the group's key; such a removal derives nobody.
 
 **Decision.** The SCIM server of [D68](D68-people-are-pushed-into-clew-through-standard-scim.md) accepts every group a
 client pushes, and Clew, not the provisioner, decides which of those groups carry a capability. D68's keys for units,
