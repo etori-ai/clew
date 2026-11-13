@@ -297,8 +297,9 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
       for (const p of personIds) state.members.add(memberKey(groupId, p));
     },
     async searchUsers(organisationId, search, p) {
-      // Unicode's own lower case, as PostgreSQL folds the search under ICU's root locale (`caseless`).
-      const folded = (value: string | null | undefined) => (value ?? '').toLowerCase();
+      // In the composed form and Unicode's own lower case, as PostgreSQL folds the search under ICU's root locale
+      // (`folded`), so a word or a value written decomposed is the same letters (L12).
+      const folded = (value: string | null | undefined) => (value ?? '').normalize('NFC').toLowerCase();
       const matching = [...state.users.values()]
         .filter(u => {
           if (u.organisationId !== organisationId) return false;
@@ -394,7 +395,8 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
       );
     },
     async searchGroups(organisationId, words, limit) {
-      const folded = (value: string) => value.toLocaleLowerCase('sv');
+      // As the people's search folds a word and a value: composed, and in lower case.
+      const folded = (value: string) => value.normalize('NFC').toLocaleLowerCase('sv');
       return [...state.groups.values()]
         .filter(
           (g): g is GroupRecord & { externalId: string } =>

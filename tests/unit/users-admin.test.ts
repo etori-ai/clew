@@ -6,6 +6,7 @@ import {
   scimUsecases,
   usersAdminUsecases,
 } from '../../apps/server/src/modules/people/usecases';
+import type { ProvisionStore } from '../../apps/server/src/modules/people/ports';
 import { refusingNul } from '../refusing-nul';
 
 /**
@@ -14,6 +15,29 @@ import { refusingNul } from '../refusing-nul';
  * NUL as PostgreSQL does, so none of them hands one on.
  */
 const T = '2026-11-09T06:00:00.000Z';
+/**
+ * The store with `meanwhile` run whenever a transaction takes a group's row lock, before the row is answered: what a
+ * SCIM write of the group committed while a mapping change waited for that row (K4).
+ */
+function lockedAfter(store: ProvisionStore, meanwhile: () => void): ProvisionStore {
+  return {
+    transaction: fn =>
+      store.transaction(tx =>
+        fn(
+          new Proxy(tx, {
+            get(target, key) {
+              const member: unknown = Reflect.get(target, key);
+              if (typeof member !== 'function') return member;
+              return (...args: unknown[]) => {
+                if (key === 'readGroup' && args[2] === true) meanwhile();
+                return (member as (...values: unknown[]) => unknown).apply(target, args);
+              };
+            },
+          }),
+        ),
+      ),
+  };
+}
 function stack() {
   const store = memoryProvisionStore(),
     s = store.state;
@@ -110,6 +134,8 @@ function stack() {
   return {
     store,
     usecases: usersAdminUsecases(keys),
+    /** The page's use cases over the same store, where `meanwhile` commits while a change waits for a group's row. */
+    waiting: (meanwhile: () => void) => usersAdminUsecases({ ...keys, store: lockedAfter(keys.store, meanwhile) }),
     /** The operator's script's use cases over the same store and keys (D107 item 6). */
     operator: provisionerKeyUsecases(keys),
     /** The SCIM server over the same store, at the instant given: what a provisioner's key meets. */
@@ -644,6 +670,14 @@ describe('Användare', () => {
       ['Östra lärare', 'admin.users'],
     ]);
   });
+  test('a word pasted decomposed is the same letters as one typed composed, in the list and in the group picker (L12)', async () => {
+    const { usecases, admin } = stack();
+    // As text copied from a file name or a PDF may arrive: an a and a ring above, an a and two dots.
+    expect((await usecases.people(admin, { text: 'AVSTÄNGD'.normalize('NFD') })).rows.map(u => u.id)).toEqual(['zara']);
+    expect(await usecases.searchGroups(admin, 'bergsåkers'.normalize('NFD'))).toEqual({
+      groups: [{ id: 'unit:unit-skola', label: 'Bergsåkers skola' }],
+    });
+  });
   test("a row whose group is gone is removed after another organisation has taken the group's external id, and that group is never mapped from here (K4)", async () => {
     const { usecases, admin, store } = stack(),
       s = store.state;
@@ -683,6 +717,56 @@ describe('Användare', () => {
       },
     ]);
     expect(s.grants.get('ulla')).toEqual({ unitId: 'unit-t', unitLabel: 'Timrå', role: 'employee', capabilities: [] });
+  });
+  test('a group re-keyed or removed while a mapping to it waits for its row is no group to map, and nothing is written (K4)', async () => {
+    for (const meanwhile of ['re-keyed', 'removed'] as const) {
+      const { store, waiting, admin } = stack(),
+        s = store.state;
+      const changing = waiting(() => {
+        if (meanwhile === 're-keyed') s.groups.get('g-ad')!.externalId = 'S-1-5-21-it-staff-v2';
+        else {
+          s.groups.delete('g-ad');
+          s.members.delete(memberKey('g-ad', 'mikael'));
+        }
+      });
+      // In the order the writes committed, the group no longer holds the key when the mapping is added: refused, as
+      // an addition after that write is, with no row left to give whatever group takes the key later.
+      await expect(
+        changing.addGroupCapability(admin, { groupExternalId: 'S-1-5-21-it-staff', capability: 'admin.connectors' }),
+      ).rejects.toThrow('Gruppen finns inte bland de provisionerade grupperna.');
+      expect(s.groupCapabilities).toEqual([]);
+      expect(s.audit).toEqual([]);
+      expect(s.grants.get('mikael')?.capabilities).toEqual([]);
+    }
+  });
+  test('a change is audited with the name its group has once the change holds the row, and a row whose group was re-keyed meanwhile goes as one whose group is gone (K4)', async () => {
+    const { store, waiting, admin } = stack(),
+      s = store.state,
+      row = { groupExternalId: 'S-1-5-21-it-staff', capability: 'admin.connectors' as const };
+    // Renamed while the addition waited: the row is named, and audited, by the name the group has now.
+    const added = await waiting(() => (s.groups.get('g-ad')!.label = 'IT-avdelningen')).addGroupCapability(admin, row);
+    expect(added.groupCapabilities).toEqual([{ ...row, groupLabel: 'IT-avdelningen' }]);
+    expect(s.audit[0]).toEqual({
+      actor: 'person:mikael',
+      action: 'group-capability.added',
+      subject: 'group:S-1-5-21-it-staff',
+      details: { capability: 'admin.connectors', groupLabel: 'IT-avdelningen' },
+    });
+    expect(s.grants.get('mikael')?.capabilities).toEqual(['admin.connectors']);
+    // Re-keyed while the removal waited: the row is removed and audited without a name, and nobody is derived from
+    // here, since the write that took the key away derived the group's members itself.
+    const removed = await waiting(
+      () => (s.groups.get('g-ad')!.externalId = 'S-1-5-21-it-staff-v2'),
+    ).removeGroupCapability(admin, row);
+    expect(removed.groupCapabilities).toEqual([]);
+    expect(s.audit.slice(2)).toEqual([
+      {
+        actor: 'person:mikael',
+        action: 'group-capability.removed',
+        subject: 'group:S-1-5-21-it-staff',
+        details: { capability: 'admin.connectors', groupLabel: null },
+      },
+    ]);
   });
   test('a NUL names no unit and no group and is in no name: the answer is nobody and nothing, and the store is never handed it (K3)', async () => {
     const { usecases, admin, store } = stack();

@@ -617,6 +617,68 @@ test('a row whose group is gone is taken away while the group is pushed again, i
   expect(await grant(person)).toEqual({ role: 'employee', capabilities: [] });
   expect(lateWaited).toBe(true);
 });
+/**
+ * A store whose transactions, their work done, hold everything they locked until `release` is called, and only then
+ * commit: a SCIM write that another request meets while it waits for the write's locks.
+ */
+function heldOpen(inner: ProvisionStore) {
+  let done!: () => void, release!: () => void;
+  const atCommit = new Promise<void>(resolve => (done = resolve)),
+    gate = new Promise<void>(resolve => (release = resolve));
+  const store: ProvisionStore = {
+    transaction: fn =>
+      inner.transaction(async tx => {
+        const result = await fn(tx);
+        done();
+        await gate;
+        return result;
+      }),
+  };
+  return { store, atCommit, release };
+}
+test('a group re-keyed or removed while a mapping to it is added waits for that write, and is then no group to map: refused, and nothing is written (K4)', async () => {
+  const { prefix, deps, p, store, user, grant, scim } = stack();
+  const { persona, admin } = administration(prefix, store);
+  const person = (await scim.createUser(p, user(1), BASE)).id,
+    member = [{ value: person }];
+  await scim.createGroup(p, { externalId: `unit:${prefix}-u`, displayName: 'U', members: member }, BASE);
+  for (const write of ['re-key', 'delete'] as const) {
+    const key = `${prefix}:${write}`,
+      group = await scim.createGroup(p, { externalId: key, displayName: 'IT-personal', members: member }, BASE);
+    // The SCIM write has done its work and holds the group's row; the addition waits for it, then finds the key held
+    // by no group, as it would one after the other.
+    const writing = heldOpen(store),
+      writer = scimUsecases({ store: writing.store, ...deps }),
+      written =
+        write === 're-key'
+          ? writer.patchGroup(
+              p,
+              group.id,
+              { schemas: [PATCH], Operations: [{ op: 'replace', path: 'externalId', value: key + '-v2' }] },
+              BASE,
+            )
+          : writer.deleteGroup(p, group.id);
+    await writing.atCommit;
+    const adding = admin().addGroupCapability(persona, { groupExternalId: key, capability: 'admin.users' }),
+      addingWaited = await stillWaiting(settled(adding), writing.release);
+    await written;
+    await expect(adding).rejects.toThrow('Gruppen finns inte bland de provisionerade grupperna.');
+    expect(addingWaited).toBe(true);
+    expect(
+      await database()
+        .select()
+        .from(schema.groupCapabilities)
+        .where(eq(schema.groupCapabilities.organisationId, p.organisationId)),
+    ).toEqual([]);
+    expect(
+      await database()
+        .select()
+        .from(schema.audit)
+        .where(eq(schema.audit.subject, 'group:' + key)),
+    ).toEqual([]);
+    expect(await grant(person)).toEqual({ role: 'employee', capabilities: [] });
+  }
+});
 test('two patches of one group at once: both members are in the group afterwards, and neither request fails', async () => {
   const { prefix, p, user, grant, scim } = stack();
   const [a, b] = [(await scim.createUser(p, user(1), BASE)).id, (await scim.createUser(p, user(2), BASE)).id];

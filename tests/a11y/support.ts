@@ -442,13 +442,15 @@ export class MockApi {
       // first ten by name, as the server answers it.
       if (path === '/admin/users/groups/search' && method === 'POST') {
         const { text } = request.postDataJSON() as { text: string },
-          words = text.toLocaleLowerCase('sv').split(/\s+/).filter(Boolean);
+          words = text.normalize('NFC').toLocaleLowerCase('sv').split(/\s+/).filter(Boolean);
         this.groupSearches.push(text);
         if (this.groupSearchFails)
           return route.fulfill({ status: 503, json: { error: 'Något gick fel. Försök igen.' } });
         return json({
           groups: [...this.users.groups, ...this.groupsBeyond]
-            .filter(g => words.every(w => [g.label, g.id].some(v => v.toLocaleLowerCase('sv').includes(w))))
+            .filter(g =>
+              words.every(w => [g.label, g.id].some(v => v.normalize('NFC').toLocaleLowerCase('sv').includes(w))),
+            )
             .sort((a, b) => a.label.localeCompare(b.label, 'sv'))
             .slice(0, 10),
         });
@@ -458,7 +460,7 @@ export class MockApi {
           return route.fulfill({ status: 403, json: { error: 'Du saknar behörighet för åtgärden.', code: 'denied' } });
         // The server's reading of a question (D100), on the suite's people: every part narrows, then one page.
         const asked = request.postDataJSON() as UsersAdminQueryType,
-          words = (asked.text ?? '').toLocaleLowerCase('sv').split(/\s+/).filter(Boolean),
+          words = (asked.text ?? '').normalize('NFC').toLocaleLowerCase('sv').split(/\s+/).filter(Boolean),
           status = (u: (typeof this.people)[number]) =>
             !u.enabled ? 'disabled' : !u.active ? 'no-access' : u.bound ? 'signed-in' : 'not-signed-in';
         this.peopleQueries.push(asked);
@@ -466,7 +468,9 @@ export class MockApi {
         const matching = this.people.filter(
           u =>
             words.every(w =>
-              [u.name, u.title, u.userName, u.email].some(v => (v ?? '').toLocaleLowerCase('sv').includes(w)),
+              [u.name, u.title, u.userName, u.email].some(v =>
+                (v ?? '').normalize('NFC').toLocaleLowerCase('sv').includes(w),
+              ),
             ) &&
             (!(asked.unitId || asked.role) ||
               u.assignments.some(

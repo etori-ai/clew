@@ -936,17 +936,26 @@ export function usersAdminUsecases(deps: {
       // D101: another organisation's group does not exist for this administrator, throughout. A row is the
       // organisation's that wrote it (migration 0051), so a row on an id that another organisation's group took over
       // is a row whose group is gone, and it may be removed as any such row may (D85). Only adding needs the group.
-      const found = named ? await tx.findGroup('externalId', input.groupExternalId) : undefined,
-        group = found?.organisationId === persona.organisationId ? found : undefined;
-      if (!group && present) throw new InputError('Gruppen finns inte bland de provisionerade grupperna.');
+      const ownGroup = async () => {
+        const found = named ? await tx.findGroup('externalId', input.groupExternalId) : undefined;
+        return found?.organisationId === persona.organisationId ? found : undefined;
+      };
+      const seen = await ownGroup();
+      if (!seen && present) throw new InputError('Gruppen finns inte bland de provisionerade grupperna.');
       // Locked as a SCIM write of the group locks it, and before its members are read: a member added while the row
-      // is being taken away is derived after this change, and does not keep a capability no row gives.
-      if (group) await tx.readGroup(persona.organisationId, group.id, true);
+      // is being taken away is derived after this change, and does not keep a capability no row gives. A write of the
+      // group that holds the row now commits first, and what it left is read below.
+      if (seen) await tx.readGroup(persona.organisationId, seen.id, true);
       // Then the organisation's rows, before one is written. A group write derives from the rows it read until it
       // commits, so this waits for it and derives the members as it left them; a group write that comes later waits for
       // this change and reads the rows it leaves. That holds for a row whose group is gone and is pushed again meanwhile,
       // which no group lock covers: its members are read after the push commits, or the push reads the rows after this.
       await tx.lockGroupCapabilities(persona.organisationId, 'change');
+      // The organisation's group that holds the key now that both are held, which decides the change: a group re-keyed
+      // or removed while this change waited holds it no longer, so adding is refused as it would have been after that
+      // write, and nothing is written; a group pushed again under the key meanwhile holds it, with its members and name.
+      const holder = await ownGroup();
+      if (!holder && present) throw new InputError('Gruppen finns inte bland de provisionerade grupperna.');
       const changed =
         named &&
         (await tx.setGroupCapability(persona.organisationId, input.groupExternalId, input.capability, present));
@@ -955,7 +964,7 @@ export function usersAdminUsecases(deps: {
           actor: 'person:' + persona.id,
           action: present ? 'group-capability.added' : 'group-capability.removed',
           subject: 'group:' + input.groupExternalId,
-          details: { capability: input.capability, groupLabel: group?.label ?? null },
+          details: { capability: input.capability, groupLabel: holder?.label ?? null },
         });
         // The organisation's rows as this change leaves them, read once for every member of the group: they are held, so
         // no other change to them and no group write that reads them runs until this one commits.
@@ -963,11 +972,9 @@ export function usersAdminUsecases(deps: {
           organisationId: persona.organisationId,
           rules: await tx.groupCapabilities(persona.organisationId),
         };
-        // The row applies to the members of the organisation's own group alone, read now that the rows are held, so that
-        // a group pushed again meanwhile is seen with its members; a key another organisation's group holds names none
-        // of this organisation's people (D101).
-        const holder = await tx.findGroup('externalId', input.groupExternalId);
-        if (holder?.organisationId === persona.organisationId)
+        // The row applies to the members of the organisation's own group alone; a key another organisation's group
+        // holds names none of this organisation's people (D101).
+        if (holder)
           await derivation.deriveAll(tx, 'person:' + persona.id, await tx.members(input.groupExternalId), known);
       }
       return overviewWithin(tx, persona);

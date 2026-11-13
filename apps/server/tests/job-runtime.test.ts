@@ -4,7 +4,7 @@ import { eq, like, or } from 'drizzle-orm';
 import { database, schema, closeDatabase } from '@clew/db';
 import { postgresJobQueue } from '../src/scheduler/adapters/postgres';
 import { durableJobs } from '../src/scheduler/adapters/durable-postgres';
-import { createScheduler, SIGN_IN_CLEANUP } from '../src/scheduler/usecases';
+import { createScheduler, scheduledJobRunner, SIGN_IN_CLEANUP } from '../src/scheduler/usecases';
 import { bindActivities } from '../src/dbos/workflows';
 import { durableResult } from '../src/dbos/start';
 import { testEngine } from './durable';
@@ -37,16 +37,17 @@ test(
       clock,
       log: (...args) => logged.push(args),
     });
-    // The step as `composition/jobs.ts` runs it: claim the execution on the ledger's clock, run the job, complete it.
+    // The live step, `scheduledJobRunner`, as `composition/jobs.ts` binds it, over the job table and this scheduler on
+    // the ledger's clock; this test schedules no attention release.
     bindActivities({
-      runScheduledJob: async id => {
-        const job = await durableJobs.claimExecution(id, clock().toISOString());
-        if (!job) return 'done';
-        if (job === 'busy') return 'busy';
-        await scheduler.run(job);
-        await durableJobs.completed(id, job.attempt, clock().toISOString());
-        return 'done';
-      },
+      runScheduledJob: scheduledJobRunner({
+        executions: durableJobs,
+        release: async batch => {
+          throw new Error('Not a scheduler job: ' + batch);
+        },
+        run: job => scheduler.run(job),
+        clock,
+      }),
     });
     const nights: Array<[id: string, runAt: string]> = [
         [SIGN_IN_CLEANUP + ':2001-11-06', '2001-11-06T02:00:00.000Z'],

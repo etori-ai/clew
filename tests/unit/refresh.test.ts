@@ -3,7 +3,7 @@ import { threadAccess } from '../../apps/server/src/threads/access';
 import { draft as storedDraft } from '../store-contract';
 import { expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
-import type { AuthenticatedContext } from '../../packages/contracts/src';
+import type { AuthenticatedContext, ThreadItem } from '../../packages/contracts/src';
 import type { ScanObservation, ThreadDraft } from '../../packages/connectors/src';
 import { memoryRefreshStore } from '../../apps/server/src/threads/adapters/refresh-memory';
 import { refreshUsecases } from '../../apps/server/src/threads/usecases/refresh';
@@ -164,6 +164,83 @@ test('without whose a key is, a scanned row names nobody (D116)', async () => {
     undefined,
     { entity: 'unit', key: 'unit-1' },
   ]);
+});
+/** A draft without occurrences of its own, which Clew revises by a digest of what the source wrote. */
+const legacy = (topic: string, ...items: ThreadItem[]): ThreadDraft => {
+  const { occurrences: _, ...rest } = draft();
+  return { ...rest, topic, items };
+};
+test("a person renamed in Clew's directory alone is no change of the work: the rows are rewritten, and nothing reopens, wakes or is delivered again (D116)", async () => {
+  const users = new Map([user('a', 'chef'), user('p-erik', 'erik.sandstrom')].map(u => [u.id, u] as const));
+  const w = world(memoryPersonKeys({ users }));
+  const drafts = ['open', 'snoozed', 'dismissed', 'receipted'].map(topic => legacy(topic, row('r1', 'erik.sandstrom')));
+  w.set(drafts);
+  await w.uc.request(actor);
+  await w.uc.tick();
+  const card = (topic: string) => w.store.threads.dump().find(x => x.thread.topic.startsWith(topic + ':'))!.thread;
+  const until = '2026-11-07T07:00:00.000Z',
+    snoozed = card('snoozed').id;
+  await w.store.threads.transaction(async tx => {
+    await tx.updateThread(snoozed, { snoozedUntil: until });
+    await tx.scheduleTimer({
+      id: `snooze:${snoozed}`,
+      personId: 'a',
+      threadId: snoozed,
+      kind: 'snooze',
+      unitId: 'unit',
+      authorizationVersion: 'v1',
+      dueAt: until,
+      requestedAt: w.clock().toISOString(),
+    });
+    await tx.updateThread(card('dismissed').id, { state: 'dismissed' });
+    await tx.updateThread(card('receipted').id, {
+      state: 'handled',
+      receipt: { at: w.clock().toISOString(), headline: 'Klart', rows: [], undoUntil: null, undoCapability: null },
+    });
+  });
+  const revisions = w.store.dump().map(o => o.revision);
+  // Erik is renamed in the directory; the source still names him by the name it knows, which now names nobody.
+  users.get('p-erik')!.userName = 'erik.sand';
+  w.advance();
+  w.set(drafts);
+  await w.uc.tick();
+  expect(w.store.dump().map(o => o.revision)).toEqual(revisions);
+  expect(card('open')).toMatchObject({ state: 'open', trigger: { reason: 'Aktuell' } });
+  expect(card('snoozed')).toMatchObject({ state: 'open', snoozedUntil: until });
+  expect([card('open'), card('snoozed')].map(t => t.items.map(i => i.subject))).toEqual([[undefined], [undefined]]);
+  expect(await w.store.threads.readTimer(`snooze:${snoozed}`)).toMatchObject({ state: 'active' });
+  expect(w.store.threads.cancelled).toEqual([]);
+  expect(card('dismissed').state).toBe('dismissed');
+  expect(w.store.threads.dump().filter(x => x.thread.topic.startsWith('receipted:'))).toHaveLength(1);
+  expect(w.store.threads.audit.filter(a => a.action === 'thread.refreshed').map(a => [a.subject, a.details])).toEqual([
+    [`thread:${card('open').id}`, { materialChange: false, connector: 'source' }],
+    [`thread:${snoozed}`, { materialChange: false, connector: 'source' }],
+  ]);
+  // One word per card when it was pushed, and none since.
+  expect(w.store.threads.deliveries).toHaveLength(4);
+});
+test('a source that names another person in a row has changed the work, and the card comes back (D116)', async () => {
+  const users = new Map(
+    [user('a', 'chef'), user('p-erik', 'erik.sandstrom'), user('p-anna', 'anna')].map(u => [u.id, u] as const),
+  );
+  const w = world(memoryPersonKeys({ users }));
+  w.set([legacy('leave', row('r1', 'erik.sandstrom'))]);
+  await w.uc.request(actor);
+  await w.uc.tick();
+  const id = w.store.threads.dump()[0]!.thread.id;
+  await w.store.threads.transaction(tx => tx.updateThread(id, { state: 'dismissed' }));
+  w.advance();
+  w.set([legacy('leave', row('r1', 'anna'))]);
+  await w.uc.tick();
+  expect(w.store.threads.dump()[0]!.thread).toMatchObject({
+    state: 'open',
+    items: [{ ref: 'r1', subject: { entity: 'person', key: 'p-anna' } }],
+    trigger: { reason: 'Källan har ändrat uppgiften. Aktuell' },
+  });
+  expect(w.store.threads.audit.filter(a => a.action === 'thread.refreshed').map(a => a.details)).toEqual([
+    { materialChange: true, connector: 'source' },
+  ]);
+  expect(w.store.threads.deliveries).toHaveLength(2);
 });
 test('an unchanged card is not rewritten when its stored copy has another key order or lacks an absent property', async () => {
   const w = world();

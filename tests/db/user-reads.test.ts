@@ -15,9 +15,10 @@ import {
 import { cLocaleDatabase } from './c-locale';
 
 /**
- * The user reads on PostgreSQL: the contract on the suite's database, and who holds a user name on a database created
- * with the C locale, where plain lower() folds only A to Z and the unique index lets Å and å in as two people (L13). Run
- * with `bun run test:db` inside the devcontainer.
+ * The user reads on PostgreSQL: the contract on the suite's database, and, on a database created with the C locale,
+ * where a plain lower() folds only A to Z, that the unique index folds under ICU and refuses Å and å as two people and
+ * that who holds a user name matches across case and composition, a name held by a composed row and a decomposed (NFD)
+ * one naming nobody (L13). Run with `bun run test:db` inside the devcontainer.
  */
 if (!process.env.DATABASE_URL)
   throw new Error('DATABASE_URL is not set. Run `bun run test:db` inside the devcontainer.');

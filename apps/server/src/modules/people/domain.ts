@@ -199,9 +199,12 @@ export interface UserSearch {
   status?: UserStatus;
   capability?: string;
 }
-/** The words of a typed search, in lower case as Swedish folds it; at most eight, so a pasted text stays one query. */
+/**
+ * The words of a typed search, in their composed form (NFC), as user names are kept (L12), and in lower case as Swedish
+ * folds it; at most eight, so a pasted text stays one query. A word pasted decomposed, as from a file name, is the word.
+ */
 export const searchWords = (text: string | undefined): string[] =>
-  (text ?? '').toLocaleLowerCase('sv').split(/\s+/).filter(Boolean).slice(0, 8);
+  (text ?? '').normalize('NFC').toLocaleLowerCase('sv').split(/\s+/).filter(Boolean).slice(0, 8);
 /**
  * A unit with every unit below it in the tree (D99), the unit first. A unit the tree does not name is itself alone,
  * and each unit is taken once, so a stored chain that were ever a cycle ends.

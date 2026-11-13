@@ -716,6 +716,9 @@ test.describe('users administration', () => {
       await page.keyboard.type('z');
       await expect(page.getByRole('option', { name: failed })).toBeVisible();
       await expect(page.getByText('Ingen grupp matchar.')).toHaveCount(0);
+      // A word pasted decomposed, as text copied from a file name arrives, is the same letters to the page's own match.
+      await group.fill('bergsåkers'.normalize('NFD'));
+      await expect(page.getByRole('option', { name: /^Bergsåkers skola/ })).toBeVisible();
       await expectNoAxeViolations(page);
       // Once the server answers, new words find what it holds, and the field no longer says that a search failed.
       api.groupSearchFails = false;

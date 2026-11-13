@@ -46,8 +46,8 @@ export const postgresUserReads = (db: () => Database = database): Omit<UserReads
       where holder.organisation_id = (select reader.organisation_id from auth_person reader where reader.id = ${readerId})`);
     const found = new Map<string, Set<string>>();
     for (const r of rows) found.set(r.asked, (found.get(r.asked) ?? new Set<string>()).add(r.id));
-    // Two people the unique index let in with spellings that compare alike here (one stored decomposed, or Å and å on a
-    // C-locale database) leave the name naming nobody rather than either of them.
+    // The unique index folds case under ICU on any database, so two people whose spellings compare alike here can only
+    // be a row stored decomposed (NFD) beside a composed one; such a name names nobody rather than either of them.
     return new Map([...found].flatMap(([name, ids]) => (ids.size === 1 ? [[name, [...ids][0]!] as const] : [])));
   },
   async exists(personId) {
@@ -117,12 +117,14 @@ const groupColumn = { externalId: schema.groups.externalId, label: schema.groups
 /** How many membership rows one statement writes or removes. */
 const MEMBER_BATCH = 5000;
 /**
- * D100: the people list's search as conditions on `auth_person`. A word is matched as written, so `%` and `_` in it
- * are escaped, and without regard to case as a user name is compared (`caseless`, on both sides): a database created
- * with the locale C folds only a to z by itself, so å, ä and ö fold the same in every installation, however its
- * database was created.
+ * D100: the people list's search as conditions on `auth_person`, and the group picker's (D85) on `auth_group`. A word is
+ * matched as written, so `%` and `_` in it are escaped; in the composed form (NFC) on both sides, so a word or a value
+ * stored decomposed is the same letters as a composed one (L12); and without regard to case as a user name is compared
+ * (`caseless`): a database created with the locale C folds only a to z by itself, so å, ä and ö fold the same in every
+ * installation, however its database was created.
  */
-const folded = (column: SQL, pattern: string) => sql`${caseless(column)} like ${caseless(pattern)}`;
+const folded = (column: SQL, pattern: string) =>
+  sql`${caseless(sql`normalize(${column}, NFC)`)} like ${caseless(sql`normalize(${pattern}::text, NFC)`)}`;
 const personHas = (table: SQL, ...conditions: Array<SQL | undefined>) =>
   sql`exists (select 1 from ${table} where ${and(...conditions)})`;
 function userSearchConditions(search: UserSearch): Array<SQL | undefined> {
@@ -729,7 +731,8 @@ export function postgresProvisionStore(db: () => Database = database): Provision
           and(
             eq(schema.groups.organisationId, organisationId),
             isNotNull(schema.groups.externalId),
-            // As the people list matches a word (D100): as written, without regard to case, under the ICU collation.
+            // As the people list matches a word (D100): as written, in the composed form, without regard to case under
+            // the ICU collation (`folded`).
             ...words.map(word => {
               const pattern = '%' + word.replace(/[\\%_]/g, '\\$&') + '%';
               return or(

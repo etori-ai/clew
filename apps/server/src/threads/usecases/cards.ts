@@ -69,6 +69,16 @@ const sameDraft = (t: Thread, d: ThreadDraft, items: Thread['items']) =>
   (t.deadline ?? null) === (d.deadline ?? null) &&
   JSON.stringify(t.items) === JSON.stringify(items) &&
   JSON.stringify(t.actions) === JSON.stringify(d.actions);
+/**
+ * Rows without the people they name, whom Clew resolves from its directory (D116): what the source wrote, as far as a
+ * stored card can tell, since the card keeps the id and not the source's key.
+ */
+const unnamed = (items: Thread['items']) =>
+  items.map(item => {
+    if (item.subject?.entity !== 'person') return item;
+    const { subject: _, ...rest } = item;
+    return rest;
+  });
 
 export function threadUsecases(deps: ThreadDeps) {
   const { store, registry, run, calendar, clock, ids, people } = deps;
@@ -132,6 +142,9 @@ export function threadUsecases(deps: ThreadDeps) {
         selected: existing.items.find(x => x.ref === i.ref)?.selected ?? i.selected,
       }));
       if (sameDraft(existing, d, items)) continue;
+      // A row that names another person, or nobody, because the directory changed (a rename, a leaver, a reused name) is
+      // rewritten, but only the source moving is activity that wakes a snoozed card (D116).
+      const moved = !sameDraft({ ...existing, items: unnamed(existing.items) }, d, unnamed(items));
       await store.transaction(async tx => {
         const current = await tx.lockThread(persona.id, existing.id);
         if (
@@ -158,7 +171,7 @@ export function threadUsecases(deps: ThreadDeps) {
           details: { connector: d.connector, topic: d.topic, owner: persona.id },
         });
         // A snoozed card whose source moved comes back early (D28, D29): the snooze breaks on activity.
-        if (existing.snoozedUntil) {
+        if (existing.snoozedUntil && moved) {
           await wake(tx, existing, 'changed', now.toISOString());
           // The timer ends here, so the word the person was promised goes out now (D49), as it does on the refresh path.
           await tx.admitDelivery({

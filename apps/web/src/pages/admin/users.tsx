@@ -118,13 +118,17 @@ const TYPING_PAUSE_MS = 250;
 type OfferedGroup = UsersAdminOverview['groups'][number];
 /** A group as the picker offers it: the item's id is the group's external id, which a mapping row is keyed by. */
 const groupItem = (g: OfferedGroup): SearchableItem => ({ id: g.id, label: g.label });
-/** Whether a group holds every word of a search in its name or its external id, as the server matches it. */
+/**
+ * Whether a group holds every word of a search in its name or its external id, as the server matches it: in the composed
+ * form (NFC), so a word pasted decomposed is the same letters, and in lower case.
+ */
 const holdsWords = (g: OfferedGroup, text: string) =>
   text
+    .normalize('NFC')
     .toLocaleLowerCase('sv')
     .split(/\s+/)
     .filter(Boolean)
-    .every(word => [g.label, g.id].some(value => value.toLocaleLowerCase('sv').includes(word)));
+    .every(word => [g.label, g.id].some(value => value.normalize('NFC').toLocaleLowerCase('sv').includes(word)));
 /**
  * What the group picker says when the server could not be asked for the groups: the matches among the groups the page
  * holds may be shown, but whether any other group matches is not known, so the picker never says that none does.

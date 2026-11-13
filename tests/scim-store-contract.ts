@@ -731,6 +731,57 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         expect(await found({ words: ['zara'], role: 'manager' })).toEqual([]);
       });
     });
+    test('a word and what it is looked for in are the same letters composed or decomposed, in the people list and the group picker (D100, D85, L12)', async () => {
+      const h = await make(),
+        p = h.prefix,
+        org = p + '-org',
+        [composed, decomposed] = [p + '-composed', p + '-decomposed'],
+        [angen, oster] = ['S-' + p + '-ängen', ('S-' + p + '-öster').normalize('NFD')],
+        nfd = (text: string) => text.normalize('NFD');
+      await h.store.transaction(async tx => {
+        await tx.insertUser(
+          userRow(composed, org, {
+            name: 'Åsa Öberg',
+            userName: p + '.åsa',
+            title: 'Förskollärare',
+            employments: [{ unitId: p + '-u', title: 'Måltidsbiträde' }],
+          }),
+        );
+        // Stored decomposed, as a value a source sent that way is kept, and as a user name written before they were
+        // normalised may be.
+        await tx.insertUser(
+          userRow(decomposed, org, {
+            name: nfd('Ärla Ödmark'),
+            userName: nfd(p + '.ärla'),
+            title: nfd('Kökschef'),
+            employments: [{ unitId: p + '-u', title: nfd('Städansvarig') }],
+          }),
+        );
+        await tx.insertGroup(groupRow(p + '-g1', org, { externalId: angen, label: 'Ängens förskola' }));
+        await tx.insertGroup(groupRow(p + '-g2', org, { externalId: oster, label: nfd('Östra skolan') }));
+      });
+      await h.store.transaction(async tx => {
+        const found = async (...words: string[]) =>
+          (await tx.searchUsers(org, { words }, { startIndex: 1, count: 10 })).rows.map(r => r.id);
+        const groups = async (...words: string[]) => (await tx.searchGroups(org, words, 10)).map(g => g.externalId);
+        // A word pasted decomposed, as text copied from a file name arrives, finds what is stored composed: in the name,
+        // the user name, the title and an employment's title, without regard to case.
+        expect(await found(nfd('ÅSA'))).toEqual([composed]);
+        expect(await found(nfd(p + '.åsa'))).toEqual([composed]);
+        expect(await found(nfd('förskollärare'))).toEqual([composed]);
+        expect(await found(nfd('MÅLTIDSBITRÄDE'))).toEqual([composed]);
+        // And a word typed composed finds what is stored decomposed.
+        expect(await found('ÖDMARK')).toEqual([decomposed]);
+        expect(await found(p + '.ärla')).toEqual([decomposed]);
+        expect(await found('kökschef')).toEqual([decomposed]);
+        expect(await found('städansvarig', 'ÄRLA')).toEqual([decomposed]);
+        // The group picker the same, in a group's name and its external id.
+        expect(await groups(nfd('ÄNGENS'))).toEqual([angen]);
+        expect(await groups('östra')).toEqual([oster]);
+        expect(await groups('ÖSTER')).toEqual([oster]);
+        expect(await groups(nfd('öster'), 'skolan')).toEqual([oster]);
+      });
+    });
     test('the directory of a unit is everyone active placed on it, with the role held there, whichever unit they act in (A4)', async () => {
       const { store, prefix: p } = await make();
       const org = p + '-org',

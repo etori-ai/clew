@@ -158,7 +158,8 @@ const capability = (name: string, kind: Capability['kind']): Capability => ({
   run: async () => ({}),
 });
 
-function world() {
+/** `scans`: what the HR system pushes each person, `SCANS` unless a test changes it as it goes. */
+function world(scans: Record<string, ThreadDraft[]> = SCANS) {
   const people = directory();
   const registry = new Registry();
   const hr: Connector = {
@@ -167,7 +168,7 @@ function world() {
     source: 'Personalsystemet',
     areas: [],
     capabilities: [capability('personal.approve', 'execute'), capability('personal.book', 'propose')],
-    scan: async actor => SCANS[actor.id] ?? [],
+    scan: async actor => scans[actor.id] ?? [],
   };
   registry.register(hr);
   // The talks module's own cards are core (D96): its action point card names the employee on the thread, not a row.
@@ -357,6 +358,37 @@ describe('the cards about a person', () => {
     await w.scan('hillevi');
     expect((await w.store.readThread('hillevi', sick))?.items).toEqual([row('sick:1', 'Erik Sund sjuk 10–11 nov')]);
     expect((await w.entities.detail(hillevi, 'person', 'erik'))?.cards).toEqual([]);
+  });
+  test('a rename the source has not made is no activity on a card: its row is rewritten and its snooze holds, until the source moves (D116)', async () => {
+    const scans = { ...SCANS, hillevi: [...SCANS.hillevi!] };
+    const w = world(scans);
+    await w.scan('hillevi');
+    const hillevi = w.people.persona('hillevi');
+    const sick = await w.card('hillevi', 'sick');
+    await w.threads.snoozeThread(hillevi, sick, { until: '2026-11-10T12:00:00.000Z' });
+    const actions = () => w.store.audit.filter(a => a.subject === 'thread:' + sick).map(a => a.action);
+    w.people.state.users.get('erik')!.userName = 'erik.sund';
+    w.advance(60_000);
+    await w.scan('hillevi');
+    const renamed = (await w.store.readThread('hillevi', sick))!;
+    expect(renamed.items).toEqual([row('sick:1', 'Erik Sund sjuk 10–11 nov')]);
+    expect(renamed.snoozedUntil).toBe('2026-11-10T12:00:00.000Z');
+    expect(await w.store.readTimer(`snooze:${sick}`)).toMatchObject({ state: 'active' });
+    expect(actions()).toEqual(['thread.pushed', 'thread.snoozed', 'thread.refreshed']);
+    expect(w.store.deliveries.filter(id => id.startsWith('woken:'))).toEqual([]);
+    // The source moving is activity: the snooze breaks, and the word the person was promised goes out now (D28, D49).
+    scans.hillevi[0] = { ...scans.hillevi[0]!, items: [row('sick:1', 'Erik Sund sjuk 10–12 nov', person('erik.s'))] };
+    w.advance(60_000);
+    await w.scan('hillevi');
+    expect((await w.store.readThread('hillevi', sick))!.snoozedUntil).toBeNull();
+    expect(actions()).toEqual([
+      'thread.pushed',
+      'thread.snoozed',
+      'thread.refreshed',
+      'thread.refreshed',
+      'thread.woken',
+    ]);
+    expect(w.store.deliveries.filter(id => id.startsWith('woken:'))).toHaveLength(1);
   });
   test("an action point's card names the employee on the thread, never on a row, and shows on them (D96 item 6)", async () => {
     const w = world();

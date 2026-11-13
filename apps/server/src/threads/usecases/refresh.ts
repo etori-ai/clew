@@ -67,6 +67,10 @@ export function refreshUsecases({
   /**
    * `session`: how the person's own session took part in the scan (D26), which the audit row says, never the binding:
    * `true` when it was asked for a token, `'idle'` when it stood but its person had not been active within `PRESENCE_MS`.
+   * `sourced`: the drafts as the source wrote them, in the order of `result.drafts`, whose rows name people by id
+   * (D116). A draft without occurrences of its own is revised by Clew's digest of what the source wrote, so a change in
+   * the directory alone (a rename, a leaver, a reused name) rewrites the card's rows and never counts as the source
+   * changing the work: it reopens nothing, cancels no snooze and delivers nothing again.
    */
   async function finish(
     job: RefreshRequest,
@@ -74,6 +78,7 @@ export function refreshUsecases({
     result: ScanObservation | undefined,
     failure?: string,
     session?: true | 'idle',
+    sourced?: readonly ThreadDraft[],
   ) {
     const at = clock().toISOString(),
       observation = result?.observation;
@@ -120,13 +125,14 @@ export function refreshUsecases({
       const existing = await tx.occurrences(job),
         seen = new Set<string>(),
         touched = new Set<string>();
-      for (const d of result.drafts) {
+      for (const [index, d] of result.drafts.entries()) {
+        const s = sourced?.[index] ?? d;
         const identities = d.occurrences?.length
           ? d.occurrences
           : [
               {
                 key: d.topic,
-                revision: key([d.title, d.summary, d.items, d.actions, d.deadline, d.waitingOn]),
+                revision: key([s.title, s.summary, s.items, s.actions, s.deadline, s.waitingOn]),
                 period: 'legacy',
               },
             ];
@@ -360,7 +366,10 @@ export function refreshUsecases({
       job = await store.claim(at, new Date(Date.parse(at) + 30_000).toISOString());
     if (!job) return false;
     const baseline = await store.baseline(job);
-    let result: ScanObservation | undefined, error: string | undefined, backing: true | 'idle' | undefined;
+    let result: ScanObservation | undefined,
+      sourced: ThreadDraft[] | undefined,
+      error: string | undefined,
+      backing: true | 'idle' | undefined;
     try {
       const persona = await current(job.personId);
       if (
@@ -396,7 +405,9 @@ export function refreshUsecases({
             : persona,
           job.connector,
         );
-        // A person a row names by user name is kept by id (D116), resolved as the rows arrive.
+        // A person a row names by user name is kept by id (D116), resolved as the rows arrive; whether the source changed
+        // the work is judged on the drafts as it wrote them (`finish`).
+        sourced = result.drafts;
         result = { ...result, drafts: await keyedDrafts(people, persona, result.drafts) };
         const latest = await current(job.personId);
         if (
@@ -409,7 +420,7 @@ export function refreshUsecases({
     } catch {
       error = 'unavailable';
     }
-    await finish(job, baseline, result, error, backing);
+    await finish(job, baseline, result, error, backing, sourced);
     return true;
   }
   async function statuses(persona: AuthenticatedContext) {
