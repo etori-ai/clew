@@ -513,6 +513,18 @@ what they say.
   problems, among them a change in Clew's directory alone that reopened cards and delivered them again, a capability
   mapping on the users page decided by a group read before its lock, a people search that did not compare in NFC, and
   a migration that left deferred trigger events queued. Each is fixed with a test that fails without its fix.
+- A Group resource lists each member's name as `display`, but a member's new name left the group's
+  `meta.lastModified` where it was: the mirror of S13, older than this work. The person's write now records when the
+  name changed (`auth_person.name_changed_at`, in the migration `person_name_changed_at`), and a group's time of change
+  is the later of its own and that time among its current members, read from the same rows as the names. The user
+  write writes no group row: it would lock the group after the person, against the order of a group write, and a test
+  of renames and group writes run at once deadlocks with that order and finishes with this one. A check of the fix
+  found two windows, both closed. A `GET` or a list read the group, the names and their time in separate statements,
+  so a rename that committed between them came under the time from before it, and S13's user side did the same with
+  a group renamed between the read of a person and of their groups: a read now answers from one snapshot. And a
+  group write took its time before it held the people it touches, so a member renamed meanwhile and then taken out
+  left the group, and the member, with a time older than one a client had read: it now takes its time once it holds
+  them.
 - Migration 0053, on `main`, could not upgrade a database at 0052 that holds a phone number (55006, pending trigger
   events). It now fires the deferred signals before its writes and keeps them immediate through them, as 0032 and
   0054 do, and an upgrade test runs it on a database that holds numbers. Editing an applied migration is safe here:
@@ -610,6 +622,10 @@ what they say.
 
 **Left.**
 
+- A member's new name and another change of the same group that no lock orders, such as another member's new name
+  or a write of the group that does not hold the member, take their times before they commit. The one with the
+  earlier time can commit second, and the group then changes under the time it already showed. Ordering them would
+  put every rename behind every group the person is in, which a mass rename in a large organisation cannot afford.
 - Nothing removes rows of the audit trail or the authentication log by age. D117 leaves that to the organisation's
   retention decision, which no installation has made yet.
 - No script reaches free text that may name an erased person: card text, the answers to text asks in `thread.started`

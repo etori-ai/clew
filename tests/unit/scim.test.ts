@@ -826,6 +826,125 @@ describe('SCIM groups and derivation', () => {
     await scim.deleteGroup(p, unit.id);
     expect(locked).toEqual(ids);
   });
+  test("a manager group re-keyed as its unit's group names no manager by the key it gave up: its members leave the role and the unit keeps its name", async () => {
+    const { scim, p, store } = harness();
+    const a = (await scim.createUser(p, anna, BASE)).id;
+    const managers = await scim.createGroup(p, group('unit-manager:x', 'Chefer', [a]), BASE);
+    expect(store.state.grants.get(a)?.role).toBe('manager');
+    const unit = store.state.units.get('x');
+    // The unit's managers are read before the group is written, when the group itself still holds their key.
+    await scim.replaceGroup(p, managers.id, group('unit:x', 'Enhet X', []), BASE);
+    expect([store.state.grants.get(a), store.state.units.get('x')]).toEqual([undefined, unit]);
+  });
+  test('a group write holds everyone it touches or derives in one pass, and only then takes its time and writes; a read is answered from one snapshot (the mirror of S13)', async () => {
+    const inner = memoryProvisionStore(),
+      events: string[] = [],
+      writes = new Set([
+        'insertGroup',
+        'updateGroup',
+        'setGroupMembers',
+        'deleteGroup',
+        'audit',
+        'touchUsers',
+        'writeUnits',
+        'replaceAssignments',
+        'writeGrant',
+        'updateUser',
+      ]);
+    // Every call of the store as it comes: the people a pass holds, a write, a read; and every reading of the clock.
+    const store: ProvisionStore = {
+      transaction: (fn, options) => {
+        events.push(options?.snapshot ? 'snapshot' : 'transaction');
+        return inner.transaction(
+          tx =>
+            fn(
+              new Proxy(tx, {
+                get(target, name) {
+                  const value: unknown = Reflect.get(target, name);
+                  if (typeof value !== 'function' || typeof name !== 'string') return value;
+                  return (...args: unknown[]) => {
+                    events.push(
+                      name === 'lockPeople'
+                        ? `held ${[...new Set(args[0] as string[])].sort().join(' ')}`
+                        : writes.has(name)
+                          ? 'write'
+                          : name,
+                    );
+                    return (value as (...a: unknown[]) => unknown).apply(target, args);
+                  };
+                },
+              }),
+            ),
+          options,
+        );
+      },
+    };
+    let seq = 0;
+    const scim = scimUsecases({
+      store,
+      clock: () => (events.push('clock'), new Date()),
+      ids: () => 'id-' + ++seq,
+      digest: token => token,
+    });
+    const p = { id: 'mk', organisationId: 'sundsvall', label: 'Metakatalogen' };
+    const [a, b, c, m] = [
+      (await scim.createUser(p, anna, BASE)).id,
+      (await scim.createUser(p, { ...anna, externalId: 'mk-2', userName: 'bo' }, BASE)).id,
+      (await scim.createUser(p, { ...anna, externalId: 'mk-3', userName: 'cia' }, BASE)).id,
+      (await scim.createUser(p, { ...anna, externalId: 'mk-4', userName: 'max' }, BASE)).id,
+    ];
+    await scim.createGroup(p, group('unit-manager:skola', 'Rektorer', [m]), BASE);
+    /** What a write held when it read the clock, whether it wrote before that, and how often it read it. */
+    const timed = async (write: () => Promise<unknown>) => {
+      events.length = 0;
+      await write();
+      const clock = events.indexOf('clock');
+      return {
+        held: events[clock - 1],
+        wroteBefore: events.slice(0, clock).includes('write'),
+        clocks: events.filter(e => e === 'clock').length,
+      };
+    };
+    // The unit group's members are touched, and they and the unit's manager derived: all of them are held first.
+    let unit!: { id: string };
+    expect(
+      await timed(async () => {
+        unit = await scim.createGroup(p, group('unit:skola', 'Skola', [c!, a!, b!]), BASE);
+      }),
+    ).toEqual({ held: `held ${[a, b, c, m].join(' ')}`, wroteBefore: false, clocks: 1 });
+    // Renamed with a taken out: a is touched and derived, the members touched, they and the manager derived.
+    expect(await timed(() => scim.replaceGroup(p, unit.id, group('unit:skola', 'Skolan', [c!, b!]), BASE))).toEqual({
+      held: `held ${[a, b, c, m].join(' ')}`,
+      wroteBefore: false,
+      clocks: 1,
+    });
+    expect(await timed(() => scim.deleteGroup(p, unit.id))).toEqual({
+      held: `held ${[b, c].join(' ')}`,
+      wroteBefore: false,
+      clocks: 1,
+    });
+    // A read takes one snapshot and writes nothing; a write is an ordinary transaction.
+    const unitless = await scim.createGroup(p, group('ad:alla', 'Alla', [a!]), BASE);
+    for (const read of [
+      () => scim.getUser(p, a!, BASE),
+      () => scim.listUsers(p, {}, BASE),
+      () => scim.getGroup(p, unitless.id, BASE),
+      () => scim.getGroup(p, unitless.id, BASE, { excludedAttributes: 'members' }),
+      () => scim.listGroups(p, {}, BASE),
+    ]) {
+      events.length = 0;
+      await read();
+      expect([events[0], events.includes('write')]).toEqual(['snapshot', false]);
+    }
+    events.length = 0;
+    await scim.patchUser(
+      p,
+      a!,
+      { schemas: [SCIM.patch], Operations: [{ op: 'replace', path: 'title', value: 'Lärare' }] },
+      BASE,
+    );
+    expect(events[0]).toBe('transaction');
+  });
   test('a push that changes nothing writes no unit and no assignment', async () => {
     const inner = memoryProvisionStore();
     let unitWrites = 0,

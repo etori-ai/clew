@@ -13,10 +13,13 @@ import type { Provisioner, ProvisionStore, ProvisionTx } from '../ports';
 /**
  * The provisioning store in memory: the unit tests' adapter (D25), held to Postgres by
  * `tests/provisioning-store-contract.ts` and `tests/scim-store-contract.ts`. State is plain and seedable; a transaction
- * is a snapshot that a throw rolls back, the audit rows included.
+ * is a snapshot that a throw rolls back, the audit rows included. Nothing locks: a unit test runs one request at a time,
+ * so every transaction, a read's `snapshot` included, reads the state as one moment left it.
  */
 export interface MemoryProvisionState {
   users: Map<string, UserRecord>;
+  /** `auth_person.name_changed_at`: when a person's name last changed after they were written, by person id. */
+  namesChanged: Map<string, string>;
   groups: Map<string, GroupRecord>;
   /** `memberKey(groupId, personId)`. */
   members: Set<string>;
@@ -43,6 +46,7 @@ const splitKey = (key: string) => key.split('\u0000') as [string, string];
 export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisionState } {
   const state: MemoryProvisionState = {
     users: new Map(),
+    namesChanged: new Map(),
     groups: new Map(),
     members: new Set(),
     groupCapabilities: [],
@@ -107,6 +111,7 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
       const p = state.users.get(id);
       return p && { id: p.id, organisationId: p.organisationId };
     },
+    async lockPeople() {},
     async lockUnits() {},
     async lockTree() {},
     async lockGroupCapabilities() {},
@@ -240,6 +245,7 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
       const next = { ...u, ...fields };
       assertUnique(next, id);
       state.users.set(id, next);
+      if (fields.name !== undefined && fields.name !== u.name) state.namesChanged.set(id, fields.updatedAt);
     },
     async touchUsers(ids, updatedAt) {
       for (const id of ids) {
@@ -296,8 +302,18 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
           .filter(([g]) => g === groupId)
           .map(([, p]) => state.users.get(p))
           .filter((u): u is UserRecord => !!u)
-          .map(u => ({ id: u.id, name: u.name })),
+          .map(u => ({ id: u.id, name: u.name, nameChangedAt: state.namesChanged.get(u.id) ?? null })),
       );
+    },
+    async memberNamesChanged(groupIds) {
+      const wanted = new Set(groupIds),
+        changed = new Map<string, string>();
+      for (const [groupId, personId] of [...state.members].map(splitKey)) {
+        const at = state.namesChanged.get(personId),
+          held = changed.get(groupId);
+        if (wanted.has(groupId) && at !== undefined && (held === undefined || at > held)) changed.set(groupId, at);
+      }
+      return changed;
     },
     async setGroupMembers(groupId, personIds) {
       for (const key of [...state.members]) if (splitKey(key)[0] === groupId) state.members.delete(key);

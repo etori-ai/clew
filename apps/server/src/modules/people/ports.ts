@@ -77,6 +77,13 @@ export interface ProvisionTx {
    */
   lockPerson(id: string): Promise<{ id: string; organisationId: string } | undefined>;
   /**
+   * Holds these people for the rest of the transaction, as `lockPerson` holds one, in one pass in id order and a few
+   * thousand a statement; an id that names nobody is passed over. A group write holds everyone it touches or derives
+   * this way before it takes its time of change: a person's own write holds them before it takes its time, so one that
+   * came first has committed under an earlier time, and one that comes later waits and takes a later one.
+   */
+  lockPeople(ids: readonly string[]): Promise<void>;
+  /**
    * Holds the named units for the rest of the transaction, whether or not they have a row yet. A unit's `unit:` and
    * `unit-manager:` groups are two resources that write one unit, so a write of either takes this before it reads the
    * unit's managers or locks a person: the two then run one after the other, and the later reads what the earlier
@@ -172,6 +179,11 @@ export interface ProvisionTx {
     filter?: { attribute: 'userName' | 'externalId'; value: string },
   ): Promise<Listed<UserRecord>>;
   insertUser(record: UserRecord): Promise<void>;
+  /**
+   * Writes the fields named and the time of change. A name other than the one held is also recorded as changed at
+   * `updatedAt`, for the groups whose resource lists the person (`groupMembers`, `memberNamesChanged`); the record reads
+   * the same.
+   */
   updateUser(
     id: string,
     fields: Partial<Pick<UserRecord, keyof UserFields>> & {
@@ -203,7 +215,18 @@ export interface ProvisionTx {
   ): Promise<void>;
   /** Removes the group and its memberships; its group-capability rows stay (D85). */
   deleteGroup(id: string): Promise<void>;
-  groupMembers(groupId: string): Promise<Array<{ id: string; name: string }>>;
+  /**
+   * The group's members by id, each with when their name last changed (`updateUser`), null if it has not since they
+   * were written: a Group resource lists each member's name, so that is a change of the group (RFC 7643 §3.1), read in
+   * the same statement as the names, so no name is newer than the time read with it.
+   */
+  groupMembers(groupId: string): Promise<Array<{ id: string; name: string; nameChangedAt: string | null }>>;
+  /**
+   * For each of these groups, when the name of one of its current members last changed (`updateUser`), by group id,
+   * for an answer that leaves the members out. A group none of whose members has had a new name since they were written
+   * is absent. One read for a page of groups, whatever their size.
+   */
+  memberNamesChanged(groupIds: readonly string[]): Promise<Map<string, string>>;
   setGroupMembers(groupId: string, personIds: readonly string[]): Promise<void>;
   // Administration › Användare (D85, D100).
   /**
@@ -302,5 +325,10 @@ export interface ProvisionTx {
   ): Promise<Array<{ externalId: string; label: string }>>;
 }
 export interface ProvisionStore {
-  transaction<T>(fn: (tx: ProvisionTx) => Promise<T>): Promise<T>;
+  /**
+   * One transaction. With `snapshot`, it only reads, and every read in it sees the store as it was at one moment, so
+   * what it answers held together: a resource and its time of change, a group and its members' names, a person and the
+   * groups they are in, a page and its total. Without it, each statement sees what had committed when it began.
+   */
+  transaction<T>(fn: (tx: ProvisionTx) => Promise<T>, options?: { snapshot?: boolean }): Promise<T>;
 }

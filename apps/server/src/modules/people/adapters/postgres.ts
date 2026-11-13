@@ -212,6 +212,18 @@ export function postgresProvisionStore(db: () => Pick<Transaction, 'transaction'
         .for(ROW_LOCK);
       return row;
     },
+    async lockPeople(ids) {
+      // In id order byte by byte, as `touchUsers` takes them and a derivation takes one at a time: the rows are locked
+      // in the order the statement sorts them, before any of them is written.
+      const sorted = [...new Set(ids)].sort();
+      for (let at = 0; at < sorted.length; at += MEMBER_BATCH)
+        await tx
+          .select({ id: schema.people.id })
+          .from(schema.people)
+          .where(inArray(schema.people.id, sorted.slice(at, at + MEMBER_BATCH)))
+          .orderBy(sql`${schema.people.id} collate "C"`)
+          .for(ROW_LOCK);
+    },
     async lockUnits(unitIds) {
       // An advisory lock, since a new unit has no row to lock yet; in id order, as people are locked.
       for (const id of [...new Set(unitIds)].sort())
@@ -477,7 +489,18 @@ export function postgresProvisionStore(db: () => Pick<Transaction, 'transaction'
     async updateUser(id, { updatedAt, ...fields }) {
       await tx
         .update(schema.people)
-        .set({ ...fields, updatedAt: new Date(updatedAt) })
+        .set({
+          ...fields,
+          updatedAt: new Date(updatedAt),
+          // Compared with the name as it was (the columns on the right are the row before the write): only a new name
+          // is a change of the groups that list the person.
+          ...(fields.name === undefined
+            ? {}
+            : {
+                nameChangedAt: sql`case when ${schema.people.name} is distinct from ${fields.name}::text
+                  then ${updatedAt}::timestamptz else ${schema.people.nameChangedAt} end`,
+              }),
+        })
         .where(eq(schema.people.id, id));
     },
     async touchUsers(ids, updatedAt) {
@@ -560,12 +583,35 @@ export function postgresProvisionStore(db: () => Pick<Transaction, 'transaction'
       await tx.delete(schema.groups).where(eq(schema.groups.id, id));
     },
     async groupMembers(groupId) {
-      return tx
-        .select({ id: schema.people.id, name: schema.people.name })
+      const rows = await tx
+        .select({ id: schema.people.id, name: schema.people.name, nameChangedAt: schema.people.nameChangedAt })
         .from(schema.groupMembers)
         .innerJoin(schema.people, eq(schema.people.id, schema.groupMembers.personId))
         .where(eq(schema.groupMembers.groupId, groupId))
         .orderBy(schema.people.id);
+      return rows.map(row => ({ ...row, nameChangedAt: row.nameChangedAt?.toISOString() ?? null }));
+    },
+    async memberNamesChanged(groupIds) {
+      const changed = new Map<string, string>();
+      // In pieces a statement takes, as `groupLabels` reads them; only the members whose name has changed are counted.
+      for (let at = 0; at < groupIds.length; at += 1000) {
+        const rows = await tx
+          .select({
+            groupId: schema.groupMembers.groupId,
+            at: sql`max(${schema.people.nameChangedAt})`.mapWith(schema.people.nameChangedAt),
+          })
+          .from(schema.groupMembers)
+          .innerJoin(schema.people, eq(schema.people.id, schema.groupMembers.personId))
+          .where(
+            and(
+              inArray(schema.groupMembers.groupId, groupIds.slice(at, at + 1000)),
+              isNotNull(schema.people.nameChangedAt),
+            ),
+          )
+          .groupBy(schema.groupMembers.groupId);
+        for (const row of rows) changed.set(row.groupId, row.at.toISOString());
+      }
+      return changed;
     },
     async setGroupMembers(groupId, personIds) {
       // Only who came and who went is written, a few thousand rows a statement: a group of ten thousand that gains one
@@ -852,5 +898,13 @@ export function postgresProvisionStore(db: () => Pick<Transaction, 'transaction'
       return rows.map(row => ({ externalId: row.externalId!, label: row.label }));
     },
   });
-  return { transaction: fn => db().transaction(tx => fn(txOf(tx))) };
+  return {
+    // A snapshot is PostgreSQL's REPEATABLE READ: every statement reads what had committed when the first one began.
+    // Read only, it never waits for a writer and is never refused for one, and a write in it fails.
+    transaction: (fn, options) =>
+      db().transaction(
+        tx => fn(txOf(tx)),
+        options?.snapshot ? { isolationLevel: 'repeatable read', accessMode: 'read only' } : undefined,
+      ),
+  };
 }
