@@ -166,13 +166,18 @@ const mappingKey = (m: GroupCapability) => m.groupExternalId + ':' + m.capabilit
 /**
  * A filter's options with the chosen value among them. The address may name a value the options do not hold: a unit
  * that has left the tree since the link was saved, or any unit while the overview that holds them could not be read.
- * The list is narrowed by it all the same, so the chip says so, by the value itself when nothing better is known.
+ * The list is narrowed by it all the same, so the chip says so, by the value itself when nothing better is known, and
+ * the option carries `description` when there is something to say beside it.
  */
 const withChosen = <T extends { value: string; label: string }>(
   options: T[],
   value: string | undefined,
   label: string,
-) => (value === undefined || options.some(o => o.value === value) ? options : [...options, { value, label }]);
+  description?: string,
+) =>
+  value === undefined || options.some(o => o.value === value)
+    ? options
+    : [...options, { value, label, ...(description ? { description } : {}) }];
 /**
  * What the address says the list is narrowed by (D43: English names and values). Anything it cannot mean is left out,
  * and so is anything the server would refuse as malformed: an address is never the reason the list cannot be read.
@@ -646,8 +651,9 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
                 hasClear
                 hasSearch
                 searchPlaceholder="Sök enhet"
-                // The units come with the overview. Without it there are none to offer, and the panel says why, typed
-                // into or not, never that the catalogue has pushed none.
+                // The units come with the overview. Without it the panel says why whenever it is opened or searched: in
+                // place of options, or beside the unit the address names, the one it can offer, by its id. Never that
+                // the catalogue has pushed none.
                 emptyText={data ? 'Katalogen har inte fört in några enheter.' : UNITS_UNREAD}
                 emptySearchText={data ? undefined : UNITS_UNREAD}
                 options={withChosen(
@@ -658,6 +664,7 @@ export function AdminUsersPage({ user }: { user: SessionUser }) {
                   })),
                   filter.unitId,
                   filter.unitId ?? '',
+                  data ? undefined : UNITS_UNREAD,
                 )}
                 value={filter.unitId ?? null}
                 onChange={(unit: string | null) => show({ unit })}

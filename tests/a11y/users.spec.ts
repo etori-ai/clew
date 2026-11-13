@@ -792,6 +792,50 @@ test.describe('users administration', () => {
       await expect(readout(page)).toHaveText('1 av 4 personer');
       await expect(page.getByRole('table').first().locator('tbody tr')).toHaveText([/Mikael Lund/]);
       await expectNoAxeViolations(page);
+      // A unit the address names still narrows the list and is the one unit the filter can offer, by its id. The
+      // sentence stands beside it and is read with it, so that one unit is never heard as the catalogue's whole list.
+      await open(page, '/admin/users?unit=unit-omsorg');
+      await expect(readout(page)).toHaveText('1 av 4 personer');
+      const named = filters(page).getByRole('button', { name: /^Enhet/ });
+      await expect(named).toContainText('Enhet: unit-omsorg');
+      await named.click();
+      await expect(page.getByRole('option')).toHaveAccessibleName('unit-omsorg Enheterna kunde inte läsas.');
+      await page.keyboard.type('xyz');
+      await expect(units).toHaveText('Enheterna kunde inte läsas.');
+      await expect.poll(() => announcements(page)).toContainEqual('Enheterna kunde inte läsas.');
+      await page.keyboard.press('Escape');
+      await expect(named).toContainText('Enhet: unit-omsorg');
+    });
+    test('the unit filter of an overview that was read says that none were pushed, or that none matches, and never that the units could not be read (W3)', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      const read = api.users;
+      api.users = { ...read, units: [] };
+      await open(page, '/admin/users');
+      const units = page.getByRole('listbox');
+      await filters(page)
+        .getByRole('button', { name: /^Enhet/ })
+        .click();
+      await expect(units).toHaveText('Katalogen har inte fört in några enheter.');
+      await expect.poll(() => announcements(page)).toContainEqual('Katalogen har inte fört in några enheter.');
+      await page.keyboard.press('Escape');
+      expect(await announcements(page)).not.toContainEqual('Enheterna kunde inte läsas.');
+      // With the overview's units, a unit the tree no longer names is offered by its id alone, and a word that no unit
+      // holds finds nothing.
+      api.users = read;
+      await open(page, '/admin/users?unit=unit-borta');
+      await filters(page)
+        .getByRole('button', { name: /^Enhet/ })
+        .click();
+      await expect(page.getByRole('option', { name: 'unit-borta', exact: true })).toBeVisible();
+      await page.keyboard.type('zzz');
+      await expect(units).toHaveText('Inga resultat hittades');
+      await expect.poll(() => announcements(page)).toContainEqual('Inga resultat hittades');
+      await page.keyboard.press('Escape');
+      expect(await announcements(page)).not.toContainEqual('Enheterna kunde inte läsas.');
+      await expect(page.getByText('Enheterna kunde inte läsas.')).toHaveCount(0);
     });
   });
   test.describe('phone', () => {

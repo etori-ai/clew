@@ -75,7 +75,6 @@ interface CapRow extends Record<string, unknown> {
   name: string;
   c: ConnectorDetail['capabilities'][number];
 }
-const EMPTY_UNITS: Array<{ id: string; label: string }> = [];
 /** The choice "Ingen kolumn" in the column selector: never a field's key, which a view keeps to letters and digits. */
 const NO_COLUMN = '-';
 
@@ -127,8 +126,8 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
   // The connector and the units from the admin cache (D33); a 400 is the one answer the page turns into "finns inte".
   const client = useQueryClient();
   const detail = useQuery(adminQueries.connector(id));
-  const units = useQuery(adminQueries.units).data?.units ?? EMPTY_UNITS;
-  const groups = useQuery(adminQueries.groups).data?.groups ?? EMPTY_UNITS;
+  const units = useQuery(adminQueries.units);
+  const groups = useQuery(adminQueries.groups);
   const c = detail.data ?? null;
   const missing = detail.isError && detail.error instanceof ApiError && detail.error.status === 400;
   const readError =

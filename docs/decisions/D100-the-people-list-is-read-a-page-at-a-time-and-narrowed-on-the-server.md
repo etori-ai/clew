@@ -28,9 +28,10 @@ paragraph, this paragraph holds.
 - **Items 1 and 7, the filters when the overview cannot be read (W3).** The people and the overview are two reads, so
   the list and its filters are drawn when only the overview could not be read. The capability filter offers the
   closed list `CAPABILITIES` from the contract, which the address is read by too, and not the overview's copy of it,
-  so it offers every capability either way. The unit filter offers the units the overview holds; without them it says
-  "Enheterna kunde inte läsas." when it is opened or searched, and never that the catalogue has pushed no units. A
-  unit the address names still narrows the list, shown by its id (item 5).
+  so it offers every capability either way. The unit filter offers the units the overview holds. Without them it says
+  "Enheterna kunde inte läsas." whenever it is opened or searched: in place of options, or beside a unit the address
+  names, which still narrows the list and is offered and shown by its id (item 5). It never says that the catalogue
+  has pushed no units, and with the overview read it never says that the units could not be read.
 
 **Decision.** Administration › Användare reads its people a page at a time. The server narrows, orders and counts;
 the browser never holds the organisation.

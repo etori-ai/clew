@@ -66,15 +66,14 @@ const byOrdinal = (a: ConnectorSummary, b: ConnectorSummary) =>
   (a.ordinal ?? Infinity) - (b.ordinal ?? Infinity) || a.source.localeCompare(b.source, 'sv');
 /** The words under a system's name: its id, and "Clews egen" on the house's rows. */
 const idLine = (c: ConnectorSummary) => `${c.id}${c.ordinal === null ? ' · Clews egen' : ''}`;
-const EMPTY_UNITS: Array<{ id: string; label: string }> = [];
 const EMPTY_CONNECTORS: ConnectorSummary[] = [];
 
 export function AdminConnectorsPage({ user }: { user: SessionUser }) {
   const mobile = useMediaQuery('(max-width: 720px)');
   const client = useQueryClient();
   const list = useQuery(adminQueries.connectors);
-  const units = useQuery(adminQueries.units).data?.units ?? EMPTY_UNITS;
-  const groups = useQuery(adminQueries.groups).data?.groups ?? EMPTY_UNITS;
+  const units = useQuery(adminQueries.units);
+  const groups = useQuery(adminQueries.groups);
   const [filter, setFilter] = useState<Filter>('alla');
   const [adding, setAdding] = useState(false);
   const toast = useToast();

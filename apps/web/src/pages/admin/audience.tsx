@@ -1,4 +1,4 @@
-import { useQueries } from '@tanstack/react-query';
+import { useQueries, type UseQueryResult } from '@tanstack/react-query';
 import type { ConnectorAudience, ConnectorPreview, Role } from '@clew/contracts';
 import {
   CheckboxList,
@@ -13,10 +13,14 @@ import {
 import { adminQueries } from '../../queries';
 import { roleLabel } from './labels';
 
-/**
- * "Vem ser det" (D23): everyone, or a selection of roles, units and provisioned groups (D68). Any of the three lists admits a
- * person. Groups wait for SCIM and are shown disabled with the reason, so the editor does not change shape later.
- */
+/** A unit or a provisioned group as the editor offers it: the id is what an audience stores. */
+type Offered = { id: string; label: string };
+/** The page's reads of what the editor offers (D33), handed over as they stand. */
+export type UnitsRead = UseQueryResult<{ units: Offered[] }>;
+export type GroupsRead = UseQueryResult<{ groups: Offered[] }>;
+/** What a field says when its read failed: which units or groups there are is not known, so it never says there are none. */
+const UNITS_UNREAD = 'Enheterna kunde inte läsas.';
+const GROUPS_UNREAD = 'Grupperna kunde inte läsas.';
 /** What the editor says about the thing it governs: a connector (D23) or a model (D24). */
 const wording = {
   connector: {
@@ -30,21 +34,34 @@ const wording = {
     selected: 'En person som inte är med ser inte modellen och får standardmodellen i stället.',
   },
 };
+/**
+ * "Vem ser det" (D23): everyone, or a selection of roles, units and provisioned groups (D68). Any of the three lists admits a
+ * person. Groups wait for SCIM and are shown disabled with the reason, so the editor does not change shape later. The
+ * units and the groups are reads of their own: a field is busy while its read is on its way, says so when the read
+ * failed, and only a read that holds none says that there are none.
+ */
 export function AudienceEditor({
   value,
   onChange,
   units,
-  groups = [],
+  groups,
   of = 'connector',
 }: {
   value: ConnectorAudience;
   onChange: (a: ConnectorAudience) => void;
-  units: Array<{ id: string; label: string }>;
-  /** The provisioned groups with an external id; empty until a provisioner has pushed any. */
-  groups?: Array<{ id: string; label: string }>;
+  /** The read of the organisation's units. */
+  units: UnitsRead;
+  /** The read of the provisioned groups with an external id: none until a provisioner has pushed any. */
+  groups: GroupsRead;
   of?: keyof typeof wording;
 }) {
   const selected = value.mode === 'selected' ? value : null;
+  const unitList = units.data?.units ?? [];
+  const unitsUnread = units.isError && units.data === undefined;
+  const groupList = groups.data?.groups ?? [];
+  const groupsUnread = groups.isError && groups.data === undefined;
+  // The group field is disabled with its reason once its read has answered with no group to offer, or failed.
+  const noGroups = !groups.isPending && groupList.length === 0;
   const update = (patch: Partial<Extract<ConnectorAudience, { mode: 'selected' }>>) =>
     onChange({
       mode: 'selected',
@@ -79,31 +96,35 @@ export function AudienceEditor({
           </CheckboxList>
           <MultiSelector
             label="Enheter"
-            placeholder="Välj enheter"
+            placeholder={unitsUnread ? UNITS_UNREAD : 'Välj enheter'}
             value={selected.units ?? []}
             onChange={u => update({ units: u })}
-            hasSearch={units.length > 15}
+            hasSearch={unitList.length > 15}
             triggerDisplay="badges"
             presentation="adaptive"
-            options={units.map(u => ({ value: u.id, label: u.label }))}
-            emptyText="Inga enheter"
+            isLoading={units.isPending}
+            options={unitList.map(u => ({ value: u.id, label: u.label }))}
+            emptyText={unitsUnread ? UNITS_UNREAD : 'Inga enheter'}
             emptySearchText="Inga träffar"
             searchPlaceholder="Sök enhet"
           />
           <MultiSelector
             label="Grupper"
-            placeholder={groups.length ? 'Välj grupper' : 'Inga grupper provisionerade'}
+            placeholder={groupsUnread ? GROUPS_UNREAD : noGroups ? 'Inga grupper provisionerade' : 'Välj grupper'}
             value={selected.groups ?? []}
             onChange={g => update({ groups: g })}
-            hasSearch={groups.length > 15}
+            hasSearch={groupList.length > 15}
             triggerDisplay="badges"
             presentation="adaptive"
-            options={groups.map(g => ({ value: g.id, label: g.label }))}
-            emptyText="Inga grupper"
+            isLoading={groups.isPending}
+            options={groupList.map(g => ({ value: g.id, label: g.label }))}
+            emptyText={groupsUnread ? GROUPS_UNREAD : 'Inga grupper'}
             emptySearchText="Inga träffar"
             searchPlaceholder="Sök grupp"
-            isDisabled={!groups.length}
-            disabledMessage="Grupper visas när katalogen har provisionerat dem genom SCIM."
+            isDisabled={noGroups}
+            disabledMessage={
+              groupsUnread ? GROUPS_UNREAD : 'Grupper visas när katalogen har provisionerat dem genom SCIM.'
+            }
           />
         </VStack>
       )}

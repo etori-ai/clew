@@ -18,7 +18,7 @@ import {
 } from '@clew/ui';
 import { api } from '../../api';
 import { useAdminAction } from '../../mutations';
-import { AudienceEditor } from './audience';
+import { AudienceEditor, type GroupsRead, type UnitsRead } from './audience';
 import { CheckResult } from './check-result';
 import { DialogFrame } from '../../components/dialog-frame';
 import { audienceLabel } from './labels';
@@ -34,8 +34,8 @@ const stepLabels = ['Adress', 'Kontroll', 'Vem ser det', 'Aktivera'];
 type Props = {
   isOpen: boolean;
   onClose: (added: boolean) => void;
-  units: Array<{ id: string; label: string }>;
-  groups?: Array<{ id: string; label: string }>;
+  units: UnitsRead;
+  groups: GroupsRead;
 };
 export function AddConnectorDialog({ isOpen, onClose, units, groups }: Props) {
   const [step, setStep] = useState(0);

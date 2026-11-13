@@ -182,6 +182,15 @@ export class MockApi {
   devAccounts: { userName: string; name: string }[] | undefined = undefined;
   /** The session says the person may administer connectors (D23). Off by default so the other suites see the ordinary page. */
   admin = false;
+  /**
+   * "Vem ser det" on Anslutna system and Modeller (D23, D24, D68): the units and the provisioned groups the audience
+   * editor offers (`GET /api/admin/units` and `/api/admin/groups`), and whether both reads fail (503, after the page's
+   * one retry). `holdAudienceLists` keeps both reads on their way.
+   */
+  audienceUnits = [...units];
+  audienceGroups = [...groups];
+  audienceListsFail = false;
+  private audienceListsHeld?: Promise<void>;
   /** Användare (D85): the people and the group-capability rows the users page shows; the rows change with the page's actions. */
   users = usersOverview();
   /** Användare (D100): the people the list is read from, a page at a time, and every question the page has asked. */
@@ -323,6 +332,14 @@ export class MockApi {
     });
     return release;
   }
+  /** Keeps the audience editor's reads of the units and the groups pending until the returned function is called. */
+  holdAudienceLists() {
+    let release = () => {};
+    this.audienceListsHeld = new Promise<void>(resolve => {
+      release = resolve;
+    });
+    return release;
+  }
   private update(id: string, change: Partial<Thread>) {
     this.threads = this.threads.map(t => (t.id === id ? { ...t, ...change, updatedAt: NOW } : t));
     return this.threads.find(t => t.id === id)!;
@@ -430,8 +447,12 @@ export class MockApi {
           return saved({ logo: null });
         }
       }
-      if (path === '/admin/units') return json({ units });
-      if (path === '/admin/groups') return json({ groups });
+      if (path === '/admin/units' || path === '/admin/groups') {
+        await this.audienceListsHeld;
+        if (this.audienceListsFail)
+          return route.fulfill({ status: 503, json: { error: 'Något gick fel. Försök igen.' } });
+        return path === '/admin/units' ? json({ units: this.audienceUnits }) : json({ groups: this.audienceGroups });
+      }
       if (path === '/admin/users' && method === 'GET')
         return this.usersForbidden
           ? route.fulfill({ status: 403, json: { error: 'Du saknar behörighet för åtgärden.', code: 'denied' } })
