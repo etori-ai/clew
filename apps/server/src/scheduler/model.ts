@@ -18,6 +18,13 @@ export interface JobQueue {
  * whose process has died or stopped loses its claim, and the job's workflow claims it again once the lease has passed.
  */
 export const JOB_LEASE_MS = 120_000;
+/**
+ * How long a run lasts before the runner says so. Every job takes seconds, a page of the nightly scan included, so a run
+ * this long is waiting on something that does not answer. It keeps its claim, and so its job, for as long as its process
+ * lives, since the job's step has no timeout: the runner writes one error line, and the reliability counts show the job
+ * as `longRunningJobs` until the run settles or its process stops.
+ */
+export const JOB_RUN_LONG_MS = 10 * 60_000;
 /** The engine's side of a job row (D47, D85): its execution claimed under a lease, then completed with its audit row. */
 export interface JobExecutions {
   /** This attempt of the job; `busy` before its run time or while another attempt holds the lease; undefined when it is done or not the engine's to run. */

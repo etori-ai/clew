@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
-import { JOB_LEASE_MS, type Job, type JobExecutions, type JobQueue } from '../../apps/server/src/scheduler/model';
+import {
+  JOB_LEASE_MS,
+  JOB_RUN_LONG_MS,
+  type Job,
+  type JobExecutions,
+  type JobQueue,
+} from '../../apps/server/src/scheduler/model';
 import {
   createScheduler,
   NIGHTLY,
@@ -341,6 +347,38 @@ describe('the scheduled jobs', () => {
     // The renewal ends with the run.
     expect(w.timer.intervals()).toEqual([]);
     expect(w.logged).toEqual([]);
+  });
+  test('a run that lasts ten minutes is said once, with the job and the attempt, and keeps its claim until it settles', async () => {
+    const w = world();
+    const open = w.gate('hung');
+    await w.jobs.schedule({ id: 'u', kind: 'undo-expiry', runAt: T0, payload: { threadId: 'hung' } });
+    const first = w.runJob('u');
+    await settle();
+    // Renewed at every quarter of the lease, and nothing said, until the run has lasted ten minutes.
+    for (let lasted = JOB_LEASE_MS / 4; lasted < JOB_RUN_LONG_MS; lasted += JOB_LEASE_MS / 4) {
+      w.advance(JOB_LEASE_MS / 4);
+      await w.timer.fire();
+    }
+    expect(w.logged).toEqual([]);
+    w.advance(JOB_LEASE_MS / 4);
+    await w.timer.fire();
+    const long = [
+      'scheduled job still running after ten minutes; it holds its claim until the run settles or its process stops',
+      'u',
+      1,
+    ];
+    expect(w.logged).toEqual([long]);
+    // Said once: the claim is still renewed, so the workflow's next attempt finds the job claimed.
+    for (let quarter = 0; quarter < 8; quarter++) {
+      w.advance(JOB_LEASE_MS / 4);
+      await w.timer.fire();
+    }
+    expect(await w.runJob('u')).toBe('busy');
+    open();
+    expect(await first).toBe('done');
+    expect(w.jobs.finished).toEqual([['u', 1]]);
+    expect(w.timer.intervals()).toEqual([]);
+    expect(w.logged).toEqual([long]);
   });
   test('a renewal that fails is said and tried again at the next quarter, and the run completes', async () => {
     const w = world();

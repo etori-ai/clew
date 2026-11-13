@@ -68,6 +68,26 @@ test('the live API and its composition load in Node without external services', 
   assert.equal(typeof api.fetch, 'function');
 });
 
+test('the repeating timer that renews a scheduled job’s claim ticks until it is stopped and never holds the process open', async () => {
+  const { every } = await import('../src/composition/ambient');
+  const timers = () => process.getActiveResourcesInfo().filter(resource => resource === 'Timeout').length;
+  let ticks = 0;
+  const before = timers();
+  const stop = every(10, () => ticks++);
+  // Stopped whatever the assertions find, so a timer that holds the process cannot keep the suite from ending.
+  try {
+    assert.equal(timers(), before, 'the timer does not keep the event loop alive');
+    for (let waited = 0; ticks < 3 && waited < 5000; waited += 10)
+      await new Promise(resolve => setTimeout(resolve, 10));
+  } finally {
+    stop();
+  }
+  const seen = ticks;
+  assert.ok(seen >= 3, `it ticked ${seen} times`);
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(ticks, seen, 'no tick after it was stopped');
+});
+
 test('Node accepts a freshly issued document review and distinguishes invalid evidence from actual expiry', async () => {
   let now = Date.parse('2026-11-08T20:00:00.000Z');
   const clock = () => new Date(now);

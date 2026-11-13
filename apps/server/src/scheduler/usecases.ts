@@ -2,7 +2,15 @@ import { Temporal } from 'temporal-polyfill';
 import { timeZone } from '@clew/calendar/dates';
 import type { CalendarUsecases } from '../modules/calendar/usecases/samtal';
 import type { ThreadUsecases } from '../threads/usecases/cards';
-import { JOB_LEASE_MS, type Job, type JobExecutions, type JobQueue, type People, type SignInData } from './model';
+import {
+  JOB_LEASE_MS,
+  JOB_RUN_LONG_MS,
+  type Job,
+  type JobExecutions,
+  type JobQueue,
+  type People,
+  type SignInData,
+} from './model';
 
 /**
  * The scheduled jobs (D15, D47): the nightly scan of everyone with a grant, a page at a time, one nightly clean-up of
@@ -121,6 +129,8 @@ export type Scheduler = ReturnType<typeof createScheduler>;
  * While the run lasts, its claim is renewed every quarter of the lease, so a run that outlasts the lease is never
  * claimed again beside itself; only a run whose process has died or stopped loses its claim. A run that finds its claim
  * taken all the same, or finishes after another attempt took it, says so in one line, and its completion writes nothing.
+ * A run still going after `JOB_RUN_LONG_MS` is said once, with its job and attempt, since it holds the job until it
+ * settles or its process stops.
  */
 export function scheduledJobRunner(deps: {
   executions: JobExecutions;
@@ -132,10 +142,14 @@ export function scheduledJobRunner(deps: {
   log: (message: string, ...details: unknown[]) => void;
 }) {
   const { executions, clock, log } = deps;
-  /** Renews the attempt's claim while its run lasts; the function it returns stops the renewal and waits for one under way. */
-  function keepClaim(job: Job & { attempt: number }) {
+  /**
+   * Renews the attempt's claim, made at `claimedAt`, while its run lasts, and says once that the run has lasted
+   * `JOB_RUN_LONG_MS`; the function it returns stops the renewal and waits for one under way.
+   */
+  function keepClaim(job: Job & { attempt: number }, claimedAt: Date) {
     let stopped = false,
       lost = false,
+      long = false,
       renewing: Promise<void> | undefined;
     const renew = async () => {
       try {
@@ -148,7 +162,16 @@ export function scheduledJobRunner(deps: {
       }
     };
     const cancel = deps.every(JOB_LEASE_MS / 4, () => {
-      if (stopped || lost || renewing) return;
+      if (stopped || lost) return;
+      if (!long && clock().getTime() - claimedAt.getTime() >= JOB_RUN_LONG_MS) {
+        long = true;
+        log(
+          'scheduled job still running after ten minutes; it holds its claim until the run settles or its process stops',
+          job.id,
+          job.attempt,
+        );
+      }
+      if (renewing) return;
       renewing = renew().finally(() => {
         renewing = undefined;
       });
@@ -160,10 +183,11 @@ export function scheduledJobRunner(deps: {
     };
   }
   return async function runScheduledJob(id: string): Promise<'done' | 'busy'> {
-    const job = await executions.claimExecution(id, clock().toISOString());
+    const claimedAt = clock();
+    const job = await executions.claimExecution(id, claimedAt.toISOString());
     if (!job) return 'done';
     if (job === 'busy') return 'busy';
-    const stopRenewing = keepClaim(job);
+    const stopRenewing = keepClaim(job, claimedAt);
     try {
       if (job.kind === 'attention-release' && typeof job.payload.batch === 'string')
         await deps.release(job.payload.batch);
