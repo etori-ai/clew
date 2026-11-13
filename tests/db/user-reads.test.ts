@@ -1,9 +1,6 @@
 import { afterAll, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { resolve } from 'node:path';
-import { inArray, sql } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import { migrate } from 'drizzle-orm/postgres-js/migrator';
+import { inArray } from 'drizzle-orm';
 import { database, schema } from '../../packages/db/src/index';
 import { postgresProvisionStore, postgresUserReads } from '../../apps/server/src/modules/people/adapters/postgres';
 import { directoryUsecases } from '../../apps/server/src/modules/people/usecases';
@@ -15,6 +12,7 @@ import {
   userReadOthers,
   userReadsContract,
 } from '../user-reads-contract';
+import { cLocaleDatabase } from './c-locale';
 
 /**
  * The user reads on PostgreSQL: the contract on the suite's database, and who holds a user name on a database created
@@ -89,20 +87,10 @@ userReadsContract('postgres', async () => {
   return { actors, others, reads: reads() };
 });
 
-test('Å and å are one letter to who holds a user name on a database created with the C locale (L13)', async () => {
+test('Å and å are one letter to the user name index and to who holds a name, on a database created with the C locale (L13)', async () => {
   // A database of its own, created with the C locale and migrated, since the suite's database may fold Å by itself.
-  const db = database();
-  const name = 'clew_test_c_locale_' + randomUUID().replaceAll('-', '').slice(0, 12),
-    url = new URL(process.env.DATABASE_URL!);
-  url.pathname = '/' + name;
-  await db.execute(sql.raw(`create database ${name} template template0 encoding 'UTF8' locale 'C'`));
-  const c = drizzle({ connection: { url: url.toString(), max: 2, onnotice: () => undefined } });
+  const { db: c, drop } = await cLocaleDatabase();
   try {
-    const [locale] = await c.execute<{ collation: string; folds: boolean }>(
-      sql`select datcollate as collation, lower('Å') = 'å' as folds from pg_database where datname = current_database()`,
-    );
-    expect(locale).toEqual({ collation: 'C', folds: false });
-    await migrate(c, { migrationsFolder: resolve(import.meta.dir, '../../packages/db/migrations') });
     await c.insert(schema.people).values([
       { id: 'reader', organisationId: 'c', name: 'Läsare', userName: 'läsare' },
       { id: 'asa', organisationId: 'c', name: 'Åsa Öberg', userName: 'Åsa.Öberg' },
@@ -113,14 +101,23 @@ test('Å and å are one letter to who holds a user name on a database created wi
       'åsa.öberg': 'asa',
       [decomposed]: 'asa',
     });
-    // Plain lower() leaves Å as it is here, so the unique index lets a second person in as åsa.öberg (L13). Who holds the
-    // name is then not known: it names neither of them.
+    // The unique index folds Å under ICU whatever the database's locale, so nobody else may hold the name in another
+    // case.
+    const refused = await c
+      .insert(schema.people)
+      .values({ id: 'asa-2', organisationId: 'c', name: 'Åsa Öberg', userName: 'åsa.öberg' })
+      .then(
+        () => undefined,
+        (error: unknown) => (error as { cause?: { code?: string; constraint_name?: string } }).cause,
+      );
+    expect(refused).toMatchObject({ code: '23505', constraint_name: 'auth_person_user_name' });
+    // A row stored decomposed (NFD), as one written before user names were normalised may be, is another name to the
+    // index, which compares the folded bytes. Who holds the name is then not known: it names neither of them.
     await c
       .insert(schema.people)
-      .values({ id: 'asa-2', organisationId: 'c', name: 'Åsa Öberg', userName: 'åsa.öberg' });
+      .values({ id: 'asa-nfd', organisationId: 'c', name: 'Åsa Öberg', userName: 'Åsa.Öberg'.normalize('NFD') });
     expect((await reads.holders('reader', ['åsa.öberg', decomposed, 'Åsa.Öberg'])).size).toBe(0);
   } finally {
-    await c.$client.end();
-    await db.execute(sql.raw(`drop database if exists ${name} with (force)`));
+    await drop();
   }
 }, 30_000);
