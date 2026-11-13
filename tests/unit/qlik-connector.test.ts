@@ -67,15 +67,26 @@ function stack(options: Parameters<typeof createConnector>[0] = {}) {
 }
 
 describe('the qlik connector', () => {
-  test('the manifest is valid: two reads for managers, table views, a read about a unit, an area with a figure, no scan', () => {
+  test('the manifest is valid: reads for managers, tables, charts, reads about a unit, three areas with figures, no scan', () => {
     const manifest = parseManifest(qlikManifest, 'qlik');
     expect(manifest.capabilities.map(c => [c.name, c.kind, c.view?.kind, c.scope.roles, c.about])).toEqual([
       ['qlik.sickLeaveByUnit', 'read', 'table', ['manager'], undefined],
       ['qlik.sickLeaveTrend', 'read', 'table', ['manager'], undefined],
       ['qlik.unit', 'read', 'list', ['manager'], { entity: 'unit' }],
+      ['qlik.sickLeaveChart', 'read', 'series', ['manager'], undefined],
+      ['qlik.economyByUnit', 'read', 'table', ['manager'], undefined],
+      ['qlik.economyChart', 'read', 'series', ['manager'], undefined],
+      ['qlik.economyUnit', 'read', 'list', ['manager'], { entity: 'unit' }],
+      ['qlik.hmeByUnit', 'read', 'table', ['manager'], undefined],
+      ['qlik.hmeChart', 'read', 'series', ['manager'], undefined],
+      ['qlik.hmeUnit', 'read', 'list', ['manager'], { entity: 'unit' }],
     ]);
     expect(manifest.scan).toBe(false);
-    expect(manifest.areas).toMatchObject([{ id: 'sick-leave', roles: ['manager'], figure: true }]);
+    expect(manifest.areas).toMatchObject([
+      { id: 'sick-leave', roles: ['manager'], figure: true },
+      { id: 'economy', roles: ['manager'], figure: true },
+      { id: 'hme', roles: ['manager'], figure: true },
+    ]);
   });
 
   test("a manager reads their unit's latest closed month against the same month last year", async () => {
@@ -156,7 +167,11 @@ describe('the qlik connector', () => {
     expect([declared.model, declared.about]).toEqual([false, { entity: 'unit' }]);
     expect(placesOf(declared)).toEqual(['lens', 'mark', 'section']);
     const watch = declared.view?.kind === 'list' ? declared.view.fields.find(f => f.key === 'watch')! : undefined;
-    expect([fieldTone(watch!, 'Bevaka'), fieldTone(watch!, undefined)]).toEqual(['warn', 'none']);
+    expect([fieldTone(watch!, 'Inom målet'), fieldTone(watch!, 'Bevaka'), fieldTone(watch!, undefined)]).toEqual([
+      'ok',
+      'warn',
+      'none',
+    ]);
     const { registry } = stack();
     expect(registry.tools(hillevi).map(t => t.name)).not.toContain('qlik.unit');
     const unit = (actor: Actor, keys: string[]) =>
@@ -171,7 +186,8 @@ describe('the qlik connector', () => {
       month: 'oktober 2026',
       total: 5.3,
       lastYear: 5.5,
-      change: -0.2,
+      // With its sign, as words: a number field would draw no plus.
+      change: '−0,2 procentenheter',
       headcount: 46,
     });
     // The row opens the unit's trend by its ref.
@@ -188,6 +204,11 @@ describe('the qlik connector', () => {
       { keys: ['unit-skola'] },
     );
     expect(watched.rows[0]!.watch).toBe('Bevaka');
+    // Below the rate the row says so too, so a unit within the target reads as one and not as a blank.
+    const calm = await stack({ warnAbove: 6 }).registry.run<{ rows: Array<{ watch?: string }> }>(hillevi, 'qlik.unit', {
+      keys: ['unit-skola'],
+    });
+    expect(calm.rows[0]!.watch).toBe('Inom målet');
   });
 
   test('a manager whose unit is not in the statistics gets no rows and no figure', async () => {
@@ -215,7 +236,7 @@ describe('the qlik connector', () => {
     });
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({
-      error: { code: 'denied', message: 'Bara chefer ser sjukfrånvarostatistiken.' },
+      error: { code: 'denied', message: 'Bara chefer ser statistiken.' },
     });
   });
 
@@ -292,6 +313,238 @@ describe('the qlik connector', () => {
     });
     expect(report.findings.filter(f => f.level === 'fail')).toEqual([]);
     expect(report.ok).toBe(true);
+  });
+});
+
+/**
+ * The key figures of the follow-up dialogue (docs/reviews/2026-11-12-absorbing-big-boss-board-into-clew.md): economy and
+ * HME beside sick leave, made up by the fixture until their source is settled; the organisation's thresholds as settings;
+ * charts as series views; and the fixture's open mode, where every unit Clew asks about has figures.
+ */
+describe('the key figures beside sick leave', () => {
+  type EconomyRow = {
+    ref: string;
+    unit: string;
+    month: string;
+    budget: number;
+    forecast: number;
+    deviation: number;
+    assessment?: string;
+  };
+  type HmeRow = {
+    ref: string;
+    unit: string;
+    year?: string;
+    total?: number;
+    change?: number;
+    assessment?: string;
+    note?: string;
+  };
+  type SeriesOut = {
+    series: { categories: string[]; series: Array<{ id: string; role: string; values: Array<number | null> }> };
+  };
+
+  test('economy per unit: the latest month of the year, the deviation is budget minus forecast, and a chart over the year', async () => {
+    const { registry } = stack();
+    const { rows } = await registry.run<{ rows: EconomyRow[] }>(hillevi, 'qlik.economyByUnit', {});
+    expect(rows).toHaveLength(1);
+    const [row] = rows;
+    expect(row).toMatchObject({ unit: 'Bergsåkers skola', month: 'oktober 2026' });
+    expect(row!.deviation).toBe(Math.round((row!.budget - row!.forecast) * 10) / 10);
+    // Without the organisation's rule there is no assessment.
+    expect(row!.assessment).toBeUndefined();
+    const chart = await registry.run<SeriesOut>(hillevi, 'qlik.economyChart', { unit: row!.ref });
+    expect(chart.series.categories).toHaveLength(10);
+    expect(chart.series.series.map(s => [s.id, s.role])).toEqual([
+      ['deviation', 'actual'],
+      ['balance', 'target'],
+    ]);
+    expect(chart.series.series[0]!.values.at(-1)).toBe(row!.deviation);
+  });
+
+  test('HME per unit: the latest measurement against the one before, and a group below the minimum held back', async () => {
+    const { registry } = stack();
+    const [row] = (await registry.run<{ rows: HmeRow[] }>(hillevi, 'qlik.hmeByUnit', {})).rows;
+    expect(row).toMatchObject({ unit: 'Bergsåkers skola', year: '2025' });
+    expect(typeof row!.total).toBe('number');
+    expect(typeof row!.change).toBe('number');
+    const it = (await registry.run<{ rows: HmeRow[] }>(itChief, 'qlik.hmeByUnit', {})).rows;
+    expect(it.find(r => r.unit === 'Servicedesk')).toEqual({
+      ref: expect.any(String),
+      unit: 'Servicedesk',
+      year: '2025',
+      note: 'Färre än 5 svarande. Visas inte.',
+    });
+    const chart = await registry.run<SeriesOut>(hillevi, 'qlik.hmeChart', { unit: row!.ref });
+    expect(chart.series.categories).toEqual(['2019', '2021', '2023', '2025']);
+    expect(chart.series.series.map(s => s.id)).toEqual(['total', 'motivation', 'leadership', 'governance']);
+  });
+
+  test("the tones are the organisation's settings: sick leave, economy and HME, each off until set", async () => {
+    const plain = await stack().registry.areas(hillevi);
+    expect(plain.filter(a => a.figure).map(a => [a.id, a.figure!.tone])).toEqual([
+      ['sick-leave', 'none'],
+      ['economy', 'none'],
+      ['hme', 'none'],
+    ]);
+    // Bergsåkers skola's latest rate is 5,3 %: at or above the alert rate it says "Åtgärd krävs".
+    const strict = stack({ warnAbove: 4, alertAbove: 5 });
+    expect((await strict.registry.areas(hillevi)).find(a => a.id === 'sick-leave')?.figure?.tone).toBe('alert');
+    const unit = await strict.registry.run<{ rows: Array<{ watch?: string }> }>(hillevi, 'qlik.unit', {
+      keys: ['unit-skola'],
+    });
+    expect(unit.rows[0]!.watch).toBe('Åtgärd krävs');
+    // The economy is "Mot underskott" below the operator's deviation, "Klarar budget" at or above it.
+    const [e] = (await stack().registry.run<{ rows: EconomyRow[] }>(hillevi, 'qlik.economyByUnit', {})).rows;
+    const under = stack({ economyAlertBelow: e!.deviation + 0.1 });
+    expect(
+      (await under.registry.run<{ rows: EconomyRow[] }>(hillevi, 'qlik.economyByUnit', {})).rows[0]!.assessment,
+    ).toBe('Mot underskott');
+    expect((await under.registry.areas(hillevi)).find(a => a.id === 'economy')?.figure?.tone).toBe('alert');
+    const within = stack({ economyAlertBelow: e!.deviation });
+    expect(
+      (await within.registry.run<{ rows: EconomyRow[] }>(hillevi, 'qlik.economyByUnit', {})).rows[0]!.assessment,
+    ).toBe('Klarar budget');
+    // HME: ok from the target, warn from the lower line, alert below it.
+    const [h] = (await stack().registry.run<{ rows: HmeRow[] }>(hillevi, 'qlik.hmeByUnit', {})).rows;
+    const hmeWith = async (hmeOkFrom: number, hmeWarnFrom?: number) =>
+      (await stack({ hmeOkFrom, hmeWarnFrom }).registry.run<{ rows: HmeRow[] }>(hillevi, 'qlik.hmeByUnit', {})).rows[0]!
+        .assessment;
+    expect(await hmeWith(h!.total!)).toBe('Över mål');
+    expect(await hmeWith(h!.total! + 1, h!.total!)).toBe('Bevaka');
+    expect(await hmeWith(h!.total! + 2, h!.total! + 1)).toBe('Åtgärd krävs');
+  });
+
+  test('the economy and HME figures (D54) say the value and open their tables', async () => {
+    const areas = await stack().registry.areas(hillevi);
+    expect(areas.find(a => a.id === 'economy')?.figure).toMatchObject({
+      label: 'Ekonomi, avvikelse mot budget',
+      value: expect.stringMatching(/^[+−]\d+,\d mnkr$/),
+      comparison: 'Helårsprognos mot helårsbudget · oktober 2026',
+      opens: { capability: 'qlik.economyByUnit' },
+    });
+    expect(areas.find(a => a.id === 'hme')?.figure).toMatchObject({
+      label: 'HME',
+      value: expect.stringMatching(/^\d+$/),
+      comparison: expect.stringMatching(/^Mätår 2025 · [+−]\d+ sedan 2023$/),
+      opens: { capability: 'qlik.hmeByUnit' },
+    });
+  });
+
+  test('the unit page reads economy and HME about a unit (D97), and the sick-leave section opens its chart', async () => {
+    const { registry } = stack();
+    const economy = await registry.run<{ rows: Array<{ key: string; deviation: number }> }>(
+      hillevi,
+      'qlik.economyUnit',
+      {
+        keys: ['unit-skola', 'unit-omsorg'],
+      },
+    );
+    expect(economy.rows.map(r => r.key)).toEqual(['unit-skola']);
+    const hme = await registry.run<{ rows: Array<{ key: string }> }>(hillevi, 'qlik.hmeUnit', { keys: ['unit-skola'] });
+    expect(hme.rows.map(r => r.key)).toEqual(['unit-skola']);
+    const [sick] = (
+      await registry.run<{ rows: Array<{ ref: string }> }>(hillevi, 'qlik.unit', { keys: ['unit-skola'] })
+    ).rows;
+    const chart = await registry.run<SeriesOut>(hillevi, 'qlik.sickLeaveChart', { unit: sick!.ref });
+    expect(chart.series.categories).toHaveLength(12);
+    expect(chart.series.series[0]!.values.at(-1)).toBe(5.3);
+  });
+
+  test('a source without economy or HME answers no rows and no figure, not an error', async () => {
+    const inner = fixture();
+    const sickLeaveOnly: Statistics = { read: () => inner.read() };
+    const { registry } = stack({ statistics: sickLeaveOnly });
+    expect((await registry.run<{ rows: unknown[] }>(hillevi, 'qlik.economyByUnit', {})).rows).toEqual([]);
+    expect((await registry.run<{ rows: unknown[] }>(hillevi, 'qlik.hmeUnit', { keys: ['unit-skola'] })).rows).toEqual(
+      [],
+    );
+    const areas = await registry.areas(hillevi);
+    expect(areas.find(a => a.id === 'economy')?.figure).toBeNull();
+    expect(areas.find(a => a.id === 'sick-leave')?.figure).toMatchObject({ value: '5,3 %' });
+  });
+
+  test('open mode: without a unit map every manager has figures for their own unit, by its own id, the same every time', async () => {
+    const { registry } = stack({ unitMap: null });
+    const own = (await registry.run<{ rows: UnitRow[] }>(hillevi, 'qlik.sickLeaveByUnit', {})).rows;
+    expect(own.map(r => [r.ref, r.unit])).toEqual([['unit:unit-skola', 'Bergsåkers skola']]);
+    // The scope is the reader's own unit, as with a map: any other id is no row.
+    const keys = ['unit-skola', 'unit-hemtjanst', 'unit-ekonomi'];
+    for (const read of ['qlik.unit', 'qlik.economyUnit', 'qlik.hmeUnit']) {
+      const { rows } = await registry.run<{ rows: Array<{ key: string; ref: string }> }>(hillevi, read, { keys });
+      expect(rows.map(r => [r.key, r.ref])).toEqual([['unit-skola', 'unit:unit-skola']]);
+    }
+    await expect(registry.run(hillevi, 'qlik.hmeChart', { unit: 'unit:unit-hemtjanst' })).rejects.toThrow();
+    const chart = await registry.run<SeriesOut>(hillevi, 'qlik.hmeChart', { unit: 'unit:unit-skola' });
+    expect(chart.series.categories).toHaveLength(4);
+    // A manager of any unit in any tree has every figure, and the same ones the next time.
+    const librarian = { ...hillevi, unitId: 'unit-bibliotek', unitLabel: 'Biblioteket' };
+    const figures = async () =>
+      (await stack({ unitMap: null }).registry.areas(librarian))
+        .filter(a => a.figure)
+        .map(a => [a.id, a.figure!.value]);
+    const first = await figures();
+    expect(first.map(([id]) => id)).toEqual(['sick-leave', 'economy', 'hme']);
+    expect(await figures()).toEqual(first);
+    // About one made-up unit in thirteen is too small to show, as a real one can be.
+    const small = { ...hillevi, unitId: 'unit-kommunikation', unitLabel: 'Kommunikation' };
+    const { rows } = await registry.run<{ rows: Array<{ total?: number; note?: string }> }>(small, 'qlik.unit', {
+      keys: ['unit-kommunikation'],
+    });
+    expect(rows).toMatchObject([{ note: 'Färre än 5 medarbetare. Visas inte.' }]);
+    expect(rows[0]!.total).toBeUndefined();
+  });
+});
+
+/**
+ * The units a manager follows up (D117): Clew signs the units below the reader into the actor when a call has them, and
+ * the connector answers for those units and refuses every other, with a map and in open mode alike.
+ */
+describe('the units below the reader (D117)', () => {
+  type Row = { key?: string; ref: string; unit: string };
+  const ingrid: Actor = {
+    id: 'ingrid',
+    name: 'Ingrid Holm',
+    unitId: 'unit-grundskola',
+    unitLabel: 'Grundskola',
+    role: 'manager',
+    units: [
+      { unitId: 'unit-grundskola', unitLabel: 'Grundskola' },
+      { unitId: 'unit-skola', unitLabel: 'Bergsåkers skola' },
+      { unitId: 'unit-skola-haga', unitLabel: 'Hagaskolan' },
+    ],
+  };
+  test('open mode: a section and a chart for a unit below, the table with every unit, named as Clew names them', async () => {
+    const { registry } = stack({ unitMap: null });
+    const keys = ['unit-skola', 'unit-skola-haga', 'unit-omsorg'];
+    for (const read of ['qlik.unit', 'qlik.economyUnit', 'qlik.hmeUnit']) {
+      const { rows } = await registry.run<{ rows: Row[] }>(ingrid, read, { keys });
+      expect(rows.map(r => [r.key, r.unit])).toEqual([
+        ['unit-skola', 'Bergsåkers skola'],
+        ['unit-skola-haga', 'Hagaskolan'],
+      ]);
+    }
+    const table = await registry.run<{ rows: Row[] }>(ingrid, 'qlik.economyByUnit', {});
+    expect(table.rows.map(r => r.unit)).toEqual(['Grundskola', 'Bergsåkers skola', 'Hagaskolan']);
+    const chart = await registry.run<{ series: { categories: string[] } }>(ingrid, 'qlik.sickLeaveChart', {
+      unit: 'unit:unit-skola',
+    });
+    expect(chart.series.categories).toHaveLength(12);
+    await expect(registry.run(ingrid, 'qlik.sickLeaveChart', { unit: 'unit:unit-omsorg' })).rejects.toThrow();
+    // Without the units the same manager has her own unit alone.
+    const { units: _, ...alone } = ingrid;
+    expect((await registry.run<{ rows: Row[] }>(alone, 'qlik.unit', { keys })).rows).toEqual([]);
+  });
+  test('with a map, a unit below is the source units the map names for it, and an unmapped one is no row', async () => {
+    const { registry } = stack({
+      unitMap: { 'unit-grundskola': ['IT och digitalisering'], 'unit-skola': ['Bergsåkers skola'] },
+    });
+    const { rows } = await registry.run<{ rows: Row[] }>(ingrid, 'qlik.unit', {
+      keys: ['unit-skola', 'unit-skola-haga'],
+    });
+    expect(rows.map(r => [r.key, r.unit])).toEqual([['unit-skola', 'Bergsåkers skola']]);
+    const table = await registry.run<{ rows: Row[] }>(ingrid, 'qlik.sickLeaveByUnit', {});
+    expect(table.rows.map(r => r.unit)).toEqual(['IT och digitalisering', 'Bergsåkers skola']);
   });
 });
 

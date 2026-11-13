@@ -29,7 +29,8 @@ export async function connectorAuthority(pem: string, kid: string, previous: JSO
     ],
   };
   // The person's directory user name is signed with the rest of the actor when they have one (D44, D97): the key a
-  // connector knows them by. Optional, so a grant signed without it still verifies.
+  // connector knows them by; so are the units they follow up when the call has them (D117). Both optional, so a grant
+  // signed without them still verifies.
   const sign = (audience: string, actor: Actor, claims: Record<string, unknown>) =>
     new SignJWT({
       actor: {
@@ -39,6 +40,7 @@ export async function connectorAuthority(pem: string, kid: string, previous: JSO
         unitId: actor.unitId,
         unitLabel: actor.unitLabel,
         ...(actor.userName ? { userName: actor.userName } : {}),
+        ...(actor.units?.length ? { units: actor.units } : {}),
       },
       ...claims,
     })

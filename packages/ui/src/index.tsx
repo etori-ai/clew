@@ -151,6 +151,7 @@ export {
   BellIcon,
   BookOpenIcon,
   ChartBarIcon,
+  ChatBubbleLeftRightIcon,
   CheckCircleIcon,
   DocumentTextIcon,
   HomeIcon,

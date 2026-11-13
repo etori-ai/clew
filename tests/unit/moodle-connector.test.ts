@@ -21,6 +21,7 @@ import {
 import { checkConnector } from '../../packages/connectors/src/check';
 import { namedInputs } from '../../packages/connectors/src/named';
 import { manifestProblems, parseManifest, remoteConnector, type FetchLike } from '../../packages/connectors/src/remote';
+import { adapterOf } from '../../connectors/moodle/config.mjs';
 import { OVERLAP, createConnector } from '../../connectors/moodle/connector.mjs';
 import {
   ItemUnreadable,
@@ -37,7 +38,12 @@ import {
   plainText,
   unescapeText,
 } from '../../connectors/moodle/moodle.mjs';
-import { HOLDINGS_PAGE, HoldingsOutput, manifest as moodleManifest } from '../../connectors/moodle/manifest.mjs';
+import {
+  COURSES_ROWS_MAX,
+  HOLDINGS_PAGE,
+  HoldingsOutput,
+  manifest as moodleManifest,
+} from '../../connectors/moodle/manifest.mjs';
 import {
   assertionFor,
   installationAssertionFor,
@@ -561,13 +567,15 @@ describe('the Moodle connector', () => {
     // Johan's account is suspended: what he completed stays true, and his row is there.
     const johan = (await page()).rows.find(r => r.key === 'johan')!;
     expect(johan.holdings.length).toBeGreaterThan(0);
-    // Matched on idnumber, two accounts whose idnumbers differ only in case are no one, as in every read.
+    // Matched on idnumber, two accounts that share a key are no one, as in every read, and so is one whose key has a
+    // capital letter: only the lower-case spelling is anyone's.
     const twins = stack({ match: 'idnumber' });
     twins.learning.controls.add('kim.a', 'kim');
-    twins.learning.controls.add('kim.b', 'Kim');
+    twins.learning.controls.add('kim.b', 'kim');
+    twins.learning.controls.add('lo.a', 'Lo');
     const twinKeys = (await twins.page()).rows.map(r => r.key);
     expect(twinKeys).not.toContain('kim');
-    expect(twinKeys).not.toContain('Kim');
+    expect(twinKeys).not.toContain('Lo');
     expect(twinKeys).toContain('lisa');
   });
 
@@ -870,6 +878,74 @@ describe('the Moodle connector', () => {
     expect(old.status).toBe(401);
   });
 
+  test('the adapter is always named: no default, and a half-configured deployment does not start on made-up data', () => {
+    const url = 'https://larplattform.example';
+    const token = 'c1e0de0000000000000000000000d0e5';
+    expect(adapterOf({ MOODLE_ADAPTER: 'moodle', MOODLE_URL: url, MOODLE_TOKEN: token })).toBe('moodle');
+    expect(adapterOf({ MOODLE_ADAPTER: 'fixture' })).toBe('fixture');
+    // What compose passes for an unset variable is the empty string.
+    expect(adapterOf({ MOODLE_ADAPTER: 'fixture', MOODLE_URL: '', MOODLE_TOKEN: '' })).toBe('fixture');
+    // A real address and token without the adapter named used to start the stand-in.
+    expect(() => adapterOf({ MOODLE_URL: url, MOODLE_TOKEN: token })).toThrow('MOODLE_ADAPTER is not set');
+    expect(() => adapterOf({})).toThrow('MOODLE_ADAPTER is not set');
+    expect(() => adapterOf({ MOODLE_ADAPTER: ' ' })).toThrow('MOODLE_ADAPTER is not set');
+    expect(() => adapterOf({ MOODLE_ADAPTER: 'live' })).toThrow('Unknown MOODLE_ADAPTER "live"');
+    expect(() => adapterOf({ MOODLE_ADAPTER: 'moodle', MOODLE_URL: url })).toThrow('MOODLE_TOKEN is not set');
+    expect(() => adapterOf({ MOODLE_ADAPTER: 'moodle' })).toThrow('MOODLE_URL and MOODLE_TOKEN are not set');
+    expect(() => adapterOf({ MOODLE_ADAPTER: 'fixture', MOODLE_URL: url, MOODLE_TOKEN: token })).toThrow(
+      'MOODLE_ADAPTER is "fixture" but MOODLE_URL and MOODLE_TOKEN are set',
+    );
+    expect(() => adapterOf({ MOODLE_ADAPTER: 'fixture', MOODLE_TOKEN: token })).toThrow('but MOODLE_TOKEN is set');
+    // The connector itself never picks a source either.
+    expect(() => createConnector({ secret })).toThrow('A source is required');
+  });
+
+  test('moodle.courses: a list longer than the answer may be is cut where a person can see it, never refused whole', async () => {
+    // 3 courses under way, 300 completed and 400 badges: 703 rows where the declared answer holds 500.
+    const many = (n: number, of: (i: number) => Row) => Array.from({ length: n }, (_, i) => of(i));
+    const source = wrapped(async (method, call) => {
+      if (method === 'courses')
+        return [
+          ...many(3, i => ({ id: 1000 + i, name: `Pågående ${i}`, idnumber: '', completed: false, tracked: true })),
+          ...many(300, i => ({ id: 2000 + i, name: `Klar ${i}`, idnumber: '', completed: true, tracked: true })),
+        ];
+      if (method === 'completion') return Math.floor(at / 1000) - 86_400;
+      if (method === 'badges')
+        return many(400, i => ({
+          id: 3000 + i,
+          name: `Märke ${i}`,
+          issuedAt: Math.floor(at / 1000) - i * 86_400,
+          expiresAt: null,
+        }));
+      return call();
+    });
+    const { courses } = stack({ source });
+    // Through Clew's registry, which validates the answer against the declared schema: it is answered, not refused.
+    const rows = await courses(hillevi, 'hillevi');
+    expect(rows).toHaveLength(COURSES_ROWS_MAX);
+    expect(rows.at(-1)).toEqual({ name: 'Listan är avkortad: 204 kurser och märken till visas inte här.' });
+    // The oldest completed courses go first: all 204 fit there, so what is under way and every badge is still listed.
+    const count = (kind: string, status?: string) =>
+      rows.filter(r => r.kind === kind && (!status || r.status === status)).length;
+    expect([count('Kurs', 'Pågår'), count('Kurs', 'Genomförd'), count('Märke')]).toEqual([3, 96, 400]);
+    // Exactly as many as the answer holds is the whole list, with no line.
+    const exact = wrapped(async (method, call) =>
+      method === 'courses'
+        ? []
+        : method === 'badges'
+          ? many(COURSES_ROWS_MAX, i => ({
+              id: 3000 + i,
+              name: `Märke ${i}`,
+              issuedAt: Math.floor(at / 1000),
+              expiresAt: null,
+            }))
+          : call(),
+    );
+    const whole = await stack({ source: exact }).courses(hillevi, 'hillevi');
+    expect(whole).toHaveLength(COURSES_ROWS_MAX);
+    expect(whole.every(r => r.kind === 'Märke')).toBe(true);
+  });
+
   test('the match field: username by default, which a Moodle user cannot change; idnumber when the installation says so', async () => {
     // Sara's idnumber is an employee number, her username her user name; Lisa's idnumber is her user name.
     const byUsername = stack();
@@ -879,11 +955,34 @@ describe('the Moodle connector', () => {
     expect(() => createConnector({ secret, match: 'email' as never })).toThrow('Unknown match field');
   });
 
-  test('a key that matches two accounts without regard to case is no one, under any relation', async () => {
+  test('matched on idnumber, two accounts that differ only in case on different pages are never both a row', async () => {
+    const { learning, sweep } = stack({ match: 'idnumber' });
+    // On the first page: an idnumber with a capital letter, and one in lower case.
+    learning.controls.add('ab.one', 'Ab12');
+    learning.controls.add('cd.one', 'cd34');
+    // Enough accounts between for a page of their own, then the twins in other spellings.
+    for (let i = 0; i < HOLDINGS_PAGE + 5; i++) learning.controls.add(`filler.${i}`, `filler-${i}`);
+    learning.controls.add('ab.two', 'AB12');
+    learning.controls.add('cd.two', 'CD34');
+    const pages = await sweep();
+    expect(pages.length).toBeGreaterThan(1);
+    const pageOf = (key: string) => pages.findIndex(p => p.rows.some(r => r.key === key));
+    const keys = pages.flatMap(p => p.rows.map(r => r.key));
+    // Clew compares keys without regard to case: no two rows of the whole read may be the same person to it.
+    const folded = keys.map(k => k.toLowerCase());
+    expect(new Set(folded).size).toBe(folded.length);
+    // Neither spelling with a capital letter is anyone; the lower-case one is, alone, on its own page.
+    expect(folded.filter(k => k === 'ab12')).toEqual([]);
+    expect(keys.filter(k => k.toLowerCase() === 'cd34')).toEqual(['cd34']);
+    expect(pageOf('cd34')).toBe(0);
+    expect(pageOf(`filler-${HOLDINGS_PAGE + 4}`)).toBeGreaterThan(0);
+  });
+
+  test('a key that two accounts hold is no one, under any relation', async () => {
     const { learning, post } = stack({ match: 'idnumber' });
-    // Two Moodle accounts whose idnumbers differ only in case.
+    // Two Moodle accounts with the same idnumber: Moodle does not keep it unique.
     learning.controls.add('kim.a', 'kim');
-    learning.controls.add('kim.b', 'Kim');
+    learning.controls.add('kim.b', 'kim');
     const kim = person('Kim', 'Kim Berg');
     const rows = async (actor: Actor, relation: string) =>
       (
@@ -900,9 +999,11 @@ describe('the Moodle connector', () => {
     expect(await rows(hillevi, 'managed')).toEqual([]);
   });
 
-  test('a key is looked up as asked and in lower case, and two accounts sharing the value are no one', async () => {
+  test('a key is looked up in lower case alone: the account that holds it so is the person, however the key is asked', async () => {
+    const asked: string[][] = [];
     const twins: LearningSource = {
       async accounts(_field, values) {
+        asked.push([...values]);
         const all = [
           { id: 11, username: 'a1', idnumber: 'Kim', suspended: false },
           { id: 12, username: 'a2', idnumber: 'kim', suspended: false },
@@ -930,11 +1031,12 @@ describe('the Moodle connector', () => {
           )
         ).json()) as { output: { rows: Row[] } }
       ).output.rows.map(r => r.key);
-    // "Kim" and "kim" are both asked for and both found: no one, rather than the one spelt as asked.
-    expect(await keys(['Kim'])).toEqual([]);
-    // "KIM" finds the lower-case account only: Moodle compares exactly, so only spellings asked can collide.
+    // However the key is asked, the account is the one that holds it in lower case; "Kim" is nobody's and takes
+    // nothing from it. The answer never depends on which spellings happened to be asked.
+    expect(await keys(['Kim'])).toEqual(['Kim']);
     expect(await keys(['KIM'])).toEqual(['KIM']);
-    // Two accounts with the same idnumber: no one, rather than either.
+    expect(asked).toEqual([['kim'], ['kim']]);
+    // No account holds "lo" in lower case, and the two that hold "Lo" are no one, rather than either.
     expect(await keys(['Lo', 'lo'])).toEqual([]);
     // A key asked twice in two cases is answered once.
     expect(await keys(['kim', 'KIM'])).toEqual(['kim']);

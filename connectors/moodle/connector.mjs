@@ -7,9 +7,10 @@
 // One read is the installation's own (D119): every account and what it holds, a page at a time, answered only to Clew's
 // assertion that no person is behind the call. Nothing is stored or cached between requests.
 import { createVerifier } from './verification.mjs';
-import { ItemUnreadable, SourceRefused, SourceUnavailable, createFixtureLearning } from './learning.mjs';
+import { ItemUnreadable, SourceRefused, SourceUnavailable } from './learning.mjs';
 import {
   CONNECTOR,
+  COURSES_ROWS_MAX,
   CRITERIA_MAX,
   DEFAULT_SOURCE,
   HOLDINGS_PAGE,
@@ -124,7 +125,7 @@ function json(body, status = 200) {
 const fail = (code, message, status) => json({ error: { code, message } }, status);
 
 /**
- * source: the learning-platform port (the stand-in by default). match: the Moodle field that holds the key Clew sends.
+ * source: the learning-platform port, always given: nothing here falls back to the stand-in. match: the Moodle field that holds the key Clew sends.
  * sourceLabel: the system's name as a person reads it. publicUrl: the address a person's browser reaches Moodle at, for
  * links to a course; without it there are none. timeZone: the zone a Moodle time is read as a day in. concurrency: how
  * many Moodle calls one read may have open at once. deadlines: per read, see DEADLINES. Identity, and how the caller
@@ -133,7 +134,7 @@ const fail = (code, message, status) => json({ error: { code, message } }, statu
 export function createConnector({
   jwks,
   secret,
-  source = createFixtureLearning(),
+  source,
   match = 'username',
   sourceLabel = DEFAULT_SOURCE,
   publicUrl,
@@ -147,6 +148,7 @@ export function createConnector({
     throw new Error(`Unknown match field "${match}". Known: ${MATCH_FIELDS.join(', ')}.`);
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 16)
     throw new Error('The concurrency must be a whole number from 1 to 16.');
+  if (!source) throw new Error('A source is required: the learning platform the connector reads.');
   const manifest = createManifest({ source: sourceLabel });
   const verify = createVerifier({ secret, jwks, clewUrl }, CONNECTOR);
   const linkBase = publicUrl ? new URL(publicUrl).toString().replace(/\/+$/, '') : undefined;
@@ -196,10 +198,9 @@ export function createConnector({
    * The Moodle account behind each key the caller may be answered about, in the order asked. A key is answered only when
    * Clew vouched for it as `self` or `managed`: a key it did not vouch for, a missing `about` (a Clew on protocol 2,
    * anything that sends keys past Clew) and any other relation are no one, the same as a person Moodle does not know.
-   * Then what is about Moodle and not about the organisation: one account per key without regard to case, a key asked
-   * twice (in any case) answered once; each key looked up as asked and in lower case, since Moodle compares exactly; a
-   * key that matches no account, or more than one without regard to case, is no one; and under `self` the account found
-   * must be the signed caller's own. Every read finds its people here.
+   * Then what is about Moodle and not about the organisation: a key asked twice (in any case) is answered once, the
+   * account is the one that holds the key in lower case, a key no account or more than one holds so is no one
+   * (`accountsOf`), and under `self` the account found must be the signed caller's own. Every read finds its people here.
    */
   async function find(actor, keys, run, relations) {
     const asked = keys.filter(key => ANSWERED.includes(relations.get(fold(key))));
@@ -208,10 +209,17 @@ export function createConnector({
     );
   }
   /**
-   * The one Moodle account behind each key, in the order given, a key given twice (in any case) once: each key looked up
-   * as given and in lower case, since Moodle compares exactly, and a key that matches no account, or more than one
-   * without regard to case, is no one. Moodle's guest account is no one's. The rule every read finds an account by, the
-   * person's and the installation's.
+   * The one Moodle account behind each key, in the order given, a key given twice (in any case) once. Clew compares a
+   * key without regard to case; the account behind it is the one that holds it in lower case, as Moodle keeps every
+   * username, looked up in that spelling alone. A key that no account holds so, or more than one, is no one. Moodle's
+   * guest account is no one's. The rule every read finds an account by, the person's and the installation's.
+   *
+   * Why lower case alone: Moodle compares exactly, so a lookup cannot say whether another account holds the same
+   * idnumber in another spelling (`AB12` beside `Ab12`), on this page of the installation's read or on one far from
+   * it, and Clew would take both for the same person. The lower-case spelling is the one a single exact lookup
+   * settles: every account that holds it comes back. An account whose idnumber has a capital letter is therefore
+   * nobody's, whatever is asked, and takes nothing from the account that holds the key in lower case. A Moodle whose
+   * database compares without regard to case answers the other spellings too; they are left out the same way.
    */
   async function accountsOf(keys, run) {
     const asked = [];
@@ -222,11 +230,11 @@ export function createConnector({
       asked.push(key);
     }
     if (!asked.length) return [];
-    const values = [...new Set(asked.flatMap(k => [k, fold(k)]))];
+    const values = asked.map(fold);
     const accounts = (await run(signal => source.accounts(match, values, { signal }))).filter(a => !isGuest(a));
     return asked.flatMap(key => {
-      const candidates = accounts.filter(a => typeof a[match] === 'string' && fold(a[match]) === fold(key));
-      return candidates.length === 1 ? [{ key, account: candidates[0] }] : [];
+      const holders = accounts.filter(a => a[match] === fold(key));
+      return holders.length === 1 ? [{ key, account: holders[0] }] : [];
     });
   }
 
@@ -269,7 +277,9 @@ export function createConnector({
     // One person's courses and badges: what is under way, what was completed and when, and the badges with their end.
     // A course that records no completion says nothing of competence and is left out; a completed course whose day
     // Moodle withholds is shown without it. A person whose course or badge list Moodle refuses is not answered: this is
-    // one person's list, and a list with a part silently missing would read as complete.
+    // one person's list, and a list with a part silently missing would read as complete. For the same reason a list
+    // longer than the answer may be (COURSES_ROWS_MAX) is cut where a person can see it: the oldest completed courses go
+    // first, then the oldest badges, then courses under way, and the last row says how many are not shown.
     courses: async (actor, input, run, relations) => {
       const person = input.person;
       if (
@@ -324,7 +334,24 @@ export function createConnector({
           date: dayOf(b.issuedAt),
           ...(b.expiresAt !== null ? { expiresOn: dayOf(b.expiresAt) } : {}),
         }));
-      return { rows: [...ongoing, ...done, ...held] };
+      const over = ongoing.length + done.length + held.length - COURSES_ROWS_MAX;
+      if (over <= 0) return { rows: [...ongoing, ...done, ...held] };
+      // One row is the line itself, so one more than the overflow is left out.
+      let left = over + 1;
+      const cut = list => {
+        const kept = list.slice(0, Math.max(0, list.length - left));
+        left -= list.length - kept.length;
+        return kept;
+      };
+      const [keptDone, keptHeld, keptOngoing] = [cut(done), cut(held), cut(ongoing)];
+      return {
+        rows: [
+          ...keptOngoing,
+          ...keptDone,
+          ...keptHeld,
+          { name: `Listan är avkortad: ${over + 1} kurser och märken till visas inte här.` },
+        ],
+      };
     },
 
     // One person's one course, opened from a row of moodle.courses. The person is found as every read finds them, and
@@ -461,7 +488,8 @@ export function createConnector({
   const installation = {
     // The holdings profile (D108 item 9): a page of the site's accounts in Moodle's id order, each with every holding
     // the platform can see, and the cursor of the next page. An account Moodle withholds the details of has no key and
-    // no row; an account whose key matches another account without regard to case is no one, as in every read. A page
+    // no row; an account that does not hold its key in lower case, or shares it with another, is no one, as in every
+    // read. A page
     // stops taking accounts halfway to its deadline and answers those it finished, so a slow Moodle gives shorter pages
     // and the read still moves on; if the deadline passes before the first account is finished, that account is
     // answered with what was read of it, nothing if nothing was, and marked partial. A failing call fails the page.
@@ -477,11 +505,17 @@ export function createConnector({
       const unseen = listed.filter(a => a.id > after);
       const page = unseen.slice(0, HOLDINGS_PAGE);
       // A key Moodle gave for each account, checked as every read checks one: it must find this account and no other.
-      // Two accounts of the page whose keys differ only in case are no one; one on another page is found by the lookup
-      // when it is spelt in lower case, as in a person's read.
+      // Only a key in lower case is anyone's (`accountsOf`): an account on another page that differs from one here only
+      // in case cannot be seen from here, so its other spellings are no one on every page, and one in the same spelling
+      // is found by the lookup, here or elsewhere.
       // Moodle's guest account is left out: it is nobody's, and Moodle will not read its badges (35).
       const spelt = page.filter(
-        a => !isGuest(a) && typeof a[match] === 'string' && a[match] !== '' && a[match].length <= KEY_MAX,
+        a =>
+          !isGuest(a) &&
+          typeof a[match] === 'string' &&
+          a[match] !== '' &&
+          a[match].length <= KEY_MAX &&
+          a[match] === fold(a[match]),
       );
       const twice = new Set(spelt.map(a => fold(a[match])).filter((k, i, all) => all.indexOf(k) !== i));
       const keyed = spelt.filter(a => !twice.has(fold(a[match])));

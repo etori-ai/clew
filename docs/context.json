@@ -191,7 +191,11 @@
     "D96",
     "D99",
     "D100",
-    "D101"
+    "D101",
+    "D116",
+    "D117",
+    "D118",
+    "D119"
   ],
   "decisions": [
     {
@@ -1045,7 +1049,7 @@
       "number": 88,
       "path": "docs/decisions/D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md",
       "title": "D88 · The web app draws the shared header above its rail, a connector gives Clew its content, and Clew has one front end",
-      "status": "accepted, built 2026-11-09 on `main`",
+      "status": "accepted, built 2026-11-09 on `main`; Start and the row under it are Clew's since [D116](D116-start-and-the-row-under-it-are-clews.md) (provisional, 2026-11-13), the connector gives the other places",
       "date": "2026-11-09",
       "area": "ui, product, integrations"
     },
@@ -1261,7 +1265,7 @@
       "number": 108,
       "path": "docs/decisions/D108-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md",
       "title": "D108 · Competence is an owned domain: one holding for competences and certificates, typed against a catalogue",
-      "status": "proposed, and built against the freeze on new surface: [D101](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) (the first real integration) item 4 allows no new owned domain, administration page or rail destination until its loop works, and this record is all three. It was begun on a branch cut before that freeze reached `main`, continued in the same working session after the freeze was pointed out, and brought into `main` on 2026-11-11 on that session's instruction, with the question whether it may pass the freeze asked and not answered by the product owner. The module is switched off until an administrator enables it. The product owner lifted the freeze on 2026-11-12, so it stays on `main`. The direction below was set in that working session on 2026-11-11 and is not yet confirmed by the product owner (decided in the session: a core module shipped with Clew and switched on per installation, competences and certificates in it, a position on the person, the catalogue with the main administrator, search for HR and staffing, a person's own registration approved by their manager, erasure a period after deactivation, the matrix as a page of its own, a review by an HR practitioner before real data); the items marked \"proposed\" are the author's and were not discussed, the items under \"Open\" are not decided; built 2026-11-11 on synthetic data: the catalogue with its page, a manager's registration, the computed status, the reads, the figure, the scan, erasure and export (see \"As built\"); built 2026-11-12, provisional: item 9 from source to status, the installation's read of the holdings profile ([D119](D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md)), the copy of what a source holds, its daily read and the mapping of a source's types on Administration › Kompetens › Källor (see the three \"As built, 2026-11-12\" sections), read end to end in process against the development Moodle but not yet by the running server; positions, requirements, coverage, the matrix, a person's own registration, search and the read log not built",
+      "status": "proposed, and built against the freeze on new surface: [D101](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) (the first real integration) item 4 allows no new owned domain, administration page or rail destination until its loop works, and this record is all three. It was begun on a branch cut before that freeze reached `main`, continued in the same working session after the freeze was pointed out, and brought into `main` on 2026-11-11 on that session's instruction, with the question whether it may pass the freeze asked and not answered by the product owner. The module is switched off until an administrator enables it. The product owner lifted the freeze on 2026-11-12, so it stays on `main`. The direction below was set in that working session on 2026-11-11 and is not yet confirmed by the product owner (decided in the session: a core module shipped with Clew and switched on per installation, competences and certificates in it, a position on the person, the catalogue with the main administrator, search for HR and staffing, a person's own registration approved by their manager, erasure a period after deactivation, the matrix as a page of its own, a review by an HR practitioner before real data); the items marked \"proposed\" are the author's and were not discussed, the items under \"Open\" are not decided; built 2026-11-11 on synthetic data: the catalogue with its page, a manager's registration, the computed status, the reads, the figure, the scan, erasure and export (see \"As built\"); built 2026-11-12, provisional: item 9 from source to status, the installation's read of the holdings profile ([D119](D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md)), the copy of what a source holds, its daily read and the mapping of a source's types on Administration › Kompetens › Källor (see the three \"As built, 2026-11-12\" sections), read end to end in process against the development Moodle but not yet by the running server; positions, requirements, coverage, the matrix, a person's own registration, search and the read log not built; amended by [D120](D120-a-skill-is-a-holding-with-a-level-and-the-competence-domain-covers-what-a-skills-platform-does.md) (2026-11-12, provisional: a skill is a holding with a level, the catalogue can be imported, the Kompetens place in the rail, goals beside talks' action points) and [D121](D121-a-registrar-reads-competence-across-the-organisation-through-a-relation-of-its-own.md) (2026-11-12, provisional: item 8's `competence.search` is a relation of its own, not a capability, and item 15's read log is built with it)",
       "date": "2026-11-11",
       "area": "product, identity, integrations"
     },
@@ -1338,6 +1342,24 @@
       "area": "ui"
     },
     {
+      "key": "D116-start-and-the-row-under-it-are-clews",
+      "number": 116,
+      "path": "docs/decisions/D116-start-and-the-row-under-it-are-clews.md",
+      "title": "D116 · Start and the row under it are Clew's; the intranet keeps the other places",
+      "status": "provisional (Oliver Borgström, 2026-11-13; built on the branch `start-is-clews`, tested by nothing outside the repository; amended the same day: Start has no row of pages, the rail holds Clew's places once, Dialogstöd joins the rail as an exception to the freeze, D101, at Oliver Borgström's choice)",
+      "date": "2026-11-13",
+      "area": "ui, integrations"
+    },
+    {
+      "key": "D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them",
+      "number": 117,
+      "path": "docs/decisions/D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md",
+      "title": "D117 · A manager follows up the units of the managers who report to them, and a source is told those units",
+      "status": "provisional (Oliver Borgström, 2026-11-13; built on the branch `dialogue-reach`, tested by nothing outside the repository; item 3's overview is a new page, built as an exception to the freeze on new surface, D101, at Oliver Borgström's choice)",
+      "date": "2026-11-13",
+      "area": "product, integrations"
+    },
+    {
       "key": "D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation",
       "number": 117,
       "path": "docs/decisions/D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md",
@@ -1347,6 +1369,33 @@
       "area": "integrations, identity"
     },
     {
+      "key": "D118-an-administrators-capability-is-no-relation-to-a-person",
+      "number": 118,
+      "path": "docs/decisions/D118-an-administrators-capability-is-no-relation-to-a-person.md",
+      "title": "D118 · An administrator's capability is no relation to a person: Användare and Personal list the same people, and what is shown about one follows the relation",
+      "status": "accepted (product owner, 2026-11-12: \"keep it that way\"; a boundary of scope that confirms what is built, nothing in the code changes)",
+      "date": "2026-11-12",
+      "area": "identity, product"
+    },
+    {
+      "key": "D118-the-follow-up-dialogue-is-an-owned-domain",
+      "number": 118,
+      "path": "docs/decisions/D118-the-follow-up-dialogue-is-an-owned-domain.md",
+      "title": "D118 · The follow-up dialogue is an owned domain: assessments and activities per unit, areas and questions as configuration",
+      "status": "provisional (Oliver Borgström, 2026-11-13; built on the branch `followup-dialogue`, tested by nothing outside the repository; a new owned domain and a new drawer, built as an exception to the freeze on new surface, D101, at Oliver Borgström's choice; checklist questions 6, 11 and 12 are open)",
+      "date": "2026-11-13",
+      "area": "product"
+    },
+    {
+      "key": "D119-key-figures-per-unit-come-through-one-vendor-neutral-profile",
+      "number": 119,
+      "path": "docs/decisions/D119-key-figures-per-unit-come-through-one-vendor-neutral-profile.md",
+      "title": "D119 · Key figures per unit come through one vendor-neutral profile",
+      "status": "proposed (Oliver Borgström asked for it on 2026-11-13; nothing built; the source, the history and the class of the data are open, and building it needs the product owner's word on the freeze, D101)",
+      "date": "2026-11-13",
+      "area": "integrations"
+    },
+    {
       "key": "D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach",
       "number": 119,
       "path": "docs/decisions/D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md",
@@ -1354,6 +1403,33 @@
       "status": "provisional (built 2026-11-12 on branch `holdings-caller` for D108 item 9's copy of every source's holdings; accepted once a connector outside the repository answers an installation read and the competence register's copy has run on it)",
       "date": "2026-11-12",
       "area": "integrations, identity"
+    },
+    {
+      "key": "D120-a-skill-is-a-holding-with-a-level-and-the-competence-domain-covers-what-a-skills-platform-does",
+      "number": 120,
+      "path": "docs/decisions/D120-a-skill-is-a-holding-with-a-level-and-the-competence-domain-covers-what-a-skills-platform-does.md",
+      "title": "D120 · A skill is a holding with a level, and the competence domain covers what a skills platform does for a public-sector organisation",
+      "status": "provisional (product owner, 2026-11-12, answered as questions in a working session; nothing outside the repository has tested it; items 1 to 8 built on branch `competence-skills` by 2026-11-13, the later slices of item 9 not; see [implementation status](../reference/status/people.md) for what exists)",
+      "date": "2026-11-12",
+      "area": "product, identity"
+    },
+    {
+      "key": "D121-a-registrar-reads-competence-across-the-organisation-through-a-relation-of-its-own",
+      "number": 121,
+      "path": "docs/decisions/D121-a-registrar-reads-competence-across-the-organisation-through-a-relation-of-its-own.md",
+      "title": "D121 · A registrar reads competence across the organisation through a relation of its own, and every such read is logged",
+      "status": "provisional (product owner, 2026-11-12: chose \"a new relation\" over an exception to D118 and over counts without names; nothing outside the repository has tested it; not built when written)",
+      "date": "2026-11-12",
+      "area": "identity, product"
+    },
+    {
+      "key": "D122-the-assistant-may-read-and-propose-whatever-the-person-who-asks-may-and-adding-a-model-is-answering-for-it",
+      "number": 122,
+      "path": "docs/decisions/D122-the-assistant-may-read-and-propose-whatever-the-person-who-asks-may-and-adding-a-model-is-answering-for-it.md",
+      "title": "D122 · The assistant may read and propose whatever the person who asks may, and adding a model is answering for it",
+      "status": "provisional (product owner, 2026-11-13, said in a working session; nothing is built and nothing outside the repository has tested it)",
+      "date": "2026-11-13",
+      "area": "assistant, identity, product"
     }
   ],
   "documents": [
@@ -1617,6 +1693,7 @@
         "A connector author implements two required routes",
         "What the registry does",
         "Models and declared views",
+        "Clew's own reads and the model",
         "MCP is a separate design",
         "Trace the behavior"
       ]
@@ -1975,8 +2052,38 @@
       "headings": []
     },
     {
+      "path": "docs/decisions/D116-start-and-the-row-under-it-are-clews.md",
+      "title": "D116 · Start and the row under it are Clew's; the intranet keeps the other places",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md",
+      "title": "D117 · A manager follows up the units of the managers who report to them, and a source is told those units",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
       "path": "docs/decisions/D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md",
       "title": "D117 · The core decides who a source may be asked about, on every call, and signs the relation",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D118-an-administrators-capability-is-no-relation-to-a-person.md",
+      "title": "D118 · An administrator's capability is no relation to a person: Användare and Personal list the same people, and what is shown about one follows the relation",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D118-the-follow-up-dialogue-is-an-owned-domain.md",
+      "title": "D118 · The follow-up dialogue is an owned domain: assessments and activities per unit, areas and questions as configuration",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D119-key-figures-per-unit-come-through-one-vendor-neutral-profile.md",
+      "title": "D119 · Key figures per unit come through one vendor-neutral profile",
       "category": "decision-history",
       "headings": []
     },
@@ -1989,6 +2096,24 @@
     {
       "path": "docs/decisions/D12-objects-chips-proposals.md",
       "title": "D12 · Objects, chips, proposals: the general interaction pattern",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D120-a-skill-is-a-holding-with-a-level-and-the-competence-domain-covers-what-a-skills-platform-does.md",
+      "title": "D120 · A skill is a holding with a level, and the competence domain covers what a skills platform does for a public-sector organisation",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D121-a-registrar-reads-competence-across-the-organisation-through-a-relation-of-its-own.md",
+      "title": "D121 · A registrar reads competence across the organisation through a relation of its own, and every such read is logged",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D122-the-assistant-may-read-and-propose-whatever-the-person-who-asks-may-and-adding-a-model-is-answering-for-it.md",
+      "title": "D122 · The assistant may read and propose whatever the person who asks may, and adding a model is answering for it",
       "category": "decision-history",
       "headings": []
     },
@@ -2601,6 +2726,7 @@
         "Identity",
         "Platform",
         "Interface",
+        "Assistant",
         "Proposed, not decided",
         "No longer in force"
       ]
@@ -4015,6 +4141,22 @@
       ]
     },
     {
+      "path": "docs/reviews/2026-11-12-absorbing-big-boss-board-into-clew.md",
+      "title": "Plan: absorbing big-boss-board (Dialogstöd) into Clew · 2026-11-12",
+      "category": "review-history",
+      "headings": [
+        "What was asked",
+        "Changed the same day",
+        "Sources read",
+        "What bbb is",
+        "Where each part goes in Clew",
+        "Decisions this plan rests on",
+        "Phases",
+        "Behaviour that changes for bbb's users",
+        "Risks"
+      ]
+    },
+    {
       "path": "docs/reviews/2026-11-12-municipal-employment-and-work-placements.md",
       "title": "Municipal employment, work placements and managerial responsibility",
       "category": "review-history",
@@ -4062,6 +4204,15 @@
         "Review and verification",
         "Outcome",
         "Pre-merge review of the fixes"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-13-dialogstod-design-critique.md",
+      "title": "Design critique: Dialogstöd's overview and the unit page · 2026-11-13",
+      "category": "review-history",
+      "headings": [
+        "Findings",
+        "What changed"
       ]
     },
     {

@@ -1141,6 +1141,11 @@ export function competenceUsecases(deps: CompetenceDeps) {
    * connector's audience or the competence module's own (D23, `HoldingsPort.admitted`). The read holds only the usable
    * holdings of the people it may keep rows for and the source's row ids, at most `COPY_HOLDINGS_MAX` holdings.
    *
+   * A person is one row of a read. Clew compares a key without regard to case, and a source may hold two accounts
+   * whose keys differ only in case, on one page or on two; a source cannot always tell, and Clew can. A key that a
+   * second row of the same sweep answers for, in any spelling, is nobody's: nothing of either row is kept, their
+   * holdings count as unusable, and what the person already has from the source is left as it is.
+   *
    * A page that does not answer is handled by its error kind (`SourceReadError`): the same page is asked again twice
    * after a pause when the source is unavailable, the sweep starts again from the first page once when the source no
    * longer knows the cursor, and anything else stops the read. A read that stops keeps what it read, revokes nothing and
@@ -1163,9 +1168,9 @@ export function competenceUsecases(deps: CompetenceDeps) {
     const claimed = await deps.store.transaction(async tx => {
       const at = now(),
         iso = at.toISOString();
-      const current = await tx.source(connectorId);
-      if (leased(current, iso) && current!.run !== run) return false;
-      const base = current ?? blankSource(connectorId, ref.source);
+      // Opened, not read: a source no run has claimed before gets its row here, so two first runs wait for each other.
+      const base = await tx.openSource(blankSource(connectorId, ref.source));
+      if (leased(base, iso) && base.run !== run) return false;
       await tx.putSource({
         ...base,
         source: ref.source,
@@ -1201,6 +1206,9 @@ export function competenceUsecases(deps: CompetenceDeps) {
       matched: [] as ReadHolding[],
       /** Each key seen, lower case, and the active person it matched, null for nobody. */
       keys: new Map<string, PersonRef | null>(),
+      /** The keys, lower case, a row has answered for, and those a second row answered for: one person, two accounts. */
+      answered: new Set<string>(),
+      twice: new Set<string>(),
       /** The people matched, and whether the source's rows may be kept for them. */
       admitted: new Map<string, boolean>(),
       /** Per organisation: holdings read and unusable for the people admitted, and the people outside. */
@@ -1241,6 +1249,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
         if (row?.partial) got.partial = true;
         const key = keyOf(row);
         const person = key ? got.keys.get(key) : undefined;
+        if (key) (got.answered.has(key) ? got.twice : got.answered).add(key);
         for (const holding of Array.isArray(row?.holdings) ? row.holdings : []) {
           got.read++;
           if (typeof holding?.id === 'string' && holding.id) got.seen.add(holding.id);
@@ -1312,6 +1321,7 @@ export function competenceUsecases(deps: CompetenceDeps) {
           ...(failure ? { failure } : {}),
           pages: got.pages,
           unmatched: counts.unmatched,
+          ...(got.twice.size ? { ambiguous: got.twice.size } : {}),
           ...counts.total,
         },
       });
@@ -1408,6 +1418,19 @@ export function competenceUsecases(deps: CompetenceDeps) {
     } catch (error) {
       return failedHere(error, 'read');
     }
+    // One person, two rows: neither is kept (see above). Their usable holdings become unusable ones in the counts.
+    const twice = new Set([...got.twice].flatMap(key => got.keys.get(key)?.id ?? []));
+    if (twice.size) {
+      for (const m of got.matched.filter(m => twice.has(m.personId))) {
+        got.invalid++;
+        tally(m.organisationId).invalid++;
+      }
+      got.matched = got.matched.filter(m => !twice.has(m.personId));
+      deps.log?.('competence: a source answered more than one row for the same person; nothing of those rows is kept', {
+        connector: connectorId,
+        people: twice.size,
+      });
+    }
     const { seen, matched, partial, withdrawals } = got;
     outcome = failure ? 'failed' : partial ? 'partial' : 'complete';
     try {
@@ -1421,13 +1444,17 @@ export function competenceUsecases(deps: CompetenceDeps) {
           (await tx.mappingsOf(connectorId)).map(m => [m.organisationId + '\n' + m.sourceType, m]),
         );
         const existing = await tx.copiedFrom(connectorId);
-        // Checked again under the lock: a person deactivated (and perhaps erased) since the page was read gets nothing.
+        // Checked again under the source's lock, which an erasure takes for every source before it removes anything: a
+        // person deactivated (and perhaps erased) since the page was read gets nothing, and one erased from here on
+        // waits for this write and takes its rows with it.
         const active = await tx.activeIds([...new Set([...matched.map(m => m.personId), ...holders])]);
         const removed = existing.filter(h => !active.has(h.personId) || !keep(h.personId));
         const gone = new Set(removed.map(h => h.id));
         const plan = planCopy({
           connectorId,
-          existing: existing.filter(h => !gone.has(h.id)),
+          // What a person answered by two rows already has is left out of the plan: neither revoked for absence nor
+          // marked as read again, since nothing this read says of them is known to be theirs.
+          existing: existing.filter(h => !gone.has(h.id) && !twice.has(h.personId)),
           read: matched.filter(m => active.has(m.personId)),
           seen,
           mapping: (organisationId, sourceType) => mapped.get(organisationId + '\n' + sourceType)?.typeId ?? null,

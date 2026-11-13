@@ -1,6 +1,6 @@
 {
-  "id": "1841c720-2353-41a4-8297-92278562f95a",
-  "prevId": "a0e20746-7bdf-4db2-ae27-ed104f7d92af",
+  "id": "a0e20746-7bdf-4db2-ae27-ed104f7d92af",
+  "prevId": "63cac027-8c59-4c55-b40f-1977cbe6c43b",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -579,382 +579,6 @@
         "competence_holding_typed": {
           "name": "competence_holding_typed",
           "value": "\"competence_holding\".\"type_id\" IS NOT NULL OR \"competence_holding\".\"connector_id\" IS NOT NULL"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.competence_requirement": {
-      "name": "competence_requirement",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "organisation_id": {
-          "name": "organisation_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "type_id": {
-          "name": "type_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "position_id": {
-          "name": "position_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "unit_id": {
-          "name": "unit_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "person_id": {
-          "name": "person_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "min_level": {
-          "name": "min_level",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "competence_requirement_position": {
-          "name": "competence_requirement_position",
-          "columns": [
-            {
-              "expression": "type_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "position_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"competence_requirement\".\"position_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "competence_requirement_unit": {
-          "name": "competence_requirement_unit",
-          "columns": [
-            {
-              "expression": "type_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "unit_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"competence_requirement\".\"unit_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "competence_requirement_person": {
-          "name": "competence_requirement_person",
-          "columns": [
-            {
-              "expression": "type_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "person_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"competence_requirement\".\"person_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "competence_requirement_organisation": {
-          "name": "competence_requirement_organisation",
-          "columns": [
-            {
-              "expression": "organisation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "competence_requirement_type_id_competence_type_id_fk": {
-          "name": "competence_requirement_type_id_competence_type_id_fk",
-          "tableFrom": "competence_requirement",
-          "tableTo": "competence_type",
-          "columnsFrom": [
-            "type_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "competence_requirement_position_id_auth_position_id_fk": {
-          "name": "competence_requirement_position_id_auth_position_id_fk",
-          "tableFrom": "competence_requirement",
-          "tableTo": "auth_position",
-          "columnsFrom": [
-            "position_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "competence_requirement_unit_id_auth_unit_id_fk": {
-          "name": "competence_requirement_unit_id_auth_unit_id_fk",
-          "tableFrom": "competence_requirement",
-          "tableTo": "auth_unit",
-          "columnsFrom": [
-            "unit_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "competence_requirement_person_id_auth_person_id_fk": {
-          "name": "competence_requirement_person_id_auth_person_id_fk",
-          "tableFrom": "competence_requirement",
-          "tableTo": "auth_person",
-          "columnsFrom": [
-            "person_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "competence_requirement_target": {
-          "name": "competence_requirement_target",
-          "value": "num_nonnulls(\"competence_requirement\".\"position_id\", \"competence_requirement\".\"unit_id\", \"competence_requirement\".\"person_id\") = 1"
-        },
-        "competence_requirement_level": {
-          "name": "competence_requirement_level",
-          "value": "\"competence_requirement\".\"min_level\" IS NULL OR \"competence_requirement\".\"min_level\" BETWEEN 1 AND 3"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.competence_share_target": {
-      "name": "competence_share_target",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "organisation_id": {
-          "name": "organisation_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "type_id": {
-          "name": "type_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "position_id": {
-          "name": "position_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "unit_id": {
-          "name": "unit_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "min_share": {
-          "name": "min_share",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "competence_share_target_unit": {
-          "name": "competence_share_target_unit",
-          "columns": [
-            {
-              "expression": "type_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "position_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "unit_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"competence_share_target\".\"unit_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "competence_share_target_organisation": {
-          "name": "competence_share_target_organisation",
-          "columns": [
-            {
-              "expression": "organisation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "type_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "position_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"competence_share_target\".\"unit_id\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "competence_share_target_type_id_competence_type_id_fk": {
-          "name": "competence_share_target_type_id_competence_type_id_fk",
-          "tableFrom": "competence_share_target",
-          "tableTo": "competence_type",
-          "columnsFrom": [
-            "type_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "competence_share_target_position_id_auth_position_id_fk": {
-          "name": "competence_share_target_position_id_auth_position_id_fk",
-          "tableFrom": "competence_share_target",
-          "tableTo": "auth_position",
-          "columnsFrom": [
-            "position_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "competence_share_target_unit_id_auth_unit_id_fk": {
-          "name": "competence_share_target_unit_id_auth_unit_id_fk",
-          "tableFrom": "competence_share_target",
-          "tableTo": "auth_unit",
-          "columnsFrom": [
-            "unit_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "competence_share_target_share": {
-          "name": "competence_share_target_share",
-          "value": "\"competence_share_target\".\"min_share\" BETWEEN 1 AND 100"
         }
       },
       "isRLSEnabled": false
@@ -1564,6 +1188,482 @@
           "onUpdate": "no action"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.dialogue_activity": {
+      "name": "dialogue_activity",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "organisation_id": {
+          "name": "organisation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unit_id": {
+          "name": "unit_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "area_key": {
+          "name": "area_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "text_sealed": {
+          "name": "text_sealed",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "due_on": {
+          "name": "due_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "done_at": {
+          "name": "done_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "done_by": {
+          "name": "done_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "done_note_sealed": {
+          "name": "done_note_sealed",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "dialogue_activity_unit": {
+          "name": "dialogue_activity_unit",
+          "columns": [
+            {
+              "expression": "unit_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "dialogue_activity_thread": {
+          "name": "dialogue_activity_thread",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "dialogue_activity_owner_open": {
+          "name": "dialogue_activity_owner_open",
+          "columns": [
+            {
+              "expression": "owner_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"dialogue_activity\".\"done_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "dialogue_activity_owner_id_auth_person_id_fk": {
+          "name": "dialogue_activity_owner_id_auth_person_id_fk",
+          "tableFrom": "dialogue_activity",
+          "tableTo": "auth_person",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "dialogue_activity_done_by_auth_person_id_fk": {
+          "name": "dialogue_activity_done_by_auth_person_id_fk",
+          "tableFrom": "dialogue_activity",
+          "tableTo": "auth_person",
+          "columnsFrom": [
+            "done_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "dialogue_activity_created_by_auth_person_id_fk": {
+          "name": "dialogue_activity_created_by_auth_person_id_fk",
+          "tableFrom": "dialogue_activity",
+          "tableTo": "auth_person",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "dialogue_activity_thread_id_thread_id_fk": {
+          "name": "dialogue_activity_thread_id_thread_id_fk",
+          "tableFrom": "dialogue_activity",
+          "tableTo": "thread",
+          "columnsFrom": [
+            "thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.dialogue_area": {
+      "name": "dialogue_area",
+      "schema": "",
+      "columns": {
+        "organisation_id": {
+          "name": "organisation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "measure": {
+          "name": "measure",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "info": {
+          "name": "info",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dimensions": {
+          "name": "dimensions",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "ordinal": {
+          "name": "ordinal",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "dialogue_area_organisation_id_key_pk": {
+          "name": "dialogue_area_organisation_id_key_pk",
+          "columns": [
+            "organisation_id",
+            "key"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "dialogue_area_kind": {
+          "name": "dialogue_area_kind",
+          "value": "\"dialogue_area\".\"kind\" IN ('measured', 'assessed')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.dialogue_assessment": {
+      "name": "dialogue_assessment",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "organisation_id": {
+          "name": "organisation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unit_id": {
+          "name": "unit_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "area_key": {
+          "name": "area_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "dimension": {
+          "name": "dimension",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "tone": {
+          "name": "tone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "comment_sealed": {
+          "name": "comment_sealed",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "author_id": {
+          "name": "author_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "dialogue_assessment_unit": {
+          "name": "dialogue_assessment_unit",
+          "columns": [
+            {
+              "expression": "unit_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "area_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "dimension",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "dialogue_assessment_author_id_auth_person_id_fk": {
+          "name": "dialogue_assessment_author_id_auth_person_id_fk",
+          "tableFrom": "dialogue_assessment",
+          "tableTo": "auth_person",
+          "columnsFrom": [
+            "author_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "dialogue_assessment_tone": {
+          "name": "dialogue_assessment_tone",
+          "value": "\"dialogue_assessment\".\"tone\" IN ('ok', 'warn', 'alert')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.dialogue_question": {
+      "name": "dialogue_question",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "organisation_id": {
+          "name": "organisation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "area_key": {
+          "name": "area_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unit_id": {
+          "name": "unit_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "heading": {
+          "name": "heading",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "text": {
+          "name": "text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "based_on": {
+          "name": "based_on",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ordinal": {
+          "name": "ordinal",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "dialogue_question_area": {
+          "name": "dialogue_question_area",
+          "columns": [
+            {
+              "expression": "organisation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "area_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

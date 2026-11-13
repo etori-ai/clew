@@ -1,6 +1,7 @@
 import type { ViewRef } from '@clew/contracts';
 import { REVIEW_KEYS } from './review-address';
 import { TALK_PARAM } from './talk-address';
+import { DIALOGUE_PARAM } from './dialogue-address';
 
 /**
  * What the panel holds is named in the address (D50), the same way on every page (`usePagePanel`, the shell's drawer):
@@ -36,11 +37,12 @@ const OWN_KEYS = [ENTRY_PARAM, ASK_PARAM];
 /** Every name the panel's part of an address uses: what a page drops when it opens its own thing in the panel's place. */
 const PANEL_KEYS: readonly string[] = [...VIEW_KEYS, 'card', ...READ_KEYS, ...OWN_KEYS];
 /**
- * What lies over the page and the panel and holds the focus (D111 rule 5): one person's talk (`talk-address.ts`), and
- * a card's review as its address named it before the review was a page (`review-address.ts`, which leads such an
- * address to the review's page). Closing one leaves the page's address as it was under it.
+ * What lies over the page and the panel and holds the focus (D111 rule 5): one person's talk (`talk-address.ts`), one
+ * unit's dialogue (`dialogue-address.ts`, D118), and a card's review as its address named it before the review was a
+ * page (`review-address.ts`, which leads such an address to the review's page). Closing one leaves the page's address
+ * as it was under it.
  */
-const FOCUSED_KEYS: readonly string[] = [...REVIEW_KEYS, TALK_PARAM];
+const FOCUSED_KEYS: readonly string[] = [...REVIEW_KEYS, TALK_PARAM, DIALOGUE_PARAM];
 const parse = (json: string | null): Record<string, unknown> => {
   try {
     const v: unknown = json ? JSON.parse(json) : {};

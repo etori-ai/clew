@@ -136,7 +136,13 @@ const fieldTables = [
       .join('\n')
   );
 });
-const decisionLink = (number: string) => {
+const decisionLink = (number: string, record?: string) => {
+  if (record) {
+    // A number that names two records is linked by the record a rule names (`Rule.record`); a wrong one fails the run.
+    const named = decisions.find(d => `D${d.number}` === number && d.path.split('/').at(-1) === record);
+    if (!named) throw new Error(`Rule names decision record ${record}, which is not ${number}.`);
+    return `../decisions/${record}`;
+  }
   const hits = decisions.filter(d => `D${d.number}` === number);
   return hits.length === 1
     ? `../decisions/${hits[0]!.path.split('/').at(-1)}`

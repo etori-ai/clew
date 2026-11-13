@@ -1,8 +1,9 @@
 // Serves connector.mjs over HTTP. Environment (README.md has the full table):
 //   PORT (default 4053), CLEW_CONNECTOR_SECRET (shared with Clew), CLEW_URL (where Clew's keys are fetched)
-//   MOODLE_ADAPTER        "fixture" (default: the in-memory stand-in in learning.mjs) or "moodle" (the real API)
-//   MOODLE_URL            Moodle's base address, as the connector reaches it. Required for moodle
-//   MOODLE_TOKEN          the service account's web service token. Required for moodle
+//   MOODLE_ADAPTER        "moodle" (the real API) or "fixture" (the in-memory stand-in in learning.mjs, whose people
+//                         are made up: development and tests only). Required: there is no default (config.mjs)
+//   MOODLE_URL            Moodle's base address, as the connector reaches it. Required for moodle, refused for fixture
+//   MOODLE_TOKEN          the service account's web service token. Required for moodle, refused for fixture
 //   MOODLE_ALLOW_HTTP     "true" lets MOODLE_URL be plain http on a private development network
 //   MOODLE_MATCH_FIELD    the Moodle field that holds the key Clew sends: "username" (default) or "idnumber"
 //   MOODLE_SOURCE_LABEL   the system's name as a person reads it (default "Lärplattformen")
@@ -10,14 +11,13 @@
 //   MOODLE_TIMEZONE       the zone Moodle's times are read as days in (default "Europe/Stockholm")
 //   MOODLE_CONCURRENCY    how many Moodle calls one request may have open at once (default 4, at most 16)
 import { createServer } from 'node:http';
+import { adapterOf } from './config.mjs';
 import { MATCH_FIELDS, createConnector } from './connector.mjs';
 import { createFixtureLearning } from './learning.mjs';
 import { createMoodleLearning } from './moodle.mjs';
 
 const env = process.env;
-const adapter = env.MOODLE_ADAPTER || 'fixture';
-if (adapter !== 'fixture' && adapter !== 'moodle')
-  throw new Error(`Unknown MOODLE_ADAPTER "${adapter}". Known: fixture, moodle.`);
+const adapter = adapterOf(env);
 
 const match = env.MOODLE_MATCH_FIELD || 'username';
 if (!MATCH_FIELDS.includes(match))

@@ -1,5 +1,10 @@
 import type {
   CommitmentAddBody,
+  DialogueActivityAddBody,
+  DialogueActivityDoneBody,
+  DialogueActivityEditBody,
+  DialogueAssessBody,
+  DialogueUnit,
   CommitmentsInput,
   CommitmentsResult,
   NewsResult,
@@ -236,6 +241,8 @@ const read = <T>(name: string, input: unknown) =>
   call<{ output: T }>(`/api/cap/${name}?input=${encodeURIComponent(JSON.stringify(input))}`).then(r => r.output);
 const talkPath = (personId: string) => `/api/talks/${encodeURIComponent(personId)}`;
 const commitmentPath = (id: string) => `/api/talks/commitments/${encodeURIComponent(id)}`;
+const dialogueUnitPath = (unitId: string) => `/api/dialogue/units/${encodeURIComponent(unitId)}`;
+const dialogueActivityPath = (id: string) => `/api/dialogue/activities/${encodeURIComponent(id)}`;
 export const api = {
   /** Personal (D94): the people on the units the signed-in manager manages; 403 for anyone else. */
   staff: () => call<StaffOverview>('/api/staff'),
@@ -287,6 +294,21 @@ export const api = {
     complete: (id: string) => post<void>(`${commitmentPath(id)}/done`),
     /** Opens a done action point again. */
     reopen: (id: string) => del<void>(`${commitmentPath(id)}/done`),
+  },
+  /**
+   * The follow-up dialogue (D118): one unit's dialogue and its writes, Clew's own routes. Refused while the module is
+   * switched off for the person, and for a unit they do not follow up.
+   */
+  dialogue: {
+    unit: (unitId: string) => call<DialogueUnit>(dialogueUnitPath(unitId)),
+    assess: (unitId: string, body: DialogueAssessBody) =>
+      post<{ id: string }>(`${dialogueUnitPath(unitId)}/assessments`, body),
+    addActivity: (unitId: string, body: DialogueActivityAddBody) =>
+      post<{ id: string }>(`${dialogueUnitPath(unitId)}/activities`, body),
+    editActivity: (id: string, body: DialogueActivityEditBody) => patch<void>(dialogueActivityPath(id), body),
+    complete: (id: string, body: DialogueActivityDoneBody = {}) => post<void>(`${dialogueActivityPath(id)}/done`, body),
+    reopen: (id: string) => del<void>(`${dialogueActivityPath(id)}/done`),
+    remove: (id: string) => del<void>(dialogueActivityPath(id)),
   },
   /**
    * Kompetens (D108): the built-in module's own routes. They are refused while the module is switched off for the

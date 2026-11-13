@@ -620,6 +620,12 @@ export interface CompetenceTx {
   source(connectorId: string): Promise<SourceRecord | undefined>;
   /** Every source's row, locked in the order of their ids; returns their ids (a merge, D108 item 2). */
   lockSources(): Promise<string[]>;
+  /**
+   * One source, locked, written as `blank` first when it has no record: what a run claims a source through. Of two
+   * transactions that open a source nobody has read before, the second waits for the first and is answered what the
+   * first wrote, so they never both find it free.
+   */
+  openSource(blank: SourceRecord): Promise<SourceRecord>;
   /** Write a source's record, replacing the one there. */
   putSource(record: SourceRecord): Promise<void>;
   /**
@@ -726,9 +732,12 @@ export interface CompetenceTx {
   /**
    * Remove the person's holdings, copied ones included, and the requirements set on them alone, and remove them from
    * other people's holdings (null `registeredBy`, `revokedBy`, `decidedBy`, `validatedBy`, each keeping its time) and
-   * from the requirements and share targets they set (null `createdBy`, which holds `person:<id>`). Takes the row lock of every source the person has copied
-   * rows from first, in the order of their ids. Returns the approval keys of the removed holdings, whose cards the use
-   * case removes with `workItems` in the same transaction.
+   * from the requirements and share targets they set (null `createdBy`, which holds `person:<id>`). Takes the row lock
+   * of every source first, in the order of their ids, whether the person has rows of it yet or not: a read's write holds
+   * its source's row from before it asks who is active until it commits, so an erasure waits for a write under way, the
+   * person's very first one included, and a write that starts after the erasure finds the person deactivated. Returns
+   * the approval keys of the removed holdings, whose cards the use case removes with `workItems` in the same
+   * transaction.
    */
   erasePerson(personId: string): Promise<Erased>;
   /**

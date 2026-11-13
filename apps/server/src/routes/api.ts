@@ -49,6 +49,7 @@ import {
 } from '../composition';
 import { Type, type Static } from 'typebox';
 import { executions } from '../composition/executions';
+import { withFollowedUnits } from '../composition/people';
 import { jobs } from '../composition/jobs-across-systems';
 import { FactEnvelopeSchema, StepDraftSchema, type FactEnvelope } from '@clew/connectors/protocol';
 import { changesFor } from '../composition/changes';
@@ -314,8 +315,9 @@ api.get('/cap/:name', async c => {
     }
   }
   // The output and, when the capability declares one, how to draw it (D38): the browser never guesses a declared view.
-  // The person's own session asks for the read itself, so a relation they hold by grant may be resolved (D121).
-  const persona = c.get('session').context;
+  // As the person with the units they follow up (D117), so a view opened for a unit below them can be answered; and the
+  // person's own session asks for the read itself, so a relation they hold by grant may be resolved (D121).
+  const persona = await withFollowedUnits(c.get('session').context);
   const output = await runCapability(persona, name, input, { direct: true });
   const view = registry.viewFor(actorOf(persona), name);
   return c.json({ output, source: found.connector.source, ...(view ? { view } : {}) });

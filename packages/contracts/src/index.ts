@@ -62,6 +62,12 @@ export interface AuthenticatedContext extends SessionUser {
    * Absent means none. Never a capability: no route consults it to decide what administration a person may do (D118).
    */
   relationGrants?: RelationGrant[];
+  /**
+   * The units the person follows up (D117): those they manage and those of the managers who report to them (D99's
+   * reporting line), set where a read needs them and signed into a connector's actor, so a source can answer for the
+   * units below the reader and refuse the rest. Absent where nobody set them; a connector then knows `unitId` alone.
+   */
+  units?: Array<{ unitId: string; unitLabel: string }>;
   authorizationVersion: string;
   sessionBinding: string;
   expiresAt: string;
@@ -1143,6 +1149,149 @@ export const CommitmentAddBodySchema = object({
 export type CommitmentAddBody = Static<typeof CommitmentAddBodySchema>;
 
 /**
+ * The follow-up dialogue (D118): a manager's dialogue about one unit, area by area, with the managers who follow it up.
+ * An area is measured (its figure comes from the key-figure source the area names) or assessed (a manager sets its
+ * state, per dimension where it has them). Areas, dimensions and questions are configuration an operator loads; the
+ * assessments and activities are Clew's own records. A tone is Clew's: `ok`, `warn`, `alert`.
+ */
+export const DIALOGUE_TONES = ['ok', 'warn', 'alert'] as const;
+export type DialogueTone = (typeof DIALOGUE_TONES)[number];
+export const DialogueToneSchema = literals(DIALOGUE_TONES);
+export const DIALOGUE_AREA_KINDS = ['measured', 'assessed'] as const;
+export type DialogueAreaKind = (typeof DIALOGUE_AREA_KINDS)[number];
+/** The limits of the free text (D118 item 9), as big-boss-board had them. */
+export const DIALOGUE_TEXT_MAX = { activity: 4000, note: 1000, comment: 2000 } as const;
+const areaKey = Type.String({ pattern: '^[a-z][a-z0-9-]{0,39}$', maxLength: 40 });
+const dimensionKey = Type.String({ pattern: '^[a-z][a-z0-9-]{0,39}$', maxLength: 40 });
+/** An assessment as the dialogue shows it: the state, its comment, who set it and when. */
+export const DialogueAssessmentSchema = object({
+  tone: DialogueToneSchema,
+  comment: Type.Optional(Type.String({ maxLength: DIALOGUE_TEXT_MAX.comment })),
+  /** The author's name; absent once they were erased. */
+  by: Type.Optional(Type.String({ maxLength: 200 })),
+  at: Type.String({ maxLength: 40 }),
+});
+export type DialogueAssessment = Static<typeof DialogueAssessmentSchema>;
+export const DialogueDimensionSchema = object({
+  /** Empty for an area assessed as a whole. */
+  key: Type.String({ maxLength: 40 }),
+  /** Empty for an area assessed as a whole. */
+  title: Type.String({ maxLength: 120 }),
+  /** The newest first; the first is the state that counts. */
+  history: Type.Array(DialogueAssessmentSchema, { maxItems: 200 }),
+});
+export type DialogueDimension = Static<typeof DialogueDimensionSchema>;
+export const DialogueQuestionSchema = object({
+  heading: Type.Optional(Type.String({ maxLength: 120 })),
+  text: Type.String({ maxLength: 2000 }),
+  /** The statement from the employee survey the question is drawn from. */
+  basedOn: Type.Optional(Type.String({ maxLength: 2000 })),
+});
+export type DialogueQuestion = Static<typeof DialogueQuestionSchema>;
+export const DialogueActivitySchema = object({
+  id,
+  text: Type.String({ maxLength: DIALOGUE_TEXT_MAX.activity }),
+  dueOn: Type.Optional(calendarDay),
+  /** Who answers for it: its owner's name, absent once they were erased. */
+  owner: Type.Optional(Type.String({ maxLength: 200 })),
+  /** The reader owns it. */
+  mine: Type.Boolean(),
+  doneAt: Type.Optional(Type.String({ maxLength: 40 })),
+  doneNote: Type.Optional(Type.String({ maxLength: DIALOGUE_TEXT_MAX.note })),
+  createdAt: Type.String({ maxLength: 40 }),
+});
+export type DialogueActivity = Static<typeof DialogueActivitySchema>;
+export const DialogueAreaSchema = object({
+  key: areaKey,
+  title: Type.String({ maxLength: 120 }),
+  kind: literals(DIALOGUE_AREA_KINDS),
+  /** For a measured area, the read about a unit that answers its figure (`<connector>.<read>`). */
+  measure: Type.Optional(Type.String({ maxLength: 120 })),
+  /** A fact about the area: how to read it, what the data says and does not. */
+  info: Type.Optional(Type.String({ maxLength: 2000 })),
+  /** The state that counts: the worst of the dimensions' newest assessments; absent while nothing is assessed. */
+  tone: Type.Optional(DialogueToneSchema),
+  dimensions: Type.Array(DialogueDimensionSchema, { maxItems: 10 }),
+  questions: Type.Array(DialogueQuestionSchema, { maxItems: 50 }),
+  activities: Type.Array(DialogueActivitySchema, { maxItems: 500 }),
+});
+export type DialogueArea = Static<typeof DialogueAreaSchema>;
+/** One unit's dialogue (`GET /api/dialogue/units/:unitId`): every configured area in order. */
+export const DialogueUnitSchema = object({
+  unit: object({
+    id: Type.String({ minLength: 1, maxLength: ENTITY_KEY_MAX }),
+    label: Type.String({ maxLength: 200 }),
+    relation: literals(['own', 'below'] as const),
+  }),
+  areas: Type.Array(DialogueAreaSchema, { maxItems: 30 }),
+  /** Clew's own module answers for the reader, so the dialogue can be written. */
+  writable: Type.Boolean(),
+});
+export type DialogueUnit = Static<typeof DialogueUnitSchema>;
+/** A manager sets an assessed area's state for a unit (D118 item 6); `dimension` only for an area that has them. */
+export const DialogueAssessBodySchema = object({
+  area: areaKey,
+  dimension: Type.Optional(dimensionKey),
+  tone: DialogueToneSchema,
+  comment: Type.Optional(Type.String({ maxLength: DIALOGUE_TEXT_MAX.comment })),
+});
+export type DialogueAssessBody = Static<typeof DialogueAssessBodySchema>;
+/** A manager adds an activity to a unit's area (D118 item 4); the due date is optional (item 5). */
+export const DialogueActivityAddBodySchema = object({
+  area: areaKey,
+  text: Type.String({ minLength: 1, maxLength: DIALOGUE_TEXT_MAX.activity }),
+  dueOn: Type.Optional(calendarDay),
+});
+export type DialogueActivityAddBody = Static<typeof DialogueActivityAddBodySchema>;
+/** An activity's text and due date changed; `dueOn` null takes the date away. */
+export const DialogueActivityEditBodySchema = object({
+  text: Type.String({ minLength: 1, maxLength: DIALOGUE_TEXT_MAX.activity }),
+  dueOn: Type.Union([calendarDay, Type.Null()]),
+});
+export type DialogueActivityEditBody = Static<typeof DialogueActivityEditBodySchema>;
+/** An activity marked done, with an optional note on how it went. */
+export const DialogueActivityDoneBodySchema = object({
+  note: Type.Optional(Type.String({ maxLength: DIALOGUE_TEXT_MAX.note })),
+});
+export type DialogueActivityDoneBody = Static<typeof DialogueActivityDoneBodySchema>;
+/**
+ * The areas, dimensions and questions of an organisation's dialogue (D118 item 3), as an operator loads them from a
+ * file (`scripts/dialogue-areas.ts`). A question with `units` is shown only on those units and replaces the area's
+ * general questions there, as big-boss-board's organisation-specific questions did.
+ */
+export const DialogueConfigSchema = object({
+  areas: Type.Array(
+    object({
+      key: areaKey,
+      title: Type.String({ minLength: 1, maxLength: 120 }),
+      kind: literals(DIALOGUE_AREA_KINDS),
+      measure: Type.Optional(Type.String({ minLength: 1, maxLength: 120 })),
+      info: Type.Optional(Type.String({ minLength: 1, maxLength: 2000 })),
+      dimensions: Type.Optional(
+        Type.Array(object({ key: dimensionKey, title: Type.String({ minLength: 1, maxLength: 120 }) }), {
+          maxItems: 10,
+        }),
+      ),
+      questions: Type.Optional(
+        Type.Array(
+          object({
+            heading: Type.Optional(Type.String({ minLength: 1, maxLength: 120 })),
+            text: Type.String({ minLength: 1, maxLength: 2000 }),
+            basedOn: Type.Optional(Type.String({ minLength: 1, maxLength: 2000 })),
+            units: Type.Optional(
+              Type.Array(Type.String({ minLength: 1, maxLength: ENTITY_KEY_MAX }), { minItems: 1, maxItems: 500 }),
+            ),
+          }),
+          { maxItems: 200 },
+        ),
+      ),
+    }),
+    { minItems: 1, maxItems: 30 },
+  ),
+});
+export type DialogueConfig = Static<typeof DialogueConfigSchema>;
+
+/**
  * One piece of news as a news source's connector lists it (D112, amended 2026-11-11): what Hem's "Nyheter" and the
  * list "Alla nyheter" draw, and nothing else. A row either leaves Clew by its `link` or opens in Clew by the read its
  * view's `open` names (by convention `<id>.newsItem`). No body, no image, no author: Clew is not a news site (vision).
@@ -1246,8 +1395,11 @@ export const isRelationGrant = (value: string): value is RelationGrant =>
 /** The relations of the closed list among stored values, in the list's order; anything else is dropped. */
 export const relationGrantsOf = (values: readonly string[] | undefined | null): RelationGrant[] =>
   RELATION_GRANTS.filter(r => values?.includes(r));
-/** How a caller stands to a unit (D117): they manage it (`manages`), or are placed on it without managing it (`member`). */
-export const UNIT_RELATIONS = ['manages', 'member'] as const;
+/**
+ * How a caller stands to a unit (D117, both records): they manage it (`manages`), are placed on it without managing it
+ * (`member`), or a manager who reports to them leads it (`below`, D99's reporting line one level down).
+ */
+export const UNIT_RELATIONS = ['manages', 'member', 'below'] as const;
 export type UnitRelation = (typeof UNIT_RELATIONS)[number];
 export type Relation = PersonRelation | UnitRelation;
 export const RELATIONS: readonly Relation[] = [...PERSON_RELATIONS, ...UNIT_RELATIONS];
@@ -1261,7 +1413,7 @@ export const PersonRelationSchema = literals(PROTOCOL_PERSON_RELATIONS, {
 });
 export const UnitRelationSchema = literals(UNIT_RELATIONS, {
   description:
-    "`manages`: the caller holds a manager's role on the unit. `member`: the caller is placed on it otherwise.",
+    "`manages`: the caller holds a manager's role on the unit. `member`: the caller is placed on it otherwise. `below`: the unit is one the caller follows up from above (D117): the nearest unit below one they manage that has a manager, led by a manager who reports to them (D99's reporting line, one level down, never the whole branch).",
 });
 /**
  * Who may be asked about through a capability (D117). Clew resolves how the caller stands to every person the input
@@ -1579,7 +1731,13 @@ export const EntityDetailSchema = object({
     Type.Literal('colleague'),
     Type.Literal('manages'),
     Type.Literal('member'),
+    // A unit whose manager reports to the reader (D99's reporting line, D117).
+    Type.Literal('below'),
   ]),
+  /** For a unit: the units under it whose managers report to the reader, each a page of its own (D117). */
+  below: Type.Optional(Type.Array(object({ key: Type.String(), name: Type.String() }), { maxItems: 200 })),
+  /** For a unit below the reader (`below`): the reader's own unit its manager reports to, the way up (D117). */
+  above: Type.Optional(object({ key: Type.String(), name: Type.String() })),
   actions: Type.Array(EntityActionSchema),
   sections: Type.Array(EntitySourceSchema),
   cards: Type.Array(EntityCardSchema),
@@ -3878,6 +4036,8 @@ export interface ReferenceRule {
   /** The field paths the rule binds together. */
   fields: string[];
   decision?: string;
+  /** The decision record's file name, where `decision` is a number that names two records (D117, D119). */
+  record?: string;
   /** Where Clew applies it: when the manifest is loaded, when the connector is registered, in the conformance check, or on each call. */
   enforced: 'loader' | 'registry' | 'check' | 'call';
 }

@@ -27,6 +27,8 @@ import { talkSeamUsecases } from '../modules/talk-seam/usecases';
 import { talkDirectory, talks } from '../composition/talks';
 import { competenceConnector } from '../modules/competence/capabilities';
 import { competence } from '../composition/competence';
+import { dialogueConnector } from '../modules/dialogue/capabilities';
+import { dialogue } from '../composition/dialogue';
 import { logger } from '../logging';
 import { relations } from '../composition/relations';
 
@@ -77,11 +79,13 @@ const clewConnector = {
 // and an administrator can switch it off so that another system answers the profile.
 // The competence module (D108 item 13) is bundled too, and is the one bundled connector an installation switches on
 // itself: its row is created disabled (`offAtFirstBoot`), so nothing of the domain shows until an administrator enables it.
+// The follow-up dialogue (D118) is bundled and enabled by default, as talks is: an administrator can switch it off.
 const bundled = [
   calendarConnector(calendar, events),
   clewConnector,
   talksConnector(talks),
   competenceConnector(competence),
+  dialogueConnector(dialogue),
 ];
 for (const m of [...internal, ...bundled]) registry.register({ ...m, uses: ['*'] });
 export const internalIds = internal.map(m => m.id);

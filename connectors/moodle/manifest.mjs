@@ -19,6 +19,11 @@ export const PERSON_KEYS_MAX = 50;
 export const HOLDINGS_PAGE = 25;
 /** The most holdings one row carries; an account with more is answered with these and marked partial. */
 export const HOLDINGS_PER_ROW = 500;
+/**
+ * The most rows one person's list of courses and badges carries (moodle.courses). Clew refuses a whole answer that is
+ * longer than its declared schema allows, so a longer list is cut here and its last row says so.
+ */
+export const COURSES_ROWS_MAX = 500;
 /** The cursor of the next page: the id of the last account answered and its place in Moodle's list, `<id>:<place>`. */
 export const cursorPattern = '^[0-9]{1,10}:[0-9]{1,9}$';
 
@@ -144,7 +149,8 @@ function capabilities(source) {
 
   // One person's courses and badges, the section's fuller read. Names of courses and badges only; nothing a person wrote.
   // A course's row carries the person's key as asked and the course's id, which open it in moodle.course, and, where an
-  // installation gives Moodle's public address, a link to the course there. A badge's row opens nothing.
+  // installation gives Moodle's public address, a link to the course there. A badge's row opens nothing. A list longer
+  // than COURSES_ROWS_MAX is cut, and its last row is a line that says how many are not shown: a name and nothing else.
   const personCourses = {
     name: `${CONNECTOR}.courses`,
     kind: 'read',
@@ -157,7 +163,7 @@ function capabilities(source) {
     output: object({
       rows: {
         type: 'array',
-        maxItems: 500,
+        maxItems: COURSES_ROWS_MAX,
         items: object(
           {
             name: text(),
@@ -169,7 +175,8 @@ function capabilities(source) {
             course: courseId,
             link,
           },
-          ['name', 'kind', 'status'],
+          // A course or a badge always has its kind and status; the line that says a list was cut has a name alone.
+          ['name'],
         ),
       },
     }),

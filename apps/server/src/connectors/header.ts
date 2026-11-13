@@ -2,11 +2,13 @@ import type { AuthenticatedContext, SiteHeaderView } from '@clew/contracts';
 import { actorOf } from '@clew/connectors';
 import { registry } from './registry';
 import { clock } from '../composition/ambient';
+import { CLEWS_START, withClewsStart } from './header-start';
 
 /**
  * The shared header for a signed-in person (D88): the answer of the connector an administrator chose to give it
  * (`Registry.header`), or Clew's default, the site's name and Start, when no connector gives the person one. Platform
- * code beside the registry, like the menu and the tools: no module owns the header, a connector does.
+ * code beside the registry, like the menu and the tools: no module owns the header, a connector does, except Start and
+ * the row under it, which are Clew's own pages for the person (D116, `header-start.ts`).
  *
  * The header never blocks a page. The browser draws the default band at once and fills the places in when this
  * answers; here the connector gets a short budget (`HEADER_TIMEOUT_MS`), a failure or a refusal is the default, and the
@@ -15,7 +17,7 @@ import { clock } from '../composition/ambient';
  * the person and their authorization version, so a changed grant is a new read; it lives in this process only.
  */
 export const DEFAULT_HEADER: SiteHeaderView = {
-  menu: { version: 1, site: { name: 'Startsidan', href: '/' }, items: [{ id: 'start', label: 'Start', href: '/' }] },
+  menu: { version: 1, site: { name: 'Startsidan', href: '/' }, items: [CLEWS_START] },
   logo: null,
   source: null,
 };
@@ -30,7 +32,11 @@ async function fetchSiteHeader(persona: AuthenticatedContext): Promise<SiteHeade
   });
   if (!found) return DEFAULT_HEADER;
   return {
-    menu: { version: 1, site: found.output.site, items: found.output.items },
+    menu: {
+      version: 1,
+      site: found.output.site,
+      items: withClewsStart(found.output.items),
+    },
     logo: found.output.logo ?? null,
     source: { id: found.connector.id, label: found.connector.source },
   };

@@ -1,4 +1,5 @@
-import type { AuthenticatedContext, Thread } from '@clew/contracts';
+import type { AuthenticatedContext, Subject, Thread } from '@clew/contracts';
+import { namedAmong, namedSubjects } from '../threads/domain';
 import { subjectCards } from '../threads/usecases/subjects';
 import { threadAccess } from '../threads/access';
 import { dueLabel, workItemLine } from './context';
@@ -13,7 +14,9 @@ export type { ManagedPerson };
  * into the turn is the asker's own open work about them (the index from entity to cards, D97 item 6): each work item's
  * title, source, last day and buttons. Never a source's rows about the person, and never a card's text or rows when the
  * card is about someone the conversation names: a work item's summary and rows may say what a source knows about a
- * person's health, and the model is not handed that (D97 item 7, D115).
+ * person's health, and the model is not handed that (D97 item 7, D115). Whether a card is about such a person is read
+ * from the card in hand (`guards`), so it holds wherever the card lies: under Behöver dig, set aside under Inte nu,
+ * waiting on someone else, or handled.
  */
 
 /** How one name as the asker wrote it resolves: one person, several, or nobody. */
@@ -164,14 +167,15 @@ export interface PeopleInTurn {
   /** The people the asker's words in this conversation could name: the only ones the lookup tool resolves. */
   mentioned: ManagedPerson[];
   /**
-   * The cards about any of them, rows or thread: wherever one is in the turn, the model is handed its title, last day and
-   * buttons, never its text or rows.
+   * Whether a card is about any of them, by its own rows or the thread itself: wherever such a card is in the turn, the
+   * model is handed its title, last day and buttons, never its text or rows. Decided on the card in hand, never on a
+   * list it might be missing from: a card pointed at may be set aside, waiting or handled.
    */
-  guarded: ReadonlySet<string>;
+  guards: (thread: Pick<Thread, 'id' | 'items' | 'subjects'>) => boolean;
   /** The asker's open work about one of them: their cards under Behöver dig whose rows name them (D97 item 6). */
   work: (person: ManagedPerson) => Thread[];
 }
-const NOBODY: PeopleInTurn = { people: [], named: [], mentioned: [], guarded: new Set(), work: () => [] };
+const NOBODY: PeopleInTurn = { people: [], named: [], mentioned: [], guards: () => false, work: () => [] };
 
 /**
  * The person part of one turn: the people the asker manages, the names in the question and the work about everyone
@@ -223,11 +227,14 @@ export async function peopleInTurn(
       }
     }
   }
+  const asked: Subject[] = [...about.values()].map(p => ({ entity: 'person', key: p.key }));
   return {
     people,
     named,
     mentioned: [...about.values()],
-    guarded,
+    // The card's own subjects decide. The cards found through the index are kept beside them, so a card it named stays
+    // guarded whatever the copy in hand says.
+    guards: thread => guarded.has(thread.id) || namedAmong(namedSubjects(thread), asked).length > 0,
     work: person => byKey.get(fold(person.key)) ?? [],
   };
 }

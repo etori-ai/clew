@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { announcements, expect, expectNoAxeViolations, heading, narrow, open, reflowProblems, test } from './support';
 import { ENTITY_UNIT, TALK_LENS, user } from './data';
-import { MEMBER_UNIT, SICK_UNIT, TALK_UNITS, Units, unitAction, unitCard } from './unit-data';
+import { BELOW_UNIT, MEMBER_UNIT, SICK_UNIT, TALK_UNITS, Units, unitAction, unitCard } from './unit-data';
 
 /**
  * The unit as an entity (D112 item 5, the shape of board Person; D97): a page of its own at `/units/:id`, in the work
@@ -51,6 +51,10 @@ test.describe('the unit as a page', () => {
     await expect(talks.getByText('1 av 5 hållna')).toBeVisible();
     const [a, b] = await Promise.all([sick.boundingBox(), talks.boundingBox()]);
     expect(b!.y).toBeGreaterThanOrEqual(a!.y + a!.height);
+    // The key figures on top (D117): each source's figure with its state, above the sections that give the details.
+    const tile = page.getByRole('main').getByText('1 av 5 hållna').first();
+    await expect(page.getByRole('main').getByText('1 av 5 hållna')).toHaveCount(2);
+    expect((await tile.boundingBox())!.y).toBeLessThan(a!.y);
     // A source's row as its view declares it, its fuller read under it, its source's badge on its heading's line.
     await expect(sick.getByText('Qlik', { exact: true }).first()).toBeVisible();
     await expect(sick.getByText('4,2 %').first()).toBeVisible();
@@ -112,6 +116,43 @@ test.describe('the unit as a page', () => {
     await expect(heading(page, 2, `Inget mer att visa om ${MEMBER_UNIT.label}`)).toBeVisible();
     await expect(wayBack(page, 'Hem')).toHaveCount(0);
     await expectNoAxeViolations(page);
+  });
+
+  test('the units below in the reader’s reporting line are links in the facts, and the one opened says its manager reports to the reader (D117)', async ({
+    page,
+    api: _,
+  }) => {
+    const units = new Units();
+    units.withBelow = true;
+    await units.route(page);
+    await open(page, school);
+    const details = page.getByRole('complementary', { name: 'Detaljer' });
+    await expect(details).toContainText('Enheter under');
+    const link = details.getByRole('link', { name: BELOW_UNIT.label, exact: true });
+    await expect(link).toHaveAttribute('href', `/units/${BELOW_UNIT.id}?from=${encodeURIComponent(school)}`);
+    await expectNoAxeViolations(page);
+    await link.click();
+    await expect(heading(page, 1, BELOW_UNIT.label)).toBeVisible();
+    const below = page.getByRole('complementary', { name: 'Detaljer' });
+    await expect(below).toContainText('Enhetens chef rapporterar till dig');
+    await expect(below).not.toContainText('Medarbetare');
+    await expect(below).not.toContainText('Enheter under');
+    // The trail above the name: the way up to the school, and the unit as a menu of the other units the reader follows up.
+    const trail = page.getByRole('navigation', { name: 'Enheter', exact: true });
+    await expect(trail.getByRole('link', { name: 'Bergsåkers skola', exact: true })).toHaveAttribute(
+      'href',
+      '/units/unit-skola',
+    );
+    const switcher = trail.getByRole('button', { name: BELOW_UNIT.label });
+    await expect(switcher).toHaveAttribute('aria-haspopup', 'menu');
+    await switcher.press('Enter');
+    const menu = page.getByRole('menu');
+    await expect(menu.getByRole('menuitem', { name: 'Hagaskolan' })).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: 'Bergsåkers skola' })).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: BELOW_UNIT.label })).toHaveCount(0);
+    await expectNoAxeViolations(page);
+    await page.keyboard.press('Escape');
+    await expect(switcher).toBeFocused();
   });
 
   test('a unit the reader may not ask about is the page’s own “finns inte”', async ({ page, api: _ }) => {

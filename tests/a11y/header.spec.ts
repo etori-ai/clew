@@ -2,24 +2,17 @@ import { desktop, expect, expectNoAxeViolations, open, openNav, phone, reflowPro
 import type { SiteHeaderView } from '@clew/contracts';
 
 /**
- * The shared header on the web app (D88): the band with the installation's name, the places the person's header
- * connector lists and the current place's own pages under the band; the rail stays Clew's. Keyboard, structure, axe
- * and reflow, at desktop, phone and 1024 px.
+ * The shared header on the web app (D88): the band with the installation's name, Clew's Start (D116; the server puts it
+ * first, with no row of pages under it since 2026-11-13) and the places the person's header connector lists; Clew's own
+ * pages stand once, in the rail. Keyboard, structure, axe and reflow, at desktop, phone and 1024 px.
  */
 const fromConnector = (): SiteHeaderView => ({
   menu: {
     version: 1,
     site: { name: 'Intranätet', href: '/' },
     items: [
-      {
-        id: 'start',
-        label: 'Start',
-        href: '/',
-        children: [
-          { id: 'kalender', label: 'Kalender', href: '/calendar' },
-          { id: 'kort', label: 'Mina kort', href: '/?tab=waiting' },
-        ],
-      },
+      // As the server answers since D116, amended: Clew's Start alone, whatever the connector listed there.
+      { id: 'start', label: 'Start', href: '/' },
       { id: 'organisation', label: 'Organisation', href: 'https://intranat.example.se/organisation' },
       { id: 'service', label: 'Service, IT och lokaler', href: 'https://intranat.example.se/service' },
     ],
@@ -58,10 +51,9 @@ test.describe('the shared header on every page', () => {
       'https://intranat.example.se/organisation',
     );
     await expect(places.getByRole('link', { name: 'Service, IT och lokaler' })).toBeVisible();
-    // The row under the band: Start's own pages, the page's own marked.
-    const pages = banner.getByRole('navigation', { name: 'Start', exact: true });
-    await expect(pages.getByRole('link', { name: 'Kalender' })).toHaveAttribute('aria-current', 'page');
-    await expect(pages.getByRole('link', { name: 'Mina kort' })).toHaveAttribute('href', '/?tab=waiting');
+    // No row under the band: Clew's pages stand once, in the rail, which marks the page's own.
+    await expect(banner.getByRole('navigation', { name: 'Start', exact: true })).toHaveCount(0);
+    await expect(banner.getByRole('link', { name: 'Kalender' })).toHaveCount(0);
     await expect(banner.getByRole('button', { name: 'Påminnelser: 0', exact: true })).toBeVisible();
     await expect(banner.getByRole('button', { name: 'Testa Testsson, inställningar', exact: true })).toBeVisible();
     // The rail stays the rail: Clew's own places, nothing of the header's, and no heading or person of its own, since
@@ -69,6 +61,7 @@ test.describe('the shared header on every page', () => {
     const rail = page.getByRole('navigation', { name: 'Sidonavigering' });
     await expect(rail.getByRole('link', { name: 'Organisation' })).toHaveCount(0);
     await expect(rail.getByRole('link', { name: /^Hem/ })).toBeVisible();
+    await expect(rail.getByRole('link', { name: 'Kalender', exact: true })).toHaveAttribute('aria-current', 'page');
     await expect(rail.getByRole('link', { name: 'Intranätet' })).toHaveCount(0);
     await expect(rail.getByRole('button', { name: 'Testa Testsson', exact: true })).toHaveCount(0);
     await expectNoAxeViolations(page);

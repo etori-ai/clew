@@ -108,6 +108,13 @@ export const ActorSchema = object(
           "The person's provisioned directory user name (SCIM `userName`, D68): the key your system knows them by, and the key a read about a person is asked with (D97). Absent for a person provisioned without one.",
       }),
     ),
+    units: Type.Optional(
+      Type.Array(object({ unitId: Type.String({ minLength: 1, maxLength: 256 }), unitLabel: Type.String() }), {
+        maxItems: 200,
+        description:
+          'The units the person follows up (D117): those they manage and those of the managers who report to them (D99). Present on the calls where Clew knows them (a read about units, a view opened on a page); a source may answer for these units and must refuse every other. Absent means `unitId` alone.',
+      }),
+    ),
   },
   'The acting person as Clew knows them. Never a token.',
 );
@@ -126,7 +133,7 @@ export const CallAboutSchema = object(
       Type.Union([PersonRelationSchema, UnitRelationSchema]),
       {
         description:
-          "Every key the input carries (each of `keys`, or the value of the property that takes one key), exactly as the input spells it, mapped to how the actor stands to it: a person's `self`, `managed` or `colleague`, a unit's `manages` or `member`. Clew sends no key the capability does not admit, so a key the input carries and this map does not name is one Clew did not vouch for: answer it as no row.",
+          "Every key the input carries (each of `keys`, or the value of the property that takes one key), exactly as the input spells it, mapped to how the actor stands to it: a person's `self`, `managed` or `colleague`, a unit's `manages`, `member` or `below`. Clew sends no key the capability does not admit, so a key the input carries and this map does not name is one Clew did not vouch for: answer it as no row.",
       },
     ),
   },

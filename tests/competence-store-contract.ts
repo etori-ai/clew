@@ -977,6 +977,21 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
         expect((await w.store.transaction(tx => tx.sources())).filter(s => s.connectorId === w.lms)).toEqual([done]);
       });
 
+      test('opening a source writes its record when it has none and answers the one there otherwise, unchanged', async () => {
+        const w = await copying({ source: false });
+        const blank = blankSource(w.lms);
+        // Nobody has read the source: the record is written as given, and it is there afterwards.
+        expect(await w.store.transaction(tx => tx.openSource(blank))).toEqual(blank);
+        expect(await w.store.transaction(tx => tx.source(w.lms))).toEqual(blank);
+        // A run holds it: opening answers the run's record and overwrites nothing.
+        const claimed = blankSource(w.lms, { run: 'r1', claimedAt: T, leaseUntil: T2 });
+        await w.store.transaction(tx => tx.putSource(claimed));
+        expect(await w.store.transaction(tx => tx.openSource(blankSource(w.lms, { source: 'Annat namn' })))).toEqual(
+          claimed,
+        );
+        expect(await w.store.transaction(tx => tx.source(w.lms))).toEqual(claimed);
+      });
+
       test("a connector's copied rows are listed by person and deleted by id, and only its own", async () => {
         const w = await copying();
         const other = w.p + '-hr';

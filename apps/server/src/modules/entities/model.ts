@@ -14,6 +14,11 @@ export interface DirectoryPerson {
   /** Null for a person provisioned without one; such a person cannot be asked about (D97). */
   userName: string | null;
   enabled: boolean;
+  /**
+   * Set for a person who reports to the unit from a unit below it (D99) rather than being placed on it: the units below
+   * that they lead or are placed on.
+   */
+  below?: Array<DirectoryUnit & { role: 'manager' | 'employee' }>;
 }
 export interface DirectoryUnit {
   unitId: string;
@@ -23,8 +28,6 @@ export interface DirectoryUnit {
 export interface ReachPerson extends DirectoryPerson {
   /** Their role on the unit itself; for someone who reports to it from below, the role they hold there. Absent: unknown. */
   role?: 'manager' | 'employee';
-  /** Set for someone who reports to the unit from a unit below it (D99) rather than being placed on it. */
-  below?: readonly unknown[];
 }
 /**
  * Where the reader stands: every unit they are assigned to, the units they manage with the people Personal lists on

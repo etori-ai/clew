@@ -1232,6 +1232,34 @@ describe('a question about a person the asker manages (D115)', () => {
     for (const marker of HEALTH) expect(model.handed.at(-2)!).not.toContain(marker);
   });
 
+  // A card pointed at is not always under Behöver dig: the guard is read from the card itself, whatever state it is in.
+  for (const [state, patch, says] of [
+    ['set aside under Inte nu', { snoozedUntil: '2026-12-01T07:00:00.000Z' }, 'Ärendet ligger under Inte nu.'],
+    ['waiting on someone else', { waitingOn: 'HR' }, 'Ärendet väntar på HR.'],
+    ['handled', { state: 'handled', handledAt: T0 }, 'Ärendet är hanterat.'],
+  ] as const)
+    test(`a chipped work item about a named person that is ${state} is handed by title alone, in this turn and the next`, async () => {
+      const model = scripted([], 'Svar.');
+      const w = world({ generate: model.generate });
+      const card = await rehab(w);
+      await w.store.transaction(tx => tx.updateThread(card.id, { ...patch, updatedAt: T0 }));
+      const chip = { ref: 'thread:' + card.id, kind: 'thread' as const, label: card.title };
+      const first = await w.assistant.converse(hillevi, { text: QUESTION, chips: [chip] });
+      const system = model.handed.at(-2)!;
+      // The card is in the turn in the state the test put it in, by its title, and nothing a source holds is with it.
+      expect(system).toContain('- Ärende "Boka ett omtankesamtal med en medarbetare" (Personalsystemet');
+      expect(system).toContain(says);
+      for (const marker of HEALTH) expect(model.handed.join('\n')).not.toContain(marker);
+      // The follow-up names nobody; the asker named her before, so the same card stays its title.
+      await w.assistant.converse(hillevi, {
+        text: 'Vad står det här?',
+        chips: [chip],
+        conversationId: first.conversationId,
+      });
+      expect(model.handed.at(-2)!).toContain('- Ärende "Boka ett omtankesamtal med en medarbetare" (Personalsystemet');
+      for (const marker of HEALTH) expect(model.handed.join('\n')).not.toContain(marker);
+    });
+
   test('a card that names the person on the thread alone, as an action point does (D96 item 6), is guarded and never listed', async () => {
     const model = scripted([['clew__findPerson', { name: 'Anna' }]], 'Svar.');
     const w = world({ generate: model.generate });

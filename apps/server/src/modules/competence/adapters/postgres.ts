@@ -519,6 +519,27 @@ export function competenceTx(
       const [r] = await tx.select().from(sources).where(eq(sources.connectorId, connectorId)).for('update');
       return r ? sourceOf(r) : undefined;
     },
+    async openSource(blank) {
+      // The insert waits for another transaction that is inserting the same source, and then does nothing; the read
+      // after it sees what that transaction committed and takes the row's lock.
+      await tx
+        .insert(sources)
+        .values({
+          connectorId: blank.connectorId,
+          source: blank.source,
+          run: blank.run,
+          claimedAt: date(blank.claimedAt),
+          leaseUntil: date(blank.leaseUntil),
+          startedAt: date(blank.startedAt),
+          finishedAt: date(blank.finishedAt),
+          outcome: blank.outcome,
+          counts: blank.counts as unknown as Record<string, number> | null,
+        })
+        .onConflictDoNothing({ target: sources.connectorId });
+      const [r] = await tx.select().from(sources).where(eq(sources.connectorId, blank.connectorId)).for('update');
+      if (!r) throw new Error('A source that was just opened has no record.');
+      return sourceOf(r);
+    },
     async putSource(s) {
       const set = {
         source: s.source,
@@ -854,20 +875,11 @@ export function competenceTx(
       return changed > 0;
     },
     async erasePerson(personId) {
-      // The row of every source the person has copied rows from, first and in one order, as the copy's write takes it:
-      // a read that is writing finishes before the person's rows go, and never puts them back afterwards.
-      const from = await tx
-        .selectDistinct({ connectorId: holdings.connectorId })
-        .from(holdings)
-        .where(and(eq(holdings.personId, personId), isNotNull(holdings.connectorId)));
-      const ids = from.map(r => r.connectorId!).sort();
-      if (ids.length)
-        await tx
-          .select({ id: sources.connectorId })
-          .from(sources)
-          .where(inArray(sources.connectorId, ids))
-          .orderBy(asc(sources.connectorId))
-          .for('update');
+      // The row of every source, first and in one order, as the copy's write takes its own before it asks who is
+      // active: a read that is writing finishes before the person's rows go, and never puts them back afterwards. Every
+      // source and not only those the person has rows from: the write of a person's very first copied row has nothing
+      // of theirs to be found by, and a source has its row from the moment a run claims it.
+      await tx.select({ id: sources.connectorId }).from(sources).orderBy(asc(sources.connectorId)).for('update');
       const removed = await tx
         .delete(holdings)
         .where(eq(holdings.personId, personId))

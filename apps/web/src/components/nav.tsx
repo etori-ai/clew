@@ -7,6 +7,7 @@ import {
   Badge,
   CommandPalette,
   CommandPaletteInput,
+  ChatBubbleLeftRightIcon,
   HomeIcon,
   InboxIcon,
   PlusIcon,
@@ -60,7 +61,7 @@ const ADMIN_ROWS: ReadonlyArray<{
 ];
 /** What the rail marks as current: the place, and within the start page the conversation. */
 export interface RailCurrent {
-  surface: 'start' | 'todo' | 'calendar' | 'verktyg' | 'staff' | 'competence' | 'admin';
+  surface: 'start' | 'todo' | 'calendar' | 'verktyg' | 'staff' | 'units' | 'competence' | 'admin';
   conversationId?: string | null;
   /** The capability whose tool page is open (D42), so its row under Verktyg is marked. */
   view?: string | null;
@@ -87,7 +88,8 @@ type Found = ({ href: string } | { card: string }) & { detail: string; group: st
  * The rail (D112 item 1, board Sidebar, the `shell-side-nav` template): Ny fråga and Sök as its first rows, each with
  * its icon, so the rail's own collapse draws them as icons named by their labels as it does every row; Sök opens
  * Astryx's `CommandPalette` over the page, which finds conversations, work items, areas and tools. Then the places,
- * Hem, Att göra with how much needs the person, Kalender, a manager's Personal (D94) and Kompetens (D120 item 8); Verktyg, the views an
+ * Hem, Att göra with how much needs the person, Kalender, a manager's Personal (D94) and Dialogstöd (D116, amended:
+ * the header's Start has no row of its own, so Clew's places stand here once), and Kompetens (D120 item 8); Verktyg, the views an
  * administrator placed as tools (D40, each a page of its own, D42); then Samtal, the person's conversations, newest
  * first, in one disclosure, each with a dot only where the data says something about it (the answer being written, a
  * draft that waits for the person). At the foot Administration with the sections the person may open (`ADMIN_ROWS`),
@@ -231,6 +233,15 @@ export function useRail({
               icon={clewIcon.people}
               href="/staff"
               isSelected={current.surface === 'staff'}
+            />
+          )}
+          {/* Dialogstöd (D117, D118): the units a manager follows up and their dialogue; marked on every unit's page. */}
+          {manager && (
+            <SideNavItem
+              label="Dialogstöd"
+              icon={ChatBubbleLeftRightIcon}
+              href="/units"
+              isSelected={current.surface === 'units'}
             />
           )}
           {/* Kompetens (D120 item 8): the reader's own and, for a manager, the matrix; drawn while the module is on for them.

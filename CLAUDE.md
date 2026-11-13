@@ -4,7 +4,7 @@ Start with `docs/README.md` for the product, architecture and connector document
 
 **The freeze on new surface is lifted (product owner, 2026-11-12).** D101 (the first real integration) held new owned domains, entity kinds, view kinds, presentation fields, administration pages and rail destinations until Nextcloud's Approval app worked end to end; the product owner lifted it with that integration's manual screen-reader pass still not made. The closed view catalogue of D100 (the narrowed vision) is a separate rule and still holds.
 
-Decision numbers D37–D39, D44–D46, D85, D96 and D99–D101 each identify two records. Use full filenames or linked titles to distinguish them; preserve all historical records and use the generated index when choosing the next unused number.
+Decision numbers D37–D39, D44–D46, D85, D96, D99–D101 and D116–D119 each identify two records. Use full filenames or linked titles to distinguish them; preserve all historical records and use the generated index when choosing the next unused number.
 
 ## Open source, always
 

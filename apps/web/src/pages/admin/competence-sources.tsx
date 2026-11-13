@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { createElement, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import type {
@@ -12,6 +12,7 @@ import {
   Badge,
   Button,
   Card,
+  CompletionFeedback,
   Dialog,
   DialogHeader,
   EmptyState,
@@ -31,6 +32,7 @@ import {
   pixel,
   proportional,
   useMediaQuery,
+  useToast,
 } from '@clew/ui';
 import { api } from '../../api';
 import { ApiError } from '../../api-error';
@@ -54,6 +56,10 @@ import { instantText } from './labels';
  * (`?source=<connector>&type=<the source's type id>`, D83) and opened by the type's name, where the mapping is also
  * removed.
  *
+ * A read runs on the server after the request is answered, so the page follows it: while a source is being read, or a
+ * read asked for here has not yet shown its result, the sources are asked for again every few seconds, and the result
+ * of a read asked for here is said when it is there. Nothing has to be reloaded to see how a read went.
+ *
  * A list that can grow is a page with an address (D116), so the sources have this page of their own under the
  * catalogue's rather than a tab without one. Like the catalogue it is refused while the module is off and to an
  * administrator without `admin.competence`, and says which.
@@ -69,6 +75,16 @@ const outcomeBadge: Record<CompetenceReadOutcome, { label: string; variant: 'neu
   partial: { label: 'Delvis läst', variant: 'warning' },
   failed: { label: 'Kunde inte läsas', variant: 'error' },
 };
+/** How a read asked for on this page went, as the notice says it. */
+const outcomeNotice: Record<CompetenceReadOutcome, (source: string) => string> = {
+  complete: source => `${source} är inläst.`,
+  partial: source => `${source} är delvis inläst.`,
+  failed: source => `${source} kunde inte läsas in.`,
+};
+/** How often the sources are asked for again while a read is followed. */
+const FOLLOW_EVERY_MS = 2000;
+/** How long a read asked for here is waited for before the page stops asking: one that never started shows nothing new. */
+const FOLLOW_FOR_MS = 10 * 60_000;
 const count = (n: number, one: string, other: string) => `${n} ${n === 1 ? one : other}`;
 const holdingsText = (n: number) => count(n, 'intyg', 'intyg');
 interface Row extends Record<string, unknown> {
@@ -219,6 +235,34 @@ function SourceCard({
   mobile: boolean;
 }) {
   const read = useAdminAction({ invalidate: [keys.competenceSources], toastId: 'competence:read' });
+  const toast = useToast();
+  const finishedAt = source.lastRead?.finishedAt ?? null;
+  const outcome = source.lastRead?.outcome;
+  // The read asked for from this card, by when the source's last read had finished at that moment: it is followed
+  // until a later read shows. The request is answered when the read is queued, before it has claimed the source, so
+  // `reading` alone does not say it is under way.
+  const [asked, setAsked] = useState<{ before: string | null } | null>(null);
+  const following = source.reading || asked !== null;
+  // A second observer of the page's own query, only for the interval: the card is drawn from the page's data.
+  useQuery({
+    ...competenceSourcesQuery,
+    refetchInterval: following ? FOLLOW_EVERY_MS : false,
+    notifyOnChangeProps: [],
+  });
+  useEffect(() => {
+    if (!asked || source.reading || finishedAt === asked.before) return;
+    setAsked(null);
+    if (outcome)
+      toast({
+        body: createElement(CompletionFeedback, null, outcomeNotice[outcome](source.source)),
+        uniqueID: 'competence:read',
+      });
+  }, [asked, source.reading, finishedAt, outcome, source.source, toast]);
+  useEffect(() => {
+    if (!asked) return;
+    const timer = setTimeout(() => setAsked(null), FOLLOW_FOR_MS);
+    return () => clearTimeout(timer);
+  }, [asked]);
   const nameOf = (id: string | undefined) => catalogue.find(t => t.id === id)?.name ?? 'Okänd kompetens';
   const last = source.lastRead;
   const mapping = (t: CompetenceSourceType) =>
@@ -269,7 +313,7 @@ function SourceCard({
           <VStack gap={1} hAlign="start">
             <Heading level={2}>{source.source}</Heading>
             <HStack gap={1} wrap="wrap" vAlign="center">
-              {source.reading && <Badge variant="info" label="Läses in" />}
+              {following && <Badge variant="info" label="Läses in" />}
               {/* Off under Anslutna system, or no longer declaring the read: "Svarar inte" is what that page says of a
                   system it cannot reach, so the badge says what follows for the register instead. */}
               {!source.answering && <Badge variant="neutral" label="Läses inte in" />}
@@ -282,10 +326,11 @@ function SourceCard({
             label="Läs in nu"
             aria-label={`Läs in nu: ${source.source}`}
             isLoading={read.busy}
-            isDisabled={!source.answering || source.reading}
+            isDisabled={!source.answering || following}
             onClick={() =>
               void read.run(async () => {
                 await api.competence.readSource(source.connectorId);
+                setAsked({ before: finishedAt });
                 return `${source.source} läses in.`;
               })
             }
