@@ -9,13 +9,7 @@ import { durableJobs } from '../src/scheduler/adapters/durable-postgres';
 import { createScheduler, scheduledJobRunner, SIGN_IN_CLEANUP } from '../src/scheduler/usecases';
 import { every } from '../src/composition/ambient';
 import { bindActivities } from '../src/dbos/workflows';
-import {
-  cancelDurable,
-  durableResult,
-  engineControls,
-  moveToRunningVersion,
-  type WorkflowControls,
-} from '../src/dbos/start';
+import { durableResult, engineControls, moveToRunningVersion } from '../src/dbos/start';
 import { testEngine } from './durable';
 
 // A scheduled job (D86) on PostgreSQL, the durable engine and production Node: the nightly clean-up of sign-in data
@@ -276,21 +270,19 @@ test(
       // its move of the clean-up's night: it cancelled the night and did not rewind it.
       startAt = Date.parse('2002-11-06T03:00:00.000Z');
       launched = await engine.launch({ executorID: instance, applicationVersion: releases[1] });
-      await cancelDurable('job:' + cleanup);
+      await assert.rejects(
+        moveToRunningVersion(['job:' + cleanup], engine.durable.queue, {
+          ...engineControls,
+          rewind: async () => {
+            throw new Error('interrupted before rewind');
+          },
+        }),
+        /interrupted before rewind/,
+      );
       assert.equal((await version('job:' + cleanup))?.status, 'CANCELLED');
-      // A second start moves the scan's night, and while it holds the night between its two calls, a third start, which
-      // runs once the engine has launched as `composition/jobs.ts` runs it, takes over both nights. The second finds
-      // the scan's night moved under the running version and leaves it to the third.
-      let third: string[] = [];
-      const holding: WorkflowControls = {
-        ...engineControls,
-        async cancel(workflowID) {
-          await engineControls.cancel(workflowID);
-          third = await starting.startNightly();
-        },
-      };
-      assert.deepEqual(await moveToRunningVersion(['job:' + scan], engine.durable.queue, holding), []);
-      assert.deepEqual(third, nights);
+      // Two starts contend for both nights. The earlier failure released the clean-up's move lock on rollback.
+      const taken = await Promise.all([starting.startNightly(), starting.startNightly()]);
+      assert.deepEqual(taken.flat().sort(), [...nights].sort());
       // The scan's night waits in its step under the new release, on the ledger's queue.
       await until(
         async () => (await version('job:' + scan))?.application_version === releases[1],
@@ -319,7 +311,16 @@ test(
         );
         assert.equal((await version('job:' + night))?.application_version, releases[1]);
       }
-      // Another start of the same release, a second instance or a restart, finds nothing to take over.
+      // Recover a cancellation left by an older mover on a current-version nightly workflow. Use the future night
+      // while its workflow sleeps, so its recorded clock and wait can be compared without an activity in flight.
+      const future = next[0]!;
+      const workflowID = 'job:' + future;
+      await until(async () => (await engine.steps(workflowID)).length > 0, 'the scan did not record its clock');
+      await engineControls.cancel(workflowID);
+      const before = await engine.steps(workflowID);
+      startAt = later().getTime();
+      assert.deepEqual(await starting.startNightly(), [future]);
+      assert.deepEqual((await engine.steps(workflowID)).slice(0, before.length), before);
       assert.deepEqual(await starting.startNightly(), []);
       assert.equal(cleaned.length, 2);
     } finally {

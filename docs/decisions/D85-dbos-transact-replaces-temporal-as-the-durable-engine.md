@@ -18,7 +18,16 @@ rewound to its first step under its own id and the running version, on the ledge
 `seedNightly` in `scheduler/usecases.ts`, `startJobs` in `composition/jobs.ts`). A last night taken over runs at once,
 late, and one that ran is left as it is. A night that is `CANCELLED` under another version is such a take-over that was
 stopped between its two calls, since nothing in Clew cancels a job's workflow otherwise, and the next start rewinds it
-the same way; a start that finds a night moved by another start meanwhile leaves it to that one. The start logs
+the same way. Starts and operator moves take a transaction-scoped advisory lock per application queue and workflow
+before reading its status. A later start sees the earlier move's current state and leaves a waiting or finished
+night alone. If it finds a nightly workflow `CANCELLED` under the running version, it resumes it on the ledger's
+queue with every recorded step intact (`DBOS.resumeWorkflow`), rather than rewinding it. This recovers a cancellation
+left by an interrupted overlapping start from before this repair. Only the scheduler's selected nightly jobs get
+this recovery; an intentionally cancelled reminder or follow-up does not. After cancelling a waiting workflow, a
+move reads its status again and rewinds only a confirmed cancellation, so a workflow that finished before the
+cancel arrived is left finished. The lock holds one app-pool connection while the engine controls use their separate
+pool; it is released on commit, rollback or process death. No engine call inside it uses a second app-pool connection.
+The start logs
 `nightly work taken over from the replaced release` with the job ids. Cancelling changes only the engine's records and
 stops no process. A process of the older version that still sleeps on a night wakes at its time, finds the workflow
 queued again rather than cancelled, and may claim the night and run it with its own code; only its record of the step
@@ -46,9 +55,11 @@ first said, is not used: its copy gets a new id, which the ledger's row does not
 instance of one release takes both nights from the queue and is killed, and the same instance starts as the next release
 after the clean-up's night has passed, its engine recovering nothing of the older version's. Its start takes both nights
 over: the clean-up's, which an earlier start cancelled and was stopped before rewinding, and the scan's while another
-start that has cancelled it is between its two calls, which then finds it moved and leaves it. The clean-up's night runs
+start is moving it under the shared lock. The clean-up's night runs
 at once and the scan's at its time, each once, each schedules the next night under the new release, and a further start
-takes nothing over. `apps/server/tests/move-runtime.test.ts` runs the script on two workflows that a killed instance of
+takes nothing over. Database-free `apps/server/tests/workflow-moves.test.ts` controls overlapping starts, interrupted
+moves, current-version cancelled recovery and completion before cancellation. `apps/server/tests/move-runtime.test.ts`
+runs the script on two workflows that a killed instance of
 the older release left: it lists them and moves them, and each runs once under the next release from its first step
 without a record; it refuses a finished one, and starts an approved execution that ended in `ERROR` again from the step
 that failed.

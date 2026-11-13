@@ -20,6 +20,7 @@
  * application in the same database, such as a test's engine.
  */
 import { resolve } from 'node:path';
+import { closeDatabase } from '@clew/db';
 import { DEFAULT_APPLICATION, ledgerQueue } from '../apps/server/src/dbos/runtime';
 import { moveCandidate, moveWorkflow, workflowClient } from '../apps/server/src/dbos/start';
 
@@ -50,7 +51,7 @@ if (!wellFormed || !databaseUrl) {
   process.exit(2);
 }
 // The client's own warnings and errors are not this script's output: they go to stderr.
-const engine = await workflowClient(databaseUrl, application, line => console.error(line));
+const engine = await workflowClient(application, line => console.error(line));
 try {
   const latest = await engine.latest(),
     queue = ledgerQueue(application);
@@ -58,7 +59,9 @@ try {
   const ids = named.length ? named : await engine.waitingUnderAnother(latest);
   if (!ids.length) console.log(`Nothing of ${application} waits under another version than ${latest}.`);
   for (const workflowID of ids) {
-    const found = await moveCandidate(engine.controls, workflowID, latest);
+    const found = confirm
+      ? await moveWorkflow(engine.controls, workflowID, latest, queue)
+      : await moveCandidate(engine.controls, workflowID, latest);
     if ('refused' in found) {
       console.error(`${workflowID}: not moved, ${found.refused}.`);
       process.exitCode = 1;
@@ -66,14 +69,12 @@ try {
     }
     const where = `${found.workflowID} (${found.name}, ${found.status} under ${found.version ?? 'no version'})`;
     if (!confirm) console.log(`${where} would continue under ${latest} from step ${found.from}.`);
-    else if (await moveWorkflow(engine.controls, found, latest, queue))
-      console.log(`${where} moved to ${latest}, from step ${found.from}.`);
-    else console.log(`${where} was moved to ${latest} by another move meanwhile.`);
+    else console.log(`${where} moved to ${latest}, from step ${found.from}.`);
   }
   if (ids.length && !confirm) console.log('Nothing was moved. Run again with --confirm to move.');
 } catch (error) {
   console.error(`Could not move: ${(error as Error).message}`);
   process.exitCode = 1;
 } finally {
-  await engine.destroy();
+  await Promise.all([engine.destroy(), closeDatabase()]);
 }

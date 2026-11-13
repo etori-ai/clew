@@ -1,3 +1,5 @@
+import { sql } from 'drizzle-orm';
+import { database } from '@clew/db';
 import { DBOS, DBOSClient, type DLogger, type WorkflowStatus } from '@dbos-inc/dbos-sdk';
 
 /** One step a workflow recorded, as the engine lists it; the package does not export the type by name. */
@@ -29,6 +31,7 @@ const waiting = (status: string) => status === 'PENDING' || status === 'ENQUEUED
  * engine's database in an operator's script (`scripts/workflows-move.ts`), which launches no engine of its own.
  */
 export interface WorkflowControls {
+  withMoveLock<T>(queue: string, workflowID: string, run: () => Promise<T>): Promise<T>;
   status(
     workflowID: string,
   ): Promise<Pick<WorkflowStatus, 'status' | 'workflowName' | 'applicationVersion'> | null | undefined>;
@@ -39,60 +42,64 @@ export interface WorkflowControls {
     options: { startStep: number; applicationVersion: string; queueName: string },
   ): Promise<unknown>;
 }
+/**
+ * All starts and operator moves on the same application's queue take this lock before reading mutable engine state.
+ * The callback uses DBOS's separate pool. The app-pool connection only holds this one transaction-scoped lock.
+ */
+function withMoveLock<T>(queue: string, workflowID: string, run: () => Promise<T>) {
+  return database().transaction(async tx => {
+    const key = JSON.stringify(['clew.workflow-move', queue, workflowID]);
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
+    return run();
+  });
+}
+type NightlyControls = WorkflowControls & {
+  readonly version: string;
+  resume(workflowID: string, queue: string): Promise<unknown>;
+};
 /** The engine of this process, once it has launched. */
-export const engineControls: WorkflowControls = {
+export const engineControls: NightlyControls = {
+  get version() {
+    return DBOS.applicationVersion;
+  },
+  withMoveLock,
+  resume: (workflowID, queue) => DBOS.resumeWorkflow(workflowID, { queueName: queue }),
   status: workflowID => DBOS.getWorkflowStatus(workflowID),
   steps: workflowID => DBOS.listWorkflowSteps(workflowID),
   cancel: workflowID => DBOS.cancelWorkflow(workflowID),
   rewind: (workflowID, options) => DBOS.rewindWorkflow(workflowID, options),
 };
-/**
- * Moves one workflow to `version` on `queue` under its own id, which the ledger's row names (D86): cancelled first when
- * it waits (`status`), since only a workflow that has ended can be rewound, then rewound from `startStep`, which drops
- * what it recorded from there on. Cancelling changes the engine's records only and stops no process. One of the older
- * version that still runs the workflow sleeps on a timer of its own, finds the workflow no longer cancelled when it
- * wakes, since the rewind has queued it again, and runs on until it next records a step, which fails, because the
- * workflow is no longer its: a step it runs meanwhile runs in both, unless the ledger fences it, as a job's claim
- * fences a night. False when another move to the same version, by another start or an operator, moved it between the
- * two.
- */
-async function moveOne(
-  controls: WorkflowControls,
-  workflowID: string,
-  status: string,
-  to: { version: string; queue: string; startStep: number },
-) {
-  if (waiting(status)) await controls.cancel(workflowID);
-  try {
-    await controls.rewind(workflowID, { startStep: to.startStep, applicationVersion: to.version, queueName: to.queue });
-    return true;
-  } catch (error) {
-    // Another move to the same version, a start of another process or an operator's, moved it after the status read.
-    const now = await controls.status(workflowID);
-    if (now && waiting(now.status) && now.applicationVersion === to.version) return false;
-    throw error;
-  }
+
+/** An executor may have completed its workflow before the cancel arrived. Only a confirmed cancellation may be rewound. */
+async function cancelWaiting(controls: WorkflowControls, workflowID: string) {
+  await controls.cancel(workflowID);
+  return (await controls.status(workflowID))?.status === 'CANCELLED';
 }
+
 /**
- * Hands workflows that wait under another version of the application to the version that runs, at a server's start
- * (D85 item 2, as amended 2026-11-13): the nights of the nightly jobs. Only executors of a workflow's own version
- * recover it, so one that a replaced release took from the queue waits under that release for good. Each of
- * `workflowIDs` that is PENDING or ENQUEUED under another version is moved (`moveOne`) from its first step, on `queue`
- * and under the running version, whose queue runner then takes it; one that is CANCELLED under another version is a
- * move that stopped between its two calls, and is rewound. Only for a workflow that nothing else cancels, that has
- * done nothing a restart repeats before its last step, and whose ledger fences a second run: a process of the older
- * version that still runs at the night's time wakes and may claim the night itself and run it with its own code, and
- * only its record of the step fails. The ids moved here.
+ * The scheduler selects the last and next nightly jobs and the unfinished pages of the last scan. Nothing in Clew
+ * intentionally cancels these workflows. Move an older version's night from step zero under its stable id; its ledger
+ * claim fences the job. Resume a cancellation already under this version with its recorded steps intact.
  */
 export async function moveToRunningVersion(workflowIDs: string[], queue: string, controls = engineControls) {
-  const running = DBOS.applicationVersion,
-    moved: string[] = [];
+  const running = controls.version;
+  const moved: string[] = [];
   for (const workflowID of workflowIDs) {
-    const status = await controls.status(workflowID);
-    if (!status?.applicationVersion || status.applicationVersion === running) continue;
-    if (!waiting(status.status) && status.status !== 'CANCELLED') continue;
-    if (await moveOne(controls, workflowID, status.status, { version: running, queue, startStep: 0 }))
-      moved.push(workflowID);
+    const taken = await controls.withMoveLock(queue, workflowID, async () => {
+      const status = await controls.status(workflowID);
+      if (!status?.applicationVersion) return false;
+      if (status.applicationVersion === running) {
+        if (status.status !== 'CANCELLED') return false;
+        await controls.resume(workflowID, queue);
+      } else {
+        if (waiting(status.status)) {
+          if (!(await cancelWaiting(controls, workflowID))) return false;
+        } else if (status.status !== 'CANCELLED') return false;
+        await controls.rewind(workflowID, { startStep: 0, applicationVersion: running, queueName: queue });
+      }
+      return true;
+    });
+    if (taken) moved.push(workflowID);
   }
   return moved;
 }
@@ -142,18 +149,29 @@ export async function moveCandidate(
     from: continuesFrom((await controls.steps(workflowID)) ?? []),
   };
 }
-/**
- * Moves what `moveCandidate` found to `latest` on `queue`, from the step it found, under the workflow's own id. False
- * when another move took it first.
- */
-export const moveWorkflow = (controls: WorkflowControls, candidate: MoveCandidate, latest: string, queue: string) =>
-  moveOne(controls, candidate.workflowID, candidate.status, { version: latest, queue, startStep: candidate.from });
+/** Decide under the same lock as startup, then rewind from the checkpoint reached when the workflow finally stopped. */
+export function moveWorkflow(controls: WorkflowControls, workflowID: string, latest: string, queue: string) {
+  return controls.withMoveLock(queue, workflowID, async () => {
+    const candidate = await moveCandidate(controls, workflowID, latest);
+    if ('refused' in candidate) return candidate;
+    if (waiting(candidate.status)) {
+      if (!(await cancelWaiting(controls, workflowID)))
+        return { workflowID, refused: 'it finished before it could be cancelled' };
+      candidate.from = continuesFrom((await controls.steps(workflowID)) ?? []);
+    }
+    await controls.rewind(workflowID, { startStep: candidate.from, applicationVersion: latest, queueName: queue });
+    return candidate;
+  });
+}
 /**
  * A client of the engine's database for an operator's move (`scripts/workflows-move.ts`): the engine's controls without
  * an engine, the application's latest version, and what waits under another one. It launches no engine and runs no
  * workflow; the engine of a running server runs what it moves. The client's own warnings and errors go to `warn`.
  */
-export async function workflowClient(databaseUrl: string, application: string, warn: (line: string) => void) {
+export async function workflowClient(application: string, warn: (line: string) => void) {
+  // DBOS and the move lock must use the same installation database.
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) throw new Error('DATABASE_URL is not set.');
   const logger: DLogger = {
     debug: () => undefined,
     info: () => undefined,
@@ -162,6 +180,7 @@ export async function workflowClient(databaseUrl: string, application: string, w
   };
   const client = await DBOSClient.create({ systemDatabaseUrl: databaseUrl, applicationName: application, logger });
   const controls: WorkflowControls = {
+    withMoveLock,
     status: workflowID => client.getWorkflow(workflowID),
     steps: workflowID => client.listWorkflowSteps(workflowID),
     cancel: workflowID => client.cancelWorkflow(workflowID),
