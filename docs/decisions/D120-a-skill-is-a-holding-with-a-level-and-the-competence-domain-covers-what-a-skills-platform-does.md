@@ -1,6 +1,6 @@
 # D120 · A skill is a holding with a level, and the competence domain covers what a skills platform does for a public-sector organisation
 
-**Status:** provisional (product owner, 2026-11-12, answered as questions in a working session; nothing outside the repository has tested it; built in stages on branch `competence-skills`, see [implementation status](../reference/status/people.md) for what exists) · **Date:** 2026-11-12 · **Area:** product, identity
+**Status:** provisional (product owner, 2026-11-12, answered as questions in a working session; nothing outside the repository has tested it; items 1 to 8 built on branch `competence-skills` by 2026-11-13, the later slices of item 9 not; see [implementation status](../reference/status/people.md) for what exists) · **Date:** 2026-11-12 · **Area:** product, identity
 
 **Decision.** The competence domain
 ([D108](D108-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md)) grows to do what a commercial
@@ -76,8 +76,8 @@ vendored copy of a classification: a file to keep current in a repository other 
 something its publisher serves in every language.
 
 **Open.** Who validates a skill, or approves a certificate, for a person who reports to nobody: the form says it
-cannot be sent, as D108 leaves it. How long a holding is kept after a person is deactivated: the timer starts only
-when an operator has set the period. Whether the level should have a description per type. Whether an interest mark
+cannot be sent, as D108 leaves it. How long a holding is kept after a person is deactivated: the timer is built and starts
+only when an operator has set the period, and no length is recommended. Whether the level should have a description per type. Whether an interest mark
 should be searchable. D108's checklist question 4 ("it is small") was not a plain yes and is further from one now.
 
 **A gap in Astryx, left open.** On the matrix (item 8), when the table scrolls sideways and a person tabs backwards,
@@ -88,6 +88,14 @@ no CSS of its own, so nothing is worked around: the case stands as a `test.fixme
 `tests/a11y/competence-matrix.spec.ts`. With ten columns or fewer on a wide window the table does not scroll and the
 case does not arise; where it does not fit beside the panel or on a phone the matrix is a list. It has to be closed,
 in Astryx or by a decision that allows an exception, before the suite's gate returns (D59).
+
+**As built (2026-11-13).** Narrower or other than the items in these places. A person holds a skill once, and
+changing its level is an action of its own; removing it revokes the row (item 2). A manager cannot revoke a skill the
+person rated themselves. A type that a source is mapped to cannot become a skill or stop being one. The import
+(item 7) creates an area that a row names and that does not exist, treats names that differ only in Unicode form or
+invisible characters as one, accepts an address that is `http`, `https` or `urn`, and takes 30 000 rows a file and
+20 000 types an organisation; ESCO's knowledge concepts would be imported as skills, since its skills file holds
+both. A merge between a skill and another kind is refused, and one is not undone.
 
 **Not established.** No HR practitioner has read it. Nothing is measured. No screen reader has passed over any of
 the pages. ESCO's CSV has not been read from a real download in this session; the importer is written against its

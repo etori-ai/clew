@@ -420,6 +420,30 @@ before the engine launches, the daily run, a source whose step keeps failing bes
 that cannot be asked for, and an instance killed while it reads whose run is adopted and finishes once under its
 lease), and `tests/a11y/admin-competence-sources.spec.ts`.
 
+**As built, 2026-11-13: the rest of the decision, on branch `competence-skills`.** What the "Not done" paragraph
+above lists is built, except what this paragraph says is not. A person's positions arrive as `position:` groups
+(item 5); requirements on a position, a unit or a person, the status `missing`, coverage and share targets (items 6
+and 10); the place Kompetens with the reader's own page and the matrix (item 11); a person's own registration,
+approved or rejected by the manager they report to through a work item (item 7); merging two types and bringing an
+archived one back (item 2); revoking from the product; the erasure timer (item 14), which starts only when an
+operator has set a period; and the read log (item 15) together with the search across the organisation, which
+[D121](D121-a-registrar-reads-competence-across-the-organisation-through-a-relation-of-its-own.md) builds as a
+relation and not as the capability `competence.search` that item 8 names. Skills with levels and the catalogue
+import are [D120](D120-a-skill-is-a-holding-with-a-level-and-the-competence-domain-covers-what-a-skills-platform-does.md).
+What each does, its limits and its tests are in [implementation status](../reference/status/people.md), which is
+kept current; this paragraph is not.
+
+Where the build is narrower than the items: a small group is never counted on its own in coverage (fewer than five
+is not shown), and the same rule holds for the numbers an administrator sees before a merge; a manager's people are
+their direct reports ([D99](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md)
+item 4), not everyone on a unit they lead; item 15's row per unit for coverage is not written, and of a manager's
+reads only one report's holdings and the matrix export are logged (D121, "As built"); a person who reports to nobody
+cannot send a registration.
+
+Still not done: seen signed in by a person; a manual pass with a screen reader; a review by an HR practitioner; the
+length of the retention period, which no installation has set; a copy made by the running server against a real
+system; an import of existing holdings from spreadsheets.
+
 **Replaces.** Amends [D68](D68-people-are-pushed-into-clew-through-standard-scim.md) item 2 and
 [D96](D96-a-key-written-wrong-is-refused-at-the-scim-boundary.md) (a key written wrong): `position:` is a fourth
 reserved prefix. Narrows [D97](D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md) item 9 ("no
