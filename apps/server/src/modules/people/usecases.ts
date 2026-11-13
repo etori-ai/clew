@@ -33,12 +33,12 @@ import {
   applyUserPatch,
   assertAcceptedKey,
   assertAcceptedParent,
+  auditKeysToErase,
   branchOf,
   bySwedish,
   closesCycle,
   deriveAuthority,
   ERASED,
-  erasedDetails,
   erasedProfile,
   givesAuthority,
   groupFields,
@@ -1460,15 +1460,16 @@ export function personErasureUsecases(deps: { store: ProvisionStore; clock: () =
         const subject = 'person:' + personId,
           about = await tx.auditRows(Object.keys(IDENTIFIERS_ABOUT), { subject }),
           asHolder = await tx.auditRows(Object.keys(IDENTIFIERS_AS_HOLDER), { key: 'holder', value: subject });
-        // One rewrite a row: a refused sign-in about the person whose subject they held is both.
-        const rewritten = new Map<number, Record<string, unknown>>();
+        // A refused sign-in may match both roles. Only pass the keys to erase: another person's erasure can redact
+        // the same row before we write it.
+        const redactions = new Map<number, string[]>();
         for (const [rows, keys] of [
           [about, IDENTIFIERS_ABOUT],
           [asHolder, IDENTIFIERS_AS_HOLDER],
         ] as const)
           for (const row of rows) {
-            const next = erasedDetails(rewritten.get(row.id) ?? row.details, keys[row.action] ?? []);
-            if (next) rewritten.set(row.id, next);
+            const held = auditKeysToErase(row.details, keys[row.action] ?? []);
+            if (held.length) redactions.set(row.id, [...(redactions.get(row.id) ?? []), ...held]);
           }
         const at = deps.clock().toISOString(),
           fields = heldFields(person),
@@ -1479,7 +1480,7 @@ export function personErasureUsecases(deps: { store: ProvisionStore; clock: () =
         if (grants) await tx.writeGrant(personId, undefined);
         const bindings = await tx.removeBindings(personId),
           sessions = await tx.removeSessions(personId);
-        await tx.rewriteAudit([...rewritten].map(([id, details]) => ({ id, details })));
+        const auditRows = await tx.redactAudit(redactions);
         const signInRows = await tx.eraseClaims(namesHeld(person, about), ERASED);
         // The resource a provisioner reads changes when a field is cleared or a group is no longer listed (S13): a
         // stale push that put the erased person back in a group is undone by a second erasure, which moves it too.
@@ -1491,7 +1492,7 @@ export function personErasureUsecases(deps: { store: ProvisionStore; clock: () =
           grants,
           bindings,
           sessions,
-          auditRows: rewritten.size,
+          auditRows,
           signInRows,
         };
         await tx.audit({ actor, action: PERSON_ERASED, subject, details: { ...erased } });

@@ -1096,10 +1096,12 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         // An action not asked for is not read, and no action is no row.
         expect(await tx.auditRows(['identity.rebound'], { subject: 'person:' + a })).toEqual([]);
         expect(await tx.auditRows([], { subject: 'person:' + a })).toEqual([]);
-        await tx.rewriteAudit([
-          { id: about[0]!.id, details: { userName: '[erased]', externalId: '[erased]' } },
-          { id: asHolder[0]!.id, details: { ...refused.details, subject: '[erased]' } },
+        const redactions = new Map([
+          [about[0]!.id, ['userName', 'externalId']],
+          [asHolder[0]!.id, ['subject']],
         ]);
+        expect(await tx.redactAudit(redactions)).toBe(2);
+        expect(await tx.redactAudit(redactions)).toBe(0);
         return {
           memberships: await tx.removeMemberships(a, later),
           bindings: await tx.removeBindings(a),
@@ -1162,7 +1164,7 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
           expect(await tx.removeSessions(b)).toBe(1);
           expect(await tx.eraseClaims(['U:' + b], '[erased]')).toBe(1);
           const [row] = await tx.auditRows(['scim.user.created'], { subject: 'person:' + b });
-          await tx.rewriteAudit([{ id: row!.id, details: {} }]);
+          expect(await tx.redactAudit(new Map([[row!.id, ['userName']]]))).toBe(1);
           throw new Error('rolled back');
         }),
       ).rejects.toThrow('rolled back');

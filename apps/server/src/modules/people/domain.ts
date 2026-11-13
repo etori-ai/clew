@@ -368,16 +368,12 @@ export const IDENTIFIERS_ABOUT: Readonly<Record<string, readonly string[]>> = {
 export const IDENTIFIERS_AS_HOLDER: Readonly<Record<string, readonly string[]>> = {
   'identity.conflict': ['subject'],
 };
-/** The details with each of `keys` that holds a value replaced by the marker; undefined when none of them holds one. */
-export function erasedDetails(
-  details: Readonly<Record<string, unknown>>,
-  keys: readonly string[],
-): Record<string, unknown> | undefined {
-  const held = keys.filter(key => {
+/** The identifier keys in this row that still hold something to erase. */
+export function auditKeysToErase(details: Readonly<Record<string, unknown>>, keys: readonly string[]): string[] {
+  return keys.filter(key => {
     const value = details[key];
     return value !== undefined && value !== null && value !== '' && value !== ERASED;
   });
-  return held.length ? { ...details, ...Object.fromEntries(held.map(key => [key, ERASED])) } : undefined;
 }
 /**
  * The values a sign-in may have claimed for the person, which the authentication log keeps as `claim:<value>` when it

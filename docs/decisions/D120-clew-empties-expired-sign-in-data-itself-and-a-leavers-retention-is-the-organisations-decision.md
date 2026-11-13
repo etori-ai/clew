@@ -57,6 +57,8 @@
      personal attribute: the name, the e-mail address, the phone numbers, the employments and the title. It stores no
      user name and no source key (`externalId`). The row keeps its id, which other records point at, its organisation,
      its deactivation and its time of creation, and nothing personal.
+     Audit redaction merges only the selected identifier fields into each current row, in row-id order. Erasing two
+     people named in the same conflict event cannot restore an identifier the other erasure already masked.
    - The record then reads as its id. Clew answers a record without a user name with its id in the user name's place,
      so `GET /scim/v2/Users/<id>` answers the id as `userName`, an empty name, no address, no groups and
      `active: false`, and Administration › Användare shows the id where the user name stood. A filter on `userName` or

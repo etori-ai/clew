@@ -9,6 +9,7 @@ import { talkStoreWithCards } from '../../apps/server/src/composition/talks';
 import { competenceUsecases } from '../../apps/server/src/modules/competence/usecases';
 import { SCIM } from '../../apps/server/src/modules/people/contracts';
 import { postgresProvisionStore, postgresUserReads } from '../../apps/server/src/modules/people/adapters/postgres';
+import type { ProvisionStore } from '../../apps/server/src/modules/people/ports';
 import { personErasureUsecases, scimUsecases } from '../../apps/server/src/modules/people/usecases';
 import { talkUsecases } from '../../apps/server/src/modules/talks/usecases';
 import { postgresThreadStore } from '../../apps/server/src/threads/adapters/postgres';
@@ -471,6 +472,46 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
   });
   expect(await talks.erasePerson(OPERATOR, asa)).toEqual({ talks: 0, commitments: 0, cleared: 0, cards: 0 });
   expect(await competence.erasePerson(OPERATOR, asa)).toEqual({ holdings: 0, cleared: 0, cards: 0 });
+});
+
+test('overlapping erasures of the claimed person and the holder preserve both redactions on a shared conflict', async () => {
+  const claimed = ids(),
+    holder = ids(),
+    details = {
+      issuer: issuerA,
+      claim,
+      value: 'name-' + claimed,
+      subject: 'sub-' + holder,
+      holder: 'person:' + holder,
+    };
+  await db
+    .insert(schema.people)
+    .values([claimed, holder].map(id => ({ id, organisationId: org, name: id, enabled: false })));
+  await db.insert(schema.audit).values({
+    actor: 'person:' + claimed,
+    subject: 'person:' + claimed,
+    action: 'identity.conflict',
+    details,
+  });
+  // The holder has read the original row. Let the claimed person's erasure commit before the holder writes it.
+  const holderStore: ProvisionStore = {
+    transaction: run =>
+      store.transaction(tx =>
+        run({
+          ...tx,
+          async redactAudit(keysByRow) {
+            expect(await erasure.erasePerson(OPERATOR, claimed)).toMatchObject({ erased: { auditRows: 1 } });
+            return tx.redactAudit(keysByRow);
+          },
+        }),
+      ),
+  };
+  const holderErasure = personErasureUsecases({ store: holderStore, clock });
+  expect(await holderErasure.erasePerson(OPERATOR, holder)).toMatchObject({ erased: { auditRows: 0 } });
+  expect(
+    (await auditTrail()).find(row => row.action === 'identity.conflict' && row.subject === 'person:' + claimed)
+      ?.details,
+  ).toEqual({ ...details, value: '[erased]', subject: '[erased]' });
 });
 
 // Four runs of the script, each loading the server's composition, which takes seconds apiece on a busy machine.

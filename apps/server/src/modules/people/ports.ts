@@ -292,8 +292,8 @@ export interface ProvisionTx {
     actions: readonly string[],
     where: { subject: string } | { key: string; value: string },
   ): Promise<AuditRecord[]>;
-  /** Replaces the details of these audit rows, by id, and nothing else of them. */
-  rewriteAudit(rows: ReadonlyArray<Pick<AuditRecord, 'id' | 'details'>>): Promise<void>;
+  /** Sets the selected identifier keys to ERASED on each current audit row; returns how many rows changed. */
+  redactAudit(keysByRow: ReadonlyMap<number, readonly string[]>): Promise<number>;
   /**
    * Rewrites the actor `claim:<value>` of the authentication log's rows (a sign-in whose claim named nobody it could
    * bind) to `claim:<marker>` where the value is one of `names`, compared as user names are, without regard to case

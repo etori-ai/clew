@@ -2,7 +2,7 @@ import { and, eq, gt, inArray, isNotNull, isNull, like, not, or, sql, type SQL, 
 import { database, schema, type Database, type Transaction } from '@clew/db';
 import { writeAudit } from '@clew/db/threads';
 import { UNIT_KEY } from '@clew/contracts/scim-group-key';
-import { unitGroupOf, type GroupRecord, type UserRecord, type UserSearch } from '../domain';
+import { ERASED, unitGroupOf, type GroupRecord, type UserRecord, type UserSearch } from '../domain';
 import type { ProvisionStore, ProvisionTx, UserReads } from '../ports';
 
 /**
@@ -824,9 +824,20 @@ export function postgresProvisionStore(db: () => Runner = database): ProvisionSt
         )
         .orderBy(schema.audit.id);
     },
-    async rewriteAudit(rows) {
-      for (const row of rows)
-        await tx.update(schema.audit).set({ details: row.details }).where(eq(schema.audit.id, row.id));
+    async redactAudit(keysByRow) {
+      let changed = 0;
+      // Two erasures can share several conflict rows in opposite roles. Acquire the rows in the same order and
+      // merge only this person's redactions into the version held when the UPDATE takes its lock.
+      for (const [id, keys] of [...keysByRow].sort(([a], [b]) => a - b)) {
+        const patch = JSON.stringify(Object.fromEntries(keys.map(key => [key, ERASED])));
+        const rows = await tx
+          .update(schema.audit)
+          .set({ details: sql`${schema.audit.details} || ${patch}::jsonb` })
+          .where(and(eq(schema.audit.id, id), sql`not (${schema.audit.details} @> ${patch}::jsonb)`))
+          .returning({ id: schema.audit.id });
+        changed += rows.length;
+      }
+      return changed;
     },
     async eraseClaims(names, marker) {
       // A NUL is no name a sign-in could carry, and PostgreSQL refuses to compare one.

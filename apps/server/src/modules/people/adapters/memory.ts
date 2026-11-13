@@ -1,5 +1,6 @@
 import {
   bySwedish,
+  ERASED,
   unitGroupOf,
   type Assignment,
   type Grant,
@@ -422,11 +423,15 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
           : [],
       );
     },
-    async rewriteAudit(rows) {
-      for (const { id, details } of rows) {
+    async redactAudit(keysByRow) {
+      let changed = 0;
+      for (const [id, keys] of keysByRow) {
         const row = state.audit[id];
-        if (row) state.audit[id] = { ...row, details: structuredClone(details) };
+        if (!row || !keys.some(key => row.details[key] !== ERASED)) continue;
+        for (const key of keys) row.details[key] = ERASED;
+        changed++;
       }
+      return changed;
     },
     async eraseClaims(names, marker) {
       // Unicode's own lower case of the composed form, as PostgreSQL folds both sides under ICU's root locale.
