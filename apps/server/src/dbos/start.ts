@@ -19,3 +19,35 @@ export async function cancelDurable(workflowID: string) {
 }
 /** The result of a workflow started elsewhere; waits until it has one. */
 export const durableResult = <R>(workflowID: string) => DBOS.retrieveWorkflow<R>(workflowID).getResult();
+
+const waiting = (status: string) => status === 'PENDING' || status === 'ENQUEUED';
+/**
+ * Hands workflows that wait under another version of the application to the version that runs (D85 item 2, as amended
+ * 2026-11-13). Only executors of a workflow's own version recover it, so one that a replaced release took from the
+ * queue waits under that release for good. Each of `workflowIDs` that is PENDING or ENQUEUED under another version is
+ * cancelled, which also ends its wait in a process of that version that still runs, and is rewound to its first step
+ * under its own id, on `queue` and under the running version, whose queue runner then takes it. One that is CANCELLED
+ * under another version is a move that stopped between the two, and is rewound. A run that a process of the older
+ * version had begun can no longer record a step: the rewind takes the workflow from it. Only for a workflow whose
+ * ledger fences a second run and that nothing else cancels. The ids moved here.
+ */
+export async function moveToRunningVersion(workflowIDs: string[], queue: string) {
+  const running = DBOS.applicationVersion,
+    moved: string[] = [];
+  for (const workflowID of workflowIDs) {
+    const status = await DBOS.getWorkflowStatus(workflowID);
+    if (!status?.applicationVersion || status.applicationVersion === running) continue;
+    if (waiting(status.status)) await DBOS.cancelWorkflow(workflowID);
+    else if (status.status !== 'CANCELLED') continue;
+    try {
+      await DBOS.rewindWorkflow(workflowID, { applicationVersion: running, queueName: queue });
+    } catch (error) {
+      // Another process of this version, starting at the same time, moved it after this one read its status.
+      const now = await DBOS.getWorkflowStatus(workflowID);
+      if (now && waiting(now.status) && now.applicationVersion === running) continue;
+      throw error;
+    }
+    moved.push(workflowID);
+  }
+  return moved;
+}

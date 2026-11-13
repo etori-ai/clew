@@ -543,6 +543,16 @@ what they say.
   still holds; and a card is also the record of what the person holding it did. The documents now claim no more than
   the code does, and also describe the erasure as built: no user name stored, rather than the id.
 - Two accessibility tests raced the frame in which the page moves the focus. They now wait for it.
+- The operations guide said that the nightly clean-up runs by itself, with no setting, and named neither
+  `CLEW_RELEASE` nor `CLEW_EXECUTOR_ID`. A deployment that changes the engine's application version left the next
+  night of the clean-up, and of the nightly scan, waiting under the replaced version, where no process of the new one
+  recovers it. Only a night's run schedules the next one, so both jobs stopped for good, and nothing said so. A server's
+  start now takes such a night over: it cancels the wait and rewinds the workflow under its own id and the running
+  version ([D85](../decisions/D85-dbos-transact-replaces-temporal-as-the-durable-engine.md) item 2, amended
+  2026-11-13), and the next start finishes a take-over that a start was stopped in the middle of. The guide names both
+  settings and the step after each deployment for the rest of the waiting work, which the runbook now gives a section
+  of its own, and a test shows both nights taken over from a killed instance of the older release, one of them left
+  cancelled by a stopped start.
 
 **Left.**
 
@@ -552,5 +562,9 @@ what they say.
   and `execution.approved` rows, approved payloads and the operator name in `identity.rebound` rows. D117 and the
   runbook list them, for an operator or the organisation's retention to remove.
 - D115 is also taken on the branch `prototype-look`. Whichever reaches `main` second takes the next free number.
+- Every workflow other than the next nights that a deployment leaves under the replaced application version, such as a
+  reminder, an approved execution, a watch or a follow-up, still runs only once an operator moves it
+  ([D85](../decisions/D85-dbos-transact-replaces-temporal-as-the-durable-engine.md) item 2). Moving each at launch
+  needs it shown safe to start again from its first step, which nobody has done for all of them.
 
 **Verified.** VERIFIED-PLACEHOLDER

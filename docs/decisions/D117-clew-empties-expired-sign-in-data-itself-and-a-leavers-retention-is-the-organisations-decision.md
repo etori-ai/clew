@@ -10,7 +10,10 @@
      ([D86](D86-the-ledger-starts-its-workflow-inside-its-own-transaction.md)), with a `job.scheduled` and a
      `job.completed` row (actor `system:scheduler`). Every server process schedules it at start, and each night
      schedules the next one before it cleans. The id is fixed for each date, so the clean-up runs once a night however
-     many processes schedule it. It needs no cron job and no configuration.
+     many processes schedule it. It needs no cron job and no configuration. Since 2026-11-13 a start schedules it once
+     the server's durable engine has launched, and takes over a night that a deployment left waiting under the
+     replaced release, which no process of the new release would otherwise run, so a deployment needs no step for it
+     ([D85](D85-dbos-transact-replaces-temporal-as-the-durable-engine.md) item 2, as amended that day).
    - In one transaction it removes every session past its absolute or idle expiry, with its sealed tokens, and writes an
      `expired` row in the authentication log (actor `person:<id>`) for each one that was still open. A session that had
      already ended goes without a second row. It also removes the login transactions and the logout receipts past their
@@ -172,13 +175,17 @@ names nobody.
   decided after the erasure and are sent as written, and an execution approved from one is dispatched as approved.
   Only a card started with an `execute`, and what was approved from it, is refused (item 3).
 
-**As built.** `removeExpiredSignIns` in `packages/db/src/auth.ts`; the job kind `sign-in-cleanup` and `scheduleCleanup`
-in `apps/server/src/scheduler/usecases.ts`; `startJobs` in `apps/server/src/composition/jobs.ts` and the binding in
-`apps/server/src/composition/index.ts`; `scripts/auth-setup.ts`. Tests: `tests/db/sign-in-cleanup.test.ts` (on
+**As built.** `removeExpiredSignIns` in `packages/db/src/auth.ts`; the job kind `sign-in-cleanup`, `scheduleCleanup`
+and `startNightly` in `apps/server/src/scheduler/usecases.ts`; `startJobs` in `apps/server/src/composition/jobs.ts` and
+the binding in `apps/server/src/composition/index.ts`; the take-over of a night, `moveToRunningVersion` in
+`apps/server/src/dbos/start.ts` (2026-11-13); `scripts/auth-setup.ts`. Tests: `tests/db/sign-in-cleanup.test.ts` (on
 PostgreSQL, what goes and what stays, and one job, one workflow and one `job.scheduled` row however often the night is
-scheduled), `tests/unit/scheduler.test.ts` (the next 03:00 Stockholm, once for each date, and a failing clean-up that
-still schedules the next night and completes), and `apps/server/tests/job-runtime.test.ts` in `bun run test:durability`
-(nights on the real durable engine, a failing one included). `scripts/person-erase.ts` runs `personErasureUsecases` in
+scheduled), `tests/unit/scheduler.test.ts` (the next 03:00 Stockholm, once for each date, a failing clean-up that
+still schedules the next night and completes, and a start that takes over a night left under a replaced release), and
+`apps/server/tests/job-runtime.test.ts` in `bun run test:durability` (nights on the real durable engine, a failing one
+included, and the nights a killed instance of one release took from the queue, taken over by the start of the next
+release on the same instance, one of them left cancelled by a start stopped before its rewind, and run once under
+it). `scripts/person-erase.ts` runs `personErasureUsecases` in
 `apps/server/src/modules/people/usecases.ts`, bound as `personErasure` in `apps/server/src/composition/people.ts`; what
 it replaces in the audit trail and the authentication log is named by `IDENTIFIERS_ABOUT`, `IDENTIFIERS_AS_HOLDER` and
 `namesHeld` in `apps/server/src/modules/people/domain.ts`, and its store ports are held to

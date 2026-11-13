@@ -1006,7 +1006,7 @@
       "number": 85,
       "path": "docs/decisions/D85-dbos-transact-replaces-temporal-as-the-durable-engine.md",
       "title": "D85 · DBOS Transact replaces Temporal as the durable engine",
-      "status": "accepted, implemented; the in-transaction start it names as the next step is D86 (2026-11-09)",
+      "status": "accepted, implemented; the in-transaction start it names as the next step is D86 (2026-11-09); item 2 amended 2026-11-13 in the fixes of the review of users and the organisation: a server's start takes over the next night of the scan and of the sign-in clean-up when a deployment left it waiting under the replaced version",
       "date": "2026-11-09",
       "area": "platform"
     },
@@ -2827,6 +2827,7 @@
       "category": "maintainer-guide",
       "headings": [
         "Inspect without exposing source data",
+        "After every deployment",
         "Upgrade from the previous scheduler",
         "Migrations that write rows",
         "The ledger queue",

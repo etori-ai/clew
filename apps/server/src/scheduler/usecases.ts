@@ -55,28 +55,35 @@ export function createScheduler(deps: SchedulerDeps) {
     const today = now.with({ hour, minute: 0, second: 0, millisecond: 0 });
     return today.epochMilliseconds > now.epochMilliseconds ? today : today.add({ days: 1 });
   }
-  /** The next 06:00 Stockholm after now. Idempotent by date, so every process may schedule it. */
+  /** The next 06:00 Stockholm after now. Idempotent by date, so every process may schedule it. The job's id. */
   async function scheduleNightly() {
     const next = nextAt(6);
-    await jobs.schedule({
-      id: `scan:${next.toPlainDate().toString()}`,
-      kind: NIGHTLY,
-      runAt: new Date(next.epochMilliseconds).toISOString(),
-    });
+    const id = `scan:${next.toPlainDate().toString()}`;
+    await jobs.schedule({ id, kind: NIGHTLY, runAt: new Date(next.epochMilliseconds).toISOString() });
+    return id;
   }
   /**
    * The sign-in clean-up at the next 03:00 Stockholm after now, a quiet hour that exists on both days the clocks
-   * change. Idempotent by date, so every process may schedule it, and one job runs it however many processes do.
+   * change. Idempotent by date, so every process may schedule it, and one job runs it however many processes do. The
+   * job's id.
    */
   async function scheduleCleanup() {
     const next = nextAt(3);
-    await jobs.schedule({
-      id: `${SIGN_IN_CLEANUP}:${next.toPlainDate().toString()}`,
-      kind: SIGN_IN_CLEANUP,
-      runAt: new Date(next.epochMilliseconds).toISOString(),
-    });
+    const id = `${SIGN_IN_CLEANUP}:${next.toPlainDate().toString()}`;
+    await jobs.schedule({ id, kind: SIGN_IN_CLEANUP, runAt: new Date(next.epochMilliseconds).toISOString() });
+    return id;
   }
-  return { run, scheduleNightly, scheduleCleanup };
+  /**
+   * A server's start, once its durable engine runs: the next night of the scan and of the sign-in clean-up, scheduled
+   * when no earlier start or night has, and taken over when a deployment left it waiting under the replaced release or
+   * an earlier start was stopped while taking it over. Only a night's run schedules the night after it, so a night left
+   * there would stop both for good (D85 item 2, as amended 2026-11-13). Neither night has begun, since each lies ahead.
+   * The ids of the nights taken over.
+   */
+  async function startNightly() {
+    return jobs.takeOver([await scheduleNightly(), await scheduleCleanup()]);
+  }
+  return { run, scheduleNightly, scheduleCleanup, startNightly };
 }
 export type Scheduler = ReturnType<typeof createScheduler>;
 /**

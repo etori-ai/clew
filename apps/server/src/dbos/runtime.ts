@@ -12,8 +12,9 @@ import { telemetry } from '../telemetry';
  *    transaction (`dbos.enqueue_workflow` in the store adapters, D86) and the application name below is what they name.
  *  - `CLEW_EXECUTOR_ID`: a stable name per instance (default: the host name). Recovery and takeover key on it.
  *  - `CLEW_RELEASE`: the application version; unset, DBOS hashes the workflow source. Workflows are tagged with the
- *    version that started them and are recovered only by executors of that version; an operator moves the rest with
- *    `forkWorkflow`. Only the latest registered version dequeues, so the version that launches promotes itself.
+ *    version that started them and are recovered only by executors of that version; a server's start takes the next
+ *    nights over (`moveToRunningVersion` in `start.ts`), and an operator moves the rest with `forkWorkflow`. Only the
+ *    latest registered version dequeues, so the version that launches promotes itself.
  *  - Logging and tracing (D91): the engine's log lines go through Clew's logger, and when telemetry export is on the
  *    engine emits its workflow and step spans on the global tracer provider, in the `dbos.*` semantic-convention
  *    names, so a reminder's workflow and the Postgres writes under it are one trace.
@@ -78,18 +79,26 @@ async function promoteCurrentVersion() {
 }
 
 const RETRY_MS = 30_000;
-/** Launch beside the server; if the database is unreachable the page still works (D8) and the launch retries. */
+/**
+ * Launch beside the server; if the database is unreachable the page still works (D8) and the launch retries. Resolves
+ * once the engine has launched, which may be after several attempts, and never rejects.
+ */
 export function startDurableRuntime() {
-  launchDurable()
-    .then(info =>
-      logger.info(
-        { scope: 'dbos', executor: info.executorID, version: info.applicationVersion },
-        'durable engine (DBOS) launched',
-      ),
-    )
-    .catch(async error => {
-      logger.error({ scope: 'dbos', error }, `durable engine unavailable, retrying in ${RETRY_MS / 1000} s`);
-      await DBOS.shutdown().catch(() => undefined);
-      setTimeout(startDurableRuntime, RETRY_MS).unref();
-    });
+  return new Promise<Awaited<ReturnType<typeof launchDurable>>>(resolve => {
+    const attempt = () =>
+      launchDurable()
+        .then(info => {
+          logger.info(
+            { scope: 'dbos', executor: info.executorID, version: info.applicationVersion },
+            'durable engine (DBOS) launched',
+          );
+          resolve(info);
+        })
+        .catch(async error => {
+          logger.error({ scope: 'dbos', error }, `durable engine unavailable, retrying in ${RETRY_MS / 1000} s`);
+          await DBOS.shutdown().catch(() => undefined);
+          setTimeout(attempt, RETRY_MS).unref();
+        });
+    void attempt();
+  });
 }

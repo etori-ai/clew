@@ -12,6 +12,13 @@ export interface Job {
 export interface JobQueue {
   /** Idempotent by job id. The job's durable workflow starts with the same commit (D86). */
   schedule(job: { id: string; kind: string; runAt: string; payload?: Record<string, unknown> }): Promise<void>;
+  /**
+   * The jobs among `ids` whose workflow a replaced release left waiting under its own version, which no process of the
+   * running release recovers (D85 item 2), or a take-over stopped between its two calls left cancelled there, start
+   * again from their first step under the running release. For jobs that have not begun, whose second start the claim
+   * of the job's row fences. The ids taken over.
+   */
+  takeOver(ids: string[]): Promise<string[]>;
 }
 /** The engine's side of a job row (D47, D85): its execution claimed under a lease, then completed with its audit row. */
 export interface JobExecutions {

@@ -27,16 +27,26 @@ const persona = (id: string): AuthenticatedContext => ({
   },
 });
 type Row = Job & { runAt: string; status: 'temporal' | 'executing' | 'done'; attempts: number; leaseUntil?: string };
-/** The job table as the engine sees it: a row is claimed once its run time has come, under a two-minute lease. */
+/**
+ * The job table as the engine sees it: a row is claimed once its run time has come, under a two-minute lease. The jobs
+ * in `stranded` wait under a replaced release until they are taken over.
+ */
 function memoryJobs() {
   const rows: Row[] = [];
   const finished: Array<[string, number]> = [];
-  const queue: JobQueue & JobExecutions & { rows: Row[]; finished: typeof finished } = {
+  const stranded = new Set<string>();
+  const queue: JobQueue & JobExecutions & { rows: Row[]; finished: typeof finished; stranded: Set<string> } = {
     rows,
     finished,
+    stranded,
     async schedule(job) {
       if (!rows.some(r => r.id === job.id))
         rows.push({ ...job, payload: job.payload ?? {}, status: 'temporal', attempts: 0 });
+    },
+    async takeOver(ids) {
+      const taken = ids.filter(id => stranded.has(id));
+      taken.forEach(id => stranded.delete(id));
+      return taken;
     },
     async claimExecution(id, at) {
       const row = rows.find(r => r.id === id);
@@ -147,6 +157,21 @@ describe('the scheduled jobs', () => {
         attempts: 0,
       },
     ]);
+  });
+  test('a start schedules the next night of the scan and of the clean-up, and takes over a night a deployment left under the replaced release', async () => {
+    const w = world();
+    // The night of the scan was scheduled by an earlier start or night, and its workflow waits under the release that
+    // a deployment replaced: only a night's run schedules the night after it, so it must be taken over.
+    await w.jobs.schedule({ id: 'scan:2026-11-05', kind: NIGHTLY, runAt: '2026-11-05T05:00:00.000Z' });
+    w.jobs.stranded.add('scan:2026-11-05');
+    expect(await w.scheduler.startNightly()).toEqual(['scan:2026-11-05']);
+    expect(w.jobs.rows.map(r => [r.id, r.status])).toEqual([
+      ['scan:2026-11-05', 'temporal'],
+      ['sign-in-cleanup:2026-11-05', 'temporal'],
+    ]);
+    // A second start of the same release finds nothing to take over and schedules nothing more.
+    expect(await w.scheduler.startNightly()).toEqual([]);
+    expect(w.jobs.rows).toHaveLength(2);
   });
   test('the sign-in clean-up removes what expired by its clock and schedules the next night', async () => {
     const w = world();

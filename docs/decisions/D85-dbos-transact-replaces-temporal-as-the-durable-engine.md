@@ -1,6 +1,38 @@
 # D85 · DBOS Transact replaces Temporal as the durable engine
 
-**Status:** accepted, implemented; the in-transaction start it names as the next step is D86 (2026-11-09) · **Date:** 2026-11-09 · **Area:** platform
+**Status:** accepted, implemented; the in-transaction start it names as the next step is D86 (2026-11-09); item 2 amended 2026-11-13 in the fixes of the review of users and the organisation: a server's start takes over the next night of the scan and of the sign-in clean-up when a deployment left it waiting under the replaced version · **Date:** 2026-11-09 · **Area:** platform
+
+**Amended 2026-11-13.** A review of the fixes of the
+[review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md)
+found that a deployment stopped the nightly jobs for good. A deployment that changes the application version, which is
+every release once `CLEW_RELEASE` is set and otherwise one that changes the workflow code or the engine, leaves the
+`scheduledJob` workflow of the next night's scan and sign-in clean-up
+([D117](D117-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md))
+waiting under the replaced version, where no process of the new one recovers it. Only a night's run schedules the night
+after it, and a start found that night already scheduled, so neither job ran again until a server started on a later
+day or an operator moved the workflow, and nothing logged it. Item 2 now has one exception. A server's start, once its
+engine has launched, schedules the next night of both jobs, and each whose workflow is `PENDING` or `ENQUEUED` under
+another version is taken over: the workflow is cancelled, which also ends its wait in a process of that version that
+still runs, and rewound to its first step under its own id and the running version, on the ledger's queue
+(`DBOS.rewindWorkflow` in dbos-sdk 5.5.0; `moveToRunningVersion` in `dbos/start.ts`, `startNightly` in
+`scheduler/usecases.ts`, `startJobs` in `composition/jobs.ts`). A night that is `CANCELLED` under another version is
+such a take-over that was stopped between its two calls, since nothing in Clew cancels a job's workflow otherwise, and
+is rewound the same way by the next start. The start logs `nightly work taken over from the replaced release` with the
+job ids. Starting such a workflow again is safe: a `scheduledJob` only waits for its time
+and then runs its job by id under the claim of the job's row, a night that lies ahead has not begun, and the claim's
+attempt fences a second run. The rewind keeps the id that the job's row names (D86); a run that a process of the older
+version had begun can no longer record a step once the workflow is taken from it. Only these two are taken over because
+they alone form a chain, which one stranded night ends, and nobody would notice a clean-up missing; every other workflow
+left under an older version is one piece of work, still moved by an operator after the deployment, the same way or with
+`forkWorkflow` as above, which gives the copy a new id and leaves the original waiting until it is cancelled. Moving every
+workflow at launch was left: whether a workflow can start again from its first step has to be shown for each, and
+D47's rule that workflow functions stay replay compatible does not show it for a follow-up that reminds or a watch that
+reads. The [operations runbook](../maintainers/reliability-operations.md#after-every-deployment) has the steps after
+every deployment, and the operations guide names `CLEW_RELEASE` and `CLEW_EXECUTOR_ID` for the hosting team. Test:
+`apps/server/tests/job-runtime.test.ts`, where an instance of one release takes both nights from the queue and is
+killed, the same instance starts as the next release, whose engine recovers nothing of the older version's, and its
+start takes both nights over, the clean-up's left cancelled by an earlier start that was stopped before its rewind:
+each runs once and schedules the next night under the new release, and a second start takes nothing over.
 
 **Decision.** [DBOS Transact](https://github.com/dbos-inc/dbos-transact-ts) (MIT, `@dbos-inc/dbos-sdk` 5.4.0) is Clew's engine for durable workflows and timers, in place of Temporal (D17). It runs inside the BFF process and checkpoints to Clew's own PostgreSQL database, in the schema `dbos`; there is no separate service, no second database and no UI container. The seven workflows live in `apps/server/src/dbos/workflows.ts`: `scheduledJob`, `mcpWatch`, `durableReminder`, `approvedExecution`, `jobWatch` and `obligation` as before, and no legacy `reminder` function, because no Temporal history exists to replay. Their steps call use cases from the composition root through named activities bound in `dbos/activities.ts`; the runtime tests bind their own. `dbos/runtime.ts` launches the engine, `dbos/start.ts` starts a workflow under a stable id or meets the one already there, and `dbos/timers.ts`, `dbos/executions.ts` and `dbos/obligations.ts` are the delivery adapters behind the outboxes and the `ObligationTimers` port. Routes, use cases and modules never import the engine; the dependency rules name `apps/server/src/dbos/` where they named `temporal/`.
 

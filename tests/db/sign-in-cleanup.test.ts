@@ -135,7 +135,13 @@ test('the clean-up is scheduled once a night with its workflow in the same commi
   let time = Date.parse('2098-11-05T10:00:00.000Z');
   const cleaned: string[] = [];
   const scheduler = createScheduler({
-    jobs: postgresJobQueue(testDurable),
+    // No engine runs here, so nothing is taken over from another release.
+    jobs: postgresJobQueue({
+      durable: testDurable,
+      move: async () => {
+        throw new Error('no durable engine runs in this test');
+      },
+    }),
     people: { granted: async () => [], personaFor: async () => undefined },
     threads: { ensureThreads: async () => undefined, closeReceiptWindow: async () => undefined },
     calendar: { closeUndoWindow: async () => undefined },
