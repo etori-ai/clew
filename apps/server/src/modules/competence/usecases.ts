@@ -44,6 +44,12 @@ export class CompetenceError extends InputError {
 export const COMPETENCE_ADMIN: Capability = 'admin.competence';
 /** The version of the export document (D108 item 14); a breaking change is a new version. */
 export const COMPETENCE_EXPORT_FORMAT = 'clew.competence/1';
+/**
+ * What erasing one person from the domain did, counts only (D108 item 14), or why it erased nothing: an id the people
+ * table does not hold, or a person the source has not deactivated (D116 item 7, D117 item 3).
+ */
+export type CompetenceErasure =
+  { refused: 'unknown' | 'active' } | { holdings: number; cleared: number; cards: number };
 const NOT_A_MANAGER = 'Intyg registreras av den som är chef för en enhet.';
 const NOT_YOURS = 'Personen finns inte bland dem du är chef för.';
 const NO_TYPE = 'Kompetensen finns inte i katalogen.';
@@ -427,15 +433,15 @@ export function competenceUsecases(deps: CompetenceDeps) {
     /**
      * Erase one person from the domain (D108 item 14): their holdings, their id on the holdings they registered or
      * revoked for others, and the cards the competence scan put in their own stream. `actor` is the operator's. An id
-     * the people table does not hold (a user name, a typo) erases nothing and writes no audit row: undefined.
+     * the people table does not hold (a user name, a typo) and a person who is still active erase nothing and write no
+     * audit row: only a person the source has deactivated is erased (D117 item 3).
      */
-    async erasePerson(
-      actor: string,
-      personId: string,
-    ): Promise<{ holdings: number; cleared: number; cards: number } | undefined> {
+    async erasePerson(actor: string, personId: string): Promise<CompetenceErasure> {
       const at = now().toISOString();
-      return deps.store.transaction(async tx => {
-        if (!(await tx.persons([personId])).length) return undefined;
+      return deps.store.transaction(async (tx): Promise<CompetenceErasure> => {
+        const [person] = await tx.persons([personId]);
+        if (!person) return { refused: 'unknown' };
+        if (person.enabled) return { refused: 'active' };
         const erased = await tx.erasePerson(personId);
         const cards = await tx.cards.removeOwn(personId, actor, at);
         const counted = { holdings: erased.holdings, cleared: erased.cleared, cards };

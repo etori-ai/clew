@@ -122,7 +122,7 @@ function world() {
     obligations: memoryObligations(),
   });
   const store = memoryTalkStore({
-    persons: STAFF.map(p => ({ id: p.id, organisationId: ORG, name: p.name, userName: p.userName })),
+    persons: STAFF.map(p => ({ id: p.id, organisationId: ORG, name: p.name, userName: p.userName, enabled: true })),
   });
   const talks = talkUsecases({
     store,

@@ -105,11 +105,12 @@ beforeEach(() => {
     ['other', { units: [{ unitId: 'u3', unitLabel: 'Enhet 3', people: [dan] }] }],
   ]);
   store = memoryCompetenceStore({
-    persons: [anna, bo, cia, dan, { id: 'boss', name: 'Karin Chef', userName: 'boss' }].map(p => ({
+    persons: [anna, bo, cia, dan, { id: 'boss', name: 'Karin Chef', userName: 'boss', enabled: true }].map(p => ({
       id: p.id,
       organisationId: ORG,
       name: p.name,
       userName: p.userName,
+      enabled: p.enabled !== false,
     })),
   });
   competence = competenceUsecases({
@@ -121,6 +122,8 @@ beforeEach(() => {
 });
 const audits = () => store.audit();
 const lastAudit = () => audits().at(-1)!;
+/** The source deactivates the person: only then does an operator erase them (D117 item 3). */
+const deactivate = (id: string) => store.addPerson({ ...store.state.persons.get(id)!, enabled: false });
 /** A catalogue of three types: one with the employer's rule, two without. */
 async function catalogue() {
   const hot = await competence.addType(admin, { name: 'Heta arbeten', area: 'Säkerhet', kind: 'certificate' });
@@ -543,6 +546,7 @@ describe('erasure and export', () => {
     const { hot } = await catalogue();
     await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2026-01-10' });
     await competence.registerHolding(boss, 'bo', { typeId: hot, issuedOn: '2026-01-10' });
+    deactivate('anna');
     expect(await competence.erasePerson('operator:cli', 'anna')).toEqual({ holdings: 1, cleared: 0, cards: 0 });
     expect(lastAudit()).toEqual({
       actor: 'operator:cli',
@@ -552,12 +556,13 @@ describe('erasure and export', () => {
       details: { holdings: 1, cleared: 0, cards: 0 },
     });
     // The manager who registered is erased: the holdings stay, without her id.
+    deactivate('boss');
     expect(await competence.erasePerson('operator:cli', 'boss')).toEqual({ holdings: 0, cleared: 1, cards: 0 });
     expect([...store.state.holdings.values()].map(h => [h.personId, h.registeredBy])).toEqual([['bo', null]]);
   });
   test("the cards the competence scan put in the person's own stream go with the holdings, and are counted (R1)", async () => {
     const seeded = memoryCompetenceStore({
-      persons: [{ id: 'anna', organisationId: ORG, name: 'Anna', userName: 'anna.a' }],
+      persons: [{ id: 'anna', organisationId: ORG, name: 'Anna', userName: 'anna.a', enabled: false }],
       cards: {
         'card-heta': { personId: 'anna', connector: 'competence' },
         'card-hlr': { personId: 'anna', connector: 'competence' },
@@ -597,9 +602,25 @@ describe('erasure and export', () => {
     await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2026-01-10' });
     const before = audits().length;
     for (const id of ['nobody', 'Anna.A', 'anna.a'])
-      expect(await competence.erasePerson('operator:cli', id)).toBeUndefined();
+      expect(await competence.erasePerson('operator:cli', id)).toEqual({ refused: 'unknown' });
     expect(audits()).toHaveLength(before);
     expect([...store.state.holdings.values()].map(h => h.personId)).toEqual(['anna']);
+  });
+  test('a person who is still active is refused: nothing is erased and no audit row is written (D117 item 3)', async () => {
+    const { hot } = await catalogue();
+    await competence.registerHolding(boss, 'anna', { typeId: hot, issuedOn: '2026-01-10' });
+    store.addCard('card-anna', { personId: 'anna', connector: 'competence' });
+    const before = audits().length,
+      holdings = structuredClone(store.state.holdings);
+    // Neither Anna, whose holding it is, nor the manager who registered it.
+    for (const id of ['anna', 'boss'])
+      expect(await competence.erasePerson('operator:cli', id)).toEqual({ refused: 'active' });
+    expect(audits()).toHaveLength(before);
+    expect(store.state.holdings).toEqual(holdings);
+    expect([...store.state.cards.keys()]).toEqual(['card-anna']);
+    // Once the source has deactivated her, the same call erases her.
+    deactivate('anna');
+    expect(await competence.erasePerson('operator:cli', 'anna')).toEqual({ holdings: 1, cleared: 0, cards: 1 });
   });
   test('the export is one versioned document of the organisation, audited with counts', async () => {
     const { hot } = await catalogue();
@@ -626,6 +647,7 @@ test('no audit row carries a name: of a person or of a type', async () => {
   await competence.updateType(admin, hlr, { name: 'Fallskydd', validityMonths: 36 });
   await competence.revokeHolding(boss, id);
   await competence.archiveType(admin, hot);
+  deactivate('bo');
   await competence.erasePerson('operator:cli', 'bo');
   await competence.exportDomain('operator:cli', ORG);
   const written = JSON.stringify(audits());

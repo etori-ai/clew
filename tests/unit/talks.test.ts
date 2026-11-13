@@ -121,6 +121,7 @@ beforeEach(() => {
       organisationId: ORG,
       name: p.name,
       userName: p.userName,
+      enabled: p.enabled !== false,
     })),
   });
   talks = talkUsecases({
@@ -136,6 +137,8 @@ beforeEach(() => {
   });
 });
 const at = () => now.toISOString();
+/** The source deactivates the person: only then does an operator erase them (D117 item 3). */
+const deactivate = (id: string) => store.addPerson({ ...store.state.persons.get(id)!, enabled: false });
 const open = () =>
   talks.openRound('operator:cli', {
     organisationId: ORG,
@@ -626,6 +629,7 @@ describe('action points', () => {
       text: 'Boka en kurs',
       dueOn: '2026-12-20',
     });
+    deactivate('co');
     await talks.erasePerson('operator:cli', 'co');
     expect(store.state.commitments.get(lenas)).toMatchObject({ ownerId: null });
     expect(await talks.takeovers(boss, [lenas])).toEqual(new Set([lenas]));
@@ -650,6 +654,7 @@ describe('action points', () => {
     expect(store.state.commitments.get(annas)).toMatchObject({ doneAt: null, doneBy: null });
     expect(store.audit()).toHaveLength(audited);
     // Erasing the employee removes her own points with her: there is nobody's point left to take over.
+    deactivate('anna');
     await talks.erasePerson('operator:cli', 'anna');
     expect(store.state.commitments.get(annas)).toBeUndefined();
   });
@@ -793,6 +798,7 @@ describe('erasure and export', () => {
       dueOn: '2027-01-15',
     });
     const cards = [a1, a2].map(id => store.state.commitments.get(id)!.threadId!);
+    deactivate('anna');
     const counts = await talks.erasePerson('operator:cli', 'anna');
     expect(counts).toEqual({ talks: 1, commitments: 2, cleared: 0, cards: 2 });
     expect(store.calls().at(-1)).toEqual({ op: 'remove', threadIds: [...cards].sort() });
@@ -814,10 +820,33 @@ describe('erasure and export', () => {
     const audit = store.audit().length,
       calls = store.calls().length;
     for (const key of ['nobody', 'anna.a', 'Anna.A'])
-      expect(await talks.erasePerson('operator:cli', key)).toBeUndefined();
+      expect(await talks.erasePerson('operator:cli', key)).toEqual({ refused: 'unknown' });
     expect(store.audit()).toHaveLength(audit);
     expect(store.calls()).toHaveLength(calls);
     expect(store.state.commitments.get(id)).toMatchObject({ employeeId: 'anna' });
+  });
+
+  test('a person who is still active is refused: nothing is erased and no audit row is written (D117 item 3)', async () => {
+    await open();
+    await talks.markHeld(boss, 'anna', { heldOn: '2026-11-03' });
+    const id = await talks.addCommitment(boss, 'anna', { owner: 'employee', text: 'Läsa boken', dueOn: '2026-12-15' });
+    // Lena owns a point about Bo: her id on it stays as well.
+    staff.set('co', { units: [{ unitId: 'u1', unitLabel: 'Enhet 1', people: [anna, bo] }] });
+    const lenas = await talks.addCommitment(co, 'bo', { owner: 'manager', text: 'Boka en kurs', dueOn: '2026-12-20' });
+    const audit = store.audit().length,
+      calls = store.calls().length,
+      cards = store.state.cards.size;
+    for (const key of ['anna', 'co'])
+      expect(await talks.erasePerson('operator:cli', key)).toEqual({ refused: 'active' });
+    expect(store.audit()).toHaveLength(audit);
+    expect(store.calls()).toHaveLength(calls);
+    expect(store.state.cards.size).toBe(cards);
+    expect(store.state.commitments.get(id)).toMatchObject({ employeeId: 'anna' });
+    expect(store.state.commitments.get(lenas)).toMatchObject({ ownerId: 'co', createdBy: 'co' });
+    expect([...store.state.talks.values()].map(t => t.employeeId)).toEqual(['anna']);
+    // Once the source has deactivated her, the same call erases her.
+    deactivate('anna');
+    expect(await talks.erasePerson('operator:cli', 'anna')).toEqual({ talks: 1, commitments: 1, cleared: 0, cards: 1 });
   });
 
   test('the export is one versioned document with the text, and its audit row has counts', async () => {
@@ -851,6 +880,7 @@ describe('erasure and export', () => {
     await talks.reopenCommitment(asAnna, id);
     await talks.commitmentDue(store.state.commitments.get(id)!.threadId!, 1);
     await talks.exportDomain('operator:cli', ORG);
+    deactivate('anna');
     await talks.erasePerson('operator:cli', 'anna');
     const text = auditText();
     expect(store.audit().length).toBeGreaterThanOrEqual(9);

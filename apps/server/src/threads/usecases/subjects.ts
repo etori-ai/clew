@@ -61,8 +61,8 @@ export function subjectCards({ store, registry, clock }: SubjectCardsDeps) {
 export interface SubjectErasureDeps {
   store: Pick<ThreadStore, 'transaction'>;
   clock: () => Date;
-  /** Whether the people table holds a person (composition: the people module's user reads). */
-  people: { exists(personId: string): Promise<boolean> };
+  /** Whether a person is active, or undefined for an id the people table does not hold (composition: the user reads). */
+  people: { enabled(personId: string): Promise<boolean | undefined> };
 }
 /** The audit action of an erased subject. */
 export const SUBJECT_ERASED = 'thread.subject_erased';
@@ -73,12 +73,19 @@ export function subjectErasure({ store, clock, people }: SubjectErasureDeps) {
    * in one transaction with one audit row about it (`person:<id>`, `unit:<id>`), counts only. An entity is named by
    * Clew's key (D116): a person by their id, which reaches every card about them whatever user names they have held, and
    * never another person's; a unit by its id. The rows' text stays as the source wrote it, and a source that still names
-   * the entity names it again on its next scan. A person id the people table does not hold (a user name, a typo) erases
-   * nothing and writes no audit row: undefined. A unit is erased by any id, since a removed unit may still be named.
-   * `actor` is the operator's.
+   * the entity names it again on its next scan. A person id the people table does not hold (a user name, a typo) and a
+   * person who is still active erase nothing and write no audit row: only a person the source has deactivated is erased
+   * (D117 item 3). A unit is erased by any id, since a removed unit may still be named. `actor` is the operator's.
    */
-  async function eraseSubject(actor: string, subject: Subject): Promise<SubjectErasure | undefined> {
-    if (subject.entity === 'person' && !(await people.exists(subject.key))) return undefined;
+  async function eraseSubject(
+    actor: string,
+    subject: Subject,
+  ): Promise<SubjectErasure | { refused: 'unknown' | 'active' }> {
+    if (subject.entity === 'person') {
+      const enabled = await people.enabled(subject.key);
+      if (enabled === undefined) return { refused: 'unknown' };
+      if (enabled) return { refused: 'active' };
+    }
     const at = clock().toISOString();
     return store.transaction(async tx => {
       const erased = await tx.eraseSubject(subject);

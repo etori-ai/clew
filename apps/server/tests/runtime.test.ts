@@ -140,7 +140,9 @@ test('the talks routes (D96): thin writes over the use cases, Swedish refusals, 
   const anna = { id: 'anna', name: 'Anna', userName: 'anna.a', email: null, role: 'employee' as const, enabled: true };
   let n = 0;
   const talks = talkUsecases({
-    store: memoryTalkStore({ persons: [{ id: 'anna', organisationId: 'org', name: 'Anna', userName: 'anna.a' }] }),
+    store: memoryTalkStore({
+      persons: [{ id: 'anna', organisationId: 'org', name: 'Anna', userName: 'anna.a', enabled: true }],
+    }),
     staff: async p =>
       p.id === 'boss' ? { units: [{ unitId: 'u1', unitLabel: 'Enheten', people: [anna] }] } : { units: [] },
     manages: async (managerId, employeeId) => managerId === 'boss' && employeeId === 'anna',

@@ -2,7 +2,7 @@ import type { StaffOverview } from '@clew/contracts';
 import { withThreadTx, type ThreadStoreOptions } from '../threads/adapters/postgres';
 import { talkTx } from '../modules/talks/adapters/postgres';
 import { talkUsecases } from '../modules/talks/usecases';
-import type { Manages, Sealer, Staff, TalkStore } from '../modules/talks/model';
+import type { Manages, Sealer, Staff, TalkDeps, TalkStore } from '../modules/talks/model';
 import type { Directory, DirectoryPerson, Holders, Takeovers } from '../modules/talk-seam/model';
 import { openSecret, sealSecret } from '../auth-crypto';
 import { ForbiddenError } from '../context';
@@ -59,14 +59,22 @@ export const talkManages: Manages = async (managerId, employeeId) => {
   const overview = await staff(persona);
   return overview.units.some(unit => unit.people.some(p => p.id === employeeId && p.enabled !== false));
 };
-export const talks = talkUsecases({
-  store: talkStore,
+const talkDeps: Omit<TalkDeps, 'store'> = {
   staff,
   manages: talkManages,
   bookings: (persona, round) => calendar.samtalBookings(persona, round),
   clock,
   ids,
-});
+};
+export const talks = talkUsecases({ store: talkStore, ...talkDeps });
+/**
+ * The talks module as the operator's erasure runs it (`scripts/talks-erase.ts`): the same use cases and tables over a
+ * store that cancels no workflow. A script never launches the durable engine, so a cancel there could only fail after
+ * the commit, and print an error before the script's own answer. The `due` timers of the removed cards go with them,
+ * and a workflow still waiting on one wakes at its time, finds no timer and ends without a write: the generation fence
+ * covers a cancel that never arrives (D86).
+ */
+export const talksForScripts = talkUsecases({ store: talkStoreWithCards({ durable: ledger }, { clock }), ...talkDeps });
 /**
  * The talks seam's directory (D96 item 8): the reader with their user name, and the people on the units they manage
  * now, read fresh on every call. As the talks module counts them: the reader left out, each person once, a deactivated

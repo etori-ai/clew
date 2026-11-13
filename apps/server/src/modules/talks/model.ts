@@ -61,13 +61,18 @@ export interface CommitmentRecord {
   threadId: string | null;
 }
 export type CommitmentPatch = Partial<Pick<CommitmentRecord, 'doneAt' | 'doneBy'>>;
-/** A person as the domain needs them: to key a row on the user name (D96 item 8) and to name the employee to the reader. */
+/**
+ * A person as the domain needs them: to key a row on the user name (D96 item 8), to name the employee to the reader, and
+ * to erase only a person the source has deactivated (D117 item 3).
+ */
 export interface PersonRef {
   id: string;
   organisationId: string;
   name: string;
   /** Null for a person provisioned without one. */
   userName: string | null;
+  /** False once the source has deactivated the person (D68 item 1). */
+  enabled: boolean;
 }
 /** One audit row, written in the same transaction as the change. Metadata only: ids, dates, counts and roles. */
 export interface TalkAudit {

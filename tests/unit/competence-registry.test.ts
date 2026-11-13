@@ -56,7 +56,7 @@ function world() {
   const clock = () => new Date(now);
   let n = 0;
   const store = memoryCompetenceStore({
-    persons: [{ id: 'p-anna', organisationId: ORG, name: 'Anna Lindqvist', userName: 'anna.lindqvist' }],
+    persons: [{ id: 'p-anna', organisationId: ORG, name: 'Anna Lindqvist', userName: 'anna.lindqvist', enabled: true }],
   });
   const competence = competenceUsecases({
     store,

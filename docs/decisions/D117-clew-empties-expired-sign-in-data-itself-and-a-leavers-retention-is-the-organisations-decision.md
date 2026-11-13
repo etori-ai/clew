@@ -41,7 +41,11 @@
      `scripts/competence-erase.ts` first, each with the person's id
      ([D116](D116-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) item 7), and
      `bun scripts/person-erase.ts --person <id> --confirm` last. The three still find the person by the id once the
-     record is erased.
+     record is erased. Each of them refuses an id the people table does not hold and a person who is still active, as
+     this script does (2026-11-13: until then the three erased an active person's cards, talks and competence). They
+     cancel no durable workflow, since a script never starts the engine: a removed card's timer goes with the card, and
+     its workflow wakes at its time, finds no timer and ends
+     ([D86](D86-the-ledger-starts-its-workflow-inside-its-own-transaction.md)).
    - A person is named by their id, never by a user name. It refuses an id the people table does not hold and a person
      who is still active, and writes nothing and no audit row for either.
    - In one transaction it takes the person out of their groups, moving each group's time of change, and removes their
@@ -138,11 +142,12 @@ completes rather than throws: a job that throws is claimed again by its workflow
 failure lasts, one more such workflow each night, while the next night repeats the clean-up anyway.
 
 The erase takes one person at a time, and the organisation runs it from its own list when its rules say that a record's
-time has come. Refusing an active person avoids cutting off someone who still works there, and erasing a record that the
-next push would create again. The audit trail keeps every event, and names the person there only by an id that no
-longer leads to a name. For an organisation of several thousand employees, leavers come every week and many of them
-come back. Keeping the record until the organisation decides lets a returner be reactivated with their history, and the
-erase lets the organisation keep its own rules for each person who does not come back.
+time has come. Refusing an active person, in this script and in the three that come before it, avoids cutting off
+someone who still works there from their record, their cards, their talks and their competence, and erasing what the
+next push and the next scan would create again. The audit trail keeps every event, and names the person there only by
+an id that no longer leads to a name. For an organisation of several thousand employees, leavers come every week and
+many of them come back. Keeping the record until the organisation decides lets a returner be reactivated with their
+history, and the erase lets the organisation keep its own rules for each person who does not come back.
 
 The erased record stores no user name, so no key leads to the person any more: an action started from their menu with
 an `execute`, which Clew resolves to a user name when it is decided and checks again before it is sent, cannot reach a
@@ -191,8 +196,11 @@ the database), `tests/db/person-erase.test.ts` (on PostgreSQL, a person pushed t
 SCIM filters on the source key and the user name once deactivated, then erased, with every table and the audit trail
 searched for each value that named them; the stale group push undone by a second erasure; the freed name and key pushed
 again as a new person; the other three erasures still finding the person by id; and the script's exit codes and answers,
-with someone else holding the person's id as a user name in another case) and `tests/unit/entities-actions.test.ts` (an
-execute about a person erased since cannot be decided, and nothing is approved).
+with someone else holding the person's id as a user name in another case), `tests/unit/entities-actions.test.ts` (an
+execute about a person erased since cannot be decided, and nothing is approved), and, for the three erasures that come
+first, `tests/unit/erase-scripts.test.ts` (the arguments refused before the database is asked) and
+`tests/db/erase-scripts.test.ts` (as scripts on PostgreSQL: an unknown id and an active person refused, and a
+deactivated person erased with the script's own answer alone, a card with a waiting timer included).
 
 **Replaces.** `pruneAuthentication`, which only the development setup ran. Its revocation and removal of expired
 sessions is now done every night in the server, from the first night after either expiry rather than a day after the

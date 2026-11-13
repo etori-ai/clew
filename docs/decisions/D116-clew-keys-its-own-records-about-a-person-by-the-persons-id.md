@@ -86,11 +86,14 @@ user name, so a rename separated a person from the cards about them and a reuse 
 7. **Erasure is by the id.** `bun scripts/subject-erase.ts person <person id> --confirm`,
    `bun scripts/talks-erase.ts --person <person id> --confirm` and
    `bun scripts/competence-erase.ts --person <person id> --confirm` take the person's id, never a user name. An id the
-   people table does not hold is refused, and nothing is erased or audited. One erasure reaches every card about the
-   person, whatever user names they have held, and never the cards of someone who holds one of those names now. The
-   rows' text stays as the source wrote it. `competence-erase` also removes the cards the competence scan put in the
-   person's stream, each with one `thread.removed` row (`details.reason` `erasure`) written at the time of the erasure.
-   When a person's own record is erased is
+   people table does not hold is refused, and so is a person who is still active, since a person is erased only once
+   the source has deactivated them (D117 item 3); nothing is erased or audited for either. `talks-erase` and
+   `competence-erase` refuse an option given twice or any other argument, as `person-erase` does, so a copied line
+   cannot erase the wrong person (2026-11-13). One erasure reaches every card about the person, whatever user names
+   they have held, and never the cards of someone who holds one of those names now. The rows' text stays as the source
+   wrote it. `competence-erase` also removes the cards the competence scan put in the person's stream, each with one
+   `thread.removed` row (`details.reason` `erasure`) written at the time of the erasure. When a person's own record is
+   erased is
    [D117](D117-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md)'s.
 8. **D97's two open items on keys are settled.** The key on the wire is the user name. The key on Clew's card rows is
    the person's id, so the key Clew keeps on a card is never one of the person's names, as [principle
@@ -136,7 +139,7 @@ returners come back to the record they had. Keying by the id keeps each person's
 these, and none of them needs an operator.
 
 **As built.** In `@clew/contracts`: `foldSourceKey`, `EntityRefSchema` with Clew's `key` and the source's `sourceKey`,
-`PanelViewSpec.people` and `SUBJECT_CHANGED`. The people port's `userName`, `holders` and `exists` (`UserReads`) are
+`PanelViewSpec.people` and `SUBJECT_CHANGED`. The people port's `userName`, `holders` and `enabled` (`UserReads`) are
 read from PostgreSQL through `postgresUserReads`, the only adapter that has them. `tests/user-reads-contract.ts` holds
 them there, in `tests/db/user-reads.test.ts`, on a database created with the C locale too, and holds the unit suite's
 in-memory double to the same; `tests/db/postgres-entity-keys.test.ts` opens a person's address by id on PostgreSQL.
@@ -150,8 +153,11 @@ reaches only rows that arrive after, and a rename the source has not made rewrit
 `tests/unit/executions.test.ts` (an approved action about a person), `tests/unit/card-decisions.test.ts`,
 `tests/unit/search.test.ts`, `tests/unit/refresh.test.ts` (a rename in the directory alone rewrites the rows and
 reopens, wakes and delivers nothing; a source that names another person in a row brings the card back),
-`tests/unit/capability-routes.test.ts`, `tests/db/postgres-competence-erasure.test.ts`, and
-`tests/a11y/executions.spec.ts` for the card's text and the button that decides again. No migration re-keys the
+`tests/unit/capability-routes.test.ts`, `tests/db/postgres-competence-erasure.test.ts`,
+`tests/unit/erase-scripts.test.ts` (the arguments `talks-erase` and `competence-erase` refuse before they ask the
+database), `tests/db/erase-scripts.test.ts` (the three erasures as scripts on PostgreSQL: an unknown id and an active
+person refused, a deactivated one erased), and `tests/a11y/executions.spec.ts` for the card's text and the button that
+decides again. No migration re-keys the
 cards written before, since Clew is not launched and its data is synthetic: a card whose rows named a person by user
 name names nobody until its rows are next written, when each name is resolved as item 2 says. A request's span records
 an entity's key as `:key` in `url.full` and the route template as `http.route` (`apps/server/src/request-spans.ts`),

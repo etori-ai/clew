@@ -57,11 +57,17 @@ export const holdingRow = (
   revokedBy: null,
   ...extra,
 });
-const person = (id: string, organisationId: string, userName: string | null = 'u-' + id): PersonRef => ({
+const person = (
+  id: string,
+  organisationId: string,
+  userName: string | null = 'u-' + id,
+  enabled = true,
+): PersonRef => ({
   id,
   organisationId,
   name: 'Name ' + id,
   userName,
+  enabled,
 });
 const refused = async (run: () => Promise<unknown>) => {
   try {
@@ -212,13 +218,17 @@ export function competenceStoreContract(name: string, make: () => Promise<Compet
       expect(await w.auditFor(subject)).toEqual([{ actor: 'operator:test', action: 'competence.type_added' }]);
     });
 
-    test('the people the domain names: an unknown id is absent, a person without a user name has null', async () => {
+    test('the people the domain names: an unknown id is absent, a person without a user name has null, a deactivated one is not enabled', async () => {
       const w = await world();
       await w.seedPerson(person(w.p + '-cia', w.org, null));
-      const found = await w.store.transaction(tx => tx.persons([w.anna, w.p + '-cia', w.p + '-nobody']));
+      await w.seedPerson(person(w.p + '-leaver', w.org, 'u-' + w.p + '-leaver', false));
+      const found = await w.store.transaction(tx =>
+        tx.persons([w.anna, w.p + '-cia', w.p + '-leaver', w.p + '-nobody']),
+      );
       expect(found.sort((a, b) => a.id.localeCompare(b.id))).toEqual([
         person(w.anna, w.org),
         person(w.p + '-cia', w.org, null),
+        person(w.p + '-leaver', w.org, 'u-' + w.p + '-leaver', false),
       ]);
       expect(await w.store.transaction(tx => tx.persons([]))).toEqual([]);
     });

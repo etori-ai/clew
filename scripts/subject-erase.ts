@@ -13,10 +13,11 @@
  *   bun scripts/subject-erase.ts person <person id> --confirm
  *   bun scripts/subject-erase.ts unit <unit id> --confirm
  *
- * A person is named by their id, never by a user name: an id the people table does not hold is refused, and nothing is
- * erased or audited. A unit is erased by any id, since a removed unit may still be named on cards. When no card names
- * the entity the script says so. Run `bun scripts/talks-erase.ts` and `bun scripts/competence-erase.ts` as well to erase
- * a person from those domains.
+ * A person is named by their id, never by a user name. Refused, writing nothing and no audit row, for an id the people
+ * table does not hold and for a person who is still active: the source deactivates a person first (D68 item 1). A unit
+ * is erased by any id, since a removed unit may still be named on cards. When no card names the entity the script says
+ * so. Run `bun scripts/talks-erase.ts` and `bun scripts/competence-erase.ts` as well to erase a person from those
+ * domains.
  */
 import { resolve } from 'node:path';
 import { closeDatabase } from '@clew/db';
@@ -53,9 +54,11 @@ if (!args.includes('--confirm')) {
 }
 try {
   const erased = await subjects.eraseSubject(OPERATOR, { entity, key });
-  if (!erased) {
+  if ('refused' in erased) {
     console.error(
-      `No person has the id "${key}": nothing was erased and nothing was audited. A person is named by their id, never by a user name.`,
+      erased.refused === 'unknown'
+        ? `No person has the id "${key}": nothing was erased and nothing was audited. A person is named by their id, never by a user name.`
+        : `Person "${key}" is still active: only a person the source has deactivated is erased (D68 item 1). Nothing was erased and nothing was audited.`,
     );
     process.exitCode = 1;
   } else if (!erased.cards)

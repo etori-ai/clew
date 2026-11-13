@@ -154,16 +154,19 @@ export function userReadsContract(
     },
   );
   test(
-    label + ': whether the people table holds a person, with or without a user name, active or not (D116)',
+    label +
+      ': whether a person is active, with or without a user name, and nothing for an id the people table does not hold (D116, D117)',
     async () => {
       const { reads, actors, others } = await prepare();
-      expect(await reads.exists(actors[0].id)).toBe(true);
-      expect(await reads.exists(actors[1].id)).toBe(true);
-      for (const other of others) expect(await reads.exists(other.id)).toBe(true);
-      expect(await reads.exists('missing-' + actors[0].id)).toBe(false);
-      expect(await reads.exists(actors[0].id + '\u0000')).toBe(false);
+      expect(await reads.enabled(actors[0].id)).toBe(true);
+      expect(await reads.enabled(actors[1].id)).toBe(true);
+      for (const other of others) expect([other.id, await reads.enabled(other.id)]).toEqual([other.id, other.enabled]);
+      // The deactivated person of the actors' organisation is among them.
+      expect(others.some(other => !other.enabled)).toBe(true);
+      expect(await reads.enabled('missing-' + actors[0].id)).toBeUndefined();
+      expect(await reads.enabled(actors[0].id + '\u0000')).toBeUndefined();
       // A user name is not an id.
-      expect(await reads.exists(actors[0].id + '.login')).toBe(false);
+      expect(await reads.enabled(actors[0].id + '.login')).toBeUndefined();
     },
   );
 }

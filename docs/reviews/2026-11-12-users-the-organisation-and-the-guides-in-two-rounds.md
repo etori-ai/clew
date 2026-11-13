@@ -542,6 +542,13 @@ what they say.
   next scan draws again; a started `propose` holds the source's own action under the source's own key, which the source
   still holds; and a card is also the record of what the person holding it did. The documents now claim no more than
   the code does, and also describe the erasure as built: no user name stored, rather than the id.
+- Of the four erasures of a leaver, only `person-erase` refused a person who was still active, and `talks-erase` and
+  `competence-erase` read the first of an option given twice, so a copied line could erase the wrong person or someone
+  who still works there. The three now refuse an active person, and those two a malformed call, as `person-erase` does
+  ([D117](../decisions/D117-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md)
+  item 3). When a card they removed had a timer waiting, both also printed an error from the durable engine before
+  their answer: a script never starts the engine, so they no longer cancel through it, and the timer's workflow finds
+  no timer when it wakes.
 - Two accessibility tests raced the frame in which the page moves the focus. They now wait for it.
 
 **Left.**
