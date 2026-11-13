@@ -14,6 +14,7 @@ import {
   headerFor,
   loadMenu,
   manifest as intranetManifest,
+  type MenuFile,
 } from '../../connectors/intranet/connector.mjs';
 import {
   DEFAULT_HEADER,
@@ -25,8 +26,8 @@ import { assertionFor, testJwks } from '../connector-authority';
 
 /**
  * The intranet connector and the header capability (D88): a manifest's `header` names the read that answers the shared
- * header, Clew checks the answer's shape, the person's audience and the connector's switch decide who gets it, and the
- * first registered connector wins when two declare one. Run over the protocol against the fixture.
+ * header, Clew checks the answer's shape, the person's audience and the connector's switch decide who gets it, and only
+ * the connector an administrator chose gives it when two declare one. Run over the protocol against the fixture.
  */
 const secret = 'test-secret-test-secret';
 const hassan: Actor = {
@@ -340,6 +341,87 @@ describe('the intranet connector and the shared header (D88)', () => {
     expect(report.findings.map(f => f.text)).toContain('header as manager: 5 places, a logo');
     expect(JSON.stringify(report)).not.toContain('Kompetensförsörjning');
   });
+  test("the conformance check takes a holder's denied as its answer for that person, and fails only a failure", async () => {
+    // The fixture lists a place for managers alone, and answers `denied` (403) for an employee, as the guide says.
+    const site = { name: 'Startsidan', href: '/' };
+    const check = (fetch: FetchLike) =>
+      checkConnector({
+        key: secret,
+        url: 'http://intranet',
+        id: 'intranet',
+        assert: assertionFor('intranet', secret),
+        assertForeign: assertionFor('intranet', 'another-secret-entirely'),
+        fetch,
+      });
+    const serving = (menu: MenuFile): FetchLike => {
+      const service = createConnector({ jwks: testJwks, secret, menu });
+      return (input, init) => service.handle(new Request(input, init));
+    };
+    const managers = serving({ site, items: [{ id: 'chef', label: 'Chefsstöd', href: '/chef', roles: ['manager'] }] });
+    const report = await check(managers);
+    expect(report.findings.filter(f => f.level !== 'ok')).toEqual([]);
+    expect(report.ok).toBe(true);
+    expect(report.items.filter(i => i.label === 'Sidhuvud')).toEqual([
+      { level: 'ok', group: 'surfaces', label: 'Sidhuvud', description: 'Kan ge sidhuvudet: för chef 1 plats.' },
+      {
+        level: 'ok',
+        group: 'surfaces',
+        label: 'Sidhuvud',
+        description: 'Kan ge sidhuvudet: listar inget för medarbetare, som då får Clews eget.',
+      },
+    ]);
+    expect(report.items.find(i => i.capability === 'intranet.header')).toMatchObject({
+      level: 'ok',
+      description: 'Svarar för chef. Listar inget för medarbetare, som då får Clews eget sidhuvud.',
+    });
+    // Denied for both: nothing fails, and the check says that no answer's shape was tried.
+    const nobody = await check(serving({ site, items: [] }));
+    expect(nobody.ok).toBe(true);
+    expect(nobody.findings.filter(f => f.level !== 'ok').map(f => f.text)).toEqual([
+      "header: denied for both of the check's people, so the shape of an answer is not checked",
+    ]);
+    // A failure fails, reported with the header and never as a refused draft: an answer out of shape, a holder that is
+    // down and one that rejects Clew's key or assertion (401), whatever its body says.
+    const service = createConnector({ jwks: testJwks, secret });
+    const answering =
+      (answer: () => Response): FetchLike =>
+      async (input, init) => {
+        const response = await service.handle(new Request(input, init));
+        // The probe signed with another secret keeps the service's own 401.
+        return new URL(input).pathname === '/clew/capabilities/intranet.header' && response.status !== 401
+          ? answer()
+          : response;
+      };
+    const failures: Array<[how: string, answer: () => Response, finding: RegExp]> = [
+      [
+        'out of shape',
+        () => Response.json({ output: { site, items: [] } }),
+        /^header as manager: answer is not a SiteHeaderOutput: \/items/,
+      ],
+      [
+        'down',
+        () => Response.json({ error: { code: 'unavailable', message: 'Nere.' } }, { status: 503 }),
+        /^header as manager: Intranätet svarar inte just nu\.$/,
+      ],
+      [
+        "Clew's assertion rejected",
+        () => Response.json({ error: { code: 'denied', message: 'Ogiltigt behörighetsbevis.' } }, { status: 401 }),
+        /^header as manager: Ogiltigt behörighetsbevis\.$/,
+      ],
+    ];
+    for (const [how, answer, finding] of failures) {
+      const failed = await check(answering(answer));
+      const texts = failed.findings.filter(f => f.level === 'fail').map(f => f.text);
+      expect([how, failed.ok]).toEqual([how, false]);
+      expect([how, texts.some(t => finding.test(t))]).toEqual([how, true]);
+      expect([how, texts.filter(t => t.startsWith('draft '))]).toEqual([how, []]);
+      expect([how, failed.items.filter(i => i.label === 'Ärenden')]).toEqual([how, []]);
+      expect(failed.items.filter(i => i.label === 'Sidhuvud').map(i => [i.level, i.description])).toEqual([
+        ['fail', 'Kan inte ge sidhuvudet: svaret för chef kom inte, eller inte i protokollets form.'],
+        ['fail', 'Kan inte ge sidhuvudet: svaret för medarbetare kom inte, eller inte i protokollets form.'],
+      ]);
+    }
+  });
 });
 
 describe('the header a person is served, kept for a minute (D88)', () => {
@@ -436,6 +518,60 @@ describe('the header a person is served, kept for a minute (D88)', () => {
     source: { id: 'portal', label: 'portal' },
   };
 
+  test("a holder that rejects Clew's key or assertion (its 401) has failed, not refused the person: the last good header stays", async () => {
+    // The intranet cannot fetch Clew's public keys, or holds another transport key: it answers every request 401
+    // `denied`, as the protocol has a connector answer credentials it cannot verify. That is about Clew, not the person.
+    let outage: 'keys' | 'transport' | undefined;
+    const refused: string[] = [];
+    const service = createConnector({
+      jwks: async () => {
+        if (outage === 'keys') throw new Error('Clew cannot be reached');
+        return testJwks();
+      },
+      secret,
+    });
+    const registry = new Registry({ onRefused: (id, topic, problem) => refused.push(`${id} ${topic}: ${problem}`) });
+    registry.register(
+      remoteConnector(parseManifest(intranetManifest, 'intranet'), {
+        url: 'http://intranet',
+        key: secret,
+        assert: assertionFor('intranet', secret),
+        fetch: async (input, init) => {
+          const request = new Request(input, init);
+          if (outage === 'transport') request.headers.set('x-clew-connector-key', 'rotated-elsewhere-rotated');
+          return service.handle(request);
+        },
+      }),
+    );
+    registry.govern('intranet', { ...openGovernance(), header: true });
+    for (const how of ['keys', 'transport'] as const) {
+      outage = how;
+      expect([how, await registry.header(hassan)]).toMatchObject([
+        how,
+        { status: 'failed', connector: { id: 'intranet' } },
+      ]);
+    }
+    // A failure is logged; a refusal of the person is not.
+    expect(refused).toEqual([
+      'intranet header: Ogiltigt behörighetsbevis.',
+      'intranet header: Ogiltigt behörighetsbevis.',
+    ]);
+    // Through the kept header: a good answer, and a minute later the intranet rejects Clew's assertion. The last good
+    // header is served while the intranet is asked again, and after it failed.
+    outage = undefined;
+    let now = Date.parse('2026-11-13T08:00:00Z');
+    const headers = siteHeaders({ registry, clock: () => new Date(now) });
+    const hassanIn = signedIn([]);
+    const good = await headers.read(hassanIn);
+    expect(good.source).toEqual({ id: 'intranet', label: 'Intranätet' });
+    outage = 'keys';
+    now += HEADER_FRESH_MS;
+    expect(await headers.read(hassanIn)).toEqual(good);
+    while (refused.length === 2) await settled();
+    await settled();
+    expect(refused).toHaveLength(3);
+    expect(await headers.read(hassanIn)).toEqual(good);
+  });
   test('a holder that fails or answers out of shape leaves the last good header in place, and is asked again at the next refresh', async () => {
     const { state, headers, at } = portal();
     const hassanIn = signedIn([]);

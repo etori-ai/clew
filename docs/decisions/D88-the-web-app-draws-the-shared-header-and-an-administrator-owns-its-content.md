@@ -1,6 +1,6 @@
 # D88 · The web app draws the shared header above its rail, a connector gives Clew its content, and Clew has one front end
 
-**Status:** accepted, built 2026-11-09 on `main`; item 5 amended 2026-11-12 in the fixes of the review of users and the organisation (A2): the last good header is kept per person, authorization version and provisioned groups, so a changed group membership is a new read too; items 4 and 5 amended 2026-11-13 in the fixes of the gaps that review left: a holder that fails leaves the last good header in place for up to an hour, a holder that refuses the person takes their places away at that answer, and who may have the header is decided at every read · **Date:** 2026-11-09 · **Area:** ui, product, integrations
+**Status:** accepted, built 2026-11-09 on `main`; item 5 amended 2026-11-12 in the fixes of the review of users and the organisation (A2): the last good header is kept per person, authorization version and provisioned groups, so a changed group membership is a new read too; items 4 and 5 amended 2026-11-13 in the fixes of the gaps that review left: a holder that fails, a 401 for Clew's key or assertion included, leaves the last good header in place for up to an hour, a holder that refuses the person with a 403 takes their places away at that answer, which the conformance check takes as an answer, and who may have the header is decided at every read · **Date:** 2026-11-09 · **Area:** ui, product, integrations
 
 **Amended 2026-11-12.** Since A2 of the
 [review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md),
@@ -19,14 +19,20 @@ item 5 stands.
 left, a failure of the holder and a refusal are told apart, since item 5's cache keeps a header through the one and
 never past the other. Before this, a background read that failed or was refused put Clew's default in the kept
 answer's place for the next minute, so one failed refresh turned a person's band into the default. Item 4's
-`Registry.header` now answers `answered`; `denied`, when the holder refuses the person with the protocol's `denied`,
-which is how a content system lists nothing for them, since a `SiteHeaderOutput` has at least one place; `failed`,
-when the holder the person may have throws otherwise, does not answer within the budget or answers out of shape, a
-delegated token the exchange cannot give (D26) included; or `refused`, when no connector gives the person the header,
-or the holder was switched off, replaced or narrowed while it was asked, judged on the governance read after the call
-whether the holder answered or not. A remote connector's error code reaches the registry (`CapabilityError.code`),
-which is how it tells a refusal of the person from a failure. `Registry.headerHolder` names the connector that gives the
-person the header, without asking it. Item 5 now reads: a holder that fails leaves the last good header in place for
+`Registry.header` now answers `answered`; `denied`, when the holder refuses the person with the protocol's `denied`
+and its 403, which is how a content system lists nothing for them, since a `SiteHeaderOutput` has at least one place;
+`failed`, when the holder the person may have throws otherwise, does not answer within the budget or answers out of
+shape, a delegated token the exchange cannot give (D26) included; or `refused`, when no connector gives the person the
+header, or the holder was switched off, replaced or narrowed while it was asked, judged on the governance read after
+the call whether the holder answered or not. A remote connector's error code reaches the registry
+(`CapabilityError.code`), which is how it tells a refusal of the person from a failure. Only a `denied` with a 403 is
+a refusal: a 401 is the holder rejecting Clew's key or assertion, as the protocol defines it, so it reaches the
+registry as `unavailable` whatever its body says, and an outage of the holder's key set leaves everyone's last header
+in place and is logged instead of taking everyone's places away. Item 4's conformance check takes a holder's `denied`
+for one of its two people as the holder's answer, in the header's lines and in the capability's, and warns when the
+holder denies both, since no answer's shape was then checked; a failure still fails it. `connectors/intranet` answers
+`denied` for a person its file lists no place for. `Registry.headerHolder` names the connector that gives the person
+the header, without asking it. Item 5 now reads: a holder that fails leaves the last good header in place for
 up to an hour after it gave it (`HEADER_STALE_MS`), or the default when it has given none, and is asked again a minute
 later; after the hour the default stands until it answers. An hour, because a stale menu is harmless and an access
 change is not: in a large organisation an hour carries everyone's menu through a restart or an ordinary outage of the

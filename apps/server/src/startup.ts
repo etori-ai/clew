@@ -1,3 +1,5 @@
+/** What a person, or a connector in the protocol's shape, is told while startup has not finished. */
+export const STARTING = 'Tjänsten startar. Försök igen om en stund.';
 /** Fail closed for business requests, but recover automatically when a startup dependency returns. */
 export function startupReadiness(deps: {
   initialize: () => Promise<void>;

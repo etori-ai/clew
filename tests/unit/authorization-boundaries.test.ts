@@ -126,6 +126,76 @@ describe('authorization and invocation boundaries', () => {
     registry.govern('open', { ...openGovernance(), capabilities: { 'open.close': { enabled: false } } });
     expect(await refusal('open.close')).toEqual(unknown);
   });
+  test('a nested call refuses an execute on the lookup it runs: one that comes into view between two reads runs nothing', async () => {
+    const paid: string[] = [];
+    const finance: Connector = {
+      ...connector('finance'),
+      capabilities: [
+        {
+          name: 'finance.pay',
+          kind: 'execute',
+          title: 'Betala',
+          description: 'Betala',
+          model: false,
+          scope: {},
+          execution: { strategy: 'manual' },
+          input: shape({}),
+          output: { type: 'object' } as never,
+          run: async () => {
+            paid.push('finance.pay');
+            return { headline: 'Betalt', rows: [] };
+          },
+        },
+      ],
+    };
+    // How an administrator can bring the execute into view: what stands at the nested call's own read of the
+    // governance, and what stands from the next read on, the one before the call would run.
+    const ways: Array<[how: string, before: (registry: Registry) => void, after: (registry: Registry) => void]> = [
+      [
+        'switched on',
+        r => r.register(finance).govern('finance', { ...openGovernance(), state: 'disabled' }),
+        r => r.govern('finance', openGovernance()),
+      ],
+      [
+        'its audience widened',
+        r =>
+          r
+            .register(finance)
+            .govern('finance', { ...openGovernance(), audience: { mode: 'selected', roles: ['employee'] } }),
+        r => r.govern('finance', openGovernance()),
+      ],
+      [
+        'the capability switched on',
+        r =>
+          r
+            .register(finance)
+            .govern('finance', { ...openGovernance(), capabilities: { 'finance.pay': { enabled: false } } }),
+        r => r.govern('finance', openGovernance()),
+      ],
+      ['registered', () => {}, r => r.register(finance).govern('finance', openGovernance())],
+    ];
+    for (const [how, before, after] of ways) {
+      const registry = new Registry().register({ ...connector('caller'), uses: ['finance.pay'] });
+      registry.govern('caller', openGovernance());
+      before(registry);
+      let reads = 0;
+      registry.setRefresh(async () => {
+        if (++reads === 2) after(registry);
+      });
+      const answer = await registry
+        .clewFor(actor, {}, 'caller')
+        .call('finance.pay', {})
+        .then(
+          output => ({ output }),
+          (error: CapabilityError) => ({ message: error.message, code: error.code }),
+        );
+      expect([how, answer]).toEqual([
+        how,
+        { message: 'En anslutning kan inte utföra åtgärder i en annan anslutning.', code: 'denied' },
+      ]);
+    }
+    expect(paid).toEqual([]);
+  });
   test('output validation rejects bad data, and replacement replaces compiled input schemas', async () => {
     const registry = new Registry()
       .register(connector('source', async () => ({ count: '1' })))

@@ -2777,7 +2777,7 @@ Example:
 
 #### `header`
 
-The shared header (D88): this connector gives Clew the header it draws above every page, for the people in the connector's audience, as the content system (Sitevision, SharePoint, WordPress) lists its sections for them. When several enabled connectors declare one, the earliest registered answers. Clew keeps no header of its own beyond its default (the site's name and Start).
+The shared header (D88): this connector can give Clew the header it draws above every page, for the people in the connector's audience, as the content system (Sitevision, SharePoint, WordPress) lists its sections for them. Declaring it makes the connector a candidate, not the holder: only the one connector an administrator chose to give the header answers, whatever the order connectors were registered in. Clew keeps no header of its own beyond its default (the site's name and Start).
 
 - Type: object
 - optional

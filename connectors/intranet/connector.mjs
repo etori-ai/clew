@@ -112,7 +112,12 @@ export function createConnector({
     } catch {
       return fail('invalid', 'Ogiltig förfrågan.', 400);
     }
-    if (url.pathname === '/clew/capabilities/intranet.header') return json({ output: headerFor(actor, menu) });
+    if (url.pathname === '/clew/capabilities/intranet.header') {
+      // A header has at least one place; for a person the menu lists nothing for, the protocol's answer is `denied`
+      // with its 403, and Clew draws its own header for them (D88). A 401 is only ever about Clew's credentials.
+      const header = headerFor(actor, menu);
+      return header.items.length ? json({ output: header }) : fail('denied', 'Intranätet listar inget för dig.', 403);
+    }
     return fail('not-found', 'Okänd förmåga.', 404);
   }
   return { manifest, handle };

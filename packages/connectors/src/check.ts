@@ -9,7 +9,7 @@ import type {
   EntityKind,
   Role,
 } from '@clew/contracts';
-import { Registry, openGovernance, type Actor } from './index';
+import { CapabilityError, Registry, openGovernance, type Actor } from './index';
 import { fetchManifest, remoteConnector, type FetchLike } from './remote';
 import type { AboutPlace, ConnectorManifest } from './protocol';
 import { menuRowOf, placesOf, rowsKey, viewRows, viewOutputProblem } from './views';
@@ -153,8 +153,14 @@ export async function checkConnector(
       `Använder personens egen behörighet mot ${manifest.delegation.audience}. Kontrollen har ingen inloggning och kan inte pröva det, så nekade svar är väntade.`,
     );
   }
+  /** While the header is asked below, why it failed for that role: the header reports it, not as a refused draft. */
+  let header: { problem?: string } | undefined;
   const registry = new Registry({
     onRefused: (_id, topic, problem) => {
+      if (header && topic === 'header') {
+        header.problem = problem;
+        return;
+      }
       if (topic.startsWith('figure:')) {
         fail(`${topic}: ${problem}`);
         item('fail', 'surfaces', 'Nyckeltal', `Nyckeltalet för ${topic.slice(7)} kan inte vara en länk: ${problem}`);
@@ -441,7 +447,14 @@ export async function checkConnector(
         if (actor === manager || c.scope.roles?.length === 1) checkView(c, output, row);
       } catch (error) {
         const m = (error as Error).message;
-        if (manifest.delegation && /styrkas|behörighet/.test(m)) {
+        // The header's read refusing a person (`denied`, its 403) is how a content system lists nothing for them (D88).
+        if (c.name === manifest.header?.capability && error instanceof CapabilityError && error.code === 'denied') {
+          ok(`${c.name} as ${actor.role}: denied, the header lists nothing for this person (${m})`);
+          row.note('ok', `Listar inget för ${ROLE[actor.role]}, som då får Clews eget sidhuvud.`);
+        } else if (manifest.delegation && error instanceof CapabilityError && error.code === 'denied') {
+          // The check has no session, so no person's token to send, and a delegating connector refuses the person for
+          // it, in whatever words: `denied`, which a remote connector's error keeps only with its 403 (`remote.ts`). A
+          // 401 is the connector rejecting Clew's key or assertion, whatever its body says, and fails below.
           ok(`${c.name} as ${actor.role}: refused without the person's token, as a delegating connector should (${m})`);
           row.note('ok', 'Nekas utan personens egen inloggning, som väntat.');
         } else if (UNAVAILABLE.test(m)) {
@@ -565,13 +578,18 @@ export async function checkConnector(
         `Genomgången föreslår ${counts.join(' och ')}. ${same ? 'Två genomgångar gav samma ärenden.' : 'Två genomgångar gav olika ärenden.'}`,
       );
   }
-  // The shared header (D88): asked as both roles; the answer must be in the protocol's shape. Its words stay out of the
-  // report (D23, D44): the check counts the places and says whether a logo came along, never what they are.
+  // The shared header (D88): asked as both roles; the answer must be in the protocol's shape, or the holder's `denied`
+  // (its 403), which is how it lists nothing for a person and Clew then draws its own. Its words stay out of the report
+  // (D23, D44): the check counts the places and says whether a logo came along, never what they are.
   if (manifest.header) {
     // The check's registry makes the connector the holder for the probe; in an installation an administrator chooses one.
     registry.govern(manifest.id, { ...registry.governance(manifest.id), header: true });
+    let denied = 0;
     for (const actor of people) {
+      header = {};
       const answer = await registry.header(actor);
+      const problem = header.problem;
+      header = undefined;
       if (answer.status === 'answered') {
         const n = answer.output.items.length;
         ok(`header as ${actor.role}: ${n} places${answer.output.logo ? ', a logo' : ''}`);
@@ -581,15 +599,37 @@ export async function checkConnector(
           'Sidhuvud',
           `Kan ge sidhuvudet: för ${ROLE[actor.role]} ${count(n, 'plats', 'platser')}${answer.output.logo ? ' och en logotyp' : ''}.`,
         );
-      } else {
-        fail(`header as ${actor.role}: no answer in the protocol's shape`);
+      } else if (answer.status === 'denied') {
+        denied++;
+        ok(`header as ${actor.role}: denied, so this person gets Clew's own header`);
+        item(
+          'ok',
+          'surfaces',
+          'Sidhuvud',
+          `Kan ge sidhuvudet: listar inget för ${ROLE[actor.role]}, som då får Clews eget.`,
+        );
+      } else if (answer.status === 'failed') {
+        // An error, a 401 for Clew's key or assertion included, no answer in time or an answer out of shape.
+        fail(`header as ${actor.role}: ${problem ?? 'no answer'}`);
         item(
           'fail',
           'surfaces',
           'Sidhuvud',
-          `Kan inte ge sidhuvudet: svaret för ${ROLE[actor.role]} är inte i protokollets form.`,
+          `Kan inte ge sidhuvudet: svaret för ${ROLE[actor.role]} kom inte, eller inte i protokollets form.`,
         );
+      } else {
+        fail(`header as ${actor.role}: outside the header capability's scope`);
+        item('fail', 'surfaces', 'Sidhuvud', `Kan inte ge sidhuvudet: förmågan gäller inte ${ROLE[actor.role]}.`);
       }
+    }
+    if (denied === people.length) {
+      warn("header: denied for both of the check's people, so the shape of an answer is not checked");
+      item(
+        'warn',
+        'surfaces',
+        'Sidhuvud',
+        'Listar inget för vare sig chef eller medarbetare, så svarets form är inte prövad.',
+      );
     }
   }
   // One row per area: the roles that see the same thing share a sentence. The figure's value is an answer and stays out

@@ -140,12 +140,16 @@ async function post(
 }
 /**
  * A connector's error answer in the protocol's shape, mapped to what the person sees, with its code kept: a caller
- * tells the connector's refusal of the person (`denied`) from its failure by it.
+ * tells the connector's refusal of the person (`denied`) from its failure by it. The status decides what the code may
+ * claim, as the protocol gives them: a 401 is the connector rejecting Clew's key or assertion, and a `denied` refuses
+ * the person only with its 403, so either is the connector failing, `unavailable`, whatever the body says. The message
+ * stays the connector's, so the conformance check still names the rejection.
  */
-function failWith(json: unknown, source: string): never {
+function failWith(json: unknown, status: number, source: string): never {
   const error = (json as { error?: { code?: ProtocolErrorCode; message?: string } } | null)?.error;
   if (error?.code === 'unavailable' || !error?.message) throw unavailable(source);
-  throw new CapabilityError(error.message, error.code);
+  const failed = status === 401 || (error.code === 'denied' && status !== 403);
+  throw new CapabilityError(error.message, failed ? 'unavailable' : error.code);
 }
 
 /**
@@ -187,7 +191,7 @@ export function remoteConnector(manifest: ConnectorManifest, transport: RemoteTr
         clew.signal,
       );
       if (status >= 500 || !Value.Check(CallResponseSchema, json)) throw unavailable(source);
-      if ('error' in json) failWith(json, source);
+      if ('error' in json) failWith(json, status, source);
       return json.output;
     },
   }));
