@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**112 in force**: 98 accepted and 14 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
+**113 in force**: 98 accepted and 15 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -28,6 +28,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D104 · The model does the work: a floor holds without it, and the assistant may act alone within governed limits](D104-the-model-does-the-work-a-floor-holds-without-it-and-the-assistant-may-act-alone-within-limits.md) | 2026-11-10 | provisional |  |
 | [D117 · A manager follows up the units of the managers who report to them, and a source is told those units](D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md) | 2026-11-13 | provisional | [D101](README.md) |
 | [D118 · The follow-up dialogue is an owned domain: assessments and activities per unit, areas and questions as configuration](D118-the-follow-up-dialogue-is-an-owned-domain.md) | 2026-11-13 | provisional | [D101](README.md) |
+| [D120 · A manager's own notes in the follow-up dialogue are private posts, and their files go to the document system](D120-a-managers-own-notes-in-the-follow-up-dialogue-are-private-posts-and-files-go-to-the-document-system.md) | 2026-11-13 | provisional | [D101](README.md) |
 
 ## Integrations
 

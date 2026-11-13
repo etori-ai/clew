@@ -4,6 +4,8 @@ import type {
   DialogueActivityDoneBody,
   DialogueActivityEditBody,
   DialogueAssessBody,
+  DialogueNoteAddBody,
+  DialogueNoteEditBody,
   DialogueUnit,
   CommitmentsInput,
   CommitmentsResult,
@@ -192,6 +194,7 @@ const talkPath = (personId: string) => `/api/talks/${encodeURIComponent(personId
 const commitmentPath = (id: string) => `/api/talks/commitments/${encodeURIComponent(id)}`;
 const dialogueUnitPath = (unitId: string) => `/api/dialogue/units/${encodeURIComponent(unitId)}`;
 const dialogueActivityPath = (id: string) => `/api/dialogue/activities/${encodeURIComponent(id)}`;
+const dialogueNotePath = (id: string) => `/api/dialogue/notes/${encodeURIComponent(id)}`;
 export const api = {
   /** Personal (D94): the people on the units the signed-in manager manages; 403 for anyone else. */
   staff: () => call<StaffOverview>('/api/staff'),
@@ -258,6 +261,11 @@ export const api = {
     complete: (id: string, body: DialogueActivityDoneBody = {}) => post<void>(`${dialogueActivityPath(id)}/done`, body),
     reopen: (id: string) => del<void>(`${dialogueActivityPath(id)}/done`),
     remove: (id: string) => del<void>(dialogueActivityPath(id)),
+    /** The reader's own notes on an area (D120): written, changed and removed by their author only. */
+    addNote: (unitId: string, body: DialogueNoteAddBody) =>
+      post<{ id: string }>(`${dialogueUnitPath(unitId)}/notes`, body),
+    editNote: (id: string, body: DialogueNoteEditBody) => patch<void>(dialogueNotePath(id), body),
+    removeNote: (id: string) => del<void>(dialogueNotePath(id)),
   },
   /**
    * Kompetens (D108): the built-in module's own routes. They are refused while the module is switched off for the

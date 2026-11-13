@@ -1120,8 +1120,11 @@ export type DialogueTone = (typeof DIALOGUE_TONES)[number];
 export const DialogueToneSchema = literals(DIALOGUE_TONES);
 export const DIALOGUE_AREA_KINDS = ['measured', 'assessed'] as const;
 export type DialogueAreaKind = (typeof DIALOGUE_AREA_KINDS)[number];
-/** The limits of the free text (D118 item 9), as big-boss-board had them. */
-export const DIALOGUE_TEXT_MAX = { activity: 4000, note: 1000, comment: 2000 } as const;
+/**
+ * The limits of the free text (D118 item 9), as big-boss-board had them; `note` is an activity's done note and
+ * `ownNote` a manager's own note on an area (D120).
+ */
+export const DIALOGUE_TEXT_MAX = { activity: 4000, note: 1000, comment: 2000, ownNote: 4000 } as const;
 const areaKey = Type.String({ pattern: '^[a-z][a-z0-9-]{0,39}$', maxLength: 40 });
 const dimensionKey = Type.String({ pattern: '^[a-z][a-z0-9-]{0,39}$', maxLength: 40 });
 /** An assessment as the dialogue shows it: the state, its comment, who set it and when. */
@@ -1162,6 +1165,18 @@ export const DialogueActivitySchema = object({
   createdAt: Type.String({ maxLength: 40 }),
 });
 export type DialogueActivity = Static<typeof DialogueActivitySchema>;
+/**
+ * A manager's own note on an area of a unit (D120): free text only its author reads, looser than an activity: no owner,
+ * no card, nothing to mark done, and it can be removed.
+ */
+export const DialogueNoteSchema = object({
+  id,
+  text: Type.String({ maxLength: DIALOGUE_TEXT_MAX.ownNote }),
+  createdAt: Type.String({ maxLength: 40 }),
+  /** Present when the text was changed after it was written. */
+  editedAt: Type.Optional(Type.String({ maxLength: 40 })),
+});
+export type DialogueNote = Static<typeof DialogueNoteSchema>;
 export const DialogueAreaSchema = object({
   key: areaKey,
   title: Type.String({ maxLength: 120 }),
@@ -1175,6 +1190,8 @@ export const DialogueAreaSchema = object({
   dimensions: Type.Array(DialogueDimensionSchema, { maxItems: 10 }),
   questions: Type.Array(DialogueQuestionSchema, { maxItems: 50 }),
   activities: Type.Array(DialogueActivitySchema, { maxItems: 500 }),
+  /** The reader's own notes on the area, the newest first (D120); nobody else's are ever here. */
+  notes: Type.Array(DialogueNoteSchema, { maxItems: 500 }),
 });
 export type DialogueArea = Static<typeof DialogueAreaSchema>;
 /** One unit's dialogue (`GET /api/dialogue/units/:unitId`): every configured area in order. */
@@ -1215,6 +1232,17 @@ export const DialogueActivityDoneBodySchema = object({
   note: Type.Optional(Type.String({ maxLength: DIALOGUE_TEXT_MAX.note })),
 });
 export type DialogueActivityDoneBody = Static<typeof DialogueActivityDoneBodySchema>;
+/** A manager writes a note of their own on a unit's area (D120). */
+export const DialogueNoteAddBodySchema = object({
+  area: areaKey,
+  text: Type.String({ minLength: 1, maxLength: DIALOGUE_TEXT_MAX.ownNote }),
+});
+export type DialogueNoteAddBody = Static<typeof DialogueNoteAddBodySchema>;
+/** A note's text changed by its author. */
+export const DialogueNoteEditBodySchema = object({
+  text: Type.String({ minLength: 1, maxLength: DIALOGUE_TEXT_MAX.ownNote }),
+});
+export type DialogueNoteEditBody = Static<typeof DialogueNoteEditBodySchema>;
 /**
  * The areas, dimensions and questions of an organisation's dialogue (D118 item 3), as an operator loads them from a
  * file (`scripts/dialogue-areas.ts`). A question with `units` is shown only on those units and replaces the area's

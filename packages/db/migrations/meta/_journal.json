@@ -386,6 +386,13 @@
       "when": 1794565426589,
       "tag": "0054_dialogue",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1794578521736,
+      "tag": "0055_dialogue_note",
+      "breakpoints": true
     }
   ]
 }

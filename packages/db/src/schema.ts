@@ -982,6 +982,26 @@ export const dialogueActivities = pgTable(
   ],
 );
 /**
+ * A manager's own note on an area of a unit (D120): free text sealed at rest, read by its author only. It has no card
+ * and no state. The author is never null: a note without its author is nobody's, so it goes with the person.
+ */
+export const dialogueNotes = pgTable(
+  'dialogue_note',
+  {
+    id: text('id').primaryKey(),
+    organisationId: text('organisation_id').notNull(),
+    unitId: text('unit_id').notNull(),
+    areaKey: text('area_key').notNull(),
+    authorId: text('author_id')
+      .notNull()
+      .references(() => people.id, { onDelete: 'cascade' }),
+    textSealed: text('text_sealed').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  t => [index('dialogue_note_author_unit').on(t.authorId, t.unitId)],
+);
+/**
  * The catalogue of competence types (D108 item 2): rows per installation, never an enumeration in code. Archived, never
  * deleted; one name per organisation among the types that are not archived, without regard to case.
  */

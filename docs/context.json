@@ -1342,6 +1342,15 @@
       "status": "proposed (Oliver Borgström asked for it on 2026-11-13; nothing built; the source, the history and the class of the data are open, and building it needs the product owner's word on the freeze, D101)",
       "date": "2026-11-13",
       "area": "integrations"
+    },
+    {
+      "key": "D120-a-managers-own-notes-in-the-follow-up-dialogue-are-private-posts-and-files-go-to-the-document-system",
+      "number": 120,
+      "path": "docs/decisions/D120-a-managers-own-notes-in-the-follow-up-dialogue-are-private-posts-and-files-go-to-the-document-system.md",
+      "title": "D120 · A manager's own notes in the follow-up dialogue are private posts, and their files go to the document system",
+      "status": "provisional (Oliver Borgström, 2026-11-13; built on the branch `dialogue-notes`, tested by nothing outside the repository; a new record in an owned domain, built as an exception to the freeze on new surface, D101, at Oliver Borgström's choice; item 8 is a direction, nothing of it is built)",
+      "date": "2026-11-13",
+      "area": "product"
     }
   ],
   "documents": [
@@ -1948,6 +1957,12 @@
     {
       "path": "docs/decisions/D12-objects-chips-proposals.md",
       "title": "D12 · Objects, chips, proposals: the general interaction pattern",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D120-a-managers-own-notes-in-the-follow-up-dialogue-are-private-posts-and-files-go-to-the-document-system.md",
+      "title": "D120 · A manager's own notes in the follow-up dialogue are private posts, and their files go to the document system",
       "category": "decision-history",
       "headings": []
     },

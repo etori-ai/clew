@@ -105,7 +105,7 @@ feature; it draws areas, figures and cards from whatever answers them, core or c
 | KPI tiles on the start page | Area figures of the key-figures connector (D54). On `main`, D112 already lets Läget's figures stand for Dialogstöd on Hem, the heading leading to the unit's page | Connector | 1 |
 | "Ny aktivitet" notice and "Att agera på" | The activity's card in the owner's stream (D96 item 5's pattern) | Core | 2 |
 | The prototype's "Sammanfatta sjukfrånvaron" | D8's fixed answer from the figures (`assistant/fixed.ts` already matches "sjuk" and "budget"); the model reads the connector's aggregates. The rehab ladder is HR's content (D82 item 2) and is not carried over | Connector data | 1 |
-| The prototype's notes block | Not carried over. bbb has none; it is the heaviest record (free text) and checklist Part 4 orders it last | — | — |
+| The prototype's notes block | Not carried over in this plan: bbb's public repository has none, it is the heaviest record (free text) and checklist Part 4 orders it last. Amended 2026-11-13: the specification of the running service has notes (§5.7), and they were built as a manager's own posts ([D120](../decisions/D120-a-managers-own-notes-in-the-follow-up-dialogue-are-private-posts-and-files-go-to-the-document-system.md)); files are left to the document system | Core | — |
 | Support functions and tools | Not carried over; bbb no longer shows them. Confirm with the users | — | — |
 | Status page, question cards, inbox | Not carried over: they are bbb's project log, not product. Exported once and archived (phase 5) | — | — |
 | Access code, SAML, sessions, own token layer | Clew's OIDC and SCIM, Astryx | — | — |
