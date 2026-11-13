@@ -1,4 +1,4 @@
-import { and, eq, gt } from 'drizzle-orm';
+import { and, eq, gt, inArray, sql } from 'drizzle-orm';
 import { database, schema } from '@clew/db';
 import type { DurableQueue } from '@clew/db/durable';
 import { jobWorkflowId, scheduleJob } from '@clew/db/jobs';
@@ -21,6 +21,17 @@ export function postgresJobQueue(options: {
     async takeOver(ids) {
       const moved = new Set(await move(ids.map(jobWorkflowId), durable.queue));
       return ids.filter(id => moved.has(jobWorkflowId(id)));
+    },
+    async unfinished(prefix) {
+      // Few rows wait or run at any time, so the status index (`job_due`) narrows them before the prefix is compared.
+      const rows = await database()
+        .select({ id: schema.jobs.id })
+        .from(schema.jobs)
+        .where(
+          and(inArray(schema.jobs.status, ['temporal', 'executing']), sql`starts_with(${schema.jobs.id}, ${prefix})`),
+        )
+        .orderBy(schema.jobs.runAt, schema.jobs.id);
+      return rows.map(r => r.id);
     },
   };
 }

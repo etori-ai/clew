@@ -73,6 +73,9 @@ function memoryJobs() {
       taken.forEach(id => stranded.delete(id));
       return taken;
     },
+    async unfinished(prefix) {
+      return rows.filter(r => r.id.startsWith(prefix) && r.status !== 'done').map(r => r.id);
+    },
     async claimExecution(id, at) {
       const row = rows.find(r => r.id === id);
       if (!row || row.status === 'done') return undefined;
@@ -269,6 +272,30 @@ describe('the scheduled jobs', () => {
       ['sign-in-cleanup:2026-11-05', 'temporal'],
     ]);
     expect(w.calls).toEqual(['scan:hassan', 'scan:hillevi', 'clean:' + T0]);
+  });
+  test('a start takes over the page of the last night’s scan that a deployment left under the replaced release, and the rest of that night runs', async () => {
+    const people = Array.from({ length: SCAN_PAGE + 1 }, (_, i) => 'p' + String(i).padStart(4, '0'));
+    const w = world(people);
+    // The older release ran this morning's first page, which scheduled the second, and was replaced before that ran.
+    await w.jobs.schedule({ id: 'scan:2026-11-04', kind: NIGHTLY, runAt: '2026-11-04T05:00:00.000Z' });
+    expect(await w.runJob('scan:2026-11-04')).toBe('done');
+    w.jobs.stranded.add('scan:2026-11-04:2');
+    expect(await w.scheduler.startNightly()).toEqual(['scan:2026-11-04:2']);
+    expect(w.jobs.asked).toEqual([
+      [
+        'scan:2026-11-04',
+        'scan:2026-11-04:2',
+        'scan:2026-11-05',
+        'sign-in-cleanup:2026-11-04',
+        'sign-in-cleanup:2026-11-05',
+      ],
+    ]);
+    // Taken over, the page runs at once and scans the rest of the night: everyone, once.
+    expect(await w.runJob('scan:2026-11-04:2')).toBe('done');
+    expect(w.calls.filter(call => call.startsWith('scan:'))).toEqual(people.map(id => 'scan:' + id));
+    // A page that completed is not looked at again.
+    expect(await w.scheduler.startNightly()).toEqual([]);
+    expect(w.jobs.asked[1]).not.toContain('scan:2026-11-04:2');
   });
   test('a server’s start waits for its durable engine, then schedules and takes over the nights and says which it took over', async () => {
     const w = world();

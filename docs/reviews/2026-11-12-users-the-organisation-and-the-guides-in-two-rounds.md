@@ -585,6 +585,10 @@ what they say.
   records end. The guide names both settings and the step after each deployment, which the runbook now gives a section
   of its own, and tests show both nights taken over from a killed instance of the older release, one of them past and
   one left cancelled by a stopped start, and the script moving what such an instance left.
+- The fix that runs the nightly scan a page at a time and the fix that takes the nights over at a start did not meet:
+  a deployment during the scan left the page it had reached waiting under the replaced release, and the rest of that
+  night was never scanned, since only a page's run schedules the next. A start now takes over the last night's pages
+  that have not completed with that night ([scheduled work](../architecture/scheduled-work.md)).
 
 **Left.**
 

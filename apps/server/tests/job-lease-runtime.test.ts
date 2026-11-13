@@ -79,7 +79,11 @@ test(
     let launched: Awaited<ReturnType<typeof engine.launch>> | undefined;
     try {
       // Due long ago, so the engine runs it as soon as it launches.
-      await postgresJobQueue({ durable: engine.durable, move: moveToRunningVersion }).schedule({ id, kind: 'receipt-final', runAt: '2001-11-05T10:00:00.000Z' });
+      await postgresJobQueue({ durable: engine.durable, move: moveToRunningVersion }).schedule({
+        id,
+        kind: 'receipt-final',
+        runAt: '2001-11-05T10:00:00.000Z',
+      });
       launched = await engine.launch();
       const [, seen] = await Promise.race([
         Promise.all([durableResult('job:' + id), probe]),

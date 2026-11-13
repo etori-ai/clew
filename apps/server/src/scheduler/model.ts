@@ -19,6 +19,11 @@ export interface JobQueue {
    * before it claims the job's row, and whose second run that claim fences. The ids taken over.
    */
   takeOver(ids: string[]): Promise<string[]>;
+  /**
+   * The ids of the jobs whose id begins with `prefix` that have not completed: waiting for their run, or claimed by a run
+   * that did not complete. The later pages of a night's scan are `<night>:<page>`.
+   */
+  unfinished(prefix: string): Promise<string[]>;
 }
 /**
  * How long a claim on a job's execution holds without being renewed. A run renews it while it lasts, so only a run

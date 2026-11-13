@@ -124,12 +124,15 @@ export function createScheduler(deps: SchedulerDeps) {
    * schedules the night after it, so a night left there would stop its job for good (D85 item 2, as amended
    * 2026-11-13). The last night is there when the deployment's downtime spanned its time: the older release held it
    * and stopped first, and no process of this one recovers it. Taken over, it runs at once, late; a last night that
-   * ran is left as it is. The ids of the nights taken over.
+   * ran is left as it is. A night of the scan is more than one job: a deployment during the scan leaves the page it had
+   * reached waiting under the replaced release as well, so the last night's later pages that have not completed are
+   * taken over with it, and the rest of that night runs. The ids of the nights and pages taken over.
    */
   async function startNightly() {
     const scan = await scheduleNightly(),
-      cleanup = await scheduleCleanup();
-    return jobs.takeOver([scan.last, scan.id, cleanup.last, cleanup.id]);
+      cleanup = await scheduleCleanup(),
+      pages = await jobs.unfinished(`${scan.last}:`);
+    return jobs.takeOver([scan.last, ...pages, scan.id, cleanup.last, cleanup.id]);
   }
   return { run, scheduleNightly, scheduleCleanup, startNightly };
 }

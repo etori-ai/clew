@@ -13,8 +13,8 @@ downtime spans its time. Only a night's run schedules the night after it, and a 
 scheduled, so neither job ran again until a server started on a later day or an operator moved the workflow, and nothing
 logged it. Item 2 now has one exception. A server's start, once its engine has launched, schedules the next night of
 both jobs and takes over the last and the next night of each whose workflow is `PENDING` or `ENQUEUED` under another
-version: the workflow is cancelled and rewound to its first step under its own id and the running version, on the
-ledger's queue (`DBOS.rewindWorkflow` in dbos-sdk 5.5.0; `moveToRunningVersion` in `dbos/start.ts`, `startNightly` and
+version, the later pages of the last night's scan that have not completed included: the workflow is cancelled and
+rewound to its first step under its own id and the running version, on the ledger's queue (`DBOS.rewindWorkflow` in dbos-sdk 5.5.0; `moveToRunningVersion` in `dbos/start.ts`, `startNightly` and
 `seedNightly` in `scheduler/usecases.ts`, `startJobs` in `composition/jobs.ts`). A last night taken over runs at once,
 late, and one that ran is left as it is. A night that is `CANCELLED` under another version is such a take-over that was
 stopped between its two calls, since nothing in Clew cancels a job's workflow otherwise, and the next start rewinds it

@@ -217,3 +217,45 @@ test('every process schedules the next scan and clean-up when it starts, one job
   ).map(r => r.id);
   expect(ids.sort()).toEqual([SIGN_IN_CLEANUP + ':2098-11-06', SIGN_IN_CLEANUP + ':2098-11-07']);
 });
+
+test('a start also asks the engine about the pages of the last night’s scan that have not completed', async () => {
+  const asked: string[][] = [];
+  const scheduler = createScheduler({
+    jobs: postgresJobQueue({
+      durable: testDurable,
+      move: async workflowIDs => {
+        asked.push(workflowIDs);
+        return [];
+      },
+    }),
+    people: { granted: async () => [], personaFor: async () => undefined },
+    threads: { ensureThreads: async () => undefined, closeReceiptWindow: async () => undefined },
+    calendar: { closeUndoWindow: async () => undefined },
+    signIns: { removeExpired: async () => undefined },
+    // 11:00 in Stockholm, after this morning's scan.
+    clock: () => new Date('2098-12-05T10:00:00.000Z'),
+    log: () => undefined,
+  });
+  // This morning's pages as a deployment left them, written directly: the second completed, the third claimed by a run
+  // whose process stopped before it completed, after it had scheduled the fourth, which waits. A page of the night
+  // before that still waits is that night's, which only an operator moves.
+  await database()
+    .insert(schema.jobs)
+    .values([
+      { id: 'scan:2098-12-05:2', kind: NIGHTLY, runAt: new Date('2098-12-05T05:01:00.000Z'), status: 'done' },
+      { id: 'scan:2098-12-05:3', kind: NIGHTLY, runAt: new Date('2098-12-05T05:02:00.000Z'), status: 'executing' },
+      { id: 'scan:2098-12-05:4', kind: NIGHTLY, runAt: new Date('2098-12-05T05:03:00.000Z') },
+      { id: 'scan:2098-12-04:2', kind: NIGHTLY, runAt: new Date('2098-12-04T05:01:00.000Z') },
+    ]);
+  expect(await scheduler.startNightly()).toEqual([]);
+  expect(asked).toEqual([
+    [
+      'job:scan:2098-12-05',
+      'job:scan:2098-12-05:3',
+      'job:scan:2098-12-05:4',
+      'job:scan:2098-12-06',
+      'job:' + SIGN_IN_CLEANUP + ':2098-12-05',
+      'job:' + SIGN_IN_CLEANUP + ':2098-12-06',
+    ],
+  ]);
+});
