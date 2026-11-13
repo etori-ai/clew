@@ -6,6 +6,7 @@ import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import { httpInstrumentationMiddleware } from '@hono/otel';
 import { authRoutes } from './routes/auth';
+import { healthRoutes } from './routes/health';
 import { checkDevLogin } from './auth';
 import { api } from './routes/api';
 import { adminRoutes } from './routes/admin';
@@ -24,6 +25,7 @@ import { bindLiveActivities } from './dbos/activities';
 import { failure } from './context';
 import { signingAuthority } from './connectors/signing';
 import { startupReadiness } from './startup';
+import { databaseAnswers } from '@clew/db';
 import { startRefresh } from './composition/refresh';
 import { startJobs } from './composition/jobs';
 import { scimRoutes } from './routes/scim';
@@ -76,8 +78,8 @@ const startup = startupReadiness({
     setTimeout(run, 5000).unref();
   },
 });
-app.get('/api/health', c => c.json({ ok: true }));
-app.get('/api/ready', c => c.json({ ready: startup.ready() }, startup.ready() ? 200 : 503));
+// Ready once startup has finished and while the database answers within a second (routes/health.ts).
+app.route('/api', healthRoutes({ started: startup.ready, databaseAnswers }));
 // Signing in does not expose connector data and must not depend on connector startup.
 app.route('/api/auth', authRoutes);
 // The installation's theme and logo (D98): public and needed by the sign-in page, so it waits for nothing but the database.

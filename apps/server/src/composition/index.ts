@@ -25,6 +25,7 @@ import type { KeySealer } from '../assistant/ports';
 import { assistantUsecases } from '../assistant';
 import { postgresJobQueue, postgresPeople } from '../scheduler/adapters/postgres';
 import { createScheduler } from '../scheduler/usecases';
+import { removeExpiredSignIns } from '@clew/db/auth';
 import { postgresThreadStore } from '../threads/adapters/postgres';
 import { cancelDurable } from '../dbos/start';
 import { ledger } from './durable';
@@ -326,6 +327,8 @@ export const scheduler = createScheduler({
   people: postgresPeople(),
   threads,
   calendar,
+  // The nightly clean-up of sign-in machinery (D117).
+  signIns: { removeExpired: now => removeExpiredSignIns(now) },
   clock,
   log: logPort('scheduler', 'error'),
 });

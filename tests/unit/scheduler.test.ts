@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { AuthenticatedContext } from '../../packages/contracts/src/index';
 import type { Job, JobQueue } from '../../apps/server/src/scheduler/model';
-import { createScheduler, NIGHTLY } from '../../apps/server/src/scheduler/usecases';
+import { createScheduler, NIGHTLY, SIGN_IN_CLEANUP } from '../../apps/server/src/scheduler/usecases';
 
 /** The Postgres-backed scheduler (D15) driven by hand (D25): a queue in memory, use cases that only record what they were asked. */
 const T0 = '2026-11-04T07:00:00.000Z';
@@ -49,9 +49,16 @@ function world() {
     calls: string[] = [],
     logged: unknown[][] = [];
   let time = Date.parse(T0);
+  let cleanupFails = false;
   const scheduler = createScheduler({
     jobs,
     clock: () => new Date(time),
+    signIns: {
+      removeExpired: async now => {
+        calls.push('clean:' + now.toISOString());
+        if (cleanupFails) throw new Error('database unavailable');
+      },
+    },
     log: (...args) => logged.push(args),
     people: {
       granted: async () => ['hillevi', 'gone', 'hassan'],
@@ -81,6 +88,9 @@ function world() {
     advance: (ms: number) => {
       time += ms;
     },
+    failCleanup: () => {
+      cleanupFails = true;
+    },
   };
 }
 
@@ -92,6 +102,55 @@ describe('the scheduler', () => {
     expect(w.jobs.rows).toEqual([
       { id: 'scan:2026-11-05', kind: NIGHTLY, runAt: '2026-11-05T05:00:00.000Z', payload: {}, status: 'due' },
     ]);
+  });
+  test('schedules the sign-in clean-up at the next 03:00 Stockholm, once per date', async () => {
+    const w = world();
+    await w.scheduler.scheduleCleanup();
+    await w.scheduler.scheduleCleanup();
+    expect(w.jobs.rows).toEqual([
+      {
+        id: 'sign-in-cleanup:2026-11-05',
+        kind: SIGN_IN_CLEANUP,
+        runAt: '2026-11-05T02:00:00.000Z',
+        payload: {},
+        status: 'due',
+      },
+    ]);
+  });
+  test('the sign-in clean-up removes what expired by its clock and schedules the next night', async () => {
+    const w = world();
+    await w.jobs.schedule({
+      id: 'sign-in-cleanup:2026-11-04',
+      kind: SIGN_IN_CLEANUP,
+      runAt: '2026-11-04T02:00:00.000Z',
+    });
+    await w.scheduler.tick();
+    expect(w.calls).toEqual(['clean:' + T0]);
+    expect(w.jobs.rows.map(r => [r.id, r.status, r.runAt])).toEqual([
+      ['sign-in-cleanup:2026-11-04', 'done', '2026-11-04T02:00:00.000Z'],
+      ['sign-in-cleanup:2026-11-05', 'due', '2026-11-05T02:00:00.000Z'],
+    ]);
+    expect(w.logged).toEqual([]);
+  });
+  test('a night whose clean-up fails says so and completes, and the next night is scheduled to clean what it left', async () => {
+    const w = world();
+    w.failCleanup();
+    // As the engine's step runs a job (`runScheduledJob`): the run resolves, so the night completes in the ledger. A
+    // run that threw would be claimed again by its workflow every few minutes for as long as the failure lasted.
+    await w.scheduler.run({ id: 'sign-in-cleanup:2026-11-04', kind: SIGN_IN_CLEANUP, payload: {} });
+    expect(w.calls).toEqual(['clean:' + T0]);
+    expect(w.logged).toEqual([['sign-in clean-up failed', new Error('database unavailable')]]);
+    expect(w.jobs.rows.map(r => [r.id, r.status, r.runAt])).toEqual([
+      ['sign-in-cleanup:2026-11-05', 'due', '2026-11-05T02:00:00.000Z'],
+    ]);
+    // The next night fails too, and is done, never failed, where a tick runs it.
+    w.advance(24 * 3600_000);
+    await w.scheduler.tick();
+    expect(w.jobs.rows.map(r => [r.id, r.status, r.error])).toEqual([
+      ['sign-in-cleanup:2026-11-05', 'done', undefined],
+      ['sign-in-cleanup:2026-11-06', 'due', undefined],
+    ]);
+    expect(w.logged).toHaveLength(2);
   });
   test('a tick runs what is due, in order, finishes each job and never lets one failure stop the rest', async () => {
     const w = world();

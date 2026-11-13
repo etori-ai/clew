@@ -2,25 +2,32 @@ import { Temporal } from 'temporal-polyfill';
 import { timeZone } from '@clew/calendar/dates';
 import type { CalendarUsecases } from '../modules/calendar/usecases/samtal';
 import type { ThreadUsecases } from '../threads/usecases/cards';
-import type { Job, JobQueue, People } from './model';
+import type { Job, JobQueue, People, SignInData } from './model';
 
 /**
- * Postgres-backed scheduler for v1 (D15). One nightly scan per person with a grant and one timer per undo window.
- * Jobs are claimed with a row lock by the queue adapter, so a second server process is safe. The durable engine
- * runs each job since D85 (`adapters/durable-postgres.ts`). Built over ports (D25): the tests drive `tick()` with a queue in memory.
+ * Postgres-backed scheduler for v1 (D15). One nightly scan per person with a grant, one nightly clean-up of expired
+ * sign-in data (D117) and one timer per undo window. Jobs are claimed with a row lock by the queue adapter, so a second
+ * server process is safe. The durable engine runs each job since D85 (`adapters/durable-postgres.ts`). Built over ports
+ * (D25): the tests drive `tick()` with a queue in memory.
  */
 export interface SchedulerDeps {
   jobs: JobQueue;
   people: People;
   threads: Pick<ThreadUsecases, 'ensureThreads' | 'closeReceiptWindow'>;
   calendar: Pick<CalendarUsecases, 'closeUndoWindow'>;
+  signIns: SignInData;
   clock: () => Date;
   log: (message: string, ...details: unknown[]) => void;
   pollMs?: number;
 }
 export const NIGHTLY = 'scan-utvecklingssamtal';
+/**
+ * The nightly clean-up of sign-in machinery (D117): sessions, login transactions and logout receipts past expiry. A
+ * night whose clean-up fails says so in one line and completes; the next night cleans what it left.
+ */
+export const SIGN_IN_CLEANUP = 'sign-in-cleanup';
 export function createScheduler(deps: SchedulerDeps) {
-  const { jobs, people, threads, calendar, clock, log } = deps;
+  const { jobs, people, threads, calendar, signIns, clock, log } = deps;
   let timer: ReturnType<typeof setInterval> | undefined;
   const threadIdOf = (job: Job) => (typeof job.payload.threadId === 'string' ? job.payload.threadId : undefined);
   async function run(job: Job) {
@@ -30,6 +37,12 @@ export function createScheduler(deps: SchedulerDeps) {
         if (persona) await threads.ensureThreads(persona).catch(error => log('scan', id, error));
       }
       await scheduleNightly();
+    } else if (job.kind === SIGN_IN_CLEANUP) {
+      // The next night first. A clean-up that fails is said and left to that night, and the night completes: a job
+      // that threw would be claimed again by its workflow every few minutes for as long as the failure lasted, one more
+      // workflow each night, while the next night repeats the clean-up anyway.
+      await scheduleCleanup();
+      await signIns.removeExpired(clock()).catch(error => log('sign-in clean-up failed', error));
     } else if (job.kind === 'undo-expiry') {
       const threadId = threadIdOf(job);
       if (threadId) await calendar.closeUndoWindow(threadId);
@@ -38,14 +51,30 @@ export function createScheduler(deps: SchedulerDeps) {
       if (threadId) await threads.closeReceiptWindow(threadId);
     } else throw new Error('Unsupported scheduled job kind: ' + job.kind);
   }
+  /** The next time it is `hour` o'clock in Stockholm after now. */
+  function nextAt(hour: number) {
+    const now = Temporal.Instant.fromEpochMilliseconds(clock().getTime()).toZonedDateTimeISO(timeZone);
+    const today = now.with({ hour, minute: 0, second: 0, millisecond: 0 });
+    return today.epochMilliseconds > now.epochMilliseconds ? today : today.add({ days: 1 });
+  }
   /** The next 06:00 Stockholm after now. Idempotent by date, so every process may schedule it. */
   async function scheduleNightly() {
-    const now = Temporal.Instant.fromEpochMilliseconds(clock().getTime()).toZonedDateTimeISO(timeZone);
-    const today = now.with({ hour: 6, minute: 0, second: 0, millisecond: 0 });
-    const next = today.epochMilliseconds > now.epochMilliseconds ? today : today.add({ days: 1 });
+    const next = nextAt(6);
     await jobs.schedule({
       id: `scan:${next.toPlainDate().toString()}`,
       kind: NIGHTLY,
+      runAt: new Date(next.epochMilliseconds).toISOString(),
+    });
+  }
+  /**
+   * The sign-in clean-up at the next 03:00 Stockholm after now, a quiet hour that exists on both days the clocks
+   * change. Idempotent by date, so every process may schedule it, and one job runs it however many processes do.
+   */
+  async function scheduleCleanup() {
+    const next = nextAt(3);
+    await jobs.schedule({
+      id: `${SIGN_IN_CLEANUP}:${next.toPlainDate().toString()}`,
+      kind: SIGN_IN_CLEANUP,
       runAt: new Date(next.epochMilliseconds).toISOString(),
     });
   }
@@ -64,6 +93,7 @@ export function createScheduler(deps: SchedulerDeps) {
   }
   function start() {
     void scheduleNightly();
+    void scheduleCleanup();
     void tick();
     timer ??= setInterval(() => void tick().catch(error => log('scheduler', error)), deps.pollMs ?? 15_000);
   }
@@ -71,6 +101,6 @@ export function createScheduler(deps: SchedulerDeps) {
     if (timer) clearInterval(timer);
     timer = undefined;
   }
-  return { run, scheduleNightly, tick, start, stop };
+  return { run, scheduleNightly, scheduleCleanup, tick, start, stop };
 }
 export type Scheduler = ReturnType<typeof createScheduler>;
