@@ -1150,7 +1150,7 @@
       "number": 99,
       "path": "docs/decisions/D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md",
       "title": "D99 · Units form a tree pushed over SCIM, and a manager works with their direct reports",
-      "status": "accepted (product owner, 2026-11-10: units form a tree, the tree is pushed as resources of its own, a manager works with their direct reports and not with everyone below), built 2026-11-10 (the parent on the unit group, the SCIM extension and its refusals, the reporting line in Personal, talks and the calendar's team, the development directory as a tree, the check, Administration › Organisation; see \"As built\"); the transport in item 2 is proposed until a real provisioner has used it, the branch of item 5 has no user yet, and the items under \"Open\" are not decided; the order of a push and whose a unit is are D101 (2026-11-11)",
+      "status": "accepted (product owner, 2026-11-10: units form a tree, the tree is pushed as resources of its own, a manager works with their direct reports and not with everyone below), built 2026-11-10 (the parent on the unit group, the SCIM extension and its refusals, the reporting line in Personal, talks and the calendar's team, the development directory as a tree, the check, Administration › Organisation; see \"As built\"); the transport in item 2 is proposed until a real provisioner has used it, the branch of item 5 has no user yet, and the items under \"Open\" are not decided; the order of a push and whose a unit is are D101 (2026-11-11); the order inside the unit overlay of item 6 and where its close returns the focus are amended by [D124](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) (2026-11-13, provisional, not built)",
       "date": "2026-11-10",
       "area": "identity, product"
     },
@@ -1285,7 +1285,7 @@
       "number": 112,
       "path": "docs/decisions/D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md",
       "title": "D112 · The interface is rebuilt on Astryx's templates: a queue, one detail shape, and one panel with the assistant in it",
-      "status": "provisional (accepted when a manager has done a day's work in it and one connector author has declared an action that asks for input from the author's page alone)",
+      "status": "provisional (accepted when a manager has done a day's work in it and one connector author has declared an action that asks for input from the author's page alone); item 3's row gains the state's word by [D124](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) item 9 (2026-11-13, provisional, built), and item 5's person page is redrawn by its item 6 (not built)",
       "date": "2026-11-11",
       "area": "ui"
     },
@@ -1378,6 +1378,15 @@
       "status": "provisional (taken in the fixes of [the review of users and the organisation](../reviews/2026-11-12-users-the-organisation-and-the-guides-in-two-rounds.md), Q7, L3, P4 and R3, on the product owner's word of 2026-11-12 to fix every finding and take every open decision), the nightly clean-up built 2026-11-12 and `scripts/person-erase.ts` 2026-11-13; accepted once the clean-up has run in an installation outside the development stack and an organisation has erased a leaver's record with the scripts under its own retention rules",
       "date": "2026-11-12",
       "area": "identity, platform"
+    },
+    {
+      "key": "D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas",
+      "number": 124,
+      "path": "docs/decisions/D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md",
+      "title": "D124 · A unit is walked one step up and one step down, and Organisation, Användare and the person card follow their canvas",
+      "status": "provisional (accepted when an administrator has found a unit's reporting line in the drawer of a directory with several hundred units, and the walk has passed a manual screen-reader pass); built: item 9, and of item 10 Personal's sizes and the hidden avatars in the unit drawer and on Personal, and of item 8 the work row and Användare's narrow list; nothing else is",
+      "date": "2026-11-13",
+      "area": "ui"
     }
   ],
   "documents": [
@@ -2008,6 +2017,12 @@
     {
       "path": "docs/decisions/D123-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md",
       "title": "D123 · Clew empties expired sign-in data itself, and a leaver's retention is the organisation's decision",
+      "category": "decision-history",
+      "headings": []
+    },
+    {
+      "path": "docs/decisions/D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md",
+      "title": "D124 · A unit is walked one step up and one step down, and Organisation, Användare and the person card follow their canvas",
       "category": "decision-history",
       "headings": []
     },
@@ -4127,6 +4142,21 @@
       "headings": [
         "Findings",
         "What changed"
+      ]
+    },
+    {
+      "path": "docs/reviews/2026-11-13-organisation-users-and-the-person-card.md",
+      "title": "Design exploration: Organisation, Användare and the person card · 2026-11-13",
+      "category": "review-history",
+      "headings": [
+        "The brief",
+        "Structure: one step up, one step down",
+        "What each surface draws",
+        "Settled while building",
+        "Decided",
+        "The Impeccable finish review",
+        "Fixed in the product",
+        "Evidence"
       ]
     },
     {

@@ -345,6 +345,8 @@ test.describe('the assistant drafts, the person decides (D112 item 8)', () => {
     const drafts = panel.getByRole('region', { name: 'Utkast: Boka samtalet' });
     await expect(drafts).toHaveCount(2);
     await expect(drafts.first().getByText('Ersatt av ett nyare utkast').first()).toBeVisible();
+    // The dot beside the word is decoration, so the state is heard once.
+    await expect(drafts.first().getByRole('img', { name: 'Ersatt av ett nyare utkast' })).toHaveCount(0);
     await expect(drafts.first().getByRole('button', { name: 'Granska och boka' })).toHaveCount(0);
     await expect(drafts.last().getByRole('button', { name: 'Granska och boka' })).toBeVisible();
   });

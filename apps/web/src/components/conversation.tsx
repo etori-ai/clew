@@ -112,7 +112,7 @@ function ActionDraftCard({
             <Text weight="semibold">{action.label}</Text>
             {state ? (
               <HStack gap={1.5} vAlign="center">
-                <StatusDot variant={state.variant} label={state.label} />
+                <StatusDot variant={state.variant} label={state.label} aria-hidden />
                 <Text type="supporting">{state.label}</Text>
               </HStack>
             ) : (

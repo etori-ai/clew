@@ -144,6 +144,11 @@ describe('the HR fixture connector', () => {
     expect(topics.filter(t => t.startsWith('hr:leave:'))).toHaveLength(2);
     expect(manager.every(d => d.area === 'employees')).toBe(true);
     expect(manager.find(d => d.topic === 'hr:rehab:hr:emp:1001')?.deadline).toBe('2026-11-16');
+    // When a request came in is said as the day, the month in full and the time, in Swedish time.
+    expect(manager.filter(d => d.topic.startsWith('hr:leave:')).map(d => d.reason)).toEqual([
+      'Ansökan kom 2 november kl. 16:40',
+      'Ansökan kom 3 november kl. 06:35',
+    ]);
     // A row about one employee names them by user name (D97), so the card shows on that person; the text keeps no name.
     expect(
       manager.flatMap(d => (d.items ?? []).map(i => [d.topic.split(':').slice(0, 2).join(':'), i.label, i.subject])),

@@ -102,10 +102,13 @@ export function whenWord(instant: string, now = today()): string {
   const day = days === 0 ? 'i dag' : days === -1 ? 'i går' : days === 1 ? 'i morgon' : longDate(date);
   return `${day} ${clock(instant)}`;
 }
-/** A due day as the header's badge says it (board WorkItem: "Förfaller i dag"). */
-function dueBadge(thread: Thread, now: string) {
+/**
+ * A due day as the header's badge says it (board WorkItem: "Förfaller i dag"). A badge that only repeats the state's
+ * word beside it ("Påminnelse") is left out, as on the item's row.
+ */
+function dueBadge(thread: Thread, now: string, state: string) {
   const due = dueOf(thread, now);
-  if (!due) return null;
+  if (!due || due.label === state) return null;
   const label =
     due.label === 'Försenad' || due.label === 'Påminnelse'
       ? due.label
@@ -159,7 +162,11 @@ function useWorkItem(thread: Thread, onChange: (thread: Thread) => void, idBase:
 }
 type ItemState = ReturnType<typeof useWorkItem>;
 
-/** The status (the state the queue's dot shows, as text with its dot) and the badges: when it is due, its area, what it is about. */
+/**
+ * The status (the state the queue's dot shows, as text with its dot) and the badges: when it is due, its area, what it
+ * is about. The dot beside its word is decoration, hidden from assistive technology as the row's is, so the state is
+ * heard once.
+ */
 function StatusLine({ thread, item }: { thread: Thread; item: ItemState }) {
   const now = new Date().toISOString(),
     day = today();
@@ -185,11 +192,11 @@ function StatusLine({ thread, item }: { thread: Thread; item: ItemState }) {
   return (
     <HStack gap={2} vAlign="center" wrap="wrap">
       <HStack gap={1.5} vAlign="center">
-        <StatusDot variant={state.variant} label={state.label} />
+        <StatusDot variant={state.variant} label={state.label} aria-hidden />
         <Text weight="semibold">{state.label}</Text>
       </HStack>
       {detail && <Text type="supporting">{detail}</Text>}
-      {dueBadge(thread, day)}
+      {dueBadge(thread, day, state.label)}
       <AreaChip ordinal={item.mark.ordinal} icon={item.mark.icon} label={item.mark.title} />
       {about && <Badge variant="neutral" label={about.label} />}
       {draft && open && <Badge variant="warning" icon={<Icon icon="warning" size="sm" />} label="Att bekräfta" />}
@@ -683,7 +690,7 @@ function Details({ thread, item }: { thread: Thread; item: ItemState }) {
         <MetadataList>
           <MetadataListItem label="Status">
             <HStack gap={2} vAlign="center">
-              <StatusDot variant={state.variant} label={state.label} />
+              <StatusDot variant={state.variant} label={state.label} aria-hidden />
               <Text>{state.label}</Text>
             </HStack>
           </MetadataListItem>

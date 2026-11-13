@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import { organisationPeople } from './data';
 import {
   announcements,
   desktop,
@@ -136,7 +137,7 @@ test.describe('organisation', () => {
       // Where the unit is: the units above it, outermost first.
       await expect(people.getByText('Kommunen › Barn och utbildning › Grundskola')).toBeVisible();
       await expect(people.getByRole('status').filter({ hasText: 'personer' })).toHaveText(
-        '3 personer på enheten, 1 avstängd',
+        '3 personer på enheten och 1 avstängd',
       );
       // Who leads the unit first, in a group of their own, then the others placed on it; nobody reports from below.
       await expect(people.getByRole('heading', { level: 3 })).toHaveText(['Chefer', 'Medarbetare']);
@@ -144,6 +145,9 @@ test.describe('organisation', () => {
       await expect(leaders).toHaveCount(2);
       await expect(leaders.first()).toContainText('Hillevi Berg');
       await expect(leaders.first()).toContainText('Chef · hillevi@clew.test');
+      // The avatar beside a name is decoration, as in the tree: the name is said once, by its link.
+      await expect(leaders.first().locator('.astryx-avatar')).toHaveAttribute('aria-hidden', 'true');
+      await expect(people.getByRole('img')).toHaveCount(0);
       const others = people.getByRole('list', { name: 'Medarbetare · Bergsåkers skola' }).getByRole('listitem');
       await expect(others).toHaveCount(2);
       await expect(others.first()).toContainText('Anna Lindqvist');
@@ -154,6 +158,28 @@ test.describe('organisation', () => {
       await expect(page).toHaveURL(/\/admin\/organisation$/);
       // The tree kept what was opened in it, and the row that opened the overlay has the focus again.
       await expect(row(/Bergsåkers skola/)).toBeFocused();
+    });
+    test('more than one deactivated person on a unit is counted in the plural', async ({ page, api }) => {
+      api.admin = true;
+      // The unit's people as the fixture has them, and one more who is deactivated.
+      await page.route('**/api/admin/organisation/units/unit-skola', route =>
+        route.fulfill({
+          json: {
+            unitId: 'unit-skola',
+            unitLabel: 'Bergsåkers skola',
+            people: [
+              ...organisationPeople['unit-skola']!,
+              { id: 'ture', name: 'Ture Väst', userName: 'ture.vast', email: null, role: 'employee', enabled: false },
+            ],
+            reports: [],
+          },
+        }),
+      );
+      await open(page, '/admin/organisation?unit=unit-skola');
+      const people = page.getByRole('dialog', { name: 'Personer på Bergsåkers skola' });
+      await expect(people.getByRole('status').filter({ hasText: 'personer' })).toHaveText(
+        '3 personer på enheten och 2 avstängda',
+      );
     });
     test('an address that names a unit opens it over the tree with the units above it open, and a unit with nobody on it says so', async ({
       page,

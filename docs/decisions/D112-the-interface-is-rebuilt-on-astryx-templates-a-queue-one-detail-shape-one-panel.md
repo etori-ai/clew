@@ -1,6 +1,6 @@
 # D112 · The interface is rebuilt on Astryx's templates: a queue, one detail shape, and one panel with the assistant in it
 
-**Status:** provisional (accepted when a manager has done a day's work in it and one connector author has declared an action that asks for input from the author's page alone) · **Date:** 2026-11-11 · **Area:** ui
+**Status:** provisional (accepted when a manager has done a day's work in it and one connector author has declared an action that asks for input from the author's page alone); item 3's row gains the state's word by [D124](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) item 9 (2026-11-13, provisional, built), and item 5's person page is redrawn by its item 6 (not built) · **Date:** 2026-11-11 · **Area:** ui
 
 **Context.** Views, cards and navigation had grown by amendment (D50, D53, D63, D66, D72, D83, D97, D111) and were
 hard to hold together. The product owner asked for a fresh approach drawn only from what Astryx already ships, saw it

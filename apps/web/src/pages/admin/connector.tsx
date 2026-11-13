@@ -317,7 +317,7 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
                 .join(' · ')}
             </Text>
             <HStack gap={1} vAlign="center" wrap="wrap">
-              <StatusDot variant={s.tone} label={s.label} />
+              <StatusDot variant={s.tone} label={s.label} aria-hidden />
               <Text color="secondary">
                 {s.label}
                 {c.bundled ? ' · körs i Startsidan' : c.url ? ` · ${c.url}` : ''}
@@ -864,18 +864,19 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
           }
         >
           {diff && (
+            // Each row begins with its dot's word ("Ny funktion: …"), so the dot is decoration and is heard once.
             <List density="compact" aria-label="Ändringar">
               {diff.added.map(n => (
                 <ListItem
                   key={'a' + n}
-                  startContent={<StatusDot variant="success" label="Ny" />}
+                  startContent={<StatusDot variant="success" label="Ny" aria-hidden />}
                   label={<Text>Ny funktion: {n}</Text>}
                 />
               ))}
               {diff.removed.map(n => (
                 <ListItem
                   key={'r' + n}
-                  startContent={<StatusDot variant="error" label="Borttagen" />}
+                  startContent={<StatusDot variant="error" label="Borttagen" aria-hidden />}
                   label={<Text>Borttagen funktion: {n}</Text>}
                   description={<Text type="supporting">Ärenden som pekar på den slutar fungera.</Text>}
                 />
@@ -883,21 +884,21 @@ export function AdminConnectorPage({ user }: { user: SessionUser }) {
               {diff.changed.map(n => (
                 <ListItem
                   key={'c' + n}
-                  startContent={<StatusDot variant="warning" label="Ändrad" />}
+                  startContent={<StatusDot variant="warning" label="Ändrad" aria-hidden />}
                   label={<Text>Ändrad funktion: {n}</Text>}
                 />
               ))}
               {diff.areasAdded.map(n => (
                 <ListItem
                   key={'aa' + n}
-                  startContent={<StatusDot variant="success" label="Nytt" />}
+                  startContent={<StatusDot variant="success" label="Nytt" aria-hidden />}
                   label={<Text>Nytt område: {n}</Text>}
                 />
               ))}
               {diff.areasRemoved.map(n => (
                 <ListItem
                   key={'ar' + n}
-                  startContent={<StatusDot variant="error" label="Borttaget" />}
+                  startContent={<StatusDot variant="error" label="Borttaget" aria-hidden />}
                   label={<Text>Borttaget område: {n}</Text>}
                 />
               ))}

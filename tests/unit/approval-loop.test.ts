@@ -154,7 +154,7 @@ function world(wrap: (source: ApprovalSource) => ApprovalSource = source => sour
           compensates: e.compensates,
         },
         updatedAt: e.updatedAt,
-        ...(stage === 'approval' ? { waitingOn: 'Väntar på källans besked' } : {}),
+        ...(stage === 'approval' ? { waitingOn: 'källans besked' } : {}),
         ...(!e.compensates && projected && e.state !== 'running' ? { receipt: projected } : {}),
         ...(!e.compensates && confirmed ? { state: 'handled' as const, handledAt: e.updatedAt, waitingOn: null } : {}),
         ...(['unknown', 'partial', 'failed'].includes(e.state) || e.reason ? { waitingOn: null } : {}),

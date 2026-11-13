@@ -21,8 +21,8 @@ for (const [layout, viewport] of [
         // The work item in Att göra (D112): beside the queue on a desktop, whose row says where it stands, alone at 320 px.
         await open(page, '/todo?item=fakturor');
         if (layout === 'desktop')
-          await expect(page.locator('#work-fakturor').getByRole('img')).toHaveAccessibleName(
-            state === 'unknown' ? 'Behöver kontrolleras' : 'Väntar på källan',
+          await expect(page.locator('#work-fakturor')).toContainText(
+            state === 'unknown' ? 'Behöver kontrolleras · ' : 'Väntar på källan · ',
           );
         const check = page.getByRole('button', { name: 'Kontrollera status' });
         await expect(check).toBeVisible();

@@ -534,4 +534,119 @@ test.describe('an action about a person or a unit that asks', () => {
     ]);
     await expect(page).toHaveURL('/staff?card=entity-hr-registerAbsence-karin');
   });
+
+  test('a choice left out is said on its selector, which shows its focus over the error (2.4.7)', async ({
+    page,
+    api,
+  }) => {
+    // Six options: more than a radio list holds, so the choice is drawn as a selector.
+    const options = ['Sjukdom', 'Vård av barn', 'Semester', 'Tjänstledighet', 'Föräldraledighet', 'Annat'];
+    api.entityList.actions = api.entityList.actions.map(a =>
+      a.capability === 'hr.registerAbsence'
+        ? {
+            ...a,
+            path: {
+              asks: [
+                {
+                  kind: 'choice',
+                  property: 'reason',
+                  label: 'Orsak',
+                  required: true,
+                  options: options.map((label, i) => ({ value: `reason-${i}`, label })),
+                },
+              ],
+              effect: false,
+              description: 'Förbereder en sjukanmälan för en medarbetare i chefens enhet.',
+            },
+          }
+        : a,
+    );
+    await page.setViewportSize(desktop);
+    await open(page, '/staff');
+    await page.getByRole('button', { name: 'Åtgärder för Karin Lindqvist' }).click();
+    await page.getByRole('menuitem', { name: 'Registrera frånvaro' }).click();
+    const dialog = dialogOf(page, 'Registrera frånvaro');
+    await dialog.getByRole('button', { name: 'Nästa' }).click();
+    const choice = dialog.getByRole('combobox', { name: /^Orsak/ });
+    await expect(choice).toBeFocused();
+    await expect(dialog.getByText('Orsak behöver fyllas i.').first()).toBeVisible();
+    // Astryx draws a selector's status on its trigger's container and drops the focus inset there; Clew's theme draws
+    // one in the error colour while the focus is inside (`packages/ui/src/theme.ts`), and nothing once it has left.
+    const box = dialog.locator('.astryx-selector[data-status="error"]');
+    await expect(box).toHaveCount(1);
+    const shadow = () =>
+      box.evaluate(async el => {
+        await Promise.all(el.getAnimations().map(a => a.finished.catch(() => undefined)));
+        return getComputedStyle(el).boxShadow;
+      });
+    expect(await shadow()).toMatch(/ 0px 0px 0px 2px inset$/);
+    await choice.evaluate(el => el.blur());
+    await expect(choice).not.toBeFocused();
+    expect(await shadow()).toBe('none');
+    await expectNoAxeViolations(page);
+  });
+
+  test('free text, a date and a clock left out show their focus over the error too (2.4.7)', async ({ page, api }) => {
+    // Without a calendar to suggest from, a meeting is asked as a date and a clock: the one place the dialog asks a clock.
+    api.freeTimes = null;
+    api.entityList.actions = api.entityList.actions.map(a =>
+      a.capability === 'hr.registerAbsence'
+        ? {
+            ...a,
+            path: {
+              asks: [
+                { kind: 'long-text', property: 'note', label: 'Anteckning', required: true },
+                { kind: 'meeting', property: 'when', label: 'När', required: true, durationMinutes: 45 },
+              ],
+              effect: false,
+              description: 'Förbereder en sjukanmälan för en medarbetare i chefens enhet.',
+            },
+          }
+        : a,
+    );
+    await page.setViewportSize(desktop);
+    await open(page, '/staff');
+    await page.getByRole('button', { name: 'Åtgärder för Karin Lindqvist' }).click();
+    await page.getByRole('menuitem', { name: 'Registrera frånvaro' }).click();
+    const dialog = dialogOf(page, 'Registrera frånvaro');
+    const note = dialog.getByRole('textbox', { name: /^Anteckning/ });
+    const date = dialog
+      .getByRole('combobox', { name: /^Datum/ })
+      .or(dialog.getByRole('textbox', { name: /^Datum/ }))
+      .first();
+    const clock = dialog
+      .getByRole('textbox', { name: /^Klockslag/ })
+      .or(dialog.getByRole('spinbutton', { name: /^Klockslag/ }))
+      .first();
+    await expect(date).toBeVisible();
+    await dialog.getByRole('button', { name: 'Nästa' }).click();
+    await expect(note).toBeFocused();
+    await expect(dialog.getByText('Anteckning behöver fyllas i.').first()).toBeVisible();
+    await expect(dialog.getByText('När behöver fyllas i.').first()).toBeVisible();
+    // The same inset as the selector's, on the bordered box of each field: 2 px while the focus is inside it, and
+    // nothing once it has left.
+    const focusShown = async (box: Locator, control: Locator) => {
+      await expect(box).toHaveCount(1);
+      const shadow = () =>
+        box.evaluate(async el => {
+          await Promise.all(el.getAnimations().map(a => a.finished.catch(() => undefined)));
+          return getComputedStyle(el).boxShadow;
+        });
+      await control.focus();
+      await expect(control).toBeFocused();
+      expect(await shadow()).toMatch(/ 0px 0px 0px 2px inset$/);
+      await control.evaluate(el => (el as HTMLElement).blur());
+      await expect(control).not.toBeFocused();
+      expect(await shadow()).toBe('none');
+    };
+    await focusShown(dialog.locator('.astryx-text-area[data-status="error"]'), note);
+    // Without a date the meeting's problem stands on the date; with one, on the clock.
+    await expect(dialog.locator('.astryx-time-input[data-status="error"]')).toHaveCount(0);
+    await focusShown(dialog.locator('.astryx-date-input[data-status="error"]'), date);
+    await date.pressSequentially('2026-11-10');
+    await date.press('Tab');
+    await expect(dialog.locator('.astryx-date-input[data-status="error"]')).toHaveCount(0);
+    await focusShown(dialog.locator('.astryx-time-input[data-status="error"]'), clock);
+    await expectNoAxeViolations(page);
+  });
 });

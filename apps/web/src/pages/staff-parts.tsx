@@ -185,7 +185,7 @@ function Person({ entity, openers }: { entity: EntityRef; openers: Openers }) {
   const location = useLocation();
   return (
     <HStack gap={3} vAlign="center">
-      <Avatar name={entity.name} size={32} tooltip={false} />
+      <Avatar name={entity.name} size="sm" tooltip={false} aria-hidden />
       <Link
         ref={openers(entity.id)}
         href={personPageFrom(location.pathname, location.search, entity.key)}
@@ -308,7 +308,7 @@ function PhoneRow({
     <ListItem
       itemKey={entity.key}
       align="start"
-      startContent={<Avatar name={entity.name} size={32} tooltip={false} />}
+      startContent={<Avatar name={entity.name} size="md" tooltip={false} aria-hidden />}
       label={
         <Link
           ref={ctx.openers(entity.id)}

@@ -281,8 +281,8 @@ test.describe('Klart', () => {
     await open(page, '/todo?tab=done');
     const done = page.getByRole('list', { name: 'Klart' });
     await expect(done.getByRole('listitem')).toHaveCount(2);
-    await expect(done.locator('#work-attest').getByRole('img', { name: 'Klart' })).toBeVisible();
-    await expect(done.locator('#work-avfardad').getByRole('img', { name: 'Avfärdat' })).toBeVisible();
+    await expect(done.locator('#work-attest')).toContainText('Klart · ');
+    await expect(done.locator('#work-avfardad')).toContainText('Avfärdat · ');
     await expect(done).not.toContainText('Vem är på plats i dag?');
   });
 });
