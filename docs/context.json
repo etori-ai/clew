@@ -1033,7 +1033,7 @@
       "number": 88,
       "path": "docs/decisions/D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md",
       "title": "D88 · The web app draws the shared header above its rail, a connector gives Clew its content, and Clew has one front end",
-      "status": "accepted, built 2026-11-09 on `main`",
+      "status": "accepted, built 2026-11-09 on `main`; Start and the row under it are Clew's since [D116](D116-start-and-the-row-under-it-are-clews.md) (provisional, 2026-11-13), the connector gives the other places",
       "date": "2026-11-09",
       "area": "ui, product, integrations"
     },
@@ -1306,6 +1306,15 @@
       "status": "provisional (product owner, 2026-11-12, who directed the build against the freeze on new surface of D101 and settled items 3, 5 and 6 after the [review of the same day](../reviews/2026-11-12-scim-and-the-guides-before-the-handover.md)); implemented with the synthetic provisioner; accepted once a real directory has sent employments and numbers; no manual screen-reader pass yet",
       "date": "2026-11-12",
       "area": "identity, ui"
+    },
+    {
+      "key": "D116-start-and-the-row-under-it-are-clews",
+      "number": 116,
+      "path": "docs/decisions/D116-start-and-the-row-under-it-are-clews.md",
+      "title": "D116 · Start and the row under it are Clew's; the intranet keeps the other places",
+      "status": "provisional (Oliver Borgström, 2026-11-13; built on the branch `start-is-clews`, tested by nothing outside the repository)",
+      "date": "2026-11-13",
+      "area": "ui, integrations"
     }
   ],
   "documents": [
@@ -1884,6 +1893,12 @@
       "headings": [
         "Employment and work placement in a municipality"
       ]
+    },
+    {
+      "path": "docs/decisions/D116-start-and-the-row-under-it-are-clews.md",
+      "title": "D116 · Start and the row under it are Clew's; the intranet keeps the other places",
+      "category": "decision-history",
+      "headings": []
     },
     {
       "path": "docs/decisions/D12-objects-chips-proposals.md",

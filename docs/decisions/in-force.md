@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**109 in force**: 98 accepted and 11 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 10 proposed and not decided. 6 no longer in force.
+**110 in force**: 98 accepted and 12 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 10 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -134,13 +134,14 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D74 · One page header for every surface](D74-one-page-header-for-every-surface.md) | 2026-11-07 | accepted |  |
 | [D76 · Loading sections reserve their place and enter together](D76-loading-sections-reserve-their-place-and-enter-together.md) | 2026-11-07 | accepted |  |
 | [D83 · Interface spaces have stable navigation roles](D83-interface-spaces-have-stable-navigation-roles.md) | 2026-11-09 | accepted | [D81](D81-mcp-apps-extend-ai-chat-with-provider-owned-interactions.md), [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) |
-| [D88 · The web app draws the shared header above its rail, a connector gives Clew its content, and Clew has one front end](D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md) | 2026-11-09 | accepted |  |
+| [D88 · The web app draws the shared header above its rail, a connector gives Clew its content, and Clew has one front end](D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md) | 2026-11-09 | accepted | [D116](D116-start-and-the-row-under-it-are-clews.md) |
 | [D90 · Mina ärenden is a section on Hem, after the day's work](D90-mina-arenden-is-a-section-on-hem.md) | 2026-11-09 | accepted |  |
 | [D92 · What goes into the box enters on Astryx's entry motion](D92-what-goes-into-the-box-enters-on-astryxs-entry-motion.md) | 2026-11-09 | accepted |  |
 | [D98 · The installation's theme and logo are saved in Clew by an administrator, the theme as a design tokens file](D98-the-installations-theme-and-logo-are-saved-in-clew-by-an-administrator.md) | 2026-11-10 | accepted |  |
 | [D100 · The people list is read a page at a time and narrowed on the server](D100-the-people-list-is-read-a-page-at-a-time-and-narrowed-on-the-server.md) | 2026-11-11 | accepted |  |
 | [D111 · Where something opens is decided by what it is, never by the page it was clicked on](D111-where-something-opens-is-decided-by-what-it-is.md) | 2026-11-11 | provisional | [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) |
 | [D112 · The interface is rebuilt on Astryx's templates: a queue, one detail shape, and one panel with the assistant in it](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md) | 2026-11-11 | provisional |  |
+| [D116 · Start and the row under it are Clew's; the intranet keeps the other places](D116-start-and-the-row-under-it-are-clews.md) | 2026-11-13 | provisional |  |
 
 ## Proposed, not decided
 

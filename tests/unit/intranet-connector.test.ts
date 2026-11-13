@@ -30,7 +30,6 @@ const hillevi: Actor = {
   unitLabel: 'Bergsåkers skola',
   role: 'manager',
 };
-const CALENDAR = { id: 'kalender', label: 'Kalender', href: '/calendar' };
 
 function stack(refused: string[] = []) {
   const service = createConnector({ jwks: testJwks, secret });
@@ -94,14 +93,13 @@ describe('the intranet connector and the shared header (D88)', () => {
     const employee = await registry.header(hassan);
     expect(employee?.connector.id).toBe('intranet');
     expect(employee?.output.site).toEqual({ name: 'Startsidan', href: '/' });
+    // Start and its pages are Clew's (D116), so the intranet lists only its own places.
     expect(employee?.output.items.map(i => i.id)).toEqual([
-      'start',
       'anstallning-arbetsmiljo',
       'ekonomi-styrning',
       'kompetensforsorjning',
       'organisation',
     ]);
-    expect(employee?.output.items[0]!.children).toContainEqual(CALENDAR);
     // The same four sections the stand-in's tree lists for a signed-in visitor, so both sites read the same; the logo is the file's.
     expect((await registry.header(hillevi))?.output.items).toEqual(employee?.output.items);
     expect(employee?.output.logo).toEqual({ src: '/branding/sundsvall-dragon-white.png', alt: 'Sundsvalls kommun' });
@@ -164,10 +162,10 @@ describe('the intranet connector and the shared header (D88)', () => {
     const header = report.items.filter(i => i.label === 'Sidhuvud');
     expect(header.map(i => i.level)).toEqual(['ok', 'ok']);
     expect(header.map(i => i.description)).toEqual([
-      'Kan ge sidhuvudet: för chef 5 platser och en logotyp.',
-      'Kan ge sidhuvudet: för medarbetare 5 platser och en logotyp.',
+      'Kan ge sidhuvudet: för chef 4 platser och en logotyp.',
+      'Kan ge sidhuvudet: för medarbetare 4 platser och en logotyp.',
     ]);
-    expect(report.findings.map(f => f.text)).toContain('header as manager: 5 places, a logo');
+    expect(report.findings.map(f => f.text)).toContain('header as manager: 4 places, a logo');
     expect(JSON.stringify(report)).not.toContain('Kompetensförsörjning');
   });
 });

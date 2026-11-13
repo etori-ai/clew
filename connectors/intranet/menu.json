@@ -1,18 +1,8 @@
 {
-  "_comment": "The intranet's header as the fixture connector answers it (D88): the site's name, the logo, and the places in the band with their own pages. Edit this file, or point INTRANET_MENU_FILE at another, to change what Clew draws; a place with `roles` is listed to those roles only. Addresses are paths on Clew's origin or http(s) addresses. Not Clew's own configuration: the stand-in for what a content system lists.",
+  "_comment": "The intranet's header as the fixture connector answers it (D88): the site's name, the logo, and the intranet's places in the band with their own pages. Start and its pages are Clew's (D116), so they are not listed here. Edit this file, or point INTRANET_MENU_FILE at another, to change what Clew draws; a place with `roles` is listed to those roles only. Addresses are paths on Clew's origin or http(s) addresses. Not Clew's own configuration: the stand-in for what a content system lists.",
   "site": { "name": "Startsidan", "href": "/" },
   "logo": { "src": "/branding/sundsvall-dragon-white.png", "alt": "Sundsvalls kommun" },
   "items": [
-    {
-      "id": "start",
-      "label": "Start",
-      "href": "/",
-      "children": [
-        { "id": "mina-aktiviteter", "label": "Mina aktiviteter", "href": "/?tab=waiting" },
-        { "id": "kalender", "label": "Kalender", "href": "/calendar" },
-        { "id": "nytt-utvecklingsarende", "label": "Nytt utvecklingsärende", "href": "/intranat/flode/utvecklingsarende" }
-      ]
-    },
     { "id": "anstallning-arbetsmiljo", "label": "Anställning och arbetsmiljö", "href": "/intranat/anstallning-arbetsmiljo" },
     { "id": "ekonomi-styrning", "label": "Ekonomi och styrning", "href": "/intranat/ekonomi-styrning" },
     { "id": "kompetensforsorjning", "label": "Kompetensförsörjning", "href": "/intranat/kompetensforsorjning" },
