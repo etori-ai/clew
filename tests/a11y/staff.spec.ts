@@ -242,6 +242,10 @@ test.describe('Personal', () => {
       await page.keyboard.press('Enter');
       const card = page.getByRole('complementary', { name: 'Ärende' });
       await expect(card.getByRole('article', { name: 'Ärende: Planera utvecklingssamtal vecka 45' })).toBeVisible();
+      // The panel's heading takes the focus the frame after the card is drawn, and Esc is pressed there, once a person
+      // has heard it. Pressed before, Esc went to the title on the page and closed nothing, which failed this test in
+      // about half the runs.
+      await expect(card.locator('[aria-level="2"]').filter({ hasText: 'Ärende' })).toBeFocused();
       await page.keyboard.press('Escape');
       await expect(page).toHaveURL('/people/johan?section=needs-you&from=%2Fstaff');
       await expect(title).toBeFocused();

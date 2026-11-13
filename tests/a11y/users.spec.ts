@@ -635,6 +635,10 @@ test.describe('users administration', () => {
       await expect(page.getByRole('option', { name: /^Rektorer/ })).toBeVisible();
       await page.keyboard.press('ArrowDown');
       await page.keyboard.press('Enter');
+      // The chosen group takes the focus the frame after it is chosen, as above, and the person moves on from there.
+      // Moved on before that, the focus went back to the group, and Enter opened it for editing instead of taking the
+      // row away.
+      await expect(form.getByRole('button', { name: 'Grupp Rektorer' })).toBeFocused();
       await mapping.getByRole('button', { name: 'Ta bort: IT-personal ger administrera anslutna system' }).focus();
       await page.keyboard.press('Enter');
       await expect(page.getByText(/^Ingen grupp ger någon behörighet ännu/)).toBeVisible();
