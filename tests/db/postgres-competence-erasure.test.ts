@@ -13,7 +13,8 @@ import { forgetTestWorkflows, testDurable } from './durable';
  * on one thread-store transaction), with the test's own engine queue. The holdings, the cards the competence scan put in
  * the person's stream, a `thread.removed` row per card and the erasure's own audit row commit together or not at all;
  * another connector's card of theirs and someone else's competence card stay; an id the people table does not hold, such
- * as the person's user name, erases nothing and writes no audit row. Run with `bun run test:db` inside the devcontainer.
+ * as the person's user name, and a person who is still active erase nothing and write no audit row (D117 item 3). Run
+ * with `bun run test:db` inside the devcontainer.
  */
 if (!process.env.DATABASE_URL)
   throw new Error('DATABASE_URL is not set. Run `bun run test:db` inside the devcontainer.');
@@ -133,9 +134,22 @@ describe('erasing a person from the competence domain on Postgres (D108 item 14,
   test('a user name, in any case, is no id: nothing is erased and nothing is audited', async () => {
     await seed();
     for (const key of [userName, userName.toLowerCase(), `${ORG}-nobody`])
-      expect([key, await competence.erasePerson('operator:cli', key)]).toEqual([key, undefined]);
+      expect([key, await competence.erasePerson('operator:cli', key)]).toEqual([key, { refused: 'unknown' }]);
     expect((await threadsOf(person)).map(t => t.id)).toEqual([cards.otherConnector, cards.own].sort());
     expect(await auditOf([`person:${userName}`, `person:${person}`])).toEqual([]);
+  });
+  test('a person who is still active is refused: nothing is erased and nothing is audited (D117 item 3)', async () => {
+    expect(await competence.erasePerson('operator:cli', person)).toEqual({ refused: 'active' });
+    expect((await threadsOf(person)).map(t => t.id)).toEqual([cards.otherConnector, cards.own].sort());
+    expect(
+      await database()
+        .select({ id: schema.competenceHoldings.id })
+        .from(schema.competenceHoldings)
+        .where(eq(schema.competenceHoldings.personId, person)),
+    ).toEqual([{ id: `${ORG}-holding` }]);
+    expect(await auditOf([`person:${person}`, `thread:${cards.own}`])).toEqual([]);
+    // The source deactivates the person: from now on the erasure goes through.
+    await database().update(schema.people).set({ enabled: false }).where(eq(schema.people.id, person));
   });
   test('the cards go with the holdings in one transaction, or neither does', async () => {
     await expect(

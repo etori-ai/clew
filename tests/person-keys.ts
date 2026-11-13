@@ -7,11 +7,12 @@ const folded = (name: string) => name.normalize('NFC').toLowerCase();
  * Whose a source's key is (D116), over the memory directory of the unit tests: what `composition/person-keys.ts` reads
  * from the people table. A user name names whoever of the reader's organisation holds it now, active or not, compared
  * without regard to case and in its composed form; two holders of spellings that compare alike leave it naming nobody,
- * and a reader the directory does not hold is answered nothing. `exists` is the erasure's check.
+ * and a reader the directory does not hold is answered nothing. `enabled` is the erasure's check: undefined for an id
+ * the directory does not hold, false for a deactivated person.
  */
 export function memoryPersonKeys(
   state: Pick<MemoryProvisionState, 'users'>,
-): PersonKeys & { exists(personId: string): Promise<boolean> } {
+): PersonKeys & { enabled(personId: string): Promise<boolean | undefined> } {
   return {
     async holders(readerId, userNames) {
       const held = new Map<string, string>();
@@ -31,6 +32,6 @@ export function memoryPersonKeys(
       return held;
     },
     userName: async personId => state.users.get(personId)?.userName ?? null,
-    exists: async personId => state.users.has(personId),
+    enabled: async personId => state.users.get(personId)?.enabled,
   };
 }

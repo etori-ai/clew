@@ -69,6 +69,12 @@ export interface UnitStanding {
   booked: number;
   missing: number;
 }
+/**
+ * What erasing one person from the domain did, counts only (D96 item 10), or why it erased nothing: an id the people
+ * table does not hold, or a person the source has not deactivated (D116 item 7, D117 item 3).
+ */
+export type TalkErasure =
+  { refused: 'unknown' | 'active' } | { talks: number; commitments: number; cleared: number; cards: number };
 
 /**
  * The talks module's use cases (D96): the round of development talks and its action points. A manager's reach is
@@ -561,15 +567,15 @@ export function talkUsecases(deps: TalkDeps) {
     /**
      * Erase one person from the domain (D96 item 10): their talks and every action point about them, the cards of
      * those and of the ones they owned, and their name on other people's records. `actor` is the operator's. An id the
-     * people table does not hold (a user name, a typo) erases nothing and writes no audit row: undefined.
+     * people table does not hold (a user name, a typo) and a person who is still active erase nothing and write no
+     * audit row: only a person the source has deactivated is erased (D117 item 3).
      */
-    async erasePerson(
-      actor: string,
-      personId: string,
-    ): Promise<{ talks: number; commitments: number; cleared: number; cards: number } | undefined> {
+    async erasePerson(actor: string, personId: string): Promise<TalkErasure> {
       const at = now().toISOString();
-      return deps.store.transaction(async tx => {
-        if (!(await tx.persons([personId])).length) return undefined;
+      return deps.store.transaction(async (tx): Promise<TalkErasure> => {
+        const [person] = await tx.persons([personId]);
+        if (!person) return { refused: 'unknown' };
+        if (person.enabled) return { refused: 'active' };
         const erased = await tx.erasePerson(personId);
         if (erased.threadIds.length) await tx.workItems.remove(erased.threadIds);
         const counts = {

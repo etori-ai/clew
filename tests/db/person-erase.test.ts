@@ -471,6 +471,7 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
   expect(await competence.erasePerson(OPERATOR, asa)).toEqual({ holdings: 0, cleared: 0, cards: 0 });
 });
 
+// Four runs of the script, each loading the server's composition, which takes seconds apiece on a busy machine.
 test('the script refuses an unknown id and an active person, erases a deactivated one and says when nothing is left', async () => {
   const p = provisioner;
   const id = (
@@ -546,4 +547,4 @@ test('the script refuses an unknown id and an active person, erases a deactivate
         .orderBy(schema.audit.id)
     ).map(row => row.details.fields),
   ).toEqual([4, 0]);
-});
+}, 60_000);

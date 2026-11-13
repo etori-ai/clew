@@ -154,7 +154,13 @@ export function talkTx(tx: Transaction, options: { sealer: Sealer; workItems: Wo
     async persons(ids) {
       if (!ids.length) return [];
       return tx
-        .select({ id: people.id, organisationId: people.organisationId, name: people.name, userName: people.userName })
+        .select({
+          id: people.id,
+          organisationId: people.organisationId,
+          name: people.name,
+          userName: people.userName,
+          enabled: people.enabled,
+        })
         .from(people)
         .where(inArray(people.id, [...ids]));
     },

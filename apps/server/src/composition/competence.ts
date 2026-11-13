@@ -48,3 +48,16 @@ const staff: Staff = async persona => {
   }
 };
 export const competence = competenceUsecases({ store: competenceStore, staff, clock, ids });
+/**
+ * The competence module as the operator's erasure runs it (`scripts/competence-erase.ts`): the same use cases and tables
+ * over a store that cancels no workflow. A script never launches the durable engine, so a cancel there could only fail
+ * after the commit, and print an error before the script's own answer. The timers of the removed cards go with them,
+ * and a workflow still waiting on one, a reminder or a snooze, wakes at its time, finds no timer and ends without a
+ * write: the generation fence covers a cancel that never arrives (D86).
+ */
+export const competenceForScripts = competenceUsecases({
+  store: competenceStoreWithCards({ durable: ledger }),
+  staff,
+  clock,
+  ids,
+});

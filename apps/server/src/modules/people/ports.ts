@@ -33,8 +33,11 @@ export interface UserReads {
    * hold.
    */
   holders(readerId: string, userNames: readonly string[]): Promise<Map<string, string>>;
-  /** Whether the people table holds this person, active or not: an erasure refuses an id it does not (D116). */
-  exists(personId: string): Promise<boolean>;
+  /**
+   * Whether this person is active: false once the source has deactivated them, undefined for an id the people table
+   * does not hold. An erasure refuses an id it does not hold (D116) and a person who is still active (D117).
+   */
+  enabled(personId: string): Promise<boolean | undefined>;
 }
 /** A SCIM client (D68): the one thing that fills the provisioning tables, scoped to one organisation. */
 export interface Provisioner {

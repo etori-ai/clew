@@ -6,13 +6,19 @@
  *
  *   bun scripts/talks-erase.ts --person <person id> --confirm
  *
- * A person is named by their id, never by a user name: an id the people table does not hold is refused, and nothing is
- * erased or audited. A person with nothing in the domain is still audited, with zero counts, and the script says so.
+ * A person is named by their id, never by a user name. Refused, writing nothing and no audit row, for an id the people
+ * table does not hold and for a person who is still active: the source deactivates a person first (D68 item 1). An
+ * option given twice, or any other argument, is refused too, before the database is asked. A person with nothing in
+ * the domain is still audited, with zero counts, and the script says so. It cancels no workflow, since a script never
+ * starts the durable engine: a removed card's `due` timer goes with the card, and its workflow wakes at its time, finds
+ * no timer and ends without a write (D86).
  */
 import { resolve } from 'node:path';
 import { closeDatabase } from '@clew/db';
-import { talks } from '../apps/server/src/composition/talks';
+import { talksForScripts } from '../apps/server/src/composition/talks';
 import { OPERATOR } from './talk-round';
+
+const USAGE = 'Usage: bun scripts/talks-erase.ts --person <person id> --confirm';
 
 try {
   process.loadEnvFile(resolve(import.meta.dir, '../apps/server/.env.local'));
@@ -20,26 +26,36 @@ try {
   /* settings may come from the environment */
 }
 const args = process.argv.slice(2);
-const option = (name: string) => {
-  const i = args.indexOf('--' + name);
-  return i >= 0 ? args[i + 1] : undefined;
-};
-const personId = option('person');
-if (!personId || personId.startsWith('--')) {
-  console.error('Usage: bun scripts/talks-erase.ts --person <person id> --confirm');
+const given = new Map<string, string>();
+let wellFormed = true;
+for (let i = 0; i < args.length && wellFormed; i++) {
+  const arg = args[i]!,
+    value = args[i + 1];
+  // An option given twice is refused, never read once: a copied line could otherwise erase the wrong person.
+  if (given.has(arg)) wellFormed = false;
+  else if (arg === '--confirm') given.set(arg, '');
+  else if (arg === '--person' && value !== undefined && !value.startsWith('--')) given.set(arg, args[++i]!);
+  else wellFormed = false;
+}
+const personId = given.get('--person');
+if (!wellFormed || !personId) {
+  console.error(USAGE);
   process.exit(2);
 }
-if (!args.includes('--confirm')) {
+if (!given.has('--confirm')) {
   console.error(
     `Erasing person "${personId}" from the talks domain removes their talks, every action point about them and the cards of those and of the ones they own, and cannot be undone. Run again with --confirm to erase.`,
   );
+  console.error(USAGE);
   process.exit(2);
 }
 try {
-  const erased = await talks.erasePerson(OPERATOR, personId);
-  if (!erased) {
+  const erased = await talksForScripts.erasePerson(OPERATOR, personId);
+  if ('refused' in erased) {
     console.error(
-      `No person has the id "${personId}": nothing was erased and nothing was audited. A person is named by their id, never by a user name.`,
+      erased.refused === 'unknown'
+        ? `No person has the id "${personId}": nothing was erased and nothing was audited. A person is named by their id, never by a user name.`
+        : `Person "${personId}" is still active: only a person the source has deactivated is erased (D68 item 1). Nothing was erased and nothing was audited.`,
     );
     process.exitCode = 1;
   } else if (!erased.talks && !erased.commitments && !erased.cleared && !erased.cards)
@@ -51,7 +67,11 @@ try {
       `Erased person "${personId}" from the talks domain: ${erased.talks} talks and ${erased.commitments} action points removed, ${erased.cleared} other records cleared, ${erased.cards} cards removed. Audited as person:${personId}.`,
     );
 } catch (error) {
-  console.error(`Could not erase: ${(error as Error).message}`);
+  // The transaction wrote nothing. A query's own error is its cause; the wrapper's message repeats the statement.
+  const cause = (error as { cause?: unknown }).cause;
+  console.error(
+    `Could not erase: ${(cause instanceof Error ? cause : (error as Error)).message}. Nothing was written.`,
+  );
   process.exitCode = 1;
 } finally {
   await closeDatabase();

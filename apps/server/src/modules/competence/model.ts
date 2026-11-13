@@ -52,13 +52,18 @@ export interface HoldingRecord {
   revokedBy: string | null;
 }
 export type HoldingPatch = Partial<Pick<HoldingRecord, 'state' | 'revokedAt' | 'revokedBy'>>;
-/** A person as the domain needs them: to key a row on the user name and to name them to the reader. */
+/**
+ * A person as the domain needs them: to key a row on the user name, to name them to the reader, and to erase only a
+ * person the source has deactivated (D117 item 3).
+ */
 export interface PersonRef {
   id: string;
   organisationId: string;
   name: string;
   /** Null for a person provisioned without one. */
   userName: string | null;
+  /** False once the source has deactivated the person (D68 item 1). */
+  enabled: boolean;
 }
 /** One audit row, written in the same transaction as the change. Metadata only: ids, dates, counts and kinds. */
 export interface CompetenceAudit {

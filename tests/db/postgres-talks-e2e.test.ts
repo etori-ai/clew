@@ -273,7 +273,16 @@ describe('the talks module on Postgres through the composition store (D96)', () 
     expect(row!.details).toEqual({ rounds: 1, talks: 1, commitments: 1 });
   });
 
+  test('an employee who is still active is refused, and nothing is erased or audited (D117 item 3)', async () => {
+    expect(await talks.erasePerson('operator:cli', employee)).toEqual({ refused: 'active' });
+    expect(await commitmentRow(id)).toMatchObject({ employeeId: employee, threadId });
+    expect((await card(threadId)).thread).toMatchObject({ personId: employee });
+    expect(await auditOf([`person:${employee}`])).toEqual([]);
+  });
+
   test('erasing the employee leaves no talk, action point or card of theirs in any table', async () => {
+    // The source deactivates the employee first, as the runbook asks.
+    await database().update(schema.people).set({ enabled: false }).where(eq(schema.people.id, employee));
     expect(await talks.erasePerson('operator:cli', employee)).toEqual({
       talks: 1,
       commitments: 1,

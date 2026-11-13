@@ -50,10 +50,13 @@ export const postgresUserReads = (db: () => Database = database): Omit<UserReads
     // be a row stored decomposed (NFD) beside a composed one; such a name names nobody rather than either of them.
     return new Map([...found].flatMap(([name, ids]) => (ids.size === 1 ? [[name, [...ids][0]!] as const] : [])));
   },
-  async exists(personId) {
-    if (personId.includes('\u0000')) return false;
-    const [row] = await db().select({ id: schema.people.id }).from(schema.people).where(eq(schema.people.id, personId));
-    return !!row;
+  async enabled(personId) {
+    if (personId.includes('\u0000')) return undefined;
+    const [row] = await db()
+      .select({ enabled: schema.people.enabled })
+      .from(schema.people)
+      .where(eq(schema.people.id, personId));
+    return row?.enabled;
   },
 });
 const userColumns = {

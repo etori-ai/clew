@@ -34,13 +34,14 @@ userReadsContract('memory', async () => {
   });
   // The people table: the actors and their colleague in one organisation, beside a person of another, a deactivated
   // one of theirs and two of theirs whose user names differ only in how they are composed.
-  const people: Array<{ id: string; organisationId: string; userName: string | null }> = [
+  const people: Array<{ id: string; organisationId: string; userName: string | null; enabled: boolean }> = [
     ...actors.map(a => ({
       id: a.id,
       organisationId: USER_READ_ORGANISATION,
       userName: userReadNames(actors)[a.id] ?? null,
+      enabled: true,
     })),
-    { id: colleague.id, organisationId: USER_READ_ORGANISATION, userName: null },
+    { id: colleague.id, organisationId: USER_READ_ORGANISATION, userName: null, enabled: true },
     ...others,
   ];
   return {
@@ -68,7 +69,7 @@ userReadsContract('memory', async () => {
         }
         return held;
       },
-      exists: async id => people.some(p => p.id === id),
+      enabled: async id => people.find(p => p.id === id)?.enabled,
     },
   };
 });

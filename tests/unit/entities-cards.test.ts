@@ -439,12 +439,15 @@ describe('the cards about a person', () => {
 });
 
 describe("erasing a person's key from the cards", () => {
+  /** The source deactivates the person: only then does an operator erase them (D117 item 3). */
+  const deactivate = (w: ReturnType<typeof world>, id: string) => void (w.people.state.users.get(id)!.enabled = false);
   test('every row and thread loses the subject, the text stays, and one audit row counts what was touched without the key', async () => {
     const w = world();
     await w.scan('hillevi', 'petra');
     const hillevi = w.people.persona('hillevi');
     const sick = await w.card('hillevi', 'sick');
     const before = (await w.store.readThread('hillevi', sick))!;
+    deactivate(w, 'erik');
     expect(await w.erasure.eraseSubject('operator:cli', person('erik'))).toEqual({
       cards: 1,
       rows: 1,
@@ -453,7 +456,7 @@ describe("erasing a person's key from the cards", () => {
     const after = (await w.store.readThread('hillevi', sick))!;
     expect(after.items).toEqual([row('sick:1', 'Erik Sund sjuk 10–11 nov')]);
     expect(after.updatedAt).toBe(before.updatedAt);
-    expect((await w.entities.detail(hillevi, 'person', 'erik'))?.cards).toEqual([]);
+    expect(await w.store.threadsNaming('hillevi', [person('erik')])).toEqual([]);
     expect((await w.entities.list(hillevi, 'person')).attention.map(a => a.key)).toEqual(['maria']);
     const audit = w.store.audit.filter(e => e.action === SUBJECT_ERASED);
     expect(audit).toEqual([
@@ -471,18 +474,19 @@ describe("erasing a person's key from the cards", () => {
     const w = world();
     await w.scan('hillevi');
     w.people.state.users.get('erik')!.userName = 'erik.sund';
+    deactivate(w, 'erik');
     expect(await w.erasure.eraseSubject('operator:cli', person('erik'))).toEqual({
       cards: 1,
       rows: 1,
       cardSubjects: 0,
     });
-    expect((await w.entities.detail(w.people.persona('hillevi'), 'person', 'erik'))?.cards).toEqual([]);
+    expect(await w.store.threadsNaming('hillevi', [person('erik')])).toEqual([]);
   });
   test('an id the people table does not hold, a user name among them, erases nothing and writes no audit row (R1)', async () => {
     const w = world();
     await w.scan('hillevi');
     for (const key of ['Erik.S', 'erik.s', 'nobody'])
-      expect(await w.erasure.eraseSubject('operator:cli', person(key))).toBeUndefined();
+      expect(await w.erasure.eraseSubject('operator:cli', person(key))).toEqual({ refused: 'unknown' });
     expect(w.store.audit.filter(e => e.action === SUBJECT_ERASED)).toEqual([]);
     expect((await w.entities.detail(w.people.persona('hillevi'), 'person', 'erik'))?.cards).toHaveLength(1);
     // A unit is erased by any id, since a removed unit may still be named; nothing named it here, and that is said.
@@ -492,6 +496,26 @@ describe("erasing a person's key from the cards", () => {
       cardSubjects: 0,
     });
     expect(w.store.audit.filter(e => e.action === SUBJECT_ERASED).map(e => e.subject)).toEqual(['unit:unit-gone']);
+  });
+  test('a person who is still active is refused: no card loses them and no audit row is written (D117 item 3)', async () => {
+    const w = world();
+    await w.scan('hillevi', 'petra');
+    const named = async () =>
+      (await w.store.threadsNaming('hillevi', [person('erik')])).map(n => n.thread.items.map(i => i.subject));
+    const before = await named();
+    expect(before).toEqual([[person('erik')]]);
+    expect(await w.erasure.eraseSubject('operator:cli', person('erik'))).toEqual({ refused: 'active' });
+    expect(await named()).toEqual(before);
+    expect(w.store.audit.filter(e => e.action === SUBJECT_ERASED)).toEqual([]);
+    expect((await w.entities.detail(w.people.persona('hillevi'), 'person', 'erik'))?.cards).toHaveLength(1);
+    // Once the source has deactivated him, the same call erases him; Bo, deactivated already, is erased at once.
+    deactivate(w, 'erik');
+    expect(await w.erasure.eraseSubject('operator:cli', person('erik'))).toEqual({
+      cards: 1,
+      rows: 1,
+      cardSubjects: 0,
+    });
+    expect(await w.erasure.eraseSubject('operator:cli', person('bo'))).toEqual({ cards: 1, rows: 1, cardSubjects: 0 });
   });
   test('a failure after the audit row leaves every subject and no audit row behind', async () => {
     const w = world();
@@ -504,11 +528,12 @@ describe("erasing a person's key from the cards", () => {
         }),
     };
     const erasure = subjectErasure({ store: failing, clock: () => new Date(T0), people: w.keys });
+    deactivate(w, 'anna');
     await expect(erasure.eraseSubject('operator:cli', person('anna'))).rejects.toThrow('after the audit row');
     expect(w.store.audit.filter(e => e.action === SUBJECT_ERASED)).toEqual([]);
     expect(
       (await w.store.threadsNaming('petra', [person('anna')])).map(n => n.thread.items.map(i => i.subject)),
     ).toEqual([[person('anna')]]);
-    expect((await w.entities.detail(w.people.persona('hillevi'), 'person', 'anna'))?.cards).toHaveLength(1);
+    expect(await w.store.threadsNaming('hillevi', [person('anna')])).toHaveLength(1);
   });
 });
