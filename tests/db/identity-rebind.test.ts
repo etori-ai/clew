@@ -1,5 +1,6 @@
 import { afterAll, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
+import { join } from 'node:path';
 import { and, eq, inArray, like } from 'drizzle-orm';
 import { database, schema } from '../../packages/db/src/index';
 import { RebindRefused, rebindIdentity, resolveSubject, signIn } from '../../packages/db/src/auth';
@@ -207,3 +208,30 @@ test('a name that moved while someone signed in for the first time is settled by
   expect((await signIn(issuer, 'sub-hanna', claim, prefix + ':hanna')).access?.person.id).toBe(hanna);
   expect((await resolveSubject(issuer, 'sub-tove'))?.person.id).toBe(tove);
 });
+test("a query that fails is answered by the script with the database's own message and that nothing was written", () => {
+  // The same server's maintenance database holds none of Clew's tables, so the script's first query fails there and
+  // the driver's error comes inside the ORM's, whose message is the statement and a line of its parameters: the
+  // person and the subject. The script says the driver's message alone, as the erase scripts do.
+  const elsewhere = new URL(process.env.DATABASE_URL!);
+  elsewhere.pathname = '/postgres';
+  const result = Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, '../../scripts/identity-rebind.ts'),
+      '--person',
+      anna,
+      '--subject',
+      'sub-anna-new',
+      '--operator',
+      operator,
+      '--issuer',
+      issuer,
+    ],
+    { env: { ...process.env, DATABASE_URL: elsewhere.href }, stdout: 'pipe', stderr: 'pipe' },
+  );
+  expect({ code: result.exitCode, out: result.stdout.toString(), err: result.stderr.toString().trim() }).toEqual({
+    code: 1,
+    out: '',
+    err: expect.stringMatching(/^Could not rebind: relation "[a-z_]+" does not exist\. Nothing was written\.$/),
+  });
+}, 60_000);

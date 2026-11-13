@@ -85,8 +85,12 @@ try {
           `. ${audited}`,
   );
 } catch (error) {
-  // A refusal (`RebindRefused`) or a failure: the transaction wrote nothing either way.
-  console.error(`Could not rebind: ${(error as Error).message}. Nothing was written.`);
+  // A refusal (`RebindRefused`) or a failure: the transaction wrote nothing either way. A query's own error is its
+  // cause; the wrapper's message repeats the statement and its parameters, the person and the subject among them.
+  const cause = (error as { cause?: unknown }).cause;
+  console.error(
+    `Could not rebind: ${(cause instanceof Error ? cause : (error as Error)).message}. Nothing was written.`,
+  );
   if (error instanceof RebindRefused && error.holder)
     console.error(
       `If that binding is wrong, release it first, once the account names agree in the identity provider and in Clew, then run this again: bun scripts/identity-rebind.ts --person ${error.holder} --release --operator "<your name>"`,
