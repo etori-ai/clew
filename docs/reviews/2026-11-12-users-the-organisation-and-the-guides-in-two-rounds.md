@@ -511,7 +511,8 @@ what they say.
   L13; the participant on a calendar proposal, N1, N3), and an upgrade test runs it on a database that holds data.
   Migration 0055 indexes the comparison with which Clew finds who holds a user name (D116 item 2): every lookup, at a
   refresh, a declared view, a search and a started propose among others, had read every person in the installation.
-  A test checks that an index serves it.
+  Each name is looked up through it on its own, so a long list does not read every person either, and a test checks
+  the plans for a few names and for many.
 
 **Found while fixing, and fixed.**
 

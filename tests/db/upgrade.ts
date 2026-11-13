@@ -44,7 +44,7 @@ export interface UpgradeDatabase {
 }
 /**
  * An empty database created beside the suite's, on the same server, to be migrated step by step and upgraded with rows
- * in it. The caller drops it when its tests end.
+ * in it, or migrated at once to hold rows whose statistics a test controls. The caller drops it when its tests end.
  */
 export async function upgradeDatabase(): Promise<UpgradeDatabase> {
   const name = 'clew_test_upgrade_' + randomUUID().replaceAll('-', '').slice(0, 12),

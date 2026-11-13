@@ -33,19 +33,25 @@ export const postgresUserReads = (db: () => Database = database): Omit<UserReads
     // Each name as asked beside the people of the reader's organisation it names: the same expression on both sides, in
     // the composed form (NFC) and without regard to case under ICU's root collation, so that a decomposed å is å and Å
     // and å are one letter on a database created with the C locale too (L12, L13). The holder's side is the expression
-    // of the index `auth_person_user_name_nfc`, which finds each name's holders without reading every person; keep the
-    // two alike (`tests/db/user-reads.test.ts`).
+    // of the index `auth_person_user_name_nfc`; keep the two alike. Each name is looked up on its own, in a lateral
+    // subquery that stops at two holders, which are enough to name nobody: as a join, a list of a few hundred names (a
+    // manager's refresh, a declared view) was planned as one read of every person in the installation
+    // (`tests/db/user-reads.test.ts`).
     const asked = sql.join(
       names.map(name => sql`(${name}::text)`),
       sql`, `,
     );
     const rows = await db().execute<{ asked: string; id: string }>(sql`
       select asked.name as asked, holder.id as id
-      from (values ${asked}) as asked(name)
-      join auth_person holder
-        on lower(normalize(holder.user_name, NFC) collate "und-x-icu")
-         = lower(normalize(asked.name, NFC) collate "und-x-icu")
-      where holder.organisation_id = (select reader.organisation_id from auth_person reader where reader.id = ${readerId})`);
+      from auth_person reader
+      cross join (values ${asked}) as asked(name)
+      cross join lateral (
+        select person.id from auth_person person
+        where lower(normalize(person.user_name, NFC) collate "und-x-icu")
+            = lower(normalize(asked.name, NFC) collate "und-x-icu")
+          and person.organisation_id = reader.organisation_id
+        limit 2) as holder
+      where reader.id = ${readerId}`);
     const found = new Map<string, Set<string>>();
     for (const r of rows) found.set(r.asked, (found.get(r.asked) ?? new Set<string>()).add(r.id));
     // The unique index folds case under ICU on any database, so two people whose spellings compare alike here can only

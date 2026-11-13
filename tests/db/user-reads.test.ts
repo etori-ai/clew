@@ -13,12 +13,14 @@ import {
   userReadsContract,
 } from '../user-reads-contract';
 import { cLocaleDatabase } from './c-locale';
+import { upgradeDatabase } from './upgrade';
 
 /**
  * The user reads on PostgreSQL: the contract on the suite's database, and, on a database created with the C locale,
  * where a plain lower() folds only A to Z, that the unique index folds under ICU and refuses Å and å as two people and
  * that who holds a user name matches across case and composition, a name held by a composed row and a decomposed (NFD)
- * one naming nobody (L13); and that who holds a name is looked up through an index, not by reading every person (D116).
+ * one naming nobody (L13); and, on a database of a thousand people per organisation, that who holds a name is looked up
+ * name by name through an index, for a few names or many, never by reading every person (D116).
  * Run with `bun run test:db` inside the devcontainer.
  */
 if (!process.env.DATABASE_URL)
@@ -128,14 +130,16 @@ test('Å and å are one letter to the user name index and to who holds a name, o
 interface PlanNode {
   'Node Type': string;
   'Relation Name'?: string;
+  'Index Name'?: string;
   'Index Cond'?: string;
   Plans?: PlanNode[];
 }
 const planNodes = (node: PlanNode): PlanNode[] => [node, ...(node.Plans ?? []).flatMap(planNodes)];
 
-test('who holds a user name is looked up through an index, not by reading every person in the installation (D116)', async () => {
-  // The statement `holders` sends, taken as it is sent. A refresh, a declared view, a search and a started propose each
-  // send it, so a lookup that read every person would cost more with every person the installation holds.
+test('who holds a user name is looked up name by name through an index, for a few names or many, never by reading every person in the installation (D116)', async () => {
+  // The statements `holders` sends for a few names and for many, taken as they are sent. A refresh asks at once for every
+  // name in the drafts of a manager's scan and a declared view for every subject in its output; a search, a started
+  // propose and the talks ask for a few.
   const sent: SQL[] = [];
   const recording = {
     execute: async (query: SQL) => {
@@ -143,18 +147,40 @@ test('who holds a user name is looked up through an index, not by reading every 
       return [];
     },
   } as unknown as Database;
-  await postgresUserReads(() => recording).holders(actors[0].id, ['åsa.öberg', 'ÅSA.ÖBERG'.normalize('NFD'), 'bo.ek']);
-  expect(sent).toHaveLength(1);
-  // A table of a few rows is read faster in full than through an index, so the planner is asked whether an index can
-  // serve the lookup at all: with sequential scans switched off, it still reads auth_person in full when none can.
-  const plan = await database().transaction(async tx => {
-    await tx.execute(sql`set local enable_seqscan = off`);
-    const [row] = await tx.execute<{ 'QUERY PLAN': unknown }>(sql`explain (format json) ${sent[0]}`);
-    const explained = row!['QUERY PLAN'];
-    return (typeof explained === 'string' ? JSON.parse(explained) : explained)[0].Plan as PlanNode;
-  });
-  const nodes = planNodes(plan);
-  expect(nodes.filter(n => n['Node Type'] === 'Seq Scan' && n['Relation Name'] === 'auth_person')).toEqual([]);
-  // The holders are found by the names asked, through a condition on the user name.
-  expect(nodes.some(n => n['Index Cond']?.includes('user_name'))).toBe(true);
-});
+  const asked = [
+    ['åsa.öberg', 'ÅSA.ÖBERG'.normalize('NFD'), 'bo.ek'],
+    Array.from({ length: 300 }, (_, n) => `person1.${n + 1}`),
+  ];
+  for (const names of asked) await postgresUserReads(() => recording).holders('reader', names);
+  expect(sent).toHaveLength(asked.length);
+  // The planner chooses by the table's statistics. The suite's people table holds a few rows, and its statistics are
+  // whatever autovacuum last took, those of an empty table included, by which reading every person costs least. The
+  // plans are therefore asked of a database of the test's own, with a thousand people in each of two organisations and
+  // its statistics taken, under the planner's default settings.
+  const own = await upgradeDatabase();
+  try {
+    await own.migrate();
+    await own.db.execute(sql`
+      insert into auth_person (id, organisation_id, name, user_name)
+      select 'person-' || o || '-' || n, 'organisation-' || o, 'Person ' || n, 'person' || o || '.' || n
+      from generate_series(1, 2) as o, generate_series(1, 1000) as n
+      union all select 'reader', 'organisation-1', 'Reader', 'reader'`);
+    await own.db.execute(sql`analyze auth_person`);
+    const plans = [];
+    for (const [i, statement] of sent.entries()) {
+      const [row] = await own.db.execute<{ 'QUERY PLAN': unknown }>(sql`explain (format json) ${statement}`);
+      const explained = row!['QUERY PLAN'];
+      const nodes = planNodes((typeof explained === 'string' ? JSON.parse(explained) : explained)[0].Plan as PlanNode);
+      plans.push({
+        names: asked[i]!.length,
+        // A node that reads the people of every organisation.
+        everyPerson: nodes.some(n => n['Node Type'] === 'Seq Scan' && n['Relation Name'] === 'auth_person'),
+        // The holders found through the index on the comparison, by a condition on the name asked.
+        byIndex: nodes.some(n => n['Index Name'] === 'auth_person_user_name_nfc' && n['Index Cond'] !== undefined),
+      });
+    }
+    expect(plans).toEqual(asked.map(names => ({ names: names.length, everyPerson: false, byIndex: true })));
+  } finally {
+    await own.drop();
+  }
+}, 30_000);
