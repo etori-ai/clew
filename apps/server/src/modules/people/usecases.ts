@@ -83,8 +83,9 @@ export interface OrganisationRules {
  * fact that produced it: the person is locked before their memberships are read, and the rows are read after that lock
  * or under the organisation's hold on them. An unchanged grant writes no audit row; a changed one writes `grant.derived`
  * on the person with the new unit, role and capabilities, or `removed: true` when the person has no unit left (fail
- * closed). A `protected` key never reaches these tables (D93), so the derived flag stays false and is never written to
- * the audit row.
+ * closed). Placements that change while the grant stays (a second unit, a manager's role on one) write
+ * `assignments.derived` with the placements instead (D99). A `protected` key never reaches these tables (D93), so the
+ * derived flag stays false and is never written to the audit row.
  */
 export function provisioningUsecases(deps: { store: ProvisionStore }) {
   async function deriveWithin(
