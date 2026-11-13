@@ -172,7 +172,7 @@ export function createConnector({
         : typeof hmeWarnFrom === 'number' && total < hmeWarnFrom
           ? 'alert'
           : 'warn';
-  const SICK_WORD = { warn: 'Bevaka', alert: 'Åtgärd krävs' };
+  const SICK_WORD = { ok: 'Inom målet', warn: 'Bevaka', alert: 'Åtgärd krävs' };
   const ECONOMY_WORD = { ok: 'Klarar budget', alert: 'Mot underskott' };
   const HME_WORD = { ok: 'Över mål', warn: 'Bevaka', alert: 'Åtgärd krävs' };
 
@@ -299,7 +299,7 @@ export function createConnector({
           ...(pick.total !== undefined ? { total: pick.total } : {}),
           ...(word ? { watch: word } : {}),
           ...(pick.lastYear !== undefined ? { lastYear: pick.lastYear } : {}),
-          ...(pick.change !== undefined ? { change: pick.change } : {}),
+          ...(pick.change !== undefined ? { change: `${signed(pick.change)} procentenheter` } : {}),
           ...(pick.headcount !== undefined ? { headcount: pick.headcount } : {}),
           ...(pick.note ? { note: pick.note } : {}),
         });
@@ -400,7 +400,7 @@ export function createConnector({
           ref: refOf(unit),
           unit: nameOf(actor, unit),
           month: e.month,
-          deviation: e.deviation,
+          deviation: `${signed(e.deviation)} mnkr`,
           ...(e.assessment ? { assessment: e.assessment } : {}),
           forecast: e.forecast,
           budget: e.budget,
@@ -473,7 +473,7 @@ export function createConnector({
           year: String(h.year),
           ...(h.total !== undefined ? { total: h.total } : {}),
           ...(h.assessment ? { assessment: h.assessment } : {}),
-          ...(h.change !== undefined ? { change: h.change } : {}),
+          ...(h.change !== undefined ? { change: signed(h.change, String) } : {}),
           ...(h.note ? { note: h.note } : {}),
         });
       }
