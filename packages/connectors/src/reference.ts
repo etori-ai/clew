@@ -550,7 +550,7 @@ export const RULES: Rule[] = [
     fields: ['capabilities[].about', 'capabilities[].name', 'capabilities[].kinds', 'header.capability'],
     enforced: 'loader',
     decision: 'D97',
-    text: '`<id>.search`, `<id>.fetch`, `<id>.errands`, `<id>.talks`, `<id>.commitments`, `<id>.news`, a capability with `kinds` and the read the header names have shapes of their own and cannot declare `about`.',
+    text: '`<id>.search`, `<id>.fetch`, `<id>.errands`, `<id>.requests`, `<id>.talks`, `<id>.commitments`, `<id>.news`, a capability with `kinds` and the read the header names have shapes of their own and cannot declare `about`.',
   },
   {
     id: 'installation-on-3',
@@ -627,6 +627,14 @@ export const RULES: Rule[] = [
     enforced: 'call',
     decision: 'D26',
     text: "A `read` named `<id>.search` with `kinds` is a source of Clew's composite search: its output is a `SearchOutput`, and `<id>.fetch` takes one of its refs back and returns one `SearchHit`.",
+  },
+  {
+    id: 'requests-profile',
+    title: 'requests makes a source of what the person ordered or reported',
+    fields: ['capabilities[].name', 'capabilities[].view.open.capability'],
+    enforced: 'call',
+    decision: 'D123',
+    text: 'A `read` named `<id>.requests` that takes `{}` lists what the person ordered or reported in a service desk and waits for: its output is a `RequestsOutput`, rows of `ref` (`request:<id>:…`), `label` (the number and the type, never a title, a description or a name), `state` (`waiting-on-me`, `new`, `active` or `closed`), `status` (your own word), `since` (when it was ordered or reported) and an optional `expectedAt` and `link`, and nothing else. It is not an errand list: `<id>.errands` is for the people who handle cases, this one for the person who waits. Clew asks every request source in the person\'s scope as the person, at once under a budget, and lists the rows as `clew.requests`, what waits on the person first, then what is open from the oldest, then what is closed from the newest, at most 200: the first five under "Beställningar och felanmälningar" on Hem and the whole list on its own page. An answer that is not a `RequestsOutput` counts as no answer, and a source that does not answer is named under the rows. A row opens the read the view\'s `open` names (by convention `<id>.request`) beside the page. While `clew.requests` is registered the model is offered it and never the per-source read.',
   },
   {
     id: 'news-profile',

@@ -303,6 +303,12 @@ export const SEARCH_CONNECTOR = 'clew';
 /** A capability is an errand source when it is named `<id>.errands` and is a read (D35, D89); the composite `clew.errands` is never one itself. */
 export const isErrandSource = (c: Pick<Capability, 'name' | 'kind'>, connectorId: string) =>
   c.kind === 'read' && c.name === connectorId + '.errands' && connectorId !== SEARCH_CONNECTOR;
+/**
+ * A capability is a request source when it is named `<id>.requests` and is a read (D123): what a person ordered or
+ * reported in a service desk. Kept apart from the errand profile; the composite `clew.requests` is never one itself.
+ */
+export const isRequestSource = (c: Pick<Capability, 'name' | 'kind'>, connectorId: string) =>
+  c.kind === 'read' && c.name === connectorId + '.requests' && connectorId !== SEARCH_CONNECTOR;
 /** A capability is a news source when it is named `<id>.news` and is a read (D112, amended 2026-11-11); the composite `clew.news` is never one itself. */
 export const isNewsSource = (c: Pick<Capability, 'name' | 'kind'>, connectorId: string) =>
   c.kind === 'read' && c.name === connectorId + '.news' && connectorId !== SEARCH_CONNECTOR;
@@ -1239,6 +1245,21 @@ export class Registry implements HoldingsReader {
       }));
   }
   /**
+   * The request sources a person may use (D123): every `<id>.requests` read in scope, with the read a row of it opens.
+   * As in `errandSources`, the name is tested before the scope: `clew.requests` is in scope only for a person with a
+   * source, so its own scope asks this, and must never be asked from here.
+   */
+  requestSources(actor: Actor) {
+    return [...this.capabilities.values()]
+      .filter(c => isRequestSource(c.capability, c.connector.id) && !!this.allowed(actor, c.capability.name))
+      .map(c => ({
+        name: c.capability.name,
+        connectorId: c.connector.id,
+        source: c.connector.source,
+        ...(this.opens(actor, c.capability) ? { open: this.opens(actor, c.capability)! } : {}),
+      }));
+  }
+  /**
    * The news sources a person may read (D112, amended 2026-11-11): every `<id>.news` read in scope, with the read a row
    * of it opens in Clew. As in `errandSources`, the name is tested before the scope: `clew.news` is in scope only for a
    * person with a source, so its own scope asks this, and must never be asked from here.
@@ -1550,8 +1571,9 @@ export class Registry implements HoldingsReader {
   /**
    * Tool definitions for the model: `model: true` capabilities the person may call, from connectors whose tools are on (D8).
    * The per-connector search sources are left out while the composite search is registered, so the model sees one search tool (D26).
-   * The per-connector errand lists are left out the same way while `clew.errands` is registered (D35 item 4), and the
-   * per-connector news lists while `clew.news` is (D112, amended 2026-11-11).
+   * The per-connector errand lists are left out the same way while `clew.errands` is registered (D35 item 4), the
+   * per-connector request lists while `clew.requests` is (D123), and the per-connector news lists while `clew.news` is
+   * (D112, amended 2026-11-11).
    * The talks profile and its composites are never tools, registered or not: no read of that domain reaches a model (D96 item 6).
    * A read about an entity is never a tool either (D97 item 7): the loader refuses `model: true` on one, and this holds
    * whatever a registration says. Clew's own connectors are governed here as any other (D122 item 4): the connector's
@@ -1560,6 +1582,7 @@ export class Registry implements HoldingsReader {
   tools(actor: Actor) {
     const composite = this.capabilities.has(SEARCH_CONNECTOR + '.search');
     const errands = this.capabilities.has(SEARCH_CONNECTOR + '.errands');
+    const requests = this.capabilities.has(SEARCH_CONNECTOR + '.requests');
     const news = this.capabilities.has(SEARCH_CONNECTOR + '.news');
     // An execute's effect read (D112) says what a decision will write; the loader holds it to model: false, and this holds whatever a registration says.
     const effects = new Set(
@@ -1573,6 +1596,7 @@ export class Registry implements HoldingsReader {
       })
       .filter(c => !(composite && isSearchSource(c.capability, c.connector.id)))
       .filter(c => !(errands && isErrandSource(c.capability, c.connector.id)))
+      .filter(c => !(requests && isRequestSource(c.capability, c.connector.id)))
       .filter(c => !(news && isNewsSource(c.capability, c.connector.id)))
       .filter(c => !isTalkSource(c.capability, c.connector.id) && !isCommitmentSource(c.capability, c.connector.id))
       .filter(c => c.capability.name !== TALK_COMPOSITE && c.capability.name !== COMMITMENT_COMPOSITE)

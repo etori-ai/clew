@@ -19,6 +19,8 @@ import { searchConnector, type AnswerCards } from '../modules/search/connector';
 import { searchUsecases } from '../modules/search/usecases';
 import { errandCapabilities } from '../modules/errands/capabilities';
 import { errandUsecases } from '../modules/errands/usecases';
+import { requestCapabilities } from '../modules/requests/capabilities';
+import { requestUsecases } from '../modules/requests/usecases';
 import { newsCapabilities } from '../modules/news/capabilities';
 import { newsUsecases } from '../modules/news/usecases';
 import { talksConnector } from '../modules/talks/capabilities';
@@ -53,6 +55,8 @@ export const answerCards: AnswerCards = {};
 const internal = [userCapabilities(userReads)];
 /** The combined errand list (D35 item 4, D89) lists its case systems from the registry the same way. */
 const errands = errandUsecases({ sources: actor => registry.errandSources(actor) });
+/** The combined request list (D123), what a person ordered or reported, lists its service desks from the registry the same way. */
+const requests = requestUsecases({ sources: actor => registry.requestSources(actor) });
 /** The combined news list (D112, amended 2026-11-11) lists its news sources from the registry the same way. */
 const news = newsUsecases({ sources: actor => registry.newsSources(actor) });
 /**
@@ -63,17 +67,24 @@ const news = newsUsecases({ sources: actor => registry.newsSources(actor) });
 const talkSeam = talkSeamUsecases({ source: actor => registry.talkSource(actor), directory: talkDirectory });
 /**
  * Clew's own connector is assembled here, the only file that names connectors: the composite search owns the id and the
- * question area, the errand list adds its read and its area, the news list its read, the talks seam its two reads. The
- * modules never import each other (D20).
+ * question area, the errand list adds its read and its area, the request list its read and its area, the news list its
+ * read, the talks seam its two reads. The modules never import each other (D20).
  */
 const core = searchConnector(search, answerCards);
 const errandPart = errandCapabilities(errands, actor => registry.errandSources(actor).length > 0);
+const requestPart = requestCapabilities(requests, actor => registry.requestSources(actor).length > 0);
 const newsPart = newsCapabilities(news, actor => registry.newsSources(actor).length > 0);
 const talkPart = talkSeamCapabilities(talkSeam, actor => !!registry.talkSource(actor));
 const clewConnector = {
   ...core,
-  areas: [...core.areas, ...errandPart.areas],
-  capabilities: [...core.capabilities, ...errandPart.capabilities, ...newsPart.capabilities, ...talkPart.capabilities],
+  areas: [...core.areas, ...errandPart.areas, ...requestPart.areas],
+  capabilities: [
+    ...core.capabilities,
+    ...errandPart.capabilities,
+    ...requestPart.capabilities,
+    ...newsPart.capabilities,
+    ...talkPart.capabilities,
+  ],
 };
 // The built-in talks module (D96 item 9) is bundled, not internal: it gets an administrable row, enabled by default,
 // and an administrator can switch it off so that another system answers the profile.

@@ -781,6 +781,10 @@ export const VALUE_WORDS: Readonly<Record<string, string>> = {
   unknown: 'okänt',
   vab: 'vab',
   'waiting-safety-rep': 'väntar på skyddsombud',
+  // Where something a person ordered or reported stands (D123); `closed` is above.
+  'waiting-on-me': 'väntar på dig',
+  new: 'ny',
+  active: 'pågår',
 };
 /** A value's word (`VALUE_WORDS`), or the value as given. */
 export const valueWord = (value: string): string =>
@@ -1086,6 +1090,78 @@ const calendarDay = Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$', maxLength: 
 const userName = Type.String({ minLength: 1, maxLength: 512 });
 /** A link into the answering system. Absolute http(s) only, so a page can put it in an `href`. */
 const sourceLink = Type.String({ maxLength: 1000, pattern: '^https?://[^\\s]+$' });
+/**
+ * Where something a person ordered or reported stands, seen from the person who waits for it (D123): whose move it is,
+ * in words every service desk can answer in, so that lists from several systems are ordered together. The names are the
+ * errand states' where the meaning is the same; a request has no `waiting-on-others`, since everything open waits on the
+ * desk. A list is drawn with what waits on the person first, then what is open (`new` or `active`), then `closed`.
+ */
+export const REQUEST_STATES = ['waiting-on-me', 'new', 'active', 'closed'] as const;
+export const RequestState = literals(REQUEST_STATES, {
+  description:
+    '`waiting-on-me`: the desk has asked the person something, or waits for them to confirm or collect. `new`: received, nobody has started. `active`: being handled, a delivery on its way included. `closed`: delivered, solved or withdrawn.',
+});
+export type RequestState = (typeof REQUEST_STATES)[number];
+/**
+ * One thing a person ordered or reported, as a service desk's connector lists it for that person (D123): what Clew
+ * needs to list and order it, and nothing that names a person. The free text is in the connector's own view of one
+ * request, read live.
+ */
+export const RequestRowSchema = object(
+  {
+    ref: Type.String({
+      minLength: 1,
+      maxLength: 200,
+      pattern: '^request:[a-z][a-z0-9-]*:[A-Za-z0-9:_.-]+$',
+      description:
+        "`request:<connector id>:<the system's own identity>`, stable. What the read the view's `open` names takes back. Clew treats it as opaque.",
+    }),
+    label: Type.String({
+      minLength: 1,
+      maxLength: 200,
+      description:
+        'The request number and the category or type display name ("SD-4711 · Dator, Felanmälan"). Never the title, a description, a name or an account: it is the only text of the request a list, a model or a conversation may carry.',
+    }),
+    state: RequestState,
+    status: Type.String({ minLength: 1, maxLength: 80, description: "Swedish. The system's own name for the status." }),
+    since: { ...instant, description: 'When the person ordered or reported it.' },
+    expectedAt: Type.Optional(
+      Type.Union([calendarDay, instant], {
+        description: 'When it is expected to be delivered or done, a day or an instant, where the system promises one.',
+      }),
+    ),
+    link: Type.Optional({ ...sourceLink, description: 'The request in its own system.' }),
+  },
+  "One thing a person ordered or reported in a service desk's list (D123).",
+);
+export type RequestRow = Static<typeof RequestRowSchema>;
+/** What `<id>.requests` and the composite `clew.requests` take: nothing. The source lists what the person ordered or reported. */
+export const RequestsInputSchema = object({});
+export type RequestsInput = Static<typeof RequestsInputSchema>;
+/** What `<id>.requests` returns. */
+export const RequestsOutputSchema = object(
+  { rows: Type.Array(RequestRowSchema, { maxItems: 500 }) },
+  'What `<id>.requests` returns: what the person ordered or reported in this system, as the system lets them see it.',
+);
+export type RequestsOutput = Static<typeof RequestsOutputSchema>;
+/**
+ * What the composite `clew.requests` returns (D123): every system's rows in one list, each marked with the connector it
+ * came from and the view that opens it there, and every system's part in the answer. `unanswered` names the systems
+ * that did not answer, as a person reads them.
+ */
+export const RequestsResultSchema = object({
+  rows: Type.Array(
+    object({
+      ...RequestRowSchema.properties,
+      connector: Type.String(),
+      system: Type.String(),
+      view: Type.Optional(ViewRefSchema),
+    }),
+  ),
+  systems: Type.Array(SearchSourceSchema),
+  unanswered: Type.Array(Type.String()),
+});
+export type RequestsResult = Static<typeof RequestsResultSchema>;
 /**
  * Where one person stands in the round of development talks (D96 item 2): no talk yet, a talk in the calendar, or held.
  * The order here is the order a list is drawn in.

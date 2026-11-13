@@ -25,6 +25,8 @@ export const fixtureViews = (): ViewEntry[] => [
   ),
   { capability: 'clew.search', title: 'Källor' },
   { capability: 'clew.errands', title: 'Mina ärenden', kind: 'list' },
+  { capability: 'clew.requests', title: 'Beställningar och felanmälningar', kind: 'list' },
+  { capability: 'servicedesk.request', title: 'Beställning', kind: 'detail' },
   { capability: 'clew.news', title: 'Nyheter', kind: 'list' },
   { capability: 'calendar.today', title: 'Dagens möten' },
   { capability: 'calendar.week', title: 'Hela veckan' },

@@ -62,6 +62,13 @@ describe('side panel labels (3.1.2)', () => {
       'Giltigt',
     ]);
     expect(VALUE_WORDS.expired).toBe('utgånget');
+    // Where something a person ordered or reported stands (D123).
+    expect(['waiting-on-me', 'new', 'active', 'closed'].map(state => statusWord('Läge', state))).toEqual([
+      'Väntar på dig',
+      'Ny',
+      'Pågår',
+      'Stängd',
+    ]);
   });
   test('a day is short in a row and long in a sentence or among a record’s facts, one rule', () => {
     expect(shortDay('2026-10-13')).toBe('13 okt. 2026');

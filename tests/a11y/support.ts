@@ -115,6 +115,7 @@ import {
   matrixAnswer,
 } from './competence';
 import { errandsOutput, errandsSpec, smErrandOutput, smErrandSpec } from './errands';
+import { deskRequestOutput, deskRequestSpec, requestsOutput, requestsSpec } from './requests';
 import { manifestReference } from '../../packages/connectors/src/reference';
 import { previewManifest } from '../../packages/connectors/src/preview';
 import { parseManifest } from '../../packages/connectors/src/remote';
@@ -963,6 +964,11 @@ export class MockApi {
     if (path === '/cap/clew.errands') return json({ output: errandsOutput, source: 'Startsidan', view: errandsSpec });
     if (path === '/cap/sm.errand')
       return json({ output: smErrandOutput, source: 'Ärendesystemet', view: smErrandSpec });
+    // What the person ordered or reported (D123), and one request in the service desk a row came from.
+    if (path === '/cap/clew.requests')
+      return json({ output: requestsOutput, source: 'Startsidan', view: requestsSpec });
+    if (path === '/cap/servicedesk.request')
+      return json({ output: deskRequestOutput, source: 'IT-servicedesken', view: deskRequestSpec });
     // The combined news list (D112, amended 2026-11-11), refused without a news source as the registry refuses an
     // out-of-scope read, and one piece of news opened in the source it came from.
     if (path === '/cap/clew.news')

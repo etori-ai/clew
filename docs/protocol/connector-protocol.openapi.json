@@ -1098,7 +1098,7 @@
                   "type": "string",
                   "pattern": "^[a-z][a-z0-9-]*\\.[a-zA-Z][a-zA-Z0-9]*$",
                   "maxLength": 80,
-                  "description": "`<connector id>.<verb>`, stable. Two names are profiles Clew combines across connectors: `<id>.search` (D26, see `kinds`), and `<id>.errands` (D35, D89), a read that takes `{ view?: \"assigned\" | \"reported\" }` and answers an ErrandsOutput with the errands the case system lets the person see. Its view's `open` names the read that shows one errand, by convention `<id>.errand`. Clew lists every `<id>.errands` in the person's scope as `clew.errands`. A third is combined the same way: `<id>.news` (D112), a read that takes `{}` and answers a NewsOutput with the news the person may read; its view's `open`, when a row should open in Clew rather than by its `link`, names the read that shows one item, by convention `<id>.newsItem`. Clew lists every `<id>.news` in the person's scope as `clew.news`, newest first, on Hem and as \"Alla nyheter\"; a source that fails contributes nothing. Two more are the talks profile (D96), answered by one system per installation rather than combined: `<id>.talks`, a read that takes `{}` and answers a TalksOutput (the open round of development talks and one row per person the reader manages, keyed on the SCIM `userName`), and `<id>.commitments`, a read that takes `{ person?: <userName> }` and answers a CommitmentsOutput (that employee's action points for a manager of their unit, or without `person` the ones the reader owns and the ones about the reader). `<id>.talks` may be limited to managers; `<id>.commitments` should be callable by everyone who owns action points or is their subject. Clew's built-in `talks` connector answers while either of its reads is enabled for the person; otherwise the one connector whose `<id>.talks` or `<id>.commitments` the person may call does, and with several none does. Neither is ever offered to the model."
+                  "description": "`<connector id>.<verb>`, stable. Four names are profiles Clew combines across connectors: `<id>.search`, `<id>.errands`, `<id>.requests` and `<id>.news`. `<id>.search` (D26) is a search source, see `kinds`. `<id>.errands` (D35, D89) is a read that takes `{ view?: \"assigned\" | \"reported\" }` and answers an ErrandsOutput with the errands the case system lets the person see. Its view's `open` names the read that shows one errand, by convention `<id>.errand`. Clew lists every `<id>.errands` in the person's scope as `clew.errands`. `<id>.requests` (D123) is kept apart from it: a read that takes `{}` and answers a RequestsOutput with what the person ordered or reported in a service desk and waits for; its view's `open` names the read that shows one request, by convention `<id>.request`. Clew lists every `<id>.requests` in the person's scope as `clew.requests`, what waits on the person first, under \"Beställningar och felanmälningar\" on Hem. `<id>.news` (D112) is a read that takes `{}` and answers a NewsOutput with the news the person may read; its view's `open`, when a row should open in Clew rather than by its `link`, names the read that shows one item, by convention `<id>.newsItem`. Clew lists every `<id>.news` in the person's scope as `clew.news`, newest first, on Hem and as \"Alla nyheter\"; a source that fails contributes nothing. Two more are the talks profile (D96), answered by one system per installation rather than combined: `<id>.talks`, a read that takes `{}` and answers a TalksOutput (the open round of development talks and one row per person the reader manages, keyed on the SCIM `userName`), and `<id>.commitments`, a read that takes `{ person?: <userName> }` and answers a CommitmentsOutput (that employee's action points for a manager of their unit, or without `person` the ones the reader owns and the ones about the reader). `<id>.talks` may be limited to managers; `<id>.commitments` should be callable by everyone who owns action points or is their subject. Clew's built-in `talks` connector answers while either of its reads is enabled for the person; otherwise the one connector whose `<id>.talks` or `<id>.commitments` the person may call does, and with several none does. Neither is ever offered to the model."
                 },
                 "kind": {
                   "anyOf": [
@@ -5921,6 +5921,182 @@
         },
         "additionalProperties": false,
         "description": "What `<id>.errands` returns: the person's errands in this system, as the system lets them see them."
+      },
+      "RequestRow": {
+        "type": "object",
+        "required": [
+          "ref",
+          "label",
+          "state",
+          "status",
+          "since"
+        ],
+        "properties": {
+          "ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^request:[a-z][a-z0-9-]*:[A-Za-z0-9:_.-]+$",
+            "description": "`request:<connector id>:<the system's own identity>`, stable. What the read the view's `open` names takes back. Clew treats it as opaque."
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "The request number and the category or type display name (\"SD-4711 · Dator, Felanmälan\"). Never the title, a description, a name or an account: it is the only text of the request a list, a model or a conversation may carry."
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "waiting-on-me"
+              },
+              {
+                "type": "string",
+                "const": "new"
+              },
+              {
+                "type": "string",
+                "const": "active"
+              },
+              {
+                "type": "string",
+                "const": "closed"
+              }
+            ],
+            "description": "`waiting-on-me`: the desk has asked the person something, or waits for them to confirm or collect. `new`: received, nobody has started. `active`: being handled, a delivery on its way included. `closed`: delivered, solved or withdrawn."
+          },
+          "status": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "Swedish. The system's own name for the status."
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 40,
+            "description": "When the person ordered or reported it."
+          },
+          "expectedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "maxLength": 10
+              },
+              {
+                "type": "string",
+                "format": "date-time",
+                "maxLength": 40
+              }
+            ],
+            "description": "When it is expected to be delivered or done, a day or an instant, where the system promises one."
+          },
+          "link": {
+            "type": "string",
+            "maxLength": 1000,
+            "pattern": "^https?://[^\\s]+$",
+            "description": "The request in its own system."
+          }
+        },
+        "additionalProperties": false,
+        "description": "One thing a person ordered or reported in a service desk's list (D123)."
+      },
+      "RequestsOutput": {
+        "type": "object",
+        "required": [
+          "rows"
+        ],
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "ref",
+                "label",
+                "state",
+                "status",
+                "since"
+              ],
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "^request:[a-z][a-z0-9-]*:[A-Za-z0-9:_.-]+$",
+                  "description": "`request:<connector id>:<the system's own identity>`, stable. What the read the view's `open` names takes back. Clew treats it as opaque."
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "The request number and the category or type display name (\"SD-4711 · Dator, Felanmälan\"). Never the title, a description, a name or an account: it is the only text of the request a list, a model or a conversation may carry."
+                },
+                "state": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": "waiting-on-me"
+                    },
+                    {
+                      "type": "string",
+                      "const": "new"
+                    },
+                    {
+                      "type": "string",
+                      "const": "active"
+                    },
+                    {
+                      "type": "string",
+                      "const": "closed"
+                    }
+                  ],
+                  "description": "`waiting-on-me`: the desk has asked the person something, or waits for them to confirm or collect. `new`: received, nobody has started. `active`: being handled, a delivery on its way included. `closed`: delivered, solved or withdrawn."
+                },
+                "status": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80,
+                  "description": "Swedish. The system's own name for the status."
+                },
+                "since": {
+                  "type": "string",
+                  "format": "date-time",
+                  "maxLength": 40,
+                  "description": "When the person ordered or reported it."
+                },
+                "expectedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                      "maxLength": 10
+                    },
+                    {
+                      "type": "string",
+                      "format": "date-time",
+                      "maxLength": 40
+                    }
+                  ],
+                  "description": "When it is expected to be delivered or done, a day or an instant, where the system promises one."
+                },
+                "link": {
+                  "type": "string",
+                  "maxLength": 1000,
+                  "pattern": "^https?://[^\\s]+$",
+                  "description": "The request in its own system."
+                }
+              },
+              "additionalProperties": false,
+              "description": "One thing a person ordered or reported in a service desk's list (D123)."
+            },
+            "maxItems": 500
+          }
+        },
+        "additionalProperties": false,
+        "description": "What `<id>.requests` returns: what the person ordered or reported in this system, as the system lets them see it."
       },
       "NewsRow": {
         "type": "object",
