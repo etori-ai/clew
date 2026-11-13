@@ -28,7 +28,7 @@ or the network, and CI (`.github/workflows/check.yml`) runs it without the stack
 | The installation's theme file and appearance (D98) | Example tests of the format, the contrast pairs and the base table against Astryx's resolved tokens; scenario tests of the use cases with their audit rows on the memory store; the store contract on both adapters; the public routes over the memory store | `tests/unit/theme-file.test.ts`, `appearance-admin.test.ts`, `appearance-routes.test.ts`, `tests/appearance-store-contract.ts` | `bun run check`, `bun run test:db` |
 | Durable state across the database and worker/source boundary | Real PostgreSQL contracts and Node/DBOS workflows against an independent synthetic fault source; timer cancellation and a killed instance's takeover; workflow starts committed with their intents before the engine launches (D86); a job's watch steps through real `jobWatch` workflows; a night's `scheduledJob`, a failing one included, run through the live `scheduledJobRunner` as `composition/jobs.ts` binds it; deferred attention released by its job's workflow; a live step whose statement fails, retried without its values; `scripts/jobs-check.ts` runs a job on the independent fixture connectors against the dev stack | `tests/db/`, `apps/server/tests/execution-runtime.test.ts`, `apps/server/tests/timer-runtime.test.ts`, `apps/server/tests/watch-runtime.test.ts`, `apps/server/tests/job-runtime.test.ts`, `apps/server/tests/attention-runtime.test.ts`, `apps/server/tests/failed-step-runtime.test.ts` | `bun run test:db`, `bun run test:durability`, CI `reliability.yml` |
 | What a failure leaves in a log line, a span or the durable engine's warning (D91) | Example tests of the logger's serializer with a statement built as drizzle builds it; real failing statements on PostgreSQL; a mounted app with a recording tracer; a live step on the engine | `tests/unit/logging.test.ts`, `tests/db/postgres-error-logging.test.ts`, `apps/server/tests/request-spans.test.ts`, `apps/server/tests/failed-step-runtime.test.ts` | `bun run check` (the unit suite and `bun run test:node`), `bun run test:db`, `bun run test:durability` |
-| Upgrade and restore | Isolated databases starting at migration 0019, conservative upgrade, repeated migration and evidence comparison after pg_dump/pg_restore; an upgrade through 0054 on a database of its own, created beside the suite's and dropped afterwards: rows seeded at the migration before it, then a probe migration that writes, 0054 and a probe that alters the tables 0054 writes, in the one transaction Drizzle runs them in | `scripts/recovery-rehearsal.ts`, `tests/db/person-keys-upgrade.test.ts` | [operations runbook](../maintainers/reliability-operations.md), CI `reliability.yml`, `bun run test:db` |
+| Upgrade and restore | Isolated databases starting at migration 0019, conservative upgrade, repeated migration and evidence comparison after pg_dump/pg_restore; an upgrade through 0053 and one through 0054, each on a database of its own, created beside the suite's and dropped afterwards: rows seeded at the migration before it, then the migration and a probe that alters the tables it writes (for 0054 also a probe before it that writes), in the one transaction Drizzle runs them in; a database that applied 0053 before its fix runs nothing again | `scripts/recovery-rehearsal.ts`, `tests/db/upgrade.ts`, `tests/db/person-directory-upgrade.test.ts`, `tests/db/person-keys-upgrade.test.ts` | [operations runbook](../maintainers/reliability-operations.md), CI `reliability.yml`, `bun run test:db` |
 
 ## Microsoft 365 without Microsoft
 
@@ -92,8 +92,21 @@ contract (`tests/scim-store-contract.ts`) runs on it as a third store, after mem
 the suite's database (`tests/db/postgres-provisioning.test.ts`); its case for a word and a value composed or
 decomposed (NFC and NFD), in the people list and the group picker, runs on all three.
 `tests/db/user-name-form.test.ts` and `tests/db/user-reads.test.ts` use it too, and `tests/db/identity-binding.test.ts`
-creates its own; `tests/db/person-keys-upgrade.test.ts` creates a database of its own to upgrade. So the role in
+creates its own; the upgrade tests create a database of their own to upgrade (`upgradeDatabase()` in `tests/db/upgrade.ts`). So the role in
 `DATABASE_URL` needs `CREATEDB` for `bun run test:db`; the devcontainer's `clew` is the image's superuser and has it.
+
+A migration that writes rows gets an upgrade test in `tests/db`. `upgradeDatabase()` creates an empty database beside
+the suite's, and `migrate(entries.slice(0, position(entries, '<name>')))` brings it to the migration before. The test
+seeds rows that the migration's writes touch, then upgrades in one call that runs the migration and a probe migration
+after it, and nothing later. The probe is an entry `{ ...target, idx: target.idx + 1, when: target.when + 1, tag:
+'upgrade_probe_after' }` whose text goes in `migrate`'s second argument; it alters every table the migration writes, so
+it fails with 55006 if the migration left a change signal pending ([migrations that write
+rows](../maintainers/reliability-operations.md#migrations-that-write-rows)). A probe before the migration that writes
+such a row also checks that the migration's `SET CONSTRAINTS ALL IMMEDIATE` comes first, as `person-keys-upgrade` does.
+Do not upgrade to the newest migration with `migrate()`: a later migration that writes the same tables would change
+what the test asserts. Only a test with rows shows a pending-trigger-events failure, because a write that matches no
+row queues nothing. `tests/db/person-directory-upgrade.test.ts` also checks that drizzle-orm's migrator compares no
+hash; if a drizzle-orm upgrade makes that case fail, editing an applied migration is no longer safe.
 
 A race between two writes is tested twice. In the unit suite the other write runs at the moment the use case takes its
 lock, through a store wrapped to run it there, as the K4 cases in `tests/unit/users-admin.test.ts` do for a mapping

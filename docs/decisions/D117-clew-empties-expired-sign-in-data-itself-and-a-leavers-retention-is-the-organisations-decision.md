@@ -123,6 +123,15 @@ retention means nothing without one.
   refuses, so the erasure would fail.
 - Reading a user name that equals the person's id as none: it would take the user name from active people whose id is
   their user name, such as those personas.
+- Closing the cards about an erased person whose actions a source wrote, or refusing the erasure while one is open
+  (decided 2026-11-13, when the documents were found to promise more than the code did). A card a source pushed is the
+  source's work: its next scan draws it again or settles it, so a card Clew closed would come back. One started from
+  the person's menu with a `propose` holds the source's own action and the input the source wrote, under the source's
+  own key, which the source still holds: the erasure is of Clew's record, and what the source holds stays the
+  source's (item 2). Either card is also the record of what the person who holds it did, and its text stays like any
+  other text (Limits). Refusing the erasure would make it wait on work in other people's streams, which the operator
+  cannot see. By the time an organisation's retention says that a record goes, such a card has normally long been
+  decided.
 
 The clean-up runs at 03:00 Stockholm time because that hour exists on both days the clocks change. A failed night
 completes rather than throws: a job that throws is claimed again by its workflow every few minutes for as long as the

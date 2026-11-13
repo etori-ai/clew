@@ -2828,6 +2828,7 @@
       "headings": [
         "Inspect without exposing source data",
         "Upgrade from the previous scheduler",
+        "Migrations that write rows",
         "The ledger queue",
         "Restore safely",
         "Provisioning",

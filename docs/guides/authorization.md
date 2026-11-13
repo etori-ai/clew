@@ -34,9 +34,9 @@ Return 401 for invalid credentials. Fail closed when the trusted key set cannot 
 
 Declare each exact target in manifest `uses`, for example `"uses": ["calendar.today"]`. After verifying the incoming request, extract its `callback` claim and use **that grant** as the bearer on `POST {CLEW_URL}/api/connectors/call`, with a `CallbackRequest` body such as `{ "name": "calendar.today", "input": {} }`.
 
-Do not send the original request assertion as a callback credential. Clew accepts only the callback audience `clew:connector-callback`, rebuilds current person/assignment access, checks the origin and target, verifies declared dependencies, and validates the call. Callbacks allow reads and proposals, never executes. Circular calls and chains beyond the bound of eight are refused. Call within the request's two-minute authority window; do not persist the grant for a background job.
+Do not send the original request assertion as a callback credential. Clew accepts only the callback audience `clew:connector-callback`, rebuilds current person/assignment access, checks the origin and target, verifies declared dependencies, and validates the call. Callbacks allow reads and proposals, never executes. Circular calls and chains beyond the bound of eight are refused. Clew answers a refusal in the contract's shape: 404 `not-found` for a target the person may not know of, exactly as for one nobody registered; 403 `denied` for the person's scope, an execute or the target's own refusal; 400 `invalid` for input or a circular call; 503 `unavailable` when the target is down or answers what Clew cannot verify. Call within the request's two-minute authority window; do not persist the grant for a background job.
 
-See [hello's callback implementation](../../connectors/hello/connector.mjs) and [Clew's callback route](../../apps/server/src/routes/connectors.ts). `callbackFor` decodes a claim; it is safe to use only after the containing assertion was verified.
+See [hello's callback implementation](../../connectors/hello/connector.mjs) and [Clew's callback route](../../apps/server/src/routes/connector-callback.ts). `callbackFor` decodes a claim; it is safe to use only after the containing assertion was verified.
 
 ## Reads about a person or a unit
 

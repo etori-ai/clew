@@ -38,11 +38,11 @@ The web half: one action dialog (`apps/web/src/components/action-dialog.tsx`, As
 
 ## Cross-connector dependencies
 
-**Works in this checkout.** Exact string targets in `uses`, enforced calls and output validation.
+**Works in this checkout.** Exact string targets in `uses`, enforced calls and output validation. The callback answers in the published contract's codes, from the error's protocol code (`CapabilityError.code`): 404 `not-found` for a hidden or unknown target alike, 403 `denied`, 400 `invalid` and 503 `unavailable`.
 
 **Limits and pending work.** No `deprecated` field, semantic compatibility classifier, dependent health UI or checker `--clew` option. The D37 dependency document is a proposal with a different example shape.
 
-**Evidence.** [Registry](../../../packages/connectors/src/index.ts), [schema](../../protocol/connector-protocol.schema.json), [D37 dependencies](../../decisions/D37-connectors-declare-what-they-use-and-a-capability-name-is-its-contract.md)
+**Evidence.** [Registry](../../../packages/connectors/src/index.ts), [callback route](../../../apps/server/src/routes/connector-callback.ts) and [its tests](../../../tests/unit/connector-callback.test.ts), [schema](../../protocol/connector-protocol.schema.json), [D37 dependencies](../../decisions/D37-connectors-declare-what-they-use-and-a-capability-name-is-its-contract.md)
 
 ## Change notifications
 
