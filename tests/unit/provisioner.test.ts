@@ -1609,6 +1609,78 @@ describe('the synthetic provisioner', () => {
       expect(log).toContain('group unit:e was removed already');
       expect(holders(store, 'unit:e')).toBeUndefined();
     });
+    for (const cleanup of [
+      'refused removal',
+      'group missed between pages',
+      'refused verification',
+      'successful fallback',
+    ] as const)
+      test(`a returner's current memberships decide reactivation after ${cleanup}`, async () => {
+        const { store, client } = stack();
+        const units = [unit('a', 'A')];
+        const anna = someone('e-1', 'anna', 'a', { groups: ['ad:old'] });
+        const bo = someone('e-2', 'bo', 'a');
+        const oldGroup = { id: 'ad:old', label: 'Former duty' };
+        await reconcile(client, source(units, [anna, bo], [oldGroup]), scope);
+        const annaId = ekonomiId(store, anna.externalId),
+          boId = ekonomiId(store, bo.externalId);
+        const oldId = [...store.state.groups.values()].find(g => g.externalId === oldGroup.id)!.id;
+        await client.request('DELETE', '/Users/' + annaId);
+        await client.request('DELETE', '/Users/' + boId);
+        // Bo also belongs to a group managed by another writer. His return is independent of Anna's cleanup.
+        await client.request('POST', '/Groups', {
+          displayName: 'Other directory',
+          externalId: 'other:team',
+          members: [{ value: boId }],
+        });
+        const returning = source(units, [{ ...anna, groups: [] }, bo], cleanup === 'refused removal' ? [oldGroup] : []);
+        const partial: ScimClient = {
+          async request(method, path, body) {
+            if (cleanup === 'refused removal' && method === 'PATCH' && path === '/Groups/' + oldId)
+              throw new ScimClientError(400, 'invalidValue', 'Membership removal refused.', null);
+            if (cleanup === 'successful fallback' && method === 'DELETE' && path === '/Groups/' + oldId)
+              throw new ScimClientError(409, undefined, 'Group retained.', null);
+            if (
+              cleanup === 'refused verification' &&
+              method === 'GET' &&
+              path === `/Users/${annaId}?attributes=groups.value`
+            )
+              throw new ScimClientError(400, 'invalidValue', 'Memberships unavailable.', null);
+            const result = await client.request(method, path, body);
+            if (
+              cleanup === 'group missed between pages' &&
+              method === 'GET' &&
+              path.startsWith('/Groups?') &&
+              path.includes('startIndex=')
+            )
+              return {
+                ...result,
+                body: {
+                  ...result.body,
+                  Resources: result.body.Resources.filter((g: { id: string }) => g.id !== oldId),
+                },
+              };
+            return result;
+          },
+        };
+        const summary = await reconcile(partial, returning, scope, { force: true });
+        const verified = cleanup === 'successful fallback';
+        expect(store.state.members.has(memberKey(oldId, annaId))).toBe(
+          cleanup === 'refused removal' || cleanup === 'group missed between pages',
+        );
+        expect(summary.refused.map(person => person.externalId)).toEqual(verified ? [] : [anna.externalId]);
+        expect(store.state.users.get(annaId)?.enabled).toBe(verified);
+        expect(store.state.users.get(boId)?.enabled).toBe(true);
+        expect(
+          store.state.audit
+            .filter(row => row.action === 'scim.user.reactivated')
+            .map(row => row.subject)
+            .sort(),
+        ).toEqual((verified ? ['person:' + annaId, 'person:' + boId] : ['person:' + boId]).sort());
+        await reconcile(client, returning, scope, { force: true });
+        expect(store.state.users.get(annaId)?.enabled).toBe(true);
+        expect(store.state.members.has(memberKey(oldId, annaId))).toBe(false);
+      });
     test('somebody the read misses who returns is made active only once the duties the source withdrew are gone', async () => {
       const { store, client } = stack();
       const units = ['a', 'b', 'c', 'd', 'e'].map(id => unit(id, 'Enhet ' + id));

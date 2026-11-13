@@ -2,6 +2,7 @@ import {
   UNIT_KEY,
   MANAGER_KEY,
   CAPABILITY_KEY,
+  readScimGroupKey,
   reservedScimGroupKey,
 } from '../../packages/contracts/src/scim-group-key';
 import { ScimClientError, type ScimClient } from './client';
@@ -673,8 +674,7 @@ async function reconcile(
         placements.set(externalId, [...(placements.get(externalId) ?? []), unitOf(g.externalId)]);
   /** Whether no unit the source places this person on was written above, so that nothing can place them this run. */
   const nowhere = (externalId: string) => placements.get(externalId)?.every(key => absent.has(key)) === true;
-  /** Somebody the run does not place as the source has them, reported with the people Clew refused. */
-  const notPlaced = (user: PlannedUser, detail: string) => {
+  const refusePerson = (user: PlannedUser, detail: string) => {
     summary.refused.push({ externalId: user.externalId, userName: user.body.userName, detail });
     options.log?.(`refused ${user.body.userName}: ${detail}`);
   };
@@ -708,7 +708,7 @@ async function reconcile(
         // nothing. The read may have missed them, so they are looked for first.
         const found = await findUser(user.externalId);
         if (!found) {
-          notPlaced(
+          refusePerson(
             user,
             'Not created: no unit the source places this person on was written, so they are not placed yet.',
           );
@@ -736,8 +736,7 @@ async function reconcile(
       else summary.created++;
     } catch (error) {
       if (!refusal(error)) throw error;
-      summary.refused.push({ externalId: user.externalId, userName: user.body.userName, detail: error.message });
-      options.log?.(`refused ${user.body.userName}: ${error.message}`);
+      refusePerson(user, error.message);
     }
   };
   for (const user of users) {
@@ -825,7 +824,7 @@ async function reconcile(
   // Somebody new whom no unit took is created on none, and said so; a later run places them once one does.
   for (const user of users)
     if (run.postedUsers.has(user.externalId) && unplaced.has(ids.get(user.externalId) ?? ''))
-      notPlaced(user, 'Created, but not placed: no unit the source places this person on took them.');
+      refusePerson(user, 'Created, but not placed: no unit the source places this person on took them.');
   for (const trim of trims) {
     const lost = isUnit(trim.key) ? trim.lost.filter(id => !unplaced.has(id)) : trim.lost;
     for (const operations of [
@@ -908,15 +907,44 @@ async function reconcile(
       await keep(group!, 'Clew did not remove it');
     }
   }
-  // 6. A returning person regains access only after expired duties have been removed, and only with a row Clew takes.
-  // One that no unit the source places them on has taken stays inactive until one does: active, they would be on no
-  // unit.
-  for (const { id, user } of rehires) {
-    if (unplaced.has(id)) {
-      notPlaced(user, 'Left inactive: no unit the source places this person on took them, so they are not placed yet.');
-      continue;
+  // 6. A refused removal or a group missed between pages can leave an old duty in place.
+  // Read the returner's actual memberships before enabling them. Other writers own their own group keys.
+  async function rehireRefusal(id: string, externalId: string): Promise<string | undefined> {
+    const noPlacement =
+      'Left inactive: no unit the source places this person on took them, so they are not placed yet.';
+    if (unplaced.has(id)) return noPlacement;
+    const { body } = await client.request('GET', `/Users/${encodeURIComponent(id)}?attributes=groups.value`);
+    const memberships: ReadonlyArray<{ value: string }> = body.groups;
+    let hasPlacement = false;
+    for (const membership of memberships) {
+      let key: string | undefined;
+      try {
+        const group = await client.request(
+          'GET',
+          `/Groups/${encodeURIComponent(membership.value)}?attributes=externalId`,
+        );
+        key = group.body.externalId;
+      } catch (error) {
+        if (error instanceof ScimClientError && error.status === 404) continue;
+        throw error;
+      }
+      if (!key || !ownsGroup(key)) continue;
+      if (!planned.get(key)?.members.includes(externalId))
+        return `Left inactive: the source withdrew membership of '${key}', but the person is still a member.`;
+      const prefix = readScimGroupKey(key)?.prefix;
+      if (prefix === UNIT_KEY || prefix === MANAGER_KEY) hasPlacement = true;
     }
-    await sendPerson(user, id);
+    if (!hasPlacement) return noPlacement;
+  }
+  for (const { id, user } of rehires) {
+    try {
+      const reason = await rehireRefusal(id, user.externalId);
+      if (reason) refusePerson(user, reason);
+      else await sendPerson(user, id);
+    } catch (error) {
+      if (!refusal(error)) throw error;
+      refusePerson(user, `Left inactive: could not verify group memberships. ${error.message}`);
+    }
   }
   // The groups as the first complete read found them, less what this attempt could not create or had to keep.
   summary.groupsCreated = groups.filter(g => !first.held.has(g.externalId) && !unwritten.has(g.externalId)).length;
