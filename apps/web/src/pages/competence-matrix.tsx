@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps,
 import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  COMPETENCE_MATRIX_COLUMNS,
   SKILL_KIND,
   type CompetenceApproval,
   type CompetenceDecision,
@@ -22,6 +23,7 @@ import {
   Card,
   Dialog,
   DialogHeader,
+  DropdownMenu,
   EmptyState,
   HStack,
   Heading,
@@ -33,8 +35,8 @@ import {
   ListItem,
   MetadataList,
   MetadataListItem,
-  MoreMenu,
   Selector,
+  Switch,
   Table,
   Text,
   Toolbar,
@@ -54,6 +56,8 @@ import {
   approvalPageHref,
   approveHref,
   approveOf,
+  attentionHref,
+  attentionOnly,
   matrixFileHref,
   matrixHref,
   matrixInputOf,
@@ -80,12 +84,16 @@ import { panelBesideQuery } from '../components/panel';
 import { DialogFrame } from '../components/dialog-frame';
 import { LevelField, RegisterHolding, levelLabel } from '../components/register-holding';
 import {
-  CellStatus,
+  CellMark,
   CompetenceHeader,
   PersonRequirementDialog,
   cellDay,
+  cellPhrases,
+  cellSentence,
   instantDay,
   levelsWords,
+  managesFrom,
+  needsAttention,
   reasonWords,
 } from './competence-parts';
 
@@ -94,9 +102,13 @@ const COLUMN = 1440 - 2 * 32;
 /** The page's own padding on each side of the matrix, which the matrix's least width does not count. */
 const PADDING = 32;
 const TITLE_ID = 'matris-rubrik';
-/** The pinned column of names, and each competence's column: as wide as a badge, its day and the cell's menu. */
-const PERSON_WIDTH = pixel(220),
-  CELL_WIDTH = proportional(1, { minWidth: 176 });
+/**
+ * The pinned column of names, and each competence's column: as wide as a cell's one control, its longest word a badge
+ * ("Går ut snart") or a skill's level ("Grundläggande"): at 1280 px six columns are in view where a cell of a word, a day
+ * and a menu of its own left four, a row is 37 px high where it was 59, and thirty columns scroll past the names.
+ */
+const PERSON_WIDTH = pixel(200),
+  CELL_WIDTH = proportional(1, { minWidth: 124 });
 /** The least width the matrix needs as a table with this many columns, as Astryx's Table works it out. */
 const matrixMinWidth = (columns: number) =>
   resolveColumnWidths([
@@ -104,10 +116,10 @@ const matrixMinWidth = (columns: number) =>
     ...Array.from({ length: columns }, (_, i) => ({ key: `type-${i}`, width: CELL_WIDTH })),
   ]).tableMinWidth;
 const cellKey = (personId: string, typeId: string) => personId + '\n' + typeId;
-/** The key of a registration's own "Granska" in the list of what waits, among the page's controls. */
+/** The key of a registration's own way in, its name, in the list of what waits, among the page's controls. */
 const awaitingKey = (holdingId: string) => 'awaiting\n' + holdingId;
 const AWAITING_ID = 'matris-att-granska';
-type MenuItems = ComponentProps<typeof MoreMenu>['items'];
+type MenuItems = ComponentProps<typeof DropdownMenu>['items'];
 /** A write a cell's menu asks to confirm: revoking the holding that decides, or removing the requirement on the person. */
 interface Confirming {
   kind: 'revoke' | 'requirement';
@@ -128,19 +140,20 @@ interface CellContext {
 }
 
 /**
- * One cell's menu (Astryx's `MoreMenu`, as a row of the `table` template carries one): titled with what requires the
- * competence of the person, and holding what the manager can do there. "Registrera intyg" opens the registration over
- * the page with the person and the competence in the address (`register`, `competence`); "Återkalla intyget" is offered
+ * One cell, one control (D108 item 11): Astryx's `DropdownMenu` on a quiet button that draws where the person stands in
+ * one word (`CellMark`) and is named for the person, the competence and all of it ("Anna Lindqvist, HLR: går ut snart,
+ * 10 jan. 2027"), the same words its tooltip shows a pointer. Its menu is titled with the details and what requires the
+ * competence of the person, and holds what the manager can do there. "Registrera intyg" opens the registration over the
+ * page with the person and the competence in the address (`register`, `competence`); "Återkalla intyget" is offered
  * where the holding that decides was registered in Clew, never for one copied from a source; "Ta bort kravet" where the
  * competence is required of the person by the manager's own requirement. Where the person's own registration of the
  * competence waits for the manager's decision (D108 item 7), "Granska" comes first and opens the decision over the page
  * with the registration in the address (`approve`). In a skill's column (D120) a skill the person holds has "Bekräfta
  * nivå" ("Ändra nivå" once confirmed), which opens the confirmation over the page with the skill in the address
  * (`validate`), in place of a registration, since a person holds one skill of a type; where none is held,
- * "Registrera färdighet". The trigger is the cell's control, which takes the focus back when a dialog or a confirmation
- * opened from it closes.
+ * "Registrera färdighet". The control takes the focus back when a dialog or a confirmation opened from it closes.
  */
-function CellMenu({
+function CellControl({
   row,
   column,
   cell,
@@ -154,11 +167,14 @@ function CellMenu({
   const own = cell.through.find(r => r.on === 'person' && r.requirementId)?.requirementId;
   const skill = column.kind === SKILL_KIND;
   const heldSkill = skill && cell.holdingId !== undefined && cell.level !== undefined ? cell.holdingId : null;
+  const phrases = cellPhrases(cell, skill);
+  const reason = cell.required ? reasonWords(cell) : null;
+  const name = `${row.name}, ${column.name}: ${cellSentence(phrases)}`;
   const items: MenuItems = [
     {
       type: 'section',
       id: 'cell',
-      title: reasonWords(cell),
+      title: [...phrases, ...(reason ? [reason] : [])].join(' · '),
       items: [
         ...(cell.pending
           ? [
@@ -204,29 +220,35 @@ function CellMenu({
     },
   ];
   return (
-    <MoreMenu
-      ref={ctx.control(row.personId, column.typeId)}
-      label={`Åtgärder: ${column.name} för ${row.name}`}
-      size="sm"
-      alignment="end"
+    <DropdownMenu
+      button={{
+        ref: ctx.control(row.personId, column.typeId),
+        label: name,
+        tooltip: name,
+        size: 'sm',
+        variant: 'ghost',
+        children: <CellMark cell={cell} skill={skill} />,
+      }}
+      hasChevron={false}
       presentation="adaptive"
+      alignment="start"
+      menuWidth={280}
       items={items}
     />
   );
 }
 
 /**
- * A column's heading in two lines, as Personal draws one: the competence, and its area under it; for a skill (D120 item
- * 4), the least level asked of the people shown under that.
+ * A column's heading: the competence in up to two lines, cut with its whole name a tooltip away where it is longer (its
+ * cells name it in full too); for a skill (D120 item 4), the least level asked of the people shown under it.
  */
 const columnHeader = (c: CompetenceMatrixColumn) => (
   <VStack gap={0}>
-    <Text weight="semibold">{c.name}</Text>
-    <Text type="supporting" weight="normal">
-      {c.area}
+    <Text weight="semibold" maxLines={2} textWrap="wrap">
+      {c.name}
     </Text>
     {c.levels && c.levels.length > 0 && (
-      <Text type="supporting" weight="normal">
+      <Text type="supporting" weight="normal" maxLines={2} textWrap="wrap">
         {levelsWords(c.levels)}
       </Text>
     )}
@@ -239,8 +261,8 @@ interface TableRow extends Record<string, unknown> {
 
 /**
  * The matrix as Astryx's `table-comparison` template draws one: the people down the side in a column pinned while the
- * competences scroll past it (`useTableStickyColumns`), one column per competence, a grid of dividers, and each cell
- * the person's status in words with its menu.
+ * competences scroll past it (`useTableStickyColumns`), one narrow column per competence, a grid of dividers, and each
+ * cell one control that says where the person stands in a word and opens its details and actions.
  */
 function MatrixTable({ data, ctx }: { data: CompetenceMatrixOutput; ctx: CellContext }) {
   const location = useLocation();
@@ -275,16 +297,12 @@ function MatrixTable({ data, ctx }: { data: CompetenceMatrixOutput; ctx: CellCon
             key: `type:${c.typeId}`,
             header: columnHeader(c),
             width: CELL_WIDTH,
-            renderCell: (r: TableRow) => (
-              <HStack gap={2} vAlign="center" justify="between">
-                <CellStatus cell={r.row.cells[i]!} skill={c.kind === SKILL_KIND} />
-                <CellMenu row={r.row} column={c} cell={r.row.cells[i]!} ctx={ctx} />
-              </HStack>
-            ),
+            renderCell: (r: TableRow) => <CellControl row={r.row} column={c} cell={r.row.cells[i]!} ctx={ctx} />,
           })),
         ]}
-        density="balanced"
+        density="compact"
         dividers="grid"
+        verticalAlign="top"
         hasHover
         plugins={{ sticky, rowHeaders }}
       />
@@ -295,7 +313,7 @@ function MatrixTable({ data, ctx }: { data: CompetenceMatrixOutput; ctx: CellCon
 /**
  * The matrix where the table does not fit (a phone, and beside the panel where the table would not keep its columns'
  * widths), as Personal draws its rows there: one person per item, their name leading to their page, and their cells as
- * the item's content, a short list of each competence with its status and its menu.
+ * the item's content, a short list of each competence with its details and its control.
  */
 function MatrixList({ data, ctx }: { data: CompetenceMatrixOutput; ctx: CellContext }) {
   const location = useLocation();
@@ -314,15 +332,20 @@ function MatrixList({ data, ctx }: { data: CompetenceMatrixOutput; ctx: CellCont
             }
             description={
               <List aria-label={`Kompetens för ${row.name}`} density="compact" edge="flush">
-                {data.columns.map((c, i) => (
-                  <ListItem
-                    key={c.typeId}
-                    align="start"
-                    label={<Text>{c.name}</Text>}
-                    description={<CellStatus cell={row.cells[i]!} skill={c.kind === SKILL_KIND} />}
-                    endContent={<CellMenu row={row} column={c} cell={row.cells[i]!} ctx={ctx} />}
-                  />
-                ))}
+                {data.columns.map((c, i) => {
+                  const cell = row.cells[i]!;
+                  return (
+                    <ListItem
+                      key={c.typeId}
+                      align="start"
+                      label={<Text>{c.name}</Text>}
+                      description={
+                        <Text type="supporting">{cellPhrases(cell, c.kind === SKILL_KIND).join(' · ')}</Text>
+                      }
+                      endContent={<CellControl row={row} column={c} cell={cell} ctx={ctx} />}
+                    />
+                  );
+                })}
               </List>
             }
           />
@@ -333,48 +356,96 @@ function MatrixList({ data, ctx }: { data: CompetenceMatrixOutput; ctx: CellCont
 }
 
 /**
- * The choice of the columns where more competences are required than ten (D108 item 11): the sets by area, then by
- * position, each part of a set larger than ten its own choice. A choice rewrites the address in place, as a view's own
- * controls do, so a reload and a link show the same columns and one step back leaves the page.
+ * The matrix narrowed to what needs the manager (`only=attention`): the competences where a cell does, and the people
+ * with such a cell among them, from what the read answered.
  */
-function SetChoice({ data, onChoose }: { data: CompetenceMatrixOutput; onChoose: (g: CompetenceMatrixGroup) => void }) {
-  if (!data.groups.length) return null;
+function needing(data: CompetenceMatrixOutput): CompetenceMatrixOutput {
+  const columns = data.columns.flatMap((c, i) => (data.rows.some(r => needsAttention(r.cells[i]!)) ? [i] : []));
+  return {
+    ...data,
+    columns: columns.map(i => data.columns[i]!),
+    rows: data.rows
+      .filter(r => columns.some(i => needsAttention(r.cells[i]!)))
+      .map(r => ({ ...r, cells: columns.map(i => r.cells[i]!) })),
+  };
+}
+
+/** The value of the choice that shows every required competence, where they all fit (`by` left out). */
+const EVERY = 'every';
+/**
+ * The ways to narrow the matrix, both in the address and rewritten in place, as a view's own controls do, so a reload
+ * and a link show the same and one step back leaves the page. The set (D108 item 11): every required competence where
+ * they fit, else none, then each area and each position, a part of a set larger than fits its own choice. And "Visa bara
+ * det som behöver åtgärdas" (`only=attention`), with a status that says how much is left when it is on.
+ */
+function MatrixChoice({
+  data,
+  attention,
+  shown,
+  onChoose,
+  onAttention,
+}: {
+  data: CompetenceMatrixOutput;
+  attention: boolean;
+  shown: CompetenceMatrixOutput;
+  onChoose: (g: CompetenceMatrixGroup | null) => void;
+  onAttention: (on: boolean) => void;
+}) {
+  const every = data.required <= COMPETENCE_MATRIX_COLUMNS;
   const chosen = data.groups.findIndex(g => g.by === data.by && g.part === data.part);
   const named = (g: CompetenceMatrixGroup) => (g.parts > 1 ? `${g.label} (${g.part} av ${g.parts})` : g.label);
-  const options = (['area', 'position'] as const)
-    .map(kind => ({
-      type: 'section' as const,
-      title: kind === 'area' ? 'Område' : 'Befattning',
-      options: data.groups.flatMap((g, i) =>
-        g.kind === kind
-          ? [
-              {
-                value: String(i),
-                label: named(g),
-                description: g.types === 1 ? '1 kompetens' : `${g.types} kompetenser`,
-              },
-            ]
-          : [],
-      ),
-    }))
-    .filter(s => s.options.length > 0);
+  const count = (n: number) => (n === 1 ? '1 kompetens' : `${n} kompetenser`);
+  const options = [
+    ...(every
+      ? [
+          {
+            type: 'section' as const,
+            title: 'Alla',
+            options: [{ value: EVERY, label: 'Alla kompetenser', description: count(data.required) }],
+          },
+        ]
+      : []),
+    ...(['area', 'position'] as const)
+      .map(kind => ({
+        type: 'section' as const,
+        title: kind === 'area' ? 'Område' : 'Befattning',
+        options: data.groups.flatMap((g, i) =>
+          g.kind === kind ? [{ value: String(i), label: named(g), description: count(g.types) }] : [],
+        ),
+      }))
+      .filter(section => section.options.length > 0),
+  ];
+  const people = (n: number) => (n === 1 ? '1 medarbetare' : `${n} medarbetare`);
   return (
-    <HStack>
-      <Selector
-        label="Visa kompetenser för"
-        description={`${data.columns.length} av ${data.required} kompetenser som krävs visas.`}
-        variant="secondary"
-        options={options}
-        value={String(chosen) as never}
-        onChange={value => {
-          const g = data.groups[Number(value)];
-          if (g) onChoose(g);
-        }}
-        presentation="adaptive"
-        hasSearch={data.groups.length > 8}
-        searchPlaceholder="Sök område eller befattning"
-        emptySearchText="Inget matchar"
-      />
+    <HStack gap={4} wrap="wrap" vAlign="end">
+      {data.groups.length > 0 && (
+        <Selector
+          label="Visa kompetenser för"
+          description={`${data.columns.length} av ${data.required} kompetenser som krävs visas.`}
+          variant="secondary"
+          options={options}
+          value={(chosen >= 0 ? String(chosen) : EVERY) as never}
+          onChange={value => onChoose(value === EVERY ? null : (data.groups[Number(value)] ?? null))}
+          presentation="adaptive"
+          hasSearch={data.groups.length > 8}
+          searchPlaceholder="Sök område eller befattning"
+          emptySearchText="Inget matchar"
+        />
+      )}
+      <VStack gap={1} hAlign="start">
+        <Switch
+          label="Visa bara det som behöver åtgärdas"
+          description="Saknas, utgånget, går ut snart eller att granska."
+          value={attention}
+          onChange={next => onAttention(next)}
+        />
+        {/* How much is left, read out when it changes (4.1.3); nothing while the matrix is not narrowed. */}
+        <Text type="supporting" role="status">
+          {attention
+            ? `${shown.rows.length} av ${people(data.rows.length)} och ${shown.columns.length} av ${count(data.columns.length)} visas.`
+            : ''}
+        </Text>
+      </VStack>
     </HStack>
   );
 }
@@ -388,7 +459,8 @@ const awaitingDays = (a: CompetenceMatrixAwaiting) =>
  * Every registration of the reader's reports' own that waits for their decision (D108 item 7), above the matrix: a type
  * nobody requires has no column, so this list is where each is within reach whatever its type. Astryx's card with a
  * toolbar and a list, as the person's own page draws what waits, the count in the toolbar told as it changes; each row
- * the person, the competence and its dates, and "Granska", which opens the decision over the page (`approve`).
+ * the person, the competence and its dates, the person's name its way in: it opens the decision over the page
+ * (`approve`), and takes the focus back when the decision is left without one.
  */
 function Awaiting({
   rows,
@@ -400,7 +472,7 @@ function Awaiting({
   rows: CompetenceMatrixAwaiting[];
   search: URLSearchParams;
   headingRef: Ref<HTMLHeadingElement>;
-  control: (key: string) => (el: HTMLButtonElement | null) => void;
+  control: (key: string) => (el: HTMLAnchorElement | HTMLButtonElement | null) => void;
   onReview: (row: CompetenceMatrixAwaiting) => void;
 }) {
   return (
@@ -424,23 +496,22 @@ function Awaiting({
         {rows.map(row => (
           <ListItem
             key={row.holdingId}
-            label={<Text weight="semibold">{row.name}</Text>}
+            label={
+              <Link
+                ref={control(awaitingKey(row.holdingId))}
+                href={approveHref(row.holdingId, search)}
+                weight="semibold"
+                hasUnderline
+                onClick={() => onReview(row)}
+              >
+                {row.name}
+              </Link>
+            }
             description={
               <VStack gap={0} hAlign="start">
                 <Text>{row.competence}</Text>
                 <Text type="supporting">{awaitingDays(row)}</Text>
               </VStack>
-            }
-            endContent={
-              <Button
-                ref={control(awaitingKey(row.holdingId))}
-                size="sm"
-                variant="secondary"
-                label="Granska"
-                aria-label={`Granska ${row.competence} för ${row.name}`}
-                href={approveHref(row.holdingId, search)}
-                onClick={() => onReview(row)}
-              />
             }
           />
         ))}
@@ -628,8 +699,10 @@ function SkillDialog({
  * Medarbetarnas kompetens at `/competence/matrix` (D108 item 11, D120 item 8), the second page of the place Kompetens:
  * the people who report to the reader against the competences required of at least one of them, built on Astryx's
  * `table-comparison` template. It is no declared view: its columns are chosen, and a cell writes (D95 item 4). At most
- * ten columns at a time; where more are required, the reader chooses a set by area or by position, and the set is in
- * the address (`by`, `part`). Each cell says where the person stands in words, never by colour alone, and its menu
+ * `COMPETENCE_MATRIX_COLUMNS` columns at a time; the reader narrows them to a set by area or by position, which is
+ * chosen for them where more are required, and to what needs them (`only=attention`), both in the address (`by`,
+ * `part`, `only`). Each cell is one control that says where the person stands in a word, never by colour alone, is
+ * named with all of it, and opens its details and a menu that
  * registers a certificate with the competence chosen (`register`, `competence`), revokes a holding registered in Clew
  * and removes the manager's own requirement on the person, each removal asked for in Astryx's confirmation first. The
  * header adds a requirement for one person in a dialog named in the address (`requirement=new`) and downloads the
@@ -637,11 +710,13 @@ function SkillDialog({
  * is listed above the matrix, whatever its type, and one of a required type is noted in its cell too; either opens the
  * decision in a dialog named in the address (`approve`), as the approval's card in the reader's stream does, and a
  * decision replaces the address so Back does not come to it again; an address for a registration the reader may not
- * decide, or one decided already, opens nothing and the page says why. A skill's cell (D120) says the level held in words and its menu confirms it in a dialog named
- * in the address (`validate`), which an address the reader may not confirm opens nothing of, as for an approval. Closing a dialog or a confirmation gives the focus back to the cell's control, or to the
- * page's heading where the cell has gone with what was removed or where no cell opened it (D83 rule 7). The table gives way to a list where it does
- * not fit, on a phone and beside the panel, as Personal does, so at 320 px nothing scrolls sideways; on a wider window the
- * table scrolls sideways inside its own region, the names pinned, as the template's does.
+ * decide, or one decided already, opens nothing and the page says why. A skill's cell (D120) says the level held and
+ * its menu confirms it in a dialog named in the address (`validate`), which an address the reader may not confirm opens
+ * nothing of, as for an approval. Closing a dialog or a confirmation gives the focus back to the cell's control, or to
+ * the page's heading where the cell has gone with what was removed or where no cell opened it (D83 rule 7). The table
+ * gives way to a list where it does not fit, on a phone and beside the panel, as Personal does, so at 320 px nothing
+ * scrolls sideways; on a wider window the table scrolls sideways inside its own region, the names pinned, as the
+ * template's does.
  */
 export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin: boolean }) {
   usePageTitle('Medarbetarnas kompetens');
@@ -658,8 +733,11 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
   const matrixQ = useQuery(competenceMatrixQuery(input));
   const typesQ = useQuery(competenceTypesQuery);
   const panel = usePagePanel({ overlayOnly: short });
-  const data = matrixQ.data;
+  const read = matrixQ.data;
   const off = matrixQ.isError && refused(matrixQ.error);
+  // What needs the manager, narrowed on the page from what the read answered (`only=attention`).
+  const attention = attentionOnly(search);
+  const data = useMemo(() => (read && attention ? needing(read) : read), [read, attention]);
   const tableBeside = useMediaQuery(panelBesideQuery(matrixMinWidth(data?.columns.length ?? 0) + 2 * PADDING));
   const narrow = mobile || (panel.occupied && !tableBeside);
 
@@ -674,7 +752,7 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
   );
   // Each "Granska" in the list of what waits, so the decision it opened can give it the focus back.
   const awaitingControl = useCallback(
-    (key: string) => (el: HTMLButtonElement | null) => {
+    (key: string) => (el: HTMLAnchorElement | HTMLButtonElement | null) => {
       if (el) controls.current.set(key, el);
       else controls.current.delete(key);
     },
@@ -834,22 +912,23 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
       reviewedFrom.current = cellKey(personId, typeId);
     },
   };
-  const choose = (g: CompetenceMatrixGroup) =>
-    navigate(matrixHref({ by: g.by, part: g.part }, search), { replace: true, preventScrollReset: true });
+  const choose = (g: CompetenceMatrixGroup | null) =>
+    navigate(matrixHref(g ? { by: g.by, part: g.part } : {}, search), { replace: true, preventScrollReset: true });
+  const narrowTo = (on: boolean) => navigate(attentionHref(on, search), { replace: true, preventScrollReset: true });
 
-  const shown = data && data.rows.length > 0 && data.columns.length > 0;
+  const shown = read && read.rows.length > 0 && read.columns.length > 0;
   const actions =
-    data && !off ? (
+    read && !off ? (
       <HStack gap={2} wrap="wrap">
         {shown && (
           <Button
             variant="secondary"
             label="Ladda ner som CSV"
             icon={<Icon icon={ArrowDownTrayIcon} size="sm" />}
-            href={matrixFileHref(data.by ? { by: data.by, ...(data.part ? { part: data.part } : {}) } : {})}
+            href={matrixFileHref(read.by ? { by: read.by, ...(read.part ? { part: read.part } : {}) } : {})}
           />
         )}
-        {data.rows.length > 0 && (
+        {read.rows.length > 0 && (
           <Button
             ref={addRequirement}
             variant="primary"
@@ -874,7 +953,7 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
                   title="Medarbetarnas kompetens"
                   titleId={TITLE_ID}
                   page="matrix"
-                  hasTabs={!off && !matrixQ.isPending}
+                  hasTabs={!off && managesFrom(user, matrixQ)}
                   hasSearch={searcher}
                   end={actions}
                 />
@@ -917,9 +996,9 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
                   </VStack>
                 ) : (
                   <AsyncContent pending={matrixQ.isPending} fallback={<ContentSkeleton heading={false} />} gap={5}>
-                    {data && data.awaiting.length > 0 && (
+                    {read && read.awaiting.length > 0 && (
                       <Awaiting
-                        rows={data.awaiting}
+                        rows={read.awaiting}
                         search={search}
                         headingRef={awaitingHeading}
                         control={awaitingControl}
@@ -928,7 +1007,7 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
                         }}
                       />
                     )}
-                    {data && data.rows.length === 0 ? (
+                    {read && read.rows.length === 0 ? (
                       <Card>
                         <EmptyState
                           headingLevel={2}
@@ -936,7 +1015,7 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
                           description="Här ser den som är chef för en enhet sina medarbetares kompetens. Katalogen avgör vem som är chef; be systemförvaltaren om det inte stämmer."
                         />
                       </Card>
-                    ) : data && data.columns.length === 0 ? (
+                    ) : read && read.columns.length === 0 ? (
                       <Card>
                         <EmptyState
                           headingLevel={2}
@@ -944,12 +1023,29 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
                           description="När en befattning, en enhet eller du kräver en kompetens av någon av dem visas den här, med var var och en står."
                         />
                       </Card>
-                    ) : data ? (
+                    ) : read && data ? (
                       <>
-                        <SetChoice data={data} onChoose={choose} />
-                        <VStack gap={0} aria-busy={matrixQ.isPlaceholderData}>
-                          {narrow ? <MatrixList data={data} ctx={ctx} /> : <MatrixTable data={data} ctx={ctx} />}
-                        </VStack>
+                        <MatrixChoice
+                          data={read}
+                          attention={attention}
+                          shown={data}
+                          onChoose={choose}
+                          onAttention={narrowTo}
+                        />
+                        {data.rows.length === 0 ? (
+                          <Card>
+                            <EmptyState
+                              headingLevel={2}
+                              title="Inget behöver åtgärdas"
+                              description="Ingen av dem som visas saknar något som krävs, har något som har gått ut eller går ut snart, eller har en registrering att granska."
+                              actions={<Button label="Visa alla" href={attentionHref(false, search)} />}
+                            />
+                          </Card>
+                        ) : (
+                          <VStack gap={0} aria-busy={matrixQ.isPlaceholderData}>
+                            {narrow ? <MatrixList data={data} ctx={ctx} /> : <MatrixTable data={data} ctx={ctx} />}
+                          </VStack>
+                        )}
                       </>
                     ) : null}
                   </AsyncContent>
@@ -961,10 +1057,10 @@ export function CompetenceMatrixPage({ user, admin }: { user: SessionUser; admin
       />
       {panel.overlay}
       {/* Registrera intyg (D108 item 7), from a cell with its competence chosen; closing gives the cell its focus back. */}
-      <RegisterHolding opener={opener} people={data?.rows.map(r => ({ id: r.personId, name: r.name }))} />
+      <RegisterHolding opener={opener} people={read?.rows.map(r => ({ id: r.personId, name: r.name }))} />
       <PersonRequirementDialog
-        isOpen={!!data && !off && requiring}
-        people={data?.rows ?? []}
+        isOpen={!!read && !off && requiring}
+        people={read?.rows ?? []}
         catalogue={typesQ.data?.rows ?? []}
         onClose={() => {
           navigate(withoutRequirement(search));

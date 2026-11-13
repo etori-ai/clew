@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import type { CompetenceLevel, CompetenceMatrixCell, CompetenceMatrixRow, CompetenceType } from '@clew/contracts';
+import {
+  COMPETENCE_LEVEL_LABELS,
+  type CompetenceLevel,
+  type CompetenceMatrixCell,
+  type CompetenceMatrixRow,
+  type CompetenceType,
+  type SessionUser,
+} from '@clew/contracts';
 import {
   Badge,
   Button,
@@ -17,14 +24,15 @@ import { api } from '../api';
 import { COMPETENCE_PATH, MATRIX_PATH, SEARCH_PATH } from '../competence-address';
 import { useAdminAction } from '../mutations';
 import { keys } from '../query-keys';
+import { refused } from '../query-policy';
 import { DialogFrame } from '../components/dialog-frame';
 import { LevelField, isSkillType, levelLabel } from '../components/register-holding';
 import { PageHeader } from '../components/page-header';
 import { mobileQuery } from '../components/shell';
 
 /**
- * What the pages of Kompetens share (D120 item 8): the header with the sibling pages as tabs that are links, the words
- * a cell of the matrix says, and the dialog in which a manager adds a requirement for one of their reports.
+ * What the pages of Kompetens share (D120 item 8): the header with the sibling pages as tabs that are links, what a cell
+ * of the matrix draws and says, and the dialog in which a manager adds a requirement for one of their reports.
  */
 
 /** Which page of the place is shown. */
@@ -32,9 +40,8 @@ export type CompetencePageId = 'own' | 'matrix' | 'search';
 /**
  * The page's header (D74): its title and its own actions on the first line; under it, where the reader has another page
  * of the place, the place's pages as Astryx's navigation tabs, each a link with its own address (D116), the current one
- * marked: the matrix where the reader has it (`hasTabs`: the server answered its read, so someone reports to them), and
- * Kompetenssökning where they hold the relation `registrar` (`hasSearch`, D121). Someone with neither has one page, so
- * no tabs.
+ * marked: the matrix where the reader has it (`hasTabs`, `managesFrom`), and Kompetenssökning where they hold the
+ * relation `registrar` (`hasSearch`, D121). Someone with neither has one page, so no tabs.
  */
 export function CompetenceHeader({
   title,
@@ -65,6 +72,20 @@ export function CompetenceHeader({
   );
 }
 
+/**
+ * Whether the reader has the matrix, someone reporting to them (D99): the server's answer to the matrix's read decides,
+ * a refusal meaning no. Until it has answered, the session's role stands in for it, so the place's tabs are drawn with
+ * the page and never gain a tab between two others when the answer comes; the rare reader whose role and reports
+ * disagree sees the tab come or go once.
+ */
+export function managesFrom(
+  user: Pick<SessionUser, 'role'>,
+  matrix: { isPending: boolean; isSuccess: boolean; isError: boolean; error: unknown },
+): boolean {
+  if (matrix.isPending) return user.role === 'manager';
+  return matrix.isSuccess || (matrix.isError && !refused(matrix.error));
+}
+
 const day = new Intl.DateTimeFormat('sv-SE', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 const instant = new Intl.DateTimeFormat('sv-SE', { day: 'numeric', month: 'short', year: 'numeric' });
 /** An instant as the day it falls on where the reader is: "3 mars 2026". */
@@ -77,83 +98,74 @@ export function levelsWords(levels: readonly number[]): string {
   return 'Minst ' + (words.length < 2 ? (words[0] ?? '') : `${words.slice(0, -1).join(', ')} eller ${words.at(-1)}`);
 }
 
+/** A level as a cell says it beside another word: "Självständig". */
+const level = (value: number | undefined) => (value === undefined ? '' : levelLabel(value));
 /**
- * Where a person stands on a skill's column, in words (D120 items 1 and 4): the level held ("Självständig"), or
- * "Egen bedömning: Självständig" while only the person has rated it; where a requirement is not met, "Saknas" as a badge
- * with what is asked and what is held under it ("kräver Expert, har Självständig"). The same words as the file.
+ * Where a person stands on one column (D108 item 4, D120 items 1 to 4), in the words the cell's menu titles itself with
+ * and its control is named by, each a phrase of its own: "Går ut snart, 10 jan. 2027", "Saknas", "Krävs inte" and what
+ * is held without being required, a skill's level ("Självständig", "Egen bedömning: Expert") and, where a requirement
+ * is not met, what is asked and what is held; "Att granska" first where the person's own registration waits for the
+ * manager (D108 item 7), the status after it being what it is without the registration; "Vill utveckla" last.
  */
-function SkillCellStatus({ cell }: { cell: CompetenceMatrixCell }) {
-  const held =
-    cell.level === undefined
-      ? null
-      : cell.validated
-        ? levelLabel(cell.level)
-        : `Egen bedömning: ${levelLabel(cell.level)}`;
-  const asked =
-    cell.status === 'missing' && cell.least !== undefined
+export function cellPhrases(cell: CompetenceMatrixCell, skill: boolean): string[] {
+  const ends = cell.expiresOn ? cellDay(cell.expiresOn) : null;
+  const held = (): string[] => {
+    if (skill) {
+      if (cell.level === undefined) return [];
+      return [cell.validated ? level(cell.level) : `Egen bedömning: ${level(cell.level)}`];
+    }
+    return cell.status === 'expired'
+      ? [ends ? `Utgånget ${ends}` : 'Utgånget']
+      : cell.status === 'expiring'
+        ? [ends ? `Går ut snart, ${ends}` : 'Går ut snart']
+        : cell.status === 'valid'
+          ? [ends ? `Giltigt till ${ends}` : 'Giltigt utan slutdatum']
+          : [];
+  };
+  const standing =
+    cell.status === 'missing'
       ? [
-          `kräver ${levelLabel(cell.least)}`,
-          ...(cell.level === undefined
-            ? []
-            : [cell.validated ? `har ${levelLabel(cell.level)}` : `egen bedömning: ${levelLabel(cell.level)}`]),
-        ].join(', ')
-      : null;
-  const lines = [
-    asked,
-    !cell.required && cell.status !== 'none' ? 'Krävs inte' : null,
-    cell.interest ? 'Vill utveckla' : null,
-  ].filter((line): line is string => !!line);
-  return (
-    <VStack gap={0.5} hAlign="start">
-      {cell.status === 'missing' ? (
-        <Badge variant="error" label="Saknas" />
-      ) : cell.status === 'none' || held === null ? (
-        <Text type="supporting">Krävs inte</Text>
-      ) : (
-        <Text>{held}</Text>
-      )}
-      {lines.length > 0 && <Text type="supporting">{lines.join(' · ')}</Text>}
-    </VStack>
-  );
+          'Saknas',
+          ...(skill && cell.least !== undefined ? [`Kräver ${level(cell.least)}`] : []),
+          ...(skill && cell.level !== undefined
+            ? [cell.validated ? `Har ${level(cell.level)}` : `Egen bedömning: ${level(cell.level)}`]
+            : []),
+        ]
+      : cell.status === 'none'
+        ? ['Krävs inte']
+        : cell.required
+          ? held()
+          : ['Krävs inte', ...held()];
+  return [...(cell.pending ? ['Att granska'] : []), ...standing, ...(cell.interest ? ['Vill utveckla'] : [])];
 }
-
+/** A level's word keeps its capital inside a sentence, as "kräver Självständig" does. */
+const LEVEL_WORDS = new Set<string>(Object.values(COMPETENCE_LEVEL_LABELS));
+/** The phrases as one line under a sentence's opening: "går ut snart, 10 jan. 2027", "Expert, vill utveckla". */
+export const cellSentence = (phrases: readonly string[]) =>
+  phrases.map(p => (LEVEL_WORDS.has(p) ? p : p.charAt(0).toLocaleLowerCase('sv') + p.slice(1))).join(', ');
 /**
- * Where a person stands on a column, in words (D108 item 4): what needs the manager is a badge in its tone with its word
- * (Utgånget, Saknas, Går ut snart), so the colour never says it alone (1.4.1); Giltigt is plain text; a type neither
- * held nor required is "Krävs inte" in supporting text. Under it, the day it ends, and "Krävs inte" for a holding of a
- * type that is not required of the person. Where the person's own registration of the type waits for the manager's
- * decision (D108 item 7), "Att granska" beside it: the status is what it is without the registration, which counts
- * towards nothing until it is approved. A skill's cell (D120) says its level instead (`SkillCellStatus`).
+ * What a cell's control draws (D108 item 11, D120): one short word, so a column is as narrow as its longest. What needs
+ * the manager is a badge in its tone with its word (Att granska, Saknas, Utgånget, Går ut snart), so the colour never
+ * says it alone (1.4.1); a required holding that is valid is the word Giltigt, or a skill's level, in the badges' size;
+ * anything not required of the person is "Krävs inte" in supporting text, drawn quietly. The date, the levels and the
+ * rest are the control's name and its menu's (`cellPhrases`).
  */
-export function CellStatus({ cell, skill = false }: { cell: CompetenceMatrixCell; skill?: boolean }) {
-  if (skill) return <SkillCellStatus cell={cell} />;
-  const status =
-    cell.status === 'expired' ? (
-      <Badge variant="error" label="Utgånget" />
-    ) : cell.status === 'missing' ? (
-      <Badge variant="error" label="Saknas" />
-    ) : cell.status === 'expiring' ? (
-      <Badge variant="warning" label="Går ut snart" />
-    ) : cell.status === 'valid' ? (
-      <Text>Giltigt</Text>
-    ) : (
-      <Text type="supporting">Krävs inte</Text>
-    );
-  const lines = [
-    cell.expiresOn ? (cell.status === 'valid' ? `till ${cellDay(cell.expiresOn)}` : cellDay(cell.expiresOn)) : null,
-    !cell.required && cell.status !== 'none' ? 'Krävs inte' : null,
-  ].filter((line): line is string => !!line);
+export function CellMark({ cell, skill }: { cell: CompetenceMatrixCell; skill: boolean }) {
+  if (cell.pending) return <Badge variant="info" label="Att granska" />;
+  if (cell.status === 'missing') return <Badge variant="error" label="Saknas" />;
+  if (!cell.required || cell.status === 'none') return <Text type="supporting">Krävs inte</Text>;
+  if (cell.status === 'expired') return <Badge variant="error" label="Utgånget" />;
+  if (cell.status === 'expiring') return <Badge variant="warning" label="Går ut snart" />;
+  // In the badges' size, so the longest level ("Grundläggande") fits the column as the longest badge does.
   return (
-    <VStack gap={0.5} hAlign="start">
-      {status}
-      {lines.length > 0 && <Text type="supporting">{lines.join(' · ')}</Text>}
-      {cell.pending && <Badge variant="info" label="Att granska" />}
-    </VStack>
+    <Text type="supporting" color="primary">
+      {skill && cell.level !== undefined ? level(cell.level) : 'Giltigt'}
+    </Text>
   );
 }
-/** What requires the type of the person, as the cell's menu names it: "Krävs: befattning Undersköterska, eget krav". */
-export function reasonWords(cell: CompetenceMatrixCell): string {
-  if (!cell.through.length) return 'Krävs inte';
+/** What requires the type of the person, as the cell's menu says it: "Krävs: befattning Undersköterska, eget krav". */
+export function reasonWords(cell: CompetenceMatrixCell): string | null {
+  if (!cell.through.length) return null;
   return (
     'Krävs: ' +
     cell.through
@@ -163,7 +175,10 @@ export function reasonWords(cell: CompetenceMatrixCell): string {
       .join(', ')
   );
 }
-
+/** Whether a cell needs the manager: a required type missing, run out or soon to, or the person's own registration waiting. */
+export const needsAttention = (cell: CompetenceMatrixCell) =>
+  !!cell.pending ||
+  (cell.required && (cell.status === 'missing' || cell.status === 'expired' || cell.status === 'expiring'));
 /** The catalogue's types a requirement can name, grouped by area: an archived type takes nothing new. */
 const typeOptions = (types: CompetenceType[]) => {
   const open = types.filter(t => !t.archived);

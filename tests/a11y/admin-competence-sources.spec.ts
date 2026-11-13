@@ -84,8 +84,11 @@ test.describe('Administration › Kompetens › Källor', () => {
       ).toHaveAttribute('href', '/admin/competence');
       const table = page.getByRole('table');
       await expect(table).toHaveCount(1);
-      await expect(table.getByRole('columnheader')).toHaveText(['Typ i källan', 'Intyg', 'Kopplad till', 'Koppla']);
+      // A type's name opens its mapping, so the row has no button of its own.
+      await expect(table.getByRole('columnheader')).toHaveText(['Typ i källan', 'Intyg', 'Kopplad till']);
+      await expect(table.getByRole('button')).toHaveCount(0);
       const hlr = table.getByRole('row', { name: /Hjärt-lungräddning med hjärtstartare/ });
+      await expect(hlr.getByRole('link')).toHaveAccessibleName('Hjärt-lungräddning med hjärtstartare');
       await expect(hlr).toContainText('clew-dev:hlr');
       await expect(hlr).toContainText('38 intyg');
       await expect(hlr).toContainText('HLR');
@@ -110,7 +113,7 @@ test.describe('Administration › Kompetens › Källor', () => {
     }) => {
       switchedOn(api);
       await open(page, SOURCES);
-      const map = page.getByRole('link', { name: 'Koppla Livsmedelshygien' });
+      const map = page.getByRole('main').getByRole('link', { name: 'Livsmedelshygien', exact: true });
       await map.focus();
       await page.keyboard.press('Enter');
       await expect(page).toHaveURL(mapAddress('lms', 'clew-dev:livsmedelshygien'));
@@ -152,6 +155,8 @@ test.describe('Administration › Kompetens › Källor', () => {
         notices(page).getByText('Livsmedelshygien är kopplad till Fallskydd. 21 intyg räknas nu.'),
       ).toBeAttached();
       await expect(page.getByRole('table').getByRole('row', { name: /Livsmedelshygien/ })).toContainText('Fallskydd');
+      // The focus is back on the name that opened it.
+      await expect(map).toBeFocused();
     });
 
     test('a mapping is removed in its dialog, and Esc closes back to the list without writing', async ({
@@ -167,7 +172,11 @@ test.describe('Administration › Kompetens › Källor', () => {
       await expect(page).toHaveURL(SOURCES);
       expect(api.sourceWrites).toEqual([]);
 
-      await page.getByRole('link', { name: 'Koppla Hjärt-lungräddning med hjärtstartare' }).click();
+      const hlr = page
+        .getByRole('main')
+        .getByRole('link', { name: 'Hjärt-lungräddning med hjärtstartare', exact: true });
+      await hlr.focus();
+      await page.keyboard.press('Enter');
       await dialog.getByRole('button', { name: 'Ta bort kopplingen' }).click();
       await expect(dialog).toBeHidden();
       expect(api.sourceWrites).toEqual([
@@ -251,7 +260,7 @@ test.describe('Administration › Kompetens › Källor', () => {
 
   test.describe('phone', () => {
     test.use({ viewport: phone });
-    test("each source's types are a list with a way to map each one, and the dialog fills the screen", async ({
+    test("each source's types are a list whose names map each one, and the dialog fills the screen", async ({
       page,
       api,
     }) => {
@@ -260,7 +269,8 @@ test.describe('Administration › Kompetens › Källor', () => {
       const list = page.getByRole('list', { name: 'Typer i Lärplattformen' });
       await expect(list.getByText('38 intyg · Kopplad till HLR')).toBeVisible();
       await expect(list.getByText('21 intyg · Inte kopplad')).toBeVisible();
-      await list.getByRole('link', { name: 'Koppla Livsmedelshygien' }).click();
+      await expect(list.getByRole('button')).toHaveCount(0);
+      await list.getByRole('link', { name: 'Livsmedelshygien', exact: true }).click();
       const dialog = dialogOf(page);
       await expect(dialog.getByRole('combobox', { name: /Kompetens i katalogen/ })).toBeVisible();
       await settled(page);

@@ -86,8 +86,10 @@ measured at 1280 px with the button, 28 px wide, lying 110 to 188 px inside the 
 clear. Astryx's `Table` with `useTableStickyColumns` sets no scroll padding and documents no remedy, and Clew writes
 no CSS of its own, so nothing is worked around: the case stands as a `test.fixme` in
 `tests/a11y/competence-matrix.spec.ts`. With ten columns or fewer on a wide window the table does not scroll and the
-case does not arise; where it does not fit beside the panel or on a phone the matrix is a list. It has to be closed,
-in Astryx or by a decision that allows an exception, before the suite's gate returns (D59).
+case does not arise; where it does not fit beside the panel or on a phone the matrix is a list. Since 2026-11-13 the cells are
+narrow and a matrix holds up to thirty columns, so the table scrolls more often: tabbing backwards through twenty
+columns at 1280 px, 8 of 19 stops lie under the pinned column, some wholly. It has to be closed, in Astryx or by a
+decision that allows an exception, before the suite's gate returns (D59).
 
 **As built (2026-11-13).** Narrower or other than the items in these places. A person holds a skill once, and
 changing its level is an action of its own; removing it revokes the row (item 2). A manager cannot revoke a skill the

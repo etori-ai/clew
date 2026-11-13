@@ -350,6 +350,8 @@ export class MockApi {
    */
   competenceMatrix: CompetenceMatrixOutput = competenceMatrix();
   competenceMatrixSets = false;
+  /** How long the matrix's read takes to answer, in milliseconds: a hard load waits for it as the server's would. */
+  matrixDelay = 0;
   /** Every read of the matrix and every download of its file, as the query, in order. */
   matrixReads: string[] = [];
   matrixDownloads: string[] = [];
@@ -1163,6 +1165,7 @@ export class MockApi {
     // Kompetens › Medarbetare (D108 item 11): the manager's matrix, its file, and a holding revoked from a cell. Someone
     // who manages nobody is refused as the server refuses them.
     if (path === '/competence/matrix' || path === '/competence/matrix.csv') {
+      if (this.matrixDelay) await new Promise(resolve => setTimeout(resolve, this.matrixDelay));
       if (this.employee || this.staffForbidden)
         return route.fulfill({
           status: 403,

@@ -989,10 +989,11 @@ const REASON_ORDER = ['position', 'unit', 'person'] as const;
 /**
  * The manager's matrix (D108 item 11): each report (`people`, every one of them, by name) against the types required
  * of at least one of them, at most `COMPETENCE_MATRIX_COLUMNS` columns at a time. A required type that is archived or
- * unknown is required of nobody, so it is no column. Where more types are required than fit, the reader chooses a set:
- * the required types of one area, or those a requirement on one position asks for, of every position a report holds; a
- * set larger than ten is shown in parts of ten. `by` and `part` name the set (an unknown one, or none, is the first, the
- * first area). Each cell says where the person stands (the holding that decides, as `deciding` works it out, or
+ * unknown is required of nobody, so it is no column. The reader may choose a set: the required types of one area, or
+ * those a requirement on one position asks for, of every position a report holds. Where more types are required than
+ * fit, a set is always shown, one larger than fits in parts, and `by` and `part` name it (an unknown one, or none, is the
+ * first, the first area). Where every type fits, the sets offered are those that narrow it, and none chosen, or an
+ * unknown one, is every type. Each cell says where the person stands (the holding that decides, as `deciding` works it out, or
  * `missing` where the type is required of them and nothing counts, or `none` where it is neither held nor required),
  * what requires it of them, and whether the reader may revoke the holding: one registered in Clew may be, one copied
  * from a source never (D108 item 9), and of a skill only one a manager registered (`revocable`). Where the person's own
@@ -1031,45 +1032,45 @@ export function matrixOf(input: {
   const positionLabel = new Map(input.positions.map(p => [p.code, p.label])),
     unitLabel = new Map(input.units.map(u => [u.id, u.label]));
 
-  const sets: MatrixSet[] = [];
-  let shown = all,
-    chosen: MatrixSet | undefined;
-  if (all.length > COMPETENCE_MATRIX_COLUMNS) {
-    const split = (by: string, kind: MatrixSet['kind'], label: string, types: readonly TypeRecord[]) =>
-      runs(types, COMPETENCE_MATRIX_COLUMNS).map((run, i, parts): MatrixSet => ({
-        by,
-        part: i + 1,
-        parts: parts.length,
-        kind,
-        label,
-        types: run.length,
-        typeIds: run.map(t => t.id),
-      }));
-    // `all` is in the catalogue's order, by area first, so its areas come in Swedish order.
-    for (const area of new Set(all.map(t => t.area)))
-      sets.push(
-        ...split(
-          'area:' + area,
-          'area',
-          area,
-          all.filter(t => t.area === area),
-        ),
-      );
-    const held = [...new Set(input.people.flatMap(p => placeOf(p.id).positionCodes))]
-      .filter(code => positionLabel.has(code))
-      .sort((a, b) => sv(positionLabel.get(a)!, positionLabel.get(b)!) || a.localeCompare(b));
-    for (const code of held) {
-      const asked = new Set(input.requirements.filter(r => r.positionCode === code).map(r => r.typeId));
-      const types = all.filter(t => asked.has(t.id));
-      if (types.length) sets.push(...split('position:' + code, 'position', positionLabel.get(code)!, types));
-    }
-    chosen =
-      sets.find(s => s.by === input.by && s.part === (input.part ?? 1)) ??
-      sets.find(s => s.by === input.by) ??
-      sets[0]!;
-    const ids = new Set(chosen.typeIds);
-    shown = all.filter(t => ids.has(t.id));
+  const split = (by: string, kind: MatrixSet['kind'], label: string, types: readonly TypeRecord[]) =>
+    runs(types, COMPETENCE_MATRIX_COLUMNS).map((run, i, parts): MatrixSet => ({
+      by,
+      part: i + 1,
+      parts: parts.length,
+      kind,
+      label,
+      types: run.length,
+      typeIds: run.map(t => t.id),
+    }));
+  const offered: MatrixSet[] = [];
+  // `all` is in the catalogue's order, by area first, so its areas come in Swedish order.
+  for (const area of new Set(all.map(t => t.area)))
+    offered.push(
+      ...split(
+        'area:' + area,
+        'area',
+        area,
+        all.filter(t => t.area === area),
+      ),
+    );
+  const held = [...new Set(input.people.flatMap(p => placeOf(p.id).positionCodes))]
+    .filter(code => positionLabel.has(code))
+    .sort((a, b) => sv(positionLabel.get(a)!, positionLabel.get(b)!) || a.localeCompare(b));
+  for (const code of held) {
+    const asked = new Set(input.requirements.filter(r => r.positionCode === code).map(r => r.typeId));
+    const types = all.filter(t => asked.has(t.id));
+    if (types.length) offered.push(...split('position:' + code, 'position', positionLabel.get(code)!, types));
   }
+  const fits = all.length <= COMPETENCE_MATRIX_COLUMNS;
+  // Where every type fits, a set that holds every one of them narrows nothing, so it is not offered.
+  const sets = fits ? offered.filter(s => s.types < all.length) : offered;
+  const chosen: MatrixSet | undefined = fits
+    ? sets.find(s => s.by === input.by)
+    : (sets.find(s => s.by === input.by && s.part === (input.part ?? 1)) ??
+      sets.find(s => s.by === input.by) ??
+      sets[0]!);
+  const ids = chosen ? new Set(chosen.typeIds) : null;
+  const shown = ids ? all.filter(t => ids.has(t.id)) : all;
 
   const standings = deciding(input.holdings, input.types, input.today, required, least);
   const at = new Map(standings.map(s => [s.personId + '\n' + s.type.id, s]));

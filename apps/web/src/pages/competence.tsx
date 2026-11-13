@@ -12,6 +12,7 @@ import {
   Heading,
   Layout,
   LayoutContent,
+  Link,
   List,
   ListItem,
   MoreMenu,
@@ -34,7 +35,7 @@ import { AsyncContent, ContentSkeleton } from '../components/loading';
 import { usePagePanel } from '../components/page-panel';
 import { AddOwnHolding, ChangeOwnSkill, levelLabel } from '../components/register-holding';
 import { DeclaredView } from '../components/view';
-import { CompetenceHeader, cellDay } from './competence-parts';
+import { CompetenceHeader, cellDay, managesFrom } from './competence-parts';
 
 /** The read behind the page: `competence.holdings` with no input answers the reader's own (D108, relation `self`). */
 const HOLDINGS = 'competence.holdings';
@@ -130,22 +131,27 @@ function SkillLine({ row }: { row: CompetenceOwnSkill }) {
   );
 }
 
+/** Which of a skill's controls opened its dialog, so closing it gives that one the focus back (D83 rule 7). */
+type SkillOpener = 'name' | 'menu';
 /**
  * The reader's own skills (D120 items 2 and 3), as Astryx's card with a toolbar and a list: each with its level, "Saknas"
- * and the level asked where a requirement is not met, "Egen bedömning" until a manager confirms it, and "Vill utveckla";
- * its menu changes it in a dialog named in the address (`skill`) or removes it, which is asked first.
+ * and the level asked where a requirement is not met, "Egen bedömning" until a manager confirms it, and "Vill utveckla".
+ * The skill's name is its way in: it opens "Ändra nivå" in a dialog named in the address (`skill`), as the first row of
+ * its menu does; the menu also removes it, which is asked first.
  */
 function Skills({
   rows,
   search,
   headingRef,
   control,
+  onOpen,
   onRemove,
 }: {
   rows: CompetenceOwnSkill[];
   search: URLSearchParams;
   headingRef: Ref<HTMLHeadingElement>;
-  control: (holdingId: string) => (el: HTMLButtonElement | null) => void;
+  control: (holdingId: string, via: SkillOpener) => (el: HTMLAnchorElement | HTMLButtonElement | null) => void;
+  onOpen: (via: SkillOpener) => void;
   onRemove: (row: CompetenceOwnSkill) => void;
 }) {
   return (
@@ -164,11 +170,21 @@ function Skills({
         {rows.map(row => (
           <ListItem
             key={row.holdingId}
-            label={<Text weight="semibold">{row.competence}</Text>}
+            label={
+              <Link
+                ref={control(row.holdingId, 'name')}
+                href={skillHref(row.holdingId, search)}
+                weight="semibold"
+                hasUnderline
+                onClick={() => onOpen('name')}
+              >
+                {row.competence}
+              </Link>
+            }
             description={<SkillLine row={row} />}
             endContent={
               <MoreMenu
-                ref={control(row.holdingId)}
+                ref={control(row.holdingId, 'menu')}
                 label={`Åtgärder: ${row.competence}`}
                 size="sm"
                 alignment="end"
@@ -179,7 +195,12 @@ function Skills({
                     id: 'skill',
                     title: row.competence,
                     items: [
-                      { id: 'change', label: 'Ändra nivå', href: skillHref(row.holdingId, search) },
+                      {
+                        id: 'change',
+                        label: 'Ändra nivå',
+                        href: skillHref(row.holdingId, search),
+                        onClick: () => onOpen('menu'),
+                      },
                       { id: 'remove', label: 'Ta bort', onClick: () => onRemove(row) },
                     ],
                   },
@@ -201,16 +222,17 @@ function Skills({
  * the matrix is one link away, and "Lägg till" as the page's primary action: the reader registers a certificate of their
  * own in a dialog named in the address (`add=new`, D108 item 7), which the manager they report to approves before it
  * counts. What waits for that decision is a card of its own above the list, each row with "Ta tillbaka"; what the manager
- * rejected is another, each row with "Ta bort", seen by the reader alone. The skills the reader holds (D120) are a card of their own, each with its level and
- * marks and a menu that changes it (`skill=<holding id>`, a dialog over the page) or removes it, asked first in Astryx's
- * confirmation; a skill required of the reader that they hold nothing of stays in the list as "Saknas". With nothing
+ * rejected is another, each row with "Ta bort", seen by the reader alone. The skills the reader holds (D120) are a card
+ * of their own, each with its level and marks, its name opening the dialog that changes it (`skill=<holding id>`, over
+ * the page), and a menu that changes it too or removes it, asked first in Astryx's confirmation; a skill required of
+ * the reader that they hold nothing of stays in the list as "Saknas". With nothing
  * held and nothing required the page says so; with the module off for the reader the read is refused and the page says
  * that instead. It holds the panel beside it as every page with a column does, so a work item opened from the bell
  * lies beside it.
  *
- * Closing the dialog gives the focus to "Lägg till", also when the address opened it; closing a skill's gives it to that
- * skill's menu. A row taken back or removed takes its control with it, so the focus goes to its card's heading, or to
- * the page's when the card went with the last row (D83 rule 7).
+ * Closing the dialog gives the focus to "Lägg till", also when the address opened it; closing a skill's gives it to what
+ * opened it, the skill's name or its menu (the name when the address did). A row taken back or removed takes its control
+ * with it, so the focus goes to its card's heading, or to the page's when the card went with the last row (D83 rule 7).
  */
 export function CompetencePage({ user, admin }: { user: SessionUser; admin: boolean }) {
   usePageTitle('Mina kompetenser');
@@ -224,10 +246,10 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
   const navigate = useNavigate();
   const read = useQuery({ ...viewQuery(HOLDINGS, null), retry: false });
   const off = read.isError && refused(read.error);
-  // Whether the reader has anyone reporting to them is the server's answer, not the session's role (D99): the matrix's
-  // read, which the matrix's page reads the same way, so the tab leads to a page already read. Refused, there is no tab.
+  // Whether the reader has anyone reporting to them is the server's answer to the matrix's read (D99), which the
+  // matrix's page reads the same way, so the tab leads to a page already read; until it answers, the session's role.
   const matrix = useQuery(competenceMatrixQuery({}));
-  const manages = matrix.isSuccess || (matrix.isError && !refused(matrix.error));
+  const manages = managesFrom(user, matrix);
   const own = useQuery(competenceOwnQuery);
   const pending = own.data?.pending ?? [];
   const rejected = own.data?.rejected ?? [];
@@ -254,15 +276,18 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
   const pendingHeading = useRef<HTMLHeadingElement>(null);
   const rejectedHeading = useRef<HTMLHeadingElement>(null);
   const skillsHeading = useRef<HTMLHeadingElement>(null);
-  // Each skill's menu, so its dialog or its removal can give the focus back to it.
+  // Each skill's name and menu, so its dialog or its removal can give the focus back to what opened it.
   const controls = useRef(new Map<string, HTMLElement>());
   const control = useCallback(
-    (holdingId: string) => (el: HTMLButtonElement | null) => {
-      if (el) controls.current.set(holdingId, el);
-      else controls.current.delete(holdingId);
+    (holdingId: string, via: SkillOpener) => (el: HTMLAnchorElement | HTMLButtonElement | null) => {
+      const key = via + '\n' + holdingId;
+      if (el) controls.current.set(key, el);
+      else controls.current.delete(key);
     },
     [],
   );
+  // What opened the dialog that changes a skill: its name, unless its menu did; an address opens it as the name would.
+  const openedVia = useRef<SkillOpener>('name');
   const open = adding(search) && !off;
   const changing = skillOf(search);
   const changed = off ? undefined : skills.find(s => s.holdingId === changing);
@@ -278,7 +303,9 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
     if (changed || adding(search)) setRefusal(null);
   }, [changed, search]);
   const [removing, setRemoving] = useState<CompetenceOwnSkill | null>(null);
-  const [focusAfter, setFocusAfter] = useState<'add' | 'pending' | 'rejected' | { skill: string } | null>(null);
+  const [focusAfter, setFocusAfter] = useState<
+    'add' | 'pending' | 'rejected' | { skill: string; via: SkillOpener } | null
+  >(null);
   useEffect(() => {
     if (focusAfter === null || open || changed || removing) return;
     setFocusAfter(null);
@@ -290,7 +317,7 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
           ? [pendingHeading.current]
           : focusAfter === 'rejected'
             ? [rejectedHeading.current]
-            : [controls.current.get(focusAfter.skill), skillsHeading.current];
+            : [controls.current.get(focusAfter.via + '\n' + focusAfter.skill), skillsHeading.current];
     // A frame later, once a dialog that closed has given the focus back where it took it from.
     requestAnimationFrame(() => (targets.find(t => t?.isConnected) ?? document.getElementById(TITLE_ID))?.focus());
   }, [focusAfter, open, changed, removing, pending.length, rejected.length, skills.length]);
@@ -339,7 +366,7 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
       return `${row.competence} är borttagen.`;
     });
     setRemoving(null);
-    setFocusAfter({ skill: row.holdingId });
+    setFocusAfter({ skill: row.holdingId, via: 'menu' });
   };
 
   const actions =
@@ -420,6 +447,9 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
                         search={search}
                         headingRef={skillsHeading}
                         control={control}
+                        onOpen={via => {
+                          openedVia.current = via;
+                        }}
                         onRemove={row => {
                           remove.reset();
                           setRemoving(row);
@@ -458,14 +488,15 @@ export function CompetencePage({ user, admin }: { user: SessionUser; admin: bool
         skill={changed}
         onClose={() => {
           navigate(withoutSkill(search));
-          if (changed) setFocusAfter({ skill: changed.holdingId });
+          if (changed) setFocusAfter({ skill: changed.holdingId, via: openedVia.current });
+          openedVia.current = 'name';
         }}
       />
       <AlertDialog
         isOpen={!!removing}
         onOpenChange={next => {
           if (!next && removing) {
-            setFocusAfter({ skill: removing.holdingId });
+            setFocusAfter({ skill: removing.holdingId, via: 'menu' });
             setRemoving(null);
           }
         }}

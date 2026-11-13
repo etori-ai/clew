@@ -3,6 +3,7 @@ import {
   checkContract,
   CompetenceAttentionOutputSchema,
   CompetenceHoldingsOutputSchema,
+  COMPETENCE_MATRIX_COLUMNS,
   CompetenceMatrixOutputSchema,
   CompetenceSkillRatingBodySchema,
   type AuthenticatedContext,
@@ -57,6 +58,7 @@ import { memoryProvisionStore } from '../../apps/server/src/modules/people/adapt
 import { staffUsecases } from '../../apps/server/src/modules/people/usecases';
 import { reportsByUnit } from '../../apps/server/src/modules/entities/domain';
 import { Registry } from '../registry';
+import { DEVELOPMENT_CATALOGUE, DEVELOPMENT_REQUIREMENTS } from '../../scripts/competence-development';
 
 /**
  * The competence module's use cases (D108) on the memory adapter, with a clock, ids and a staff port the test owns:
@@ -685,16 +687,17 @@ describe('the built-in connector', () => {
     return types;
   }
 
-  test('it passes the registry validation, no read is a model tool, and the two lists open without input', () => {
+  test('it passes the registry validation, three reads are model tools (D122), and the two lists open without input', () => {
     const c = connector();
     expect(() => registry()).not.toThrow();
     expect(c).toMatchObject({ id: 'competence', kind: 'core', source: 'Kompetens' });
+    // The reads about an entity stay closed as the loader holds them (D97 item 7), and so does an approval's read.
     expect(c.capabilities.map(x => [x.name, x.kind, x.model, x.about?.entity ?? null])).toEqual([
-      ['competence.attention', 'read', false, null],
-      ['competence.holdings', 'read', false, null],
+      ['competence.attention', 'read', true, null],
+      ['competence.holdings', 'read', true, null],
       ['competence.person', 'read', false, 'person'],
       ['competence.unit', 'read', false, 'unit'],
-      ['competence.coverage', 'read', false, null],
+      ['competence.coverage', 'read', true, null],
       ['competence.approval', 'read', false, null],
     ]);
     for (const x of c.capabilities) expect(viewProblem(x, c.capabilities)).toBeUndefined();
@@ -1795,9 +1798,16 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
 
       const m = await competence.matrix(boss);
       expect(checkContract(CompetenceMatrixOutputSchema, m)).toBe(true);
-      // Every type fits: no sets to choose from. The columns in the catalogue's order, by area.
+      // Every type fits, so every one is shown with none chosen, and the sets that narrow it are offered: each area, and
+      // each position the reports hold. The columns in the catalogue's order, by area.
       expect(m.by).toBeUndefined();
-      expect(m.groups).toEqual([]);
+      expect(m.groups).toEqual([
+        { by: 'area:Akut', part: 1, parts: 1, kind: 'area', label: 'Akut', types: 1 },
+        { by: 'area:Examen', part: 1, parts: 1, kind: 'area', label: 'Examen', types: 1 },
+        { by: 'area:Säkerhet', part: 1, parts: 1, kind: 'area', label: 'Säkerhet', types: 1 },
+        { by: 'position:' + SSK, part: 1, parts: 1, kind: 'position', label: 'Sjuksköterska', types: 1 },
+        { by: 'position:' + USK, part: 1, parts: 1, kind: 'position', label: 'Undersköterska', types: 1 },
+      ]);
       expect(m.required).toBe(3);
       expect(m.columns).toEqual([
         { typeId: hlr, name: 'HLR', area: 'Akut', kind: 'course' },
@@ -1842,9 +1852,22 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
         ['missing', null, true, ['Undersköterska', 'Enhet 1']],
         ['none', null, false, []],
       ]);
-      // An archived type is required of nobody, so it is no column.
+      // A set chosen narrows the columns and is in the answer; an unknown one is every column again.
+      const degrees = await competence.matrix(boss, { by: 'area:Examen' });
+      expect([degrees.by, degrees.part, degrees.columns.map(c => c.name)]).toEqual([
+        'area:Examen',
+        1,
+        ['Socionomexamen'],
+      ]);
+      expect(degrees.rows.every(r => r.cells.length === 1)).toBe(true);
+      const unknown = await competence.matrix(boss, { by: 'area:Okänd' });
+      expect([unknown.by, unknown.columns.length]).toEqual([undefined, 2]);
+      // An archived type is required of nobody, so it is no column; a single area and a position that asks for all of
+      // it narrow nothing, so nothing is offered.
       await competence.archiveType(admin, degree);
-      expect((await competence.matrix(boss)).columns.map(c => c.name)).toEqual(['HLR']);
+      const alone = await competence.matrix(boss);
+      expect(alone.columns.map(c => c.name)).toEqual(['HLR']);
+      expect(alone.groups).toEqual([]);
     });
 
     test('only a manager reads it, and only their own reports', async () => {
@@ -1864,14 +1887,16 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
       await expect(competence.matrix(boss)).rejects.toBeInstanceOf(ForbiddenError);
     });
 
-    test('more than ten required types are offered as sets by area and by position, ten at a time, the chosen one in the address', async () => {
+    test('more required types than fit are offered as sets by area and by position, a part at a time, the chosen one in the address', async () => {
       directory();
       const { hlr } = await catalogue();
+      const CAP = COMPETENCE_MATRIX_COLUMNS;
+      const padded = (i: number) => String(i).padStart(2, '0');
       await competence.addRequirement(admin, { typeId: hlr, positionCode: USK });
       const safety: string[] = [];
-      for (let i = 1; i <= 11; i++) {
+      for (let i = 1; i <= CAP + 1; i++) {
         const id = await competence.addType(admin, {
-          name: `Skydd ${String(i).padStart(2, '0')}`,
+          name: `Skydd ${padded(i)}`,
           area: 'Säkerhet',
           kind: 'certificate',
         });
@@ -1881,24 +1906,26 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
       const names = (m: CompetenceMatrixOutput) => m.columns.map(c => c.name);
       const first = await competence.matrix(boss);
       expect(checkContract(CompetenceMatrixOutputSchema, first)).toBe(true);
-      expect(first.required).toBe(12);
-      // Areas first in Swedish order, then the positions the reports hold, by label; a set of eleven in two parts.
+      expect(first.required).toBe(CAP + 2);
+      // Areas first in Swedish order, then the positions the reports hold, by label; a set of one more than fits in two
+      // parts.
       expect(first.groups).toEqual([
         { by: 'area:Akut', part: 1, parts: 1, kind: 'area', label: 'Akut', types: 1 },
-        { by: 'area:Säkerhet', part: 1, parts: 2, kind: 'area', label: 'Säkerhet', types: 10 },
+        { by: 'area:Säkerhet', part: 1, parts: 2, kind: 'area', label: 'Säkerhet', types: CAP },
         { by: 'area:Säkerhet', part: 2, parts: 2, kind: 'area', label: 'Säkerhet', types: 1 },
-        { by: 'position:' + SSK, part: 1, parts: 2, kind: 'position', label: 'Sjuksköterska', types: 10 },
+        { by: 'position:' + SSK, part: 1, parts: 2, kind: 'position', label: 'Sjuksköterska', types: CAP },
         { by: 'position:' + SSK, part: 2, parts: 2, kind: 'position', label: 'Sjuksköterska', types: 1 },
         { by: 'position:' + USK, part: 1, parts: 1, kind: 'position', label: 'Undersköterska', types: 1 },
       ]);
       // Nothing chosen: the first set.
       expect([first.by, first.part, names(first)]).toEqual(['area:Akut', 1, ['HLR']]);
       const safe = await competence.matrix(boss, { by: 'area:Säkerhet' });
+      expect(checkContract(CompetenceMatrixOutputSchema, safe)).toBe(true);
       expect([safe.by, safe.part]).toEqual(['area:Säkerhet', 1]);
-      expect(names(safe)).toEqual(Array.from({ length: 10 }, (_, i) => `Skydd ${String(i + 1).padStart(2, '0')}`));
-      expect(safe.rows.every(r => r.cells.length === 10)).toBe(true);
-      expect(names(await competence.matrix(boss, { by: 'area:Säkerhet', part: 2 }))).toEqual(['Skydd 11']);
-      expect(names(await competence.matrix(boss, { by: 'position:' + SSK, part: 2 }))).toEqual(['Skydd 11']);
+      expect(names(safe)).toEqual(Array.from({ length: CAP }, (_, i) => `Skydd ${padded(i + 1)}`));
+      expect(safe.rows.every(r => r.cells.length === CAP)).toBe(true);
+      expect(names(await competence.matrix(boss, { by: 'area:Säkerhet', part: 2 }))).toEqual([`Skydd ${CAP + 1}`]);
+      expect(names(await competence.matrix(boss, { by: 'position:' + SSK, part: 2 }))).toEqual([`Skydd ${CAP + 1}`]);
       expect(names(await competence.matrix(boss, { by: 'position:' + USK }))).toEqual(['HLR']);
       // Anna does not hold the position the safety set is asked of: required of Bo, not of her.
       expect(cells(safe)['Anna Andersson']![0]).toEqual(['none', null, false, []]);
@@ -1907,11 +1934,51 @@ describe('requirements, missing and coverage (D108 item 6)', () => {
       expect([(await competence.matrix(boss, { by: 'area:Säkerhet', part: 7 })).part]).toEqual([1]);
       const unknown = await competence.matrix(boss, { by: 'area:Okänd' });
       expect([unknown.by, names(unknown)]).toEqual(['area:Akut', ['HLR']]);
-      // Down to ten, every type fits again and no set is offered.
-      await competence.archiveType(admin, safety[10]!);
-      await competence.archiveType(admin, safety[9]!);
-      const fits = await competence.matrix(boss, { by: 'area:Säkerhet' });
-      expect([fits.by, fits.groups, fits.columns.length]).toEqual([undefined, [], 10]);
+      // Down to as many as fit, every type is shown unless a set is chosen, and the sets that narrow it are offered.
+      await competence.archiveType(admin, safety[CAP]!);
+      await competence.archiveType(admin, safety[CAP - 1]!);
+      const fits = await competence.matrix(boss);
+      expect([fits.by, fits.columns.length]).toEqual([undefined, CAP]);
+      expect(fits.groups.map(g => [g.by, g.parts, g.types])).toEqual([
+        ['area:Akut', 1, 1],
+        ['area:Säkerhet', 1, CAP - 1],
+        ['position:' + SSK, 1, CAP - 1],
+        ['position:' + USK, 1, 1],
+      ]);
+      const chosen = await competence.matrix(boss, { by: 'area:Säkerhet' });
+      expect([chosen.by, chosen.columns.length]).toEqual(['area:Säkerhet', CAP - 1]);
+    });
+
+    test('a matrix of twenty required types and thirty reports is read whole: every column, every person, a cell each', async () => {
+      directory();
+      await catalogue();
+      // Twenty-eight more reports on the manager's unit beside Anna and Bo, each holding the undersköterska position.
+      const more = Array.from({ length: 28 }, (_, i) =>
+        person(`report-${String(i + 1).padStart(2, '0')}`, `Rapport ${String(i + 1).padStart(2, '0')}`, null),
+      );
+      for (const p of more) {
+        store.state.persons.set(p.id, { id: p.id, organisationId: ORG, name: p.name, userName: p.userName });
+        store.assign(p.id, 'u1');
+        store.holdPosition(p.id, 'pos-usk');
+      }
+      staff.set('boss', { units: [{ unitId: 'u1', unitLabel: 'Enhet 1', people: [anna, bo, ...more] }] });
+      for (let i = 1; i <= 20; i++) {
+        const id = await competence.addType(admin, {
+          name: `Kompetens ${String(i).padStart(2, '0')}`,
+          area: i % 2 ? 'Säkerhet' : 'Vård',
+          kind: 'certificate',
+        });
+        await competence.addRequirement(admin, { typeId: id, positionCode: USK });
+      }
+      const m = await competence.matrix(boss);
+      expect(checkContract(CompetenceMatrixOutputSchema, m)).toBe(true);
+      expect([m.by, m.required, m.columns.length, m.rows.length]).toEqual([undefined, 20, 20, 30]);
+      expect(m.rows.every(r => r.cells.length === 20)).toBe(true);
+      // Two areas of ten: each narrows the twenty, so both are offered; the position asks for all of them and is not.
+      expect(m.groups.map(g => [g.by, g.types])).toEqual([
+        ['area:Säkerhet', 10],
+        ['area:Vård', 10],
+      ]);
     });
 
     test('the export is the matrix as shown, with an audit row of counts that names nobody', async () => {
@@ -3745,5 +3812,48 @@ describe('skills with levels and interest (D120)', () => {
       const written = JSON.stringify(audits());
       for (const name of [...NAMES, ...TYPE_NAMES, 'Engelska', 'Journalsystem']) expect(written).not.toContain(name);
     });
+  });
+});
+
+/**
+ * The development stack's data (`scripts/competence-development.ts`), seeded through the operator's use cases as the
+ * seed seeds it: every requirement names a type of the catalogue and a position of the synthetic directory, a least
+ * level only on a skill, and none twice, so the seed adds each once and a run after one made by hand skips it.
+ */
+describe('the development data (D108 item 6)', () => {
+  test('a school’s teachers and its managers are required something, as care’s are: each requirement seeds once', async () => {
+    const positions = [
+      'underskoterska',
+      'sjukskoterska',
+      'vardbitrade',
+      'stodassistent',
+      'enhetschef',
+      'handlaggare',
+      'maskinforare',
+      'larare',
+    ];
+    for (const code of positions) store.addPosition({ id: 'pos-' + code, organisationId: ORG, code, label: code });
+    const typeIds = new Map<string, string>();
+    for (const type of DEVELOPMENT_CATALOGUE)
+      typeIds.set(type.name, await competence.seedType('operator:test', ORG, type));
+    const keys = DEVELOPMENT_REQUIREMENTS.map(r => r.position + '\n' + r.type);
+    expect(new Set(keys).size).toBe(keys.length);
+    for (const r of DEVELOPMENT_REQUIREMENTS) {
+      expect(positions).toContain(r.position);
+      const typeId = typeIds.get(r.type);
+      expect(typeId).toBeDefined();
+      await competence.seedRequirement('operator:test', ORG, {
+        typeId: typeId!,
+        positionCode: r.position,
+        ...(r.minLevel ? { minLevel: r.minLevel } : {}),
+      });
+    }
+    expect(DEVELOPMENT_REQUIREMENTS.filter(r => r.position === 'larare')).toEqual([
+      { position: 'larare', type: 'Brandskydd' },
+      { position: 'larare', type: 'HLR' },
+      { position: 'larare', type: 'Lättläst svenska', minLevel: 2 },
+    ]);
+    expect(DEVELOPMENT_REQUIREMENTS.filter(r => r.position === 'enhetschef').length).toBeGreaterThan(1);
+    expect(store.state.requirements.size).toBe(DEVELOPMENT_REQUIREMENTS.length);
   });
 });

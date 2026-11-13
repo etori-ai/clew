@@ -5,7 +5,9 @@ import { viewPageHref } from './view-address';
  * The place Kompetens in the rail (D120 item 8) and its pages, each an address of its own (D116): the reader's own
  * holdings at `/competence`, and the manager's matrix at `/competence/matrix` (D108 item 11). The matrix names its set
  * of columns in the address, `by` (`area:<the area>` or `position:<the position's id>`) and `part` (from 1, left out for
- * the first), so a reload, a link and Back show the same columns. Over the matrix, `requirement=new` is the dialog that
+ * the first), so a reload, a link and Back show the same columns; `only=attention` narrows what it shows to the people
+ * and the competences where something needs the manager, which the page does with what the read answered, so it is
+ * never sent to the server and the file is the set as read. Over the matrix, `requirement=new` is the dialog that
  * adds a requirement for one person, `register` and `competence` the registration of a certificate
  * (`register-address.ts`), `approve=<holding id>` the decision on a report's own registration (D108 item 7), and
  * `validate=<holding id>` the confirmation of a report's skill (D120 item 2). Over the reader's own page, `add=new` is
@@ -60,6 +62,17 @@ export function matrixHref(input: CompetenceMatrixInput, search: URLSearchParams
   q.delete(PART);
   if (input.by) q.set(BY, input.by);
   if (input.by && input.part && input.part > 1) q.set(PART, String(input.part));
+  return address(MATRIX_PATH, q);
+}
+const ONLY = 'only',
+  ATTENTION = 'attention';
+/** Whether the address narrows the matrix to what needs the manager (`only=attention`). */
+export const attentionOnly = (search: URLSearchParams | string) => new URLSearchParams(search).get(ONLY) === ATTENTION;
+/** The matrix narrowed to what needs the manager, or not, everything else in the address kept. */
+export function attentionHref(on: boolean, search: URLSearchParams | string = ''): string {
+  const q = new URLSearchParams(search);
+  q.delete(ONLY);
+  if (on) q.set(ONLY, ATTENTION);
   return address(MATRIX_PATH, q);
 }
 /** The matrix as shown, as a file to download. */

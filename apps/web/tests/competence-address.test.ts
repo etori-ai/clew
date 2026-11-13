@@ -8,6 +8,8 @@ import {
   approvalPageHref,
   approveHref,
   approveOf,
+  attentionHref,
+  attentionOnly,
   firstSearchPage,
   holdingsPageHref,
   matrixFileHref,
@@ -51,6 +53,19 @@ describe('the matrix names its columns and what lies over it in the address (D10
     );
     expect(matrixFileHref({ by: 'position:pos-usk' })).toBe('/api/competence/matrix.csv?by=position%3Apos-usk');
     expect(matrixFileHref({})).toBe('/api/competence/matrix.csv');
+  });
+  test('`only=attention` narrows to what needs the manager, keeps the set and the rest, and is never sent to the server', () => {
+    expect(attentionOnly('?only=attention')).toBe(true);
+    for (const q of ['', '?only=all', '?only=', '?attention=1']) expect(attentionOnly(q)).toBe(false);
+    expect(attentionHref(true, '?by=area%3AAkut&card=omtanke')).toBe(
+      `${MATRIX_PATH}?by=area%3AAkut&card=omtanke&only=attention`,
+    );
+    expect(attentionHref(false, '?by=area%3AAkut&only=attention')).toBe(`${MATRIX_PATH}?by=area%3AAkut`);
+    expect(attentionHref(false, '?only=attention')).toBe(MATRIX_PATH);
+    // The read and the file take the set alone.
+    expect(matrixInputOf('?only=attention&by=area%3AAkut')).toEqual({ by: 'area:Akut' });
+    expect(matrixHref({}, '?by=area%3AAkut&part=2&only=attention')).toBe(`${MATRIX_PATH}?only=attention`);
+    expect(requirementHref('?only=attention')).toBe(`${MATRIX_PATH}?only=attention&requirement=new`);
   });
   test('the dialog that adds a requirement for one person lies over the matrix, its set kept, and closes to it', () => {
     expect(requirementHref('?by=area%3AAkut')).toBe(`${MATRIX_PATH}?by=area%3AAkut&requirement=new`);

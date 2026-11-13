@@ -78,9 +78,24 @@ test.describe('Kompetens › Kompetenssökning', () => {
         // Before a type is chosen the page says what it does, and that every read is logged.
         await expect(page.getByRole('heading', { level: 2, name: 'Välj en kompetens' })).toBeVisible();
         await expect(page.getByText('Varje sökning, nedladdning och öppnad person loggas')).toBeVisible();
+        // Nothing is drawn above the fields for a result not yet there: the card begins with the fields, and the
+        // readout that follows them is there, empty and taking no room, until it has something to say.
+        await expect(page.getByRole('toolbar', { name: 'Sökresultat' })).toHaveCount(0);
+        const card = (await page
+          .locator('.astryx-card')
+          .filter({ has: form(page) })
+          .boundingBox())!;
+        const fields = (await form(page).boundingBox())!;
+        // The card's own padding is all that stands above the fields.
+        expect(fields.y - card.y).toBeLessThanOrEqual(16);
+        const field = (await typeField(page).boundingBox())!;
         await expectNoAxeViolations(page);
         await chooseType(page, 'hl', 'HLR');
         await expect(readout(page)).toHaveText('3 personer med HLR');
+        // The fields have not moved for it: the count came in after them.
+        const now = (await typeField(page).boundingBox())!;
+        expect([now.x, now.y]).toEqual([field.x, field.y]);
+        expect((await form(page).boundingBox())!.y).toBe(fields.y);
         await expect.poll(() => announcements(page)).toContainEqual('3 personer med HLR');
         // In the body, never the address (D100 item 5): the type searched for is no log line's business.
         expect(api.searchBodies).toEqual([{ typeId: 't-hlr', page: 1, pageSize: 25 }]);

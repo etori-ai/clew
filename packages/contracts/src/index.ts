@@ -2180,9 +2180,12 @@ export type CompetenceShareTargetBody = Static<typeof CompetenceShareTargetBodyS
 /**
  * The manager's matrix (D108 item 11): the people who report to the reader against the competence types required of
  * at least one of them, at most this many columns at a time. Where more types are required, the reader chooses the
- * types of one area or of one position, and a set larger than this is shown in parts.
+ * types of one area or of one position, and a set larger than this is shown in parts. Thirty since a cell is one
+ * compact control (2026-11-13; ten before, when a cell was a word, a day and a menu of its own): a set the reader
+ * narrows to one area or position, or to what needs attention, fits it, and more than thirty columns is no longer a
+ * table one reads across.
  */
-export const COMPETENCE_MATRIX_COLUMNS = 10;
+export const COMPETENCE_MATRIX_COLUMNS = 30;
 /** What a set of the matrix's columns is chosen by: an area of the catalogue, or a position the reports hold. */
 export const COMPETENCE_MATRIX_GROUPS = ['area', 'position'] as const;
 export type CompetenceMatrixGroupKind = (typeof COMPETENCE_MATRIX_GROUPS)[number];
@@ -2201,8 +2204,11 @@ const matrixPart = Type.Integer({ minimum: 1, maximum: 99 });
 /** One set of columns the reader may choose, as the selector offers it. */
 export const CompetenceMatrixGroupSchema = object({
   by: matrixBy,
-  part: { ...matrixPart, description: 'Which part of a set larger than ten, from 1.' },
-  parts: { ...matrixPart, description: 'How many parts the set is shown in; 1 for a set of ten or fewer.' },
+  part: { ...matrixPart, description: 'Which part of a set larger than `COMPETENCE_MATRIX_COLUMNS`, from 1.' },
+  parts: {
+    ...matrixPart,
+    description: 'How many parts the set is shown in; 1 for a set of `COMPETENCE_MATRIX_COLUMNS` or fewer.',
+  },
   kind: literals(COMPETENCE_MATRIX_GROUPS),
   label: Type.String({ minLength: 1, maxLength: 512, description: "Swedish. The area, or the position's label." }),
   types: Type.Integer({ minimum: 1, maximum: COMPETENCE_MATRIX_COLUMNS, description: 'The columns of this part.' }),
@@ -2302,11 +2308,16 @@ export const CompetenceMatrixAwaitingSchema = object({
 export type CompetenceMatrixAwaiting = Static<typeof CompetenceMatrixAwaitingSchema>;
 export const CompetenceMatrixOutputSchema = object(
   {
-    by: Type.Optional({ ...matrixBy, description: 'The set shown; absent when every required type fits.' }),
+    by: Type.Optional({
+      ...matrixBy,
+      description:
+        'The set shown; absent when every required type is shown, which it is when they fit and none is chosen.',
+    }),
     part: Type.Optional(matrixPart),
     groups: Type.Array(CompetenceMatrixGroupSchema, {
       maxItems: 2000,
-      description: 'The sets to choose from; empty when every required type fits in one view.',
+      description:
+        'The sets to choose from: every area and every position of a report, each in parts where it is larger than the most shown; where every required type fits, only the sets that narrow it, so empty when none does.',
     }),
     columns: Type.Array(CompetenceMatrixColumnSchema, { maxItems: COMPETENCE_MATRIX_COLUMNS }),
     rows: Type.Array(CompetenceMatrixRowSchema, { maxItems: 5000 }),
@@ -2319,7 +2330,7 @@ export const CompetenceMatrixOutputSchema = object(
   "The reader's reports against what is required of them (D108 item 11).",
 );
 export type CompetenceMatrixOutput = Static<typeof CompetenceMatrixOutputSchema>;
-/** What the matrix and its file are read with: the set of columns, and which part of a set larger than ten. */
+/** What the matrix and its file are read with: the set of columns, and which part of a set larger than the most shown. */
 export interface CompetenceMatrixInput {
   by?: string;
   part?: number;

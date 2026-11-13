@@ -31,7 +31,6 @@ import {
   Selector,
   Table,
   Text,
-  Toolbar,
   Typeahead,
   TypeaheadItem,
   VStack,
@@ -55,7 +54,7 @@ import { Shell, mobileQuery, shortQuery } from '../components/shell';
 import { usePagePanel } from '../components/page-panel';
 import { panelBesideQuery } from '../components/panel';
 import { levelLabel } from '../components/register-holding';
-import { CompetenceHeader, cellDay } from './competence-parts';
+import { CompetenceHeader, cellDay, managesFrom } from './competence-parts';
 
 /** The page's column at its widest: the width every page has (1216 px) less its padding on each side. */
 const COLUMN = 1216 - 2 * 32;
@@ -163,9 +162,10 @@ export function CompetenceSearchPage({ user, admin }: { user: SessionUser; admin
   const searcher = useHeldRelations().includes('registrar');
   const options = useQuery(competenceSearchOptionsQuery);
   const off = options.isError && refused(options.error);
-  // The matrix's tab follows the server's answer to its read, as on the place's other pages (D99).
+  // The matrix's tab follows the server's answer to its read, and the session's role until it answers, as on the
+  // place's other pages (D99).
   const matrix = useQuery({ ...competenceMatrixQuery({}), enabled: !off });
-  const manages = matrix.isSuccess || (matrix.isError && !refused(matrix.error));
+  const manages = managesFrom(user, matrix);
 
   const [draft, setDraft] = useState<SearchDraft>(keptSearch);
   const change = (next: SearchDraft) => {
@@ -337,109 +337,106 @@ export function CompetenceSearchPage({ user, admin }: { user: SessionUser; admin
                   </VStack>
                 ) : (
                   <Card padding={0}>
-                    <Toolbar
-                      label="Sökresultat"
-                      size="sm"
-                      dividers={['bottom']}
-                      startContent={
-                        // The one line that says what the search found, read out when it changes (4.1.3).
-                        <Text weight="semibold" role="status" ref={head}>
-                          {said}
-                        </Text>
-                      }
-                      endContent={
-                        data && data.total > 0 ? (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            label="Ladda ner som CSV"
-                            icon={<Icon icon={ArrowDownTrayIcon} size="sm" />}
-                            isLoading={downloading}
-                            onClick={() => void download()}
-                          />
-                        ) : undefined
-                      }
-                    />
                     <Section variant="transparent" padding={3}>
                       <VStack gap={2}>
-                        <HStack
-                          gap={2}
-                          wrap="wrap"
-                          vAlign="end"
-                          role="search"
-                          aria-label="Sök vem som har en kompetens"
-                        >
-                          <Typeahead<TypeItem>
-                            label="Kompetens"
-                            placeholder="Sök på namn eller område"
-                            searchSource={source}
-                            value={chosen}
-                            onChange={item =>
-                              change({
-                                ...draft,
-                                type: item
-                                  ? {
-                                      id: item.id,
-                                      label: item.label,
-                                      area: item.auxiliaryData?.area ?? '',
-                                      kind: item.auxiliaryData?.kind ?? 'certificate',
-                                    }
-                                  : null,
-                                minLevel: item?.auxiliaryData?.kind === SKILL_KIND ? draft.minLevel : null,
-                              })
-                            }
-                            hasEntriesOnFocus
-                            maxMenuItems={COMPETENCE_TYPE_SEARCH_MAX}
-                            emptySearchText="Ingen kompetens i katalogen heter så"
-                            renderItem={item => <TypeaheadItem item={item} description={item.auxiliaryData?.area} />}
-                            menu={{
-                              role: 'listbox',
-                              render: ({ listbox, isEmptySearch }) => (
-                                <VStack gap={0}>
-                                  {listbox}
-                                  {more && !isEmptySearch && (
-                                    <Section variant="transparent" padding={2}>
-                                      <Text type="supporting">Fler kompetenser matchar. Skriv mer av namnet.</Text>
-                                    </Section>
-                                  )}
-                                </VStack>
-                              ),
-                            }}
-                            width={mobile ? '100%' : 320}
-                          />
-                          {skill && (
-                            <Selector
-                              label="Lägsta nivå"
-                              placeholder="Alla nivåer"
-                              presentation="adaptive"
-                              hasClear
-                              options={COMPETENCE_LEVELS.map(l => ({ value: String(l), label: levelLabel(l) }))}
-                              value={draft.minLevel ? String(draft.minLevel) : null}
-                              onChange={(value: string | null) =>
+                        {/* The fields lead the row, and what the search found follows them, as Astryx's filter bar
+                            places its result count: nothing is drawn for it before a search, and the fields stay where
+                            they are when it comes. */}
+                        <HStack gap={2} wrap="wrap" vAlign="end">
+                          <HStack
+                            gap={2}
+                            wrap="wrap"
+                            vAlign="end"
+                            role="search"
+                            aria-label="Sök vem som har en kompetens"
+                          >
+                            <Typeahead<TypeItem>
+                              label="Kompetens"
+                              placeholder="Sök på namn eller område"
+                              searchSource={source}
+                              value={chosen}
+                              onChange={item =>
                                 change({
                                   ...draft,
-                                  minLevel: value ? (Number(value) as SearchDraft['minLevel']) : null,
+                                  type: item
+                                    ? {
+                                        id: item.id,
+                                        label: item.label,
+                                        area: item.auxiliaryData?.area ?? '',
+                                        kind: item.auxiliaryData?.kind ?? 'certificate',
+                                      }
+                                    : null,
+                                  minLevel: item?.auxiliaryData?.kind === SKILL_KIND ? draft.minLevel : null,
                                 })
                               }
+                              hasEntriesOnFocus
+                              maxMenuItems={COMPETENCE_TYPE_SEARCH_MAX}
+                              emptySearchText="Ingen kompetens i katalogen heter så"
+                              renderItem={item => <TypeaheadItem item={item} description={item.auxiliaryData?.area} />}
+                              menu={{
+                                role: 'listbox',
+                                render: ({ listbox, isEmptySearch }) => (
+                                  <VStack gap={0}>
+                                    {listbox}
+                                    {more && !isEmptySearch && (
+                                      <Section variant="transparent" padding={2}>
+                                        <Text type="supporting">Fler kompetenser matchar. Skriv mer av namnet.</Text>
+                                      </Section>
+                                    )}
+                                  </VStack>
+                                ),
+                              }}
+                              width={mobile ? '100%' : 320}
+                            />
+                            {skill && (
+                              <Selector
+                                label="Lägsta nivå"
+                                placeholder="Alla nivåer"
+                                presentation="adaptive"
+                                hasClear
+                                options={COMPETENCE_LEVELS.map(l => ({ value: String(l), label: levelLabel(l) }))}
+                                value={draft.minLevel ? String(draft.minLevel) : null}
+                                onChange={(value: string | null) =>
+                                  change({
+                                    ...draft,
+                                    minLevel: value ? (Number(value) as SearchDraft['minLevel']) : null,
+                                  })
+                                }
+                              />
+                            )}
+                            <Selector
+                              label="Enhet"
+                              placeholder="Hela organisationen"
+                              presentation="adaptive"
+                              hasClear
+                              hasSearch
+                              searchPlaceholder="Sök enhet"
+                              emptyText="Katalogen har inte fört in några enheter."
+                              emptySearchText="Ingen enhet heter så"
+                              options={units.map(u => ({
+                                value: u.id,
+                                label: u.label,
+                                ...(u.parentLabel ? { description: u.parentLabel } : {}),
+                              }))}
+                              value={draft.unitId}
+                              onChange={(unitId: string | null) => change({ ...draft, unitId: unitId || null })}
+                            />
+                          </HStack>
+                          {/* The one line that says what the search found, read out when it changes (4.1.3): there from
+                              the start and empty before a search, so it takes no room until it has something to say. */}
+                          <Text weight="semibold" role="status" ref={head}>
+                            {said}
+                          </Text>
+                          {data && data.total > 0 && (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              label="Ladda ner som CSV"
+                              icon={<Icon icon={ArrowDownTrayIcon} size="sm" />}
+                              isLoading={downloading}
+                              onClick={() => void download()}
                             />
                           )}
-                          <Selector
-                            label="Enhet"
-                            placeholder="Hela organisationen"
-                            presentation="adaptive"
-                            hasClear
-                            hasSearch
-                            searchPlaceholder="Sök enhet"
-                            emptyText="Katalogen har inte fört in några enheter."
-                            emptySearchText="Ingen enhet heter så"
-                            options={units.map(u => ({
-                              value: u.id,
-                              label: u.label,
-                              ...(u.parentLabel ? { description: u.parentLabel } : {}),
-                            }))}
-                            value={draft.unitId}
-                            onChange={(unitId: string | null) => change({ ...draft, unitId: unitId || null })}
-                          />
                         </HStack>
                         <Text type="supporting">
                           Varje sökning, nedladdning och öppnad person loggas med vem som läste och när.

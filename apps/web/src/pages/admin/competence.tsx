@@ -20,6 +20,7 @@ import {
   EmptyState,
   FormLayout,
   HStack,
+  Link,
   List,
   ListItem,
   NumberInput,
@@ -59,8 +60,8 @@ import { IMPORT_PATH } from './competence-import';
  * "Kompetens" (D108 items 2, 3 and 8): the catalogue of competence types, kept by whoever has `admin.competence`. A
  * type has a name, an area it is listed under, a kind and, where the employer sets one, how many months a holding is
  * valid from the day it was issued. A type is added and changed in a dialog over the list, named in the address
- * (`?type=new`, `?type=<id>`, D83), and archived there: an archived type takes no new holdings, is required of nobody
- * and keeps the ones it has, so it is asked for twice; "Återställ" brings it back.
+ * (`?type=new`, `?type=<id>`, D83) and opened by the type's name, and archived there: an archived type takes no new
+ * holdings, is required of nobody and keeps the ones it has, so it is asked for twice; "Återställ" brings it back.
  *
  * The catalogue at scale (D120 item 7, D108 item 2): many types come in from a file on Importera
  * (`/admin/competence/import`), so the list is searched and paged in the browser. Two types that are one are merged in
@@ -123,6 +124,14 @@ const validityText = (months: number | undefined, kind?: CompetenceKind) =>
         : `${months} månader`
       : 'Ingen regel';
 const holdingsText = (n: number) => `${n} intyg`;
+/**
+ * What a person holds of a type, in the word for its kind (D120): a skill's holdings are "färdigheter", every other
+ * kind's "intyg", one and many.
+ */
+const heldWords = (skill: boolean) =>
+  skill
+    ? { one: 'färdighet', many: 'färdigheter', all: 'Färdigheterna' }
+    : { one: 'intyg', many: 'intyg', all: 'Intygen' };
 /** A count of people or holdings as the server shows it to an administrator: the number, or fewer than five (D118). */
 const countText = (n: CompetenceShownCount, one: string, many: string) =>
   n === 'few' ? `färre än ${COMPETENCE_GROUP_MIN} ${many}` : `${n} ${n === 1 ? one : many}`;
@@ -133,11 +142,15 @@ interface Row extends Record<string, unknown> {
   id: string;
   t: CompetenceType;
 }
-/** What a merge would move, in the sentence the dialog says before the second press (D108 item 2). */
-function mergeText(p: CompetenceMergePreview, into: string): string {
+/**
+ * What a merge would move, in the sentence the dialog says before the second press (D108 item 2). A skill merges only
+ * into a skill, so what moves is named for the kind of both (`skill`).
+ */
+function mergeText(p: CompetenceMergePreview, into: string, skill: boolean): string {
+  const held = heldWords(skill);
   const moves = [
     some(p.holdings)
-      ? `${countText(p.holdings, 'intyg', 'intyg')} hos ${countText(p.people, 'person', 'personer')}`
+      ? `${countText(p.holdings, held.one, held.many)} hos ${countText(p.people, 'person', 'personer')}`
       : null,
     p.requirements
       ? `${p.requirements} krav${
@@ -155,7 +168,7 @@ function mergeText(p: CompetenceMergePreview, into: string): string {
   ].filter((m): m is string => m !== null);
   const listed =
     moves.length === 0
-      ? `Inga intyg, krav eller kopplingar flyttas till ${into}.`
+      ? `Inga ${held.many}, krav eller kopplingar flyttas till ${into}.`
       : `Till ${into} flyttas ${moves.length === 1 ? moves[0] : `${moves.slice(0, -1).join(', ')} och ${moves.at(-1)}`}.`;
   return [
     listed,
@@ -444,7 +457,7 @@ function TypeDialog({
           <VStack gap={3}>
             <Text as="p">
               {merged
-                ? `Kompetensen är sammanslagen med ${merged.name}. Intygen, kraven och kopplingarna som hörde till den finns nu där. En sammanslagning går inte att ångra.`
+                ? `Kompetensen är sammanslagen med ${merged.name}. ${heldWords(type?.kind === 'skill').all}, kraven och kopplingarna som hörde till den finns nu där. En sammanslagning går inte att ångra.`
                 : 'Kompetensen är sammanslagen med en annan. En sammanslagning går inte att ångra.'}
             </Text>
             {merged && (
@@ -456,7 +469,7 @@ function TypeDialog({
         ) : merging && type ? (
           <VStack gap={3}>
             <Text as="p">
-              {`Allt som hör till ${type.name} flyttas till den kompetens du väljer: intyg och färdigheter, krav, andelsmål och kopplingar till källor. ${type.name} arkiveras och visar vart den gick.`}
+              {`Allt som hör till ${type.name} flyttas till den ${type.kind === 'skill' ? 'färdighet' : 'kompetens'} du väljer: ${heldWords(type.kind === 'skill').many}, krav, andelsmål och kopplingar till källor. ${type.name} arkiveras och visar vart den gick.`}
             </Text>
             <Typeahead<Target>
               label="Slå ihop med"
@@ -480,7 +493,7 @@ function TypeDialog({
               {!target
                 ? ''
                 : preview.data
-                  ? mergeText(preview.data, target.label)
+                  ? mergeText(preview.data, target.label, type.kind === 'skill')
                   : preview.isPending
                     ? 'Räknar vad som flyttas …'
                     : ''}
@@ -490,8 +503,7 @@ function TypeDialog({
           <VStack gap={3}>
             {type?.archived && (
               <Text as="p" type="supporting">
-                Kompetensen är arkiverad: den kan inte registreras och krävs inte av någon, men de intyg som finns
-                ligger kvar. Återställ den för att använda den igen.
+                {`Kompetensen är arkiverad: den kan inte registreras och krävs inte av någon, men de ${heldWords(type.kind === 'skill').many} som finns ligger kvar. Återställ den för att använda den igen.`}
               </Text>
             )}
             <FormLayout direction="vertical" defaultOptionality="required">
@@ -573,8 +585,7 @@ function TypeDialog({
             )}
             {archiving && (
               <Text as="p" role="status">
-                En arkiverad kompetens kan inte registreras och krävs inte av någon förrän den återställs. Intygen som
-                finns ligger kvar. Tryck Ja, arkivera för att arkivera den.
+                {`En arkiverad kompetens kan inte registreras och krävs inte av någon förrän den återställs. ${heldWords(type?.kind === 'skill').all} som finns ligger kvar. Tryck Ja, arkivera för att arkivera den.`}
               </Text>
             )}
           </VStack>
@@ -657,6 +668,15 @@ export function AdminCompetencePage({ user }: { user: SessionUser }) {
     ) : t.archived ? (
       <Badge variant="neutral" label="Arkiverad" />
     ) : null;
+  /**
+   * A type's name is its way in: a link to its dialog over the list (`type`), the list's place kept, so the row needs no
+   * button of its own. Astryx gives the focus back to it when the dialog closes.
+   */
+  const name = (t: CompetenceType) => (
+    <Link href={editHref(t.id)} weight="semibold" hasUnderline>
+      {t.name}
+    </Link>
+  );
   const columns = [
     {
       key: 'name',
@@ -664,7 +684,7 @@ export function AdminCompetencePage({ user }: { user: SessionUser }) {
       width: proportional(3, { minWidth: 220 }),
       renderCell: (r: Row) => (
         <VStack gap={1} hAlign="start">
-          <Text weight="semibold">{r.t.name}</Text>
+          {name(r.t)}
           {mark(r.t)}
         </VStack>
       ),
@@ -682,14 +702,6 @@ export function AdminCompetencePage({ user }: { user: SessionUser }) {
       width: proportional(2, { minWidth: 160 }),
       renderCell: (r: Row) => (
         <Text color={r.t.validityMonths ? 'primary' : 'secondary'}>{validityText(r.t.validityMonths, r.t.kind)}</Text>
-      ),
-    },
-    {
-      key: 'edit',
-      header: 'Ändra',
-      width: pixel(110),
-      renderCell: (r: Row) => (
-        <Button size="sm" variant="secondary" label="Ändra" aria-label={`Ändra ${r.t.name}`} href={editHref(r.t.id)} />
       ),
     },
   ];
@@ -789,7 +801,7 @@ export function AdminCompetencePage({ user }: { user: SessionUser }) {
               {shown.map(t => (
                 <ListItem
                   key={t.id}
-                  label={<Text weight="semibold">{t.name}</Text>}
+                  label={name(t)}
                   description={
                     <VStack gap={1} hAlign="start">
                       <Text type="supporting">
@@ -797,15 +809,6 @@ export function AdminCompetencePage({ user }: { user: SessionUser }) {
                       </Text>
                       {mark(t)}
                     </VStack>
-                  }
-                  endContent={
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      label="Ändra"
-                      aria-label={`Ändra ${t.name}`}
-                      href={editHref(t.id)}
-                    />
                   }
                 />
               ))}

@@ -1,5 +1,11 @@
 import type { Page } from '@playwright/test';
-import { competenceCatalogue, competenceRequirements, competenceShareTargets, skillTypes } from './competence';
+import {
+  competenceCatalogue,
+  competenceRequirements,
+  competenceShareTargets,
+  expectLevelNames,
+  skillTypes,
+} from './competence';
 import {
   desktop,
   expect,
@@ -222,7 +228,9 @@ test.describe('Administration › Kompetens › Krav', () => {
       await expect(competence).toContainText('Journalsystem');
       const least = dialog.getByRole('radiogroup', { name: /Lägsta nivå/ });
       await expect(least).toBeVisible();
-      const basic = dialog.getByRole('radio', { name: /Grundläggande/ });
+      // Each level is named by its word and described by what it means, never by the number behind it.
+      await expectLevelNames(least);
+      const basic = dialog.getByRole('radio', { name: 'Grundläggande', exact: true });
       await expect(basic).toBeChecked();
       await settled(page);
       await expectNoAxeViolations(page);

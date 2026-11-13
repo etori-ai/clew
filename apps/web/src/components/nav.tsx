@@ -93,7 +93,8 @@ type Found = ({ href: string } | { card: string }) & { detail: string; group: st
  * draft that waits for the person). At the foot Administration with the sections the person may open (`ADMIN_ROWS`),
  * collapsed until one of them is open. Kalender is drawn while the calendar is the person's to see (D23), and Kompetens
  * for everyone while the competence module is switched on and visible to them (D108 item 13), the same signal as its row
- * under Administration: not before `/api/areas` has said so, since the module is off until an administrator switches it on.
+ * under Administration: not before `/api/areas` has said so, since the module is off until an administrator switches it on,
+ * except on a page of the place itself, where the reader already is.
  * Every row is a link to a route, so the back button and a reload land in the same place. Returned as the shell's
  * slots so the shell keeps the heading, the person and the way out.
  */
@@ -232,8 +233,10 @@ export function useRail({
               isSelected={current.surface === 'staff'}
             />
           )}
-          {/* Kompetens (D120 item 8): the reader's own and, for a manager, the matrix; drawn while the module is on for them. */}
-          {!!systems && sees('competence') && (
+          {/* Kompetens (D120 item 8): the reader's own and, for a manager, the matrix; drawn while the module is on for them.
+              On a page of the place it is drawn before `/api/areas` has answered, so the rail does not gain a row under
+              the reader's eyes; the page says so itself if the module turns out to be off. */}
+          {(!!systems || current.surface === 'competence') && sees('competence') && (
             <SideNavItem
               label="Kompetens"
               icon={AcademicCapIcon}

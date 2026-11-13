@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { competenceCatalogue } from './competence';
 import {
   announcements,
@@ -45,6 +45,17 @@ const obscured = (page: Page) =>
     });
   });
 const dialogOf = (page: Page, name: string) => page.getByRole('dialog', { name });
+/** A type's name in the catalogue, which is its way in: a link to its dialog. */
+const typeLink = (page: Page, name: string) =>
+  page.getByRole('main').getByRole('link', { name, exact: true }).and(page.locator('[href*="type="]'));
+/** Presses Tab until `target` has the focus, as a person moving through the page does; fails after `max` stops. */
+async function tabTo(page: Page, target: Locator, max = 60) {
+  for (let i = 0; i < max; i++) {
+    if ((await target.count()) && (await target.evaluate(el => el === document.activeElement))) return;
+    await page.keyboard.press('Tab');
+  }
+  await expect(target).toBeFocused();
+}
 /** The dialog fades in: contrast is measured once every finite animation has run, not in the instant it opens. */
 const settled = (page: Page) =>
   page.evaluate(() =>
@@ -68,7 +79,7 @@ test.describe('Administration › Kompetens', () => {
         api.competenceTypes = competenceCatalogue();
         await open(page, '/admin/competence');
         await expect(page.getByRole('heading', { level: 1, name: 'Kompetens' })).toBeVisible();
-        await expect(page.getByText('Heta arbeten', { exact: true })).toBeVisible();
+        await expect(typeLink(page, 'Heta arbeten')).toBeVisible();
         await expectNoAxeViolations(page);
         const { unmarked } = await hiddenFocusStops(page);
         expect(unmarked).toEqual([]);
@@ -96,8 +107,12 @@ test.describe('Administration › Kompetens', () => {
         '3 kompetenser att registrera, 1 arkiverade',
       );
       const table = page.getByRole('table');
-      await expect(table.getByRole('columnheader')).toHaveText(['Kompetens', 'Område', 'Typ', 'Giltighet', 'Ändra']);
+      // A type's name opens it, so the row has no button of its own.
+      await expect(table.getByRole('columnheader')).toHaveText(['Kompetens', 'Område', 'Typ', 'Giltighet']);
+      await expect(table.getByRole('button')).toHaveCount(0);
       const hlr = table.getByRole('row', { name: /HLR/ });
+      await expect(hlr.getByRole('link')).toHaveAccessibleName('HLR');
+      await expect(hlr.getByRole('link')).toHaveAttribute('href', '/admin/competence?type=t-hlr');
       await expect(hlr).toContainText('Akut omhändertagande');
       await expect(hlr).toContainText('Kurs');
       await expect(hlr).toContainText('24 månader (2 år)');
@@ -255,7 +270,12 @@ test.describe('Administration › Kompetens', () => {
       api.admin = true;
       api.competenceTypes = competenceCatalogue();
       await open(page, '/admin/competence');
-      await page.getByRole('link', { name: 'Ändra HLR' }).click();
+      // By keyboard: Tab to the type's name, Enter opens its dialog.
+      const hlr = typeLink(page, 'HLR');
+      const box = (await hlr.boundingBox())!;
+      expect(box.width).toBeGreaterThanOrEqual(24);
+      await tabTo(page, hlr);
+      await page.keyboard.press('Enter');
       await expect(page).toHaveURL('/admin/competence?type=t-hlr');
       const dialog = dialogOf(page, 'Ändra kompetens');
       await expect(dialog.getByRole('textbox', { name: /Namn/ })).toHaveValue('HLR');
@@ -282,6 +302,8 @@ test.describe('Administration › Kompetens', () => {
       ]);
       await expect(notices(page).getByText('HLR är ändrad.')).toBeAttached();
       await expect(page.getByRole('table').getByRole('row', { name: /HLR/ })).toContainText('12 månader (1 år)');
+      // The focus is back on the name that opened it.
+      await expect(hlr).toBeFocused();
     });
     test('a change of the name alone is saved at once, and the server’s refusal keeps what was typed', async ({
       page,
@@ -327,7 +349,10 @@ test.describe('Administration › Kompetens', () => {
       await expect(page).toHaveURL('/admin/competence');
       expect(api.catalogueWrites).toEqual([]);
 
-      await page.getByRole('link', { name: 'Ändra Fallskydd' }).click();
+      const fall = typeLink(page, 'Fallskydd');
+      await fall.focus();
+      await page.keyboard.press('Enter');
+      await expect(page).toHaveURL('/admin/competence?type=t-fall');
       await dialog.getByRole('button', { name: 'Arkivera', exact: true }).click();
       await dialog.getByRole('button', { name: 'Ja, arkivera' }).click();
       await expect(dialog).toBeHidden();
@@ -340,7 +365,8 @@ test.describe('Administration › Kompetens', () => {
           .getByText('Arkiverad'),
       ).toBeVisible();
       // An archived type can still be read and renamed, but not archived again: it is restored instead.
-      await page.getByRole('link', { name: 'Ändra Fallskydd' }).click();
+      await fall.focus();
+      await page.keyboard.press('Enter');
       await expect(dialog.getByText('Kompetensen är arkiverad', { exact: false })).toBeVisible();
       await expect(dialog.getByRole('button', { name: /^Arkivera/ })).toHaveCount(0);
       await expect(dialog.getByRole('button', { name: 'Återställ' })).toBeVisible();
@@ -409,7 +435,8 @@ test.describe('Administration › Kompetens', () => {
       await expect(target).toBeFocused();
       // A skill and an archived type are not offered: a certificate is merged into a type in use of another kind.
       await page.keyboard.type('Engelska');
-      await expect(merging.getByText('Ingen kompetens som används heter så')).toBeVisible();
+      // The list's own row: the dialog's live region says the same words to announce them.
+      await expect(merging.getByRole('option', { name: 'Ingen kompetens som används heter så' })).toBeVisible();
       await target.fill('');
       await page.keyboard.type('Heta');
       await expect(page.getByRole('option', { name: /Heta arbeten/ })).toBeVisible();
@@ -436,7 +463,8 @@ test.describe('Administration › Kompetens', () => {
       await expect(row.getByText('Sammanslagen')).toBeVisible();
       await expect(row.getByText('med Heta arbeten')).toBeVisible();
       // A merged type says what it went into and is read only: no change, archive, restore or merge.
-      await page.getByRole('link', { name: 'Ändra Fallskydd' }).click();
+      await typeLink(page, 'Fallskydd').focus();
+      await page.keyboard.press('Enter');
       await expect(dialog.getByText('Kompetensen är sammanslagen med Heta arbeten.', { exact: false })).toBeVisible();
       for (const name of [/^Arkivera/, /^Återställ/, /^Slå ihop/, /^Spara/])
         await expect(dialog.getByRole('button', { name })).toHaveCount(0);
@@ -446,6 +474,60 @@ test.describe('Administration › Kompetens', () => {
       await expect(dialog.getByRole('textbox', { name: /Namn/ })).toHaveValue('Heta arbeten');
       await settled(page);
       await expectNoAxeViolations(page);
+    });
+    test('a skill’s merge says what moves as färdigheter, one and many, never as intyg', async ({ page, api }) => {
+      api.admin = true;
+      api.competenceTypes = [
+        ...competenceCatalogue(),
+        ...['Engelska', 'Teckenspråk', 'Lättläst svenska', 'Kalkylprogram'].map((name, i) => ({
+          id: `t-skill-${i}`,
+          name,
+          area: 'Språk',
+          kind: 'skill' as const,
+          archived: false,
+        })),
+      ];
+      await open(page, '/admin/competence?type=t-skill-0');
+      const dialog = dialogOf(page, 'Ändra kompetens');
+      const merging = dialogOf(page, 'Slå ihop kompetens');
+      // Each target is asked for once: a count already read is not read again.
+      const into = async (name: string) => {
+        await dialog.getByRole('button', { name: 'Slå ihop med …' }).click();
+        await expect(merging.getByRole('combobox', { name: /Slå ihop med/ })).toBeFocused();
+        await page.keyboard.type(name.slice(0, 6));
+        await page.getByRole('option', { name: new RegExp('^' + name) }).click();
+        return merging.getByRole('status').filter({ hasText: /flyttas/ });
+      };
+      const said = await into('Teckenspråk');
+      await expect(
+        merging.getByText(
+          'Allt som hör till Engelska flyttas till den färdighet du väljer: färdigheter, krav, andelsmål och kopplingar till källor.',
+          { exact: false },
+        ),
+      ).toBeVisible();
+      await expect(said).toContainText('Till Teckenspråk flyttas 12 färdigheter hos 9 personer,');
+      await expect(said).not.toContainText('intyg');
+      await merging.getByRole('button', { name: 'Avbryt' }).click();
+      // One of each.
+      api.mergePreview = { ...api.mergePreview, holdings: 1, people: 1 };
+      await expect(await into('Lättläst svenska')).toContainText(
+        'Till Lättläst svenska flyttas 1 färdighet hos 1 person,',
+      );
+      await merging.getByRole('button', { name: 'Avbryt' }).click();
+      // Nothing to move is said in the skill's words too.
+      api.mergePreview = {
+        ...api.mergePreview,
+        holdings: 0,
+        people: 0,
+        requirements: 0,
+        requirementsFolded: 0,
+        shareTargets: 0,
+        shareTargetsFolded: 0,
+        mappings: 0,
+      };
+      await expect(await into('Kalkylprogram')).toContainText(
+        'Inga färdigheter, krav eller kopplingar flyttas till Kalkylprogram.',
+      );
     });
     test('a merge waits while own registrations of both wait: it is said without who or how many, and Slå ihop stays disabled', async ({
       page,
@@ -508,7 +590,9 @@ test.describe('Administration › Kompetens', () => {
       await expect(search).toHaveValue('ledarskap');
       await expect(table.getByRole('row', { name: /Färdighet 111/ })).toBeVisible();
       // A type's dialog keeps the list's place, its close goes back to it, and so does Back.
-      await page.getByRole('link', { name: 'Ändra Färdighet 111' }).click();
+      const t111 = typeLink(page, 'Färdighet 111');
+      await t111.focus();
+      await page.keyboard.press('Enter');
       await expect(page).toHaveURL('/admin/competence?text=ledarskap&page=2&type=t-110');
       // Escape once the dialog has the focus.
       await expect(dialogOf(page, 'Ändra kompetens').getByRole('textbox', { name: /Namn/ })).toHaveValue(
@@ -521,6 +605,7 @@ test.describe('Administration › Kompetens', () => {
       await page.keyboard.press('Escape');
       await expect(page).toHaveURL('/admin/competence?text=ledarskap&page=2');
       await expect(table.getByRole('row', { name: /Färdighet 111/ })).toBeVisible();
+      await expect(t111).toBeFocused();
       // Back steps through what was opened and the pages, each with the search; the words typed are no steps.
       await page.goBack();
       await expect(page).toHaveURL('/admin/competence?text=ledarskap&page=2&type=t-110');
@@ -561,7 +646,7 @@ test.describe('Administration › Kompetens', () => {
   });
   test.describe('phone', () => {
     test.use({ viewport: phone });
-    test('the catalogue is a list with a way to change each type, and the dialog fills the screen', async ({
+    test('the catalogue is a list whose names open each type, and the dialog fills the screen', async ({
       page,
       api,
     }) => {
@@ -570,7 +655,10 @@ test.describe('Administration › Kompetens', () => {
       await open(page, '/admin/competence');
       const list = page.getByRole('list', { name: 'Katalogen' });
       await expect(list.getByText('Akut omhändertagande · Kurs · 24 månader (2 år)')).toBeVisible();
-      await list.getByRole('link', { name: 'Ändra HLR' }).click();
+      await expect(list.getByRole('button')).toHaveCount(0);
+      const hlr = list.getByRole('link', { name: 'HLR', exact: true });
+      await hlr.focus();
+      await page.keyboard.press('Enter');
       const dialog = dialogOf(page, 'Ändra kompetens');
       await expect(dialog.getByRole('textbox', { name: /Namn/ })).toHaveValue('HLR');
       await settled(page);

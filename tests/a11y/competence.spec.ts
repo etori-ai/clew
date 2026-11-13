@@ -1,5 +1,12 @@
 import type { Locator, Page } from '@playwright/test';
-import { competenceTypes, holdingsOutput, holdingsWithOwn, ownEnglish, withSkills } from './competence';
+import {
+  competenceTypes,
+  expectLevelNames,
+  holdingsOutput,
+  holdingsWithOwn,
+  ownEnglish,
+  withSkills,
+} from './competence';
 import {
   desktop,
   expect,
@@ -170,6 +177,37 @@ test.describe('Kompetens › Mina kompetenser', () => {
       switchedOn(api);
       await open(page, '/');
       await expect(rail(page).getByRole('link', { name: 'Kompetens', exact: true })).toBeVisible();
+    });
+
+    test('on a hard load the place’s tabs and the rail’s Kompetens are drawn with the page and do not move when the reads answer', async ({
+      page,
+      api,
+    }) => {
+      switchedOn(api);
+      api.relations = ['registrar'];
+      // The rail's systems and the matrix's read answer a second and a half after the page is drawn.
+      api.areasDelay = 1500;
+      api.matrixDelay = 1500;
+      await page.goto(OWN);
+      await expect(page.getByRole('heading', { level: 1, name: 'Mina kompetenser' })).toBeVisible();
+      const place = rail(page).getByRole('link', { name: 'Kompetens', exact: true });
+      // Before either has answered: the session says a manager and a registrar, so all three pages are there at once.
+      const pages = async () => {
+        await expect(tabs(page).getByRole('link')).toHaveCount(3);
+        for (const [i, name] of ['Mina kompetenser', 'Medarbetare', 'Kompetenssökning'].entries())
+          await expect(tabs(page).getByRole('link').nth(i)).toHaveAccessibleName(name);
+      };
+      await pages();
+      await expect(place).toBeVisible();
+      await expect(addLink(page)).toBeVisible();
+      const before = { tabs: await tabs(page).boundingBox(), place: await place.boundingBox() };
+      expect(api.matrixReads).toEqual([]);
+      await page.waitForLoadState('networkidle');
+      await expect.poll(() => api.matrixReads.length).toBe(1);
+      // The answers change nothing that was drawn: the same tabs in the same place, the rail's row where it was.
+      await pages();
+      expect(await tabs(page).boundingBox()).toEqual(before.tabs);
+      expect(await place.boundingBox()).toEqual(before.place);
     });
 
     test('someone who manages nobody has the page without tabs, and nothing held or required is said as such', async ({
@@ -356,7 +394,8 @@ test.describe('Kompetens › Mina kompetenser', () => {
       );
       await expect(skill.getByLabel('Utfärdat', { exact: false })).toHaveCount(0);
       const levels = skill.getByRole('radiogroup', { name: /Nivå/ });
-      await expect(levels.getByRole('radio')).toHaveCount(3);
+      // Each level is named by its word and described by what it means, never by the number behind it.
+      await expectLevelNames(levels);
       await settled(page);
       await expectNoAxeViolations(page);
       // Saved with no level: it is said on the group, whose first choice takes the focus.
@@ -393,7 +432,7 @@ test.describe('Kompetens › Mina kompetenser', () => {
       await expect(page.getByRole('heading', { level: 2, name: 'Väntar på godkännande' })).toHaveCount(0);
     });
 
-    test('it is changed in a dialog with its address and removed after the confirmation, by keyboard, the focus coming back each time', async ({
+    test('its name opens the change, a dialog with its address, and it is removed after the confirmation, by keyboard, the focus coming back each time', async ({
       page,
       api,
     }) => {
@@ -406,16 +445,18 @@ test.describe('Kompetens › Mina kompetenser', () => {
       await expect(lacking).toContainText(/saknas/i);
       await expect(lacking).toContainText('Självständig');
       await expectNoAxeViolations(page);
-      const menu = main.getByRole('button', { name: 'Åtgärder: Engelska' });
-      await tabTo(page, menu);
-      await page.keyboard.press('Enter');
-      await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText(['Ändra nivå', 'Ta bort']);
-      await expect(page.getByRole('menuitem', { name: 'Ändra nivå' })).toBeFocused();
+      // The skill's name is its way in: a link named by the skill, at least 24 px wide and a row's height from the next.
+      const name = page.getByRole('list', { name: 'Färdigheter' }).getByRole('link', { name: 'Engelska', exact: true });
+      const box = (await name.boundingBox())!;
+      expect(box.width).toBeGreaterThanOrEqual(24);
+      expect(box.height).toBeGreaterThanOrEqual(20);
+      await tabTo(page, name);
       await page.keyboard.press('Enter');
       await expect(page).toHaveURL(`${OWN}?skill=skill-eng`);
       const change = skillDialog(page, 'Ändra nivå');
       await expect(change.getByText('Engelska', { exact: true })).toBeVisible();
-      const current = change.getByRole('radio', { name: /Självständig/ });
+      await expectLevelNames(change.getByRole('radiogroup', { name: /Nivå/ }));
+      const current = change.getByRole('radio', { name: 'Självständig', exact: true });
       await expect(current).toBeChecked();
       await expect(change.getByRole('switch', { name: /Vill utveckla/ })).toBeChecked();
       await settled(page);
@@ -432,6 +473,17 @@ test.describe('Kompetens › Mina kompetenser', () => {
       ]);
       await expect(notices(page).getByText('Engelska är sparad.')).toBeAttached();
       await expect(main.getByRole('listitem').filter({ hasText: 'Engelska' })).toContainText('Expert');
+      await expect(name).toBeFocused();
+      // Its menu opens the change too, and gives the focus back to itself when it closes.
+      const menu = main.getByRole('button', { name: 'Åtgärder: Engelska' });
+      await tabTo(page, menu);
+      await page.keyboard.press('Enter');
+      await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText(['Ändra nivå', 'Ta bort']);
+      await expect(page.getByRole('menuitem', { name: 'Ändra nivå' })).toBeFocused();
+      await page.keyboard.press('Enter');
+      await expect(change).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(change).toBeHidden();
       await expect(menu).toBeFocused();
       // Removed after the confirmation: its card goes with it, so the page's heading takes the focus.
       await page.keyboard.press('Enter');
@@ -449,7 +501,7 @@ test.describe('Kompetens › Mina kompetenser', () => {
       await expect(page.getByRole('heading', { level: 1, name: 'Mina kompetenser' })).toBeFocused();
     });
 
-    test('an address from before opens the change, and Esc closes it to the skill’s menu', async ({ page, api }) => {
+    test('an address from before opens the change, and Esc closes it to the skill’s name', async ({ page, api }) => {
       withEnglish(api);
       await open(page, `${OWN}?skill=skill-eng`);
       const change = skillDialog(page, 'Ändra nivå');
@@ -457,7 +509,7 @@ test.describe('Kompetens › Mina kompetenser', () => {
       await page.keyboard.press('Escape');
       await expect(change).toBeHidden();
       await expect(page).toHaveURL(OWN);
-      await expect(page.getByRole('main').getByRole('button', { name: 'Åtgärder: Engelska' })).toBeFocused();
+      await expect(page.getByRole('main').getByRole('link', { name: 'Engelska', exact: true })).toBeFocused();
       expect(api.skillWrites).toEqual([]);
     });
 

@@ -1,3 +1,4 @@
+import { expect, type Locator } from '@playwright/test';
 import type {
   CompetenceApproval,
   CompetenceMatrixCell,
@@ -282,8 +283,9 @@ export const competenceMatrix = (): CompetenceMatrixOutput => ({
   required: 3,
 });
 /**
- * The same matrix as it is when more is required than ten columns hold (the mock keeps the three columns and offers
- * them in sets): by area and by position, the set in the address choosing the columns, the first when none is named.
+ * The same matrix as it is when more is required than the most columns shown (the mock keeps the three columns and
+ * offers them in sets, saying 42 are required): by area and by position, the set in the address choosing the columns,
+ * the first when none is named.
  */
 export const matrixSets = [
   { by: 'area:Akut omhändertagande', part: 1, parts: 1, kind: 'area', label: 'Akut omhändertagande', types: 1 },
@@ -295,20 +297,101 @@ const setColumns: Record<string, string[]> = {
   'area:Säkerhet': ['t-fall', 't-heta'],
   'position:underskoterska': ['t-hlr', 't-heta'],
 };
-/** The matrix the mock answers: whole, or in sets, with the set `by` names (the first when it names none it knows). */
-export function matrixAnswer(base: CompetenceMatrixOutput, sets: boolean, by: string | null): CompetenceMatrixOutput {
-  if (!sets) return base;
-  const chosen = matrixSets.find(s => s.by === by) ?? matrixSets[0];
-  const ids = setColumns[chosen.by]!;
-  const keep = base.columns.map((c, i) => (ids.includes(c.typeId) ? i : -1)).filter(i => i >= 0);
+/** The matrix with only the columns at these indexes, in every row. */
+const keeping = (base: CompetenceMatrixOutput, keep: number[]): Pick<CompetenceMatrixOutput, 'columns' | 'rows'> => ({
+  columns: keep.map(i => base.columns[i]!),
+  rows: base.rows.map(r => ({ ...r, cells: keep.map(i => r.cells[i]!) })),
+});
+/**
+ * The matrix the mock answers, as the server does: where everything fits, every column unless an area is chosen (`by`),
+ * with the areas offered where there is more than one; with `beyond`, more is required than fits, so a set is always
+ * shown, the one `by` names or the first.
+ */
+export function matrixAnswer(base: CompetenceMatrixOutput, beyond: boolean, by: string | null): CompetenceMatrixOutput {
+  if (beyond) {
+    const chosen = matrixSets.find(s => s.by === by) ?? matrixSets[0];
+    const ids = setColumns[chosen.by]!;
+    return {
+      ...base,
+      by: chosen.by,
+      part: 1,
+      groups: matrixSets.map(s => ({ ...s })),
+      ...keeping(
+        base,
+        base.columns.map((c, i) => (ids.includes(c.typeId) ? i : -1)).filter(i => i >= 0),
+      ),
+      required: 42,
+    };
+  }
+  const areas = [...new Set(base.columns.map(c => c.area))];
+  const groups =
+    areas.length > 1
+      ? areas.map(area => ({
+          by: 'area:' + area,
+          part: 1,
+          parts: 1,
+          kind: 'area' as const,
+          label: area,
+          types: base.columns.filter(c => c.area === area).length,
+        }))
+      : [];
+  const chosen = groups.find(g => g.by === by);
+  if (!chosen) return { ...base, groups };
   return {
+    ...base,
     by: chosen.by,
     part: 1,
-    groups: matrixSets.map(s => ({ ...s })),
-    columns: keep.map(i => base.columns[i]!),
-    rows: base.rows.map(r => ({ ...r, cells: keep.map(i => r.cells[i]!) })),
-    required: 12,
-    awaiting: base.awaiting,
+    groups,
+    ...keeping(
+      base,
+      base.columns.map((c, i) => (c.area === chosen.label ? i : -1)).filter(i => i >= 0),
+    ),
+  };
+}
+/**
+ * A matrix at the size a manager of a large unit reads (D108 item 11): twenty required types in two areas, the last a
+ * skill, against thirty reports, every state a cell can be in turning through the rows, and a long name or two among
+ * the types, so the page can be judged at size.
+ */
+export function largeMatrix(): CompetenceMatrixOutput {
+  const columns = Array.from({ length: 20 }, (_, i) => ({
+    typeId: `t-big-${i + 1}`,
+    name: i % 7 === 3 ? `Hjärt- och lungräddning med hjärtstartare ${i + 1}` : `Kompetens ${i + 1}`,
+    area: i < 10 ? 'Säkerhet' : 'Vård',
+    kind: i === 19 ? ('skill' as const) : ('course' as const),
+    ...(i === 19 ? { levels: [2 as const] } : {}),
+  }));
+  const state = (p: number, i: number): CompetenceMatrixCell => {
+    const typeId = columns[i]!.typeId;
+    const required = { required: true, through: [onPosition] };
+    if (i === 19)
+      return (p + i) % 3 === 0
+        ? cell(typeId, { status: 'missing', ...required, least: 2 })
+        : cell(typeId, { status: 'valid', ...required, least: 2, holdingId: `h-${p}-${i}`, level: 3, validated: true });
+    switch ((p + i) % 7) {
+      case 0:
+        return cell(typeId, { status: 'missing', ...required });
+      case 1:
+        return cell(typeId, { status: 'expiring', expiresOn: '2027-01-10', ...required, holdingId: `h-${p}-${i}` });
+      case 2:
+        return cell(typeId, { status: 'expired', expiresOn: '2026-05-31', ...required, holdingId: `h-${p}-${i}` });
+      case 3:
+        return cell(typeId, { status: 'none' });
+      default:
+        return cell(typeId, { status: 'valid', expiresOn: '2028-11-01', ...required, holdingId: `h-${p}-${i}` });
+    }
+  };
+  return {
+    groups: [],
+    awaiting: [],
+    columns,
+    rows: Array.from({ length: 30 }, (_, p) => ({
+      personId: `p-${p + 1}`,
+      key: `person${p + 1}`,
+      name: `Person ${String(p + 1).padStart(2, '0')}`,
+      cells: columns.map((_, i) => state(p, i)),
+    })),
+    required: 20,
   };
 }
 
@@ -505,4 +588,25 @@ export function searchHolders(many = false): Record<string, CompetenceSearchRow[
       },
     ],
   };
+}
+
+/**
+ * The three levels of a skill (D120 item 1) as a radio group names and describes them, in order: each radio named by
+ * its word and described by what it means, never by the number behind it, whichever of the three forms draws the group
+ * (a person's own skill, a manager's registration, a requirement's least level).
+ */
+export async function expectLevelNames(group: Locator) {
+  const radios = group.getByRole('radio');
+  await expect(radios).toHaveCount(3);
+  const levels = [
+    ['Grundläggande', 'Kan grunderna och arbetar med stöd.'],
+    ['Självständig', 'Arbetar på egen hand.'],
+    ['Expert', 'Kan lära ut och leda andra.'],
+  ] as const;
+  for (const [i, [name, meaning]] of levels.entries()) {
+    await expect(radios.nth(i)).toHaveAccessibleName(name);
+    await expect(radios.nth(i)).toHaveAccessibleDescription(meaning);
+  }
+  for (const number of ['1', '2', '3'])
+    await expect(group.getByRole('radio', { name: number, exact: true })).toHaveCount(0);
 }

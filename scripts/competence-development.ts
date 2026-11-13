@@ -61,7 +61,12 @@ export const DEVELOPMENT_REQUIREMENTS: ReadonlyArray<{ position: string; type: s
   { position: 'maskinforare', type: 'Arbete på väg' },
   { position: 'maskinforare', type: 'Fallskydd' },
   { position: 'enhetschef', type: 'Informationssäkerhet' },
+  { position: 'enhetschef', type: 'Brandskydd' },
   { position: 'sjukskoterska', type: 'Journalsystem', minLevel: 2 },
+  // A school's teachers, so a school manager's matrix has columns as a care manager's does.
+  { position: 'larare', type: 'Brandskydd' },
+  { position: 'larare', type: 'HLR' },
+  { position: 'larare', type: 'Lättläst svenska', minLevel: 2 },
 ];
 /** A share target across the whole organisation: at least half of the undersköterskor hold a delegation. */
 export const DEVELOPMENT_SHARE_TARGETS: ReadonlyArray<{ position: string; type: string; minShare: number }> = [

@@ -18,6 +18,7 @@ import {
   FormLayout,
   Heading,
   HStack,
+  Link,
   List,
   ListItem,
   MetadataList,
@@ -50,7 +51,8 @@ import { instantText } from './labels';
  * it now, and its types as the source names them, with how many holdings carry each and the catalogue type it is
  * mapped to. A copied holding whose type is not mapped is kept under the source's own words and counts towards nothing,
  * so mapping is what makes a source's holdings count. A type is mapped in a dialog over the list, named in the address
- * (`?source=<connector>&type=<the source's type id>`, D83), where the mapping is also removed.
+ * (`?source=<connector>&type=<the source's type id>`, D83) and opened by the type's name, where the mapping is also
+ * removed.
  *
  * A list that can grow is a page with an address (D116), so the sources have this page of their own under the
  * catalogue's rather than a tab without one. Like the catalogue it is refused while the module is off and to an
@@ -221,14 +223,14 @@ function SourceCard({
   const last = source.lastRead;
   const mapping = (t: CompetenceSourceType) =>
     t.typeId ? <Text>{nameOf(t.typeId)}</Text> : <Badge variant="neutral" label="Inte kopplad" />;
-  const mapButton = (t: CompetenceSourceType) => (
-    <Button
-      size="sm"
-      variant="secondary"
-      label="Koppla"
-      aria-label={`Koppla ${t.label}`}
-      href={mapHref(source.connectorId, t.sourceType)}
-    />
+  /**
+   * A source's type is mapped from its name: a link to the dialog that maps it over the page (`source`, `type`), so the
+   * row needs no button of its own. Astryx gives the focus back to it when the dialog closes.
+   */
+  const name = (t: CompetenceSourceType) => (
+    <Link href={mapHref(source.connectorId, t.sourceType)} weight="semibold" hasUnderline>
+      {t.label}
+    </Link>
   );
   const columns = [
     {
@@ -237,7 +239,7 @@ function SourceCard({
       width: proportional(3, { minWidth: 220 }),
       renderCell: (r: Row) => (
         <VStack gap={0} hAlign="start">
-          <Text weight="semibold">{r.t.label}</Text>
+          {name(r.t)}
           <Text type="code" color="secondary">
             {r.t.sourceType}
           </Text>
@@ -256,7 +258,6 @@ function SourceCard({
       width: proportional(2, { minWidth: 180 }),
       renderCell: (r: Row) => mapping(r.t),
     },
-    { key: 'map', header: 'Koppla', width: pixel(110), renderCell: (r: Row) => mapButton(r.t) },
   ];
   return (
     <Card padding={0}>
@@ -328,13 +329,12 @@ function SourceCard({
           {source.types.map(t => (
             <ListItem
               key={t.sourceType}
-              label={<Text weight="semibold">{t.label}</Text>}
+              label={name(t)}
               description={
                 <Text type="supporting">
                   {holdingsText(t.holdings)} · {t.typeId ? `Kopplad till ${nameOf(t.typeId)}` : 'Inte kopplad'}
                 </Text>
               }
-              endContent={mapButton(t)}
             />
           ))}
         </List>
