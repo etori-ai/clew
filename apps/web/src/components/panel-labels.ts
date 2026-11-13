@@ -1,4 +1,4 @@
-import type { ViewNoun } from '@clew/contracts';
+import { VALUE_WORDS, statusLabel, valueWord, type ViewNoun } from '@clew/contracts';
 /** Swedish names for what read capabilities return. `tests/unit/panel-labels.test.ts` holds every connector output to this list. */
 export const fieldLabels: Record<string, string> = {
   document: 'Underlag',
@@ -155,31 +155,50 @@ export function staleLabel(stale: boolean | null | undefined, iso: string | unde
   if (months >= 24) return `${Math.floor(months / 12)} år sedan`;
   return months >= 1 ? `${months} ${months === 1 ? 'månad' : 'månader'} sedan` : 'Kan vara inaktuell';
 }
-const values: Record<string, string> = {
-  // A person in the round of development talks (D96 item 2).
-  booked: 'bokat',
-  held: 'hållet',
-  missing: 'saknas',
-  closed: 'stängd',
-  // Where a holding stands today (D108 item 4).
-  expired: 'utgånget',
-  expiring: 'går ut snart',
-  valid: 'giltigt',
-  // A copied holding whose source type is not mapped to the catalogue (D108 item 9).
-  uncounted: 'räknas inte',
-  done: 'klart',
-  failed: 'misslyckades',
-  long: 'sjukskriven',
-  open: 'öppen',
-  short: 'sjuk',
-  skipped: 'inte skickad',
-  unknown: 'okänt',
-  vab: 'vab',
-  'waiting-safety-rep': 'väntar på skyddsombud',
-};
 const instant = /^\d{4}-\d{2}-\d{2}T/;
 const day = /^\d{4}-\d{2}-\d{2}$/;
 const time = new Intl.DateTimeFormat('sv-SE', { dateStyle: 'short', timeStyle: 'short' });
+/**
+ * A day has two lengths and one rule for which (the review of 2026-11-13, after "13 okt. 2026" and "13 oktober 2026"
+ * stood on one page). Short, "13 okt. 2026", where days stand under one another to be scanned: a table's cell, a list's
+ * line, a matrix's cell. Long, "13 oktober 2026", where a day is read rather than scanned: in a sentence, a toast, or
+ * among one record's facts (a detail, a dialog's facts, a section's facts on a person's page). Every page writes a day
+ * with one of these two; a calendar day (`2026-10-13`) is the day it names wherever the reader is.
+ */
+const shortFormat = new Intl.DateTimeFormat('sv-SE', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+const longFormat = new Intl.DateTimeFormat('sv-SE', {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+/** A calendar day, or the day of an instant where the reader is, as the moment it is formatted in UTC. */
+const dayAt = (value: string) => {
+  if (day.test(value)) return Date.parse(value + 'T12:00:00Z');
+  const at = Date.parse(value);
+  if (Number.isNaN(at)) return at;
+  const local = new Date(at);
+  return Date.UTC(local.getFullYear(), local.getMonth(), local.getDate(), 12);
+};
+/** How long a day is written where it stands (`shortDay`, `longDay`). */
+export type DayLength = 'short' | 'long';
+/** A day in a row: "13 okt. 2026". What cannot be read as a day is given back as it is. */
+export const shortDay = (value: string) => {
+  const at = dayAt(value);
+  return Number.isNaN(at) ? value : shortFormat.format(at);
+};
+/** A day in a sentence or among a record's facts: "13 oktober 2026". What cannot be read as a day is given back as it is. */
+export const longDay = (value: string) => {
+  const at = dayAt(value);
+  return Number.isNaN(at) ? value : longFormat.format(at);
+};
+/** A day at the length its place asks for. */
+export const dayText = (value: string, length: DayLength) => (length === 'short' ? shortDay : longDay)(value);
 
 export const fieldLabel = (key: string) => fieldLabels[key] ?? key;
 /** One readable line for any value a capability returns. Nothing reaches the person as raw JSON. */
@@ -192,7 +211,7 @@ export function fieldValue(value: unknown): string {
       ? time.format(new Date(value))
       : day.test(value)
         ? dateOnly.format(new Date(`${value}T12:00:00`))
-        : (values[value] ?? value);
+        : valueWord(value);
   if (Array.isArray(value)) return value.map(fieldValue).join(', ');
   return Object.entries(value)
     .filter(([key]) => !hiddenFields.has(key))
@@ -205,9 +224,13 @@ export function counted(n: number, noun: ViewNoun = { one: 'rad', other: 'rader'
 }
 /**
  * A status field's one word (D71, artboard 4): a bare yes or no takes the field's label as its word ("Kvitterad",
- * "Inte kvitterad"), so two fields never read "Ja · Ja"; any other value is the source's word in Swedish.
+ * "Inte kvitterad"), so two fields never read "Ja · Ja"; any other value is the source's word in Swedish. A code Clew
+ * gives a word (`VALUE_WORDS`, which the model reads) stands alone as a status, so it is written as one, its first
+ * letter capitalised ("Utgånget", as the matrix and the search write it too: one casing on every face, the review of
+ * 2026-11-13). Words a source wrote itself ("tors 12 nov", "3 öppna") are drawn exactly as it wrote them.
  */
 export function statusWord(label: string, value: unknown): string {
+  if (typeof value === 'string' && Object.prototype.hasOwnProperty.call(VALUE_WORDS, value)) return statusLabel(value);
   if (typeof value !== 'boolean') return fieldValue(value);
   return value ? label : `Inte ${label.charAt(0).toLowerCase()}${label.slice(1)}`;
 }

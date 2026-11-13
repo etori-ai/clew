@@ -23,6 +23,7 @@ export { Token } from '@astryxdesign/core/Token';
 export { ToggleButton, ToggleButtonGroup } from '@astryxdesign/core/ToggleButton';
 export { List, ListItem } from '@astryxdesign/core/List';
 export { CheckboxList, CheckboxListItem } from '@astryxdesign/core/CheckboxList';
+export { CheckboxInput } from '@astryxdesign/core/CheckboxInput';
 export { Collapsible, CollapsibleGroup } from '@astryxdesign/core/Collapsible';
 export { Grid, GridSpan } from '@astryxdesign/core/Grid';
 export { Divider } from '@astryxdesign/core/Divider';
@@ -101,8 +102,16 @@ export {
   proportional,
   resolveColumnWidths,
   useTableStickyColumns,
+  // Row selection with a page of checkboxes and its count (the catalogue's import, D120 item 7).
+  TableSelectionToolbar,
+  useTableSelection,
+  // Headers that sort, the order held by the page and read on the server (Kompetenssökning).
+  useTableSortable,
 } from '@astryxdesign/core/Table';
-export type { TableColumn } from '@astryxdesign/core/Table';
+export type { TableColumn, TablePlugin, TableSortState } from '@astryxdesign/core/Table';
+// A searchable choice of several, over a search on the server (Kompetenssökning's types).
+export { Tokenizer } from '@astryxdesign/core/Tokenizer';
+export type { TokenizerHandle } from '@astryxdesign/core/Tokenizer';
 export { Switch } from '@astryxdesign/core/Switch';
 export { Dialog, DialogHeader } from '@astryxdesign/core/Dialog';
 export { AlertDialog } from '@astryxdesign/core/AlertDialog';
@@ -132,6 +141,8 @@ export {
   useAnimatedLayout,
   useAnnounce,
   useEntryAnimation,
+  // The WAI-ARIA grid's keys and its one tab stop (Medarbetarnas kompetens, the matrix).
+  useGridFocus,
   useMediaQuery,
   useStreamingText,
 } from '@astryxdesign/core/hooks';
@@ -139,6 +150,7 @@ export { Lightbox } from '@astryxdesign/core/Lightbox';
 export type { AnimatedLayout } from '@astryxdesign/core/hooks';
 // Glyphs beyond Astryx's registry come from Heroicons (MIT), the set Astryx's own templates draw with; each is named here once.
 export {
+  AcademicCapIcon,
   ArrowDownTrayIcon,
   ArrowPathIcon,
   ArrowsPointingOutIcon,

@@ -2,12 +2,18 @@ import type {
   AuthenticatedContext,
   CompetenceEvidence,
   CompetenceKind,
+  CompetenceReadCaller,
+  CompetenceReadKind,
+  CompetenceReadRelation,
   CompetenceReadCounts,
   CompetenceReadOutcome,
+  CompetenceSearchStatus,
+  CompetenceSearchWindow,
   Holding,
   HoldingsOutput,
   HoldingsRow,
   StaffOverview,
+  Subject,
 } from '@clew/contracts';
 
 /**
@@ -16,7 +22,9 @@ import type {
  * happens inside one `CompetenceStore` transaction together with its audit row. `adapters/postgres.ts` runs in the
  * server, `adapters/memory.ts` in the unit tests, both held to one store contract. Who reports to whom comes in as a
  * function filled in composition, so the module does not import the people module, and so do the sources whose
- * holdings are copied in (`HoldingsPort`, item 9), so it imports no connector and not the registry.
+ * holdings are copied in (`HoldingsPort`, item 9), so it imports no connector and not the registry. What requirements
+ * need of the directory (positions, assignments and the tree, items 5 and 6) is read through the store, as the people
+ * themselves are, and the branch under a unit is worked out in `domain.ts`.
  *
  * Every instant is an ISO string and every date a `YYYY-MM-DD` calendar day in Swedish time, both handed in by the use
  * case from `clock`; every id comes from `ids`. Where a holding stands (valid, expiring, expired) is never stored: the
@@ -38,11 +46,20 @@ export interface TypeRecord {
   /** The actor that added it: a person's principal id, or an operator's such as `operator:cli`. */
   createdBy: string;
   createdAt: string;
+  /**
+   * The address the type came with from an imported file (D120 item 7), such as an ESCO concept's URI; null for one
+   * added by hand. One per organisation, whatever the type's state, so an import is idempotent on it.
+   */
+  sourceUri: string | null;
+  /** The type this one was merged into (D108 item 2); a merged type is archived, and a merge is not undone. */
+  mergedInto: string | null;
 }
-export type TypePatch = Partial<Pick<TypeRecord, 'name' | 'area' | 'kind' | 'validityMonths' | 'archivedAt'>>;
+export type TypePatch = Partial<
+  Pick<TypeRecord, 'name' | 'area' | 'kind' | 'validityMonths' | 'archivedAt' | 'mergedInto'>
+>;
 /**
- * A holding's state as stored (D108 items 7 and 9). `pending` and `rejected` belong to a person's own registration,
- * which is not written yet; the store takes them so the table does not change shape when it is.
+ * A holding's state as stored (D108 items 7 and 9). `pending` and `rejected` belong to a person's own registration
+ * (evidence `self`): it waits for the manager they report to, who approves it (`valid`) or rejects it.
  */
 export type HoldingState = 'pending' | 'valid' | 'rejected' | 'revoked';
 /**
@@ -68,15 +85,65 @@ export interface HoldingRecord {
   expiresOn: string | null;
   evidence: CompetenceEvidence;
   state: HoldingState;
-  /** The manager who registered it; null once that person was erased, and always on a copied row. */
+  /**
+   * Who registered it: the manager, or the person themselves for their own registration (evidence `self`); null once
+   * that person was erased, and always on a copied row.
+   */
   registeredBy: string | null;
   createdAt: string;
   revokedAt: string | null;
   revokedBy: string | null;
   /** Set on a row copied from a source (evidence `system`), null on one registered in Clew. */
   copy: HoldingCopy | null;
+  /**
+   * The decision on a person's own registration (D108 item 7): the manager who approved or rejected it (their
+   * attestation; null once that manager was erased) and when (null while it waits, and on every other holding).
+   */
+  decidedBy: string | null;
+  decidedAt: string | null;
+  /**
+   * The approval's key on a person's own registration: each manager's card is the thread `<threadId>:<manager id>`
+   * (`approvalCardId`), all of them on one topic, so one decision closes every one. Null on every other holding.
+   */
+  threadId: string | null;
+  /**
+   * The level a skill is held at (D120 item 1), 1 to 3; null on every other kind. A holding with a level has no end
+   * date, no source and no approval, and is one per person and type while it counts (`SkillTaken`).
+   */
+  level: number | null;
+  /** The person wants to develop the skill (D120 item 3); false on every other kind. Counts towards nothing. */
+  interest: boolean;
+  /**
+   * The manager who confirmed a skill's level (D120 item 2) and when: both null while it is the person's own rating
+   * alone; `validatedBy` null with a time once that manager was erased, so it stays confirmed. Null on every other kind.
+   */
+  validatedBy: string | null;
+  validatedAt: string | null;
+  /**
+   * When a skill's level was last set by a rating, the person's own or a manager's registration (not by a confirmation,
+   * which is `validatedAt`): set on every skill, null on every other kind. A required skill that stops meeting its
+   * requirement begins a new spell at this moment or at its confirmation, so its card is issued again (D108 item 12).
+   */
+  ratedAt: string | null;
 }
-export type HoldingPatch = Partial<Pick<HoldingRecord, 'state' | 'revokedAt' | 'revokedBy'>>;
+export type HoldingPatch = Partial<
+  Pick<
+    HoldingRecord,
+    | 'state'
+    | 'revokedAt'
+    | 'revokedBy'
+    | 'decidedBy'
+    | 'decidedAt'
+    | 'level'
+    | 'interest'
+    | 'validatedBy'
+    | 'validatedAt'
+    | 'ratedAt'
+    | 'evidence'
+    | 'registeredBy'
+    | 'issuedOn'
+  >
+>;
 /** A source's type mapped to the catalogue for one organisation (D108 item 9). `mappedBy` is an actor string. */
 export interface SourceMapping {
   connectorId: string;
@@ -119,6 +186,61 @@ export interface SourceTypeCount {
   label: string;
   holdings: number;
 }
+/**
+ * What is required of whom (D108 item 6): a type and exactly one of a position (by its code in the organisation), a unit
+ * (by the id of its `unit:` key) or one person. A position and a unit are named by key, not by a row, so one that is
+ * pushed again keeps its requirements and one that is gone counts towards nothing until it comes back. `minLevel` is the
+ * least level a confirmed skill must reach (D120 item 4), set on a requirement of a skill and null on any other.
+ * `createdBy` is an actor string, null once that person was erased.
+ */
+export interface RequirementRecord {
+  id: string;
+  organisationId: string;
+  typeId: string;
+  positionCode: string | null;
+  unitId: string | null;
+  personId: string | null;
+  minLevel: number | null;
+  createdBy: string | null;
+  createdAt: string;
+}
+/**
+ * A share target (D108 item 6): of the people who hold the position `positionCode`, at least `minShare` percent hold
+ * `typeId`, on the branch of `unitId` or, null, across the whole organisation. It names no person.
+ */
+export interface ShareTargetRecord {
+  id: string;
+  organisationId: string;
+  typeId: string;
+  positionCode: string;
+  unitId: string | null;
+  minShare: number;
+  createdBy: string | null;
+  createdAt: string;
+}
+/** A position of the organisation (D108 item 5), as SCIM wrote it. */
+export interface PositionRecord {
+  id: string;
+  organisationId: string;
+  code: string;
+  label: string;
+}
+/**
+ * A unit of the organisation's tree as pushed (D99): a `unit:` group's unit id, its name and the unit above it, null on a
+ * root. Every node is one, also one nobody is placed on.
+ */
+export interface UnitRecord {
+  id: string;
+  organisationId: string;
+  label: string;
+  parentId: string | null;
+}
+/** Where one person stands in the directory: the units they are assigned to and the codes of the positions they hold. */
+export interface Placed {
+  personId: string;
+  unitIds: string[];
+  positionCodes: string[];
+}
 /** A durable workflow start committed with the transaction that decides it (D86); the memory store records it. */
 export interface WorkflowStart {
   workflow: string;
@@ -138,6 +260,70 @@ export interface PersonRef {
   /** False once the source has deactivated the person (D68 item 1). */
   enabled: boolean;
 }
+/**
+ * One row of the read log (D108 item 15, D121 item 5): who read competence about people, as which relation, what and
+ * when. A search and its export name the types asked for, with the least level, the unit, the statuses and the
+ * validity window they were narrowed by (not the order, which discloses nothing), and are a registrar's; one person's
+ * holdings opened names whom. `rows` is how many rows the read returned. Ids, codes and counts: never a name and never
+ * content. Written in the transaction that reads what it records.
+ */
+export interface ReadLogEntry {
+  id: string;
+  organisationId: string;
+  /** The person who read, by Clew's id. */
+  readerId: string;
+  /** `self` only on a row written before a person's own reads stopped being logged (2026-11-13); none is written now. */
+  relation: CompetenceReadRelation | 'self';
+  /**
+   * Who made the read (D122 item 6): the person, or the assistant reading one person's holdings for them as `managed`;
+   * a row written before the assistant could read is the person's.
+   */
+  caller: CompetenceReadCaller;
+  kind: CompetenceReadKind;
+  /** The first type a search or its file asked for (the one type of a row from before several could be asked); null otherwise. */
+  typeId: string | null;
+  /**
+   * Every type a search or its file asked for, in the order chosen, `typeId` first (migration 0074; a row from before
+   * holds its one type); empty for one person opened and for a manager's matrix as a file.
+   */
+  typeIds: string[];
+  minLevel: number | null;
+  unitId: string | null;
+  personId: string | null;
+  /**
+   * The statuses a search or its file narrowed by, in the contract's order (`COMPETENCE_SEARCH_STATUSES`), each once;
+   * empty for every status, and on every other read (migration 0076; a row from before is empty).
+   */
+  status: CompetenceSearchStatus[];
+  /** The validity window in days a search or its file narrowed by; null for none, and on every other read. */
+  until: CompetenceSearchWindow | null;
+  rows: number;
+  readAt: string;
+}
+/** What the read log is read by, for an operator (`scripts/competence-read-log.ts`): every filter narrows further. */
+export interface ReadLogQuery {
+  organisationId?: string;
+  /** The reads of this person's competence. */
+  personId?: string;
+  /** The searches and files that asked for this type, alone or among others. */
+  typeId?: string;
+  /** The searches and files that narrowed by this status, alone or among others. */
+  status?: CompetenceSearchStatus;
+  /** The searches and files that narrowed by this validity window. */
+  until?: CompetenceSearchWindow;
+  /** The reads this person made. */
+  readerId?: string;
+  /** The reads made as this relation. */
+  relation?: CompetenceReadRelation;
+  /** The reads made by this caller: the person, or the assistant for them. */
+  caller?: CompetenceReadCaller;
+  /** The reads of this kind. */
+  kind?: CompetenceReadKind;
+  /** From this instant on. */
+  since?: string;
+  /** At most this many rows, the newest first. */
+  limit: number;
+}
 /** One audit row, written in the same transaction as the change. Metadata only: ids, dates, counts and kinds. */
 export interface CompetenceAudit {
   actor: string;
@@ -150,22 +336,69 @@ export interface CompetenceAudit {
 export interface Erased {
   /** Holdings removed because they were the person's own. */
   holdings: number;
-  /** Other people's holdings from which the person was removed (registered by, revoked by). */
+  /**
+   * Rows from which the person was removed: other people's holdings they registered, revoked or decided, and the
+   * requirements and share targets they set (`createdBy`).
+   */
   cleared: number;
+  /** Requirements set on the person alone (D108 item 6), removed with them. */
+  requirements: number;
+  /** The approval keys of the person's own registrations that were removed: their cards go with them (`workItems`). */
+  threadIds: string[];
 }
 /**
- * The whole domain for one organisation (D108 item 14), copied rows and the mappings of sources included; the use case
- * turns it into `clew.competence/2`.
+ * The whole domain for one organisation (D108 item 14), copied rows, the mappings of sources, the requirements and the
+ * share targets included; the use case turns it into `clew.competence/8`.
  */
 export interface CompetenceExport {
   types: TypeRecord[];
   holdings: HoldingRecord[];
   mappings: SourceMapping[];
+  requirements: RequirementRecord[];
+  shareTargets: ShareTargetRecord[];
 }
 /** What `CompetenceTx.forgetSource` removed (D108 item 9). */
 export interface Forgotten {
   holdings: number;
   mappings: number;
+}
+/**
+ * How long an organisation keeps the competence of a person the directory has deactivated (D108 item 14): an operator's
+ * setting, with no default. No record, no period: nothing is erased. `setBy` is an actor string; `setAt` is when the
+ * period last changed, from which no erasure falls due within the grace (`RETENTION_GRACE_MS`).
+ */
+export interface RetentionRecord {
+  organisationId: string;
+  days: number;
+  setBy: string;
+  setAt: string;
+}
+/**
+ * Where one person's erasure stands (D108 item 14): `inactive` from the deactivation until they are active again
+ * (`cancelled`) or erased (`erased`).
+ */
+export type ErasureState = 'inactive' | 'cancelled' | 'erased';
+/**
+ * One person's erasure intent (D108 item 14), the module's own (the shared timer intent needs a thread). `inactiveSince`
+ * is when the directory deactivated them or, for a deactivation Clew did not record, when the sweep found it; set while
+ * `inactive`. When the erasure falls due is not stored: it follows from `inactiveSince` and the organisation's period as
+ * it stands (`erasureDue`). The generation grows with every deactivation, so an erasure planned for an earlier spell
+ * does nothing (D47's fence).
+ */
+export interface ErasureRecord {
+  personId: string;
+  organisationId: string;
+  state: ErasureState;
+  inactiveSince: string | null;
+  generation: number;
+  updatedAt: string;
+}
+/** An intent the sweep acts on (D108 item 14): whom, of which organisation and spell, and when it fell due. */
+export interface DueErasure {
+  personId: string;
+  organisationId: string;
+  generation: number;
+  dueAt: string;
 }
 
 /** The store's refusal of a type name the organisation already uses; the use case turns it into what the person reads. */
@@ -173,6 +406,109 @@ export class TypeNameTaken extends Error {
   constructor() {
     super('The organisation already has a competence type with this name.');
     this.name = 'TypeNameTaken';
+  }
+}
+
+/** The store's refusal of an address another type of the organisation keeps already (D120 item 7). */
+export class TypeUriTaken extends Error {
+  constructor() {
+    super('The organisation already has a competence type with this address.');
+    this.name = 'TypeUriTaken';
+  }
+}
+
+/** The store's refusal of a second registration of one type waiting for the same person (D108 item 7). */
+export class PendingTaken extends Error {
+  constructor() {
+    super('The person has a registration of this type waiting already.');
+    this.name = 'PendingTaken';
+  }
+}
+
+/** The store's refusal of a second skill of one type that counts for the same person (D120 item 1). */
+export class SkillTaken extends Error {
+  constructor() {
+    super('The person holds this skill already.');
+    this.name = 'SkillTaken';
+  }
+}
+
+/** How a person's own registration left the managers' streams (D108 item 7). */
+/**
+ * How a person's own registration left a manager's stream (D108 item 7): decided, taken back, or set aside by Clew,
+ * `reassigned` when that manager can no longer decide it (the person reports to someone else, or the manager left)
+ * and `paused` while the person who registered it is not active.
+ */
+export type ApprovalOutcome = 'approved' | 'rejected' | 'withdrawn' | 'reassigned' | 'paused';
+/** One manager's card of one approval, as the reconciliation reads it. */
+export interface ApprovalCard {
+  /** Whose stream it is in. */
+  personId: string;
+  open: boolean;
+  /**
+   * Put away by Clew (`reassigned` or `paused`), not by its owner or a decision: the one kind of closed card Clew opens
+   * again when its owner can decide once more.
+   */
+  setAside: boolean;
+}
+/**
+ * The approval of a person's own registration as work (D108 item 7): one card in the stream of each manager the person
+ * reports to when they register it, every card on one topic so that one decision, by any of them or by a manager the
+ * person reports to later, or the person taking it back, closes them all. A card's title, summary and messages name
+ * nobody and no competence, since they are what the assistant reads; the person is the card's subject (D97 item 6), a
+ * key that is never drawn or read, so the card shows on that person for its owner. Its way in is a read that leads to
+ * the approval on the matrix. Implemented in composition over the thread store's transaction (`withThreadTx`), on the
+ * same database transaction as the `CompetenceTx` it belongs to, as talks implements its `WorkItemTx`; the memory
+ * store records the calls.
+ */
+export interface ApprovalWorkItemTx {
+  /**
+   * Insert an open card for each of `managers` (`<threadId>:<manager id>`), admit its delivery, write its message and
+   * its `thread.pushed` audit row. `subject` is the person who registered it, by Clew's key, their id (D122).
+   */
+  open(input: {
+    threadId: string;
+    holdingId: string;
+    managers: readonly string[];
+    at: string;
+    subject?: Subject;
+  }): Promise<void>;
+  /**
+   * Mark every open card of the approval handled (or, with `only`, those of these owners), with a message that says how
+   * it ended, and end the reminders the owners set on them. A card that is gone or already put away is no error.
+   */
+  close(threadId: string, at: string, outcome: ApprovalOutcome, only?: readonly string[]): Promise<void>;
+  /** Every card of the approval, whichever stream it is in, locked, by owner. */
+  cards(threadId: string): Promise<ApprovalCard[]>;
+  /** Open again the cards of these owners that Clew set aside, with a message that says it waits for them again. */
+  reopen(threadId: string, personIds: readonly string[], at: string): Promise<void>;
+  /** Erasure of the person who registered: every card of these approvals goes, from whichever stream it is in. */
+  remove(threadIds: readonly string[]): Promise<void>;
+  /**
+   * Erasure of the person who registered, by the key the cards are about (their `subject`): every approval card about
+   * them goes, a registration's they took back included, whose row is gone and with it the approval's key.
+   */
+  removeAbout(subject: Subject): Promise<void>;
+  /**
+   * Erasure of a person (D108 item 14): every card of the module in their own stream goes, the approvals they decide as
+   * a manager (the other managers' cards of those approvals stay) and the scan's cards about their own competence, with
+   * the occurrences the scan keeps for them.
+   */
+  removeOwned(personId: string): Promise<void>;
+}
+
+/** The store's refusal of a requirement the type and its target already have (D108 item 6). */
+export class RequirementTaken extends Error {
+  constructor() {
+    super('The requirement exists already.');
+    this.name = 'RequirementTaken';
+  }
+}
+/** The store's refusal of a share target the type, position and unit (or the organisation) already have. */
+export class ShareTargetTaken extends Error {
+  constructor() {
+    super('The share target exists already.');
+    this.name = 'ShareTargetTaken';
   }
 }
 
@@ -189,9 +525,41 @@ export interface CompetenceCardsTx {
    */
   removeOwn(personId: string, actor: string, at: string): Promise<number>;
 }
-/** Everything a competence use case reads and writes in one transaction. Reads that a write follows take a row lock. */
+/**
+ * Everything a competence use case reads and writes in one transaction. Reads that a write follows take a row lock.
+ *
+ * **The lock order.** A transaction that takes more than one kind of lock takes them in this order, and several of one
+ * kind in the order of their ids, so two transactions wait for each other and never deadlock:
+ *
+ * 1. the row of one person's erasure intent (`erasure`), taken by a deactivation and a reactivation (inside the SCIM
+ *    transaction, after the people module's own locks, and bounded there by a lock timeout), by the sweep's
+ *    reconciliation and by an erasure, the timer's or an operator's; one person's at a time;
+ * 2. the organisation's catalogue (`lockCatalogue`), taken by what adds types (an add, an import);
+ * 3. the rows of the sources (`source`, `lockSources`), taken by a source's copy and its write, a mapping, forgetting a
+ *    source, erasure and a merge;
+ * 4. the rows of types (`type`), taken by what registers, rates, maps, requires, changes, archives, restores and merges;
+ * 5. the rows of holdings (`holding`, `lockHoldingsOfTypes`), taken by what changes, decides, confirms, revokes or
+ *    removes one, and by a merge;
+ * 6. the rows of requirements and share targets (`requirement`, `shareTarget`).
+ *
+ * The retention period's own lock (`lockRetention`) is taken by setting or clearing the period and by nothing else, and
+ * that transaction takes no other lock, so it stands outside the order. No competence transaction waits for a row of
+ * the people module: an intent has no foreign key to `auth_person`, and nothing here locks a person's row.
+ *
+ * A use case that knows only a holding and needs its type as well (a person's change of their own skill) reads the
+ * holding without a lock to learn the type, locks the type, then locks the holding and reads it again. A write takes
+ * its own locks too: inserting a holding, a requirement or a mapping waits on a type a merge has locked, which is the
+ * order above. Reads that write nothing (the lists, the search, a merge's preview) take no lock.
+ */
 export interface CompetenceTx {
   // The catalogue.
+  /**
+   * Hold the organisation's catalogue for this transaction (the first lock of the order): an add and an import of types
+   * take it, so the count they check against `COMPETENCE_CATALOGUE_MAX` is the count they write to.
+   */
+  lockCatalogue(organisationId: string): Promise<void>;
+  /** How many types the organisation has, archived and merged ones included. */
+  countTypes(organisationId: string): Promise<number>;
   /** The organisation's types by area and name in Swedish order; archived ones only when asked for. */
   types(organisationId: string, options?: { archived?: boolean }): Promise<TypeRecord[]>;
   /** One type, locked. */
@@ -205,15 +573,49 @@ export interface CompetenceTx {
   insertType(type: TypeRecord): Promise<void>;
   /** Change a type; the same name rule as `insertType`. An unknown id changes nothing. */
   updateType(id: string, patch: TypePatch): Promise<void>;
+  /**
+   * Insert these types at once, as an import does (D120 item 7), each that may be: one whose name another type of the
+   * organisation in use has (by the store's own comparison without regard to case, which in Postgres is the name index's
+   * `lower()`), or whose address another type keeps whatever its state, or that an earlier one of the batch took, is
+   * left out without an error. Returns the ids inserted.
+   */
+  insertTypes(types: readonly TypeRecord[]): Promise<string[]>;
+  /**
+   * The organisation's types that are not archived whose name or area holds each of these words, without regard to case
+   * (D121 item 4: the type field of the search, over a catalogue of thousands), by name in Swedish order and then id, at
+   * most `limit`. No words: the first `limit` by name.
+   */
+  findTypes(organisationId: string, words: readonly string[], limit: number): Promise<TypeRecord[]>;
   // Holdings.
   /** Every holding of these people, oldest first, whatever its state. */
   holdingsOf(personIds: readonly string[]): Promise<HoldingRecord[]>;
   /** Every holding of this type, oldest first, whatever its state. */
   holdingsOfType(typeId: string): Promise<HoldingRecord[]>;
+  /** Every holding of these types, whatever its state, locked in the order of their ids (a merge, D108 item 2). */
+  lockHoldingsOfTypes(typeIds: readonly string[]): Promise<HoldingRecord[]>;
+  /** Every person's own registration that waits for a decision (D108 item 7), of every organisation, oldest first. */
+  waitingRegistrations(): Promise<HoldingRecord[]>;
   /** One holding, locked. */
   holding(id: string): Promise<HoldingRecord | undefined>;
+  /**
+   * Insert a holding. A second `pending` one of the same person and type is refused with `PendingTaken` (D108 item 7);
+   * only a holding of evidence `self` may be pending or rejected, and only it is decided or has an approval's key. A
+   * second skill of one type that counts for the same person is refused with `SkillTaken` (D120 item 1); a skill has
+   * no end date, no source and no approval, and only a skill is confirmed or has an interest mark.
+   */
   insertHolding(holding: HoldingRecord): Promise<void>;
-  updateHolding(id: string, patch: HoldingPatch): Promise<void>;
+  /** Change a holding; the same rules as `insertHolding`. An unknown id changes nothing; returns whether there was one. */
+  updateHolding(id: string, patch: HoldingPatch): Promise<boolean>;
+  /**
+   * Remove one holding registered in Clew, as a person's own registration taken back is (D108 item 7). A copied row is
+   * left alone: it goes only with its source or its person.
+   */
+  deleteHolding(id: string): Promise<void>;
+  /**
+   * Re-point these holdings, registered or copied and whatever their state, to another type, as a merge does (D108 item
+   * 2); the same rules as `insertHolding`. Returns how many there were.
+   */
+  retypeHoldings(holdingIds: readonly string[], typeId: string): Promise<number>;
   // Rows copied from a source (D108 item 9).
   /**
    * Every row copied from this connector, whatever its state. Not locked row by row: the copy's write and a mapping
@@ -247,10 +649,17 @@ export interface CompetenceTx {
   putMapping(mapping: SourceMapping): Promise<void>;
   /** Remove a mapping; false when there was none. */
   removeMapping(connectorId: string, organisationId: string, sourceType: string): Promise<boolean>;
+  /**
+   * Map to `intoTypeId` every source type of the organisation mapped to `fromTypeId`, keeping who mapped it and when, as
+   * a merge does (D108 item 2). Returns how many mappings there were.
+   */
+  retypeMappings(organisationId: string, fromTypeId: string, intoTypeId: string): Promise<number>;
   /** Every source the copy has claimed or read. */
   sources(): Promise<SourceRecord[]>;
   /** One source, locked. */
   source(connectorId: string): Promise<SourceRecord | undefined>;
+  /** Every source's row, locked in the order of their ids; returns their ids (a merge, D108 item 2). */
+  lockSources(): Promise<string[]>;
   /**
    * One source, locked, written as `blank` first when it has no record: what a run claims a source through. Of two
    * transactions that open a source nobody has read before, the second waits for the first and is answered what the
@@ -266,6 +675,45 @@ export interface CompetenceTx {
   forgetSource(connectorId: string): Promise<Forgotten>;
   /** Start a durable workflow with this transaction's commit (D86). An id that already exists is left as it is. */
   enqueue(start: WorkflowStart): Promise<void>;
+  // Erasure after a person leaves (D108 item 14).
+  /**
+   * Hold the organisation's retention period for this transaction: only setting or clearing it takes this, so two
+   * changes of one period run one after the other and each reads what the other left.
+   */
+  lockRetention(organisationId: string): Promise<void>;
+  /** The organisation's period; undefined while none is set. */
+  retention(organisationId: string): Promise<RetentionRecord | undefined>;
+  /** Write the organisation's period, replacing the one there. */
+  putRetention(record: RetentionRecord): Promise<void>;
+  /** Remove the organisation's period; false when there was none. */
+  removeRetention(organisationId: string): Promise<boolean>;
+  /** One person's erasure intent, locked. */
+  erasure(personId: string): Promise<ErasureRecord | undefined>;
+  /** Every erasure intent of the organisation's people, whatever its state, by person id; not locked. */
+  erasures(organisationId: string): Promise<ErasureRecord[]>;
+  /** Write one person's erasure intent, replacing the one there. Takes no lock on the person's row. */
+  putErasure(record: ErasureRecord): Promise<void>;
+  /** The people of the organisation the directory has deactivated now, by id. */
+  inactiveIn(organisationId: string): Promise<string[]>;
+  /**
+   * The `inactive` intents of every organisation that has a period whose erasure is due at `asOf` (`erasureDue`: the
+   * period after `inactiveSince`, never sooner than the grace after the period was set), the earliest due first, then
+   * by person id; at most `limit`, not locked.
+   */
+  dueErasures(asOf: string, limit: number): Promise<DueErasure[]>;
+  /** How many `inactive` intents of every organisation with a period are due at `asOf`. */
+  countDue(asOf: string): Promise<number>;
+  /**
+   * People the directory has deactivated, of an organisation that has a period, whose deactivation no intent records
+   * (none, or one cancelled by a reactivation): a deactivation from before the intents, or one whose port failed. By
+   * person id, at most `limit`.
+   */
+  unrecordedLeavers(limit: number): Promise<Array<{ personId: string; organisationId: string }>>;
+  /**
+   * Intents `inactive` or `erased` of people who are active now, whose reactivation no intent records. By person id,
+   * at most `limit`.
+   */
+  returnedLeavers(limit: number): Promise<ErasureRecord[]>;
   // People.
   /** These people as the domain names them; an unknown id is absent. */
   persons(ids: readonly string[]): Promise<PersonRef[]>;
@@ -273,31 +721,99 @@ export interface CompetenceTx {
   activeByUserName(userNames: readonly string[]): Promise<PersonRef[]>;
   /** Of these people, the ones not deactivated now. */
   activeIds(personIds: readonly string[]): Promise<Set<string>>;
+  // The directory as requirements read it (D108 items 5 and 6, D99): read here, as the people above are, so the module
+  // imports no other module; written only by the SCIM use cases.
+  /** The organisation's positions, by label in Swedish order. */
+  positions(organisationId: string): Promise<PositionRecord[]>;
+  /**
+   * The organisation's tree as pushed, by name in Swedish order: every `unit:` group with the unit above it, a node
+   * nobody is placed on included. A unit people are assigned to that no group names is not in it.
+   */
+  units(organisationId: string): Promise<UnitRecord[]>;
+  /** The active people of the organisation assigned to any of these units, each once. */
+  placedOn(organisationId: string, unitIds: readonly string[]): Promise<string[]>;
+  /**
+   * For each of these people of the organisation the units they are assigned to and the codes of the positions they
+   * hold; an unknown id, or a person of another organisation, is absent.
+   */
+  placesOf(organisationId: string, personIds: readonly string[]): Promise<Placed[]>;
+  /** The active people of the organisation who hold a position of one of these codes, once per person and code. */
+  positionHolders(organisationId: string, codes: readonly string[]): Promise<Array<{ personId: string; code: string }>>;
+  // Requirements and share targets (D108 item 6).
+  /** Every requirement of the organisation, on a position, a unit or a person, oldest first. */
+  requirements(organisationId: string): Promise<RequirementRecord[]>;
+  /** One requirement, locked. */
+  requirement(id: string): Promise<RequirementRecord | undefined>;
+  /** Insert a requirement. One the type and its target already have is refused with `RequirementTaken`. */
+  insertRequirement(requirement: RequirementRecord): Promise<void>;
+  /** Remove a requirement; false when there was none. */
+  removeRequirement(id: string): Promise<boolean>;
+  /**
+   * Re-point a requirement to another type, or change its least level, as a merge does (D108 item 2). One the type and
+   * its target already have is refused with `RequirementTaken`. An unknown id changes nothing; returns whether there was
+   * one.
+   */
+  updateRequirement(id: string, patch: Partial<Pick<RequirementRecord, 'typeId' | 'minLevel'>>): Promise<boolean>;
+  /** Every share target of the organisation, oldest first. */
+  shareTargets(organisationId: string): Promise<ShareTargetRecord[]>;
+  /** One share target, locked. */
+  shareTarget(id: string): Promise<ShareTargetRecord | undefined>;
+  /** Insert a share target. One the type, position and unit (or the organisation) already have: `ShareTargetTaken`. */
+  insertShareTarget(target: ShareTargetRecord): Promise<void>;
+  /** Remove a share target; false when there was none. */
+  removeShareTarget(id: string): Promise<boolean>;
+  /**
+   * Re-point a share target to another type, or change its least share, as a merge does (D108 item 2). One the type,
+   * position and unit already have is refused with `ShareTargetTaken`. An unknown id changes nothing; returns whether
+   * there was one.
+   */
+  updateShareTarget(id: string, patch: Partial<Pick<ShareTargetRecord, 'typeId' | 'minShare'>>): Promise<boolean>;
   // Erasure and export (D108 item 14).
   /**
-   * Remove the person's holdings, copied ones included, and remove them from other people's (null `registeredBy`,
-   * `revokedBy`). Takes the row lock of every source first, in the order of their ids, whether the person has rows of
-   * it yet or not: a read's write holds its source's row from before it asks who is active until it commits, so an
-   * erasure waits for a write under way, the person's very first one included, and a write that starts after the
-   * erasure finds the person deactivated.
+   * Remove the person's holdings, copied ones included, and the requirements set on them alone, and remove them from
+   * other people's holdings (null `registeredBy`, `revokedBy`, `decidedBy`, `validatedBy`, each keeping its time) and
+   * from the requirements and share targets they set (null `createdBy`, which holds `person:<id>`). Takes the row lock
+   * of every source first, in the order of their ids, whether the person has rows of it yet or not: a read's write holds
+   * its source's row from before it asks who is active until it commits, so an erasure waits for a write under way, the
+   * person's very first one included, and a write that starts after the erasure finds the person deactivated. Returns
+   * the approval keys of the removed holdings, whose cards the use case removes with `workItems` in the same
+   * transaction.
    */
   erasePerson(personId: string): Promise<Erased>;
-  /** Every type of the organisation, archived included, every holding of its people, and its mappings. */
+  /**
+   * Every type of the organisation, archived included, every holding of its people, its mappings, its requirements and
+   * its share targets.
+   */
   exportOrganisation(organisationId: string): Promise<CompetenceExport>;
   /** The person's own competence cards, for an erasure. */
   cards: CompetenceCardsTx;
   audit(entry: CompetenceAudit): Promise<void>;
+  // The read log (D108 item 15, D121 item 5).
+  /** Write one row of the read log. A row the store cannot write throws, and the read it records fails with it. */
+  logRead(entry: ReadLogEntry): Promise<void>;
+  /** The read log as an operator reads it, the newest first, then by id. */
+  readLog(query: ReadLogQuery): Promise<ReadLogEntry[]>;
+  /** The approvals' cards in the managers' streams (D108 item 7), on the same transaction. */
+  workItems: ApprovalWorkItemTx;
 }
 export interface CompetenceStore {
   transaction<T>(fn: (tx: CompetenceTx) => Promise<T>): Promise<T>;
 }
 
 /**
- * The manager's reports (D99 item 4), from the assignments and the tree when asked, never stored. Someone who manages
- * no unit gets `{ units: [] }`: composition maps the people module's refusal to that, so this module decides what a
- * non-manager is refused with and never imports another module's error.
+ * The manager's reports (D99 item 4), from the assignments and the tree when asked, never stored: the units the reader
+ * manages, each with exactly the people who report to the reader through it, the `managed` relation of D117. Not
+ * Personal's list, which also holds a co-manager of the unit and the reader's own manager where they are placed on it.
+ * Someone who manages no unit gets `{ units: [] }`, so this module decides what a non-manager is refused with and never
+ * imports another module's error.
  */
 export type Staff = (persona: AuthenticatedContext) => Promise<StaffOverview>;
+/**
+ * The people the reader reports to now (D99 item 4, D117's line): whoever leads the nearest unit above the reader that
+ * somebody leads, active, by person id, never the reader. Empty for someone who reports to nobody. Computed when asked,
+ * never stored, through the people module's reach bound in composition.
+ */
+export type Above = (persona: AuthenticatedContext) => Promise<string[]>;
 
 /**
  * What a source answers (D108 item 9, D119) is the holdings profile of `@clew/contracts`: a page of `HoldingsRow`s,
@@ -344,6 +860,20 @@ export type CompetenceLog = (message: string, ...details: unknown[]) => void;
 export interface CompetenceDeps {
   store: CompetenceStore;
   staff: Staff;
+  /** Whom the reader reports to (D108 item 7). Absent: everyone reports to nobody, as in the tests of earlier slices. */
+  above?: Above;
+  /**
+   * A person as the use cases take one, built from their current grant (D108 item 7): to count whom a manager reports
+   * to as they themselves count their reports, and to tell whether the person who registered is active. Undefined for
+   * someone deactivated or without access. Absent: who reports to whom is `above` alone, and approvals are never
+   * reconciled, as in the tests of earlier slices.
+   */
+  personaOf?: (personId: string) => Promise<AuthenticatedContext | undefined>;
+  /**
+   * A one-way digest of a text (D108 item 12): the manager's card names its cause by one, so its stored identity says
+   * nothing of whom or what it counts. Composition hands in SHA-256; absent, a 64-bit FNV-1a, for tests.
+   */
+  digest?: (text: string) => string;
   clock: () => Date;
   ids: () => string;
   /** The sources the copy reads (item 9). Absent: there are none, as in the tests of the first slice. */
@@ -351,4 +881,6 @@ export interface CompetenceDeps {
   /** Waits before a page that did not answer is asked again (item 9); composition waits, a test need not. */
   pause?: (ms: number) => Promise<void>;
   log?: CompetenceLog;
+  /** The same port at the information level: what the erasure sweep did, in counts (D91). */
+  info?: CompetenceLog;
 }

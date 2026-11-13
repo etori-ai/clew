@@ -325,7 +325,7 @@ describe('the erase scripts on PostgreSQL (D122 item 7, D123 item 3)', () => {
     });
     expect(run('competence-erase.ts', '--person', leaver, '--confirm')).toEqual({
       code: 0,
-      out: `Erased person "${leaver}" from the competence domain: 1 holdings removed, 0 other holdings cleared of their id, 1 cards removed. Audited as person:${leaver}.`,
+      out: `Erased person "${leaver}" from the competence domain: 1 holdings and 0 requirements removed, 0 other holdings cleared of their id, the cards of 0 approvals and 1 cards of their own removed. Audited as person:${leaver}.`,
       err: '',
     });
     expect(run('dialogue-erase.ts', '--person', leaver, '--confirm')).toEqual({

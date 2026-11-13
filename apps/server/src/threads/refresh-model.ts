@@ -40,6 +40,11 @@ export interface RefreshTx extends ThreadTx {
   lockRequest(id: string): Promise<RefreshRequest | undefined>;
   saveRequest(request: RefreshRequest): Promise<void>;
   occurrences(request: RefreshRequest): Promise<Occurrence[]>;
+  /**
+   * Every open occurrence of one connector, of every person and assignment, oldest key first and locked: what an
+   * operator's reset of the connector's topic-only cards reads (`legacyCardsUsecases`). Never the refresh's own path.
+   */
+  openOccurrences(connector: string): Promise<Occurrence[]>;
   saveOccurrence(occurrence: Occurrence): Promise<void>;
   /** Existing legacy cards and row versions are captured before source I/O. */
   findTopic(personId: string, connector: string, topic: string): Promise<Thread | undefined>;

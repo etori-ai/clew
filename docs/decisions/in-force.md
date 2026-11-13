@@ -4,7 +4,7 @@
 
 Which decisions bind work today, one line each. This page is drawn from the first word of every record's status; the [full index](README.md) lists every record with its complete status, and each record holds the reasoning.
 
-**121 in force**: 96 accepted and 25 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
+**125 in force**: 97 accepted and 28 provisional (chosen, but tested by nothing outside the repository, [D102](D102-a-decision-is-provisional-until-something-outside-the-repository-has-tested-it.md)). 11 proposed and not decided. 6 no longer in force.
 
 In force does not mean built: [implementation status](../reference/status.md) says what works. "Read with" names the later decisions that a record's status says refine, amend or replace part of it.
 
@@ -22,7 +22,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D84 · A model's reasoning is its own setting, and the model test settles it](D84-a-models-reasoning-is-its-own-setting.md) | 2026-11-07, revised 2026-11-09 | accepted |  |
 | [D94 · A manager has a Personal section that lists the people on the units they manage](D94-a-manager-has-a-personal-section-listing-the-people-on-their-units.md) | 2026-11-09 | accepted | [D99](README.md) |
 | [D95 · Clew may own a domain by choice, decided per domain with the core-or-connector checklist](D95-clew-may-own-a-domain-by-choice-decided-with-the-core-or-connector-checklist.md) | 2026-11-10 | accepted |  |
-| [D96 · Talks is Clew's first owned domain: the round and action points, behind a profile a connector can answer](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md) | 2026-11-10 | accepted | [D99](README.md), [D111](D111-where-something-opens-is-decided-by-what-it-is.md), [D122](D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) |
+| [D96 · Talks is Clew's first owned domain: the round and action points, behind a profile a connector can answer](D96-talks-is-the-first-owned-domain-the-round-and-action-points-behind-a-profile.md) | 2026-11-10 | accepted | [D99](README.md), [D111](D111-where-something-opens-is-decided-by-what-it-is.md), [D122](README.md) |
 | [D100 · The vision is narrowed to what Clew can keep today: the open page, adapters as the norm, a closed view catalogue](D100-the-vision-is-narrowed-to-what-clew-can-keep-today.md) | 2026-11-10 | accepted | [D101](README.md) |
 | [D101 · The first real integration is Nextcloud's Approval app, and new surface waits until its loop works](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) | 2026-11-10 | provisional |  |
 | [D104 · The model does the work: a floor holds without it, and the assistant may act alone within governed limits](D104-the-model-does-the-work-a-floor-holds-without-it-and-the-assistant-may-act-alone-within-limits.md) | 2026-11-10 | provisional |  |
@@ -30,6 +30,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D117 · A manager follows up the units of the managers who report to them, and a source is told those units](D117-a-manager-follows-up-the-units-below-and-a-source-is-told-them.md) | 2026-11-13 | provisional |  |
 | [D118 · The follow-up dialogue is an owned domain: assessments and activities per unit, areas and questions as configuration](D118-the-follow-up-dialogue-is-an-owned-domain.md) | 2026-11-13 | provisional |  |
 | [D120 · A manager's own notes in the follow-up dialogue are private posts, and their files go to the document system](D120-a-managers-own-notes-in-the-follow-up-dialogue-are-private-posts-and-files-go-to-the-document-system.md) | 2026-11-13 | provisional |  |
+| [D120 · A skill is a holding with a level, and the competence domain covers what a skills platform does for a public-sector organisation](D120-a-skill-is-a-holding-with-a-level-and-the-competence-domain-covers-what-a-skills-platform-does.md) | 2026-11-12 | provisional |  |
 
 ## Integrations
 
@@ -54,7 +55,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D79 · Semantic views and versioned document review](D79-semantic-views-and-versioned-document-review.md) | 2026-11-08 | accepted |  |
 | [D80 · Recover rejected rows without replaying confirmed writes](D80-recover-rejected-rows-without-replaying-confirmed-writes.md) | 2026-11-08 | accepted |  |
 | [D89 · An errand connector acts as the person, and the case system decides access](D89-an-errand-connector-acts-as-the-person-and-the-case-system-decides-access.md) | 2026-11-09 | accepted |  |
-| [D97 · A source says what its rows are about, and Clew places them](D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md) | 2026-11-10 | accepted | [D99](README.md), [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md), [D111](D111-where-something-opens-is-decided-by-what-it-is.md), [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md), [D114](D114-person-profiles-show-employments-and-categorised-phone-numbers.md), [D115](D115-the-assistant-resolves-a-person-the-asker-names-and-hands-the-model-the-work-about-them-not-health-rows.md), [D117](README.md), [D122](D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) |
+| [D97 · A source says what its rows are about, and Clew places them](D97-a-source-says-what-its-rows-are-about-and-clew-places-them.md) | 2026-11-10 | accepted | [D99](README.md), [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md), [D111](D111-where-something-opens-is-decided-by-what-it-is.md), [D112](D112-the-interface-is-rebuilt-on-astryx-templates-a-queue-one-detail-shape-one-panel.md), [D114](D114-person-profiles-show-employments-and-categorised-phone-numbers.md), [D115](D115-the-assistant-resolves-a-person-the-asker-names-and-hands-the-model-the-work-about-them-not-health-rows.md), [D117](README.md), [D122](README.md) |
 | [D117 · The core decides who a source may be asked about, on every call, and signs the relation](D117-the-core-decides-who-a-source-may-be-asked-about-on-every-call-and-signs-the-relation.md) | 2026-11-12 | provisional |  |
 | [D119 · The installation reads as itself, through a read no person can reach](D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md) | 2026-11-12 | provisional |  |
 
@@ -62,7 +63,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 
 | Decision | Date | Standing | Read with |
 |---|---|---|---|
-| [D5 · OIDC and OAuth 2.1 with JWT access tokens are the only identification path](D05-oidc-and-oauth-only-identification-path.md) | 2026-11-03 | accepted | [D121](D121-a-sign-in-follows-the-identity-providers-session.md) |
+| [D5 · OIDC and OAuth 2.1 with JWT access tokens are the only identification path](D05-oidc-and-oauth-only-identification-path.md) | 2026-11-03 | accepted | [D121](README.md) |
 | [D44 · Authorized reads and Clew-signed connector authority](D44-authorized-reads-and-clew-signed-connector-authority.md) | 2026-11-05 | accepted | [D117](README.md) |
 | [D62 · Users are core entities, not connected systems](D62-users-are-core-entities-not-connected-systems.md) | 2026-11-06 | accepted |  |
 | [D68 · People are pushed into Clew through standard SCIM, and mapping happens outside Clew](D68-people-are-pushed-into-clew-through-standard-scim.md) | 2026-11-06 | accepted | [D85](README.md), [D93](D93-the-protected-key-is-refused-at-the-scim-boundary.md), [D96](README.md), [D99](README.md), [D101](README.md), [D107](D107-an-administrator-issues-replaces-and-takes-back-a-provisioners-key-on-the-users-page.md), [D109](D109-a-provisioner-sends-a-change-when-it-happens-and-reconciles-the-whole-source-daily.md), [D110](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md), [D114](D114-person-profiles-show-employments-and-categorised-phone-numbers.md), [D123](D123-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md) |
@@ -71,13 +72,15 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D93 · The `protected` key is refused at the SCIM boundary until Clew decides whether it may hold the fact](D93-the-protected-key-is-refused-at-the-scim-boundary.md) | 2026-11-09 | accepted | [D96](README.md) |
 | [D96 · A key written wrong is refused at the SCIM boundary, not stored as a plain group](D96-a-key-written-wrong-is-refused-at-the-scim-boundary.md) | 2026-11-10 | accepted |  |
 | [D99 · Units form a tree pushed over SCIM, and a manager works with their direct reports](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md) | 2026-11-10 | accepted | [D101](README.md), [D124](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) |
-| [D101 · A provisioner pushes the organisation first and adds before it removes, and a unit belongs to one organisation](D101-a-provisioner-pushes-the-organisation-first-and-adds-before-it-removes-and-a-unit-belongs-to-one-organisation.md) | 2026-11-11 | provisional | [D122](D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md), [D123](D123-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md) |
+| [D101 · A provisioner pushes the organisation first and adds before it removes, and a unit belongs to one organisation](D101-a-provisioner-pushes-the-organisation-first-and-adds-before-it-removes-and-a-unit-belongs-to-one-organisation.md) | 2026-11-11 | provisional | [D122](README.md), [D123](D123-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md) |
 | [D103 · The session that asked stands behind delegated work: an approved write, and a scan while the person is present](D103-the-session-that-asked-stands-behind-delegated-work.md) | 2026-11-10 | provisional |  |
 | [D107 · An administrator issues, replaces and takes back a provisioner's key on the users page](D107-an-administrator-issues-replaces-and-takes-back-a-provisioners-key-on-the-users-page.md) | 2026-11-11 | provisional |  |
 | [D109 · A provisioner sends a change when it happens, and reconciles the whole source at least daily](D109-a-provisioner-sends-a-change-when-it-happens-and-reconciles-the-whole-source-daily.md) | 2026-11-11 | provisional |  |
 | [D110 · A person's title is pushed as SCIM's `title` and kept apart from the role](D110-a-persons-title-is-pushed-as-scims-title-and-kept-apart-from-the-role.md) | 2026-11-11 | provisional | [D114](D114-person-profiles-show-employments-and-categorised-phone-numbers.md) |
 | [D113 · A deactivation is never refused for what stands beside it, and the SCIM server says no to what it did not do](D113-a-deactivation-is-never-refused-for-what-stands-beside-it.md) | 2026-11-11 | provisional |  |
 | [D114 · Person profiles show current employments and categorised phone numbers](D114-person-profiles-show-employments-and-categorised-phone-numbers.md) | 2026-11-12 | provisional |  |
+| [D118 · An administrator's capability is no relation to a person: Användare and Personal list the same people, and what is shown about one follows the relation](D118-an-administrators-capability-is-no-relation-to-a-person.md) | 2026-11-12 | accepted |  |
+| [D121 · A registrar reads competence across the organisation through a relation of its own, and every such read is logged](D121-a-registrar-reads-competence-across-the-organisation-through-a-relation-of-its-own.md) | 2026-11-12 | provisional |  |
 | [D121 · A sign-in follows the identity provider's session, and a sign-out there ends Clew's](D121-a-sign-in-follows-the-identity-providers-session.md) | 2026-11-12 | provisional |  |
 | [D122 · Clew keys its own records about a person by the person's id](D122-clew-keys-its-own-records-about-a-person-by-the-persons-id.md) | 2026-11-12 | provisional |  |
 | [D123 · Clew empties expired sign-in data itself, and a leaver's retention is the organisation's decision](D123-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md) | 2026-11-12 | provisional |  |
@@ -154,6 +157,12 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D116 · Start and the row under it are Clew's; the intranet keeps the other places](D116-start-and-the-row-under-it-are-clews.md) | 2026-11-13 | provisional |  |
 | [D124 · A unit is walked one step up and one step down, and Organisation, Användare and the person card follow their canvas](D124-a-unit-is-walked-one-step-up-and-one-step-down-and-the-people-pages-follow-their-canvas.md) | 2026-11-13 | provisional |  |
 
+## Assistant
+
+| Decision | Date | Standing | Read with |
+|---|---|---|---|
+| [D122 · The assistant may read and propose whatever the person who asks may, and adding a model is answering for it](D122-the-assistant-may-read-and-propose-whatever-the-person-who-asks-may-and-adding-a-model-is-answering-for-it.md) | 2026-11-13 | provisional |  |
+
 ## Proposed, not decided
 
 | Decision | Area | Date | Read with |
@@ -167,7 +176,7 @@ In force does not mean built: [implementation status](../reference/status.md) sa
 | [D82 · Sick-leave statistics come through an absence connector that reads only aggregates](D82-sick-leave-statistics-come-through-an-absence-connector-that-reads-only-aggregates.md) | integrations | 2026-11-06 |  |
 | [D87 · One header shared by the portal and the intranet, built with Astryx and embedded as a custom element](D87-one-header-shared-by-the-portal-and-the-intranet.md) | ui | 2026-11-09 | [D88](D88-the-web-app-draws-the-shared-header-and-an-administrator-owns-its-content.md) |
 | [D99 · An unresolved job step reaches a person and is finished forward; no connector is asked for rollback](D99-an-unresolved-job-step-reaches-a-person-and-is-finished-forward.md) | integrations, product | 2026-11-10 |  |
-| [D108 · Competence is an owned domain: one holding for competences and certificates, typed against a catalogue](D108-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md) | product, identity, integrations | 2026-11-11 | [D119](README.md), [D123](D123-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md) |
+| [D108 · Competence is an owned domain: one holding for competences and certificates, typed against a catalogue](D108-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md) | product, identity, integrations | 2026-11-11 | [D119](README.md), [D120](README.md), [D121](README.md), [D123](D123-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md) |
 | [D119 · Key figures per unit come through one vendor-neutral profile](D119-key-figures-per-unit-come-through-one-vendor-neutral-profile.md) | integrations | 2026-11-13 |  |
 
 ## No longer in force

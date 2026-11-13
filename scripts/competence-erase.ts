@@ -1,10 +1,13 @@
 /**
- * Erase one person from the competence domain (D108 item 14): their holdings, the rows copied from sources included,
- * their id on the holdings they registered or revoked for others, and the cards the competence scan put in their own
- * stream ("HLR gick ut 1 juni"), each with a `thread.removed` row. Only a person the directory has deactivated is
- * erased, since the next read of a source would copy an active person's holdings back. Runs inside the app container
- * with the server's local settings (DATABASE_URL); no route and no `package.json` entry. Audited
- * (`competence.person_erased`, counts only) with the actor `operator:cli`. It cannot be undone, so it needs `--confirm`.
+ * Erase one person from the competence domain by hand (D108 item 14): their holdings, the rows copied from sources
+ * included, the requirements set on them alone (item 6), their id on the holdings they registered or revoked for
+ * others, the cards of their own registrations' approvals and every card of the module in their own stream ("HLR gick
+ * ut 1 juni"), each with a `thread.removed` row. Only a person the directory has deactivated is erased, since the next
+ * read of a source would copy an active person's holdings back. The same erasure as the hourly sweep's
+ * (`scripts/competence-retention.ts` sets its period); the person's intent is marked erased here, so the sweep has
+ * nothing more to do for them. Runs inside the app container with the server's local settings (DATABASE_URL); no route
+ * and no `package.json` entry. Audited (`competence.person_erased` with the cause `operator`, counts only) with the
+ * actor `operator:cli`. It cannot be undone, so it needs `--confirm`.
  *
  *   bun scripts/competence-erase.ts --person <person id> --confirm
  *
@@ -50,13 +53,13 @@ try {
         : `Person "${personId}" is still active: only a person the source has deactivated is erased (D68 item 1). Nothing was erased and nothing was audited.`,
     );
     process.exitCode = 1;
-  } else if (!erased.holdings && !erased.cleared && !erased.cards)
+  } else if (!erased.holdings && !erased.cleared && !erased.requirements && !erased.approvals && !erased.cards)
     console.log(
       `Person "${personId}" has nothing in the competence domain: nothing was changed. Audited as person:${personId}.`,
     );
   else
     console.log(
-      `Erased person "${personId}" from the competence domain: ${erased.holdings} holdings removed, ${erased.cleared} other holdings cleared of their id, ${erased.cards} cards removed. Audited as person:${personId}.`,
+      `Erased person "${personId}" from the competence domain: ${erased.holdings} holdings and ${erased.requirements} requirements removed, ${erased.cleared} other holdings cleared of their id, the cards of ${erased.approvals} approvals and ${erased.cards} cards of their own removed. Audited as person:${personId}.`,
     );
 } catch (error) {
   // The transaction wrote nothing. A query's own error is its cause; the wrapper's message repeats the statement.

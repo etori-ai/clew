@@ -1,5 +1,5 @@
 /**
- * The SCIM group keys Clew reserves: the three that carry meaning (D68), and `protected`, which is refused at the SCIM
+ * The SCIM group keys Clew reserves: the four that carry meaning (D68; `position:`, D108 item 5), and `protected`, which is refused at the SCIM
  * boundary (D93), as a reserved key written wrong is (D96); how a key is read, the one way the boundary, the derivation
  * and the example's check take it; and the capability names a `capability:` key may carry. This file imports nothing,
  * so the example provisioner and its check (`scripts/provisioner/`) take it alone, without loading TypeBox at run time;
@@ -8,9 +8,10 @@
 export const UNIT_KEY = 'unit:',
   MANAGER_KEY = 'unit-manager:',
   CAPABILITY_KEY = 'capability:',
+  POSITION_KEY = 'position:',
   PROTECTED_KEY = 'protected';
 
-const prefixes = [UNIT_KEY, MANAGER_KEY, CAPABILITY_KEY] as const;
+const prefixes = [UNIT_KEY, MANAGER_KEY, CAPABILITY_KEY, POSITION_KEY] as const;
 
 /** Also recognise a reserved key written with the wrong case or spacing so callers can refuse it. */
 export function reservedScimGroupKey(key: string) {
@@ -24,7 +25,7 @@ export interface ScimGroupKey {
   value: string;
 }
 /**
- * A key as the SCIM boundary accepts it (D96): one of the three prefixes exactly, in lower case, and directly after it
+ * A key as the SCIM boundary accepts it (D96): one of the four prefixes exactly, in lower case, and directly after it
  * a unit id or a capability name that is not empty and has no space at either end. Clew reads a key this way wherever
  * it reads one, and takes a group for a unit only when its key reads as that unit's, so any other key means nothing: a
  * plain group, `protected` (D93), and a reserved word written wrong, which a group stored before D96 may still carry

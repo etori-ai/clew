@@ -1,12 +1,17 @@
 import { isDeepStrictEqual } from 'node:util';
 import {
   CAPABILITIES,
+  RELATION_GRANTS,
   contractProblems,
   isCapability,
+  isRelationGrant,
   type AuthenticatedContext,
   type Capability,
   type GroupCapabilityInputType,
   type GroupCapability,
+  type GroupRelation,
+  type GroupRelationInputType,
+  type RelationGrant,
   GROUP_SEARCH_LIMIT,
   type GroupSearchResult,
   type OrganisationOverview,
@@ -38,6 +43,7 @@ import {
   bySwedish,
   closesCycle,
   deriveAuthority,
+  grantRelations,
   ERASED,
   erasedProfile,
   givesAuthority,
@@ -53,8 +59,10 @@ import {
   organisationOf,
   pageOf,
   parseFilter,
+  positionOfKey,
   project,
   sameGrant,
+  samePositions,
   searchWords,
   unitGroupOf,
   unitOfKey,
@@ -67,6 +75,7 @@ import {
   type GroupFields,
   type GroupRecord,
   type GroupCapabilityRule,
+  type GroupRelationRule,
   type Projection,
   type TreeUnit,
   type UserFields,
@@ -110,7 +119,8 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
       rules =
         known?.organisationId === person.organisationId
           ? known.rules
-          : await tx.groupCapabilities(person.organisationId);
+          : await tx.groupCapabilities(person.organisationId),
+      relationRules = await tx.groupRelations(person.organisationId);
     // Every unit the memberships name, as the unit table knows it: the label of a managed unit without a `unit:` group,
     // and the comparison that lets an unchanged derivation write nothing (a reconciliation replays every person).
     const named = [...new Set(memberships.flatMap(m => unitOfKey(m.externalId) ?? []))];
@@ -124,7 +134,7 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
       const node = placedOn.has(id) ? undefined : await tx.findGroup('externalId', UNIT_KEY + id);
       if (node) pushedLabels[id] = node.label;
     }
-    const derived = deriveAuthority(memberships, rules, { ...knownLabels, ...pushedLabels });
+    const derived = deriveAuthority(memberships, rules, { ...knownLabels, ...pushedLabels }, relationRules);
     const movedUnits = derived.units.filter(u => knownLabels[u.id] !== u.label);
     if (movedUnits.length) await tx.writeUnits(person.organisationId, movedUnits);
     // Compared as a set: the store and the derivation need not order unit ids alike, and an order alone is no change.
@@ -135,7 +145,14 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
     if (!sameAssignments) await tx.replaceAssignments(personId, derived.assignments);
     // Compared as stored, so a projection that still carries a name outside the closed list is rewritten.
     const before = await tx.grant(personId),
-      previous = before && { ...before, capabilities: [...before.capabilities].sort() as Capability[] };
+      heldRelations = grantRelations(before),
+      previous = before && {
+        unitId: before.unitId,
+        unitLabel: before.unitLabel,
+        role: before.role,
+        capabilities: [...before.capabilities].sort() as Capability[],
+        ...(heldRelations.length ? { relations: heldRelations } : {}),
+      };
     const regranted = !sameGrant(previous, derived.grant);
     // D99: the history of who was assigned where is the audit rows. A second unit, or a manager's role on one, changes
     // what a person sees without changing the unit they act as, so it is said by itself when the grant does not say it.
@@ -158,8 +175,31 @@ export function provisioningUsecases(deps: { store: ProvisionStore }) {
               role: derived.grant.role,
               capabilities: derived.grant.capabilities,
               assignments: derived.assignments.length,
+              // D121: said whenever the person held one before or holds one now, so its loss is on the row too.
+              ...(derived.relations.length || heldRelations.length ? { relations: derived.relations } : {}),
             }
           : { removed: true },
+      });
+    }
+    // D108 item 5: what the person is, from the `position:` groups they are in, whatever unit they are placed on. A
+    // position's row is its group's and is written with the group; one pushed before Clew read the key gets its row
+    // here, from the group's name. Compared by code, so a renamed position writes nothing on the people who hold it.
+    if (derived.positions.length) {
+      const known = await tx.positionLabels(
+          person.organisationId,
+          derived.positions.map(p => p.code),
+        ),
+        unwritten = derived.positions.filter(p => known[p.code] !== p.label);
+      if (unwritten.length) await tx.writePositions(person.organisationId, unwritten);
+    }
+    if (!samePositions(await tx.positionsOf(personId), derived.positions)) {
+      const codes = derived.positions.map(p => p.code);
+      await tx.replacePositions(personId, person.organisationId, codes);
+      await tx.audit({
+        actor,
+        action: 'positions.derived',
+        subject: 'person:' + personId,
+        details: { positions: codes },
       });
     }
     return derived;
@@ -363,6 +403,39 @@ export function scimUsecases(deps: {
       await tx.writeUnits(p.organisationId, [{ id, label: fields.label }]);
   };
   /**
+   * D108 item 5: a `position:` group is a position of the organisation, named by the group's name. Unlike a unit row,
+   * the position's row is written whether anyone holds it or not: the organisation's positions are the ones its source
+   * sends. A position needs no check of the organisation beyond the group's (D101): it has one key, and a group's key
+   * is unique across the installation, so one organisation holds a code at a time. `positionOf` reads the row as it
+   * stands, before anyone is held; `namePosition` writes it once everyone the write touches or derives is held
+   * (`heldAt`), so a holder's own write, which derives them and writes the same row, waits for this one, and before
+   * anyone is derived, so a holder is given the row as it now reads. A group stored before Clew read the key has no row
+   * and members who hold nothing yet: its write derives everyone in it (`missing`).
+   */
+  const positionOf = async (tx: ProvisionTx, p: Provisioner, fields: GroupFields) => {
+    const code = positionOfKey(fields.externalId);
+    if (code === undefined) return undefined;
+    const label = (await tx.positionLabels(p.organisationId, [code]))[code];
+    return { code, label, missing: label === undefined };
+  };
+  const namePosition = async (
+    tx: ProvisionTx,
+    p: Provisioner,
+    fields: GroupFields,
+    position: Awaited<ReturnType<typeof positionOf>>,
+  ) => {
+    if (position && position.label !== fields.label)
+      await tx.writePositions(p.organisationId, [{ code: position.code, label: fields.label }]);
+  };
+  /**
+   * The position a group stops carrying, once the people who held it through the group have been derived without it:
+   * the group was removed or took another key. Its row goes, and with it nothing a person still holds.
+   */
+  const dropPosition = async (tx: ProvisionTx, p: Provisioner, was: string | null, now: string | null) => {
+    const code = positionOfKey(was);
+    if (code !== undefined && code !== positionOfKey(now)) await tx.removePositions(p.organisationId, [code]);
+  };
+  /**
    * A group write holds everyone it touches or derives before it takes its time of change, in one pass in id order as
    * every writer takes people (a second pass could wait on a writer that waits on the first), after the group, the
    * tree, the units and the capability rows. A person's own write holds them before it takes its time, so one that came
@@ -503,6 +576,14 @@ export function scimUsecases(deps: {
           externalId: fields.externalId,
         },
       });
+      // D108 item 14: the domains that keep data about the person hear of it in this transaction, whatever verb it was.
+      if (flipped)
+        await tx.leavers[fields.enabled ? 'reactivated' : 'deactivated']({
+          actor: actorOf(p),
+          personId: current.id,
+          organisationId: current.organisationId,
+          at,
+        });
     }
     // Always: silent when nothing moved, and it heals a projection written before provisioning existed.
     await derivation.deriveWithin(tx, actorOf(p), current.id);
@@ -541,18 +622,24 @@ export function scimUsecases(deps: {
       renamed = relabelled || rekeyed;
     // Only who comes is asked about: who is already in the group was asked about when they came.
     await membersExist(tx, p, added);
-    if (!renamed && !moved && !added.length && !removed.length) return groupView(tx, current, base);
+    // D108 item 5: a `position:` group's row as it stands. A group stored before Clew read the key has none: it gets it
+    // on this write, also one that changes nothing else, and everyone in the group is derived in it, so each holds the
+    // position and has it in the audit.
+    const position = await positionOf(tx, p, fields),
+      positionMissing = position?.missing === true;
+    if (!renamed && !moved && !added.length && !removed.length && !positionMissing) return groupView(tx, current, base);
     // Who may hold another grant afterwards. Only a group that gives its members something, under the key it had or
     // the key it gets, moves a grant; any other group moves none, whatever the write did to it. A new key changes what
-    // every member gets, and a `unit:` group's new name the label its members and the unit's managers carry. A new
-    // name of any other group, and a move in the tree, change nobody's grant. Otherwise only those who came or went.
+    // every member gets, and a `unit:` group's new name the label its members and the unit's managers carry, as a
+    // position's first row does its holders'. A new name of any other group, and a move in the tree, change nobody's
+    // grant. Otherwise only those who came or went.
     const unitRenamed = relabelled && unitGroupOf(fields.externalId) !== undefined;
     let derive: { people: string[]; known: OrganisationRules } | undefined,
       assigned: string[] = [];
-    if (added.length || removed.length || rekeyed || unitRenamed) {
+    if (added.length || removed.length || rekeyed || unitRenamed || positionMissing) {
       const authority = await authorityOf(tx, p, current.externalId, fields.externalId);
       if (authority.gives) {
-        derive = { people: [...added, ...removed], known: authority.known };
+        derive = { people: [...added, ...removed, ...(positionMissing ? before : [])], known: authority.known };
         if (rekeyed || unitRenamed) {
           // Read before the group is written, to be held with everyone else. A group that gives up the unit's manager
           // key for its unit key names no manager by it: once written, its members manage the unit no more.
@@ -569,6 +656,12 @@ export function scimUsecases(deps: {
     // A new key or a move in the tree is not on a member's resource; a new name is, as the display of the group.
     const touched = [...added, ...removed, ...(relabelled ? fields.members : [])],
       at = await heldAt(tx, touched, derive?.people);
+    // Nothing of the group itself changed: the position's first row alone, with its holders derived.
+    if (!renamed && !moved && !added.length && !removed.length) {
+      await namePosition(tx, p, fields, position);
+      await settle(tx, p, at, [], derive);
+      return groupView(tx, current, base);
+    }
     // The time of the change is the group's whoever caused it: a member who came or went changes the resource a
     // client reads, and `meta.lastModified` once went back to the old time on the next read (RFC 7643 §3.1).
     await tx.updateGroup(current.id, {
@@ -594,7 +687,9 @@ export function scimUsecases(deps: {
       },
     });
     await nameUnit(tx, p, fields, assigned);
+    await namePosition(tx, p, fields, position);
     await settle(tx, p, at, touched, derive);
+    await dropPosition(tx, p, current.externalId, fields.externalId);
     return groupView(
       tx,
       { ...current, externalId: fields.externalId, label: fields.label, parentUnitId: fields.parent, updatedAt: at },
@@ -647,6 +742,14 @@ export function scimUsecases(deps: {
           subject: 'person:' + record.id,
           details: { userName: fields.userName, externalId: fields.externalId },
         });
+        // A person pushed already deactivated is inactive from now on (D108 item 14), as one deactivated later is.
+        if (!record.enabled)
+          await tx.leavers.deactivated({
+            actor: actorOf(p),
+            personId: record.id,
+            organisationId: p.organisationId,
+            at,
+          });
         await derivation.deriveWithin(tx, actorOf(p), record.id);
         return userResource(record, [], base);
       }),
@@ -691,18 +794,23 @@ export function scimUsecases(deps: {
           base,
         );
       }),
-    /** D68: a deleted user is deactivated, never erased. Idempotent. */
+    /**
+     * D68: a deleted user is deactivated, never erased. Idempotent. The leavers port hears of it in the same transaction
+     * (D108 item 14), as it does of a deactivation by `PATCH` or `PUT`.
+     */
     deleteUser: (p: Provisioner, id: string) =>
       deps.store.transaction(async tx => {
         const current = await userOr404(tx, p, id, true);
         if (!current.enabled) return;
-        await tx.updateUser(id, { enabled: false, updatedAt: now() });
+        const at = now();
+        await tx.updateUser(id, { enabled: false, updatedAt: at });
         await tx.audit({
           actor: actorOf(p),
           action: 'scim.user.deactivated',
           subject: 'person:' + id,
           details: { userName: current.userName, externalId: current.externalId },
         });
+        await tx.leavers.deactivated({ actor: actorOf(p), personId: id, organisationId: current.organisationId, at });
         await derivation.deriveWithin(tx, actorOf(p), id);
       }),
     createGroup: (p: Provisioner, body: unknown, base: string): Promise<ScimGroup> =>
@@ -716,6 +824,7 @@ export function scimUsecases(deps: {
         await unitOfOwnOrganisation(tx, p, fields);
         await placeInTree(tx, p, fields);
         await membersExist(tx, p, fields.members);
+        const position = await positionOf(tx, p, fields);
         // Its members are touched; they and the managers of a unit it names are derived when it gives them something.
         const assigned = [...fields.members, ...(await managersOfUnit(tx, fields.externalId))],
           authority = assigned.length ? await authorityOf(tx, p, fields.externalId) : undefined,
@@ -745,6 +854,7 @@ export function scimUsecases(deps: {
           },
         });
         if (derive) await nameUnit(tx, p, fields, assigned);
+        await namePosition(tx, p, fields, position);
         await settle(tx, p, at, fields.members, derive);
         return groupView(tx, record, base);
       }),
@@ -790,7 +900,8 @@ export function scimUsecases(deps: {
     /**
      * Removes the group; its members lose what it gave them, and their resources, which no longer list it, the time
      * they last changed. The group-capability rows stay (D85). A `unit:` group with units below it is not removed
-     * (D99): the answer is 409 and names them.
+     * (D99): the answer is 409 and names them. A `position:` group
+     * takes its position with it (D108 item 5), once its members have been derived without it.
      */
     deleteGroup: (p: Provisioner, id: string) =>
       deps.store.transaction(async tx => {
@@ -820,6 +931,7 @@ export function scimUsecases(deps: {
           },
         });
         await settle(tx, p, at, members, derive);
+        await dropPosition(tx, p, current.externalId, null);
       }),
   };
 }
@@ -827,9 +939,11 @@ export type ScimUsecases = ReturnType<typeof scimUsecases>;
 
 /**
  * Administration › Användare (D62, D68, D85): what an administrator with `admin.users` sees and may change. Identity,
- * units and roles are read only here; they come from the provisioner. The one thing written is D85's rows, a group gives
- * a capability: audited per row (`group-capability.added`, `group-capability.removed`), and every current member of the
- * group is re-derived in the same transaction, so a grant never lags the row that produced it.
+ * units and roles are read only here; they come from the provisioner. What is written is D85's rows, a group gives a
+ * capability, and D121's, a group gives a relation to people by grant (`registrar`), kept apart since a capability is no
+ * relation (D118): audited per row (`group-capability.added`, `group-capability.removed`, `group-relation.added`,
+ * `group-relation.removed`), and every current member of the group is re-derived in the same transaction, so a grant
+ * never lags the row that produced it.
  *
  * The people are read a page at a time (D100): the store narrows, orders and counts, and only the rows of the page are
  * filled in with unit, grant and binding, so a page costs the same in an organisation of two hundred and one of
@@ -935,11 +1049,13 @@ export function usersAdminUsecases(deps: {
       externalId: u.externalId,
       email: u.email,
       title: titlesOf(u).join(', ') || null,
+      positions: await tx.positionsOf(u.id),
       enabled: u.enabled,
       bound: await tx.bound(u.id),
       assignments: await tx.assignmentsOf(u.id),
       active: grant ? { unitId: grant.unitId, unitLabel: grant.unitLabel, role: grant.role } : null,
       capabilities: grant ? sorted(grant.capabilities) : [],
+      relationGrants: grantRelations(grant),
     };
   }
   async function overviewWithin(tx: ProvisionTx, persona: AuthenticatedContext): Promise<UsersAdminOverview> {
@@ -955,8 +1071,11 @@ export function usersAdminUsecases(deps: {
     // This organisation's rows, those whose group is gone included (D85: a row outlives its group and applies again
     // when the group returns). A row belongs to the organisation that wrote it, so another's is not here (D101). Each
     // is named by its own group, read in one go, and not by what the bounded list of groups above happens to hold.
-    const rules = await tx.groupCapabilities(persona.organisationId);
-    const names = await tx.groupLabels(persona.organisationId, [...new Set(rules.map(m => m.groupExternalId))]);
+    const rules = await tx.groupCapabilities(persona.organisationId),
+      relationRules = await tx.groupRelations(persona.organisationId);
+    const names = await tx.groupLabels(persona.organisationId, [
+      ...new Set([...rules, ...relationRules].map(m => m.groupExternalId)),
+    ]);
     const groupCapabilities: GroupCapability[] = rules
       .filter((m): m is GroupCapabilityRule & { capability: Capability } => isCapability(m.capability))
       .map(m => ({
@@ -969,6 +1088,19 @@ export function usersAdminUsecases(deps: {
           (a.groupLabel ?? a.groupExternalId).localeCompare(b.groupLabel ?? b.groupExternalId, 'sv') ||
           a.capability.localeCompare(b.capability),
       );
+    // D121: the groups that give a relation to people, by the same rules and kept apart from the capabilities (D118).
+    const groupRelations: GroupRelation[] = relationRules
+      .filter((m): m is GroupRelationRule & { relation: RelationGrant } => isRelationGrant(m.relation))
+      .map(m => ({
+        groupExternalId: m.groupExternalId,
+        groupLabel: names.get(m.groupExternalId) ?? null,
+        relation: m.relation,
+      }))
+      .sort(
+        (a, b) =>
+          (a.groupLabel ?? a.groupExternalId).localeCompare(b.groupLabel ?? b.groupExternalId, 'sv') ||
+          a.relation.localeCompare(b.relation),
+      );
     const at = deps.clock().toISOString(),
       provisioners = (await tx.provisioners(persona.organisationId)).map(p => ({
         id: p.id,
@@ -977,7 +1109,42 @@ export function usersAdminUsecases(deps: {
         silent: p.lastSeenAt === null || since(at, p.lastSeenAt) > PROVISIONER_SILENT_MS,
         previousValidUntil: p.previousValidUntil !== null && p.previousValidUntil > at ? p.previousValidUntil : null,
       }));
-    return { groupCapabilities, groups, capabilities: [...CAPABILITIES], units, provisioners };
+    return {
+      groupCapabilities,
+      groupRelations,
+      groups,
+      capabilities: [...CAPABILITIES],
+      relationGrants: [...RELATION_GRANTS],
+      units,
+      provisioners,
+    };
+  }
+  /**
+   * D121: a group gives, or stops giving, a relation to people by grant: as `change` does for a capability, in one
+   * transaction with its audit row (`group-relation.added`, `group-relation.removed`) and every current member re-derived,
+   * so the relation is held exactly while the row and the membership are.
+   */
+  async function changeRelation(persona: AuthenticatedContext, input: GroupRelationInputType, present: boolean) {
+    require(persona);
+    await persona.authorize();
+    if (!isRelationGrant(input.relation)) throw new InputError('Okänd behörighet.');
+    return deps.store.transaction(async tx => {
+      const group = await tx.findGroup('externalId', input.groupExternalId);
+      if (group ? group.organisationId !== persona.organisationId : present)
+        throw new InputError('Gruppen finns inte bland de provisionerade grupperna.');
+      if (group) await tx.readGroup(persona.organisationId, group.id, true);
+      const changed = await tx.setGroupRelation(persona.organisationId, input.groupExternalId, input.relation, present);
+      if (changed) {
+        await tx.audit({
+          actor: 'person:' + persona.id,
+          action: present ? 'group-relation.added' : 'group-relation.removed',
+          subject: 'group:' + input.groupExternalId,
+          details: { relation: input.relation, groupLabel: group?.label ?? null },
+        });
+        await derivation.deriveAll(tx, 'person:' + persona.id, await tx.members(input.groupExternalId));
+      }
+      return overviewWithin(tx, persona);
+    });
   }
   async function change(persona: AuthenticatedContext, input: GroupCapabilityInputType, present: boolean) {
     require(persona);
@@ -1170,6 +1337,31 @@ export function usersAdminUsecases(deps: {
       change(persona, input, true),
     removeGroupCapability: (persona: AuthenticatedContext, input: GroupCapabilityInputType) =>
       change(persona, input, false),
+    addGroupRelation: (persona: AuthenticatedContext, input: GroupRelationInputType) =>
+      changeRelation(persona, input, true),
+    removeGroupRelation: (persona: AuthenticatedContext, input: GroupRelationInputType) =>
+      changeRelation(persona, input, false),
+    /**
+     * D121, for the development seed: an operator maps a group of an organisation to a relation, as the page does, with
+     * the same audit row and derivation and the operator as the actor. The group must be provisioned in that organisation.
+     */
+    async seedGroupRelation(actor: string, organisationId: string, input: GroupRelationInputType): Promise<boolean> {
+      if (!isRelationGrant(input.relation)) throw new InputError('Okänd behörighet.');
+      return deps.store.transaction(async tx => {
+        const group = await tx.findGroup('externalId', input.groupExternalId);
+        if (!group || group.organisationId !== organisationId) return false;
+        await tx.readGroup(organisationId, group.id, true);
+        if (!(await tx.setGroupRelation(organisationId, input.groupExternalId, input.relation, true))) return false;
+        await tx.audit({
+          actor,
+          action: 'group-relation.added',
+          subject: 'group:' + input.groupExternalId,
+          details: { relation: input.relation, groupLabel: group.label },
+        });
+        await derivation.deriveAll(tx, actor, await tx.members(input.groupExternalId));
+        return true;
+      });
+    },
   };
 }
 export type UsersAdminUsecases = ReturnType<typeof usersAdminUsecases>;

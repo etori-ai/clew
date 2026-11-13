@@ -1,15 +1,17 @@
 import { and, eq } from 'drizzle-orm';
-import type { StaffOverview } from '@clew/contracts';
 import { COMPETENCE_CONNECTOR } from '@clew/connectors';
 import { schema, type Transaction } from '@clew/db';
-import { competenceTx } from '../modules/competence/adapters/postgres';
-import { competenceUsecases } from '../modules/competence/usecases';
-import type { CompetenceCardsTx, CompetenceStore, HoldingsPort, Staff } from '../modules/competence/model';
 import { withThreadTx, type ThreadStoreOptions } from '../threads/adapters/postgres';
 import type { ThreadTx } from '../threads/model';
+import { competenceTx } from '../modules/competence/adapters/postgres';
+import { competenceUsecases } from '../modules/competence/usecases';
+import { reportsByUnit } from '../modules/entities/domain';
+import type { Above, CompetenceCardsTx, CompetenceStore, HoldingsPort, Staff } from '../modules/competence/model';
+import { createHash } from 'node:crypto';
 import { cancelDurable } from '../dbos/start';
-import { ForbiddenError } from '../context';
+import { systemContext } from '../system-context';
 import { logPort, logger } from '../logging';
+import { competenceWorkItems } from './competence-work-items';
 import { staff as staffUsecases } from './people';
 import { removeCards } from './card-removal';
 import { clock, ids } from './ambient';
@@ -28,27 +30,50 @@ export const competenceCards = (tx: Transaction, thread: ThreadTx): CompetenceCa
   },
 });
 /**
- * One competence transaction is one thread-store transaction: the holdings and the person's competence cards go
- * together in an erasure, or neither does, and the copy's workflow starts with the transaction that decides it (D86).
- * `options` names the durable engine's queue: the server's ledger here, a test's own in `tests/db`.
+ * One competence transaction is one thread-store transaction (D108 items 7 and 14): the competence tables, the
+ * approvals' cards (`competenceWorkItems`) and the person's own cards (`competenceCards`) share the physical database
+ * transaction, so a person's own registration, its cards in the managers' streams, an erasure with the cards it removes,
+ * their audit rows and anything enqueued commit or roll back as one, as talks' action points do. `options` names the
+ * durable engine's queue: the server's ledger here, a test's own in `tests/db`; `deps.clock` is composition's unless a
+ * test gives its own.
  */
-export function competenceStoreWithCards(options: ThreadStoreOptions): CompetenceStore {
+export function competenceStoreWithCards(
+  options: ThreadStoreOptions,
+  deps: { clock: () => Date } = { clock },
+): CompetenceStore {
   return {
     transaction: fn =>
-      withThreadTx(options, (tx, thread) => fn(competenceTx(tx, options.durable, competenceCards(tx, thread)))),
+      withThreadTx(options, (tx, thread) =>
+        fn(
+          competenceTx(
+            tx,
+            options.durable,
+            competenceWorkItems(tx, thread, { clock: deps.clock }),
+            competenceCards(tx, thread),
+          ),
+        ),
+      ),
   };
 }
-export const competenceStore = competenceStoreWithCards({ durable: ledger, cancel: cancelDurable });
-const NOBODY: StaffOverview = { units: [] };
-/** Personal's overview (D94, D99): the people module's refusal of someone who manages no unit is "nobody" to this module. */
-const staff: Staff = async persona => {
-  try {
-    return await staffUsecases.overview(persona);
-  } catch (error) {
-    if (error instanceof ForbiddenError) return NOBODY;
-    throw error;
-  }
-};
+export const competenceStore = competenceStoreWithCards({ durable: ledger, cancel: cancelDurable }, { clock });
+/**
+ * The reader's reports (D99 item 4) as the module's `Staff` port has them: the units they manage, each with exactly the
+ * people the `managed` relation names (D117, `reportsByUnit`), read from the people module's directory on every call.
+ * Personal's list is wider: it holds a co-manager of the unit and the reader's own manager when they are placed on it,
+ * and neither is anyone whose competence the reader may read or write. Someone who manages no unit has no units.
+ */
+const staff: Staff = async persona => ({ units: reportsByUnit(await staffUsecases.reach(persona)) });
+/**
+ * Whom the reader reports to (D99 item 4, D117's line), as the people module's reach answers it: whoever leads the
+ * nearest unit above the reader that somebody leads, active, read on every call. A person's own registration goes to
+ * them (D108 item 7).
+ */
+const above: Above = async persona => (await staffUsecases.reach(persona)).above.filter(id => id !== persona.id);
+/**
+ * A person as the use cases take one, from their current grant (D108 item 7): to count a manager's reports as the
+ * manager does, and to tell whether a person who registered is active. Undefined for someone deactivated or without access.
+ */
+const personaOf = (personId: string) => systemContext(personId, 'system:competence');
 /**
  * What the copy of D108 item 9 reads: the module's switch and the installation's read of the holdings profile (D119,
  * `holdingsReader`). The registry is built over the module this file builds, so the slot is filled in
@@ -69,24 +94,36 @@ const holdings: HoldingsPort = {
   admitted: (connectorId, personIds) => holdingsPort.admitted(connectorId, personIds),
   reaches: (connectorId, organisationId) => holdingsPort.reaches(connectorId, organisationId),
 };
-export const competence = competenceUsecases({
-  store: competenceStore,
+const shared = {
   staff,
+  above,
+  personaOf,
+  digest: (text: string) => createHash('sha256').update(text).digest('hex'),
   clock,
   ids,
   holdings,
-  pause: ms => new Promise(resolve => setTimeout(resolve, ms)),
   log: logPort('competence', 'warn'),
+  info: logPort('competence', 'info'),
+};
+export const competence = competenceUsecases({
+  ...shared,
+  store: competenceStore,
+  pause: ms => new Promise(resolve => setTimeout(resolve, ms)),
 });
 const RETRY_MS = 5000;
 const GUARD_MS = 60 * 60_000;
 /**
- * The daily copy (D108 item 9) is asked for at boot and every hour after, idempotent by its day, and each daily run asks
- * for the next one before it reads. The retry is only for a database that is not reachable yet.
+ * The competence module's guard, started at boot and run every hour after (D108 items 9 and 14). It asks for the daily
+ * copy, idempotent by its day, and each daily run asks for the next one before it reads; the retry is only for a
+ * database that is not reachable yet. It also runs the erasure sweep (`sweepErasures`): what is due is erased within
+ * the hour, by whichever instance runs, whatever the durable engine's version, since the timer is the intents' rows
+ * and this loop, not a sleeping workflow. One sweep at a time in an instance; two instances sweeping at once erase each
+ * person once, since every erasure re-reads its intent under its lock.
  */
 export function startCompetenceCopy() {
   // One attempt at a time: the hourly guard does not start a second retry beside one still waiting.
-  let retrying = false;
+  let retrying = false,
+    sweeping = false;
   const ask = async (retry = false) => {
     if (retrying && !retry) return;
     try {
@@ -98,10 +135,27 @@ export function startCompetenceCopy() {
       setTimeout(() => void ask(true), RETRY_MS).unref();
     }
   };
+  const sweep = async () => {
+    if (sweeping) return;
+    sweeping = true;
+    try {
+      await competence.sweepErasures();
+    } catch (error) {
+      // A round that cannot read its intents at all (the database is away) is tried again at the next hour.
+      logger.error({ scope: 'competence', error }, 'the erasure sweep could not run; the next round tries again');
+    } finally {
+      sweeping = false;
+    }
+  };
   void ask();
+  void sweep();
   // The chain heals itself: a daily run that could not ask for the next one (its step failed after its retries), or a
-  // day with no instance running at 04:00, is asked for again within the hour. Idempotent by the day's id.
-  setInterval(() => void ask(), GUARD_MS).unref();
+  // day with no instance running at 04:00, is asked for again within the hour. Idempotent by the day's id. The sweep
+  // erases within the hour what fell due since the last.
+  setInterval(() => {
+    void ask();
+    void sweep();
+  }, GUARD_MS).unref();
 }
 /**
  * The competence module as the operator's erasure runs it (`scripts/competence-erase.ts`): the same use cases and tables
@@ -111,10 +165,6 @@ export function startCompetenceCopy() {
  * write: the generation fence covers a cancel that never arrives (D86).
  */
 export const competenceForScripts = competenceUsecases({
+  ...shared,
   store: competenceStoreWithCards({ durable: ledger }),
-  staff,
-  clock,
-  ids,
-  holdings,
-  log: logPort('competence', 'warn'),
 });

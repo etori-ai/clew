@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { Assignment, GroupRecord, UserRecord } from '../apps/server/src/modules/people/domain';
-import type { Provisioner, ProvisionStore } from '../apps/server/src/modules/people/ports';
+import type { LeaverChange, LeaversTx, Provisioner, ProvisionStore } from '../apps/server/src/modules/people/ports';
 import { directoryUsecases } from '../apps/server/src/modules/people/usecases';
 
 /**
@@ -31,6 +31,14 @@ export interface ScimStoreHarness {
   logSignIn(actor: string | null, action: string): Promise<number>;
   /** The actor of a row of the authentication log, by its id. */
   signInActor(id: number): Promise<string | null | undefined>;
+  /**
+   * The same adapter built with a leavers binding (D108 item 14), as composition builds the SCIM store: `leavers` is the
+   * port, and `failed` hears of a call that failed.
+   */
+  withLeavers(
+    leavers: () => LeaversTx,
+    failed: (error: unknown, change: LeaverChange, kind: keyof LeaversTx) => void,
+  ): ProvisionStore;
 }
 const T = '2026-11-09T06:00:00.000Z';
 export const userRow = (id: string, organisationId: string, extra: Partial<UserRecord> = {}): UserRecord => ({
@@ -751,6 +759,70 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         expect(await found({ words: ['zara'], role: 'manager' })).toEqual([]);
       });
     });
+    test('positions are written by organisation and code, relabelled in place, held by a person as a whole set and removed with their holds (D108 item 5)', async () => {
+      const { store, prefix: p } = await make();
+      const [org, elsewhere] = [p + '-org', p + '-elsewhere'],
+        [a, b] = [p + '-a', p + '-b'],
+        [usk, ssk] = [
+          { code: 'usk', label: 'Undersköterska' },
+          { code: 'ssk', label: 'Sjuksköterska' },
+        ];
+      await store.transaction(async tx => {
+        await tx.insertUser(userRow(a, org));
+        await tx.insertUser(userRow(b, org));
+        await tx.writePositions(org, [usk, ssk]);
+        // Another organisation's rows are its own, under the same code or one this organisation does not have.
+        await tx.writePositions(elsewhere, [
+          { code: 'usk', label: 'Annans' },
+          { code: 'only-there', label: 'Bara där' },
+        ]);
+        expect(await tx.positionLabels(org, ['usk', 'ssk', 'only-there', 'nowhere'])).toEqual({
+          usk: 'Undersköterska',
+          ssk: 'Sjuksköterska',
+        });
+        expect(await tx.positionLabels(elsewhere, ['usk', 'ssk'])).toEqual({ usk: 'Annans' });
+        expect(await tx.positionLabels(org, [])).toEqual({});
+        // A person holds the codes of their organisation that have a row, by code.
+        await tx.replacePositions(a, org, ['usk', 'ssk', 'only-there', 'nowhere']);
+        await tx.replacePositions(b, org, ['usk']);
+        expect(await tx.positionsOf(a)).toEqual([ssk, usk]);
+        expect(await tx.positionsOf(p + '-nobody')).toEqual([]);
+      });
+      await store.transaction(async tx => {
+        // A label is written over in place, and whoever holds the position keeps it.
+        await tx.writePositions(org, [{ code: 'usk', label: 'Undersköterska, hemtjänst' }]);
+        expect(await tx.positionsOf(b)).toEqual([{ code: 'usk', label: 'Undersköterska, hemtjänst' }]);
+        expect(await tx.positionLabels(elsewhere, ['usk'])).toEqual({ usk: 'Annans' });
+        // A replacement is the whole set, and an empty one holds nothing.
+        await tx.replacePositions(a, org, ['usk']);
+        expect((await tx.positionsOf(a)).map(x => x.code)).toEqual(['usk']);
+        await tx.replacePositions(b, org, []);
+        expect(await tx.positionsOf(b)).toEqual([]);
+        await tx.replacePositions(b, org, ['ssk']);
+        // A removed code takes its holds with it, in its own organisation only.
+        await tx.removePositions(org, ['usk']);
+        await tx.removePositions(org, []);
+        expect(await tx.positionsOf(a)).toEqual([]);
+        expect(await tx.positionsOf(b)).toEqual([ssk]);
+        expect(await tx.positionLabels(org, ['usk', 'ssk'])).toEqual({ ssk: 'Sjuksköterska' });
+        expect(await tx.positionLabels(elsewhere, ['usk', 'only-there'])).toEqual({
+          usk: 'Annans',
+          'only-there': 'Bara där',
+        });
+      });
+      // A transaction that fails writes no position and no hold.
+      await expect(
+        store.transaction(async tx => {
+          await tx.writePositions(org, [{ code: 'mf', label: 'Maskinförare' }]);
+          await tx.replacePositions(a, org, ['mf']);
+          throw new Error('source said no');
+        }),
+      ).rejects.toThrow('source said no');
+      await store.transaction(async tx => {
+        expect(await tx.positionLabels(org, ['mf'])).toEqual({});
+        expect(await tx.positionsOf(a)).toEqual([]);
+      });
+    });
     test('a word and what it is looked for in are the same letters composed or decomposed, in the people list and the group picker (D100, D85, L12)', async () => {
       const h = await make(),
         p = h.prefix,
@@ -896,6 +968,57 @@ export function scimStoreContract(name: string, make: () => Promise<ScimStoreHar
         // A unit is held whether or not it has a row, and naming one twice is one lock.
         await tx.lockUnits([p + '-unit-without-a-row', p + '-u', p + '-u']);
       });
+    });
+    test('the leavers bound to the store are told on its transaction, and one that fails is reported and never fails the change (D108 item 14, D113)', async () => {
+      const h = await make();
+      const p = h.prefix,
+        org = p + '-org',
+        told: string[] = [],
+        failed: string[] = [];
+      let failing = false;
+      const store = h.withLeavers(
+        () => ({
+          async deactivated(change) {
+            told.push(`deactivated:${change.personId}:${change.organisationId}:${change.actor}:${change.at}`);
+            if (failing) throw new Error('the domain failed');
+          },
+          async reactivated(change) {
+            told.push('reactivated:' + change.personId);
+          },
+        }),
+        (_error, change, kind) => failed.push(kind + ':' + change.personId),
+      );
+      const change = (personId: string) => ({ actor: 'provisioner:x', personId, organisationId: org, at: T });
+      await store.transaction(async tx => {
+        await tx.insertUser(userRow(p + '-a', org));
+        await tx.leavers.deactivated(change(p + '-a'));
+      });
+      // The binding fails: the change it was told of commits all the same, and the failure is reported.
+      failing = true;
+      await store.transaction(async tx => {
+        await tx.updateUser(p + '-a', { enabled: false, updatedAt: T });
+        await tx.leavers.deactivated(change(p + '-a'));
+        await tx.updateUser(p + '-a', { name: 'After the port', updatedAt: T });
+      });
+      expect(failed).toEqual(['deactivated:' + p + '-a']);
+      await store.transaction(async tx => {
+        expect(await tx.readUser(org, p + '-a')).toMatchObject({ enabled: false, name: 'After the port' });
+      });
+      // A rollback of the change takes it all back, whatever the binding did.
+      failing = false;
+      await expect(
+        store.transaction(async tx => {
+          await tx.leavers.reactivated(change(p + '-a'));
+          throw new Error('after the port');
+        }),
+      ).rejects.toThrow('after the port');
+      expect(told).toEqual([
+        `deactivated:${p}-a:${org}:provisioner:x:${T}`,
+        `deactivated:${p}-a:${org}:provisioner:x:${T}`,
+        'reactivated:' + p + '-a',
+      ]);
+      // A store built without a binding tells nobody, and is no error.
+      await h.store.transaction(tx => tx.leavers.deactivated(change(p + '-c')));
     });
     test("an organisation's capability rows are held for a read or for a change until the transaction ends, and holding them changes nothing (B1)", async () => {
       const { store, prefix: p } = await make();

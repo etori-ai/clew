@@ -57,11 +57,20 @@ export interface Authority {
   role: string;
   capabilities: string[];
   version: number;
+  /** D121: the relations to people held by grant; absent when none, so the value of everyone else did not change. */
+  relations?: string[];
 }
 export function authorityOf(access: {
   person: { organisationId: string; enabled: boolean };
-  grant: { unitId: string; role: string; capabilities: readonly string[]; version: number };
+  grant: {
+    unitId: string;
+    role: string;
+    capabilities: readonly string[];
+    version: number;
+    relations?: readonly string[];
+  };
 }): Authority {
+  const relations = [...new Set(access.grant.relations ?? [])].sort();
   return {
     enabled: access.person.enabled,
     organisationId: access.person.organisationId,
@@ -69,6 +78,8 @@ export function authorityOf(access: {
     role: access.grant.role,
     capabilities: [...new Set(access.grant.capabilities)].sort(),
     version: access.grant.version,
+    // Authority: a relation granted or taken back is a change of whom the person may read about (D121).
+    ...(relations.length ? { relations } : {}),
   };
 }
 /** An HMAC over the authority alone, in a fixed field order, so the value changes exactly when the authority does. */

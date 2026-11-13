@@ -34,7 +34,11 @@ import { plan, push as reconcile, type PushOptions } from '../../scripts/provisi
 setDefaultTimeout(30_000);
 
 // This isolated organisation belongs to the test writer.
-const scope = { userPrefix: 'dev:', groupPrefixes: ['unit:', 'unit-manager:', 'ad:', 'capability:'], groupKeys: [] };
+const scope = {
+  userPrefix: 'dev:',
+  groupPrefixes: ['unit:', 'unit-manager:', 'ad:', 'capability:', 'position:'],
+  groupKeys: [],
+};
 const push = (client: ScimClient, directory: Directory, options?: PushOptions) =>
   reconcile(client, directory, scope, options);
 /** A person of the development directory moved to another unit, employments and all: an employment names a unit that is sent (D114). */
@@ -95,7 +99,7 @@ describe('the synthetic provisioner', () => {
     await push(client, { ...directory, people: [{ ...person, phoneNumbers: [secondWork, onCall] }] });
     expect(store.state.users.get(id)).toMatchObject({ employments, phoneNumbers: [secondWork, onCall] });
   });
-  test('plans D68 groups from units, manager flags, plain groups and capabilities, two hundred and fifty people in forty-eight units', () => {
+  test('plans D68 groups from units, manager flags, plain groups, capabilities and positions, two hundred and fifty people in forty-eight units', () => {
     const p = plan(developmentDirectory),
       by = (externalId: string) => p.groups.find(g => g.externalId === externalId)!,
       keyed = (key: string) => p.groups.filter(g => g.externalId.startsWith(key));
@@ -122,6 +126,8 @@ describe('the synthetic provisioner', () => {
       'ad:forvaltning-stadsbyggnad': 34,
       'ad:forvaltning-utbildning': 87,
       'ad:intranat-redaktorer': 13,
+      // D121: the development stack's registrar group, Hillevi alone; the seed maps it to Kompetenssökning.
+      'ad:kompetenssamordnare': 1,
       'ad:krisledning': 5,
       'ad:nattpersonal': 12,
       'ad:projekt-e-arkiv': 0,
@@ -164,6 +170,35 @@ describe('the synthetic provisioner', () => {
       "The directory does not list the unit 'unit-skola', which 12 active people name: hillevi, anna, erik, maria, johan (and 7 more).",
     );
     expect(unlisted.members).toEqual(by('unit:unit-skola').members);
+    // D108 item 5: every position the source lists is a group under its own code and name, one nobody holds too.
+    expect(Object.fromEntries(keyed('position:').map(g => [g.externalId, g.members.length]))).toEqual({
+      'position:enhetschef': 10,
+      'position:handlaggare': 5,
+      'position:larare': 35,
+      'position:maskinforare': 2,
+      'position:sjukskoterska': 9,
+      'position:stodassistent': 7,
+      'position:tolk': 0,
+      'position:underskoterska': 27,
+      'position:vardbitrade': 7,
+    });
+    expect(by('position:underskoterska')).toMatchObject({ displayName: 'Undersköterska' });
+    expect(by('position:underskoterska').members).toContain('dev:hassan');
+    // A position is the person's: two people hold two each, on the one unit they work in.
+    expect(
+      developmentDirectory.people.filter(u => (u.positions ?? []).length > 1).map(u => [u.department, u.positions]),
+    ).toEqual([
+      ['unit-lss', ['stodassistent', 'underskoterska']],
+      ['unit-gata', ['maskinforare', 'handlaggare']],
+    ]);
+    // A position the directory does not list is the fault of the rows that name it: planned with them and refused.
+    expect(
+      plan({ ...developmentDirectory, positions: [] }).groups.find(g => g.externalId === 'position:underskoterska')!
+        .refused,
+    ).toMatch(/^The directory does not list the group 'position:underskoterska', which \d+ active people name: /);
+    expect(() =>
+      plan({ ...developmentDirectory, positions: [...developmentDirectory.positions!, { code: ' usk', label: 'X' }] }),
+    ).toThrow("The position code ' usk' is empty or has space around it");
   });
   test("the units are a tree: every unit names the one above it, the units are planned from the root down, and a broken tree is the source's mistake (D99)", () => {
     const p = plan(developmentDirectory),
@@ -251,7 +286,7 @@ describe('the synthetic provisioner', () => {
       created: 250,
       replaced: 0,
       deactivated: 0,
-      groupsCreated: 113,
+      groupsCreated: 123,
       groupsReplaced: 0,
       groupsRemoved: 0,
       refused: [],
@@ -289,6 +324,19 @@ describe('the synthetic provisioner', () => {
       'unit-grundskola',
     );
     expect(store.state.units.get('unit-hr')).toEqual({ organisationId: 'poc', label: 'HR-avdelningen' });
+    // D108 item 5: the source's positions are the organisation's, one nobody holds included, and a hundred people
+    // hold theirs; a position moves no grant.
+    expect([...store.state.positions.values()].filter(row => row.organisationId === 'poc')).toHaveLength(9);
+    expect([...store.state.personPositions.values()].filter(ids => ids.length)).toHaveLength(100);
+    const hassan = [...store.state.users.values()].find(u => u.userName === 'hassan')!.id;
+    expect(await store.transaction(tx => tx.positionsOf(hassan))).toEqual([
+      { code: 'underskoterska', label: 'Undersköterska' },
+    ]);
+    expect(
+      store.state.audit
+        .filter(row => row.subject === 'person:' + hassan && row.action === 'positions.derived')
+        .map(row => row.details),
+    ).toEqual([{ positions: ['underskoterska'] }]);
     const audited = store.state.audit.length;
     const second = await push(client, developmentDirectory);
     expect(second).toEqual({
@@ -296,7 +344,7 @@ describe('the synthetic provisioner', () => {
       replaced: 250,
       deactivated: 0,
       groupsCreated: 0,
-      groupsReplaced: 113,
+      groupsReplaced: 123,
       groupsRemoved: 0,
       refused: [],
       groupsRefused: [],
@@ -370,7 +418,7 @@ describe('the synthetic provisioner', () => {
     expect(remaining).not.toContain('unit-manager:unit-skola');
     expect(remaining).not.toContain('capability:admin.users');
     expect(remaining).toContain('unit:unit-omsorg');
-    expect(remaining).toHaveLength(109);
+    expect(remaining).toHaveLength(119);
   });
   test('a unit that moves in the directory moves in Clew, and units that leave it are removed from the leaves up (D99)', async () => {
     const { store, client } = stack();
@@ -613,7 +661,7 @@ describe('the synthetic provisioner', () => {
         groupKeys: ['protected'],
       };
       const empty = source([a, b], someone('e-1', 'anna'));
-      for (const id of ['unit:b', 'unit-manager:b', 'capability:admin.users', 'protected', ' Unit :b']) {
+      for (const id of ['unit:b', 'unit-manager:b', 'capability:admin.users', 'protected', ' Unit :b', 'position:b']) {
         const directory = {
           ...empty,
           groups: [{ id, label: 'Newsletter' }],
@@ -1536,7 +1584,9 @@ describe('the synthetic provisioner', () => {
         await checkProvisioning('http://clew.local', twice, (input, init) => app.request(input, init))
       ).map(f => f.text);
       expect(findings).toContain('6 users: 5 active, 1 deactivated.');
-      expect(findings).toContain('4 groups: 4 unit, 0 unit-manager, 0 capability, 0 plain (0 without an externalId).');
+      expect(findings).toContain(
+        '4 groups: 4 unit, 0 unit-manager, 0 capability, 0 position, 0 plain (0 without an externalId).',
+      );
       // A unit and a person Clew holds are missing from the read, as a writer that removes rows ahead of them would
       // have them slip past. Each is found by its key, and nothing is created twice or refused.
       const hidden = paging(rows => rows.filter(r => r.externalId !== 'unit:b' && r.externalId !== 'e-2'));
@@ -1798,7 +1848,7 @@ describe('the synthetic provisioner', () => {
         });
       const findings = await checkProvisioning('http://clew.local', client, (input, init) => app.request(input, init));
       expect(findings.filter(f => f.level === 'ok').map(f => f.text)).toContain(
-        '7 groups: 2 unit, 1 unit-manager, 1 capability, 1 plain (0 without an externalId), 1 with a key written wrong and 1 with a capability the check does not know.',
+        '7 groups: 2 unit, 1 unit-manager, 1 capability, 0 position, 1 plain (0 without an externalId), 1 with a key written wrong and 1 with a capability the check does not know.',
       );
       expect(findings.filter(f => f.level === 'warn').map(f => f.text)).toEqual([
         '1 unit or unit-manager group has no active members: unit:kansli.',
@@ -1814,7 +1864,7 @@ describe('the synthetic provisioner', () => {
           f => f.text,
         ),
       ).toContain(
-        '6 groups: 2 unit, 1 unit-manager, 1 capability, 1 plain (0 without an externalId) and 1 with a capability the check does not know.',
+        '6 groups: 2 unit, 1 unit-manager, 1 capability, 0 position, 1 plain (0 without an externalId) and 1 with a capability the check does not know.',
       );
     });
     test('a unit key with space after the prefix or at the end, stored before D96, places and leads nobody, and the check says what Clew does with it (D96)', async () => {
@@ -1871,7 +1921,7 @@ describe('the synthetic provisioner', () => {
           f => f.level !== 'ok' || f.text.includes('groups:'),
         );
       const counted =
-          '3 groups: 1 unit, 0 unit-manager, 0 capability, 0 plain (0 without an externalId) and 2 with a key written wrong.',
+          '3 groups: 1 unit, 0 unit-manager, 0 capability, 0 position, 0 plain (0 without an externalId) and 2 with a key written wrong.',
         unplaced = '1 active user has no unit: or unit-manager: group and can do nothing in Clew: anna.',
         harmless =
           "2 groups carry a key that is written wrong, so Clew reads them as plain groups, which give nobody anything unless an administrator maps them to a capability: 'unit-manager: skola', 'unit:skola '.";
@@ -2110,6 +2160,7 @@ describe('the synthetic provisioner', () => {
       employments: employedOn(p, 'school'),
       manager: i === 0,
       groups: [],
+      positions: [],
       alsoIn: [],
       alsoManages: [],
       capabilities: i === 0 ? ['admin.users' as const] : [],
@@ -2141,6 +2192,7 @@ describe('the synthetic provisioner', () => {
       employments: employedOn(developmentDirectory.people[0]!, 'school'),
       manager: true,
       groups: [],
+      positions: [],
       alsoIn: [],
       alsoManages: [],
       capabilities: ['admin.users' as const],
@@ -2220,6 +2272,7 @@ describe('the synthetic provisioner', () => {
       employments: employedOn(p, i === 0 ? '110' : '111'),
       manager: i < 2,
       groups: [],
+      positions: [],
       alsoIn: [],
       alsoManages: [],
       capabilities: i === 0 ? ['admin.users' as const] : [],
@@ -2265,6 +2318,7 @@ describe('the synthetic provisioner', () => {
         employments: employedOn(p, 'mine-u'),
         manager: false,
         groups: [],
+        positions: [],
         capabilities: [],
         alsoIn: [],
         alsoManages: [],
@@ -2310,13 +2364,15 @@ describe('the synthetic provisioner', () => {
       // More than the two hundred a page carries, so the check reads a full page of users and one more.
       '250 users: 250 active, 0 deactivated.',
       expect.stringMatching(
-        /^\d+ groups: 48 unit, \d+ unit-manager, \d+ capability, \d+ plain \(0 without an externalId\)\.$/,
+        /^\d+ groups: 48 unit, \d+ unit-manager, \d+ capability, 9 position, \d+ plain \(0 without an externalId\)\.$/,
       ),
       'Every active user is in a unit.',
       // D110: a title Clew cannot read is left out and never refused, so the check is where a broken mapping shows.
       '249 of 250 active users have a title.',
       // D114: what Clew cannot read of a number or an employment is left out, so the counts are where that shows.
       'Phone numbers on 3 of 250 active users, employments on 250.',
+      // D108 item 5: a position gives no access, so a mapping that sends none shows here.
+      'Positions on 100 of 250 active users, from 9 positions.',
       // The area nobody is placed on has units below it, so it is a heading and not an emptied unit (D99).
       'The units form a tree: 1 root, 6 levels deep.',
     ]);

@@ -249,7 +249,7 @@ describe('two writers of copied rows at once', () => {
     const [written, erased] = await Promise.allSettled([writing, erasing]);
     expect(written).toEqual({ status: 'fulfilled', value: true });
     // It then takes the row the write just made with it.
-    expect(erased).toEqual({ status: 'fulfilled', value: { holdings: 1, cleared: 0 } });
+    expect(erased).toEqual({ status: 'fulfilled', value: { holdings: 1, cleared: 0, requirements: 0, threadIds: [] } });
     expect(await w.store.transaction(tx => tx.holdingsOf([w.anna]))).toEqual([]);
     expect(await w.store.transaction(tx => tx.copiedFrom(w.lms))).toEqual([]);
   });
@@ -277,7 +277,10 @@ describe('two writers of copied rows at once', () => {
     });
     expect(await settledWithin(writing, 500)).toBe(false);
     open();
-    expect(await Promise.all([erasing, writing])).toEqual([{ holdings: 0, cleared: 0 }, false]);
+    expect(await Promise.all([erasing, writing])).toEqual([
+      { holdings: 0, cleared: 0, requirements: 0, threadIds: [] },
+      false,
+    ]);
     expect(await w.store.transaction(tx => tx.holdingsOf([w.anna]))).toEqual([]);
   });
 

@@ -63,7 +63,7 @@ export async function resolveChips(
       const ref = chip.ref.replace(/^document:/, '');
       let hit: SearchHit | undefined;
       try {
-        hit = await deps.run<SearchHit>(persona, SEARCH_CONNECTOR + '.fetchSource', { ref });
+        hit = await deps.run<SearchHit>(persona, SEARCH_CONNECTOR + '.fetchSource', { ref }, { caller: 'assistant' });
       } catch {
         hit = undefined;
       }

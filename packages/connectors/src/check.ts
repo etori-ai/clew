@@ -133,6 +133,7 @@ const RELATION: Record<Relation, string> = {
   self: 'den inloggade själv',
   managed: 'den inloggades medarbetare',
   colleague: 'andra i organisationen',
+  registrar: 'alla i organisationen för den med kompetenssökning',
   manages: 'enheter den inloggade är chef för',
   member: 'enheter den inloggade är placerad på',
   below: 'enheter vars chef rapporterar till den inloggade',

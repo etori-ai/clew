@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { Area, Capability, MenuEntry, Thread } from '@clew/contracts';
 import {
+  AcademicCapIcon,
   Badge,
   CommandPalette,
   CommandPaletteInput,
@@ -61,12 +62,28 @@ const ADMIN_ROWS: ReadonlyArray<{
 ];
 /** What the rail marks as current: the place, and within the start page the conversation. */
 export interface RailCurrent {
-  surface: 'start' | 'todo' | 'calendar' | 'verktyg' | 'staff' | 'units' | 'admin';
+  surface: 'start' | 'todo' | 'calendar' | 'verktyg' | 'staff' | 'units' | 'competence' | 'admin';
   conversationId?: string | null;
   /** The capability whose tool page is open (D42), so its row under Verktyg is marked. */
   view?: string | null;
   /** The administration's section that is open (D45), so its row under Administration is marked. */
   section?: AdminSection;
+}
+/**
+ * The places in the rail that belong to one connector: the rail draws each of them on that connector's own signal
+ * (`sees`, the system the person may see, D23), Kalender for the calendar and Kompetens for the competence module. A
+ * view of one of its reads is a page of that place, so the rail marks the place on it, wherever it was opened from (the
+ * review of 2026-11-13: the same list was marked Kompetens, Hem or nothing by its `from`). Personal and Dialogstöd
+ * show many systems' rows and belong to none.
+ */
+const CONNECTOR_PLACES: Readonly<Record<string, RailCurrent['surface']>> = {
+  calendar: 'calendar',
+  competence: 'competence',
+};
+/** The place a read's page belongs to, by its connector (a capability's name begins with its connector's id), or null. */
+export function placeOfRead(capability: string): RailCurrent | null {
+  const surface = CONNECTOR_PLACES[capability.split('.')[0] ?? ''];
+  return surface ? { surface } : null;
 }
 const EMPTY_THREADS: Thread[] = [];
 const EMPTY_AREAS: Area[] = [];
@@ -88,12 +105,15 @@ type Found = ({ href: string } | { card: string }) & { detail: string; group: st
  * The rail (D112 item 1, board Sidebar, the `shell-side-nav` template): Ny fråga and Sök as its first rows, each with
  * its icon, so the rail's own collapse draws them as icons named by their labels as it does every row; Sök opens
  * Astryx's `CommandPalette` over the page, which finds conversations, work items, areas and tools. Then the places,
- * Hem, Att göra with how much needs the person, Kalender and a manager's Personal (D94) and Dialogstöd (D116, amended:
- * the header's Start has no row of its own, so Clew's places stand here once); Verktyg, the views an
+ * Hem, Att göra with how much needs the person, Kalender, a manager's Personal (D94) and Dialogstöd (D116, amended:
+ * the header's Start has no row of its own, so Clew's places stand here once), and Kompetens (D120 item 8); Verktyg, the views an
  * administrator placed as tools (D40, each a page of its own, D42); then Samtal, the person's conversations, newest
  * first, in one disclosure, each with a dot only where the data says something about it (the answer being written, a
  * draft that waits for the person). At the foot Administration with the sections the person may open (`ADMIN_ROWS`),
- * collapsed until one of them is open. Kalender is drawn while the calendar is the person's to see (D23).
+ * collapsed until one of them is open. Kalender is drawn while the calendar is the person's to see (D23), and Kompetens
+ * for everyone while the competence module is switched on and visible to them (D108 item 13), the same signal as its row
+ * under Administration: not before `/api/areas` has said so, since the module is off until an administrator switches it on,
+ * except on a page of the place itself, where the reader already is.
  * Every row is a link to a route, so the back button and a reload land in the same place. Returned as the shell's
  * slots so the shell keeps the heading, the person and the way out.
  */
@@ -223,6 +243,7 @@ export function useRail({
               ) : undefined
             }
           />
+          {/* Kalender and Kompetens are drawn on their connector's signal, so a read of theirs marks them (`CONNECTOR_PLACES`). */}
           {sees('calendar') && (
             <SideNavItem
               label="Kalender"
@@ -247,6 +268,17 @@ export function useRail({
               icon={ChatBubbleLeftRightIcon}
               href="/units"
               isSelected={current.surface === 'units'}
+            />
+          )}
+          {/* Kompetens (D120 item 8): the reader's own and, for a manager, the matrix; drawn while the module is on for them.
+              On a page of the place it is drawn before `/api/areas` has answered, so the rail does not gain a row under
+              the reader's eyes; the page says so itself if the module turns out to be off. */}
+          {(!!systems || current.surface === 'competence') && sees('competence') && (
+            <SideNavItem
+              label="Kompetens"
+              icon={AcademicCapIcon}
+              href="/competence"
+              isSelected={current.surface === 'competence'}
             />
           )}
         </SideNavSection>

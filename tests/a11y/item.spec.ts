@@ -4,7 +4,7 @@ import { NOTICE_REASON, NOTICE_TEXT, NOW, asNotice } from './data';
 
 /**
  * A work item as a page (D112 item 4, board WorkItem, `/items/<threadId>`, the `work-item-detail` template): reached
- * with "Öppna som sida" from Att göra's reading pane and from the panel beside a page, with `from` as the way back. The
+ * by its title, a link, in Att göra's reading pane and in the panel beside a page, with `from` as the way back. The
  * page is the item's header (the trail, the title, the status and badges, the buttons), the main column (a notice's
  * text, Varför ser jag detta?, the rows, Dokument, Händelser) and the details rail; at 1024 px and below the rail is
  * behind "Visa detaljer" in a fullscreen dialog, and on a phone the buttons are pinned to the foot (board PhoneItem,
@@ -25,13 +25,15 @@ const outline = (page: Page) =>
 test.describe('the work item as a page', () => {
   test.use({ viewport: wide });
 
-  test('Öppna som sida leads from the reading pane to the page, which opens on its heading, keeps one outline and leads back to the pane', async ({
+  test('the title leads from the reading pane to the page, which opens on its heading, keeps one outline and leads back to the pane', async ({
     page,
     api: _,
   }) => {
     await open(page, '/todo?item=fakturor');
     const pane = page.getByRole('complementary', { name: 'Valt ärende' });
-    const asPage = pane.getByRole('link', { name: 'Öppna som sida' });
+    // The name is the way in (2026-11-13): the title is the link, and there is no "Öppna som sida" beside it.
+    const asPage = pane.getByRole('heading', { name: INVOICES }).getByRole('link', { name: INVOICES });
+    await expect(pane.getByRole('link', { name: 'Öppna som sida' })).toHaveCount(0);
     await expect(asPage).toHaveAttribute('href', '/items/fakturor?from=%2Ftodo%3Fitem%3Dfakturor');
     await asPage.click();
     await expect(page).toHaveURL('/items/fakturor?from=%2Ftodo%3Fitem%3Dfakturor');
@@ -88,7 +90,9 @@ test.describe('the work item as a page', () => {
     api: _,
   }) => {
     await open(page, '/staff?card=omtanke');
-    const asPage = page.getByRole('link', { name: 'Öppna som sida' });
+    const asPage = page
+      .getByRole('heading', { name: 'Omtankesamtal med Anna Lindqvist' })
+      .getByRole('link', { name: 'Omtankesamtal med Anna Lindqvist' });
     await expect(asPage).toHaveAttribute('href', '/items/omtanke?from=%2Fstaff%3Fcard%3Domtanke');
     await asPage.click();
     await expect(page.getByRole('heading', { level: 1, name: 'Omtankesamtal med Anna Lindqvist' })).toBeFocused();
@@ -108,7 +112,7 @@ test.describe('the work item as a page', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Omtankesamtal med Anna Lindqvist' })).toBeVisible();
   });
 
-  test('a calendar proposal beside a page links to its page as every work item does, and not on that page itself (D116)', async ({
+  test('a calendar proposal beside a page links its title to its page as every work item does, and not on that page itself (D116)', async ({
     page,
     api,
   }) => {
@@ -116,14 +120,15 @@ test.describe('the work item as a page', () => {
     await open(page, `/?card=${proposal.id}`);
     const panel = page.getByRole('complementary', { name: 'Ärende' });
     await expect(panel.locator(`#card-${proposal.id}`)).toBeVisible();
-    const asPage = panel.getByRole('link', { name: 'Öppna som sida' });
+    const asPage = panel.locator(`#card-${proposal.id}`).getByRole('heading').getByRole('link').first();
     await expect(asPage).toHaveAttribute('href', `/items/${proposal.id}?from=%2F%3Fcard%3D${proposal.id}`);
     await expectNoAxeViolations(page);
     await asPage.click();
     await expect(page).toHaveURL(`/items/${proposal.id}?from=%2F%3Fcard%3D${proposal.id}`);
     await expect(page.getByRole('heading', { level: 1, name: proposal.title })).toBeVisible();
-    // On its own page the proposal is the page: there is no further page to lead to.
-    await expect(page.getByRole('main').getByRole('link', { name: 'Öppna som sida' })).toHaveCount(0);
+    // On its own page the proposal is the page: its title leads nowhere further (the page's own "Fråga Clew" is the
+    // one link to this address, with `ask=1`).
+    await expect(page.getByRole('main').getByRole('heading').getByRole('link')).toHaveCount(0);
     await expect(page.getByRole('main').getByRole('link', { name: 'Hem', exact: true })).toHaveAttribute(
       'href',
       `/?card=${proposal.id}`,

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import type { AuthenticatedContext } from '../../packages/contracts/src/index';
+import { AddModelInput, checkContract, type AuthenticatedContext } from '../../packages/contracts/src/index';
 import { memoryModelHealth, memoryModelStore, memoryModelWire } from '../../apps/server/src/assistant/adapters/memory';
-import { modelUsecases } from '../../apps/server/src/assistant/usecases/models';
+import { modelUsecases, PERSONAL_DATA_UNCONFIRMED } from '../../apps/server/src/assistant/usecases/models';
 import { choicesFor, pickModel, slugFor } from '../../apps/server/src/assistant/domain';
 import type { ModelRecord } from '../../apps/server/src/assistant/ports';
 
@@ -90,12 +90,14 @@ async function installed(w: ReturnType<typeof world>) {
     model: 'gpt-oss:120b',
     title: 'Kapabel',
     description: 'Långa svar och utkast.',
+    mayProcessPersonalData: true,
   });
   const { model: small } = await w.models.addModel(w.mikael, {
     providerId: 'kommunen',
     model: 'gpt-oss:20b',
     title: 'Snabb (lokal)',
     description: 'Korta frågor om dagen.',
+    mayProcessPersonalData: true,
   });
   await w.models.updateModel(w.mikael, big.id, { state: 'enabled', isDefault: true });
   await w.models.updateModel(w.mikael, small.id, {
@@ -264,7 +266,11 @@ describe('providers', () => {
     const w = world();
     await w.models.addProvider(w.mikael, { id: 'tanke', title: 'Tanke', baseUrl: 'http://resonerar.test/v1' });
     const pings = () => w.wire.calls.filter(c => c.kind === 'ping').map(c => c.reasoning);
-    const added = await w.models.addModel(w.mikael, { providerId: 'tanke', model: 'tankande' });
+    const added = await w.models.addModel(w.mikael, {
+      providerId: 'tanke',
+      model: 'tankande',
+      mayProcessPersonalData: true,
+    });
     const id = added.model.id;
     expect(added.report).toMatchObject({ ok: true, health: { status: 'ok' } });
     expect(added.report.findings.map(f => f.text).join(' ')).toContain('utan resonemang');
@@ -293,14 +299,23 @@ describe('providers', () => {
   test('a failed test on add keeps the model and its reasoning, and a model without tools is tested without one', async () => {
     const w = world();
     await w.models.addProvider(w.mikael, { id: 'tanke', title: 'Tanke', baseUrl: 'http://resonerar.test/v1' });
-    const wrong = await w.models.addModel(w.mikael, { providerId: 'tanke', model: 'finns-inte' });
+    const wrong = await w.models.addModel(w.mikael, {
+      providerId: 'tanke',
+      model: 'finns-inte',
+      mayProcessPersonalData: true,
+    });
     expect(wrong.report).toMatchObject({ ok: false, health: { status: 'ok' } });
     expect(wrong.report.findings[0]!.text).toContain('vägrar anropet');
     expect(wrong.report.findings[0]!.text).toContain('model not found');
     expect(wrong.model).toMatchObject({ state: 'disabled', reasoning: 'provider-default' });
     expect(await w.models.testModel(w.mikael, wrong.model.id)).toMatchObject({ ok: false });
     const before = w.wire.calls.length;
-    const quiet = await w.models.addModel(w.mikael, { providerId: 'tanke', model: 'tankande', tools: false });
+    const quiet = await w.models.addModel(w.mikael, {
+      providerId: 'tanke',
+      model: 'tankande',
+      tools: false,
+      mayProcessPersonalData: true,
+    });
     expect(quiet.report).toMatchObject({ ok: true });
     expect(w.wire.calls.slice(before)).toEqual([
       expect.objectContaining({ kind: 'ping', reasoning: 'provider-default' }),
@@ -328,7 +343,11 @@ describe('models', () => {
       baseUrl: 'http://llm.test/v1',
       apiKey: KEY,
     });
-    const { model: m, report } = await w.models.addModel(w.mikael, { providerId: 'kommunen', model: 'gpt-oss:20b' });
+    const { model: m, report } = await w.models.addModel(w.mikael, {
+      providerId: 'kommunen',
+      model: 'gpt-oss:20b',
+      mayProcessPersonalData: true,
+    });
     expect(report).toMatchObject({ ok: true, findings: [{ level: 'ok', text: 'gpt-oss:20b svarar.' }] });
     expect(m).toMatchObject({
       id: 'gpt-oss-20b',
@@ -346,15 +365,40 @@ describe('models', () => {
         at: T0,
         actor: 'person:mikael',
         action: 'model.added',
-        details: { provider: 'kommunen', model: 'gpt-oss:20b' },
+        details: { provider: 'kommunen', model: 'gpt-oss:20b', mayProcessPersonalData: true },
       },
     ]);
-    await expect(w.models.addModel(w.mikael, { providerId: 'kommunen', model: 'gpt-oss:20b' })).rejects.toThrow(
-      'finns redan',
-    );
-    await expect(w.models.addModel(w.mikael, { providerId: 'saknas', model: 'x' })).rejects.toThrow(
-      'Leverantören finns inte',
-    );
+    await expect(
+      w.models.addModel(w.mikael, { providerId: 'kommunen', model: 'gpt-oss:20b', mayProcessPersonalData: true }),
+    ).rejects.toThrow('finns redan');
+    await expect(
+      w.models.addModel(w.mikael, { providerId: 'saknas', model: 'x', mayProcessPersonalData: true }),
+    ).rejects.toThrow('Leverantören finns inte');
+  });
+  test('adding a model is the statement that the organisation may process personal data with it: required, only true, and in the audit row (D122)', async () => {
+    const w = world();
+    await w.models.addProvider(w.mikael, {
+      id: 'kommunen',
+      title: 'Kommunens modeller',
+      baseUrl: 'http://llm.test/v1',
+      apiKey: KEY,
+    });
+    // The route's contract takes nothing but `true`; without it the request never reaches the use case.
+    const body = { providerId: 'kommunen', model: 'gpt-oss:20b' };
+    expect(checkContract(AddModelInput, body)).toBe(false);
+    expect(checkContract(AddModelInput, { ...body, mayProcessPersonalData: false })).toBe(false);
+    expect(checkContract(AddModelInput, { ...body, mayProcessPersonalData: true })).toBe(true);
+    // A caller that skips the contract (a script) is refused by the use case, and nothing is written.
+    for (const unconfirmed of [body, { ...body, mayProcessPersonalData: false }])
+      await expect(w.models.addModel(w.mikael, unconfirmed as never)).rejects.toThrow(PERSONAL_DATA_UNCONFIRMED);
+    expect(await w.store.listModels()).toEqual([]);
+    expect(actions(w.store, 'model:gpt-oss-20b')).toEqual([]);
+    const { model } = await w.models.addModel(w.mikael, { ...body, mayProcessPersonalData: true });
+    expect(w.store.audit.find(a => a.subject === 'model:' + model.id && a.action === 'model.added')?.details).toEqual({
+      provider: 'kommunen',
+      model: 'gpt-oss:20b',
+      mayProcessPersonalData: true,
+    });
   });
   test('the default is one switched-on model: a new default clears the old one with its own row, and switching the default off clears its flag', async () => {
     const w = world();
@@ -362,7 +406,8 @@ describe('models', () => {
     await expect(
       w.models.updateModel(
         w.mikael,
-        (await w.models.addModel(w.mikael, { providerId: 'kommunen', model: 'extra' })).model.id,
+        (await w.models.addModel(w.mikael, { providerId: 'kommunen', model: 'extra', mayProcessPersonalData: true }))
+          .model.id,
         { isDefault: true },
       ),
     ).rejects.toThrow('Slå på modellen');
@@ -476,7 +521,11 @@ describe("the person's model", () => {
       ['nere', 'x'],
       ['lokal', 'y'],
     ] as const) {
-      const { model: m } = await w.models.addModel(w.mikael, { providerId: provider, model });
+      const { model: m } = await w.models.addModel(w.mikael, {
+        providerId: provider,
+        model,
+        mayProcessPersonalData: true,
+      });
       await w.models.updateModel(w.mikael, m.id, { state: 'enabled' });
     }
     w.health.mark('nere', true, T0);

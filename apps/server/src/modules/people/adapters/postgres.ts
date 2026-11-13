@@ -3,7 +3,7 @@ import { database, schema, type Database, type Transaction } from '@clew/db';
 import { writeAudit } from '@clew/db/threads';
 import { UNIT_KEY } from '@clew/contracts/scim-group-key';
 import { ERASED, unitGroupOf, type GroupRecord, type UserRecord, type UserSearch } from '../domain';
-import type { ProvisionStore, ProvisionTx, UserReads } from '../ports';
+import type { LeaverChange, LeaversTx, ProvisionStore, ProvisionTx, UserReads } from '../ports';
 
 /**
  * Read the local user and grant tables. The directory is not read here: it is `directoryUsecases` over the provisioning
@@ -212,14 +212,51 @@ type Runner = {
   transaction<T>(fn: (tx: Transaction) => Promise<T>, config?: Parameters<Database['transaction']>[1]): Promise<T>;
 };
 /**
- * The provisioning tables and the grant projection (D68, D85) inside one Postgres transaction. `db` is the server's
- * pool unless a test names another database, as the store contract does with one created with the locale C (L13), or
- * a transaction the caller holds and that may not wait for a second connection (L1): each transaction of the store is
- * then a savepoint in it, asked one at a time, and reads at that transaction's isolation, so such a store is not asked
- * for a snapshot.
+ * What the provisioning store tells beyond its own tables (D108 item 14), bound in composition: `leavers` builds the
+ * leavers port on the transaction it is given, and `leaverFailed` hears of a call that failed.
  */
-export function postgresProvisionStore(db: () => Runner = database): ProvisionStore {
+export interface ProvisionStoreOptions {
+  leavers?: (tx: Transaction) => LeaversTx;
+  leaverFailed?: (error: unknown, change: LeaverChange, kind: keyof LeaversTx) => void;
+  /**
+   * What the store's transactions run on: the server's pool unless a test names another database, as the store contract
+   * does with one created with the locale C (L13), or a transaction the caller holds and that may not wait for a second
+   * connection (L1): each transaction of the store is then a savepoint in it, asked one at a time, and reads at that
+   * transaction's isolation, so such a store is not asked for a snapshot.
+   */
+  db?: () => Runner;
+}
+/** The longest a leavers call may wait for a lock before it is given up and left to the domain's own reconciliation. */
+const LEAVERS_LOCK_TIMEOUT = '2s';
+/** The provisioning tables and the grant projection (D68, D85) inside one Postgres transaction (`options.db`). */
+export function postgresProvisionStore(options: ProvisionStoreOptions = {}): ProvisionStore {
+  const db = options.db ?? database;
+  /**
+   * The leavers port of one transaction (D108 item 14, D113: nothing beside a deactivation may keep a leaver's access).
+   * Each call runs in a savepoint of the change's transaction with a lock timeout, so what the domain writes commits or
+   * rolls back with the change, it waits for a lock at most `LEAVERS_LOCK_TIMEOUT`, and a call that fails, by an error
+   * or by the timeout, is rolled back to the savepoint and reported, and the change itself goes on and commits. The
+   * domain finds what it missed from the directory later (the competence module's sweep). Without a binding a change
+   * of `active` is told to nobody: a store for what never deactivates anyone.
+   */
+  const leaversOf = (tx: Transaction): LeaversTx => {
+    const tell = (kind: keyof LeaversTx) => async (change: LeaverChange) => {
+      if (!options.leavers) return;
+      try {
+        await tx.transaction(async savepoint => {
+          await savepoint.execute(sql`set local lock_timeout = ${sql.raw(`'${LEAVERS_LOCK_TIMEOUT}'`)}`);
+          await options.leavers!(savepoint)[kind](change);
+        });
+        // A setting made in a savepoint that was released lasts the transaction: the change's own work waits as before.
+        await tx.execute(sql`set local lock_timeout to default`);
+      } catch (error) {
+        options.leaverFailed?.(error, change, kind);
+      }
+    };
+    return { deactivated: tell('deactivated'), reactivated: tell('reactivated') };
+  };
   const txOf = (tx: Transaction): ProvisionTx => ({
+    leavers: leaversOf(tx),
     async lockPerson(id) {
       const [row] = await tx
         .select({ id: schema.people.id, organisationId: schema.people.organisationId })
@@ -284,6 +321,15 @@ export function postgresProvisionStore(db: () => Runner = database): ProvisionSt
         .from(schema.groupCapabilities)
         .where(eq(schema.groupCapabilities.organisationId, organisationId));
     },
+    async groupRelations(organisationId) {
+      return tx
+        .select({
+          groupExternalId: schema.groupRelations.groupExternalId,
+          relation: schema.groupRelations.relation,
+        })
+        .from(schema.groupRelations)
+        .where(eq(schema.groupRelations.organisationId, organisationId));
+    },
     async unitLabels(ids, organisationId) {
       if (!ids.length) return {};
       const rows = await tx
@@ -314,10 +360,14 @@ export function postgresProvisionStore(db: () => Runner = database): ProvisionSt
           unitLabel: schema.accessGrants.unitLabel,
           role: schema.accessGrants.role,
           capabilities: schema.accessGrants.capabilities,
+          relations: schema.accessGrants.relations,
         })
         .from(schema.accessGrants)
         .where(eq(schema.accessGrants.personId, personId));
-      return row;
+      if (!row) return undefined;
+      // As the memory store holds it: `relations` only when the person holds one (D121).
+      const { relations, ...rest } = row;
+      return relations.length ? { ...rest, relations } : rest;
     },
     async writeGrant(personId, grant) {
       if (!grant) {
@@ -329,11 +379,58 @@ export function postgresProvisionStore(db: () => Runner = database): ProvisionSt
         unitLabel: grant.unitLabel,
         role: grant.role,
         capabilities: [...grant.capabilities],
+        relations: [...(grant.relations ?? [])],
       };
       await tx
         .insert(schema.accessGrants)
         .values({ personId, ...values })
         .onConflictDoUpdate({ target: schema.accessGrants.personId, set: values });
+    },
+    async positionsOf(personId) {
+      return (
+        tx
+          .select({ code: schema.positions.code, label: schema.positions.label })
+          .from(schema.personPositions)
+          .innerJoin(schema.positions, eq(schema.positions.id, schema.personPositions.positionId))
+          .where(eq(schema.personPositions.personId, personId))
+          // By the code as text, without a locale: the order the memory adapter and the derivation use.
+          .orderBy(sql`${schema.positions.code} collate "C"`)
+      );
+    },
+    async positionLabels(organisationId, codes) {
+      if (!codes.length) return {};
+      const rows = await tx
+        .select({ code: schema.positions.code, label: schema.positions.label })
+        .from(schema.positions)
+        .where(and(eq(schema.positions.organisationId, organisationId), inArray(schema.positions.code, [...codes])));
+      return Object.fromEntries(rows.map(r => [r.code, r.label]));
+    },
+    async writePositions(organisationId, positions) {
+      for (const p of positions)
+        await tx
+          .insert(schema.positions)
+          .values({ id: crypto.randomUUID(), organisationId, code: p.code, label: p.label })
+          .onConflictDoUpdate({
+            target: [schema.positions.organisationId, schema.positions.code],
+            set: { label: p.label },
+          });
+    },
+    async removePositions(organisationId, codes) {
+      if (!codes.length) return;
+      // The holds go with the row (`on delete cascade`).
+      await tx
+        .delete(schema.positions)
+        .where(and(eq(schema.positions.organisationId, organisationId), inArray(schema.positions.code, [...codes])));
+    },
+    async replacePositions(personId, organisationId, codes) {
+      await tx.delete(schema.personPositions).where(eq(schema.personPositions.personId, personId));
+      if (!codes.length) return;
+      const rows = await tx
+        .select({ id: schema.positions.id })
+        .from(schema.positions)
+        .where(and(eq(schema.positions.organisationId, organisationId), inArray(schema.positions.code, [...codes])));
+      if (rows.length)
+        await tx.insert(schema.personPositions).values(rows.map(row => ({ personId, positionId: row.id })));
     },
     audit: entry => writeAudit(tx, entry),
     async provisioner(tokenDigest, at) {
@@ -882,6 +979,27 @@ export function postgresProvisionStore(db: () => Runner = database): ProvisionSt
           ),
         )
         .returning({ capability: schema.groupCapabilities.capability });
+      return removed.length > 0;
+    },
+    async setGroupRelation(organisationId, groupExternalId, relation, present) {
+      if (present) {
+        const inserted = await tx
+          .insert(schema.groupRelations)
+          .values({ organisationId, groupExternalId, relation })
+          .onConflictDoNothing()
+          .returning({ relation: schema.groupRelations.relation });
+        return inserted.length > 0;
+      }
+      const removed = await tx
+        .delete(schema.groupRelations)
+        .where(
+          and(
+            eq(schema.groupRelations.organisationId, organisationId),
+            eq(schema.groupRelations.groupExternalId, groupExternalId),
+            eq(schema.groupRelations.relation, relation),
+          ),
+        )
+        .returning({ relation: schema.groupRelations.relation });
       return removed.length > 0;
     },
     async groupLabels(organisationId, externalIds) {

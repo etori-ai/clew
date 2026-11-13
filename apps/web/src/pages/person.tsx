@@ -34,6 +34,7 @@ import { RAIL, panelBesideQuery } from '../components/panel';
 import { usePagePanel, type OwnThing } from '../components/page-panel';
 import { AskClew } from '../components/thing-panel';
 import { TalkOverlay } from '../components/talk-overlay';
+import { RegisterHolding } from '../components/register-holding';
 import {
   EntityPage,
   PageSection,
@@ -422,6 +423,9 @@ export function PersonPage({ user, admin }: { user: SessionUser; admin: boolean 
       {panel.overlay}
       {/* The talk from the talks section's "Öppna samtalet" lies over the page and its panel (D111 rule 5). */}
       {user.role === 'manager' && <TalkOverlay back={detail ? `Tillbaka till ${detail.entity.name}` : 'Tillbaka'} />}
+      {/* "Registrera intyg" from the Kompetens section (`?register=<id>`, a query alone) lies over this page, as it does
+          over Personal: closing it leaves the person where they are, and Back never opens it again. */}
+      {user.role === 'manager' && <RegisterHolding />}
     </Shell>
   );
 }

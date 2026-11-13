@@ -162,7 +162,13 @@ describe('erasing a person from the competence domain on Postgres (D108 item 14,
     expect(await auditOf([`thread:${cards.own}`])).toEqual([]);
   });
   test('erasing by id removes the holdings, the name on what they registered and their competence cards, and audits each', async () => {
-    expect(await competence.erasePerson('operator:cli', person)).toEqual({ holdings: 1, cleared: 1, cards: 1 });
+    expect(await competence.erasePerson('operator:cli', person)).toEqual({
+      holdings: 1,
+      cleared: 1,
+      requirements: 0,
+      approvals: 0,
+      cards: 1,
+    });
     const db = database();
     expect(
       await db.select().from(schema.competenceHoldings).where(eq(schema.competenceHoldings.personId, person)),
@@ -190,7 +196,7 @@ describe('erasing a person from the competence domain on Postgres (D108 item 14,
         actor: 'operator:cli',
         action: 'competence.person_erased',
         subject: `person:${person}`,
-        details: { holdings: 1, cleared: 1, cards: 1 },
+        details: { cause: 'operator', holdings: 1, cleared: 1, requirements: 0, approvals: 0, cards: 1 },
       },
     ]);
     expect(await auditOf([`thread:${cards.otherConnector}`, `thread:${cards.colleagues}`])).toEqual([]);

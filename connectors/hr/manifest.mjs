@@ -155,9 +155,21 @@ const absenceOverview = {
   scope: manager,
   input: empty,
   output: object({
-    rows: array(object({ ref: string, name: string, short: integer, vab: integer, long: integer, periods: integer })),
+    rows: array(
+      object({
+        ref: string,
+        person: string,
+        name: string,
+        short: integer,
+        vab: integer,
+        long: integer,
+        periods: integer,
+      }),
+    ),
   }),
-  // The view (D38): absence per person as a table whose row opens the person's pattern. Health data: the model is handed only that the rows are shown.
+  // The view (D38): absence per person as a table. A row names the employee by user name (`subject`, D97 item 6), so
+  // the name leads to the person in Clew, and the row opens the employee's pattern by its own link. Health data: the
+  // model is handed only that the rows are shown.
   view: {
     kind: 'table',
     title: 'name',
@@ -165,6 +177,7 @@ const absenceOverview = {
     modelReads: 'summary',
     noun: { one: 'medarbetare', other: 'medarbetare' },
     empty: 'Ingen frånvaro de senaste sex månaderna.',
+    subject: { entity: 'person', key: 'person' },
     open: { capability: 'hr.absencePattern', title: 'Mönster', params: { ref: 'ref' } },
     fields: [
       { key: 'name', label: 'Namn' },

@@ -1,6 +1,6 @@
 import * as oidc from 'openid-client';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
-import type { AuthenticatedContext } from '@clew/contracts';
+import { relationGrantsOf, type AuthenticatedContext } from '@clew/contracts';
 import { database } from '@clew/db';
 import { logger } from './logging';
 import {
@@ -405,6 +405,10 @@ export async function authenticate(raw: string | undefined) {
     organisationId: access.person.organisationId,
     principal: { id: 'person:' + access.person.id, kind: 'person' },
     capabilities: access.grant.capabilities,
+    // D121: a relation to people held by grant, from the access record read on this request; never a capability.
+    ...(relationGrantsOf(access.grant.relations).length
+      ? { relationGrants: relationGrantsOf(access.grant.relations) }
+      : {}),
     groups,
     authorizationVersion: version,
     sessionBinding: digest,

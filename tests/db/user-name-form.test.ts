@@ -95,7 +95,7 @@ test('the same on a database created with the locale C, where a plain lower() fo
   try {
     await oneNameInEitherCase(
       scimUsecases({
-        store: postgresProvisionStore(() => c.db),
+        store: postgresProvisionStore({ db: () => c.db }),
         clock: () => new Date(),
         ids: () => `${prefix}-${++seq}`,
         digest: (token: string) => token,

@@ -222,11 +222,12 @@ try {
       ? `talks          kept the open round ${round.kept} of organisation "${DEVELOPMENT_ROUND.organisationId}"`
       : `talks          opened round ${round.opened} for organisation "${DEVELOPMENT_ROUND.organisationId}" (${DEVELOPMENT_ROUND.opensOn} to ${DEVELOPMENT_ROUND.dueOn})`,
   );
-  // The competence module's catalogue and holdings (D108): the types the development organisation lacks and holdings
-  // for the people who have none. The module itself stays off until an administrator switches it on (item 13).
+  // The competence module's catalogue, holdings and requirements (D108): the types the development organisation lacks,
+  // holdings for the people who have none, and the requirements and share target it does not have yet. The module
+  // itself stays off until an administrator switches it on (item 13).
   const seeded = await seedCompetence(DEVELOPMENT_ROUND.organisationId);
   console.log(
-    `competence     seeded ${seeded.types} new types and ${seeded.holdings} holdings for ${seeded.people} people of organisation "${DEVELOPMENT_ROUND.organisationId}"`,
+    `competence     seeded ${seeded.types} new types, ${seeded.holdings} holdings for ${seeded.people} people, ${seeded.requirements} requirements and ${seeded.targets} share targets of organisation "${DEVELOPMENT_ROUND.organisationId}"${seeded.registrar ? ', registrar group mapped' : ''}`,
   );
   // The follow-up dialogue's areas and questions (D118 item 3): the example file, only when the organisation has none.
   const areas = await loadDialogueAreas(EXAMPLE_AREAS, DEVELOPMENT_ROUND.organisationId, { ifNone: true });

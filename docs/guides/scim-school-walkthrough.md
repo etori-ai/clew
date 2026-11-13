@@ -109,7 +109,7 @@ bun scripts/provisioner-check.ts "$CLEW" --roots 1 | sed '1d'
   ok   Without a token the endpoint answers 401 with the SCIM error resource.
   ok   The token is accepted. PATCH yes, filter yes (at most 200 rows a page), bulk no, sort no, ETags no.
   ok   3 users: 3 active, 0 deactivated.
-  ok   7 groups: 4 unit, 2 unit-manager, 1 capability, 0 plain (0 without an externalId).
+  ok   7 groups: 4 unit, 2 unit-manager, 1 capability, 0 position, 0 plain (0 without an externalId).
   ok   Every active user is in a unit.
   ok   3 of 3 active users have a title.
   ok   Phone numbers on 3 of 3 active users, employments on 3.

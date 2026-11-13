@@ -1,0 +1,139 @@
+/**
+ * Read the competence domain's read log (D108 item 15, D121 item 5): who read competence about other people, as which
+ * relation, by whom (the person, or the assistant reading for them, D122 item 6), what and when, the newest first. A
+ * search across the organisation and its file name every type searched for, in the order chosen, with the least level,
+ * the unit, the statuses and the validity window it narrowed by, where one was given; one person's holdings opened
+ * names whom; a manager's matrix as a file names neither. Ids, codes and counts only, as the log holds them: no name
+ * and no content. Read-only: it writes
+ * nothing, not even an audit row. Runs inside the app container with the server's local settings (DATABASE_URL); no
+ * route, no page (D121 asks for none) and no `package.json` entry.
+ *
+ *   bun scripts/competence-read-log.ts [--organisation <id>] [--person <person id>] [--type <type id>]
+ *                                      [--status valid|expiring|expired] [--until 30|90|180]
+ *                                      [--reader <person id>]
+ *                                      [--relation managed|registrar|self] [--caller person|assistant]
+ *                                      [--kind search|person|export]
+ *                                      [--since <ISO instant>] [--limit <n, default 100, at most 10000>]
+ *
+ * `--type` keeps the searches and files that asked for that type, alone or among others; `--status` those that narrowed
+ * by that status, alone or among others; `--until` those that narrowed by that validity window.
+ *
+ * One line per read, tab-separated: when, organisation, reader, relation, caller, kind, the types or the person, the
+ * least level, the unit, the statuses (comma-separated) and the window in days where given, and how many rows the read
+ * returned. Every field is printed escaped (`printable`), so no
+ * value a row holds can start a line of its own, hide one or move the terminal's cursor.
+ */
+import { resolve } from 'node:path';
+import { closeDatabase } from '@clew/db';
+import {
+  COMPETENCE_READ_CALLERS,
+  COMPETENCE_READ_KINDS,
+  COMPETENCE_READ_RELATIONS,
+  COMPETENCE_SEARCH_STATUSES,
+  COMPETENCE_SEARCH_WINDOWS,
+} from '@clew/contracts';
+import { competence } from '../apps/server/src/composition/competence';
+import type { ReadLogQuery } from '../apps/server/src/modules/competence/model';
+import { printable } from './printable';
+
+if (import.meta.main) {
+  try {
+    process.loadEnvFile(resolve(import.meta.dir, '../apps/server/.env.local'));
+  } catch {
+    /* settings may come from the environment */
+  }
+  const args = process.argv.slice(2);
+  const option = (name: string) => {
+    const i = args.indexOf('--' + name);
+    const value = i >= 0 ? args[i + 1] : undefined;
+    return value && !value.startsWith('--') ? value : undefined;
+  };
+  const usage =
+    'Usage: bun scripts/competence-read-log.ts [--organisation <id>] [--person <person id>] [--type <type id>] [--status valid|expiring|expired] [--until 30|90|180] [--reader <person id>] [--relation managed|registrar|self] [--caller person|assistant] [--kind search|person|export] [--since <ISO instant>] [--limit <n>]';
+  const limit = option('limit') === undefined ? 100 : Number(option('limit'));
+  const since = option('since'),
+    relation = option('relation'),
+    caller = option('caller'),
+    kind = option('kind'),
+    status = option('status'),
+    until = option('until') === undefined ? undefined : Number(option('until'));
+  const relations: readonly string[] = [...COMPETENCE_READ_RELATIONS, 'self'];
+  if (
+    !Number.isInteger(limit) ||
+    limit < 1 ||
+    limit > 10_000 ||
+    (since !== undefined && Number.isNaN(Date.parse(since))) ||
+    (relation !== undefined && !relations.includes(relation)) ||
+    (caller !== undefined && !(COMPETENCE_READ_CALLERS as readonly string[]).includes(caller)) ||
+    (kind !== undefined && !(COMPETENCE_READ_KINDS as readonly string[]).includes(kind)) ||
+    (status !== undefined && !(COMPETENCE_SEARCH_STATUSES as readonly string[]).includes(status)) ||
+    (until !== undefined && !(COMPETENCE_SEARCH_WINDOWS as readonly number[]).includes(until))
+  ) {
+    console.error(usage);
+    process.exit(2);
+  }
+  const query: ReadLogQuery = {
+    ...(option('organisation') !== undefined ? { organisationId: option('organisation') } : {}),
+    ...(option('person') !== undefined ? { personId: option('person') } : {}),
+    ...(option('type') !== undefined ? { typeId: option('type') } : {}),
+    ...(status !== undefined ? { status: status as NonNullable<ReadLogQuery['status']> } : {}),
+    ...(until !== undefined ? { until: until as NonNullable<ReadLogQuery['until']> } : {}),
+    ...(option('reader') !== undefined ? { readerId: option('reader') } : {}),
+    ...(relation !== undefined ? { relation: relation as ReadLogQuery['relation'] } : {}),
+    ...(caller !== undefined ? { caller: caller as ReadLogQuery['caller'] } : {}),
+    ...(kind !== undefined ? { kind: kind as ReadLogQuery['kind'] } : {}),
+    ...(since !== undefined ? { since: new Date(since).toISOString() } : {}),
+    limit,
+  };
+  try {
+    const rows = await competence.readLog(query);
+    console.log(
+      [
+        'readAt',
+        'organisation',
+        'reader',
+        'relation',
+        'caller',
+        'kind',
+        'subject',
+        'minLevel',
+        'unit',
+        'status',
+        'until',
+        'rows',
+      ].join('\t'),
+    );
+    for (const r of rows)
+      console.log(
+        [
+          r.readAt,
+          r.organisationId,
+          'person:' + r.readerId,
+          r.relation,
+          r.caller,
+          r.kind,
+          r.personId !== null
+            ? 'person:' + r.personId
+            : r.typeIds.length
+              ? r.typeIds.map(id => 'type:' + id).join(',')
+              : '',
+          r.minLevel ?? '',
+          r.unitId ?? '',
+          r.status.join(','),
+          r.until ?? '',
+          r.rows,
+        ]
+          .map(printable)
+          .join('\t'),
+      );
+    console.log(
+      `${rows.length} read${rows.length === 1 ? '' : 's'}${rows.length === limit ? ' (the limit; there may be more)' : ''}.`,
+    );
+  } catch (error) {
+    // A message from the database names no person; it is printed escaped as every field is.
+    console.error(`Could not read the log: ${printable((error as Error).message)}`);
+    process.exitCode = 1;
+  } finally {
+    await closeDatabase();
+  }
+}

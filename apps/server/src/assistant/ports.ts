@@ -174,7 +174,17 @@ export interface AssistantDeps {
     Registry,
     'tools' | 'areas' | 'list' | 'find' | 'allowed' | 'visible' | 'capabilitiesFor' | 'connector'
   >;
-  run: <O = unknown>(persona: AuthenticatedContext, name: string, input: unknown) => Promise<O>;
+  /**
+   * Run a read through the registry as the person, on the assistant's behalf: every call the assistant makes says so
+   * (`caller: 'assistant'`, D122 item 6), so a source that logs reads of people records who made it, and none is the
+   * person's own direct read (D121, D122 item 5). `runCapability` in the server.
+   */
+  run: <O = unknown>(
+    persona: AuthenticatedContext,
+    name: string,
+    input: unknown,
+    context: { caller: 'assistant' },
+  ) => Promise<O>;
   calendar: Pick<CalendarUsecases, 'listWeek' | 'readToday' | 'samtalStatus' | 'ensureProposalThread' | 'replan'>;
   models: ModelResolver;
   clock: () => Date;

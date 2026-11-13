@@ -5,7 +5,7 @@ import type { Thread, ViewRef } from '@clew/contracts';
 import { Button, ChatLayout, Icon, SparklesIcon, VStack } from '@clew/ui';
 import { areasQuery } from '../queries';
 import { viewSearch, withAsk, withCard, withoutView } from '../panel-address';
-import { opensAsPage, viewPageHref } from '../view-address';
+import { declaredPage, opensAsPage, viewPageHref } from '../view-address';
 import {
   ConversationContext,
   useModelConfigured,
@@ -77,14 +77,16 @@ export function ThingWithConversation({
   const conversationId = talk.conversation?.id;
   const subjectThread = subject.chips.find(c => c.kind === 'thread')?.threadId;
   const views = useQuery(areasQuery).data?.views;
-  // An answer's view (D116): a list or a table is its own page, with the page the panel is on as the way back; one thing
-  // is shown beside the conversation on its own page, where a long exchange continues.
+  // An answer's view (D116): a list or a table is its own page, with the page the panel is on as the way back, or the
+  // page Clew's own read declares for its rows (`declaredPage`); one thing is shown beside the conversation on its own
+  // page, where a long exchange continues.
   const viewHref = (v: ViewRef) =>
-    opensAsPage(views, v.capability)
+    declaredPage(views, v.capability, v.input) ??
+    (opensAsPage(views, v.capability)
       ? viewPageHref(v, withoutView(pathname, search))
       : conversationId
         ? `/conversations/${conversationId}${viewSearch(v)}`
-        : viewSearch(v);
+        : viewSearch(v));
   const openView = (view: ViewRef) => {
     if (conversationId || opensAsPage(views, view.capability)) navigate(viewHref(view));
   };

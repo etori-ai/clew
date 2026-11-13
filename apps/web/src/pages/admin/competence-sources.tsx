@@ -19,6 +19,7 @@ import {
   FormLayout,
   Heading,
   HStack,
+  Link,
   List,
   ListItem,
   MetadataList,
@@ -52,7 +53,8 @@ import { instantText } from './labels';
  * it now, and its types as the source names them, with how many holdings carry each and the catalogue type it is
  * mapped to. A copied holding whose type is not mapped is kept under the source's own words and counts towards nothing,
  * so mapping is what makes a source's holdings count. A type is mapped in a dialog over the list, named in the address
- * (`?source=<connector>&type=<the source's type id>`, D83), where the mapping is also removed.
+ * (`?source=<connector>&type=<the source's type id>`, D83) and opened by the type's name, where the mapping is also
+ * removed.
  *
  * A read runs on the server after the request is answered, so the page follows it: while a source is being read, or a
  * read asked for here has not yet shown its result, the sources are asked for again every few seconds, and the result
@@ -89,9 +91,12 @@ interface Row extends Record<string, unknown> {
   id: string;
   t: CompetenceSourceType;
 }
-/** The catalogue's types a source's type can be mapped to, grouped by area: archived types take nothing new. */
+/**
+ * The catalogue's types a source's type can be mapped to, grouped by area: archived types take nothing new, and a skill
+ * is left out, since a copied row has no level (D120).
+ */
 const typeOptions = (types: CompetenceType[]) => {
-  const open = types.filter(t => !t.archived);
+  const open = types.filter(t => !t.archived && t.kind !== 'skill');
   return [...new Set(open.map(t => t.area))].map(area => ({
     type: 'section' as const,
     title: area,
@@ -262,14 +267,14 @@ function SourceCard({
   const last = source.lastRead;
   const mapping = (t: CompetenceSourceType) =>
     t.typeId ? <Text>{nameOf(t.typeId)}</Text> : <Badge variant="neutral" label="Inte kopplad" />;
-  const mapButton = (t: CompetenceSourceType) => (
-    <Button
-      size="sm"
-      variant="secondary"
-      label="Koppla"
-      aria-label={`Koppla ${t.label}`}
-      href={mapHref(source.connectorId, t.sourceType)}
-    />
+  /**
+   * A source's type is mapped from its name: a link to the dialog that maps it over the page (`source`, `type`), so the
+   * row needs no button of its own. Astryx gives the focus back to it when the dialog closes.
+   */
+  const name = (t: CompetenceSourceType) => (
+    <Link href={mapHref(source.connectorId, t.sourceType)} weight="semibold" hasUnderline>
+      {t.label}
+    </Link>
   );
   const columns = [
     {
@@ -278,7 +283,7 @@ function SourceCard({
       width: proportional(3, { minWidth: 220 }),
       renderCell: (r: Row) => (
         <VStack gap={0} hAlign="start">
-          <Text weight="semibold">{r.t.label}</Text>
+          {name(r.t)}
           <Text type="code" color="secondary">
             {r.t.sourceType}
           </Text>
@@ -297,7 +302,6 @@ function SourceCard({
       width: proportional(2, { minWidth: 180 }),
       renderCell: (r: Row) => mapping(r.t),
     },
-    { key: 'map', header: 'Koppla', width: pixel(110), renderCell: (r: Row) => mapButton(r.t) },
   ];
   return (
     <Card padding={0}>
@@ -370,13 +374,12 @@ function SourceCard({
           {source.types.map(t => (
             <ListItem
               key={t.sourceType}
-              label={<Text weight="semibold">{t.label}</Text>}
+              label={name(t)}
               description={
                 <Text type="supporting">
                   {holdingsText(t.holdings)} · {t.typeId ? `Kopplad till ${nameOf(t.typeId)}` : 'Inte kopplad'}
                 </Text>
               }
-              endContent={mapButton(t)}
             />
           ))}
         </List>
@@ -405,7 +408,8 @@ export function AdminCompetenceSourcesPage({ user }: { user: SessionUser }) {
   const error = query.isError && !refused ? errorMessage(query.error, 'Källorna kunde inte läsas.') : null;
   const openedSource = sources.find(s => s.connectorId === search.get(SOURCE_PARAM));
   const openedType = openedSource?.types.find(t => t.sourceType === search.get(TYPE_PARAM));
-  const close = () => navigate(SOURCES_PATH);
+  // Closing replaces the dialog's address, so Back never opens a mapping again (D83 rule 8).
+  const close = () => navigate(SOURCES_PATH, { replace: true });
   return (
     <AdminShell
       user={user}

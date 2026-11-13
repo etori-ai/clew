@@ -17,6 +17,7 @@ import type {
   MenuHint,
   MenuIcon,
   PersonAccess,
+  PersonRelation,
   Receipt,
   Relation,
   UnitAccess,
@@ -41,6 +42,7 @@ import {
   HoldingsInputSchema,
   HoldingsOutputSchema,
   MAX_DOCUMENT_BYTES,
+  RELATION_GRANTS,
   SiteHeaderOutputSchema,
   contractProblems,
   foldSourceKey,
@@ -79,6 +81,7 @@ export {
   viewRows,
   viewSummary,
 } from './views';
+export { READING_CHARS, READING_ROWS, dateWords, fieldWords, modelReading } from './reading';
 
 /**
  * The capability layer (D1, D3). A connector owns a Clew contract: capabilities with a kind, a scope and an
@@ -187,6 +190,11 @@ export interface Clew {
    * capability it runs, never carried into a nested call and never taken from a caller.
    */
   about?: AboutClaim;
+  /**
+   * The assistant made this call for the person (D122 item 6), as `RunContext.caller` says; absent for every other
+   * caller. In process only: a remote connector is never told. A source that logs reads of people records it.
+   */
+  caller?: RunCaller;
   /** Run another connector's `read` or `propose` as the same actor. Scope applies; `execute` is refused. */
   call<O = unknown>(name: string, input?: unknown): Promise<O>;
   /**
@@ -212,7 +220,23 @@ export interface RunContext {
    * registry, is ignored and the input resolved again. Never carried into a nested call.
    */
   resolution?: Resolution;
+  /**
+   * The person's own session asked for this read itself, directly (`/api/cap`): the one call on which a relation the
+   * person holds by grant (`RELATION_GRANTS`, D121's `registrar`) is resolved, and then only for a capability of a core
+   * connector. Never carried into a nested call, so a read reached through any connector (a callback, a `clew.call`, a
+   * scan), a card, a tool, a job or a figure sees the person as the colleague they are.
+   */
+  direct?: boolean;
+  /**
+   * Who made the call when it was not the person themself (D122 item 6): `assistant`, a read the assistant made in a
+   * conversation turn for the person. Carried into every nested in-process call, since the read is still the
+   * assistant's, and handed to the capability as `clew.caller`; never sent to a remote connector. It grants nothing and
+   * is never `direct`: a call the assistant makes resolves no relation held by grant (D122 item 5).
+   */
+  caller?: RunCaller;
 }
+/** Who made a call for the person, when it was not the person themself (D122 item 6). */
+export type RunCaller = 'assistant';
 /** What `Registry.validate` resolved about whom an input names (D117): opaque, issued and redeemed by one registry. */
 export class Resolution {
   private constructor() {}
@@ -239,7 +263,11 @@ export interface Capability<I = unknown, O = unknown> {
   description: string;
   input: TSchema;
   output: TSchema;
-  /** Exposed as a tool to the model. `execute` defaults to false and should stay so (D8). */
+  /**
+   * Exposed as a tool to the model. `execute` defaults to false and should stay so (D8). What the model reads of the
+   * output is derived from the declared view by `modelReading`, the same for every connector: nothing a capability runs
+   * decides it.
+   */
   model: boolean;
   /** Who may call it. Evaluated on every call; never trusts the browser. */
   scope: Scope;
@@ -263,15 +291,24 @@ export interface Capability<I = unknown, O = unknown> {
    * Who may be asked about through it (D117): the relations a caller may have to a person its input names, and on a
    * capability not about a person the input property that takes the key. The registry enforces it on every path. Only
    * Clew's own connectors may add `ids`: a person without a user name may then be named by Clew's own id, as the talks
-   * domain names them; a manifest cannot carry it, since Clew's id is never sent to a connector.
+   * domain names them; a manifest cannot carry it, since Clew's id is never sent to a connector. Only they may admit
+   * `registrar` (D121): the protocol's relations are `PROTOCOL_PERSON_RELATIONS`, so a manifest cannot carry it either,
+   * and a connector is never told it.
    */
-  person?: PersonAccess & { ids?: true };
+  person?: Omit<PersonAccess, 'admits'> & { admits?: PersonRelation[]; ids?: true };
   /** On a capability about a unit (D117): the relations a caller may have to the unit, `manages` when absent. */
   unit?: UnitAccess;
   /** On a propose or execute (D112): what the person fills in before it runs, each naming one input property. */
   asks?: Ask[];
   /** On an execute (D112): a read of the same connector, same input, that says what the write will do where. */
   effect?: string;
+  /**
+   * On a read of Clew's own connectors only: Clew's own page where its rows are worked through, a path inside Clew
+   * (`ViewEntry.page`). Whatever opens the read without input (a figure's `opens`, a card's read, an answer's "Visa
+   * allt") leads there, and the read's own page stays for an address that names it. A manifest cannot carry it, so a
+   * remote connector never claims a page inside Clew, as with `about.page`.
+   */
+  page?: string;
   run: (actor: Actor, input: I, clew: Clew) => Promise<O>;
 }
 /** A capability is a search source when it is named `<id>.search` and is a read (D26); the composite `clew.search` is never one itself. */
@@ -642,10 +679,22 @@ export class Registry implements HoldingsReader {
    * not a string, refuses the call as an unknown capability is refused, so the answer never tells whether that person
    * exists; it is checked whether or not the input schema lists it. `about` is what the connector is told: each key sent
    * and its relation. A directory that cannot be read throws `RelationsUnavailableError`, never an empty answer.
+   *
+   * A relation held by grant (`RELATION_GRANTS`, D121) is admitted only where `granted` says so: the person's own session
+   * asked a core connector's read directly (`RunContext.direct`). On any other call it is taken out of what the
+   * capability admits before the resolver is asked, so a reader who holds it stands as they would without it.
    */
-  private async narrow(actor: Actor, name: string, input: unknown): Promise<{ input: unknown; about?: AboutClaim }> {
-    const named = this.named.get(name);
-    if (!named) return { input };
+  private async narrow(
+    actor: Actor,
+    name: string,
+    input: unknown,
+    options: { granted?: boolean } = {},
+  ): Promise<{ input: unknown; about?: AboutClaim }> {
+    const declared = this.named.get(name);
+    if (!declared) return { input };
+    const named = options.granted
+      ? declared
+      : { ...declared, admits: declared.admits.filter(r => !(RELATION_GRANTS as readonly string[]).includes(r)) };
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw unknownCapability();
     const given = input as Record<string, unknown>;
     if (
@@ -889,6 +938,7 @@ export class Registry implements HoldingsReader {
       chain: context.chain ?? [],
       ...(context.signal ? { signal: context.signal } : {}),
       ...(context.operationId ? { operationId: context.operationId } : {}),
+      ...(context.caller ? { caller: context.caller } : {}),
       call: async <O>(name: string, input: unknown = {}) => {
         await this.refresh();
         const owner = origin ? this.connectors.get(origin) : undefined;
@@ -900,7 +950,13 @@ export class Registry implements HoldingsReader {
           actor,
           name,
           input,
-          { authorize: context.authorize, delegate: context.delegate, chain: context.chain, signal: context.signal },
+          {
+            authorize: context.authorize,
+            delegate: context.delegate,
+            chain: context.chain,
+            signal: context.signal,
+            ...(context.caller ? { caller: context.caller } : {}),
+          },
           true,
         );
         return output;
@@ -942,8 +998,12 @@ export class Registry implements HoldingsReader {
       throw new CapabilityError('Du saknar behörighet för åtgärden.', 'denied');
     if (!this.validator(found.capability.input)(input))
       throw new CapabilityError('Ogiltig förfrågan till ' + name + '.', 'invalid');
-    const narrowed = this.redeem(actor, name, input, context.resolution) ?? (await this.narrow(actor, name, input));
-    const { resolution: _resolution, ...carried } = context;
+    // A relation held by grant (D121) only on the person's own direct read of a core connector's capability, and never
+    // for a read the assistant makes, whatever else the context says (D122 item 5).
+    const granted = context.direct === true && context.caller === undefined && found.connector.kind === 'core';
+    const narrowed =
+      this.redeem(actor, name, input, context.resolution) ?? (await this.narrow(actor, name, input, { granted }));
+    const { resolution: _resolution, direct: _direct, ...carried } = context;
     const clew = this.clewFor(actor, { ...carried, chain: [...(context.chain ?? []), name] }, found.connector.id);
     const output = await found.capability.run(
       actor,
@@ -1496,6 +1556,8 @@ export class Registry implements HoldingsReader {
       source: found.connector.source,
       chip,
       ...(rows && found.connector.kind === 'core' ? { rowViews: true } : {}),
+      // Who owns the data (D3): anything but Clew's own domain lives in the system it was read from.
+      ...(found.connector.kind !== 'core' ? { external: true } : {}),
     } as PanelViewSpec;
   }
   /** The connector that gives this person the shared header (D88), by the governance as it stands, without asking it. */
@@ -1608,10 +1670,12 @@ export class Registry implements HoldingsReader {
   views(actor: Actor): ViewEntry[] {
     return this.capabilitiesFor(actor)
       .filter(({ capability }) => capability.kind === 'read')
-      .map(({ capability }) => ({
+      .map(({ capability, connector }) => ({
         capability: capability.name,
         title: capability.title,
         ...(capability.view ? { kind: capability.view.kind } : {}),
+        // Clew's own page for the read's rows: only a core connector's read has one.
+        ...(capability.page && connector.kind === 'core' ? { page: capability.page } : {}),
       }));
   }
   /**
@@ -1621,7 +1685,8 @@ export class Registry implements HoldingsReader {
    * per-connector news lists while `clew.news` is (D112, amended 2026-11-11).
    * The talks profile and its composites are never tools, registered or not: no read of that domain reaches a model (D96 item 6).
    * A read about an entity is never a tool either (D97 item 7): the loader refuses `model: true` on one, and this holds
-   * whatever a registration says.
+   * whatever a registration says. Clew's own connectors are governed here as any other (D122 item 4): the connector's
+   * assistant switch and each read's. What the model reads of a tool's output is `modelReading` of its view.
    */
   tools(actor: Actor) {
     const composite = this.capabilities.has(SEARCH_CONNECTOR + '.search');

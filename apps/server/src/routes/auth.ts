@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { LOGIN_TRANSACTION_MS, readSession, revokeSession, touchSession } from '../auth';
-import { CAPABILITIES, sessionUser } from '@clew/contracts';
+import { sessionUser } from '@clew/contracts';
+import { sessionEntryPoints } from '../session-entry-points';
 import {
   AuthError,
   authSettings,
@@ -79,13 +80,10 @@ authRoutes.get('/dev/login', async c => {
 });
 authRoutes.get('/session', protectedRoute(), c => {
   const session = c.get('session');
-  // `admin` and `capabilities` only decide which entry points the browser draws (Administration and its rows); every
-  // admin call is checked again on the server (D23, D85).
-  const held = CAPABILITIES.filter(c => session.context.capabilities.includes(c));
+  // Which entry points the browser draws, never what the person may do (`session-entry-points.ts`).
   return c.json({
     user: sessionUser(session.context),
-    admin: held.length > 0,
-    capabilities: held,
+    ...sessionEntryPoints(session.context),
     csrfToken: session.csrfToken,
     sessionKey: session.sessionKey,
     expiresAt: session.context.expiresAt,

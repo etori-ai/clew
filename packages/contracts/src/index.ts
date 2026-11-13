@@ -3,6 +3,14 @@ import { Format } from 'typebox/format';
 import { Settings } from 'typebox/system';
 import { Value } from 'typebox/value';
 import { DocumentReviewSchema, ReviewEvidenceSchema } from './presentation';
+import {
+  COMPETENCE_CATALOGUE_MAX,
+  COMPETENCE_IMPORT_FORMATS,
+  COMPETENCE_IMPORT_REQUEST_MAX,
+  COMPETENCE_IMPORT_ROWS_MAX,
+  COMPETENCE_URI_MAX,
+  type CompetenceImportKind,
+} from './competence-import';
 // Explicit exports keep these names visible to the Node ESM server through this package's CommonJS boundary.
 export {
   MAX_DOCUMENT_BYTES,
@@ -49,6 +57,11 @@ export interface AuthenticatedContext extends SessionUser {
    * (D44, D97). Absent for a person provisioned without one. Never in `SessionUser`.
    */
   userName?: string;
+  /**
+   * The relations to people the person holds by grant (D121, `RELATION_GRANTS`), from their current access record.
+   * Absent means none. Never a capability: no route consults it to decide what administration a person may do (D118).
+   */
+  relationGrants?: RelationGrant[];
   /**
    * The units the person follows up (D117): those they manage and those of the managers who report to them (D99's
    * reporting line), set where a read needs them and signed into a connector's actor, so a source can answer for the
@@ -722,6 +735,74 @@ export function viewRows(view: View, output: unknown): Record<string, unknown>[]
   if (!key || !isViewRecord(output) || !Array.isArray(output[key])) return undefined;
   return (output[key] as unknown[]).filter(isViewRecord);
 }
+/** Two 32-bit FNV-1a passes with different offsets, as 16 hex digits: tells rows of one read apart, says nothing of them. */
+const digest = (text: string) => {
+  const pass = (seed: number) => {
+    let h = seed >>> 0;
+    for (let i = 0; i < text.length; i++) {
+      h ^= text.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h.toString(16).padStart(8, '0');
+  };
+  return pass(0x811c9dc5) + pass(0x050c5d1f);
+};
+/** The shape of a row's mark: what a conversation's message may keep of a row (`MessageMeta.viewRows`). */
+export const ROW_MARK = '^[0-9a-f]{16}$';
+/**
+ * A row's mark: what tells one row of a declared table or list from the others when the read is made again, without
+ * saying what the row holds. The connector's ref for the row when the view declares one (stable while the row changes),
+ * else a digest of what the view draws of it (a row whose drawn values changed is another row). The server marks the
+ * rows an answer names; the browser finds them again in the read it makes as the person. A digest, never a value.
+ */
+export function rowMark(view: View, row: Record<string, unknown>): string {
+  if (view.kind !== 'table' && view.kind !== 'list') return digest(JSON.stringify(row));
+  const ref = view.ref ? row[view.ref] : undefined;
+  if (typeof ref === 'string' && ref) return digest('ref\u0000' + ref);
+  const keys = [...view.fields.map(f => f.key), ...(view.subject ? [view.subject.key] : [])];
+  return digest(JSON.stringify(keys.map(k => row[k] ?? null)));
+}
+/**
+ * The Swedish word for a code a source answers with, as a person reads it wherever Clew draws a value: in a view, in the
+ * generic panel and in what the model reads of a read. A value with no word here is drawn as the source gave it.
+ */
+export const VALUE_WORDS: Readonly<Record<string, string>> = {
+  // A person in the round of development talks (D96 item 2).
+  booked: 'bokat',
+  held: 'hållet',
+  missing: 'saknas',
+  closed: 'stängd',
+  // Where a holding stands today (D108 item 4).
+  expired: 'utgånget',
+  expiring: 'går ut snart',
+  valid: 'giltigt',
+  // A copied holding whose source type is not mapped to the catalogue (D108 item 9).
+  uncounted: 'räknas inte',
+  // A person's own registration that waits for their manager, or that the manager rejected (D108 item 7).
+  'awaiting-approval': 'väntar på godkännande',
+  rejected: 'avvisat',
+  done: 'klart',
+  failed: 'misslyckades',
+  long: 'sjukskriven',
+  open: 'öppen',
+  short: 'sjuk',
+  skipped: 'inte skickad',
+  unknown: 'okänt',
+  vab: 'vab',
+  'waiting-safety-rep': 'väntar på skyddsombud',
+};
+/** A value's word (`VALUE_WORDS`), or the value as given. */
+export const valueWord = (value: string): string =>
+  Object.prototype.hasOwnProperty.call(VALUE_WORDS, value) ? VALUE_WORDS[value]! : value;
+/**
+ * A status's word where it stands alone, a badge or a table's cell (the review of 2026-11-13: one casing everywhere):
+ * the word of `VALUE_WORDS` with its first letter capitalised, "Utgånget", "Går ut snart". Inside a sentence the word
+ * stays as `valueWord` gives it, which is also what the model reads.
+ */
+export const statusLabel = (value: string): string => {
+  const word = valueWord(value);
+  return word.charAt(0).toLocaleUpperCase('sv') + word.slice(1);
+};
 /**
  * The keys a view's records name people by (`subject` on a person, D97 item 6), each once: a source's key, the user name,
  * which Clew resolves to the person's id before a name links to their page (D122, `PanelViewSpec.people`).
@@ -760,8 +841,16 @@ export function openRef(open: ViewOpen, row: Record<string, unknown>, source: st
 /** The declared view as the browser gets it beside the output: the declaration, whose it is, and whether a row can be added to the conversation. */
 /**
  * `rowViews` is set for a view of Clew's own connectors only (the combined errand list, D35 item 4): each row may then
- * carry the view it opens (`view`, a ViewRef into the connector the row came from) and the output may name the systems
- * that did not answer (`unanswered`). A connector outside Clew never gets it, so its rows open only its own reads.
+ * carry the view it opens (`view`, a ViewRef into the connector the row came from), the output may name the systems
+ * that did not answer (`unanswered`) and say how many rows it left out (`omitted`, a positive whole number beside the
+ * rows, such as the 500 rows a competence list is cut at). A connector outside Clew never gets it, so its rows open
+ * only its own reads and nothing of its output beside the rows is read as such.
+ *
+ * `external` is set where the rows live in a system outside Clew: the connector's kind, as the registry knows it, is
+ * not Clew's own domain (`passthrough` or `derived`, D3: the data lives in the connected system and Clew keeps refs and
+ * audit rows only; every connector registered over the protocol is one, and so is the calendar). The view then says
+ * that nothing of it is stored in Clew. A view of a `core` connector says nothing of the kind: its rows are Clew's own
+ * register, or Clew's combination of other systems' answers.
  */
 export type PanelViewSpec = View & {
   capability: string;
@@ -769,6 +858,7 @@ export type PanelViewSpec = View & {
   source: string;
   chip: boolean;
   rowViews?: boolean;
+  external?: boolean;
   /**
    * The people the output's records name (`subject` on a person, D97 item 6), from the key on the record (the source's,
    * a user name) to Clew's key for the person, their id (D122), so a name links to `/people/<id>`. A key nobody of the
@@ -846,6 +936,14 @@ export const ViewEntrySchema = object({
       Type.Literal('series'),
       Type.Literal('activity'),
     ]),
+  ),
+  page: Type.Optional(
+    Type.String({
+      maxLength: 200,
+      pattern: '^/[^/]',
+      description:
+        "Clew's own page where the read's rows are worked through, a path inside Clew: whatever opens the read without input leads there instead of to the read's page, which stays for an address that names it. Only a read of Clew's own connectors has one (`Capability.page`).",
+    }),
   ),
 });
 export type ViewEntry = Static<typeof ViewEntrySchema>;
@@ -1419,11 +1517,32 @@ export type About = Static<typeof AboutSchema>;
 /**
  * How a caller stands to a person they ask a source about (D97 item 8, D117), from Clew's own directory (D99): the person
  * themself (`self`), one of their direct reports (`managed`) or another active person of the organisation
- * (`colleague`). A closed list, as `ENTITY_KINDS` is: a new relation is a contract change that comes with the rule that
- * resolves it.
+ * (`colleague`); and, for a reader who holds the grant of that name (D121), `registrar` to every active person of their
+ * organisation whom `self` or `managed` does not already name. A closed list, as `ENTITY_KINDS` is: a new relation is a
+ * contract change that comes with the rule that resolves it.
  */
-export const PERSON_RELATIONS = ['self', 'managed', 'colleague'] as const;
+export const PERSON_RELATIONS = ['self', 'managed', 'colleague', 'registrar'] as const;
 export type PersonRelation = (typeof PERSON_RELATIONS)[number];
+/**
+ * The person relations of the connector protocol (D117), the ones a manifest may admit and a connector may be told.
+ * `registrar` (D121) is not among them: only a capability of Clew's own core connectors may admit it, so it never leaves
+ * the installation, and the published protocol is the one D117 set. Opening it to a connector is a protocol change.
+ */
+export const PROTOCOL_PERSON_RELATIONS = ['self', 'managed', 'colleague'] as const satisfies readonly PersonRelation[];
+export type ProtocolPersonRelation = (typeof PROTOCOL_PERSON_RELATIONS)[number];
+/**
+ * The relations to a person that are granted on their own rather than resolved from the organisation tree (D121): a
+ * closed list, mapped from a provisioned group by an administrator with `admin.users` (as a capability is, D85) and
+ * derived into the person's access. Never a name in `CAPABILITIES`: a capability is no relation to a person (D118).
+ */
+export const RELATION_GRANTS = ['registrar'] as const satisfies readonly PersonRelation[];
+export type RelationGrant = (typeof RELATION_GRANTS)[number];
+export const RelationGrantSchema = literals(RELATION_GRANTS);
+export const isRelationGrant = (value: string): value is RelationGrant =>
+  (RELATION_GRANTS as readonly string[]).includes(value);
+/** The relations of the closed list among stored values, in the list's order; anything else is dropped. */
+export const relationGrantsOf = (values: readonly string[] | undefined | null): RelationGrant[] =>
+  RELATION_GRANTS.filter(r => values?.includes(r));
 /**
  * How a caller stands to a unit (D117, both records): they manage it (`manages`), are placed on it without managing it
  * (`member`), or a manager who reports to them leads it (`below`, D99's reporting line one level down).
@@ -1436,7 +1555,7 @@ export const RELATIONS: readonly Relation[] = [...PERSON_RELATIONS, ...UNIT_RELA
 export const STRICT_RELATIONS: readonly PersonRelation[] = ['self', 'managed'];
 /** What a capability about a unit admits when it does not say (D117): a unit the caller manages. */
 export const STRICT_UNIT_RELATIONS: readonly UnitRelation[] = ['manages'];
-export const PersonRelationSchema = literals(PERSON_RELATIONS, {
+export const PersonRelationSchema = literals(PROTOCOL_PERSON_RELATIONS, {
   description:
     "`self`: the caller is the person. `managed`: the person reports to the caller (D99): placed without a manager's role on a unit the caller manages, or reporting to it from below (the managers of the nearest led units below it, and the people of units nobody leads in between); a co-manager of the caller's unit only when their line runs to a unit above it that the caller leads, never someone who manages the caller. `colleague`: any other active person of the caller's organisation.",
 });
@@ -1817,31 +1936,66 @@ export type EntityEffectInput = Static<typeof EntityEffectInputSchema>;
 export const EntityActionStartedSchema = object({ threadId: id });
 export type EntityActionStarted = Static<typeof EntityActionStartedSchema>;
 /**
- * What a competence type is (D108 item 2). A closed list: a certificate and a competence are one record, a holding, and
- * the kind says which the type is.
+ * What a competence type is (D108 item 2, D120 item 1). A closed list: a certificate, a competence and a skill are one
+ * record, a holding, and the kind says which the type is.
  */
-export const COMPETENCE_KINDS = ['certificate', 'degree', 'course', 'authorisation'] as const;
+export const COMPETENCE_KINDS = ['certificate', 'degree', 'course', 'authorisation', 'skill'] as const;
 export const CompetenceKind = literals(COMPETENCE_KINDS, {
   description:
-    '`certificate`: a certificate with an issuer. `degree`: an examination. `course`: a completed course. `authorisation`: a right to perform a task, such as a delegation.',
+    '`certificate`: a certificate with an issuer. `degree`: an examination. `course`: a completed course. `authorisation`: a right to perform a task, such as a delegation. `skill`: something a person can do, held at a level (D120) and never ending.',
 });
 export type CompetenceKind = (typeof COMPETENCE_KINDS)[number];
+/** The kind whose holdings carry a level and no dates of their own (D120 item 1). */
+export const SKILL_KIND = 'skill' satisfies CompetenceKind;
 /**
- * Where a holding stands on a day (D108 item 4), computed when read and never stored. The order here is the order a
- * list is drawn in: what needs a person first.
+ * The level a skill is held at (D120 item 1): a closed list of three, what a person can rate consistently and what a
+ * matrix cell can show. 1 is the least.
  */
-export const COMPETENCE_STATUSES = ['expired', 'expiring', 'valid'] as const;
+export const COMPETENCE_LEVELS = [1, 2, 3] as const;
+export type CompetenceLevel = (typeof COMPETENCE_LEVELS)[number];
+export const CompetenceLevelSchema = literals(COMPETENCE_LEVELS, {
+  description: '1: Grundläggande, 2: Självständig, 3: Expert (D120 item 1).',
+});
+/** Swedish. Each level as a person reads it, the one wording for the server's rows and the browser's forms. */
+export const COMPETENCE_LEVEL_LABELS: Record<CompetenceLevel, string> = {
+  1: 'Grundläggande',
+  2: 'Självständig',
+  3: 'Expert',
+};
+/** Swedish. What each level means, as a form explains it beside the choice. */
+export const COMPETENCE_LEVEL_DESCRIPTIONS: Record<CompetenceLevel, string> = {
+  1: 'Kan grunderna och arbetar med stöd.',
+  2: 'Arbetar på egen hand.',
+  3: 'Kan lära ut och leda andra.',
+};
+/** Whether a value is one of the three levels. */
+export const isCompetenceLevel = (value: unknown): value is CompetenceLevel =>
+  (COMPETENCE_LEVELS as readonly unknown[]).includes(value);
+/** Swedish. The mark of a skill that only the person has rated, until a manager confirms it (D120 item 2). */
+export const SELF_RATED_WORD = 'Egen bedömning';
+/** Swedish. The mark of a skill the person wants to develop (D120 item 3). */
+export const INTEREST_WORD = 'Vill utveckla';
+/**
+ * Where a person stands on a type on a day (D108 items 4 and 6), computed when read and never stored. The order here is
+ * the order a list is drawn in and the precedence of one word for a person: what needs a person first. An expired
+ * holding comes before a missing one, since something the person was relied on for has lapsed; both come before one
+ * that is about to run out.
+ */
+export const COMPETENCE_STATUSES = ['expired', 'missing', 'expiring', 'valid'] as const;
 export const CompetenceStatus = literals(COMPETENCE_STATUSES, {
   description:
-    '`expired`: the end date has passed. `expiring`: it ends within 90 days. `valid`: it ends later, or never.',
+    '`expired`: the end date has passed. `missing`: required of the person by a position, a unit or a requirement of their own, and they hold nothing of it that counts. `expiring`: it ends within 90 days. `valid`: it ends later, or never.',
 });
 export type CompetenceStatus = (typeof COMPETENCE_STATUSES)[number];
 /**
- * Where a row of a read stands (D108 items 4 and 9): one of the statuses, or `uncounted` for a holding copied from a
- * source whose type no administrator has mapped to the catalogue yet. It is listed under the source's own label and
- * counts towards nothing. Last in the order a list is drawn in.
+ * Where a row of a read stands (D108 items 4, 7 and 9): one of the statuses; `awaiting-approval` for a holding the person
+ * registered themselves that waits for their manager's decision, and `rejected` for one the manager turned down, both
+ * counting towards nothing; or `uncounted` for a holding copied from a source whose type no administrator has mapped to
+ * the catalogue yet, listed under the source's own label. What counts towards nothing comes last in the order a list is
+ * drawn in. The words are their own (`awaiting-approval`, not `pending`), so a browser that words every source's values
+ * alike never gives another system's `pending` this meaning.
  */
-export const COMPETENCE_ROW_STATUSES = [...COMPETENCE_STATUSES, 'uncounted'] as const;
+export const COMPETENCE_ROW_STATUSES = [...COMPETENCE_STATUSES, 'awaiting-approval', 'rejected', 'uncounted'] as const;
 export type CompetenceRowStatus = (typeof COMPETENCE_ROW_STATUSES)[number];
 /** How a holding is attested (D108 items 7 and 9): read from a system, registered by a manager, or the person's own word. */
 export const COMPETENCE_EVIDENCE = ['system', 'manager', 'self'] as const;
@@ -1861,11 +2015,26 @@ export const CompetenceTypeSchema = object(
       description: "The employer's rule: a holding ends this many months after it was issued. Absent: no rule.",
     }),
     archived: Type.Boolean({ description: 'An archived type takes no new holdings; the ones it has stay.' }),
+    uri: Type.Optional(
+      Type.String({
+        minLength: 1,
+        maxLength: COMPETENCE_URI_MAX,
+        description:
+          "The address the type came with from an imported file (D120 item 7), such as an ESCO concept's `conceptUri`. An import is idempotent on it. Absent: added by hand, or imported without one.",
+      }),
+    ),
+    mergedInto: Type.Optional({
+      ...id,
+      description:
+        'The type this one was merged into (D108 item 2): its holdings, requirements and mappings are there, and it is archived. Absent: not merged.',
+    }),
   },
   'A competence type in the catalogue (D108).',
 );
 export type CompetenceType = Static<typeof CompetenceTypeSchema>;
-export const CompetenceTypesOutputSchema = object({ rows: Type.Array(CompetenceTypeSchema, { maxItems: 2000 }) });
+export const CompetenceTypesOutputSchema = object({
+  rows: Type.Array(CompetenceTypeSchema, { maxItems: COMPETENCE_CATALOGUE_MAX }),
+});
 export type CompetenceTypesOutput = Static<typeof CompetenceTypesOutputSchema>;
 /** One holding as a read lists it (D108): who, what, since when, until when and where it stands today. */
 export const CompetenceHoldingRowSchema = object(
@@ -1882,20 +2051,32 @@ export const CompetenceHoldingRowSchema = object(
       ...competenceName,
       description: "The type's name; for a copied holding whose type is not mapped, the source's own label.",
     },
+    typeId: Type.Optional({
+      ...id,
+      description:
+        "The catalogue type's id, which the person's own page registers a new one of from the row. Absent for a copied holding whose type is not mapped. Not drawn, and not read by the model.",
+    }),
     area: Type.Optional({ ...competenceArea, description: 'Absent for a copied holding whose type is not mapped.' }),
     kind: Type.Optional(
       literals(COMPETENCE_KINDS, { description: 'Absent for a copied holding whose type is not mapped.' }),
     ),
-    issuedOn: { ...calendarDay, description: 'The day it was issued.' },
+    issuedOn: Type.Optional({
+      ...calendarDay,
+      description: 'The day it was issued. Absent on a `missing` row, which is no holding.',
+    }),
     expiresOn: Type.Optional({
       ...calendarDay,
       description: "The last day it is valid: the issuer's date, else the employer's rule. Absent: it does not end.",
     }),
     status: literals(COMPETENCE_ROW_STATUSES, {
       description:
-        '`expired`, `expiring` or `valid` as computed today; `uncounted`: copied from a source whose type is not mapped to the catalogue, so it counts towards nothing.',
+        "`expired`, `missing`, `expiring` or `valid` as computed today (`missing`: a type required of the person that they hold nothing of that counts); `awaiting-approval`: registered by the person themselves and waiting for their manager's decision; `rejected`: registered by the person and turned down by their manager, listed to the person alone; `uncounted`: copied from a source whose type is not mapped to the catalogue. The last three count towards nothing.",
     }),
-    evidence: literals(COMPETENCE_EVIDENCE),
+    evidence: Type.Optional(
+      literals(COMPETENCE_EVIDENCE, {
+        description: 'How it is attested. Absent on a `missing` row, which is no holding.',
+      }),
+    ),
     source: Type.Optional(
       Type.String({
         minLength: 1,
@@ -1905,6 +2086,30 @@ export const CompetenceHoldingRowSchema = object(
       }),
     ),
     readAt: Type.Optional({ ...instant, description: 'When it was last read from that system. Absent with `source`.' }),
+    level: Type.Optional(
+      literals(Object.values(COMPETENCE_LEVEL_LABELS), {
+        description:
+          'Swedish. The level a skill is held at (D120 item 1): "Grundläggande", "Självständig" or "Expert". Absent on every other kind, and on a skill required of the person that they hold nothing of.',
+      }),
+    ),
+    assessment: Type.Optional(
+      Type.Literal(SELF_RATED_WORD, {
+        description:
+          'Swedish. "Egen bedömning": a skill only the person has rated, which no manager has confirmed and which meets no requirement (D120 item 2). Absent once confirmed.',
+      }),
+    ),
+    interest: Type.Optional(
+      Type.Literal(INTEREST_WORD, {
+        description:
+          'Swedish. "Vill utveckla": the person wants to develop this skill (D120 item 3). It counts towards nothing.',
+      }),
+    ),
+    required: Type.Optional(
+      literals(Object.values(COMPETENCE_LEVEL_LABELS), {
+        description:
+          'Swedish. On a `missing` skill: the least level required of the person, which a confirmed holding must reach (D120 item 4).',
+      }),
+    ),
   },
   'One holding of one person (D108).',
 );
@@ -1921,8 +2126,17 @@ export type CompetenceHoldingsOutput = Static<typeof CompetenceHoldingsOutputSch
 export const CompetenceAttentionInputSchema = object({});
 export type CompetenceAttentionInput = Static<typeof CompetenceAttentionInputSchema>;
 export const CompetenceAttentionOutputSchema = object(
-  { rows: Type.Array(CompetenceHoldingRowSchema, { maxItems: 500 }) },
-  "What has expired or expires within 90 days among the reader's reports (D108 item 11), the expired first.",
+  {
+    rows: Type.Array(CompetenceHoldingRowSchema, { maxItems: 500 }),
+    omitted: Type.Optional(
+      Type.Integer({
+        minimum: 1,
+        description:
+          'How many more there are than the 500 rows given: those that run out last. Absent when every one is given.',
+      }),
+    ),
+  },
+  "The requirements not met among the reader's reports (`competenceRequirementUnmet`): a type required of a person that is missing (a skill below the level asked included), has expired or expires within 90 days, the expired first. A holding nothing requires of the person is not one (D108 items 6 and 11).",
 );
 export type CompetenceAttentionOutput = Static<typeof CompetenceAttentionOutputSchema>;
 /** An administrator adds a type to the catalogue (D108 item 2). */
@@ -1941,6 +2155,74 @@ export const CompetenceTypePatchSchema = object({
   validityMonths: Type.Optional(Type.Union([validityMonths, Type.Null()])),
 });
 export type CompetenceTypePatch = Static<typeof CompetenceTypePatchSchema>;
+/**
+ * One type of a file an administrator imports (D120 item 7), as the page sends it once chosen: every column filled, an
+ * ESCO row with the area the administrator chose. The server checks it again with `competenceImportRowProblem`, the
+ * rule the page read the file with. `row` is the row's number in the file, for a refusal to name.
+ */
+export const CompetenceImportRowSchema = object({
+  row: Type.Integer({ minimum: 1, maximum: COMPETENCE_IMPORT_ROWS_MAX + 1 }),
+  // In UTF-16 units, twice the catalogue's limits in characters; the shared check counts the characters.
+  name: Type.String({ minLength: 1, maxLength: 240 }),
+  area: Type.String({ minLength: 1, maxLength: 160 }),
+  kind: CompetenceKind,
+  validityMonths: Type.Union([validityMonths, Type.Null()]),
+  uri: Type.Union([Type.String({ minLength: 1, maxLength: COMPETENCE_URI_MAX }), Type.Null()]),
+});
+export type CompetenceImportRowBody = Static<typeof CompetenceImportRowSchema>;
+/**
+ * `POST /api/competence/types/import`: the chosen rows of one file, at most `COMPETENCE_IMPORT_REQUEST_MAX` a request
+ * (the page sends more in parts), and the file's format, which the audit row records. A row the catalogue holds already
+ * is skipped, not refused, so a part sent again changes nothing.
+ */
+export const CompetenceImportBodySchema = object({
+  format: literals(COMPETENCE_IMPORT_FORMATS),
+  rows: Type.Array(CompetenceImportRowSchema, { minItems: 1, maxItems: COMPETENCE_IMPORT_REQUEST_MAX }),
+});
+export type CompetenceImportBody = Static<typeof CompetenceImportBodySchema>;
+/** What an import did: how many types it added and how many rows the catalogue held already. */
+export interface CompetenceImportOutcome {
+  added: number;
+  skipped: number;
+}
+/** `POST /api/competence/types/:id/merge`: the type the one in the path is merged into (D108 item 2). */
+export const CompetenceMergeBodySchema = object({ into: id });
+export type CompetenceMergeBody = Static<typeof CompetenceMergeBodySchema>;
+/**
+ * The least number of people a count shown to an administrator may stand for (D118, D108 item 8): below it, and above
+ * none, a count of people or of what people hold is said only as fewer than this, never as the number.
+ */
+export const COMPETENCE_GROUP_MIN = 5;
+/** A count of people or of their holdings as an administrator is shown it: the number at 0 and from `COMPETENCE_GROUP_MIN`, else `few`. */
+export type CompetenceShownCount = number | 'few';
+/**
+ * What merging one type into another would move (D108 item 2), counted before it is confirmed, and what a merge answers
+ * once it is done; nothing is written by the preview, which locks nothing. Counted as an administrator may see it
+ * (D118): the holdings of active people that count or did (not a registration of a person's own that waits or was
+ * rejected), the requirements set on positions and units (one a manager set on one person moves too and is not
+ * counted), the share targets and the sources' mappings. A count of people or holdings below `COMPETENCE_GROUP_MIN` is
+ * `few`. The merge's audit row keeps the exact counts.
+ */
+export interface CompetenceMergePreview {
+  /** Holdings of active people that move to the other type. */
+  holdings: CompetenceShownCount;
+  /** The people those holdings are of. */
+  people: CompetenceShownCount;
+  /** Requirements on positions and units moved, and of them those whose target the other type already had: one is kept, the stricter. */
+  requirements: number;
+  requirementsFolded: number;
+  /** Share targets moved, and of them those the other type already had for the position and unit: the higher kept. */
+  shareTargets: number;
+  shareTargetsFolded: number;
+  /** Sources' types mapped to the type, mapped to the other from now on. */
+  mappings: number;
+  /** People who hold a skill of both: the one that does not decide is set aside (revoked), with its history kept. */
+  skillsSetAside: CompetenceShownCount;
+  /** Holdings that end by the employer's rule and are counted from the other type's rule from now on. */
+  ruled: CompetenceShownCount;
+  /** Whether registrations of people's own wait for both types: while any do, the merge is refused. Never how many. */
+  waiting: boolean;
+}
 /** What a change of a type's validity would do to the holdings counted from it (D108 item 3), before it is confirmed. */
 export interface CompetenceValidityImpact {
   /** Holdings that end by the rule: the ones with no date of the issuer's. */
@@ -1948,13 +2230,116 @@ export interface CompetenceValidityImpact {
   expiredBefore: number;
   expiredAfter: number;
 }
-/** A manager registers a certificate for a person who reports to them (D108 item 7). */
+/**
+ * A manager registers a certificate for a person who reports to them, or a person registers their own for their manager
+ * to approve (D108 item 7): the type, the day it was issued and, where the issuer set one, the day it ends.
+ */
 export const CompetenceHoldingBodySchema = object({
   typeId: id,
   issuedOn: calendarDay,
   expiresOn: Type.Optional(calendarDay),
 });
 export type CompetenceHoldingBody = Static<typeof CompetenceHoldingBodySchema>;
+/**
+ * A person adds a skill of their own (D120 items 2 and 3): the type, the level and whether they want to develop it.
+ * Stored at once as their own rating; a skill they hold already is refused, and changed instead
+ * (`CompetenceSkillChangeBody`). It names no person: it is always the reader's own.
+ */
+export const CompetenceSkillRatingBodySchema = object({
+  typeId: id,
+  level: CompetenceLevelSchema,
+  interest: Type.Boolean(),
+});
+export type CompetenceSkillRatingBody = Static<typeof CompetenceSkillRatingBodySchema>;
+/** A person changes a skill of their own, by its holding (D120 items 2 and 3): the level and the interest mark. */
+export const CompetenceSkillChangeBodySchema = object({ level: CompetenceLevelSchema, interest: Type.Boolean() });
+export type CompetenceSkillChangeBody = Static<typeof CompetenceSkillChangeBodySchema>;
+/** The manager a person reports to registers a skill for them at a level, confirmed at once (D120 item 2). */
+export const CompetenceSkillBodySchema = object({ typeId: id, level: CompetenceLevelSchema });
+export type CompetenceSkillBody = Static<typeof CompetenceSkillBodySchema>;
+/** The manager a person reports to confirms a skill's level, or sets another (D120 item 2). Absent: as rated. */
+export const CompetenceValidationBodySchema = object({ level: Type.Optional(CompetenceLevelSchema) });
+export type CompetenceValidationBody = Static<typeof CompetenceValidationBodySchema>;
+/**
+ * One skill the reader holds (D120 items 2 and 3), as their own page lists it with its actions: the level, whether a
+ * manager has confirmed it, the interest mark, and, where a requirement asks for more than it meets, the least level
+ * asked.
+ */
+export interface CompetenceOwnSkill {
+  holdingId: string;
+  typeId: string;
+  /** The type's name, as a person reads it. */
+  competence: string;
+  area: string;
+  level: CompetenceLevel;
+  /** Confirmed, or registered, by a manager: false while it is the person's own rating alone. */
+  validated: boolean;
+  interest: boolean;
+  /** Required of the person and not met by this holding: the least level asked (D120 item 4). */
+  short?: CompetenceLevel;
+}
+/**
+ * A skill as the manager a person reports to confirms it (D120 item 2): who holds it, which skill, the level they or a
+ * manager set, and whether it is confirmed already.
+ */
+export interface CompetenceSkillValidation {
+  holdingId: string;
+  personId: string;
+  name: string;
+  typeId: string;
+  competence: string;
+  area: string;
+  level: CompetenceLevel;
+  validated: boolean;
+  interest: boolean;
+}
+/** One of the reader's own registrations that waits for their manager's decision (D108 item 7). */
+export interface CompetenceOwnPending {
+  holdingId: string;
+  typeId: string;
+  /** The type's name, as a person reads it. */
+  competence: string;
+  issuedOn: string;
+  /** The last day it would be valid: the issuer's date, else the employer's rule. Absent: it does not end. */
+  expiresOn?: string;
+}
+/**
+ * What the reader's own registration needs to know (D108 item 7): whether anyone would decide it (`approver`: the reader
+ * reports to a manager now, D99 item 4; false, a registration cannot be sent), and the registrations waiting for a
+ * decision, oldest first.
+ */
+export interface CompetenceOwnOutput {
+  approver: boolean;
+  pending: CompetenceOwnPending[];
+  /** The reader's own registrations their manager rejected (D108 item 7), oldest first: theirs alone to see and remove. */
+  rejected: CompetenceOwnPending[];
+  /** The skills the reader holds (D120), by area and name. */
+  skills: CompetenceOwnSkill[];
+}
+/**
+ * A registration of a person's own as the manager who decides it reads it (D108 item 7): who registered it, which
+ * competence, and its dates. Only for a registration that waits, and only for a manager the person reports to now.
+ */
+export interface CompetenceApproval {
+  holdingId: string;
+  personId: string;
+  /** The person's user name, or Clew's id for a person provisioned without one. */
+  key: string;
+  name: string;
+  typeId: string;
+  competence: string;
+  area: string;
+  issuedOn: string;
+  /** The last day it would be valid: the issuer's date, else the employer's rule. Absent: it does not end. */
+  expiresOn?: string;
+  /** When the person registered it. */
+  registeredAt: string;
+}
+/** The manager's decision on a registration of a person's own (D108 item 7). */
+export const COMPETENCE_DECISIONS = ['approve', 'reject'] as const;
+export type CompetenceDecision = (typeof COMPETENCE_DECISIONS)[number];
+export const CompetenceDecisionBodySchema = object({ decision: literals(COMPETENCE_DECISIONS) });
+export type CompetenceDecisionBody = Static<typeof CompetenceDecisionBodySchema>;
 /**
  * How one read of a source ended (D108 item 9). `complete`: read to the end with nothing marked partial. `partial`: read
  * to the end, but the source marked some of it partial, so nothing was revoked. `failed`: a page could not be read; what
@@ -2028,6 +2413,468 @@ export const CompetenceMappingBodySchema = object({
   typeId: Type.Union([id, Type.Null()]),
 });
 export type CompetenceMappingBody = Static<typeof CompetenceMappingBodySchema>;
+/**
+ * What a requirement is set on (D108 item 6): a position (everyone who holds it), a unit (everyone placed on it) or one
+ * person. A person with two positions is under both sets.
+ */
+export const COMPETENCE_REQUIREMENT_TARGETS = ['position', 'unit', 'person'] as const;
+export type CompetenceRequirementTarget = (typeof COMPETENCE_REQUIREMENT_TARGETS)[number];
+/** One requirement as Administration › Kompetens › Krav lists it. */
+export interface CompetenceRequirement {
+  id: string;
+  typeId: string;
+  on: CompetenceRequirementTarget;
+  /** The position's code, the unit's id (from its `unit:` key) or the person's id. */
+  targetId: string;
+  /**
+   * Swedish. The position's label or the unit's name; a one-person requirement is never listed to an administrator.
+   * The key itself where the position or the unit is gone.
+   */
+  targetLabel: string;
+  /** On a skill (D120 item 4): the least level a confirmed holding must reach. Absent on every other kind. */
+  minLevel?: CompetenceLevel;
+  /**
+   * The position or the unit is no longer one the organisation has: the requirement counts towards nothing until one
+   * comes back under the same key, and is listed so that it can be removed.
+   */
+  gone?: true;
+}
+/** A position of the organisation (D108 item 5) as a requirement or a share target is set on it, by its code. */
+export interface CompetencePosition {
+  code: string;
+  label: string;
+}
+/** A unit of the organisation's tree as a requirement or a share target is set on it, nobody placed on it or not. */
+export interface CompetenceUnit {
+  id: string;
+  label: string;
+}
+/** The requirements set on positions and units, and the positions and units they can be set on. */
+export interface CompetenceRequirementsOutput {
+  rows: CompetenceRequirement[];
+  positions: CompetencePosition[];
+  units: CompetenceUnit[];
+}
+const positionCode = Type.String({
+  minLength: 1,
+  maxLength: 200,
+  description: 'A position by its code in the organisation, as the provisioner sends it (`position:<code>`).',
+});
+/**
+ * A requirement is added for exactly one of a position (by its code) or a unit (by its id), as an administrator with
+ * `admin.competence`, or one person, as the manager that person reports to (D118). `personId` is Clew's id of the person.
+ */
+export const CompetenceRequirementBodySchema = object({
+  typeId: id,
+  positionCode: Type.Optional(positionCode),
+  unitId: Type.Optional(id),
+  personId: Type.Optional(id),
+  minLevel: Type.Optional({
+    ...CompetenceLevelSchema,
+    description: 'On a skill only (D120 item 4): the least level a confirmed holding must reach. Absent: 1.',
+  }),
+});
+export type CompetenceRequirementBody = Static<typeof CompetenceRequirementBodySchema>;
+/**
+ * A share target (D108 item 6): of the people who hold a position, at least this share holds a type, on a unit's branch
+ * or across the whole organisation. Kept by an administrator with `admin.competence`; it names no person.
+ */
+export interface CompetenceShareTarget {
+  id: string;
+  typeId: string;
+  positionCode: string;
+  positionLabel: string;
+  /** Absent: the whole organisation. */
+  unitId?: string;
+  unitLabel?: string;
+  /** The least share, in whole percent from 1 to 100. */
+  minShare: number;
+  /** The position or the unit is gone: the target counts towards nothing and is listed so that it can be removed. */
+  gone?: true;
+  /**
+   * For a target across the whole organisation, measured over it once and naming nobody: the share of the position's
+   * holders who meet it, rounded down, and whether that reaches the least share; `tooFew` where fewer than five hold the
+   * position, so no figure is shown. Absent for a unit's target, which its unit's manager reads, and for one that counts
+   * towards nothing.
+   */
+  outcome?: { holders: number; meeting: number; share: number; met: boolean } | { tooFew: true };
+}
+export interface CompetenceShareTargetsOutput {
+  rows: CompetenceShareTarget[];
+}
+export const CompetenceShareTargetBodySchema = object({
+  typeId: id,
+  positionCode,
+  unitId: Type.Optional({
+    ...id,
+    description: 'The unit whose branch the target is for. Absent: the whole organisation.',
+  }),
+  minShare: Type.Integer({ minimum: 1, maximum: 100, description: 'The least share, in whole percent.' }),
+});
+export type CompetenceShareTargetBody = Static<typeof CompetenceShareTargetBodySchema>;
+/**
+ * The manager's matrix (D108 item 11): the people who report to the reader against the competence types required of
+ * at least one of them, at most this many columns at a time. Where more types are required, the reader chooses the
+ * types of one area or of one position, and a set larger than this is shown in parts. Thirty since a cell is one
+ * compact control (2026-11-13; ten before, when a cell was a word, a day and a menu of its own): a set the reader
+ * narrows to one area or position, or to what needs attention, fits it, and more than thirty columns is no longer a
+ * table one reads across.
+ */
+export const COMPETENCE_MATRIX_COLUMNS = 30;
+/** What a set of the matrix's columns is chosen by: an area of the catalogue, or a position the reports hold. */
+export const COMPETENCE_MATRIX_GROUPS = ['area', 'position'] as const;
+export type CompetenceMatrixGroupKind = (typeof COMPETENCE_MATRIX_GROUPS)[number];
+/**
+ * Where a person stands on one column (D108 items 4 and 6): one of the statuses, or `none` when they hold nothing of a
+ * type that is not required of them.
+ */
+export const COMPETENCE_MATRIX_STATUSES = [...COMPETENCE_STATUSES, 'none'] as const;
+export type CompetenceMatrixStatus = (typeof COMPETENCE_MATRIX_STATUSES)[number];
+const matrixBy = Type.String({
+  minLength: 1,
+  maxLength: 200,
+  description: '`area:<the area as the catalogue names it>` or `position:<the position code>`.',
+});
+const matrixPart = Type.Integer({ minimum: 1, maximum: 99 });
+/** One set of columns the reader may choose, as the selector offers it. */
+export const CompetenceMatrixGroupSchema = object({
+  by: matrixBy,
+  part: { ...matrixPart, description: 'Which part of a set larger than `COMPETENCE_MATRIX_COLUMNS`, from 1.' },
+  parts: {
+    ...matrixPart,
+    description: 'How many parts the set is shown in; 1 for a set of `COMPETENCE_MATRIX_COLUMNS` or fewer.',
+  },
+  kind: literals(COMPETENCE_MATRIX_GROUPS),
+  label: Type.String({ minLength: 1, maxLength: 512, description: "Swedish. The area, or the position's label." }),
+  types: Type.Integer({ minimum: 1, maximum: COMPETENCE_MATRIX_COLUMNS, description: 'The columns of this part.' }),
+});
+export type CompetenceMatrixGroup = Static<typeof CompetenceMatrixGroupSchema>;
+/** One column: a competence type required of at least one of the reports. */
+export const CompetenceMatrixColumnSchema = object({
+  typeId: id,
+  name: competenceName,
+  area: competenceArea,
+  kind: CompetenceKind,
+  levels: Type.Optional(
+    Type.Array(CompetenceLevelSchema, {
+      maxItems: 3,
+      description:
+        'On a skill (D120 item 4): the least levels required of the people shown, each once, the lowest first.',
+    }),
+  ),
+});
+export type CompetenceMatrixColumn = Static<typeof CompetenceMatrixColumnSchema>;
+/** What requires a type of a person: a position they hold, a unit they are placed on, or their manager's requirement. */
+export const CompetenceMatrixReasonSchema = object({
+  on: literals(COMPETENCE_REQUIREMENT_TARGETS),
+  label: Type.Optional(
+    Type.String({ minLength: 1, maxLength: 512, description: "Swedish. The position's label or the unit's name." }),
+  ),
+  requirementId: Type.Optional({
+    ...id,
+    description: 'On a requirement set on the person alone: its id, which the manager may remove.',
+  }),
+});
+export type CompetenceMatrixReason = Static<typeof CompetenceMatrixReasonSchema>;
+/** How one person stands to one column. */
+export const CompetenceMatrixCellSchema = object({
+  typeId: id,
+  status: literals(COMPETENCE_MATRIX_STATUSES),
+  expiresOn: Type.Optional({ ...calendarDay, description: 'The last day the holding that decides is valid.' }),
+  required: Type.Boolean(),
+  through: Type.Array(CompetenceMatrixReasonSchema, { maxItems: 100 }),
+  holdingId: Type.Optional({
+    ...id,
+    description:
+      'The holding that decides the status, when one does; on a skill held below what is required, or not yet confirmed, that skill (D120).',
+  }),
+  evidence: Type.Optional(literals(COMPETENCE_EVIDENCE)),
+  revocable: Type.Boolean({
+    description:
+      "Whether the reader may revoke that holding: one registered in Clew, never one copied from a source; of a skill only one a manager registered, never the person's own rating (D120).",
+  }),
+  pending: Type.Optional({
+    ...id,
+    description:
+      "The person's own registration of this type that waits for the reader's decision (D108 item 7), by its id. It counts towards nothing, so the status is what it is without it.",
+  }),
+  level: Type.Optional({
+    ...CompetenceLevelSchema,
+    description:
+      'On a skill the person holds (D120): its level. With `holdingId`, also where the status is `missing` because the level is too low or not confirmed.',
+  }),
+  validated: Type.Optional(
+    Type.Boolean({
+      description: "On a skill the person holds: whether a manager has confirmed it. False: the person's own rating.",
+    }),
+  ),
+  interest: Type.Optional(Type.Literal(true, { description: 'The person wants to develop this skill (D120 item 3).' })),
+  least: Type.Optional({
+    ...CompetenceLevelSchema,
+    description: 'On a skill required of the person: the least level asked of them (D120 item 4).',
+  }),
+});
+export type CompetenceMatrixCell = Static<typeof CompetenceMatrixCellSchema>;
+/** One person who reports to the reader, with one cell per column in the columns' order. */
+export const CompetenceMatrixRowSchema = object({
+  personId: id,
+  key: { ...userName, description: "The user name, or Clew's id for a person provisioned without one." },
+  name: Type.String({ minLength: 1, maxLength: 512 }),
+  cells: Type.Array(CompetenceMatrixCellSchema, { maxItems: COMPETENCE_MATRIX_COLUMNS }),
+});
+export type CompetenceMatrixRow = Static<typeof CompetenceMatrixRowSchema>;
+/**
+ * A registration of a report's own that waits for the reader's decision (D108 item 7), as the matrix lists it above its
+ * columns: whatever its type, since a type nobody requires has no column.
+ */
+export const CompetenceMatrixAwaitingSchema = object({
+  holdingId: id,
+  personId: id,
+  key: { ...userName, description: "The user name, or Clew's id for a person provisioned without one." },
+  name: Type.String({ minLength: 1, maxLength: 512 }),
+  typeId: id,
+  competence: competenceName,
+  issuedOn: calendarDay,
+  expiresOn: Type.Optional({
+    ...calendarDay,
+    description: "The last day it would be valid: the issuer's date, else the employer's rule.",
+  }),
+});
+export type CompetenceMatrixAwaiting = Static<typeof CompetenceMatrixAwaitingSchema>;
+export const CompetenceMatrixOutputSchema = object(
+  {
+    by: Type.Optional({
+      ...matrixBy,
+      description:
+        'The set shown; absent when every required type is shown, which it is when they fit and none is chosen.',
+    }),
+    part: Type.Optional(matrixPart),
+    groups: Type.Array(CompetenceMatrixGroupSchema, {
+      maxItems: 2000,
+      description:
+        'The sets to choose from: every area and every position of a report, each in parts where it is larger than the most shown; where every required type fits, only the sets that narrow it, so empty when none does.',
+    }),
+    columns: Type.Array(CompetenceMatrixColumnSchema, { maxItems: COMPETENCE_MATRIX_COLUMNS }),
+    rows: Type.Array(CompetenceMatrixRowSchema, { maxItems: 5000 }),
+    required: Type.Integer({ minimum: 0, description: 'How many types are required of anyone, over every set.' }),
+    awaiting: Type.Array(CompetenceMatrixAwaitingSchema, {
+      maxItems: 5000,
+      description: "Every registration of the reports' own that waits for the reader's decision, oldest first.",
+    }),
+  },
+  "The reader's reports against what is required of them (D108 item 11).",
+);
+export type CompetenceMatrixOutput = Static<typeof CompetenceMatrixOutputSchema>;
+/**
+ * What the matrix and its file are read with: the set of columns, and which part of a set larger than the most shown.
+ * `only: 'attention'` narrows the file to what needs the manager (`competenceMatrixNeeding`), as the page narrows what
+ * it shows; the matrix's read itself is never narrowed, so turning the switch asks the server nothing.
+ */
+export interface CompetenceMatrixInput {
+  by?: string;
+  part?: number;
+  only?: 'attention';
+}
+/** Where a person stands on a type that is a requirement not met now or soon: missing, expired, expiring. */
+export const COMPETENCE_UNMET_STATUSES = ['missing', 'expired', 'expiring'] as const;
+/**
+ * What needs a manager's action (the product owner, 2026-11-13), the one definition every surface counts with: a
+ * requirement not met now or soon. A type required of the person that is missing (a skill held below the level asked,
+ * or only rated by the person, is `missing`), has expired or expires within 90 days. A holding nothing requires of the
+ * person is a fact about them, never attention, whatever its status. The server counts its rows with it (the figure
+ * on Hem, the manager's card, `competence.attention`), the matrix its cells.
+ */
+export const competenceRequirementUnmet = (standing: { required: boolean; status: string }): boolean =>
+  standing.required && (COMPETENCE_UNMET_STATUSES as readonly string[]).includes(standing.status);
+/**
+ * Whether a cell of the matrix needs the manager: a requirement not met now or soon (`competenceRequirementUnmet`), or
+ * the person's own registration of the type that waits for the manager's decision (D108 item 7), which the matrix has
+ * always counted and which a registration waiting as a card counts too.
+ */
+export const competenceNeedsAttention = (
+  cell: Pick<CompetenceMatrixCell, 'required' | 'status' | 'pending'>,
+): boolean => !!cell.pending || competenceRequirementUnmet(cell);
+/**
+ * The matrix narrowed to what needs the manager (`only=attention`): the columns where a cell does, and the people with
+ * such a cell among them. The page narrows what it read with it, and the file the same, so what is downloaded is what
+ * is shown.
+ */
+export function competenceMatrixNeeding<T extends Pick<CompetenceMatrixOutput, 'columns' | 'rows'>>(data: T): T {
+  const columns = data.columns.flatMap((_, i) =>
+    data.rows.some(r => competenceNeedsAttention(r.cells[i]!)) ? [i] : [],
+  );
+  return {
+    ...data,
+    columns: columns.map(i => data.columns[i]!),
+    rows: data.rows
+      .filter(r => columns.some(i => competenceNeedsAttention(r.cells[i]!)))
+      .map(r => ({ ...r, cells: columns.map(i => r.cells[i]!) })),
+  };
+}
+/**
+ * Kompetenssökning (D121 item 4): who in the reader's organisation holds every one of up to five types, read only
+ * through the relation `registrar`. Asked for in a request body; the page names what it asks in its own address, by ids
+ * and codes only (`apps/web/src/competence-address.ts`). A page at a time, sorted and filtered on the server before the
+ * page is cut, so every page is a slice of one order.
+ */
+export const COMPETENCE_SEARCH_PAGE_SIZES = [25, 50, 100] as const;
+/** The highest page a search may ask for: past the end the last page is answered. */
+export const COMPETENCE_SEARCH_PAGE_MAX = 100_000;
+/** The most types one search asks for: a person is found when they hold every one of them. */
+export const COMPETENCE_SEARCH_TYPES_MAX = 5;
+/**
+ * Where a chosen type's holding stands, as the status filter narrows: one or more of the three. It applies to every
+ * chosen type that can end; a skill never ends and is `valid`, so a skill is narrowed by its least level instead.
+ */
+export const COMPETENCE_SEARCH_STATUSES = ['valid', 'expiring', 'expired'] as const;
+export type CompetenceSearchStatus = (typeof COMPETENCE_SEARCH_STATUSES)[number];
+/**
+ * The validity window, in days: a holding of a type that can end, still valid today and ending within this many days
+ * (the last day counted). Like the status filter it applies to every chosen type that can end, each by itself.
+ */
+export const COMPETENCE_SEARCH_WINDOWS = [30, 90, 180] as const;
+export type CompetenceSearchWindow = (typeof COMPETENCE_SEARCH_WINDOWS)[number];
+/**
+ * What the result is sorted by. With several types, `status` is the worst of the chosen types' (run out before about
+ * to run out before valid), `until` the earliest day one of them ends (one that never ends after every day) and `level`
+ * the lowest level among the chosen skills. Ties go by name in Swedish order, then by id, so pages never shuffle.
+ */
+export const COMPETENCE_SEARCH_SORTS = ['name', 'unit', 'status', 'until', 'level'] as const;
+export type CompetenceSearchSort = (typeof COMPETENCE_SEARCH_SORTS)[number];
+/** Ascending: A to Ö, run out first, the earliest day first, the lowest level first. */
+export const COMPETENCE_SEARCH_ORDERS = ['asc', 'desc'] as const;
+export type CompetenceSearchOrder = (typeof COMPETENCE_SEARCH_ORDERS)[number];
+/** An id as a body names a type or a unit: 1 to 80 characters, none of them a control character. */
+const searchId = Type.String({ minLength: 1, maxLength: 80, pattern: '^[^\\u0000-\\u001F\\u007F]+$' });
+const searchUnit = {
+  ...searchId,
+  description: "A unit of the organisation's tree, by its id; the people placed on it or on any unit below it.",
+};
+const searchTypes = Type.Array(searchId, {
+  minItems: 1,
+  maxItems: COMPETENCE_SEARCH_TYPES_MAX,
+  uniqueItems: true,
+  description: 'The types asked for, in the order chosen: a person is found when they hold every one.',
+});
+const searchNarrowing = {
+  typeIds: searchTypes,
+  minLevel: Type.Optional({
+    ...CompetenceLevelSchema,
+    description:
+      'On the chosen skills: the least level held, confirmed or the person\'s own rating ("Egen bedömning"). Refused when no chosen type is a skill.',
+  }),
+  unitId: Type.Optional(searchUnit),
+  status: Type.Optional(
+    Type.Array(literals(COMPETENCE_SEARCH_STATUSES), {
+      minItems: 1,
+      maxItems: COMPETENCE_SEARCH_STATUSES.length,
+      uniqueItems: true,
+      description:
+        'Where each chosen type that can end stands today, one of these. Refused when every chosen type is a skill.',
+    }),
+  ),
+  until: Type.Optional(
+    literals(COMPETENCE_SEARCH_WINDOWS, {
+      description:
+        'Each chosen type that can end is still valid and ends within this many days. Refused when every chosen type is a skill.',
+    }),
+  ),
+  sort: Type.Optional(literals(COMPETENCE_SEARCH_SORTS)),
+  order: Type.Optional(literals(COMPETENCE_SEARCH_ORDERS)),
+};
+/** What the file of a search is asked with: what the page shows, every page of it, in the page's order. */
+export const CompetenceSearchFileBodySchema = object(searchNarrowing);
+export type CompetenceSearchFileBody = Static<typeof CompetenceSearchFileBodySchema>;
+export const CompetenceSearchBodySchema = object({
+  ...searchNarrowing,
+  page: Type.Optional(Type.Integer({ minimum: 1, maximum: COMPETENCE_SEARCH_PAGE_MAX })),
+  pageSize: Type.Optional(literals(COMPETENCE_SEARCH_PAGE_SIZES)),
+});
+export type CompetenceSearchBody = Static<typeof CompetenceSearchBodySchema>;
+/** One chosen type as a found person holds it: the holding that decides (D108 item 9). */
+export interface CompetenceSearchHeld {
+  typeId: string;
+  /** Where the holding stands today; a skill never ends, so it is `valid`. */
+  status: Exclude<CompetenceStatus, 'missing'>;
+  /** The last day it is valid; absent when it does not end. */
+  expiresOn?: string;
+  /** On a skill (D120): the level held, and whether a manager has confirmed it (false: "Egen bedömning"). */
+  level?: CompetenceLevel;
+  validated?: boolean;
+}
+/** One person who holds every type searched for. */
+export interface CompetenceSearchRow {
+  personId: string;
+  /** The user name the person's page is opened by; null for a person provisioned without one, who has no page. */
+  key: string | null;
+  name: string;
+  /** The units the person is placed on, by name in Swedish order; empty when none. */
+  units: string[];
+  /** Each chosen type as the person holds it, in the order the types were asked for. */
+  held: CompetenceSearchHeld[];
+}
+export interface CompetenceSearchPage {
+  /** The types asked for, in the order asked, as the catalogue names them: what the page labels its field and columns with. */
+  types: Array<{ id: string; name: string; area: string; kind: CompetenceKind }>;
+  rows: CompetenceSearchRow[];
+  /** How many people the search found, every filter applied, across every page. */
+  total: number;
+  /**
+   * How many hold every type as the unit and the least level narrow them, before the status and the validity window
+   * do: what "2 av 9" counts from, and how the page tells which filter left nobody.
+   */
+  unfiltered: number;
+  /** The page read, 1-based: the one asked for, or the last one when there are fewer. */
+  page: number;
+  pageSize: number;
+}
+/**
+ * What the search page narrows by, and whether the reader may search at all: the organisation's units (D99), by name in
+ * Swedish order, `parentLabel` telling two of one name apart. Refused to anyone without the relation.
+ */
+export interface CompetenceSearchOptions {
+  units: Array<{ id: string; label: string; parentLabel: string | null }>;
+}
+/** The most types the type field is offered at a time (D121 item 4): a catalogue may hold thousands. */
+export const COMPETENCE_TYPE_SEARCH_MAX = 20;
+/**
+ * What the type field asks the catalogue with, in a body: the words typed, matched against a type's name and area; or
+ * the ids an address names (`ids`), so the field can name the types a search was opened with before its answer, and
+ * say which of them the catalogue does not hold. The catalogue names nobody, so neither is logged.
+ */
+export const CompetenceTypeSearchBodySchema = Type.Union([
+  object({ text: Type.String({ maxLength: 120 }) }),
+  object({ ids: Type.Array(searchId, { minItems: 1, maxItems: COMPETENCE_SEARCH_TYPES_MAX, uniqueItems: true }) }),
+]);
+export type CompetenceTypeSearchBody = Static<typeof CompetenceTypeSearchBodySchema>;
+export interface CompetenceTypeSearchOutput {
+  /**
+   * With `text`, the types that are not archived whose name or area hold every word, by name in Swedish order; with
+   * `ids`, the reader's organisation's types of those ids, archived ones too, in the order asked, an unknown id left out.
+   */
+  rows: CompetenceType[];
+  /** More types match than are listed: the field asks for more words. */
+  more: boolean;
+}
+/**
+ * One read of competence about other people (D108 item 15, D121 item 5): a search across the organisation, one person's
+ * holdings opened, or an export (a search's file, or a manager's matrix as a file). The read log holds who read, as which
+ * relation, which type or whom, when and how many rows; never a name and never content.
+ */
+export const COMPETENCE_READ_KINDS = ['search', 'person', 'export'] as const;
+export type CompetenceReadKind = (typeof COMPETENCE_READ_KINDS)[number];
+/**
+ * The relations a read of competence is logged under: a manager's report, or `registrar` (D121). A person's own read
+ * discloses nothing and is not logged (the decision of 2026-11-13).
+ */
+export const COMPETENCE_READ_RELATIONS = ['managed', 'registrar'] as const satisfies readonly PersonRelation[];
+export type CompetenceReadRelation = (typeof COMPETENCE_READ_RELATIONS)[number];
+/**
+ * Who made a logged read (D122 item 6): the person, or the assistant reading for them in a conversation. The assistant
+ * reads only as `managed` and only one person's holdings: never as `registrar`, never a search or a file (D122 item 5).
+ */
+export const COMPETENCE_READ_CALLERS = ['person', 'assistant'] as const;
+export type CompetenceReadCaller = (typeof COMPETENCE_READ_CALLERS)[number];
 /** A Clew-side action the conversation proposes; executed only after the person confirms, through the thread endpoints. */
 export const ClewActionSchema = object({
   n: Type.Integer(),
@@ -2094,8 +2941,36 @@ export const MessageMetaSchema = object({
   refs: Type.Optional(Type.Array(Type.String())),
   shape: Type.Optional(AnswerShape),
   view: Type.Optional(ViewRefSchema),
+  /**
+   * What the answer's card draws of its view's rows, decided when the answer was written and kept so the card is the
+   * same whenever it is read again: `all` the read as the input asked it, `named` only the rows the answer names (their
+   * marks, `rowMark`), `none` no rows, since the answer is about rows it does not name and an unrelated card is worse
+   * than none. `count` is how many rows the read answered then, which a folded card says without reading. Marks, never
+   * rows. Absent on a view that is not a table or a list: its card is the read as it is.
+   */
+  viewRows: Type.Optional(
+    object({
+      count: Type.Integer({ minimum: 0 }),
+      show: Type.Union([Type.Literal('all'), Type.Literal('named'), Type.Literal('none')]),
+      marks: Type.Optional(Type.Array(Type.String({ pattern: ROW_MARK }), { maxItems: 50 })),
+    }),
+  ),
   draft: Type.Optional(DraftSchema),
   toolCalls: Type.Optional(Type.Array(object({ capability: Type.String(), input: Type.Unknown() }))),
+  /**
+   * Every read the turn made through the registry (D122 item 8): which capability, how many rows it answered, or that
+   * it failed; never what it answered. The next turn's model is told what was read and when, not what it held.
+   */
+  reads: Type.Optional(
+    Type.Array(
+      object({
+        capability: Type.String({ maxLength: 120 }),
+        rows: Type.Optional(Type.Integer({ minimum: 0 })),
+        failed: Type.Optional(Type.Literal(true)),
+      }),
+      { maxItems: 20 },
+    ),
+  ),
   assistant: Type.Optional(AssistantMode),
   source: Type.Optional(Type.String()),
   /** The sources a document answer cites (D26), numbered as `[n]` in the body; refs only. */
@@ -2647,6 +3522,15 @@ export type Role = Static<typeof RoleSchema>;
 export { CAPABILITIES, isCapability, type Capability } from './scim-group-key';
 import { CAPABILITIES, type Capability } from './scim-group-key';
 export const CapabilitySchema = literals(CAPABILITIES);
+/**
+ * D108 item 5: a position as a source sends it, a code and a label and nothing else. It arrives as membership of a SCIM
+ * group whose `externalId` is `position:<code>`, the group's name being the label, and it is tied to the person, not to
+ * a placement on a unit. The code is whatever the installation's source has: Clew builds in no classification.
+ */
+export interface Position {
+  code: string;
+  label: string;
+}
 /** Administration › Användare (D62, D68, D85): a provisioned person as the page lists them. No token, no subject. */
 export interface UserAdminRow {
   id: string;
@@ -2656,6 +3540,8 @@ export interface UserAdminRow {
   email: string | null;
   /** D110, D114: what the person is called at work: the titles of their employments, or the core title; null without one. */
   title: string | null;
+  /** D108 item 5: the positions the person's `position:` memberships give, by code; empty when the source sends none. */
+  positions: Position[];
   enabled: boolean;
   /** An identity binding exists, so the person has signed in (or was bound by the development seed). */
   bound: boolean;
@@ -2663,6 +3549,8 @@ export interface UserAdminRow {
   /** The assignment the person acts as, from the grant projection; null when the person has no unit. */
   active: { unitId: string; unitLabel: string; role: Role } | null;
   capabilities: string[];
+  /** D121: the relations to people the person holds by grant, from the grant projection; empty when none. */
+  relationGrants: RelationGrant[];
 }
 /** Personal (D94): a person on a unit the signed-in manager manages, as the page lists them. No token, no subject. */
 export interface StaffPerson {
@@ -2741,9 +3629,21 @@ export interface GroupCapability {
   groupLabel: string | null;
   capability: Capability;
 }
+/**
+ * D121: one group gives its members one relation to people by grant (`RELATION_GRANTS`), as a group gives a capability
+ * (D85) and kept apart from it (D118). `groupLabel` as in `GroupCapability`.
+ */
+export interface GroupRelation {
+  groupExternalId: string;
+  groupLabel: string | null;
+  relation: RelationGrant;
+}
 export interface UsersAdminOverview {
   /** Each row is named by its own group, whichever groups `groups` holds. */
   groupCapabilities: GroupCapability[];
+  /** D121: the groups that give a relation to people by grant, `registrar` ("Kompetenssökning"). */
+  groupRelations: GroupRelation[];
+  /** The provisioned groups with an external id, as the editor offers them. */
   /**
    * The organisation's groups with an external id, by name in Swedish order, at most the first 10 000: what the group
    * picker offers before anything is typed and finds at once. It asks the server for the others
@@ -2751,6 +3651,8 @@ export interface UsersAdminOverview {
    */
   groups: Array<{ id: string; label: string }>;
   capabilities: Capability[];
+  /** D121: the relations a group may give, as the editor offers them beside the capabilities. */
+  relationGrants: RelationGrant[];
   /**
    * The organisation's units as the people list offers them to narrow by (D100): the nodes of the tree (D99), by label
    * in Swedish order. `parentLabel` tells two units with one name apart; null on a root.
@@ -2876,6 +3778,12 @@ export const GroupCapabilityInput = Type.Object(
   { additionalProperties: false },
 );
 export type GroupCapabilityInputType = Static<typeof GroupCapabilityInput>;
+/** D121: a group gives, or stops giving, a relation to people by grant. */
+export const GroupRelationInput = Type.Object(
+  { groupExternalId: Type.String({ minLength: 1, maxLength: 512 }), relation: RelationGrantSchema },
+  { additionalProperties: false },
+);
+export type GroupRelationInputType = Static<typeof GroupRelationInput>;
 /** How many groups one search of the group picker on Administration › Användare answers with. */
 export const GROUP_SEARCH_LIMIT = 10;
 /**
@@ -3137,12 +4045,18 @@ export const ProviderPatchInput = Type.Partial(object({ title: adminTitle, baseU
 export type ProviderPatchInput = Static<typeof ProviderPatchInput>;
 export const ProviderKeyInput = object({ apiKey: providerKey });
 export type ProviderKeyInput = Static<typeof ProviderKeyInput>;
+/**
+ * A model added under a provider. `mayProcessPersonalData` is the administrator's statement, required and only ever
+ * `true`, that the organisation may process its data with the model, personal data included (D122 item 1): a model
+ * receives whatever the person who asks may read. The audit row of the addition records it.
+ */
 export const AddModelInput = object({
   providerId: adminSlug,
   model: wireModel,
   title: Type.Optional(adminTitle),
   description: Type.Optional(adminDescription),
   tools: Type.Optional(Type.Boolean()),
+  mayProcessPersonalData: Type.Literal(true),
 });
 export type AddModelInput = Static<typeof AddModelInput>;
 export const ModelPatchInput = Type.Partial(
@@ -3385,16 +4299,6 @@ export const ObjectSchema = object({
   visible: Type.Boolean(),
 });
 export type ClewObject = Static<typeof ObjectSchema>;
-/** What the row offers when it gets focus: questions with their source, things to do, earlier conversations. */
-export const CompletionsSchema = object({
-  completions: Type.Array(Type.String()),
-  ask: Type.Array(object({ text: Type.String(), capability: Type.String(), source: Type.String() })),
-  do: Type.Array(
-    object({ text: Type.String(), capability: Type.String(), source: Type.String(), kind: Type.String() }),
-  ),
-  recent: Type.Array(object({ conversationId: id, title: Type.String(), at: instant })),
-});
-export type Completions = Static<typeof CompletionsSchema>;
 /** One model a person may pick in the composer (D24): its name, what it is good for, and whether it is the installation's default. */
 export const ModelChoiceSchema = object({
   id: Type.String(),
@@ -3596,6 +4500,44 @@ export {
   type HoldingsOutput,
   type HoldingsRow,
 } from './holdings';
+
+// The file of competence types an administrator imports (D120 item 7), in a file of its own. Named one by one, as below.
+export {
+  COMPETENCE_CATALOGUE_MAX,
+  COMPETENCE_IMPORT_AREA_MAX,
+  COMPETENCE_IMPORT_COLUMNS,
+  COMPETENCE_IMPORT_FORMATS,
+  COMPETENCE_IMPORT_KIND_WORDS,
+  COMPETENCE_IMPORT_KINDS,
+  COMPETENCE_IMPORT_MAX_CHARS,
+  COMPETENCE_IMPORT_NAME_MAX,
+  COMPETENCE_IMPORT_PROBLEMS_MAX,
+  COMPETENCE_IMPORT_REQUEST_MAX,
+  COMPETENCE_IMPORT_ROWS_MAX,
+  COMPETENCE_IMPORT_VALIDITY_MAX,
+  COMPETENCE_URI_MAX,
+  ESCO_RELEASED,
+  ESCO_SKILL_COLUMNS,
+  catalogueMatcher,
+  competenceImportRowProblem,
+  importKind,
+  importText,
+  nameKey,
+  parseCompetenceImport,
+  type CompetenceImportCandidate,
+  type CompetenceImportFormat,
+  type CompetenceImportKind,
+  type CompetenceImportProblem,
+  type CompetenceImportResult,
+  type CompetenceImportRow,
+} from './competence-import';
+/** The import file keeps its own copy of the kinds (it imports nothing of ours); the compiler holds it to this list. */
+type SameKinds = [CompetenceImportKind] extends [CompetenceKind]
+  ? [CompetenceKind] extends [CompetenceImportKind]
+    ? true
+    : false
+  : false;
+export const IMPORT_KINDS_MATCH: SameKinds = true;
 
 // Named one by one: the server runs under Node through tsx, where a star re-export's names are not visible to an importer.
 export {

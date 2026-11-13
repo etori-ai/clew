@@ -342,6 +342,9 @@ describe('Användare', () => {
     ]);
     expect(o.groupCapabilities).toEqual([]);
     expect(o.capabilities).toEqual(['admin.connectors', 'admin.users', 'admin.appearance', 'admin.competence']);
+    // D121: the relation a group may give is offered beside the capabilities, and is none of them.
+    expect(o.groupRelations).toEqual([]);
+    expect(o.relationGrants).toEqual(['registrar']);
   });
   test('only admin.users may look or change', async () => {
     const { usecases, other } = stack();
@@ -381,6 +384,69 @@ describe('Användare', () => {
       'grant.derived',
       'group-capability.removed',
       'grant.derived',
+    ]);
+  });
+  test('mapping a group to Kompetenssökning gives its members the relation, never a capability, audited; unmapping takes it back (D121)', async () => {
+    const { usecases, admin, store, other } = stack();
+    const row = { groupExternalId: 'S-1-5-21-it-staff', relation: 'registrar' as const };
+    // Only admin.users maps it, as a capability is mapped (D85).
+    await expect(usecases.addGroupRelation(other, row)).rejects.toThrow('behörighet');
+    const mapped = await usecases.addGroupRelation(admin, row);
+    expect(mapped.groupRelations).toEqual([
+      { groupExternalId: 'S-1-5-21-it-staff', groupLabel: 'IT-personal', relation: 'registrar' },
+    ]);
+    expect(mapped.groupCapabilities).toEqual([]);
+    expect(store.state.grants.get('mikael')).toMatchObject({ capabilities: [], relations: ['registrar'] });
+    const [listed] = (await usecases.people(admin, { text: 'mikael' })).rows;
+    expect(listed).toMatchObject({ capabilities: [], relationGrants: ['registrar'] });
+    expect((await usecases.people(admin, { text: 'hillevi' })).rows[0]?.relationGrants).toEqual([]);
+    expect(store.state.audit.map(a => a.action)).toEqual(['group-relation.added', 'grant.derived']);
+    expect(store.state.audit[0]).toEqual({
+      actor: 'person:mikael',
+      action: 'group-relation.added',
+      subject: 'group:S-1-5-21-it-staff',
+      details: { relation: 'registrar', groupLabel: 'IT-personal' },
+    });
+    expect(store.state.audit[1]).toMatchObject({
+      subject: 'person:mikael',
+      details: { capabilities: [], relations: ['registrar'] },
+    });
+    // Nothing happens twice; and the capability list is not where it went.
+    await usecases.addGroupRelation(admin, row);
+    expect(store.state.audit).toHaveLength(2);
+    expect(store.state.groupCapabilities).toEqual([]);
+    const unmapped = await usecases.removeGroupRelation(admin, row);
+    expect(unmapped.groupRelations).toEqual([]);
+    expect(store.state.grants.get('mikael')?.relations).toBeUndefined();
+    expect(store.state.audit.map(a => a.action)).toEqual([
+      'group-relation.added',
+      'grant.derived',
+      'group-relation.removed',
+      'grant.derived',
+    ]);
+    expect(store.state.audit[3]).toMatchObject({ details: { relations: [] } });
+    // A name outside the closed list, and another organisation's group, are refused as for a capability.
+    await expect(usecases.addGroupRelation(admin, { ...row, relation: 'admin.users' as never })).rejects.toThrow(
+      'Okänd behörighet',
+    );
+    await expect(usecases.addGroupRelation({ ...admin, organisationId: 'timra' }, row)).rejects.toThrow(
+      'Gruppen finns inte',
+    );
+    await expect(usecases.addGroupRelation(admin, { ...row, groupExternalId: 'S-1-5-21-gone' })).rejects.toThrow(
+      'Gruppen finns inte',
+    );
+  });
+  test('the seed maps a group of an organisation as the page does, once, and nothing for a group not pushed (D121)', async () => {
+    const { usecases, store } = stack();
+    const row = { groupExternalId: 'S-1-5-21-it-staff', relation: 'registrar' as const };
+    expect(await usecases.seedGroupRelation('operator:cli', 'poc', row)).toBe(true);
+    expect(await usecases.seedGroupRelation('operator:cli', 'poc', row)).toBe(false);
+    expect(await usecases.seedGroupRelation('operator:cli', 'timra', row)).toBe(false);
+    expect(await usecases.seedGroupRelation('operator:cli', 'poc', { ...row, groupExternalId: 'none' })).toBe(false);
+    expect(store.state.grants.get('mikael')?.relations).toEqual(['registrar']);
+    expect(store.state.audit.map(a => [a.actor, a.action])).toEqual([
+      ['operator:cli', 'group-relation.added'],
+      ['operator:cli', 'grant.derived'],
     ]);
   });
   test("another organisation's group is not there to map or unmap, and its rows are not shown (D101)", async () => {

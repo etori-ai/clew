@@ -9,7 +9,6 @@ import {
   systems,
   attention,
   checkReport,
-  completions,
   connectorDetail,
   connectorPreview,
   connectors,
@@ -63,8 +62,28 @@ import {
 import type {
   AppearanceAdminView,
   Capability,
+  CompetenceApproval,
+  CompetenceDecisionBody,
   CompetenceHoldingBody,
+  CompetenceImportBody,
+  CompetenceMergeBody,
+  CompetenceMergePreview,
+  CompetenceOwnOutput,
+  CompetenceSkillBody,
+  CompetenceSkillChangeBody,
+  CompetenceSkillRatingBody,
+  CompetenceSkillValidation,
+  CompetenceValidationBody,
   CompetenceMappingBody,
+  CompetenceMatrixCell,
+  CompetenceMatrixOutput,
+  CompetenceRequirementBody,
+  CompetenceRequirementsOutput,
+  CompetenceSearchBody,
+  CompetenceSearchFileBody,
+  CompetenceSearchRow,
+  CompetenceShareTarget,
+  CompetenceShareTargetBody,
   CompetenceSource,
   CompetenceType,
   CompetenceTypeBody,
@@ -81,13 +100,21 @@ import type {
   ProviderSummary,
   TalkHeldBody,
   TalkRound,
+  RelationGrant,
   UsersAdminQueryType,
 } from '@clew/contracts';
 import { THEME_BASE_COLORS, parseThemeFile, themeFileOf } from '../../packages/contracts/src/theme-file';
 import { personSearch, phonebook } from './phonebook';
 import { rooms, roomsSpec } from './rooms';
 import { fixtureViews } from './view-catalogue';
-import { holdingsOutput, holdingsSpec } from './competence';
+import {
+  attentionOutput,
+  attentionSpec,
+  competenceMatrix,
+  holdingsOutput,
+  holdingsSpec,
+  matrixAnswer,
+} from './competence';
 import { errandsOutput, errandsSpec, smErrandOutput, smErrandSpec } from './errands';
 import { manifestReference } from '../../packages/connectors/src/reference';
 import { previewManifest } from '../../packages/connectors/src/preview';
@@ -191,6 +218,20 @@ export class MockApi {
    * draws under Administration. Every one by default; a test narrows it.
    */
   capabilities: Capability[] = ['admin.connectors', 'admin.users', 'admin.appearance', 'admin.competence'];
+  /** D121: the relations to people the session says the person holds by grant: `registrar` opens Kompetenssökning. */
+  relations: RelationGrant[] = [];
+  /**
+   * Kompetenssökning (D121): the people who hold each type, by type id, as the server would find them; every body the
+   * page asked a search with, every file asked for, and whether the search fails (a 503).
+   */
+  competenceSearch: Record<string, CompetenceSearchRow[]> = {};
+  searchBodies: CompetenceSearchBody[] = [];
+  /** How often the search page's options were read: an ordinary read, which a shown tab reads again once it has aged. */
+  searchOptionsReads = 0;
+  searchFiles: CompetenceSearchFileBody[] = [];
+  searchFails = false;
+  /** The type ids the search page asked the catalogue to name (an address opened from a link or a reload; no log). */
+  typesNamed: string[] = [];
   /**
    * The person's calendar (D116, amended 2026-11-12): `ok` answers; `silent` does not (the calendar's own 400, as when its
    * server fails); `unbound` is an account with no calendar bound to it; `hidden` is a calendar the registry does not
@@ -286,6 +327,28 @@ export class MockApi {
   validityImpact: CompetenceValidityImpact = { holdings: 3, expiredBefore: 0, expiredAfter: 2 };
   /** The next write to the catalogue answers 400 with this sentence; it resets itself after that one. */
   catalogueFail: string | null = null;
+  /** The catalogue cannot be read (a 503), while the rest of the module answers. */
+  catalogueReadFails = false;
+  /**
+   * The catalogue at scale (D120 item 7, D108 item 2): every part of an import as it was sent, and what a merge would
+   * move as the server counts it. An import adds the rows the catalogue does not hold, by address or name, as the server
+   * does; a part answers 400 with `importFail` once `importFailAfter` parts were saved, and it resets itself after that.
+   */
+  importWrites: CompetenceImportBody[] = [];
+  importFail: string | null = null;
+  importFailAfter = 0;
+  mergePreview: CompetenceMergePreview = {
+    holdings: 12,
+    people: 9,
+    requirements: 2,
+    requirementsFolded: 1,
+    shareTargets: 0,
+    shareTargetsFolded: 0,
+    mappings: 1,
+    skillsSetAside: 0,
+    ruled: 0,
+    waiting: false,
+  };
   /** What the registrations sent, in order. */
   registered: Array<{ personId: string; body: CompetenceHoldingBody }> = [];
   /** The next registration answers 400 with this sentence; it resets itself after that one. */
@@ -296,6 +359,52 @@ export class MockApi {
   sourceWrites: Array<{ method: string; path: string; body?: unknown }> = [];
   /** The next write to a source answers 400 with this sentence; it resets itself after that one. */
   sourceFail: string | null = null;
+  /**
+   * Kompetens › Krav (D108 item 6): the requirements on positions and units with the positions and units to choose
+   * from, and the share targets, while the module is on.
+   */
+  competenceRequirements: CompetenceRequirementsOutput = { rows: [], positions: [], units: [] };
+  competenceShareTargets: CompetenceShareTarget[] = [];
+  /** Every write to the requirements and the share targets, in order: the method, the path and the body. */
+  requirementWrites: Array<{ method: string; path: string; body?: unknown }> = [];
+  /** The next write to a requirement or a share target answers 400 with this sentence; it resets itself after that one. */
+  requirementFail: string | null = null;
+  /** The person's own holdings as `competence.holdings` answers them while the module is on. */
+  competenceHoldings: unknown = holdingsOutput;
+  /**
+   * Kompetens › Medarbetare (D108 item 11): the manager's matrix as the server answers it, changed by the writes from it
+   * as the server would change it; with `competenceMatrixSets` more is required than ten columns hold, so it is offered
+   * in sets (`matrixAnswer`).
+   */
+  competenceMatrix: CompetenceMatrixOutput = competenceMatrix();
+  competenceMatrixSets = false;
+  /** How long the matrix's read takes to answer, in milliseconds: a hard load waits for it as the server's would. */
+  matrixDelay = 0;
+  /** Every read of the matrix and every download of its file, as the query, in order. */
+  matrixReads: string[] = [];
+  matrixDownloads: string[] = [];
+  /** Every revocation of a holding, in order. */
+  holdingWrites: Array<{ method: string; path: string }> = [];
+  /**
+   * The reader's own registration (D108 item 7): whether anyone would decide it, and the ones that wait, as the writes
+   * from the page change them. Every write to them in order; the next registration answers 400 with `ownFail`.
+   */
+  competenceOwn: CompetenceOwnOutput = { approver: true, pending: [], rejected: [], skills: [] };
+  ownWrites: Array<{ method: string; path: string; body?: unknown }> = [];
+  ownFail: string | null = null;
+  /**
+   * The registrations of the reports' own that wait for the reader's decision, by holding id; an id not here is refused
+   * as the server refuses one the reader may not decide. Every decision in order; a decided one leaves this map.
+   */
+  competenceApprovals: Record<string, CompetenceApproval> = {};
+  approvalWrites: Array<{ path: string; body: CompetenceDecisionBody }> = [];
+  /**
+   * Skills (D120): the reports' skills the reader may confirm, by holding id (an id not here is refused as the server
+   * refuses one the reader may not confirm), and every write to a skill in order: the reader's own ratings and removals,
+   * a manager's registration and confirmation.
+   */
+  competenceSkills: Record<string, CompetenceSkillValidation> = {};
+  skillWrites: Array<{ method: string; path: string; body?: unknown }> = [];
   /** Utvecklingssamtal (D96). False: the person has no talks system, so both reads are refused as the registry refuses them. */
   talksOffered = true;
   /** False: another system answers the profile; the reads are read-only (no `id`, a `link` on every row) and the writes refused. */
@@ -358,6 +467,57 @@ export class MockApi {
     });
     return release;
   }
+  /** Every cell of the matrix through `change`; a column required of nobody and held by nobody goes, as the server's would. */
+  private changeMatrix(change: (cell: CompetenceMatrixCell, personId: string) => CompetenceMatrixCell) {
+    const m = this.competenceMatrix;
+    const rows = m.rows.map(r => ({ ...r, cells: r.cells.map(c => change(c, r.personId)) }));
+    const keep = m.columns.map((_, i) => rows.some(r => r.cells[i]!.required));
+    this.competenceMatrix = {
+      ...m,
+      columns: m.columns.filter((_, i) => keep[i]),
+      rows: rows.map(r => ({ ...r, cells: r.cells.filter((_, i) => keep[i]) })),
+      required: keep.filter(Boolean).length,
+    };
+  }
+  /** A manager's requirement on one person: their cell is required by it, a column added for a type not shown yet. */
+  private requirePerson(personId: string, typeId: string, requirementId: string) {
+    const m = this.competenceMatrix;
+    if (!m.columns.some(c => c.typeId === typeId)) {
+      const type = this.competenceTypes?.find(t => t.id === typeId);
+      if (!type) return;
+      this.competenceMatrix = {
+        ...m,
+        columns: [...m.columns, { typeId, name: type.name, area: type.area, kind: type.kind }],
+        rows: m.rows.map(r => ({
+          ...r,
+          cells: [...r.cells, { typeId, status: 'none', required: false, through: [], revocable: false }],
+        })),
+      };
+    }
+    this.changeMatrix((c, p) =>
+      p === personId && c.typeId === typeId
+        ? {
+            ...c,
+            required: true,
+            status: c.status === 'none' ? 'missing' : c.status,
+            through: [...c.through, { on: 'person', requirementId }],
+          }
+        : c,
+    );
+  }
+  /** The requirement on one person removed: their cell is no longer required by it. */
+  private unrequire(requirementId: string) {
+    this.changeMatrix(c => {
+      if (!c.through.some(r => r.requirementId === requirementId)) return c;
+      const through = c.through.filter(r => r.requirementId !== requirementId);
+      return {
+        ...c,
+        through,
+        required: through.length > 0,
+        status: !through.length && c.status === 'missing' ? 'none' : c.status,
+      };
+    });
+  }
   /** Keeps the audience editor's reads of the units and the groups pending until the returned function is called. */
   holdAudienceLists() {
     let release = () => {};
@@ -399,6 +559,8 @@ export class MockApi {
             ...(this.employee ? { user: { ...user, role: 'employee' } } : {}),
             admin: this.admin && this.capabilities.length > 0,
             capabilities: this.admin ? this.capabilities : [],
+            // D121: a relation to people by grant is never an admin flag; it only draws Kompetenssökning.
+            relations: this.relations,
           })
         : route.fulfill({ status: 401, json: { error: 'Ingen session' } });
     }
@@ -626,6 +788,24 @@ export class MockApi {
           });
         return json(this.users);
       }
+      // D121: a group gives Kompetenssökning, mapped beside the capabilities by calls of its own.
+      if (path === '/admin/users/group-relations' && method === 'POST') {
+        const input = request.postDataJSON() as { groupExternalId: string; relation: RelationGrant };
+        if (!this.users.groupRelations.some(m => m.groupExternalId === input.groupExternalId))
+          this.users.groupRelations.push({
+            groupExternalId: input.groupExternalId,
+            groupLabel: this.users.groups.find(g => g.id === input.groupExternalId)?.label ?? null,
+            relation: input.relation,
+          });
+        return json(this.users);
+      }
+      if (path === '/admin/users/group-relations/remove' && method === 'POST') {
+        const input = request.postDataJSON() as { groupExternalId: string; relation: string };
+        this.users.groupRelations = this.users.groupRelations.filter(
+          m => !(m.groupExternalId === input.groupExternalId && m.relation === input.relation),
+        );
+        return json(this.users);
+      }
       if (path === '/admin/users/group-capabilities/remove' && method === 'POST') {
         const input = request.postDataJSON() as { groupExternalId: string; capability: string };
         this.users.groupCapabilities = this.users.groupCapabilities.filter(
@@ -762,7 +942,6 @@ export class MockApi {
       });
     }
     if (path === '/attention') return json(attention);
-    if (path === '/completions') return json(completions);
     if (path === '/assistant/status') return json(assistantStatus(this.modelChoices, this.currentModel));
     if (path === '/assistant/model' && request.method() === 'PATCH') {
       this.currentModel = (request.postDataJSON() as { modelId: string }).modelId;
@@ -859,14 +1038,53 @@ export class MockApi {
         status: 403,
         json: { error: 'Kompetens är inte påslaget i den här installationen.', code: 'denied' },
       });
-    if (path === '/competence/types' && route.request().method() === 'GET') return json({ rows: this.competenceTypes });
-    const typePath = /^\/competence\/types(?:\/([^/]+))?(\/archive|\/validity)?$/.exec(path);
+    if (path === '/competence/types' && route.request().method() === 'GET')
+      return this.catalogueReadFails
+        ? route.fulfill({ status: 503, json: { error: 'Något gick fel. Försök igen.' } })
+        : json({ rows: this.competenceTypes });
+    // An import's part (D120 item 7): what the catalogue holds already, by address or name, is skipped.
+    if (path === '/competence/types/import' && this.competenceTypes && route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as CompetenceImportBody;
+      if (this.importFail && this.importWrites.length >= this.importFailAfter) {
+        const error = this.importFail;
+        this.importFail = null;
+        return route.fulfill({ status: 400, json: { error } });
+      }
+      this.importWrites.push(body);
+      const types = this.competenceTypes;
+      let added = 0,
+        skipped = 0;
+      for (const row of body.rows) {
+        const held = types.some(
+          t =>
+            (row.uri !== null && t.uri === row.uri) ||
+            ((!t.archived || !!t.mergedInto) && t.name.toLowerCase() === row.name.toLowerCase()),
+        );
+        if (held) {
+          skipped++;
+          continue;
+        }
+        added++;
+        types.push({
+          id: `t-imp-${types.length + 1}`,
+          name: row.name,
+          area: row.area,
+          kind: row.kind,
+          ...(row.validityMonths ? { validityMonths: row.validityMonths } : {}),
+          archived: false,
+          ...(row.uri ? { uri: row.uri } : {}),
+        });
+      }
+      return json({ added, skipped });
+    }
+    const typePath = /^\/competence\/types(?:\/([^/]+))?(\/archive|\/validity|\/merge|\/restore)?$/.exec(path);
     if (typePath && this.competenceTypes && path !== '/competence/types') {
       const id = decodeURIComponent(typePath[1]!),
         method = route.request().method();
       if (typePath[2] === '/validity') return json(this.validityImpact);
       const found = this.competenceTypes.find(t => t.id === id);
       if (!found) return route.fulfill({ status: 400, json: { error: 'Kompetensen finns inte i katalogen.' } });
+      if (typePath[2] === '/merge' && method === 'GET') return json(this.mergePreview);
       if (this.catalogueFail) {
         const error = this.catalogueFail;
         this.catalogueFail = null;
@@ -876,6 +1094,17 @@ export class MockApi {
         found.archived = true;
         this.catalogueWrites.push({ method, path });
         return route.fulfill({ status: 204, body: '' });
+      }
+      if (typePath[2] === '/restore' && method === 'POST') {
+        found.archived = false;
+        this.catalogueWrites.push({ method, path });
+        return route.fulfill({ status: 204, body: '' });
+      }
+      if (typePath[2] === '/merge' && method === 'POST') {
+        const body = route.request().postDataJSON() as CompetenceMergeBody;
+        Object.assign(found, { archived: true, mergedInto: body.into });
+        this.catalogueWrites.push({ method, path, body });
+        return json(this.mergePreview);
       }
       if (method === 'PATCH') {
         const body = route.request().postDataJSON() as CompetenceTypePatch;
@@ -935,6 +1164,386 @@ export class MockApi {
         return json({ holdings: type?.holdings ?? 0 });
       }
     }
+    // Kompetenssökning (D121): refused to anyone without the relation, as the server refuses; the type field asks the
+    // catalogue, by words or by the ids an address names; a search and its file are asked in a body, every chosen type
+    // held, filtered and sorted before a page is cut, as the server does.
+    if (path === '/competence/search/types' && route.request().method() === 'POST') {
+      const asked = route.request().postDataJSON() as { text?: string; ids?: string[] };
+      this.typesNamed.push(...(asked.ids ?? []));
+      // By the ids an address names, archived ones too, in the order asked; an unknown id is left out.
+      if (asked.ids)
+        return json({
+          rows: asked.ids.flatMap(id => (this.competenceTypes ?? []).filter(t => t.id === id)),
+          more: false,
+        });
+      const words = (asked.text ?? '').toLocaleLowerCase('sv').split(/\s+/).filter(Boolean);
+      const found = (this.competenceTypes ?? []).filter(
+        t => !t.archived && words.every(w => (t.name + ' ' + t.area).toLocaleLowerCase('sv').includes(w)),
+      );
+      return json({ rows: found.slice(0, 20), more: found.length > 20 });
+    }
+    if (path === '/competence/search' || path === '/competence/search.csv') {
+      if (!this.relations.includes('registrar'))
+        return route.fulfill({
+          status: 403,
+          json: {
+            error: 'Kompetenssökning är inte tilldelad dig. En administratör ger den genom en grupp.',
+            code: 'denied',
+          },
+        });
+      if (route.request().method() === 'GET') {
+        this.searchOptionsReads++;
+        return json({
+          units: [
+            { id: 'unit-skola', label: 'Bergsåkers skola', parentLabel: 'Grundskola' },
+            { id: 'unit-omsorg', label: 'Hemtjänst Centrum', parentLabel: null },
+          ],
+        });
+      }
+      if (this.searchFails) return route.fulfill({ status: 503, json: { error: 'Något gick fel. Försök igen.' } });
+      const body = route.request().postDataJSON() as CompetenceSearchBody;
+      // As the server: every type is the catalogue's, or nothing is read or logged.
+      const types = body.typeIds.map(id => this.competenceTypes?.find(t => t.id === id));
+      if (types.some(t => !t))
+        return route.fulfill({ status: 400, json: { error: 'Kompetensen finns inte i katalogen.' } });
+      const chosen = types as NonNullable<(typeof types)[number]>[];
+      const skill = (typeId: string) => chosen.find(t => t.id === typeId)?.kind === 'skill';
+      const today = NOW.slice(0, 10);
+      const days = (end: string) => Math.round((Date.parse(end) - Date.parse(today)) / 86_400_000);
+      // One row per person who holds every chosen type, their types as held in the order chosen.
+      const [first, ...rest] = chosen.map(t => this.competenceSearch[t.id] ?? []);
+      const all = (first ?? [])
+        .filter(r => rest.every(rows => rows.some(o => o.personId === r.personId)))
+        .map(r => ({
+          ...r,
+          held: [r, ...rest.map(rows => rows.find(o => o.personId === r.personId)!)].flatMap(o => o.held),
+        }))
+        .filter(
+          r =>
+            (!body.unitId ||
+              r.units.includes(body.unitId === 'unit-skola' ? 'Bergsåkers skola' : 'Hemtjänst Centrum')) &&
+            r.held.every(h => !skill(h.typeId) || !body.minLevel || (h.level ?? 0) >= body.minLevel),
+        );
+      const narrowed = all.filter(r =>
+        r.held.every(
+          h =>
+            skill(h.typeId) ||
+            ((!body.status || body.status.includes(h.status)) &&
+              (!body.until ||
+                (h.expiresOn !== undefined && days(h.expiresOn) >= 0 && days(h.expiresOn) <= body.until))),
+        ),
+      );
+      const rank = { expired: 0, expiring: 1, valid: 2 } as const;
+      const value = (r: CompetenceSearchRow): string | number | undefined =>
+        body.sort === 'unit'
+          ? r.units.join(', ') || undefined
+          : body.sort === 'status'
+            ? Math.min(...r.held.map(h => rank[h.status]))
+            : body.sort === 'until'
+              ? r.held.flatMap(h => (h.expiresOn ? [h.expiresOn] : [])).sort()[0]
+              : body.sort === 'level'
+                ? Math.min(...r.held.flatMap(h => (h.level ? [h.level] : [9])))
+                : r.name;
+      const sign = body.order === 'desc' ? -1 : 1;
+      const held = [...narrowed].sort((a, b) => {
+        const x = value(a),
+          y = value(b);
+        const by =
+          x === y
+            ? 0
+            : x === undefined
+              ? 1
+              : y === undefined
+                ? -1
+                : typeof x === 'number'
+                  ? x - (y as number)
+                  : String(x).localeCompare(String(y), 'sv');
+        return sign * by || a.name.localeCompare(b.name, 'sv') || a.personId.localeCompare(b.personId);
+      });
+      if (path === '/competence/search.csv') {
+        this.searchFiles.push(body);
+        return route.fulfill({
+          status: 200,
+          headers: {
+            'content-type': 'text/csv; charset=utf-8',
+            'content-disposition': 'attachment; filename="kompetenssokning-2026-11-04.csv"',
+          },
+          body: '\ufeffNamn;Användarnamn;Enhet;Status;Giltigt till\r\n',
+        });
+      }
+      this.searchBodies.push(body);
+      const pageSize = body.pageSize ?? 25,
+        last = Math.max(1, Math.ceil(held.length / pageSize)),
+        at = Math.min(body.page ?? 1, last);
+      return json({
+        types: chosen.map(t => ({ id: t.id, name: t.name, area: t.area, kind: t.kind })),
+        rows: held.slice((at - 1) * pageSize, at * pageSize),
+        total: held.length,
+        unfiltered: all.length,
+        page: at,
+        pageSize,
+      });
+    }
+    // Kompetens › Medarbetare (D108 item 11): the manager's matrix, its file, and a holding revoked from a cell. Someone
+    // who manages nobody is refused as the server refuses them.
+    if (path === '/competence/matrix' || path === '/competence/matrix.csv') {
+      if (this.matrixDelay) await new Promise(resolve => setTimeout(resolve, this.matrixDelay));
+      if (this.employee || this.staffForbidden)
+        return route.fulfill({
+          status: 403,
+          json: { error: 'Medarbetarnas kompetens visas för den som är chef för en enhet.', code: 'denied' },
+        });
+      const answer = matrixAnswer(this.competenceMatrix, this.competenceMatrixSets, url.searchParams.get('by'));
+      if (path === '/competence/matrix') {
+        this.matrixReads.push(url.search);
+        return json(answer);
+      }
+      this.matrixDownloads.push(url.search);
+      return route.fulfill({
+        status: 200,
+        headers: {
+          'content-type': 'text/csv; charset=utf-8',
+          'content-disposition': 'attachment; filename="kompetens-2026-11-04.csv"',
+        },
+        body: '\ufeff' + ['Namn', 'Användarnamn', ...answer.columns.map(c => c.name)].join(';') + '\r\n',
+      });
+    }
+    const revoking = /^\/competence\/holdings\/([^/]+)$/.exec(path);
+    if (revoking && route.request().method() === 'DELETE') {
+      const holdingId = decodeURIComponent(revoking[1]!);
+      this.holdingWrites.push({ method: 'DELETE', path });
+      this.changeMatrix(c =>
+        c.holdingId === holdingId
+          ? {
+              typeId: c.typeId,
+              status: c.required ? 'missing' : 'none',
+              required: c.required,
+              through: c.through,
+              revocable: false,
+            }
+          : c,
+      );
+      return route.fulfill({ status: 204, body: '' });
+    }
+    // Kompetens › Krav (D108 item 6): the requirements and the share targets, each listed, added and removed.
+    const requirementPath = /^\/competence\/(requirements|share-targets)(?:\/([^/]+))?$/.exec(path);
+    if (requirementPath) {
+      const method = route.request().method(),
+        targets = requirementPath[1] === 'share-targets',
+        id = requirementPath[2] ? decodeURIComponent(requirementPath[2]) : undefined;
+      if (method === 'GET' && !id)
+        return json(targets ? { rows: this.competenceShareTargets } : this.competenceRequirements);
+      if (this.requirementFail) {
+        const error = this.requirementFail;
+        this.requirementFail = null;
+        return route.fulfill({ status: 400, json: { error } });
+      }
+      const { positions, units } = this.competenceRequirements;
+      if (method === 'POST' && !id) {
+        const body = route.request().postDataJSON() as CompetenceRequirementBody & CompetenceShareTargetBody;
+        const created = `${targets ? 'target' : 'requirement'}-new-${this.requirementWrites.length + 1}`;
+        this.requirementWrites.push({ method, path, body });
+        // A manager's requirement on one person (D118): the person's cell in the matrix is required by it.
+        if (!targets && body.personId) {
+          this.requirePerson(body.personId, body.typeId, created);
+          return route.fulfill({ status: 201, json: { id: created } });
+        }
+        const position = positions.find(p => p.code === body.positionCode),
+          unit = units.find(u => u.id === body.unitId);
+        if (targets)
+          this.competenceShareTargets.push({
+            id: created,
+            typeId: body.typeId,
+            positionCode: body.positionCode!,
+            positionLabel: position?.label ?? body.positionCode!,
+            ...(unit ? { unitId: unit.id, unitLabel: unit.label } : {}),
+            minShare: body.minShare,
+          });
+        else
+          this.competenceRequirements.rows.push({
+            id: created,
+            typeId: body.typeId,
+            on: body.unitId ? 'unit' : 'position',
+            targetId: (body.unitId ?? body.positionCode)!,
+            targetLabel: (unit?.label ?? position?.label)!,
+            ...(body.minLevel !== undefined ? { minLevel: body.minLevel } : {}),
+          });
+        return route.fulfill({ status: 201, json: { id: created } });
+      }
+      if (method === 'DELETE' && id) {
+        this.requirementWrites.push({ method, path });
+        if (!targets) this.unrequire(id);
+        if (targets) this.competenceShareTargets = this.competenceShareTargets.filter(t => t.id !== id);
+        else this.competenceRequirements.rows = this.competenceRequirements.rows.filter(r => r.id !== id);
+        return route.fulfill({ status: 204, body: '' });
+      }
+    }
+    // Skills (D120): the reader's own rating, added once, changed by its holding and removed; a manager's registration
+    // and confirmation from the matrix, which change the cell as the server's would.
+    if (path === '/competence/own/skills' && route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as CompetenceSkillRatingBody;
+      if (this.competenceOwn.skills.some(k => k.typeId === body.typeId))
+        return route.fulfill({
+          status: 400,
+          json: { error: 'Du har redan den färdigheten. Ändra nivån under Färdigheter i stället.' },
+        });
+      this.skillWrites.push({ method: 'POST', path, body });
+      const type = this.competenceTypes?.find(t => t.id === body.typeId);
+      const id = 'skill-' + this.skillWrites.length;
+      this.competenceOwn = {
+        ...this.competenceOwn,
+        skills: [
+          ...this.competenceOwn.skills,
+          {
+            holdingId: id,
+            typeId: body.typeId,
+            competence: type?.name ?? body.typeId,
+            area: type?.area ?? '',
+            level: body.level,
+            validated: false,
+            interest: body.interest,
+          },
+        ],
+      };
+      return route.fulfill({ status: 201, json: { id } });
+    }
+    const ownSkill = /^\/competence\/own\/skills\/([^/]+)$/.exec(path);
+    if (ownSkill && route.request().method() === 'PUT') {
+      const id = decodeURIComponent(ownSkill[1]!);
+      const body = route.request().postDataJSON() as CompetenceSkillChangeBody;
+      const held = this.competenceOwn.skills.find(k => k.holdingId === id);
+      if (!held) return route.fulfill({ status: 403, json: { error: 'Du har ingen sådan färdighet.' } });
+      this.skillWrites.push({ method: 'PUT', path, body });
+      this.competenceOwn = {
+        ...this.competenceOwn,
+        skills: this.competenceOwn.skills.map(k =>
+          k.holdingId === id
+            ? { ...k, level: body.level, interest: body.interest, validated: k.validated && k.level === body.level }
+            : k,
+        ),
+      };
+      return route.fulfill({ status: 204, body: '' });
+    }
+    if (ownSkill && route.request().method() === 'DELETE') {
+      const id = decodeURIComponent(ownSkill[1]!);
+      this.skillWrites.push({ method: 'DELETE', path });
+      this.competenceOwn = { ...this.competenceOwn, skills: this.competenceOwn.skills.filter(k => k.holdingId !== id) };
+      return route.fulfill({ status: 204, body: '' });
+    }
+    const registeringSkill = /^\/competence\/people\/([^/]+)\/skills$/.exec(path);
+    if (registeringSkill && route.request().method() === 'POST') {
+      const personId = decodeURIComponent(registeringSkill[1]!);
+      const body = route.request().postDataJSON() as CompetenceSkillBody;
+      this.skillWrites.push({ method: 'POST', path, body });
+      const id = 'skill-new-' + this.skillWrites.length;
+      this.changeMatrix((c, p) =>
+        p === personId && c.typeId === body.typeId
+          ? {
+              ...c,
+              status: c.least !== undefined && body.level < c.least ? 'missing' : 'valid',
+              holdingId: id,
+              evidence: 'manager',
+              revocable: true,
+              level: body.level,
+              validated: true,
+            }
+          : c,
+      );
+      return route.fulfill({ status: 201, json: { id } });
+    }
+    const skillPath = /^\/competence\/skills\/([^/]+?)(\/validation)?$/.exec(path);
+    if (skillPath) {
+      const id = decodeURIComponent(skillPath[1]!);
+      const found = this.competenceSkills[id];
+      if (!found)
+        return route.fulfill({ status: 403, json: { error: 'Färdigheten finns inte bland dem du kan bekräfta.' } });
+      if (route.request().method() === 'GET' && !skillPath[2]) return json(found);
+      const body = route.request().postDataJSON() as CompetenceValidationBody;
+      this.skillWrites.push({ method: 'POST', path, body });
+      const level = body.level ?? found.level;
+      this.competenceSkills[id] = { ...found, level, validated: true };
+      this.changeMatrix(c =>
+        c.holdingId === id
+          ? { ...c, level, validated: true, status: c.least !== undefined && level < c.least ? 'missing' : 'valid' }
+          : c,
+      );
+      return route.fulfill({ status: 204, body: '' });
+    }
+    // A person's own registration (D108 item 7): what waits, a new one and one taken back.
+    if (path === '/competence/own' && route.request().method() === 'GET') return json(this.competenceOwn);
+    if (path === '/competence/own/types' && route.request().method() === 'GET')
+      return json({ rows: this.competenceTypes });
+    if (path === '/competence/own/holdings' && route.request().method() === 'POST') {
+      if (this.ownFail) {
+        const error = this.ownFail;
+        this.ownFail = null;
+        return route.fulfill({ status: 400, json: { error } });
+      }
+      const body = route.request().postDataJSON() as CompetenceHoldingBody;
+      this.ownWrites.push({ method: 'POST', path, body });
+      const id = 'own-' + this.ownWrites.length;
+      const type = this.competenceTypes?.find(t => t.id === body.typeId);
+      this.competenceOwn = {
+        ...this.competenceOwn,
+        pending: [
+          ...this.competenceOwn.pending,
+          {
+            holdingId: id,
+            typeId: body.typeId,
+            competence: type?.name ?? body.typeId,
+            issuedOn: body.issuedOn,
+            ...(body.expiresOn ? { expiresOn: body.expiresOn } : {}),
+          },
+        ],
+      };
+      return route.fulfill({ status: 201, json: { id } });
+    }
+    const withdrawing = /^\/competence\/own\/holdings\/([^/]+)$/.exec(path);
+    if (withdrawing && route.request().method() === 'DELETE') {
+      const id = decodeURIComponent(withdrawing[1]!);
+      this.ownWrites.push({ method: 'DELETE', path });
+      this.competenceOwn = {
+        ...this.competenceOwn,
+        pending: this.competenceOwn.pending.filter(p => p.holdingId !== id),
+      };
+      return route.fulfill({ status: 204, body: '' });
+    }
+    // One the manager rejected, removed by the person.
+    const removingRejected = /^\/competence\/own\/rejected\/([^/]+)$/.exec(path);
+    if (removingRejected && route.request().method() === 'DELETE') {
+      const id = decodeURIComponent(removingRejected[1]!);
+      this.ownWrites.push({ method: 'DELETE', path });
+      this.competenceOwn = {
+        ...this.competenceOwn,
+        rejected: this.competenceOwn.rejected.filter(p => p.holdingId !== id),
+      };
+      return route.fulfill({ status: 204, body: '' });
+    }
+    // Its decision by the manager the person reports to: the registration read, and approved or rejected.
+    const approvalPath = /^\/competence\/approvals\/([^/]+)$/.exec(path);
+    if (approvalPath) {
+      const id = decodeURIComponent(approvalPath[1]!);
+      const found = this.competenceApprovals[id];
+      if (!found)
+        return route.fulfill({ status: 403, json: { error: 'Registreringen finns inte bland dem du kan granska.' } });
+      if (route.request().method() === 'GET') return json(found);
+      const body = route.request().postDataJSON() as CompetenceDecisionBody;
+      this.approvalWrites.push({ path, body });
+      delete this.competenceApprovals[id];
+      this.competenceMatrix = {
+        ...this.competenceMatrix,
+        awaiting: this.competenceMatrix.awaiting.filter(a => a.holdingId !== id),
+      };
+      // Approved, the registration decides the cell; rejected, the cell is as it was without it.
+      this.changeMatrix(c => {
+        if (c.pending !== id) return c;
+        const { pending: _pending, ...rest } = c;
+        return body.decision === 'approve'
+          ? { ...rest, status: 'valid', holdingId: id, evidence: 'self', revocable: true }
+          : rest;
+      });
+      return route.fulfill({ status: 204, body: '' });
+    }
     const registering = /^\/competence\/people\/([^/]+)\/holdings$/.exec(path);
     if (registering && route.request().method() === 'POST') {
       if (this.registerFail) {
@@ -946,9 +1555,18 @@ export class MockApi {
       this.registered.push({ personId: decodeURIComponent(registering[1]!), body });
       return route.fulfill({ status: 201, json: { id: 'holding-' + this.registered.length } });
     }
-    // Kompetens (D108): one person's holdings, the view the person's section opens.
+    // Kompetens (D108): one person's holdings, the view the person's section opens; refused while the module is off, as
+    // the registry refuses a read of a connector that is switched off: `GET /api/cap` answers it 404, as a name nobody
+    // registered.
+    // What needs doing among a manager's reports, as the card under an answer reads it again.
+    if (path === '/cap/competence.attention')
+      return this.competenceTypes
+        ? json({ output: attentionOutput, source: 'Kompetens', view: attentionSpec })
+        : route.fulfill({ status: 404, json: { error: 'Okänd förmåga.' } });
     if (path === '/cap/competence.holdings')
-      return json({ output: holdingsOutput, source: 'Kompetens', view: holdingsSpec });
+      return this.competenceTypes
+        ? json({ output: this.competenceHoldings, source: 'Kompetens', view: holdingsSpec })
+        : route.fulfill({ status: 404, json: { error: 'Okänd förmåga.' } });
     // Utvecklingssamtal (D96): the two composites and the built-in module's writes.
     if (path === '/cap/clew.talks' || path === '/cap/clew.commitments' || path.startsWith('/talks/'))
       return this.handleTalks(route, path, url);
@@ -1483,7 +2101,16 @@ export class MockApi {
     if (kind === 'models') {
       if (!id && method === 'GET') return json({ providers: this.providers, models: this.models });
       if (!id && method === 'POST') {
-        const input = body() as { providerId: string; model: string; title?: string; description?: string };
+        const input = body() as {
+          providerId: string;
+          model: string;
+          title?: string;
+          description?: string;
+          mayProcessPersonalData?: unknown;
+        };
+        // As the server's contract does (D122 item 1): no model without the administrator's statement.
+        if (input.mayProcessPersonalData !== true)
+          return route.fulfill({ status: 400, json: { error: 'Ogiltig förfrågan.' } });
         const p = this.providers.find(x => x.id === input.providerId)!;
         const m: ModelSummary = {
           ...this.models[0]!,

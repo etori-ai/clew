@@ -889,6 +889,57 @@ test.describe('users administration', () => {
       await expect(group).not.toHaveAccessibleDescription(failed);
       await expect(group).not.toHaveAttribute('aria-invalid', 'true');
     });
+    test('a group is given Kompetenssökning under its own heading, apart from the capabilities, and taken back (D121)', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      await open(page, '/admin/users');
+      const form = page.getByRole('form', { name: 'Lägg till behörighet från grupp' });
+      const group = form.getByRole('combobox', { name: 'Grupp' });
+      // The group is found by a search, as every group is (D85).
+      await group.focus();
+      await page.keyboard.type('rekt');
+      await expect(page.getByRole('option', { name: /^Rektorer/ })).toBeVisible();
+      await page.keyboard.press('ArrowDown');
+      await page.keyboard.press('Enter');
+      const gives = form.getByRole('combobox', { name: 'Ger behörigheten' });
+      await gives.focus();
+      await page.keyboard.press('Enter');
+      // Administering Clew and reading about people are two headings in the choice; the relation says what it lets do.
+      await expect(page.getByRole('group', { name: 'Administrera' })).toBeVisible();
+      const people = page.getByRole('group', { name: 'Läsa om personer' });
+      await expect(people.getByRole('option')).toHaveCount(1);
+      await expect(people.getByRole('option', { name: /Kompetenssökning/ })).toContainText('Varje läsning loggas');
+      await people.getByRole('option', { name: /Kompetenssökning/ }).click();
+      await form.getByRole('button', { name: 'Lägg till' }).click();
+      await expect
+        .poll(() => announcements(page))
+        .toContainEqual(expect.stringContaining('Sparat: Rektorer ger Kompetenssökning'));
+      const mapping = page.getByRole('table').nth(1);
+      await expect(mapping.getByRole('row', { name: /Rektorer/ })).toContainText('Kompetenssökning');
+      // The capability that was there before stays a capability beside it.
+      await expect(mapping.getByRole('row', { name: /IT-personal/ })).toContainText('Administrera anslutna system');
+      await expectNoAxeViolations(page);
+      await mapping.getByRole('button', { name: 'Ta bort: Rektorer ger Kompetenssökning' }).click();
+      await expect
+        .poll(() => announcements(page))
+        .toContainEqual(expect.stringContaining('Borttaget: Rektorer ger inte längre Kompetenssökning'));
+      await expect(mapping.getByText('Rektorer', { exact: true })).toHaveCount(0);
+    });
+    test('a person who holds Kompetenssökning has it on their row beside their capabilities (D121)', async ({
+      page,
+      api,
+    }) => {
+      api.admin = true;
+      api.people = usersPeople().map(u => (u.id === 'hillevi' ? { ...u, relationGrants: ['registrar' as const] } : u));
+      await open(page, '/admin/users');
+      const hillevi = page
+        .getByRole('row', { name: /Hillevi Berg/ })
+        .or(page.getByRole('listitem').filter({ hasText: 'Hillevi Berg' }));
+      await expect(hillevi.first()).toContainText('Kompetenssökning');
+      await expectNoAxeViolations(page);
+    });
     test('without admin.users the server says no and the page says so, and nothing about groups or catalogues', async ({
       page,
       api,

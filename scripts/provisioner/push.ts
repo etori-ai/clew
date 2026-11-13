@@ -2,6 +2,7 @@ import {
   UNIT_KEY,
   MANAGER_KEY,
   CAPABILITY_KEY,
+  POSITION_KEY,
   readScimGroupKey,
   reservedScimGroupKey,
 } from '../../packages/contracts/src/scim-group-key';
@@ -33,6 +34,9 @@ import { fullName, type Directory, type DirectoryPerson } from './directory';
  * and one who returns stays inactive. So a fault in the source never takes a person off their last unit, and nobody is
  * created or made active on no unit without the run saying so. Everything else the source withdraws goes all the same:
  * a manager's role, a capability, a plain group, and the old units of somebody it places on a unit that was written.
+ *
+ * A position (D108 item 5) is a `position:<code>` group under the source's own code and name, sent for every position
+ * the source lists, held or not.
  */
 /** D114: the extension a user's current employments travel in. */
 const SCIM_EMPLOYMENT_SCHEMA = 'urn:clew:params:scim:schemas:extension:employment:2.0:User';
@@ -137,6 +141,17 @@ export function planOrganisation(directory: Directory): PlannedGroup[] {
     directory.groups.map(g => g.id),
     'a group id is one group',
   );
+  once(
+    'the position',
+    (directory.positions ?? []).map(position => position.code),
+    'a position code is one position',
+  );
+  // D108 item 5: Clew takes a code as it is sent, so one it would refuse is the source's to put right first.
+  for (const { code } of directory.positions ?? [])
+    if (!code || code !== code.trim())
+      throw new Error(
+        `The position code '${code}' is empty or has space around it, which Clew refuses after '${POSITION_KEY}' (D96). Nothing was written.`,
+      );
   for (const { id } of directory.groups) {
     if (reservedScimGroupKey(id))
       throw new Error(`Directory group '${id}' uses a reserved SCIM key. Give the plain group its own key.`);
@@ -192,6 +207,8 @@ export function planOrganisation(directory: Directory): PlannedGroup[] {
     if (fault.has(unit.id)) node.refused = fault.get(unit.id);
   }
   for (const g of directory.groups) group(g.id, g.label);
+  // D108 item 5: every position the source lists, held or not, under the source's own code and name.
+  for (const position of directory.positions ?? []) group(POSITION_KEY + position.code, position.label);
   // A unit or a group an active person names and the directory does not list: one the source has lost from its list,
   // or one it names before it lists it. It is planned with the people who name it, so that one Clew holds keeps them.
   const unlisted = new Map<string, string[]>();
@@ -219,6 +236,13 @@ export function planOrganisation(directory: Directory): PlannedGroup[] {
       (listed ? group(id, listed.label) : named(id, p)).members.push(p.externalId);
     }
     for (const c of p.capabilities) group(CAPABILITY_KEY + c, 'Clew · ' + c).members.push(p.externalId);
+    // D108 item 5: a position the directory does not list is that person's row's fault, as a group's is.
+    for (const code of p.positions ?? []) {
+      const position = directory.positions?.find(x => x.code === code);
+      (position ? group(POSITION_KEY + position.code, position.label) : named(POSITION_KEY + code, p)).members.push(
+        p.externalId,
+      );
+    }
   }
   for (const [key, who] of unlisted)
     groups.get(key)!.refused =
@@ -465,12 +489,14 @@ async function reconcile(
   const counts = new Map<string, { held: number; removed: number }>();
   for await (const g of page(client, '/Groups?excludedAttributes=members')) {
     if (!g.externalId || !ownsGroup(g.externalId)) continue;
-    // Units and plain groups are independent exports. Managers and capabilities are derived from people.
+    // Units, positions and plain groups are independent exports. Managers and capabilities are derived from people.
     const kind = g.externalId.startsWith(UNIT_KEY)
       ? 'units'
-      : g.externalId.startsWith(MANAGER_KEY) || g.externalId.startsWith(CAPABILITY_KEY)
-        ? 'role groups'
-        : 'directory groups';
+      : g.externalId.startsWith(POSITION_KEY)
+        ? 'positions'
+        : g.externalId.startsWith(MANAGER_KEY) || g.externalId.startsWith(CAPABILITY_KEY)
+          ? 'role groups'
+          : 'directory groups';
     const count = counts.get(kind) ?? { held: 0, removed: 0 },
       row = heldGroup(g);
     count.held++;

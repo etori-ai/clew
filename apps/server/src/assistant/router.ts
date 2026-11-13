@@ -12,8 +12,6 @@ export interface ToolInfo {
   view?: View;
 }
 
-const clockOf = (at: string) =>
-  new Date(at).toLocaleTimeString('sv-SE', { timeStyle: 'short', timeZone: 'Europe/Stockholm' });
 const STOP = new Set([
   'hur',
   'vad',
@@ -166,12 +164,14 @@ export function nearest(text: string, tools: ToolInfo[], count = 3): ToolInfo[] 
     .slice(0, count)
     .map(x => x.t);
 }
-/** The composite search without a model (D26, D8): the hits are named, never read; the sources that did not answer are named too. */
-export function searchAnswer(output: SearchResult, at: string): { body: string } {
+/**
+ * The composite search without a model (D26, D8): the hits are named, never read; the sources that did not answer are
+ * named too. When the answer was given is the message's own time, under it, and never a suffix of the sentence.
+ */
+export function searchAnswer(output: SearchResult): { body: string } {
   const missed = output.sources.filter(s => s.status !== 'ok').map(s => s.source);
   const missedLine = missed.length ? ` ${missed.join(', ')} ${missed.length === 1 ? 'svarade' : 'svarade'} inte.` : '';
-  if (!output.rows.length)
-    return { body: `Jag hittade inget om det här i källorna jag får söka i.${missedLine} Startsidan ${clockOf(at)}.` };
+  if (!output.rows.length) return { body: `Jag hittade inget om det här i källorna jag får söka i.${missedLine}` };
   const sources = [...new Set(output.rows.map(r => r.source))].join(', ');
   // A person is counted, never named (the names rule): who it is stands in the panel, read from the source.
   const people = output.rows.filter(r => r.kind === 'person').length;
@@ -179,29 +179,30 @@ export function searchAnswer(output: SearchResult, at: string): { body: string }
   const peopleLine = people ? `${people} ${people === 1 ? 'person' : 'personer'}` : '';
   if (!found.length)
     return {
-      body: `${peopleLine} hittades. Se ${people === 1 ? 'kontaktuppgifterna' : 'dem'} i panelen. Källor: ${sources}.${missedLine} Startsidan ${clockOf(at)}.`,
+      body: `${peopleLine} hittades. Se ${people === 1 ? 'kontaktuppgifterna' : 'dem'} i panelen. Källor: ${sources}.${missedLine}`,
     };
   const names = found.slice(0, 3).map(r => r.label);
   return {
-    body: `${found.length} ${found.length === 1 ? 'träff' : 'träffar'} i rutiner och dokument: ${names.join(', ')}${found.length > 3 ? ' …' : ''}.${people ? ` Dessutom ${peopleLine}.` : ''} Läs själv i panelen; jag har inte läst dem åt dig. Källor: ${sources}.${missedLine} Startsidan ${clockOf(at)}.`,
+    body: `${found.length} ${found.length === 1 ? 'träff' : 'träffar'} i rutiner och dokument: ${names.join(', ')}${found.length > 3 ? ' …' : ''}.${people ? ` Dessutom ${peopleLine}.` : ''} Läs själv i panelen; jag har inte läst dem åt dig. Källor: ${sources}.${missedLine}`,
   };
 }
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const rowLabel = (r: Record<string, unknown>) => String(r.name ?? r.title ?? r.label ?? r.supplier ?? r.ref ?? '');
-/** A Swedish sentence from a capability's output without a model: rows become a count and a view, scalars become "key: value". */
+/**
+ * A Swedish sentence from a capability's output without a model: rows become a count and a view, scalars become "key:
+ * value". The source and the time are the message's own, under it, and never a suffix of the sentence.
+ */
 export function templatedAnswer(
   tool: ToolInfo,
   input: Record<string, unknown>,
   output: unknown,
-  at: string,
 ): { body: string; view?: ViewRef } {
-  const when = `${tool.source} ${clockOf(at)}`;
   if (isRecord(output) && Array.isArray(output.rows)) {
     const rows = output.rows as Record<string, unknown>[];
     const names = rows.slice(0, 3).map(rowLabel).filter(Boolean);
     const body = rows.length
-      ? `${rows.length} ${rows.length === 1 ? 'post' : 'poster'} under ${tool.title.toLowerCase()}${names.length ? ': ' + names.join(', ') + (rows.length > 3 ? ' …' : '') : ''}. ${when}.`
-      : `Inget under ${tool.title.toLowerCase()} just nu. ${when}.`;
+      ? `${rows.length} ${rows.length === 1 ? 'post' : 'poster'} under ${tool.title.toLowerCase()}${names.length ? ': ' + names.join(', ') + (rows.length > 3 ? ' …' : '') : ''}.`
+      : `Inget under ${tool.title.toLowerCase()} just nu.`;
     return {
       body,
       view: {
@@ -223,7 +224,7 @@ export function templatedAnswer(
       .slice(0, 6)
       .map(([k, v]) => `${k}: ${Array.isArray(v) ? (v.length ? v.join(', ') : 'inga') : String(v)}`);
     return {
-      body: `${tool.title}: ${parts.join('; ') || 'inget att visa'}. ${when}.`,
+      body: `${tool.title}: ${parts.join('; ') || 'inget att visa'}.`,
       view: {
         capability: tool.name,
         input,
@@ -233,5 +234,5 @@ export function templatedAnswer(
       },
     };
   }
-  return { body: `${tool.title}: ${String(output)}. ${when}.` };
+  return { body: `${tool.title}: ${String(output)}.` };
 }

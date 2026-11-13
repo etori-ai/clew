@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { ProviderSummary, ProviderTestReport } from '@clew/contracts';
 import {
   Banner,
   Button,
+  CheckboxInput,
   CheckboxList,
   CheckboxListItem,
   Dialog,
@@ -33,7 +34,9 @@ import { DialogFrame } from '../../components/dialog-frame';
  * maxHeight, and the actions in LayoutFooter, which never scrolls away however long the endpoint's model list is.
  * "Lägg till leverantör" is two steps: the address and the key (the row is saved and the endpoint asked for its
  * models), then the models to add. "Lägg till modell" asks the endpoint for its list when it opens and offers the same
- * picker. A new model is off unless the administrator says otherwise, so nothing answers in the box by accident.
+ * picker. A new model is off unless the administrator says otherwise, so nothing answers in the box by accident. Adding
+ * one is answering for it (D122 item 1): the picker says what a model reads, and the administrator confirms that the
+ * organisation may process personal data with it before anything is added.
  */
 const ID = /^[a-z][a-z0-9-]*$/;
 const URL_PATTERN = /^https?:\/\/\S+$/;
@@ -58,13 +61,28 @@ export function Findings({ report, label = 'Kontrollens resultat' }: { report: P
   );
 }
 
-/** What the administrator picks under one provider: ids ticked from the endpoint's list, one typed by hand, and whether they go on at once. */
+/**
+ * What the administrator picks under one provider: ids ticked from the endpoint's list, one typed by hand, whether they
+ * go on at once, and the statement that the organisation may process personal data with them (D122 item 1).
+ */
 export interface ModelPick {
   chosen: string[];
   typed: string;
   enable: boolean;
+  confirmed: boolean;
 }
-const NO_PICK: ModelPick = { chosen: [], typed: '', enable: false };
+const NO_PICK: ModelPick = { chosen: [], typed: '', enable: false, confirmed: false };
+/**
+ * What a model reads and who answers for it (D122 item 1), above the list and in both dialogs. The description is the
+ * text the product owner approved, word for word; the title is the page's.
+ */
+export const PERSONAL_DATA_NOTICE = {
+  title: 'Modeller och personuppgifter',
+  description:
+    'En modell du lägger till får läsa det som personen som frågar får läsa, även personuppgifter. Lägg bara till modeller som organisationen får behandla personuppgifter med.',
+};
+/** The confirmation's error, said when "Lägg till" is pressed without it, as the other required fields say theirs. */
+const UNCONFIRMED = 'Bekräfta det här för att lägga till.';
 /** The ids the pick adds: the ticked ones, then the typed one when it is a valid id that is neither ticked nor added already. */
 const pickedIds = (p: ModelPick, existing: string[]) => {
   const typed = p.typed.trim();
@@ -85,7 +103,7 @@ const addedMessage = (n: number, enable: boolean) =>
 async function addPicked(providerId: string, ids: string[], enable: boolean): Promise<string> {
   const silent: string[] = [];
   for (const model of ids) {
-    const added = await api.admin.addModel({ providerId, model });
+    const added = await api.admin.addModel({ providerId, model, mayProcessPersonalData: true });
     if (!added.report.ok) silent.push(added.model.title);
     if (enable) await api.admin.updateModel(added.model.id, { state: 'enabled' });
   }
@@ -95,19 +113,25 @@ async function addPicked(providerId: string, ids: string[], enable: boolean): Pr
 }
 
 /**
- * The picker both dialogs share: the endpoint's models that are not added yet as a CheckboxList, a field for an id the
- * endpoint does not list (or the only way in when it lists none), and the switch that turns them on at once.
+ * The picker both dialogs share: what a model reads and who answers for it, the endpoint's models that are not added yet
+ * as a CheckboxList, a field for an id the endpoint does not list (or the only way in when it lists none), the switch
+ * that turns them on at once, and the required confirmation (D122 item 1), which says so once "Lägg till" was pressed
+ * without it (`attempted`); the dialog then gives it the focus through `confirmRef`, as a form gives its wrong field.
  */
 export function ModelPicker({
   listed,
   existing,
   value,
   onChange,
+  attempted = false,
+  confirmRef,
 }: {
   listed: string[];
   existing: string[];
   value: ModelPick;
   onChange: (pick: ModelPick) => void;
+  attempted?: boolean;
+  confirmRef?: RefObject<HTMLInputElement | null>;
 }) {
   const fresh = listed.filter(id => !existing.includes(id));
   const typed = value.typed.trim();
@@ -118,8 +142,10 @@ export function ModelPicker({
       : existing.includes(typed)
         ? 'Modellen är redan tillagd.'
         : undefined;
+  const many = value.chosen.length + (typed && !typedError && !value.chosen.includes(typed) ? 1 : 0) > 1;
   return (
     <VStack gap={4}>
+      <Banner status="info" {...PERSONAL_DATA_NOTICE} />
       {fresh.length > 0 && (
         <CheckboxList
           label="Modeller att lägga till"
@@ -154,6 +180,14 @@ export function ModelPicker({
         value={value.enable}
         onChange={enable => onChange({ ...value, enable })}
       />
+      <CheckboxInput
+        {...(confirmRef ? { ref: confirmRef } : {})}
+        label={`Organisationen får behandla personuppgifter med ${many ? 'de här modellerna' : 'den här modellen'}.`}
+        isRequired
+        value={value.confirmed}
+        onChange={confirmed => onChange({ ...value, confirmed })}
+        status={attempted && !value.confirmed ? { type: 'error', message: UNCONFIRMED } : undefined}
+      />
     </VStack>
   );
 }
@@ -169,6 +203,8 @@ export function AddProviderDialog({ isOpen, onClose }: { isOpen: boolean; onClos
   const [touched, setTouched] = useState(false);
   const [result, setResult] = useState<{ providerId: string; report: ProviderTestReport } | null>(null);
   const [pick, setPick] = useState<ModelPick>(NO_PICK);
+  const [attempted, setAttempted] = useState(false);
+  const confirmRef = useRef<HTMLInputElement>(null);
   const { run, busy, error, reset: clearError } = useAdminAction({ toastId: 'provider:new' });
   const heading = useRef<HTMLHeadingElement>(null);
   // The step heading takes focus on every step (2.4.3), as in "Anslut system".
@@ -196,6 +232,7 @@ export function AddProviderDialog({ isOpen, onClose }: { isOpen: boolean; onClos
     setTouched(false);
     setResult(null);
     setPick(NO_PICK);
+    setAttempted(false);
     clearError();
   };
   const close = () => {
@@ -278,14 +315,16 @@ export function AddProviderDialog({ isOpen, onClose }: { isOpen: boolean; onClos
               <Button
                 variant="primary"
                 label={addLabel(ids.length)}
-                isDisabled={busy || !ids.length}
-                clickAction={() =>
-                  run(async () => {
+                isDisabled={busy || !ids.length || (attempted && !pick.confirmed)}
+                clickAction={async () => {
+                  setAttempted(true);
+                  if (!pick.confirmed) return confirmRef.current?.focus();
+                  await run(async () => {
                     const message = await addPicked(result.providerId, ids, pick.enable);
                     close();
                     return message;
-                  })
-                }
+                  });
+                }}
               />
             )
           )
@@ -353,7 +392,14 @@ export function AddProviderDialog({ isOpen, onClose }: { isOpen: boolean; onClos
                 />
               )}
               <Findings report={result.report} />
-              <ModelPicker listed={result.report.models} existing={[]} value={pick} onChange={setPick} />
+              <ModelPicker
+                listed={result.report.models}
+                existing={[]}
+                value={pick}
+                onChange={setPick}
+                attempted={attempted}
+                confirmRef={confirmRef}
+              />
             </>
           )}
         </VStack>
@@ -374,6 +420,8 @@ export function AddModelDialog({
   onClose: () => void;
 }) {
   const [pick, setPick] = useState<ModelPick>(NO_PICK);
+  const [attempted, setAttempted] = useState(false);
+  const confirmRef = useRef<HTMLInputElement>(null);
   const listing = useQuery({ ...adminQueries.listed(provider?.id ?? ''), enabled: !!provider });
   const existing = (useQuery(adminQueries.models).data?.models ?? [])
     .filter(m => m.providerId === provider?.id)
@@ -381,6 +429,7 @@ export function AddModelDialog({
   const { run, busy, error, reset } = useAdminAction({ toastId: 'model:new' });
   const close = () => {
     setPick(NO_PICK);
+    setAttempted(false);
     reset();
     onClose();
   };
@@ -417,15 +466,17 @@ export function AddModelDialog({
           <Button
             variant="primary"
             label={addLabel(ids.length)}
-            isDisabled={busy || !ids.length || !provider}
-            clickAction={() =>
-              run(async () => {
+            isDisabled={busy || !ids.length || !provider || (attempted && !pick.confirmed)}
+            clickAction={async () => {
+              setAttempted(true);
+              if (!pick.confirmed) return confirmRef.current?.focus();
+              await run(async () => {
                 if (!provider) return;
                 const message = await addPicked(provider.id, ids, pick.enable);
                 close();
                 return message;
-              })
-            }
+              });
+            }}
           />
         }
       >
@@ -439,7 +490,14 @@ export function AddModelDialog({
               </Text>
             )}
             {!listing.isPending && (
-              <ModelPicker listed={report?.models ?? []} existing={existing} value={pick} onChange={setPick} />
+              <ModelPicker
+                listed={report?.models ?? []}
+                existing={existing}
+                value={pick}
+                onChange={setPick}
+                attempted={attempted}
+                confirmRef={confirmRef}
+              />
             )}
           </VStack>
         )}

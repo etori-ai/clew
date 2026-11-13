@@ -137,6 +137,8 @@ export function originLabel(path: string | null): string | null {
   if (pathname === '/') return 'Hem';
   if (pathname === '/todo') return 'Att göra';
   if (pathname === '/calendar') return 'Kalender';
+  // D121: a person's holdings opened from a hit of the registrar's search.
+  if (pathname === '/competence/search') return 'Kompetenssökning';
   return null;
 }
 /** The tool a page was opened from (`/tools/<capability>`), or null. */

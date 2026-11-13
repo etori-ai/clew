@@ -5,7 +5,8 @@ import type { Capability } from '../../packages/contracts/src/scim-group-key';
  * people. A person has a unit and a manager flag, the two facts the provisioner turns into D68's `unit:` and
  * `unit-manager:` groups; may work in or manage further units; may be in plain directory groups, which mean nothing in
  * Clew until an administrator maps one to a capability (D85) or names it in an audience (D23); and may hold Clew
- * capabilities that become `capability:` groups; and may have several current employments, each with its own unit and title (D114). Two hundred and fifty people in forty-eight
+ * capabilities that become `capability:` groups; may hold positions from the source's own list, which become
+ * `position:` groups and grant nothing (D108 item 5); and may have several current employments, each with its own unit and title (D114). Two hundred and fifty people in forty-eight
  * units: four personas with a Keycloak account (`login`), seven written by hand for the names a real directory
  * holds, and the rest generated deterministically, so every manager has a team, the users page has something to page
  * and a group has anything from no members to eighty.
@@ -52,6 +53,11 @@ export interface DirectoryGroup {
   id: string;
   label: string;
 }
+/** D108 item 5: a position as the source lists it, its own code and its name. Clew is sent both and nothing else. */
+export interface DirectoryPosition {
+  code: string;
+  label: string;
+}
 export interface DirectoryPerson {
   active: boolean;
   /** The source's stable id, never reused. `dev:` marks the development stack's people. */
@@ -73,6 +79,8 @@ export interface DirectoryPerson {
   alsoManages?: string[];
   /** Plain directory groups the person is in. */
   groups?: string[];
+  /** D108 item 5: the codes of the positions the person holds, of those the directory lists. */
+  positions?: string[];
   capabilities: Capability[];
   /** A persona: has a Keycloak account in the development stack and a fixed person id the fixtures key on. */
   login?: boolean;
@@ -82,6 +90,8 @@ export interface Directory {
   complete: boolean;
   units: DirectoryUnit[];
   groups: DirectoryGroup[];
+  /** D108 item 5: the source's positions, each sent as a `position:` group whether anyone holds it or not. */
+  positions?: DirectoryPosition[];
   people: DirectoryPerson[];
 }
 /**
@@ -236,6 +246,8 @@ const GROUPS: DirectoryGroup[] = [
   { id: 'ad:elevhalsa', label: 'Elevhälsoteamet' },
   { id: 'ad:nattpersonal', label: 'Nattpersonal' },
   { id: 'ad:systemforvaltare', label: 'Systemförvaltare' },
+  // D121: mapped to Kompetenssökning by the development seed (`DEVELOPMENT_REGISTRAR_GROUP` in competence-development.ts).
+  { id: 'ad:kompetenssamordnare', label: 'Kompetenssamordnare' },
   // A group the directory holds and nobody is in yet.
   { id: 'ad:projekt-e-arkiv', label: 'Projekt e-arkiv' },
   ...(Object.keys(AREAS) as Area[]).map(area => ({ id: areaGroup(area), label: AREAS[area] })),
@@ -315,6 +327,49 @@ const TITLES: Record<string, { lead: string[]; staff: string[] }> = {
   [ROOT]: { lead: ['Kommundirektör'], staff: [] },
   ...Object.fromEntries((Object.keys(AREAS) as Area[]).map(area => [areaUnit(area), DIRECTOR])),
 };
+/**
+ * D108 item 5: the source's positions, a code and a name each, which the provisioner sends as `position:<code>` groups.
+ * The codes are this directory's own, as a real source's are its own: Clew builds in no classification of positions.
+ * A position says what a person is employed as and gives no access; one nobody holds is still one of the source's.
+ */
+const POSITIONS: DirectoryPosition[] = [
+  { code: 'underskoterska', label: 'Undersköterska' },
+  { code: 'sjukskoterska', label: 'Sjuksköterska' },
+  { code: 'vardbitrade', label: 'Vårdbiträde' },
+  { code: 'stodassistent', label: 'Stödassistent' },
+  { code: 'enhetschef', label: 'Enhetschef' },
+  { code: 'handlaggare', label: 'Handläggare' },
+  { code: 'maskinforare', label: 'Maskinförare' },
+  { code: 'larare', label: 'Lärare' },
+  // A position the source lists and nobody in this directory holds.
+  { code: 'tolk', label: 'Tolk' },
+];
+/** The position an employment's title is employed as, in this source; a title not listed is a job without one. */
+const POSITION_OF_TITLE: Record<string, string> = {
+  Undersköterska: 'underskoterska',
+  Sjuksköterska: 'sjukskoterska',
+  'Medicinskt ansvarig sjuksköterska': 'sjukskoterska',
+  Skolsköterska: 'sjukskoterska',
+  Vårdbiträde: 'vardbitrade',
+  Stödassistent: 'stodassistent',
+  Enhetschef: 'enhetschef',
+  Handläggare: 'handlaggare',
+  Bygglovshandläggare: 'handlaggare',
+  Anläggningsarbetare: 'maskinforare',
+  Lärare: 'larare',
+  Speciallärare: 'larare',
+  Gymnasielärare: 'larare',
+};
+/**
+ * The `n`th generated person of these units holds a second position beside the one their title gives: a position is
+ * the person's, not a placement's, so one person can be two things on one unit.
+ */
+const SECOND_POSITION: Partial<Record<string, { n: number; code: string }>> = {
+  // An anläggningsarbetare who also handles the permits for digging in the street.
+  'unit-gata': { n: 2, code: 'handlaggare' },
+  // A stödassistent who is also employed as an undersköterska.
+  'unit-lss': { n: 1, code: 'underskoterska' },
+};
 /** The title of the `n`th generated person of a unit, of which the first `managers` lead it. */
 const titleOf = (unitId: string, n: number, managers: number): string => {
   const { lead, staff } = TITLES[unitId] ?? { lead: ['Verksamhetschef'], staff: [] };
@@ -359,7 +414,8 @@ const personas: DirectoryPerson[] = [
     employments: [{ unitId: 'unit-skola', title: 'Rektor' }],
     department: 'unit-skola',
     manager: true,
-    groups: ['ad:alla-chefer', 'ad:rektorer'],
+    // Also the development stack's registrar (D121): searches competence across the organisation.
+    groups: ['ad:alla-chefer', 'ad:rektorer', 'ad:kompetenssamordnare'],
     capabilities: [],
     login: true,
   },
@@ -591,6 +647,7 @@ function generated(): DirectoryPerson[] {
       const employments: Employment[] = [{ unitId: unit.id, title: titleOf(unit.id, n, managers) }];
       const secondEmployment = n === 1 ? SECOND_EMPLOYMENT[unit.id] : undefined;
       if (secondEmployment) employments.push(secondEmployment);
+      const secondPosition = SECOND_POSITION[unit.id]?.n === n ? SECOND_POSITION[unit.id]!.code : undefined;
       people.push({
         active: true,
         externalId: 'dev:' + userName,
@@ -604,6 +661,7 @@ function generated(): DirectoryPerson[] {
         ...(seat.manager && alsoManages.length ? { alsoManages } : {}),
         ...(secondEmployment ? { alsoIn: [secondEmployment.unitId] } : {}),
         ...(groups.length ? { groups } : {}),
+        ...(secondPosition ? { positions: [secondPosition] } : {}),
         capabilities:
           unit.id === 'unit-it' && seat.manager
             ? ['admin.connectors']
@@ -620,13 +678,25 @@ const inArea = (p: DirectoryPerson): DirectoryPerson => {
   const area = UNITS.find(u => u.id === p.department)!.area;
   return area ? { ...p, groups: [...(p.groups ?? []), areaGroup(area)] } : p;
 };
+/**
+ * A person's positions (D108 item 5): those their employments are employed as, by title in the directory's order, then
+ * any other they hold. A person whose titles name no position holds none, as most of the directory does.
+ */
+const withPositions = (p: DirectoryPerson): DirectoryPerson => {
+  const byTitle = (p.employments ?? []).flatMap(job => {
+      const code = job.title && POSITION_OF_TITLE[job.title];
+      return code ? [code] : [];
+    }),
+    positions = [...new Set([...byTitle, ...(p.positions ?? [])])];
+  return positions.length ? { ...p, positions } : p;
+};
 /** A unit that names no unit above it stands under its administration. */
 const parentOf = (unit: UnitPlan) =>
   unit.parent ?? (unit.area && unit.id !== areaUnit(unit.area) ? areaUnit(unit.area) : undefined);
 /** The installation assigns these namespaces to the development writer. */
 export const developmentScope = {
   userPrefix: 'dev:',
-  groupPrefixes: ['unit:unit-', 'unit-manager:unit-', 'ad:'],
+  groupPrefixes: ['unit:unit-', 'unit-manager:unit-', 'ad:', 'position:'],
   groupKeys: [
     'capability:admin.users',
     'capability:admin.connectors',
@@ -641,6 +711,7 @@ export const developmentDirectory: Directory = {
     return { id: unit.id, label: unit.label, ...(parent ? { parent } : {}) };
   }),
   groups: GROUPS,
-  people: [...handwritten, ...generated()].map(inArea),
+  positions: POSITIONS,
+  people: [...handwritten, ...generated()].map(inArea).map(withPositions),
 };
 export const fullName = (p: DirectoryPerson) => `${p.givenName} ${p.familyName}`;

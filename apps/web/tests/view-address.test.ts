@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { ViewEntry } from '@clew/contracts';
 import {
+  declaredPage,
   openedAsPage,
   opensAsPage,
   readInput,
@@ -121,5 +122,37 @@ describe("a work item's read that answers with rows leads to the read's page (D1
     expect(readPageHref(thread, { capability: 'hr.leaveRequests' }, '/?card=ledighet')).toBe(
       '/tools/hr.leaveRequests?from=%2F%3Fcard%3Dledighet',
     );
+  });
+});
+
+describe('a read of Clew’s own that declares the page its rows are worked on leads there (D116)', () => {
+  const declared: ViewEntry[] = [
+    ...views,
+    {
+      capability: 'competence.attention',
+      title: 'Krav som inte uppfylls',
+      kind: 'table',
+      page: '/competence/matrix?only=attention',
+    },
+  ];
+  const thread = { items: [] } as Parameters<typeof readInput>[0];
+  test('the figure on Hem, an answer’s list and the manager’s card lead to the matrix narrowed, not to the read’s page', () => {
+    expect(declaredPage(declared, 'competence.attention')).toBe('/competence/matrix?only=attention');
+    expect(
+      viewOpenHref(declared, '/', '', { capability: 'competence.attention', title: 'Krav som inte uppfylls' }),
+    ).toBe('/competence/matrix?only=attention');
+    expect(readPageHref(thread, { capability: 'competence.attention' }, '/?card=kompetens', declared)).toBe(
+      '/competence/matrix?only=attention',
+    );
+    // Read with an input it is the read's own page; any other read keeps its page; without the list, its page.
+    expect(declaredPage(declared, 'competence.attention', { person: 'anna' })).toBeUndefined();
+    expect(declaredPage(declared, 'talks.talks')).toBeUndefined();
+    expect(readPageHref(thread, { capability: 'competence.attention' }, '/')).toBe(
+      '/tools/competence.attention?from=%2F',
+    );
+  });
+  test('only a path inside Clew is followed', () => {
+    for (const page of ['//evil.example/x', 'https://evil.example', 'javascript:alert(1)'])
+      expect(declaredPage([{ capability: 'x.y', title: 'X', page }], 'x.y')).toBeUndefined();
   });
 });

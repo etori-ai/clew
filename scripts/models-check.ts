@@ -176,11 +176,14 @@ try {
       ? 'key sealed with the master key, opened only under its own purpose, absent from every view'
       : 'no key: the endpoint takes none',
   );
+  // The operator who points the check at an endpoint answers for it as an administrator does on the page (D122): the
+  // check sends only its own synthetic text and removes the model when it is done.
   const added = await models.addModel(admin, {
     providerId,
     model,
     title: 'Kontrollmodell',
     description: 'Används av models-check.',
+    mayProcessPersonalData: true,
   });
   modelId = added.model.id;
   if (!added.report.ok) fail('test on add: ' + added.report.findings.map(f => f.text).join('; '));

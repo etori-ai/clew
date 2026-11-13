@@ -15,14 +15,14 @@ import {
   VStack,
   useMediaQuery,
 } from '@clew/ui';
-import { areasQuery } from '../queries';
+import { areasQuery, entityDetailQuery } from '../queries';
 import { errorMessage, refused } from '../query-policy';
 import { usePageTitle } from '../page-title';
 import { insideClew, originOf, toolOf } from '../person-address';
 import { opensAsPage, viewOpenHref, withViewInput } from '../view-address';
 import { useShownForTheWayBack } from '../way-back';
 import { Shell, mobileQuery, shortQuery } from '../components/shell';
-import { useRail, type RailCurrent } from '../components/nav';
+import { placeOfRead, useRail, type RailCurrent } from '../components/nav';
 import { DeclaredView } from '../components/view';
 import { PanelBody, RAIL, answersWithRowsOf, panelBesideQuery } from '../components/panel';
 import { usePagePanel, useView, viewSubject, type OwnThing } from '../components/page-panel';
@@ -36,15 +36,31 @@ const tableQuery = '(min-width: 1280px)';
 const tableBesideQuery = panelBesideQuery(1280 - RAIL);
 /** The heading the page sends the focus to when the person arrives from a link on another page. */
 const TITLE_ID = 'vy-rubrik';
+/** The one person a view's input names by `person`, or null. */
+function personOf(inputJson: string | null): string | null {
+  try {
+    const person = (JSON.parse(inputJson ?? 'null') as { person?: unknown } | null)?.person;
+    return typeof person === 'string' && person ? person : null;
+  } catch {
+    return null;
+  }
+}
+/** What a list or a table holds, as a heading's first word: "Kompetenser". */
+function nounOf(spec: { kind: string; noun?: { other: string } } | undefined): string | undefined {
+  const other = spec?.noun?.other;
+  return other ? other.charAt(0).toLocaleUpperCase('sv') + other.slice(1) : undefined;
+}
 
 /**
- * Where the rail stands on a view's page that is not a tool of its own: on the place the view was opened from, as a
- * work item's page does (`item.tsx`); with no such place, on nothing.
+ * Where the rail stands on a view's page that is neither a tool of its own nor a read of a connector with a place in
+ * the rail (`placeOfRead`): on the place the view was opened from, as a work item's page does (`item.tsx`); with no
+ * such place, on nothing.
  */
 function placeOf(from: string | null): RailCurrent {
   const tool = toolOf(from);
   if (from?.startsWith('/staff')) return { surface: 'staff' };
   if (from?.startsWith('/calendar')) return { surface: 'calendar' };
+  if (from?.startsWith('/competence')) return { surface: 'competence' };
   if (tool) return { surface: 'verktyg', view: tool };
   if (from?.startsWith('/todo') || from?.startsWith('/items/')) return { surface: 'todo' };
   if (from === '/' || from?.startsWith('/?')) return { surface: 'start' };
@@ -93,17 +109,38 @@ export function ToolPage({ user, admin = false }: { user: SessionUser; admin?: b
   const known = views?.find(v => v.capability === capability) ?? null;
   const unlisted = areasQ.data !== undefined && !entry && !known && views !== undefined;
   const inputJson = search.get('input');
-  const title = entry?.label ?? search.get('title') ?? known?.title ?? '';
+  const named = entry?.label ?? search.get('title') ?? known?.title ?? '';
   // Read only once the person's reads are known, so a read that is not theirs is never asked for.
-  const main = useView(areasQ.data !== undefined && !unlisted ? capability : null, inputJson, { title, address });
+  const main = useView(areasQ.data !== undefined && !unlisted ? capability : null, inputJson, {
+    title: named,
+    address,
+  });
+  // A view of one person's (its input names `person`) opened without a name of its own is named for them from the
+  // directory, as their page names them (D121, the review of 2026-11-13): a person's name never rides in the address.
+  // The directory is asked by Clew's key, the person's id (D122): the address's `of` where the opener knew it, else the
+  // input's own key, which is the id of a person without a user name. Until both have answered the heading waits; a
+  // person the directory does not answer for keeps the read's own name.
+  const whose = !entry && search.get('title') === null ? (search.get('of') ?? personOf(inputJson)) : null;
+  const person = useQuery({ ...entityDetailQuery('person', whose ?? ''), enabled: whose !== null });
+  const noun = main.shown?.capability === capability ? nounOf(main.shown.spec) : undefined;
+  const title =
+    whose === null
+      ? named
+      : person.data && noun
+        ? `${noun} för ${person.data.entity.name}`
+        : person.isError || (person.data && main.shown)
+          ? named
+          : '';
   const missing = unlisted || (!!main.failed && refused(main.failed));
   const ready = areasQ.data !== undefined && !missing;
   const from = insideClew(search.get('from'));
   const back = from
     ? (originOf(from, menu) ?? { label: from.startsWith('/conversations/') ? 'Samtalet' : 'Tillbaka', href: from })
     : null;
+  // A tool in the rail marks its row; a read of a connector with a place of its own in the rail (Kompetens, Kalender)
+  // marks that place wherever it was opened from; any other view the place it was opened from.
   const nav = useRail({
-    current: entry ? { surface: 'verktyg', view: capability } : placeOf(from),
+    current: entry ? { surface: 'verktyg', view: capability } : (placeOfRead(capability) ?? placeOf(from)),
     admin,
     manager: user.role === 'manager',
   });

@@ -1,6 +1,15 @@
-import { queryOptions } from '@tanstack/react-query';
-import type { AskValues, Role, DocumentRequest, EntityKind, UsersAdminQueryType } from '@clew/contracts';
+import { keepPreviousData, queryOptions } from '@tanstack/react-query';
+import type {
+  AskValues,
+  CompetenceMatrixInput,
+  CompetenceSearchBody,
+  Role,
+  DocumentRequest,
+  EntityKind,
+  UsersAdminQueryType,
+} from '@clew/contracts';
 import { api } from './api';
+import { LOGGED_READ, isLoggedView } from './logged-reads';
 import { keys } from './query-keys';
 import { unlessRefused } from './query-policy';
 
@@ -103,13 +112,6 @@ export const competenceTypesQuery = queryOptions({
 /** The day and the model's status are extras on the page: a failure is tolerated, never retried, never shown as the page's error. */
 export const todayQuery = queryOptions({ queryKey: keys.today, queryFn: () => api.today(), retry: false });
 export const attentionQuery = queryOptions({ queryKey: keys.attention, queryFn: () => api.attention() });
-/** What the box offers (D34): the standing actions for the role and the recent conversations, kept a minute. */
-export const completionsQuery = queryOptions({
-  queryKey: keys.completions,
-  queryFn: () => api.completions(),
-  staleTime: 60_000,
-  retry: false,
-});
 export const assistantQuery = queryOptions({
   queryKey: keys.assistant,
   queryFn: () => api.assistantStatus(),
@@ -145,6 +147,8 @@ export const viewQuery = (capability: string, inputJson: string | null) =>
   queryOptions({
     queryKey: keys.view(capability, inputJson),
     queryFn: () => api.capability(capability, parseInput(inputJson)),
+    // One person's holdings opened by someone else is logged on the server (D121 item 5): read when asked, no more.
+    ...(isLoggedView(capability, inputJson) ? LOGGED_READ : {}),
   });
 /**
  * A card action opened as a view (`open-card` and `open-action` in the address). The call is a POST, so it is de-duplicated, never retried
@@ -206,6 +210,16 @@ export const competenceCatalogueQuery = queryOptions({
   retry: false,
 });
 /**
+ * What merging one type into another would move (D108 item 2), read when the administrator has chosen the type to merge
+ * into. A refusal (a type of another kind, an archived one) is said in the dialog, so it is not retried.
+ */
+export const competenceMergePreviewQuery = (from: string, into: string) =>
+  queryOptions({
+    queryKey: keys.competenceMergePreview(from, into),
+    queryFn: () => api.competence.mergePreview(from, into),
+    retry: false,
+  });
+/**
  * Administration › Kompetens › Källor (D108 item 9): the systems whose holdings are copied in, with their last read and
  * their types. Refused the same way as the catalogue, and not retried for the same reason.
  */
@@ -214,6 +228,100 @@ export const competenceSourcesQuery = queryOptions({
   queryFn: () => api.competence.sources(),
   retry: false,
 });
+/**
+ * Administration › Kompetens › Krav (D108 item 6): the requirements on positions and units, with the positions and
+ * units they can be set on, and the share targets. Refused the same way as the catalogue, and not retried.
+ */
+export const competenceRequirementsQuery = queryOptions({
+  queryKey: keys.competenceRequirements,
+  queryFn: () => api.competence.requirements(),
+  retry: false,
+});
+export const competenceShareTargetsQuery = queryOptions({
+  queryKey: keys.competenceShareTargets,
+  queryFn: () => api.competence.shareTargets(),
+  retry: false,
+});
+/**
+ * The manager's matrix (D108 item 11) with the set of columns the address names. Refused to someone who manages nobody
+ * and while the module is off, which is the page's own state, so not retried.
+ */
+export const competenceMatrixQuery = (input: CompetenceMatrixInput) =>
+  queryOptions({
+    queryKey: keys.competenceMatrix(input.by ?? null, input.part ?? null),
+    queryFn: () => api.competence.matrix(input),
+    retry: false,
+    placeholderData: keepPreviousData,
+  });
+/**
+ * Kompetenssökning (D121): what the page narrows by. Refused to anyone without the relation and while the module is off,
+ * which is the page's own state, so not retried.
+ */
+export const competenceSearchOptionsQuery = queryOptions({
+  queryKey: keys.competenceSearchOptions,
+  queryFn: () => api.competence.searchOptions(),
+  retry: false,
+});
+/**
+ * One page of a search (D121 item 4), as the address names it. Every read of it writes a row of the read log on the
+ * server, so it is read once per address the reader goes to: never again on its own when the tab is shown, the network
+ * returns or something else changes. An address read in the last five minutes that the reader comes back to (Back,
+ * Forward, a person's page and back) is shown as it was read, with no new read and no new row; after that it is read,
+ * and logged, again. The page on screen stays while the next is read.
+ */
+export const competenceSearchQuery = (body: CompetenceSearchBody) =>
+  queryOptions({
+    queryKey: keys.competenceSearch(body),
+    queryFn: () => api.competence.search(body),
+    ...LOGGED_READ,
+    gcTime: 5 * 60_000,
+    placeholderData: keepPreviousData,
+  });
+/**
+ * The catalogue's types an address names, by id (D121 item 4): what the search's field names them with before the
+ * search answers, and how the page tells an id the catalogue does not hold. The catalogue names nobody: not logged.
+ */
+export const competenceTypesNamedQuery = (ids: readonly string[]) =>
+  queryOptions({
+    queryKey: keys.competenceTypesNamed(ids),
+    queryFn: () => api.competence.findTypes({ ids: [...ids] }),
+    retry: false,
+  });
+/**
+ * The reader's own registration (D108 item 7): whether anyone would decide it, and the ones that wait. `null` while the
+ * module is off for the person, which the page says on its own. Not retried.
+ */
+export const competenceOwnQuery = queryOptions({
+  queryKey: keys.competenceOwn,
+  queryFn: () => unlessRefused(api.competence.own()),
+  retry: false,
+});
+/** The types a person may register one of their own for (D108 item 7); `null` while the module is off for them. */
+export const competenceOwnTypesQuery = queryOptions({
+  queryKey: keys.competenceOwnTypes,
+  queryFn: () => unlessRefused(api.competence.ownTypes()),
+  retry: false,
+});
+/**
+ * A registration of a report's own as the manager who decides it reads it (D108 item 7). A refusal (not theirs to
+ * decide, or decided already) is the page's to say, so it is not retried.
+ */
+export const competenceApprovalQuery = (holdingId: string) =>
+  queryOptions({
+    queryKey: keys.competenceApproval(holdingId),
+    queryFn: () => api.competence.approval(holdingId),
+    retry: false,
+  });
+/**
+ * A report's skill as the manager a person reports to confirms its level (D120 item 2). A refusal (not theirs to
+ * confirm) is the page's to say, so it is not retried.
+ */
+export const competenceSkillQuery = (holdingId: string) =>
+  queryOptions({
+    queryKey: keys.competenceSkill(holdingId),
+    queryFn: () => api.competence.skill(holdingId),
+    retry: false,
+  });
 export const adminQueries = {
   connectors: queryOptions({ queryKey: keys.admin.connectors, queryFn: () => api.admin.connectors() }),
   units: queryOptions({ queryKey: keys.admin.units, queryFn: () => api.admin.units() }),

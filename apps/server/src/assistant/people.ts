@@ -253,8 +253,9 @@ const swedishList = (items: string[]) =>
   items.length < 2 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} och ${items.at(-1)}`;
 
 /**
- * The prompt's lines about the people the question names (Swedish, as the prompt is): who each name is, or that it may
- * be several, and the asker's open work about each one by title, source, last day and buttons.
+ * The prompt's lines about the people the question names (Swedish, as the prompt is): who each name is, with the user
+ * name a read about one person takes (D122: the registry resolves it as the asker's report, or refuses it), or that it
+ * may be several, and the asker's open work about each one by title, source, last day and buttons.
  */
 export function peopleLines(turn: PeopleInTurn, now: string): string[] {
   return turn.named.map(n => {
@@ -263,7 +264,7 @@ export function peopleLines(turn: PeopleInTurn, now: string): string[] {
     const person = n.found.person;
     const work = turn.work(person);
     return (
-      `"${n.written}" är ${person.name} på ${person.unit}. ` +
+      `"${n.written}" är ${person.name} på ${person.unit}, användarnamn ${person.key}. ` +
       (work.length
         ? `Öppna ärenden om medarbetaren under Behöver dig: ${work.map(t => workItemLine(t, now)).join(' ')}`
         : 'Inga öppna ärenden om medarbetaren under Behöver dig.')
@@ -276,16 +277,17 @@ export const PERSON_TOOL = 'clew.findPerson';
 /**
  * The lookup the model may use when the question's names were not written as names, or come from earlier in the
  * conversation: the name as the asker wrote it, resolved among the people the asker's own words could name. It answers
- * who it is, or the names when several, or that nobody is called so, and the open work about the one person: titles,
- * last days and buttons. `found` hears each person found, so the turn can draw their work.
+ * who it is, with the user name a read about one person takes (D122), or the names when several, or that nobody is
+ * called so, and the open work about the one person: titles, last days and buttons. `found` hears each person found, so
+ * the turn can draw their work.
  */
 export function personTool(turn: PeopleInTurn, now: string, found: (person: ManagedPerson) => void): ClewTool {
   return {
     name: PERSON_TOOL,
     description:
       'Ta reda på vem en medarbetare som personen nämnt är, bland dem personen är chef för, och vilka öppna ärenden om ' +
-      'medarbetaren som väntar på personen under Behöver dig. Svarar med namnet och ärendenas titel, sista dag och ' +
-      'knappar, aldrig med uppgifter om hälsa eller frånvaro.',
+      'medarbetaren som väntar på personen under Behöver dig. Svarar med namnet, användarnamnet som ett verktyg om en ' +
+      'medarbetare tar som person, och ärendenas titel, sista dag och knappar, aldrig med uppgifter om hälsa eller frånvaro.',
     input: {
       type: 'object',
       properties: {
@@ -319,6 +321,7 @@ export function personTool(turn: PeopleInTurn, now: string, found: (person: Mana
         found: 'one',
         name: match.person.name,
         unit: match.person.unit,
+        userName: match.person.key,
         workItems: turn.work(match.person).map(t => workItemLine(t, now)),
         note: 'Ärendena visas för personen i samtalet. Uppgifter om medarbetarens hälsa och frånvaro lämnas inte till dig.',
       };

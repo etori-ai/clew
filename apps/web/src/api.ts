@@ -13,6 +13,7 @@ import type {
   TalkHeldBody,
   TalksResult,
   GroupCapabilityInputType,
+  GroupRelationInputType,
   GroupSearchResult,
   ProvisionerIssueInputType,
   ProvisionerKeyIssued,
@@ -64,7 +65,6 @@ import type {
   RescheduleEventInput,
   CheckReport,
   ClewObject,
-  Completions,
   ConnectorDetail,
   ConnectorHealth,
   ConnectorPatchInput,
@@ -91,12 +91,35 @@ import type {
 } from '@clew/contracts';
 import type {
   CompetenceHoldingBody,
+  CompetenceImportBody,
+  CompetenceImportOutcome,
   CompetenceMappingBody,
+  CompetenceMergePreview,
+  CompetenceMatrixInput,
+  CompetenceMatrixOutput,
+  CompetenceRequirementBody,
+  CompetenceRequirementsOutput,
+  CompetenceSearchBody,
+  CompetenceSearchFileBody,
+  CompetenceSearchOptions,
+  CompetenceSearchPage,
+  CompetenceTypeSearchBody,
+  CompetenceTypeSearchOutput,
+  CompetenceShareTargetBody,
+  CompetenceShareTargetsOutput,
   CompetenceSourcesOutput,
   CompetenceTypeBody,
   CompetenceTypePatch,
   CompetenceTypesOutput,
   CompetenceValidityImpact,
+  CompetenceApproval,
+  CompetenceDecision,
+  CompetenceOwnOutput,
+  CompetenceSkillBody,
+  CompetenceSkillChangeBody,
+  CompetenceSkillRatingBody,
+  CompetenceSkillValidation,
+  CompetenceValidationBody,
   EntityActionStarted,
   EntityDetail,
   EntityKind,
@@ -106,6 +129,7 @@ import type {
 } from '@clew/contracts';
 
 import { ApiError } from './api-error';
+import { matrixQuery } from './competence-address';
 export { ApiError };
 export interface CorrectionExecution {
   id: string;
@@ -189,6 +213,28 @@ async function converseStream(
   throw new ApiError(502, 'Svaret bröts innan det var klart. Försök igen.');
 }
 const post = <T>(path: string, body?: unknown) => call<T>(path, { method: 'POST', body: JSON.stringify(body ?? {}) });
+/**
+ * A file the server makes from what a body asks (a search's result, D121): its bytes and the name the server gave it.
+ * Errors carry the server's Swedish message, as `call`'s do.
+ */
+async function file(path: string, body: unknown): Promise<{ blob: Blob; filename: string }> {
+  const response = await sessionFetch(path, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!response.ok) {
+    let message = 'Något gick fel.';
+    try {
+      message = ((await response.json()) as { error?: string }).error ?? message;
+    } catch {
+      /* not JSON */
+    }
+    throw new ApiError(response.status, message);
+  }
+  const named = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') ?? '')?.[1];
+  return { blob: await response.blob(), filename: named ?? 'fil.csv' };
+}
 const patch = <T>(path: string, body: unknown) => call<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
 const put = <T>(path: string, body: unknown) => call<T>(path, { method: 'PUT', body: JSON.stringify(body) });
 const del = <T>(path: string) => call<T>(path, { method: 'DELETE' });
@@ -274,8 +320,8 @@ export const api = {
   },
   /**
    * Kompetens (D108): the built-in module's own routes. They are refused while the module is switched off for the
-   * person, and the catalogue is refused to someone who neither manages anyone nor administers it; `queries.ts` turns
-   * that refusal into `null`.
+   * person, and the catalogue is refused to someone who neither manages anyone nor administers it (a person reads the
+   * types of their own registration from `ownTypes`); `queries.ts` turns that refusal into `null`.
    */
   competence: {
     /** The competence types a certificate can be registered for. */
@@ -287,6 +333,18 @@ export const api = {
       patch<void>(`/api/competence/types/${encodeURIComponent(id)}`, body),
     /** Archives a type: it takes no new holdings and keeps the ones it has. */
     archiveType: (id: string) => post<void>(`/api/competence/types/${encodeURIComponent(id)}/archive`),
+    /** Brings an archived type back; a merged one is refused, since a merge is not undone. */
+    restoreType: (id: string) => post<void>(`/api/competence/types/${encodeURIComponent(id)}/restore`),
+    /** What merging the type into another would move, in counts; nothing is written. */
+    mergePreview: (id: string, into: string) =>
+      call<CompetenceMergePreview>(
+        `/api/competence/types/${encodeURIComponent(id)}/merge?into=${encodeURIComponent(into)}`,
+      ),
+    /** Merges the type into another: its holdings, requirements and mappings move, and it is archived as merged. */
+    mergeTypes: (id: string, into: string) =>
+      post<CompetenceMergePreview>(`/api/competence/types/${encodeURIComponent(id)}/merge`, { into }),
+    /** Imports chosen rows of a file (D120 item 7), a part at a time: what the catalogue holds already is skipped. */
+    importTypes: (body: CompetenceImportBody) => post<CompetenceImportOutcome>('/api/competence/types/import', body),
     /** What a new validity would do to the holdings counted from the type's rule, before it is saved. */
     validityImpact: (id: string, months: number | null) =>
       call<CompetenceValidityImpact>(
@@ -295,6 +353,51 @@ export const api = {
     /** A manager registers a certificate for a person who reports to them. */
     register: (personId: string, body: CompetenceHoldingBody) =>
       post<{ id: string }>(`/api/competence/people/${encodeURIComponent(personId)}/holdings`, body),
+    /** The manager a person reports to takes back a holding registered in Clew; a copied one is refused. */
+    revokeHolding: (id: string) => del<void>(`/api/competence/holdings/${encodeURIComponent(id)}`),
+    /** The reader's own registration (D108 item 7): whether anyone would decide it, and the ones that wait. */
+    own: () => call<CompetenceOwnOutput>('/api/competence/own'),
+    /** The types a person may register one of their own for: the catalogue's, archived ones left out. */
+    ownTypes: () => call<CompetenceTypesOutput>('/api/competence/own/types'),
+    /** The reader registers a holding of their own, for the manager they report to to approve. */
+    registerOwn: (body: CompetenceHoldingBody) => post<{ id: string }>('/api/competence/own/holdings', body),
+    /** The reader takes back their own registration while it waits. */
+    withdrawOwn: (id: string) => del<void>(`/api/competence/own/holdings/${encodeURIComponent(id)}`),
+    /** The reader removes their own registration that their manager rejected. */
+    removeRejected: (id: string) => del<void>(`/api/competence/own/rejected/${encodeURIComponent(id)}`),
+    /** The reader adds a skill of their own (D120): stored at once as their own rating; one they hold is refused. */
+    rateOwnSkill: (body: CompetenceSkillRatingBody) => post<{ id: string }>('/api/competence/own/skills', body),
+    /** The reader changes a skill of their own: its level and the interest mark. */
+    changeOwnSkill: (id: string, body: CompetenceSkillChangeBody) =>
+      put<void>(`/api/competence/own/skills/${encodeURIComponent(id)}`, body),
+    /** The reader removes a skill of their own. */
+    removeOwnSkill: (id: string) => del<void>(`/api/competence/own/skills/${encodeURIComponent(id)}`),
+    /** A manager registers a skill for a person who reports to them, confirmed at once. */
+    registerSkill: (personId: string, body: CompetenceSkillBody) =>
+      post<{ id: string }>(`/api/competence/people/${encodeURIComponent(personId)}/skills`, body),
+    /** A report's skill as the manager confirms it. */
+    skill: (id: string) => call<CompetenceSkillValidation>(`/api/competence/skills/${encodeURIComponent(id)}`),
+    /** The manager confirms the skill's level, or sets another. */
+    validateSkill: (id: string, body: CompetenceValidationBody) =>
+      post<void>(`/api/competence/skills/${encodeURIComponent(id)}/validation`, body),
+    /** A registration of a report's own that waits for the reader's decision. */
+    approval: (id: string) => call<CompetenceApproval>(`/api/competence/approvals/${encodeURIComponent(id)}`),
+    /** The reader approves or rejects it. */
+    decide: (id: string, decision: CompetenceDecision) =>
+      post<void>(`/api/competence/approvals/${encodeURIComponent(id)}`, { decision }),
+    /** The manager's matrix (D108 item 11): their reports against what is required of them, the set of columns `by`. */
+    matrix: (input: CompetenceMatrixInput) =>
+      call<CompetenceMatrixOutput>(`/api/competence/matrix${matrixQuery(input)}`),
+    /**
+     * Kompetenssökning (D121): what the page narrows by, refused to anyone without the relation; the types whose name or
+     * area holds the words typed; one page of the people who hold a type; and the whole result as a file. What is
+     * searched for travels in the body, never in an address, and every read is logged on the server.
+     */
+    searchOptions: () => call<CompetenceSearchOptions>('/api/competence/search'),
+    findTypes: (body: CompetenceTypeSearchBody) =>
+      post<CompetenceTypeSearchOutput>('/api/competence/search/types', body),
+    search: (body: CompetenceSearchBody) => post<CompetenceSearchPage>('/api/competence/search', body),
+    searchFile: (body: CompetenceSearchFileBody) => file('/api/competence/search.csv', body),
     /** The systems whose holdings are copied in (D108 item 9): each one's last read and its types with their mappings. */
     sources: () => call<CompetenceSourcesOutput>('/api/competence/sources'),
     /** Maps a type of a source to a catalogue type, or removes the mapping with `typeId: null`. */
@@ -302,6 +405,18 @@ export const api = {
       put<{ holdings: number }>(`/api/competence/sources/${encodeURIComponent(connectorId)}/mapping`, body),
     /** "Läs in nu": a read of one source, started at once. */
     readSource: (connectorId: string) => post<void>(`/api/competence/sources/${encodeURIComponent(connectorId)}/read`),
+    /** The requirements on positions and units (D108 item 6), and the positions and units they can be set on. */
+    requirements: () => call<CompetenceRequirementsOutput>('/api/competence/requirements'),
+    /** Adds a requirement on one position, one unit or, for a manager, one of their reports. */
+    addRequirement: (body: CompetenceRequirementBody) => post<{ id: string }>('/api/competence/requirements', body),
+    /** Removes a requirement. */
+    removeRequirement: (id: string) => del<void>(`/api/competence/requirements/${encodeURIComponent(id)}`),
+    /** The share targets: a least share of a position's holders, on a unit's branch or the whole organisation. */
+    shareTargets: () => call<CompetenceShareTargetsOutput>('/api/competence/share-targets'),
+    /** Adds a share target. */
+    addShareTarget: (body: CompetenceShareTargetBody) => post<{ id: string }>('/api/competence/share-targets', body),
+    /** Removes a share target. */
+    removeShareTarget: (id: string) => del<void>(`/api/competence/share-targets/${encodeURIComponent(id)}`),
   },
   /** The manifest field by field (D60): a public document, read with the plain fetch since no session or token belongs on it. */
   manifestReference: async () => {
@@ -322,7 +437,6 @@ export const api = {
   undo: (id: string) => post<Thread>(`/api/threads/${id}/undo`),
   replan: (id: string, week: string) => post<Thread>(`/api/threads/${id}/replan`, { week }),
   dismiss: (id: string) => post<Thread>(`/api/threads/${id}/dismiss`),
-  completions: () => call<Completions>('/api/completions'),
   thread: (id: string) => call<Thread>(`/api/threads/${id}`),
   /** A work item's Händelser (D112 item 4), from its audit rows. */
   itemEvents: (id: string) => call<ItemEvents>(`/api/threads/${id}/events`),
@@ -430,6 +544,11 @@ export const api = {
       post<UsersAdminOverview>('/api/admin/users/group-capabilities', input),
     removeGroupCapability: (input: GroupCapabilityInputType) =>
       post<UsersAdminOverview>('/api/admin/users/group-capabilities/remove', input),
+    // D121: a group gives a relation to people by grant, mapped beside the capabilities.
+    addGroupRelation: (input: GroupRelationInputType) =>
+      post<UsersAdminOverview>('/api/admin/users/group-relations', input),
+    removeGroupRelation: (input: GroupRelationInputType) =>
+      post<UsersAdminOverview>('/api/admin/users/group-relations/remove', input),
     // The catalogues' keys (D107). The answer to issuing or rotating one carries the key, once.
     issueProvisioner: (input: ProvisionerIssueInputType) =>
       post<ProvisionerKeyIssued>('/api/admin/users/provisioners', input),

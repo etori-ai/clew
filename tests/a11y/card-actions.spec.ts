@@ -417,14 +417,6 @@ test.describe('nothing is cut off', () => {
     expect(await cutOff(page.getByRole('dialog'))).toEqual([]);
   });
 
-  test('what the box suggests on a phone keeps its whole title', async ({ page, api: _ }) => {
-    await page.setViewportSize(phone);
-    await open(page, '/');
-    await composer(page).fill('attestera');
-    await expect(page.getByText('Menar du')).toBeVisible();
-    expect(await cutOff(page.getByRole('main'))).toEqual([]);
-  });
-
   test('a proposal in a week says who it is on a line of its own', async ({ page, api: _ }) => {
     await page.setViewportSize(desktop);
     await open(page, `/calendar?date=${NEXT_WEEK}`);

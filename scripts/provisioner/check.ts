@@ -11,6 +11,7 @@ import {
   UNIT_KEY,
   MANAGER_KEY,
   CAPABILITY_KEY,
+  POSITION_KEY,
   PROTECTED_KEY,
   isCapability,
   readScimGroupKey,
@@ -127,10 +128,11 @@ export async function checkProvisioning(
     units = keyed(UNIT_KEY),
     managers = keyed(MANAGER_KEY),
     capabilities = keyed(CAPABILITY_KEY),
-    plain = sound.length - units.length - managers.length - capabilities.length;
+    positions = keyed(POSITION_KEY),
+    plain = sound.length - units.length - managers.length - capabilities.length - positions.length;
   say('ok', `${plural(users.length, 'user', 'users')}: ${active.length} active, ${deactivated.length} deactivated.`);
   const counts = [
-    `${units.length} unit, ${managers.length} unit-manager, ${capabilities.length} capability, ${plain} plain (${groups.filter(g => !g.externalId).length} without an externalId)`,
+    `${units.length} unit, ${managers.length} unit-manager, ${capabilities.length} capability, ${positions.length} position, ${plain} plain (${groups.filter(g => !g.externalId).length} without an externalId)`,
     ...(miswritten.length ? [`${miswritten.length} with a key written wrong`] : []),
     ...(unknown.length ? [`${unknown.length} with a capability the check does not know`] : []),
   ];
@@ -171,6 +173,15 @@ export async function checkProvisioning(
       'ok',
       `Phone numbers on ${active.filter(u => u.phoneNumbers?.length).length} of ${plural(active.length, 'active user', 'active users')}, employments on ${active.filter(u => jobsOf(u).length).length}.`,
     );
+  // D108 item 5: a position is membership of a `position:` group and gives no access, so a mapping that sends none
+  // shows here and nowhere else.
+  if (active.length && positions.length) {
+    const held = active.filter(u => (u.groups ?? []).some(g => keyOf.get(g.value)?.startsWith(POSITION_KEY))).length;
+    say(
+      'ok',
+      `Positions on ${held} of ${plural(active.length, 'active user', 'active users')}, from ${plural(positions.length, 'position', 'positions')}.`,
+    );
+  }
   const named = new Set(units.map(g => g.externalId!.slice(UNIT_KEY.length)));
   // An employment is refused when it is written on a unit Clew does not hold; a unit removed afterwards leaves it.
   const adrift = active.flatMap(u =>

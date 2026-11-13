@@ -441,8 +441,14 @@ describe('the model and a view it may not read', () => {
     expect(handed).toEqual(viewSummary(tool.view!, tool.title, output));
     expect(handed).toMatchObject({ shown: true, view: 'Sök i telefonboken', rows: 2 });
     expect(JSON.stringify(handed)).not.toMatch(/Anna|0980/);
-    // A view that does not ask for it is read as before.
-    expect(await execute(open, async () => output)).toEqual(output);
+    // A view that does not ask for it is read as the view draws it: its labels, the rows counted (`modelReading`).
+    expect(await execute(open, async () => output)).toEqual({
+      antal: 2,
+      rader: [
+        { Namn: 'Anna Lindqvist', Telefon: '0980-319 203' },
+        { Namn: 'Hassan Ali', Telefon: '0980-319 202' },
+      ],
+    });
     expect(
       systemPrompt({ name: 'x', role: 'employee', unitLabel: 'y', now: new Date(now), week: 45, objects: [] }),
     ).toContain('resultatet visas i en vy');
@@ -517,13 +523,13 @@ describe('a person found by the search is counted, never named, in what Clew sto
   };
   const sources: SearchResult['sources'] = [{ id: 'phonebook', source: 'Telefonboken', status: 'ok' }];
   test('the sentence without a model and the citations stored with an answer leave the name in its source', () => {
-    expect(searchAnswer({ rows: [person], sources }, now).body).toMatch(
-      /^1 person hittades\. Se kontaktuppgifterna i panelen\. Källor: Telefonboken\./,
+    expect(searchAnswer({ rows: [person], sources }).body).toBe(
+      '1 person hittades. Se kontaktuppgifterna i panelen. Källor: Telefonboken.',
     );
-    const mixed = searchAnswer(
-      { rows: [routine, person, { ...person, ref: 'person:2', label: 'Hassan Ali' }], sources },
-      now,
-    ).body;
+    const mixed = searchAnswer({
+      rows: [routine, person, { ...person, ref: 'person:2', label: 'Hassan Ali' }],
+      sources,
+    }).body;
     expect(mixed).toContain('1 träff i rutiner och dokument: Rutin vid fall. Dessutom 2 personer.');
     expect(mixed).not.toMatch(/Anna|Hassan/);
     expect(citationsOf({ rows: [person, routine] })).toEqual([

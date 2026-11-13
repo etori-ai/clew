@@ -7,8 +7,8 @@ import '@clew/ui/styles.css';
 import { createQueryClient } from './query-client';
 import { changeNotices } from './thread-cache';
 import { LinkProvider, Providers, SessionBoundary, VisuallyHidden, type BrowserSession } from '@clew/ui';
-import type { Capability, SessionUser, SiteHeaderView } from '@clew/contracts';
-import { HeldCapabilities, capabilitiesOf } from './capabilities';
+import type { Capability, RelationGrant, SessionUser, SiteHeaderView } from '@clew/contracts';
+import { HeldCapabilities, HeldRelations, capabilitiesOf, relationsOf } from './capabilities';
 import { FirstLoad } from './components/first-load';
 import { StartPage } from './pages/start';
 import { TodoPage } from './pages/todo';
@@ -31,6 +31,9 @@ import { AdminModelsPage } from './pages/admin/models';
 import { AdminUsersPage } from './pages/admin/users';
 import { AdminOrganisationPage } from './pages/admin/organisation';
 import { StaffPage } from './pages/staff';
+import { CompetencePage } from './pages/competence';
+import { ApprovalPage, CompetenceMatrixPage } from './pages/competence-matrix';
+import { CompetenceSearchPage } from './pages/competence-search';
 import { PersonPage } from './pages/person';
 import { UnitPage } from './pages/unit';
 import { UnitsPage } from './pages/units';
@@ -40,9 +43,18 @@ import { NotAdmin } from './pages/admin/shell';
 import { AdminAppearancePage } from './pages/admin/appearance';
 import { AdminCompetencePage } from './pages/admin/competence';
 import { AdminCompetenceSourcesPage } from './pages/admin/competence-sources';
+import { AdminCompetenceRequirementsPage } from './pages/admin/competence-requirements';
+import { AdminCompetenceImportPage } from './pages/admin/competence-import';
 import { loadBranding, useBranding } from './branding';
 
-type Shell = { session: BrowserSession; user: SessionUser; admin: boolean; capabilities: Capability[] };
+type Shell = {
+  session: BrowserSession;
+  user: SessionUser;
+  admin: boolean;
+  capabilities: Capability[];
+  /** D121: the relations to people held by grant: whether Kompetens offers its search. Never an admin flag. */
+  relations: RelationGrant[];
+};
 /** The cache inspector, development only: the production bundle, the a11y suite and a deployment never carry it. */
 const Devtools = import.meta.env.DEV
   ? lazy(() => import('@tanstack/react-query-devtools').then(m => ({ default: m.ReactQueryDevtools })))
@@ -85,6 +97,7 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
           user: data.user,
           admin: data.admin === true,
           capabilities: capabilitiesOf(data.capabilities),
+          relations: relationsOf(data.relations),
         });
       })
       .catch(() => {
@@ -139,6 +152,7 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
                 user: data.user,
                 admin: data.admin === true,
                 capabilities: capabilitiesOf(data.capabilities),
+                relations: relationsOf(data.relations),
               });
             })
             .catch(() => setShell('anonymous'));
@@ -185,7 +199,9 @@ function Protected({ children }: { children: (shell: Shell) => React.ReactNode }
         <ConversationProvider>
           <ThingConversationProvider>
             <HeldCapabilities.Provider value={shell.capabilities}>
-              <PanelClaims>{children(shell)}</PanelClaims>
+              <HeldRelations.Provider value={shell.relations}>
+                <PanelClaims>{children(shell)}</PanelClaims>
+              </HeldRelations.Provider>
             </HeldCapabilities.Provider>
           </ThingConversationProvider>
         </ConversationProvider>
@@ -244,6 +260,8 @@ function App() {
         path="/tools/clew.news"
         element={<Protected>{shell => <NewsPage user={shell.user} admin={shell.admin} />}</Protected>}
       />
+      {/* A report's own registration (D108 item 7): the page of the read its card opens is the decision over the matrix. */}
+      <Route path="/tools/competence.approval" element={<ApprovalPage />} />
       <Route
         path="/tools/:capability"
         element={<Protected>{shell => <ToolPage user={shell.user} admin={shell.admin} />}</Protected>}
@@ -252,6 +270,20 @@ function App() {
       <Route
         path="/staff"
         element={<Protected>{shell => <StaffPage user={shell.user} admin={shell.admin} />}</Protected>}
+      />
+      {/* Kompetens (D120 item 8): the reader's own, and a manager's matrix of their reports (D108 item 11); the server checks both. */}
+      <Route
+        path="/competence"
+        element={<Protected>{shell => <CompetencePage user={shell.user} admin={shell.admin} />}</Protected>}
+      />
+      <Route
+        path="/competence/matrix"
+        element={<Protected>{shell => <CompetenceMatrixPage user={shell.user} admin={shell.admin} />}</Protected>}
+      />
+      {/* Kompetenssökning (D121 item 4): who in the organisation holds a type, for the holder of the relation `registrar`. */}
+      <Route
+        path="/competence/search"
+        element={<Protected>{shell => <CompetenceSearchPage user={shell.user} admin={shell.admin} />}</Protected>}
       />
       {/* A person as a page (D97 item 5, D111 rule 3): a name on Personal or on any row that names them; `section` is the chosen source. */}
       <Route
@@ -330,6 +362,18 @@ function App() {
         ))}
       />
       <Route
+        path="/admin/competence/requirements"
+        element={admin(shell => (
+          <AdminCompetenceRequirementsPage user={shell.user} />
+        ))}
+      />
+      <Route
+        path="/admin/competence/import"
+        element={admin(shell => (
+          <AdminCompetenceImportPage user={shell.user} />
+        ))}
+      />
+      <Route
         path="/admin/models/:id"
         element={admin(shell => (
           <AdminModelPage user={shell.user} />
@@ -339,7 +383,7 @@ function App() {
         path="/todo"
         element={<Protected>{shell => <TodoPage user={shell.user} admin={shell.admin} />}</Protected>}
       />
-      {/* A work item as a page (D112 item 4): "Öppna som sida" from the reading pane and the panel; `from` is the way back. */}
+      {/* A work item as a page (D112 item 4): its title in the reading pane and the panel leads here; `from` is the way back. */}
       <Route
         path="/items/:threadId"
         element={<Protected>{shell => <ItemPage user={shell.user} admin={shell.admin} />}</Protected>}

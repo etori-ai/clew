@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { QueryClient } from '@tanstack/query-core';
+import { QueryClient, QueryObserver, focusManager, onlineManager } from '@tanstack/query-core';
 import type { Proposal, Thread } from '@clew/contracts';
 import { keys } from '../../apps/web/src/query-keys';
+import { createQueryClient } from '../../apps/web/src/query-client';
+import { LOGGED_READ, isLoggedQuery, isLoggedView } from '../../apps/web/src/logged-reads';
 import {
   applyThread,
   changeNotices,
@@ -198,5 +200,66 @@ describe('the stream cache (D33)', () => {
     expect(pickProposalThread([thread({ id: 'x' }), handled, open])?.id).toBe('new');
     expect(pickProposalThread([thread({ id: 'x' }), handled])?.id).toBe('old');
     expect(pickProposalThread([thread({ id: 'x' })])).toBeNull();
+  });
+});
+
+describe('a read the server logs is read when the reader asks, and no more (D121 item 5)', () => {
+  /** A query observed as a page observes it, with the session's own defaults; how often its read was made. */
+  async function observed(c: QueryClient, key: readonly unknown[], options: object) {
+    let reads = 0;
+    const observer = new QueryObserver(c, {
+      queryKey: key,
+      queryFn: async () => ({ read: ++reads }),
+      ...options,
+    });
+    const stop = observer.subscribe(() => undefined);
+    await tick();
+    return { reads: () => reads, stop };
+  }
+  test('a search and another person’s holdings are not read again by a notice, the tab shown, the network back or age', async () => {
+    const c = createQueryClient();
+    const search = await observed(c, ['competence-search', { typeId: 't-hlr', page: 1, pageSize: 25 }], LOGGED_READ);
+    const holdings = await observed(c, keys.view('competence.holdings', '{"person":"anna"}'), LOGGED_READ);
+    // An ordinary view beside them, which every one of these does read again.
+    const ordinary = await observed(c, keys.view('phonebook.directory', null), {});
+    expect([search.reads(), holdings.reads(), ordinary.reads()]).toEqual([1, 1, 1]);
+    const notices = changeNotices(c);
+    notices.arrived('1');
+    notices.arrived('2');
+    await tick();
+    expect([search.reads(), holdings.reads()]).toEqual([1, 1]);
+    expect(ordinary.reads()).toBe(2);
+    focusManager.setFocused(false);
+    focusManager.setFocused(true);
+    onlineManager.setOnline(false);
+    onlineManager.setOnline(true);
+    await tick();
+    expect([search.reads(), holdings.reads()]).toEqual([1, 1]);
+    // Nor is it marked to be read again when next shown: it stays what was read.
+    for (const key of [
+      ['competence-search', { typeId: 't-hlr', page: 1, pageSize: 25 }],
+      keys.view('competence.holdings', '{"person":"anna"}'),
+    ]) {
+      expect(c.getQueryState(key)?.isInvalidated).toBe(false);
+      expect(c.getQueryCache().find({ queryKey: key })?.isStale()).toBe(false);
+    }
+    for (const o of [search, holdings, ordinary]) o.stop();
+    notices.stop();
+    focusManager.setFocused(undefined);
+  });
+  test('which view reads are logged: one person’s holdings named by `person`; the reader’s own page names nobody', () => {
+    expect(LOGGED_READ).toMatchObject({
+      staleTime: Infinity,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      retry: false,
+    });
+    expect(isLoggedView('competence.holdings', '{"person":"anna"}')).toBe(true);
+    expect(isLoggedView('competence.holdings', null)).toBe(false);
+    expect(isLoggedView('competence.holdings', '{}')).toBe(false);
+    expect(isLoggedView('competence.attention', '{"person":"anna"}')).toBe(false);
+    expect(isLoggedView('competence.holdings', '{not json')).toBe(false);
+    expect(isLoggedQuery({ meta: LOGGED_READ.meta })).toBe(true);
+    expect(isLoggedQuery({ meta: undefined })).toBe(false);
   });
 });

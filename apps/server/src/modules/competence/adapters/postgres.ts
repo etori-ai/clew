@@ -1,11 +1,24 @@
-import { and, asc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
-import { schema, type Transaction } from '@clew/db';
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, like, ne, or, sql, type SQL } from 'drizzle-orm';
+import { database, schema, type Transaction } from '@clew/db';
 import { enqueueWorkflow, type DurableQueue } from '@clew/db/durable';
+import { UNIT_KEY } from '@clew/contracts/scim-group-key';
+import { RETENTION_GRACE_MS } from '../domain';
 import {
+  PendingTaken,
+  RequirementTaken,
+  ShareTargetTaken,
+  SkillTaken,
   TypeNameTaken,
+  TypeUriTaken,
+  type ApprovalWorkItemTx,
   type CompetenceCardsTx,
+  type CompetenceStore,
   type CompetenceTx,
+  type ErasureRecord,
   type HoldingRecord,
+  type Placed,
+  type RequirementRecord,
+  type ShareTargetRecord,
   type SourceMapping,
   type SourceReadCounts,
   type SourceRecord,
@@ -17,6 +30,15 @@ const {
   competenceHoldings: holdings,
   competenceSourceMappings: mappings,
   competenceSources: sources,
+  competenceRequirements: requirements,
+  competenceShareTargets: targets,
+  competenceReadLog: reads,
+  competenceRetention: periods,
+  competenceErasures: intents,
+  positions,
+  personPositions,
+  groups,
+  assignments,
   people,
   audit,
 } = schema;
@@ -24,6 +46,8 @@ type TypeRow = typeof types.$inferSelect;
 type HoldingRow = typeof holdings.$inferSelect;
 type MappingRow = typeof mappings.$inferSelect;
 type SourceRow = typeof sources.$inferSelect;
+type RequirementRow = typeof requirements.$inferSelect;
+type TargetRow = typeof targets.$inferSelect;
 const iso = (at: Date | null) => (at === null ? null : at.toISOString());
 const date = (at: string | null) => (at === null ? null : new Date(at));
 const sv = (a: string, b: string) => a.localeCompare(b, 'sv');
@@ -40,15 +64,56 @@ function nameTaken(error: unknown) {
     (e?.constraint_name ?? e?.cause?.constraint_name) === 'competence_type_name'
   );
 }
-/** Run a write of the catalogue, turning the name index's refusal into the port's `TypeNameTaken`. */
+/**
+ * Run a write of the catalogue, turning the name index's refusal into the port's `TypeNameTaken` and the address
+ * index's (D120 item 7) into `TypeUriTaken`.
+ */
 async function named(write: () => Promise<unknown>) {
   try {
     await write();
   } catch (error) {
     if (nameTaken(error)) throw new TypeNameTaken();
+    if (uniqueIndexOf(error) === 'competence_type_source_uri') throw new TypeUriTaken();
     throw error;
   }
 }
+/** Which unique index refused a write, or undefined for another error; the driver may wrap the error once. */
+function uniqueIndexOf(error: unknown): string | undefined {
+  const e = error as { code?: string; constraint_name?: string; cause?: { code?: string; constraint_name?: string } };
+  return (e?.code ?? e?.cause?.code) === '23505' ? (e?.constraint_name ?? e?.cause?.constraint_name) : undefined;
+}
+/** Run a write, turning a refusal of one of these unique indexes into `taken`. */
+async function once(write: () => Promise<unknown>, indexes: readonly string[], taken: () => Error) {
+  try {
+    await write();
+  } catch (error) {
+    const index = uniqueIndexOf(error);
+    if (index && indexes.includes(index)) throw taken();
+    throw error;
+  }
+}
+/**
+ * Run a write of a holding, turning a refusal of the one pending registration of a type (D108 item 7) into
+ * `PendingTaken` and of the one skill of a type (D120 item 1) into `SkillTaken`.
+ */
+async function taken(write: () => Promise<unknown>) {
+  try {
+    await write();
+  } catch (error) {
+    const index = uniqueIndexOf(error);
+    if (index === 'competence_holding_pending') throw new PendingTaken();
+    if (index === 'competence_holding_one_skill') throw new SkillTaken();
+    throw error;
+  }
+}
+const REQUIREMENT_INDEXES = [
+  'competence_requirement_position',
+  'competence_requirement_unit',
+  'competence_requirement_person',
+];
+const TARGET_INDEXES = ['competence_share_target_unit', 'competence_share_target_organisation'];
+const requirementOf = (r: RequirementRow): RequirementRecord => ({ ...r, createdAt: r.createdAt.toISOString() });
+const targetOf = (r: TargetRow): ShareTargetRecord => ({ ...r, createdAt: r.createdAt.toISOString() });
 const typeOf = (r: TypeRow): TypeRecord => ({
   ...r,
   createdAt: r.createdAt.toISOString(),
@@ -58,6 +123,9 @@ const holdingOf = ({ connectorId, sourceId, sourceType, sourceLabel, readAt, ...
   ...r,
   createdAt: r.createdAt.toISOString(),
   revokedAt: iso(r.revokedAt),
+  decidedAt: iso(r.decidedAt),
+  validatedAt: iso(r.validatedAt),
+  ratedAt: iso(r.ratedAt),
   copy:
     connectorId && sourceId && sourceType && sourceLabel && readAt
       ? { connectorId, sourceId, sourceType, sourceLabel, readAt: readAt.toISOString() }
@@ -68,6 +136,9 @@ const rowOf = ({ copy, ...h }: HoldingRecord): typeof holdings.$inferInsert => (
   ...h,
   createdAt: new Date(h.createdAt),
   revokedAt: date(h.revokedAt),
+  decidedAt: date(h.decidedAt),
+  validatedAt: date(h.validatedAt),
+  ratedAt: date(h.ratedAt),
   connectorId: copy?.connectorId ?? null,
   sourceId: copy?.sourceId ?? null,
   sourceType: copy?.sourceType ?? null,
@@ -75,6 +146,16 @@ const rowOf = ({ copy, ...h }: HoldingRecord): typeof holdings.$inferInsert => (
   readAt: copy ? new Date(copy.readAt) : null,
 });
 const mappingOf = (r: MappingRow): SourceMapping => ({ ...r, mappedAt: r.mappedAt.toISOString() });
+const erasureOf = (r: typeof intents.$inferSelect): ErasureRecord => ({
+  ...r,
+  inactiveSince: iso(r.inactiveSince),
+  updatedAt: r.updatedAt.toISOString(),
+});
+/**
+ * When an `inactive` intent falls due under its organisation's period, as `erasureDue` computes it: the period's days of
+ * 24 hours after `inactive_since`, and never sooner than the grace after the period was set. Read joined to the period.
+ */
+const dueOf = sql<Date>`greatest(${intents.inactiveSince} + ${periods.days} * interval '24 hours', ${periods.setAt} + ${RETENTION_GRACE_MS}::float8 * interval '1 millisecond')`;
 const sourceOf = (r: SourceRow): SourceRecord => ({
   ...r,
   claimedAt: iso(r.claimedAt),
@@ -85,13 +166,50 @@ const sourceOf = (r: SourceRow): SourceRecord => ({
 });
 
 /**
+ * A store with no approval cards (D108 item 7), for a caller that registers nothing of a person's own: a scheduled read,
+ * an operator's script, the store contract. Opening or closing a card is refused, since its approval would be lost; with
+ * no card there is nothing to remove. Composition builds the server's store with the cards (`competenceStoreWithCards`).
+ */
+const noCards: ApprovalWorkItemTx = {
+  async open() {
+    throw new Error('This competence store has no approval cards: build it with competenceStoreWithCards.');
+  },
+  async close() {
+    throw new Error('This competence store has no approval cards: build it with competenceStoreWithCards.');
+  },
+  async cards() {
+    return [];
+  },
+  async reopen() {
+    throw new Error('This competence store has no approval cards: build it with competenceStoreWithCards.');
+  },
+  async remove() {},
+  async removeAbout() {},
+  async removeOwned() {},
+};
+/**
+ * A store with no thread store beside it has no way to remove a person's own cards (D108 item 14), so an erasure through
+ * it is refused, and its transaction with it, rather than leave the cards behind. Composition builds the server's store
+ * with them (`competenceStoreWithCards`).
+ */
+const noOwnCards: CompetenceCardsTx = {
+  async removeOwn() {
+    throw new Error('This competence store cannot remove cards: build it with competenceStoreWithCards.');
+  },
+};
+/**
  * The competence tables (D108) on one Postgres transaction. Reads that a write follows take a row lock. The catalogue's
  * order is Swedish and is sorted here, since the database's collation is not Clew's to choose. `durable` names the
- * engine's application and queue, so a workflow start commits with the transaction that decides it (D86). `cards` is
- * the person's own cards on the same transaction, which composition shares with the thread store
- * (`composition/competence.ts`).
+ * engine's application and queue, so a workflow start commits with the transaction that decides it (D86). `workItems` is
+ * the approvals' cards over the same transaction (D108 item 7), and `cards` the person's own cards for an erasure,
+ * which composition shares with the thread store (`composition/competence.ts`).
  */
-export function competenceTx(tx: Transaction, durable: DurableQueue, cards: CompetenceCardsTx): CompetenceTx {
+export function competenceTx(
+  tx: Transaction,
+  durable: DurableQueue,
+  workItems: ApprovalWorkItemTx = noCards,
+  cards: CompetenceCardsTx = noOwnCards,
+): CompetenceTx {
   return {
     cards,
     async types(organisationId, options = {}) {
@@ -125,8 +243,56 @@ export function competenceTx(tx: Transaction, durable: DurableQueue, cards: Comp
       if ('kind' in patch && patch.kind !== undefined) set.kind = patch.kind;
       if ('validityMonths' in patch) set.validityMonths = patch.validityMonths ?? null;
       if ('archivedAt' in patch) set.archivedAt = date(patch.archivedAt ?? null);
+      if ('mergedInto' in patch) set.mergedInto = patch.mergedInto ?? null;
       if (!Object.keys(set).length) return;
       await named(() => tx.update(types).set(set).where(eq(types.id, id)));
+    },
+    async insertTypes(rows) {
+      // `ON CONFLICT DO NOTHING` without a target: a row the name index (its `lower()` under the database's collation)
+      // or the address index would refuse, an earlier row of the statement included, is left out, never an error.
+      const inserted: string[] = [];
+      for (const slice of slices(rows))
+        for (const r of await tx
+          .insert(types)
+          .values(slice.map(t => ({ ...t, createdAt: new Date(t.createdAt), archivedAt: date(t.archivedAt) })))
+          .onConflictDoNothing()
+          .returning({ id: types.id }))
+          inserted.push(r.id);
+      return inserted;
+    },
+    async lockCatalogue(organisationId) {
+      // A lock of the transaction on the organisation's catalogue: there is no row of the organisation to lock.
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${'competence-catalogue:' + organisationId}, 0))`,
+      );
+    },
+    async countTypes(organisationId) {
+      const [row] = await tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(types)
+        .where(eq(types.organisationId, organisationId));
+      return Number(row?.n ?? 0);
+    },
+    async findTypes(organisationId, words, limit) {
+      // Matched and ordered under the ICU collation the people list uses (D100), so å, ä and ö fold and sort the same
+      // in a database created with the locale C as in the memory store's `Intl`.
+      const folded = (column: SQL, pattern: string) => sql`${column} collate "sv-x-icu" ilike ${pattern}`;
+      const rows = await tx
+        .select()
+        .from(types)
+        .where(
+          and(
+            eq(types.organisationId, organisationId),
+            isNull(types.archivedAt),
+            ...words.map(word => {
+              const pattern = '%' + word.replace(/[\\%_]/g, '\\$&') + '%';
+              return or(folded(sql`${types.name}`, pattern), folded(sql`${types.area}`, pattern));
+            }),
+          ),
+        )
+        .orderBy(sql`${types.name} collate "sv-x-icu"`, asc(types.id))
+        .limit(limit);
+      return rows.map(typeOf);
     },
     async holdingsOf(personIds) {
       if (!personIds.length) return [];
@@ -145,20 +311,66 @@ export function competenceTx(tx: Transaction, durable: DurableQueue, cards: Comp
         .orderBy(asc(holdings.createdAt), asc(holdings.id));
       return rows.map(holdingOf);
     },
+    async lockHoldingsOfTypes(typeIds) {
+      if (!typeIds.length) return [];
+      const rows = await tx
+        .select()
+        .from(holdings)
+        .where(inArray(holdings.typeId, [...new Set(typeIds)]))
+        .orderBy(asc(holdings.id))
+        .for('update');
+      return rows.map(holdingOf);
+    },
+    async waitingRegistrations() {
+      const rows = await tx
+        .select()
+        .from(holdings)
+        .where(and(eq(holdings.evidence, 'self'), eq(holdings.state, 'pending')))
+        .orderBy(asc(holdings.createdAt), asc(holdings.id));
+      return rows.map(holdingOf);
+    },
     async holding(id) {
       const [r] = await tx.select().from(holdings).where(eq(holdings.id, id)).for('update');
       return r ? holdingOf(r) : undefined;
     },
     async insertHolding(h) {
-      await tx.insert(holdings).values(rowOf(h));
+      await taken(() => tx.insert(holdings).values(rowOf(h)));
     },
     async updateHolding(id, patch) {
       const set: Partial<typeof holdings.$inferInsert> = {};
       if ('state' in patch && patch.state !== undefined) set.state = patch.state;
       if ('revokedAt' in patch) set.revokedAt = date(patch.revokedAt ?? null);
       if ('revokedBy' in patch) set.revokedBy = patch.revokedBy ?? null;
-      if (!Object.keys(set).length) return;
-      await tx.update(holdings).set(set).where(eq(holdings.id, id));
+      if ('decidedAt' in patch) set.decidedAt = date(patch.decidedAt ?? null);
+      if ('decidedBy' in patch) set.decidedBy = patch.decidedBy ?? null;
+      if ('level' in patch) set.level = patch.level ?? null;
+      if ('interest' in patch && patch.interest !== undefined) set.interest = patch.interest;
+      if ('validatedAt' in patch) set.validatedAt = date(patch.validatedAt ?? null);
+      if ('validatedBy' in patch) set.validatedBy = patch.validatedBy ?? null;
+      if ('ratedAt' in patch) set.ratedAt = date(patch.ratedAt ?? null);
+      if ('evidence' in patch && patch.evidence !== undefined) set.evidence = patch.evidence;
+      if ('registeredBy' in patch) set.registeredBy = patch.registeredBy ?? null;
+      if ('issuedOn' in patch && patch.issuedOn !== undefined) set.issuedOn = patch.issuedOn;
+      if (!Object.keys(set).length)
+        return (await tx.select({ id: holdings.id }).from(holdings).where(eq(holdings.id, id))).length > 0;
+      let changed = 0;
+      await taken(async () => {
+        changed = (await tx.update(holdings).set(set).where(eq(holdings.id, id)).returning({ id: holdings.id })).length;
+      });
+      return changed > 0;
+    },
+    async deleteHolding(id) {
+      await tx.delete(holdings).where(and(eq(holdings.id, id), isNull(holdings.connectorId)));
+    },
+    async retypeHoldings(holdingIds, typeId) {
+      let n = 0;
+      for (const slice of slices([...new Set(holdingIds)]))
+        await taken(async () => {
+          n += (
+            await tx.update(holdings).set({ typeId }).where(inArray(holdings.id, slice)).returning({ id: holdings.id })
+          ).length;
+        });
+      return n;
     },
     async copiedFrom(connectorId) {
       const rows = await tx
@@ -301,6 +513,22 @@ export function competenceTx(tx: Transaction, durable: DurableQueue, cards: Comp
     async sources() {
       return (await tx.select().from(sources).orderBy(asc(sources.connectorId))).map(sourceOf);
     },
+    async lockSources() {
+      const rows = await tx
+        .select({ id: sources.connectorId })
+        .from(sources)
+        .orderBy(asc(sources.connectorId))
+        .for('update');
+      return rows.map(r => r.id);
+    },
+    async retypeMappings(organisationId, fromTypeId, intoTypeId) {
+      const rows = await tx
+        .update(mappings)
+        .set({ typeId: intoTypeId })
+        .where(and(eq(mappings.organisationId, organisationId), eq(mappings.typeId, fromTypeId)))
+        .returning({ id: mappings.sourceType });
+      return rows.length;
+    },
     async source(connectorId) {
       const [r] = await tx.select().from(sources).where(eq(sources.connectorId, connectorId)).for('update');
       return r ? sourceOf(r) : undefined;
@@ -361,18 +589,123 @@ export function competenceTx(tx: Transaction, durable: DurableQueue, cards: Comp
       return { holdings: removed.length, mappings: unmapped.length };
     },
     enqueue: start => enqueueWorkflow(tx, durable, start),
-    async persons(ids) {
-      if (!ids.length) return [];
-      return tx
-        .select({
-          id: people.id,
-          organisationId: people.organisationId,
-          name: people.name,
-          userName: people.userName,
-          enabled: people.enabled,
-        })
+    async lockRetention(organisationId) {
+      // A lock of the transaction on the organisation's period: there may be no row of it to lock.
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${'competence-retention:' + organisationId}, 0))`,
+      );
+    },
+    async retention(organisationId) {
+      const [r] = await tx.select().from(periods).where(eq(periods.organisationId, organisationId));
+      return r && { ...r, setAt: r.setAt.toISOString() };
+    },
+    async putRetention(record) {
+      const set = { days: record.days, setBy: record.setBy, setAt: new Date(record.setAt) };
+      await tx
+        .insert(periods)
+        .values({ organisationId: record.organisationId, ...set })
+        .onConflictDoUpdate({ target: periods.organisationId, set });
+    },
+    async removeRetention(organisationId) {
+      const removed = await tx
+        .delete(periods)
+        .where(eq(periods.organisationId, organisationId))
+        .returning({ id: periods.organisationId });
+      return removed.length > 0;
+    },
+    async erasure(personId) {
+      const [r] = await tx.select().from(intents).where(eq(intents.personId, personId)).for('update');
+      return r && erasureOf(r);
+    },
+    async erasures(organisationId) {
+      const rows = await tx
+        .select()
+        .from(intents)
+        .where(eq(intents.organisationId, organisationId))
+        .orderBy(asc(intents.personId));
+      return rows.map(erasureOf);
+    },
+    async putErasure(record) {
+      const set = {
+        organisationId: record.organisationId,
+        state: record.state,
+        inactiveSince: date(record.inactiveSince),
+        generation: record.generation,
+        updatedAt: new Date(record.updatedAt),
+      };
+      await tx
+        .insert(intents)
+        .values({ personId: record.personId, ...set })
+        .onConflictDoUpdate({ target: intents.personId, set });
+    },
+    async inactiveIn(organisationId) {
+      const rows = await tx
+        .select({ id: people.id })
         .from(people)
-        .where(inArray(people.id, [...ids]));
+        .where(and(eq(people.organisationId, organisationId), eq(people.enabled, false)))
+        .orderBy(asc(people.id));
+      return rows.map(r => r.id);
+    },
+    async dueErasures(asOf, limit) {
+      const rows = await tx
+        .select({
+          personId: intents.personId,
+          organisationId: intents.organisationId,
+          generation: intents.generation,
+          dueAt: dueOf,
+        })
+        .from(intents)
+        .innerJoin(periods, eq(periods.organisationId, intents.organisationId))
+        .where(and(eq(intents.state, 'inactive'), sql`${dueOf} <= ${asOf}::timestamptz`))
+        .orderBy(dueOf, asc(intents.personId))
+        .limit(limit);
+      return rows.map(r => ({ ...r, dueAt: new Date(r.dueAt).toISOString() }));
+    },
+    async countDue(asOf) {
+      const [row] = await tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(intents)
+        .innerJoin(periods, eq(periods.organisationId, intents.organisationId))
+        .where(and(eq(intents.state, 'inactive'), sql`${dueOf} <= ${asOf}::timestamptz`));
+      return row?.n ?? 0;
+    },
+    async unrecordedLeavers(limit) {
+      return tx
+        .select({ personId: people.id, organisationId: people.organisationId })
+        .from(people)
+        .innerJoin(periods, eq(periods.organisationId, people.organisationId))
+        .leftJoin(intents, eq(intents.personId, people.id))
+        .where(and(eq(people.enabled, false), or(isNull(intents.personId), eq(intents.state, 'cancelled'))))
+        .orderBy(asc(people.id))
+        .limit(limit);
+    },
+    async returnedLeavers(limit) {
+      const rows = await tx
+        .select({ intent: intents })
+        .from(intents)
+        .innerJoin(people, eq(people.id, intents.personId))
+        .where(and(eq(people.enabled, true), ne(intents.state, 'cancelled')))
+        .orderBy(asc(intents.personId))
+        .limit(limit);
+      return rows.map(r => erasureOf(r.intent));
+    },
+    async persons(ids) {
+      // In slices, as `activeIds` and `placesOf` read: a search names every holder of a type (D121 item 4).
+      const found = [];
+      for (const slice of slices([...new Set(ids)]))
+        found.push(
+          ...(await tx
+            .select({
+              id: people.id,
+              organisationId: people.organisationId,
+              name: people.name,
+              userName: people.userName,
+              enabled: people.enabled,
+            })
+            .from(people)
+            .where(inArray(people.id, slice))),
+        );
+      return found;
     },
     async activeByUserName(userNames) {
       const found = [];
@@ -401,22 +734,207 @@ export function competenceTx(tx: Transaction, durable: DurableQueue, cards: Comp
           found.add(r.id);
       return found;
     },
+    async positions(organisationId) {
+      const rows = await tx.select().from(positions).where(eq(positions.organisationId, organisationId));
+      return rows.sort((a, b) => sv(a.label, b.label) || a.code.localeCompare(b.code));
+    },
+    async units(organisationId) {
+      // The tree as pushed (D99), as the people module's `unitTree` reads it: every `unit:` group of the organisation.
+      const rows = await tx
+        .select({ externalId: groups.externalId, label: groups.label, parentId: groups.parentUnitId })
+        .from(groups)
+        .where(and(eq(groups.organisationId, organisationId), like(groups.externalId, UNIT_KEY + '%')));
+      return rows
+        .map(r => ({ id: r.externalId!.slice(UNIT_KEY.length), organisationId, label: r.label, parentId: r.parentId }))
+        .sort((a, b) => sv(a.label, b.label) || a.id.localeCompare(b.id));
+    },
+    async placedOn(organisationId, unitIds) {
+      const found = new Set<string>();
+      for (const slice of slices([...new Set(unitIds)]))
+        for (const r of await tx
+          .selectDistinct({ id: assignments.personId })
+          .from(assignments)
+          .innerJoin(people, eq(people.id, assignments.personId))
+          .where(
+            and(
+              inArray(assignments.unitId, slice),
+              eq(people.enabled, true),
+              eq(people.organisationId, organisationId),
+            ),
+          ))
+          found.add(r.id);
+      return [...found].sort();
+    },
+    async placesOf(organisationId, personIds) {
+      const places = new Map<string, Placed>();
+      for (const slice of slices([...new Set(personIds)])) {
+        for (const r of await tx
+          .select({ id: people.id })
+          .from(people)
+          .where(and(inArray(people.id, slice), eq(people.organisationId, organisationId))))
+          places.set(r.id, { personId: r.id, unitIds: [], positionCodes: [] });
+        const known = [...places.keys()].filter(id => slice.includes(id));
+        if (!known.length) continue;
+        for (const r of await tx
+          .select({ personId: assignments.personId, unitId: assignments.unitId })
+          .from(assignments)
+          .where(inArray(assignments.personId, known)))
+          places.get(r.personId)?.unitIds.push(r.unitId);
+        for (const r of await tx
+          .select({ personId: personPositions.personId, code: positions.code })
+          .from(personPositions)
+          .innerJoin(positions, eq(positions.id, personPositions.positionId))
+          .where(and(inArray(personPositions.personId, known), eq(positions.organisationId, organisationId))))
+          places.get(r.personId)?.positionCodes.push(r.code);
+      }
+      return [...places.values()].map(p => ({
+        ...p,
+        unitIds: p.unitIds.sort(),
+        positionCodes: p.positionCodes.sort(),
+      }));
+    },
+    async positionHolders(organisationId, codes) {
+      if (!codes.length) return [];
+      const rows = await tx
+        .select({ personId: personPositions.personId, code: positions.code })
+        .from(personPositions)
+        .innerJoin(positions, eq(positions.id, personPositions.positionId))
+        .innerJoin(people, eq(people.id, personPositions.personId))
+        .where(
+          and(
+            eq(positions.organisationId, organisationId),
+            inArray(positions.code, [...new Set(codes)]),
+            eq(people.organisationId, organisationId),
+            eq(people.enabled, true),
+          ),
+        );
+      return rows.sort((a, b) => a.personId.localeCompare(b.personId) || a.code.localeCompare(b.code));
+    },
+    async requirements(organisationId) {
+      const rows = await tx
+        .select()
+        .from(requirements)
+        .where(eq(requirements.organisationId, organisationId))
+        .orderBy(asc(requirements.createdAt), asc(requirements.id));
+      return rows.map(requirementOf);
+    },
+    async requirement(id) {
+      const [r] = await tx.select().from(requirements).where(eq(requirements.id, id)).for('update');
+      return r ? requirementOf(r) : undefined;
+    },
+    async insertRequirement(r) {
+      await once(
+        () => tx.insert(requirements).values({ ...r, createdAt: new Date(r.createdAt) }),
+        REQUIREMENT_INDEXES,
+        () => new RequirementTaken(),
+      );
+    },
+    async removeRequirement(id) {
+      const removed = await tx.delete(requirements).where(eq(requirements.id, id)).returning({ id: requirements.id });
+      return removed.length > 0;
+    },
+    async updateRequirement(id, patch) {
+      const set: Partial<typeof requirements.$inferInsert> = {};
+      if (patch.typeId !== undefined) set.typeId = patch.typeId;
+      if ('minLevel' in patch) set.minLevel = patch.minLevel ?? null;
+      if (!Object.keys(set).length)
+        return (await tx.select({ id: requirements.id }).from(requirements).where(eq(requirements.id, id))).length > 0;
+      let changed = 0;
+      await once(
+        async () => {
+          changed = (
+            await tx.update(requirements).set(set).where(eq(requirements.id, id)).returning({ id: requirements.id })
+          ).length;
+        },
+        REQUIREMENT_INDEXES,
+        () => new RequirementTaken(),
+      );
+      return changed > 0;
+    },
+    async shareTargets(organisationId) {
+      const rows = await tx
+        .select()
+        .from(targets)
+        .where(eq(targets.organisationId, organisationId))
+        .orderBy(asc(targets.createdAt), asc(targets.id));
+      return rows.map(targetOf);
+    },
+    async shareTarget(id) {
+      const [r] = await tx.select().from(targets).where(eq(targets.id, id)).for('update');
+      return r ? targetOf(r) : undefined;
+    },
+    async insertShareTarget(t) {
+      await once(
+        () => tx.insert(targets).values({ ...t, createdAt: new Date(t.createdAt) }),
+        TARGET_INDEXES,
+        () => new ShareTargetTaken(),
+      );
+    },
+    async removeShareTarget(id) {
+      const removed = await tx.delete(targets).where(eq(targets.id, id)).returning({ id: targets.id });
+      return removed.length > 0;
+    },
+    async updateShareTarget(id, patch) {
+      const set: Partial<typeof targets.$inferInsert> = {};
+      if (patch.typeId !== undefined) set.typeId = patch.typeId;
+      if (patch.minShare !== undefined) set.minShare = patch.minShare;
+      if (!Object.keys(set).length)
+        return (await tx.select({ id: targets.id }).from(targets).where(eq(targets.id, id))).length > 0;
+      let changed = 0;
+      await once(
+        async () => {
+          changed = (await tx.update(targets).set(set).where(eq(targets.id, id)).returning({ id: targets.id })).length;
+        },
+        TARGET_INDEXES,
+        () => new ShareTargetTaken(),
+      );
+      return changed > 0;
+    },
     async erasePerson(personId) {
       // The row of every source, first and in one order, as the copy's write takes its own before it asks who is
       // active: a read that is writing finishes before the person's rows go, and never puts them back afterwards. Every
       // source and not only those the person has rows from: the write of a person's very first copied row has nothing
       // of theirs to be found by, and a source has its row from the moment a run claims it.
       await tx.select({ id: sources.connectorId }).from(sources).orderBy(asc(sources.connectorId)).for('update');
-      const removed = await tx.delete(holdings).where(eq(holdings.personId, personId)).returning({ id: holdings.id });
+      const removed = await tx
+        .delete(holdings)
+        .where(eq(holdings.personId, personId))
+        .returning({ id: holdings.id, threadId: holdings.threadId });
+      const required = await tx
+        .delete(requirements)
+        .where(eq(requirements.personId, personId))
+        .returning({ id: requirements.id });
       const cleared = new Set<string>();
-      for (const column of ['registeredBy', 'revokedBy'] as const)
+      for (const column of ['registeredBy', 'revokedBy', 'decidedBy', 'validatedBy'] as const)
         for (const r of await tx
           .update(holdings)
           .set({ [column]: null })
           .where(eq(holdings[column], personId))
           .returning({ id: holdings.id }))
           cleared.add(r.id);
-      return { holdings: removed.length, cleared: cleared.size };
+      // The requirements and share targets the person set keep standing, without their author.
+      const actor = 'person:' + personId;
+      const authored =
+        (
+          await tx
+            .update(requirements)
+            .set({ createdBy: null })
+            .where(eq(requirements.createdBy, actor))
+            .returning({ id: requirements.id })
+        ).length +
+        (
+          await tx
+            .update(targets)
+            .set({ createdBy: null })
+            .where(eq(targets.createdBy, actor))
+            .returning({ id: targets.id })
+        ).length;
+      return {
+        holdings: removed.length,
+        cleared: cleared.size + authored,
+        requirements: required.length,
+        threadIds: [...new Set(removed.flatMap(r => (r.threadId ? [r.threadId] : [])))].sort(),
+      };
     },
     async exportOrganisation(organisationId) {
       const typeRows = await tx
@@ -435,10 +953,22 @@ export function competenceTx(tx: Transaction, durable: DurableQueue, cards: Comp
         .from(mappings)
         .where(eq(mappings.organisationId, organisationId))
         .orderBy(asc(mappings.connectorId), asc(mappings.sourceType), asc(mappings.mappedAt));
+      const requirementRows = await tx
+        .select()
+        .from(requirements)
+        .where(eq(requirements.organisationId, organisationId))
+        .orderBy(asc(requirements.createdAt), asc(requirements.id));
+      const targetRows = await tx
+        .select()
+        .from(targets)
+        .where(eq(targets.organisationId, organisationId))
+        .orderBy(asc(targets.createdAt), asc(targets.id));
       return {
         types: typeRows.map(typeOf),
         holdings: holdingRows.map(r => holdingOf(r.holding)),
         mappings: mappingRows.map(mappingOf),
+        requirements: requirementRows.map(requirementOf),
+        shareTargets: targetRows.map(targetOf),
       };
     },
     async audit(e) {
@@ -450,5 +980,41 @@ export function competenceTx(tx: Transaction, durable: DurableQueue, cards: Comp
         details: e.details ?? {},
       });
     },
+    async logRead(e) {
+      await tx.insert(reads).values({ ...e, readAt: new Date(e.readAt) });
+    },
+    async readLog(q) {
+      const rows = await tx
+        .select()
+        .from(reads)
+        .where(
+          and(
+            q.organisationId === undefined ? undefined : eq(reads.organisationId, q.organisationId),
+            q.personId === undefined ? undefined : eq(reads.personId, q.personId),
+            // A search or a file that asked for the type, alone or among others (migration 0074).
+            q.typeId === undefined ? undefined : sql`${q.typeId} = ANY(${reads.typeIds})`,
+            // A search or a file that narrowed by the status, alone or among others, or by the window (migration 0076).
+            q.status === undefined ? undefined : sql`${q.status} = ANY(${reads.status})`,
+            q.until === undefined ? undefined : eq(reads.until, q.until),
+            q.readerId === undefined ? undefined : eq(reads.readerId, q.readerId),
+            q.relation === undefined ? undefined : eq(reads.relation, q.relation),
+            q.caller === undefined ? undefined : eq(reads.caller, q.caller),
+            q.kind === undefined ? undefined : eq(reads.kind, q.kind),
+            q.since === undefined ? undefined : gte(reads.readAt, new Date(q.since)),
+          ),
+        )
+        .orderBy(desc(reads.readAt), asc(reads.id))
+        .limit(q.limit);
+      return rows.map(r => ({ ...r, readAt: r.readAt.toISOString() }));
+    },
+    workItems,
   };
+}
+/**
+ * The competence store over its own `database().transaction`, with no cards: for a caller that registers nothing of a
+ * person's own and erases nobody. An erasure through it fails, and its transaction with it, rather than leave the
+ * person's cards behind. The server's store shares the transaction with the thread store (`competenceStoreWithCards`).
+ */
+export function postgresCompetenceStore(durable: DurableQueue): CompetenceStore {
+  return { transaction: fn => database().transaction(tx => fn(competenceTx(tx, durable))) };
 }

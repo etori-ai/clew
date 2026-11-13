@@ -1,15 +1,17 @@
 import {
+  byCode,
   bySwedish,
   ERASED,
   unitGroupOf,
   type Assignment,
   type Grant,
   type GroupCapabilityRule,
+  type GroupRelationRule,
   type GroupRecord,
   type Placement,
   type UserRecord,
 } from '../domain';
-import type { Provisioner, ProvisionStore, ProvisionTx } from '../ports';
+import type { LeaverChange, LeaversTx, Provisioner, ProvisionStore, ProvisionTx } from '../ports';
 
 /**
  * The provisioning store in memory: the unit tests' adapter (D25), held to Postgres by
@@ -25,9 +27,16 @@ export interface MemoryProvisionState {
   /** `memberKey(groupId, personId)`. */
   members: Set<string>;
   groupCapabilities: Array<GroupCapabilityRule & { organisationId: string }>;
+  /** D121: a group gives its members a relation to people by grant. */
+  groupRelations: Array<GroupRelationRule & { organisationId: string }>;
   units: Map<string, { organisationId: string; label: string }>;
   assignments: Map<string, Assignment[]>;
-  grants: Map<string, Omit<Grant, 'capabilities'> & { capabilities: string[] }>;
+  /** `relations` (D121) only when the person holds one, as the projection stores it. */
+  grants: Map<string, Omit<Grant, 'capabilities' | 'relations'> & { capabilities: string[]; relations?: string[] }>;
+  /** D108 item 5: the organisations' positions, by the store's id; a code is unique within its organisation. */
+  positions: Map<string, { organisationId: string; code: string; label: string }>;
+  /** The ids of the positions each person holds, by person id. */
+  personPositions: Map<string, string[]>;
   /** By token digest; `previous` is a rotated-out digest that still answers until `until`. */
   provisioners: Map<
     string,
@@ -41,23 +50,40 @@ export interface MemoryProvisionState {
   audit: Array<{ actor: string; action: string; subject: string; details: Record<string, unknown> }>;
   /** `auth_audit`, the authentication log. */
   authenticationAudit: Array<{ actor: string | null; action: string }>;
+  /** What the leavers port was told (D108 item 14), in order; a rollback takes it back with the rest. */
+  leavers: Array<LeaverChange & { change: keyof LeaversTx }>;
+}
+/**
+ * What the memory store tells beyond its own state, as `postgresProvisionStore`'s options do: `leavers` is the port a
+ * test binds (the competence module's, on its own memory store, which commits on its own), and `leaverFailed` hears of
+ * a call that failed, which, as on Postgres, never fails the change. Every call is also recorded in `state.leavers`.
+ */
+export interface MemoryProvisionOptions {
+  leavers?: () => LeaversTx;
+  leaverFailed?: (error: unknown, change: LeaverChange, kind: keyof LeaversTx) => void;
 }
 export const memberKey = (groupId: string, personId: string) => groupId + '\u0000' + personId;
 const splitKey = (key: string) => key.split('\u0000') as [string, string];
-export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisionState } {
+export function memoryProvisionStore(
+  options: MemoryProvisionOptions = {},
+): ProvisionStore & { state: MemoryProvisionState } {
   const state: MemoryProvisionState = {
     users: new Map(),
     namesChanged: new Map(),
     groups: new Map(),
     members: new Set(),
     groupCapabilities: [],
+    groupRelations: [],
     units: new Map(),
     assignments: new Map(),
     grants: new Map(),
+    positions: new Map(),
+    personPositions: new Map(),
     provisioners: new Map(),
     bindings: [],
     sessions: [],
     audit: [],
+    leavers: [],
     authenticationAudit: [],
   };
   const snapshot = () => structuredClone(state),
@@ -101,13 +127,25 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
       .filter(([, p]) => p === personId)
       .map(([g]) => state.groups.get(g))
       .filter((g): g is GroupRecord => !!g);
+  /** The organisation's position rows of these codes, with their ids. */
+  const positionRows = (organisationId: string, codes: readonly string[]) =>
+    [...state.positions].filter(([, row]) => row.organisationId === organisationId && codes.includes(row.code));
   const provisionerRow = (p: Provisioner & { lastSeenAt?: string | null }) => ({
     id: p.id,
     organisationId: p.organisationId,
     label: p.label,
     lastSeenAt: p.lastSeenAt ?? null,
   });
+  const tell = (change: keyof LeaversTx) => async (told: LeaverChange) => {
+    state.leavers.push({ ...told, change });
+    try {
+      await options.leavers?.()[change](told);
+    } catch (error) {
+      options.leaverFailed?.(error, told, change);
+    }
+  };
   const tx: ProvisionTx = {
+    leavers: { deactivated: tell('deactivated'), reactivated: tell('reactivated') },
     async lockPerson(id) {
       const p = state.users.get(id);
       return p && { id: p.id, organisationId: p.organisationId };
@@ -131,6 +169,11 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
         .filter(m => m.organisationId === organisationId)
         .map(m => ({ groupExternalId: m.groupExternalId, capability: m.capability }));
     },
+    async groupRelations(organisationId) {
+      return state.groupRelations
+        .filter(m => m.organisationId === organisationId)
+        .map(m => ({ groupExternalId: m.groupExternalId, relation: m.relation }));
+    },
     async unitLabels(ids, organisationId) {
       return Object.fromEntries(
         ids.flatMap(id => {
@@ -153,8 +196,48 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
       return g && structuredClone(g);
     },
     async writeGrant(personId, grant) {
-      if (grant) state.grants.set(personId, { ...grant, capabilities: [...grant.capabilities] });
-      else state.grants.delete(personId);
+      if (!grant) {
+        state.grants.delete(personId);
+        return;
+      }
+      const { relations, ...rest } = grant;
+      state.grants.set(personId, {
+        ...rest,
+        capabilities: [...grant.capabilities],
+        ...(relations?.length ? { relations: [...relations] } : {}),
+      });
+    },
+    async positionsOf(personId) {
+      return (state.personPositions.get(personId) ?? [])
+        .flatMap(id => {
+          const row = state.positions.get(id);
+          return row ? [{ code: row.code, label: row.label }] : [];
+        })
+        .sort(byCode);
+    },
+    async positionLabels(organisationId, codes) {
+      return Object.fromEntries(positionRows(organisationId, codes).map(([, row]) => [row.code, row.label]));
+    },
+    async writePositions(organisationId, positions) {
+      for (const p of positions) {
+        const [held] = positionRows(organisationId, [p.code]);
+        state.positions.set(held?.[0] ?? crypto.randomUUID(), { organisationId, code: p.code, label: p.label });
+      }
+    },
+    async removePositions(organisationId, codes) {
+      const gone = new Set(positionRows(organisationId, codes).map(([id]) => id));
+      for (const id of gone) state.positions.delete(id);
+      for (const [personId, ids] of state.personPositions)
+        state.personPositions.set(
+          personId,
+          ids.filter(id => !gone.has(id)),
+        );
+    },
+    async replacePositions(personId, organisationId, codes) {
+      state.personPositions.set(
+        personId,
+        positionRows(organisationId, codes).map(([id]) => id),
+      );
     },
     async audit(entry) {
       state.audit.push(structuredClone(entry));
@@ -457,6 +540,21 @@ export function memoryProvisionStore(): ProvisionStore & { state: MemoryProvisio
       }
       if (!present && index !== -1) {
         state.groupCapabilities.splice(index, 1);
+        return true;
+      }
+      return false;
+    },
+    async setGroupRelation(organisationId, groupExternalId, relation, present) {
+      const rows = state.groupRelations;
+      const index = rows.findIndex(
+        m => m.organisationId === organisationId && m.groupExternalId === groupExternalId && m.relation === relation,
+      );
+      if (present && index === -1) {
+        rows.push({ organisationId, groupExternalId, relation });
+        return true;
+      }
+      if (!present && index !== -1) {
+        rows.splice(index, 1);
         return true;
       }
       return false;

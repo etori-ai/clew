@@ -24,13 +24,17 @@ export const rooms: CalendarRoom[] = [
     equipment: ['projektor', 'mikrofon', 'hörslinga', 'video', 'rullstolsanpassat'],
   },
 ];
-/** What the registry adds for the browser: whose view it is; the calendar is no search source, so a row is no chip. */
+/**
+ * What the registry adds for the browser: whose view it is; the calendar is no search source, so a row is no chip; and
+ * its rows live in the calendar, not in Clew (`passthrough`).
+ */
 export const roomsSpec: PanelViewSpec = {
   ...roomsView,
   capability: 'calendar.rooms',
   connector: 'calendar',
   source: 'Kalendern',
   chip: false,
+  external: true,
 };
 /** The rooms as a row in the menu (D40), as the server hands it over once an administrator has chosen it. */
 export const roomsMenuRow: MenuEntry = {

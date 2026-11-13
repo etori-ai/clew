@@ -20,8 +20,11 @@ import { viewWithPeople } from '../threads/usecases/keys';
  */
 export interface CapabilityRouteDeps {
   registry: Pick<Registry, 'findFor' | 'viewFor'>;
-  /** Run a capability as the person, with input validation and scope: `runCapability` in the server. */
-  run(persona: AuthenticatedContext, name: string, input: unknown): Promise<unknown>;
+  /**
+   * Run a capability as the person, with input validation and scope: `runCapability` in the server. `direct` says the
+   * person's own session asks for the read itself, the one call where a relation they hold by grant is resolved (D121).
+   */
+  run(persona: AuthenticatedContext, name: string, input: unknown, options?: { direct?: boolean }): Promise<unknown>;
   /** Whose a source's key is (D122): a record that names a person by user name links to them by id. Absent: nobody. */
   people?: Pick<PersonKeys, 'holders'>;
   /**
@@ -54,9 +57,10 @@ export function capabilityRoutes(deps: CapabilityRouteDeps) {
       }
     }
     // The output and, when the capability declares one, how to draw it (D38): the browser never guesses a declared view.
-    // As the person with the units they follow up (D117), so a view opened for a unit below them can be answered.
+    // As the person with the units they follow up (D117), so a view opened for a unit below them can be answered; and the
+    // person's own session asks for the read itself, so a relation they hold by grant may be resolved (D121).
     const reader = deps.follow ? await deps.follow(persona) : persona;
-    const output = await run(reader, name, input);
+    const output = await run(reader, name, input, { direct: true });
     const view = registry.viewFor(audiencedActorOf(reader), name);
     // A record that names a person links to them by id (D122).
     return c.json({

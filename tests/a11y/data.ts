@@ -29,7 +29,6 @@ import type {
   Area,
   Attention,
   CalendarEvent,
-  Completions,
   SnoozePreset,
   CheckReport,
   ConnectorDetail,
@@ -46,6 +45,7 @@ import type {
 } from '@clew/contracts';
 import type { MenuEntry, NewsResult, PanelViewSpec } from '@clew/contracts';
 import { newsCapabilities } from '../../apps/server/src/modules/news/capabilities';
+import { brandskyddMark, mariaMark } from './competence';
 import { manifest as communicationNewsManifest } from '../../connectors/communication/connector.mjs';
 
 /** Synthetic data, typed against the contracts so the suite follows the API. The clock is frozen to this Wednesday. */
@@ -406,6 +406,63 @@ export const threads = (): Thread[] => [
   }),
 ];
 
+/**
+ * A conversation about competence with two answers, each with its card as the turn recorded it (D38): the older about
+ * Anna's holdings (one person's, a read that is logged when it is made), the latest about what needs doing, naming Maria,
+ * whose row is the fourth. Opening it reads the latest card's view alone.
+ */
+export const competenceConversation = thread({
+  id: 'kompetens',
+  title: 'När går Annas brandskydd ut?',
+  kind: 'question',
+  connector: 'clew',
+  area: 'fragor',
+  messages: [
+    { id: 'k1', role: 'user', body: 'När går Annas brandskydd ut?', createdAt: NOW },
+    {
+      id: 'k2',
+      role: 'assistant',
+      body: 'Annas brandskydd gäller till 1 november 2028.',
+      createdAt: NOW,
+      meta: {
+        source: 'Kompetens',
+        assistant: 'model',
+        shape: 'svar',
+        view: {
+          capability: 'competence.holdings',
+          input: { person: 'anna.lindqvist' },
+          title: 'Mina kompetenser',
+          source: 'Kompetens',
+          declared: true,
+        },
+        viewRows: { count: 6, show: 'named', marks: [brandskyddMark] },
+        reads: [{ capability: 'competence.holdings', rows: 6 }],
+      },
+    },
+    { id: 'k3', role: 'user', body: 'Vems brandskydd går ut snart?', createdAt: NOW },
+    {
+      id: 'k4',
+      role: 'assistant',
+      body: 'Maria Källströms brandskydd går ut 20 januari 2027.',
+      createdAt: NOW,
+      meta: {
+        source: 'Kompetens',
+        assistant: 'model',
+        shape: 'svar',
+        view: {
+          capability: 'competence.attention',
+          input: {},
+          title: 'Krav som inte uppfylls',
+          source: 'Kompetens',
+          declared: true,
+        },
+        viewRows: { count: 4, show: 'named', marks: [mariaMark] },
+        reads: [{ capability: 'competence.attention', rows: 4 }],
+      },
+    },
+  ],
+});
+
 const area = (id: string, title: string, values: Partial<Area> = {}): Area => ({
   id,
   title,
@@ -557,16 +614,6 @@ export const attention: Attention = {
     { kind: 'bundle', at: '12:00', state: 'next' },
     { kind: 'bundle', at: '16:00', state: 'later' },
     { kind: 'quiet', at: '17:00', state: 'later' },
-  ],
-};
-/** What the box offers while the person types (D34): the standing actions for the role. The areas under the box (D41) come from `areas`. */
-export const completions: Completions = {
-  completions: ['Vad har jag i dag?'],
-  ask: [],
-  recent: [],
-  do: [
-    { text: 'Attestera fakturor', capability: 'finance.approve', source: 'Ekonomisystemet', kind: 'execute' },
-    { text: 'Rapportera avvikelse', capability: 'incidents.report', source: 'Avvikelsesystemet', kind: 'execute' },
   ],
 };
 export const today: TodayView = {
@@ -1450,11 +1497,13 @@ export const usersPeople = (): UserAdminRow[] => [
     externalId: 'dev:hassan',
     email: 'hassan@clew.test',
     title: 'Undersköterska',
+    positions: [{ code: 'underskoterska', label: 'Undersköterska' }],
     enabled: true,
     bound: true,
     assignments: [{ unitId: 'unit-omsorg', unitLabel: 'Hemtjänst Centrum', role: 'employee' }],
     active: { unitId: 'unit-omsorg', unitLabel: 'Hemtjänst Centrum', role: 'employee' },
     capabilities: [],
+    relationGrants: [],
   },
   {
     id: 'hillevi',
@@ -1464,11 +1513,13 @@ export const usersPeople = (): UserAdminRow[] => [
     externalId: 'dev:hillevi',
     email: 'hillevi@clew.test',
     title: 'Rektor',
+    positions: [],
     enabled: true,
     bound: true,
     assignments: [{ unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' }],
     active: { unitId: 'unit-skola', unitLabel: 'Bergsåkers skola', role: 'manager' },
     capabilities: [],
+    relationGrants: [],
   },
   {
     id: 'mikael',
@@ -1477,11 +1528,13 @@ export const usersPeople = (): UserAdminRow[] => [
     externalId: 'dev:mikael',
     email: 'mikael@clew.test',
     title: 'Systemförvaltare',
+    positions: [],
     enabled: true,
     bound: false,
     assignments: [{ unitId: 'unit-it', unitLabel: 'IT och digitalisering', role: 'employee' }],
     active: { unitId: 'unit-it', unitLabel: 'IT och digitalisering', role: 'employee' },
     capabilities: ['admin.connectors', 'admin.users'],
+    relationGrants: [],
   },
   {
     id: 'omar',
@@ -1490,11 +1543,13 @@ export const usersPeople = (): UserAdminRow[] => [
     externalId: 'dev:omar',
     email: 'omar@clew.test',
     title: null,
+    positions: [],
     enabled: true,
     bound: false,
     assignments: [],
     active: null,
     capabilities: [],
+    relationGrants: [],
   },
 ];
 /**
@@ -1512,17 +1567,20 @@ export const manyPeople = (): UserAdminRow[] =>
       externalId: 'dev:p' + n,
       email: `person${n}@clew.test`,
       title: i === 0 ? 'Verksamhetsutvecklare med ansvar för digitalisering och välfärdsteknik' : null,
+      positions: [],
       enabled: true,
       bound: false,
       assignments: [placed],
       active: placed,
       capabilities: [],
+      relationGrants: [],
     };
   });
 export const usersOverview = (): UsersAdminOverview => ({
   groupCapabilities: [
     { groupExternalId: 'S-1-5-21-it-staff', groupLabel: 'IT-personal', capability: 'admin.connectors' },
   ],
+  groupRelations: [],
   units: [
     { id: 'unit-skola', label: 'Bergsåkers skola', parentLabel: 'Grundskola' },
     { id: 'unit-omsorg', label: 'Hemtjänst Centrum', parentLabel: null },
@@ -1534,6 +1592,7 @@ export const usersOverview = (): UsersAdminOverview => ({
     { id: 'S-1-5-21-rektorer', label: 'Rektorer' },
   ],
   capabilities: ['admin.connectors', 'admin.users'],
+  relationGrants: ['registrar'],
   provisioners: [
     { id: 'hr', label: 'HR-systemet', lastSeenAt: '2026-11-06T05:00:00.000Z', silent: true, previousValidUntil: null },
     {

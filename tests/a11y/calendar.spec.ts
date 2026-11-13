@@ -123,7 +123,11 @@ test.describe('the levels and the mark (D71, artboard 6)', () => {
     await expect(panel.getByRole('button', { name: 'Skicka inbjudan' })).toBeVisible();
     await expect(panel.getByRole('button', { name: 'Flytta …' })).toBeVisible();
     await expect(panel.getByRole('button', { name: 'Föreslå andra tider' })).toBeVisible();
-    await expect(panel.getByRole('link', { name: 'Öppna som sida' })).toHaveAttribute('href', /^\/items\/samtal/);
+    // Its name in the panel's header is the way to its work item's page (the name is the way in, 2026-11-13).
+    await expect(
+      panel.getByRole('heading', { name: 'Utvecklingssamtal' }).getByRole('link', { name: 'Utvecklingssamtal' }),
+    ).toHaveAttribute('href', /^\/items\/samtal/);
+    await expect(panel.getByRole('link', { name: 'Öppna som sida' })).toHaveCount(0);
     // The old Förslag panel is gone from the end slot.
     await expect(page.getByRole('complementary', { name: 'Förslag' })).toHaveCount(0);
     await expectNoAxeViolations(page);

@@ -16,7 +16,7 @@ export async function phonebook(
   name: string,
   input: unknown,
 ): Promise<{ status: number; body: { output: unknown; view?: PanelViewSpec } | { error: string } }> {
-  // Protocol 3 (D117): the assertion is bound to the exact body and the capability it is sent for.
+  // Protocol 3 (D117): the assertion is bound to the body, serialised once, and to the capability it is sent to.
   const body = JSON.stringify({ actor: user, input });
   const response = await service.handle(
     new Request(`http://phonebook/clew/capabilities/${name}`, {
@@ -35,7 +35,8 @@ export async function phonebook(
   if (answer.error)
     return { status: answer.error.message === 'Okänd förmåga.' ? 404 : 400, body: { error: answer.error.message } };
   const view = capabilities.find(c => c.name === name)?.view;
-  // What the registry adds for the browser: whose view it is, and that a row with a ref can be chipped (the connector is a search source).
+  // What the registry adds for the browser: whose view it is, that a row with a ref can be chipped (the connector is a
+  // search source), and that its rows live outside Clew (a connector over the protocol, `passthrough`).
   const spec = view
     ? ({
         ...view,
@@ -43,6 +44,7 @@ export async function phonebook(
         connector: 'phonebook',
         source: 'Telefonboken',
         chip: (view.kind === 'table' || view.kind === 'list') && !!view.ref,
+        external: true,
       } as PanelViewSpec)
     : undefined;
   return { status: 200, body: { output: answer.output, ...(spec ? { view: spec } : {}) } };

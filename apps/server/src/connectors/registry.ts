@@ -7,6 +7,7 @@ import {
   COMPETENCE_CONNECTOR,
   Registry,
   type HoldingsReader,
+  type RunCaller,
 } from '@clew/connectors';
 import { InputError } from '../context';
 import { calendarConnector } from '../modules/calendar/connector';
@@ -126,11 +127,15 @@ export const acceptsEmptyInput = (schema: object) => {
  * Run a capability through the registry with input validation: the path for REST, cards and tools. A connector's
  * callback goes through the registry's `clewFor` instead (`routes/connector-callback.ts`), which keeps the protocol's
  * codes. It runs as the person with their provisioned groups, so an audience that names a group admits its members.
+ * `direct` is for the one caller that is the person's own session asking for a read itself (`GET /api/cap`): only there
+ * is a relation the person holds by grant resolved (D121, `RunContext.direct`). `caller` is for the assistant's runner,
+ * which reads in a conversation turn for the person (D122 item 6, `RunContext.caller`).
  */
 export async function runCapability<O = unknown>(
   persona: AuthenticatedContext,
   name: string,
   input: unknown,
+  options: { direct?: boolean; caller?: RunCaller } = {},
 ): Promise<O> {
   const found = registry.find(name);
   if (!found) throw new InputError('Okänd förmåga.');
@@ -138,6 +143,8 @@ export async function runCapability<O = unknown>(
     return await registry.run<O>(audiencedActorOf(persona), name, input ?? {}, {
       authorize: () => persona.authorize(),
       delegate: persona.delegate,
+      ...(options.direct ? { direct: true } : {}),
+      ...(options.caller ? { caller: options.caller } : {}),
     });
   } catch (error) {
     if (error instanceof CapabilityError) throw new InputError(error.message);

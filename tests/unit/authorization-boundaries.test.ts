@@ -13,6 +13,7 @@ import { testAuthority } from '../connector-authority';
 import { decodeJwt, generateKeyPair, exportPKCS8 } from 'jose';
 import { connectorAuthority } from '../../apps/server/src/connectors/authority';
 import { verifyAssertion } from '../../connectors/hello/verification.mjs';
+import { sessionEntryPoints } from '../../apps/server/src/session-entry-points';
 
 const actor: Actor & { authorizationVersion: string } = {
   authorizationVersion: 'v1',
@@ -324,5 +325,24 @@ describe('authorization and invocation boundaries', () => {
     // An empty user name is no user name: neither cut into the actor nor signed.
     expect(actorOf({ ...actor, userName: '' })).not.toHaveProperty('userName');
     expect(decodeJwt(await authority.assert('hello', { ...actor, userName: '' })).actor).toEqual(actorOf(actor));
+  });
+  test('a relation to people by grant (D121) leaves Clew in no actor and no assertion, and turns no administration on', async () => {
+    const authority = await testAuthority();
+    const registrar = { ...actor, relationGrants: ['registrar' as const] };
+    expect(actorOf(registrar)).toEqual(actorOf(actor));
+    const request = await authority.assert('hello', registrar, ['source.count']);
+    expect(JSON.stringify(decodeJwt(request))).not.toContain('registrar');
+    expect(JSON.stringify(await authority.verify(decodeJwt(request).callback as string))).not.toContain('registrar');
+    // What the session tells the browser to draw: the search, never Administration (D118).
+    expect(sessionEntryPoints({ capabilities: [], relationGrants: ['registrar'] })).toEqual({
+      admin: false,
+      capabilities: [],
+      relations: ['registrar'],
+    });
+    expect(sessionEntryPoints({ capabilities: ['admin.users', 'registrar', 'calendar:plan'] })).toEqual({
+      admin: true,
+      capabilities: ['admin.users'],
+      relations: [],
+    });
   });
 });

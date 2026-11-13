@@ -138,7 +138,11 @@ Beside the message and the audit row every turn writes, a turn the model answere
 | `traceId` | The OpenTelemetry trace, when the turn was traced |
 
 The same record is in the audit row's `details.modelCall`, so a reader goes from an answer in a conversation to its
-audit row to its trace in the backend. When a configured model fails and the router answers (D8),
+audit row to its trace in the backend. The audit row also lists the reads the turn made through the registry,
+`details.reads`: each capability with how many rows it answered, or that it failed (refused or not answered), never a
+row ([D122](../decisions/D122-the-assistant-may-read-and-propose-whatever-the-person-who-asks-may-and-adding-a-model-is-answering-for-it.md)
+item 8). Every such read is made with `caller: 'assistant'`, so a source that logs reads of people (the competence read
+log) records that the assistant made it for the person. When a configured model fails and the router answers (D8),
 `MessageMeta.fallbackReason` and `details.fallbackReason` carry the wire's words, cut to 200 characters. Never the
 text of the prompt or the answer: the message body holds the answer, nothing else does.
 

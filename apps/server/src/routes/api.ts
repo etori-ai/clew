@@ -77,7 +77,7 @@ const {
 } = threads;
 const { cancelReminder, remind } = reminders;
 const { confirm, readToday, replan, samtalStatus, undo, weekOverview } = calendar;
-const { ask, completionsFor, converse, listObjects, reply } = assistant;
+const { ask, converse, listObjects, reply } = assistant;
 const ajv = addFormats(new Ajv({ allErrors: false }));
 const approval = ajv.compile(
   Type.Object(
@@ -447,7 +447,6 @@ api.post('/threads/:id/dismiss', async c => c.json(await dismissAny(c.get('sessi
 api.post('/ask', async c =>
   c.json(await ask(c.get('session').context, (await body(c.req.raw, validators.ask)).question)),
 );
-api.get('/completions', async c => c.json(await completionsFor(c.get('session').context)));
 /** One conversation turn (D12): text plus chips; answers in one of three shapes; nothing is executed here. */
 api.post('/conversation', async c =>
   c.json(

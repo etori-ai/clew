@@ -1,0 +1,238 @@
+import { afterAll, describe, expect, test } from 'bun:test';
+import { and, eq, inArray, like } from 'drizzle-orm';
+import { closeDatabase, database, schema } from '../../packages/db/src/index';
+import type { AuthenticatedContext } from '../../packages/contracts/src/index';
+import { postgresCompetenceStore } from '../../apps/server/src/modules/competence/adapters/postgres';
+import type { CompetenceStore } from '../../apps/server/src/modules/competence/model';
+import { competenceUsecases } from '../../apps/server/src/modules/competence/usecases';
+import { testDurable } from './durable';
+
+/**
+ * Kompetenssökning on Postgres (D121 items 4 and 5, D108 item 15): a search, its file and a person opened each write
+ * their row of the read log in the transaction that reads what it records, so a row the database refuses takes the read
+ * with it, the file's audit row included, and nothing is answered. A search of several types is one row naming every
+ * type (`type_ids`, migration 0074), found again by any of them, and keeps the statuses and the window it narrowed by
+ * (`status`, `until`, migration 0076). The sorting and the filters are the use case's, over
+ * what the store reads (`domain.ts`), so they are the same on both adapters and held by the unit suite. Run with
+ * `bun run test:db` inside the devcontainer.
+ */
+if (!process.env.DATABASE_URL)
+  throw new Error('DATABASE_URL is not set. Run `bun run test:db` inside the devcontainer.');
+
+const tag = Math.random().toString(36).slice(2, 8);
+const ORG = `competence-search-${tag}`;
+const anna = `${ORG}-anna`,
+  bo = `${ORG}-bo`,
+  hr = `${ORG}-hr`;
+const people = [anna, bo, hr];
+let n = 0;
+const ids = () => `${ORG}-${String(++n).padStart(4, '0')}`;
+const registrar: AuthenticatedContext = {
+  id: hr,
+  name: 'Synthetic Registrator',
+  unitId: `unit-${tag}`,
+  unitLabel: 'HR',
+  role: 'employee',
+  organisationId: ORG,
+  principal: { id: 'person:' + hr, kind: 'person' },
+  capabilities: [],
+  relationGrants: ['registrar'],
+  authorizationVersion: 'v1',
+  sessionBinding: 'test',
+  expiresAt: '2099-01-01T00:00:00.000Z',
+  authorize: async () => ({ version: 'v1' }),
+};
+const store = postgresCompetenceStore(testDurable);
+const usecasesOver = (over: CompetenceStore) =>
+  competenceUsecases({
+    store: over,
+    staff: async () => ({ units: [] }),
+    clock: () => new Date('2026-03-02T09:00:00.000Z'),
+    ids,
+  });
+const competence = usecasesOver(store);
+/** The same store, but every row of the read log it writes is one the table's checks refuse: a negative count. */
+const refusing: CompetenceStore = {
+  transaction: fn => store.transaction(tx => fn({ ...tx, logRead: entry => tx.logRead({ ...entry, rows: -1 }) })),
+};
+let typeId = '';
+
+afterAll(async () => {
+  const db = database();
+  await db.delete(schema.competenceReadLog).where(eq(schema.competenceReadLog.organisationId, ORG));
+  await db.delete(schema.audit).where(like(schema.audit.subject, `%${ORG}%`));
+  await db.delete(schema.competenceHoldings).where(inArray(schema.competenceHoldings.personId, people));
+  await db.delete(schema.competenceTypes).where(eq(schema.competenceTypes.organisationId, ORG));
+  await db.delete(schema.people).where(inArray(schema.people.id, people));
+  await closeDatabase();
+});
+
+const logged = () =>
+  database()
+    .select({
+      kind: schema.competenceReadLog.kind,
+      relation: schema.competenceReadLog.relation,
+      typeId: schema.competenceReadLog.typeId,
+      typeIds: schema.competenceReadLog.typeIds,
+      personId: schema.competenceReadLog.personId,
+      rows: schema.competenceReadLog.rows,
+    })
+    .from(schema.competenceReadLog)
+    .where(eq(schema.competenceReadLog.organisationId, ORG))
+    .orderBy(schema.competenceReadLog.id);
+const exported = () =>
+  database()
+    .select({ details: schema.audit.details })
+    .from(schema.audit)
+    .where(and(eq(schema.audit.subject, 'organisation:' + ORG), eq(schema.audit.action, 'competence.search_exported')));
+
+describe('Kompetenssökning on Postgres (D121)', () => {
+  test('a search, its file and a person opened are read and logged in one transaction each', async () => {
+    await database()
+      .insert(schema.people)
+      .values([
+        { id: anna, organisationId: ORG, name: 'Synthetic Anna', userName: `anna.${tag}` },
+        { id: bo, organisationId: ORG, name: 'Synthetic Bo', userName: `bo.${tag}` },
+        { id: hr, organisationId: ORG, name: 'Synthetic Registrator', userName: `hr.${tag}` },
+      ]);
+    typeId = await competence.seedType('operator:test', ORG, { name: 'HLR', area: 'Akut', kind: 'course' });
+    await competence.seedHolding('operator:test', ORG, anna, { typeId, issuedOn: '2026-01-10' });
+    await competence.seedHolding('operator:test', ORG, bo, { typeId, issuedOn: '2025-01-10', expiresOn: '2026-01-10' });
+    const page = await competence.search(registrar, { typeIds: [typeId] });
+    expect(page.rows.map(r => [r.name, r.held[0]?.status])).toEqual([
+      ['Synthetic Anna', 'valid'],
+      ['Synthetic Bo', 'expired'],
+    ]);
+    const file = await competence.exportSearch(registrar, { typeIds: [typeId] });
+    expect(file.text.split('\r\n')).toHaveLength(4);
+    // The registry tells the module `registrar` only on her own direct read of it (`RunContext.direct`).
+    expect((await competence.holdings(registrar, { person: `ANNA.${tag}` }, 'registrar')).rows).toHaveLength(1);
+    expect(await logged()).toEqual([
+      { kind: 'search', relation: 'registrar', typeId, typeIds: [typeId], personId: null, rows: 2 },
+      { kind: 'export', relation: 'registrar', typeId, typeIds: [typeId], personId: null, rows: 2 },
+      { kind: 'person', relation: 'registrar', typeId: null, typeIds: [], personId: anna, rows: 1 },
+    ]);
+    expect(await exported()).toEqual([{ details: { typeIds: [typeId], people: 2 } }]);
+  });
+
+  test('a row the database refuses takes the read with it: nothing is answered and the file is not audited', async () => {
+    const failing = usecasesOver(refusing);
+    for (const read of [
+      () => failing.search(registrar, { typeIds: [typeId] }),
+      () => failing.exportSearch(registrar, { typeIds: [typeId] }),
+      () => failing.holdings(registrar, { person: `bo.${tag}` }, 'registrar'),
+    ])
+      await expect(read()).rejects.toThrow();
+    // Only the three rows of the reads that answered are there; the refused file left no audit row behind.
+    expect(await logged()).toHaveLength(3);
+    expect(await exported()).toHaveLength(1);
+  });
+
+  test('a read the assistant makes for a manager is logged with its caller; one as a registrar is refused by the table with its read (D122)', async () => {
+    const manager: AuthenticatedContext = {
+      ...registrar,
+      id: `${ORG}-boss`,
+      principal: { id: `person:${ORG}-boss`, kind: 'person' },
+      role: 'manager',
+      relationGrants: [],
+    };
+    const managing = competenceUsecases({
+      store,
+      staff: async () => ({
+        units: [
+          {
+            unitId: `unit-${tag}`,
+            unitLabel: 'Akuten',
+            people: [
+              {
+                id: anna,
+                name: 'Synthetic Anna',
+                userName: `anna.${tag}`,
+                email: null,
+                role: 'employee',
+                enabled: true,
+              },
+            ],
+          },
+        ],
+      }),
+      clock: () => new Date('2026-03-02T09:00:00.000Z'),
+      ids,
+    });
+    expect((await managing.holdings(manager, { person: `anna.${tag}` }, 'managed', 'assistant')).rows).toHaveLength(1);
+    const callers = () =>
+      database()
+        .select({ caller: schema.competenceReadLog.caller, relation: schema.competenceReadLog.relation })
+        .from(schema.competenceReadLog)
+        .where(eq(schema.competenceReadLog.organisationId, ORG))
+        .orderBy(schema.competenceReadLog.id);
+    expect((await callers()).at(-1)).toEqual({ caller: 'assistant', relation: 'managed' });
+    // The registry never tells the module `registrar` for the assistant (D122 item 5); were it to, the row is refused.
+    const before = (await callers()).length;
+    await expect(competence.holdings(registrar, { person: `anna.${tag}` }, 'registrar', 'assistant')).rejects.toThrow();
+    expect(await callers()).toHaveLength(before);
+    // The reads before were the person's; a row written without saying, as every row from before the column was, is too.
+    expect((await callers()).slice(0, 3).map(r => r.caller)).toEqual(['person', 'person', 'person']);
+    await database()
+      .insert(schema.competenceReadLog)
+      .values({
+        id: `${ORG}-9999`,
+        organisationId: ORG,
+        readerId: manager.id,
+        relation: 'managed',
+        kind: 'person',
+        personId: anna,
+        rows: 1,
+        readAt: new Date('2026-03-02T09:00:00.000Z'),
+      });
+    expect((await callers()).at(-1)).toEqual({ caller: 'person', relation: 'managed' });
+    expect(await managing.readLog({ organisationId: ORG, caller: 'assistant', limit: 10 })).toHaveLength(1);
+    await database()
+      .delete(schema.competenceReadLog)
+      .where(eq(schema.competenceReadLog.id, `${ORG}-9999`));
+  });
+
+  test('a deactivated person is no one a registrar opens, and the refusal is not logged', async () => {
+    await database().update(schema.people).set({ enabled: false }).where(eq(schema.people.id, bo));
+    await expect(competence.holdings(registrar, { person: `bo.${tag}` }, 'registrar')).rejects.toThrow(
+      'Personen finns inte bland dem du är chef för.',
+    );
+    expect((await competence.search(registrar, { typeIds: [typeId] })).rows.map(r => r.name)).toEqual([
+      'Synthetic Anna',
+    ]);
+    // The three reads of the first test, the assistant's for a manager, and this search.
+    expect((await logged()).map(r => r.kind)).toEqual(['search', 'export', 'person', 'person', 'search']);
+  });
+
+  test('a search of two types is one row of the log naming both in the order chosen, found again by either (0074)', async () => {
+    const english = await competence.seedType('operator:test', ORG, { name: 'Engelska', area: 'Språk', kind: 'skill' });
+    await competence.seedSkill('operator:test', ORG, anna, { typeId: english, level: 2, confirmed: true });
+    const page = await competence.search(registrar, {
+      typeIds: [typeId, english],
+      status: ['valid'],
+      sort: 'until',
+      order: 'desc',
+    });
+    expect(page.rows.map(r => [r.name, r.held.map(h => h.typeId)])).toEqual([['Synthetic Anna', [typeId, english]]]);
+    expect((await logged()).at(-1)).toEqual({
+      kind: 'search',
+      relation: 'registrar',
+      typeId,
+      typeIds: [typeId, english],
+      personId: null,
+      rows: 1,
+    });
+    // Narrowed by a type in SQL: the search of both is found by the second, and every read of the first by it.
+    const byEnglish = await competence.readLog({ organisationId: ORG, typeId: english, limit: 10 });
+    expect(byEnglish.map(r => r.typeIds)).toEqual([[typeId, english]]);
+    expect(await competence.readLog({ organisationId: ORG, typeId, limit: 10 })).toHaveLength(4);
+    // The filters it narrowed by are in its row (0076), and the log is read by them.
+    expect(
+      (await competence.readLog({ organisationId: ORG, status: 'valid', limit: 10 })).map(r => [r.status, r.until]),
+    ).toEqual([[['valid'], null]]);
+    await competence.exportSearch(registrar, { typeIds: [typeId], status: ['expired', 'valid'], until: 180 });
+    expect(await competence.readLog({ organisationId: ORG, until: 180, limit: 10 })).toMatchObject([
+      { kind: 'export', status: ['valid', 'expired'], until: 180 },
+    ]);
+  });
+});

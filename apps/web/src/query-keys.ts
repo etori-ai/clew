@@ -10,7 +10,6 @@ export const keys = {
   areas: ['areas'] as const,
   today: ['today'] as const,
   attention: ['attention'] as const,
-  completions: ['completions'] as const,
   assistant: ['assistant'] as const,
   /** The prefix of every loaded week; invalidated when a thread with proposals changes. */
   calendarAll: ['calendar'] as const,
@@ -55,8 +54,31 @@ export const keys = {
   /** Kompetens (D108): the catalogue a certificate is registered from, and the administrator's whole catalogue. */
   competenceTypes: ['competence', 'types'] as const,
   competenceCatalogue: ['competence', 'catalogue'] as const,
+  /** What merging one type into another would move (D108 item 2), per pair. */
+  competenceMergePreview: (from: string, into: string) => ['competence', 'merge', from, into] as const,
   /** Administration › Kompetens › Källor (D108 item 9). */
   competenceSources: ['competence', 'sources'] as const,
+  /** Administration › Kompetens › Krav (D108 item 6): the requirements and the share targets. */
+  competenceRequirements: ['competence', 'requirements'] as const,
+  competenceShareTargets: ['competence', 'share-targets'] as const,
+  /** The manager's matrix (D108 item 11), per set of columns. */
+  competenceMatrix: (by: string | null, part: number | null) => ['competence', 'matrix', by, part] as const,
+  /** The reader's own registrations that wait for a decision (D108 item 7), and one a manager decides. */
+  competenceOwn: ['competence', 'own'] as const,
+  competenceOwnTypes: ['competence', 'own', 'types'] as const,
+  competenceApproval: (holdingId: string) => ['competence', 'approval', holdingId] as const,
+  /** A report's skill as the manager confirms its level (D120). */
+  competenceSkill: (holdingId: string) => ['competence', 'skill', holdingId] as const,
+  /**
+   * Kompetenssökning (D121): what the page narrows by (the relation's probe), and one page of a search. The search is
+   * outside `competenceAll`, so a change elsewhere in the module never reads it again on its own: every read of it is
+   * logged, and one is made only when the reader asks.
+   */
+  competenceSearchOptions: ['competence', 'search-options'] as const,
+  competenceSearch: (body: { typeIds: readonly string[]; [part: string]: unknown }) =>
+    ['competence-search', body] as const,
+  /** The catalogue's types an address names, by id (the search's field labels them before its answer): no log. */
+  competenceTypesNamed: (ids: readonly string[]) => ['competence', 'types-named', ids] as const,
   competenceAll: ['competence'] as const,
   /** The follow-up dialogue (D118): one unit's dialogue. */
   dialogue: {

@@ -34,7 +34,7 @@ import { useReceiptArrivals } from '../linger';
 import { withCard } from '../panel-address';
 import { viewOpenHref, type ViewTarget } from '../view-address';
 import { needsYouOf, rowFacts, sourcesNotice, todoHref } from '../work-items';
-import { Composer, Suggestions } from '../components/composer';
+import { Composer } from '../components/composer';
 import { PageHeader } from '../components/page-header';
 import { titled, useConversation, type ConversationState } from '../components/conversation-context';
 import { Transcript } from '../components/conversation';
@@ -64,7 +64,6 @@ import { EventDialog } from '../components/calendar/event-dialog';
 import type { AgendaItem } from '@clew/ui';
 import { NoCalendar, Today } from '../components/today';
 import { SilentNotice, silentLine, useSaySilent, useSilentSources } from '../components/silent-sources';
-import { Since } from '../components/since';
 import { Lage } from '../components/lage';
 import { NewsBlock } from '../components/news';
 import { FocusNews, focusOf } from '../components/focus-news';
@@ -91,11 +90,11 @@ const EMPTY_AREAS: Area[] = [];
  * urgent work items, "I dag", the day as the calendar family draws it (D32), and "Nyheter", the newest news from the
  * person's news sources. The work list itself is Att göra's (`/todo`). Under the blocks Läget's figures stand for
  * Dialogstöd, then Verktygslådan, the person's tools, and then what D112 keeps as it was until it is decided: Mina
- * ärenden, the person's own action points and Sedan i går. A work item opened from Hem (a row, "Läs", the day's link to
- * an item, a suggestion under the box) and one thing opened from it (a piece of news, an errand, a budget) are in the
- * panel beside Hem, so the person stays on Hem (D112, amended 2026-11-12); opening it is not asking about it (D111
- * rule 6). A list or a table opened from Hem (a tile of Läget, a suggestion, an answer's "Visa allt") is its own page,
- * with Hem as the way back (D116).
+ * ärenden and the person's own action points. "Sedan i går" and the suggestions under the box ("Menar du") were removed
+ * on 2026-11-13: no digest sentences and no suggestion chips on a page. A work item opened from Hem (a row, "Läs", the
+ * day's link to an item) and one thing opened from it (a piece of news, an errand, a budget) are in the panel beside
+ * Hem, so the person stays on Hem (D112, amended 2026-11-12); opening it is not asking about it (D111 rule 6). A list or
+ * a table opened from Hem (a tile of Läget, an answer's "Visa allt") is its own page, with Hem as the way back (D116).
  * A conversation takes the column at `/conversations/:id` (D31), with what it is about in the panel: the view an answer
  * names, the card or view that was open when it was asked, or the page it was asked on. The address is the state
  * throughout (`panel-address.ts`).
@@ -186,8 +185,6 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   // and is not a row under them too; any other such item stays an ordinary row.
   const focus = useMemo(() => focusOf(needsYou), [needsYou]);
   const first = useMemo(() => needsYou.filter(t => t.id !== focus?.id).slice(0, ON_HEM), [needsYou, focus]);
-  // What closed today (artboard A's "1 klar"): cards, not the person's own conversations.
-  const closedToday = useMemo(() => all.handledToday.filter(t => t.kind !== 'question'), [all.handledToday]);
 
   /**
    * The panel (D50): the work item or the view the address names, or in a conversation the card that was open when the
@@ -315,10 +312,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
    * day that cannot be read says why in the block (D116, amended 2026-11-12) instead of leaving its place to the others.
    */
   const dayBlock = (
-    <AsyncContent
-      pending={loadingThreads || (dayQ.isPending && !calendarHidden)}
-      fallback={<AsideSkeleton kind="today" />}
-    >
+    <AsyncContent pending={loadingThreads || (dayQ.isPending && !calendarHidden)} fallback={<AsideSkeleton />}>
       <Today
         view={withoutCalendar ? null : day}
         threads={threads}
@@ -340,8 +334,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
   );
   // The landing (D112 item 2, amended 2026-11-11, board Hem10): one heading, the box under it (docked at the foot on a
   // phone), the item that asks for a read receipt, the three blocks, Läget, Verktygslådan, and under them what D112 keeps
-  // until it is decided. The box is anchored under the heading (D53): what grows under it while the person types
-  // ("Menar du") pushes the blocks down, never the field they are typing in (D36).
+  // until it is decided. The box is anchored under the heading (D53).
   const landing = () => (
     <VStack gap={8}>
       {/* The heading and the box at their reading width, centred over the page's full width. */}
@@ -350,12 +343,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
           <Heading level={1} id="hem" tabIndex={-1} justify="center">
             Vad vill du få gjort?
           </Heading>
-          {!docked && (
-            <VStack gap={2}>
-              <Composer place="landing" near={near} roomy />
-              <Suggestions viewHref={(capability, title) => viewHref({ capability, title })} cardHref={cardHref} />
-            </VStack>
-          )}
+          {!docked && <Composer place="landing" near={near} roomy />}
         </VStack>
       </VStack>
       {error && (
@@ -391,19 +379,10 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
         twoAcross={mobile}
       />
       <Toolbox />
-      {/* What D112 keeps as it was until decided, under the board's parts: Mina ärenden (D90), the person's own action
-          points (D96 item 7), then Sedan i går. */}
+      {/* What D112 keeps as it was until decided, under the board's parts: Mina ärenden (D90) and the person's own action
+          points (D96 item 7). */}
       <MyErrands areas={areas} hrefFor={viewHref} />
       <MyCommitments />
-      <AsyncContent pending={loadingThreads} fallback={<AsideSkeleton kind="since" />}>
-        <Since
-          handled={closedToday}
-          waiting={all.waiting}
-          sources={sources}
-          now={now}
-          doneHref={todoHref({ tab: 'done' })}
-        />
-      </AsyncContent>
     </VStack>
   );
   /**
@@ -535,19 +514,7 @@ export function StartPage({ user, admin = false }: { user: SessionUser; admin?: 
             <LayoutContent isScrollable={false} padding={0}>
               {/* The bounded height is what makes ChatLayout the scroll container, as the conversation composes it. */}
               <VStack height="100%">
-                <ChatLayout
-                  density="balanced"
-                  scrollButton={null}
-                  composer={
-                    <VStack gap={2}>
-                      <Suggestions
-                        viewHref={(capability, title) => viewHref({ capability, title })}
-                        cardHref={cardHref}
-                      />
-                      <Composer place="landing" near={near} />
-                    </VStack>
-                  }
-                >
+                <ChatLayout density="balanced" scrollButton={null} composer={<Composer place="landing" near={near} />}>
                   {column720(2)}
                 </ChatLayout>
               </VStack>

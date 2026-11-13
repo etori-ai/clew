@@ -1,6 +1,6 @@
 # D108 · Competence is an owned domain: one holding for competences and certificates, typed against a catalogue
 
-**Status:** proposed, and built against the freeze on new surface: [D101](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) (the first real integration) item 4 allows no new owned domain, administration page or rail destination until its loop works, and this record is all three. It was begun on a branch cut before that freeze reached `main`, continued in the same working session after the freeze was pointed out, and brought into `main` on 2026-11-11 on that session's instruction, with the question whether it may pass the freeze asked and not answered by the product owner. The module is switched off until an administrator enables it. The product owner lifted the freeze on 2026-11-12, so it stays on `main`. The direction below was set in that working session on 2026-11-11 and is not yet confirmed by the product owner (decided in the session: a core module shipped with Clew and switched on per installation, competences and certificates in it, a position on the person, the catalogue with the main administrator, search for HR and staffing, a person's own registration approved by their manager, erasure a period after deactivation, the matrix as a page of its own, a review by an HR practitioner before real data); the items marked "proposed" are the author's and were not discussed, the items under "Open" are not decided; built 2026-11-11 on synthetic data: the catalogue with its page, a manager's registration, the computed status, the reads, the figure, the scan, erasure and export (see "As built"); built 2026-11-12, provisional: item 9 from source to status, the installation's read of the holdings profile ([D119](D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md)), the copy of what a source holds, its daily read and the mapping of a source's types on Administration › Kompetens › Källor (see the three "As built, 2026-11-12" sections), read end to end in process against the development Moodle but not yet by the running server; positions, requirements, coverage, the matrix, a person's own registration, search and the read log not built; item 14 amended 2026-11-12 by [D123](D123-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md): no timer erases a leaver's holdings, and how long they are kept is the organisation's decision · **Date:** 2026-11-11 · **Area:** product, identity, integrations
+**Status:** proposed, and built against the freeze on new surface: [D101](D101-the-first-real-integration-is-nextclouds-approval-app-and-new-surface-waits-for-it.md) (the first real integration) item 4 allows no new owned domain, administration page or rail destination until its loop works, and this record is all three. It was begun on a branch cut before that freeze reached `main`, continued in the same working session after the freeze was pointed out, and brought into `main` on 2026-11-11 on that session's instruction, with the question whether it may pass the freeze asked and not answered by the product owner. The module is switched off until an administrator enables it. The product owner lifted the freeze on 2026-11-12, so it stays on `main`. The direction below was set in that working session on 2026-11-11 and is not yet confirmed by the product owner (decided in the session: a core module shipped with Clew and switched on per installation, competences and certificates in it, a position on the person, the catalogue with the main administrator, search for HR and staffing, a person's own registration approved by their manager, erasure a period after deactivation, the matrix as a page of its own, a review by an HR practitioner before real data); the items marked "proposed" are the author's and were not discussed, the items under "Open" are not decided; built 2026-11-11 on synthetic data: the catalogue with its page, a manager's registration, the computed status, the reads, the figure, the scan, erasure and export (see "As built"); built 2026-11-12, provisional: item 9 from source to status, the installation's read of the holdings profile ([D119](D119-the-installation-reads-as-itself-through-a-read-no-person-can-reach.md)), the copy of what a source holds, its daily read and the mapping of a source's types on Administration › Kompetens › Källor (see the three "As built, 2026-11-12" sections), read end to end in process against the development Moodle but not yet by the running server; positions, requirements, coverage, the matrix, a person's own registration, search and the read log not built; item 14 amended 2026-11-12 by [D123](D123-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md): no timer erases a leaver's holdings, and how long they are kept is the organisation's decision (the period built on the competence branches stays dormant unless an operator sets one, see the amendment); amended by [D120](D120-a-skill-is-a-holding-with-a-level-and-the-competence-domain-covers-what-a-skills-platform-does.md) (2026-11-12, provisional: a skill is a holding with a level, the catalogue can be imported, the Kompetens place in the rail, goals beside talks' action points) and [D121](D121-a-registrar-reads-competence-across-the-organisation-through-a-relation-of-its-own.md) (2026-11-12, provisional: item 8's `competence.search` is a relation of its own, not a capability, and item 15's read log is built with it) · **Date:** 2026-11-11 · **Area:** product, identity, integrations
 
 **Amended 2026-11-12.** [D123](D123-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md),
 taken in the fixes of the
@@ -11,6 +11,11 @@ D123 weighed a period an administrator sets, run automatically, and left it, sin
 an open case or a pending request for access before a deletion that cannot be undone. An operator erases one person's
 holdings with `bun scripts/competence-erase.ts --person <person id> --confirm`, one of the three steps that come before
 `scripts/person-erase.ts` in the procedure for one person (D123 item 3). The rest of item 14 stands.
+The competence branches had meanwhile built item 14's period as an operator's setting per organisation, with no
+default, and an hourly sweep that erases a deactivated person's holdings once it has run (see "As built"); while no
+period is set nothing is erased. That build and D123's answer were merged on 2026-11-13 with both kept: the manual
+erasure above works as D123 says, and the sweep stays dormant unless an operator sets a period. Whether a period may
+be set at all, or the sweep goes, is for the product owner ([open questions](../maintainers/open-questions.md)).
 
 **Decision.** Competence (Swedish in the product: **Kompetens**) becomes a domain Clew owns under
 [D95](D95-clew-may-own-a-domain-by-choice-decided-with-the-core-or-connector-checklist.md): a module
@@ -200,8 +205,12 @@ and a manager's attestation exists nowhere else.
   has not been read.
 - The key on the wire for item 10, `externalId` or `userName` (D97, open), and which way ID06 is read; its interface
   has not been read.
-- How a deactivation reaches an owned domain to start item 14's timer. Talks has the same need and is erased by an
+- Settled 2026-11-13 for competence: a deactivation reaches the domain through the people module's `leavers` port,
+  inside the provisioning transaction. Talks has the same need, does not use the port, and is erased by an
   operator's script today.
+- Whether erasure should also reach the audit rows. `competence.holding_registered`, `holding_submitted`,
+  `skill_rated` and `skill_validated` record the type, the dates and the level beside the person's id, the person
+  stays in the directory (D68), and so the audit log still tells what the erased register told.
 - Who approves a registration from a person who reports to nobody, and what a manager sees when a person moves to
   them: every holding, or those registered since.
 - Whether a position should follow a placement, for a person who is a machine operator on one unit and an
@@ -435,6 +444,31 @@ Postgres with the connector's removal on Postgres, `apps/server/tests/competence
 before the engine launches, the daily run, a source whose step keeps failing beside one that is read and a next day
 that cannot be asked for, and an instance killed while it reads whose run is adopted and finishes once under its
 lease), and `tests/a11y/admin-competence-sources.spec.ts`.
+
+**As built, 2026-11-13: the rest of the decision, on branch `competence-skills`.** What the "Not done" paragraph
+above lists is built, except what this paragraph says is not. A person's positions arrive as `position:` groups
+(item 5); requirements on a position, a unit or a person, the status `missing`, coverage and share targets (items 6
+and 10); the place Kompetens with the reader's own page and the matrix (item 11); a person's own registration,
+approved or rejected by the manager they report to through a work item (item 7); merging two types and bringing an
+archived one back (item 2); revoking from the product; erasure after a person leaves (item 14), which happens only when an
+operator has set a period, and is an intent per person and an hourly sweep, not a durable timer per person: a
+sleeping workflow did not survive a deployment; and the read log (item 15) together with the search across the organisation, which
+[D121](D121-a-registrar-reads-competence-across-the-organisation-through-a-relation-of-its-own.md) builds as a
+relation and not as the capability `competence.search` that item 8 names. Skills with levels and the catalogue
+import are [D120](D120-a-skill-is-a-holding-with-a-level-and-the-competence-domain-covers-what-a-skills-platform-does.md).
+What each does, its limits and its tests are in [implementation status](../reference/status/people.md), which is
+kept current; this paragraph is not.
+
+Where the build is narrower than the items: a small group is never counted on its own in coverage (fewer than five
+is not shown), and the same rule holds for the numbers an administrator sees before a merge; a manager's people are
+their direct reports ([D99](D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md)
+item 4), not everyone on a unit they lead; item 15's row per unit for coverage is not written, and of a manager's
+reads only one report's holdings and the matrix export are logged (D121, "As built"); a person who reports to nobody
+cannot send a registration.
+
+Still not done: seen signed in by a person; a manual pass with a screen reader; a review by an HR practitioner; the
+length of the retention period, which no installation has set; a copy made by the running server against a real
+system; an import of existing holdings from spreadsheets.
 
 **Replaces.** Amends [D68](D68-people-are-pushed-into-clew-through-standard-scim.md) item 2 and
 [D96](D96-a-key-written-wrong-is-refused-at-the-scim-boundary.md) (a key written wrong): `position:` is a fourth

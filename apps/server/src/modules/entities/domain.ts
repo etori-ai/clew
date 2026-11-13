@@ -13,6 +13,7 @@ import {
   type EntityRef,
   type EntitySource,
   type PersonRelation,
+  type ProtocolPersonRelation,
   type UnitRelation,
   type View,
 } from '@clew/contracts';
@@ -164,9 +165,21 @@ export function managedPerson(reach: Reach, id: string): Managed | undefined {
  * never someone whose role there the directory did not say. Personal lists more than this; who may be asked about as a
  * report is exactly this.
  */
-export const reportsTo = (reach: Reach, person: ReachPerson) =>
+export const reportsTo = (reach: Pick<Reach, 'above' | 'lineReports'>, person: ReachPerson) =>
   !reach.above.includes(person.id) &&
   (person.below !== undefined || person.role === 'employee' || reach.lineReports.includes(person.id));
+/**
+ * The units the reader manages, each with only the people on it who report to the reader (`reportsTo`): exactly the
+ * `managed` relation (D99 item 4, D117), never a co-manager whose line runs elsewhere nor anyone who manages the reader,
+ * though Personal lists them. For a domain of Clew's own that works with a manager's reports through a port of its own
+ * (the competence module's `Staff`), bound in composition, since a module never imports another. A unit keeps its place
+ * when nobody on it reports to the reader: the reader still manages it.
+ */
+export function reportsByUnit<P extends ReachPerson, U extends DirectoryUnit & { people: readonly P[] }>(
+  reach: Pick<Reach, 'above' | 'lineReports'> & { managed: readonly U[] },
+): Array<Omit<U, 'people'> & { people: P[] }> {
+  return reach.managed.map(unit => ({ ...unit, people: unit.people.filter(p => reportsTo(reach, p)) }));
+}
 /** A source's key for a person that Clew can compare (`foldSourceKey`): one that fits on the wire, never a NUL. */
 export const isSourceKey = (value: string) => fitsWire(value) && !value.includes('\u0000');
 /**
@@ -218,11 +231,33 @@ export function unitRelation(reach: Reach, key: string): UnitRelation | undefine
  * reader themself (`self`); a direct report on D99's line (`managed`, `reportsTo`); anyone else (`colleague`), a
  * co-manager of the reader's unit and their own manager included. The one rule: the opened entity and the registry's
  * check of every call both ask it.
+ *
+ * `registrar` (D121 item 1) stands in for `colleague`, and only where the caller says so: the reader holds the grant and
+ * the read asked about admits it (`registrarFor`). `self` and `managed` come first, so a manager who is a registrar too
+ * is never demoted, and a read that does not admit it sees a registrar as the colleague they are, nothing more.
  */
-export function personRelation(reader: { id: string }, reach: Reach, person: { id: string }): PersonRelation {
+export function personRelation(reader: { id: string }, reach: Reach, person: { id: string }): ProtocolPersonRelation;
+export function personRelation(
+  reader: { id: string },
+  reach: Reach,
+  person: { id: string },
+  registrar: boolean,
+): PersonRelation;
+export function personRelation(
+  reader: { id: string },
+  reach: Reach,
+  person: { id: string },
+  registrar = false,
+): PersonRelation {
   if (person.id === reader.id) return 'self';
-  return isReport(reach, person.id) ? 'managed' : 'colleague';
+  return isReport(reach, person.id) ? 'managed' : registrar ? 'registrar' : 'colleague';
 }
+/**
+ * Whether a reader stands as `registrar` (D121) to the people a read asks about: they hold the grant, from their current
+ * access record, and the read admits the relation. Anything else stands as it did before the relation existed.
+ */
+export const registrarFor = (reader: { relationGrants?: readonly string[] }, admits: readonly string[]) =>
+  !!reader.relationGrants?.includes('registrar') && admits.includes('registrar');
 
 /** Keys in calls of at most `size` (never more than `ENTITY_KEYS_MAX`), in order. */
 export function chunk(keys: string[], size: number): string[][] {

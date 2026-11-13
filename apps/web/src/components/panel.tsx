@@ -365,8 +365,9 @@ export interface PanelFrame {
   /** The address of what is on screen, so focus finds the link that led away when the person comes back to it. */
   address?: string | undefined;
   /**
-   * The thing's own page, for a thing too large to read in the panel alone (a record, a document, D116): "Öppna som
-   * sida" in the header, as a work item has it on its title's line. Never the only way to do anything.
+   * The thing's own page, for a thing too large to read in the panel alone (a record, a document, D116) or one that has a
+   * page of its own (Kalender's proposal, its work item): the name in the header is the link to it, as a work item's
+   * title is (the name is the way in, 2026-11-13; "Öppna som sida" is gone). Never the only way to do anything.
    */
   page?: string | undefined;
   /** A card: its name is the small label over the card, as artboard E draws "KORT"; a view keeps its title as the heading. */
@@ -663,7 +664,8 @@ export function usePanel(
   /**
    * The panel's one header, beside the page and in the drawer alike (the product owner, 2026-11-11: one sidebar): the
    * name of what is open and ✕, in the same place and at the same size either way. A card's name is the small label over
-   * the card, as artboard E draws "KORT"; a view keeps its title as the heading. A heading and a button, not a toolbar:
+   * the card, as artboard E draws "KORT"; a view keeps its title as the heading, a link to the thing's own page where it
+   * has one (`page`), so the name is the way in. A heading and a button, not a toolbar:
    * the heading takes the focus when the panel opens (beside the page from `usePanel`'s effect, in the drawer by
    * Astryx's `data-autofocus`), and a toolbar would offer its arrow keys there. ✕ closes the panel and what it holds;
    * there is never a second thing in it to name or switch to (D111, amended 2026-11-11). Astryx's `DrawerHeader` is not
@@ -683,7 +685,13 @@ export function usePanel(
               accessibilityLevel={2}
               color={named.kind === 'card' ? 'secondary' : 'primary'}
             >
-              {named.title}
+              {named.page ? (
+                <Link href={named.page} hasUnderline>
+                  {named.title}
+                </Link>
+              ) : (
+                named.title
+              )}
             </Heading>
             {named.subtitle && (
               <Text type="supporting" color="secondary">
@@ -693,7 +701,6 @@ export function usePanel(
           </VStack>
         </StackItem>
         <HStack gap={1} vAlign="center">
-          {named.page && <Button size="sm" variant="secondary" label="Öppna som sida" href={named.page} />}
           {/* A long exchange continues in the conversation view (D112 item 7, board Assistant): the transcript as the
               page's column and the thing as its artifact beside it. */}
           {continueHref && (

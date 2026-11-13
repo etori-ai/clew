@@ -2,10 +2,16 @@
  * Seed the competence domain of the development organisation (D108): a small catalogue and holdings for the people the
  * synthetic provisioner pushed, so that a manager's list, the figure and the cards have something to show. Some
  * holdings have expired, some expire within 90 days, most are valid; which person gets what follows from their place
- * in the list of people by id, so two runs on the same directory give the same result. Runs inside the app container
- * with the server's local settings (DATABASE_URL); the development seed (`dev-connectors.ts`) calls it. It adds the
- * types the organisation lacks and holdings for the people who have none, so it can be run again after the provisioner
- * has pushed more people. Every row is audited with the actor `operator:cli`.
+ * in the list of people by id, so two runs on the same directory give the same result. It also sets a handful of
+ * requirements on the directory's positions and one share target (item 6), so that some people lack something and a
+ * unit's coverage has something to count. Some people have skills (D120): rated by themselves alone, or confirmed, at
+ * a level, a few marked as ones they want to develop; one position requires a skill at a least level. And it maps the
+ * directory's registrar group to Kompetenssökning (D121), as an administrator would on Användare. Runs inside the
+ * app container with the server's local settings (DATABASE_URL); the development seed (`dev-connectors.ts`) calls it. It
+ * adds the types the organisation lacks, holdings for the people who have none, skills for the people who have no
+ * skill, and the requirements and targets that are not there yet (a position the provisioner has not pushed is
+ * skipped), so it can be run again after the provisioner has pushed more. Every row is audited with the actor
+ * `operator:cli`.
  *
  *   bun scripts/competence-seed.ts [--organisation poc]
  *
@@ -14,8 +20,15 @@
 import { resolve } from 'node:path';
 import { and, asc, eq } from 'drizzle-orm';
 import { closeDatabase, database, schema } from '@clew/db';
-import { DEVELOPMENT_CATALOGUE, DEVELOPMENT_ORGANISATION } from './competence-development';
+import {
+  DEVELOPMENT_CATALOGUE,
+  DEVELOPMENT_ORGANISATION,
+  DEVELOPMENT_REGISTRAR_GROUP,
+  DEVELOPMENT_REQUIREMENTS,
+  DEVELOPMENT_SHARE_TARGETS,
+} from './competence-development';
 import { competence, competenceStore } from '../apps/server/src/composition/competence';
+import { usersAdmin } from '../apps/server/src/composition/people';
 
 export const OPERATOR = 'operator:cli';
 /** The organisation the development directory provisions into (`scripts/auth-setup.ts`). */
@@ -42,9 +55,9 @@ export async function seedCompetence(organisationId: string, today = new Date())
     .from(schema.people)
     .where(and(eq(schema.people.organisationId, organisationId), eq(schema.people.enabled, true)))
     .orderBy(asc(schema.people.id));
-  const held = new Set(
-    (await competenceStore.transaction(tx => tx.holdingsOf(people.map(p => p.id)))).map(h => h.personId),
-  );
+  const all = await competenceStore.transaction(tx => tx.holdingsOf(people.map(p => p.id)));
+  const held = new Set(all.filter(h => h.level === null).map(h => h.personId));
+  const rated = new Set(all.filter(h => h.level !== null).map(h => h.personId));
   let seeded = 0;
   let holdings = 0;
   const hold = async (personId: string, type: string, issuedOn: string, expiresOn?: string) => {
@@ -73,7 +86,88 @@ export async function seedCompetence(organisationId: string, today = new Date())
     if (i % 13 === 0) await hold(person.id, 'Delegering läkemedel', daysFrom(today, i % 26 === 0 ? -340 : -100));
     if (i % 17 === 0) await hold(person.id, 'Socionomexamen', '2015-06-05');
   }
-  return { types, people: seeded, holdings };
+  let skills = 0;
+  const skill = async (personId: string, type: string, level: 1 | 2 | 3, confirmed: boolean, interest = false) => {
+    await competence.seedSkill(OPERATOR, organisationId, personId, {
+      typeId: ids.get(type)!,
+      level,
+      confirmed,
+      interest,
+    });
+    skills++;
+  };
+  for (const [i, person] of people.entries()) {
+    // One person in six has one skill, the kind turning with them: the person's own rating until a manager confirms
+    // it, some wanting to develop it.
+    if (rated.has(person.id) || i % 6 !== 0) continue;
+    const n = i / 6;
+    if (n % 5 === 0) await skill(person.id, 'Journalsystem', ((n % 3) + 1) as 1 | 2 | 3, n % 2 === 0);
+    else if (n % 5 === 1) await skill(person.id, 'Engelska', n % 4 === 1 ? 3 : 2, true);
+    else if (n % 5 === 2) await skill(person.id, 'Kalkylprogram', 1, false, true);
+    else if (n % 5 === 3) await skill(person.id, 'Teckenspråk', 1, false, n % 2 === 1);
+    else await skill(person.id, 'Digitala möten', 2, true, n % 3 === 0);
+  }
+  return {
+    types,
+    people: seeded,
+    holdings,
+    skills,
+    ...(await seedRequirements(organisationId, ids)),
+    registrar: await seedRegistrar(organisationId),
+  };
+}
+
+/**
+ * Kompetenssökning for the development stack (D121): the directory's registrar group is mapped to the relation
+ * `registrar`, as an administrator maps a group on Administration › Användare, with the same audit row and derivation.
+ * True when the mapping was made now; false when it was there already or the provisioner has not pushed the group.
+ */
+async function seedRegistrar(organisationId: string) {
+  return usersAdmin.seedGroupRelation(OPERATOR, organisationId, {
+    groupExternalId: DEVELOPMENT_REGISTRAR_GROUP,
+    relation: 'registrar',
+  });
+}
+
+/**
+ * The requirements and the share target of the development data (D108 item 6) that the organisation does not have yet,
+ * on the positions the provisioner pushed, by code. `typeIds` is the catalogue by name.
+ */
+async function seedRequirements(organisationId: string, typeIds: ReadonlyMap<string, string>) {
+  const { positions, required, targeted } = await competenceStore.transaction(async tx => ({
+    positions: new Set((await tx.positions(organisationId)).map(p => p.code)),
+    required: new Set(
+      (await tx.requirements(organisationId)).flatMap(r => (r.positionCode ? [r.typeId + '\n' + r.positionCode] : [])),
+    ),
+    targeted: new Set(
+      (await tx.shareTargets(organisationId)).flatMap(t =>
+        t.unitId === null ? [t.typeId + '\n' + t.positionCode] : [],
+      ),
+    ),
+  }));
+  let requirements = 0,
+    targets = 0;
+  for (const r of DEVELOPMENT_REQUIREMENTS) {
+    const typeId = typeIds.get(r.type);
+    if (!typeId || !positions.has(r.position) || required.has(typeId + '\n' + r.position)) continue;
+    await competence.seedRequirement(OPERATOR, organisationId, {
+      typeId,
+      positionCode: r.position,
+      ...(r.minLevel ? { minLevel: r.minLevel } : {}),
+    });
+    requirements++;
+  }
+  for (const t of DEVELOPMENT_SHARE_TARGETS) {
+    const typeId = typeIds.get(t.type);
+    if (!typeId || !positions.has(t.position) || targeted.has(typeId + '\n' + t.position)) continue;
+    await competence.seedShareTarget(OPERATOR, organisationId, {
+      typeId,
+      positionCode: t.position,
+      minShare: t.minShare,
+    });
+    targets++;
+  }
+  return { requirements, targets };
 }
 
 if (import.meta.main) {
@@ -92,7 +186,7 @@ if (import.meta.main) {
   try {
     const seeded = await seedCompetence(organisationId);
     console.log(
-      `Seeded competence for organisation "${organisationId}": ${seeded.types} new types and ${seeded.holdings} holdings for ${seeded.people} people who had none.`,
+      `Seeded competence for organisation "${organisationId}": ${seeded.types} new types, ${seeded.holdings} holdings for ${seeded.people} people who had none, ${seeded.skills} skills, ${seeded.requirements} requirements and ${seeded.targets} share targets${seeded.registrar ? ', and mapped the registrar group' : ''}.`,
     );
   } catch (error) {
     console.error(`Could not seed: ${(error as Error).message}`);

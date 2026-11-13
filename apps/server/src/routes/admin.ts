@@ -10,6 +10,8 @@ import {
   THEME_FILE_MAX_BYTES,
   GroupCapabilityInput,
   type GroupCapabilityInputType,
+  GroupRelationInput,
+  type GroupRelationInputType,
   GroupSearchInput,
   type GroupSearchInputType,
   UsersAdminQuery,
@@ -59,6 +61,7 @@ const validators = {
   addModel: ajv.compile(AddModelInput),
   patchModel: ajv.compile(ModelPatchInput),
   groupCapability: ajv.compile(GroupCapabilityInput),
+  groupRelation: ajv.compile(GroupRelationInput),
   groupSearch: ajv.compile(GroupSearchInput),
   usersQuery: ajv.compile(UsersAdminQuery),
   appearanceTheme: ajv.compile(AppearanceThemeInput),
@@ -114,6 +117,23 @@ adminRoutes.post('/users/group-capabilities/remove', async c =>
     await usersAdmin.removeGroupCapability(
       c.get('session').context,
       await body<GroupCapabilityInputType>(c.req.raw, validators.groupCapability),
+    ),
+  ),
+);
+// D121: a group gives a relation to people by grant (`registrar`), mapped beside the capabilities and never one (D118).
+adminRoutes.post('/users/group-relations', async c =>
+  c.json(
+    await usersAdmin.addGroupRelation(
+      c.get('session').context,
+      await body<GroupRelationInputType>(c.req.raw, validators.groupRelation),
+    ),
+  ),
+);
+adminRoutes.post('/users/group-relations/remove', async c =>
+  c.json(
+    await usersAdmin.removeGroupRelation(
+      c.get('session').context,
+      await body<GroupRelationInputType>(c.req.raw, validators.groupRelation),
     ),
   ),
 );

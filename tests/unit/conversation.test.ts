@@ -310,19 +310,9 @@ describe('a question without the model', () => {
     expect(budget.answer.body).toBe('Förbrukat av ramen: 98 %, av periodens ram.');
     expect(budget.answer.source).toBe('Ekonomisystemet');
   });
-  test('completions and the @ objects come from the registry and the open cards in scope', async () => {
+  test('the @ objects come from the open cards in scope', async () => {
     const w = world();
     await w.threads.ensureThreads(hillevi);
-    const completions = await w.assistant.completionsFor(hillevi);
-    expect(completions.ask.map(a => a.capability)).toContain('hr.whoIsOn');
-    expect(completions.completions.slice(0, 2)).toEqual([
-      'Vad har jag i dag?',
-      'Hur ligger vi till med utvecklingssamtalen?',
-    ]);
-    expect(completions.do).toEqual([]); // the mock areas list only reads under Gör själv
-    expect(completions.recent).toEqual([]);
-    await w.assistant.ask(hillevi, 'Vad har jag i dag?');
-    expect((await w.assistant.completionsFor(hillevi)).recent.map(r => r.title)).toEqual(['Vad har jag i dag?']);
     const invoices = (await w.threads.listThreadsFor(hillevi)).find(t => t.topic === 'finance:invoices')!;
     // With nothing typed, `@` offers the context alone, never everything open.
     expect(await w.assistant.listObjects(hillevi, '')).toEqual([]);
@@ -491,9 +481,10 @@ describe('with a model', () => {
     };
     const w = world({ generate });
     const turn = await w.assistant.converse(hillevi, { text: 'vem är här?' });
+    // The source and the time are the turn's, drawn under the answer: what the model wrote of them anyway is cut.
     expect(turn).toMatchObject({
       assistant: 'model',
-      answer: { body: 'Tre på plats. Personalsystemet 08:00.', source: 'Personalsystemet' },
+      answer: { body: 'Tre på plats.', source: 'Personalsystemet' },
     });
     expect(generated[0]).toContain('onsdag 4 november 2026, klockan 08:00, vecka 45');
     expect(generated).toContain('hr__whoIsOn');
@@ -1030,6 +1021,12 @@ describe('the assistant drafts, the person decides (D112 item 8)', () => {
       error: 'Varje värde ska vara text.',
     });
     expect(heard).toEqual([]);
+    // The model reads times in words in Swedish time (`modelReading`), so it may write one back without an offset: it is
+    // the Stockholm time it says, checked as any other.
+    expect(await tool.execute({ action: 'book', values: { when: '2026-11-16T09:00' } })).toMatchObject({
+      drafted: true,
+    });
+    expect(heard).toEqual([{ actionId: 'book', values: { when: '2026-11-16T08:00:00Z' } }]);
   });
 });
 
@@ -1077,14 +1074,16 @@ describe('a question about a person the asker manages (D115)', () => {
     // The prompt names who "Anna" is and the work about her by title, last day and buttons; nothing a source holds.
     expect(system).toContain('Medarbetare som personen nämnde (bland dem personen är chef för):');
     expect(system).toContain(
-      '- "Anna" är Anna Lindqvist på Skönsmons skola. Öppna ärenden om medarbetaren under Behöver dig: Ärende "Boka ett omtankesamtal med en medarbetare" (Personalsystemet, senast måndag 16 november). Knappar i ärendet nu: Boka samtalet, Se mönstret i personalsystemet, Inte nu, Fler val (Lägg till i samtalet, Avfärda).',
+      '- "Anna" är Anna Lindqvist på Skönsmons skola, användarnamn anna. Öppna ärenden om medarbetaren under Behöver dig: Ärende "Boka ett omtankesamtal med en medarbetare" (Personalsystemet, senast måndag 16 november). Knappar i ärendet nu: Boka samtalet, Se mönstret i personalsystemet, Inte nu, Fler val (Lägg till i samtalet, Avfärda).',
     );
     expect(system).toContain('Uppgifter om medarbetarnas hälsa och frånvaro lämnas inte till dig.');
-    // The lookup is Clew's own and answers the same; the routine is policy text, handed whole.
+    // The lookup is Clew's own and answers the same, with the user name a read about one person takes (D122); the
+    // routine is policy text, handed whole.
     expect(JSON.parse(model.handed[2]!)).toEqual({
       found: 'one',
       name: 'Anna Lindqvist',
       unit: 'Skönsmons skola',
+      userName: 'anna',
       workItems: [
         'Ärende "Boka ett omtankesamtal med en medarbetare" (Personalsystemet, senast måndag 16 november). Knappar i ärendet nu: Boka samtalet, Se mönstret i personalsystemet, Inte nu, Fler val (Lägg till i samtalet, Avfärda).',
       ],

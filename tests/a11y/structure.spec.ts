@@ -138,7 +138,7 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
       expect(new Set(names).size).toBe(names.length);
     });
 
-  test('Hem is one heading over the box, and under the box Behöver dig and I dag side by side, then Läget and Sedan i går', async ({
+  test('Hem is one heading over the box, and under the box Behöver dig and I dag side by side, then Läget, and no digest', async ({
     page,
     api: _,
   }) => {
@@ -154,18 +154,18 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     const needs = page.getByRole('region', { name: 'Behöver dig' });
     await expect(needs.getByRole('listitem')).toHaveCount(3);
     await expect(needs.getByRole('link', { name: 'Alla 6 i Att göra' })).toHaveAttribute('href', '/todo');
-    const today = page.getByRole('region', { name: 'I dag' }),
-      since = page.getByRole('region', { name: 'Sedan i går' });
+    const today = page.getByRole('region', { name: 'I dag' });
     const n = (await needs.boundingBox())!,
       d = (await today.boundingBox())!;
     expect(n.y).toBeGreaterThan(box.y + box.height);
     expect(d.x).toBeGreaterThanOrEqual(n.x + n.width);
     expect(Math.abs(d.y - n.y)).toBeLessThan(2);
-    // Läget follows the blocks (D112: kept under them until decided), and Sedan i går ends the page.
+    // Läget follows the blocks (D112: kept under them until decided). "Sedan i går" is gone (2026-11-13: no digest
+    // sentences on a page): what closed is in Att göra's Klart.
     const lage = heading(page, 2, 'Läget på Skönsmons skola');
     await expect(lage).toBeVisible();
     expect((await lage.boundingBox())!.y).toBeGreaterThan(n.y + n.height);
-    expect((await since.boundingBox())!.y).toBeGreaterThan((await lage.boundingBox())!.y);
+    await expect(page.getByRole('region', { name: 'Sedan i går' })).toHaveCount(0);
     await expect(page.getByRole('tablist')).toHaveCount(0);
     await expect(today.locator('[aria-level="2"]').filter({ hasText: 'I dag' })).toBeVisible();
     await expect(today.getByText('Rektorsmöte', { exact: true })).toBeVisible();
@@ -179,69 +179,17 @@ test.describe('1.3.1 and 2.4.6 structure', () => {
     await expect(today.getByText('Ledigt till 12:00')).toBeVisible();
     await expect(today.getByText('Längsta luckan · jag bokar inget här utan att fråga')).toBeVisible();
     await expect(today.getByRole('link', { name: 'Kalender' })).toHaveAttribute('href', '/calendar');
-    // Sedan i går is three sentences (artboard A): what closed with its receipt, what waits with who has answered, the next review.
-    await expect(
-      since.getByText(/^2 klara: attesterade fakturor, kvitto läst från Ekonomisystemet 09:00 och påminnelse om/),
-    ).toBeVisible();
-    await expect(
-      since.getByText(/^2 väntar på andra: planera utvecklingssamtal vecka 45 \(1 av 2 har svarat\) och tillbud/),
-    ).toBeVisible();
-    await expect(since.getByText(/^Nästa genomgång /)).toBeVisible();
-    await expect(since.getByRole('link', { name: 'Allt som är klart' })).toHaveAttribute('href', '/todo?tab=done');
     await expectNoAxeViolations(page);
   });
 
-  test('when many cards closed since the day began, Sedan i går names three and sums the rest in one sentence (D65)', async ({
-    page,
-    api,
-  }) => {
-    // Five more closed today, newest first, two of them the same card closed twice.
-    const done = api.threads.find(t => t.id === 'attest')!;
-    const more = [
-      ['Godkänn en ledighetsansökan', '2026-11-04T09:00:00.000Z'],
-      ['Tillbud 2026-1182', '2026-11-04T08:30:00.000Z'],
-      ['Boka ett omtankesamtal', '2026-11-04T08:20:00.000Z'],
-      ['Lönesystemet har inte visat det som bevakades', '2026-11-04T08:10:00.000Z'],
-      ['Lönesystemet har inte visat det som bevakades', '2026-11-04T08:10:00.000Z'],
-    ] as const;
-    api.threads = [
-      ...api.threads,
-      ...more.map(([title, handledAt], i) => ({
-        ...done,
-        id: `klar-${i}`,
-        topic: `klar-${i}`,
-        title,
-        handledAt,
-        receipt: null,
-      })),
-    ];
-    await open(page, '/');
-    const since = page.getByRole('region', { name: 'Sedan i går' });
-    await expect(
-      since.getByText(
-        '7 klara: godkänn en ledighetsansökan 10:00, tillbud 2026-1182 09:30, boka ett omtankesamtal 09:20 och 4 till.',
-        { exact: true },
-      ),
-    ).toBeVisible();
-    await expect(since.getByRole('link', { name: 'Allt som är klart' })).toHaveAttribute('href', '/todo?tab=done');
-    await expectNoAxeViolations(page);
-  });
-
-  test('typing in the box offers what the router finds without the model, the open card first; a row that leads somewhere is a link, one that asks is a button', async ({
+  test('typing in the box offers nothing under it: no suggestion chips on a page (2026-11-13)', async ({
     page,
     api: _,
   }) => {
     await open(page, '/');
     await composer(page).fill('attestera');
-    const offers = page.getByRole('list', { name: 'Menar du' });
-    await expect(offers.getByRole('listitem').first()).toContainText('Attestera 3 fakturor, 48 200 kr');
-    // An action is asked in the box: a button. The open card is somewhere to go: a link, so it opens in a new tab too (D116).
-    await expect(offers.getByRole('button', { name: /Attestera fakturor/ })).toBeVisible();
-    const card = offers.getByRole('link', { name: /Attestera 3 fakturor/ });
-    await expect(card).toHaveAttribute('href', '/?card=fakturor');
-    await card.click();
-    // The card opens beside Hem (D112, amended 2026-11-12).
-    await expect(page).toHaveURL(/^[^?]*\/\?card=fakturor$/);
+    await expect(page.getByText('Menar du')).toHaveCount(0);
+    await expect(page.getByRole('link', { name: /Attestera 3 fakturor/ })).toHaveCount(1);
   });
 
   test('a row reaches the box by @, which with nothing typed offers only what the page shows', async ({
@@ -482,10 +430,7 @@ test.describe('D54 Läget: the areas’ figures from their connectors', () => {
     await card.getByText('4,2 %', { exact: true }).click();
     await expect(page).toHaveURL(/^[^?]*\/tools\/hr\.absenceOverview\?/);
   });
-  test('a source that does not answer is the warning tile, never an empty one; Sedan i går does not repeat Läget', async ({
-    page,
-    api,
-  }) => {
+  test('a source that does not answer is the warning tile, never an empty one', async ({ page, api }) => {
     api.areas = api.areas.map(a =>
       a.id === 'budget'
         ? { ...a, figure: { label: 'Ekonomisystemet svarar inte.', tone: 'warn', unavailable: true } }
@@ -497,12 +442,6 @@ test.describe('D54 Läget: the areas’ figures from their connectors', () => {
     await expect(silent.getByText('Ekonomisystemet svarar inte.')).toBeVisible();
     await expect(silent.getByText(/försöker igen 12:00$/i)).toBeVisible();
     await expect(silent.getByRole('link')).toHaveCount(0);
-    // The figures to watch are Läget's alone: Sedan i går says what changed, not the figures again (app critique,
-    // 2026-11-13). The line's own form is `figureItems`' and has its unit test.
-    const since = page.getByRole('region', { name: 'Sedan i går' });
-    await expect(since).toBeVisible();
-    await expect(since.getByText('Sjukfrånvaro', { exact: true })).toHaveCount(0);
-    await expect(since.getByText('Öppna tillbud', { exact: true })).toHaveCount(0);
     await expectNoAxeViolations(page);
   });
   test('an area is one tile however often the page reads again, though it has cards, standing reads and a menu row', async ({

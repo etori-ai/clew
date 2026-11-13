@@ -13,9 +13,10 @@ import {
 } from './support';
 
 /**
- * Registrera intyg on Personal (D108 item 7): the competence module's page for one person, a dialog over the list at
- * `/staff?register=<personId>`, which is where the "Registrera intyg" link of the person's Kompetens section leads
- * (D97: the page a core source declares on its read about a person). The form is named for the person; what is missing
+ * Registrera intyg (D108 item 7): the competence module's way in for one person, a dialog over the page the manager is
+ * on, Personal at `/staff?register=<personId>` and a person's own page at `/people/<key>?register=<personId>`, where the
+ * "Registrera intyg" link of the person's Kompetens section leads (D97: the page a core source declares on its read
+ * about a person, a query alone). Closing it replaces its address, so Back never opens it again. The form is named for the person; what is missing
  * is said on the field; the server's refusal is an alert and keeps what was chosen; on success the dialog closes and
  * a toast says so. With the module off, or for someone not on the list, the address opens nothing. Keyboard,
  * structure, axe and reflow, at desktop, phone and 320 px. The mock's clock stands at 2026-11-04.
@@ -147,6 +148,28 @@ test.describe('Registrera intyg', () => {
       await expect(fieldError('Dagen har inte kommit.')).toBeVisible();
       await expect(issued).toHaveAccessibleDescription(/Dagen har inte kommit\./);
       await expect(issued).toBeFocused();
+      expect(api.registered).toEqual([]);
+    });
+    test('from a person’s page the dialog lies over that page: Esc leaves the person where they are, and Back opens nothing', async ({
+      page,
+      api,
+    }) => {
+      api.competenceTypes = competenceTypes();
+      // The section's way in is a query alone (`?register={id}`), which joins the page the person is on (D83 rule 5).
+      await open(page, '/people/anna');
+      await open(page, '/people/anna?register=anna');
+      const dialog = form(page);
+      await expect(dialog.getByText('För Anna Lindqvist')).toBeVisible();
+      await settled(page);
+      await expectNoAxeViolations(page);
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+      await expect(page).toHaveURL('/people/anna');
+      await expect(page.getByRole('heading', { level: 1, name: 'Anna Lindqvist' })).toBeVisible();
+      // Closing replaced the dialog's address: Back never reopens a write (the review of 2026-11-13).
+      await page.goBack();
+      await expect(page).toHaveURL('/people/anna');
+      await expect(form(page)).toHaveCount(0);
       expect(api.registered).toEqual([]);
     });
     test('with the module off, a deactivated person or an address that names nobody, the address opens nothing', async ({

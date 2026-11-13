@@ -146,7 +146,7 @@ People, units and groups enter an installation only through `/scim/v2` (D68). An
 
 Whether pushes still arrive. Clew records when each provisioner last authenticated (`auth_provisioner.last_seen_at`, written at most once a minute) and Administration › Användare shows it under "Inläsning från katalogen", with a warning when a provisioner has been silent for two days or has never called. A run that begins after half an hour of silence writes one `provisioner.seen` audit row with the previous time, so a push that changed nothing still leaves a trace and the audit lists the runs. A silent provisioner is the installation's to alarm on: access a person lost in the source ends in Clew only when the push arrives. `CLEW_PROVISIONER_TOKEN=<token> bun scripts/provisioner-check.ts <url>/scim/v2` reads what the installation holds and warns about the active users without a unit, the managed units without a name, the manager groups and the units with none below them that have no active members, the units whose people report to nobody, the deactivated users still in `unit-manager:`, `capability:` or plain groups (making them active again gives back at once what those groups give), the employments on a unit no longer held, and the group keys written wrong or naming a capability the check does not know; `--roots <n>` also warns when the tree has another number of roots. It changes nothing. It authenticates as a provisioner, so it counts as that provisioner's call and moves its last-seen time: issue the check a key of its own right before it runs ("Lägg till katalog", or `provisioner-token.ts add check --organisation <organisationId>`) and take it back as soon as it has run ("Återkalla nyckeln", or `revoke check`). There is one kind of key, so the check's key can create, change and deactivate as much as any provisioner's, and until it is taken back its row shows "Tyst i över två dygn" from two days after the check last ran.
 
-What to read when something is wrong. An unexpected failure of a SCIM request is a 500 to the client and one `error` line with scope `scim` in the server log, with the trace id when tracing is on. A 400 `invalidValue` that names a key is [D96](../decisions/D96-a-key-written-wrong-is-refused-at-the-scim-boundary.md) or D93: the provisioner's mapping wrote a key wrong. The audit table carries `scim.user.*` and `scim.group.*` (actor `provisioner:<id>`); `grant.derived` on the person with the unit, role and capabilities that resulted and the number of placements, or `removed: true` when the person has no unit left; `assignments.derived` on the person with their placements when those change and the grant does not, such as a second unit or a manager's role on one ([D99](../decisions/D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md)); `group-capability.added`/`removed` on the group (actor the administrator), with the capability and `groupLabel`, the name of the organisation's group that held the key once the change held the row of the group it found and then the organisation's capability rows, or `null` when none did, as when a removal raced a change of the group's key; and `provisioner.added`, `provisioner.rotated` (the grace period, until when the old key answers, and `endedEarlier` when a second rotation ended an older key early) and `provisioner.revoked` on `provisioner:<id>`, with the administrator or `bootstrap:cli` as the actor. The sign-in rows are under [Sign-in](#sign-in). A person with no `unit:` or `unit-manager:` membership has no grant and cannot sign in at all: every sign-in is refused with "Kontot saknar behörighet till Startsidan." and a `login-denied` row that names them, the first one right after `identity-bound`, and a person who loses their last unit while signed in is shut out at their next request with `access-revoked`. The provisioner's mapping, not Clew, decides those memberships. A mapping row whose group the source removed stays and shows as such on Administration › Användare, where it can be removed.
+What to read when something is wrong. An unexpected failure of a SCIM request is a 500 to the client and one `error` line with scope `scim` in the server log, with the trace id when tracing is on. A 400 `invalidValue` that names a key is [D96](../decisions/D96-a-key-written-wrong-is-refused-at-the-scim-boundary.md) or D93: the provisioner's mapping wrote a key wrong. The audit table carries `scim.user.*` and `scim.group.*` (actor `provisioner:<id>`); `grant.derived` on the person with the unit, role and capabilities that resulted and the number of placements, or `removed: true` when the person has no unit left; `assignments.derived` on the person with their placements when those change and the grant does not, such as a second unit or a manager's role on one ([D99](../decisions/D99-units-form-a-tree-pushed-over-scim-and-a-manager-works-with-their-direct-reports.md)); `positions.derived` on the person with the codes of the positions they now hold (D108 item 5); `group-capability.added`/`removed` on the group (actor the administrator), with the capability and `groupLabel`, the name of the organisation's group that held the key once the change held the row of the group it found and then the organisation's capability rows, or `null` when none did, as when a removal raced a change of the group's key; and `provisioner.added`, `provisioner.rotated` (the grace period, until when the old key answers, and `endedEarlier` when a second rotation ended an older key early) and `provisioner.revoked` on `provisioner:<id>`, with the administrator or `bootstrap:cli` as the actor. The sign-in rows are under [Sign-in](#sign-in). A person with no `unit:` or `unit-manager:` membership has no grant and cannot sign in at all: every sign-in is refused with "Kontot saknar behörighet till Startsidan." and a `login-denied` row that names them, the first one right after `identity-bound`, and a person who loses their last unit while signed in is shut out at their next request with `access-revoked`. The provisioner's mapping, not Clew, decides those memberships. A mapping row whose group the source removed stays and shows as such on Administration › Användare, where it can be removed.
 
 ## Sign-in
 
@@ -293,6 +293,86 @@ read copies back what the source still holds, as new rows (new ids and creation 
 labels, so the statuses are as before); what the source no longer holds does not come back. Holdings registered in Clew
 are not affected. If such a fault is found before 04:00, switching Kompetens off under Anslutna system until the
 directory is right stops the read.
+
+### Erasure after a person leaves
+
+Under [D123](../decisions/D123-clew-empties-expired-sign-in-data-itself-and-a-leavers-retention-is-the-organisations-decision.md)
+a leaver's competence is erased by hand, as one step of [Erasing one person](#erasing-one-person), when the
+organisation's rules say so, and no timer erases it. The competence module also has a period an operator may set per
+organisation, built before D123 and kept when the two were merged (D108's amendment of 2026-11-12): **while no period
+is set nothing is erased by it**, and whether one may be set is for the product owner. What follows is how it works
+once set.
+
+A person the directory deactivates keeps their competence until a period the operator sets has passed; then it is
+erased (D108 item 14). The period is per organisation and has no default: **while it is unset nothing is erased**.
+Set, read and clear it inside the app container ([script](../../scripts/competence-retention.ts)):
+
+```sh
+docker exec -w /workspace clew-app-1 bun scripts/competence-retention.ts --organisation <id>             # the period and who waits
+docker exec -w /workspace clew-app-1 bun scripts/competence-retention.ts --organisation <id> --days 90   # 1 to 3650 days (--days=90 too)
+docker exec -w /workspace clew-app-1 bun scripts/competence-retention.ts --organisation <id> --off       # clear it
+```
+
+The script refuses an organisation that has no provisioned person and no provisioner, and any argument it does not
+know; it changes nothing then.
+
+What happens:
+
+- **A deactivation** (SCIM `PATCH` or `PUT` with `active: false`, `DELETE`, or a user created inactive) writes the
+  person's row in `competence_erasure` (`inactive`, from that moment, the next generation) in the same transaction as
+  the change, through the people module's leavers port, and nothing else: no period is read and nothing is scheduled.
+  The SCIM audit row of the change records it. The port runs in a savepoint with a lock timeout of two seconds: if it
+  fails or has to wait longer, it is rolled back to the savepoint, a `warn` line with scope `scim` says so ("could not
+  record a change of active"), and the deactivation commits all the same (D113). Nothing in the competence module can
+  make a deactivation fail; the most it can do is hold it up for those two seconds.
+- **A reactivation** (`active: true`, or a full `PUT` without `active`) marks the row `cancelled` in the same way.
+  Nothing registered in Clew was touched, so the person comes back as they left. Rows copied from a source are the
+  exception: the daily read deletes them while the person is deactivated and copies back, as new rows, what the source
+  still holds at the first read after they are active again.
+- **When it is due** follows from the row and the period as it stands: the period's days after the deactivation, and
+  never sooner than a day after the period was last set or changed. Setting or changing the period therefore moves no
+  row and applies at once to everyone deactivated; one set too short by mistake brings nobody due within a day, so it
+  can be set again first. Clearing it holds everyone until a period is set again. One audit row per change,
+  `competence.retention_set` or `competence.retention_cleared`, with the period before and after and how many people
+  are deactivated.
+- **The sweep.** The server runs a sweep at boot and every hour after (the same guard that asks for the daily copy).
+  Each round, one person at a time, each in a transaction of its own: it records the deactivations no row records (one
+  from before this table, or one whose port failed), counted from when it finds them and only for an organisation with
+  a period (`competence.leaver_recorded`); it cancels the row of anyone active again whose reactivation no row records
+  (`competence.erasure_cancelled`, reason `active`); and it erases everyone due, the earliest first. An erasure re-reads
+  the row under its lock and erases only if it is still that spell's and `inactive`, a period is set, it is due and the
+  person is still deactivated. It erases what `scripts/competence-erase.ts` erases (holdings, copied rows included,
+  requirements set on the person, their id on what they registered or decided for others, the approval cards of their
+  registrations, and every card of Kompetens in their own stream with the occurrences the scan keeps for them), writes
+  `competence.person_erased` with the actor `system:competence-retention`, the cause `retention`, the generation and
+  counts only, and marks the row `erased`, in one transaction. So what is due is erased within the hour, two
+  instances sweeping at once erase each person once, and a process that dies half way erases nothing; the next round
+  does it. At most 2000 people per step and round; the rest wait for the next round. One case the sweep cannot see:
+  a person erased, reactivated and deactivated again with both changes' ports failing and no round in between (the
+  row still says `erased`); nothing of the new spell is erased then, until `scripts/competence-erase.ts` is run or the
+  person is reactivated and deactivated again.
+- **Logs.** A round that did anything writes an `info` line with scope `competence` and its counts ("the erasure sweep
+  ran"). One erasure that fails writes a `warn` line with the database's error code and is asked for again at the next
+  round. A round that leaves erasures due, by a failure or by the bound, or finds any due for more than a day, writes a
+  `warn` line with the counts (`left`, `overdue`): an erasure more than a day overdue means the sweep is failing or no
+  instance runs.
+- **By hand**, `scripts/competence-erase.ts --person <id> --confirm` erases at once (cause `operator`) and marks the
+  row `erased`.
+- **Across a deployment** nothing needs doing. The erasures are rows and the sweep is code, not a sleeping workflow, so
+  no erasure is stamped with an engine version and none is left pending under an old one: no `forkWorkflow` is needed
+  for erasures. Whether Kompetens is switched on does not matter either: an erasure set by the period is made either
+  way.
+
+What stays after an erasure: the person's row in `auth_person` (D68), their memberships, positions and assignments as
+the provisioner left them, the read log rows that hold their id (D121), the `competence_erasure` row (ids and times),
+the subject of cards in other people's streams that name them (`scripts/subject-erase.ts` removes it), and the talks
+domain (`scripts/talks-erase.ts`). **Audit rows written before the erasure keep what they recorded**: an audit row is
+never changed, so `competence.holding_registered`, `competence.holding_submitted`, `competence.skill_rated`,
+`competence.skill_validated` and the like still carry the person's id, the type's id, the days and the levels they
+were written with.
+
+To check: `select state, count(*) from competence_erasure where organisation_id = '<id>' group by state`, and the
+script, which says how many wait, how many are overdue and when the next falls due.
 
 ## Reproduce the synthetic upgrade and restore rehearsal
 

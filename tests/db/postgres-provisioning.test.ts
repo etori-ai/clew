@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { eq, inArray, like, sql } from 'drizzle-orm';
+import { eq, inArray, like, or, sql } from 'drizzle-orm';
 import { database, schema, type Database } from '../../packages/db/src/index';
 import { postgresProvisionStore } from '../../apps/server/src/modules/people/adapters/postgres';
 import { provisioningContract, type ProvisioningHarness } from '../provisioning-store-contract';
@@ -22,6 +22,7 @@ afterAll(async () => {
         .where(like(schema.people.id, p + '%'))
     ).map(r => r.id);
     await db.delete(schema.groupCapabilities).where(like(schema.groupCapabilities.groupExternalId, '%' + p + '%'));
+    await db.delete(schema.groupRelations).where(like(schema.groupRelations.groupExternalId, '%' + p + '%'));
     if (people.length) {
       await db.delete(schema.identityBindings).where(inArray(schema.identityBindings.personId, people));
       await db.delete(schema.sessions).where(inArray(schema.sessions.personId, people));
@@ -35,6 +36,10 @@ afterAll(async () => {
       await db.delete(schema.assignments).where(inArray(schema.assignments.personId, people));
       await db.delete(schema.accessGrants).where(inArray(schema.accessGrants.personId, people));
     }
+    // D108 item 5: the positions of the run's organisations, and those whose code carries the prefix; holds go with them.
+    await db
+      .delete(schema.positions)
+      .where(or(like(schema.positions.organisationId, p + '%'), like(schema.positions.code, '%' + p + '%')));
     await db.delete(schema.groups).where(like(schema.groups.id, '%' + p + '%'));
     await db.delete(schema.provisioners).where(like(schema.provisioners.id, p + '%'));
     await db.delete(schema.units).where(like(schema.units.id, p + '%'));
@@ -107,6 +112,20 @@ provisioningContract('postgres', async (): Promise<ProvisioningHarness> => {
           await tx.insert(schema.groupCapabilities).values(rows.map(row => ({ organisationId: 'org', ...row })));
       });
     },
+    async setGroupRelations(rows) {
+      await db.transaction(async tx => {
+        await tx.delete(schema.groupRelations).where(like(schema.groupRelations.groupExternalId, '%' + prefix + '%'));
+        if (rows.length)
+          await tx.insert(schema.groupRelations).values(rows.map(row => ({ organisationId: 'org', ...row })));
+      });
+    },
+    async relations(id) {
+      const [row] = await db
+        .select({ relations: schema.accessGrants.relations })
+        .from(schema.accessGrants)
+        .where(eq(schema.accessGrants.personId, id));
+      return row?.relations ?? [];
+    },
     async legacyGrant(id, grant) {
       await db.insert(schema.accessGrants).values({ personId: id, ...grant });
     },
@@ -146,7 +165,8 @@ import { scimStoreContract, type ScimStoreHarness } from '../scim-store-contract
 import { cLocaleDatabase, type CLocaleDatabase } from './c-locale';
 /** The SCIM half's harness on the suite's database, or on `db` when a test names another. */
 const scimHarness = (prefix: string, db: () => Database = database): ScimStoreHarness => ({
-  store: postgresProvisionStore(db),
+  store: postgresProvisionStore({ db }),
+  withLeavers: (leavers, leaverFailed) => postgresProvisionStore({ leavers: () => leavers(), leaverFailed, db }),
   prefix,
   async seedProvisioner(p, digest, revoked, previous) {
     await db()

@@ -4,6 +4,7 @@ import { eq, like, sql } from 'drizzle-orm';
 import { database, schema } from '../../packages/db/src/index';
 import type { DurableQueue } from '../../packages/db/src/durable';
 import { competenceStoreWithCards } from '../../apps/server/src/composition/competence';
+import { postgresCompetenceStore } from '../../apps/server/src/modules/competence/adapters/postgres';
 import { competenceStoreContract, copiedRow, typeRow } from '../competence-store-contract';
 
 /**
@@ -21,6 +22,11 @@ const prefixes: string[] = [];
 afterAll(async () => {
   const db = database();
   for (const p of prefixes) {
+    await db.delete(schema.competenceReadLog).where(like(schema.competenceReadLog.id, p + '%'));
+    await db.delete(schema.competenceErasures).where(like(schema.competenceErasures.personId, p + '%'));
+    await db.delete(schema.competenceRetention).where(like(schema.competenceRetention.organisationId, p + '%'));
+    await db.delete(schema.competenceRequirements).where(like(schema.competenceRequirements.id, p + '%'));
+    await db.delete(schema.competenceShareTargets).where(like(schema.competenceShareTargets.id, p + '%'));
     await db.delete(schema.competenceHoldings).where(like(schema.competenceHoldings.id, p + '%'));
     await db.delete(schema.competenceSourceMappings).where(like(schema.competenceSourceMappings.connectorId, p + '%'));
     await db.delete(schema.competenceSources).where(like(schema.competenceSources.connectorId, p + '%'));
@@ -28,6 +34,11 @@ afterAll(async () => {
     await db.delete(schema.threads).where(like(schema.threads.id, p + '%'));
     await db.delete(schema.audit).where(like(schema.audit.subject, '%:' + p + '%'));
     await db.delete(schema.connectors).where(like(schema.connectors.id, p + '%'));
+    await db.delete(schema.assignments).where(like(schema.assignments.personId, p + '%'));
+    await db.delete(schema.personPositions).where(like(schema.personPositions.personId, p + '%'));
+    await db.delete(schema.groups).where(like(schema.groups.id, p + '%'));
+    await db.delete(schema.units).where(like(schema.units.id, p + '%'));
+    await db.delete(schema.positions).where(like(schema.positions.id, p + '%'));
     await db.delete(schema.people).where(like(schema.people.id, p + '%'));
   }
   await db.execute(sql`delete from dbos.workflow_status where application_name = ${application}`);
@@ -91,6 +102,28 @@ competenceStoreContract('postgres', async () => {
       );
       return [...rows].map(r => r.id);
     },
+    async seedPosition(position) {
+      await database().insert(schema.positions).values(position);
+    },
+    async holdPosition(personId, positionId) {
+      await database().insert(schema.personPositions).values({ personId, positionId });
+    },
+    async seedUnit({ parentId = null, pushed = true, ...unit }) {
+      await database().insert(schema.units).values(unit);
+      if (pushed)
+        await database()
+          .insert(schema.groups)
+          .values({
+            id: unit.id + '-group',
+            organisationId: unit.organisationId,
+            externalId: 'unit:' + unit.id,
+            label: unit.label,
+            parentUnitId: parentId,
+          });
+    },
+    async place(personId, unitId) {
+      await database().insert(schema.assignments).values({ personId, unitId, role: 'employee' });
+    },
   };
 });
 
@@ -143,4 +176,74 @@ test('removing a connector removes what it put in the competence register, and n
   expect(await store.transaction(tx => tx.mappingsOf(p + '-lms'))).toEqual([]);
   expect(await store.transaction(tx => tx.source(p + '-lms'))).toBeUndefined();
   expect((await store.transaction(tx => tx.copiedFrom(p + '-hr'))).map(h => h.id)).toEqual([p + '-c2']);
+});
+
+/**
+ * D108 item 6, amended: a requirement and a share target name a position by its code and a unit by its id, not by a row.
+ * A provisioner that removes a position group and pushes it again (a new row, a new id) leaves them standing: while the
+ * position is gone they count for nobody, and when it comes back under the same code its holders are under them again.
+ * Removing a unit's group or row takes nothing either. A person's own requirement still goes with the person's row.
+ */
+test('a requirement and a share target outlive their position and unit rows, and apply again when the code comes back', async () => {
+  const p = 'test-comp-' + randomUUID().slice(0, 8);
+  prefixes.push(p);
+  const store = postgresCompetenceStore(durable);
+  const db = database();
+  const org = p + '-org';
+  await db.insert(schema.people).values({ id: p + '-anna', organisationId: org, name: 'Synthetic' });
+  await db.insert(schema.positions).values({ id: p + '-usk', organisationId: org, code: 'usk', label: 'Usk' });
+  await db.insert(schema.personPositions).values({ personId: p + '-anna', positionId: p + '-usk' });
+  await db.insert(schema.units).values({ id: p + '-u1', organisationId: org, label: 'Enhet' });
+  const at = new Date().toISOString();
+  const requirement = (id: string, target: { positionCode?: string; unitId?: string; personId?: string }) => ({
+    id,
+    organisationId: org,
+    typeId: p + '-t1',
+    positionCode: null,
+    unitId: null,
+    personId: null,
+    minLevel: null,
+    createdBy: 't',
+    createdAt: at,
+    ...target,
+  });
+  await store.transaction(async tx => {
+    await tx.insertType(typeRow(p + '-t1', org));
+    await tx.insertRequirement(requirement(p + '-r1', { positionCode: 'usk' }));
+    await tx.insertRequirement(requirement(p + '-r2', { personId: p + '-anna' }));
+    await tx.insertRequirement(requirement(p + '-r3', { unitId: p + '-u1' }));
+    await tx.insertShareTarget({
+      id: p + '-s1',
+      organisationId: org,
+      typeId: p + '-t1',
+      positionCode: 'usk',
+      unitId: null,
+      minShare: 40,
+      createdBy: 't',
+      createdAt: at,
+    });
+  });
+  // The position group is removed: its row goes, and with it who held it. The requirement and the target stay.
+  await db.delete(schema.positions).where(eq(schema.positions.id, p + '-usk'));
+  await db.delete(schema.units).where(eq(schema.units.id, p + '-u1'));
+  expect((await store.transaction(tx => tx.requirements(org))).map(r => r.id).sort()).toEqual(
+    [p + '-r1', p + '-r2', p + '-r3'].sort(),
+  );
+  expect((await store.transaction(tx => tx.shareTargets(org))).map(t => t.id)).toEqual([p + '-s1']);
+  expect(await store.transaction(tx => tx.placesOf(org, [p + '-anna']))).toEqual([
+    { personId: p + '-anna', unitIds: [], positionCodes: [] },
+  ]);
+  // Pushed again under the same code: a new row, and the holder is under the position's requirement again.
+  await db.insert(schema.positions).values({ id: p + '-usk-again', organisationId: org, code: 'usk', label: 'Usk' });
+  await db.insert(schema.personPositions).values({ personId: p + '-anna', positionId: p + '-usk-again' });
+  expect(await store.transaction(tx => tx.placesOf(org, [p + '-anna']))).toEqual([
+    { personId: p + '-anna', unitIds: [], positionCodes: ['usk'] },
+  ]);
+  expect(await store.transaction(tx => tx.positionHolders(org, ['usk']))).toEqual([
+    { personId: p + '-anna', code: 'usk' },
+  ]);
+  await db.delete(schema.people).where(eq(schema.people.id, p + '-anna'));
+  expect((await store.transaction(tx => tx.requirements(org))).map(r => r.id).sort()).toEqual(
+    [p + '-r1', p + '-r3'].sort(),
+  );
 });

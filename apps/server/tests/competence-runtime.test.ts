@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { and, eq, like } from 'drizzle-orm';
+import { and, eq, inArray, like } from 'drizzle-orm';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { database, schema, closeDatabase } from '@clew/db';
 import { competenceStoreWithCards } from '../src/composition/competence';
@@ -50,7 +50,8 @@ test(
     };
     const source = { connectorId, source: 'Testkällan' };
     let read = 0,
-      scheduled = 0;
+      scheduled = 0,
+      reconciled = 0;
     const competence = competenceUsecases({
       store,
       staff: async () => ({ units: [] }),
@@ -71,6 +72,7 @@ test(
       scheduleCompetenceCopy: async () => void scheduled++,
       competenceSources: only => competence.copySources(only),
       copyHoldings: async (run, s) => (await competence.copySource('system:test', run, s)).outcome,
+      reconcileApprovals: async () => void reconciled++,
     });
     const copied = () => store.transaction(tx => tx.copiedFrom(connectorId));
     const reads = (run: string) =>
@@ -114,6 +116,7 @@ test(
       ]);
       assert.equal((await reads('read-' + tag)).length, 1);
       assert.equal(scheduled, 0, 'a run started by hand asks for no daily run');
+      assert.equal(reconciled, 0, 'a run started by hand reconciles no approvals');
       const record = await store.transaction(tx => tx.source(connectorId));
       assert.equal(record?.outcome, 'complete');
       assert.equal(record?.run, null);
@@ -123,19 +126,33 @@ test(
       await store.transaction(tx => tx.enqueue({ ...daily, id: daily.id + ':' + tag }));
       await durableResult(daily.id + ':' + tag);
       assert.equal(scheduled, 1);
+      assert.equal(reconciled, 1, 'the daily run reconciles the approvals’ cards');
       assert.equal(read, 2);
       assert.equal((await copied()).length, 2);
 
+      // With no source to read the daily run still reconciles (D108 item 7).
+      bindActivities({ competenceSources: async () => [] });
+      const quiet = dailyCopyStart('2098-01-03', now);
+      await store.transaction(tx => tx.enqueue({ ...quiet, id: quiet.id + ':' + tag }));
+      await durableResult(quiet.id + ':' + tag);
+      assert.deepEqual([reconciled, read], [2, 2]);
+
       // One source's failure is that source's own: a source whose step fails after its retries is left for the next
-      // run while the others are read, and a daily run that cannot ask for the next day's still reads (the server's
-      // hourly guard asks again). The workflow ends well.
+      // run while the others are read, and a daily run that cannot ask for the next day's, or reconcile, still reads
+      // (the server's hourly guard asks again, the next day reconciles again). The workflow ends well.
       const broken = { connectorId: 'broken-' + tag, source: 'Trasig' };
       let attempts = 0,
-        asked = 0;
+        asked = 0,
+        tried = 0;
       bindActivities({
         scheduleCompetenceCopy: async () => {
           asked++;
           throw new Error('the database is gone');
+        },
+        // A reconciliation that keeps failing keeps the copy from nothing, nor the copy's failure it.
+        reconcileApprovals: async () => {
+          tried++;
+          throw new Error('the directory is gone');
         },
         competenceSources: async () => [broken, source],
         copyHoldings: async (run, s) => {
@@ -148,11 +165,12 @@ test(
       await store.transaction(tx => tx.enqueue({ ...isolated, id: isolated.id + ':' + tag }));
       await durableResult(isolated.id + ':' + tag);
       assert.equal((await DBOS.getWorkflowStatus(isolated.id + ':' + tag))?.status, 'SUCCESS');
-      assert.deepEqual([asked, attempts, read], [3, 3, 3]);
+      assert.deepEqual([asked, tried, attempts, read], [3, 3, 3, 3]);
       bindActivities({
         scheduleCompetenceCopy: async () => void scheduled++,
         competenceSources: only => competence.copySources(only),
         copyHoldings: async (run, s) => (await competence.copySource('system:test', run, s)).outcome,
+        reconcileApprovals: async () => void reconciled++,
       });
 
       // Process death: a second instance starts a run, takes the source's lease and is SIGKILLed while it reads. Its
@@ -223,6 +241,101 @@ test(
       await database().delete(schema.connectors).where(eq(schema.connectors.id, connectorId));
       await database().delete(schema.people).where(eq(schema.people.id, personId));
       await engine.forget();
+      await closeDatabase();
+    }
+  },
+);
+
+// The erasure a period after a person leaves (D108 item 14), on the same real PostgreSQL, in production Node. It runs in
+// no workflow: the intents are rows and the server's hourly sweep reads them, so nothing of it is bound to an engine's
+// application version and a deployment strands nothing. What a process's death can do to it is end an erasure half
+// way: a second instance is killed while its erasure's transaction is open, and the next sweep erases the person once.
+test(
+  'an erasure whose process dies half way leaves the person as they were, and the next sweep, in another process, erases them once',
+  { timeout: 60_000 },
+  async () => {
+    const tag = randomUUID().slice(0, 8),
+      DAY = 24 * 60 * 60_000;
+    const org = 'test-erasure-' + tag,
+      personId = org + '-anna';
+    const store = competenceStoreWithCards({ durable: { application: 'clew-test-erasure-' + tag, queue: 'unused' } });
+    const competence = competenceUsecases({
+      store,
+      staff: async () => ({ units: [] }),
+      clock: () => new Date(),
+      ids: () => randomUUID(),
+    });
+    const holdings = async () => (await store.transaction(tx => tx.holdingsOf([personId]))).length;
+    const erasedRows = () =>
+      database()
+        .select()
+        .from(schema.audit)
+        .where(
+          and(eq(schema.audit.subject, 'person:' + personId), eq(schema.audit.action, 'competence.person_erased')),
+        );
+    let child: ReturnType<typeof spawn> | undefined;
+    let typeId = '',
+      holdingId = '';
+    try {
+      await database()
+        .insert(schema.people)
+        .values({ id: personId, name: 'Synthetic erasure', organisationId: org, userName: personId, enabled: false });
+      typeId = await competence.seedType('operator:test', org, { name: 'HLR ' + tag, area: 'Akut', kind: 'course' });
+      holdingId = await competence.seedHolding('operator:test', org, personId, { typeId, issuedOn: '2026-01-10' });
+      // Deactivated three days ago, under a period of one day set two days ago: due.
+      const ago = (days: number) => new Date(Date.now() - days * DAY).toISOString();
+      await store.transaction(async tx => {
+        await tx.putRetention({ organisationId: org, days: 1, setBy: 'operator:test', setAt: ago(2) });
+        await tx.putErasure({
+          personId,
+          organisationId: org,
+          state: 'inactive',
+          inactiveSince: ago(3),
+          generation: 1,
+          updatedAt: ago(3),
+        });
+      });
+      child = spawn(
+        process.execPath,
+        ['--import', 'tsx', fileURLToPath(new URL('./fixtures/erasure-child.ts', import.meta.url))],
+        { env: { ...process.env, ERASE_PERSON: personId }, stdio: ['ignore', 'pipe', 'inherit'] },
+      );
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('child instance did not start erasing')), 30_000);
+        child!.once('exit', code => reject(new Error('child instance exited before erasing: ' + code)));
+        child!.stdout!.on('data', chunk => {
+          if (String(chunk).includes('erasing')) {
+            clearTimeout(timeout);
+            resolve();
+          }
+        });
+      });
+      await new Promise<void>(resolve => {
+        child!.once('exit', () => resolve());
+        child!.kill('SIGKILL');
+      });
+      // Its transaction died with it: the holding, the intent and the audit are as they were.
+      assert.equal(await holdings(), 1);
+      assert.equal((await store.transaction(tx => tx.erasure(personId)))?.state, 'inactive');
+      assert.equal((await erasedRows()).length, 0);
+      // The next sweep, here, erases her once; another finds nothing more to do.
+      await competence.sweepErasures();
+      assert.equal(await holdings(), 0);
+      assert.equal((await store.transaction(tx => tx.erasure(personId)))?.state, 'erased');
+      await competence.sweepErasures();
+      assert.equal((await erasedRows()).length, 1);
+    } finally {
+      if (child && child.exitCode === null) child.kill('SIGKILL');
+      await database()
+        .delete(schema.audit)
+        .where(
+          inArray(schema.audit.subject, ['person:' + personId, 'competence-type:' + typeId, 'holding:' + holdingId]),
+        );
+      await database().delete(schema.competenceHoldings).where(eq(schema.competenceHoldings.personId, personId));
+      await database().delete(schema.competenceErasures).where(eq(schema.competenceErasures.personId, personId));
+      await database().delete(schema.competenceRetention).where(eq(schema.competenceRetention.organisationId, org));
+      await database().delete(schema.competenceTypes).where(eq(schema.competenceTypes.organisationId, org));
+      await database().delete(schema.people).where(eq(schema.people.id, personId));
       await closeDatabase();
     }
   },

@@ -1,6 +1,12 @@
 import { Type } from 'typebox';
 import type { Connector } from '@clew/connectors';
-import { CalendarRoomSchema, DayViewSchema, TodayViewSchema, WeekEventsSchema } from '@clew/contracts';
+import {
+  CalendarRoomSchema,
+  DayViewSchema,
+  TodayViewSchema,
+  WeekEventsSchema,
+  type AuthenticatedContext,
+} from '@clew/contracts';
 import { systemContext } from '../../system-context';
 import type { CalendarUsecases } from './usecases/samtal';
 import type { EventUsecases } from './usecases/events';
@@ -35,9 +41,11 @@ export const FreeTimesOutput = Type.Object(
   },
   { additionalProperties: false },
 );
+/** `persona` turns the registry's actor into a use-case persona; the unit tests hand in their own. */
 export function calendarConnector(
   calendar: Pick<CalendarUsecases, 'readToday' | 'weekView'>,
   events: Pick<EventUsecases, 'dayView' | 'listRooms' | 'freeTimes'>,
+  persona: (actorId: string) => Promise<AuthenticatedContext> = personaFor,
 ): Connector {
   return {
     id: 'calendar',
@@ -72,7 +80,7 @@ export function calendarConnector(
         input: Type.Object({}, { additionalProperties: false }),
         output: TodayViewSchema,
         scope: () => true,
-        run: async actor => calendar.readToday(await personaFor(actor.id)),
+        run: async actor => calendar.readToday(await persona(actor.id)),
       },
       {
         name: 'calendar.week',
@@ -86,7 +94,7 @@ export function calendarConnector(
         ),
         output: WeekEventsSchema,
         scope: () => true,
-        run: async (actor, input: { from?: string }) => calendar.weekView(await personaFor(actor.id), input.from),
+        run: async (actor, input: { from?: string }) => calendar.weekView(await persona(actor.id), input.from),
       },
       {
         name: 'calendar.day',
@@ -100,16 +108,17 @@ export function calendarConnector(
         ),
         output: DayViewSchema,
         scope: () => true,
-        run: async (actor, input: { date: string }) => events.dayView(await personaFor(actor.id), input.date),
+        run: async (actor, input: { date: string }) => events.dayView(await persona(actor.id), input.date),
       },
       {
-        // The suggestions of a write that asks for a meeting time (D112): the reader's own calendar only, never a tool.
+        // The suggestions of a write that asks for a meeting time (D112), and the model's read for planning one (D122
+        // item 3): the reader's own calendar only, nobody else's, and nothing is booked.
         name: 'calendar.freeTimes',
         kind: 'read',
         title: 'Lediga tider',
-        model: false,
+        model: true,
         description:
-          'Tre lediga tider av en given längd i den inloggades egen kalender, de närmaste två veckorna eller fram till before.',
+          'Tre lediga tider av en given längd i din egen kalender, den tidigaste först: från en timme fram och två veckor framåt, eller fram till och med dagen before. Ange längden i minuter som durationMinutes och vid behov sista dagen som before (ÅÅÅÅ-MM-DD). Varje tid har start och slut i svensk tid, i ord. Läser bara din egen kalender och bokar ingenting.',
         input: Type.Object(
           {
             durationMinutes: Type.Integer({ minimum: 5, maximum: 480 }),
@@ -120,7 +129,7 @@ export function calendarConnector(
         output: FreeTimesOutput,
         scope: () => true,
         run: async (actor, input: { durationMinutes: number; before?: string }) => ({
-          gaps: (await events.freeTimes(await personaFor(actor.id), input)).slots,
+          gaps: (await events.freeTimes(await persona(actor.id), input)).slots,
         }),
       },
       {
@@ -134,7 +143,7 @@ export function calendarConnector(
         view: roomsView,
         menu: roomsMenu,
         scope: () => true,
-        run: async actor => ({ rows: await events.listRooms(await personaFor(actor.id)) }),
+        run: async actor => ({ rows: await events.listRooms(await persona(actor.id)) }),
       },
     ],
   };

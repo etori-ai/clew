@@ -471,7 +471,13 @@ test('erasing a deactivated person leaves their id and every event, and nothing 
     cardSubjects: 0,
   });
   expect(await talks.erasePerson(OPERATOR, asa)).toEqual({ talks: 0, commitments: 0, cleared: 0, cards: 0 });
-  expect(await competence.erasePerson(OPERATOR, asa)).toEqual({ holdings: 0, cleared: 0, cards: 0 });
+  expect(await competence.erasePerson(OPERATOR, asa)).toEqual({
+    holdings: 0,
+    cleared: 0,
+    requirements: 0,
+    approvals: 0,
+    cards: 0,
+  });
 });
 
 test('overlapping erasures of the claimed person and the holder preserve both redactions on a shared conflict', async () => {

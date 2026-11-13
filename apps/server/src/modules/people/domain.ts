@@ -1,27 +1,35 @@
 /**
  * Deriving a person's authority from what was pushed (D68) and mapped (D85). Pure: no I/O, no clock.
  *
- * A group's meaning is a key in its `externalId`, and three keys carry one: `unit:<unitId>` makes the member an
+ * A group's meaning is a key in its `externalId`, and four keys carry one: `unit:<unitId>` makes the member an
  * employee of that unit and names it with the group's `displayName`; `unit-manager:<unitId>` makes the member its
- * manager, which wins over `unit:` for the same unit; `capability:<name>` gives a capability of the closed list. A key
- * is read as the SCIM boundary accepts it (`readScimGroupKey`). The boundary refuses the key `protected` (D93) and a
+ * manager, which wins over `unit:` for the same unit; `capability:<name>` gives a capability of the closed list;
+ * `position:<code>` gives the person that position, named with the group's `displayName` (D108 item 5), which says what
+ * the person is and by itself decides no access; like any provisioned group it can be mapped to a capability (D85). A
+ * key is read as the SCIM boundary accepts it (`readScimGroupKey`). The boundary refuses the key `protected` (D93) and a
  * key written wrong, such as a reserved word in another case, a unit id with space around it or a capability outside
  * the list (D96), but a group stored before either decision keeps its row: a key written wrong gives nobody anything
  * here, and only a `protected` row stored before D93 sets the `protected` flag below, which D93 keeps and nothing
- * reads. Any other group gives nothing here; a rules row (group to capability) may give a capability. A person with no
- * unit membership has no active grant, so a mapping mistake fails closed.
+ * reads. Any other group gives nothing here; a rules row (group to capability) may give a capability, and a row of the
+ * other table (group to relation, D121) a relation to people by grant, which no group key gives and which is never a
+ * capability (D118). A person with no unit membership has no active grant, so a mapping mistake fails closed.
  */
 import {
   CAPABILITIES,
   EmploymentSchema,
+  RELATION_GRANTS,
   PROVISIONED_KEY_LENGTH,
   checkContract,
   isCapability,
+  isRelationGrant,
+  relationGrantsOf,
   type Capability,
+  type RelationGrant,
   type DirectoryPhone,
   type Employment,
   type OrganisationOverview,
   type OrganisationUnit,
+  type Position,
   type Role,
   type UserStatus,
 } from '@clew/contracts';
@@ -29,6 +37,7 @@ import {
   UNIT_KEY,
   MANAGER_KEY,
   CAPABILITY_KEY,
+  POSITION_KEY,
   PROTECTED_KEY,
   readScimGroupKey,
   reservedScimGroupKey,
@@ -40,7 +49,34 @@ import {
  */
 export const unitOfKey = (externalId: string | null | undefined): string | undefined => {
   const key = readScimGroupKey(externalId);
-  return key && key.prefix !== CAPABILITY_KEY ? key.value : undefined;
+  return key && (key.prefix === UNIT_KEY || key.prefix === MANAGER_KEY) ? key.value : undefined;
+};
+/**
+ * The position a `position:` group's key names (D108 item 5); undefined for any other key, and for a key D96 refuses
+ * (nothing after the prefix, or space around the code), which a group stored before the key was read may still carry.
+ */
+export const positionOfKey = (externalId: string | null | undefined): string | undefined => {
+  const key = readScimGroupKey(externalId);
+  return key?.prefix === POSITION_KEY ? key.value : undefined;
+};
+/** Positions in the order of their codes, compared as text without a locale, as the store orders them. */
+export const byCode = (a: Position, b: Position) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0);
+/**
+ * D108 item 5: the positions a person's memberships give, one per `position:` group, labelled with the group's name, by
+ * code. Tied to the person and not to a unit: a person with two positions holds both wherever they are placed.
+ */
+export function derivePositions(memberships: readonly Membership[]): Position[] {
+  const labels = new Map<string, string>();
+  for (const m of memberships) {
+    const code = positionOfKey(m.externalId);
+    if (code !== undefined) labels.set(code, m.label);
+  }
+  return [...labels].map(([code, label]) => ({ code, label })).sort(byCode);
+}
+/** Whether a person holds the same positions as before, by code: a renamed position is the same position. */
+export const samePositions = (held: readonly Position[], derived: readonly Position[]) => {
+  const codes = new Set(held.map(p => p.code));
+  return codes.size === derived.length && derived.every(p => codes.has(p.code));
 };
 export interface Membership {
   externalId: string;
@@ -50,6 +86,11 @@ export interface Membership {
 export interface GroupCapabilityRule {
   groupExternalId: string;
   capability: string;
+}
+/** One row of D121's table: a group gives its members a relation to people by grant, one of `RELATION_GRANTS`. */
+export interface GroupRelationRule {
+  groupExternalId: string;
+  relation: string;
 }
 export interface Assignment {
   unitId: string;
@@ -64,12 +105,16 @@ export interface DerivedUnit {
   id: string;
   label: string;
 }
-/** The grant projection: the one active assignment with its label, and the capabilities (`auth_access_grant`). */
+/**
+ * The grant projection: the one active assignment with its label, the capabilities, and the relations to people by
+ * grant (`auth_access_grant`). `relations` is present only when the person holds one (D121), sorted.
+ */
 export interface Grant {
   unitId: string;
   unitLabel: string;
   role: Role;
   capabilities: Capability[];
+  relations?: RelationGrant[];
 }
 export interface Derived {
   /** Every unit the person is assigned to, sorted by unit id. */
@@ -79,8 +124,12 @@ export interface Derived {
   /** The assignment the person acts as until switching exists: manager before employee, then the lowest unit id. */
   active: Assignment | undefined;
   capabilities: Capability[];
+  /** D121: the relations the person's groups give by grant, sorted; empty for nearly everyone. */
+  relations: RelationGrant[];
   protected: boolean;
   grant: Grant | undefined;
+  /** D108 item 5: what the person is, by code. Never part of the grant: a position gives no access. */
+  positions: Position[];
 }
 /**
  * The order of unit ids, which decides the active assignment (D101 item 8): character by character, by UTF-16 code
@@ -102,6 +151,7 @@ export function deriveAuthority(
   memberships: readonly Membership[],
   rules: readonly GroupCapabilityRule[],
   knownLabels: Readonly<Record<string, string>> = {},
+  relationRules: readonly GroupRelationRule[] = [],
 ): Derived {
   const roles = new Map<string, Role>(),
     labels = new Map<string, string>(),
@@ -120,30 +170,42 @@ export function deriveAuthority(
   }
   for (const row of rules)
     if (held.has(row.groupExternalId) && isCapability(row.capability)) capabilities.add(row.capability);
+  // D121: only a row of the relation table gives a relation; no group key does, and a capability never is one.
+  const related = new Set<RelationGrant>();
+  for (const row of relationRules)
+    if (held.has(row.groupExternalId) && isRelationGrant(row.relation)) related.add(row.relation);
   const assignments = [...roles.entries()]
     .map(([unitId, role]) => ({ unitId, role }))
     .sort((a, b) => byUnitId(a.unitId, b.unitId));
   const active = activeOf(assignments),
     sorted = [...capabilities].sort(),
+    relations = RELATION_GRANTS.filter(r => related.has(r)),
     labelOf = (unitId: string) => labels.get(unitId) ?? knownLabels[unitId] ?? unitId;
   return {
     units: assignments.map(a => ({ id: a.unitId, label: labelOf(a.unitId) })),
     assignments,
     active,
     capabilities: sorted,
+    relations,
     protected: isProtected,
     grant: active && {
       unitId: active.unitId,
       unitLabel: labelOf(active.unitId),
       role: active.role,
       capabilities: sorted,
+      ...(relations.length ? { relations } : {}),
     },
+    positions: derivePositions(memberships),
   };
 }
+/** The relations a stored grant carries (D121), only those of the closed list, in its order. */
+export const grantRelations = (grant: { relations?: readonly string[] } | undefined): RelationGrant[] =>
+  relationGrantsOf(grant?.relations);
 /**
  * Whether a group with this key can give its members anything: a key with meaning (`unit:`, `unit-manager:`,
- * `capability:`, read as `deriveAuthority` reads it), or one a D85 row of the organisation names. A write of any other
- * group moves nobody's grant, whatever it does to the group, so nobody is derived for it. A key whose shape is written
+ * `capability:`, read as `deriveAuthority` reads it, and `position:`, which `derivePositions` reads), or one a D85 row
+ * of the organisation names. A write of any other group moves nobody's grant, whatever it does to the group, so nobody
+ * is derived for it. A key whose shape is written
  * wrong is one: a reserved word in another case or with space in or before it, or a prefix without an id or a name or
  * with space around it, which the SCIM boundary refuses (D96) and a group stored before then may still carry. A
  * `capability:` key read as one counts whether or not its name is in the closed list: one outside it gives nothing,
@@ -159,12 +221,16 @@ export function givesAuthority(key: string | null, rules: readonly GroupCapabili
 /** Whether two grant projections carry the same authority and label, so an unchanged derivation writes no audit row. */
 export function sameGrant(a: Grant | undefined, b: Grant | undefined) {
   if (!a || !b) return a === b;
+  const ra = grantRelations(a),
+    rb = grantRelations(b);
   return (
     a.unitId === b.unitId &&
     a.unitLabel === b.unitLabel &&
     a.role === b.role &&
     a.capabilities.length === b.capabilities.length &&
-    a.capabilities.every((c, i) => c === b.capabilities[i])
+    a.capabilities.every((c, i) => c === b.capabilities[i]) &&
+    ra.length === rb.length &&
+    ra.every((r, i) => r === rb[i])
   );
 }
 
@@ -910,8 +976,10 @@ export function groupFields(body: unknown, current?: Pick<GroupFields, 'external
  * about it is stored, derived into a context or shown; a client that sends it learns why.
  *
  * D96: a key that is written wrong is refused instead of being stored as a plain group that gives nobody anything:
- * a reserved word in another case (`Unit:skola`, `Protected`) or with space in or before it (` unit:skola`,
- * `unit :skola`), `unit:` or `unit-manager:` without a unit id or with space around it, and `capability:` with a name outside the closed list. Any other `externalId` is a plain group.
+ * a reserved word in another case (`Unit:skola`, `Position:usk`, `Protected`) or with space in or before it
+ * (` unit:skola`, `unit :skola`), `unit:` or `unit-manager:` without a unit id or with space around it, `position:`
+ * without a code or with space around it (D108 item 5), and `capability:` with a name outside the closed list. Any
+ * other `externalId` is a plain group.
  */
 const refusedKey = (detail: string) => new ScimError(400, `${detail} The group was not stored.`, 'invalidValue');
 export function assertAcceptedKey(fields: GroupFields): void {
@@ -928,7 +996,7 @@ export function assertAcceptedKey(fields: GroupFields): void {
   const read = readScimGroupKey(key);
   if (!read)
     throw refusedKey(
-      `The key '${key}' needs ${prefix === CAPABILITY_KEY ? 'a capability name' : 'a unit id'} directly after '${prefix}' (D96).`,
+      `The key '${key}' needs ${prefix === CAPABILITY_KEY ? 'a capability name' : prefix === POSITION_KEY ? 'a position code' : 'a unit id'} directly after '${prefix}' (D96).`,
     );
   if (read.prefix === CAPABILITY_KEY && !isCapability(read.value))
     throw refusedKey(
@@ -1678,7 +1746,7 @@ export const schemaDocuments = (base: string) => [
     id: SCIM.group,
     name: 'Group',
     description:
-      'A group of users. unit:, unit-manager: and capability: keys in externalId carry meaning in Clew. The key protected is refused (D93), and so is a key written wrong (D96). A group as a member is refused. A unit: group may name the unit above it in the unit extension (D99).',
+      'A group of users. unit:, unit-manager:, capability: and position: keys in externalId carry meaning in Clew. The key protected is refused (D93), and so is a key written wrong (D96). A group as a member is refused. A unit: group may name the unit above it in the unit extension (D99).',
     attributes: [
       attribute('displayName', 'string', { required: true }),
       attribute('externalId', 'string', {

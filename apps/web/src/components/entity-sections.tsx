@@ -108,11 +108,13 @@ export function useSectionAnswers(
  */
 function SectionCell({ group, row }: { group: FieldGroup; row: Row }) {
   const value = row[group.lead.key];
+  // One row's facts on the person's page are read, not scanned: a day among them is long ("13 oktober 2026").
   return (
     <FieldCell
       group={group}
       row={row}
-      {...(present(value) ? { lead: <FieldValue field={group.lead} value={value} text="ordinary" /> } : {})}
+      day="long"
+      {...(present(value) ? { lead: <FieldValue field={group.lead} value={value} text="ordinary" day="long" /> } : {})}
     />
   );
 }

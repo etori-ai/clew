@@ -57,6 +57,8 @@ describe('the calendar connector declares what the fixtures declare', () => {
       connector: 'calendar',
       source: 'Kalendern',
       chip: false,
+      // The calendar's rows live in the calendar (`passthrough`, D3): the view says nothing of them is stored in Clew.
+      external: true,
     });
     expect(registry.viewFor(mikael, 'calendar.today')).toBeUndefined();
     expect(registry.menu(mikael)).toEqual([]);

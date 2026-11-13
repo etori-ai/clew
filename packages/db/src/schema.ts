@@ -13,9 +13,12 @@ import {
   index,
   uniqueIndex,
   foreignKey,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import type {
+  CompetenceSearchStatus,
+  CompetenceSearchWindow,
   ConnectorAudience,
   DirectoryPhone,
   Employment,
@@ -100,6 +103,12 @@ export const accessGrants = pgTable(
     role: text('role').$type<'manager' | 'employee'>().notNull(),
     capabilities: jsonb('capabilities').$type<string[]>().notNull(),
     version: integer('version').notNull().default(1),
+    // D121: the relations to people the person's memberships give by grant (`RELATION_GRANTS`), apart from the
+    // capabilities (D118); derived with them.
+    relations: jsonb('relations')
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
   },
   t => [check('auth_grant_role', sql`${t.role} IN ('manager', 'employee')`)],
 );
@@ -162,6 +171,38 @@ export const groupMembers = pgTable(
   },
   t => [primaryKey({ columns: [t.groupId, t.personId] }), index('auth_group_member_person').on(t.personId)],
 );
+/**
+ * D108 item 5: a position of the organisation, a code and a label and nothing else, as a `position:<code>` group pushes
+ * it; the label is the group's name. The row follows its group: written when the group is, removed when the group is
+ * removed or takes another key. The code is unique within the organisation, and since a group's key is unique across
+ * the installation, one organisation holds a code at a time. `id` is the store's own, for what refers to a position.
+ */
+export const positions = pgTable(
+  'auth_position',
+  {
+    id: text('id').primaryKey(),
+    organisationId: text('organisation_id').notNull(),
+    code: text('code').notNull(),
+    label: text('label').notNull(),
+  },
+  t => [uniqueIndex('auth_position_code').on(t.organisationId, t.code)],
+);
+/**
+ * D108 item 5: who holds which position, derived from the person's `position:` memberships in the same transaction as
+ * the change that moves them. Tied to the person, not to a placement on a unit; goes with the person or the position.
+ */
+export const personPositions = pgTable(
+  'auth_person_position',
+  {
+    personId: text('person_id')
+      .notNull()
+      .references(() => people.id, { onDelete: 'cascade' }),
+    positionId: text('position_id')
+      .notNull()
+      .references(() => positions.id, { onDelete: 'cascade' }),
+  },
+  t => [primaryKey({ columns: [t.personId, t.positionId] }), index('auth_person_position_position').on(t.positionId)],
+);
 /** A client that pushes people and groups (D68): the digest of its bearer token, never the token, and the organisation it fills. */
 export const provisioners = pgTable(
   'auth_provisioner',
@@ -196,6 +237,22 @@ export const groupCapabilities = pgTable(
     capability: text('capability').notNull(),
   },
   t => [primaryKey({ columns: [t.organisationId, t.groupExternalId, t.capability] })],
+);
+/**
+ * D121: a group gives its members a relation to people by grant (`RELATION_GRANTS` in `@clew/contracts`, today only
+ * `registrar`), as a group gives a capability above and kept apart from it, since a capability is no relation to a
+ * person (D118). The same rules as `auth_group_capability`: keyed on the group's external id without a foreign key, the
+ * relation checked where the row is written, the row its organisation's alone.
+ */
+export const groupRelations = pgTable(
+  'auth_group_relation',
+  {
+    organisationId: text('organisation_id').notNull(),
+    groupExternalId: text('group_external_id').notNull(),
+    relation: text('relation').notNull(),
+  },
+  // Named: the name Postgres would make is longer than its 63 characters and would be cut.
+  t => [primaryKey({ name: 'auth_group_relation_pk', columns: [t.organisationId, t.groupExternalId, t.relation] })],
 );
 export const loginTransactions = pgTable('auth_login_transaction', {
   digest: text('digest').primaryKey(),
@@ -288,6 +345,11 @@ export const threads = pgTable(
     uniqueIndex('thread_open_topic')
       .on(t.personId, t.topic)
       .where(sql`${t.state} = 'open' AND ${t.kind} = 'pushed'`),
+    // The cards of one approval in the competence module (D108 item 7), one per manager, are found by their shared topic
+    // whatever stream they are in; the index holds that module's cards alone.
+    index('thread_competence_topic')
+      .on(t.topic)
+      .where(sql`${t.connector} = 'competence'`),
     check('thread_state', sql`${t.state} IN ('open', 'handled', 'dismissed')`),
   ],
 );
@@ -1042,7 +1104,10 @@ export const dialogueNotes = pgTable(
 );
 /**
  * The catalogue of competence types (D108 item 2): rows per installation, never an enumeration in code. Archived, never
- * deleted; one name per organisation among the types that are not archived, without regard to case.
+ * deleted; one name per organisation among the types that are not archived, without regard to case. A type imported
+ * from a file keeps the address it came with (`source_uri`, D120 item 7), one per organisation, so an import is
+ * idempotent on it. A type merged into another (`merged_into`) is archived and stays, so the address and the history of
+ * what it was are kept; a merge is not undone.
  */
 export const competenceTypes = pgTable(
   'competence_type',
@@ -1051,26 +1116,46 @@ export const competenceTypes = pgTable(
     organisationId: text('organisation_id').notNull(),
     name: text('name').notNull(),
     area: text('area').notNull(),
-    kind: text('kind').$type<'certificate' | 'degree' | 'course' | 'authorisation'>().notNull(),
-    // The employer's rule (item 3): months from the issue date. Null: no rule.
+    kind: text('kind').$type<'certificate' | 'degree' | 'course' | 'authorisation' | 'skill'>().notNull(),
+    // The employer's rule (item 3): months from the issue date. Null: no rule, and always on a skill (D120 item 1).
     validityMonths: integer('validity_months'),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     // An actor string (a person's principal id, `operator:cli`), not a person.
     createdBy: text('created_by').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    // The address an imported type came with, such as an ESCO concept's URI (D120 item 7). Null: added by hand.
+    sourceUri: text('source_uri'),
+    // The type this one was merged into (D108 item 2).
+    mergedInto: text('merged_into').references((): AnyPgColumn => competenceTypes.id),
   },
   t => [
-    check('competence_type_kind', sql`${t.kind} IN ('certificate', 'degree', 'course', 'authorisation')`),
+    check('competence_type_kind', sql`${t.kind} IN ('certificate', 'degree', 'course', 'authorisation', 'skill')`),
     check('competence_type_validity', sql`${t.validityMonths} IS NULL OR ${t.validityMonths} BETWEEN 1 AND 600`),
+    // A skill never ends (D120 item 1): no employer's rule.
+    check('competence_type_skill', sql`${t.kind} <> 'skill' OR ${t.validityMonths} IS NULL`),
+    // A merged type is archived, and never merged into itself.
+    check(
+      'competence_type_merged',
+      sql`${t.mergedInto} IS NULL OR (${t.archivedAt} IS NOT NULL AND ${t.mergedInto} <> ${t.id})`,
+    ),
     uniqueIndex('competence_type_name')
       .on(t.organisationId, sql`lower(${t.name})`)
       .where(sql`${t.archivedAt} IS NULL`),
+    uniqueIndex('competence_type_source_uri')
+      .on(t.organisationId, t.sourceUri)
+      .where(sql`${t.sourceUri} IS NOT NULL`),
   ],
 );
 /**
  * What one person holds of one type (D108 item 1): a competence and a certificate are the same record. Where it stands
  * is computed when read and never stored (item 4). `expires_on` is the issuer's own date only (item 3). The person's
- * rows go with the person; the people who registered or revoked a row are nulled by erasure.
+ * rows go with the person; the people who registered, revoked or decided a row are nulled by erasure.
+ *
+ * A row the person registered themselves (item 7) has evidence `self`: `pending` until the manager they report to
+ * decides it, then `valid` or `rejected`, with who decided (`decided_by`, the manager's attestation) and when
+ * (`decided_at`). Only such a row is pending or rejected, and only it is decided. `thread_id` is its approval's key: each
+ * manager's card is the thread `<thread_id>:<manager id>` with the topic `competence:approval:<thread_id>`, found by that
+ * topic, so it is no reference. One pending registration per person and type.
  *
  * A row copied from a source (item 9) carries the connector, the source's own row id, type id and label, and when it
  * was last read; it has no `registered_by`, its evidence is `system`, and its `type_id` is empty while no administrator
@@ -1100,11 +1185,57 @@ export const competenceHoldings = pgTable(
     sourceType: text('source_type'),
     sourceLabel: text('source_label'),
     readAt: timestamp('read_at', { withTimezone: true }),
+    // A person's own registration (item 7): the manager who decided it and when, and its approval's cards.
+    decidedBy: text('decided_by').references(() => people.id, { onDelete: 'set null' }),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    threadId: text('thread_id'),
+    // A skill (D120): the level it is held at (1 to 3), whether the person wants to develop it, and the manager who
+    // confirmed the level and when. Null `validated_at` on a skill: the person's own rating alone.
+    level: integer('level'),
+    interest: boolean('interest').notNull().default(false),
+    validatedBy: text('validated_by').references(() => people.id, { onDelete: 'set null' }),
+    validatedAt: timestamp('validated_at', { withTimezone: true }),
+    // When a skill's level was last set by a rating, the person's own or a manager's registration: the moment its
+    // current rating began, which tells one spell of a required skill not met from the next (D108 item 12).
+    ratedAt: timestamp('rated_at', { withTimezone: true }),
   },
   t => [
     check('competence_holding_evidence', sql`${t.evidence} IN ('system', 'manager', 'self')`),
     check('competence_holding_state', sql`${t.state} IN ('pending', 'valid', 'rejected', 'revoked')`),
     check('competence_holding_period', sql`${t.expiresOn} IS NULL OR ${t.expiresOn} >= ${t.issuedOn}`),
+    // Only a person's own registration waits or is rejected.
+    check('competence_holding_own', sql`${t.state} NOT IN ('pending', 'rejected') OR ${t.evidence} = 'self'`),
+    // A person's own registration of a certificate is decided exactly when it no longer waits; nothing else is decided
+    // or has cards, a skill included (D120: it is stored at once and confirmed, not approved). A decision keeps its time
+    // when its manager is erased.
+    check(
+      'competence_holding_decided',
+      sql`(${t.decidedBy} IS NULL OR ${t.decidedAt} IS NOT NULL) AND (${t.threadId} IS NULL OR ${t.evidence} = 'self') AND CASE WHEN ${t.level} IS NOT NULL THEN ${t.decidedAt} IS NULL WHEN ${t.evidence} = 'self' THEN (${t.state} = 'pending') = (${t.decidedAt} IS NULL) ELSE ${t.decidedAt} IS NULL END`,
+    ),
+    // A skill (D120 item 1) is held at one of three levels and has no end date, no source, no approval: it is valid or
+    // revoked, registered in Clew by the person or a manager. That a level goes with a type of kind `skill` alone is the
+    // use case's to keep, since the kind lives on the type.
+    check(
+      'competence_holding_skill',
+      sql`${t.level} IS NULL OR (${t.level} BETWEEN 1 AND 3 AND ${t.expiresOn} IS NULL AND ${t.connectorId} IS NULL AND ${t.evidence} <> 'system' AND ${t.threadId} IS NULL AND ${t.state} IN ('valid', 'revoked'))`,
+    ),
+    // Only a skill is confirmed or carries an interest mark. A confirmation keeps its time when its manager is erased,
+    // as a decision does, so a confirmed level never turns back into the person's own rating.
+    // A skill always has the moment its level was rated; nothing else has one.
+    check('competence_holding_rated', sql`(${t.level} IS NULL) = (${t.ratedAt} IS NULL)`),
+    check(
+      'competence_holding_validated',
+      sql`(${t.validatedBy} IS NULL OR ${t.validatedAt} IS NOT NULL) AND (${t.validatedAt} IS NULL OR ${t.level} IS NOT NULL) AND (NOT ${t.interest} OR ${t.level} IS NOT NULL)`,
+    ),
+    // One registration of a type waiting per person: a second is refused until the first is decided or taken back.
+    uniqueIndex('competence_holding_pending')
+      .on(t.personId, t.typeId)
+      .where(sql`${t.state} = 'pending'`),
+    // One skill of a type per person (D120 item 1): rating it again changes that row. A revoked one stays as it was
+    // and does not count.
+    uniqueIndex('competence_holding_one_skill')
+      .on(t.personId, t.typeId)
+      .where(sql`${t.level} IS NOT NULL AND ${t.state} = 'valid'`),
     // A copied row has every column of its source and nobody who registered it; a row registered in Clew has none.
     check(
       'competence_holding_copy',
@@ -1181,5 +1312,211 @@ export const competenceSources = pgTable(
       'competence_source_last_read',
       sql`(${t.outcome} IS NULL) = (${t.startedAt} IS NULL) AND (${t.outcome} IS NULL) = (${t.finishedAt} IS NULL) AND (${t.outcome} IS NULL) = (${t.counts} IS NULL)`,
     ),
+  ],
+);
+/**
+ * What is required of whom (D108 item 6): a catalogue type and exactly one of a position (everyone who holds it, by the
+ * position's code in the organisation), a unit (everyone placed on it, by the unit's id from its `unit:` key) or one
+ * person. A position and a unit are named by what the provisioner calls them, not by a row: neither refers to
+ * `auth_position` or `auth_unit`, so a position group removed and pushed again under the same code, or a unit nobody is
+ * placed on, keeps its requirements; one whose position or unit is gone counts towards nothing until it comes back.
+ * Kept by `admin.competence` for a position or a unit and by the manager a person reports to for that person (D118).
+ * One requirement per type and target. `min_level` is the least level a confirmed skill must be held at (D120 item 4),
+ * set on a requirement of a skill and on nothing else, which the use case keeps since the kind lives on the type.
+ * `created_by` is an actor string, as `competence_type.created_by` is, emptied when that person is erased. Goes with
+ * its type and its person.
+ */
+export const competenceRequirements = pgTable(
+  'competence_requirement',
+  {
+    id: text('id').primaryKey(),
+    organisationId: text('organisation_id').notNull(),
+    typeId: text('type_id')
+      .notNull()
+      .references(() => competenceTypes.id, { onDelete: 'cascade' }),
+    positionCode: text('position_code'),
+    unitId: text('unit_id'),
+    personId: text('person_id').references(() => people.id, { onDelete: 'cascade' }),
+    minLevel: integer('min_level'),
+    createdBy: text('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  t => [
+    check('competence_requirement_target', sql`num_nonnulls(${t.positionCode}, ${t.unitId}, ${t.personId}) = 1`),
+    check('competence_requirement_level', sql`${t.minLevel} IS NULL OR ${t.minLevel} BETWEEN 1 AND 3`),
+    uniqueIndex('competence_requirement_position')
+      .on(t.typeId, t.positionCode)
+      .where(sql`${t.positionCode} IS NOT NULL`),
+    uniqueIndex('competence_requirement_unit')
+      .on(t.typeId, t.unitId)
+      .where(sql`${t.unitId} IS NOT NULL`),
+    uniqueIndex('competence_requirement_person')
+      .on(t.typeId, t.personId)
+      .where(sql`${t.personId} IS NOT NULL`),
+    index('competence_requirement_organisation').on(t.organisationId),
+  ],
+);
+/**
+ * A share target (D108 item 6): of the people who hold a position (by its code), at least `min_share` percent hold a
+ * type, on a unit's branch (by the unit's id) or, with no unit, across the whole organisation. Kept by
+ * `admin.competence`; it names no person. One target per type, position and unit (or the organisation). Like a
+ * requirement it names a position and a unit by their keys, not their rows, and goes with its type only.
+ */
+export const competenceShareTargets = pgTable(
+  'competence_share_target',
+  {
+    id: text('id').primaryKey(),
+    organisationId: text('organisation_id').notNull(),
+    typeId: text('type_id')
+      .notNull()
+      .references(() => competenceTypes.id, { onDelete: 'cascade' }),
+    positionCode: text('position_code').notNull(),
+    unitId: text('unit_id'),
+    minShare: integer('min_share').notNull(),
+    createdBy: text('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  t => [
+    check('competence_share_target_share', sql`${t.minShare} BETWEEN 1 AND 100`),
+    uniqueIndex('competence_share_target_unit')
+      .on(t.typeId, t.positionCode, t.unitId)
+      .where(sql`${t.unitId} IS NOT NULL`),
+    uniqueIndex('competence_share_target_organisation')
+      .on(t.organisationId, t.typeId, t.positionCode)
+      .where(sql`${t.unitId} IS NULL`),
+  ],
+);
+/**
+ * The read log of the competence domain (D108 item 15, D121 item 5): one row per read of competence about people, kept
+ * apart from the audit table since a read changes nothing. A search across the organisation and its export (`type_ids`,
+ * the first also in `type_id`, with the least level and the unit narrowed to), or one person's holdings opened
+ * (`person_id`); who read, as which
+ * relation, by whom (the person, or the assistant for them, D122 item 6), when and how many rows the read returned. Ids
+ * and counts only: never a name and never content. Written in
+ * the transaction that reads what it records, so a read whose row cannot be written answers nothing. No foreign keys:
+ * a row stays what it was when the type or the person it names changes, and erasure leaves it (D108 item 14 erases a
+ * person's holdings; who read them is not theirs to erase, and how long a row is kept is open, D121).
+ */
+export const competenceReadLog = pgTable(
+  'competence_read_log',
+  {
+    id: text('id').primaryKey(),
+    organisationId: text('organisation_id').notNull(),
+    readerId: text('reader_id').notNull(),
+    relation: text('relation').$type<'self' | 'managed' | 'registrar'>().notNull(),
+    // Who made the read (D122 item 6): the person, or the assistant reading for them. Rows from before are the person's.
+    caller: text('caller').$type<'person' | 'assistant'>().notNull().default('person'),
+    kind: text('kind').$type<'search' | 'person' | 'export'>().notNull(),
+    typeId: text('type_id'),
+    // Every type a search or its file asked for, in the order chosen, `type_id` first (a search may ask for up to five
+    // that a person must all hold); empty where `type_id` is null. Rows from before migration 0074 hold their one type.
+    typeIds: text('type_ids')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    minLevel: integer('min_level'),
+    unitId: text('unit_id'),
+    personId: text('person_id'),
+    // The filters a search or its file narrowed by (migration 0076): the statuses asked for, in the contract's order
+    // (`COMPETENCE_SEARCH_STATUSES`), empty for every status; and the validity window in days, null for none. Rows from
+    // before narrowed by neither. The order is not kept: it discloses nothing.
+    status: text('status')
+      .array()
+      .$type<CompetenceSearchStatus[]>()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    until: integer('until').$type<CompetenceSearchWindow>(),
+    rows: integer('rows').notNull(),
+    readAt: timestamp('read_at', { withTimezone: true }).notNull(),
+  },
+  t => [
+    check('competence_read_log_relation', sql`${t.relation} IN ('self', 'managed', 'registrar')`),
+    // The types asked for begin with `type_id`, and there are none where it is none. `coalesce`: an empty list's first
+    // element is NULL, and a check that comes to NULL holds, so without it a row naming a type and no list would pass
+    // (migration 0075 corrects 0074).
+    check(
+      'competence_read_log_types',
+      sql`CASE WHEN ${t.typeId} IS NULL THEN cardinality(${t.typeIds}) = 0 ELSE coalesce(${t.typeIds}[1] = ${t.typeId}, false) END`,
+    ),
+    // The assistant reads one person's holdings as their manager, never as a registrar and never a search or a file
+    // (D122 item 5): a row that says otherwise is refused, and the read with it.
+    check(
+      'competence_read_log_caller',
+      sql`${t.caller} = 'person' OR (${t.caller} = 'assistant' AND ${t.kind} = 'person' AND ${t.relation} = 'managed')`,
+    ),
+    check('competence_read_log_kind', sql`${t.kind} IN ('search', 'person', 'export')`),
+    // A person opened names whom and no type. A search and its file are a registrar's and name the type and nobody; a
+    // manager's matrix as a file is the one other export, naming neither (it holds several types).
+    check(
+      'competence_read_log_subject',
+      sql`CASE WHEN ${t.kind} = 'person' THEN ${t.personId} IS NOT NULL AND ${t.typeId} IS NULL AND ${t.minLevel} IS NULL AND ${t.unitId} IS NULL WHEN ${t.relation} = 'registrar' THEN ${t.typeId} IS NOT NULL AND ${t.personId} IS NULL ELSE ${t.kind} = 'export' AND ${t.relation} = 'managed' AND ${t.typeId} IS NULL AND ${t.personId} IS NULL AND ${t.minLevel} IS NULL AND ${t.unitId} IS NULL END`,
+    ),
+    check('competence_read_log_level', sql`${t.minLevel} IS NULL OR ${t.minLevel} BETWEEN 1 AND 3`),
+    // The statuses are one of the closed list's subsets, each once and in its order, so a list can neither carry an
+    // unknown code, a NULL element nor a repeat; the window is one of the closed list's or none. Compared as whole
+    // values with no NULL on the way (the lesson of 0075: a check that comes to NULL holds).
+    check(
+      'competence_read_log_status',
+      sql`${t.status} IN ('{}'::text[], '{valid}'::text[], '{expiring}'::text[], '{expired}'::text[], '{valid,expiring}'::text[], '{valid,expired}'::text[], '{expiring,expired}'::text[], '{valid,expiring,expired}'::text[])`,
+    ),
+    check('competence_read_log_until', sql`${t.until} IS NULL OR ${t.until} IN (30, 90, 180)`),
+    // Only a registrar's search or file narrows by them: one person opened and a manager's matrix as a file never do.
+    check(
+      'competence_read_log_filters',
+      sql`(cardinality(${t.status}) = 0 AND ${t.until} IS NULL) OR (${t.relation} = 'registrar' AND ${t.kind} IN ('search', 'export'))`,
+    ),
+    check('competence_read_log_rows', sql`${t.rows} >= 0`),
+    index('competence_read_log_organisation').on(t.organisationId, t.readAt),
+    index('competence_read_log_person').on(t.personId),
+    index('competence_read_log_reader').on(t.readerId),
+  ],
+);
+/**
+ * How long the competence of a person the directory has deactivated is kept (D108 item 14; D120 "Open": the timer
+ * starts only when an operator has set the period): one row per organisation, written by an operator with
+ * `scripts/competence-retention.ts` and audited. No row, no period: nothing is scheduled and nothing is erased. At least
+ * one day, so a typo cannot erase at once, and at most ten years. `set_by` is an actor string.
+ */
+export const competenceRetention = pgTable(
+  'competence_retention',
+  {
+    organisationId: text('organisation_id').primaryKey(),
+    days: integer('days').notNull(),
+    setBy: text('set_by').notNull(),
+    setAt: timestamp('set_at', { withTimezone: true }).notNull(),
+  },
+  t => [check('competence_retention_days', sql`${t.days} BETWEEN 1 AND 3650`)],
+);
+/**
+ * The erasure of one person's competence after they left (D108 item 14): a row per person the directory has
+ * deactivated, written in the SCIM transaction that deactivates or activates them (the people module's leavers port,
+ * bound in composition), by the hourly sweep that reconciles it with the directory and erases what is due, and by an
+ * erasure by hand. `inactive` from the deactivation until the person is active again (`cancelled`) or erased
+ * (`erased`). `inactive_since` is when the directory deactivated them or, for a deactivation Clew did not record (one
+ * from before this table, or one whose port failed), when the sweep found it: the period counts from it. When the
+ * erasure falls due is never stored: it follows from `inactive_since` and the organisation's period as it stands
+ * (`competence_retention`), so a change of the period moves no row. The generation grows with every deactivation, so
+ * an erasure planned for an earlier spell does nothing. No foreign key, as `competence_read_log` has none: a write here
+ * takes no lock on `auth_person`, which the SCIM transaction holds while it tells the port. Kept after the erasure (ids
+ * and times, no content), since a later deactivation of the same person takes the next generation.
+ */
+export const competenceErasures = pgTable(
+  'competence_erasure',
+  {
+    personId: text('person_id').primaryKey(),
+    organisationId: text('organisation_id').notNull(),
+    state: text('state').$type<'inactive' | 'cancelled' | 'erased'>().notNull(),
+    inactiveSince: timestamp('inactive_since', { withTimezone: true }),
+    generation: integer('generation').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  t => [
+    check('competence_erasure_state', sql`${t.state} IN ('inactive', 'cancelled', 'erased')`),
+    check('competence_erasure_since', sql`${t.state} <> 'inactive' OR ${t.inactiveSince} IS NOT NULL`),
+    check('competence_erasure_generation', sql`${t.generation} >= 0`),
+    index('competence_erasure_organisation').on(t.organisationId, t.state),
+    index('competence_erasure_inactive')
+      .on(t.inactiveSince)
+      .where(sql`${t.state} = 'inactive'`),
   ],
 );

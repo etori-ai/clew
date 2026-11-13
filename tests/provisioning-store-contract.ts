@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { GroupCapabilityRule } from '../apps/server/src/modules/people/domain';
+import type { GroupCapabilityRule, GroupRelationRule } from '../apps/server/src/modules/people/domain';
 import type { ProvisionStore } from '../apps/server/src/modules/people/ports';
 import { provisioningUsecases } from '../apps/server/src/modules/people/usecases';
 
@@ -28,6 +28,10 @@ export interface ProvisioningHarness {
   seed(seed: Seed): Promise<void>;
   setMembers(members: Array<{ group: string; person: string }>): Promise<void>;
   setGroupCapabilities(rows: GroupCapabilityRule[]): Promise<void>;
+  /** D121: the organisation's group-relation rows, as the users page writes them. */
+  setGroupRelations(rows: GroupRelationRule[]): Promise<void>;
+  /** D121: the relations the person's grant carries, empty without a grant or a relation. */
+  relations(personId: string): Promise<string[]>;
   grant(
     personId: string,
   ): Promise<{ unitId: string; unitLabel: string; role: string; capabilities: string[] } | undefined>;
@@ -201,6 +205,48 @@ export function provisioningContract(name: string, make: () => Promise<Provision
       expect((await h.audit(b)).at(-1)).toMatchObject({ actor: 'person:mikael', action: 'grant.derived' });
       expect(await usecases.derivePerson('system:test', p + '-nobody')).toBeUndefined();
     });
+    test('a group mapped to a relation gives it to its members beside the capabilities and never as one; a change re-derives them and is audited (D121)', async () => {
+      const h = await make(),
+        p = h.prefix,
+        a = p + '-a',
+        group = p + ':kompetens';
+      await h.seed({
+        people: [{ id: a, organisationId: 'org' }],
+        groups: [
+          { externalId: 'unit:' + p + '-hr', label: 'HR' },
+          { externalId: group, label: 'Kompetenssamordnare' },
+        ],
+        members: [
+          { group: 'unit:' + p + '-hr', person: a },
+          { group, person: a },
+        ],
+      });
+      const usecases = provisioningUsecases({ store: h.store });
+      await usecases.derivePerson('system:test', a);
+      expect(await h.relations(a)).toEqual([]);
+      const audited = (await h.audit(a)).length;
+      // A name outside the closed list gives nothing; the relation is no capability and gives none.
+      await h.setGroupRelations([
+        { groupExternalId: group, relation: 'registrar' },
+        { groupExternalId: group, relation: 'nonsense' },
+      ]);
+      expect(await usecases.deriveGroup('person:mikael', group)).toEqual([a]);
+      expect(await h.relations(a)).toEqual(['registrar']);
+      expect((await h.grant(a))!.capabilities).toEqual([]);
+      expect((await h.audit(a)).at(-1)).toMatchObject({
+        actor: 'person:mikael',
+        action: 'grant.derived',
+        details: { capabilities: [], relations: ['registrar'] },
+      });
+      // An unchanged derivation is silent.
+      await usecases.derivePerson('system:test', a);
+      expect(await h.audit(a)).toHaveLength(audited + 1);
+      // Taken back, the loss is on the row too.
+      await h.setGroupRelations([]);
+      await usecases.deriveGroup('person:mikael', group);
+      expect(await h.relations(a)).toEqual([]);
+      expect((await h.audit(a)).at(-1)).toMatchObject({ action: 'grant.derived', details: { relations: [] } });
+    });
     test('a manager of a unit nobody has pushed a unit: group for gets the unit row at once, labelled by its id until the group names it', async () => {
       const h = await make(),
         p = h.prefix,
@@ -252,6 +298,62 @@ export function provisioningContract(name: string, make: () => Promise<Provision
         capabilities: [],
       });
       expect(await h.audit(hillevi)).toHaveLength(1);
+    });
+    test('positions come from position: groups by code, labelled by the group and apart from the grant; a changed set is audited and an unchanged one is not (D108 item 5)', async () => {
+      const h = await make(),
+        p = h.prefix,
+        lena = p + '-lena',
+        [usk, mf] = ['position:' + p + '-usk', 'position:' + p + '-mf'];
+      await h.seed({
+        people: [{ id: lena, organisationId: 'org' }],
+        groups: [
+          { externalId: 'unit:' + p + '-gata', label: 'Gata och park' },
+          { externalId: usk, label: 'Undersköterska' },
+          { externalId: mf, label: 'Maskinförare' },
+          // Stored before the key was read, and written wrong: it gives nothing.
+          { externalId: 'position: ' + p + '-hl', label: 'Handläggare' },
+        ],
+        members: [
+          { group: 'unit:' + p + '-gata', person: lena },
+          { group: usk, person: lena },
+          { group: mf, person: lena },
+          { group: 'position: ' + p + '-hl', person: lena },
+        ],
+      });
+      const usecases = provisioningUsecases({ store: h.store }),
+        held = () => h.store.transaction(tx => tx.positionsOf(lena));
+      // The groups were stored without their positions: the derivation writes each position's row from its group.
+      const derived = await usecases.derivePerson('system:test', lena);
+      expect(derived?.positions).toEqual([
+        { code: p + '-mf', label: 'Maskinförare' },
+        { code: p + '-usk', label: 'Undersköterska' },
+      ]);
+      expect(await held()).toEqual(derived!.positions);
+      expect(await h.grant(lena)).toEqual({
+        unitId: p + '-gata',
+        unitLabel: 'Gata och park',
+        role: 'employee',
+        capabilities: [],
+      });
+      await usecases.derivePerson('system:test', lena);
+      expect((await h.audit(lena)).map(row => [row.action, row.details])).toEqual([
+        ['grant.derived', { unitId: p + '-gata', role: 'employee', capabilities: [], assignments: 1 }],
+        ['positions.derived', { positions: [p + '-mf', p + '-usk'] }],
+      ]);
+      // Out of one position group: the set changes and the grant does not.
+      await h.setMembers([
+        { group: 'unit:' + p + '-gata', person: lena },
+        { group: usk, person: lena },
+      ]);
+      await usecases.derivePerson('system:test', lena);
+      expect(await held()).toEqual([{ code: p + '-usk', label: 'Undersköterska' }]);
+      expect((await h.audit(lena)).slice(2).map(row => [row.actor, row.action, row.details])).toEqual([
+        ['system:test', 'positions.derived', { positions: [p + '-usk'] }],
+      ]);
+      // The position stays the organisation's, held by nobody.
+      expect(await h.store.transaction(tx => tx.positionLabels('org', [p + '-mf']))).toEqual({
+        [p + '-mf']: 'Maskinförare',
+      });
     });
     test('a transaction that fails leaves no grant and no audit row', async () => {
       const h = await make(),

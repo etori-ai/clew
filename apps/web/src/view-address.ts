@@ -58,8 +58,24 @@ export function withViewInput(pathname: string, search: URLSearchParams | string
 export const opensAsPage = (views: readonly ViewEntry[] | undefined, capability: string): boolean =>
   answersWithRows(views?.find(v => v.capability === capability)?.kind);
 /**
- * Where opening a view from a page leads: a table or a list to its page, with this page as the way back (what this page
- * holds in its panel kept, so the way back returns to it as it was); anything else beside this page, in its panel.
+ * Clew's own page a read of Clew's declares for its rows (`ViewEntry.page`, D116): the matrix narrowed to what needs the
+ * manager for `competence.attention`, so the figure on Hem, the manager's card and an answer's "Visa allt" lead to the
+ * one face of those rows. Only for the read as it is without input; with an input, and for every other read, none.
+ */
+export function declaredPage(
+  views: readonly ViewEntry[] | undefined,
+  capability: string,
+  input?: Record<string, unknown>,
+): string | undefined {
+  if (input && Object.keys(input).length) return undefined;
+  const page = views?.find(v => v.capability === capability)?.page;
+  // A path inside Clew, as the server declares it; anything else is not followed.
+  return page && /^\/[^/]/.test(page) ? page : undefined;
+}
+/**
+ * Where opening a view from a page leads: the page Clew's own read declares for its rows (`declaredPage`); else a table
+ * or a list to its page, with this page as the way back (what this page holds in its panel kept, so the way back returns
+ * to it as it was); anything else beside this page, in its panel.
  */
 export function viewOpenHref(
   views: readonly ViewEntry[] | undefined,
@@ -67,9 +83,12 @@ export function viewOpenHref(
   search: URLSearchParams | string,
   view: ViewTarget & { title: string },
 ): string {
-  return opensAsPage(views, view.capability)
-    ? viewPageHref(view, withoutView(pathname, search))
-    : withView(pathname, search, view);
+  return (
+    declaredPage(views, view.capability, view.input) ??
+    (opensAsPage(views, view.capability)
+      ? viewPageHref(view, withoutView(pathname, search))
+      : withView(pathname, search, view))
+  );
 }
 /**
  * Where an address that opens a view beside the page leads once the view has answered with rows (D116): the view's own
@@ -97,12 +116,15 @@ export function readInput(
 }
 /**
  * Where a work item's read that answers with rows leads (D116: "Se i personalsystemet", every leave request in a
- * table): the read's page, with the page the item is on as the way back. Under the read's own title, not the button's.
+ * table): the page Clew's own read declares for its rows (`declaredPage`, the manager's competence card to the matrix),
+ * else the read's page, with the page the item is on as the way back. Under the read's own title, not the button's.
  */
 export function readPageHref(
   thread: Pick<Thread, 'items'>,
   action: Pick<ThreadAction, 'capability' | 'input' | 'usesItems'>,
   from: string,
+  views?: readonly ViewEntry[],
 ): string {
-  return viewPageHref({ capability: action.capability, input: readInput(thread, action) }, from);
+  const input = readInput(thread, action);
+  return declaredPage(views, action.capability, input) ?? viewPageHref({ capability: action.capability, input }, from);
 }

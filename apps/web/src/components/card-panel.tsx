@@ -16,8 +16,8 @@ export interface CardPlace {
    */
   folded?: boolean;
   /**
-   * Where the item can be let go of (Att göra's reading pane): its ✕ stands in the item's own header row, beside "Öppna
-   * som sida", not in a row of its own above it.
+   * Where the item can be let go of (Att göra's reading pane): its ✕ stands at the end of the item's own header row,
+   * not in a row of its own above it.
    */
   onClose?: () => void;
 }

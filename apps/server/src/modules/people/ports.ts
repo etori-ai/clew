@@ -1,8 +1,10 @@
+import type { Position } from '@clew/contracts';
 import type {
   Assignment,
   DerivedUnit,
   Grant,
   GroupCapabilityRule,
+  GroupRelationRule,
   GroupRecord,
   Membership,
   Placement,
@@ -61,6 +63,32 @@ export interface AuditRecord {
   details: Record<string, unknown>;
 }
 /**
+ * A change of a person's `active` as the leavers port is told it: who made it (`provisioner:<id>`), whom, of which
+ * organisation, and when.
+ */
+export interface LeaverChange {
+  actor: string;
+  personId: string;
+  organisationId: string;
+  at: string;
+}
+/**
+ * What a change of a person's `active` means to a domain that keeps data about them (D68: a person is deactivated,
+ * never erased; D108 item 14: the competence of one who left is erased a set time after). The SCIM use cases tell it,
+ * inside the transaction that deactivates or activates the person and after the person's row is written, so whatever
+ * the domain records there commits or rolls back with the change. It never holds the change up for long or fails it
+ * (D113): the store runs each call in a savepoint with a lock timeout, and a call that fails is rolled back to the
+ * savepoint and reported, while the change commits; the domain reconciles what it missed from the directory. The people
+ * module imports no such domain: composition binds the port (`composition/people.ts`, the competence module's erasure
+ * intent), and a store built without a binding tells nobody.
+ */
+export interface LeaversTx {
+  /** The person was deactivated, or created deactivated. */
+  deactivated(change: LeaverChange): Promise<void>;
+  /** The person was activated again. */
+  reactivated(change: LeaverChange): Promise<void>;
+}
+/**
  * The ports of provisioning (D68, D85, D25): what the SCIM use cases and the derivation read and write inside one
  * transaction. The grant is the projection `auth_access_grant`; the capabilities it carries are strings there and the
  * closed list in the domain. Instants are ISO strings handed in by the use case. `adapters/postgres.ts` is what the server
@@ -110,15 +138,39 @@ export interface ProvisionTx {
   members(groupExternalId: string): Promise<string[]>;
   /** D85's rows of one organisation: a row applies to the groups of the organisation that wrote it, and to no other (D101). */
   groupCapabilities(organisationId: string): Promise<GroupCapabilityRule[]>;
+  /** D121's rows of one organisation, by the same rule: a group gives its members a relation to people by grant. */
+  groupRelations(organisationId: string): Promise<GroupRelationRule[]>;
   /** The labels of an organisation's own unit rows. A row another organisation left behind is not known here (D101). */
   unitLabels(ids: readonly string[], organisationId: string): Promise<Record<string, string>>;
   /** Upsert by id, one per assignment, before the assignments that reference them; the label is the derived one. */
   writeUnits(organisationId: string, units: readonly DerivedUnit[]): Promise<void>;
   replaceAssignments(personId: string, assignments: readonly Assignment[]): Promise<void>;
-  grant(personId: string): Promise<(Omit<Grant, 'capabilities'> & { capabilities: string[] }) | undefined>;
+  /** The projection as stored; `relations` (D121) present only when the person holds one. */
+  grant(
+    personId: string,
+  ): Promise<
+    (Omit<Grant, 'capabilities' | 'relations'> & { capabilities: string[]; relations?: string[] }) | undefined
+  >;
   /** Upsert the projection, or remove it when the person has no active assignment. */
   writeGrant(personId: string, grant: Grant | undefined): Promise<void>;
+  // Positions (D108 item 5): what a `position:<code>` group says a person is. A code is the organisation's, as a unit
+  // id is; the row's id is the store's own and never leaves it here.
+  /** The positions the person holds, by code. */
+  positionsOf(personId: string): Promise<Position[]>;
+  /** The labels of the organisation's position rows for these codes; a code without a row is absent. */
+  positionLabels(organisationId: string, codes: readonly string[]): Promise<Record<string, string>>;
+  /** Upsert by organisation and code: a code without a row gets one, a known code takes the label given. */
+  writePositions(organisationId: string, positions: readonly Position[]): Promise<void>;
+  /** Removes the organisation's rows for these codes, and with them every person's hold of them. */
+  removePositions(organisationId: string, codes: readonly string[]): Promise<void>;
+  /**
+   * The person holds exactly the positions of these codes in the organisation, written over what they held. A code
+   * without a row is not held, so a position is written before anyone is given it.
+   */
+  replacePositions(personId: string, organisationId: string, codes: readonly string[]): Promise<void>;
   audit(entry: { actor: string; action: string; subject: string; details: Record<string, unknown> }): Promise<void>;
+  /** The domains told of a deactivation or a reactivation on this transaction (D108 item 14). */
+  leavers: LeaversTx;
   // SCIM: who is calling.
   /**
    * The provisioner whose token has this digest and is not revoked, with the last time it was seen. A token that was
@@ -305,6 +357,13 @@ export interface ProvisionTx {
     organisationId: string,
     groupExternalId: string,
     capability: string,
+    present: boolean,
+  ): Promise<boolean>;
+  /** Add or remove one group-relation row of an organisation (D121); true when the row changed. */
+  setGroupRelation(
+    organisationId: string,
+    groupExternalId: string,
+    relation: string,
     present: boolean,
   ): Promise<boolean>;
   /**

@@ -4,8 +4,10 @@ import {
   activeOf,
   assertAcceptedKey,
   deriveAuthority,
+  derivePositions,
   givesAuthority,
   sameGrant,
+  samePositions,
   unitGroupOf,
   unitOfKey,
 } from '../../apps/server/src/modules/people/domain';
@@ -64,6 +66,32 @@ describe('deriveAuthority', () => {
       ]),
     ).toEqual({ unitId: 'm', role: 'manager' });
     expect(activeOf([])).toBeUndefined();
+  });
+  test('a position group gives a position by its code and its group name, and nothing of the grant (D108 item 5)', () => {
+    const d = deriveAuthority(
+      [
+        { externalId: 'unit:u1', label: 'Enhet 1' },
+        { externalId: 'position:usk', label: 'Undersköterska' },
+        { externalId: 'position:mf', label: 'Maskinförare' },
+        // Stored before the key was read: what D96 refuses now gives nothing.
+        { externalId: 'position:', label: 'Empty key' },
+        { externalId: 'position: ssk', label: 'Space after the colon' },
+        { externalId: 'Position:hl', label: 'Another case' },
+        { externalId: 'positional:x', label: 'A plain group' },
+      ],
+      [],
+    );
+    expect(d.positions).toEqual([
+      { code: 'mf', label: 'Maskinförare' },
+      { code: 'usk', label: 'Undersköterska' },
+    ]);
+    expect(d.grant).toEqual({ unitId: 'u1', unitLabel: 'Enhet 1', role: 'employee', capabilities: [] });
+    expect(derivePositions([{ externalId: 'unit:u1', label: 'Enhet 1' }])).toEqual([]);
+    // Compared by code: a relabelled position is the same one, a code more or less is not.
+    expect(samePositions([{ code: 'usk', label: 'USK' }], [{ code: 'usk', label: 'Undersköterska' }])).toBe(true);
+    expect(samePositions([], [{ code: 'usk', label: 'Undersköterska' }])).toBe(false);
+    expect(samePositions([{ code: 'usk', label: 'USK' }], [])).toBe(false);
+    expect(samePositions([], [])).toBe(true);
   });
   test('the lowest unit id is the lowest by code unit, which no locale and no upgrade of ICU moves (A5, Q4)', () => {
     // Each pair sorts the other way under the English collation that once chose: an id is a key, not a word.
@@ -194,6 +222,35 @@ describe('deriveAuthority', () => {
     expect(sameGrant(g, { ...g, capabilities: [] })).toBe(false);
     expect(sameGrant(undefined, undefined)).toBe(true);
     expect(sameGrant(g, undefined)).toBe(false);
+    // D121: a relation to people is authority too; none and an empty list are the same.
+    expect(sameGrant(g, { ...g, relations: ['registrar'] })).toBe(false);
+    expect(sameGrant(g, { ...g, relations: [] })).toBe(true);
+  });
+  test('a relation to people comes from a row of its own table alone: no group key gives it, and it is never a capability (D121, D118)', () => {
+    const memberships = [
+      { externalId: 'unit:u1', label: 'Enhet 1' },
+      { externalId: 'g-hr', label: 'HR' },
+      // A key that names it is no capability and gives nothing; the SCIM boundary refuses it (D96).
+      { externalId: 'capability:registrar', label: 'Not a capability' },
+    ];
+    const relations = [
+      { groupExternalId: 'g-hr', relation: 'registrar' },
+      { groupExternalId: 'g-hr', relation: 'admin.users' },
+      { groupExternalId: 'g-other', relation: 'registrar' },
+    ];
+    const d = deriveAuthority(memberships, [{ groupExternalId: 'g-hr', capability: 'registrar' }], {}, relations);
+    expect(d.relations).toEqual(['registrar']);
+    expect(d.capabilities).toEqual([]);
+    expect(d.grant).toEqual({
+      unitId: 'u1',
+      unitLabel: 'Enhet 1',
+      role: 'employee',
+      capabilities: [],
+      relations: ['registrar'],
+    });
+    // Without the row, nothing; and without a unit there is no grant to carry it (fail closed).
+    expect(deriveAuthority(memberships, [], {}, []).relations).toEqual([]);
+    expect(deriveAuthority([{ externalId: 'g-hr', label: 'HR' }], [], {}, relations).grant).toBeUndefined();
   });
 });
 provisioningContract('memory', async (): Promise<ProvisioningHarness> => {
@@ -239,6 +296,12 @@ provisioningContract('memory', async (): Promise<ProvisioningHarness> => {
     },
     async setGroupCapabilities(rows) {
       s.groupCapabilities = rows.map(row => ({ organisationId: 'org', ...row }));
+    },
+    async setGroupRelations(rows) {
+      s.groupRelations = rows.map(row => ({ organisationId: 'org', ...row }));
+    },
+    async relations(id) {
+      return s.grants.get(id)?.relations ?? [];
     },
     async legacyGrant(id, grant) {
       s.grants.set(id, { ...grant });

@@ -34,7 +34,7 @@ test('the user name upgrade refuses ambiguous people, then preserves the owner f
     await db.execute(sql`update auth_person set user_name = 'other-account' where id = 'p-other'`);
     await installation.migrate();
     const scim = scimUsecases({
-      store: postgresProvisionStore(() => db),
+      store: postgresProvisionStore({ db: () => db }),
       clock: () => new Date(),
       ids: () => 'p-new',
       digest: token => token,

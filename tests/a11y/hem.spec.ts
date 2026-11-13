@@ -101,16 +101,16 @@ test.describe('Hem with the parts of version 1.0', () => {
     expect(Math.abs(w.y - n.y)).toBeLessThan(2);
     expect(d.x).toBeGreaterThanOrEqual(n.x + n.width);
     expect(w.x).toBeGreaterThanOrEqual(d.x + d.width);
-    // Under them Läget, Verktygslådan, then what D112 kept, Sedan i går last.
+    // Under them Läget, Verktygslådan, then what D112 kept, the person's own action points last. "Sedan i går" is gone
+    // (2026-11-13: no digest sentences on a page).
     const lage = heading(page, 2, `Läget på ${user.unitLabel}`),
       tools = heading(page, 2, 'Verktygslådan'),
-      own = heading(page, 2, 'Mina åtgärdspunkter'),
-      since = heading(page, 2, 'Sedan i går');
+      own = heading(page, 2, 'Mina åtgärdspunkter');
     const y = async (l: ReturnType<typeof heading>) => (await l.boundingBox())!.y;
     expect(await y(lage)).toBeGreaterThan(Math.max(n.y + n.height, d.y + d.height, w.y + w.height));
     expect(await y(tools)).toBeGreaterThan(await y(lage));
     expect(await y(own)).toBeGreaterThan(await y(tools));
-    expect(await y(since)).toBeGreaterThan(await y(own));
+    await expect(page.getByRole('region', { name: 'Sedan i går' })).toHaveCount(0);
     // One h1, every other heading one level under it or deeper, never a level skipped, in the board's order.
     const headings = await headingsOf(page);
     expect(headings[0]).toEqual({ level: 1, text: 'Vad vill du få gjort?' });
@@ -126,7 +126,6 @@ test.describe('Hem with the parts of version 1.0', () => {
       at(/^Läget på /),
       at('Verktygslådan'),
       at(/^Mina åtgärdspunkter/),
-      at('Sedan i går'),
     ];
     expect(order.every(i => i > 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
@@ -433,7 +432,8 @@ test.describe('Läget leads to a list’s page, and one thing beside Hem', () =>
     const panel = page.getByRole('dialog', { name: 'Budget mot prognos' });
     await expect(panel).toBeVisible();
     await expect(page).toHaveURL('/?open=finance.budget&open-title=Budget+mot+prognos');
-    await expect(panel.getByRole('link', { name: 'Öppna som sida' })).toHaveCount(0);
+    // A budget is no record: no page of its own, so its name in the panel's header is no link.
+    await expect(panel.getByRole('heading', { name: 'Budget mot prognos' }).getByRole('link')).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(tile).toBeFocused();
@@ -464,11 +464,13 @@ test.describe('a work item opened from Hem, beside Hem', () => {
     await expect(page.getByRole('region', { name: 'Behöver dig' })).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(rail(page).getByRole('link', { name: /^Hem/ })).toHaveAttribute('aria-current', 'page');
-    // The same work item as Att göra's pane: Öppna som sida with Hem as the way back, its buttons, the box at the foot.
-    await expect(item.getByRole('link', { name: 'Öppna som sida' })).toHaveAttribute(
-      'href',
-      '/items/rutin?from=%2F%3Fcard%3Drutin',
-    );
+    // The same work item as Att göra's pane: its title the link to its page with Hem as the way back, its buttons, the
+    // box at the foot.
+    await expect(
+      item
+        .getByRole('heading', { name: 'Ny rutin för läkemedelshantering' })
+        .getByRole('link', { name: 'Ny rutin för läkemedelshantering' }),
+    ).toHaveAttribute('href', '/items/rutin?from=%2F%3Fcard%3Drutin');
     const ack = item.getByRole('button', { name: 'Jag har läst' });
     await expect(ack).toHaveCount(1);
     await expect(panel.getByRole('textbox', { name: 'Fråga Clew' })).toBeVisible();

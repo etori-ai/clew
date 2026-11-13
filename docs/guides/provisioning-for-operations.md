@@ -59,6 +59,8 @@ A membership update targets the **group's Clew ID**. Each `members[].value` cont
 }
 ```
 
+A position ([D108](../decisions/D108-competence-is-an-owned-domain-one-holding-typed-against-a-catalogue.md) item 5) is sent the same way: a group with the key `position:<code>` and the position's name, sent for every position the source lists, held or not, and a membership of it for each person who holds it. A person may hold several. A position by itself decides no access; like any provisioned group, an administrator can map it to a capability ([Groups](writing-a-provisioner.md#groups)).
+
 ### Assign the manager to the unit they lead
 
 If your HR system marks Anna with `isManager: true`, resolve which unit she leads in your provisioner. If it records a manager against each employee, use those records to identify the responsible manager for each unit. In both cases Clew expects a membership for Anna in `unit-manager:<unitId>`. A flag, title or SCIM Enterprise User `manager` field on a user grants no manager placement.
